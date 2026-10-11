@@ -27,7 +27,7 @@ fn root() -> &'static Path {
 }
 
 fn aye() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_aye"));
+    let mut c = Command::new(std::env::var_os("AYE").unwrap_or("aye".into()));
     c.current_dir(root());
     c
 }

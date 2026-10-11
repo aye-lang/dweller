@@ -38,9 +38,8 @@ Run it:
 
 `cargo test --test browser` runs the browser's tests (headless, offline).
 
-Before coding, read [`docs/practices/`](../docs/practices/README.md)
-(`browser.md` for this directory); when you learn a lesson that will come
-up again, add an entry there.
+Before coding, read [`docs/practices/browser.md`](../docs/practices/browser.md);
+when you learn a lesson that will come up again, add an entry there.
 
 ## Use with Claude Code / MCP clients
 
