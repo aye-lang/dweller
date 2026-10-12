@@ -8,3 +8,14 @@ aye test browser
 aye build browser                                   # writes ./anyknown
 AYE=$(command -v aye) cargo test --release --test browser
 ```
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option. Third-party files keep their own
+notices: jQuery (`browser/tests/jsdom/scripts/jquery-3.7.1.min.js`) and the
+Octane benchmark ports (`browser/tests/jsbench/`).
+
+Unless you explicitly state otherwise, any contribution you submit for
+inclusion in this project, as defined in the Apache-2.0 license, is dual
+licensed as above, without any additional terms or conditions.
