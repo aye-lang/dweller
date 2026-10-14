@@ -44,7 +44,9 @@
 // corners), and `opacity` below 1: a box's layer (a stacking context,
 // painted like a positioned box) or an inline box's items on a line are
 // a group, drawn into a layer of its own and blended below with the
-// opacity (0: not drawn; the box is still hit by `engine/hit.aye`).
+// opacity (0: not drawn; the box is still hit by `engine/hit.aye`); a
+// `filter` other than `none` makes a group the same way, its functions
+// applied to the layer before the opacity (filter.aye).
 
 import css
 import css.Value
@@ -96,6 +98,9 @@ pub enum Item {
     // (255: opaque).
     Layer { r: Rect }
     Mask
+    // The steps of a filter, applied to the layer being drawn (just
+    // before its `EndLayer`).
+    Filter { ops: []FilterOp }
     EndLayer { r: Rect, radii: Radii, alpha: u8 }
 }
 
@@ -150,13 +155,19 @@ pub fn build(alloc: Allocator, t: *mut Tree) AllocError!DisplayList {
 }
 
 /// Is box `i` painted in a layer of its own (positioned, transformed,
-/// clipped or with an opacity below 1; not inline)?
+/// clipped, with an opacity below 1 or a filter; not inline)?
 pub fn isLayer(t: *Tree, i: usize) bool {
     let b = t.bx(i)
     if b.kind == BoxKind.Inline || b.kind == BoxKind.Text || b.kind == BoxKind.LineBreak {
         return false
     }
-    return b.abs != 0 || layout.isPositioned(b.style) || layout.isTransformed(t, i) || layout.clipOf(t, i) != null || opacityOf(b.style) < 1.0
+    return b.abs != 0 || layout.isPositioned(b.style) || layout.isTransformed(t, i) || layout.clipOf(t, i) != null || isGroup(b.style)
+}
+
+/// Is a box with `style` drawn as a group (an opacity below 1, or a
+/// filter)?
+pub fn isGroup(style: []Value) bool {
+    return opacityOf(style) < 1.0 || hasFilter(style)
 }
 
 /// The `opacity` of a style, from 0 to 1.
@@ -244,12 +255,13 @@ fn isVisible(style: []Value) bool {
     return layout.isKeyword(style[css.VISIBILITY], "visible")
 }
 
-// A group of the items of an inline box `box` with opacity `o`, from
-// item `start` on.
+// A group of the items of an inline box `box` with opacity `o` and
+// filter `f`, from item `start` on.
 struct OpenGroup {
     box: usize
     start: usize
     o: f64
+    f: ?[]FilterOp
 }
 
 struct Builder {
@@ -293,11 +305,12 @@ struct Builder {
     }
 
     // Layer `i`: the layers below it, its own content, the layers above;
-    // all of it a group with the box's opacity.
+    // all of it a group with the box's opacity and filter.
     fn layer(self: *mut Self, i: usize) AllocError!void {
         let o = opacityOf(self.t.bx(i).style)
+        var f = try filterOf(self.t, self.t.bx(i).style)
         var group: ?usize = null
-        if o < 1.0 {
+        if o < 1.0 || f != null {
             group = try self.beginGroup()
         }
         var ls = List(LayerRef).init(self.t.backing)
@@ -311,6 +324,10 @@ struct Builder {
         let outer = self.painting
         let outer_m = self.m
         self.m = self.m.then(layout.xformOf(self.t, i))
+        if f |ops| {
+            // In the box's coordinates.
+            f = mappedOps(ops, self.m, self.t)
+        }
         let clip = layout.clipOf(self.t, i)
         if clip |c| {
             try self.add(Item.Clip { r: Rect { x: c[0], y: c[1], w: c[2], h: c[3] } })
@@ -328,7 +345,7 @@ struct Builder {
         }
         self.m = outer_m
         if group |g| {
-            try self.endGroup(g, o)
+            try self.endGroup(g, o, f)
         }
     }
 
@@ -343,9 +360,10 @@ struct Builder {
     }
 
     // Ends the group that begins at item `start`: its layer covers its
-    // items, blended below with opacity `o`. A group that draws nothing
-    // (no items, or `o` 0) is dropped.
-    fn endGroup(self: *mut Self, start: usize, o: f64) AllocError!void {
+    // items (and the reach of the filter `f`), filtered by `f`, blended
+    // below with opacity `o`. A group that draws nothing (no items, or
+    // `o` 0) is dropped.
+    fn endGroup(self: *mut Self, start: usize, o: f64, f: ?[]FilterOp) AllocError!void {
         let items = self.list.items.items()
         var bounds: ?Rect = null
         for k in start + 1..items.len {
@@ -354,9 +372,17 @@ struct Builder {
             }
         }
         let alpha = math.floor(o * 255.0 + 0.5) as u8
-        if bounds |r| {
+        if bounds |b| {
             if alpha > 0 {
+                var r = b
+                if f |ops| {
+                    let e = filterReach(ops) + 1.0
+                    r = Rect { x: b.x - e, y: b.y - e, w: b.w + 2.0 * e, h: b.h + 2.0 * e }
+                }
                 items[start] = Item.Layer { r: r }
+                if f |ops| {
+                    try self.list.items.append(Item.Filter { ops: ops })
+                }
                 return self.list.items.append(Item.EndLayer { r: r, radii: SQUARE, alpha: alpha })
             }
         }
@@ -366,7 +392,7 @@ struct Builder {
     }
 
     // Makes the groups `open` (outermost first) those of the inline boxes
-    // with an opacity below 1 from box `fb` up to the block container `c`:
+    // with an opacity below 1 or a filter from box `fb` up to the block container `c`:
     // ends those it is not inside, begins those it enters.
     fn inlineGroups(self: *mut Self, open: *mut List(OpenGroup), c: usize, fb: usize) AllocError!void {
         var chain = List(usize).init(self.t.backing)
@@ -377,7 +403,7 @@ struct Builder {
                 break
             }
             let b = self.t.bx(k)
-            if b.kind == BoxKind.Inline && opacityOf(b.style) < 1.0 {
+            if b.kind == BoxKind.Inline && isGroup(b.style) {
                 try chain.append(k)
             }
             cur = b.parent
@@ -393,7 +419,11 @@ struct Builder {
             k -= 1
             let bi = chain.items()[k]
             let start = try self.beginGroup()
-            try open.append(OpenGroup { box: bi, start: start, o: opacityOf(self.t.bx(bi).style) })
+            var f = try filterOf(self.t, self.t.bx(bi).style)
+            if f |ops| {
+                f = mappedOps(ops, self.m, self.t)
+            }
+            try open.append(OpenGroup { box: bi, start: start, o: opacityOf(self.t.bx(bi).style), f: f })
         }
     }
 
@@ -401,7 +431,7 @@ struct Builder {
     fn endGroups(self: *mut Self, open: *mut List(OpenGroup), keep: usize) AllocError!void {
         while open.len() > keep {
             if open.pop() |g| {
-                try self.endGroup(g.start, g.o)
+                try self.endGroup(g.start, g.o, g.f)
             }
         }
     }
@@ -529,7 +559,8 @@ struct Builder {
         }
         if layout.hasInlineContent(self.t, i) {
             try self.inlineFloats(i)
-            // The groups of inline boxes with an opacity, per line.
+            // The groups of inline boxes with an opacity or a filter,
+            // per line.
             var open = List(OpenGroup).init(self.t.backing)
             defer open.deinit()
             for li in b.line_start..b.line_end {
@@ -1112,6 +1143,9 @@ fn transformed(it: Item, m: layout.Affine, t: *mut Tree) Item {
         .Mask => {
             return Item.Mask
         }
+        .Filter { ops } => {
+            return Item.Filter { ops: mappedOps(ops, m, t) }
+        }
         .EndLayer { r, radii, alpha } => {
             let k = math.sqrt(math.abs(m.a * m.d - m.b * m.c))
             return Item.EndLayer { r: mapRect(r, m), radii: scaledRadii(radii, k), alpha: alpha }
@@ -1230,6 +1264,7 @@ fn moved(it: Item, dx: f64, dy: f64) Item {
         .Shadow { r, radii, dx: sdx, dy: sdy, blur, spread, c, inset } => Item.Shadow { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, radii: radii, dx: sdx, dy: sdy, blur: blur, spread: spread, c: c, inset: inset }
         .Layer { r } => Item.Layer { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h } }
         .Mask => Item.Mask
+        .Filter { ops } => Item.Filter { ops: ops }
         .EndLayer { r, radii, alpha } => Item.EndLayer { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, radii: radii, alpha: alpha }
     }
 }
@@ -1324,6 +1359,11 @@ pub fn render(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut
             .Mask => {
                 if try beginMask(&mut frames) |m| {
                     canvas = m
+                }
+            }
+            .Filter { ops } => {
+                if frames.len() > 0 {
+                    try applyFilter(frames.items()[frames.len() - 1].layer, ops, v.scale)
                 }
             }
             .EndLayer { r, radii, alpha } => {
