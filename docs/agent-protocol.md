@@ -351,7 +351,9 @@ the `anyknown` executable with the argument `mcp`.
 on a Unix domain socket at `PATH` (a stale socket file there is
 replaced; the file is removed when the window closes). Agents connect
 to it while a person uses the window: they see the same pages and act
-on them, and the person sees what they do.
+on them, and the person sees what they do. (Planned: each agent works
+in a Space of its own and never acts on the person's tabs; see
+`docs/browser.md`, B9.)
 
 - Each connection speaks JSON lines, as `anyknown agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC

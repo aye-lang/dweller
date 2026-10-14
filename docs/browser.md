@@ -57,7 +57,7 @@ Same rules as `milestones.md`: tests first; a milestone is done when its
 acceptance tests pass. Tests run headless and offline (`file:` fixtures
 and a local test server), so CI needs no network and no display.
 
-**Status.** B1–B7 are done; B8 is under way:
+**Status.** B1–B7 are done; B8 is under way; B9 is designed:
 
 | | State | Tests (`cargo test --test browser`) |
 |---|---|---|
@@ -69,6 +69,7 @@ and a local test server), so CI needs no network and no display.
 | B6 JavaScript | done | 212 conformance scripts (`anyknown js`), 30 DOM fixtures (`dump --tree --js`, also under GC stress), a to-do app session, window script test, GC unit tests |
 | B7 agent interface | done | 17 snapshot/Markdown fixtures, session and MCP transcripts (with `eval` and `wait`), shared-window sessions over its socket (JSON lines, MCP through `anyknown connect`, pause, pointing, tabs) |
 | B8 the real web | in progress | net over the local server (`net_http`, the `net_cookies` and `base` agent sessions), HTML/CSS fixtures (templates, quirks, hints, `var()`/`calc()`, at-rules, `@import`), layout fixtures of site shapes (floats, positioned boxes, grid, `details`), hit testing by layer (`window_hit_layers`), JS conformance scripts for generators, async, Symbol, the web APIs and ES modules (231–237, 242–245), DOM fixtures for module scripts, layout queries, Shadow DOM, custom elements, `MutationObserver` and Web Animations, background image loads (`net/bg_images.html`, `net/bg_image_events.html`), BigInt and property descriptor scripts (246–250), `fetch`/XHR methods and a failed image over the local server (`net/fetch_methods.html`, `net/xhr_methods.html`, `net/failed_image_once.html`), session history (`jsdom/history.html`, the `history` and `history_paths` agent sessions), Reflect, `setPrototypeOf` and Map/Set scripts (251–254), DOM fixtures for the body mixin, DOMParser, `IntersectionObserverEntry`, the virtual clock and endless feeds, replaced sizing layout fixtures (`replaced_sizing`, `replaced_minmax`) |
+| B9 agents without disturbing the user | designed (P9) | none yet; each P9 step adds its acceptance test |
 
 All the front ends share `engine/`: the window, `screenshot` and the
 agent sessions load pages through `engine.load` and keep history in a
@@ -702,3 +703,251 @@ on (`--no-js` turns it off), `dump` with `--js`.
     base URL cached per document. youtube-search CPU ~77 s → ~11.6 s
     (with the scroll budget above); a 40K-element page's peak RSS 5.58 →
     1.99 GB.
+
+### B9: Agents without disturbing the user
+
+Goal (2026-10-14): agents operate the browser while the person keeps
+using it, and nothing the agents do changes what the person sees or
+does. Each agent works in its own **Space**, a set of tabs inside the
+same browser; the person sees which Spaces have an agent working, can
+watch one, pause or stop its agent, and take a tab over. Agents use the
+person's logins. The reference is ego lite (citrolabs/ego-lite): one
+Space per agent, Spaces in parallel, and a "code mode" where one
+request runs a script that calls the browser's tools. Plan: P9 in
+[`docs/plans/browser.md`](plans/browser.md).
+
+**Today (measured 2026-10-14 on `main` 6e2e701).** Probes drove a
+headless window (`SDL_VIDEODRIVER=dummy`, `--agent-socket`) from two
+connections; the person's page had a focused text field with a
+selection and was scrolled to 200 px.
+
+| | Requirement | Today | Evidence |
+|---|---|---|---|
+| R1 | No agent action changes the person's selected tab, focus, selection, scroll or pointer | partial | In a background tab (`tab_new`), navigate, type, click, scroll, eval and `tab_close` left the person's scroll (200), selection and focus as they were. But a connection acts on the shown tab until it opens or selects another (`connSlot`, `ui/agents.aye`): a second connection's `type` replaced the person's text and cleared the selection. `tab_new`/`tab_select` with `show` switch the person's tab (`ui/agents.aye` `windowCommandOf`); the second tab makes the tab strip appear and the page viewport 28 px shorter, and closing it makes it taller (`openTab`, `removeTab` in `ui/tabs.aye`). The OS pointer is never moved. |
+| R2 | No agent request blocks the window (input within 16 ms, frames unchanged) | no | Requests run on the window's thread (`pollAgents` in `Ui.loop`, `ui/window.aye`). While connection A loaded a page whose server took 2 s, connection B's `user_context` waited 1733 ms; during a 2 s `eval` loop, 1714 ms; the person's input waits the same way. `wait` does not block (B answered in 4 ms during A's 2 s `wait`), nor did a small `screenshot`. Every request also lays out the shown tab again (`afterAgent`), and answers come at most every 15 ms (`POLL_MS`). Background tabs run their timers only during a `wait` (`checkWait`). |
+| R3 | Each agent's tabs form a Space, shown apart from the person's tabs | no | Agent tabs are appended to the person's tab strip (`openTab`), count against the same 16 tabs, and `tabs` lists every tab; an agent can `tab_select` any tab, including the one the person sees. |
+| R4 | Several agents at once, each in its own Space | partial | Up to 8 connections (`MAX_AGENTS`), each with its own tab. But one agent's load or `eval` stalls all the others (R2), pause is for all of them, and the activity line and outline show only the last action of any agent. |
+| R5 | Spaces use the person's cookies and storage; an isolated profile is an option | partial | One net session per process (`net/session.aye`) and one `localStorage` per process (`engine/window_api.aye`): all tabs share the person's logins. There is no isolated profile. |
+| R6 | The person sees which Spaces work, watches one live, pauses or stops one, takes over a tab | partial | One `AI` badge for all agents and one status line (`drawAgentChrome`, `agentStatus`). An agent's background tab can be watched by clicking it in the strip. Pause is global (`togglePause`); no stop per agent; input in an agent's tab does not stop the agent. |
+| R7 | Code mode: one request runs a script calling snapshot, click, fill, wait, navigate, read, screenshot | no | `eval` runs a script in the page's realm and returns its last value: it can read the DOM and call `el.click()`, but has no refs, snapshot, `wait` or screenshot, and a navigation ends the realm it runs in. |
+
+The probes were throwaway scripts; P9.1 and P9.2 turn them into tests.
+
+**Acceptance checks.** Each one is a test in `tests/browser.rs` (P9
+cards say which):
+
+- R1: with the person's page scrolled, a text field focused and text
+  selected (scripted events), agents in their Spaces navigate, type,
+  click, scroll, `eval` and close tabs; then `--state` and
+  `user_context` show the same tab, scroll, focus, selection, address
+  bar text and page viewport height as before. An agent cannot act on
+  a tab of the person's.
+- R2: while one agent runs a 1.5 s `eval` loop and another loads a page
+  whose server waits 1.5 s, the window's longest loop iteration
+  (`loop_max_ms` in `--state`) stays under 50 ms (the target is 16 ms;
+  50 leaves room for CI machines), and a third connection's `spaces`
+  is answered in under 100 ms.
+- R3: `tabs` in a Space lists only that Space's tabs; the person's tab
+  strip and Cmd+1..9 never include them; `tab_new` in a Space puts the
+  tab in that Space; the person's tab count and order are unchanged.
+- R4: three agents in three Spaces work at once (each navigates, types
+  and reads); each one's answers are the same as when it runs alone,
+  and pausing one Space leaves the other two working.
+- R5: a cookie the person's tab got (test server login) is sent by an
+  agent's Space; a cookie a Space got is sent by the person's next
+  request; the same for `localStorage`; a Space opened with `"profile":
+  "isolated"` sends neither.
+- R6: `--state` lists each Space with its state and last action; Pause
+  and Stop act on one Space; input in a Space's tab makes that tab's
+  actions fail with "the user took over tab N" until Hand back, while
+  the Space's other tabs and the other Spaces go on; watching shows the
+  Space's frames.
+- R7: one `run` request navigates, types, clicks, waits and reads, and
+  returns a JSON value, its log and the number of calls; an error names
+  the failing call.
+
+**Threading model: a process per Space.** R2 fails because the window
+runs agent work on its own thread. Three ways out were weighed:
+
+- *Cooperative slices on the window thread* (load with the libcurl
+  multi handle the loader already has, run scripts on the coroutines
+  generators already use, and yield every few ms). This fixes network
+  waits and long scripts, but not style and layout of big pages
+  (YouTube search: 11.6 s of CPU), which would need yield points inside
+  the cascade, where module-level state lives.
+- *A thread per Space.* The engine keeps process-wide state in about 26
+  module-level variables: the net session and loader
+  (`net/session.aye`, `net/loader.aye`), `localStorage`
+  (`engine/window_api.aye`), the CSS scratch state of `css/calc.aye`,
+  `css/selector.aye`, `css/media.aye` and `css/vars.aye`, and script
+  flags (`engine/script.aye`). Every one would move into a per-engine
+  context first; std.thread also wants an allocator per thread, and a
+  panic in any thread ends the program, so a page that crashes an agent
+  closes the person's window.
+- *A process per Space* (chosen). The window already runs headless
+  (`SDL_VIDEODRIVER=dummy`) with `--agent-socket`, which every window
+  agent test uses: a Space is that program, started by the window. It
+  starts in about 25 ms with about 45 MB resident on a small page. Its
+  globals are its own, a crash ends only that Space, and its event loop
+  runs its own tabs' timers. The costs: memory per Space, cookies and
+  `localStorage` copied between processes (R5), and frames copied to
+  the window when the person watches (R6).
+
+How it works:
+
+- `anyknown space --control FD [--width W --height H]` (internal) is the
+  window program, headless, with a private agent socket (in a
+  directory only the user can read) and a control connection to its
+  parent window (a `socketpair`, JSON lines).
+- The window keeps its socket. For each new connection it reads the
+  first line (the hello, below), starts or finds the Space, and from
+  then on copies bytes both ways between the agent and the Space's
+  socket without reading them (non-blocking, as `anyknown connect`
+  does). The window's thread does no agent work, so its loop time does
+  not depend on what agents do.
+- The Space serves the whole protocol, MCP included, as the window
+  serves it today; the commands that need the person (`user_context`,
+  pause) are answered from what the window sent over the control
+  connection.
+- The person's tabs stay in the window process. Agents can look at the
+  shown one (`user_context` with `snapshot`) but not act on it.
+
+The control connection (internal; both ways JSON lines, `{"ctl":...}`):
+
+| From | `ctl` | Members | Meaning |
+|---|---|---|---|
+| window | `pause`, `resume`, `stop` | | the person paused, resumed or stopped this Space's agent |
+| window | `input` | `events`: words of `--events` (`click:X,Y text:abc`) | the person's input while watching, in the Space's window coordinates |
+| window | `watch` | `on` (bool), `width`, `height`, `scale` | send frames (or stop); resize the Space's window |
+| window | `hand_back` | `tab` | the person gives a tab back to the agent |
+| window | `context` | the members of `user_context` | the person's context, sent when it changes |
+| window | `pointed` | the members of the `user_pointed` event | Cmd+Shift+K |
+| both | `cookie` | `url`, `line` (a Set-Cookie line), `clock` | a cookie the sender's jar stored |
+| both | `storage` | `origin`, `key`, `value` (null: removed; key null: cleared) | a `localStorage` change |
+| Space | `status` | `state`, `last`, `tabs`, `title`, `url` | for the Space's chip |
+| Space | `frame` | `seq`, `width`, `height` | a new frame is in the Space's frame file (RGBA, the canvas size) |
+
+**The Space model.**
+
+- A Space has an id (a number, never reused), a name (from the hello,
+  else "Agent N"), a profile (`shared` or `isolated`), its tabs (ids
+  are the Space's own, from 1) and a state: `working` (a request is
+  running), `waiting` (a `wait` or a load), `idle`, `paused`,
+  `taken_over` (the person has at least one of its tabs), `done` (its
+  agent left), `crashed`.
+- A new connection gets a new Space by default; its first tab is
+  opened on its first request that needs a page. At most 8 Spaces.
+- When the agent leaves, the Space stays (`done`) so the person can
+  look at it, until the person closes it or an agent attaches to it
+  (`"space": N` in the hello). A crashed Space is shown as such; its
+  connection gets an error event and is closed.
+- `profile: "shared"` (default): the Space starts with the window's
+  cookies and `localStorage` and both sides send each other every
+  change (the jar's `store`, the store's writes). Cookies of the
+  session (no Expires) are copied too. `isolated`: an empty jar and
+  store, nothing sent either way.
+
+**Protocol additions** (the JSON lines of
+[`agent-protocol.md`](agent-protocol.md); MCP tools are `browser_` and
+the name).
+
+The hello, extended. The first line may be an object without `cmd`
+and without `jsonrpc`; no response:
+
+```
+{"mcp":true,"name":"Claude Code","space":"new","profile":"shared"}
+```
+
+`mcp` (bool, default false), `name` (string), `space` (`"new"`, the
+default, or the id of a `done` Space to attach to), `profile`
+(`"shared"`, the default, or `"isolated"`). `anyknown connect PATH
+[--mcp] [--name NAME] [--space N] [--isolated]` writes it.
+
+| `cmd` | arguments | response fields |
+| --- | --- | --- |
+| `spaces` | | `result` ("2 spaces"), `spaces`: `[{"id":3,"name":"Claude Code","mine":true,"state":"working","last":"click button \"Sign in\" [e3]","tabs":2,"profile":"shared","watched":false}]` |
+| `space_close` | | `result`; closes this connection's Space and then the connection |
+| `tabs`, `tab_new`, `tab_select`, `tab_close` | as today, without `show` | only this Space's tabs; `show` is refused: "the user chooses what they see" |
+| `user_context` | `snapshot` (bool) | as today, plus `snapshot` of the person's shown tab when asked (to look at; its refs do not act) |
+| `run` | `code` (the body of a function, at most 1 MB), `ms` (at most this long, default 60000) | `result` ("ran 4 calls in 812 ms"), `value` (what the code returned, as JSON; `undefined` is `null`), `log` (array of strings), `calls`, `url`, `title`; an error: `error` ("click: no such ref e99 (call 3)"), `log`, `calls` |
+
+Events (as `user_pointed`: a JSON line, or an MCP
+`notifications/message`):
+
+```
+{"event":"paused","space":3}
+{"event":"resumed","space":3}
+{"event":"taken_over","space":3,"tab":2}
+{"event":"handed_back","space":3,"tab":2}
+{"event":"stopped","space":3}
+```
+
+Refusals: actions fail with `"paused by user"` while the Space is
+paused, `"the user took over tab 2 (wait for handed_back)"` on a tab
+the person has, and after `stopped` the connection is closed.
+
+**Code mode (`run`).** The code runs in a realm of its own in the Space
+process (not the page's, so a navigation does not end it and the page
+cannot see it), with these functions. Each one does what the command of
+the same name does, waits for it, and returns its response object
+without `id` and `ok` (`url`, `title`, `snapshot` or `diff`, `result`,
+...); a failure throws an `Error` whose message is the error:
+`navigate(url)`, `back()`, `forward()`, `reload()`, `snapshot(opts)`,
+`read(opts)`, `find(text)`, `click(ref)`, `type(ref, text, opts)`
+(alias `fill`), `select(ref, option)`, `press(key)`, `scroll(refOrDy)`,
+`wait(opts)`, `evaluate(expression)` (in the page; its `result`),
+`screenshot(opts)` (`width`, `height`, `png`), `tabs()`, `tabNew()`,
+`tabSelect(id)`, `tabClose(id)`, `log(...values)`. Between calls the
+Space reads its control connection, so pause and stop take effect at
+the next call. Example:
+
+```
+{"id":4,"cmd":"run","code":"navigate('browser/tests/agent/site/form.html'); fill('e2', 'Ada'); click('e4'); return snapshot().snapshot.includes('[checked]')"}
+{"id":4,"ok":true,"result":"ran 4 calls in 40 ms","value":true,"log":[],"calls":4,"url":"file:///.../form.html","title":"Sign up"}
+```
+
+**What the person sees.** Kept small; nothing in the window changes
+height because of agents:
+
+- The toolbar's agent area (where the `AI` badge and Pause are now)
+  holds one chip per Space: a dot (purple working or waiting, grey
+  idle or done, amber paused, blue taken over, red crashed) and the
+  name; the status bar shows a chip's last action when the mouse is
+  over it. The area grows sideways (the address bar gets shorter), never
+  downwards.
+- A click on a chip shows that Space: the page area shows the Space's
+  window (its own toolbar, its tab strip of the Space's tabs, its page)
+  from its frames, live, with Pause/Resume, Stop and, for a taken-over
+  tab, Hand back in the agent area. A click on "You" (the first chip)
+  or Cmd+Shift+0 goes back to the person's tabs; Cmd+Shift+1..8 show a
+  Space.
+- The person's tab strip shows only the person's tabs. The strip's row
+  is kept while the window listens for agents, so it never appears or
+  goes away because of them.
+- Input (click, key, text, wheel) in a shown Space goes to that Space
+  and takes the tab over; moving the mouse does not.
+- Cmd+Shift+P pauses the shown Space, or every Space when the person's
+  tabs are shown.
+
+**Risks.**
+
+- *Logins across processes (R5).* Cookies and `localStorage` are copied
+  by messages, so a Space and the window can disagree for a moment (a
+  login in one is seen by the next request of the other, not the
+  current one), and two writes of one cookie settle by arrival order.
+  `sessionStorage`, IndexedDB and in-memory page state are not shared
+  (anyknown has no IndexedDB). Today `localStorage` is not saved
+  between runs at all.
+- *Frames (R6).* A 1600×1200 canvas (800×600 at scale 2) is 7.7 MB per
+  frame; frames are sent only while the person watches, at most 30 per
+  second, through a file both processes map.
+- *Memory.* About 45 MB per idle Space, far more on big pages; at most 8
+  Spaces.
+- *Code mode (R7).* A second JS realm in a process whose page scripts
+  run at the same time, with calls from that realm into actions that
+  run page scripts: the interpreter has run one realm per page so far.
+  The engine's script flags (`engine/script.aye`) are process-wide.
+  P9.8 starts with a test of two realms before it adds the functions.
+- *Compatibility.* Connections no longer act on the person's tab by
+  default, and `show` is gone: `shared.jsonl` and the MCP instructions
+  change (P9.1).

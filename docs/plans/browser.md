@@ -81,6 +81,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 | P4 | Load times (W4) | `run --live --repeat 5` medians meet the targets | paused (backlog) |
 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | paused |
 | P6 | Release | manual checklist recorded; final site run; tag | paused |
+| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | designed 2026-10-14; P9.1 next |
 
 ## P8 split plan
 
@@ -185,6 +186,112 @@ untouched; P8.3 removes the browser from it after P8.2 is verified.
 - time box: 90 min
 - notes: P8.3 (separate card, after this one): in the Aye repo delete the moved files, fix the stay-side mentions listed above, and add a downstream check (`scripts/downstream.sh`: clone `aye-lang/anyknown` at a rev recorded in `tests/downstream/ANYKNOWN_REV`, run `aye test browser` and the browser test with `AYE=target/release/aye`) that the merge agent runs after codegen, sema or std merges. That replaces M1, which `cargo test --release` no longer covers.
 
+## P9: agents without disturbing the user
+
+Design, measurements and acceptance checks R1–R7: `docs/browser.md`,
+B9. The user asked for this on 2026-10-14; it is the one feature phase
+allowed during the maintenance mode. Cards are ordered so that R1
+(isolation) and R2 (a responsive window) come first. Each card is one
+PR; its tests go in `tests/browser.rs` in the style of `window_agents`
+(a headless window, `SDL_VIDEODRIVER=dummy`, `--agent-socket`, scripted
+`--events`, the responses and `--state` against a golden `.out`).
+Common to all cards: run only the tests named in verify, never two
+browser test runs at once; the full suite runs once on `main` after the
+merge.
+
+| Card | Requirement | One line | Verify |
+|---|---|---|---|
+| P9.1 | R1 | A connection acts on a tab of its own by default; the person's tabs are look-only; no `show`; the tab strip row stays while the window listens | `cargo test --release --test browser window_agents` |
+| P9.2 | R2 | `anyknown space`: a Space process per connection behind `--spaces`; the window copies bytes; `loop_max_ms` in `--state` | `cargo test --release --test browser window_spaces` |
+| P9.3 | R4, R6 | The control connection: pause, resume and stop per Space, `user_context` and `user_pointed` relayed, Space status, `spaces`, `space_close`, the hello's `name`/`space`, `done` Spaces | `cargo test --release --test browser window_spaces` |
+| P9.4 | R6 | Space chips in the toolbar's agent area, their state and last action, per-Space Pause and Stop | `cargo test --release --test browser window_spaces` |
+| P9.5 | R6 | Watching: the Space's frames shown in the page area, Cmd+Shift+0..8 | `cargo test --release --test browser window_spaces_watch` |
+| P9.6 | R6 | Take over and hand back: the person's input goes to the shown Space and takes that tab; events `taken_over`, `handed_back` | `cargo test --release --test browser window_spaces` |
+| P9.7 | R5 | Shared logins: cookies and `localStorage` copied both ways; `"profile":"isolated"` | `cargo test --release --test browser window_spaces_logins` |
+| P9.8 | R7 | Code mode: `run` with its functions in a realm of its own | `cargo test --release --test browser -- agent_sessions window_spaces` |
+| P9.9 | R3, R4 | Spaces by default; three agents in parallel; the in-process acting path removed; protocol docs | `cargo test --release --test browser window_` |
+
+P9.8 depends only on P9.2 and may run beside P9.3–P9.7. The others run
+in order.
+
+#### P9.1: agents never act on the person's tabs
+- lane: browser
+- goal: R1 in today's single process. A connection that has not opened or selected a tab gets its own background tab on its first command that needs a page (no longer the shown tab). Acting commands (`ACTING` in `agent/shared.aye`) on a tab the person has not given the agent fail with "this is the user's tab: open your own with tab_new"; looking (`snapshot`, `read`, `find`, `user_context`) still works. `show` in `tab_new`/`tab_select` is refused ("the user chooses what they see"). While the window listens for agents, the tab strip row is always there, so the page viewport never changes height because an agent opened or closed a tab. `afterAgent` lays out the shown tab only when the request touched it.
+- serves: R1
+- files: `browser/ui/agents.aye`, `browser/ui/tabs.aye`, `browser/ui/window.aye` (`top`), `browser/agent/shared.aye`, `browser/agent/server.aye` (MCP instructions), `browser/tests/agent/window/isolation.{jsonl,events,out}` (new), `shared.out` and `handshake.mcp.out` re-blessed, `docs/agent-protocol.md` (A shared window)
+- test: `isolation.events` clicks into a text field of a long page, types, selects with shift+left and scrolls (`wheel`); `isolation.jsonl` checks `user_context`, then `tab_new`, `navigate`, `type`, `click`, `scroll`, `eval`, `tab_close`, a `type` on the person's tab (refused), `tab_new` with `show` (refused), and `user_context` again: the same `scroll`, `selection` and `focused`; the `.out` window state shows the person's URL, scroll, focus and `tabs N, showing 1`.
+- verify: `cargo test --release --test browser window_agents > target/p9.1.log 2>&1; echo $?` → 0
+- time box: 60 min; model: sonnet
+
+#### P9.2: a process per Space
+- lane: browser
+- goal: R2. With `--spaces`, the window starts `anyknown space --control FD` (the window program, headless with `SDL_VIDEODRIVER=dummy`, its agent socket in a private directory) for each connection after reading its first line, then copies bytes between the connection and the Space's socket without parsing them; the Space exits when its connection ends (P9.3 keeps it). The Space runs its own tabs' timers. The window's `--state` gets `loop_max_ms N`: the longest iteration of `Ui.loop` while an agent was connected. `browser/tests/server.py` gets `/sleep?ms=N`.
+- serves: R2
+- files: `browser/ui/socket.aye` (socketpair, a non-blocking copy), `browser/ui/agents.aye`, `browser/ui/window.aye` (`--spaces`, `space` mode, `loop_max_ms`), `browser/main.aye`, `browser/ui/script.aye`, `browser/tests/server.py`, `browser/tests/agent/spaces/` (new: copies of `isolation` and `frames` that must give the same `.out`), `tests/browser.rs` (`window_spaces`, `window_spaces_responsive`)
+- test: `window_spaces` runs `browser/tests/agent/spaces/X.jsonl` like `window_agents` with `--spaces`. `window_spaces_responsive` opens three connections: A runs a 1500 ms `eval` loop, B navigates to `/sleep?ms=1500` on the test server, C sends `tabs` while both run: C's answer within 100 ms, and `loop_max_ms` under 50 in the window's `--state`.
+- verify: `cargo test --release --test browser window_spaces > target/p9.2.log 2>&1; echo $?` → 0
+- risk: the Space must die with the window (it gets an end of file on the control connection and exits) and a crashed Space must not stop the window (its socket is closed, the connection gets `{"id":null,"ok":false,"error":"the Space crashed"}`); the test kills a Space with SIGKILL and checks both.
+- time box: 120 min; model: opus (process lifecycle)
+
+#### P9.3: the control connection
+- lane: browser
+- goal: the window and its Spaces talk over the control connection (B9 table): `pause`/`resume`/`stop`, `context` (sent when the person's context changes), `pointed`, `status`. Cmd+Shift+P pauses every Space when the person's tabs are shown. New commands `spaces` and `space_close`; the hello takes `name`, `space` and `profile` (only `shared` until P9.7); a Space whose agent left stays `done` and can be attached to; events `paused`, `resumed`, `stopped`. `--state` lists `space ID "NAME" STATE: LAST`.
+- serves: R4, R6
+- files: `browser/ui/agents.aye`, a new `browser/ui/spaces.aye` (the window's side), `browser/agent/shared.aye` (the commands and events), `browser/ui/socket.aye` (`connect --name/--space`), `browser/tests/agent/spaces/{pause,pointing,attach}.*`, `tests/browser.rs`
+- verify: `cargo test --release --test browser window_spaces > target/p9.3.log 2>&1; echo $?` → 0
+- time box: 90 min; model: sonnet
+
+#### P9.4: Space chips
+- lane: browser
+- goal: the toolbar's agent area shows "You" and one chip per Space (dot by state, the name; the status bar shows the last action while the mouse is over a chip); Pause/Resume and Stop act on the shown Space. No new row: nothing in the window changes height.
+- serves: R6
+- files: `browser/ui/chrome.aye`, `browser/ui/spaces.aye`, `browser/ui/agents.aye`, `browser/tests/agent/spaces/chips.*`, a golden PNG of the toolbar with two Spaces (as the B4 window PNGs)
+- verify: `cargo test --release --test browser window_spaces > target/p9.4.log 2>&1; echo $?` → 0
+- time box: 60 min; model: sonnet
+
+#### P9.5: watching a Space
+- lane: browser
+- goal: a click on a chip (or Cmd+Shift+1..8; Cmd+Shift+0 for "You") shows the Space: the window sends `watch`, the Space writes its canvas to its frame file after each frame it draws (at most 30 a second) and sends `frame`, and the window draws the newest frame in its page area. The Space's window takes the size of the window's page area.
+- serves: R6
+- files: `browser/ui/spaces.aye`, `browser/ui/window.aye` (draw), `browser/ui/socket.aye` (`mmap`/`ftruncate` externs), `tests/browser.rs` (`window_spaces_watch`)
+- test: an agent navigates its Space to a page whose body is `#00aa00`; the events click its chip; `--save` writes the window's frame, and the pixel at the centre of the page area is that green; `loop_max_ms` stays under 50.
+- verify: `cargo test --release --test browser window_spaces_watch > target/p9.5.log 2>&1; echo $?` → 0
+- time box: 90 min; model: opus (shared memory between processes)
+
+#### P9.6: take over and hand back
+- lane: browser
+- goal: while a Space is shown, the person's clicks, keys, text and wheel go to it as `input` (words of `--events`, in the Space's coordinates); the first one on a tab takes that tab over: the Space's actions on it fail with "the user took over tab N (wait for handed_back)", the agent gets `taken_over`; Hand back (agent area) sends `hand_back`, the agent gets `handed_back`. The Space's other tabs and the other Spaces go on.
+- serves: R6
+- files: `browser/ui/spaces.aye`, `browser/ui/agents.aye` (a taken-over flag per tab, refusal), `browser/ui/script.aye` (input words from SDL events), `browser/tests/agent/spaces/takeover.*`
+- verify: `cargo test --release --test browser window_spaces > target/p9.6.log 2>&1; echo $?` → 0
+- time box: 90 min; model: sonnet
+
+#### P9.7: shared logins
+- lane: browser
+- goal: R5. A `shared` Space starts with the window's jar (persistent and session cookies) and `localStorage`; each side sends every change (`cookie` after `Jar.store`, `storage` after a store write) and applies the other's. `"profile":"isolated"` starts empty and sends nothing.
+- serves: R5
+- files: `browser/net/cookies.aye` (a hook after `store`, a save that includes session cookies), `browser/net/session.aye`, `browser/engine/window_api.aye` (a hook after store writes), `browser/ui/spaces.aye`, `tests/browser.rs` (`window_spaces_logins`)
+- test: over the test server, the person's tab opens `/net/start` (sets cookies); a Space navigates `/headers` and its Markdown shows those cookies; the Space sets a cookie with `eval` (`document.cookie`) and a `localStorage` item, and the person's next `/headers` and a script on the person's page see them; an `isolated` Space sees none.
+- verify: `cargo test --release --test browser window_spaces_logins > target/p9.7.log 2>&1; echo $?` → 0
+- time box: 90 min; model: opus (consistency between processes)
+
+#### P9.8: code mode (`run`)
+- lane: browser
+- goal: R7. `run` executes `code` as a function body in a realm of its own with the functions listed in B9, each a synchronous call into the session's command; it answers `value`, `log`, `calls`; pause and stop are checked between calls; `ms` bounds the run. It works in `anyknown agent`, `anyknown mcp` (`browser_run`) and in Spaces.
+- serves: R7
+- files: `browser/agent/run.aye` (new), `browser/agent/server.aye`, `browser/js/` (a realm with host functions), `browser/tests/agent/sessions/run.{jsonl,out}`, `browser/tests/agent/spaces/run.*`
+- first: a unit test that a second realm calls into a page's realm and back (a click whose handler runs page script) under GC stress; if it fails, stop and report (B9 risks).
+- verify: `cargo test --release --test browser -- agent_sessions window_spaces > target/p9.8.log 2>&1; echo $?` → 0
+- time box: 120 min; model: opus
+
+#### P9.9: Spaces by default
+- lane: browser
+- goal: R3 and R4 as the default. `--spaces` is the default; the in-process acting path goes (the person's tabs stay look-only from P9.1); at most 8 Spaces; `docs/agent-protocol.md` and the MCP instructions describe Spaces; `browser/tests/agent/window/` fixtures move to `spaces/` where they still apply. New `window_spaces_parallel`: three connections in three Spaces navigate, type and read at once; each one's output equals its output alone; pausing one leaves the others working; the person's tab strip still shows one tab.
+- serves: R3, R4
+- files: `browser/ui/agents.aye`, `browser/ui/window.aye`, `docs/agent-protocol.md`, `docs/browser.md` (B7, B9 status), `tests/browser.rs`
+- verify: `cargo test --release --test browser window_ > target/p9.9.log 2>&1; echo $?` → 0
+- time box: 90 min; model: sonnet
+
 ## Cards: PW wrap-up
 
 All wrap-up cards are done (`done.md`); the lane is frozen.
@@ -272,6 +379,10 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - **Load-time target (W4):** per site, live median minus replay median
   ≤ 0.5 s over `run --live --repeat 5`; absolute targets in `sites.json`
   after P1.4 measured them.
+- **P9 during the maintenance mode (2026-10-14):** the user asked for
+  agent Spaces (B9); P9 is the one feature phase allowed while the rest
+  of the lane stays in maintenance. A Space is a process, not a thread
+  (B9, threading model).
 - **Bot walls:** Stack Overflow and Reddit are excluded from W3 while
   they serve a bot wall; `sites.json` marks them `excluded`.
 - **B8 remains:** an item no listed site needs is out of scope (P5).
