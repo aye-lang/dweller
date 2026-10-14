@@ -44,7 +44,10 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
   backlog (P3.50–P3.61). The screens review of 2026-10-14 (P1.14) put
   a `visual` verdict on every judged site in `sites.json`: `check`
   counts W3 at 4 of 20 (hn, cnn-lite, lobsters, google); the defects
-  are P3.41, P3.50, P3.51, P3.56, P3.59, P3.61 and P3.65–P3.73.
+  are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.65–P3.73. P3.50 is done:
+  html.duckduckgo.com has no scripts and its server prints the raw date
+  (`2026-07-20T00:00:00.0000000`); Chrome shows the same text, so the
+  defect was not ours. `Date.parse` now takes fractions of any length.
 - Archives live in each checkout's `target/sites/` (untracked), so steps
   that replay sites or take screenshots run locally.
 - P3.48 is not merged: the merge 34f6f93 passed `cargo test` but failed
@@ -228,7 +231,6 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.35 YouTube search agent task: expect results URL plus a title; recapture with the `youtubei/v1/search` POST (P3.30).
 - P3.41 BBC ☰ menu button missing in replay; confirm, then diagnose (P1.4 screens). Still seen 2026-10-14: no menu/search button at the left, no Register/Sign In at the right.
 - P3.42 Proxy invariant checks against the target (P3.39).
-- P3.50 DuckDuckGo prints raw dates (`Date.parse` of 7-digit fractions, `Intl.DateTimeFormat`, `toLocaleDateString`) (screens review). Still seen 2026-10-14 (`2026-07-20T00:00:00.0000000`).
 - P3.51 form controls: default-beveled buttons on Google, misaligned GitHub commit rows; confirm, then diagnose (screens review). Google buttons not reproduced 2026-10-14: Chrome draws the archived page with the same bevelled buttons (its CSS). Still seen 2026-10-14: GitHub commit messages about 10 px above the file names; also DuckDuckGo's query text at the top of its box and YouTube's search-button icon at the top of the button (content not centred vertically).
 - P3.53 ellipsis and clamp follow-ups: right-to-left, `-webkit-line-clamp` into child blocks, unprefixed `line-clamp` (P3.52).
 - P3.54 `grid-template` with area strings and the `grid` shorthand (P3.46).

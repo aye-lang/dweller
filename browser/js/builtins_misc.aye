@@ -215,7 +215,7 @@ fn timeClip(t: f64) f64 {
 }
 
 // Parses "YYYY", "YYYY-MM", "YYYY-MM-DD" with an optional
-// "THH:MM[:SS[.sss]]" and "Z" or "+hh:mm"; NaN otherwise.
+// "THH:MM[:SS[.s...]]" and "Z" or "+hh:mm"; NaN otherwise.
 fn parseIsoDate(s: []u8) f64 {
     var p: usize = 0
     var f = @zeroed([7]f64)
@@ -255,6 +255,17 @@ fn parseIsoDate(s: []u8) f64 {
         }
         if digits != w && !(k == 6 && digits > 0) {
             return 0.0 / 0.0
+        }
+        if k == 6 {
+            // A fraction of any length, as V8 and SpiderMonkey take it:
+            // ".5" is 500 ms, digits past the third are dropped.
+            while digits < 3 {
+                v *= 10.0
+                digits += 1
+            }
+            while p < s.len && s[p] >= '0' && s[p] <= '9' {
+                p += 1
+            }
         }
         f[k] = v
         k += 1
