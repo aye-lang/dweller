@@ -41,7 +41,10 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 
 - Sites: `page_load.py check` passes on the recorded archives; the
   screens review of 2026-10-08 found the visual defects now in the
-  backlog (P3.50–P3.61).
+  backlog (P3.50–P3.61). The screens review of 2026-10-14 (P1.14) put
+  a `visual` verdict on every judged site in `sites.json`: `check`
+  counts W3 at 4 of 20 (hn, cnn-lite, lobsters, google); the defects
+  are P3.41, P3.50, P3.51, P3.56, P3.59, P3.61 and P3.65–P3.73.
 - Archives live in each checkout's `target/sites/` (untracked), so steps
   that replay sites or take screenshots run locally.
 - P3.48 is not merged: the merge 34f6f93 passed `cargo test` but failed
@@ -67,7 +70,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 | Phase | Goal | Exit check | Status |
 |---|---|---|---|
 | P0 | One clean `main` | – | done |
-| P1 | "Done" checked by a command | `page_load.py check` | done (P1.6, P1.14 in backlog) |
+| P1 | "Done" checked by a command | `page_load.py check` | done (P1.6 in backlog) |
 | PW | Wrap-up before the freeze | M2 | current |
 | P7 | Maintenance: tests green while the language changes | M1, M3 after every language merge | next (ongoing until P8) |
 | P8 | Split `browser/` into its own repo and resume | the browser repo builds against Aye with a path or URL dependency (O7) and W1 passes there | after O6–O9 |
@@ -212,7 +215,7 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.64 incremental layout for forced reads: paint-only `style` writes skip layout; a text/size change lays out its subtree and walks up only while sizes change (design in `browser/engine/PERF.md`, P3.63). Mistral's remaining ~10 s of layout; its canvas raster (~10 s, `canvasComposite`) is separate.
 - P8.2, P8.3 split `browser/` into its own repo with `git filter-repo`, move `tests/browser.rs` and the browser docs with it (decision 2026-10-08; P8.1 dry run done 2026-10-11; cards in "P8 split plan").
 - P1.6 `page_load.py` writes `last.stdout`/`last.stderr` into the archive folder; move them under `target/page-load-out/`; set a floor for the 0.8 CPU/wall warning (P1.5). Done 2026-10-14: output is in `target/page-load-out/<site>/`; the warning fires only when wall >= 1 s (the browser's fixed non-CPU time of tens of ms is under 10% of wall there; a 0.6 s `example` replay had cpu/wall 0.16 with nothing wrong) (anyknown, this PR).
-- P1.14 `visual` field per site in `sites.json` (ok / defects / date), printed by `check`; W3 needs it (screens review 2026-10-08).
+- P1.14 `visual` field per site in `sites.json` (ok / defects / date), printed by `check`; W3 needs it (screens review 2026-10-08). Done 2026-10-14: `check` prints a visual column, the defects and the W3 count; the screens review of 2026-10-14 (`check --screens` against the live pages in Chrome) filled the field.
 - P3.7 Mistral: short iframe widgets, `setTransform` errors; recheck after P3.48 (old P3 table).
 - P3.9 dump virtual clock: an `onload` set inside `setTimeout(0)` after `src` misses the load event (async images follow-up).
 - P3.10 scripts run while parsing see an 800px viewport instead of `--width` (async images follow-up).
@@ -223,16 +226,25 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.31 XHR `loadstart`/`progress` events and `xhr.upload` (P3.24).
 - P3.32 a frame's `history.length` counts only its own entries; 1 during initial load (P3.29).
 - P3.35 YouTube search agent task: expect results URL plus a title; recapture with the `youtubei/v1/search` POST (P3.30).
-- P3.41 BBC ☰ menu button missing in replay; confirm, then diagnose (P1.4 screens).
+- P3.41 BBC ☰ menu button missing in replay; confirm, then diagnose (P1.4 screens). Still seen 2026-10-14: no menu/search button at the left, no Register/Sign In at the right.
 - P3.42 Proxy invariant checks against the target (P3.39).
-- P3.50 DuckDuckGo prints raw dates (`Date.parse` of 7-digit fractions, `Intl.DateTimeFormat`, `toLocaleDateString`) (screens review).
-- P3.51 form controls: default-beveled buttons on Google, misaligned GitHub commit rows; confirm, then diagnose (screens review).
+- P3.50 DuckDuckGo prints raw dates (`Date.parse` of 7-digit fractions, `Intl.DateTimeFormat`, `toLocaleDateString`) (screens review). Still seen 2026-10-14 (`2026-07-20T00:00:00.0000000`).
+- P3.51 form controls: default-beveled buttons on Google, misaligned GitHub commit rows; confirm, then diagnose (screens review). Google buttons not reproduced 2026-10-14: Chrome draws the archived page with the same bevelled buttons (its CSS). Still seen 2026-10-14: GitHub commit messages about 10 px above the file names; also DuckDuckGo's query text at the top of its box and YouTube's search-button icon at the top of the button (content not centred vertically).
 - P3.53 ellipsis and clamp follow-ups: right-to-left, `-webkit-line-clamp` into child blocks, unprefixed `line-clamp` (P3.52).
 - P3.54 `grid-template` with area strings and the `grid` shorthand (P3.46).
-- P3.56 `<video poster>` loaded and painted like an image; recapture wikipedia-en (P3.45).
-- P3.59 intrinsic sizing passes no container height (`browser/layout/intrinsic.aye`, `cb_h = -1`); BBC NEWS `<h1>` 300px instead of 100px (P3.47).
+- P3.56 `<video poster>` loaded and painted like an image; recapture wikipedia-en (P3.45). Still seen 2026-10-14 (empty video frame on wikipedia-en).
+- P3.59 intrinsic sizing passes no container height (`browser/layout/intrinsic.aye`, `cb_h = -1`); BBC NEWS `<h1>` 300px instead of 100px (P3.47). Still seen 2026-10-14: the NEWS wordmark is 100 px left of centre.
 - P3.60 move the JS lexer, parser and AST out of the `js` module for a bundler; pure move (framework F4, `docs/framework.md`).
-- P3.61 `screenshot` runs the page as long as `dump` (Mistral's title animation caught half-way) (P3.48).
+- P3.61 `screenshot` runs the page as long as `dump` (Mistral's title animation caught half-way) (P3.48). Still seen 2026-10-14: "Introducing Mistral Large 4" not drawn, "Le chonk" 240 px low.
+- P3.65 `opacity` not drawn on some text: example.com's script-added `p+p {opacity: .6}`, go.dev's `.Article-idLink {opacity: 0}` heading ¶ links (screens review 2026-10-14).
+- P3.66 Wikipedia (en, ja): the Appearance panel is empty; Chrome shows the Text, Width and Color radio buttons (screens review 2026-10-14).
+- P3.67 MDN: the "Try it" demo shows an `about:blank` link instead of the code editor and output; the language switcher is drawn twice (screens review 2026-10-14).
+- P3.68 Python docs: the sidebar is drawn right of the text; Chrome draws it on the left (screens review 2026-10-14).
+- P3.69 bold CJK text drawn regular (Wikipedia ja lead term and notice box) (screens review 2026-10-14).
+- P3.70 abehiroshi: the news column drawn below the photo instead of beside it, the tiled background image missing, menu bullets above their links (screens review 2026-10-14).
+- P3.71 ZOL: 找产品 product names wrap and the rows misalign; the 新品首发/本月销量最高 tabs stack (screens review 2026-10-14).
+- P3.72 react.dev: the "My video" demo thumbnail is an empty white box (Chrome: blue gradient with a play icon) (screens review 2026-10-14).
+- P3.73 rustdoc: the Rust logo is a black blob; headings and sidebar titles drawn regular instead of Fira Sans Medium/bold; the copy-path icon is missing (screens review 2026-10-14).
 - P4.1 react.dev: diagnose live vs replay time (DNS/TLS, discovery, module waits, HTTP/2) (P1.4).
 - P4.2 react.dev: fix the cause found by P4.1.
 - P4.3 ZOL live: separate discovery waits from transfer waits (`browser/engine/PERF.md`).

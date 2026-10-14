@@ -682,7 +682,8 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `target/page-load-out/<site>/last.stdout` and `last.stderr`, never
     into the archive; the CPU/wall warning needs a run of 1 s or more); `check` replays every site
     against `browser/tools/sites.json` (status, most console errors,
-    Markdown it must contain), `check --agent` also runs one agent task
+    Markdown it must contain) and prints each site's visual verdict
+    and the W3 count, `check --agent` also runs one agent task
     per site (`browser/tools/agent_tasks/`). Capture also records what
     the `--screens` screenshot fetches (web fonts, images); on replay a
     non-GET request without a record of its body gets the latest
