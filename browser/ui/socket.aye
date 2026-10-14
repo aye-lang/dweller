@@ -5,8 +5,8 @@
 // Reads never block: `readSome` asks `poll` first. Writes go through
 // `send` without SIGPIPE (a closed peer is an error, not a signal). The
 // few constants that differ between macOS and Linux (the layout of
-// `sockaddr_un`, MSG_NOSIGNAL or SO_NOSIGPIPE) are chosen at run time
-// from `uname`.
+// `sockaddr_un`, MSG_NOSIGNAL or SO_NOSIGPIPE) are chosen by
+// `@targetOs()` when the program is built.
 
 import std
 import std.mem.AllocError
@@ -30,7 +30,6 @@ extern fn setsockopt(fd: i32, level: i32, name: i32, value: [*]u8, len: u32) i32
 extern fn shutdown(fd: i32, how: i32) i32
 extern fn unlink(path: [*]u8) i32
 extern fn rename(from: [*]u8, to: [*]u8) i32
-extern fn uname(buf: [*]u8) i32
 extern fn read(fd: i32, buf: [*]u8, n: usize) isize
 extern fn write(fd: i32, buf: [*]u8, n: usize) isize
 extern fn close(fd: i32) i32
@@ -44,19 +43,6 @@ let MSG_NOSIGNAL_LINUX: i32 = 0x4000
 let SOL_SOCKET_DARWIN: i32 = 0xffff
 let SO_NOSIGPIPE_DARWIN: i32 = 0x1022
 
-// 1: macOS, 0: another system (Linux), -1: not asked yet.
-var darwin: i32 = -1
-
-fn isDarwin() bool {
-    if darwin < 0 {
-        // `struct utsname` starts with the system's name on both; it is
-        // 390 bytes on Linux and 1280 on macOS.
-        var buf = @zeroed([2048]u8)
-        darwin = (uname(buf[..].ptr) == 0 && text.startsWith(buf[..], "Darwin")) as i32
-    }
-    return darwin == 1
-}
-
 // A `sockaddr_un` for `path` in `addr`; its length, or 0 when the path
 // is too long (or empty).
 fn unixAddr(path: []u8, addr: *mut [110]u8) u32 {
@@ -64,7 +50,7 @@ fn unixAddr(path: []u8, addr: *mut [110]u8) u32 {
         return 0
     }
     let n = 2 + path.len + 1
-    if isDarwin() {
+    if @targetOs() is .macos {
         // sun_len, sun_family
         addr[0] = n as u8
         addr[1] = AF_UNIX as u8
@@ -82,7 +68,7 @@ fn unixAddr(path: []u8, addr: *mut [110]u8) u32 {
 
 // No SIGPIPE for writes to `fd` on macOS (Linux: `sendAll`'s flag).
 fn noSigpipe(fd: i32) {
-    if isDarwin() {
+    if @targetOs() is .macos {
         var one = [4]u8{1, 0, 0, 0}
         setsockopt(fd, SOL_SOCKET_DARWIN, SO_NOSIGPIPE_DARWIN, one[..].ptr, 4)
     }
@@ -104,7 +90,7 @@ fn listenAt(path: []u8) i32 {
     tmp[2 + path.len] = '.'
     tmp[3 + path.len] = 'l'
     tmp[4 + path.len] = 0
-    if isDarwin() {
+    if @targetOs() is .macos {
         tmp[0] = (n + 2) as u8
     }
     unlink(tmp[2..].ptr)
@@ -185,7 +171,7 @@ fn readSome(fd: i32, buf: []mut u8) isize {
 /// Writes all of `data` to the socket `fd`; false when the peer is gone.
 fn sendAll(fd: i32, data: []u8) bool {
     var flags: i32 = 0
-    if !isDarwin() {
+    if !(@targetOs() is .macos) {
         flags = MSG_NOSIGNAL_LINUX
     }
     var off: usize = 0

@@ -363,8 +363,7 @@ form. The commit is the one that fixed the gap.
   `c_int`, `c_long`, `c_ulong` and the other C integer names).
   Verified: `extern fn labs(x: c_long) c_long`. `font/freetype.aye`
   spells `FT_Long`, `FT_Pos` and `FT_Fixed` as `c_long` since cff3f60.
-  Browser still uses the workaround: `js/interp.aye` declares `clock`
-  returning `u64`.
+  `js/interp.aye` declares `clock` returning `c_long` (O1.14c).
 
 #### 16. No `extern union`
 
@@ -653,8 +652,11 @@ form. The commit is the one that fixed the gap.
   errno, `stat` and `mtime` per OS in Aye). Left: the other OS's branch
   is still type-checked, so a `@cimport` name that only one OS's
   headers have (a field of `struct addrinfo`, `st_mtimespec`) fails on
-  the other OS. Follow-up in this repo: `isDarwin` in `ui/socket.aye` and
-  `clock()` in `js/interp.aye` can move to `@targetOs()`.
+  the other OS. In this repo (O1.14c): `ui/socket.aye` chooses its
+  macOS/Linux constants with `@targetOs()` (no `isDarwin`, no `uname`),
+  and `js/interp.aye` declares `clock` as `c_long` (`clock_t` is 64 bits
+  on both OSes; `std.time` has only wall-clock `monotonicMs`, not the
+  process's processor time that a task's budget counts).
 
 #### 51. No way to print an error or enum tag name
 

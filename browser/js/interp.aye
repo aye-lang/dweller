@@ -103,17 +103,20 @@ pub fn stackAddress() u64 {
 }
 
 // C `clock`: the processor time of the process (all threads), in units
-// of CLOCKS_PER_SEC, which POSIX fixes at 1000000.
-extern fn clock() u64
+// of CLOCKS_PER_SEC, which POSIX fixes at 1000000. `clock_t` is `long` on
+// glibc and `unsigned long` on macOS: both 64 bits, returned the same way,
+// and a reading never reaches 2^63, so one signed declaration serves both
+// (the error value (clock_t)-1 is negative in it).
+extern fn clock() c_long
 
 /// The processor time the process has used, in ms. A task's budget is
 /// counted in it, so a busy machine does not end tasks early.
 pub fn cpuMs() u64 {
     let c = clock()
-    if c == 0xFFFFFFFFFFFFFFFF {
+    if c < 0 {
         return 0
     }
-    return c / 1000
+    return c as u64 / 1000
 }
 
 pub struct Interp {
