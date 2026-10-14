@@ -22,141 +22,8 @@ removed in cff3f60.
 
 ## Open
 
-### C interop
-
-#### 49. An `extern fn` cannot have an Aye name other than its C symbol
-
-- **Need:** a module whose pub API reuses a C function's name: `std.net`
-  exports `listen` and `connect` and calls C's `listen` and `connect`.
-- **Repro:**
-
-  ```aye
-  extern fn close(fd: i32) i32
-  pub fn close(x: i32) i32 { return x }   // E0015: `close` is defined more than once
-  ```
-
-- **Workaround:** the C prelude (`src/cgen.rs`) declares the symbols
-  under other names (`aye_rt_listen` with `__asm__("listen")`) and
-  exports `aye_std_listen` and `aye_std_connect`, which `std/net/net.aye`
-  declares. A struct method of the same name is fine (`Conn.read` calls
-  C's `read`). `@cimport` also avoids it (`sock.connect`), but needs
-  libclang or the cache.
-- **Hit by:** O1.3 (`std.net`).
-- **Status:** fixed in O1.3a: `extern("connect") fn cConnect(...)` names
-  the C symbol. `std/net` calls `listen` and `connect` this way; only
-  `aye_std_errno` stays in the prelude (the errno symbol differs per OS).
-
-#### 50. No per-OS declarations
-
-- **Need:** declare a different `extern fn` or struct layout per target
-  OS.
-- **Workaround:** `aye_std_errno` stays in the C prelude (`src/cgen.rs`)
-  because the errno symbol is `__error` on macOS and `__errno_location`
-  on Linux. `std/net/net.aye` declares `struct addrinfo` with the fields
-  `ai_canonname` and `ai_addr` as `first` and `second` (their order
-  differs per OS) and picks at run time with `isDarwin()`. A field
-  whose name differs per OS cannot be picked at run time: both branches
-  are checked against the host's `@cimport`. So `std.fs.mtime` reads the
-  modification time in the C prelude (`aye_std_mtime` in `src/cgen.rs`,
-  the offset of `st_mtimespec` on macOS and `st_mtim` on Linux), and
-  `browser/net/archive.aye` calls it; it takes `d_name`'s length with
-  `strlen`, not macOS's `d_namlen` (X1.1).
-- **Hit by:** O1.3b (`std.net`: errno, `struct addrinfo`); X1.1
-  (`browser/net/archive.aye`: `st_mtimespec`, `d_namlen`); O1.5
-  (`std.fs.stat`, `readDir`, `mkdir`, `remove`, `rename`: the layouts of
-  `struct stat` and `struct dirent` and ENOTEMPTY's value differ, so
-  `aye_std_lstat`, `aye_std_readdir` and `aye_std_pathop` are in the C
-  prelude); O1.6
-  (`std.process` reads errno through `aye_std_errno`; `spawn` forks in
-  the C prelude because `fcntl` is variadic).
-- **Status:** open. X1.1 chose the std helper over a language feature:
-  per-OS declarations need a target-OS constant that the checker uses to
-  skip the other OS's code (parser, checker, cgen, spec and tests), more
-  than one step; the helper is one C function and a std function that
-  programs want anyway.
-
-#### 54. `@cimport` of a glibc header takes the wrong files
-
-- **Need:** `@cimport("math.h")` and `@cimport("pthread.h")` declare the
-  same things on Ubuntu 24.04 (glibc) as on macOS.
-- **Repro:** on Linux, `aye cimport math.h` has constants but no
-  function (`m.sqrt`: E0081), and a program with
-  `@cimport("pthread.h")` that also uses `std.time` (`browser`) fails
-  with E0096: `nanosleep` and `clock` are declared twice with different
-  signatures.
-- **Cause:** for a system header, the generator
-  (`src/cimport/generate.rs`) took the header itself and the headers of
-  the header's directory that it includes itself. glibc declares the
-  math functions in `bits/mathcalls.h` (through `__MATHCALL`), in
-  `/usr/include/aarch64-linux-gnu/bits/`, another directory: none came
-  in. glibc's `pthread.h` and `time.h` both sit in `/usr/include`, and
-  `pthread.h` includes `time.h` first, so `time.h`'s `clock` (`clock_t`
-  is `long`) and `nanosleep` (`struct timespec *`) came in and clashed
-  with `browser/js/interp.aye`'s `clock() u64` and `std/time`'s
-  `nanosleep([*]i64, [*]i64)`. macOS escaped by accident: its
-  `/usr/include/pthread.h` is a link to `pthread/pthread.h`, so its
-  directory after `canonicalize` is `pthread/`.
-- **Fix:** one rule on both OSes (`src/cimport/generate.rs`). A system
-  header brings its own declarations and those of its parts that it
-  includes itself: internal headers (a name with a leading `_`, macOS's
-  `_time.h`; or a `bits/` directory, glibc's `bits/mathcalls.h`), and
-  the headers of its directory when that is not the include directory it
-  was found in (`SDL2/SDL.h`; macOS's `pthread.h` → `pthread/`). The
-  other headers of `/usr/include` are headers of their own. On macOS the
-  output stays the same but for `zlib.h` (no longer `zconf.h`'s
-  `MAX_WBITS`, `MAX_MEM_LEVEL` and unused typedefs) and `unistd.h` (no
-  `gethostuuid`, from `gethostuuid.h`), and gains `sys/stat.h`'s
-  `S_IF*` (from `sys/_s_ifmt.h`).
-- **Hit by:** X1.3 (first Linux run: `aye check browser`, golden
-  `cimport/system.aye`, spec `aye_blocks_compile`, `codes` E0112).
-- **Status:** fixed in X1.3; `tests/cimport/threads.aye` imports
-  `pthread.h` beside `std.time`.
-
-#### 51. No way to print an error or enum tag name
-
-- **Need:** get the name of an error tag or enum tag as a string, for
-  example to print it.
-- **Workaround:** write a `match` that returns the string for each tag.
-  `@println` takes one argument, so the name cannot be passed beside a
-  tag value.
-- **Hit by:** the std.http golden (`tests/cases/std_http.aye`), which
-  prints names through its own `match`.
-- **Status:** fixed in O1.7: `@tagName(x)` gives the name of an error,
-  enum or tagged-union tag as a `[]u8`; `std_http` uses it.
-
-#### 52. A method cannot be used as a function value
-
-- **Need:** name a method as a plain function value, for example
-  store `Self.f` as a handler.
-- **Workaround:** declare the function at module level and use that.
-  `Self.f` gives E0074.
-- **Hit by:** std.http `Server` (the handler is stored as a plain fn).
-- **Status:** open.
-
-#### 53. Nested structs and generic methods are rejected
-
-- **Need:** declare a struct inside another struct or function, and
-  give a method its own type parameters.
-- **Workaround:** nested structs give E0006 and generic methods give
-  E0076. std.http `Server` is non-generic and erases `T` with
-  `@ptrCast`, as `std.thread.spawn` does.
-- **Hit by:** std.http `Server`.
-- **Status:** open.
-
-#### 55. An `extern fn` cannot share its name with a `pub fn` of the module
-
-- **Need:** `std.fs.symlink` wrapping libc `symlink`.
-- **Workaround:** `extern("symlink") fn cSymlink(...)` (F1.2).
-- **Hit by:** std.fs (F1.2). **Status:** open; the link-name form works,
-  so this is a naming nuisance, not a blocker.
-
-#### 56. C prelude helpers cannot be redeclared as `extern fn`
-
-- **Need:** call `aye_c_path` or `aye_rt_free` from std.
-- **Workaround:** only helpers whose prototype matches exactly
-  (`aye_std_fail`) can be redeclared; the rest need a new helper or
-  stack buffers (F1.2 used two 4096-byte buffers for `symlink`).
-- **Hit by:** std.fs (F1.2). **Status:** open.
+None as of 2026-10-14 (aye criterion O3: gaps 49 to 56 are fixed or
+declined).
 
 ## Declined by design
 
@@ -267,6 +134,44 @@ removed in cff3f60.
 - Functions that call each other cannot have an inferred error set
   (E0069): the agent's actions (`clickNode` follows a label to its
   control, `press` clicks) all spell `AllocError!Outcome` (agent, B7).
+
+#### 53. Nested structs (first half of gap 53; generic methods, the second half, are fixed)
+
+- **Need:** declare a struct inside another struct or function.
+- **Workaround:** nested structs give E0006; declare the struct at
+  module level (without `pub` it is as private).
+- **Hit by:** std.http `Server`, which needed generic methods, not
+  nesting.
+- **Status:** declined (aye `docs/decisions.md`, "Compiler gaps closed
+  out, round 2 (O3)"). A struct is declared at module level like every
+  other named type, so each type has one name, `module.Type`, that
+  `aye doc --signatures`, hover and error messages print the same way,
+  and the generated C name stays `module_Type`. A nested struct adds a
+  scope for type names for no new power.
+
+#### 55. An `extern fn` cannot share its name with a `pub fn` of the module
+
+- **Need:** `std.fs.symlink` wrapping libc `symlink`.
+- **Workaround:** `extern("symlink") fn cSymlink(...)` (F1.2, O1.3a).
+- **Hit by:** std.fs (F1.2).
+- **Status:** declined (aye `docs/decisions.md`, "Compiler gaps closed
+  out, round 2 (O3)"). A name in a module means one thing (E0015); the
+  link-name form names the C symbol at the declaration, so the wrapper
+  keeps the short name and a reader sees which call goes to C.
+
+#### 56. C prelude helpers cannot be redeclared as `extern fn`
+
+- **Need:** call `aye_c_path` or `aye_rt_free` from std.
+- **Workaround:** only helpers whose prototype matches exactly
+  (`aye_std_fail`) can be redeclared; the rest need a new helper or
+  stack buffers (F1.2 used two 4096-byte buffers for `symlink`).
+- **Hit by:** std.fs (F1.2).
+- **Status:** declined (aye `docs/decisions.md`, "Compiler gaps closed
+  out, round 2 (O3)"). The C prelude is the compiler's runtime, not an
+  API: its helpers change with the code generator, and E0096 rightly
+  rejects a redeclaration whose prototype differs. std reaches it only
+  through `aye_std_*` helpers with an exact Aye prototype, or writes
+  the code in Aye now that `@targetOs()` exists.
 
 ## Fixed
 
@@ -692,3 +597,140 @@ form. The commit is the one that fixed the gap.
   float stay E0037, with hints (`n != 0`; `(b as u8) as f64`).
   `js/fast_expr.aye` stores booleans and comparison results as
   `(b as u8) as f64` since P2.2.
+
+#### 49. An `extern fn` cannot have an Aye name other than its C symbol
+
+- **Need:** a module whose pub API reuses a C function's name: `std.net`
+  exports `listen` and `connect` and calls C's `listen` and `connect`.
+- **Repro:**
+
+  ```aye
+  extern fn close(fd: i32) i32
+  pub fn close(x: i32) i32 { return x }   // E0015: `close` is defined more than once
+  ```
+
+- **Workaround:** the C prelude (`src/cgen.rs`) declares the symbols
+  under other names (`aye_rt_listen` with `__asm__("listen")`) and
+  exports `aye_std_listen` and `aye_std_connect`, which `std/net/net.aye`
+  declares. A struct method of the same name is fine (`Conn.read` calls
+  C's `read`). `@cimport` also avoids it (`sock.connect`), but needs
+  libclang or the cache.
+- **Hit by:** O1.3 (`std.net`).
+- **Status:** fixed in O1.3a (aye 7b893ee): `extern("connect") fn
+  cConnect(...)` names the C symbol. `std/net` calls `listen` and
+  `connect` this way. `aye_std_errno` stayed in the prelude then (the
+  errno symbol differs per OS); O1.14b (gap 50) moved it to Aye.
+
+#### 50. No per-OS declarations
+
+- **Need:** declare a different `extern fn` or struct layout per target
+  OS.
+- **Workaround (until O1.14):** `aye_std_errno` stayed in the C prelude (`src/cgen.rs`)
+  because the errno symbol is `__error` on macOS and `__errno_location`
+  on Linux. `std/net/net.aye` declares `struct addrinfo` with the fields
+  `ai_canonname` and `ai_addr` as `first` and `second` (their order
+  differs per OS) and picks at run time with `isDarwin()`. A field
+  whose name differs per OS cannot be picked at run time: both branches
+  are checked against the host's `@cimport`. So `std.fs.mtime` reads the
+  modification time in the C prelude (`aye_std_mtime` in `src/cgen.rs`,
+  the offset of `st_mtimespec` on macOS and `st_mtim` on Linux), and
+  `browser/net/archive.aye` calls it; it takes `d_name`'s length with
+  `strlen`, not macOS's `d_namlen` (X1.1).
+- **Hit by:** O1.3b (`std.net`: errno, `struct addrinfo`); X1.1
+  (`browser/net/archive.aye`: `st_mtimespec`, `d_namlen`); O1.5
+  (`std.fs.stat`, `readDir`, `mkdir`, `remove`, `rename`: the layouts of
+  `struct stat` and `struct dirent` and ENOTEMPTY's value differ, so
+  `aye_std_lstat`, `aye_std_readdir` and `aye_std_pathop` are in the C
+  prelude); O1.6
+  (`std.process` reads errno through `aye_std_errno`; `spawn` forks in
+  the C prelude because `fcntl` is variadic).
+- **Status:** fixed in O1.14 (aye 8dedadb) and O1.14b (aye a308b36):
+  `@targetOs()` is a value of a built-in enum (`.macos`, `.linux`,
+  `.wasi`, `.freestanding`) from `--target`; `if @targetOs() is .V` is
+  folded like `@hasLink`, so the other OS's branch is checked but not
+  built. `std/net` lost `isDarwin()` and `uname`; `aye_std_errno`,
+  `aye_std_mtime` and `aye_std_lstat` left the C prelude (std reads
+  errno, `stat` and `mtime` per OS in Aye). Left: the other OS's branch
+  is still type-checked, so a `@cimport` name that only one OS's
+  headers have (a field of `struct addrinfo`, `st_mtimespec`) fails on
+  the other OS. Follow-up in this repo: `isDarwin` in `ui/socket.aye` and
+  `clock()` in `js/interp.aye` can move to `@targetOs()`.
+
+#### 51. No way to print an error or enum tag name
+
+- **Need:** get the name of an error tag or enum tag as a string, for
+  example to print it.
+- **Workaround:** write a `match` that returns the string for each tag.
+  `@println` takes one argument, so the name cannot be passed beside a
+  tag value.
+- **Hit by:** the std.http golden (`tests/cases/std_http.aye`), which
+  prints names through its own `match`.
+- **Status:** fixed in O1.7 (aye 323b81d; the commit says O1.8):
+  `@tagName(x)` gives the name of an error, enum or tagged-union tag as
+  a `[]u8` (E0116 for other types); `std_http` uses it.
+
+#### 52. A method cannot be used as a function value
+
+- **Need:** name a method as a plain function value, for example
+  store `Self.f` as a handler.
+- **Workaround:** declare the function at module level and use that.
+  `Self.f` gives E0074.
+- **Hit by:** std.http `Server` (the handler is stored as a plain fn).
+- **Status:** fixed in O1.28 (aye db86a45): `Type.m` (a non-generic
+  method of a non-generic struct, or of a generic struct with its type
+  arguments written, `Box(i32).get`) is a value of type
+  `fn(<self param type>, A...) R`, a C function pointer like a top-level
+  function. `x.m` without a call stays E0074 (a bound method would need
+  a closure).
+
+#### 53. Generic methods (second half of gap 53; nested structs, the first half, are declined)
+
+- **Need:** give a method its own type parameters.
+- **Workaround:** generic methods gave E0076. std.http `Server` is
+  non-generic and erases `T` with `@ptrCast`, as `std.thread.spawn`
+  does.
+- **Hit by:** std.http `Server`.
+- **Status:** fixed in O1.29 (aye 3de4835): a method takes its own
+  `comptime` parameters after `self`, in the form generic functions use,
+  and each call names its type arguments (`b.map(f64, half)`) and makes
+  a monomorphized instance; `where` bounds are checked at the call.
+  E0076 stays for interface methods (a `dyn` call has one function per
+  method). std.http and std.thread keep their casts where they cover
+  field storage or the C boundary.
+
+#### 54. `@cimport` of a glibc header takes the wrong files
+
+- **Need:** `@cimport("math.h")` and `@cimport("pthread.h")` declare the
+  same things on Ubuntu 24.04 (glibc) as on macOS.
+- **Repro:** on Linux, `aye cimport math.h` has constants but no
+  function (`m.sqrt`: E0081), and a program with
+  `@cimport("pthread.h")` that also uses `std.time` (`browser`) fails
+  with E0096: `nanosleep` and `clock` are declared twice with different
+  signatures.
+- **Cause:** for a system header, the generator
+  (`src/cimport/generate.rs`) took the header itself and the headers of
+  the header's directory that it includes itself. glibc declares the
+  math functions in `bits/mathcalls.h` (through `__MATHCALL`), in
+  `/usr/include/aarch64-linux-gnu/bits/`, another directory: none came
+  in. glibc's `pthread.h` and `time.h` both sit in `/usr/include`, and
+  `pthread.h` includes `time.h` first, so `time.h`'s `clock` (`clock_t`
+  is `long`) and `nanosleep` (`struct timespec *`) came in and clashed
+  with `browser/js/interp.aye`'s `clock() u64` and `std/time`'s
+  `nanosleep([*]i64, [*]i64)`. macOS escaped by accident: its
+  `/usr/include/pthread.h` is a link to `pthread/pthread.h`, so its
+  directory after `canonicalize` is `pthread/`.
+- **Fix:** one rule on both OSes (`src/cimport/generate.rs`). A system
+  header brings its own declarations and those of its parts that it
+  includes itself: internal headers (a name with a leading `_`, macOS's
+  `_time.h`; or a `bits/` directory, glibc's `bits/mathcalls.h`), and
+  the headers of its directory when that is not the include directory it
+  was found in (`SDL2/SDL.h`; macOS's `pthread.h` → `pthread/`). The
+  other headers of `/usr/include` are headers of their own. On macOS the
+  output stays the same but for `zlib.h` (no longer `zconf.h`'s
+  `MAX_WBITS`, `MAX_MEM_LEVEL` and unused typedefs) and `unistd.h` (no
+  `gethostuuid`, from `gethostuuid.h`), and gains `sys/stat.h`'s
+  `S_IF*` (from `sys/_s_ifmt.h`).
+- **Hit by:** X1.3 (first Linux run: `aye check browser`, golden
+  `cimport/system.aye`, spec `aye_blocks_compile`, `codes` E0112).
+- **Status:** fixed in X1.3 (aye 7a08c4b); `tests/cimport/threads.aye`
+  imports `pthread.h` beside `std.time`.
