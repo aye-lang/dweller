@@ -44,7 +44,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
   backlog (P3.50–P3.61). The screens review of 2026-10-14 (P1.14) put
   a `visual` verdict on every judged site in `sites.json`: `check`
   counts W3 at 4 of 20 (hn, cnn-lite, lobsters, google); the defects
-  are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.65–P3.73. P3.50 is done:
+  are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.66–P3.73 (P3.65 done: W3 6 of 20). P3.50 is done:
   html.duckduckgo.com has no scripts and its server prints the raw date
   (`2026-07-20T00:00:00.0000000`); Chrome shows the same text, so the
   defect was not ours. `Date.parse` now takes fractions of any length. P3.69 and
@@ -348,7 +348,7 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.59 intrinsic sizing passes no container height (`browser/layout/intrinsic.aye`, `cb_h = -1`); BBC NEWS `<h1>` 300px instead of 100px (P3.47). Still seen 2026-10-14: the NEWS wordmark is 100 px left of centre.
 - P3.60 move the JS lexer, parser and AST out of the `js` module for a bundler; pure move (framework F4, `docs/framework.md`).
 - P3.61 `screenshot` runs the page as long as `dump` (Mistral's title animation caught half-way) (P3.48). Still seen 2026-10-14: "Introducing Mistral Large 4" not drawn, "Le chonk" 240 px low.
-- P3.65 `opacity` not drawn on some text: example.com's script-added `p+p {opacity: .6}`, go.dev's `.Article-idLink {opacity: 0}` heading ¶ links (screens review 2026-10-14).
+- P3.65 `opacity` not drawn on some text: example.com's script-added `p+p {opacity: .6}`, go.dev's `.Article-idLink {opacity: 0}` heading ¶ links (screens review 2026-10-14). Done 2026-10-14: paint only skipped `opacity: 0` on block boxes; other opacities and inline boxes were not drawn. Now a box with `opacity` below 1 is a layer (a stacking context, painted like a positioned box) drawn as a group: its items go into a layer bounded by their extent, blended below with the opacity (`EndLayer.alpha`); an inline box's items on a line are a group too; 0 draws nothing but keeps layout and hit testing (Chrome hits opacity-0 elements too). An inline `svg`'s own opacity is its box's (no longer applied twice). New fixture `browser/tests/paint/opacity.html`; example and go-docs match Chrome, W3 4 → 6 of 20 (anyknown, this PR).
 - P3.66 Wikipedia (en, ja): the Appearance panel is empty; Chrome shows the Text, Width and Color radio buttons (screens review 2026-10-14).
 - P3.67 MDN: the "Try it" demo shows an `about:blank` link instead of the code editor and output; the language switcher is drawn twice (screens review 2026-10-14).
 - P3.68 Python docs: the sidebar is drawn right of the text; Chrome draws it on the left (screens review 2026-10-14).

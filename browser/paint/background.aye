@@ -264,7 +264,7 @@ fn background(b: *mut Builder, d: *Deco, with_color: bool) AllocError!void {
         if round {
             radii = d.radii
         }
-        try b.add(Item.EndLayer { r: d.r, radii: radii })
+        try b.add(Item.EndLayer { r: d.r, radii: radii, alpha: 255 })
     }
 }
 
@@ -1005,8 +1005,8 @@ fn beginMask(frames: *mut List(Frame)) AllocError!?*mut Canvas {
 }
 
 // Blends frame `f`'s layer onto the canvas below, through its mask's
-// alpha and the box `r` with corners `radii`.
-fn endLayer(f: Frame, r: Rect, radii: Radii) AllocError!void {
+// alpha and the box `r` with corners `radii`, with opacity `alpha`.
+fn endLayer(f: Frame, r: Rect, radii: Radii, alpha: u8) AllocError!void {
     let layer = f.layer
     let w = layer.width
     let h = layer.height
@@ -1025,9 +1025,9 @@ fn endLayer(f: Frame, r: Rect, radii: Radii) AllocError!void {
     for y in 0..h {
         for x in 0..w {
             let i = (y * w + x) * 4
-            var k: u32 = 255
+            var k = alpha as u32
             if f.mask |m| {
-                k = m.pixels[i + 3] as u32
+                k = (k * m.pixels[i + 3] as u32 + 127) / 255
             }
             if round |rc| {
                 k = (k * rc[y * w + x] as u32 + 127) / 255

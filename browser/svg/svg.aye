@@ -179,9 +179,10 @@ pub struct Size {
 }
 
 /// The picture of the `svg` element `root` of `doc` (styled by
-/// `styles`), allocated with `alloc`. Free it with `deinit` and
-/// `alloc.destroy`.
-pub fn build(alloc: Allocator, doc: *Document, styles: *css.Styles, root: NodeId) AllocError!*mut Picture {
+/// `styles`), allocated with `alloc`; with the root's `opacity` when
+/// `own_opacity` (an SVG image; that of an inline `svg` is its CSS
+/// box's, drawn by paint/). Free it with `deinit` and `alloc.destroy`.
+pub fn build(alloc: Allocator, doc: *Document, styles: *css.Styles, root: NodeId, own_opacity: bool) AllocError!*mut Picture {
     var view: ?ViewBox = null
     if doc.attr(root, "viewbox") |v| {
         view = parseViewBox(v)
@@ -237,6 +238,9 @@ pub fn build(alloc: Allocator, doc: *Document, styles: *css.Styles, root: NodeId
         depth: 0,
     }
     b.inherit(&mut ctx, values, null)
+    if !own_opacity {
+        ctx.opacity = 1.0
+    }
     b.children(root, ctx) catch |e| {
         pic.deinit()
         alloc.destroy(pic)
@@ -280,7 +284,7 @@ pub fn parseImage(alloc: Allocator, src: []u8) AllocError!?*mut Picture {
     var styles = try css.Styles.init(alloc)
     defer styles.deinit()
     try css.computeStyles(&doc, &ua, &author, media, &mut styles)
-    let pic = try build(alloc, &doc, &styles, el)
+    let pic = try build(alloc, &doc, &styles, el, true)
     pic.image = true
     return pic
 }
