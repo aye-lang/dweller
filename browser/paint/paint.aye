@@ -39,9 +39,12 @@
 // frame with their address as a link), SVG (inline `svg` elements and SVG
 // images, drawn by svg/ into their content box), form controls
 // (checkboxes and radio buttons drawn, a `select`'s arrow, a list box's selected
-// options), visibility, and overflow other than `visible` as a clip to
+// options), visibility, overflow other than `visible` as a clip to
 // the padding box (rounded by `border-radius`: a layer drawn through the
-// corners).
+// corners), and `opacity` below 1: a box's layer (a stacking context,
+// painted like a positioned box) or an inline box's items on a line are
+// a group, drawn into a layer of its own and blended below with the
+// opacity (0: not drawn; the box is still hit by `engine/hit.aye`).
 
 import css
 import css.Value
@@ -89,10 +92,11 @@ pub enum Item {
     Shadow { r: Rect, radii: Radii, dx: f64, dy: f64, blur: f64, spread: f64, c: Rgba, inset: bool }
     // Drawing goes into a transparent layer over `r` (after `Mask`, into
     // its mask) until `EndLayer`, which blends it below through the box
-    // `r` with corners `radii` and the mask's alpha.
+    // `r` with corners `radii`, the mask's alpha and the opacity `alpha`
+    // (255: opaque).
     Layer { r: Rect }
     Mask
-    EndLayer { r: Rect, radii: Radii }
+    EndLayer { r: Rect, radii: Radii, alpha: u8 }
 }
 
 pub struct DisplayList {
@@ -145,13 +149,19 @@ pub fn build(alloc: Allocator, t: *mut Tree) AllocError!DisplayList {
     return b.list
 }
 
-/// Is box `i` painted in a layer of its own (positioned, not inline)?
+/// Is box `i` painted in a layer of its own (positioned, transformed,
+/// clipped or with an opacity below 1; not inline)?
 pub fn isLayer(t: *Tree, i: usize) bool {
     let b = t.bx(i)
     if b.kind == BoxKind.Inline || b.kind == BoxKind.Text || b.kind == BoxKind.LineBreak {
         return false
     }
-    return b.abs != 0 || layout.isPositioned(b.style) || layout.isTransformed(t, i) || layout.clipOf(t, i) != null
+    return b.abs != 0 || layout.isPositioned(b.style) || layout.isTransformed(t, i) || layout.clipOf(t, i) != null || opacityOf(b.style) < 1.0
+}
+
+/// The `opacity` of a style, from 0 to 1.
+pub fn opacityOf(style: []Value) f64 {
+    return math.clamp(layout.numberOf(style[css.OPACITY], 1.0), 0.0, 1.0)
 }
 
 /// A layer inside another: its z-index (`auto` is 0) and tree order.
@@ -234,6 +244,14 @@ fn isVisible(style: []Value) bool {
     return layout.isKeyword(style[css.VISIBILITY], "visible")
 }
 
+// A group of the items of an inline box `box` with opacity `o`, from
+// item `start` on.
+struct OpenGroup {
+    box: usize
+    start: usize
+    o: f64
+}
+
 struct Builder {
     t: *mut Tree
     list: DisplayList
@@ -274,8 +292,14 @@ struct Builder {
         }
     }
 
-    // Layer `i`: the layers below it, its own content, the layers above.
+    // Layer `i`: the layers below it, its own content, the layers above;
+    // all of it a group with the box's opacity.
     fn layer(self: *mut Self, i: usize) AllocError!void {
+        let o = opacityOf(self.t.bx(i).style)
+        var group: ?usize = null
+        if o < 1.0 {
+            group = try self.beginGroup()
+        }
         var ls = List(LayerRef).init(self.t.backing)
         defer ls.deinit()
         try layersOf(self.t, i, &mut ls)
@@ -303,6 +327,83 @@ struct Builder {
             try self.add(Item.Unclip)
         }
         self.m = outer_m
+        if group |g| {
+            try self.endGroup(g, o)
+        }
+    }
+
+    // Starts a group of items (drawn into a layer of their own, then
+    // blended below with an opacity); the index of its first item, for
+    // `endGroup`.
+    fn beginGroup(self: *mut Self) AllocError!usize {
+        let start = self.list.items.len()
+        // Its bounds are known at its end.
+        try self.list.items.append(Item.Layer { r: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } })
+        return start
+    }
+
+    // Ends the group that begins at item `start`: its layer covers its
+    // items, blended below with opacity `o`. A group that draws nothing
+    // (no items, or `o` 0) is dropped.
+    fn endGroup(self: *mut Self, start: usize, o: f64) AllocError!void {
+        let items = self.list.items.items()
+        var bounds: ?Rect = null
+        for k in start + 1..items.len {
+            if itemBounds(items[k], self.t) |r| {
+                bounds = united(bounds, r)
+            }
+        }
+        let alpha = math.floor(o * 255.0 + 0.5) as u8
+        if bounds |r| {
+            if alpha > 0 {
+                items[start] = Item.Layer { r: r }
+                return self.list.items.append(Item.EndLayer { r: r, radii: SQUARE, alpha: alpha })
+            }
+        }
+        while self.list.items.len() > start {
+            _ = self.list.items.pop()
+        }
+    }
+
+    // Makes the groups `open` (outermost first) those of the inline boxes
+    // with an opacity below 1 from box `fb` up to the block container `c`:
+    // ends those it is not inside, begins those it enters.
+    fn inlineGroups(self: *mut Self, open: *mut List(OpenGroup), c: usize, fb: usize) AllocError!void {
+        var chain = List(usize).init(self.t.backing)
+        defer chain.deinit()
+        var cur: ?usize = fb
+        while cur |k| {
+            if k == c {
+                break
+            }
+            let b = self.t.bx(k)
+            if b.kind == BoxKind.Inline && opacityOf(b.style) < 1.0 {
+                try chain.append(k)
+            }
+            cur = b.parent
+        }
+        // `chain` is innermost first.
+        var same: usize = 0
+        while same < open.len() && same < chain.len() && open.items()[same].box == chain.items()[chain.len() - 1 - same] {
+            same += 1
+        }
+        try self.endGroups(open, same)
+        var k = chain.len() - same
+        while k > 0 {
+            k -= 1
+            let bi = chain.items()[k]
+            let start = try self.beginGroup()
+            try open.append(OpenGroup { box: bi, start: start, o: opacityOf(self.t.bx(bi).style) })
+        }
+    }
+
+    // Ends the groups of `open` after the first `keep`.
+    fn endGroups(self: *mut Self, open: *mut List(OpenGroup), keep: usize) AllocError!void {
+        while open.len() > keep {
+            if open.pop() |g| {
+                try self.endGroup(g.start, g.o)
+            }
+        }
     }
 
     // Starts clipping to the padding box of box `i` (rounded by its
@@ -321,7 +422,7 @@ struct Builder {
         let radii = radiiOf(cb.style, cb.w, cb.h)
         if isRound(radii) {
             let r = Rect { x: cb.ax + cb.border[3], y: cb.ay + cb.border[0], w: cb.w - cb.border[1] - cb.border[3], h: cb.h - cb.border[0] - cb.border[2] }
-            return self.add(Item.EndLayer { r: r, radii: insetRadii(radii, cb.border[0], cb.border[1], cb.border[2], cb.border[3]) })
+            return self.add(Item.EndLayer { r: r, radii: insetRadii(radii, cb.border[0], cb.border[1], cb.border[2], cb.border[3]), alpha: 255 })
         }
         try self.add(Item.Unclip)
     }
@@ -392,10 +493,6 @@ struct Builder {
             return
         }
         let b = self.t.bx(i).*
-        if layout.numberOf(b.style[css.OPACITY], 1.0) <= 0.0 {
-            // Fully transparent (other opacities are not supported).
-            return
-        }
         let visible = isVisible(b.style)
         self.extend(b.ax + b.w + b.margin[1], b.ay + b.h + b.margin[2])
         if visible {
@@ -432,11 +529,16 @@ struct Builder {
         }
         if layout.hasInlineContent(self.t, i) {
             try self.inlineFloats(i)
+            // The groups of inline boxes with an opacity, per line.
+            var open = List(OpenGroup).init(self.t.backing)
+            defer open.deinit()
             for li in b.line_start..b.line_end {
                 let line = self.t.lines.items()[li]
                 for fi in line.frag_start..line.frag_end {
+                    try self.inlineGroups(&mut open, i, self.t.frags.items()[fi].box)
                     try self.frag(fi, b.line_start, b.line_end, cx, cy)
                 }
+                try self.endGroups(&mut open, 0)
             }
         } else {
             let n = self.t.children(i).len
@@ -738,7 +840,7 @@ struct Builder {
             }
             if self.t.doc.isElement(el, "svg") {
                 // The picture lives in the tree's arena, as long as the list.
-                let pic = try svg.build(self.t.alloc, self.t.doc, self.t.styles, el)
+                let pic = try svg.build(self.t.alloc, self.t.doc, self.t.styles, el, false)
                 return self.drawing(pic, x, y, w, h)
             }
             let kind = layout.controlKind(self.t.doc, el)
@@ -1010,9 +1112,9 @@ fn transformed(it: Item, m: layout.Affine, t: *mut Tree) Item {
         .Mask => {
             return Item.Mask
         }
-        .EndLayer { r, radii } => {
+        .EndLayer { r, radii, alpha } => {
             let k = math.sqrt(math.abs(m.a * m.d - m.b * m.c))
-            return Item.EndLayer { r: mapRect(r, m), radii: scaledRadii(radii, k) }
+            return Item.EndLayer { r: mapRect(r, m), radii: scaledRadii(radii, k), alpha: alpha }
         }
     }
 }
@@ -1060,6 +1162,60 @@ fn mapRect(r: Rect, m: layout.Affine) Rect {
     return Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
+// The area item `it` may draw on (null: none), with a margin for
+// glyphs outside their advance and for blurs.
+fn itemBounds(it: Item, t: *mut Tree) ?Rect {
+    match it {
+        .Fill { r, c } => {
+            return r
+        }
+        .Quad { p, c } => {
+            var x0 = p[0]
+            var x1 = p[0]
+            var y0 = p[1]
+            var y1 = p[1]
+            for k in 1..4 {
+                x0 = math.min(x0, p[k * 2])
+                x1 = math.max(x1, p[k * 2])
+                y0 = math.min(y0, p[k * 2 + 1])
+                y1 = math.max(y1, p[k * 2 + 1])
+            }
+            return Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+        }
+        .Text { x, y, s, face, c } => {
+            let em = face.size
+            return Rect { x: x - em, y: y - 2.0 * em, w: t.measure.width(face, s) + 2.0 * em, h: 3.0 * em }
+        }
+        .Image { r, w, h, pixels } => {
+            return r
+        }
+        .Svg { r, pic } => {
+            return r
+        }
+        .Tiles { clip, tile, sx, sy, rx, ry, src } => {
+            return clip
+        }
+        .Shadow { r, radii, dx, dy, blur, spread, c, inset } => {
+            let e = 2.0 * blur + math.abs(spread) + math.abs(dx) + math.abs(dy)
+            return Rect { x: r.x - e, y: r.y - e, w: r.w + 2.0 * e, h: r.h + 2.0 * e }
+        }
+        .Layer { r } => {
+            return r
+        }
+        _ => {
+            return null
+        }
+    }
+}
+
+// The bounding box of `a` (null: none) and `b`.
+fn united(a: ?Rect, b: Rect) Rect {
+    let r = a orelse return b
+    let x0 = math.min(r.x, b.x)
+    let y0 = math.min(r.y, b.y)
+    return Rect { x: x0, y: y0, w: math.max(r.x + r.w, b.x + b.w) - x0, h: math.max(r.y + r.h, b.y + b.h) - y0 }
+}
+
 // `it` moved by (`dx`, `dy`).
 fn moved(it: Item, dx: f64, dy: f64) Item {
     return match it {
@@ -1074,7 +1230,7 @@ fn moved(it: Item, dx: f64, dy: f64) Item {
         .Shadow { r, radii, dx: sdx, dy: sdy, blur, spread, c, inset } => Item.Shadow { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, radii: radii, dx: sdx, dy: sdy, blur: blur, spread: spread, c: c, inset: inset }
         .Layer { r } => Item.Layer { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h } }
         .Mask => Item.Mask
-        .EndLayer { r, radii } => Item.EndLayer { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, radii: radii }
+        .EndLayer { r, radii, alpha } => Item.EndLayer { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, radii: radii, alpha: alpha }
     }
 }
 
@@ -1170,11 +1326,11 @@ pub fn render(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut
                     canvas = m
                 }
             }
-            .EndLayer { r, radii } => {
+            .EndLayer { r, radii, alpha } => {
                 if frames.pop() |f| {
                     canvas = f.outer
                     v = f.outer_view
-                    endLayer(f, r, radii) catch |e| {
+                    endLayer(f, r, radii, alpha) catch |e| {
                         dropFrame(f)
                         return e
                     }
