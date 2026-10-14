@@ -38,7 +38,7 @@ import std.mem.Allocator
 import std.text
 import url
 
-let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
+let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--spaces] [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
 /// The toolbar height, in CSS px.
 pub let TOOLBAR: f64 = 40.0
@@ -79,10 +79,16 @@ struct UiOptions {
     // `--frames`.
     socket: []u8
     exit_when_idle: bool
+    // Each agent connection is served by a Space, a process of its own
+    // (spaces.aye).
+    spaces: bool
+    // This is a Space (`dweller space`): the control connection to its
+    // window; -1 for a window.
+    control: i32
 }
 
 fn uiOptions(args: [][]u8) ?UiOptions {
-    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false }
+    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, spaces: false, control: -1 }
     var i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -113,6 +119,8 @@ fn uiOptions(args: [][]u8) ?UiOptions {
             i += 1
         } else if text.eql(a, "--exit-when-idle") {
             o.exit_when_idle = true
+        } else if text.eql(a, "--spaces") {
+            o.spaces = true
         } else if text.eql(a, "--save") && more {
             o.save = args[i + 1]
             i += 1
@@ -133,7 +141,7 @@ fn uiOptions(args: [][]u8) ?UiOptions {
     if (o.target.len == 0 && o.socket.len == 0) || (!headless && (o.events.len > 0 || o.state || o.show_text || o.save.len > 0)) {
         return null
     }
-    if o.exit_when_idle && (o.socket.len == 0 || o.frames > 0) {
+    if (o.exit_when_idle || o.spaces) && (o.socket.len == 0 || o.frames > 0) {
         return null
     }
     return o
@@ -142,13 +150,17 @@ fn uiOptions(args: [][]u8) ?UiOptions {
 /// `dweller [open] FILE|URL ...`: opens a window on the page; returns
 /// the exit status.
 pub fn run(alloc: Allocator, args: [][]u8) i32 {
-    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false }
+    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, spaces: false, control: -1 }
     if uiOptions(args) |parsed| {
         o = parsed
     } else {
         std.log.err(UI_USAGE)
         return 2
     }
+    return runWith(alloc, o)
+}
+
+fn runWith(alloc: Allocator, o: UiOptions) i32 {
     var sys = font.System.init(alloc) catch |e| {
         if text.eql(o.face, "system") {
             std.log.err("no system font found ({})", e)
@@ -221,6 +233,13 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                     return 1
                 }
                 if !listening {
+                    return 1
+                }
+                let spaced = setUpSpaces(&mut ui, o) catch |e| {
+                    std.log.err("out of memory")
+                    return 1
+                }
+                if !spaced {
                     return 1
                 }
             }
@@ -439,6 +458,10 @@ pub struct Ui {
     fn loop(self: *mut Self, frames: i64) AllocError!void {
         var drawn: i64 = 0
         while !self.quit {
+            // The time of this iteration without its wait for events
+            // (`loop_max_ms` in `--state`).
+            let start = std.time.monotonicMs()
+            var waited: u64 = 0
             if self.dirty || frames > 0 {
                 try self.draw()
                 self.dirty = false
@@ -455,6 +478,7 @@ pub struct Ui {
             if self.agents != null && timeout > POLL_MS {
                 timeout = POLL_MS
             }
+            timeout = spacesTimeout(self, timeout)
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -462,17 +486,29 @@ pub struct Ui {
                     }
                 }
             }
-            if SDL_WaitEventTimeout(&mut ev, timeout) != 0 {
+            let before = std.time.monotonicMs()
+            if isSpace(self) {
+                // No person: wait for the agent (and the window) instead.
+                waitInSpace(self, timeout)
+                waited = std.time.monotonicMs() - before
+                while SDL_PollEvent(&mut ev) != 0 {
+                    try self.handle(&ev)
+                }
+            } else if SDL_WaitEventTimeout(&mut ev, timeout) != 0 {
+                waited = std.time.monotonicMs() - before
                 try self.handle(&ev)
                 while SDL_PollEvent(&mut ev) != 0 {
                     try self.handle(&ev)
                 }
+            } else {
+                waited = std.time.monotonicMs() - before
             }
             if self.tab.page |p| {
                 if try engine.runDueTimers(p) {
                     try self.afterScripts()
                 }
             }
+            try runSpaceTimers(self)
             try pollAgents(self)
             if self.resized {
                 self.resized = false
@@ -480,6 +516,7 @@ pub struct Ui {
                     try self.relayout()
                 }
             }
+            noteLoopTime(self, std.time.monotonicMs() - start - waited)
         }
     }
 
