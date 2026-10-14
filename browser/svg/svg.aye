@@ -106,6 +106,8 @@ pub struct Picture {
     dashes: List(f64)
     clips: List(ClipPath)
     clip_shapes: List(Shape)
+    // An SVG image (`parseImage`), not an inline `svg` element.
+    image: bool = false
 
     pub fn deinit(self: *mut Self) {
         self.shapes.deinit()
@@ -155,10 +157,17 @@ pub struct Picture {
     }
 
     /// The transform from the picture's coordinates to a box at (`x`,
-    /// `y`), `w` x `h` (device px), where a CSS px is `px` device px.
+    /// `y`), `w` x `h` (device px), where a CSS px is `px` device px. An
+    /// image without a viewBox is drawn at its natural size, scaled to
+    /// the box like a bitmap (as Chrome does: the Rust logo, 106 px, in
+    /// a 48 px box); an inline `svg` without one is not scaled.
     pub fn placement(self: *Self, x: f64, y: f64, w: f64, h: f64, px: f64) Matrix {
         if self.view |vb| {
             return viewBoxTransform(vb, self.aspect, x, y, w, h)
+        }
+        if self.image {
+            let n = self.naturalSize()
+            return Matrix { a: w / n.w, b: 0.0, c: 0.0, d: h / n.h, e: x, f: y }
         }
         return Matrix { a: px, b: 0.0, c: 0.0, d: px, e: x, f: y }
     }
@@ -271,7 +280,9 @@ pub fn parseImage(alloc: Allocator, src: []u8) AllocError!?*mut Picture {
     var styles = try css.Styles.init(alloc)
     defer styles.deinit()
     try css.computeStyles(&doc, &ua, &author, media, &mut styles)
-    return try build(alloc, &doc, &styles, el)
+    let pic = try build(alloc, &doc, &styles, el)
+    pic.image = true
+    return pic
 }
 
 // A style sheet without its `<![CDATA[` and `]]>` (the HTML parser keeps

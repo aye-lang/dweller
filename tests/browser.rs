@@ -3353,6 +3353,91 @@ fn window_framesets() {
     );
 }
 
+/// `browser/tests/fonts/bold.html`: bold text from a face of one weight
+/// gets synthetic bold, and from a variable face its `wght` axis, so the
+/// bold rows have more ink than the regular ones (and the variable bold
+/// row is wider: its advances grow). Skipped without a system font or
+/// python3.
+#[test]
+fn bold_weights() {
+    let out = scratch().join("font_bold.png");
+    let res = run(&[
+        "screenshot",
+        "browser/tests/fonts/bold.html",
+        "-o",
+        out.to_str().unwrap(),
+        "--font",
+        "system",
+        "--width",
+        "400",
+        "--height",
+        "240",
+    ]);
+    if text(&res.stderr).contains("no system font found") {
+        println!("skipped: no system font");
+        return;
+    }
+    assert!(
+        res.status.success() && res.stderr.is_empty(),
+        "{}\n{}",
+        res.status,
+        text(&res.stderr)
+    );
+    // Ink (255 - red, summed) and the rightmost inked column of each
+    // 60 px row; the PNG encoder uses filter 0.
+    let script = r#"
+import struct, sys, zlib
+data = open(sys.argv[1], 'rb').read()
+w, h = struct.unpack('>II', data[16:24])
+chunks, offset = [], 8
+while offset < len(data):
+    n = int.from_bytes(data[offset:offset+4], 'big')
+    if data[offset+4:offset+8] == b'IDAT':
+        chunks.append(data[offset+8:offset+8+n])
+    offset += n + 12
+raw = zlib.decompress(b''.join(chunks))
+stride = w * 4 + 1
+for band in range(4):
+    ink, right = 0, 0
+    for y in range(band * 60, band * 60 + 60):
+        for x in range(w):
+            v = 255 - raw[y * stride + 1 + x * 4]
+            if v > 64:
+                right = max(right, x)
+            ink += v
+    print(ink, right)
+"#;
+    let Ok(py) = Command::new("python3")
+        .args(["-c", script, out.to_str().unwrap()])
+        .output()
+    else {
+        println!("skipped: no python3");
+        return;
+    };
+    assert!(py.status.success(), "{}", text(&py.stderr));
+    let rows: Vec<(u64, u64)> = text(&py.stdout)
+        .lines()
+        .map(|l| {
+            let mut f = l.split(' ').map(|n| n.parse::<u64>().unwrap());
+            (f.next().unwrap(), f.next().unwrap())
+        })
+        .collect();
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    assert!(rows[0].0 > 0 && rows[2].0 > 0, "{rows:?}");
+    assert!(
+        rows[1].0 * 10 > rows[0].0 * 11,
+        "synthetic bold adds no ink: {rows:?}"
+    );
+    assert!(
+        rows[3].0 * 10 > rows[2].0 * 15,
+        "the variable face is not drawn bold: {rows:?}"
+    );
+    assert!(
+        rows[3].1 > rows[2].1 + 5,
+        "the variable face's bold advances do not grow: {rows:?}"
+    );
+}
+
 /// `browser/tests/fonts/`: a tiny font as TrueType, WOFF and WOFF 2
 /// (`@font-face`, system fonts): the three pages must look the same, and
 /// unlike the page without the font. WOFF 2 is checked where

@@ -47,7 +47,9 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
   are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.65–P3.73. P3.50 is done:
   html.duckduckgo.com has no scripts and its server prints the raw date
   (`2026-07-20T00:00:00.0000000`); Chrome shows the same text, so the
-  defect was not ours. `Date.parse` now takes fractions of any length.
+  defect was not ours. `Date.parse` now takes fractions of any length. P3.69 and
+  P3.73 are done (font weights, SVG image scaling, `noscript` sheets);
+  P3.73b (CSS `filter`) is left.
 - Archives live in each checkout's `target/sites/` (untracked), so steps
   that replay sites or take screenshots run locally.
 - P3.48 is not merged: the merge 34f6f93 passed `cargo test` but failed
@@ -242,11 +244,12 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.66 Wikipedia (en, ja): the Appearance panel is empty; Chrome shows the Text, Width and Color radio buttons (screens review 2026-10-14).
 - P3.67 MDN: the "Try it" demo shows an `about:blank` link instead of the code editor and output; the language switcher is drawn twice (screens review 2026-10-14).
 - P3.68 Python docs: the sidebar is drawn right of the text; Chrome draws it on the left (screens review 2026-10-14).
-- P3.69 bold CJK text drawn regular (Wikipedia ja lead term and notice box) (screens review 2026-10-14).
+- P3.69 bold CJK text drawn regular (Wikipedia ja lead term and notice box) (screens review 2026-10-14). Done 2026-10-14 (with P3.73): the CJK fallback (PingFang UI on macOS) is a variable face and was drawn at its default weight; variable faces now follow the CSS weight through their `wght` axis (one FreeType face per weight), and a bold font whose face is lighter than 600 gets synthetic bold (outline grown 1/24 em like Skia, advances kept), so Noto CJK Regular on Linux is bold too.
 - P3.70 abehiroshi: the news column drawn below the photo instead of beside it, the tiled background image missing, menu bullets above their links (screens review 2026-10-14).
 - P3.71 ZOL: 找产品 product names wrap and the rows misalign; the 新品首发/本月销量最高 tabs stack (screens review 2026-10-14).
 - P3.72 react.dev: the "My video" demo thumbnail is an empty white box (Chrome: blue gradient with a play icon) (screens review 2026-10-14).
-- P3.73 rustdoc: the Rust logo is a black blob; headings and sidebar titles drawn regular instead of Fira Sans Medium/bold; the copy-path icon is missing (screens review 2026-10-14).
+- P3.73 rustdoc: the Rust logo is a black blob; headings and sidebar titles drawn regular instead of Fira Sans Medium/bold; the copy-path icon is missing (screens review 2026-10-14). Done 2026-10-14: (1) "Fira Sans", "Inter", "Source Code Pro"... were in the list of system families, which ended the web-font lookup before the page's `@font-face` faces; an `@font-face` family now comes first (also MDN and Mistral's Inter, GitHub's Mona Sans). (2) An SVG image without a viewBox (the logo, 106 px) is scaled to its box (48 px) like a bitmap; it was drawn 1:1 and clipped. (3) `noscript.css` (inside `<noscript>`) applied while scripts run and hid `#copy-path`; sheets inside `noscript` now apply only with scripting off.
+- P3.73b CSS `filter` is not drawn: rustdoc's copy-path and toolbar icons are black, Chrome draws them gray (`filter: invert(50%)`) (P3.73).
 - P4.1 react.dev: diagnose live vs replay time (DNS/TLS, discovery, module waits, HTTP/2) (P1.4).
 - P4.2 react.dev: fix the cause found by P4.1.
 - P4.3 ZOL live: separate discovery waits from transfer waits (`browser/engine/PERF.md`).

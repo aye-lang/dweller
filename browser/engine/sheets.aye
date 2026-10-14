@@ -45,7 +45,7 @@ pub fn authorSheets(alloc: Allocator, doc: *Document, address: *Url, media: css.
 fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, address: *Url, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
     var cur: ?NodeId = root
     while cur |h| {
-        if doc.isElement(h, "style") && (try mediaOk(doc, h, media, sheet)) {
+        if doc.isElement(h, "style") && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             var src = text.Builder.init(alloc)
             defer src.deinit()
             try doc.textContent(h, &mut src)
@@ -63,7 +63,7 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             sheet.scope_root = doc.parent(h)
             try parseWithImports(alloc, base, address, src.bytes(), media, sheet, false)
             sheet.scope_root = null
-        } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && (try mediaOk(doc, h, media, sheet)) {
+        } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             let scripted = doc.sheets.ofOwner(h)
             var disabled = false
             if scripted |ss| {
@@ -106,7 +106,7 @@ fn prefetchSheets(alloc: Allocator, doc: *Document, base: *Url, address: *Url, m
     defer hrefs.deinit()
     var cur: ?NodeId = doc.root
     while cur |h| {
-        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && (try mediaOk(doc, h, media, sheet)) {
+        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             if doc.attr(h, "href") |href| {
                 if url.resolve(alloc, base, text.trim(href)) |target| {
                     defer target.deinit(alloc)
@@ -126,6 +126,24 @@ fn mediaOk(doc: *Document, el: NodeId, media: css.Media, sheet: *mut css.Sheet) 
         return css.mediaMatches(sheet, q, media)
     }
     return true
+}
+
+// Is `el` inside a `noscript` element while scripts run? The parser
+// builds `noscript` content as elements, which a browser with scripting
+// on parses as text: its sheets (rustdoc's noscript.css hides the
+// copy-path button) do not apply.
+fn inNoscript(doc: *Document, el: NodeId) bool {
+    if !scriptingEnabled() {
+        return false
+    }
+    var cur = doc.parent(el)
+    while cur |p| {
+        if doc.isElement(p, "noscript") {
+            return true
+        }
+        cur = doc.parent(p)
+    }
+    return false
 }
 
 // `rel` has the word `stylesheet` and not `alternate`.
@@ -195,4 +213,28 @@ fn parseWithImports(alloc: Allocator, base: *Url, address: *Url, src: []u8, medi
     }
     sheet.base_layer = outer_layer
     try sheet.moveRulesFirst(first_rule, mid)
+}
+
+test "noscript sheets apply only while scripts do not run" {
+    let a = @testAllocator()
+    var doc = try Document.init(a)
+    defer doc.deinit()
+    let ns = try doc.createElement("noscript", []dom.Attr{})
+    doc.appendChild(doc.root, ns)
+    let style = try doc.createElement("style", []dom.Attr{})
+    doc.appendChild(ns, style)
+    try doc.appendText(style, "p { color: red }")
+    var address = try url.parse(a, "https://x.test/")
+    defer address.deinit(a)
+    let media = css.Media { width: 800.0, height: 600.0 }
+    var off = try css.Sheet.init(a)
+    defer off.deinit()
+    try authorSheets(a, &doc, &address, media, &mut off)
+    @expectEqual(1, off.rules.len())
+    setScripting(true)
+    defer setScripting(false)
+    var on = try css.Sheet.init(a)
+    defer on.deinit()
+    try authorSheets(a, &doc, &address, media, &mut on)
+    @expectEqual(0, on.rules.len())
 }

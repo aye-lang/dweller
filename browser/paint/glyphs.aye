@@ -43,7 +43,8 @@ pub struct TextPainter {
     alloc: Allocator
     // The system's fonts; null to draw the fixed-metric font's boxes.
     system: ?*mut font.System
-    // Key: face << 52 | glyph id << 32 | size in 1/64 px.
+    // Key: face << 52 | glyph id << 32 | synthetic bold << 31 | size in
+    // 1/64 px.
     index: IntMap(u64, usize)
     glyphs: List(Glyph)
     data: List(u8)
@@ -93,7 +94,7 @@ pub struct TextPainter {
             }
             let origin = roundPx(x + p.x * scale)
             let top = base - roundPx(p.y * scale)
-            let gi = try self.glyph(sys, p.face, size64, p.glyph)
+            let gi = try self.glyph(sys, p.face, size64, p.glyph, p.bold)
             let gl = self.glyphs.items()[gi]
             if !gl.ok || gl.w == 0 || gl.h == 0 {
                 continue
@@ -111,10 +112,11 @@ pub struct TextPainter {
         }
     }
 
-    /// The box of glyph `g` of `face` at `size64` (1/64 px) as drawn,
-    /// rendering and caching it on first use; null without pixels.
-    pub fn glyphBox(self: *mut Self, sys: *mut font.System, face: u32, size64: i64, g: u32) AllocError!?GlyphBox {
-        let gi = try self.glyph(sys, face, size64, g)
+    /// The box of glyph `g` of `face` at `size64` (1/64 px) as drawn
+    /// (with synthetic bold when `bold`), rendering and caching it on
+    /// first use; null without pixels.
+    pub fn glyphBox(self: *mut Self, sys: *mut font.System, face: u32, size64: i64, g: u32, bold: bool) AllocError!?GlyphBox {
+        let gi = try self.glyph(sys, face, size64, g, bold)
         let gl = self.glyphs.items()[gi]
         if !gl.ok || gl.w == 0 || gl.h == 0 {
             return null
@@ -127,15 +129,18 @@ pub struct TextPainter {
         return self.data.len()
     }
 
-    // The index in `glyphs` of glyph `g` of face `face` at `size64`,
-    // rendering it on first use.
-    fn glyph(self: *mut Self, sys: *mut font.System, face: u32, size64: i64, g: u32) AllocError!usize {
-        let key = (face as u64 << 52) | ((g as u64 & 0xFFFFF) << 32) | size64 as u64
+    // The index in `glyphs` of glyph `g` of face `face` at `size64`
+    // (with synthetic bold when `bold`), rendering it on first use.
+    fn glyph(self: *mut Self, sys: *mut font.System, face: u32, size64: i64, g: u32, bold: bool) AllocError!usize {
+        var key = (face as u64 << 52) | ((g as u64 & 0xFFFFF) << 32) | size64 as u64
+        if bold {
+            key = key | (1 as u64 << 31)
+        }
         if self.index.get(key) |gi| {
             return gi
         }
         var gl = Glyph { ok: false, w: 0, h: 0, left: 0, top: 0, offset: self.data.len(), color: false, scale: 1.0 }
-        if sys.render(face, size64, g) |bm| {
+        if sys.render(face, size64, g, bold) |bm| {
             if bm.buffer |buf| {
                 gl.ok = true
                 gl.w = bm.width as usize

@@ -236,6 +236,19 @@ test "pictures from documents" {
     @expect(close(20.0, n.w) && close(10.0, n.h))
 }
 
+test "images without a viewBox scale to their box" {
+    let a = @testAllocator()
+    // The Rust logo: 106 x 106, no viewBox, drawn in a 48 px box.
+    let pic = try built(a, "<svg width='106' height='106'><rect width='106' height='106'/></svg>")
+    defer a.destroy(pic)
+    defer pic.deinit()
+    let m = pic.placement(4.0, 2.0, 53.0, 212.0, 1.0)
+    @expect(close(0.5, m.a) && close(2.0, m.d) && close(4.0, m.e) && close(2.0, m.f))
+    // An inline `svg` is not scaled: one CSS px is `px` device px.
+    pic.image = false
+    @expect(close(2.0, pic.placement(0.0, 0.0, 53.0, 53.0, 2.0).a))
+}
+
 fn redAt(pixels: []u8, w: usize, x: usize, y: usize) u8 {
     return pixels[(y * w + x) * 4]
 }

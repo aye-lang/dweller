@@ -1530,14 +1530,14 @@ fn canvasTextBounds(alloc: std.mem.Allocator, system: ?*mut font.System, painter
         let width = try sys.shapeText(f, s, &mut placed)
         let size64 = math.floor(f.size * 64.0 + 0.5) as i64
         for p in placed.items() {
-            let gb = (try painter.glyphBox(sys, p.face, size64, p.glyph)) orelse continue
+            let gb = (try painter.glyphBox(sys, p.face, size64, p.glyph, p.bold)) orelse continue
             if !gb.color {
                 let x0 = p.x + gb.left as f64
                 let y0 = -p.y - gb.top as f64
                 bounds.include(x0, y0, x0 + gb.w as f64, y0 + gb.h as f64)
                 continue
             }
-            if sys.render(p.face, size64, p.glyph) |bm| {
+            if sys.render(p.face, size64, p.glyph, p.bold) |bm| {
                 if bm.width == 0 || bm.rows == 0 {
                     continue
                 }
