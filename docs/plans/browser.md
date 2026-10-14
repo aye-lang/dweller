@@ -51,7 +51,16 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 - P3.58 is half done: WIP 34c2234 on `worktree-agent-a0b64f7b014b9b6ea`,
   not built (native `TypedArray` in `browser/js/typed.aye`, test
   `browser/tests/js/256_typed_array_views.js`).
-- Open gaps the browser met: #3 (P2.9) and #49 (O1.3a, std only).
+- Open gaps the browser met: none (2026-10-14: gaps 49 to 56 fixed or
+  declined, aye criterion O3; anyknown #1, 215e3a1).
+- Maintenance steps done 2026-10-14 (squash commits on `main`): #1 215e3a1
+  `COMPILER_GAPS.md` gaps 49 to 56 closed; #2 8546630 P-flaky
+  `window_relayout_after_image_load`; #3 c13bc8b O1.17c `virtual_clock.html`
+  reads the clock once per 1000 increments (`jsdom_gc_stress` about 140 s
+  to 90 s); #4 aee0c41 P7 flaky `http_failed_image_fetched_once`; #5 55b4b48
+  O1.14c `isDarwin`/`uname` replaced by `@targetOs()`, `clock()` declared
+  `c_long`, `AYE_REV` a067dfd; #6 1198067 P8.x `browser/net/archive.aye`
+  lists the archive directory with `std.fs.readDir`.
 
 ## Phases
 
@@ -80,7 +89,7 @@ against the copy, passed 62 of 62 with one changed line.
 - `browser/` has no symlinks, no import of `std/` or `framework/` files
   (std is built into the compiler), and no source-level path into the
   repo. The only `@cimport`s are system headers (`pthread.h`,
-  `dirent.h`, SDL2, FreeType, libcurl, HarfBuzz, brotli), found through
+  `dirent.h` (gone since P8.x, 2026-10-14, anyknown #6), SDL2, FreeType, libcurl, HarfBuzz, brotli), found through
   `pkg-config` and `~/.cache/aye`.
 - `aye build` named the binary after the directory (`browser`), not
   `anyknown`. Fixed: `browser/aye.toml` has `name = "anyknown"` and no
@@ -198,7 +207,7 @@ card adds a site fix or a feature.
 Paused until P8. Before any site item becomes a card, its symptom is
 confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 
-- P7 flaky `http_failed_image_fetched_once` under load: the failed image was requested twice (`GET /fail/once.png` ×2) in the full suite on main 0e61757 with three agents building; 3/3 alone pass. P3.23 removed a sleep; a second fetch still races. Same class on Linux arm64: `window_relayout_after_image_load` failed once in the full suite (main 71fd28a, an amd64 Rosetta run beside it), 3/3 alone pass. Diagnose step; verify 30× under load (merge-agent check) (main, 2026-10-08).
+- P7 flaky `http_failed_image_fetched_once` under load: the failed image was requested twice (`GET /fail/once.png` ×2) in the full suite on main 0e61757 with three agents building; 3/3 alone pass. P3.23 removed a sleep; a second fetch still races. Same class on Linux arm64: `window_relayout_after_image_load` failed once in the full suite (main 71fd28a, an amd64 Rosetta run beside it), 3/3 alone pass. Diagnose step; verify 30× under load (merge-agent check) (main, 2026-10-08). Done 2026-10-14: an image's load/error fires in the task that finishes its background load (anyknown #2, 8546630); a dropped in-flight image load is held until it ends, so a failed URL is fetched once per document (anyknown #4, aee0c41).
 - P3.63 Mistral costs ~40 s CPU (was 4 s) since P3.48: its real animations run, and each forced layout re-runs layout over the whole document; the inline-style subtree restyle (0d7dddf) helps little because the main page notes other changes between writes, and one iframe uses container queries (`g.styles.queried`). Needs incremental layout; first log what the main page notes between layouts (P3.48b/d, 2026-10-08).
 - P8.2, P8.3 split `browser/` into its own repo with `git filter-repo`, move `tests/browser.rs` and the browser docs with it (decision 2026-10-08; P8.1 dry run done 2026-10-11; cards in "P8 split plan").
 - P1.6 `page_load.py` writes `last.stdout`/`last.stderr` into the archive folder; move them under `target/page-load-out/`; set a floor for the 0.8 CPU/wall warning (P1.5).
