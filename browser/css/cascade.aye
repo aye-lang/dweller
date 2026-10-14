@@ -105,6 +105,14 @@ pub struct Styles {
     // look at of `class` (inputs.aye `noteClasses`): valid while those
     // sheets are, as `inputs` is only compared with them.
     class_infos: List(*ClassInfo)
+    // Set by `restyleSubtrees` when an element or pseudo-element it
+    // styled got values that layout reads (`paintOnly`: not those) other
+    // than before, or got or lost values: the boxes may move.
+    moved: bool = false
+    // The first `MAX_MOVED` of those elements (of a pseudo-element: its
+    // element), and whether there were more.
+    moved_els: List(NodeId)
+    moved_many: bool = false
 
     pub fn init(alloc: Allocator) AllocError!Styles {
         let arena = try alloc.create(Arena.init(alloc))
@@ -158,6 +166,7 @@ pub struct Styles {
             queried: false,
             inputs: 0,
             class_infos: List(*ClassInfo).init(alloc),
+            moved_els: List(NodeId).init(alloc),
         }
     }
 
@@ -182,6 +191,7 @@ pub struct Styles {
     }
 
     pub fn deinit(self: *mut Self) {
+        self.moved_els.deinit()
         self.class_infos.deinit()
         self.sizes.deinit()
         self.map.deinit()
@@ -194,6 +204,16 @@ pub struct Styles {
         self.inline.deinit()
         self.arena.deinit()
         self.alloc.destroy(self.arena)
+    }
+
+    // `moved`: the boxes of `el` may move.
+    fn noteMoved(self: *mut Self, el: NodeId) AllocError!void {
+        self.moved = true
+        if self.moved_els.len() < MAX_MOVED {
+            try self.moved_els.append(el)
+        } else {
+            self.moved_many = true
+        }
     }
 
     /// The computed values of the element `el` (null for other nodes).
@@ -406,6 +426,7 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
         reuse: false,
+        track: false,
         filters: null,
         filter: AncestorFilter.empty(),
     }
@@ -528,6 +549,7 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
         reuse: false,
+        track: false,
         filters: null,
         filter: AncestorFilter.empty(),
     }
@@ -564,11 +586,16 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
 /// them: the ancestors of each root first (what it inherits, the root
 /// element's font size), as `computeStylesOf` does, unless the root
 /// before had the same parent. For a document without shadow trees.
-/// Returns how many elements it styled.
-pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, roots: []NodeId, shallow: []bool, out: *mut Styles) AllocError!usize {
+/// `keep`: the old values stay as they are (a layout still points at
+/// them), else they are written over when no element holds them any
+/// more. Sets `Styles.moved`. Returns how many elements it styled.
+pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, roots: []NodeId, shallow: []bool, keep: bool, out: *mut Styles) AllocError!usize {
     let began = perf.start()
     defer perf.end("restyle", began, "subtrees")
     out.inputs = 0
+    out.moved = false
+    out.moved_els.clear()
+    out.moved_many = false
     let a = out.arena.allocator()
     let wins = try a.alloc(Win { set: false, level: 0, spec: 0, d: NO_DECL }, NPROPS)
     var c = Computer {
@@ -588,11 +615,13 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
         reuse: false,
+        track: false,
         filters: null,
         filter: AncestorFilter.empty(),
     }
     defer c.deinit()
-    c.reuse = true
+    c.reuse = !keep
+    c.track = true
     var filters = AncestorFilters { map: IntMap(u32, AncestorFilter).init(out.alloc) }
     defer filters.map.deinit()
     c.filters = &mut filters
@@ -664,11 +693,11 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                     }
                 }
                 _ = out.customs.remove(h.index)
-                _ = out.before.remove(h.index)
-                _ = out.after.remove(h.index)
+                let pseudos = takePseudos(out, h)
                 try styleElement(&mut c, ua, author, &mut hints, h)
                 let own_customs = c.custom_wins.len() > 0
                 try stylePseudos(&mut c, ua, ua_pseudo.items(), h)
+                try notePseudos(out, h, pseudos)
                 styled += 1
                 let values = out.map.get(h.index) orelse old.items()
                 if !had || had_own_customs || own_customs || styleParent(doc, h) == null {
@@ -691,10 +720,10 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
             if doc.node(h).kind == Kind.Element {
                 // What the element had and may not have now.
                 _ = out.customs.remove(h.index)
-                _ = out.before.remove(h.index)
-                _ = out.after.remove(h.index)
+                let pseudos = takePseudos(out, h)
                 try styleElement(&mut c, ua, author, &mut hints, h)
                 try stylePseudos(&mut c, ua, ua_pseudo.items(), h)
+                try notePseudos(out, h, pseudos)
                 styled += 1
             }
             cur = doc.following(h, r)
@@ -826,6 +855,9 @@ struct Computer {
     // layout that pointed at them is gone), to be written over when no
     // other element holds them.
     reuse: bool
+    // Compare the values of each element styled with those it had
+    // (`Styles.moved`).
+    track: bool
     // For a document without shadow trees: the ancestors of the elements
     // (ancestor_filter.aye), and those of the element being styled.
     filters: ?*mut AncestorFilters
@@ -1182,12 +1214,19 @@ struct Computer {
             try self.out.customs.put(el.index, l)
         }
         var old: ?[]Value = null
-        if self.reuse {
+        if self.track {
             old = self.out.map.get(el.index)
         }
         let values = try self.computeValues(parent, is_root)
         try self.alignCenter(el, values)
-        try self.out.map.put(el.index, try self.out.intern(values, old))
+        if self.track && !sameLayout(old, values) {
+            try self.out.noteMoved(el)
+        }
+        var release: ?[]Value = null
+        if self.reuse {
+            release = old
+        }
+        try self.out.map.put(el.index, try self.out.intern(values, release))
     }
 
     // The computed values of the pseudo-element `pseudo` of `el` from the
@@ -1564,15 +1603,60 @@ fn restyleBelow(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     while cur |h| {
         if doc.node(h).kind == Kind.Element {
             _ = out.customs.remove(h.index)
-            _ = out.before.remove(h.index)
-            _ = out.after.remove(h.index)
+            let pseudos = takePseudos(out, h)
             try styleElement(c, ua, author, hints, h)
             try stylePseudos(c, ua, ua_pseudo, h)
+            try notePseudos(out, h, pseudos)
             styled += 1
         }
         cur = doc.following(h, top)
     }
     return styled
+}
+
+// The values of the `::before` and `::after` of `el`, taken out of `out`
+// before it is styled again (`notePseudos`). Nothing writes over them:
+// a pseudo-element's array is not released.
+struct Pseudos {
+    before: ?[]Value
+    after: ?[]Value
+}
+
+fn takePseudos(out: *mut Styles, el: NodeId) Pseudos {
+    let p = Pseudos { before: out.before.get(el.index), after: out.after.get(el.index) }
+    _ = out.before.remove(el.index)
+    _ = out.after.remove(el.index)
+    return p
+}
+
+// Notes `el` as moved (`Styles.moved`) when its pseudo-elements styled
+// again differ from `old` in what layout reads.
+fn notePseudos(out: *mut Styles, el: NodeId, old: Pseudos) AllocError!void {
+    if !samePseudo(old.before, out.before.get(el.index)) || !samePseudo(old.after, out.after.get(el.index)) {
+        try out.noteMoved(el)
+    }
+}
+
+// At most this many elements are kept in `Styles.moved_els`: beyond,
+// script geometry lays the whole document out again.
+let MAX_MOVED: usize = 64
+
+fn samePseudo(old: ?[]Value, now: ?[]Value) bool {
+    if now |n| {
+        return sameLayout(old, n)
+    }
+    return old == null
+}
+
+// Are `now` the values `old` had (none: not), for all that layout reads?
+fn sameLayout(old: ?[]Value, now: []Value) bool {
+    let o = old orelse return false
+    for i in 0..NPROPS {
+        if !paintOnly(i) && !sameValue(o[i], now[i]) {
+            return false
+        }
+    }
+    return true
 }
 
 // Are the values of `a` and `b` the same?

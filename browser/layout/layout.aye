@@ -19,6 +19,8 @@
 // - markers.aye: list item markers.
 // - controls.aye: form controls (generated content, sizes) and images.
 // - dump.aye: the box tree as text (`anyknown dump --layout`).
+// - incremental.aye: one element's boxes built and laid out again (for
+//   script geometry).
 //
 // Boxes live in `Tree.boxes` and name each other by index. Geometry is
 // relative: a box's `x`, `y` are of its border box, relative to the
@@ -188,6 +190,11 @@ pub struct Box {
     // flexed item, CSS Flexbox 9.4 and 9.8): definite for its content
     // while it is laid out again; -1 otherwise.
     forced_h: f64
+    // The containing block `layoutBlockLevel` laid the box out in last
+    // (its width, and its height or -1): `relayout` lays it out again in
+    // it (incremental.aye).
+    cb_w: f64 = 0.0
+    cb_h: f64 = -1.0
 
     /// Is the box out of flow (a float, or absolutely positioned)?
     pub fn oof(self: *Self) bool {

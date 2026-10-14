@@ -216,16 +216,16 @@ test "elements share equal computed values, and a restyle of one leaves the othe
     // `a` and `b` hold the same values: `a`'s new ones go elsewhere.
     try doc.setAttr(pa, "style", "color: blue")
     let roots_a = [1]NodeId{pa}
-    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_a[..], shallow[..], &mut styles)
+    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_a[..], shallow[..], false, &mut styles)
     try colorsOf(&doc, &styles, ids[..], &mut out)
     @expectEqual("rgb(0, 0, 255);rgb(0, 0, 0);rgb(255, 0, 0);", out.bytes())
     // `b` takes `a`'s values; then `a` changes again, `b` keeps them.
     try doc.setAttr(pb, "style", "color: blue")
     let roots_b = [1]NodeId{pb}
-    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_b[..], shallow[..], &mut styles)
+    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_b[..], shallow[..], false, &mut styles)
     @expect(styles.get(pa).?.ptr == styles.get(pb).?.ptr)
     try doc.setAttr(pa, "style", "color: green")
-    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_a[..], shallow[..], &mut styles)
+    _ = try css.restyleSubtrees(&doc, &ua, &author, media, roots_a[..], shallow[..], false, &mut styles)
     try colorsOf(&doc, &styles, ids[..], &mut out)
     @expectEqual("rgb(0, 128, 0);rgb(0, 0, 255);rgb(255, 0, 0);", out.bytes())
 }

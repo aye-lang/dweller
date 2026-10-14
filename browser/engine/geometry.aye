@@ -33,6 +33,7 @@ import js.JsError
 import js.Value
 import layout
 import perf
+import std
 import std.list.List
 import std.map.IntMap
 import std.math
@@ -63,6 +64,12 @@ struct Geometry {
     // how many elements were styled again since `styles` were computed.
     deps: css.RestyleDeps
     restyled: usize
+    // `Script.layout_noted` at `version`.
+    noted: u64
+    // Whether the tree has floats, and how many boxes it had when laid
+    // out from scratch (`relayoutDirty`).
+    floats: bool
+    built: usize
 }
 
 // At most this many different changes are kept for the next layout
@@ -176,6 +183,7 @@ fn noteLayoutChange(s: *mut Script, at: NodeId, change: css.StyleChange) AllocEr
         return
     }
     s.layout_version += 1
+    s.layout_noted += 1
     if s.geom == null || s.restyle_all {
         return
     }
@@ -243,6 +251,11 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     defer perf.end("script_layout", began, p.url.href)
     let st = try computedStyling(s)
     if s.geom |g| {
+        // When only children and `style` and `class` attributes changed:
+        // the elements whose boxes to build again (`relayoutDirty`).
+        var dirty = List(NodeId).init(s.alloc)
+        defer dirty.deinit()
+        let local = try localChanges(s, g, version, &mut dirty)
         var fresh = sameStyles(s, g, st)
         if fresh {
             // Nothing the styles depend on changed (a class no rule
@@ -250,10 +263,38 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             clearChanges(s)
             s.restyle_all = false
         } else {
-            fresh = restyle(s, g, st) catch |e| {
+            fresh = restyle(s, g, st, local) catch |e| {
                 dropGeometry(s)
                 return e
             }
+            if fresh && local && g.styles.moved {
+                // Values that layout reads changed (`css.paintOnly`).
+                if g.styles.moved_many {
+                    dirty.clear()
+                    try dirty.append(p.doc.root)
+                } else {
+                    for el in g.styles.moved_els.items() {
+                        try dirty.append(el)
+                    }
+                }
+            }
+        }
+        // The boxes stay when nothing they depend on changed (an
+        // animation's opacity), or else those of the dirty elements are
+        // built and laid out again when that is local.
+        var kept = fresh && local && dirty.len() == 0
+        if fresh && local && !kept {
+            kept = relayoutDirty(s, g, dirty.items()) catch |e| {
+                dropGeometry(s)
+                return e
+            }
+        }
+        if kept {
+            g.version = version
+            g.noted = s.layout_noted
+            followScroll(s, g)
+            try checkLayout(s, g)
+            return g
         }
         if fresh {
             dropTree(s, g)
@@ -268,7 +309,10 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             g.tree = laid.tree
             g.first = laid.first
             g.next = laid.next
+            g.floats = laid.floats
+            g.built = laid.tree.boxes.len()
             g.version = version
+            g.noted = s.layout_noted
             s.geom = g
             followScroll(s, g)
             return g
@@ -292,7 +336,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     }
     try deps.build(&st.author, &st.ua, quirks)
     var laid = try layOut(s, styles)
-    let g = s.alloc.create(Geometry { tree: laid.tree, styles: styles, first: laid.first, next: laid.next, version: version, width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0 }) catch |e| {
+    let g = s.alloc.create(Geometry { tree: laid.tree, styles: styles, first: laid.first, next: laid.next, version: version, width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, floats: laid.floats, built: laid.tree.boxes.len() }) catch |e| {
         laid.tree.deinit()
         s.alloc.destroy(laid.tree)
         laid.first.deinit()
@@ -334,8 +378,9 @@ fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Style
 // or for other sheets or another viewport, or when the styles depend on
 // what css/invalidation.aye does not follow (`:has()` of siblings,
 // container queries, shadow trees; but see `onlyInlineStyle`), or after styling the document again
-// `RESTYLE_ROUNDS` times this way. Whether it did.
-fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling) AllocError!bool {
+// `RESTYLE_ROUNDS` times this way. Whether it did. `keep`: the old
+// values stay as they are, for the boxes of `g` to keep pointing at.
+fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocError!bool {
     let p = s.page
     let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && g.sheets == s.computed_sheets && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && !g.styles.queried && p.doc.shadows.len() == 0 && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
     if !ok {
@@ -348,9 +393,48 @@ fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling) AllocError!bool {
     if !(try restyleRoots(s, g, st, &mut roots, &mut shallow)) {
         return false
     }
-    g.restyled += try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), g.styles)
+    g.restyled += try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), keep, g.styles)
     clearChanges(s)
     return true
+}
+
+// Were the changes to the document since `g` (at `version` now) all
+// noted (`noteLayoutChange`), to children and to `style` and `class`
+// attributes? Then the boxes of `g` stay but those of the elements in
+// `dirty` (a changed text's parent; an element whose `::before` or
+// `::after` shows an attribute, `content: attr()`) and of those whose
+// values that layout reads change. Not for an image's new source or
+// bitmap, which only move `Script.layout_version`.
+fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(NodeId)) AllocError!bool {
+    if s.restyle_all || s.page.mutations != g.mutations || version - g.version != s.layout_noted - g.noted {
+        return false
+    }
+    let doc = &s.page.doc
+    let style = css.attrChange("style").what
+    for c in s.restyle.items() {
+        if c.what.what == css.CHILDREN_CHANGED.what && !c.what.token {
+            if !doc.isLive(c.at) || !doc.isConnected(c.at) {
+                continue
+            }
+            var el = c.at
+            if doc.node(el).kind != dom.Kind.Element {
+                el = doc.parent(el) orelse return false
+            }
+            try dirty.append(el)
+        } else if c.what.token || c.what.what == style {
+            if showsAttr(g, c.at, 1) || showsAttr(g, c.at, 2) {
+                try dirty.append(c.at)
+            }
+        } else {
+            return false
+        }
+    }
+    return true
+}
+
+fn showsAttr(g: *Geometry, el: NodeId, pseudo: u8) bool {
+    let v = g.styles.pseudo(el, pseudo) orelse return false
+    return text.indexOf(layout.keywordOf(v[css.CONTENT]), "attr(") != null
 }
 
 // Are the changes noted since `g` all to `style` attributes that no
@@ -493,6 +577,7 @@ struct Boxes {
     tree: *mut layout.Tree
     first: IntMap(u32, usize)
     next: List(usize)
+    floats: bool
 }
 
 // Lays the document out with `styles`.
@@ -534,7 +619,214 @@ fn layOut(s: *mut Script, styles: *mut css.Styles) AllocError!Boxes {
             try first.put(n.index, k)
         }
     }
-    return Boxes { tree: tree, first: first, next: next }
+    return Boxes { tree: tree, first: first, next: next, floats: layout.hasFloats(tree) }
+}
+
+// Builds the boxes of each element of `dirty` again (of the nearest
+// element above it whose box can be, when its own cannot) and lays them out
+// again (layout/incremental.aye), when that is what a full layout gives:
+// not for a tree with floats, container queries or shadow trees, nor
+// after so many boxes were built again that the tree is mostly dropped
+// ones. False when it did not; the tree may then be changed in part and
+// must be laid out from scratch.
+fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!bool {
+    let doc = &s.page.doc
+    let t = g.tree
+    if g.floats || g.styles.queried || doc.shadows.len() > 0 || t.boxes.len() > 2 * g.built + 1024 {
+        return false
+    }
+    var roots = List(usize).init(s.alloc)
+    defer roots.deinit()
+    for d in dirty {
+        if !doc.isLive(d) || !doc.isConnected(d) {
+            continue
+        }
+        var cur: ?NodeId = d
+        var found: ?usize = null
+        while cur |c| {
+            if doc.node(c).kind != dom.Kind.Element {
+                return false
+            }
+            // Its box when it has one (not several) that can be built
+            // again, else that of an element above (a flex item's text:
+            // the block around the flex container).
+            if g.first.get(c.index) |b| {
+                if t.bx(b).node |n| {
+                    if dom.same(n, c) && g.next.items()[b] == NO_BOX && layout.canRebuild(t, b) {
+                        found = b
+                        break
+                    }
+                }
+            }
+            cur = doc.parent(c)
+        }
+        let b = found orelse return false
+        var known = false
+        for r in roots.items() {
+            if r == b {
+                known = true
+            }
+        }
+        if !known {
+            try roots.append(b)
+        }
+    }
+    // Only the outermost: the others are built again with them.
+    var outer = List(usize).init(s.alloc)
+    defer outer.deinit()
+    for r in roots.items() {
+        var under = false
+        var up = t.bx(r).parent
+        while up |u| {
+            for o in roots.items() {
+                if o == u {
+                    under = true
+                }
+            }
+            up = t.bx(u).parent
+        }
+        if !under {
+            try outer.append(r)
+        }
+    }
+    var forgotten = List(NodeId).init(s.alloc)
+    defer forgotten.deinit()
+    let built = t.boxes.len()
+    for r in outer.items() {
+        if !(try layout.rebuild(t, r, &mut forgotten)) {
+            return false
+        }
+    }
+    // The boxes by node: without the dropped boxes, with the new ones.
+    for n in forgotten.items() {
+        if g.first.get(n.index) |k| {
+            if t.bx(k).node == null {
+                _ = g.first.remove(n.index)
+            }
+        }
+    }
+    while g.next.len() < t.boxes.len() {
+        try g.next.append(NO_BOX)
+    }
+    var k = t.boxes.len()
+    while k > built {
+        k -= 1
+        if t.bx(k).node |n| {
+            if g.first.get(n.index) |after| {
+                if after >= built {
+                    g.next.items()[k] = after
+                }
+            }
+            try g.first.put(n.index, k)
+        }
+    }
+    for r in outer.items() {
+        if !(try layout.relayout(t, r)) {
+            return false
+        }
+    }
+    return true
+}
+
+// ANYKNOWN_LAYOUT_CHECK=1: each layout that keeps boxes of the one
+// before (`geometry`) is compared with a full layout of the same styles,
+// and the first difference is logged ("LAYOUT CHECK"). For tests
+// (`tests/browser.rs` sets it for the DOM fixtures) and for real pages.
+var check_read: bool = false
+var check_on: bool = false
+
+fn checkLayout(s: *mut Script, g: *mut Geometry) AllocError!void {
+    if !check_read {
+        check_read = true
+        if getenv("ANYKNOWN_LAYOUT_CHECK".ptr) |p| {
+            check_on = p[0] == '1'
+        }
+    }
+    if !check_on {
+        return
+    }
+    var full = try layOut(s, g.styles)
+    defer {
+        full.tree.deinit()
+        s.alloc.destroy(full.tree)
+        full.first.deinit()
+        full.next.deinit()
+    }
+    _ = layout.scrollTo(full.tree, g.tree.scroll_y)
+    let a = g.tree
+    let b = full.tree
+    if a.root |ra| {
+        if b.root |rb| {
+            _ = sameBoxes(s, a, ra, b, rb)
+            return
+        }
+    }
+    if a.root != null || b.root != null {
+        std.log.info("LAYOUT CHECK {}: a root box only in one layout", s.page.url.href)
+    }
+}
+
+// Are box `i` of `a` and box `j` of `b`, their lines and their subtrees
+// the same? Logs the first difference.
+fn sameBoxes(s: *mut Script, a: *layout.Tree, i: usize, b: *layout.Tree, j: usize) bool {
+    let x = a.bx(i)
+    let y = b.bx(j)
+    var what: []u8 = ""
+    if x.kind != y.kind || x.pseudo != y.pseudo || (x.node == null) != (y.node == null) {
+        what = "kind"
+    } else if x.node != null && !dom.same(x.node.?, y.node.?) {
+        what = "node"
+    } else if x.x != y.x || x.y != y.y || x.w != y.w || x.h != y.h || x.ax != y.ax || x.ay != y.ay {
+        what = "place"
+    } else if x.scroll_dy != y.scroll_dy || x.first_baseline != y.first_baseline || x.last_baseline != y.last_baseline {
+        what = "scroll or baseline"
+    } else if !sameSides(x.margin, y.margin) || !sameSides(x.border, y.border) || !sameSides(x.padding, y.padding) {
+        what = "edges"
+    } else if x.line_end - x.line_start != y.line_end - y.line_start || x.children.len() != y.children.len() {
+        what = "lines or children"
+    }
+    if what.len == 0 {
+        for k in 0..x.line_end - x.line_start {
+            if !sameLine(a, x.line_start + k, b, y.line_start + k) {
+                what = "line"
+                break
+            }
+        }
+    }
+    if what.len > 0 {
+        var name: []u8 = "(anonymous)"
+        if x.node |n| {
+            name = s.page.doc.node(n).name
+        }
+        std.log.info("LAYOUT CHECK {}: box {} <{}> differs ({}): {} {} {}x{} at {} {}, full {} {} {}x{} at {} {}", s.page.url.href, i, name, what, x.x, x.y, x.w, x.h, x.ax, x.ay, y.x, y.y, y.w, y.h, y.ax, y.ay)
+        return false
+    }
+    for k in 0..x.children.len() {
+        if !sameBoxes(s, a, a.children(i)[k], b, b.children(j)[k]) {
+            return false
+        }
+    }
+    return true
+}
+
+fn sameSides(a: [4]f64, b: [4]f64) bool {
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3]
+}
+
+fn sameLine(a: *layout.Tree, i: usize, b: *layout.Tree, j: usize) bool {
+    let x = a.lines.items()[i]
+    let y = b.lines.items()[j]
+    if x.x != y.x || x.y != y.y || x.w != y.w || x.h != y.h || x.baseline != y.baseline || x.frag_end - x.frag_start != y.frag_end - y.frag_start {
+        return false
+    }
+    for k in 0..x.frag_end - x.frag_start {
+        let f = a.frags.items()[x.frag_start + k]
+        let e = b.frags.items()[y.frag_start + k]
+        if f.kind != e.kind || f.start != e.start || f.end != e.end || f.x != e.x || f.y != e.y || f.w != e.w || f.h != e.h || f.hidden != e.hidden {
+            return false
+        }
+    }
+    return true
 }
 
 // The computed values of `el` in the layout scripts read, when it is up
