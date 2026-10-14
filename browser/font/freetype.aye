@@ -17,12 +17,21 @@
 //
 // Advances are in font units (unscaled), scaled to the font size here, so
 // one face serves every size.
+//
+// Weight (CSS Fonts 4, 5.2 and 7): a variable face (a `wght` axis) is
+// drawn at the CSS weight, clamped to its axis and its `@font-face`
+// range, through one FreeType face per weight (`weighted`); a bold font
+// (weight 600 or more) whose face is lighter than 600 (a CJK fallback
+// face, a family with only a regular `@font-face`) is drawn with
+// synthetic bold: the outline grown like Skia's fake bold, the advances
+// kept (`Placed.bold`, `render`).
 
 @link("freetype2")
 
 import std.list.List
 import std.map.IntMap
 import std.map.StrMap
+import std.math
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -104,6 +113,41 @@ extern struct FTGlyphSlot {
     bitmap: FTBitmap
     bitmap_left: i32
     bitmap_top: i32
+    outline: FTOutline
+}
+
+extern struct FTOutline {
+    n_contours: u16
+    n_points: u16
+    points: ?[*]u8
+    tags: ?[*]u8
+    contours: ?[*]u8
+    flags: i32
+}
+
+// The start of `TT_OS2` (tttables.h), up to the weight class.
+extern struct TTOS2Start {
+    version: u16
+    x_avg_char_width: i16
+    us_weight_class: u16
+}
+
+// `FT_MM_Var` and `FT_Var_Axis` (ftmm.h): the axes of a variable face.
+extern struct FTMMVar {
+    num_axis: u32
+    num_designs: u32
+    num_namedstyles: u32
+    axis: ?[*]FTVarAxis
+    namedstyle: ?[*]u8
+}
+
+extern struct FTVarAxis {
+    name: ?[*]u8
+    minimum: c_long
+    def: c_long
+    maximum: c_long
+    tag: c_ulong
+    strid: u32
 }
 
 /// A rendered glyph: `rows` rows of `width` pixels, `pitch` bytes apart,
@@ -132,6 +176,8 @@ pub struct Placed {
     x: f64
     y: f64
     cluster: u32
+    // Drawn with synthetic bold (see `render`).
+    bold: bool = false
 }
 
 extern fn FT_Init_FreeType(library: *mut ?*mut FTLibraryRec) i32
@@ -145,6 +191,12 @@ extern fn FT_Get_Kerning(face: *mut FTFaceRec, left: u32, right: u32, mode: u32,
 extern fn FT_Set_Char_Size(face: *mut FTFaceRec, width: c_long, height: c_long, hres: u32, vres: u32) i32
 extern fn FT_Select_Size(face: *mut FTFaceRec, index: i32) i32
 extern fn FT_Load_Glyph(face: *mut FTFaceRec, glyph: u32, flags: i32) i32
+extern fn FT_Render_Glyph(slot: *mut FTGlyphSlot, mode: i32) i32
+extern fn FT_Outline_Embolden(outline: *mut FTOutline, strength: c_long) i32
+extern fn FT_Get_Sfnt_Table(face: *mut FTFaceRec, tag: i32) ?*mut TTOS2Start
+extern fn FT_Get_MM_Var(face: *mut FTFaceRec, master: *mut ?*mut FTMMVar) i32
+extern fn FT_Done_MM_Var(library: *mut FTLibraryRec, master: *mut FTMMVar) i32
+extern fn FT_Set_Var_Design_Coordinates(face: *mut FTFaceRec, n: u32, coords: [*]c_long) i32
 
 let FT_LOAD_NO_SCALE: i32 = 1
 // FT_LOAD_RENDER | FT_LOAD_NO_BITMAP | FT_LOAD_TARGET_LIGHT: an
@@ -153,6 +205,14 @@ let FT_LOAD_NO_SCALE: i32 = 1
 let FT_LOAD_RENDER_LIGHT: i32 = 0x1000C
 // FT_LOAD_RENDER | FT_LOAD_COLOR: a color bitmap glyph (emoji).
 let FT_LOAD_RENDER_COLOR: i32 = 0x100004
+// FT_LOAD_RENDER_LIGHT without FT_LOAD_RENDER: the outline, for
+// synthetic bold, rendered by FT_Render_Glyph in FT_RENDER_MODE_LIGHT.
+let FT_LOAD_OUTLINE_LIGHT: i32 = 0x10008
+let FT_RENDER_MODE_LIGHT: i32 = 1
+let FT_GLYPH_FORMAT_OUTLINE: u32 = 0x6F75746C
+let FT_SFNT_OS2: i32 = 2
+let FT_FACE_FLAG_MULTIPLE_MASTERS: i64 = 256
+let WGHT_TAG: u64 = 0x77676874
 let FT_PIXEL_MODE_GRAY: u8 = 2
 let FT_PIXEL_MODE_BGRA: u8 = 7
 let FT_KERNING_UNSCALED: u32 = 2
@@ -198,6 +258,22 @@ pub struct Face {
     // A web font's file, which FreeType reads until the face is done;
     // empty for a system face.
     data: []mut u8
+    // Does the face free `data`? Not the weight instances of a web face,
+    // which share their face's file.
+    own: bool
+    // The file of a system face (a slice of the constant lists), to open
+    // its weight instances; "" for a web face.
+    path: []u8
+    // The weights the face draws: its weight class (or its `@font-face`
+    // range, for a web face); for a variable face, its `wght` axis
+    // within that range.
+    lo: f64
+    hi: f64
+    // A variable face: the index of its `wght` axis (it is drawn through
+    // its weight instances, `System.weighted`), else -1.
+    axis: i32
+    // A weight instance: its `wght` coordinate, else 0.
+    wght: f64
     kerning: bool
     // Only color bitmaps at fixed sizes (emoji).
     color: bool
@@ -246,6 +322,8 @@ pub struct System {
     // Code point -> the first fallback face with a glyph for it, or
     // NO_FACE.
     covered: IntMap(u32, u32)
+    // Variable face << 16 | weight -> its weight instance (in `faces`).
+    instances: IntMap(u64, u32)
     web: List(WebFace)
     // The URLs of web fonts that could not be fetched or read.
     failed: List([]mut u8)
@@ -267,9 +345,10 @@ pub struct System {
         }
         if lib |library| {
             var found = [12]?*mut FTFaceRec{null, ..}
+            var paths = [12][]u8{"", ..}
             let lists = [12][]u8{SANS, SANS_ITALIC, SANS_BOLD, SANS_BOLD_ITALIC, MONO, MONO_ITALIC, MONO_BOLD, MONO_BOLD_ITALIC, SERIF, SERIF_ITALIC, SERIF_BOLD, SERIF_BOLD_ITALIC}
             for slot, list in lists {
-                found[slot] = findFace(alloc, library, list, (slot & 2) != 0, (slot & 1) != 0)
+                found[slot] = findFace(alloc, library, list, (slot & 2) != 0, (slot & 1) != 0, &mut paths[slot])
             }
             if found[0] |regular| {
                 var s = System {
@@ -280,6 +359,7 @@ pub struct System {
                     fallbacks: List(usize).init(alloc),
                     fallbacks_loaded: false,
                     covered: IntMap(u32, u32).init(alloc),
+                    instances: IntMap(u64, u32).init(alloc),
                     web: List(WebFace).init(alloc),
                     failed: List([]mut u8).init(alloc),
                     chains: StrMap(Span).init(alloc),
@@ -294,7 +374,7 @@ pub struct System {
                 for slot in 0..12 {
                     if found[slot] |face| {
                         index[slot] = s.faces.len()
-                        s.faces.append(faceOf(face, []mut u8{})) catch |e| {
+                        s.faces.append(faceOf(library, face, []mut u8{}, paths[slot])) catch |e| {
                             ok = false
                         }
                     }
@@ -339,7 +419,7 @@ pub struct System {
                 }
             }
             FT_Done_Face(face.ft)
-            if face.data.len > 0 {
+            if face.own && face.data.len > 0 {
                 self.alloc.free(face.data)
             }
         }
@@ -364,6 +444,7 @@ pub struct System {
         self.faces.deinit()
         self.fallbacks.deinit()
         self.covered.deinit()
+        self.instances.deinit()
         self.web.deinit()
         self.key.deinit()
         self.runs.deinit()
@@ -468,6 +549,16 @@ pub struct System {
                 url: address,
                 face: face,
             })
+            // The weights the face draws: its `@font-face` range (within
+            // its axis, when it is variable).
+            let fc = &mut self.faces.items()[face]
+            if fc.axis >= 0 {
+                fc.lo = math.clamp(d.weight_lo, fc.lo, fc.hi)
+                fc.hi = math.clamp(d.weight_hi, fc.lo, fc.hi)
+            } else {
+                fc.lo = d.weight_lo
+                fc.hi = d.weight_hi
+            }
             self.clearChains()
         }
         return true
@@ -494,7 +585,7 @@ pub struct System {
                 self.alloc.free(data)
                 return null
             }
-            try self.faces.append(faceOf(ft, data))
+            try self.faces.append(faceOf(self.library, ft, data, ""))
             return self.faces.len() - 1
         }
         self.alloc.free(data)
@@ -547,8 +638,11 @@ pub struct System {
     // Shapes the run `r` of `s` starting at `pen` px; returns the pen
     // after it.
     fn shapeRun(self: *mut Self, f: Font, s: []u8, r: Run, pen: f64, out: ?*mut List(Placed)) AllocError!f64 {
-        let fi = r.face as usize
+        let face = try self.weighted(r.face, f.weight)
+        let fi = face as usize
         let ft = self.faces.items()[fi].ft
+        // Synthetic bold: a bold font from a face lighter than 600.
+        let bold = f.bold && self.faces.items()[fi].hi < 600.0 && !self.faces.items()[fi].color
         let scale = f.size / ft.units_per_em as f64
         var x = pen
         if @hasLink("harfbuzz") {
@@ -559,7 +653,7 @@ pub struct System {
                         for k in 0..n {
                             let g = hbGlyphAt(buf, k)
                             if out |list| {
-                                try list.append(Placed { face: r.face, glyph: g.glyph, x: x + g.x_offset as f64 * scale, y: g.y_offset as f64 * scale, cluster: g.cluster })
+                                try list.append(Placed { face: face, glyph: g.glyph, x: x + g.x_offset as f64 * scale, y: g.y_offset as f64 * scale, cluster: g.cluster, bold: bold })
                             }
                             x += g.advance as f64 * scale
                         }
@@ -603,12 +697,53 @@ pub struct System {
                 }
             }
             if out |list| {
-                try list.append(Placed { face: r.face, glyph: glyph, x: x + kern as f64 * scale, y: 0.0, cluster: at as u32 })
+                try list.append(Placed { face: face, glyph: glyph, x: x + kern as f64 * scale, y: 0.0, cluster: at as u32, bold: bold })
             }
             x += (units + kern) as f64 * scale
             prev = glyph
         }
         return x
+    }
+
+    // The face to draw face `fi` with at the CSS weight `weight`: `fi`
+    // itself, or for a variable face, its instance at that weight
+    // (clamped to the face's range; opened on first use).
+    fn weighted(self: *mut Self, fi: u32, weight: f64) AllocError!u32 {
+        let face = self.faces.items()[fi as usize]
+        if face.axis < 0 {
+            return fi
+        }
+        let w = math.floor(math.clamp(weight, face.lo, face.hi) + 0.5)
+        let key = (fi as u64 << 16) | (w as u64 & 0xFFFF)
+        if self.instances.get(key) |known| {
+            return known
+        }
+        var result = fi
+        var inst: ?*mut FTFaceRec = null
+        if face.data.len > 0 {
+            var out: ?*mut FTFaceRec = null
+            if FT_New_Memory_Face(self.library, face.data.ptr, face.data.len as i64, face.ft.face_index, &mut out) == 0 {
+                inst = out
+            }
+        } else {
+            inst = openFace(self.alloc, self.library, face.path, face.ft.face_index)
+        }
+        if inst |ft| {
+            if setWeight(self.library, ft, face.axis, w) {
+                var g = faceOf(self.library, ft, face.data, face.path)
+                g.own = false
+                g.lo = w
+                g.hi = w
+                g.axis = -1
+                g.wght = w
+                try self.faces.append(g)
+                result = (self.faces.len() - 1) as u32
+            } else {
+                FT_Done_Face(ft)
+            }
+        }
+        try self.instances.put(key, result)
+        return result
     }
 
     // The HarfBuzz font of face `fi`, made on first use.
@@ -617,7 +752,7 @@ pub struct System {
         if !face.hb_tried {
             face.hb_tried = true
             if @hasLink("harfbuzz") {
-                face.hb = hbFontOf(face.ft)
+                face.hb = hbFontOf(face.ft, face.wght)
             }
         }
         return face.hb
@@ -685,7 +820,7 @@ pub struct System {
                     FT_Done_Face(ft)
                     continue
                 }
-                try self.faces.append(faceOf(ft, []mut u8{}))
+                try self.faces.append(faceOf(self.library, ft, []mut u8{}, path))
                 try self.fallbacks.append(self.faces.len() - 1)
             }
         }
@@ -704,10 +839,12 @@ pub struct System {
     }
 
     // The web faces that `f` asks for, in order: for each family of its
-    // list up to the first one that a system face serves (a generic or
-    // known family), the faces of that family that match its weight and
-    // style best (all of them: several `@font-face` rules may split one
-    // face by `unicode-range`).
+    // list up to the first one without web faces that a system face
+    // serves (a generic or known family), the faces of that family that
+    // match its weight and style best (all of them: several `@font-face`
+    // rules may split one face by `unicode-range`). An `@font-face`
+    // family comes before a system font of that name (CSS Fonts 4,
+    // 5.2): "Fira Sans" or "Inter" of a page is its web font.
     fn chainOf(self: *mut Self, f: Font) AllocError!Span {
         if self.web.len() == 0 || f.family.len == 0 {
             return Span { start: 0, len: 0 }
@@ -728,9 +865,6 @@ pub struct System {
             var name = text.trim(part)
             if name.len >= 2 && (name[0] == '"' || name[0] == '\'') {
                 name = text.trim(name[1..name.len - 1])
-            }
-            if isSystemFamily(name) {
-                break
             }
             // The best match of the family's faces (CSS Fonts 4, 5.2:
             // style first, then weight), then every face like it.
@@ -753,6 +887,8 @@ pub struct System {
                         try self.chain_faces.append(wi)
                     }
                 }
+            } else if isSystemFamily(name) {
+                break
             }
         }
         let span = Span { start: start, len: self.chain_faces.len() - start }
@@ -773,8 +909,10 @@ pub struct System {
     }
 
     /// Renders `glyph` of face `face` (of `Placed.face`) at `size64` / 64
-    /// px per em, antialiased; null when FreeType cannot.
-    pub fn render(self: *mut Self, face: u32, size64: i64, glyph: u32) ?GlyphBitmap {
+    /// px per em, antialiased, with synthetic bold when `bold` (the
+    /// outline grown by 1/24 em, as Skia's FreeType backend does); null
+    /// when FreeType cannot.
+    pub fn render(self: *mut Self, face: u32, size64: i64, glyph: u32, bold: bool) ?GlyphBitmap {
         let fc = self.faces.items()[face as usize]
         let ft = fc.ft
         var flags = FT_LOAD_RENDER_LIGHT
@@ -802,11 +940,23 @@ pub struct System {
         } else if FT_Set_Char_Size(ft, 0, size64, 72, 72) != 0 {
             return null
         }
+        let embolden = bold && !fc.color
+        if embolden {
+            flags = FT_LOAD_OUTLINE_LIGHT
+        }
         if FT_Load_Glyph(ft, glyph, flags) != 0 {
             return null
         }
         if ft.glyph |g| {
             let slot = @ptrCast(*mut FTGlyphSlot, g)
+            if embolden {
+                if slot.format == FT_GLYPH_FORMAT_OUTLINE {
+                    FT_Outline_Embolden(&mut slot.outline, size64 / 24)
+                }
+                if FT_Render_Glyph(slot, FT_RENDER_MODE_LIGHT) != 0 {
+                    return null
+                }
+            }
             let mode = slot.bitmap.pixel_mode
             let color = mode == FT_PIXEL_MODE_BGRA
             if mode != FT_PIXEL_MODE_GRAY && !color && slot.bitmap.rows > 0 {
@@ -827,11 +977,47 @@ pub struct System {
     }
 }
 
-fn faceOf(ft: *mut FTFaceRec, data: []mut u8) Face {
+fn faceOf(library: *mut FTLibraryRec, ft: *mut FTFaceRec, data: []mut u8, path: []u8) Face {
     let color = (ft.face_flags & FT_FACE_FLAG_SCALABLE) == 0 && (ft.face_flags & FT_FACE_FLAG_COLOR) != 0
+    // The OS/2 weight class; at least 700 for a face styled bold.
+    var weight = 400.0
+    if FT_Get_Sfnt_Table(ft, FT_SFNT_OS2) |os2| {
+        if os2.us_weight_class >= 100 && os2.us_weight_class <= 1000 {
+            weight = os2.us_weight_class as f64
+        }
+    }
+    if (ft.style_flags & FT_STYLE_FLAG_BOLD) != 0 && weight < 700.0 {
+        weight = 700.0
+    }
+    var lo = weight
+    var hi = weight
+    var axis: i32 = -1
+    if (ft.face_flags & FT_FACE_FLAG_MULTIPLE_MASTERS) != 0 {
+        var mm: ?*mut FTMMVar = null
+        if FT_Get_MM_Var(ft, &mut mm) == 0 {
+            if mm |m| {
+                if m.axis |axes| {
+                    for k in 0..m.num_axis as usize {
+                        if axes[k].tag as u64 == WGHT_TAG && axes[k].minimum < axes[k].maximum {
+                            axis = k as i32
+                            lo = axes[k].minimum as f64 / 65536.0
+                            hi = axes[k].maximum as f64 / 65536.0
+                        }
+                    }
+                }
+                FT_Done_MM_Var(library, m)
+            }
+        }
+    }
     return Face {
         ft: ft,
         data: data,
+        own: true,
+        path: path,
+        lo: lo,
+        hi: hi,
+        axis: axis,
+        wght: 0.0,
         kerning: (ft.face_flags & FT_FACE_FLAG_KERNING) != 0,
         color: color,
         hb: null,
@@ -946,6 +1132,30 @@ fn mirrored(c: u32) u32 {
     }
 }
 
+// Sets the `wght` axis (axis `axis`) of the variable face `ft` to `w`,
+// the other axes to their defaults.
+fn setWeight(library: *mut FTLibraryRec, ft: *mut FTFaceRec, axis: i32, w: f64) bool {
+    var mm: ?*mut FTMMVar = null
+    if FT_Get_MM_Var(ft, &mut mm) != 0 {
+        return false
+    }
+    var ok = false
+    if mm |m| {
+        var coords = [16]c_long{0, ..}
+        if m.axis |axes| {
+            if m.num_axis as usize <= 16 && axis >= 0 && (axis as usize) < m.num_axis as usize {
+                for k in 0..m.num_axis as usize {
+                    coords[k] = axes[k].def
+                }
+                coords[axis as usize] = math.floor(w * 65536.0) as c_long
+                ok = FT_Set_Var_Design_Coordinates(ft, m.num_axis, coords[..].ptr) == 0
+            }
+        }
+        FT_Done_MM_Var(library, m)
+    }
+    return ok
+}
+
 // The face `index` of the font file `path`, null when FreeType cannot
 // open it.
 fn openFace(alloc: Allocator, library: *mut FTLibraryRec, path: []u8, index: i64) ?*mut FTFaceRec {
@@ -971,8 +1181,8 @@ fn openFace(alloc: Allocator, library: *mut FTLibraryRec, path: []u8, index: i64
 }
 
 // The first face of the files in `list` (separated by `|`) with the
-// wanted style.
-fn findFace(alloc: Allocator, library: *mut FTLibraryRec, list: []u8, bold: bool, italic: bool) ?*mut FTFaceRec {
+// wanted style; its file goes to `found`.
+fn findFace(alloc: Allocator, library: *mut FTLibraryRec, list: []u8, bold: bool, italic: bool, found: *mut []u8) ?*mut FTFaceRec {
     let want = styleFlags(bold, italic)
     var paths = text.split(list, "|")
     while paths.next() |path| {
@@ -982,6 +1192,7 @@ fn findFace(alloc: Allocator, library: *mut FTLibraryRec, list: []u8, bold: bool
             if openFace(alloc, library, path, index) |face| {
                 count = face.num_faces
                 if (face.style_flags & 3) == want && face.units_per_em > 0 {
+                    found.* = path
                     return face
                 }
                 FT_Done_Face(face)

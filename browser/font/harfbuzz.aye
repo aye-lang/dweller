@@ -18,6 +18,11 @@ extern struct HbGlyphInfo {
     var2: u32
 }
 
+extern struct HbVariation {
+    tag: u32
+    value: f32
+}
+
 extern struct HbGlyphPosition {
     x_advance: i32
     y_advance: i32
@@ -31,6 +36,7 @@ extern fn hb_face_destroy(face: *mut HbFace)
 extern fn hb_font_create(face: *mut HbFace) ?*mut HbFont
 extern fn hb_font_destroy(font: *mut HbFont)
 extern fn hb_font_set_scale(font: *mut HbFont, x: i32, y: i32)
+extern fn hb_font_set_variations(font: *mut HbFont, variations: [*]HbVariation, n: u32)
 extern fn hb_buffer_create() ?*mut HbBuffer
 extern fn hb_buffer_destroy(buf: *mut HbBuffer)
 extern fn hb_buffer_clear_contents(buf: *mut HbBuffer)
@@ -53,15 +59,22 @@ pub struct HbGlyph {
     y_offset: i32
 }
 
-// The HarfBuzz font of a FreeType face, in font units; null when
-// HarfBuzz cannot read it. Only called where `@hasLink("harfbuzz")`.
-fn hbFontOf(ft: *mut FTFaceRec) ?*mut HbFont {
+// The HarfBuzz font of a FreeType face, in font units, at the `wght`
+// coordinate `wght` when it is not 0 (a weight instance of a variable
+// face: HarfBuzz reads the face's tables, not FreeType's coordinates);
+// null when HarfBuzz cannot read it. Only called where
+// `@hasLink("harfbuzz")`.
+fn hbFontOf(ft: *mut FTFaceRec, wght: f64) ?*mut HbFont {
     if hb_ft_face_create_referenced(ft) |face| {
         let font = hb_font_create(face)
         hb_face_destroy(face)
         if font |f| {
             let upem = ft.units_per_em as i32
             hb_font_set_scale(f, upem, upem)
+            if wght > 0.0 {
+                var v = [1]HbVariation{HbVariation { tag: 0x77676874, value: wght as f32 }}
+                hb_font_set_variations(f, v[..].ptr, 1)
+            }
             return f
         }
     }

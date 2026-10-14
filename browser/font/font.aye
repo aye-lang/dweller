@@ -210,7 +210,7 @@ test "system fonts, when there are any" {
     @expect(w2 > m.width(f, "AVATAR") + m.width(f, "Hello"))
     @expect(placed.items()[11].x > placed.items()[10].x)
     let g = placed.items()[7]
-    if s.render(g.face, 16 * 64, g.glyph) |bm| {
+    if s.render(g.face, 16 * 64, g.glyph, false) |bm| {
         @expect(bm.width > 4 && bm.width < 20)
         @expect(bm.top > 8 && bm.top < 16)
         @expect(bm.buffer != null)
@@ -338,4 +338,85 @@ test "web fonts by family, weight and unicode-range" {
         return
     }
     @expect(placed.items()[0].face != placed.items()[1].face)
+}
+
+// The ink of glyph `p` (the sum of its coverage bytes).
+fn inkOf(s: *mut System, p: Placed) u64 {
+    var ink: u64 = 0
+    if s.render(p.face, 48 * 64, p.glyph, p.bold) |bm| {
+        if bm.buffer |buf| {
+            for row in 0..bm.rows as usize {
+                for col in 0..bm.width as usize {
+                    ink += buf[row * bm.pitch as usize + col] as u64
+                }
+            }
+        }
+    }
+    return ink
+}
+
+test "synthetic bold and variable weights" {
+    var s = System.init(@testAllocator()) catch |e| {
+        return
+    }
+    defer s.deinit()
+    var file: []mut u8 = []mut u8{}
+    if std.fs.open("browser/tests/fonts/tinyvar.ttf") |f| {
+        defer f.close()
+        file = f.readAll(@testAllocator()) catch |e| {
+            return
+        }
+    } else |e| {
+        return
+    }
+    defer @testAllocator().free(file)
+    let all = [2]u32{0, 0x10FFFF}
+    let d = FaceDesc { family: "TinyVar", weight_lo: 100.0, weight_hi: 900.0, italic: false, ranges: all[..], url: "https://f.test/var.ttf" }
+    let added = s.addWebFont(d, file) catch |e| {
+        return
+    }
+    @expect(added)
+    // A variable face: its advances and outlines follow the weight
+    // (the "D" advance is 600 units at 400, 680 at 900).
+    let regular = Font { size: 16.0, bold: false, italic: false, mono: false, family: "TinyVar" }
+    let heavy = Font { size: 16.0, bold: true, italic: false, mono: false, weight: 900.0, family: "TinyVar" }
+    @expectEqual(9.6, s.width(regular, "D"))
+    let wh = s.width(heavy, "D")
+    @expect(wh > 10.87 && wh < 10.89)
+    var a = List(Placed).init(@testAllocator())
+    defer a.deinit()
+    var b = List(Placed).init(@testAllocator())
+    defer b.deinit()
+    s.shapeText(regular, "D", &mut a) catch |e| {
+        return
+    }
+    s.shapeText(heavy, "D", &mut b) catch |e| {
+        return
+    }
+    @expect(a.items()[0].face != b.items()[0].face)
+    // The heavy instance draws its own (heavy) outline, not a synthetic
+    // bold one.
+    @expect(!b.items()[0].bold)
+    @expect(inkOf(&mut s, b.items()[0]) > inkOf(&mut s, a.items()[0]) * 3 / 2)
+    // A face of one weight (the 400 of its `@font-face` rule) gets
+    // synthetic bold at 600 and more: more ink, the same advance.
+    let one = FaceDesc { family: "TinyOne", weight_lo: 400.0, weight_hi: 400.0, italic: false, ranges: all[..], url: "https://f.test/one.ttf" }
+    let added1 = s.addWebFont(one, file) catch |e| {
+        return
+    }
+    @expect(added1)
+    let plain = Font { size: 16.0, bold: false, italic: false, mono: false, family: "TinyOne" }
+    let bold = Font { size: 16.0, bold: true, italic: false, mono: false, weight: 700.0, family: "TinyOne" }
+    @expectEqual(s.width(plain, "D"), s.width(bold, "D"))
+    a.clear()
+    b.clear()
+    s.shapeText(plain, "D", &mut a) catch |e| {
+        return
+    }
+    s.shapeText(bold, "D", &mut b) catch |e| {
+        return
+    }
+    @expect(!a.items()[0].bold)
+    @expect(b.items()[0].bold)
+    @expect(inkOf(&mut s, b.items()[0]) > inkOf(&mut s, a.items()[0]) * 11 / 10)
 }
