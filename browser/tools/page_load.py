@@ -436,14 +436,21 @@ def check(args, sites):
     expectations = json.loads(EXPECTATIONS.read_text())["sites"]
     if set(expectations) != set(SITES):
         raise SystemExit(f"{EXPECTATIONS}: sites differ from SITES: {sorted(set(expectations) ^ set(SITES))}")
-    print(f"{'site':<14} {'status':<9} {'errors':>6} {'wall':>7} {'cpu':>7} {'load':>5}  task   result  missing", flush=True)
+    print(f"{'site':<14} {'status':<9} {'errors':>6} {'wall':>7} {'cpu':>7} {'load':>5}  task   result  visual   missing",
+          flush=True)
     failed = []
+    # W3: content passes and the screens review found no defect; excluded sites are not counted.
+    w3_pass, w3_judged = [], []
     screens = {}
     for name in sites:
         expect = expectations[name]
         judged = expect["status"] != "excluded"
         directory = args.archive / name
         url = SITES[name]
+        visual = expect.get("visual")
+        shown = "-" if not visual else visual["status"] if visual["status"] == "ok" else f"defects:{len(visual['defects'])}"
+        if judged:
+            w3_judged.append(name)
         try:
             url = json.loads((directory / "manifest.json").read_text())["url"]
             result = run(args.binary, url, directory)
@@ -451,7 +458,7 @@ def check(args, sites):
             errors = console_errors(args.binary, url, directory)
         except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
             print(f"{name:<14} {expect['status']:<9} {'-':>6} {'-':>7} {'-':>7} {'-':>5}  {'-':<5}  "
-                  f"{'FAIL' if judged else 'skip':<6}  {str(error).splitlines()[0]}", flush=True)
+                  f"{'FAIL' if judged else 'skip':<6}  {shown:<8} {str(error).splitlines()[0]}", flush=True)
             if judged:
                 failed.append(name)
             if args.screens:
@@ -471,7 +478,11 @@ def check(args, sites):
             failed.append(name)
         count = f"{len(errors)}/{expect['max_errors']}"
         print(f"{name:<14} {expect['status']:<9} {count:>6} {result['wall']:6.2f}s {result['cpu']:6.2f}s "
-              f"{result['load']:5.1f}  {task:<5}  {verdict:<6}  {', '.join(map(repr, missing)) or '-'}", flush=True)
+              f"{result['load']:5.1f}  {task:<5}  {verdict:<6}  {shown:<8} {', '.join(map(repr, missing)) or '-'}", flush=True)
+        if verdict == "pass" and visual and visual["status"] == "ok":
+            w3_pass.append(name)
+        if visual and visual["status"] != "ok":
+            print(f"  visual {visual['date']}: {'; '.join(visual['defects'])}", flush=True)
         if result.get("fallbacks"):
             print(f"  fallback: {len(result['fallbacks'])} non-GET requests, first {result['fallbacks'][0]}", flush=True)
         if task_failure:
@@ -494,6 +505,8 @@ def check(args, sites):
                              "notes": notes + screen(args.binary, name, url, directory)}
     if args.screens:
         contact_sheet(screens, "check")
+    print(f"W3 (content pass and visual ok, excluded sites not counted): {len(w3_pass)} of {len(w3_judged)}; "
+          f"not yet: {', '.join(n for n in w3_judged if n not in w3_pass) or '-'}", flush=True)
     if failed:
         raise SystemExit(f"{len(failed)} of {len(sites)} sites miss their expectations: {', '.join(failed)}")
 
