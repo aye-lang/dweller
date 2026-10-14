@@ -14,8 +14,6 @@ import std.mem.Allocator
 import std.text
 import url.Url
 
-let dirent = @cimport("dirent.h")
-
 fn archiveDir(name: []u8) ?[]u8 {
     if getenv(name.ptr) |p| {
         return p[0..strlen(p)]
@@ -99,18 +97,13 @@ fn fallback(alloc: Allocator, dir: []u8, target: *Url, req: Request) FetchError!
     // The URL's GET record, which must not answer.
     let get = try archivePath(alloc, dir, target, Request {})
     defer alloc.free(get)
-    var cdir = text.Builder.init(alloc)
-    defer cdir.deinit()
-    try cdir.append(dir)
-    try cdir.appendByte(0)
-    let handle = dirent.opendir(cdir.bytes().ptr) orelse return null
-    defer dirent.closedir(handle)
+    let entries = std.fs.readDir(alloc, dir) catch |e| { return null }
+    defer entries.deinit()
     var best = text.Builder.init(alloc)
     defer best.deinit()
     var best_time: i64 = 0
-    while dirent.readdir(handle) |entry| {
-        // `d_name` ends with a NUL; only macOS has `d_namlen`.
-        let name = entry.d_name[0..strlen(entry.d_name[..].ptr)]
+    for entry in entries.items {
+        let name = entry.name
         if !text.endsWith(name, ".response") {
             continue
         }
