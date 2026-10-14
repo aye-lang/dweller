@@ -520,6 +520,24 @@ asks `/held-now` from the observer's first report, so the load is after
 that report on any machine; the frame budget (400) only has to be large.
 **Why:** the page's own state, not a clock, orders the two events.
 
+### Let the test server wait for every request it must hold
+**Context:** `http_images_background` failed once on Linux CI (PR #7,
+a docs-only change): `error b` instead of `load b`, `true/0` at the
+window's load.
+**Bad:** `/held-now` counted as soon as one `/held/` request was in
+flight and answered those. Each image comes on its own connection, and
+the server's threads reach the handler in any order (Fetch runs each
+fetch "in parallel"; nothing orders them at the server). An image that
+arrived after the count waited for a second `/held-now` that never came,
+until `HOLD_LIMIT` (30 s), past libcurl's 30 s total timeout: `error`
+(in the window test, run 38519570247: no `load c` and no window load
+within 400 frames). Not the engine: forcing `?b` 1 s late at the server
+failed 1 run in 1.
+**Good:** the page names what it holds, `/held-now?a,b,c,d`, and the
+server answers only once those queries are all in flight. Forced: 0 in 3.
+**Why:** "at least one arrived" is not "all arrived"; a wait on the
+server must name every request whose answer it releases.
+
 ### Change what a task's event reports in that same task
 **Context:** `window_relayout_after_image_load` failed on Linux CI: the
 observer reported `below visible: false` before `load wide`.

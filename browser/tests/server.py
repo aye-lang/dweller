@@ -49,6 +49,9 @@
 #                    flight, as text/plain; then it answers them
 #                    (waits stop after HOLD_LIMIT s, which only a broken
 #                    browser reaches)
+#   /held-now?A,B    as /held-now, but once the /held/ requests whose
+#                    queries are A and B are in flight (requests on
+#                    separate connections arrive in any order)
 import gzip
 import html
 import json
@@ -80,9 +83,10 @@ LOG = []
 SLOW = {"now": 0, "peak": 0}
 SLOW_LOCK = threading.Lock()
 
-# The /held/ requests in flight, and the number of /held-now requests
-# answered: a /held/ request waits until that number changes.
-HELD = {"now": 0, "counted": 0, "failed": 0}
+# The /held/ requests in flight (and the queries of those), and the
+# number of /held-now requests answered: a /held/ request waits until
+# that number changes.
+HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
 
@@ -176,16 +180,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 HELD_CHANGED.wait_for(lambda: HELD["failed"] > 0, HOLD_LIMIT)
             self.reply_file(path[len("/after-fail/"):])
         elif path.startswith("/held/"):
+            query = urllib.parse.urlsplit(path).query
             with HELD_CHANGED:
                 counted = HELD["counted"]
                 HELD["now"] += 1
+                HELD["queries"].append(query)
                 HELD_CHANGED.notify_all()
                 HELD_CHANGED.wait_for(lambda: HELD["counted"] > counted, HOLD_LIMIT)
                 HELD["now"] -= 1
+                HELD["queries"].remove(query)
             self.reply_file(path[len("/held/"):])
-        elif path == "/held-now":
+        elif path == "/held-now" or path.startswith("/held-now?"):
+            names = [q for q in urllib.parse.urlsplit(path).query.split(",") if q]
             with HELD_CHANGED:
-                HELD_CHANGED.wait_for(lambda: HELD["now"] > 0, HOLD_LIMIT)
+                HELD_CHANGED.wait_for(
+                    lambda: HELD["now"] > 0 and all(q in HELD["queries"] for q in names),
+                    HOLD_LIMIT,
+                )
                 now = HELD["now"]
                 HELD["counted"] += 1
                 HELD_CHANGED.notify_all()
