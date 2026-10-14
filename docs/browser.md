@@ -678,7 +678,9 @@ on (`--no-js` turns it off), `dump` with `--js`.
     the classes the sheets name, form state, viewport and container
     sizes). `browser/tools/page_load.py` captures every listed site to
     an archive (`target/sites/`) and replays it offline, with median
-    wall time, CPU time and load average; `check` replays every site
+    wall time, CPU time and load average (each run's output goes to
+    `target/page-load-out/<site>/last.stdout` and `last.stderr`, never
+    into the archive; the CPU/wall warning needs a run of 1 s or more); `check` replays every site
     against `browser/tools/sites.json` (status, most console errors,
     Markdown it must contain), `check --agent` also runs one agent task
     per site (`browser/tools/agent_tasks/`). Capture also records what

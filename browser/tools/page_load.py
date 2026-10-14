@@ -60,11 +60,17 @@ TASKS = Path(__file__).with_name("agent_tasks")
 SNAPSHOT_REF = re.compile(r'\s*- (\S+)(?: "((?:[^"\\]|\\.)*)")?.*? \[(e\d+)\](?:.*? -> (\S+))?')
 # Below this CPU/wall ratio the machine was too busy for wall time to mean anything.
 BUSY_RATIO = 0.8
+# ...but only on runs at least this long: the browser's fixed non-CPU time (exec, dyld, final
+# flush, reaping) is tens of ms, so on a run under a second it alone pushes CPU/wall below
+# BUSY_RATIO; at 1 s it is under 10% of wall, inside the 20% the ratio allows.
+BUSY_MIN_WALL = 1.0
 # --screens: the contact sheet, and the viewport of each screenshot (its first 2000 px).
 SCREENS = Path("target/screens")
 SCREEN_SIZE = ("1280", "2000")
 # run --live: where each site's last output goes (there is no archive).
 LIVE = Path("target/live")
+# Every run's last stdout/stderr, one directory per site: the archive folder stays what was recorded.
+OUT = Path("target/page-load-out")
 
 
 def run(binary, url, directory, record=False, sample=None, screenshot=False, live=False):
@@ -78,9 +84,11 @@ def run(binary, url, directory, record=False, sample=None, screenshot=False, liv
     if screenshot:
         command = [str(binary.resolve()), "screenshot", url, "-o",
                    str(directory / "paint.png"), "--font", "fixed"]
+    out_directory = OUT / directory.name
+    out_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
     # Files rather than pipes: sample must not block a verbose child.
-    with (directory / "last.stdout").open("wb") as out, (directory / "last.stderr").open("wb") as err:
+    with (out_directory / "last.stdout").open("wb") as out, (out_directory / "last.stderr").open("wb") as err:
         process = subprocess.Popen(command, env=env, stdout=out, stderr=err)
         sampler = None
         try:
@@ -104,8 +112,8 @@ def run(binary, url, directory, record=False, sample=None, screenshot=False, liv
                 except subprocess.TimeoutExpired:
                     sampler.kill()
                     sampler.wait()
-    stdout = (directory / "last.stdout").read_bytes()
-    stderr = (directory / "last.stderr").read_text(errors="replace")
+    stdout = (out_directory / "last.stdout").read_bytes()
+    stderr = (out_directory / "last.stderr").read_text(errors="replace")
     if status or "archive miss:" in stderr or "cannot record archive:" in stderr:
         problems = "\n".join(line for line in stderr.splitlines() if "archive miss:" in line or "cannot record archive:" in line)
         raise RuntimeError(f"{url}: exit {status}\n{problems}\n{stderr[-4000:]}")
@@ -141,9 +149,9 @@ def summarize(runs):
 
 
 def busy_warning(name, result):
-    """A warning line when CPU/wall < BUSY_RATIO, else None."""
+    """A warning line when CPU/wall < BUSY_RATIO on a run of at least BUSY_MIN_WALL seconds, else None."""
     ratio = result["cpu"] / result["wall"] if result["wall"] else 1.0
-    if ratio < BUSY_RATIO:
+    if result["wall"] >= BUSY_MIN_WALL and ratio < BUSY_RATIO:
         return (f"  warning: {name}: cpu/wall {ratio:.2f} < {BUSY_RATIO} (load {result['load']:.1f}): "
                 "the machine was too busy for wall time to mean anything; compare cpu")
     return None
@@ -244,7 +252,7 @@ def main():
     parser.add_argument("--screens", action="store_true",
                         help=f"screenshot each site into {SCREENS}/ and write the contact sheet {SCREENS}/index.html")
     parser.add_argument("--live", action="store_true",
-                        help=f"run: load each site from the network, not an archive (output in {LIVE}/)")
+                        help=f"run: load each site from the network, not an archive (directory {LIVE}/; output in {OUT}/)")
     args = parser.parse_args()
     if args.repeat < 1 or args.warmup < 0:
         parser.error("--repeat must be positive and --warmup nonnegative")
@@ -439,7 +447,7 @@ def check(args, sites):
         try:
             url = json.loads((directory / "manifest.json").read_text())["url"]
             result = run(args.binary, url, directory)
-            markdown = (directory / "last.stdout").read_text(errors="replace")
+            markdown = (OUT / name / "last.stdout").read_text(errors="replace")
             errors = console_errors(args.binary, url, directory)
         except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
             print(f"{name:<14} {expect['status']:<9} {'-':>6} {'-':>7} {'-':>7} {'-':>5}  {'-':<5}  "
@@ -508,7 +516,7 @@ def rebless(args, sites):
             reference = directory / "reference.md"
             old = reference.read_text(errors="replace") if reference.exists() else None
             result = run(args.binary, manifest["url"], directory)
-            new = (directory / "last.stdout").read_text(errors="replace")
+            new = (OUT / name / "last.stdout").read_text(errors="replace")
             missing = missing_md(name, new)
             if missing:
                 raise RuntimeError(f"replay misses sites.json strings {missing}; reference kept")
@@ -544,12 +552,12 @@ def load_site(args, name):
         if manifest_path.exists() or list(directory.glob("*.response")):
             raise RuntimeError(f"{directory}: use a new directory for an immutable capture")
         result = run(args.binary, SITES[name], directory, record=True)
-        missing = missing_md(name, (directory / "last.stdout").read_text(errors="replace"))
+        missing = missing_md(name, (OUT / name / "last.stdout").read_text(errors="replace"))
         if missing:
             # Only an empty directory gets here (an archive is refused above): drop the bad capture.
             shutil.rmtree(directory)
             raise RuntimeError(f"{name}: captured page misses sites.json strings {missing}; not saved")
-        (directory / "reference.md").write_bytes((directory / "last.stdout").read_bytes())
+        (directory / "reference.md").write_bytes((OUT / name / "last.stdout").read_bytes())
         steps = task_steps(name)
         task_failure, task_errors = agent_task(args.binary, SITES[name], directory, steps, record=True) \
             if steps else (None, None)
