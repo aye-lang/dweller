@@ -36,8 +36,6 @@ import std.heap.Arena
 import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
-import std.process
-import std.process.Stdio
 import std.text
 
 extern fn socketpair(domain: i32, kind: i32, protocol: i32, sv: [*]i32) i32
@@ -47,6 +45,8 @@ extern fn setenv(name: [*]u8, value: [*]u8, overwrite: i32) i32
 extern fn getpid() i32
 extern fn waitpid(pid: i32, status: *mut i32, options: i32) i32
 extern fn kill(pid: i32, sig: i32) i32
+extern fn posix_spawnp(pid: *mut i32, file: [*]u8, actions: ?[*]u8, attrs: ?[*]u8, argv: [*]?[*]u8, envp: [*]?[*]u8) i32
+extern fn _NSGetEnviron() *[*]?[*]u8
 
 let WNOHANG: i32 = 1
 let SIGKILL: i32 = 9
@@ -164,8 +164,9 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     if !a.space_js {
         try argv.append("--no-js")
     }
-    let child = process.spawn(tmp, argv.items(), Stdio.Inherit, Stdio.Inherit, Stdio.Inherit) catch |e| {
-        std.log.err("cannot start a Space ({})", e)
+    let pid = try spawnProgram(tmp, argv.items())
+    if pid <= 0 {
+        std.log.err("cannot start a Space")
         closeFd(sv[0])
         closeFd(sv[1])
         rmdir(template.ptr)
@@ -175,7 +176,7 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     }
     closeFd(sv[1])
     c.space = try ui.alloc.create(Space {
-        pid: child.pid,
+        pid: pid,
         ctl: sv[0],
         fd: -1,
         path: path,
@@ -185,6 +186,62 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
         shut: false,
         ended: false,
     })
+}
+
+// Starts the program `argv[0]` (found on the PATH when it has no `/`)
+// with the arguments `argv` and this process's environment; its process
+// id, or 0. posix_spawn, not fork: the window's memory is not copied, so
+// starting a Space takes the window's loop about a millisecond.
+fn spawnProgram(tmp: Allocator, argv: [][]u8) AllocError!i32 {
+    var strs = text.Builder.init(tmp)
+    for arg in argv {
+        try strs.append(arg)
+        try strs.appendByte(0)
+    }
+    let none: ?[*]u8 = null
+    let ptrs = try tmp.alloc(none, argv.len + 1)
+    let all = strs.bytes()
+    var off: usize = 0
+    for k, arg in argv {
+        ptrs[k] = all[off..].ptr
+        off += arg.len + 1
+    }
+    var env: [*]?[*]u8 = ptrs.ptr
+    if @targetOs() is .macos {
+        env = _NSGetEnviron().*
+    } else {
+        env = (try linuxEnv(tmp)).ptr
+    }
+    var pid: i32 = 0
+    if posix_spawnp(&mut pid, ptrs[0].?, null, null, ptrs.ptr, env) != 0 {
+        return 0
+    }
+    return pid
+}
+
+// The environment this process started with (Linux), NULL-terminated.
+fn linuxEnv(tmp: Allocator) AllocError![]?[*]u8 {
+    let none: ?[*]u8 = null
+    let raw = std.fs.readFile(tmp, "/proc/self/environ") catch |e| {
+        return tmp.alloc(none, 1)
+    }
+    var n: usize = 0
+    for b in raw {
+        if b == 0 {
+            n += 1
+        }
+    }
+    let ptrs = try tmp.alloc(none, n + 1)
+    var k: usize = 0
+    var start: usize = 0
+    for i, b in raw {
+        if b == 0 {
+            ptrs[k] = raw[start..].ptr
+            k += 1
+            start = i + 1
+        }
+    }
+    return ptrs
 }
 
 fn number(tmp: Allocator, v: i64) AllocError![]u8 {
