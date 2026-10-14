@@ -220,6 +220,25 @@ pub let TEXT_OVERFLOW: usize = 111
 pub let WEBKIT_LINE_CLAMP: usize = 112
 pub let WEBKIT_BOX_ORIENT: usize = 113
 
+/// Does nothing in layout/ and engine/geometry.aye read the property
+/// (a box, line or script geometry cannot change with it)? Taken from
+/// what they read (`grep -o 'css\.[A-Z_]*' browser/layout/*.aye`); a
+/// property that layout starts to read must leave this list. Not
+/// `transform` (it moves boxes, transform.aye), `clip`, `clip-path` or
+/// `content`.
+pub fn paintOnly(p: usize) bool {
+    if p == COLOR || p == BACKGROUND_COLOR || p == TEXT_DECORATION_LINE || p == VISIBILITY || p == Z_INDEX || p == OBJECT_FIT {
+        return true
+    }
+    // Border styles count through the border widths they compute.
+    if p >= BORDER_TOP_STYLE && p < WIDTH {
+        return true
+    }
+    // SVG paint and `opacity`; backgrounds, masks, corner radii,
+    // shadows and dashes.
+    return (p >= FILL && p <= STOP_OPACITY) || (p >= BACKGROUND_IMAGE && p <= STROKE_DASHOFFSET)
+}
+
 let DISPLAYS = "inline block list-item inline-block table inline-table table-row-group table-header-group table-footer-group table-row table-cell table-column-group table-column table-caption flex inline-flex grid inline-grid flow-root contents none -webkit-box -webkit-inline-box"
 let BORDER_STYLES = "none hidden dotted dashed solid double groove ridge inset outset"
 let LIST_STYLES = "disc circle square decimal decimal-leading-zero lower-roman upper-roman lower-greek lower-alpha lower-latin upper-alpha upper-latin armenian georgian none"

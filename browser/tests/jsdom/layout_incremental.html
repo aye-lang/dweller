@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<title>Forced layouts that keep boxes or lay out one subtree</title>
+<style>
+body { margin: 0; font-size: 10px; width: 200px }
+/* Changes inside stop here: its height does not depend on them. */
+#page { height: 1200px }
+.red { color: red; background-color: yellow; opacity: 0.5 }
+.q::after { content: attr(class) }
+#fixed { height: 50px }
+.flex { display: flex }
+#abs, #rel { position: relative }
+#abs i, #rel i { position: absolute; top: 0; left: 0 }
+#sticky { position: sticky; top: 0 }
+#moved { transform: translate(3px, 4px) }
+#rel b { position: absolute; bottom: 0; right: 0 }
+</style>
+<div id="page">
+<div id="outer"><p id="t1">a</p><div id="box" style="height: 10px"></div><p id="q" class="q"></p></div>
+<div id="after">after <span id="s">span</span></div>
+<div id="fixed"><div id="mid"><p id="t2">b</p></div></div>
+<div id="wrap"><div class="flex"><p id="t3">c</p><p id="t4">d</p></div></div>
+<div id="sticky"><p id="t7">g</p></div>
+<div id="moved"><div id="rel"><p id="t8">h</p><i id="a2">x</i><b id="a3">y</b></div></div>
+</div>
+<div id="abs"><p id="t5">e</p><i id="a1">x</i></div>
+<div class="flex"><p id="t6">f</p></div>
+<p id="tail">tail</p>
+<pre id="out"></pre>
+<script>
+// Written at the end: a change to the document between the steps would
+// be noted too.
+const lines = [];
+function log(...parts) { lines.push(parts.join(' ')); }
+const $ = id => document.getElementById(id);
+function boxes() {
+  return [...document.body.querySelectorAll('*')].filter(e => e.id && e.id !== 'out').map(e => e.id + ':' + [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight, e.getBoundingClientRect().top].join(',')).join(' ');
+}
+// The boxes after a change, and whether they are those of a full layout
+// (a new style sheet styles and lays out the whole document).
+function check(name) {
+  const fast = boxes();
+  const sheet = document.createElement('style');
+  sheet.textContent = '.unused {}';
+  document.head.append(sheet);
+  const full = boxes();
+  sheet.remove();
+  boxes();
+  log(name, fast === full ? 'same' : 'DIFF full ' + full, fast);
+}
+const long = 'a long text that wraps over more than one line in two hundred px';
+const steps = [
+  // Paint only: the boxes stay.
+  ['color', () => { $('t1').style.color = 'blue'; }],
+  ['opacity and background', () => { $('box').style.opacity = '0.3'; $('box').style.backgroundColor = 'red'; }],
+  ['visibility', () => { $('t2').style.visibility = 'hidden'; }],
+  ['paint-only class', () => $('t1').classList.add('red')],
+  // Moves boxes: transforms move their subtree.
+  ['transform', () => { $('box').style.transform = 'translateX(5px)'; }],
+  ['transform off', () => { $('box').style.transform = ''; }],
+  // Text in a block: its subtree only, or up while sizes change.
+  ['same-size text', () => { $('t1').textContent = 'z'; }],
+  ['text that wraps', () => { $('t1').textContent = long; }],
+  ['text back', () => { $('t1').textContent = 'a'; }],
+  ['text in a fixed-height block', () => { $('t2').textContent = long; }],
+  ['height that propagates', () => { $('box').style.height = '30px'; }],
+  ['height under a fixed height', () => { $('t2').style.height = '20px'; }],
+  ['margin', () => { $('t1').style.marginTop = '7px'; }],
+  ['inserted child', () => $('outer').insertBefore(Object.assign(document.createElement('div'), { id: 'n1', textContent: 'new' }), $('box'))],
+  ['removed child', () => $('n1').remove()],
+  ['display none', () => { $('box').style.display = 'none'; }],
+  ['display back', () => { $('box').style.display = ''; }],
+  ['content: attr()', () => $('q').classList.add('longer-class-name')],
+  ['text in an inline', () => { $('s').textContent = long; }],
+  ['text in a flex item', () => { $('t3').textContent = long; }],
+  ['text and paint at once', () => { $('t1').textContent = 'bb'; $('t4').style.color = 'red'; }],
+  ['two texts', () => { $('t1').textContent = 'cc'; $('t2').textContent = 'b'; }],
+  ['text in a sticky box', () => { $('t7').textContent = long; }],
+  ['text beside absolute boxes in a transformed box', () => { $('t8').textContent = long; }],
+  ['scrolled, text in a sticky box', () => { window.scrollTo(0, 300); $('t7').textContent = 'k'; }],
+  ['a box made sticky', () => { $('wrap').style.position = 'sticky'; $('wrap').style.top = '2px'; }],
+  ['a transform on the box laid out', () => { $('t1').style.transform = 'translateY(2px)'; $('t1').textContent = 'dd'; }],
+  // Not local: a full layout.
+  ['text beside an absolute box', () => { $('t5').textContent = long; }],
+  ['text in a flex item under the body', () => { $('t6').textContent = long; }],
+  ['text that moves what follows #page', () => { $('page').style.height = '410px'; $('tail').textContent = 'end'; }],
+];
+check('start');
+for (const [name, change] of steps) {
+  change();
+  check(name);
+}
+$('out').textContent = lines.join('\n') + '\n';
+</script>

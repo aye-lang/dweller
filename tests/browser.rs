@@ -2647,7 +2647,14 @@ fn jsdom_case(
         .into_owned();
     let mut all: Vec<&str> = args.to_vec();
     all.push(&rel);
-    let out = run(&all);
+    // Each forced layout that keeps boxes is compared with a full one; a
+    // difference goes to stderr ("LAYOUT CHECK").
+    let out = Command::new(anyknown())
+        .current_dir(root())
+        .env("ANYKNOWN_LAYOUT_CHECK", "1")
+        .args(&all)
+        .output()
+        .unwrap();
     let got = rooted(&text(&out.stdout));
     let stderr = rooted(&text(&out.stderr));
     if bless {

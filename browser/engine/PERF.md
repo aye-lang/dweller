@@ -319,39 +319,62 @@ JS and canvas raster in the iframes (a 10 s sample during the timers:
 `canvasComposite`, `canvasPaint`, `svg.Rasterizer.scan`,
 `paint.sampleImage` lead the non-idle leaves).
 
-### Next card proposal: incremental layout for forced reads (P3.64)
+**Mistral, 2026-10-14** (P3.64, incremental layout for forced reads):
+CPU per replay 32.5 s → 26.2 s, wall 33.0 → 26.4 s (medians of 3
+alternating runs; zol 28.1 → 28.2 s and github 5.48 → 5.43 s CPU, noise).
+Markdown of every site equals its reference; the screenshots of mistral,
+bbc, github and wikipedia-en are byte-identical.
 
-Most forced layouts follow an inline-style write (an animation frame)
-or a text change in one leaf, then read one box. Today `geometry()`
-keeps the styles (subtree restyle) but always calls `layOut` over the
-whole document. A design, not started:
+`geometry()` (`browser/engine/geometry.aye`) now keeps the layout tree
+when every change since the last layout was noted (`Script.layout_noted`
+counts them; an image's new source or bitmap is not) and is a children,
+`style` or `class` change:
 
-- State to keep: the layout tree of the last layout (already in
-  `Geometry`), plus, per box, the inputs it was laid out with (its
-  containing block width and the available height), and per block
-  container whether its height depends on its content (auto height,
-  shrink-to-fit, flex/grid item).
-- Local dirty kinds: (1) `style` writes whose changed properties are
-  paint-only (`transform`, `opacity`, `color`, `background-*`,
-  `filter`, `clip-path`): no layout at all, keep the tree, update the
-  box's style values; this covers most of Mistral's `span.word`, `div.frame`
-  and `iframe` writes. (2) a text change or a size change in a box whose
-  containing block has a fixed size (or `contain: layout/size`, an
-  `overflow` other than visible with a definite size): lay out that
-  subtree again with the stored inputs, and stop when its border box size
-  is unchanged; otherwise walk up to the first ancestor whose size does
-  not change, then shift the following siblings by the height delta.
-- Stays whole: viewport or sheet changes, `restyle_all`, inserts or
-  removals that change a formatting context's kind (block ↔ inline,
-  floats, positioned boxes, tables), anything inside a flex/grid
-  container (first version: lay out the container again), container
-  queries (the iframe's `queried`) until query containers are tracked.
-- Verify: a fixture like `layout_restyle_inline.html` that compares every
-  box after each change with a full layout (append an empty sheet), for
-  each dirty kind; `page_load.py check` Markdown hashes unchanged;
-  Mistral, ZOL and youtube-search CPU before/after.
-- Expected gain on Mistral: most of the ~10 s of layout; the canvas raster
-  (~10 s) is a separate card (P4.5-style: profile `canvasComposite`).
+- The subtree restyle reports the elements whose values that layout or
+  script geometry read changed (`Styles.moved`, `moved_els`;
+  `css.paintOnly` lists the rest: colors, backgrounds, borders' styles
+  and colors, `visibility`, `opacity`, `z-index`, shadows, radii, masks,
+  SVG paint; not `transform`, which moves boxes here). None: the boxes
+  stay as they are. The restyle then keeps the old value arrays
+  (`keep`), which the boxes still point at.
+- Else the dirty elements (those, and the parents of changed children)
+  are built again from the nearest element whose block box is in block
+  flow up to the root (`layout/incremental.aye` `canRebuild`; a flex
+  item's text: the block around the flex container), laid out in the
+  containing block of the last layout (`Box.cb_w`, `cb_h`), and up
+  through the ancestors while size, margins or baselines change; then
+  its absolutely positioned, transformed, fixed and sticky boxes as a
+  full layout does them (`finish`).
+- Whole document still: floats anywhere, container queries, shadow
+  trees, a dirty element with no such block (or the walk reaching the
+  root), a fixed box under a sticky one, more than 64 moved elements,
+  and when dropped boxes (`rebuild` leaves them in the arena) pass twice
+  the boxes of the last full layout.
+
+`ANYKNOWN_LAYOUT_CHECK=1` lays out the whole document after each kept or
+partial layout and logs the first box that differs ("LAYOUT CHECK"); the
+DOM fixtures run with it (`tests/browser.rs`), and so did a Mistral
+replay (0 differences). Fixture:
+`browser/tests/jsdom/layout_incremental.html` (paint-only writes, text in
+a block, a size that propagates, flex, sticky, transforms, `attr()`).
+
+| Document | Forced layouts | script_layout before | after | Path now |
+|---|---:|---:|---:|---|
+| main page | 872 | 4.8 s | 1.2 s | 64 boxes kept, 767 one subtree (mostly the ticker in the sticky footer), 41 whole |
+| visual-intelligence iframe | 6931 | 7.1 s | 5.2 s | 5951 boxes kept; 979 full cascades (container queries) |
+
+### Next card proposal (P3.64 slice 2)
+
+What is left of forced reads is style work, not layout. On the
+visual-intelligence iframe each kept read still hashes the whole
+document (`stylesCurrent` → `css.styleInputs`) 5951 times, and 979
+reads restyle the whole document because it uses container queries
+(`restyle` refuses `g.styles.queried`). Proposal: restyle subtrees in a
+`queried` document when no query container's size changed
+(`Styles.sizes`), and skip `stylesCurrent` when the noted changes are
+attribute writes that the subtree restyle can take. Measure per-read
+costs first (`ANYKNOWN_TIMING` `script_layout`, `cascade`). The canvas
+raster (~10 s, `canvasComposite`) stays a separate card.
 
 ## Live network check and remaining work
 

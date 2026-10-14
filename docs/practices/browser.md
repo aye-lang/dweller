@@ -703,6 +703,21 @@ value. Make the cascade itself cheap where it matters
 correct to force a layout, so its cost has to follow the size of the
 change, not of the document.
 
+### Keep a forced layout's boxes only behind a full-layout check
+**Context:** script geometry that keeps or partly redoes the last layout
+(`browser/engine/geometry.aye`, `browser/layout/incremental.aye`).
+**Bad:** which property changes may skip layout comes from a list
+(`css.paintOnly`), and a partial layout copies what a full one does
+after placing (absolutes, transforms, sticky). The first version placed
+a rebuilt box from its old position, which held its old transform: the
+boxes came out 5 px off, and nothing but a comparison showed it.
+**Good:** derive the list from what `layout/` reads (`grep -o
+'css\.[A-Z_]*' browser/layout/*.aye`), and run every kept or partial
+layout against a full one with `ANYKNOWN_LAYOUT_CHECK=1` (the DOM
+fixtures do; run a real replay with it too) before measuring.
+**Why:** a stale box is a wrong number for a script, not a crash; only a
+comparison with the full layout finds it.
+
 ### Count why a partial restyle gives up before raising its limits
 **Context:** a cache or partial update with a fallback to the full work
 (a cap, a "dirty everything" flag).

@@ -1,0 +1,295 @@
+// Incremental layout for script geometry (engine/geometry.aye): the
+// boxes of one element built again from its children and its computed
+// values (`rebuild`), laid out again in the containing block of the
+// last layout, then its parent and so on up while the box's size,
+// margins or baselines come out other than before (`relayout`).
+//
+// Only where the full layout gives the same: a block box in block flow
+// up to the root (no flex, grid or table around it, nothing
+// shrink-to-fit or out of flow, no line clamp), in a tree without
+// floats (`hasFloats`). The box laid out again and those under it are
+// then positioned, transformed and scrolled as in a full layout
+// (`finish`): the transforms and sticky offsets of the boxes above
+// moved all under them, also the absolutely positioned boxes (whose
+// containing block is such a box or one under it) but not the fixed
+// ones under a sticky box. Callers lay the tree out from scratch
+// otherwise (ANYKNOWN_LAYOUT_CHECK=1 compares the two).
+
+import css
+import dom
+import dom.Kind
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+/// Does the tree have a float? `relayout` assumes none: the lines beside
+/// a float depend on boxes outside the subtree laid out again.
+pub fn hasFloats(t: *Tree) bool {
+    for b in t.boxes.items() {
+        if b.float != 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// Is box `i` in block flow: a block box whose size does not depend on
+// the widths of its content (not shrink-to-fit, not a flex, grid or
+// table item), and not in the flow of a line clamp?
+fn inBlockFlow(t: *Tree, i: usize) bool {
+    let b = t.bx(i)
+    if (b.kind != BoxKind.Block && b.kind != BoxKind.Anonymous) || b.inline_level || b.oof() || lineClamp(t, i) > 0 || isFrameset(t, i) {
+        return false
+    }
+    if b.parent |p| {
+        let pk = t.bx(p).kind
+        return pk == BoxKind.Block || pk == BoxKind.Anonymous
+    }
+    return true
+}
+
+// Are box `i` and the boxes above it all in block flow?
+fn blockFlowUp(t: *Tree, i: usize) bool {
+    var cur: ?usize = i
+    while cur |c| {
+        if !inBlockFlow(t, c) {
+            return false
+        }
+        cur = t.bx(c).parent
+    }
+    return true
+}
+
+fn isStickyBox(b: *Box) bool {
+    return isKeyword(b.style[css.POSITION], "sticky")
+}
+
+// Do the elements that `buildChildren` would make boxes of under `el`
+// all have computed values?
+fn allStyled(t: *Tree, el: NodeId) bool {
+    var cur = dom.flatFirstChild(t.doc, el)
+    while cur |c| {
+        if t.doc.node(c).kind == Kind.Element {
+            let st = t.styles.get(c) orelse return false
+            if !isKeyword(st[css.DISPLAY], "none") && !allStyled(t, c) {
+                return false
+            }
+        }
+        cur = dom.flatNextSibling(t.doc, c)
+    }
+    return true
+}
+
+// Takes the nodes of the boxes under `i` away from them (into `out`):
+// the boxes stay in `Tree.boxes`, out of the tree.
+fn forgetBoxes(t: *mut Tree, i: usize, out: *mut List(NodeId)) AllocError!void {
+    let n = t.children(i).len
+    for k in 0..n {
+        let c = t.children(i)[k]
+        if t.bx(c).node |node| {
+            try out.append(node)
+        }
+        t.bx(c).node = null
+        try forgetBoxes(t, c, out)
+    }
+}
+
+/// Can the boxes under box `i` be built again (`rebuild`) and laid out
+/// again (`relayout`)? A block box of an element, in block flow up to
+/// the root, that its computed values keep as it is (not a list item,
+/// control or `details`, not out of flow).
+pub fn canRebuild(t: *Tree, i: usize) bool {
+    let el = t.bx(i).node orelse return false
+    if t.bx(i).pseudo != 0 || t.bx(i).kind != BoxKind.Block || t.doc.node(el).kind != Kind.Element || !blockFlowUp(t, i) {
+        return false
+    }
+    let style = t.styles.get(el) orelse return false
+    let display = keywordOf(style[css.DISPLAY])
+    let name = t.doc.node(el).name
+    let k = kindOf(name, display) orelse return false
+    if k.kind != BoxKind.Block || k.inline_level || text.eql(display, "list-item") || text.eql(name, "details") || text.eql(name, "frameset") {
+        return false
+    }
+    if isReplacedInput(t.doc, el) || controlKind(t.doc, el) != ControlKind.None {
+        return false
+    }
+    let pos = keywordOf(style[css.POSITION])
+    if text.eql(pos, "absolute") || text.eql(pos, "fixed") || !isKeyword(style[css.FLOAT], "none") {
+        return false
+    }
+    return allStyled(t, el)
+}
+
+/// Builds the boxes under box `i` (`canRebuild`) again from its element's
+/// children and computed values (also its own); the nodes of the boxes
+/// it drops go to `forgotten`. False when it builds a float: the tree
+/// must then be laid out from scratch.
+pub fn rebuild(t: *mut Tree, i: usize, forgotten: *mut List(NodeId)) AllocError!bool {
+    if !canRebuild(t, i) {
+        return false
+    }
+    let el = t.bx(i).node orelse return false
+    let style = t.styles.get(el) orelse return false
+    try forgetBoxes(t, i, forgotten)
+    let b = t.bx(i)
+    b.style = style
+    b.children = List(usize).init(t.alloc)
+    let first = t.boxes.len()
+    try buildPseudo(t, i, el, 1)
+    try buildChildren(t, i, el)
+    try buildPseudo(t, i, el, 2)
+    try fixUp(t, i)
+    for j in first..t.boxes.len() {
+        if t.bx(j).float != 0 {
+            return false
+        }
+    }
+    try prepareBox(t, i)
+    for j in first..t.boxes.len() {
+        try prepareBox(t, j)
+    }
+    return true
+}
+
+// `prepareText` for the lines of box `i`.
+fn prepareBox(t: *mut Tree, i: usize) AllocError!void {
+    if hasInlineContent(t, i) {
+        var space = true
+        var word = true
+        try prepareRun(t, i, &mut space, &mut word)
+    }
+}
+
+// Are the size, margins, baselines and offsets of `b` those of `a`
+// (what its parent's block flow reads of it)?
+fn sameOutside(a: Box, b: *Box) bool {
+    if a.w != b.w || a.h != b.h || a.through != b.through || a.first_baseline != b.first_baseline || a.last_baseline != b.last_baseline || a.rel_x != b.rel_x || a.rel_y != b.rel_y {
+        return false
+    }
+    for k in 0..4 {
+        if a.margin[k] != b.margin[k] {
+            return false
+        }
+    }
+    return a.top_strut.pos == b.top_strut.pos && a.top_strut.neg == b.top_strut.neg && a.bottom_strut.pos == b.bottom_strut.pos && a.bottom_strut.neg == b.bottom_strut.neg
+}
+
+// `sameOutside` but for the baselines.
+fn sameSize(a: Box, b: *Box) bool {
+    var c = a
+    c.first_baseline = b.first_baseline
+    c.last_baseline = b.last_baseline
+    return sameOutside(c, b)
+}
+
+// The baselines of the boxes above box `i` (laid out again; `old`
+// before), in block flow: from their first and last children's
+// (`childBaselines`), up while they change. False for a list item's
+// marker, which follows its first baseline.
+fn rebaseline(t: *mut Tree, i: usize, old: Box) bool {
+    var x = i
+    var was = old
+    while was.first_baseline != t.bx(x).first_baseline || was.last_baseline != t.bx(x).last_baseline {
+        let up = t.bx(x).parent orelse return true
+        if t.bx(up).marker.len > 0 {
+            return false
+        }
+        was = t.bx(up).*
+        let b = t.bx(up)
+        b.first_baseline = -1.0
+        b.last_baseline = -1.0
+        childBaselines(t, up)
+        x = up
+    }
+    return true
+}
+
+/// Lays box `i` out again in the containing block of the last layout,
+/// then its parent and so on while the box comes out other than before
+/// (`sameOutside`), and places the last one laid out where it was. False
+/// when that reaches the root or a box not in block flow: the tree must
+/// then be laid out from scratch.
+pub fn relayout(t: *mut Tree, i: usize) AllocError!bool {
+    if !blockFlowUp(t, i) {
+        return false
+    }
+    // Their content changed: no cached widths.
+    var cur: ?usize = i
+    while cur |c| {
+        t.bx(c).has_intrinsic = false
+        cur = t.bx(c).parent
+    }
+    var x = i
+    while true {
+        let old = t.bx(x).*
+        let up = old.parent orelse return false
+        t.clamp_left = 0
+        t.float_base = t.floats.len()
+        try layoutBlockLevel(t, x, old.cb_w, old.cb_h)
+        if sameOutside(old, t.bx(x)) || sameSize(old, t.bx(x)) {
+            let pb = t.bx(up)
+            place(t, x, pb.ax + pb.border[3] + pb.padding[3], pb.ay + pb.border[0] + pb.padding[0])
+            return (try finish(t, x)) && rebaseline(t, x, old)
+        }
+        x = up
+    }
+    return false
+}
+
+// After box `i` was laid out again and placed: what a full layout does
+// after placing (`layoutDocumentWith`), for it and the boxes under it.
+// Their absolutely positioned boxes (a box before those inside it),
+// then their transforms, then the fixed and sticky boxes of the whole
+// tree at the tree's scroll offset (`scrollTo`). False for a fixed box
+// under it and a sticky box above it (`scrollTo` moved it with that
+// one; it is placed in the viewport now).
+fn finish(t: *mut Tree, i: usize) AllocError!bool {
+    if hasFixed(t, i) {
+        var up = t.bx(i).parent
+        while up |u| {
+            if isStickyBox(t.bx(u)) {
+                return false
+            }
+            up = t.bx(u).parent
+        }
+    }
+    unshift(t, i)
+    try absolutesUnder(t, i)
+    try applyTransforms(t, i)
+    t.scrolled.clear()
+    try collectScrolled(t, t.root.?, false, false)
+    _ = scrollTo(t, t.scroll_y)
+    return true
+}
+
+fn hasFixed(t: *Tree, i: usize) bool {
+    for c in t.children(i) {
+        if t.bx(c).abs == 2 || hasFixed(t, c) {
+            return true
+        }
+    }
+    return false
+}
+
+// Box `i` and the boxes under it were placed again: none is transformed
+// or scrolled yet.
+fn unshift(t: *mut Tree, i: usize) {
+    t.bx(i).xform = null
+    t.bx(i).scroll_dy = 0.0
+    let n = t.children(i).len
+    for k in 0..n {
+        unshift(t, t.children(i)[k])
+    }
+}
+
+fn absolutesUnder(t: *mut Tree, i: usize) AllocError!void {
+    let n = t.children(i).len
+    for k in 0..n {
+        let c = t.children(i)[k]
+        if t.bx(c).abs != 0 {
+            try layoutAbsolute(t, c)
+        }
+        try absolutesUnder(t, c)
+    }
+}
