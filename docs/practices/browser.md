@@ -520,6 +520,21 @@ asks `/held-now` from the observer's first report, so the load is after
 that report on any machine; the frame budget (400) only has to be large.
 **Why:** the page's own state, not a clock, orders the two events.
 
+### Change what a task's event reports in that same task
+**Context:** `window_relayout_after_image_load` failed on Linux CI: the
+observer reported `below visible: false` before `load wide`.
+**Bad:** the background load's task decoded the image (the layout saw
+its size) and queued a second task for `load`; on the real clock an
+animation frame that was due ran between the two and saw the new size.
+On a fast Mac about 13 runs in 20 had such a frame; the test passed
+only because the observer's frame seldom fell in that gap.
+**Good:** the load's task decodes and fires `load`/`error` itself, as
+"update the image data" does (the last networking task sets the request
+completely available and fires the event); only a request settled in a
+microtask (`data:`, a cached image) queues its event as a task.
+**Why:** a state change and the event that reports it in two tasks
+leave a gap where frames and timers see one without the other.
+
 ## Debugging a real site
 
 ### See console output with `dump --js`, not the headless window
