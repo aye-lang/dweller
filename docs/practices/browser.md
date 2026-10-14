@@ -535,6 +535,23 @@ microtask (`data:`, a cached image) queues its event as a task.
 **Why:** a state change and the event that reports it in two tasks
 leave a gap where frames and timers see one without the other.
 
+### A dropped request must not abort the load a later one would join
+**Context:** `http_failed_image_fetched_once` saw `GET /fail/once.png`
+twice in the full suite, once alone.
+**Bad:** the sync XHR shares the loads' libcurl multi handle and stops
+pumping as soon as its own transfer is done. When that transfer finished
+in the same `curl_multi_perform` turn as (or before) the image's failed
+one was read, the image load was still `Running`; the script then
+dropped both requests, the last release aborted the load and kept no
+failure, and the next `img.src` started a new fetch. Forcing that order
+(defer the load's finish past the shared wait) failed 5 runs in 5.
+**Good:** a load still running when its last request drops it stays
+held by the page's image cache until it ends (`holdLoad`,
+`settleLoads`): a request for the URL meanwhile joins it, and a failure
+becomes a failed URL of the page. Forced order: 0 in 5.
+**Why:** "is the URL in flight or failed" must not depend on which
+socket libcurl read first; release only what has ended.
+
 ## Debugging a real site
 
 ### See console output with `dump --js`, not the headless window

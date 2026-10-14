@@ -58,9 +58,12 @@ pub struct ImageCache {
     referrer: []mut u8
     // The keys of `nodes.urls` (owned).
     keys: List([]mut u8)
+    // The background loads that were still running when their last
+    // request dropped them (`holdLoad`).
+    loads: List(u32)
 
     pub fn init(alloc: Allocator) ImageCache {
-        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc) }
+        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -97,6 +100,10 @@ pub struct ImageCache {
             self.alloc.free(m.mask)
         }
         self.canvas_masks.deinit()
+        for id in self.loads.items() {
+            net.releaseLoad(id)
+        }
+        self.loads.deinit()
         self.nodes.deinit()
         self.alloc.free(self.referrer)
         for k in self.keys.items() {
@@ -133,6 +140,40 @@ pub struct ImageCache {
         self.entries.append(CachedImage { href: owned, bmp: null, pic: null, tainted: true }) catch |e| {
             self.alloc.free(owned)
             return e
+        }
+    }
+
+    // Keeps the background load `id`, still running, until it ends: a
+    // request for its URL meanwhile joins it rather than fetching it
+    // again, and its failure is kept (`settleLoads`). False when the
+    // page holds it already, or cannot.
+    fn holdLoad(self: *mut Self, id: u32) bool {
+        for held in self.loads.items() {
+            if held == id {
+                return false
+            }
+        }
+        self.loads.append(id) catch |e| {
+            return false
+        }
+        return true
+    }
+
+    // Lets go of the loads held that ended, keeping the URLs of those
+    // that failed.
+    fn settleLoads(self: *mut Self) {
+        var i = self.loads.len()
+        while i > 0 {
+            i -= 1
+            let id = self.loads.items()[i]
+            if net.loadState(id) == net.LoadState.Running {
+                continue
+            }
+            if net.failedHref(id) |href| {
+                self.noteFailed(href) catch |e| {}
+            }
+            net.releaseLoad(id)
+            _ = self.loads.orderedRemove(i)
         }
     }
 
@@ -308,6 +349,7 @@ enum ImageFetch {
 fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Url, media: css.Media, fetch: ImageFetch, waited: u32) AllocError!?LoadedElementImage {
     // Even an empty or broken replacement must drop the old rendered bitmap.
     cache.nodes.map.remove(h.index)
+    cache.settleLoads()
     let choice = (try chooseImage(cache.alloc, doc, h, media)) orelse return null
     let target = url.resolve(cache.alloc, base, choice.url) catch return null
     errdefer target.deinit(cache.alloc)
@@ -340,10 +382,16 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
 /// A script's request no longer needs the background load `id` (its
 /// task ran or was cleared). A load that failed stays a failed URL of
 /// the images of `p`, which does not fetch it again, though no request
-/// decoded it.
+/// decoded it. A load still running stays the page's until it ends (a
+/// request dropped before its task saw the failure): one URL is fetched
+/// once while it is in flight or after it failed.
 fn releaseImageLoad(p: *mut Page, id: u32) {
-    if net.failedHref(id) |href| {
-        if p.images |cache| {
+    if p.images |cache| {
+        cache.settleLoads()
+        if net.loadState(id) == net.LoadState.Running && cache.holdLoad(id) {
+            return
+        }
+        if net.failedHref(id) |href| {
             cache.noteFailed(href) catch |e| {}
         }
     }
