@@ -1,6 +1,6 @@
 # Canvas 2D micro benchmark
 
-`browser/tests/canvasbench/run.sh` builds `target/anyknown` in fast mode
+`browser/tests/canvasbench/run.sh` builds `target/dweller` in fast mode
 and runs `bench.html` with `dump --text --js`. Each workload draws into a
 fresh 800x600 canvas, in tasks small enough for the script budget; only
 the drawing calls are timed (`Date.now`), and each workload's PNG is

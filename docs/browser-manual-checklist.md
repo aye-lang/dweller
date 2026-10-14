@@ -1,4 +1,4 @@
-# anyknown window: manual checklist
+# Dweller window: manual checklist
 
 The window's behavior is tested headlessly (`tests/browser.rs`:
 `window_frames` and `window_events`, which feed scripted input through
@@ -7,16 +7,16 @@ display and a person is below: run it once per milestone, on macOS and
 on Linux when possible, and note the date, platform and any failures at
 the end.
 
-Build: `aye build browser -o anyknown` (SDL2, FreeType and libcurl
+Build: `aye build browser -o dweller` (SDL2, FreeType and libcurl
 installed). Fixtures are under `browser/tests/`.
 
 ## Opening
 
-- [ ] `./anyknown browser/tests/article.html` opens a window titled
-      "Notes on Ore - anyknown", with the toolbar and the page.
-- [ ] `./anyknown open browser/tests/article.html` does the same.
-- [ ] `./anyknown https://example.com/` loads over HTTPS.
-- [ ] `./anyknown browser/tests/missing.html` shows "Cannot load this
+- [ ] `./dweller browser/tests/article.html` opens a window titled
+      "Notes on Ore – dweller - Dweller", with the toolbar and the page.
+- [ ] `./dweller open browser/tests/article.html` does the same.
+- [ ] `./dweller https://example.com/` loads over HTTPS.
+- [ ] `./dweller browser/tests/missing.html` shows "Cannot load this
       page" with the reason, not a crash.
 - [ ] The window does not use CPU while idle (Activity Monitor / `top`:
       near 0%).

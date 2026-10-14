@@ -1,4 +1,4 @@
-# anyknown browser
+# Dweller browser
 
 A web browser written in Aye, for two kinds of users at once:
 
@@ -66,8 +66,8 @@ and a local test server), so CI needs no network and no display.
 | B3 layout | done | 31 `dump --layout` fixtures (fixed font), system-font check |
 | B4 paint and window | done | 13 golden PNGs, PNG checks, headless window tests |
 | B5 forms and images | done | form sessions over HTTP, window form scripts, image decoder unit tests, form and image screenshots |
-| B6 JavaScript | done | 212 conformance scripts (`anyknown js`), 30 DOM fixtures (`dump --tree --js`, also under GC stress), a to-do app session, window script test, GC unit tests |
-| B7 agent interface | done | 17 snapshot/Markdown fixtures, session and MCP transcripts (with `eval` and `wait`), shared-window sessions over its socket (JSON lines, MCP through `anyknown connect`, pause, pointing, tabs) |
+| B6 JavaScript | done | 212 conformance scripts (`dweller js`), 30 DOM fixtures (`dump --tree --js`, also under GC stress), a to-do app session, window script test, GC unit tests |
+| B7 agent interface | done | 17 snapshot/Markdown fixtures, session and MCP transcripts (with `eval` and `wait`), shared-window sessions over its socket (JSON lines, MCP through `dweller connect`, pause, pointing, tabs) |
 | B8 the real web | in progress | net over the local server (`net_http`, the `net_cookies` and `base` agent sessions), HTML/CSS fixtures (templates, quirks, hints, `var()`/`calc()`, at-rules, `@import`), layout fixtures of site shapes (floats, positioned boxes, grid, `details`), hit testing by layer (`window_hit_layers`), JS conformance scripts for generators, async, Symbol, the web APIs and ES modules (231–237, 242–245), DOM fixtures for module scripts, layout queries, Shadow DOM, custom elements, `MutationObserver` and Web Animations, background image loads (`net/bg_images.html`, `net/bg_image_events.html`), BigInt and property descriptor scripts (246–250), `fetch`/XHR methods and a failed image over the local server (`net/fetch_methods.html`, `net/xhr_methods.html`, `net/failed_image_once.html`), session history (`jsdom/history.html`, the `history` and `history_paths` agent sessions), Reflect, `setPrototypeOf` and Map/Set scripts (251–254), DOM fixtures for the body mixin, DOMParser, `IntersectionObserverEntry`, the virtual clock and endless feeds, replaced sizing layout fixtures (`replaced_sizing`, `replaced_minmax`) |
 | B9 agents without disturbing the user | in progress (P9) | R1: `window_agents` `isolation` (agents act in their own tabs; the person's tab, scroll, selection, focus, field text and page height stay) |
 
@@ -105,7 +105,7 @@ are in `browser/COMPILER_GAPS.md`.
   tags handled simply. It never fails.
 - DOM in `Pool(Node)`: elements, text, comments; attributes;
   `getElementById`, `getElementsByTagName`, parent/children/siblings.
-- **Acceptance:** `anyknown dump --tree FILE` and `anyknown dump --text
+- **Acceptance:** `dweller dump --tree FILE` and `dweller dump --text
   FILE` golden tests on 20 fixtures, including malformed HTML.
 
 ### B2: CSS and style
@@ -123,7 +123,7 @@ are in `browser/COMPILER_GAPS.md`.
   margin/padding/border (widths, colors, styles), width/height/min/max,
   text-align, text-decoration, white-space, list-style-type, visibility,
   overflow; units px, em, rem, %, vw/vh, named and hex/rgb() colors.
-- **Acceptance:** `anyknown dump --style` golden tests.
+- **Acceptance:** `dweller dump --style` golden tests.
 
 ### B3: Layout
 
@@ -134,21 +134,21 @@ are in `browser/COMPILER_GAPS.md`.
   flexbox (row/column, gap, justify-content, align-items, flex-grow).
 - Text measurement through FreeType with a bundled-path fallback font;
   headless tests use a fixed-metric font so goldens are stable.
-- **Acceptance:** `anyknown dump --layout` golden tests (box tree with
+- **Acceptance:** `dweller dump --layout` golden tests (box tree with
   coordinates).
 
 ### B4: Paint and window
 
 - Display list (rects, borders, text runs, images); software rasterizer
   into an RGBA buffer with alpha-blended glyphs from a glyph cache.
-- `anyknown screenshot FILE -o out.png` (PNG encoder in Aye).
+- `dweller screenshot FILE -o out.png` (PNG encoder in Aye).
 - SDL2 window: address bar, back/forward/reload, scrolling (wheel and
   keys), hover cursor on links, clicking links, window resize, Cmd+L,
   Cmd+[ and Cmd+], find in page (Cmd+F).
 - **Acceptance:** screenshot golden tests compared by pixel hash; a
   manual checklist run once per milestone for the window.
-- Done: `anyknown screenshot FILE|URL -o out.png [--width W] [--height
-  H] [--font fixed|system] [--full]` and `anyknown [open] FILE|URL`.
+- Done: `dweller screenshot FILE|URL -o out.png [--width W] [--height
+  H] [--font fixed|system] [--full]` and `dweller [open] FILE|URL`.
   Golden PNGs (`browser/tests/paint/`, fixed font, compared byte for
   byte), PNG checks, and headless window tests (SDL's dummy driver,
   `--frames N` with scripted `--events`, `--state`, `--save`; see
@@ -252,7 +252,7 @@ are in `browser/COMPILER_GAPS.md`.
   golden console output; DOM fixtures whose `dump --tree` after scripts
   matches goldens; a to-do app fixture that works in the window.
 
-**The engine core (done).** `anyknown js FILE` runs a
+**The engine core (done).** `dweller js FILE` runs a
 script; `browser/tests/js/` holds the conformance scripts with Node's
 output as goldens.
 
@@ -275,7 +275,7 @@ output as goldens.
   object, intrinsics, environments, the value stack, frames, pending
   exception and return value, host roots), every 2× live allocations.
   A value held across an allocation must be on the interpreter's stack
-  (calls take `[f, this, args...]` from it). `ANYKNOWN_JS_GC=stress`
+  (calls take `[f, this, args...]` from it). `DWELLER_JS_GC=stress`
   collects at every allocation to check that discipline.
 - *Host interface:* native functions are a table of `fn(*mut Interp,
   Args) JsError!Value`; `Interp.newHostObject(proto, tag, index,
@@ -423,15 +423,15 @@ on (`--no-js` turns it off), `dump` with `--js`.
 
 ### B7: Agent interface
 
-- `anyknown agent`: JSON lines on stdio. Commands: `navigate`, `back`,
+- `dweller agent`: JSON lines on stdio. Commands: `navigate`, `back`,
   `forward`, `reload`, `snapshot` (accessibility tree with refs, roles,
   names, values, states), `read` (Markdown of the main content with
   link refs), `click`, `type`, `select`, `press`, `scroll`, `eval`,
   `screenshot`, `wait` (for load or a selector), `tabs`.
-- `anyknown mcp`: the same commands as MCP tools over stdio JSON-RPC.
-- `anyknown --agent-socket PATH` with the window: a human and an agent
+- `dweller mcp`: the same commands as MCP tools over stdio JSON-RPC.
+- `dweller --agent-socket PATH` with the window: a human and an agent
   share the page; agent actions are highlighted in the window.
-  `anyknown connect PATH [--mcp]` bridges stdio to that socket, so an
+  `dweller connect PATH [--mcp]` bridges stdio to that socket, so an
   MCP client can drive the window a person sees.
 - **Acceptance:** scripted agent sessions over fixtures (fill and submit
   a form, follow a link by ref, read a JS-rendered list) with golden
@@ -464,11 +464,11 @@ on (`--no-js` turns it off), `dump` with `--js`.
     session per process with one libcurl handle (connections, TLS
     sessions and DNS kept), gzip/deflate/br, a cookie jar (Domain, Path,
     Expires, Max-Age, Secure, HttpOnly, `__Secure-`/`__Host-`;
-    `ANYKNOWN_COOKIE_FILE` keeps persistent cookies between runs,
+    `DWELLER_COOKIE_FILE` keeps persistent cookies between runs,
     `document.cookie` reads and writes it), a subresource cache,
     redirects followed by hand (each hop stores its cookies), Accept by
     kind, Accept-Language, Referer (strict-origin-when-cross-origin), a
-    User-Agent with "anyknown" (also `navigator.userAgent`), 32 MB / 16
+    User-Agent with "Dweller" (also `navigator.userAgent`), 32 MB / 16
     MB size limits, TLS errors. `<base href>` for links, forms, images,
     sheets, scripts, `fetch` and `location`. A page's images, sheets and
     scripts are fetched concurrently (libcurl multi, 6 connections per
@@ -795,14 +795,14 @@ runs agent work on its own thread. Three ways out were weighed:
 
 How it works:
 
-- `anyknown space --control FD [--width W --height H]` (internal) is the
+- `dweller space --control FD [--width W --height H]` (internal) is the
   window program, headless, with a private agent socket (in a
   directory only the user can read) and a control connection to its
   parent window (a `socketpair`, JSON lines).
 - The window keeps its socket. For each new connection it reads the
   first line (the hello, below), starts or finds the Space, and from
   then on copies bytes both ways between the agent and the Space's
-  socket without reading them (non-blocking, as `anyknown connect`
+  socket without reading them (non-blocking, as `dweller connect`
   does). The window's thread does no agent work, so its loop time does
   not depend on what agents do.
 - The Space serves the whole protocol, MCP included, as the window
@@ -860,7 +860,7 @@ and without `jsonrpc`; no response:
 
 `mcp` (bool, default false), `name` (string), `space` (`"new"`, the
 default, or the id of a `done` Space to attach to), `profile`
-(`"shared"`, the default, or `"isolated"`). `anyknown connect PATH
+(`"shared"`, the default, or `"isolated"`). `dweller connect PATH
 [--mcp] [--name NAME] [--space N] [--isolated]` writes it.
 
 | `cmd` | arguments | response fields |
@@ -936,7 +936,7 @@ height because of agents:
   login in one is seen by the next request of the other, not the
   current one), and two writes of one cookie settle by arrival order.
   `sessionStorage`, IndexedDB and in-memory page state are not shared
-  (anyknown has no IndexedDB). Today `localStorage` is not saved
+  (Dweller has no IndexedDB). Today `localStorage` is not saved
   between runs at all.
 - *Frames (R6).* A 1600×1200 canvas (800×600 at scale 2) is 7.7 MB per
   frame; frames are sent only while the person watches, at most 30 per

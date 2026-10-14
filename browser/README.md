@@ -1,4 +1,4 @@
-# anyknown
+# Dweller
 
 A web browser written in Aye, for people and AI agents at once. The
 design, the milestones and their state are in `docs/browser.md`; the
@@ -15,25 +15,25 @@ Line Tools; later builds read the declarations from `~/.cache/aye`):
 
 ```
 cargo build --release
-target/release/aye build browser -o anyknown
+target/release/aye build browser -o dweller
 ```
 
-Outside the Aye repository (a copy or the split anyknown repository),
+Outside the Aye repository (a copy or the split Dweller repository),
 use any `aye` on the PATH; `browser/aye.toml` names the executable:
 
 ```
-aye build browser                               # writes ./anyknown
-AYE=/path/to/aye browser/build.sh               # fast mode, target/anyknown
+aye build browser                               # writes ./dweller
+AYE=/path/to/aye browser/build.sh               # fast mode, target/dweller
 ```
 
 Run it:
 
 ```
-./anyknown https://example.com/                 # a window
-./anyknown dump --md https://example.com/       # the page as Markdown
-./anyknown dump --a11y https://example.com/     # the accessibility tree
-./anyknown agent                                # JSON lines on stdio
-./anyknown mcp                                  # an MCP server on stdio
+./dweller https://example.com/                 # a window
+./dweller dump --md https://example.com/       # the page as Markdown
+./dweller dump --a11y https://example.com/     # the accessibility tree
+./dweller agent                                # JSON lines on stdio
+./dweller mcp                                  # an MCP server on stdio
 ```
 
 `cargo test --test browser` runs the browser's tests (headless, offline).
@@ -45,20 +45,20 @@ when you learn a lesson that will come up again, add an entry there.
 
 Two ways, depending on whether a person should see the page.
 
-**Without a window.** `anyknown mcp` is an MCP server on stdio: the
+**Without a window.** `dweller mcp` is an MCP server on stdio: the
 agent gets its own invisible browser.
 
 ```
-claude mcp add anyknown -- /path/to/anyknown mcp
+claude mcp add dweller -- /path/to/dweller mcp
 ```
 
 **In your window.** Open a window that listens for agents, then let the
-client connect to it through `anyknown connect`, a bridge between stdio
+client connect to it through `dweller connect`, a bridge between stdio
 and the window's socket:
 
 ```
-/path/to/anyknown --agent-socket /tmp/ak.sock https://example.com/ &
-claude mcp add anyknown -- /path/to/anyknown connect /tmp/ak.sock --mcp
+/path/to/dweller --agent-socket /tmp/dweller.sock https://example.com/ &
+claude mcp add dweller -- /path/to/dweller connect /tmp/dweller.sock --mcp
 ```
 
 The agent then works in the tab you see (or in a background tab it
@@ -76,6 +76,6 @@ opens with `browser_tab_new`), and you see what it does:
 - Cmd+T, Cmd+W and Cmd+1..9 open, close and show tabs.
 
 Any MCP client that starts stdio servers works the same way: the command
-is `anyknown` with the arguments `connect /tmp/ak.sock --mcp`. Without
-`--mcp`, the connection speaks the JSON lines of `anyknown agent`.
+is `dweller` with the arguments `connect /tmp/dweller.sock --mcp`. Without
+`--mcp`, the connection speaks the JSON lines of `dweller agent`.
 Socket paths are limited to about 100 bytes.

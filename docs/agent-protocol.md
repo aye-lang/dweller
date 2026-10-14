@@ -1,17 +1,17 @@
-# anyknown agent protocol
+# Dweller agent protocol
 
-The anyknown browser gives AI agents the engine without pixels: the page
+The Dweller browser gives AI agents the engine without pixels: the page
 as an accessibility tree with refs, the main content as Markdown, and
 actions on refs. Two stdio servers carry it:
 
-- `anyknown agent [--width PX] [--height PX] [--no-js]`: JSON lines
+- `dweller agent [--width PX] [--height PX] [--no-js]`: JSON lines
   (this document, first part).
-- `anyknown mcp [--width PX] [--height PX] [--no-js]`: a Model Context
+- `dweller mcp [--width PX] [--height PX] [--no-js]`: a Model Context
   Protocol server (second part).
 
-A window can take agents too: `anyknown --agent-socket PATH [URL]`
+A window can take agents too: `dweller --agent-socket PATH [URL]`
 serves both protocols on a Unix socket, on the pages a person sees and
-uses at the same time, and `anyknown connect PATH [--mcp]` bridges stdio
+uses at the same time, and `dweller connect PATH [--mcp]` bridges stdio
 to that socket for MCP clients ([A shared window](#a-shared-window)).
 
 Both keep one session: the page shown, the history, the refs. The
@@ -42,8 +42,8 @@ with the next response, as a `console` array (JSON lines) or a
 For goldens and quick looks, the same views are on the command line:
 
 ```
-anyknown dump --a11y [--boxes] [--json] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
-anyknown dump --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
+dweller dump --a11y [--boxes] [--json] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
+dweller dump --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
 ```
 
 With `--js`, a dump runs the timers that are due after the load, gives
@@ -295,13 +295,13 @@ ignored.
 
 ## MCP
 
-`anyknown mcp` is an MCP server over stdio: JSON-RPC 2.0 messages, one
+`dweller mcp` is an MCP server over stdio: JSON-RPC 2.0 messages, one
 per line. It supports protocol versions `2025-11-25`, `2025-06-18`,
 `2025-03-26` and `2024-11-05` (the client's when it is one of them, else
 `2025-06-18`), and the `tools` capability:
 
 - `initialize` returns `protocolVersion`, `capabilities: {"tools":
-  {"listChanged": false}}`, `serverInfo` (`anyknown`) and
+  {"listChanged": false}}`, `serverInfo` (`dweller`) and
   `instructions`.
 - `notifications/initialized` and other notifications get no response.
 - `ping` returns `{}`.
@@ -336,18 +336,18 @@ A session:
 
 ```
 → {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"c","version":"1"}}}
-← {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"anyknown","title":"anyknown browser","version":"0.1.0"},"instructions":"..."}}
+← {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"dweller","title":"Dweller browser","version":"0.1.0"},"instructions":"..."}}
 → {"jsonrpc":"2.0","method":"notifications/initialized"}
 → {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_navigate","arguments":{"url":"https://example.com/"}}}
 ← {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"loaded https://example.com/\n\nURL: https://example.com/\nTitle: Example Domain\n\n- heading \"Example Domain\" [level=1] [e1]\n..."}],"isError":false}}
 ```
 
 To use it from an MCP client, configure a stdio server whose command is
-the `anyknown` executable with the argument `mcp`.
+the `dweller` executable with the argument `mcp`.
 
 ## A shared window
 
-`anyknown --agent-socket PATH [FILE|URL]` opens the window and listens
+`dweller --agent-socket PATH [FILE|URL]` opens the window and listens
 on a Unix domain socket at `PATH` (a stale socket file there is
 replaced; the file is removed when the window closes). Agents connect
 to it while a person uses the window: each one works in tabs of its
@@ -356,9 +356,9 @@ on them; the person sees what the agents do. (Planned: each agent works
 in a Space of its own, in a process of its own; see `docs/browser.md`,
 B9.)
 
-- Each connection speaks JSON lines, as `anyknown agent`, unless its
+- Each connection speaks JSON lines, as `dweller agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC
-  message: then it speaks MCP, as `anyknown mcp`. At most 8 agents
+  message: then it speaks MCP, as `dweller mcp`. At most 8 agents
   connect at once.
 - The window serves requests between its own events, on its thread: a
   request never runs while the page handles the person's input.
@@ -420,7 +420,7 @@ whose `data` is the same object; `initialize` then also lists the
 
 ```
 {"event":"user_pointed","tab":1,"url":"file:///.../form.html","ref":"e1","text":"Sign up","element":"heading \"Sign up\" [e1]"}
-{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"notice","logger":"anyknown","data":{"event":"user_pointed",...}}}
+{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"notice","logger":"dweller","data":{"event":"user_pointed",...}}}
 ```
 
 The commands only a window has (MCP: `browser_` and the name):
@@ -454,20 +454,20 @@ key:cmd+shift+k`):
 {"id":13,"ok":false,"error":"this is the user's tab: open your own with tab_new"}
 ```
 
-### `anyknown connect`
+### `dweller connect`
 
 MCP clients start a server as a command and talk to its stdio.
-`anyknown connect PATH [--mcp]` is that command for a window: it copies
+`dweller connect PATH [--mcp]` is that command for a window: it copies
 stdin to the socket and the socket to stdout until either ends (when
 stdin ends, the window answers what it was sent, then closes). With
 `--mcp` it sends the hello first. With Claude Code:
 
 ```
-anyknown --agent-socket /tmp/ak.sock https://example.com/ &
-claude mcp add anyknown -- anyknown connect /tmp/ak.sock --mcp
+dweller --agent-socket /tmp/dweller.sock https://example.com/ &
+claude mcp add dweller -- dweller connect /tmp/dweller.sock --mcp
 ```
 
-The tools are those of `anyknown mcp` plus `browser_tabs`,
+The tools are those of `dweller mcp` plus `browser_tabs`,
 `browser_tab_new`, `browser_tab_select`, `browser_tab_close` and
 `browser_user_context`, and the instructions tell the model that a
 person shares the window.
@@ -482,5 +482,5 @@ wait until the agents made N requests (the MCP hello does not count);
 800x532`), whether the agents are paused, and the status bar's
 activity line. `cargo test --test browser window_agents`
 runs `browser/tests/agent/window/X.jsonl` with the events of
-`X.events`, over the socket from the test or through `anyknown connect
+`X.events`, over the socket from the test or through `dweller connect
 --mcp` for `X.mcp.jsonl`, against `X.out`.

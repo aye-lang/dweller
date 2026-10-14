@@ -2,7 +2,7 @@
 
 Run `browser/tests/jsbench/run.sh` from any directory (requires Python 3).
 It builds
-`target/anyknown` in fast mode, verifies each stdout checksum (also with
+`target/dweller` in fast mode, verifies each stdout checksum (also with
 Node when installed), and reports the median of three end-to-end wall
 times in seconds. Startup, parsing, execution, and teardown are included.
 Use `BENCH_RUNS=5` for more samples, `BENCH_BIN=/path/to/saved/binary`

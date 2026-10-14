@@ -8,12 +8,12 @@ Chinese.
 
 ## How each site was checked
 
-- **Agent view:** `anyknown dump --md --js URL` (90 s limit). The load
+- **Agent view:** `dweller dump --md --js URL` (90 s limit). The load
   time below is this command's wall time: fetch, subresources, scripts
   and the event loop.
-- **JS errors:** an `anyknown agent` session, `navigate` to the URL;
+- **JS errors:** an `dweller agent` session, `navigate` to the URL;
   the count is the `[error]` entries in its `console`.
-- **Screen:** the window, headless (`SDL_VIDEODRIVER=dummy anyknown URL
+- **Screen:** the window, headless (`SDL_VIDEODRIVER=dummy dweller URL
   --width 1024 --height 768 --frames 30 --save OUT.png`), scripts on,
   system fonts. Every PNG was looked at.
 - **Agent actions** (where noted): a `click` or a `type` with `submit`
