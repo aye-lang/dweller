@@ -8,7 +8,9 @@
 function log(s) { document.getElementById('out').textContent += s + '\n'; }
 const end = performance.now() + 1;
 let n = 0;
-while (performance.now() < end) n++;
+// The clock is read once per 1000 iterations: under GC stress each read
+// (it allocates) costs a collection, and 333,331 of them took 2 minutes.
+while (performance.now() < end) for (let i = 0; i < 1000; i++) n++;
 log('busy loop of 1 ms: n=' + n);
 
 // A scheduler like YouTube's: run jobs until a 1 ms budget is spent,
