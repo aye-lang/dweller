@@ -1,7 +1,7 @@
 #!/bin/sh
 # Canvas 2D micro benchmark: milliseconds spent in drawing calls (median
 # of BENCH_RUNS, default 3) and a hash of each workload's PNG.
-# BENCH_BIN names a saved binary instead of building target/anyknown;
+# BENCH_BIN names a saved binary instead of building target/dweller;
 # BENCH_BASELINE interleaves an older binary, prints speedups and fails
 # when a workload's pixels differ. Arguments select workloads.
 set -eu
@@ -11,7 +11,7 @@ if [ -z "${BENCH_BIN:-}" ]; then
 fi
 exec python3 - "$@" <<'PY'
 import os, pathlib, statistics, subprocess, sys
-binary = os.environ.get("BENCH_BIN", "target/anyknown")
+binary = os.environ.get("BENCH_BIN", "target/dweller")
 runs = int(os.environ.get("BENCH_RUNS", "3"))
 baseline = os.environ.get("BENCH_BASELINE")
 page = pathlib.Path("browser/tests/canvasbench/bench.html").resolve().as_uri()

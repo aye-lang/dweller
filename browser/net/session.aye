@@ -31,7 +31,7 @@ struct Session {
     share: ?*mut CurlShare
     jar: Jar
     cache: Cache
-    // ANYKNOWN_COOKIE_FILE, or empty.
+    // DWELLER_COOKIE_FILE, or empty.
     cookie_file: []mut u8
     // `noteNavigation`: the URL of the next navigation from a page and
     // the page's URL.
@@ -42,13 +42,13 @@ struct Session {
 var session: ?*mut Session = null
 
 /// Starts the session: every fetch until `stop` shares it. Loads the
-/// cookies of the file named by ANYKNOWN_COOKIE_FILE, if there is one.
+/// cookies of the file named by DWELLER_COOKIE_FILE, if there is one.
 pub fn start(alloc: Allocator) AllocError!void {
     if session != null {
         return
     }
     var file = []mut u8{}
-    if getenv("ANYKNOWN_COOKIE_FILE".ptr) |p| {
+    if getenv("DWELLER_COOKIE_FILE".ptr) |p| {
         file = try dup(alloc, p[0..strlen(p)])
     }
     let s = alloc.create(Session {

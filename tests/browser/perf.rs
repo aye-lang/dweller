@@ -1,11 +1,11 @@
 //! Opt-in page-load timing and immutable response archives.
-use super::{anyknown, root, scratch, server, text};
+use super::{dweller, root, scratch, server, text};
 use std::process::Command;
 
 #[test]
 fn live_frame_index_follows_mutations() {
     let page = "data:text/html,<p id=out></p><script>let r=[window.length];let a=document.createElement('iframe');a.setAttribute('name','a');document.body.appendChild(a);r.push(window.length);let b=document.createElement('iframe');b.setAttribute('name','b');document.body.appendChild(b);r.push(window.length);document.body.insertBefore(b,a);r.push(window.frames[0]===b.contentWindow,window.frames[1]===a.contentWindow);b.remove();r.push(window.length);a.remove();r.push(window.length);document.getElementById('out').textContent=r.join(',');</script>";
-    let out = Command::new(anyknown())
+    let out = Command::new(dweller())
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .output()
@@ -21,7 +21,7 @@ fn live_frame_index_follows_mutations() {
 #[test]
 fn cached_sheets_follow_media_changes() {
     let page = "data:text/html,<style id=css>p{color:red}</style><p id=out></p><script>let p=document.getElementById('out');let css=document.getElementById('css');let r=[getComputedStyle(p).color];document.head.appendChild(document.createElement('style'));r.push(getComputedStyle(p).color);css.setAttribute('media','(max-width:1px)');r.push(getComputedStyle(p).color);p.textContent=r.join('|');</script>";
-    let out = Command::new(anyknown())
+    let out = Command::new(dweller())
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .output()
@@ -40,9 +40,9 @@ fn cached_sheets_follow_media_changes() {
 #[test]
 fn script_layout_is_reused_until_a_change() {
     let page = "data:text/html,<div id=d>x</div><p id=out></p><script>let d=document.getElementById('d');let r=[d.offsetWidth,d.offsetHeight,d.getBoundingClientRect().width,d.clientWidth];d.style.width='10px';r.push(d.offsetWidth,d.getBoundingClientRect().width);document.getElementById('out').textContent=r.join(',');</script>";
-    let out = Command::new(anyknown())
+    let out = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_TIMING", "1")
+        .env("DWELLER_TIMING", "1")
         .args(["dump", "--text", "--js", "--no-scroll", page])
         .output()
         .unwrap();
@@ -50,7 +50,7 @@ fn script_layout_is_reused_until_a_change() {
     assert_eq!(text(&out.stdout), "x\n\n784,20,784,784,10,10\n");
     let trace = text(&out.stderr);
     assert_eq!(
-        trace.matches("ANYKNOWN_TIMING\tscript_layout\t").count(),
+        trace.matches("DWELLER_TIMING\tscript_layout\t").count(),
         2,
         "{trace}"
     );
@@ -63,9 +63,9 @@ fn script_layout_is_reused_until_a_change() {
 #[test]
 fn interleaved_writes_and_reads_restyle_partially() {
     let page = "data:text/html,<style>.on{height:5px}</style><div id=l></div><p id=out></p><script>let l=document.getElementById('l');for(let i=0;i<20;i++)l.append(document.createElement('div'));let loose=document.createElement('div'),sum=0;for(const c of l.children){c.className='on';loose.append(document.createElement('i'));sum+=l.offsetHeight;}document.getElementById('out').textContent=sum;</script>";
-    let out = Command::new(anyknown())
+    let out = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_TIMING", "1")
+        .env("DWELLER_TIMING", "1")
         .args(["dump", "--text", "--js", "--no-scroll", page])
         .output()
         .unwrap();
@@ -73,17 +73,17 @@ fn interleaved_writes_and_reads_restyle_partially() {
     assert_eq!(text(&out.stdout), "1050\n");
     let trace = text(&out.stderr);
     assert_eq!(
-        trace.matches("ANYKNOWN_TIMING\tscript_layout\t").count(),
+        trace.matches("DWELLER_TIMING\tscript_layout\t").count(),
         20,
         "{trace}"
     );
     assert_eq!(
-        trace.matches("ANYKNOWN_TIMING\trestyle\t").count(),
+        trace.matches("DWELLER_TIMING\trestyle\t").count(),
         19,
         "{trace}"
     );
     assert!(
-        trace.matches("ANYKNOWN_TIMING\tcascade\t").count() <= 2,
+        trace.matches("DWELLER_TIMING\tcascade\t").count() <= 2,
         "{trace}"
     );
 }
@@ -97,14 +97,14 @@ fn timing_preserves_output() {
         "--no-scroll",
         "browser/tests/agent/noscript.html",
     ];
-    let plain = Command::new(anyknown())
+    let plain = Command::new(dweller())
         .current_dir(root())
         .args(args)
         .output()
         .unwrap();
-    let timed = Command::new(anyknown())
+    let timed = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_TIMING", "1")
+        .env("DWELLER_TIMING", "1")
         .args(args)
         .output()
         .unwrap();
@@ -127,13 +127,13 @@ fn timing_preserves_output() {
         "markdown",
     ] {
         assert!(
-            trace.contains(&format!("ANYKNOWN_TIMING\t{phase}\t")),
+            trace.contains(&format!("DWELLER_TIMING\t{phase}\t")),
             "missing {phase}: {trace}"
         );
     }
     assert!(!trace.contains("leak"), "{trace}");
     assert_eq!(
-        trace.matches("ANYKNOWN_TIMING\tcascade\t").count(),
+        trace.matches("DWELLER_TIMING\tcascade\t").count(),
         1,
         "{trace}"
     );
@@ -150,15 +150,15 @@ fn timing_preserves_paint() {
         "fixed",
         "-o",
     ];
-    let first = Command::new(anyknown())
+    let first = Command::new(dweller())
         .current_dir(root())
         .args(args)
         .arg(&plain)
         .output()
         .unwrap();
-    let second = Command::new(anyknown())
+    let second = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_TIMING", "1")
+        .env("DWELLER_TIMING", "1")
         .args(args)
         .arg(&timed)
         .output()
@@ -174,7 +174,7 @@ fn timing_preserves_paint() {
     let trace = text(&second.stderr);
     for phase in ["paint_build", "paint"] {
         assert!(
-            trace.contains(&format!("ANYKNOWN_TIMING\t{phase}\t")),
+            trace.contains(&format!("DWELLER_TIMING\t{phase}\t")),
             "{trace}"
         );
     }
@@ -191,9 +191,9 @@ fn response_archive_replays_without_server() {
     // serves /log/* with appropriate content types and counts requests.
     let page = "data:text/html,<link rel=stylesheet href='BASE/log/style.css'><script src='BASE/log/script.js'></script><p id=x>Archived</p><img src='BASE/log/image.png'><script>document.getElementById('x').textContent += fromScript</script>".replace("BASE", &srv.base);
     let args = ["dump", "--md", "--js", &page];
-    let recorded = Command::new(anyknown())
+    let recorded = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_RECORD", &dir)
+        .env("DWELLER_RECORD", &dir)
         .args(args)
         .output()
         .unwrap();
@@ -206,25 +206,25 @@ fn response_archive_replays_without_server() {
     // its own response.
     assert!(std::fs::read_dir(&dir).unwrap().count() >= 3);
     let failure_url = "http://127.0.0.1:1/unavailable";
-    let recorded_failure = Command::new(anyknown())
+    let recorded_failure = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_RECORD", &dir)
+        .env("DWELLER_RECORD", &dir)
         .args(["dump", "--md", "--js", failure_url])
         .output()
         .unwrap();
     assert!(!recorded_failure.status.success());
-    let replayed_failure = Command::new(anyknown())
+    let replayed_failure = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_REPLAY", &dir)
+        .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", failure_url])
         .output()
         .unwrap();
     assert_eq!(recorded_failure.stdout, replayed_failure.stdout);
     assert_eq!(recorded_failure.stderr, replayed_failure.stderr);
     let redirect = format!("{}/redirect", srv.base);
-    let recorded_redirect = Command::new(anyknown())
+    let recorded_redirect = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_RECORD", &dir)
+        .env("DWELLER_RECORD", &dir)
         .args(["dump", "--md", "--js", &redirect])
         .output()
         .unwrap();
@@ -235,9 +235,9 @@ fn response_archive_replays_without_server() {
     );
     // Replay must not reach the network, even with HTTP prefetch enabled.
     drop(srv);
-    let replayed = Command::new(anyknown())
+    let replayed = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_REPLAY", &dir)
+        .env("DWELLER_REPLAY", &dir)
         .args(args)
         .output()
         .unwrap();
@@ -247,9 +247,9 @@ fn response_archive_replays_without_server() {
         text(&replayed.stderr)
     );
     assert_eq!(recorded.stdout, replayed.stdout);
-    let replayed_redirect = Command::new(anyknown())
+    let replayed_redirect = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_REPLAY", &dir)
+        .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", &redirect])
         .output()
         .unwrap();
@@ -259,9 +259,9 @@ fn response_archive_replays_without_server() {
         text(&replayed_redirect.stderr)
     );
     assert_eq!(recorded_redirect.stdout, replayed_redirect.stdout);
-    let missing = Command::new(anyknown())
+    let missing = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_REPLAY", &dir)
+        .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", "http://127.0.0.1:1/missing"])
         .output()
         .unwrap();
@@ -294,7 +294,7 @@ fn archive_replays_unrecorded_post_bodies() {
         format!("data:text/html,{ps}<script>{posts}</script>").replace("BASE", &base)
     };
     let dump = |env: &str, page: &str| {
-        Command::new(anyknown())
+        Command::new(dweller())
             .current_dir(root())
             .env(env, &dir)
             .args(["dump", "--md", "--js", page])
@@ -303,7 +303,7 @@ fn archive_replays_unrecorded_post_bodies() {
     };
     // "one" is recorded before "two", so "two" is the latest.
     for body in ["one", "two"] {
-        let recorded = dump("ANYKNOWN_RECORD", &page(&[body]));
+        let recorded = dump("DWELLER_RECORD", &page(&[body]));
         assert!(
             recorded.status.success() && recorded.stderr.is_empty(),
             "{}",
@@ -312,7 +312,7 @@ fn archive_replays_unrecorded_post_bodies() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     drop(srv);
-    let replayed = dump("ANYKNOWN_REPLAY", &page(&["one", "three", "four"]));
+    let replayed = dump("DWELLER_REPLAY", &page(&["one", "three", "four"]));
     let (out, err) = (text(&replayed.stdout), text(&replayed.stderr));
     assert!(
         replayed.status.success() && !err.contains("archive miss:"),

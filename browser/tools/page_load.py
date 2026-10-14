@@ -46,10 +46,10 @@ DEFAULT_SITES = ("zol", "wikipedia", "github", "youtube")
 PHASES = ("fetch", "decode", "html", "scripts", "timers", "sheets", "css_parse",
           "cascade_read", "cascade", "images", "image_decode", "layout", "paint_build", "paint", "markdown",
           "requests", "prefetch")
-TRACE = re.compile(r"ANYKNOWN_TIMING\t([^\t]+)\t(\d+)\t(.*)")
+TRACE = re.compile(r"DWELLER_TIMING\t([^\t]+)\t(\d+)\t(.*)")
 EXPECTATIONS = Path(__file__).with_name("sites.json")
 # One agent task per site: agent_tasks/<site>.jsonl, one step per line, run in one
-# `anyknown agent` session after it navigated to the site's URL. A step is a request
+# `dweller agent` session after it navigated to the site's URL. A step is a request
 # of docs/agent-protocol.md; its "target" {"role", "name", "href"} becomes the "ref"
 # of the first snapshot line with that role, exact name and an href starting with
 # "href" (name and href are optional), and its "expect" checks the response: "url"
@@ -74,12 +74,12 @@ OUT = Path("target/page-load-out")
 
 
 def run(binary, url, directory, record=False, sample=None, screenshot=False, live=False):
-    env = dict(os.environ, ANYKNOWN_TIMING="1", ANYKNOWN_BENCHMARK="1")
-    env.pop("ANYKNOWN_COOKIE_FILE", None)
-    env.pop("ANYKNOWN_RECORD", None)
-    env.pop("ANYKNOWN_REPLAY", None)
+    env = dict(os.environ, DWELLER_TIMING="1", DWELLER_BENCHMARK="1")
+    env.pop("DWELLER_COOKIE_FILE", None)
+    env.pop("DWELLER_RECORD", None)
+    env.pop("DWELLER_REPLAY", None)
     if not live:
-        env["ANYKNOWN_RECORD" if record else "ANYKNOWN_REPLAY"] = str(directory.resolve())
+        env["DWELLER_RECORD" if record else "DWELLER_REPLAY"] = str(directory.resolve())
     command = [str(binary.resolve()), "dump", "--md", "--js", url]
     if screenshot:
         command = [str(binary.resolve()), "screenshot", url, "-o",
@@ -174,14 +174,14 @@ def screen(binary, name, url, directory, live=False, record=False):
     SCREENS.mkdir(parents=True, exist_ok=True)
     out = SCREENS / f"{name}.png"
     out.unlink(missing_ok=True)
-    env = dict(os.environ, ANYKNOWN_BENCHMARK="1")
-    for variable in ("ANYKNOWN_COOKIE_FILE", "ANYKNOWN_RECORD", "ANYKNOWN_REPLAY", "ANYKNOWN_TIMING"):
+    env = dict(os.environ, DWELLER_BENCHMARK="1")
+    for variable in ("DWELLER_COOKIE_FILE", "DWELLER_RECORD", "DWELLER_REPLAY", "DWELLER_TIMING"):
         env.pop(variable, None)
     if not live:
-        env["ANYKNOWN_REPLAY"] = str(directory.resolve())
+        env["DWELLER_REPLAY"] = str(directory.resolve())
     if record:
         # Serves what the dump recorded; fetches and records only the misses.
-        env["ANYKNOWN_RECORD"] = str(directory.resolve())
+        env["DWELLER_RECORD"] = str(directory.resolve())
     command = [str(binary.resolve()), "screenshot", url, "-o", str(out.resolve()),
                "--width", SCREEN_SIZE[0], "--height", SCREEN_SIZE[1]]
     try:
@@ -212,7 +212,7 @@ def contact_sheet(entries, mode):
                      f'<span>{html.escape(entry["verdict"])}</span> <span>{html.escape(entry["errors"])}</span>'
                      f'<ul>{notes}</ul></figcaption></figure>')
     SCREENS.joinpath("index.html").write_text(f"""<!doctype html>
-<meta charset="utf-8"><title>anyknown sites</title>
+<meta charset="utf-8"><title>Dweller sites</title>
 <style>
 body {{ font: 13px system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }}
 main {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }}
@@ -223,7 +223,7 @@ img {{ width: 100%; height: 500px; object-fit: cover; object-position: top; disp
 span {{ margin-left: 6px; color: #555; }}
 ul {{ margin: 4px 0 0; padding-left: 16px; color: #a00; word-break: break-word; }}
 </style>
-<h1>anyknown sites</h1>
+<h1>Dweller sites</h1>
 <p>{html.escape(mode)} at {html.escape(head)}, {time.strftime("%Y-%m-%d %H:%M")};
 {SCREEN_SIZE[0]} px wide, the first {SCREEN_SIZE[1]} px. Click a thumbnail for the full image.</p>
 <main>
@@ -239,7 +239,7 @@ def main():
                         help="check: replay each site against browser/tools/sites.json; "
                         "rebless: store today's replay as the archive's reference (after an intended dump change)")
     parser.add_argument("--archive", type=Path, default=Path("target/sites"), help="one directory per site")
-    parser.add_argument("--binary", type=Path, default=Path("target/anyknown"))
+    parser.add_argument("--binary", type=Path, default=Path("target/dweller"))
     parser.add_argument("--compare", type=Path, help="baseline binary; alternate before/after to reduce machine-load bias")
     parser.add_argument("--site", action="append",
                         help=f"repeatable or comma-separated, or all; default {', '.join(DEFAULT_SITES)} (check: all)")
@@ -316,10 +316,10 @@ def main():
 
 def console_errors(binary, url, directory):
     """The [error] console entries of an agent session that navigates to url on the replay."""
-    env = dict(os.environ, ANYKNOWN_BENCHMARK="1", ANYKNOWN_REPLAY=str(directory.resolve()))
-    env.pop("ANYKNOWN_COOKIE_FILE", None)
-    env.pop("ANYKNOWN_RECORD", None)
-    env.pop("ANYKNOWN_TIMING", None)
+    env = dict(os.environ, DWELLER_BENCHMARK="1", DWELLER_REPLAY=str(directory.resolve()))
+    env.pop("DWELLER_COOKIE_FILE", None)
+    env.pop("DWELLER_RECORD", None)
+    env.pop("DWELLER_TIMING", None)
     request = json.dumps({"id": 1, "cmd": "navigate", "url": url}) + "\n"
     process = subprocess.run([str(binary.resolve()), "agent"], input=request.encode(),
                              capture_output=True, env=env, timeout=300)
@@ -364,10 +364,10 @@ def agent_task(binary, url, directory, steps, record=False):
     """Runs a site's task in one agent session on the archive (or live, recording
     into it). Returns why a step missed its expectations (None when none did) and the
     archive misses or recording errors (None when there were none)."""
-    env = dict(os.environ, ANYKNOWN_BENCHMARK="1")
-    for name in ("ANYKNOWN_COOKIE_FILE", "ANYKNOWN_RECORD", "ANYKNOWN_REPLAY", "ANYKNOWN_TIMING"):
+    env = dict(os.environ, DWELLER_BENCHMARK="1")
+    for name in ("DWELLER_COOKIE_FILE", "DWELLER_RECORD", "DWELLER_REPLAY", "DWELLER_TIMING"):
         env.pop(name, None)
-    env["ANYKNOWN_RECORD" if record else "ANYKNOWN_REPLAY"] = str(directory.resolve())
+    env["DWELLER_RECORD" if record else "DWELLER_REPLAY"] = str(directory.resolve())
     with tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen([str(binary.resolve()), "agent"], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=stderr, env=env, text=True)

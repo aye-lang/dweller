@@ -4,7 +4,7 @@
 // responses may contain personalized content. This is a benchmark tool,
 // not an HTTP cache (no expiry, validation, or cookie/header replay).
 // `data:` URLs hold their response: they are neither recorded nor
-// looked up. With both ANYKNOWN_REPLAY and ANYKNOWN_RECORD set, recorded
+// looked up. With both DWELLER_REPLAY and DWELLER_RECORD set, recorded
 // responses are served and only misses are fetched and recorded.
 // Replay matches a GET exactly; a non-GET request without an exact match
 // falls back to a recorded non-GET response for its URL (`fallback`).
@@ -22,7 +22,7 @@ fn archiveDir(name: []u8) ?[]u8 {
 }
 
 pub fn archiveReplay() bool {
-    return archiveDir("ANYKNOWN_REPLAY") != null
+    return archiveDir("DWELLER_REPLAY") != null
 }
 
 fn archivePath(alloc: Allocator, dir: []u8, target: *Url, req: Request) AllocError![]mut u8 {
@@ -60,7 +60,7 @@ fn archivePath(alloc: Allocator, dir: []u8, target: *Url, req: Request) AllocErr
 // Header: original URL, status (0 for error), MIME, charset, final URL,
 // error description, each on one line, then the unmodified body.
 pub fn archiveRead(alloc: Allocator, target: *Url, req: Request) FetchError!?Response {
-    let dir = archiveDir("ANYKNOWN_REPLAY") orelse return null
+    let dir = archiveDir("DWELLER_REPLAY") orelse return null
     if text.eql(target.scheme, "data") {
         return null
     }
@@ -69,7 +69,7 @@ pub fn archiveRead(alloc: Allocator, target: *Url, req: Request) FetchError!?Res
     let bytes = std.fs.readFile(alloc, path) catch |e| {
         // Replaying while recording (capture's screenshot): a miss is fetched
         // and recorded.
-        if archiveDir("ANYKNOWN_RECORD") != null {
+        if archiveDir("DWELLER_RECORD") != null {
             return null
         }
         if try fallback(alloc, dir, target, req) |res| {
@@ -196,7 +196,7 @@ fn archivedError(why: []u8) FetchError {
 }
 
 pub fn archiveWrite(alloc: Allocator, target: *Url, req: Request, res: ?*Response, failure: []u8) {
-    let dir = archiveDir("ANYKNOWN_RECORD") orelse return
+    let dir = archiveDir("DWELLER_RECORD") orelse return
     if text.eql(target.scheme, "data") {
         return
     }

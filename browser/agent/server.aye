@@ -1,9 +1,9 @@
 // The agent's command lines and stdio servers:
 //
-//     anyknown agent [--width PX] [--height PX] [--no-js]   JSON lines (docs/agent-protocol.md)
-//     anyknown mcp [--width PX] [--height PX] [--no-js]     MCP over stdio (JSON-RPC 2.0)
-//     anyknown dump --a11y [--boxes] [--json] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
-//     anyknown dump --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
+//     dweller agent [--width PX] [--height PX] [--no-js]   JSON lines (docs/agent-protocol.md)
+//     dweller mcp [--width PX] [--height PX] [--no-js]     MCP over stdio (JSON-RPC 2.0)
+//     dweller dump --a11y [--boxes] [--json] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
+//     dweller dump --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL
 //
 // The servers run the pages' scripts unless --no-js; the dumps only with
 // --js: then after the timers that are due ran, and after scrolling
@@ -22,8 +22,8 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
-let DUMP_USAGE = "usage: anyknown dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL"
-let SERVE_USAGE = "usage: anyknown agent|mcp [--width PX] [--height PX] [--no-js]"
+let DUMP_USAGE = "usage: dweller dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL"
+let SERVE_USAGE = "usage: dweller agent|mcp [--width PX] [--height PX] [--no-js]"
 
 // How many viewports a dump scrolls through at most (`--scroll-steps`).
 let DUMP_SCROLL_STEPS: usize = 20
@@ -41,7 +41,7 @@ pub fn isAgentDump(args: [][]u8) bool {
     return false
 }
 
-/// `anyknown dump --a11y|--md ...`; the exit status.
+/// `dweller dump --a11y|--md ...`; the exit status.
 pub fn dumpMain(alloc: Allocator, args: [][]u8) i32 {
     return dumpViews(alloc, args) catch |e| {
         std.log.err("{}", e)
@@ -127,7 +127,7 @@ fn dumpViews(alloc: Allocator, args: [][]u8) !i32 {
     return 0
 }
 
-/// `anyknown agent` (`mcp` false) or `anyknown mcp`; the exit status.
+/// `dweller agent` (`mcp` false) or `dweller mcp`; the exit status.
 pub fn serveMain(alloc: Allocator, args: [][]u8, mcp: bool) i32 {
     var width = 800.0
     var height = 600.0
@@ -602,9 +602,9 @@ fn mcpMessage(s: *mut Session, tmp: Allocator, line: []u8, out: *mut text.Builde
         try w.key("serverInfo")
         try w.beginObject()
         try w.key("name")
-        try w.string("anyknown")
+        try w.string("dweller")
         try w.key("title")
-        try w.string("anyknown browser")
+        try w.string("Dweller browser")
         try w.key("version")
         try w.string("0.1.0")
         try w.endObject()
