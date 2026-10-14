@@ -522,10 +522,17 @@ pub struct Ui {
         return true
     }
 
+    // Is the tab strip there? With two tabs or more, and always while
+    // the window listens for agents (so their tabs never change the
+    // page viewport's height).
+    fn hasTabStrip(self: *Self) bool {
+        return self.count > 1 || self.agents != null
+    }
+
     // The top of the page's viewport: under the toolbar and the tab
     // strip.
     fn top(self: *Self) f64 {
-        if self.count > 1 {
+        if self.hasTabStrip() {
             return TOOLBAR + TABBAR
         }
         return TOOLBAR
@@ -1252,8 +1259,8 @@ pub struct Ui {
         return sessionOf(self, conn)
     }
 
-    pub fn agentRefusal(self: *mut Self) []u8 {
-        return refusalOf(self)
+    pub fn agentRefusal(self: *mut Self, conn: usize, cmd: []u8) []u8 {
+        return refusalOf(self, conn, cmd)
     }
 
     pub fn windowCommand(self: *mut Self, conn: usize, tmp: Allocator, cmd: []u8, doc: *mut agent.Json, args: ?usize, id: []u8, reply: *mut agent.Reply) AllocError!bool {
@@ -1301,7 +1308,7 @@ pub struct Ui {
         }
         self.canvas.popClip()
         try drawToolbar(self)
-        if self.count > 1 {
+        if self.hasTabStrip() {
             try drawTabStrip(self)
         }
         if self.hover.len() > 0 {

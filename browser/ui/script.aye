@@ -191,8 +191,8 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
 
 /// The tab's state, for `--state`: the URL, the scroll offset, the
 /// focus, the address bar, the find matches and the status line; with
-/// `--agent-socket`, the tabs, whether the agents are paused and what
-/// they did last; and when an element of the page has the focus, its
+/// `--agent-socket`, the tabs, the page viewport's size, whether the
+/// agents are paused and what they did last; and when an element of the page has the focus, its
 /// name and value.
 fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
     try out.append("url ")
@@ -234,12 +234,16 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         }
     }
     if ui.agents |a| {
-        // The window listens for agents: its tabs, and what the agents'
-        // chrome shows.
+        // The window listens for agents: its tabs, the page viewport's
+        // size, and what the agents' chrome shows.
         try out.append("tabs ")
         try out.appendUint(ui.count as u64)
         try out.append(", showing ")
         try out.appendUint((ui.active + 1) as u64)
+        try out.append("\nviewport ")
+        try out.appendUint(ui.win_w as u64)
+        try out.appendByte('x')
+        try out.appendInt(std.math.floor(ui.viewHeight() + 0.5) as i64)
         try out.append("\nagents ")
         if a.paused {
             try out.append("paused")
