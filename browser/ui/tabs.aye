@@ -1,14 +1,16 @@
 // The window's tabs: Cmd+T opens one (and focuses the address bar),
 // Cmd+W closes the shown one (the last one closes the window), Cmd+1..8
-// show the first eight, Cmd+9 the last. With two tabs or more, a tab
-// strip under the toolbar shows them; a click shows a tab, a click on
-// its `x` closes it.
+// show the first eight, Cmd+9 the last. With two tabs or more (and
+// always while the window listens for agents), a tab strip under the
+// toolbar shows them; a click shows a tab, a click on its `x` closes it.
 //
 // Each tab is a `TabSlot`: an agent session (agent.Session, which owns
 // the tab's page and history) that the agents connected to the window
 // act through (agents.aye), so a tab in the background can be driven by
-// an agent while the user looks at another. Slots are allocated one by
-// one, so a session's address does not change while tabs come and go.
+// an agent while the user looks at another. A tab an agent opened is an
+// agent's; the user's tabs are look-only to agents. Slots are allocated
+// one by one, so a session's address does not change while tabs come
+// and go.
 
 import agent
 import engine
@@ -26,12 +28,14 @@ pub struct TabSlot {
     // session's refs are of an old document.
     shown: u64
     seen: u64
+    // An agent opened it: agents may act on it (else it is the user's).
+    agent: bool
 }
 
 fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.System, id: u32) AllocError!*mut TabSlot {
     var s = try agent.newWindowSession(alloc, measure, system, 800.0, 600.0)
     errdefer agent.freeSession(&mut s)
-    return alloc.create(TabSlot { id: id, session: s, shown: 0, seen: 0 })
+    return alloc.create(TabSlot { id: id, session: s, shown: 0, seen: 0, agent: false })
 }
 
 fn freeSlot(alloc: Allocator, slot: *mut TabSlot) {
@@ -89,6 +93,7 @@ fn openTab(ui: *mut Ui, show: bool) AllocError!?usize {
     if ui.count >= MAX_TABS {
         return null
     }
+    let top = ui.top()
     let slot = try newSlot(ui.alloc, ui.measure, ui.painter.system, ui.next_tab)
     ui.next_tab += 1
     let i = ui.count
@@ -96,7 +101,7 @@ fn openTab(ui: *mut Ui, show: bool) AllocError!?usize {
     ui.count += 1
     if show {
         try showTab(ui, i)
-    } else if ui.count == 2 {
+    } else if ui.top() != top {
         // The tab strip appeared: the viewport is shorter.
         try ui.relayout()
     }
@@ -110,6 +115,7 @@ fn removeTab(ui: *mut Ui, i: usize) AllocError!?*mut TabSlot {
     if ui.count <= 1 || i >= ui.count {
         return null
     }
+    let top = ui.top()
     let slot = ui.slots[i].?
     var k = i
     while k + 1 < ui.count {
@@ -128,7 +134,7 @@ fn removeTab(ui: *mut Ui, i: usize) AllocError!?*mut TabSlot {
         try showTab(ui, next)
         return slot
     }
-    if ui.count == 1 {
+    if ui.top() != top {
         // The tab strip went away: the viewport is taller.
         try ui.relayout()
     }

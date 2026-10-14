@@ -1,10 +1,14 @@
 // The window's agents: `anyknown --agent-socket PATH [URL]` listens on a
 // Unix domain socket (socket.aye); each connection speaks the JSON lines
 // of `anyknown agent`, or MCP when its first line is `{"mcp":true}` or a
-// JSON-RPC message (docs/agent-protocol.md). Commands act on the tab the
-// user sees, or on the tab the connection opened or selected
-// (`tab_new`, `tab_select`), through that tab's session
-// (agent/shared.aye): the agent sees the window's own layout.
+// JSON-RPC message (docs/agent-protocol.md). A connection acts on a tab
+// of its own, in the background: the one it opened (`tab_new`, or on
+// its first command that needs a page) or selected (`tab_select`),
+// through that tab's session (agent/shared.aye): the agent sees the
+// window's own layout. The user's tabs are look-only to agents: actions
+// on them are refused (USER_TAB), and agents never choose what the user
+// sees. While the window listens, its tab strip is always there, so
+// agents' tabs never change the page viewport's height.
 //
 // The window polls the socket between its events (it waits at most
 // POLL_MS for them while it listens), so requests run on the window's
@@ -41,6 +45,8 @@ pub let POLL_MS: i32 = 15
 // `wait` without a selector or a time: at most this long, in ms.
 let WAIT_IDLE_MS: u64 = 5000
 let WAIT_SELECTOR_MS: u64 = 5000
+// Why an action on a tab of the user's is refused.
+let USER_TAB = "this is the user's tab: open your own with tab_new"
 
 let AGENT_INK = Rgba { r: 124, g: 58, b: 237, a: 255 }
 let PAUSED_INK = Rgba { r: 217, g: 119, b: 6, a: 255 }
@@ -52,7 +58,8 @@ pub struct Conn {
     pending: text.Builder
     // 0: not known yet (its first line tells), 1: JSON lines, 2: MCP.
     mode: u8
-    // The id of the tab it acts on, or 0: the tab the user sees.
+    // The id of the tab it acts on, or 0: none yet (it looks at the tab
+    // the user sees).
     tab: u32
     // A `wait` to answer later: the request's id (JSON), the selector
     // ("" for none), when it started and when it ends (ms on the
@@ -125,6 +132,8 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
         dropped: null,
     })
     ui.agents = a
+    // The tab strip is there from now on.
+    try ui.relayout()
     ui.dirty = true
     return true
 }
@@ -284,10 +293,20 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
             c.mode = 2
         }
     }
-    try syncSlot(ui, connSlot(ui, c))
+    if connTab(ui, c) == null && agent.needsPage(tmp, line) {
+        // Its own tab, in the background, on its first command that
+        // needs a page.
+        if try openTab(ui, false) |k| {
+            ui.slots[k].?.agent = true
+            c.tab = ui.slots[k].?.id
+        }
+    }
+    let slot = connSlot(ui, c)
+    try syncSlot(ui, slot)
     let before = shownNow(ui)
     var out = text.Builder.init(tmp)
     try agent.serveShared(ui, i, c.mode == 2, tmp, line, &mut out)
+    let touched = slot == ui.slots[ui.active].?
     a.served += 1
     if out.len() > 0 {
         try out.appendByte('\n')
@@ -295,23 +314,28 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
             c.gone = true
         }
     }
-    if a.dropped |slot| {
-        freeSlot(ui.alloc, slot)
+    if a.dropped |closed| {
+        freeSlot(ui.alloc, closed)
         a.dropped = null
     }
-    try afterAgent(ui, before)
+    try afterAgent(ui, before, touched)
     try resumeScript(ui)
 }
 
-/// The tab of connection `c` (the shown one when it chose none, or its
-/// tab was closed).
-fn connSlot(ui: *Ui, c: *Conn) *mut TabSlot {
+/// The tab connection `c` opened or selected; null when it has none (or
+/// its tab was closed).
+fn connTab(ui: *Ui, c: *Conn) ?*mut TabSlot {
     if c.tab != 0 {
         if slotIndex(ui, c.tab) |k| {
             return ui.slots[k].?
         }
     }
-    return ui.slots[ui.active].?
+    return null
+}
+
+/// The tab of connection `c`: its own, else the shown one (to look at).
+fn connSlot(ui: *Ui, c: *Conn) *mut TabSlot {
+    return connTab(ui, c) orelse ui.slots[ui.active].?
 }
 
 /// Makes the session of `slot` ready for a request: the window's
@@ -333,10 +357,16 @@ fn shownNow(ui: *Ui) Shown {
 }
 
 /// After a request: the shown tab as the agent left it (its new page,
-/// layout, scroll offset, URL and title).
-fn afterAgent(ui: *mut Ui, before: Shown) AllocError!void {
+/// layout, scroll offset, URL and title), when the request was served
+/// on it (`touched`) or the shown document changed.
+fn afterAgent(ui: *mut Ui, before: Shown, touched: bool) AllocError!void {
     let now = shownNow(ui)
     let moved = now.page != before.page || now.loads != before.loads
+    // The tab strip's titles.
+    ui.dirty = true
+    if !moved && !touched {
+        return
+    }
     if moved {
         // An agent navigated the shown tab: as if the user had.
         ui.dropdown = null
@@ -353,8 +383,8 @@ fn afterAgent(ui: *mut Ui, before: Shown) AllocError!void {
     ui.dirty = true
 }
 
-/// The connections that forget tab `id` (closed): they act on the shown
-/// tab again.
+/// The connections that forget tab `id` (closed): they get a tab of
+/// their own again on their next command that needs a page.
 fn forgetTab(ui: *mut Ui, id: u32) {
     let a = ui.agents orelse return
     for c in a.conns {
@@ -374,11 +404,14 @@ fn sessionOf(ui: *mut Ui, conn: usize) ?*mut agent.Session {
     return &mut connSlot(ui, c).session
 }
 
-fn refusalOf(ui: *mut Ui) []u8 {
-    if ui.agents |a| {
-        if a.paused {
-            return "paused by user"
-        }
+fn refusalOf(ui: *mut Ui, conn: usize, cmd: []u8) []u8 {
+    let a = ui.agents orelse return ""
+    if a.paused {
+        return "paused by user"
+    }
+    let c = a.conns[conn] orelse return ""
+    if agent.actsOnPage(cmd) && !connSlot(ui, c).agent {
+        return USER_TAB
     }
     return ""
 }
@@ -439,26 +472,27 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         return true
     }
     if text.eql(cmd, "tab_new") {
-        var show = false
-        if args |o| {
-            show = doc.getBool(o, "show") orelse false
+        if showAsked(doc, args) {
+            return refuse(reply, NO_SHOW)
         }
-        let i = (try openTab(ui, show)) orelse {
+        let i = (try openTab(ui, false)) orelse {
             return refuse(reply, "too many tabs (16)")
         }
         let slot = ui.slots[i].?
+        slot.agent = true
         c.tab = slot.id
         try activity(ui, "agent: opened a tab")
-        reply.message = try tabMessage(tmp, "opened tab ", slot.id, show)
+        reply.message = try tabMessage(tmp, "opened tab ", slot.id)
         reply.fields = try tabField(tmp, slot.id)
         return true
     }
     if text.eql(cmd, "tab_select") {
+        if showAsked(doc, args) {
+            return refuse(reply, NO_SHOW)
+        }
         var want: f64 = -1.0
-        var show = false
         if args |o| {
             want = doc.getNum(o, "tab") orelse -1.0
-            show = doc.getBool(o, "show") orelse false
         }
         if want < 1.0 || want > 4294967295.0 {
             return refuse(reply, "missing argument \"tab\" (a tab's id, a number)")
@@ -468,10 +502,11 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         }
         let slot = ui.slots[k].?
         c.tab = slot.id
-        if show && k != ui.active {
-            try showTab(ui, k)
+        if slot.agent {
+            reply.message = try tabMessage(tmp, "acting on tab ", slot.id)
+        } else {
+            reply.message = try agent.concatText(tmp, try tabMessage(tmp, "looking at tab ", slot.id), " (the user's tab: you can only look)")
         }
-        reply.message = try tabMessage(tmp, "acting on tab ", slot.id, show)
         reply.fields = try tabField(tmp, slot.id)
         return true
     }
@@ -488,13 +523,16 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         let k = slotIndex(ui, id_num) orelse {
             return refuse(reply, "no such tab: see \"tabs\"")
         }
+        if !ui.slots[k].?.agent {
+            return refuse(reply, USER_TAB)
+        }
         let slot = (try removeTab(ui, k)) orelse {
             return refuse(reply, "cannot close the last tab")
         }
         forgetTab(ui, id_num)
         a.dropped = slot
         try activity(ui, "agent: closed a tab")
-        reply.message = try tabMessage(tmp, "closed tab ", id_num, false)
+        reply.message = try tabMessage(tmp, "closed tab ", id_num)
         return true
     }
     if text.eql(cmd, "user_context") {
@@ -521,13 +559,19 @@ fn activity(ui: *mut Ui, what: []u8) AllocError!void {
     ui.dirty = true
 }
 
-fn tabMessage(tmp: Allocator, what: []u8, id: u32, shown: bool) AllocError![]u8 {
+// Why `show` is refused.
+let NO_SHOW = "the user chooses what they see"
+
+// Did the request ask to show a tab to the user (`"show":true`)?
+fn showAsked(doc: *mut agent.Json, args: ?usize) bool {
+    let o = args orelse return false
+    return doc.getBool(o, "show") orelse false
+}
+
+fn tabMessage(tmp: Allocator, what: []u8, id: u32) AllocError![]u8 {
     var b = text.Builder.init(tmp)
     try b.append(what)
     try b.appendUint(id as u64)
-    if shown {
-        try b.append(", shown to the user")
-    }
     return b.bytes()
 }
 
@@ -550,7 +594,10 @@ fn members(b: *text.Builder) []u8 {
 // `tabs`: each tab's id, URL, title, and whether the user sees it and
 // this connection acts on it.
 fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
-    let mine = connSlot(ui, c).id
+    var mine: u32 = 0
+    if connTab(ui, c) |t| {
+        mine = t.id
+    }
     var b = text.Builder.init(tmp)
     var w = agent.Writer.init(&mut b)
     var detail = text.Builder.init(tmp)
@@ -977,7 +1024,7 @@ fn answerWait(ui: *mut Ui, conn: usize, tmp: Allocator, slot: *mut TabSlot, repl
     if !sendAll(c.fd, out.bytes()) {
         c.gone = true
     }
-    try afterAgent(ui, shownNow(ui))
+    try afterAgent(ui, shownNow(ui), slot == ui.slots[ui.active].?)
 }
 
 // ---- drawing

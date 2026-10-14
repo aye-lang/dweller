@@ -744,7 +744,7 @@ let TOOLS = "browser_navigate browser_back browser_forward browser_reload browse
 
 let WINDOW_TOOLS = "browser_tabs browser_tab_new browser_tab_select browser_tab_close browser_user_context"
 
-let SHARED_INSTRUCTIONS = "A web browser window that a person is using too: you act on the tab they see unless you open or select another (browser_tab_new, browser_tab_select), and they see what you do. Start with browser_snapshot (or browser_navigate): it lists the page as an accessibility tree whose interactive elements and headings carry refs like e12; act on them with browser_click, browser_type, browser_select. browser_user_context tells what the person selected, hovers, focused or pointed at. If they pause you, actions fail with \"paused by user\": wait for them. browser_wait waits in real time."
+let SHARED_INSTRUCTIONS = "A web browser window that a person is using too. You work in a tab of your own, in the background: your first command that needs a page opens it (or browser_tab_new). The person's tabs are look-only to you: browser_user_context tells what they see, selected, hover, focused or pointed at, and after browser_tab_select on one of their tabs browser_snapshot, browser_read and browser_find work, but actions fail with \"this is the user's tab\". You cannot change which tab they see. Start with browser_navigate: it lists the page as an accessibility tree whose interactive elements and headings carry refs like e12; act on them with browser_click, browser_type, browser_select. If they pause you, actions fail with \"paused by user\": wait for them. browser_wait waits in real time."
 
 fn isTool(name: []u8, shared: bool) bool {
     return text.startsWith(name, "browser_") && (html.isIn(name, TOOLS) || (shared && html.isIn(name, WINDOW_TOOLS)))
@@ -910,14 +910,12 @@ fn toolList(w: *mut Writer, shared: bool) AllocError!void {
 fn windowTools(w: *mut Writer) AllocError!void {
     try toolStart(w, "browser_tabs", "Tabs", "The window's tabs: id, URL, title, which one the user sees and which one you act on.")
     try toolEnd(w, "", true)
-    try toolStart(w, "browser_tab_new", "New tab", "Open an empty tab and act on it from now on, without changing what the user sees (unless show is true). Then use browser_navigate.")
-    try toolProp(w, "show", "boolean", "Also show the tab to the user.")
+    try toolStart(w, "browser_tab_new", "New tab", "Open an empty tab of your own in the background and act on it from now on; the user's view does not change. Then use browser_navigate.")
     try toolEnd(w, "", false)
-    try toolStart(w, "browser_tab_select", "Select tab", "Act on another tab from now on (an id from browser_tabs).")
+    try toolStart(w, "browser_tab_select", "Select tab", "Use another tab from now on (an id from browser_tabs), in the background. On a tab of the user's you can only look (snapshot, read, find).")
     try toolProp(w, "tab", "number", "The id of the tab.")
-    try toolProp(w, "show", "boolean", "Also show the tab to the user.")
     try toolEnd(w, "tab", false)
-    try toolStart(w, "browser_tab_close", "Close tab", "Close a tab (by default the one you act on); the last tab cannot be closed.")
+    try toolStart(w, "browser_tab_close", "Close tab", "Close a tab of yours (by default the one you act on); the user's tabs cannot be closed.")
     try toolProp(w, "tab", "number", "The id of the tab.")
     try toolEnd(w, "", false)
     try toolStart(w, "browser_user_context", "User context", "What the user is doing in the window: the tab and URL they see, the scroll position, the selected text, the element under the mouse and the focused element (refs), and what they last pointed at with Cmd+Shift+K.")

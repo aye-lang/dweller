@@ -2072,8 +2072,8 @@ fn window_agents() {
         .collect();
     inputs.sort();
     assert!(
-        inputs.len() >= 3,
-        "expected at least 3 window agent sessions, found {}",
+        inputs.len() >= 5,
+        "expected at least 5 window agent sessions, found {}",
         inputs.len()
     );
     let mut failures = Vec::new();

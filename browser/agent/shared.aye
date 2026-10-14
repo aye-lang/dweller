@@ -2,7 +2,8 @@
 // serves the JSON lines and MCP protocols of server.aye on a Unix
 // socket, with one session per tab of the window. The window is the
 // `Host`: it says which session a connection acts on (its tab), refuses
-// actions while the user paused the agents, runs the commands only a
+// actions while the user paused the agents and on the user's tabs
+// (agents only look at those), runs the commands only a
 // window has (`tabs`, `tab_new`, `tab_select`, `tab_close`,
 // `user_context`, and `wait` in real time), and shows what the agents
 // do (`agentActs`: a highlight and a line in the status bar).
@@ -21,8 +22,9 @@ import std.text
 pub interface Host {
     /// The session of the tab that connection `conn` acts on.
     fn agentSession(self: *mut Self, conn: usize) ?*mut Session
-    /// Why actions are refused now ("paused by user"), or "".
-    fn agentRefusal(self: *mut Self) []u8
+    /// Why connection `conn` may not do `cmd` (one of ACTING) now
+    /// ("paused by user", or the tab is the user's), or "".
+    fn agentRefusal(self: *mut Self, conn: usize, cmd: []u8) []u8
     /// Runs `cmd` (without `browser_`) when it is a command of the
     /// window, with the arguments in object `args` of `doc`; `id` is the
     /// request's id as JSON (for an answer given later). False when
@@ -56,6 +58,41 @@ let WINDOW_COMMANDS = "tabs tab_new tab_select tab_close user_context wait"
 // The commands refused while the user paused the agents (the others
 // only look).
 let ACTING = "navigate back forward reload click type select press scroll eval tab_new tab_select tab_close"
+// The commands that change the page of the connection's tab: refused on
+// a tab of the user's.
+let ON_PAGE = "navigate back forward reload click type select press scroll eval"
+// The commands that need a page: a connection without a tab of its own
+// gets one for them.
+let PAGE_COMMANDS = "navigate back forward reload snapshot read find click type select press scroll eval screenshot wait"
+
+/// Does `cmd` change the page of the tab it acts on?
+pub fn actsOnPage(cmd: []u8) bool {
+    return html.isIn(cmd, ON_PAGE)
+}
+
+/// Is `line` (a JSON-lines request or an MCP tool call) a command that
+/// needs a page?
+pub fn needsPage(tmp: Allocator, line: []u8) bool {
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var doc = Json.parse(tmp, line, &mut failure) catch |e| {
+        return false
+    }
+    defer doc.deinit()
+    let r = doc.root()
+    if doc.kind(r) != JKind.Object {
+        return false
+    }
+    if doc.getStr(r, "cmd") |cmd| {
+        return html.isIn(cmd, PAGE_COMMANDS)
+    }
+    let method = doc.getStr(r, "method") orelse return false
+    if !text.eql(method, "tools/call") {
+        return false
+    }
+    let params = doc.get(r, "params") orelse return false
+    let name = doc.getStr(params, "name") orelse return false
+    return text.startsWith(name, "browser_") && html.isIn(name[8..], PAGE_COMMANDS)
+}
 
 fn isWindowCommand(s: *Session, cmd: []u8) bool {
     return s.host != null && html.isIn(cmd, WINDOW_COMMANDS)
@@ -236,11 +273,12 @@ fn windowTool(s: *mut Session, tmp: Allocator, doc: *mut Json, cmd: []u8, args: 
     return r.ok
 }
 
-/// Why `cmd` is refused now (the user paused the agents), or "".
+/// Why `cmd` is refused now (the user paused the agents, or the tab is
+/// the user's), or "".
 fn refusal(s: *mut Session, cmd: []u8) []u8 {
     if s.host |h| {
         if html.isIn(cmd, ACTING) {
-            return h.agentRefusal()
+            return h.agentRefusal(s.conn, cmd)
         }
     }
     return ""

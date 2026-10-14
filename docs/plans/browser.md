@@ -83,7 +83,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 | P4 | Load times (W4) | `run --live --repeat 5` medians meet the targets | paused (backlog) |
 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | paused |
 | P6 | Release | manual checklist recorded; final site run; tag | paused |
-| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | designed 2026-10-14; P9.1 next |
+| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1 done 2026-10-14; P9.2 next |
 
 ## P8 split plan
 
@@ -224,6 +224,7 @@ in order.
 - test: `isolation.events` clicks into a text field of a long page, types, selects with shift+left and scrolls (`wheel`); `isolation.jsonl` checks `user_context`, then `tab_new`, `navigate`, `type`, `click`, `scroll`, `eval`, `tab_close`, a `type` on the person's tab (refused), `tab_new` with `show` (refused), and `user_context` again: the same `scroll`, `selection` and `focused`; the `.out` window state shows the person's URL, scroll, focus and `tabs N, showing 1`.
 - verify: `cargo test --release --test browser window_agents > target/p9.1.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- done 2026-10-14: as specified. Choices recorded in `docs/agent-protocol.md` (A shared window): a tab is an agent's when an agent opened it (any connection may act on it), else the person's; the commands that need a page (and so open the own tab) are `navigate back forward reload snapshot read find click type select press scroll eval screenshot wait`; on a person's tab `screenshot` and `wait` also work; `"show":false` is accepted; `tab_select` of a person's tab answers "looking at tab N (the user's tab: you can only look)". `--state` gains `viewport WxH` while agents listen (the R1 test checks the page height with it). The person in `shared`, `handshake.mcp`, `pause` and `frames` opens a page or watches the agent's tab by scripted events, so those goldens still show pointing, frames and focus.
 
 #### P9.2: a process per Space
 - lane: browser
