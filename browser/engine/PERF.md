@@ -287,6 +287,72 @@ per replay ~77 s → ~11.6 s.
   page peak RSS 10K 1.40 → 0.51 GB, 40K 5.58 → 1.99 GB (139 → 49 KB per
   card).
 
+**Mistral, 2026-10-14** (P3.63): CPU per replay 45.4 s → 32.6 s
+(medians of 3 alternating runs; wall 46.3 → 33.0 s; Markdown, check
+strings and screenshot PNG unchanged).
+
+Temporary logging in `geometry()` (not committed) recorded, for each
+forced layout, the changes noted since the last one and why
+`restyle()` refused a subtree restyle. Forced layouts and their cost
+per document (`ANYKNOWN_TIMING` `script_layout`, one run):
+
+| Document | Layouts | Before | After | What it notes between layouts | Path before → after |
+|---|---:|---:|---:|---|---|
+| main page | 872 | 17.1 s | 4.9 s | 655× text of one `p.text-button-small` (a ticker), 194× `style` of `span.word`, 206× `style` of an `iframe`, 142+48× `style` of title `p`, 28× other attributes, ~40× `:defined` | full cascade (697) → subtree restyle; the rest is layout |
+| visual-intelligence iframe | 6931 | 7.3 s | 8.5 s | 5922× `style` of `div.frame`, 1230× `style` of `aside.sc-prompt-panel` | 5954 layout only; ~970 full cascades: container queries (`queried`) and 14 shadow roots |
+| ctf-speedrun iframe | 232 | 1.0 s | 0.8 s | `style` of bar `i`/row `div` | full cascade (200) → subtree restyle |
+
+The main page's sheet set `RestyleDeps.whole`, so every change but an
+inline style restyled the whole document: Tailwind's `group-has-*`
+variant compiles to `:where(.group\/toggle):has(:checked) *`, whose
+`:has()` compound has no type, id, class or attribute of its own, and
+`addHas` took "no keys, any depth" for "any element may be its
+element". `RestyleDeps.walk` now takes the keys of a one-compound
+`:is()`/`:where()` argument as keys of the compound (`.group/toggle`
+here), which every element that matches it has. Test:
+`browser/tests/jsdom/layout_restyle_where_has.html`.
+
+What is left (~33 s CPU): timers 31 s, of which forced layouts ~14 s
+(main page ~4.2 s of pure layout, 872 × 4.9 ms over the whole document;
+visual-intelligence ~5.9 s of layout and 2.6 s of cascade) and the rest
+JS and canvas raster in the iframes (a 10 s sample during the timers:
+`canvasComposite`, `canvasPaint`, `svg.Rasterizer.scan`,
+`paint.sampleImage` lead the non-idle leaves).
+
+### Next card proposal: incremental layout for forced reads (P3.64)
+
+Most forced layouts follow an inline-style write (an animation frame)
+or a text change in one leaf, then read one box. Today `geometry()`
+keeps the styles (subtree restyle) but always calls `layOut` over the
+whole document. A design, not started:
+
+- State to keep: the layout tree of the last layout (already in
+  `Geometry`), plus, per box, the inputs it was laid out with (its
+  containing block width and the available height), and per block
+  container whether its height depends on its content (auto height,
+  shrink-to-fit, flex/grid item).
+- Local dirty kinds: (1) `style` writes whose changed properties are
+  paint-only (`transform`, `opacity`, `color`, `background-*`,
+  `filter`, `clip-path`): no layout at all, keep the tree, update the
+  box's style values; this covers most of Mistral's `span.word`, `div.frame`
+  and `iframe` writes. (2) a text change or a size change in a box whose
+  containing block has a fixed size (or `contain: layout/size`, an
+  `overflow` other than visible with a definite size): lay out that
+  subtree again with the stored inputs, and stop when its border box size
+  is unchanged; otherwise walk up to the first ancestor whose size does
+  not change, then shift the following siblings by the height delta.
+- Stays whole: viewport or sheet changes, `restyle_all`, inserts or
+  removals that change a formatting context's kind (block ↔ inline,
+  floats, positioned boxes, tables), anything inside a flex/grid
+  container (first version: lay out the container again), container
+  queries (the iframe's `queried`) until query containers are tracked.
+- Verify: a fixture like `layout_restyle_inline.html` that compares every
+  box after each change with a full layout (append an empty sheet), for
+  each dirty kind; `page_load.py check` Markdown hashes unchanged;
+  Mistral, ZOL and youtube-search CPU before/after.
+- Expected gain on Mistral: most of the ~10 s of layout; the canvas raster
+  (~10 s) is a separate card (P4.5-style: profile `canvasComposite`).
+
 ## Live network check and remaining work
 
 One separate normal live load per site (real Date/random, no archive)

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<title>Layout restyle under :where(.g):has() (Tailwind group-has-*)</title>
+<style>
+body { margin: 0; font-size: 10px }
+/* Its element has the class g: other changes restyle a subtree only. */
+:where(.g):has(.on) .t { width: 40px }
+.t { display: block; width: 10px; height: 3px }
+</style>
+<div class="g" id="g"><span class="t" id="t1"></span><p id="text">a</p><i id="flag"></i></div>
+<div id="h"><span class="t" id="t2"></span><i id="flag2" class="on"></i></div>
+<p id="tick">0</p>
+<pre id="out"></pre>
+<script>
+// Written at the end: a change to the document between the steps would
+// be noted too.
+const lines = [];
+function log(...parts) { lines.push(parts.join(' ')); }
+const $ = id => document.getElementById(id);
+function boxes() {
+  return [...document.body.querySelectorAll('*')].filter(e => e.id && e.id !== 'out').map(e => e.id + ':' + [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight].join(',')).join(' ');
+}
+// The boxes after a change, and whether they are those of a full restyle
+// (a new style sheet styles the whole document).
+function check(name) {
+  const fast = boxes();
+  const sheet = document.createElement('style');
+  sheet.textContent = '.unused {}';
+  document.head.append(sheet);
+  const full = boxes();
+  sheet.remove();
+  boxes();
+  log(name, fast === full ? 'same' : 'DIFF full ' + full, fast);
+}
+const steps = [
+  ['text outside', () => { $('tick').textContent = '1'; }],
+  ['text inside', () => { $('text').textContent = 'b'; }],
+  ['class under the group', () => $('flag').classList.add('on')],
+  ['class off', () => $('flag').classList.remove('on')],
+  ['inserted under the group', () => $('g').append(Object.assign(document.createElement('b'), { className: 'on', id: 'b1' }))],
+  ['removed', () => $('b1').remove()],
+  ['group class added', () => $('h').classList.add('g')],
+  ['group class removed', () => $('h').classList.remove('g')],
+];
+check('start');
+for (const [name, change] of steps) {
+  change();
+  check(name);
+}
+$('out').textContent = lines.join('\n') + '\n';
+</script>

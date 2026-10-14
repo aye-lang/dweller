@@ -131,6 +131,12 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
     return true
 }
 
+// Is a simple selector of this kind a key of the element that has a
+// `:has()` (`HasUse`)?
+fn isKey(kind: SelKind) bool {
+    return kind == SelKind.Type || kind == SelKind.Id || kind == SelKind.Class || kind == SelKind.Attr
+}
+
 // Does a selector of `sheet` (an argument of `:is()` or `:has()` too)
 // look at the `style` attribute?
 fn looksAtStyle(sheet: *Sheet) bool {
@@ -315,9 +321,21 @@ pub struct RestyleDeps {
             var keys = List(usize).init(self.keys.alloc)
             defer keys.deinit()
             for si in comp.start..comp.end {
-                let kind = sheet.simples.items()[si].kind
-                if kind == SelKind.Type || kind == SelKind.Id || kind == SelKind.Class || kind == SelKind.Attr {
+                let s = sheet.simples.items()[si]
+                if isKey(s.kind) {
                     try keys.append(si)
+                } else if s.kind == SelKind.Is && s.sub_end == s.sub_start + 1 {
+                    // `:where(.group):has(...)` (Tailwind's `group-has-*`):
+                    // its element matches the keys of a one-compound argument.
+                    let arg = sheet.complexes.items()[s.sub_start]
+                    if arg.end == arg.start + 1 {
+                        let inner = sheet.compounds.items()[arg.start]
+                        for sj in inner.start..inner.end {
+                            if isKey(sheet.simples.items()[sj].kind) {
+                                try keys.append(sj)
+                            }
+                        }
+                    }
                 }
             }
             if ci == cx.end - 1 {
