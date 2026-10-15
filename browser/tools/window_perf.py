@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Where the window's time goes on a live page (browser/engine/PERF.md,
+"Window"). Standard library only.
+
+    window_perf.py scroll URL [--binary B] [--frames N]
+        Headless window (--frames): the load, then N frames that each
+        turn the wheel 3 notches (`wheel:-3 frame`). Prints the first
+        paint, the scroll frames' p50/p95 and the longest loop iteration.
+    window_perf.py idle URL [--binary B]
+        A real window, no input: the CPU% of the 10 s that start 5 s
+        after the first frame, and what the loop did meanwhile.
+
+Both read the DWELLER_TIMING records (`ui_navigate`, `ui_relayout`,
+`ui_draw`, `ui_events`, `ui_timers`, `ui_loop`); --log keeps them.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+RECORD = re.compile(r"DWELLER_TIMING\t([^\t]+)\t(\d+)\t([^\n]*)")
+
+
+def records(err):
+    return [(m.group(1), int(m.group(2)) / 1e6, m.group(3)) for m in RECORD.finditer(err)]
+
+
+def iterations(recs):
+    """The records of each loop iteration (each ends with `ui_loop`)."""
+    its, cur = [], []
+    for r in recs:
+        cur.append(r)
+        if r[0] == "ui_loop":
+            its.append(cur)
+            cur = []
+    return its
+
+
+def pct(xs, q):
+    if not xs:
+        return 0.0
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, int(q * len(xs)))]
+
+
+def total(it, phase):
+    return sum(v for k, v, _ in it if k == phase)
+
+
+def scroll(a):
+    events = " ".join(["frame"] * 3 + ["wheel:-3 frame"] * a.frames)
+    env = dict(os.environ, DWELLER_TIMING="1")
+    cmd = [a.binary, a.url, "--frames", str(a.frames + 10), "--events", events, "--state"]
+    r = subprocess.run(cmd, capture_output=True, env=env, timeout=600)
+    err = r.stderr.decode("utf-8", "replace")
+    if a.log:
+        open(a.log, "w").write(err)
+    recs = records(err)
+    first = {}
+    for k, v, _ in recs:
+        first.setdefault(k, v)
+    its = iterations(recs)
+    frames = [it for it in its if any(k == "ui_events" and l == "script" for k, _, l in it)][3:]
+    out = {
+        "url": a.url,
+        "first_paint_ms": round(first.get("ui_navigate", 0) + first.get("ui_relayout", 0) + first.get("ui_draw", 0)),
+        "navigate_ms": round(first.get("ui_navigate", 0)),
+        "first_relayout_ms": round(first.get("ui_relayout", 0)),
+        "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),
+        "longest_loop_ms": round(max((total(it, "ui_loop") for it in its), default=0)),
+    }
+    for phase in ("ui_loop", "ui_draw", "ui_timers", "ui_relayout"):
+        xs = [total(it, phase) for it in frames]
+        out[phase + "_p50_p95"] = [round(pct(xs, 0.5), 1), round(pct(xs, 0.95), 1)]
+    print(json.dumps(out))
+
+
+def idle(a):
+    env = dict(os.environ, DWELLER_TIMING="1")
+    path = a.log
+    if not path:
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".log")
+        os.close(fd)
+    f = open(path, "w")
+    t0 = time.monotonic()
+    p = subprocess.Popen([a.binary, a.url], stdout=subprocess.DEVNULL, stderr=f, env=env)
+
+    def cpu():
+        s = subprocess.run(["ps", "-o", "time=", "-p", str(p.pid)], capture_output=True, text=True).stdout.strip()
+        m, sec = s.split(":")
+        return int(m) * 60 + float(sec)
+
+    try:
+        drawn = None
+        while time.monotonic() - t0 < 300 and p.poll() is None:
+            if "\tui_draw\t" in open(path).read():
+                drawn = time.monotonic() - t0
+                break
+            time.sleep(0.1)
+        time.sleep(5)
+        start = os.path.getsize(path)
+        c0, w0 = cpu(), time.monotonic()
+        time.sleep(10)
+        c1, w1 = cpu(), time.monotonic()
+    finally:
+        p.terminate()
+        try:
+            p.wait(5)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        f.close()
+    recs = records(open(path).read()[start:])
+    loops = [v for k, v, _ in recs if k == "ui_loop"]
+    print(json.dumps({
+        "url": a.url,
+        "first_frame_s": round(drawn, 1) if drawn else None,
+        "idle_cpu_pct": round(100 * (c1 - c0) / (w1 - w0), 1),
+        "iterations": len(loops),
+        "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),
+        "draws": sum(1 for k, _, _ in recs if k == "ui_draw"),
+        "longest_loop_ms": round(max(loops, default=0)),
+    }))
+    if not a.log:
+        os.remove(path)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("mode", choices=["scroll", "idle"])
+    ap.add_argument("url")
+    ap.add_argument("--binary", default="target/dweller")
+    ap.add_argument("--frames", type=int, default=40)
+    ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
+    a = ap.parse_args()
+    if not os.path.exists(a.binary):
+        sys.exit(f"no binary {a.binary} (browser/build.sh)")
+    scroll(a) if a.mode == "scroll" else idle(a)
+
+
+if __name__ == "__main__":
+    main()

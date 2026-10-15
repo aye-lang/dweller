@@ -21,6 +21,8 @@
 //     pause:N         the person pauses Space N (`--spaces`,
 //     resume:N        spaces.aye), resumes it, or stops it
 //     stop:N
+//     frame           no event: the words after it wait for the next
+//                     frame (with `--frames`)
 //
 // `--state` prints the tab's state when the window closes, and `--save
 // FILE.png` writes the last frame.
@@ -155,7 +157,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") {
             return false
         }
     }
@@ -215,6 +217,10 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         try ui.rest.append(rest)
         if try spaceWord(ui, w) {
             continue
+        }
+        if text.eql(w, "frame") {
+            // The rest waits for the next frame (`Ui.loop`).
+            return
         }
         if scriptEvent(w) |ev| {
             if ev.kind == SDL_TEXTINPUT {
