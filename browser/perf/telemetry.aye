@@ -16,7 +16,7 @@ import std
 import std.text
 import std.time
 
-extern fn open(path: [*]u8, flags: i32, mode: i32) i32
+extern fn open(path: [*]u8, flags: i32, ...) i32
 extern fn write(fd: i32, p: [*]u8, n: usize) isize
 extern fn close(fd: i32) i32
 extern fn setenv(name: [*]u8, value: [*]u8, overwrite: i32) i32
@@ -40,8 +40,13 @@ extern struct DlInfo {
     saddr: usize
 }
 
-// O_WRONLY | O_CREAT | O_APPEND
-let OPEN_APPEND: i32 = 0x441
+// O_WRONLY | O_CREAT | O_APPEND; O_CREAT differs between macOS and Linux.
+fn openAppend() i32 {
+    if @targetOs() is .macos {
+        return 0x1 | 0x200 | 0x8
+    }
+    return 0x441
+}
 // SA_SIGINFO | SA_ONSTACK: the handler gets the signal's origin and runs
 // on Aye's alternate stack when there is one.
 let SA_FLAGS: i32 = 0x08000004
@@ -842,7 +847,7 @@ fn fileSize(path: []u8) u64 {
 
 // Writes `out` to the file `path` (NUL-terminated) and empties it.
 fn writeOut(path: []u8) {
-    let fd = open(path.ptr, OPEN_APPEND, 0x180)
+    let fd = open(path.ptr, openAppend(), 0x180)
     if fd >= 0 {
         var at: usize = 0
         while at < out_len {
@@ -920,6 +925,11 @@ fn lessName(a: []u8, b: []u8) bool {
 // ---- crashes
 
 fn installCrashHandler() {
+    // Not on macOS (P4.54): the handler runs there but the process stays
+    // alive, so crashes behave as without it.
+    if @targetOs() is .macos {
+        return
+    }
     // backtrace loads its unwinder on the first call: not in the handler.
     _ = backtrace(trace[..].ptr, 1)
     for i, sig in CRASH_SIGNALS {

@@ -351,6 +351,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 Not yet cards. Before one becomes a card, main checks it is still needed
 after the cards above.
 
+- P4.54 macOS crash record: install the telemetry crash handler on macOS so it writes the record and the process exits with 128+sig; today the handler runs but the process stays alive (SDL/Cocoa signal handling suspected); verify: `window_telemetry` SIGSEGV step on macOS (P4.53).
 - P3.64 slice 2: in a container-query document, restyle subtrees when no container's size changed; skip the whole-document `stylesCurrent` hash for attribute writes (details in `PERF.md`).
 - P4.11 partial restyle for DOM mutations incl. shadow roots and `:has()` (P4.10).
 - P4.14 event dispatch and MutationObserver from prelude JS into native Aye (~15% of JS samples) (P1.11).
