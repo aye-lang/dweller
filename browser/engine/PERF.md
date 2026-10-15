@@ -507,6 +507,39 @@ from Astro's `ClientRouter` click handler (`t instanceof SVGAElement`,
 on every click that is not on an `<a>`), and `e.getTotalLength is not a
 function` from its `layout` script's SVG path polyfill.
 
+### P4.32: page fetch() and XHR in the background (2026-10-15)
+
+Page `fetch()` and asynchronous `XMLHttpRequest` start on the loader's
+libcurl multi handle (`net.startRequest`) and settle in a networking task
+that the window's loop runs once the request ended (it polls the multi
+handle with a zero timeout, at most 8 ms apart while a task waits); on the
+virtual clock that task is due at once and waits for its request, so
+`dump` stays deterministic. Their records are `background_requests`
+(start to end, nobody waits); `requests` are the synchronous ones left.
+Same machine and network as above, `window_perf.py` with the fast build,
+before (7017742) / after:
+
+| Site | scroll: longest loop ms | scroll: first paint ms | idle: longest loop ms, CPU |
+|---|---|---|---|
+| github.com/aye-lang/aye before | 2467, 1763 | 4758, 3109 | 735, 6.6% |
+| github.com/aye-lang/aye after | 1912, 2061, 1977 | 3674, 2942, 4176 | 421, 8.0% |
+| www.youtube.com before | 6749, 3684, 3910, 3061 | 6258, 8788, 4543, 3836 | 3575, 10.7% |
+| www.youtube.com after | 654, 631, 616, 771, 588 | 6987, 4712, 21873\*, 4223, 6646 | 119, 5.6% |
+
+\* that run's network: the document's script prefetch took 5.9 s (0.8 s
+in the next run) and the first relayout's image prefetch 9.8 s, before any
+page request ran in the background.
+
+No loop iteration waits for a page fetch or XHR any more. What the longest
+iterations still do: GitHub's first one after the load (1.9–2.1 s) runs
+two relayouts (1.8 s, cascades with container queries: cause 2, P4.34) and
+**92 synchronous dynamic script loads** (webpack `chunk-lazy-*.js`, 0.8 s
+one by one: P4.43); its later ones (0.9–1.4 s) are cascade, script layout
+and relayout without network. YouTube's longest (0.6–0.8 s) is a relayout
+fetching sheets and prefetching images (0.37 s) plus timer callbacks
+(0.23 s). The card's < 100 ms needs P4.34 and P4.43 (GitHub) and P4.33
+(YouTube's relayout prefetch).
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

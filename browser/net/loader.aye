@@ -387,11 +387,12 @@ fn failRequest(ld: *mut Loader, l: *mut Load, e: FetchError) {
     endRequest(ld, l)
 }
 
-// The script's request `l` ended (done or failed): its timing record and
+// The script's request `l` ended (done or failed): its timing record
+// (`background_requests`: start to end, not time anyone waited) and
 // its archive entry (DWELLER_RECORD), as `request` makes them.
 fn endRequest(ld: *mut Loader, l: *mut Load) {
     let a = l.ask.?
-    perf.end("requests", a.began, l.href)
+    perf.end("background_requests", a.began, l.href)
     let target = url.parse(ld.alloc, l.href) catch |e| {
         return
     }
