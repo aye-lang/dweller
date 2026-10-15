@@ -362,6 +362,51 @@ fn layout_system_font() {
     assert_ne!(got, fixed);
 }
 
+/// `dweller gpu-smoke` on SwiftShader (P11.2, docs/webgl.md): a 64x64
+/// framebuffer cleared to red reads back `ff0000ff`. ANGLE comes from
+/// `DWELLER_ANGLE` or `target/angle/<rev>/lib` (browser/gpu/fetch_angle.sh).
+/// Until browser/gpu/angle.lock has hashes, CI has no ANGLE: then the test
+/// checks the "WebGL unavailable" path and skips the pixels.
+#[test]
+fn gpu_smoke() {
+    let rev = std::fs::read_to_string(root().join("browser/gpu/angle.rev")).unwrap();
+    let lib = root().join("target/angle").join(rev.trim()).join("lib");
+    let present = std::env::var_os("DWELLER_ANGLE").is_some()
+        || ["libEGL.dylib", "libEGL.so"]
+            .iter()
+            .any(|f| lib.join(f).exists());
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .arg("gpu-smoke")
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}\n{got}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    if !present {
+        let lock = std::fs::read_to_string(root().join("browser/gpu/angle.lock")).unwrap();
+        let pinned = lock
+            .lines()
+            .any(|l| !l.starts_with('#') && !l.trim().is_empty());
+        assert!(
+            !pinned,
+            "ANGLE not found in {}: run browser/gpu/fetch_angle.sh",
+            lib.display()
+        );
+        assert!(got.contains("WebGL unavailable: ANGLE not found"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    assert!(got.starts_with("backend swiftshader\n"), "{got}");
+    assert!(got.contains("SwiftShader"), "{got}");
+    assert!(got.ends_with("ff0000ff\nok\n"), "{got}");
+}
+
 #[test]
 fn aye_unit_tests() {
     // The tests of every module under `browser` (15 modules have tests:
@@ -447,7 +492,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(

@@ -7,6 +7,7 @@
 //     dweller dump --layout [--width PX] [--font fixed|system] FILE|URL
 //     dweller screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full]
 //     dweller js FILE
+//     dweller gpu-smoke
 //
 // FILE is a path; URL is a `file:`, `data:`, `http:` or `https:` URL.
 // `--id` and `--tag` dump only the element with that id, or every element
@@ -21,7 +22,8 @@
 // scrolls through the page a viewport at a time (at most 20 steps, or
 // `--scroll-steps N`; none with `--no-scroll`), so that what scripts load
 // when it comes into view is in the dump (engine.scrollThrough); console
-// messages go to stderr.
+// messages go to stderr. `gpu-smoke` clears a framebuffer to red on
+// ANGLE (gpu/gl.aye; DWELLER_GL picks the backend) and reads it back.
 //
 // For AI agents (browser/agent, docs/agent-protocol.md):
 //
@@ -47,6 +49,7 @@ import dom
 import dom.NodeId
 import encoding
 import engine
+import gpu
 import html
 import js
 import net
@@ -60,7 +63,7 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -92,6 +95,9 @@ fn run(alloc: Allocator) i32 {
             return 2
         }
         return js.runFile(alloc, args[2])
+    }
+    if args.len == 2 && text.eql(args[1], "gpu-smoke") {
+        return gpu.smokeMain()
     }
     if args.len >= 2 && text.eql(args[1], "screenshot") {
         return screenshot(alloc, args[2..])

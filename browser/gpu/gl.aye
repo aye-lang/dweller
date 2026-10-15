@@ -1,0 +1,440 @@
+// gpu: ANGLE, the OpenGL ES 3.0 that WebGL runs on (docs/webgl.md §1,
+// §2). libGLESv2 and libEGL are loaded at run time with dlopen, and every
+// entry point is a C function pointer from eglGetProcAddress, as
+// Chromium binds them (ui/gl/generate_bindings.py); the types and
+// constants come from @cimport of the EGL and GLES headers (angle.h).
+// Without ANGLE the browser still builds and runs: `display()` gives
+// null, and WebGL is unavailable.
+//
+// DWELLER_GL picks the backend: metal (the default on macOS), vulkan
+// (the default on Linux), gl, swiftshader (Vulkan on SwiftShader's CPU
+// device: the same pixels on every machine), null (the API without
+// pixels) or off. DWELLER_ANGLE names the directory of the libraries;
+// without it they are looked for next to the binary, in ../Frameworks
+// next to it (the app bundle), then in target/angle/<rev>/lib.
+
+import std
+import std.text
+
+let c = @cimport("angle.h", "-Iinclude", "-DEGL_EGL_PROTOTYPES=0", "-DGL_GLES_PROTOTYPES=0", "-DEGL_NO_X11")
+
+let REVISION = @embedFile("angle.rev")
+
+extern fn dlopen(path: [*]u8, mode: c_int) ?[*]u8
+// Declared to return a function pointer (the same bits as C's `void *`):
+// `@ptrCast` cannot turn a `?[*]u8` into a function (COMPILER_GAPS.md 57).
+extern fn dlsym(handle: ?[*]u8, name: [*]u8) ?fn()
+extern fn _NSGetExecutablePath(buf: [*]u8, size: *mut u32) c_int
+extern fn readlink(path: [*]u8, buf: [*]u8, size: usize) isize
+extern fn strlen(s: [*]u8) usize
+
+let RTLD_NOW: c_int = 2
+
+pub enum Backend {
+    Metal
+    Vulkan
+    Gl
+    SwiftShader
+    Null
+    Off
+}
+
+pub fn backendName(b: Backend) []u8 {
+    return match b {
+        .Metal => "metal"
+        .Vulkan => "vulkan"
+        .Gl => "gl"
+        .SwiftShader => "swiftshader"
+        .Null => "null"
+        .Off => "off"
+    }
+}
+
+/// The backend DWELLER_GL names, or this OS's default; null for a name
+/// it does not know.
+pub fn backendFromEnv() ?Backend {
+    let name = std.os.getenv("DWELLER_GL") orelse ""
+    if name.len == 0 {
+        if @targetOs() is .macos {
+            return Backend.Metal
+        }
+        return Backend.Vulkan
+    }
+    let all = [6]Backend{Backend.Metal, Backend.Vulkan, Backend.Gl, Backend.SwiftShader, Backend.Null, Backend.Off}
+    for b in all {
+        if text.eql(name, backendName(b)) {
+            return b
+        }
+    }
+    return null
+}
+
+// The entry points Dweller calls, from eglGetProcAddress. Each has the
+// signature of the header's PFN...PROC type (`c.PFNEGLINITIALIZEPROC`);
+// those are `?fn` types, which `@ptrCast` cannot make (COMPILER_GAPS.md
+// 57), so the signatures are written out here.
+pub struct Api {
+    eglGetError: fn() c.EGLint
+    eglGetPlatformDisplay: fn(c.EGLenum, ?[*]u8, ?*c_long) c.EGLDisplay
+    eglInitialize: fn(c.EGLDisplay, ?*mut c.EGLint, ?*mut c.EGLint) c.EGLBoolean
+    eglTerminate: fn(c.EGLDisplay) c.EGLBoolean
+    eglQueryString: fn(c.EGLDisplay, c.EGLint) ?[*]u8
+    eglBindAPI: fn(c.EGLenum) c.EGLBoolean
+    eglCreateContext: fn(c.EGLDisplay, c.EGLConfig, c.EGLContext, ?*c.EGLint) c.EGLContext
+    eglDestroyContext: fn(c.EGLDisplay, c.EGLContext) c.EGLBoolean
+    eglMakeCurrent: fn(c.EGLDisplay, c.EGLSurface, c.EGLSurface, c.EGLContext) c.EGLBoolean
+    eglReleaseThread: fn() c.EGLBoolean
+    glGetError: fn() c.GLenum
+    glGetString: fn(c.GLenum) ?[*]u8
+    glGenFramebuffers: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteFramebuffers: fn(c.GLsizei, ?*c.GLuint)
+    glBindFramebuffer: fn(c.GLenum, c.GLuint)
+    glGenRenderbuffers: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteRenderbuffers: fn(c.GLsizei, ?*c.GLuint)
+    glBindRenderbuffer: fn(c.GLenum, c.GLuint)
+    glRenderbufferStorage: fn(c.GLenum, c.GLenum, c.GLsizei, c.GLsizei)
+    glFramebufferRenderbuffer: fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint)
+    glCheckFramebufferStatus: fn(c.GLenum) c.GLenum
+    glViewport: fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei)
+    glClearColor: fn(c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat)
+    glClear: fn(c.GLbitfield)
+    glReadPixels: fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8)
+}
+
+/// The process's EGL display, initialized, on `backend`.
+pub struct Display {
+    api: Api
+    egl: c.EGLDisplay
+    backend: Backend
+}
+
+/// Why `display()` gave null.
+pub enum Unavailable {
+    // DWELLER_GL is off, or names no backend.
+    Off
+    UnknownBackend
+    // libEGL or libGLESv2 is not in any directory of the search order.
+    NotFound
+    // An entry point is missing, or eglInitialize failed.
+    NoDisplay
+}
+
+var display_state: ?Display = null
+var display_tried = false
+var display_error = Unavailable.NotFound
+
+/// The process's display, made on the first call (pages without WebGL
+/// pay nothing); null when WebGL is unavailable (`unavailable()` says
+/// why).
+pub fn display() ?Display {
+    if !display_tried {
+        display_tried = true
+        display_state = makeDisplay()
+    }
+    return display_state
+}
+
+pub fn unavailable() Unavailable {
+    return display_error
+}
+
+fn makeDisplay() ?Display {
+    let backend = backendFromEnv() orelse {
+        display_error = Unavailable.UnknownBackend
+        return null
+    }
+    if backend is .Off {
+        display_error = Unavailable.Off
+        return null
+    }
+    let egl = openLibraries() orelse {
+        display_error = Unavailable.NotFound
+        return null
+    }
+    display_error = Unavailable.NoDisplay
+    let api = bind(egl) orelse return null
+    var device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE
+    let kind = match backend {
+        .Metal => c.EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE
+        .Vulkan => c.EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
+        .Gl => c.EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE
+        .SwiftShader => c.EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
+        .Null => c.EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE
+        .Off => c.EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE
+    }
+    if backend is .SwiftShader {
+        device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE
+    }
+    let attribs = [5]c_long{
+        c.EGL_PLATFORM_ANGLE_TYPE_ANGLE as c_long, kind as c_long,
+        c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE as c_long, device as c_long,
+        c.EGL_NONE as c_long,
+    }
+    let dpy = api.eglGetPlatformDisplay(c.EGL_PLATFORM_ANGLE_ANGLE as c.EGLenum, null, &attribs[0])
+    if dpy == null {
+        return null
+    }
+    var major: c.EGLint = 0
+    var minor: c.EGLint = 0
+    if api.eglInitialize(dpy, &mut major, &mut minor) == 0 {
+        return null
+    }
+    return Display { api: api, egl: dpy, backend: backend }
+}
+
+// dlopens libGLESv2, then libEGL, from the first directory of the search
+// order that has both; gives libEGL's handle.
+fn openLibraries() ?[*]u8 {
+    var exe = @zeroed([4096]u8)
+    let exe_dir = executableDir(exe[..])
+    let rev = text.trim(REVISION)
+    var target = @zeroed([256]u8)
+    let target_lib = join(target[..], "target/angle/", rev, "/lib")
+    var frameworks = @zeroed([4096]u8)
+    let bundle = join(frameworks[..], exe_dir, "/../Frameworks", "")
+    let dirs = [4][]u8{std.os.getenv("DWELLER_ANGLE") orelse "", exe_dir, bundle, target_lib}
+    for dir in dirs {
+        if dir.len == 0 {
+            continue
+        }
+        var path = @zeroed([4352]u8)
+        if @targetOs() is .macos {
+            if dlopen(join(path[..], dir, "/libGLESv2.dylib", "\x00").ptr, RTLD_NOW) == null {
+                continue
+            }
+            if dlopen(join(path[..], dir, "/libEGL.dylib", "\x00").ptr, RTLD_NOW) |h| {
+                return h
+            }
+        } else {
+            if dlopen(join(path[..], dir, "/libGLESv2.so", "\x00").ptr, RTLD_NOW) == null {
+                continue
+            }
+            if dlopen(join(path[..], dir, "/libEGL.so", "\x00").ptr, RTLD_NOW) |h| {
+                return h
+            }
+        }
+    }
+    return null
+}
+
+// a, b and c copied into out (cut at its end).
+fn join(out: []mut u8, a: []u8, b: []u8, d: []u8) []u8 {
+    var n: usize = 0
+    for part in [3][]u8{a, b, d} {
+        for ch in part {
+            if n < out.len {
+                out[n] = ch
+                n += 1
+            }
+        }
+    }
+    return out[0..n]
+}
+
+// The directory of the running binary, in buf ("" when unknown).
+fn executableDir(buf: []mut u8) []u8 {
+    var n: usize = 0
+    if @targetOs() is .macos {
+        var size = buf.len as u32
+        if _NSGetExecutablePath(buf.ptr, &mut size) != 0 {
+            return ""
+        }
+        n = strlen(buf.ptr)
+    } else {
+        let got = readlink("/proc/self/exe".ptr, buf.ptr, buf.len)
+        if got <= 0 {
+            return ""
+        }
+        n = got as usize
+    }
+    while n > 0 && buf[n - 1] != '/' {
+        n -= 1
+    }
+    if n == 0 {
+        return ""
+    }
+    return buf[0..n - 1]
+}
+
+fn bind(egl: [*]u8) ?Api {
+    let p = dlsym(egl, "eglGetProcAddress".ptr) orelse return null
+    let get = @ptrCast(fn(?[*]u8) ?fn(), p)
+    return Api {
+        eglGetError: @ptrCast(fn() c.EGLint, get("eglGetError".ptr) orelse return null),
+        eglGetPlatformDisplay: @ptrCast(fn(c.EGLenum, ?[*]u8, ?*c_long) c.EGLDisplay, get("eglGetPlatformDisplay".ptr) orelse return null),
+        eglInitialize: @ptrCast(fn(c.EGLDisplay, ?*mut c.EGLint, ?*mut c.EGLint) c.EGLBoolean, get("eglInitialize".ptr) orelse return null),
+        eglTerminate: @ptrCast(fn(c.EGLDisplay) c.EGLBoolean, get("eglTerminate".ptr) orelse return null),
+        eglQueryString: @ptrCast(fn(c.EGLDisplay, c.EGLint) ?[*]u8, get("eglQueryString".ptr) orelse return null),
+        eglBindAPI: @ptrCast(fn(c.EGLenum) c.EGLBoolean, get("eglBindAPI".ptr) orelse return null),
+        eglCreateContext: @ptrCast(fn(c.EGLDisplay, c.EGLConfig, c.EGLContext, ?*c.EGLint) c.EGLContext, get("eglCreateContext".ptr) orelse return null),
+        eglDestroyContext: @ptrCast(fn(c.EGLDisplay, c.EGLContext) c.EGLBoolean, get("eglDestroyContext".ptr) orelse return null),
+        eglMakeCurrent: @ptrCast(fn(c.EGLDisplay, c.EGLSurface, c.EGLSurface, c.EGLContext) c.EGLBoolean, get("eglMakeCurrent".ptr) orelse return null),
+        eglReleaseThread: @ptrCast(fn() c.EGLBoolean, get("eglReleaseThread".ptr) orelse return null),
+        glGetError: @ptrCast(fn() c.GLenum, get("glGetError".ptr) orelse return null),
+        glGetString: @ptrCast(fn(c.GLenum) ?[*]u8, get("glGetString".ptr) orelse return null),
+        glGenFramebuffers: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenFramebuffers".ptr) orelse return null),
+        glDeleteFramebuffers: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteFramebuffers".ptr) orelse return null),
+        glBindFramebuffer: @ptrCast(fn(c.GLenum, c.GLuint), get("glBindFramebuffer".ptr) orelse return null),
+        glGenRenderbuffers: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenRenderbuffers".ptr) orelse return null),
+        glDeleteRenderbuffers: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteRenderbuffers".ptr) orelse return null),
+        glBindRenderbuffer: @ptrCast(fn(c.GLenum, c.GLuint), get("glBindRenderbuffer".ptr) orelse return null),
+        glRenderbufferStorage: @ptrCast(fn(c.GLenum, c.GLenum, c.GLsizei, c.GLsizei), get("glRenderbufferStorage".ptr) orelse return null),
+        glFramebufferRenderbuffer: @ptrCast(fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint), get("glFramebufferRenderbuffer".ptr) orelse return null),
+        glCheckFramebufferStatus: @ptrCast(fn(c.GLenum) c.GLenum, get("glCheckFramebufferStatus".ptr) orelse return null),
+        glViewport: @ptrCast(fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei), get("glViewport".ptr) orelse return null),
+        glClearColor: @ptrCast(fn(c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat), get("glClearColor".ptr) orelse return null),
+        glClear: @ptrCast(fn(c.GLbitfield), get("glClear".ptr) orelse return null),
+        glReadPixels: @ptrCast(fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8), get("glReadPixels".ptr) orelse return null),
+    }
+}
+
+/// A surfaceless ES 3.0 context with the attributes of a WebGL context,
+/// made current; null on failure. As in Chromium's
+/// ui/gl/gl_context_egl.cc, each attribute is given only when the
+/// display has its extension (the Metal backend has no
+/// EGL_EXT_create_context_robustness).
+pub fn createContext(d: Display) c.EGLContext {
+    if d.api.eglBindAPI(c.EGL_OPENGL_ES_API as c.EGLenum) == 0 {
+        return null
+    }
+    let exts = cstr(d.api.eglQueryString(d.egl, c.EGL_EXTENSIONS))
+    let wanted = [7]Attribute{
+        Attribute { ext: "EGL_ANGLE_create_context_webgl_compatibility", name: c.EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE, value: c.EGL_TRUE },
+        Attribute { ext: "EGL_EXT_create_context_robustness", name: c.EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT, value: c.EGL_TRUE },
+        Attribute { ext: "EGL_EXT_create_context_robustness", name: c.EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT, value: c.EGL_LOSE_CONTEXT_ON_RESET_EXT },
+        Attribute { ext: "EGL_ANGLE_robust_resource_initialization", name: c.EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, value: c.EGL_TRUE },
+        Attribute { ext: "EGL_CHROMIUM_create_context_bind_generates_resource", name: c.EGL_CONTEXT_BIND_GENERATES_RESOURCE_CHROMIUM, value: c.EGL_FALSE },
+        Attribute { ext: "EGL_ANGLE_create_context_client_arrays", name: c.EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE, value: c.EGL_FALSE },
+        Attribute { ext: "EGL_ANGLE_create_context_backwards_compatible", name: c.EGL_CONTEXT_OPENGL_BACKWARDS_COMPATIBLE_ANGLE, value: c.EGL_FALSE },
+    }
+    var attribs = @zeroed([19]c.EGLint)
+    attribs[0] = c.EGL_CONTEXT_MAJOR_VERSION
+    attribs[1] = 3
+    attribs[2] = c.EGL_CONTEXT_MINOR_VERSION
+    attribs[3] = 0
+    var n: usize = 4
+    for a in wanted {
+        if hasExtension(exts, a.ext) {
+            attribs[n] = a.name
+            attribs[n + 1] = a.value
+            n += 2
+        }
+    }
+    attribs[n] = c.EGL_NONE
+    // EGL_NO_CONFIG_KHR (EGL_KHR_no_config_context), EGL_NO_CONTEXT.
+    let ctx = d.api.eglCreateContext(d.egl, null, null, &attribs[0])
+    if ctx == null {
+        return null
+    }
+    // EGL_NO_SURFACE for both (EGL_KHR_surfaceless_context).
+    if d.api.eglMakeCurrent(d.egl, null, null, ctx) == 0 {
+        d.api.eglDestroyContext(d.egl, ctx)
+        return null
+    }
+    return ctx
+}
+
+pub fn destroyContext(d: Display, ctx: c.EGLContext) {
+    d.api.eglMakeCurrent(d.egl, null, null, null)
+    d.api.eglDestroyContext(d.egl, ctx)
+}
+
+/// Ends the process's display (after the last context).
+pub fn shutdown() {
+    if display_state |d| {
+        d.api.eglTerminate(d.egl)
+        d.api.eglReleaseThread()
+    }
+    display_state = null
+}
+
+struct Attribute {
+    ext: []u8
+    name: c.EGLint
+    value: c.EGLint
+}
+
+// Whether the space-separated list exts has name.
+fn hasExtension(exts: []u8, name: []u8) bool {
+    var it = text.split(exts, " ")
+    while it.next() |e| {
+        if text.eql(e, name) {
+            return true
+        }
+    }
+    return false
+}
+
+fn cstr(p: ?[*]u8) []u8 {
+    if p |s| {
+        return s[0..strlen(s)]
+    }
+    return ""
+}
+
+/// `dweller gpu-smoke`: a 64x64 framebuffer cleared to red and read back.
+/// Prints the backend, GL_RENDERER and the pixel (`ff0000ff`); 0 when it
+/// is red (on `null`, which draws nothing, when there is no GL error),
+/// also when WebGL is unavailable (it says why).
+pub fn smokeMain() i32 {
+    let d = display() orelse {
+        @print("WebGL unavailable: ")
+        @println(match unavailable() {
+            .Off => "DWELLER_GL=off"
+            .UnknownBackend => "DWELLER_GL names no backend (metal, vulkan, gl, swiftshader, null, off)"
+            .NotFound => "ANGLE not found (DWELLER_ANGLE, next to the binary, ../Frameworks, target/angle/<rev>/lib)"
+            .NoDisplay => "no EGL display"
+        })
+        return 0
+    }
+    defer shutdown()
+    let gl = d.api
+    let ctx = createContext(d)
+    if ctx == null {
+        @print("gpu-smoke: no ES 3.0 context, EGL error ")
+        @println(gl.eglGetError())
+        return 1
+    }
+    defer destroyContext(d, ctx)
+    let size: c.GLsizei = 64
+    var fbo: c.GLuint = 0
+    var rb: c.GLuint = 0
+    gl.glGenFramebuffers(1, &mut fbo)
+    gl.glGenRenderbuffers(1, &mut rb)
+    gl.glBindRenderbuffer(c.GL_RENDERBUFFER as c.GLenum, rb)
+    gl.glRenderbufferStorage(c.GL_RENDERBUFFER as c.GLenum, c.GL_RGBA8 as c.GLenum, size, size)
+    gl.glBindFramebuffer(c.GL_FRAMEBUFFER as c.GLenum, fbo)
+    gl.glFramebufferRenderbuffer(c.GL_FRAMEBUFFER as c.GLenum, c.GL_COLOR_ATTACHMENT0 as c.GLenum, c.GL_RENDERBUFFER as c.GLenum, rb)
+    let status = gl.glCheckFramebufferStatus(c.GL_FRAMEBUFFER as c.GLenum)
+    gl.glViewport(0, 0, size, size)
+    gl.glClearColor(1.0, 0.0, 0.0, 1.0)
+    gl.glClear(c.GL_COLOR_BUFFER_BIT as c.GLbitfield)
+    var px = @zeroed([4]u8)
+    gl.glReadPixels(size / 2, size / 2, 1, 1, c.GL_RGBA as c.GLenum, c.GL_UNSIGNED_BYTE as c.GLenum, px[..].ptr)
+    let err = gl.glGetError()
+    @print("backend ")
+    @println(backendName(d.backend))
+    @print("GL_RENDERER ")
+    @println(cstr(gl.glGetString(c.GL_RENDERER as c.GLenum)))
+    @print("GL_VERSION ")
+    @println(cstr(gl.glGetString(c.GL_VERSION as c.GLenum)))
+    let hex = "0123456789abcdef"
+    for b in px {
+        @print(hex[(b >> 4) as usize..(b >> 4) as usize + 1])
+        @print(hex[(b & 15) as usize..(b & 15) as usize + 1])
+    }
+    @println()
+    gl.glDeleteRenderbuffers(1, &rb)
+    gl.glDeleteFramebuffers(1, &fbo)
+    let red = px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255
+    let complete = status == c.GL_FRAMEBUFFER_COMPLETE as c.GLenum
+    if err != 0 || !complete || (!red && !(d.backend is .Null)) {
+        @print("gpu-smoke: FAIL, glGetError ")
+        @print(err)
+        @print(", framebuffer status ")
+        @println(status)
+        return 1
+    }
+    @println("ok")
+    return 0
+}
