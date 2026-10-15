@@ -9,8 +9,10 @@
 import css
 import dom.Document
 import dom.Kind
+import dom.NodeId
 import font
 import layout
+import std.list.List
 import std.map.IntMap
 import std.mem.AllocError
 import std.mem.Allocator
@@ -51,30 +53,37 @@ pub fn restyleWithSizes(alloc: Allocator, doc: *Document, ua: *css.Sheet, author
 // Records in `styles` the content-box size of each query container of
 // `tree`; whether one changed.
 fn containerSizes(tree: *layout.Tree, styles: *mut css.Styles) AllocError!bool {
-    var any_moved = false
-    // An element's first box (its principal box) tells its size.
+    var moved = List(NodeId).init(styles.alloc)
+    defer moved.deinit()
+    try changedContainers(tree, styles, &mut moved)
+    return moved.len() > 0
+}
+
+/// Records in `styles` the content-box size of each query container of
+/// `tree` (an element's first box tells it), and appends to `out` those
+/// whose size changed.
+pub fn changedContainers(tree: *layout.Tree, styles: *mut css.Styles, out: *mut List(NodeId)) AllocError!void {
     var seen = IntMap(u32, bool).init(styles.alloc)
     defer seen.deinit()
     for b in tree.boxes.items() {
         let el = b.node orelse continue
-        if tree.doc.node(el).kind != Kind.Element || seen.contains(el.index) {
+        if b.pseudo != 0 {
+            continue
+        }
+        let kind = keywordIn(b.style[css.CONTAINER_TYPE])
+        if kind.len == 0 || text.eql(kind, "normal") || tree.doc.node(el).kind != Kind.Element || seen.contains(el.index) {
             continue
         }
         try seen.put(el.index, true)
-        let kind = keywordIn(b.style[css.CONTAINER_TYPE])
-        if kind.len == 0 || text.eql(kind, "normal") {
-            continue
-        }
         let w = b.w - b.border[1] - b.border[3] - b.padding[1] - b.padding[3]
         var h = -1.0
         if text.eql(kind, "size") {
             h = b.h - b.border[0] - b.border[2] - b.padding[0] - b.padding[2]
         }
         if try styles.setContainerSize(el, maxZero(w), h) {
-            any_moved = true
+            try out.append(el)
         }
     }
-    return any_moved
 }
 
 fn maxZero(v: f64) f64 {

@@ -308,6 +308,12 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             }
         }
         if kept {
+            kept = settleContainers(s, g, st) catch |e| {
+                dropGeometry(s)
+                return e
+            }
+        }
+        if kept {
             g.version = version
             g.noted = s.layout_noted
             followScroll(s, g)
@@ -334,8 +340,18 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             g.version = version
             g.noted = s.layout_noted
             s.geom = g
-            followScroll(s, g)
-            return g
+            let settled = settleContainers(s, g, st) catch |e| {
+                dropGeometry(s)
+                return e
+            }
+            if settled {
+                followScroll(s, g)
+                if g.shared && g.styles.queried {
+                    // `settleContainers` may have kept boxes.
+                    try checkLayout(s, g)
+                }
+                return g
+            }
         }
     }
     dropGeometry(s)
@@ -410,9 +426,11 @@ fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
 /// page's styling) for the viewport the scripts see, the layout scripts
 /// read too: the changes scripts make from now on style and lay out
 /// again only what they touch (`geometry`), for the page as for the
-/// scripts. The layout owns `tree` (`Page.tree_borrowed`). Not for
-/// styles that depend on container sizes (`layoutQueried`) or documents
-/// with shadow trees, whose changes are styled again in full.
+/// scripts. The layout owns `tree` (`Page.tree_borrowed`). With
+/// container queries, `tree` is `layoutQueried`'s, and the containers
+/// whose size a change moves are styled again (`settleContainers`). Not
+/// for documents with shadow trees, whose changes are styled again in
+/// full.
 fn adoptLayout(s: *mut Script, st: *mut Styling, tree: *mut layout.Tree) AllocError!void {
     let p = s.page
     dropGeometry(s)
@@ -458,12 +476,14 @@ fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Style
 // them, when it can: not when a change may change any element's style,
 // or for other sheets or another viewport, or when the styles depend on
 // what css/invalidation.aye does not follow (`:has()` of siblings,
-// container queries, shadow trees; but see `onlyInlineStyle`), or after styling the document again
+// shadow trees, container queries but in the page's layout, which
+// `settleContainers` follows; but see `onlyInlineStyle`), or after
+// styling the document again
 // `RESTYLE_ROUNDS` times this way. Whether it did. `keep`: the old
 // values stay as they are, for the boxes of `g` to keep pointing at.
 fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocError!bool {
     let p = s.page
-    let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && sameSheets(s, g) && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && !g.styles.queried && p.doc.shadows.len() == 0 && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
+    let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && sameSheets(s, g) && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && (!g.styles.queried || g.shared) && p.doc.shadows.len() == 0 && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
     if !ok {
         return false
     }
@@ -712,20 +732,21 @@ fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut Lis
 // Builds the boxes of each element of `dirty` again (of the nearest
 // element above it whose box can be, when its own cannot) and lays them out
 // again (layout/incremental.aye), when that is what a full layout gives:
-// not for a tree with floats, container queries or shadow trees, nor
+// not for a tree with floats or shadow trees, or container queries but in
+// the page's layout (`settleContainers`), nor
 // after so many boxes were built again that the tree is mostly dropped
 // ones. False when it did not; the tree may then be changed in part and
 // must be laid out from scratch.
 fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!bool {
     let doc = &s.page.doc
     let t = g.tree
-    if g.floats || g.styles.queried || doc.shadows.len() > 0 || t.boxes.len() > 2 * g.built + 1024 {
+    if g.floats || (g.styles.queried && !g.shared) || doc.shadows.len() > 0 || t.boxes.len() > 2 * g.built + 1024 {
         return false
     }
     var roots = List(usize).init(s.alloc)
     defer roots.deinit()
     for d in dirty {
-        if !doc.isLive(d) || !doc.isConnected(d) {
+        if !doc.isLive(d) || !doc.isConnected(d) || (g.first.get(d.index) == null && undisplayed(g, d)) {
             continue
         }
         var cur: ?NodeId = d
@@ -815,6 +836,111 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     return true
 }
 
+// At most this many times a layout's query containers change size and
+// their subtrees are styled again (`settleContainers`), as
+// containers.aye `layoutQueried`.
+let CONTAINER_ROUNDS: usize = 2
+
+// Container queries in the page's layout (`adoptLayout`): after a layout
+// that kept boxes (or one with the styles kept), the styles of the query
+// containers whose size changed (or that are new) are computed again
+// with the new size, subtree by subtree, and the boxes whose values
+// moved are built and laid out again (`relayoutDirty`), until no
+// container changes size. False when that takes more than
+// `CONTAINER_ROUNDS` rounds or a relayout that is not local: the
+// document is then styled and laid out in full (`layoutQueried`).
+fn settleContainers(s: *mut Script, g: *mut Geometry, st: *Styling) AllocError!bool {
+    if !g.shared || !g.styles.queried {
+        return true
+    }
+    let doc = &s.page.doc
+    var resized = List(NodeId).init(s.alloc)
+    defer resized.deinit()
+    var roots = List(NodeId).init(s.alloc)
+    defer roots.deinit()
+    var shallow = List(bool).init(s.alloc)
+    defer shallow.deinit()
+    var dirty = List(NodeId).init(s.alloc)
+    defer dirty.deinit()
+    var found = IntMap(u32, bool).init(s.alloc)
+    defer found.deinit()
+    var round: usize = 0
+    while true {
+        resized.clear()
+        try changedContainers(g.tree, g.styles, &mut resized)
+        if resized.len() == 0 {
+            return true
+        }
+        if round == CONTAINER_ROUNDS {
+            return false
+        }
+        round += 1
+        let began = perf.start()
+        // The outermost containers: the others are styled with them.
+        if found.len() > 0 {
+            found.deinit()
+            found = IntMap(u32, bool).init(s.alloc)
+        }
+        for el in resized.items() {
+            try found.put(el.index, true)
+        }
+        roots.clear()
+        shallow.clear()
+        for el in resized.items() {
+            var under = false
+            var up = doc.parent(el)
+            while up |u| {
+                if found.contains(u.index) {
+                    under = true
+                    break
+                }
+                up = doc.parent(u)
+            }
+            if !under {
+                try roots.append(el)
+                try shallow.append(false)
+            }
+        }
+        g.restyled += try css.restyleSubtrees(doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), true, g.styles)
+        perf.end("container_restyle", began, s.page.url.href)
+        if !g.styles.moved {
+            continue
+        }
+        dirty.clear()
+        if g.styles.moved_many {
+            try dirty.append(doc.root)
+        } else {
+            for el in g.styles.moved_els.items() {
+                try dirty.append(el)
+            }
+        }
+        if !(try relayoutDirty(s, g, dirty.items())) {
+            return false
+        }
+    }
+    return true
+}
+
+// Is `el` or an element above it `display: none` (a change in the
+// `<head>`)? Then an element without a box has none to build: when that
+// element's `display` changed, it is dirty itself (`Styles.moved`).
+fn undisplayed(g: *Geometry, el: NodeId) bool {
+    let doc = g.tree.doc
+    var cur: ?NodeId = el
+    while cur |c| {
+        if doc.node(c).kind != dom.Kind.Element {
+            return false
+        }
+        if g.styles.get(c) |v| {
+            if text.eql(layout.keywordOf(v[css.DISPLAY]), "none") {
+                return true
+            }
+        }
+        cur = doc.parent(c)
+    }
+    return false
+}
+
 // DWELLER_LAYOUT_CHECK=1: each layout that keeps boxes of the one
 // before (`geometry`) is compared with a full layout of the same styles,
 // and the first difference is logged ("LAYOUT CHECK"). For tests
@@ -862,6 +988,7 @@ fn checkStyles(s: *mut Script, g: *Geometry) AllocError!void {
     let st = g.styling
     var full = try css.Styles.init(s.alloc)
     defer full.deinit()
+    try full.copySizes(g.styles)
     try css.computeStyles(&p.doc, &st.ua, &st.author, st.media, &mut full)
     var cur: ?NodeId = p.doc.root
     while cur |h| {
@@ -955,7 +1082,7 @@ fn sameLine(a: *layout.Tree, i: usize, b: *layout.Tree, j: usize) bool {
 // cascade of the whole document with the same sheets and viewport.
 fn layoutStyles(s: *mut Script, el: NodeId) ?[]css.Value {
     let g = s.geom orelse return null
-    if g.version != layoutVersion(s.page) || g.width != s.width || g.height != s.height || g.styles.queried {
+    if g.version != layoutVersion(s.page) || g.width != s.width || g.height != s.height || (g.styles.queried && !g.shared) {
         return null
     }
     if !s.page.doc.isConnected(el) {

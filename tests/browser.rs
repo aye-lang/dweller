@@ -3428,6 +3428,70 @@ fn window_damage() {
     assert!(px.contains(&0), "no frame without damage: {px:?}");
 }
 
+/// A page shaped like GitHub's, with many container queries on nested
+/// query containers, served over HTTP: after the load, the frames that
+/// change a list (and the side column's width every 15th, which flips
+/// its `@container` conditions) style again only the changed subtrees
+/// and the containers whose size changed, never the whole document
+/// (geometry.aye `settleContainers`); every such layout equals a full
+/// one (P4.44).
+#[test]
+fn window_container_queries() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let url = format!("{}/ui/container_feed.html", srv.base);
+    let run = |env: &str, without: &str| {
+        let out = Command::new(dweller())
+            .current_dir(root())
+            .env("SDL_VIDEODRIVER", "dummy")
+            .env(env, "1")
+            .env_remove(without)
+            .args([
+                &url, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "90",
+                "--text",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            text(&out.stdout).contains("event 79"),
+            "{}",
+            text(&out.stdout)
+        );
+        (out.status, text(&out.stderr))
+    };
+    let (status, stderr) = run("DWELLER_LAYOUT_CHECK", "DWELLER_TIMING");
+    assert!(status.success() && stderr.is_empty(), "{status}\n{stderr}");
+    let (status, stderr) = run("DWELLER_TIMING", "DWELLER_LAYOUT_CHECK");
+    assert!(status.success(), "{status}\n{stderr}");
+    let phases: Vec<&str> = stderr
+        .lines()
+        .filter_map(|l| l.split('\t').nth(1))
+        .collect();
+    let count = |phase: &str| phases.iter().filter(|p| **p == phase).count();
+    // The first relayouts style the loaded page (container queries: up
+    // to three cascades); none after.
+    let loaded = phases
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| **p == "ui_relayout")
+        .nth(1)
+        .map(|(i, _)| i)
+        .unwrap_or(phases.len());
+    let late = phases[loaded..].iter().filter(|p| **p == "cascade").count();
+    assert!(count("ui_relayout") >= 50, "too few relayouts:\n{stderr}");
+    assert_eq!(late, 0, "full cascades after the load:\n{stderr}");
+    assert!(
+        count("container_restyle") >= 4,
+        "no container restyles:\n{stderr}"
+    );
+}
+
 /// The window and the scripts agree on the scroll offset: a script's
 /// `scrollTo` scrolls the window, and the wheel moves `scrollY`.
 #[test]

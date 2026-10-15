@@ -195,6 +195,9 @@ pub struct Box {
     // it (incremental.aye).
     cb_w: f64 = 0.0
     cb_h: f64 = -1.0
+    // Laid out by `layoutBlockLevel` in that containing block, its
+    // subtree unchanged since (incremental.aye `relayout`).
+    laid: bool = false
 
     /// Is the box out of flow (a float, or absolutely positioned)?
     pub fn oof(self: *Self) bool {
@@ -280,6 +283,10 @@ pub struct Tree {
     // The lines left before the line clamp of the `-webkit-box` being
     // laid out ends, among the lines of its block flow; 0 for none.
     clamp_left: usize = 0
+    // While `relayout` (incremental.aye) lays out this box again: its
+    // children that were laid out in the same containing block keep
+    // that layout (`Box.laid`).
+    keep_under: ?usize = null
     // Absolutely positioned boxes, in tree order, laid out after the
     // rest.
     absolutes: List(usize)

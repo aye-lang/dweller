@@ -182,6 +182,14 @@ pub struct Styles {
         return true
     }
 
+    /// Takes copies of the container sizes of `other`.
+    pub fn copySizes(self: *mut Self, other: *Styles) AllocError!void {
+        var it = other.sizes.iterator()
+        while it.next() |e| {
+            try self.sizes.put(e.key, e.value.*)
+        }
+    }
+
     /// Takes the container sizes of `other` (computed styles about to be
     /// dropped).
     pub fn takeSizes(self: *mut Self, other: *mut Styles) {
@@ -700,8 +708,9 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 try notePseudos(out, h, pseudos)
                 styled += 1
                 let values = out.map.get(h.index) orelse old.items()
-                if !had || had_own_customs || own_customs || styleParent(doc, h) == null {
-                    // Custom properties and `rem` reach any descendant.
+                if !had || had_own_customs || own_customs || styleParent(doc, h) == null || !sameContainer(old.items(), values) {
+                    // Custom properties and `rem` reach any descendant,
+                    // and so does what query container is the nearest.
                     styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
                 } else if !sameValues(old.items(), values) || text.eql(keywordText(values[TEXT_ALIGN]), "center") {
                     var child = doc.firstChild(h)
@@ -1670,6 +1679,12 @@ fn sameValues(a: []Value, b: []Value) bool {
         }
     }
     return true
+}
+
+// Is an element with values `a` the same query container as with `b`
+// (`container-type`, `container-name`)?
+fn sameContainer(a: []Value, b: []Value) bool {
+    return sameValue(a[CONTAINER_TYPE], b[CONTAINER_TYPE]) && sameValue(a[CONTAINER_NAME], b[CONTAINER_NAME])
 }
 
 // Are the values of `a` and `b` the same to the bit (`-0` is not `0`)?

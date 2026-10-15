@@ -134,6 +134,7 @@ pub fn rebuild(t: *mut Tree, i: usize, forgotten: *mut List(NodeId)) AllocError!
     try forgetBoxes(t, i, forgotten)
     let b = t.bx(i)
     b.style = style
+    b.laid = false
     b.children = List(usize).init(t.alloc)
     let first = t.boxes.len()
     try buildPseudo(t, i, el, 1)
@@ -207,10 +208,22 @@ fn rebaseline(t: *mut Tree, i: usize, old: Box) bool {
 
 /// Lays box `i` out again in the containing block of the last layout,
 /// then its parent and so on while the box comes out other than before
-/// (`sameOutside`), and places the last one laid out where it was. False
-/// when that reaches the root or a box not in block flow: the tree must
-/// then be laid out from scratch.
+/// (`sameOutside`), and places the last one laid out where it was (the
+/// root as a full layout does). False for a box not in block flow: the
+/// tree must then be laid out from scratch.
 pub fn relayout(t: *mut Tree, i: usize) AllocError!bool {
+    let ok = relayoutUp(t, i) catch |e| {
+        t.keep_under = null
+        return e
+    }
+    t.keep_under = null
+    return ok
+}
+
+// `relayout`; the children of a box laid out again that were not
+// changed keep their layout when their containing block is the same
+// (`Tree.keep_under`).
+fn relayoutUp(t: *mut Tree, i: usize) AllocError!bool {
     if !blockFlowUp(t, i) {
         return false
     }
@@ -223,10 +236,20 @@ pub fn relayout(t: *mut Tree, i: usize) AllocError!bool {
     var x = i
     while true {
         let old = t.bx(x).*
-        let up = old.parent orelse return false
+        t.bx(x).laid = false
+        t.keep_under = x
+        let up = old.parent orelse {
+            t.clamp_left = 0
+            t.float_base = t.floats.len()
+            try layoutRoot(t, x)
+            t.keep_under = null
+            place(t, x, 0.0, 0.0)
+            return try finish(t, x)
+        }
         t.clamp_left = 0
         t.float_base = t.floats.len()
         try layoutBlockLevel(t, x, old.cb_w, old.cb_h)
+        t.keep_under = null
         if sameOutside(old, t.bx(x)) || sameSize(old, t.bx(x)) {
             let pb = t.bx(up)
             place(t, x, pb.ax + pb.border[3] + pb.padding[3], pb.ay + pb.border[0] + pb.padding[0])

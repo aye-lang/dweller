@@ -1861,16 +1861,20 @@ fn documentSetTitle(it: *mut Interp, a: Args) JsError!Value {
     defer titles.deinit()
     try doc.getElementsByTagName("title", &mut titles)
     var t = doc.root
+    // Where the document changed, for the layout scripts read.
+    var at = doc.root
     if titles.len() > 0 {
         t = titles.items()[0]
+        at = t
     } else {
         let head = childNamed(doc, doc.documentElement(), "head") orelse return Value.Undefined
         t = try doc.createElement("title", []Attr{})
         doc.appendChild(head, t)
+        at = head
     }
     removeChildren(doc, t)
     try doc.appendText(t, b.bytes())
-    try changed(it)
+    try changedAt(it, at, "")
     return Value.Undefined
 }
 
