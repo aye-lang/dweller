@@ -113,6 +113,12 @@ pub struct Styles {
     // element), and whether there were more.
     moved_els: List(NodeId)
     moved_many: bool = false
+    // The elements it styled whose values changed but not in what
+    // layout reads, or there only in their transform (`shift`; one
+    // before and after), with the values they had: their boxes stay and
+    // take the new ones (geometry.aye, P4.56). Beyond `MAX_MOVED`, they
+    // count as moved.
+    restyled: List(Restyled)
 
     pub fn init(alloc: Allocator) AllocError!Styles {
         let arena = try alloc.create(Arena.init(alloc))
@@ -167,6 +173,7 @@ pub struct Styles {
             inputs: 0,
             class_infos: List(*ClassInfo).init(alloc),
             moved_els: List(NodeId).init(alloc),
+            restyled: List(Restyled).init(alloc),
         }
     }
 
@@ -200,6 +207,7 @@ pub struct Styles {
 
     pub fn deinit(self: *mut Self) {
         self.moved_els.deinit()
+        self.restyled.deinit()
         self.class_infos.deinit()
         self.sizes.deinit()
         self.map.deinit()
@@ -604,6 +612,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     out.moved = false
     out.moved_els.clear()
     out.moved_many = false
+    out.restyled.clear()
     let a = out.arena.allocator()
     let wins = try a.alloc(Win { set: false, level: 0, spec: 0, d: NO_DECL }, NPROPS)
     var c = Computer {
@@ -1228,14 +1237,30 @@ struct Computer {
         }
         let values = try self.computeValues(parent, is_root)
         try self.alignCenter(el, values)
+        var note = false
+        var shift = false
         if self.track && !sameLayout(old, values) {
-            try self.out.noteMoved(el)
+            if onlyTransform(old, values) && self.out.restyled.len() < MAX_MOVED {
+                note = true
+                shift = true
+            } else {
+                try self.out.noteMoved(el)
+            }
+        } else if self.track && old != null && !sameValues(old.?, values) {
+            if self.out.restyled.len() < MAX_MOVED {
+                note = true
+            } else {
+                try self.out.noteMoved(el)
+            }
         }
         var release: ?[]Value = null
         if self.reuse {
             release = old
         }
         try self.out.map.put(el.index, try self.out.intern(values, release))
+        if note {
+            try self.out.restyled.append(Restyled { el: el, old: old.?, shift: shift })
+        }
     }
 
     // The computed values of the pseudo-element `pseudo` of `el` from the
@@ -1655,6 +1680,34 @@ fn samePseudo(old: ?[]Value, now: ?[]Value) bool {
         return sameLayout(old, n)
     }
     return old == null
+}
+
+/// An element styled again whose boxes stay (`Styles.restyled`).
+pub struct Restyled {
+    el: NodeId
+    old: []Value
+    shift: bool
+}
+
+// Do `old` and `now` differ, in what layout reads, only in the
+// transform (and its origin), with one before and after (a box moved
+// by a transform: transform.aye `retransform`)?
+fn onlyTransform(old: ?[]Value, now: []Value) bool {
+    let o = old orelse return false
+    if !hasTransformValue(o[TRANSFORM]) || !hasTransformValue(now[TRANSFORM]) {
+        return false
+    }
+    for i in 0..NPROPS {
+        if i != TRANSFORM && i != TRANSFORM_ORIGIN && !paintOnly(i) && !sameValue(o[i], now[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+fn hasTransformValue(v: Value) bool {
+    let k = keywordText(v)
+    return k.len > 0 && !text.eql(k, "none")
 }
 
 // Are `now` the values `old` had (none: not), for all that layout reads?

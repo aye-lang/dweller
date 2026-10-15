@@ -146,8 +146,8 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     }
     _ = try paint.spreadLayers(pd.sigs.items(), v, all, &mut pd.damage)
     let drew = !pd.damage.isEmpty()
+    var reuse = paint.Reuse { sigs: pd.sigs.items(), cache: &mut pd.cache }
     if drew {
-        var reuse = paint.Reuse { sigs: pd.sigs.items(), cache: &mut pd.cache }
         for r in pd.damage.rects.items() {
             try pd.canvas.pushDamage(r)
             defer pd.canvas.popClip()
@@ -159,6 +159,11 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     }
     let t = perf.start()
     perf.end("ui_damage_px", t, damageLabel(pd))
+    // The layers a frame that drew blended from the raster cache and
+    // those it rasterized ("KEPT DRAWN", P4.56).
+    if drew {
+        perf.end("ui_layers", t, pairLabel(reuse.kept as u64, reuse.drawn as u64))
+    }
     pd.drawn.clear()
     for sg in pd.sigs.items() {
         try pd.drawn.append(sg)
@@ -184,6 +189,15 @@ fn damageLabel(pd: *PageDraw) []u8 {
     label_buf[n] = ' '
     n += 1
     n = putNum(&mut label_buf, n, pd.damage.rects.len() as u64)
+    return label_buf[0..n]
+}
+
+fn pairLabel(a: u64, b: u64) []u8 {
+    var n: usize = 0
+    n = putNum(&mut label_buf, n, a)
+    label_buf[n] = ' '
+    n += 1
+    n = putNum(&mut label_buf, n, b)
     return label_buf[0..n]
 }
 

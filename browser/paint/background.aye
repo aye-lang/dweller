@@ -1113,6 +1113,10 @@ struct Frame {
     local: bool = false
     key: u64 = 0
     keep: bool = false
+    // A promoted layer (P4.56): drawn at `x0`, `y0` without its
+    // translation, blended (`sx`, `sy`) device px from there.
+    sx: i64 = 0
+    sy: i64 = 0
 }
 
 // A new layer over `r` (inside the clip of `outer`).
@@ -1231,9 +1235,15 @@ fn endLayer(f: Frame, r: Rect, radii: Radii, alpha: u8) AllocError!void {
 // filter spreads them covers what is in view (`bound`: its blur does not
 // depend on the part of the frame drawn again); another one what is in
 // the clip.
-fn beginWindowLayer(frames: *mut List(Frame), outer: *mut Canvas, v: View, r: Rect, ru: *mut Reuse, at: usize) AllocError!bool {
+//
+// A promoted layer (`off`: its translation, P4.56) is drawn without it
+// and blended that many whole device pixels away; its kept pixels are
+// those before its opacity (`alpha`), which blending applies.
+fn beginWindowLayer(frames: *mut List(Frame), outer: *mut Canvas, v: View, r: Rect, ru: *mut Reuse, at: usize, off: [2]f64, alpha: u8) AllocError!bool {
     let sig = ru.sigs[at]
     let e = deviceRect(r, v)
+    let sx = math.round(off[0] * v.scale) as i64
+    let sy = math.round(off[1] * v.scale) as i64
     let w = e.x1 - e.x0
     let h = e.y1 - e.y0
     var d = e
@@ -1244,15 +1254,19 @@ fn beginWindowLayer(frames: *mut List(Frame), outer: *mut Canvas, v: View, r: Re
         key = cacheKey(sig.g, vs[..])
         if ru.cache |rc| {
             if rc.find(key, (w * h * 4) as usize) |kept| {
-                blendLayerPixels(outer, kept, e)
+                ru.kept += 1
+                blendLayerPixels(outer, kept, IRect { x0: e.x0 + sx, y0: e.y0 + sy, x1: e.x1 + sx, y1: e.y1 + sy }, alpha)
                 return true
             }
             keep = true
         }
     } else if sig.spread {
-        d = intersect(e, outer.bound)
+        d = shiftedRect(intersect(shiftedRect(e, sx, sy), outer.bound), -sx, -sy)
     } else {
-        d = intersect(e, outer.clip)
+        d = shiftedRect(intersect(shiftedRect(e, sx, sy), outer.clip), -sx, -sy)
+    }
+    if ru.cache != null {
+        ru.drawn += 1
     }
     var lw: usize = 0
     var lh: usize = 0
@@ -1261,7 +1275,7 @@ fn beginWindowLayer(frames: *mut List(Frame), outer: *mut Canvas, v: View, r: Re
         lh = (d.y1 - d.y0) as usize
     }
     let layer = try newLayer(outer.alloc, lw, lh)
-    frames.append(Frame { outer: outer, outer_view: v, layer: layer, mask: null, x0: d.x0, y0: d.y0, local: true, key: key, keep: keep }) catch |err| {
+    frames.append(Frame { outer: outer, outer_view: v, layer: layer, mask: null, x0: d.x0, y0: d.y0, local: true, key: key, keep: keep, sx: sx, sy: sy }) catch |err| {
         dropCanvas(outer.alloc, layer)
         return err
     }
@@ -1281,11 +1295,13 @@ fn endWindowLayer(f: Frame, r: Rect, radii: Radii, alpha: u8, cache: ?*mut Raste
         alloc = rc.alloc
     }
     let px = try alloc.alloc(0 as u8, w * h * 4)
-    layerPixels(f, r, radii, alpha, px) catch |e| {
+    layerPixels(f, r, radii, 255, px) catch |e| {
         alloc.free(px)
         return e
     }
-    blendLayerPixels(f.outer, px, IRect { x0: f.x0, y0: f.y0, x1: f.x0 + w as i64, y1: f.y0 + h as i64 })
+    let x0 = f.x0 + f.sx
+    let y0 = f.y0 + f.sy
+    blendLayerPixels(f.outer, px, IRect { x0: x0, y0: y0, x1: x0 + w as i64, y1: y0 + h as i64 }, alpha)
     if f.keep && cache != null {
         return cache.?.store(f.key, px)
     }
@@ -1332,12 +1348,16 @@ fn layerPixels(f: Frame, r: Rect, radii: Radii, alpha: u8, out: []mut u8) AllocE
 
 // Blends the pixels of `layerPixels` for the device rectangle `e` onto
 // `out`, inside its clip.
-fn blendLayerPixels(out: *mut Canvas, px: []u8, e: IRect) {
+// With opacity `alpha` (255: as they are) applied first.
+fn blendLayerPixels(out: *mut Canvas, px: []u8, e: IRect, alpha: u8) {
     let k = intersect(e, out.clip)
     if k.x1 <= k.x0 || k.y1 <= k.y0 {
         return
     }
     let w = (e.x1 - e.x0) as usize
+    if alpha != 255 {
+        return blendFaded(out, px, e, k, alpha as u32)
+    }
     for y in k.y0..k.y1 {
         var i = ((y - e.y0) as usize * w + (k.x0 - e.x0) as usize) * 4
         var j = (y as usize * out.width + k.x0 as usize) * 4
@@ -1354,4 +1374,30 @@ fn blendLayerPixels(out: *mut Canvas, px: []u8, e: IRect) {
             j += 4
         }
     }
+}
+
+// `blendLayerPixels` of pixels faded to `alpha` first (inside `k`).
+fn blendFaded(out: *mut Canvas, px: []u8, e: IRect, k: IRect, alpha: u32) {
+    let w = (e.x1 - e.x0) as usize
+    for y in k.y0..k.y1 {
+        var i = ((y - e.y0) as usize * w + (k.x0 - e.x0) as usize) * 4
+        var j = (y as usize * out.width + k.x0 as usize) * 4
+        for x in k.x0..k.x1 {
+            let a = (px[i + 3] as u32 * alpha + 127) / 255
+            if a != 0 {
+                let rest = 255 - a
+                for ch in 0..3 {
+                    let c = (px[i + ch] as u32 * alpha + 127) / 255
+                    out.pixels[j + ch] = ((c * 255 + out.pixels[j + ch] as u32 * rest + 127) / 255) as u8
+                }
+                out.pixels[j + 3] = (a + (out.pixels[j + 3] as u32 * rest + 127) / 255) as u8
+            }
+            i += 4
+            j += 4
+        }
+    }
+}
+
+fn shiftedRect(r: IRect, dx: i64, dy: i64) IRect {
+    return IRect { x0: r.x0 + dx, y0: r.y0 + dy, x1: r.x1 + dx, y1: r.y1 + dy }
 }

@@ -40,6 +40,18 @@ pub struct Sig {
     end: usize
     g: u64
     spread: bool
+    // The translation of the promoted layers it is in (and, a `Layer`
+    // or its `EndLayer`, its own), added to `b` on the window
+    // (`sigBounds`); a `Layer`: its hash without its own translation,
+    // which its items' hashes take (P4.56).
+    ox: f64 = 0.0
+    oy: f64 = 0.0
+    base: u64 = 0
+}
+
+/// The device pixels item signature `s` may touch on the window.
+pub fn sigBounds(s: Sig, v: View) IRect {
+    return deviceBounds(Rect { x: s.b.x + s.ox, y: s.b.y + s.oy, w: s.b.w, h: s.b.h }, v)
 }
 
 /// The device rectangles a frame draws again (at most `MAX_RECTS`,
@@ -157,16 +169,32 @@ pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocErr
     defer open.deinit()
     var ctx = List(u64).init(out.alloc)
     defer ctx.deinit()
+    // The translation of each open layer and clip (P4.56).
+    var offs = List([2]f64).init(out.alloc)
+    defer offs.deinit()
     for i, it in items {
         var within: u64 = 0x6a09e667f3bcc909
         if ctx.len() > 0 {
             within = ctx.items()[ctx.len() - 1]
         }
-        let h = hmix(hashItem(it), within)
-        var s = Sig { h: h, b: EVERYWHERE, end: i, g: 0, spread: false }
+        var cur = [2]f64{0.0, 0.0}
+        if offs.len() > 0 {
+            cur = offs.items()[offs.len() - 1]
+        }
+        var h = hmix(hashItem(it), within)
+        let base = h
+        var s = Sig { h: h, b: EVERYWHERE, end: i, g: 0, spread: false, ox: cur[0], oy: cur[1] }
         match it {
             .Layer { r } => {
                 s.b = r
+                s.base = base
+                let own = list.offsetAt(i)
+                if own[0] != 0.0 || own[1] != 0.0 {
+                    h = hmix(base, hf(hf(0x510e527fade682d1, own[0]), own[1]))
+                    s.h = h
+                    s.ox = cur[0] + own[0]
+                    s.oy = cur[1] + own[1]
+                }
             }
             .Clip { r } => {
                 s.b = r
@@ -177,6 +205,7 @@ pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocErr
                     out.items()[k].end = i
                 }
                 _ = ctx.pop()
+                _ = offs.pop()
             }
             .Mask => {
                 if open.len() > 0 {
@@ -202,8 +231,11 @@ pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocErr
                 if open.pop() |k| {
                     s.b = united(out.items()[k].b, r)
                     out.items()[k].end = i
+                    s.ox = out.items()[k].ox
+                    s.oy = out.items()[k].oy
                 }
                 _ = ctx.pop()
+                _ = offs.pop()
             }
             .Text { x, y, s: str, face, c } => {
                 // At most an em and a half a byte (measuring would shape
@@ -231,13 +263,15 @@ pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocErr
         try out.append(s)
         match it {
             .Layer { r } => {
-                out.items()[i].g = h
+                out.items()[i].g = base
                 try open.append(i)
-                try ctx.append(h)
+                try ctx.append(base)
+                try offs.append([2]f64{s.ox, s.oy})
             }
             .Clip { r } => {
                 try open.append(i)
                 try ctx.append(h)
+                try offs.append(cur)
             }
             _ => {}
         }
@@ -283,10 +317,10 @@ pub fn diff(old: []Sig, new: []Sig, v: View, area: IRect, out: *mut Damage) Allo
     let w = new[p..new.len - q]
     if o.len == 0 || w.len == 0 {
         for s in o {
-            try out.add(intersect(deviceBounds(s.b, v), area))
+            try out.add(intersect(sigBounds(s, v), area))
         }
         for s in w {
-            try out.add(intersect(deviceBounds(s.b, v), area))
+            try out.add(intersect(sigBounds(s, v), area))
         }
         return
     }
@@ -307,28 +341,28 @@ pub fn diff(old: []Sig, new: []Sig, v: View, area: IRect, out: *mut Damage) Allo
         if jn != null && (io == null || jn.? - j <= io.? - i) {
             // `w[j..jn]` came in.
             while j < jn.? {
-                try out.add(intersect(deviceBounds(w[j].b, v), area))
+                try out.add(intersect(sigBounds(w[j], v), area))
                 j += 1
             }
         } else if io != null {
             // `o[i..io]` went.
             while i < io.? {
-                try out.add(intersect(deviceBounds(o[i].b, v), area))
+                try out.add(intersect(sigBounds(o[i], v), area))
                 i += 1
             }
         } else {
-            try out.add(intersect(deviceBounds(o[i].b, v), area))
-            try out.add(intersect(deviceBounds(w[j].b, v), area))
+            try out.add(intersect(sigBounds(o[i], v), area))
+            try out.add(intersect(sigBounds(w[j], v), area))
             i += 1
             j += 1
         }
     }
     while i < o.len {
-        try out.add(intersect(deviceBounds(o[i].b, v), area))
+        try out.add(intersect(sigBounds(o[i], v), area))
         i += 1
     }
     while j < w.len {
-        try out.add(intersect(deviceBounds(w[j].b, v), area))
+        try out.add(intersect(sigBounds(w[j], v), area))
         j += 1
     }
 }
@@ -383,7 +417,7 @@ let NONE: usize = 0xffffffffffffffff
 pub fn edgeLayers(sigs: []Sig, v: View, area: IRect, out: *mut Damage) AllocError!void {
     for s in sigs {
         if s.spread {
-            let d = deviceBounds(s.b, v)
+            let d = sigBounds(s, v)
             let k = intersect(d, area)
             if k.x1 > k.x0 && k.y1 > k.y0 && (d.x0 < area.x0 || d.y0 < area.y0 || d.x1 > area.x1 || d.y1 > area.y1) {
                 try out.add(k)
@@ -406,7 +440,7 @@ pub fn spreadLayers(sigs: []Sig, v: View, area: IRect, out: *mut Damage) AllocEr
             if !s.spread {
                 continue
             }
-            let k = intersect(deviceBounds(s.b, v), area)
+            let k = intersect(sigBounds(s, v), area)
             if k.x1 <= k.x0 || k.y1 <= k.y0 || !out.intersects(k) {
                 continue
             }
@@ -424,6 +458,88 @@ pub fn spreadLayers(sigs: []Sig, v: View, area: IRect, out: *mut Damage) AllocEr
         try out.add(area)
     }
     return found
+}
+
+/// Moves the promoted layer of box `box` (`Promoted`) to the
+/// translation (`ox`, `oy`) and gives it the opacity `alpha`, in `list`
+/// and its signatures `sigs` (P4.56): the next frame's damage is then
+/// the layer where it was and where it is, and the kept layer is
+/// blended there. False when the box has no promoted layer, its layer
+/// is inside another one, or the opacity would drop it (the caller
+/// builds the list again).
+pub fn patchLayer(list: *mut DisplayList, sigs: []mut Sig, box: usize, ox: f64, oy: f64, alpha: u8) bool {
+    if alpha == 0 {
+        return false
+    }
+    var found: ?usize = null
+    for k, l in list.layers.items() {
+        if l.box == box {
+            found = k
+        }
+    }
+    let li = found orelse return false
+    let at = list.layers.items()[li].at
+    let items = list.items.items()
+    let end = sigs[at].end
+    for j in 0..at {
+        if isLayerItem(items[j]) && sigs[j].end > at {
+            return false
+        }
+    }
+    list.layers.items()[li].ox = ox
+    list.layers.items()[li].oy = oy
+    var h = sigs[at].base
+    if ox != 0.0 || oy != 0.0 {
+        h = hmix(h, hf(hf(0x510e527fade682d1, ox), oy))
+    }
+    sigs[at].h = h
+    // The translations of the items inside, again (`signature`).
+    var offs = List([2]f64).init(list.layers.alloc)
+    defer offs.deinit()
+    for k in at..end + 1 {
+        var cur = [2]f64{0.0, 0.0}
+        if offs.len() > 0 {
+            cur = offs.items()[offs.len() - 1]
+        }
+        sigs[k].ox = cur[0]
+        sigs[k].oy = cur[1]
+        match items[k] {
+            .Layer { r } => {
+                let own = list.offsetAt(k)
+                sigs[k].ox = cur[0] + own[0]
+                sigs[k].oy = cur[1] + own[1]
+                offs.append([2]f64{sigs[k].ox, sigs[k].oy}) catch |e| {
+                    return false
+                }
+            }
+            .Clip { r } => {
+                offs.append(cur) catch |e| {
+                    return false
+                }
+            }
+            .Unclip => {
+                _ = offs.pop()
+            }
+            .EndLayer { r, radii, alpha: was } => {
+                _ = offs.pop()
+            }
+            _ => {}
+        }
+    }
+    sigs[end].ox = sigs[at].ox
+    sigs[end].oy = sigs[at].oy
+    match items[end] {
+        .EndLayer { r, radii, alpha: was } => {
+            if was != alpha {
+                items[end] = Item.EndLayer { r: r, radii: radii, alpha: alpha }
+                sigs[end].h = hmix(hashItem(items[end]), sigs[at].base)
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+    return true
 }
 
 fn unite(a: IRect, b: IRect) IRect {

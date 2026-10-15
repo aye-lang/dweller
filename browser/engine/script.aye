@@ -312,6 +312,16 @@ pub struct Script {
     // The place in `restyle` of each change by `changeKey`.
     restyle_seen: IntMap(u64, usize)
     restyle_all: bool
+    // P4.56: the boxes whose transform or opacity alone changed in the
+    // layouts since the window last built its display list
+    // (`takePaintChanges`); `paint_whole` when anything else changed
+    // there; `paint_version`: the `domVersion` the last of those layouts
+    // was for. `animated`: the elements whose transform or opacity
+    // changed in them (the window promotes those that keep changing).
+    paint_boxes: List(usize)
+    paint_whole: bool = true
+    paint_version: u64 = 0
+    animated: List(NodeId)
     fixed: font.Fixed
     // The scroll offsets scripts gave scroll containers, by node index.
     scrolls: IntMap(u32, ScrollOffset)
@@ -555,6 +565,8 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         queue: List(NodeId).init(alloc),
         restyle_seen: IntMap(u64, usize).init(alloc),
         restyle_all: false,
+        paint_boxes: List(usize).init(alloc),
+        animated: List(NodeId).init(alloc),
         fixed: font.Fixed.init(),
         scrolls: IntMap(u32, ScrollOffset).init(alloc),
         scroll_x: 0.0,
@@ -641,6 +653,8 @@ pub fn destroyScript(s: *mut Script) {
     dropGeometry(s)
     s.restyle.deinit()
     s.restyle_seen.deinit()
+    s.paint_boxes.deinit()
+    s.animated.deinit()
     s.scrolls.deinit()
     for t in s.timers.items() {
         if t.load != 0 {

@@ -1,0 +1,32 @@
+<!doctype html>
+<title>carousel</title>
+<style>
+body { margin: 0 }
+#view { width: 400px; height: 320px; overflow: hidden; position: relative }
+#track { width: 600px; height: 300px; background: linear-gradient(90deg, #c00, #00c); transform: translateX(0px) }
+#track p { margin: 0; padding: 20px; color: white }
+#fade { width: 100px; height: 40px; background: #080; position: relative; opacity: 1 }
+</style>
+<div id="view"><div id="track"><p>slide one</p><p>slide two</p></div></div>
+<div id="fade"></div>
+<div id="rest"></div>
+<script>
+// Enough elements that the frames below stay under the geometry.aye
+// `RESTYLE_ROUNDS` bound, after which all is styled again.
+for (let i = 0; i < 200; i++) {
+  const p = document.createElement('p');
+  p.textContent = 'paragraph ' + i;
+  document.getElementById('rest').appendChild(p);
+}
+// A carousel (window_transform_composite): each frame moves the track
+// 1 px with a transform and fades a box, which the window composites
+// without layout or painting their items again (P4.56).
+let n = 0;
+function tick() {
+  n++;
+  document.getElementById('track').style.transform = 'translateX(' + (-n) + 'px)';
+  document.getElementById('fade').style.opacity = String(1 - (n % 50) / 100);
+  if (n < 60) requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>

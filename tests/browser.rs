@@ -3532,6 +3532,66 @@ fn window_container_queries() {
     );
 }
 
+/// A transform and opacity animation is composited (P4.56): a 60-frame
+/// `requestAnimationFrame` carousel moving a 600x300 track 1 px a frame
+/// (and fading a box) makes no relayout after the load and rasterizes
+/// no layer once they are promoted (`ui_composite`, `ui_layers` of
+/// DWELLER_TIMING); every frame equals a whole drawing and every kept
+/// layout a full one (`DWELLER_DAMAGE_CHECK`, `DWELLER_LAYOUT_CHECK`).
+#[test]
+fn window_transform_composite() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/carousel.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "400",
+            "--frames",
+            "200",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    // The phases in order, with their labels.
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let composites = recs.iter().filter(|r| r.0 == "ui_composite").count();
+    assert!(composites >= 50, "{composites} composited frames:\n{err}");
+    // After the first composited frame: no relayout, and the layers
+    // drawn come from the raster cache.
+    let first = recs.iter().position(|r| r.0 == "ui_composite").unwrap();
+    let after = &recs[first..];
+    let relayouts = after.iter().filter(|r| r.0 == "ui_relayout").count();
+    assert_eq!(relayouts, 0, "relayouts after the load:\n{err}");
+    let mut kept = 0;
+    for (_, label) in after.iter().filter(|r| r.0 == "ui_layers") {
+        let mut n = label.split(' ').map(|x| x.parse::<u64>().unwrap());
+        kept += n.next().unwrap();
+        assert_eq!(n.next().unwrap(), 0, "a layer rasterized again:\n{err}");
+    }
+    assert!(kept >= 50, "{kept} layers from the cache:\n{err}");
+}
+
 /// The window and the scripts agree on the scroll offset: a script's
 /// `scrollTo` scrolls the window, and the wheel moves `scrollY`.
 #[test]
