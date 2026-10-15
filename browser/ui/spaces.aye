@@ -174,6 +174,8 @@ fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
     }
     if o.control >= 0 {
         a.control = o.control
+        // Its status to a window that is gone fails without SIGPIPE.
+        noSigpipe(a.control)
         ui.slots[0].?.agent = true
         a.inside = try ui.alloc.create(Inside {
             id: 0,
@@ -1409,7 +1411,7 @@ fn toConns(ui: *mut Ui, tmp: Allocator, name: []u8, fields: []u8) AllocError!voi
     let a = ui.agents.?
     for c in a.conns {
         if c |conn| {
-            if conn.mode == 0 || conn.gone {
+            if conn.mode == 0 {
                 continue
             }
             var out = text.Builder.init(tmp)

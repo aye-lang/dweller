@@ -328,7 +328,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
 fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[i].?
-    while !c.waiting {
+    while !c.waiting && !ui.quit {
         let bytes = c.pending.bytes()
         var end = bytes.len
         var next = bytes.len
@@ -347,6 +347,15 @@ fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
         std.mem.copy(rest, bytes[next..])
         c.pending.clear()
         try c.pending.append(rest)
+        if a.control >= 0 {
+            // A Space: the person's pause or stop counts from the next
+            // request on.
+            var buf = @zeroed([4096]u8)
+            try watchControl(ui, buf[..])
+            if ui.quit {
+                return
+            }
+        }
         try serveLine(ui, i, tmp, text.trim(line))
     }
 }
