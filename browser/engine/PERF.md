@@ -772,6 +772,31 @@ axept.io consent SDK run), reddit 0.05 → 16 s; filed as P4.48.
 Window (`inserted_scripts` test): twenty `async = false` scripts of
 200–390 ms in order, longest loop iteration 3 ms (fast build).
 
+### P4.57: width animations lay out the changed boxes (2026-10-15)
+
+Each relayout of a page with images counted every image as new
+(`loadElementImage` dropped the mapping before putting it again), and
+that unnoted `layout_version` bump laid the whole document out again.
+Images now count a change only for a new bitmap, and note the elements
+whose image changed; flex and grid containers in block flow are built
+and laid out again on their own (`layout/incremental.aye`). New
+DWELLER_TIMING records: `layout_full` (a script layout of the whole
+document) and `layout_dirty` (of the changed boxes). Test page
+`browser/tests/ui/squares.html` (6 `.js-square` widths in a grid of flex
+cells, images, 500 paragraphs, 60 rAF frames), `--frames 100`, fast
+build:
+
+| | full layouts after the first frame | dirty relayouts | `ui_relayout` p50 |
+|---|---:|---:|---:|
+| main | 54 | 54 | 4.7 ms |
+| P4.57 | 0 | 42 | 1.4 ms |
+
+mistral.ai, `window_perf.py idle` (Xvfb, cloud box), main / P4.57: full
+layouts per loop 1.01 / 0.02, loop 31.2 / 16.2 ms, `ui_relayout` 15.3 /
+5.5 ms per loop, 417 / 700 iterations in 10 s, idle CPU ~110 / 100% (the
+loop now keeps up with the frame rate). Left per loop: `restyle` 4.6 ms,
+timers 3.3 ms, `ui_draw` 3.3 ms, `paint_build` 2.4 ms.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

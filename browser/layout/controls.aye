@@ -43,20 +43,35 @@ pub struct Images {
     // Counts the images put that differ from the ones there before (a
     // layout with them may differ).
     changes: u64 = 0
+    // The elements whose image changed since `takeChanged` (their boxes
+    // are laid out again), and whether an image of the style sheets
+    // changed or too many elements' did (any box may be laid out again).
+    changed: List(NodeId)
+    any_changed: bool = false
 
     pub fn init(alloc: Allocator) Images {
-        return Images { map: IntMap(u32, ImageRef).init(alloc), urls: StrMap(ImageRef).init(alloc) }
+        return Images { map: IntMap(u32, ImageRef).init(alloc), urls: StrMap(ImageRef).init(alloc), changed: List(NodeId).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
         self.map.deinit()
         self.urls.deinit()
+        self.changed.deinit()
+    }
+
+    /// The elements whose image changed since the last call (`changed`),
+    /// which the caller empties.
+    pub fn takeChanged(self: *mut Self) *mut List(NodeId) {
+        self.any_changed = false
+        return &mut self.changed
     }
 
     /// The image of a style sheet's `url()`; `pic` for an SVG image.
     pub fn putUrl(self: *mut Self, key: []u8, bmp: *image.Bitmap, pic: ?*svg.Picture) AllocError!void {
         let now = ImageRef { generation: 0, bmp: bmp, pic: pic, density: 1.0 }
+        let before = self.changes
         self.noteChange(self.urls.get(key), now)
+        self.any_changed = self.any_changed || self.changes != before
         try self.urls.put(key, now)
     }
 
@@ -67,6 +82,45 @@ pub struct Images {
             }
         }
         self.changes += 1
+    }
+
+    fn noteElement(self: *mut Self, el: NodeId, old: ?ImageRef, now: ImageRef) AllocError!void {
+        let before = self.changes
+        self.noteChange(old, now)
+        if self.changes != before {
+            try self.noteChanged(el)
+        }
+    }
+
+    fn noteChanged(self: *mut Self, el: NodeId) AllocError!void {
+        if self.changed.len() >= MAX_CHANGED {
+            self.any_changed = true
+            return
+        }
+        try self.changed.append(el)
+    }
+
+    /// Drops the image of `el` before it is chosen again (`settle`).
+    pub fn drop(self: *mut Self, el: NodeId) ImageMark {
+        let mark = ImageMark { old: self.map.get(el.index), changes: self.changes, changed: self.changed.len() }
+        self.map.remove(el.index)
+        return mark
+    }
+
+    /// The image of `el` was chosen again since `drop` returned `mark`:
+    /// one change when it is not the one before (the same bitmap put
+    /// again changes no layout).
+    pub fn settle(self: *mut Self, el: NodeId, mark: ImageMark) AllocError!void {
+        while self.changed.len() > mark.changed {
+            _ = self.changed.pop()
+        }
+        self.changes = mark.changes
+        if self.map.get(el.index) |now| {
+            try self.noteElement(el, mark.old, now)
+        } else if mark.old != null {
+            self.changes += 1
+            try self.noteChanged(el)
+        }
     }
 
     pub fn hasUrl(self: *Self, key: []u8) bool {
@@ -91,7 +145,7 @@ pub struct Images {
 
     pub fn put(self: *mut Self, el: NodeId, bmp: *image.Bitmap) AllocError!void {
         let now = ImageRef { generation: el.generation, bmp: bmp, pic: null, density: 1.0 }
-        self.noteChange(self.map.get(el.index), now)
+        try self.noteElement(el, self.map.get(el.index), now)
         try self.map.put(el.index, now)
     }
 
@@ -99,14 +153,14 @@ pub struct Images {
     /// its natural size is its size divided by that.
     pub fn putScaled(self: *mut Self, el: NodeId, bmp: *image.Bitmap, density: f64) AllocError!void {
         let now = ImageRef { generation: el.generation, bmp: bmp, pic: null, density: density }
-        self.noteChange(self.map.get(el.index), now)
+        try self.noteElement(el, self.map.get(el.index), now)
         try self.map.put(el.index, now)
     }
 
     /// An SVG image: `bmp` has its natural size (and no pixels).
     pub fn putPicture(self: *mut Self, el: NodeId, bmp: *image.Bitmap, pic: *svg.Picture) AllocError!void {
         let now = ImageRef { generation: el.generation, bmp: bmp, pic: pic, density: 1.0 }
-        self.noteChange(self.map.get(el.index), now)
+        try self.noteElement(el, self.map.get(el.index), now)
         try self.map.put(el.index, now)
     }
 
@@ -142,7 +196,17 @@ pub struct Images {
     }
 }
 
-struct ImageRef {
+// Beyond this many elements whose image changed, `Images.any_changed`.
+let MAX_CHANGED: usize = 256
+
+/// What `Images.drop` found before an element's image is chosen again.
+pub struct ImageMark {
+    old: ?ImageRef
+    changes: u64
+    changed: usize
+}
+
+pub struct ImageRef {
     generation: u32
     bmp: *image.Bitmap
     pic: ?*svg.Picture

@@ -424,8 +424,12 @@ enum ImageFetch {
 /// waited for (0 for none); when it is still the URL's, it is decoded
 /// now.
 fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Url, media: css.Media, fetch: ImageFetch, waited: u32) AllocError!?LoadedElementImage {
-    // Even an empty or broken replacement must drop the old rendered bitmap.
-    cache.nodes.map.remove(h.index)
+    // Even an empty or broken replacement must drop the old rendered
+    // bitmap; the same one again is no change.
+    let mark = cache.nodes.drop(h)
+    defer cache.nodes.settle(h, mark) catch |e| {
+        cache.nodes.any_changed = true
+    }
     cache.settleLoads()
     let choice = (try chooseImage(cache.alloc, doc, h, media)) orelse return null
     let target = url.resolve(cache.alloc, base, choice.url) catch return null

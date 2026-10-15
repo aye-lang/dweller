@@ -32,6 +32,76 @@ fn aye() -> Command {
     c
 }
 
+/// A child whose stdout and stderr are read on threads while it runs
+/// (`SpawnDrained`), so that a window's verbose output (DWELLER_TIMING)
+/// cannot fill a pipe and block it while the test waits for it to exit.
+struct Drained {
+    child: std::process::Child,
+    out: std::thread::JoinHandle<Vec<u8>>,
+    err: std::thread::JoinHandle<Vec<u8>>,
+}
+
+impl Drained {
+    fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        self.child.try_wait()
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        self.child.kill()
+    }
+
+    /// Waits for the child alone (what it started may keep its pipes).
+    fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.child.wait()
+    }
+
+    /// Waits for the child to exit and for its pipes to close.
+    fn wait_with_output(mut self) -> std::io::Result<Output> {
+        let status = self.child.wait()?;
+        let stdout = self.out.join().unwrap_or_default();
+        let stderr = self.err.join().unwrap_or_default();
+        Ok(Output {
+            status,
+            stdout,
+            stderr,
+        })
+    }
+}
+
+trait SpawnDrained {
+    /// Spawns the command with its stdout and stderr piped and read on
+    /// threads (`Drained`).
+    fn spawn_drained(&mut self) -> Drained;
+}
+
+impl SpawnDrained for Command {
+    fn spawn_drained(&mut self) -> Drained {
+        use std::io::Read;
+        let mut child = self
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+        let out = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = stdout.read_to_end(&mut b);
+            b
+        });
+        let err = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = stderr.read_to_end(&mut b);
+            b
+        });
+        Drained { child, out, err }
+    }
+}
+
 /// The browser, built once for all tests.
 fn dweller() -> &'static Path {
     static EXE: OnceLock<PathBuf> = OnceLock::new();
@@ -628,10 +698,7 @@ fn window_images_load_in_background() {
             "400",
             "--text",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
@@ -788,10 +855,7 @@ fn window_relayout_after_image_load() {
             "400",
             "--text",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
@@ -2132,10 +2196,7 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while !root().join(&sock).exists() {
         if start.elapsed() > Duration::from_secs(20) || window.try_wait().unwrap().is_some() {
@@ -2326,13 +2387,13 @@ fn waited_n(s: &str) -> String {
     out
 }
 
-// A headless window listening at `sock` for the Space tests.
-fn spaces_window(sock: &str, extra: &[&str]) -> std::process::Child {
+// A headless window listening at `sock` for the Space tests, its output
+// read as it comes (`Drained`).
+fn spaces_window(sock: &str, extra: &[&str]) -> Drained {
     spaces_window_env(sock, extra, &[])
 }
 
-fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> std::process::Child {
-    use std::process::Stdio;
+fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> Drained {
     use std::time::{Duration, Instant};
     let _ = std::fs::remove_file(root().join(sock));
     let mut window = Command::new(dweller())
@@ -2342,10 +2403,7 @@ fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> std::p
         .args(["--agent-socket", sock, "--exit-when-idle", "--font", "fixed"])
         .args(["--width", "800", "--height", "600"])
         .args(extra)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while !root().join(sock).exists() {
         if start.elapsed() > Duration::from_secs(20) || window.try_wait().unwrap().is_some() {
@@ -2461,16 +2519,9 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
     if spaces {
         extra.push("--spaces");
     }
-    let mut window = spaces_window_env(&sock, &extra, &[("DWELLER_TIMING", "1")]);
+    let window = spaces_window_env(&sock, &extra, &[("DWELLER_TIMING", "1")]);
     let window_pid = window.id();
-    // The records are read as they come: a full pipe would stall the
-    // window and its Spaces.
-    let mut stderr = window.stderr.take().unwrap();
-    let records_in = std::thread::spawn(move || {
-        let mut v = Vec::new();
-        std::io::Read::read_to_end(&mut stderr, &mut v).unwrap();
-        v
-    });
+    // The records are read as they come (`spaces_window`).
     let mut a = AgentConn::open(&sock);
     let mut b = AgentConn::open(&sock);
     let mut c = AgentConn::open(&sock);
@@ -2495,7 +2546,7 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
     drop(b);
     drop(c);
     let out = window.wait_with_output().unwrap();
-    let (records, rest) = space_records(&text(&records_in.join().unwrap()));
+    let (records, rest) = space_records(&text(&out.stderr));
     assert!(
         out.status.success() && rest.is_empty(),
         "the window: {}\n{rest}",
@@ -2849,20 +2900,13 @@ fn window_spaces_chips() {
     let events = "wheel:-3 agents:3 click:570,20 click:560,50 \
                   agents:6 click:690,20 click:680,74 \
                   agents:8 move:690,20 key:cmd+q";
-    let mut window = spaces_window_env(
+    let window = spaces_window_env(
         &sock,
         &["--spaces", "--state", "--save", png.to_str().unwrap(), "--events", events, &page],
         &[("DWELLER_TIMING", "1")],
     );
     let pid = window.id();
-    // The records are read as they come: a full pipe would stall the
-    // window and its Spaces.
-    let mut stderr = window.stderr.take().unwrap();
-    let records_in = std::thread::spawn(move || {
-        let mut v = Vec::new();
-        std::io::Read::read_to_end(&mut stderr, &mut v).unwrap();
-        v
-    });
+    // The records are read as they come (`spaces_window`).
     let mut agents = Vec::new();
     for (name, site) in [("Alpha", "form.html"), ("Beta", "index.html"), ("Gamma", "docs.html")] {
         let mut c = AgentConn::open(&sock);
@@ -2892,7 +2936,7 @@ fn window_spaces_chips() {
     assert!(got.contains("{\"id\":2,\"name\":\"Beta\",\"mine\":false,\"state\":\"idle\""), "{got}");
     // The person points at Beta's chip and closes the window.
     let out = window.wait_with_output().unwrap();
-    let (records, rest) = space_records(&text(&records_in.join().unwrap()));
+    let (records, rest) = space_records(&text(&out.stderr));
     assert!(
         out.status.success() && rest.is_empty(),
         "the window: {}\n{rest}",
@@ -3335,10 +3379,7 @@ fn window_timers_yield_to_frames() {
             "10",
             "--text",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
@@ -3590,6 +3631,64 @@ fn window_transform_composite() {
         assert_eq!(n.next().unwrap(), 0, "a layer rasterized again:\n{err}");
     }
     assert!(kept >= 50, "{kept} layers from the cache:\n{err}");
+}
+
+/// mistral.ai's squares (P4.57): a rAF loop that changes the `width` of
+/// 6 divs in the flex cells of a grid, on a page with images, lays out
+/// again only the boxes around them: after the first frame no layout of
+/// the whole document (`layout_full`, the page's `layout`), each frame a
+/// relayout of the changed boxes (`layout_dirty`), the same boxes as a
+/// full layout (DWELLER_LAYOUT_CHECK).
+#[test]
+fn window_width_animation() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/squares.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "400",
+            "--frames",
+            "100",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let phases: Vec<&str> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| r.split('\t').next().unwrap())
+        .collect();
+    let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+    let after = &phases[first..];
+    let count = |name: &str| after.iter().filter(|p| **p == name).count();
+    assert!(
+        count("ui_relayout") >= 50,
+        "{} relayouts:\n{err}",
+        count("ui_relayout")
+    );
+    assert_eq!(
+        count("layout_full") + count("layout"),
+        0,
+        "full layouts after the first frame:\n{err}"
+    );
+    assert!(
+        count("layout_dirty") >= 50,
+        "{} dirty relayouts:\n{err}",
+        count("layout_dirty")
+    );
 }
 
 /// The window and the scripts agree on the scroll offset: a script's
@@ -4384,10 +4483,7 @@ fn window_fetch_in_background() {
             "frame frame frame frame frame text:abc frame wheel:-3 frame wheel:-3 frame",
             "--text",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
@@ -4508,10 +4604,7 @@ fn window_paints_early() {
             events.as_str(),
             "--text",
         ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
