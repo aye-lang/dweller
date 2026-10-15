@@ -185,7 +185,7 @@ fn credentialFor(at: *Url) ?usize {
     var best_len: usize = 0
     for i in 0..a.creds.len() {
         let c = a.creds.items()[i]
-        if !sameOrigin(c.origin, at) || !text.startsWith(at.path, c.dir) {
+        if !originIs(c.origin, at) || !text.startsWith(at.path, c.dir) {
             continue
         }
         if best == null || c.dir.len > best_len {
@@ -196,7 +196,7 @@ fn credentialFor(at: *Url) ?usize {
     return best
 }
 
-fn sameOrigin(origin: []u8, at: *Url) bool {
+fn originIs(origin: []u8, at: *Url) bool {
     var rest = origin
     if !text.startsWith(rest, at.scheme) {
         return false
@@ -263,7 +263,7 @@ fn afterAuth(at: *Url, kind: Kind, headers: []u8, status: i64, challenged: bool,
     let dir = dirOf(at.path)
     for i in 0..a.creds.len() {
         let c = &mut a.creds.items()[i]
-        if sameOrigin(c.origin, at) && realm.len > 0 && text.eql(c.realm, realm) {
+        if originIs(c.origin, at) && realm.len > 0 && text.eql(c.realm, realm) {
             // RFC 7617 section 2.2: the common prefix of both directories.
             var n: usize = 0
             while n < c.dir.len && n < dir.len && c.dir[n] == dir[n] {
