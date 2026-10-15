@@ -331,12 +331,18 @@ fn illegalConstructor(it: *mut Interp, a: Args) JsError!Value {
 // The interfaces of HTML elements, each with its tag names: "Interface
 // tag tag;...". Other HTML elements are HTMLElement.
 let HTML_INTERFACES = "HTMLAnchorElement a;HTMLAreaElement area;HTMLBaseElement base;HTMLBodyElement body;HTMLBRElement br;HTMLButtonElement button;HTMLCanvasElement canvas;HTMLDataElement data;HTMLDataListElement datalist;HTMLDetailsElement details;HTMLDialogElement dialog;HTMLDivElement div;HTMLDListElement dl;HTMLEmbedElement embed;HTMLFieldSetElement fieldset;HTMLFormElement form;HTMLFrameSetElement frameset;HTMLHeadingElement h1 h2 h3 h4 h5 h6;HTMLHeadElement head;HTMLHRElement hr;HTMLHtmlElement html;HTMLIFrameElement iframe;HTMLImageElement img;HTMLInputElement input;HTMLLabelElement label;HTMLLegendElement legend;HTMLLIElement li;HTMLLinkElement link;HTMLMapElement map;HTMLMenuElement menu;HTMLMetaElement meta;HTMLMeterElement meter;HTMLModElement ins del;HTMLObjectElement object;HTMLOListElement ol;HTMLOptGroupElement optgroup;HTMLOptionElement option;HTMLOutputElement output;HTMLParagraphElement p;HTMLPictureElement picture;HTMLPreElement pre listing xmp;HTMLProgressElement progress;HTMLQuoteElement q blockquote;HTMLScriptElement script;HTMLSelectElement select;HTMLSlotElement slot;HTMLSourceElement source;HTMLSpanElement span;HTMLStyleElement style;HTMLTableCaptionElement caption;HTMLTableCellElement td th;HTMLTableColElement col colgroup;HTMLTableElement table;HTMLTableRowElement tr;HTMLTableSectionElement thead tbody tfoot;HTMLTemplateElement template;HTMLTextAreaElement textarea;HTMLTimeElement time;HTMLTitleElement title;HTMLTrackElement track;HTMLUListElement ul;HTMLUnknownElement"
+// SVG elements with interfaces of their own, under SVGGraphicsElement;
+// the basic shapes and `path` under SVGGeometryElement. Other SVG
+// elements are SVGElement.
+let SVG_INTERFACES = "SVGAElement a;SVGGElement g;SVGUseElement use;SVGImageElement image;SVGTextElement text"
+let SVG_GEOMETRY_INTERFACES = "SVGPathElement path;SVGRectElement rect;SVGCircleElement circle;SVGEllipseElement ellipse;SVGLineElement line;SVGPolylineElement polyline;SVGPolygonElement polygon"
 // The media elements, under HTMLMediaElement.
 let MEDIA_INTERFACES = "HTMLAudioElement audio;HTMLVideoElement video"
 
 // Makes the interface objects of `table` ("Interface tag tag;...") with
-// prototypes under `parent`, and maps their tags to them.
-fn defineInterfaces(s: *mut Script, table: []u8, parent: u32) JsError!void {
+// prototypes under `parent`, and maps their tags to them (in
+// `svg_tag_protos` when `in_svg`).
+fn defineInterfaces(s: *mut Script, table: []u8, parent: u32, in_svg: bool) JsError!void {
     let it = &mut s.it
     var entries = text.split(table, ";")
     while entries.next() |entry| {
@@ -345,7 +351,11 @@ fn defineInterfaces(s: *mut Script, table: []u8, parent: u32) JsError!void {
         let proto = try newProto(it, parent)
         try interfaceObject(it, name, proto)
         while words.next() |tag| {
-            try s.tag_protos.put(tag, proto)
+            if in_svg {
+                try s.svg_tag_protos.put(tag, proto)
+            } else {
+                try s.tag_protos.put(tag, proto)
+            }
         }
     }
 }
@@ -354,16 +364,20 @@ fn defineInterfaces(s: *mut Script, table: []u8, parent: u32) JsError!void {
 // HTMLElement (`html`), SVGElement and MathMLElement under Element.
 fn installElementInterfaces(s: *mut Script, html: u32, element: u32) JsError!void {
     let it = &mut s.it
-    try defineInterfaces(s, HTML_INTERFACES, html)
+    try defineInterfaces(s, HTML_INTERFACES, html, false)
     let media = try newProto(it, html)
     try interfaceObject(it, "HTMLMediaElement", media)
-    try defineInterfaces(s, MEDIA_INTERFACES, media)
+    try defineInterfaces(s, MEDIA_INTERFACES, media, false)
     s.svg_proto = try newProto(it, element)
     try interfaceObject(it, "SVGElement", s.svg_proto)
     let graphics = try newProto(it, s.svg_proto)
     try interfaceObject(it, "SVGGraphicsElement", graphics)
     s.svg_svg_proto = try newProto(it, graphics)
     try interfaceObject(it, "SVGSVGElement", s.svg_svg_proto)
+    try defineInterfaces(s, SVG_INTERFACES, graphics, true)
+    let shapes = try newProto(it, graphics)
+    try interfaceObject(it, "SVGGeometryElement", shapes)
+    try defineInterfaces(s, SVG_GEOMETRY_INTERFACES, shapes, true)
     s.mathml_proto = try newProto(it, element)
     try interfaceObject(it, "MathMLElement", s.mathml_proto)
 }
@@ -376,7 +390,7 @@ fn elementProto(s: *mut Script, h: NodeId) u32 {
         if text.eql(doc.node(h).name, "svg") {
             return s.svg_svg_proto
         }
-        return s.svg_proto
+        return s.svg_tag_protos.get(doc.node(h).name) orelse s.svg_proto
     }
     if ns == dom.NS_MATHML {
         return s.mathml_proto

@@ -233,6 +233,8 @@ pub struct Script {
     // Elements: the prototype of their interface by tag name
     // (HTMLDivElement...); others are HTMLElement (`element_proto`).
     tag_protos: StrMap(u32)
+    // The prototypes of SVG elements with interfaces of their own.
+    svg_tag_protos: StrMap(u32)
     svg_proto: u32
     svg_svg_proto: u32
     mathml_proto: u32
@@ -531,6 +533,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         fragment_proto: js.NONE,
         shadow_proto: js.NONE,
         tag_protos: StrMap(u32).init(alloc),
+        svg_tag_protos: StrMap(u32).init(alloc),
         svg_proto: js.NONE,
         svg_svg_proto: js.NONE,
         mathml_proto: js.NONE,
@@ -655,6 +658,7 @@ pub fn destroyScript(s: *mut Script) {
     s.lists.deinit()
     s.free_lists.deinit()
     s.tag_protos.deinit()
+    s.svg_tag_protos.deinit()
     s.written.deinit()
     dropComputed(s)
     dropGeometry(s)

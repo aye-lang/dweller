@@ -3341,6 +3341,44 @@ pub let PRELUDE =
     \\hidden(G, 'DOMRectReadOnly', DOMRectReadOnly);
     \\hidden(G, 'DOMRect', DOMRect);
     \\hidden(G, 'DOMRectList', DOMRectList);
+    \\class DOMPointReadOnly {
+    \\  constructor(x, y, z, w) {
+    \\    hidden(this, '_p', [Number(x) || 0, Number(y) || 0, Number(z) || 0, w === undefined ? 1 : Number(w)]);
+    \\  }
+    \\  get x() { return this._p[0]; }
+    \\  get y() { return this._p[1]; }
+    \\  get z() { return this._p[2]; }
+    \\  get w() { return this._p[3]; }
+    \\  toJSON() { return { x: this.x, y: this.y, z: this.z, w: this.w }; }
+    \\}
+    \\class DOMPoint extends DOMPointReadOnly {
+    \\  get x() { return this._p[0]; }
+    \\  get y() { return this._p[1]; }
+    \\  get z() { return this._p[2]; }
+    \\  get w() { return this._p[3]; }
+    \\  set x(v) { this._p[0] = Number(v); }
+    \\  set y(v) { this._p[1] = Number(v); }
+    \\  set z(v) { this._p[2] = Number(v); }
+    \\  set w(v) { this._p[3] = Number(v); }
+    \\}
+    \\DOMPointReadOnly.fromPoint = function (p) { p = p || {}; return new this(p.x, p.y, p.z, p.w); };
+    \\DOMPoint.fromPoint = DOMPointReadOnly.fromPoint;
+    \\hidden(G, 'DOMPointReadOnly', DOMPointReadOnly);
+    \\hidden(G, 'DOMPoint', DOMPoint);
+    \\hidden(G, 'SVGPoint', DOMPoint);
+    \\// SVG geometry (svg/geometry.aye): lengths along a shape's outline in
+    \\// its user space.
+    \\hidden(SVGGeometryElement.prototype, 'getTotalLength', function () {
+    \\  const r = ak.svgPointAtLength(this, 0);
+    \\  return r ? r[2] : 0;
+    \\});
+    \\hidden(SVGGeometryElement.prototype, 'getPointAtLength', function (d) {
+    \\  if (arguments.length < 1) throw new TypeError("Failed to execute 'getPointAtLength' on 'SVGGeometryElement': 1 argument required, but only 0 present.");
+    \\  d = Number(d);
+    \\  if (!isFinite(d)) throw new TypeError("Failed to execute 'getPointAtLength' on 'SVGGeometryElement': The provided float value is non-finite.");
+    \\  const r = ak.svgPointAtLength(this, d);
+    \\  return r ? new DOMPoint(r[0], r[1]) : new DOMPoint(0, 0);
+    \\});
     \\
     \\// Geometry (engine/geometry.aye): a layout of the document made when a
     \\// script asks after a change, reused until the next one. Elements that

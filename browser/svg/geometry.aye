@@ -1,0 +1,164 @@
+// SVGGeometryElement's getTotalLength() and getPointAtLength(): the
+// outline of a basic shape or `path` in its user space (its own
+// `transform` is not applied), curves flattened to lines within
+// `FLATNESS` user units. Arcs are converted by `arcTo` (SVG's endpoint
+// parameterization, radii scaled up) and quadratics are cubics; circles,
+// ellipses and rounded corners are cubics too, as paint draws them.
+
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// How far a flattened curve may stray from the curve, in user units.
+let FLATNESS = 0.001
+
+/// The point at distance `at` along the outline of the element `el`
+/// (`at` clamped to the outline's length), and that length: x, y,
+/// length. Null when `el` is not a basic shape or `path`. Percentages
+/// are of the nearest `svg`'s viewBox (else its size, else 300 x 150).
+pub fn pointAtLength(alloc: Allocator, doc: *Document, el: NodeId, at: f64) AllocError!?[3]f64 {
+    var verbs = List(u8).init(alloc)
+    defer verbs.deinit()
+    var coords = List(f64).init(alloc)
+    defer coords.deinit()
+    var pen = Pen { m: IDENTITY, verbs: &mut verbs, coords: &mut coords }
+    let vp = viewportOf(doc, el)
+    if !(try shapePath(doc, el, doc.node(el).name, &mut pen, vp[0], vp[1])) {
+        return null
+    }
+    var all = Walker { target: math.inf(), total: 0.0, x: 0.0, y: 0.0, sx: 0.0, sy: 0.0, px: 0.0, py: 0.0, started: false, found: false }
+    all.walk(verbs.items(), coords.items())
+    var target = at
+    if !(target > 0.0) {
+        target = 0.0
+    }
+    if target > all.total {
+        target = all.total
+    }
+    var w = Walker { target: target, total: 0.0, x: 0.0, y: 0.0, sx: 0.0, sy: 0.0, px: 0.0, py: 0.0, started: false, found: false }
+    w.walk(verbs.items(), coords.items())
+    return [3]f64{w.px, w.py, all.total}
+}
+
+// The width and height that percentages of `el` are of.
+fn viewportOf(doc: *Document, el: NodeId) [2]f64 {
+    var cur = doc.parent(el)
+    while cur |c| {
+        if text.eql(doc.node(c).name, "svg") {
+            if doc.attr(c, "viewBox") |v| {
+                if parseViewBox(v) |vb| {
+                    return [2]f64{vb.w, vb.h}
+                }
+            }
+            var w = absoluteLength(doc, c, "width")
+            var h = absoluteLength(doc, c, "height")
+            if w <= 0.0 {
+                w = 300.0
+            }
+            if h <= 0.0 {
+                h = 150.0
+            }
+            return [2]f64{w, h}
+        }
+        cur = doc.parent(c)
+    }
+    return [2]f64{300.0, 150.0}
+}
+
+// Walks an outline's lines, summing their lengths, and finds the point
+// at `target` along it (the end when it is past the end).
+struct Walker {
+    target: f64
+    total: f64
+    // The current point and the start of its subpath.
+    x: f64
+    y: f64
+    sx: f64
+    sy: f64
+    // The point found so far.
+    px: f64
+    py: f64
+    started: bool
+    found: bool
+
+    fn walk(self: *mut Self, verbs: []u8, coords: []f64) {
+        var i: usize = 0
+        for v in verbs {
+            if v == MOVE {
+                self.moveTo(coords[i], coords[i + 1])
+                i += 2
+            } else if v == LINE {
+                self.lineTo(coords[i], coords[i + 1])
+                i += 2
+            } else if v == CUBIC {
+                self.cubicTo(coords[i], coords[i + 1], coords[i + 2], coords[i + 3], coords[i + 4], coords[i + 5])
+                i += 6
+            } else if v == CLOSE {
+                self.lineTo(self.sx, self.sy)
+            }
+        }
+    }
+
+    fn moveTo(self: *mut Self, x: f64, y: f64) {
+        if !self.started {
+            self.px = x
+            self.py = y
+            self.started = true
+        }
+        self.x = x
+        self.y = y
+        self.sx = x
+        self.sy = y
+    }
+
+    fn lineTo(self: *mut Self, x: f64, y: f64) {
+        let l = math.hypot(x - self.x, y - self.y)
+        if !self.found {
+            if l > 0.0 && self.total + l >= self.target {
+                let t = (self.target - self.total) / l
+                self.px = self.x + (x - self.x) * t
+                self.py = self.y + (y - self.y) * t
+                self.found = true
+            } else {
+                self.px = x
+                self.py = y
+            }
+        }
+        self.total += l
+        self.x = x
+        self.y = y
+    }
+
+    // A cubic as lines, enough of them for `FLATNESS` (the second
+    // differences of the control points bound the error).
+    fn cubicTo(self: *mut Self, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64) {
+        let x0 = self.x
+        let y0 = self.y
+        let ax = x0 - 2.0 * x1 + x2
+        let ay = y0 - 2.0 * y1 + y2
+        let bx = x1 - 2.0 * x2 + x3
+        let by = y1 - 2.0 * y2 + y3
+        let dd = math.max(math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by))
+        var n = math.ceil(math.sqrt(0.75 * dd / FLATNESS))
+        if !(n >= 1.0) {
+            n = 1.0
+        }
+        if n > 4096.0 {
+            n = 4096.0
+        }
+        let steps = n as usize
+        for k in 1..steps + 1 {
+            let t = k as f64 / n
+            let u = 1.0 - t
+            let a = u * u * u
+            let b = 3.0 * u * u * t
+            let c = 3.0 * u * t * t
+            let d = t * t * t
+            self.lineTo(a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3)
+        }
+    }
+}

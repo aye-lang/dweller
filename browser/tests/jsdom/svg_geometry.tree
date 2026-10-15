@@ -1,0 +1,57 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "SVG geometry: getTotalLength, getPointAtLength, SVGAElement"
+      "\n"
+    <body>
+      <svg id="svg" width="200" height="100" viewbox="0 0 200 100">
+        "\n  "
+        <a id="link" href="#x">
+          <path id="line" d="M0 0 L30 40">
+        "\n  "
+        <path id="square" d="M0 0 H100 V100 Z">
+        "\n  "
+        <path id="rel" d="m10 10 h10 v10 z">
+        "\n  "
+        <path id="two" d="M0 0 H10 M100 100 H110">
+        "\n  "
+        <path id="arc" d="M0 0 A50 50 0 0 1 100 0">
+        "\n  "
+        <path id="small" d="M0 0 A10 10 0 0 1 100 0">
+        "\n  "
+        <path id="quad" d="M0 0 Q50 100 100 0">
+        "\n  "
+        <path id="cubic" d="M0 0 C0 100 100 100 100 0">
+        "\n  "
+        <path id="empty">
+        "\n  "
+        <line id="seg" x1="0" y1="0" x2="3" y2="4">
+        "\n  "
+        <polyline id="pl" points="0,0 10,0 10,10">
+        "\n  "
+        <polygon id="pg" points="0,0 10,0 10,10">
+        "\n  "
+        <rect id="rect" x="5" y="5" width="10" height="20">
+        "\n  "
+        <rect id="round" width="40" height="20" rx="5">
+        "\n  "
+        <circle id="circle" cx="50" cy="50" r="10">
+        "\n  "
+        <ellipse id="ellipse" cx="0" cy="0" rx="20" ry="10">
+        "\n  "
+        <g id="g">
+          <text id="t">
+            "x"
+        "\n"
+      "\n"
+      <a id="html-a" href="#y">
+        "html"
+      "\n"
+      <pre id="out">
+        "line length ok\nline at 25 ok\nsquare length ok\nsquare at 150 ok\nsquare at 300 ok\nrel length ok\nrel at 15 ok\ntwo length ok\ntwo at 15 ok\narc length ok\narc at 78.54 ok\nsmall length ok\nquad length ok\nquad at 73.947 ok\ncubic length ok\ncubic at 100 ok\nempty length ok\nempty at 5 ok\nseg length ok\nseg at 2.5 ok\npl length ok\npl at 15 ok\npg length ok\nrect length ok\nrect at 15 ok\nround length ok\ncircle length ok\ncircle at 0 ok\ncircle at 15.708 ok\nellipse length ok\nellipse at 0 ok\nline at -10 ok\nline at 1000 ok\ndetached 7\nNaN TypeError\nno argument TypeError\ntrue 0 0\ntrue true true\nfalse true\ntrue true true\ntrue false undefined\ntrue true\nclick on A false\n"
+      "\n"
+      <script>
+        "\nfunction log(...parts) { document.getElementById('out').textContent += parts.join(' ') + '\\n'; }\nconst $ = id => document.getElementById(id);\nconst near = (a, b) => Math.abs(a - b) <= 0.5;\nfunction len(id, want) {\n  const got = $(id).getTotalLength();\n  log(id, 'length', near(got, want) ? 'ok' : 'got ' + got + ' want ' + want);\n}\nfunction at(id, d, x, y) {\n  const p = $(id).getPointAtLength(d);\n  log(id, 'at', d, near(p.x, x) && near(p.y, y) ? 'ok' : 'got ' + p.x + ',' + p.y + ' want ' + x + ',' + y);\n}\nlen('line', 50); at('line', 25, 15, 20);\nlen('square', 341.421); at('square', 150, 100, 50); at('square', 300, 29.289, 29.289);\nlen('rel', 34.142); at('rel', 15, 20, 15);\nlen('two', 20); at('two', 15, 105, 100);\nlen('arc', 157.08); at('arc', 78.54, 50, -50);\nlen('small', 157.08);\nlen('quad', 147.894); at('quad', 73.947, 50, 50);\nlen('cubic', 200); at('cubic', 100, 50, 75);\nlen('empty', 0); at('empty', 5, 0, 0);\nlen('seg', 5); at('seg', 2.5, 1.5, 2);\nlen('pl', 20); at('pl', 15, 10, 5);\nlen('pg', 34.142);\nlen('rect', 60); at('rect', 15, 15, 10);\nlen('round', 111.416);\nlen('circle', 62.832); at('circle', 0, 60, 50); at('circle', 15.708, 50, 60);\nlen('ellipse', 96.884); at('ellipse', 0, 20, 0);\n// Clamped to the outline.\nat('line', -10, 0, 0); at('line', 1000, 30, 40);\n// Detached elements have geometry too.\nconst d = document.createElementNS('http://www.w3.org/2000/svg', 'path');\nd.setAttribute('d', 'M0 0 h7');\nlog('detached', d.getTotalLength());\ntry { $('line').getPointAtLength(NaN); } catch (e) { log('NaN', e.name); }\ntry { $('line').getPointAtLength(); } catch (e) { log('no argument', e.name); }\nconst p = $('line').getPointAtLength(0);\nlog(p instanceof DOMPoint, p.x, p.y);\n// Interfaces.\nlog($('link') instanceof SVGAElement, $('link') instanceof SVGGraphicsElement, $('link') instanceof SVGElement);\nlog($('html-a') instanceof SVGAElement, $('html-a') instanceof HTMLAnchorElement);\nlog($('line') instanceof SVGPathElement, $('line') instanceof SVGGeometryElement, $('circle') instanceof SVGCircleElement);\nlog($('g') instanceof SVGGElement, $('t') instanceof SVGGeometryElement, typeof $('t').getTotalLength);\nlog(Object.getPrototypeOf(SVGAElement.prototype) === SVGGraphicsElement.prototype, Object.getPrototypeOf(SVGPathElement.prototype) === SVGGeometryElement.prototype);\ndocument.addEventListener('click', e => log('click on', e.target.tagName, e.target instanceof SVGAElement));\n$('html-a').click();\n"
+      "\n"
