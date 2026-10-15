@@ -115,10 +115,37 @@ pub struct DisplayList {
     // The extent of the document (from 0, 0), at least the viewport.
     width: f64
     height: f64
+    // The window's promoted layers (`buildPromoted`).
+    layers: List(Promoted)
 
     pub fn deinit(self: *mut Self) {
         self.items.deinit()
+        self.layers.deinit()
     }
+
+    /// The translation the layer of item `at` is composited at (CSS px;
+    /// 0, 0 for a layer that is not promoted).
+    pub fn offsetAt(self: *Self, at: usize) [2]f64 {
+        for l in self.layers.items() {
+            if l.at == at {
+                return [2]f64{l.ox, l.oy}
+            }
+        }
+        return [2]f64{0.0, 0.0}
+    }
+}
+
+/// A promoted layer (P4.56): the group of box `box` (its `Layer` item at
+/// `at`) holds the box's items without the box's own translation
+/// (`ox`, `oy` CSS px), which the window adds when it blends the layer.
+/// A frame that only changes that translation or the box's opacity
+/// moves or blends the kept layer (`patchLayer`), without layout,
+/// painting or rasterizing its items again.
+pub struct Promoted {
+    box: usize
+    at: usize
+    ox: f64
+    oy: f64
 }
 
 /// How the list maps to device pixels: a point at (x, y) CSS px goes to
@@ -140,22 +167,59 @@ let SELECTED = Rgba { r: 206, g: 206, b: 206, a: 255 }
 
 /// The display list of a laid-out tree.
 pub fn build(alloc: Allocator, t: *mut Tree) AllocError!DisplayList {
+    let none = [0]dom.NodeId{}
+    return buildWith(alloc, t, false, none[..])
+}
+
+/// `build` for the window (P4.56): the layer boxes of the elements of
+/// `promote` and those whose `will-change` names `transform` or
+/// `opacity` are groups of their own, promoted (`Promoted`).
+pub fn buildPromoted(alloc: Allocator, t: *mut Tree, promote: []dom.NodeId) AllocError!DisplayList {
+    return buildWith(alloc, t, true, promote)
+}
+
+fn buildWith(alloc: Allocator, t: *mut Tree, window: bool, promote: []dom.NodeId) AllocError!DisplayList {
     let began = perf.start()
     defer perf.end("paint_build", began, "document")
     var b = Builder {
         t: t,
-        list: DisplayList { items: List(Item).init(alloc), background: WHITE, width: t.viewport_w, height: t.viewport_h },
+        list: DisplayList { items: List(Item).init(alloc), background: WHITE, width: t.viewport_w, height: t.viewport_h, layers: List(Promoted).init(alloc) },
         skip_bg: null,
         painting: null,
         m: layout.Affine.identity(),
         fixed: false,
+        window: window,
+        promote: promote,
+        open: List(usize).init(t.backing),
     }
+    defer b.open.deinit()
     errdefer b.list.deinit()
     if t.root |r| {
         canvasBackground(&mut b, r)
         try b.layer(r)
     }
     return b.list
+}
+
+// The places of box `i` and its subtree, in tree order, into `out`.
+fn savePlaces(t: *Tree, i: usize, out: *mut List(f64)) AllocError!void {
+    try out.append(t.bx(i).ax)
+    try out.append(t.bx(i).ay)
+    for c in t.children(i) {
+        try savePlaces(t, c, out)
+    }
+}
+
+// Puts back the places `savePlaces` took (from `at`).
+fn restorePlaces(t: *mut Tree, i: usize, saved: []f64, at: *mut usize) {
+    let b = t.bx(i)
+    b.ax = saved[at.*]
+    b.ay = saved[at.* + 1]
+    at.* += 2
+    let n = t.children(i).len
+    for k in 0..n {
+        restorePlaces(t, t.children(i)[k], saved, at)
+    }
 }
 
 /// Is box `i` painted in a layer of its own (positioned, transformed,
@@ -280,6 +344,49 @@ struct Builder {
     // document).
     m: layout.Affine
     fixed: bool
+    // P4.56: the window's build (`buildPromoted`), the elements it
+    // promotes, the promoted boxes being painted (their subtrees placed
+    // without their translations, `layout.refold`) and the sum of those
+    // translations (what `extend` adds back).
+    window: bool = false
+    promote: []dom.NodeId
+    open: List(usize)
+    ext_dx: f64 = 0.0
+    ext_dy: f64 = 0.0
+
+    // Is the layer box `i` promoted (`buildPromoted`)?
+    fn promotes(self: *Self, i: usize) bool {
+        if !self.window || !self.m.isIdentity() || self.t.root == i {
+            return false
+        }
+        let b = self.t.bx(i)
+        let el = b.node orelse return false
+        if b.pseudo != 0 {
+            return false
+        }
+        let wc = layout.keywordOf(b.style[css.WILL_CHANGE])
+        if text.indexOf(wc, "transform") != null || text.indexOf(wc, "opacity") != null {
+            return true
+        }
+        for p in self.promote {
+            if dom.same(p, el) {
+                return true
+            }
+        }
+        return false
+    }
+
+    // Is box `c` a promoted box being painted, with a translation (what
+    // is inside it is placed without it: the clips of the boxes above
+    // it are outside its group)?
+    fn movedLayer(self: *Self, c: usize) bool {
+        for k in self.open.items() {
+            if k == c {
+                return layout.translationOf(self.t, c) != null
+            }
+        }
+        return false
+    }
 
     fn add(self: *mut Self, it: Item) AllocError!void {
         if self.m.isIdentity() {
@@ -296,10 +403,12 @@ struct Builder {
         try self.add(Item.Fill { r: Rect { x: x, y: y, w: w, h: h }, c: c })
     }
 
-    fn extend(self: *mut Self, right: f64, bottom: f64) {
+    fn extend(self: *mut Self, r: f64, b: f64) {
         if self.fixed {
             return
         }
+        let right = r + self.ext_dx
+        let bottom = b + self.ext_dy
         if right > self.list.width {
             self.list.width = right
         }
@@ -311,10 +420,37 @@ struct Builder {
     // Layer `i`: the layers below it, its own content, the layers above;
     // all of it a group with the box's opacity and filter.
     fn layer(self: *mut Self, i: usize) AllocError!void {
+        // A promoted box: its subtree placed without its translation
+        // (and those of the promoted boxes it is in) while it is painted.
+        var promoted = self.promotes(i)
+        var saved = List(f64).init(self.t.backing)
+        defer saved.deinit()
+        var e = [2]f64{0.0, 0.0}
+        if promoted {
+            try savePlaces(self.t, i, &mut saved)
+            try self.open.append(i)
+            if try layout.refold(self.t, i, self.open.items()) {
+                if layout.translationOf(self.t, i) |te| {
+                    e = te
+                }
+                self.ext_dx += e[0]
+                self.ext_dy += e[1]
+            } else {
+                _ = self.open.pop()
+                promoted = false
+            }
+        }
+        defer if promoted {
+            _ = self.open.pop()
+            self.ext_dx -= e[0]
+            self.ext_dy -= e[1]
+            var k: usize = 0
+            restorePlaces(self.t, i, saved.items(), &mut k)
+        }
         let o = opacityOf(self.t.bx(i).style)
         var f = try filterOf(self.t, self.t.bx(i).style)
         var group: ?usize = null
-        if o < 1.0 || f != null {
+        if o < 1.0 || f != null || promoted {
             group = try self.beginGroup()
         }
         var ls = List(LayerRef).init(self.t.backing)
@@ -350,6 +486,9 @@ struct Builder {
         self.m = outer_m
         if group |g| {
             try self.endGroup(g, o, f)
+            if promoted && self.list.items.len() > g {
+                try self.list.layers.append(Promoted { box: i, at: g, ox: e[0], oy: e[1] })
+            }
         }
     }
 
@@ -482,7 +621,7 @@ struct Builder {
                 try clippers.append(c)
                 pushed += 1
             }
-            if cb.abs == 2 {
+            if cb.abs == 2 || self.movedLayer(c) {
                 break
             }
             if cb.abs == 1 {
@@ -1320,6 +1459,10 @@ pub fn render(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut
 pub struct Reuse {
     sigs: []Sig
     cache: ?*mut RasterCache
+    // With a cache: the layers this drawing blended from it, and those
+    // it rasterized (DWELLER_TIMING `ui_layers`, P4.56).
+    kept: usize = 0
+    drawn: usize = 0
 }
 
 /// `render`; with `reuse` (the window), the items outside the clip are
@@ -1349,7 +1492,13 @@ pub fn renderWith(list: *DisplayList, target: *mut Canvas, view: View, painter: 
         var skip = false
         if reuse |ru| {
             let sig = ru.sigs[at]
-            if !structural(it) && !touches(deviceBounds(sig.b, v), canvas.clip) {
+            var b = sig.b
+            if isLayerItem(it) {
+                // A promoted layer is blended at its translation.
+                let off = list.offsetAt(at)
+                b = Rect { x: b.x + off[0], y: b.y + off[1], w: b.w, h: b.h }
+            }
+            if !structural(it) && !touches(deviceBounds(b, v), canvas.clip) {
                 skip = true
                 if isLayerItem(it) {
                     next = sig.end + 1
@@ -1398,7 +1547,14 @@ pub fn renderWith(list: *DisplayList, target: *mut Canvas, view: View, painter: 
                 .Layer { r } => {
                     var kept = false
                     if reuse |ru| {
-                        kept = try beginWindowLayer(&mut frames, canvas, v, r, ru, at)
+                        var alpha: u8 = 255
+                        match items[ru.sigs[at].end] {
+                            .EndLayer { r: er, radii, alpha: a } => {
+                                alpha = a
+                            }
+                            _ => {}
+                        }
+                        kept = try beginWindowLayer(&mut frames, canvas, v, r, ru, at, list.offsetAt(at), alpha)
                     } else {
                         try beginLayer(&mut frames, canvas, v, r)
                     }

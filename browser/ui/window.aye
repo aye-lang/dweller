@@ -395,6 +395,14 @@ pub struct Ui {
     finding: bool
     find: Field
     matches: List(paint.Rect)
+    // P4.56: the page's elements whose layer boxes get layers of their
+    // own (`paint.buildPromoted`): their transform or opacity changed in
+    // `PROMOTE_AFTER` relayouts in a row (`anim`: how many, and in which
+    // relayout `anim_seq` last).
+    promote: List(NodeId)
+    anim: List(Anim)
+    anim_els: List(NodeId)
+    anim_seq: u64 = 0
     current: usize
     // The sign-in prompt of a 401 (auth.aye).
     auth: AuthPrompt
@@ -474,6 +482,9 @@ pub struct Ui {
             finding: false,
             find: Field.init(alloc),
             matches: List(paint.Rect).init(alloc),
+            promote: List(NodeId).init(alloc),
+            anim: List(Anim).init(alloc),
+            anim_els: List(NodeId).init(alloc),
             current: 0,
             auth: AuthPrompt.init(alloc),
             hover: text.Builder.init(alloc),
@@ -526,6 +537,9 @@ pub struct Ui {
         self.auth.deinit()
         self.matches.deinit()
         self.hover.deinit()
+        self.promote.deinit()
+        self.anim.deinit()
+        self.anim_els.deinit()
     }
 
     fn dropList(self: *mut Self) {
@@ -540,7 +554,7 @@ pub struct Ui {
     // The display list of the page tree `t` (and its items' signatures).
     fn buildList(self: *mut Self, t: *mut layout.Tree) AllocError!void {
         self.dropList()
-        self.list = try paint.build(self.alloc, t)
+        self.list = try paint.buildPromoted(self.alloc, t, self.promote.items())
         self.list_scroll = t.scroll_y
         try paint.signature(&self.list.?, t, &mut self.page.sigs)
     }
@@ -817,15 +831,32 @@ pub struct Ui {
             return
         }
         let t_relayout = perf.start()
-        defer perf.end("ui_relayout", t_relayout, "")
         let began = std.time.monotonicMs()
-        self.dropList()
+        // A change of transforms and opacities alone moves and blends
+        // the promoted layers in the list as it is (`ui_composite`, P4.56).
+        var composited = false
         if self.tab.page |p| {
+            let before = p.tree
             try p.layoutPage(self.measure, self.win_w as f64, self.layoutHeight())
             self.laid_version = engine.treeVersion(p)
-            if p.tree |t| {
-                try self.buildList(t)
+            try self.noteAnimated(p)
+            if self.list != null && p.tree != null && before == p.tree {
+                composited = self.composite(p)
             }
+            if !composited {
+                self.dropList()
+                if p.tree |t| {
+                    try self.buildList(t)
+                }
+            }
+            engine.markPainted(p)
+        } else {
+            self.dropList()
+        }
+        if composited {
+            perf.end("ui_composite", t_relayout, "")
+        } else {
+            perf.end("ui_relayout", t_relayout, "")
         }
         try self.findAll(false)
         self.tab.clampScroll(self.maxScroll())
@@ -835,6 +866,77 @@ pub struct Ui {
             self.dirty = true
         }
         self.relayout_ms = std.time.monotonicMs() - began
+    }
+
+    // Counts the relayouts in a row in which each element's transform or
+    // opacity changed; one that changed in `PROMOTE_AFTER` is promoted.
+    fn noteAnimated(self: *mut Self, p: *mut engine.Page) AllocError!void {
+        try engine.takeAnimated(p, &mut self.anim_els)
+        if self.anim_els.len() == 0 && self.anim.len() == 0 {
+            return
+        }
+        self.anim_seq += 1
+        let seq = self.anim_seq
+        for el in self.anim_els.items() {
+            var found = false
+            for k in 0..self.anim.len() {
+                let a = &mut self.anim.items()[k]
+                if dom.same(a.el, el) {
+                    found = true
+                    if a.seq + 1 == seq {
+                        a.n += 1
+                        a.seq = seq
+                    }
+                }
+            }
+            if !found {
+                try self.anim.append(Anim { el: el, n: 1, seq: seq })
+            }
+        }
+        var k: usize = 0
+        while k < self.anim.len() {
+            let a = self.anim.items()[k]
+            if a.seq != seq {
+                _ = self.anim.swapRemove(k)
+                continue
+            }
+            if a.n >= PROMOTE_AFTER && self.promote.len() < MAX_PROMOTED {
+                var known = false
+                for el in self.promote.items() {
+                    if dom.same(el, a.el) {
+                        known = true
+                    }
+                }
+                if !known {
+                    try self.promote.append(a.el)
+                }
+            }
+            k += 1
+        }
+    }
+
+    // Moves and blends the promoted layers of the boxes whose transform
+    // or opacity alone changed since the list was built; false when the
+    // list must be built again.
+    fn composite(self: *mut Self, p: *mut engine.Page) bool {
+        let boxes = engine.paintChanges(p) orelse return false
+        let t = p.tree orelse return false
+        var l = &mut self.list.?
+        for b in boxes {
+            if b >= t.boxes.len() {
+                return false
+            }
+            var off = [2]f64{0.0, 0.0}
+            if layout.translationOf(t, b) |e| {
+                off = e
+            }
+            let o = paint.opacityOf(t.bx(b).style)
+            let alpha = std.math.floor(o * 255.0 + 0.5) as u8
+            if !paint.patchLayer(l, self.page.sigs.items(), b, off[0], off[1], alpha) {
+                return false
+            }
+        }
+        return true
     }
 
     // ---- navigation
@@ -851,6 +953,8 @@ pub struct Ui {
             return self.navigated(false)
         }
         self.paint_began = t_go
+        self.promote.clear()
+        self.anim.clear()
         self.dropdown = null
         self.range_drag = false
         // The agents' refs are of the old document.
@@ -1826,3 +1930,14 @@ fn keyName(sym: i32) []u8 {
     }
     return ""
 }
+
+// An element whose transform or opacity changed in the last `n`
+// relayouts in a row, the last `seq` (`Ui.noteAnimated`).
+struct Anim {
+    el: NodeId
+    n: u32
+    seq: u64
+}
+
+let PROMOTE_AFTER: u32 = 2
+let MAX_PROMOTED: usize = 32

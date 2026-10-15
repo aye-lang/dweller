@@ -693,6 +693,27 @@ full layout: no difference. Live github.com/aye-lang/aye is unchanged
 cascades): its document has one shadow root, and shadow trees still
 take the full path (`adoptLayout`); that is GitHub's next step.
 
+### P4.56: transform and opacity changes composited (2026-10-15)
+
+A change of `transform` or `opacity` alone keeps the boxes (a
+transformed subtree placed again from where the last pass of
+transforms found it, `layout.retransform`), and the window moves or
+blends the kept layer of a promoted box (`paint.patchLayer`) instead of
+building the display list and rasterizing its items again
+(`ui_composite`, `ui_layers`). Test page `browser/tests/ui/carousel.html`
+(a 600x300 track 1 px a frame, a fading box), `--frames 200`, fast build:
+
+| | relayouts after the first frame | composited frames | layers rasterized per frame | layers blended from the cache per frame |
+|---|---:|---:|---:|---:|
+| main | 60 (one per frame) | 0 | | |
+| P4.56 | 0 | 58 | 0 | 2 |
+
+mistral.ai, `window_perf.py idle`, main / P4.56: idle CPU 97.9 / 91.4%,
+relayouts per loop 0.97 / 0.79, draw 6.9 / 4.4 ms per loop. Its animation
+is not a transform: its scripts change the `width` of `.js-square` divs
+each frame (layout), and most frames lay the whole document out because
+a `layout_version` bump is not noted (P4.57).
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

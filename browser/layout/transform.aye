@@ -21,6 +21,7 @@
 // box); other clip paths are not drawn. A clipped box is a layer.
 
 import css
+import std.list.List
 import std.math
 import std.mem.AllocError
 import std.text
@@ -121,14 +122,198 @@ fn hasTransform(style: []css.Value) bool {
 }
 
 // Applies the transforms of the boxes in tree order (an ancestor's
-// first, so a descendant's moves with it).
+// first, so a descendant's moves with it), noting first where the boxes
+// are (`Box.ux`, `uy`, `uroot`).
 fn applyTransforms(t: *mut Tree, i: usize) AllocError!void {
+    noteBases(t, i, i)
+    try transformAll(t, i)
+}
+
+fn noteBases(t: *mut Tree, i: usize, root: usize) {
+    let b = t.bx(i)
+    b.ux = b.ax
+    b.uy = b.ay
+    b.uroot = root
+    let n = t.children(i).len
+    for k in 0..n {
+        noteBases(t, t.children(i)[k], root)
+    }
+}
+
+fn transformAll(t: *mut Tree, i: usize) AllocError!void {
     if isTransformed(t, i) {
         try applyTransform(t, i)
     }
     let n = t.children(i).len
     for k in 0..n {
-        try applyTransforms(t, t.children(i)[k])
+        try transformAll(t, t.children(i)[k])
+    }
+}
+
+/// The translation of the transform of box `i` (what `applyTransform`
+/// shifts its subtree by); null for none.
+pub fn translationOf(t: *Tree, i: usize) ?[2]f64 {
+    if !isTransformed(t, i) {
+        return null
+    }
+    let b = t.bx(i)
+    let m = parseTransform(keywordOf(b.style[css.TRANSFORM]), b.w, b.h, unitsOf(t, i)) orelse return null
+    return [2]f64{m.e, m.f}
+}
+
+/// Box `i`, transformed before and after, got another transform (its
+/// box and those under it otherwise as they were): places its subtree
+/// again from where the last pass of transforms found it, as a full
+/// layout does (P4.56: no layout). False when that pass is not known
+/// for the subtree or a fixed or sticky box is on the way (the caller
+/// lays it out again).
+pub fn retransform(t: *mut Tree, i: usize) AllocError!bool {
+    if !isTransformed(t, i) {
+        return false
+    }
+    var shifts = List([2]f64).init(t.backing)
+    defer shifts.deinit()
+    if !(try pathShifts(t, i, null, &mut shifts)) {
+        return false
+    }
+    let b = t.bx(i).*
+    let u = unitsOf(t, i)
+    let m = parseTransform(keywordOf(b.style[css.TRANSFORM]), b.w, b.h, u) orelse return false
+    let o = parseOrigin(keywordOf(b.style[css.TRANSFORM_ORIGIN]), b.w, b.h, u)
+    let linear = m.a != 1.0 || m.b != 0.0 || m.c != 0.0 || m.d != 1.0
+    let aligned = (m.b == 0.0 && m.c == 0.0) || (m.a == 0.0 && m.d == 0.0)
+    if linear && aligned {
+        let x = Xform { a: m.a, b: m.b, c: m.c, d: m.d, ox: o[0], oy: o[1] }
+        if b.xform |k| {
+            t.xforms.items()[k] = x
+        } else {
+            try t.xforms.append(x)
+            t.bx(i).xform = t.xforms.len() - 1
+        }
+    } else {
+        t.bx(i).xform = null
+    }
+    try replay(t, i, &mut shifts, null)
+    return true
+}
+
+/// Places the subtree of box `i` as the last pass of transforms did,
+/// but without the translations of the boxes in `skip` (the window's
+/// promoted layers, composited at their translation: paint.aye). False
+/// (nothing moved) when `retransform` could not.
+pub fn refold(t: *mut Tree, i: usize, skip: []usize) AllocError!bool {
+    var shifts = List([2]f64).init(t.backing)
+    defer shifts.deinit()
+    if !(try pathShifts(t, i, skip, &mut shifts)) {
+        return false
+    }
+    try replay(t, i, &mut shifts, skip)
+    return true
+}
+
+// The translations the boxes above `i` (from the root of its last pass
+// of transforms) shifted it by, outermost first, into `out`; false when
+// the boxes under `i` were not all in that pass or a box on the way is
+// fixed or sticky (`scrollTo` moves it).
+fn pathShifts(t: *mut Tree, i: usize, skip: ?[]usize, out: *mut List([2]f64)) AllocError!bool {
+    let root = t.bx(i).uroot
+    if !samePass(t, i, root) {
+        return false
+    }
+    var up: ?usize = t.bx(i).parent
+    var cur = i
+    while cur != root {
+        let p = up orelse return false
+        if inScrolled(t, p) {
+            return false
+        }
+        if !skipped(skip, p) {
+            if translationOf(t, p) |e| {
+                if e[0] != 0.0 || e[1] != 0.0 {
+                    try out.append(e)
+                }
+            }
+        }
+        cur = p
+        up = t.bx(p).parent
+    }
+    if inScrolled(t, i) {
+        return false
+    }
+    // Outermost first.
+    let s = out.items()
+    var a: usize = 0
+    var z = s.len
+    while a + 1 < z {
+        z -= 1
+        let x = s[a]
+        s[a] = s[z]
+        s[z] = x
+        a += 1
+    }
+    return true
+}
+
+fn samePass(t: *Tree, i: usize, root: usize) bool {
+    if t.bx(i).uroot != root {
+        return false
+    }
+    for c in t.children(i) {
+        if !samePass(t, c, root) {
+            return false
+        }
+    }
+    return true
+}
+
+fn inScrolled(t: *Tree, i: usize) bool {
+    for k in t.scrolled.items() {
+        if k == i {
+            return true
+        }
+    }
+    return false
+}
+
+fn skipped(skip: ?[]usize, i: usize) bool {
+    let s = skip orelse return false
+    for k in s {
+        if k == i {
+            return true
+        }
+    }
+    return false
+}
+
+// Places box `k` and its subtree: where the pass found it, then each
+// translation of `shifts` and its own, in that order (`shiftSubtree`).
+fn replay(t: *mut Tree, k: usize, shifts: *mut List([2]f64), skip: ?[]usize) AllocError!void {
+    let b = t.bx(k)
+    b.ax = b.ux
+    b.ay = b.uy
+    for e in shifts.items() {
+        let c = t.bx(k)
+        c.ax += e[0]
+        c.ay += e[1]
+    }
+    var own = false
+    if !skipped(skip, k) {
+        if translationOf(t, k) |e| {
+            if e[0] != 0.0 || e[1] != 0.0 {
+                try shifts.append(e)
+                let c = t.bx(k)
+                c.ax += e[0]
+                c.ay += e[1]
+                own = true
+            }
+        }
+    }
+    let n = t.children(k).len
+    for j in 0..n {
+        try replay(t, t.children(k)[j], shifts, skip)
+    }
+    if own {
+        _ = shifts.pop()
     }
 }
 

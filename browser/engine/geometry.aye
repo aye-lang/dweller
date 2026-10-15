@@ -275,6 +275,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
         defer dirty.deinit()
         let local = try localChanges(s, g, version, &mut dirty)
         var fresh = sameStyles(s, g, st)
+        var restyled = false
         if fresh {
             // Nothing the styles depend on changed (a class no rule
             // names): only the layout is done again.
@@ -285,6 +286,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
                 dropGeometry(s)
                 return e
             }
+            restyled = fresh
             if fresh && local && g.styles.moved {
                 // Values that layout reads changed (`css.paintOnly`).
                 if g.styles.moved_many {
@@ -297,11 +299,23 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
                 }
             }
         }
-        // The boxes stay when nothing they depend on changed (an
-        // animation's opacity), or else those of the dirty elements are
-        // built and laid out again when that is local.
+        // The boxes of the elements styled again stay with their new
+        // values (an animation's opacity), moved by their new transform
+        // (P4.56), or else those of the dirty elements are built and
+        // laid out again when that is local.
+        var composite = false
+        if fresh && local && restyled {
+            composite = keepRestyled(s, g, &mut dirty) catch |e| {
+                dropGeometry(s)
+                return e
+            }
+        }
         var kept = fresh && local && dirty.len() == 0
+        if kept && !composite {
+            s.paint_whole = true
+        }
         if fresh && local && !kept {
+            s.paint_whole = true
             kept = relayoutDirty(s, g, dirty.items()) catch |e| {
                 dropGeometry(s)
                 return e
@@ -312,14 +326,20 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
                 dropGeometry(s)
                 return e
             }
+            if g.styles.queried {
+                // The containers may have styled and laid out more.
+                s.paint_whole = true
+            }
         }
         if kept {
+            s.paint_version = domVersion(p)
             g.version = version
             g.noted = s.layout_noted
             followScroll(s, g)
             try checkLayout(s, g)
             return g
         }
+        s.paint_whole = true
         if fresh {
             dropTree(s, g)
             s.geom = null
@@ -357,6 +377,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     dropGeometry(s)
     clearChanges(s)
     s.restyle_all = false
+    s.paint_whole = true
     let styles = try s.alloc.create(try css.Styles.init(s.alloc))
     errdefer {
         styles.deinit()
@@ -382,6 +403,112 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     s.geom = g
     followScroll(s, g)
     return g
+}
+
+// The elements `restyle` styled again whose boxes stay
+// (`css.Styles.restyled`): their boxes (and their text's) take the new
+// values, and those whose transform changed are placed again
+// (`layout.retransform`) or, when that cannot be, go to `dirty`. True
+// when each changed only in its transform or opacity: the window then
+// moves or blends the layers of their boxes (`Script.paint_boxes`)
+// without painting the rest again.
+fn keepRestyled(s: *mut Script, g: *mut Geometry, dirty: *mut List(NodeId)) AllocError!bool {
+    let t = g.tree
+    var composite = true
+    for r in g.styles.restyled.items() {
+        let now = g.styles.get(r.el) orelse continue
+        let only = compositeOnly(r.old, now)
+        if only {
+            try s.animated.append(r.el)
+        } else {
+            composite = false
+        }
+        var k = firstBox(g, r.el)
+        while k |b| {
+            var mine = false
+            if t.bx(b).node |n| {
+                mine = dom.same(n, r.el)
+            }
+            if mine && t.bx(b).pseudo == 0 {
+                rebind(t, b, r.old, now)
+                if r.shift && !(try layout.retransform(t, b)) {
+                    try dirty.append(r.el)
+                    composite = false
+                }
+                if only {
+                    try s.paint_boxes.append(b)
+                }
+            }
+            k = nextBox(g, b)
+        }
+    }
+    return composite
+}
+
+// Points box `i` and the boxes under it that share the values `old`
+// (its text, its inline boxes without an element) at `now`.
+fn rebind(t: *mut layout.Tree, i: usize, old: []css.Value, now: []css.Value) {
+    let b = t.bx(i)
+    if b.style.ptr == old.ptr {
+        b.style = now
+    }
+    let n = t.children(i).len
+    for k in 0..n {
+        let c = t.children(i)[k]
+        if t.bx(c).style.ptr == old.ptr {
+            rebind(t, c, old, now)
+        }
+    }
+}
+
+// Do `old` and `now` differ only in transform, its origin and opacity?
+fn compositeOnly(old: []css.Value, now: []css.Value) bool {
+    for i in 0..css.NPROPS {
+        if i != css.TRANSFORM && i != css.TRANSFORM_ORIGIN && i != css.OPACITY && !css.sameValue(old[i], now[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+fn nextBox(g: *Geometry, b: usize) ?usize {
+    let n = g.next.items()[b]
+    if n == NO_BOX {
+        return null
+    }
+    return n
+}
+
+/// The window built its display list now: forgets the changes
+/// `takePaintChanges` tells.
+pub fn markPainted(p: *mut Page) {
+    if p.script |s| {
+        s.paint_boxes.clear()
+        s.paint_whole = false
+        s.paint_version = domVersion(p)
+    }
+}
+
+/// The boxes whose transform or opacity alone changed since
+/// `markPainted`, when nothing else did (null otherwise): the page's
+/// layout is the one scripts read, and all its changes were laid out.
+pub fn paintChanges(p: *mut Page) ?[]usize {
+    let s = p.script orelse return null
+    let g = s.geom orelse return null
+    if s.paint_whole || !g.shared || s.paint_version != domVersion(p) || s.paint_boxes.len() == 0 {
+        return null
+    }
+    return s.paint_boxes.items()
+}
+
+/// The elements whose transform or opacity changed since the last call.
+pub fn takeAnimated(p: *mut Page, out: *mut List(NodeId)) AllocError!void {
+    out.clear()
+    let s = p.script orelse return
+    for el in s.animated.items() {
+        try out.append(el)
+    }
+    s.animated.clear()
 }
 
 // Are the styles of `g` still those of the document, for the sheets of
