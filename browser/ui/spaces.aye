@@ -3,7 +3,7 @@
 // window's thread. The window reads a connection's first line, starts
 // its Space,
 //
-//     anyknown space --control FD --agent-socket DIR/agent.sock
+//     dweller space --control FD --agent-socket DIR/agent.sock
 //         --width W --height H [--font fixed|system] [--no-js]
 //
 // (the window program, headless with SDL's dummy video driver, its
@@ -62,11 +62,11 @@ let RELAY_CAP: usize = 262144
 /// What an agent gets when its Space ended under it (JSON lines).
 let CRASHED = "{\"id\":null,\"ok\":false,\"error\":\"the Space crashed\"}\n"
 // The same for MCP: a log notification (a response needs a request id).
-let CRASHED_MCP = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"error\",\"logger\":\"anyknown\",\"data\":{\"error\":\"the Space crashed\"}}}\n"
+let CRASHED_MCP = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"error\",\"logger\":\"dweller\",\"data\":{\"error\":\"the Space crashed\"}}}\n"
 /// Why `user_context` fails in a Space.
 let NO_CONTEXT = "the user's context is not available in a Space yet"
 
-let SPACE_USAGE = "usage: anyknown space --control FD --agent-socket PATH [--width W] [--height H] [--font fixed|system] [--no-js]"
+let SPACE_USAGE = "usage: dweller space --control FD --agent-socket PATH [--width W] [--height H] [--font fixed|system] [--no-js]"
 
 /// The Space serving a connection, as the window sees it.
 pub struct Space {
@@ -128,7 +128,7 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     let mcp = agent.isMcpHello(tmp, text.trim(line)) || agent.looksLikeRpc(tmp, text.trim(line))
     // A directory only the user can read, for the Space's socket.
     var dir = text.Builder.init(tmp)
-    try dir.append("/tmp/anyknown-")
+    try dir.append("/tmp/dweller-")
     try dir.appendInt(getpid() as i64)
     try dir.append("-XXXXXX")
     try dir.appendByte(0)
@@ -574,7 +574,7 @@ fn leaveSpace(ui: *mut Ui) {
     }
 }
 
-/// `anyknown space --control FD --agent-socket PATH ...` (internal): a
+/// `dweller space --control FD --agent-socket PATH ...` (internal): a
 /// Space, started by a window with `--spaces`. The exit status.
 pub fn spaceMain(alloc: Allocator, args: [][]u8) i32 {
     var control: i64 = -1
