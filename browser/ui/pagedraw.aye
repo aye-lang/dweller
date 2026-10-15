@@ -1,0 +1,336 @@
+// The page's pixels between frames (P4.35, paint/damage.aye): a frame
+// draws only what changed since the last one. Its damage is what the
+// display list's signatures say changed, and after a scroll by whole
+// pixels the band that came into view (the pixels drawn before move);
+// with no damage and nothing else changed, the frame draws and presents
+// nothing. The window is composed from these pixels, then the chrome
+// and the overlays over the page.
+//
+// `DWELLER_DAMAGE_CHECK=1` draws each frame whole as well (no damage, no
+// raster cache) and logs "DAMAGE CHECK" with the pixels that differ.
+
+import engine
+import paint
+import perf
+import std
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+
+extern fn getenv(name: [*]u8) ?[*]u8
+extern fn memcmp(a: [*]u8, b: [*]u8, n: usize) i32
+
+pub struct PageDraw {
+    alloc: Allocator
+    canvas: paint.Canvas
+    // The signatures of `Ui.list`, and of what `canvas` shows.
+    sigs: List(paint.Sig)
+    drawn: List(paint.Sig)
+    // How `canvas` was drawn: false when it shows nothing yet.
+    valid: bool
+    view: paint.View
+    area: paint.IRect
+    background: paint.Rgba
+    // Which document it shows (the tab's slot and its `shown`).
+    doc: u64
+    cache: paint.RasterCache
+    damage: paint.Damage
+    // This frame moved the pixels (a scroll): all of them go to the
+    // window.
+    moved: bool
+    check: bool
+    scratch: ?paint.Canvas
+
+    pub fn init(alloc: Allocator) PageDraw {
+        var check = false
+        if getenv("DWELLER_DAMAGE_CHECK".ptr) |p| {
+            check = p[0] == '1'
+        }
+        return PageDraw {
+            alloc: alloc,
+            canvas: paint.Canvas.init(alloc, 0, 0) catch unreachable,
+            sigs: List(paint.Sig).init(alloc),
+            drawn: List(paint.Sig).init(alloc),
+            valid: false,
+            view: paint.View { scale: 1.0, dx: 0.0, dy: 0.0 },
+            area: paint.IRect { x0: 0, y0: 0, x1: 0, y1: 0 },
+            background: paint.Rgba { r: 255, g: 255, b: 255, a: 255 },
+            doc: 0,
+            cache: paint.RasterCache.init(alloc),
+            damage: paint.Damage.init(alloc),
+            moved: false,
+            check: check,
+            scratch: null,
+        }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.canvas.deinit()
+        self.sigs.deinit()
+        self.drawn.deinit()
+        self.cache.deinit()
+        self.damage.deinit()
+        if self.scratch |sc| {
+            var c = sc
+            c.deinit()
+        }
+    }
+
+    // Sizes the pixels to `w` x `h` (drawn again whole).
+    fn resize(self: *mut Self, w: usize, h: usize) AllocError!void {
+        if self.canvas.width == w && self.canvas.height == h {
+            return
+        }
+        self.canvas.deinit()
+        self.canvas = try paint.Canvas.init(self.alloc, w, h)
+        self.valid = false
+    }
+}
+
+/// Brings the page's pixels (`ui.page.canvas`, the window's `area`) up to
+/// date with `ui.list` scrolled as the tab is; true when it drew
+/// something. They are drawn with the page's own origin, so that the
+/// device coordinates of what is in view are never more than those of
+/// the page (adding a scroll offset to them is then exact, and a scroll
+/// moves the pixels a new drawing would give).
+fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
+    let pd = &mut ui.page
+    let s = ui.scale
+    let v = paint.View { scale: s, dx: -ui.tab.scroll_x * s, dy: -ui.tab.scroll * s }
+    var bg = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
+    if ui.list |l| {
+        bg = l.background
+    }
+    try pd.resize(math.maxOf(i64, 0, area.x1 - area.x0) as usize, math.maxOf(i64, 0, area.y1 - area.y0) as usize)
+    let all = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
+    let slot = ui.slots[ui.active].?
+    let doc = (slot.id as u64) << 32 | (slot.shown & 0xffffffff)
+    var whole = !pd.valid || v.scale != pd.view.scale || !sameRgba(bg, pd.background) || doc != pd.doc || ui.list == null
+    if doc != pd.doc {
+        // Another document: the cache's keys may name its freed pixels.
+        pd.cache.clear()
+    }
+    pd.damage.clear()
+    pd.moved = false
+    if !whole {
+        let ddx = v.dx - pd.view.dx
+        let ddy = v.dy - pd.view.dy
+        if ddx != math.floor(ddx) || ddy != math.floor(ddy) || math.abs(ddx) >= all.x1 as f64 || math.abs(ddy) >= all.y1 as f64 {
+            whole = true
+        } else {
+            let mx = ddx as i64
+            let my = ddy as i64
+            if mx != 0 || my != 0 {
+                pd.canvas.shift(all, mx, my)
+                pd.moved = true
+                // The bands that came into view.
+                if my > 0 {
+                    try pd.damage.add(paint.IRect { x0: 0, y0: 0, x1: all.x1, y1: my })
+                } else if my < 0 {
+                    try pd.damage.add(paint.IRect { x0: 0, y0: all.y1 + my, x1: all.x1, y1: all.y1 })
+                }
+                if mx > 0 {
+                    try pd.damage.add(paint.IRect { x0: 0, y0: 0, x1: mx, y1: all.y1 })
+                } else if mx < 0 {
+                    try pd.damage.add(paint.IRect { x0: all.x1 + mx, y0: 0, x1: all.x1, y1: all.y1 })
+                }
+                try paint.edgeLayers(pd.sigs.items(), v, all, &mut pd.damage)
+            }
+            try paint.diff(pd.drawn.items(), pd.sigs.items(), v, all, &mut pd.damage)
+        }
+    }
+    if whole {
+        pd.damage.clear()
+        try pd.damage.add(all)
+    }
+    _ = try paint.spreadLayers(pd.sigs.items(), v, all, &mut pd.damage)
+    let drew = !pd.damage.isEmpty()
+    if drew {
+        var reuse = paint.Reuse { sigs: pd.sigs.items(), cache: &mut pd.cache }
+        for r in pd.damage.rects.items() {
+            try pd.canvas.pushDamage(r)
+            defer pd.canvas.popClip()
+            pd.canvas.fillRect(r, bg)
+            if ui.list |l| {
+                try paint.renderWith(&l, &mut pd.canvas, v, &mut ui.painter, &mut reuse)
+            }
+        }
+    }
+    let t = perf.start()
+    perf.end("ui_damage_px", t, damageLabel(pd))
+    pd.drawn.clear()
+    for sg in pd.sigs.items() {
+        try pd.drawn.append(sg)
+    }
+    pd.valid = true
+    pd.view = v
+    pd.area = area
+    pd.background = bg
+    pd.doc = doc
+    pd.cache.endFrame()
+    if pd.check {
+        try checkDamage(ui, v, bg)
+    }
+    return drew
+}
+
+// "PIXELS RECTS": the damage drawn, for DWELLER_TIMING.
+var label_buf = @zeroed([48]u8)
+
+fn damageLabel(pd: *PageDraw) []u8 {
+    var n: usize = 0
+    n = putNum(&mut label_buf, n, pd.damage.area() as u64)
+    label_buf[n] = ' '
+    n += 1
+    n = putNum(&mut label_buf, n, pd.damage.rects.len() as u64)
+    return label_buf[0..n]
+}
+
+fn putNum(buf: *mut [48]u8, at: usize, v: u64) usize {
+    var digits = @zeroed([20]u8)
+    var k: usize = 0
+    var x = v
+    while true {
+        digits[k] = '0' + (x % 10) as u8
+        k += 1
+        x = x / 10
+        if x == 0 {
+            break
+        }
+    }
+    var n = at
+    while k > 0 {
+        k -= 1
+        buf[n] = digits[k]
+        n += 1
+    }
+    return n
+}
+
+// DWELLER_DAMAGE_CHECK: draws the page whole into a scratch canvas, as
+// `render` does without damage or cache, and logs the pixels that differ
+// from the page's.
+fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
+    let pd = &mut ui.page
+    let area = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
+    if pd.scratch == null || pd.scratch.?.width != pd.canvas.width || pd.scratch.?.height != pd.canvas.height {
+        if pd.scratch |sc| {
+            var c = sc
+            c.deinit()
+        }
+        pd.scratch = try paint.Canvas.init(pd.alloc, pd.canvas.width, pd.canvas.height)
+    }
+    var sc = &mut pd.scratch.?
+    try sc.pushClip(area)
+    defer sc.popClip()
+    sc.fillRect(area, bg)
+    if ui.list |l| {
+        // The window's drawing, without damage or cache.
+        var whole = paint.Reuse { sigs: pd.sigs.items(), cache: null }
+        try paint.renderWith(&l, sc, v, &mut ui.painter, &mut whole)
+    }
+    var count: usize = 0
+    var b = paint.IRect { x0: area.x1, y0: area.y1, x1: area.x0, y1: area.y0 }
+    for y in area.y0..area.y1 {
+        let row = (y as usize * sc.width + area.x0 as usize) * 4
+        let n = (area.x1 - area.x0) as usize * 4
+        if memcmp(sc.pixels[row..].ptr, pd.canvas.pixels[row..].ptr, n) == 0 {
+            continue
+        }
+        for x in area.x0..area.x1 {
+            let i = (y as usize * sc.width + x as usize) * 4
+            if sc.pixels[i] != pd.canvas.pixels[i] || sc.pixels[i + 1] != pd.canvas.pixels[i + 1] || sc.pixels[i + 2] != pd.canvas.pixels[i + 2] || sc.pixels[i + 3] != pd.canvas.pixels[i + 3] {
+                count += 1
+                b.x0 = math.minOf(i64, b.x0, x)
+                b.y0 = math.minOf(i64, b.y0, y)
+                b.x1 = math.maxOf(i64, b.x1, x + 1)
+                b.y1 = math.maxOf(i64, b.y1, y + 1)
+            }
+        }
+    }
+    if count > 0 {
+        std.log.err("DAMAGE CHECK: {} pixels differ in {},{} - {},{} (damage {} rects, {} px)", count, b.x0, b.y0, b.x1, b.y1, pd.damage.rects.len(), pd.damage.area())
+        let i = (b.y0 as usize * sc.width + b.x0 as usize) * 4
+        std.log.err("  page {} {} {} {} full {} {} {} {}", pd.canvas.pixels[i], pd.canvas.pixels[i + 1], pd.canvas.pixels[i + 2], pd.canvas.pixels[i + 3], sc.pixels[i], sc.pixels[i + 1], sc.pixels[i + 2], sc.pixels[i + 3])
+        if ui.list |l| {
+            for k, it in l.items.items() {
+                let d = paint.deviceBounds(pd.sigs.items()[k].b, v)
+                if d.x0 <= b.x0 && b.x0 < d.x1 && d.y0 <= b.y0 && b.y0 < d.y1 {
+                    std.log.err("  item {} {} {},{} - {},{}", k, paint.kindName(it), d.x0, d.y0, d.x1, d.y1)
+                }
+            }
+        }
+    }
+}
+
+/// Is something drawn over the page (find matches, the focused field,
+/// a dropdown, the status line, an agent's flash, a menu)?
+fn pageOverlays(ui: *mut Ui) bool {
+    if ui.matches.len() > 0 || ui.finding || ui.dropdown != null || ui.hover.len() > 0 {
+        return true
+    }
+    if chipStatus(ui).len > 0 || agentStatus(ui).len > 0 {
+        return true
+    }
+    if ui.agents |a| {
+        if a.flash || a.menu != 0 {
+            return true
+        }
+    }
+    if ui.tab.page |p| {
+        if p.doc.controls.focus != null || p.doc.controls.validation != null {
+            return true
+        }
+    }
+    return false
+}
+
+/// Copies the page's damage (all of the page after a scroll) into the
+/// window and presents it; the rest of the window is as it was.
+fn presentDamage(ui: *mut Ui) {
+    let pd = &mut ui.page
+    let ox = pd.area.x0
+    let oy = pd.area.y0
+    var rects = pd.damage.rects.items()
+    var all = [1]paint.IRect{paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }}
+    if pd.moved {
+        rects = all[..]
+    }
+    for r in rects {
+        ui.canvas.blit(&pd.canvas, r, ox, oy)
+    }
+    if pd.check {
+        // The window shows the page's pixels as they are now.
+        var rows: usize = 0
+        let n = pd.canvas.width * 4
+        for y in 0..pd.canvas.height {
+            let i = y * n
+            let j = ((y + oy as usize) * ui.canvas.width + ox as usize) * 4
+            if memcmp(pd.canvas.pixels[i..].ptr, ui.canvas.pixels[j..].ptr, n) != 0 {
+                rows += 1
+            }
+        }
+        if rows > 0 {
+            std.log.err("DAMAGE CHECK: the window differs from the page in {} rows", rows)
+        }
+    }
+    if ui.texture |t| {
+        let full = paint.IRect { x0: 0, y0: 0, x1: ui.canvas.width as i64, y1: ui.canvas.height as i64 }
+        for d in rects {
+            let b = paint.intersect(paint.IRect { x0: d.x0 + ox, y0: d.y0 + oy, x1: d.x1 + ox, y1: d.y1 + oy }, full)
+            if b.x1 > b.x0 && b.y1 > b.y0 {
+                let rect = SDL_Rect { x: b.x0 as i32, y: b.y0 as i32, w: (b.x1 - b.x0) as i32, h: (b.y1 - b.y0) as i32 }
+                let off = (b.y0 as usize * ui.canvas.width + b.x0 as usize) * 4
+                SDL_UpdateTexture(t, &rect, ui.canvas.pixels[off..].ptr, (ui.canvas.width * 4) as i32)
+            }
+        }
+        SDL_RenderClear(ui.renderer)
+        SDL_RenderCopy(ui.renderer, t, null, null)
+        SDL_RenderPresent(ui.renderer)
+    }
+}
+
+fn sameRgba(a: paint.Rgba, b: paint.Rgba) bool {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+}

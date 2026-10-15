@@ -367,6 +367,9 @@ pub struct Ui {
     px_h: i32
     scale: f64
     canvas: paint.Canvas
+    // The page's pixels, kept between frames (damage.aye): only what
+    // changed is drawn again.
+    page: PageDraw
     painter: paint.TextPainter
     measure: dyn font.Measurer
     // The tabs (tabs.aye): `slots[..count]`, `slots[active]` shown; `tab`
@@ -403,7 +406,14 @@ pub struct Ui {
     // A shortcut was handled: ignore the text input of its key.
     swallow: bool
     resized: bool
+    // Something other than the page's pixels changed (the chrome, an
+    // overlay): the next frame composes the window again.
     dirty: bool
+    // The page's display list changed after its timers: the next frame
+    // draws what changed, and nothing when no pixel did.
+    repaint: bool = false
+    // Inside the timers' `afterScripts`.
+    from_timers: bool = false
     quit: bool
     // engine.domVersion of the page when it was last laid out.
     laid_version: u64
@@ -444,6 +454,7 @@ pub struct Ui {
             px_h: 0,
             scale: 1.0,
             canvas: paint.Canvas.init(alloc, 0, 0) catch unreachable,
+            page: PageDraw.init(alloc),
             painter: paint.TextPainter.init(alloc, system),
             measure: measure,
             slots: slots,
@@ -498,6 +509,7 @@ pub struct Ui {
         stopAgents(self)
         self.rest.deinit()
         self.canvas.deinit()
+        self.page.deinit()
         self.painter.deinit()
         for i in 0..self.count {
             freeSlot(self.alloc, self.slots[i].?)
@@ -515,6 +527,15 @@ pub struct Ui {
             old.deinit()
         }
         self.list = null
+        self.page.sigs.clear()
+    }
+
+    // The display list of the page tree `t` (and its items' signatures).
+    fn buildList(self: *mut Self, t: *mut layout.Tree) AllocError!void {
+        self.dropList()
+        self.list = try paint.build(self.alloc, t)
+        self.list_scroll = t.scroll_y
+        try paint.signature(&self.list.?, t, &mut self.page.sigs)
     }
 
     // Sizes the canvas to the window and opens the first page (or, with
@@ -553,13 +574,14 @@ pub struct Ui {
             var waited_ns: u64 = 0
             try self.advanceLoad(false)
             try self.imagesIn()
-            if self.dirty || frames > 0 {
+            if self.dirty || self.repaint || frames > 0 {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
                 try self.draw()
                 perf.noteFrame(std.time.monotonicMs() - drew)
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
+                self.repaint = false
                 drawn += 1
                 if self.paint_began != 0 && self.list != null {
                     perf.end("ui_first_paint", self.paint_began, self.tab.href())
@@ -644,6 +666,8 @@ pub struct Ui {
                 if (try engine.runDueTimers(p)) || engine.navigationPending(p) {
                     // A navigation that a script asked for while the page
                     // loaded is followed here too (one per iteration).
+                    self.from_timers = true
+                    defer self.from_timers = false
                     try self.afterScripts()
                     contextMayChange(self)
                 }
@@ -709,6 +733,7 @@ pub struct Ui {
         self.scale = pw as f64 / w as f64
         self.canvas.deinit()
         self.canvas = try paint.Canvas.init(self.alloc, pw as usize, ph as usize)
+        self.page.valid = false
         if self.texture |t| {
             SDL_DestroyTexture(t)
         }
@@ -792,13 +817,16 @@ pub struct Ui {
             try p.layoutPage(self.measure, self.win_w as f64, self.layoutHeight())
             self.laid_version = engine.treeVersion(p)
             if p.tree |t| {
-                self.list = try paint.build(self.alloc, t)
-                self.list_scroll = t.scroll_y
+                try self.buildList(t)
             }
         }
         try self.findAll(false)
         self.tab.clampScroll(self.maxScroll())
-        self.dirty = true
+        if self.from_timers {
+            self.repaint = true
+        } else {
+            self.dirty = true
+        }
         self.relayout_ms = std.time.monotonicMs() - began
     }
 
@@ -1023,7 +1051,8 @@ pub struct Ui {
         self.tab.scroll += dy
         self.tab.clampScroll(self.maxScroll())
         if self.tab.scroll != before {
-            self.dirty = true
+            // The chrome stays: only the page's pixels move.
+            self.repaint = true
             perf.noteScroll()
             self.followScroll()
         }
@@ -1047,7 +1076,7 @@ pub struct Ui {
         let x = std.math.clamp(self.tab.scroll_x + dx, 0.0, max)
         if x != self.tab.scroll_x {
             self.tab.scroll_x = x
-            self.dirty = true
+            self.repaint = true
         }
     }
 
@@ -1081,11 +1110,9 @@ pub struct Ui {
             return false
         }
         if p.tree |t| {
-            self.dropList()
-            self.list = try paint.build(self.alloc, t)
-            self.list_scroll = t.scroll_y
+            try self.buildList(t)
         }
-        self.dirty = true
+        self.repaint = true
         return true
     }
 
@@ -1698,9 +1725,7 @@ pub struct Ui {
             self.relist = false
             if self.tab.page |p| {
                 if p.tree |t| {
-                    self.dropList()
-                    self.list = try paint.build(self.alloc, t)
-                    self.list_scroll = t.scroll_y
+                    try self.buildList(t)
                 }
             }
         }
@@ -1710,14 +1735,23 @@ pub struct Ui {
         let content = paint.Rect { x: 0.0, y: top, w: self.win_w as f64, h: self.viewHeight() }
         let v = paint.View { scale: s, dx: -self.tab.scroll_x * s, dy: (top - self.tab.scroll) * s }
         let flat = paint.View { scale: s, dx: 0.0, dy: 0.0 }
-        try self.canvas.pushClip(paint.deviceRect(content, flat))
-        if self.list |l| {
-            self.canvas.fillRect(paint.deviceRect(content, flat), l.background)
-            try paint.render(&l, &mut self.canvas, v, &mut self.painter)
+        let area = paint.deviceRect(content, flat)
+        // The page's pixels, then the window: all of it when something
+        // else changed or an overlay is over the page, else only what the
+        // page drew again (and nothing when it drew nothing).
+        let drew = try drawPage(self, area)
+        let whole = self.dirty || pageOverlays(self)
+        if !whole {
+            if drew {
+                presentDamage(self)
+            }
+            return
+        }
+        self.canvas.blit(&self.page.canvas, paint.IRect { x0: 0, y0: 0, x1: area.x1 - area.x0, y1: area.y1 - area.y0 }, area.x0, area.y0)
+        try self.canvas.pushClip(area)
+        if self.list != null {
             try drawPageState(self, v)
             try drawAgentFlash(self, v)
-        } else {
-            self.canvas.fillRect(paint.deviceRect(content, flat), paint.Rgba { r: 255, g: 255, b: 255, a: 255 })
         }
         for i, m in self.matches.items() {
             var c = paint.Rgba { r: 255, g: 230, b: 0, a: 110 }

@@ -202,6 +202,52 @@ pub fn fillGradient(t: Target, x0: i64, y0: i64, x1: i64, y1: i64, g: *Gradient,
     }
 }
 
+/// The colors that `fillGradient` would blend over the device pixels
+/// `x0..x0 + w`, `y0..y0 + h` (`g`'s space mapped to device px by `m`),
+/// row after row, 4 bytes a pixel, into `out`; false (nothing drawn)
+/// when `m` cannot be inverted. Kept between frames by paint's raster
+/// cache and drawn with `blendColors`.
+pub fn gradientColors(out: []mut u8, x0: i64, y0: i64, w: usize, h: usize, g: *Gradient, m: Matrix) bool {
+    let inv = invert(m) orelse return false
+    var i: usize = 0
+    for row in 0..h {
+        let py = (y0 + row as i64) as f64 + 0.5
+        for col in 0..w {
+            let px = (x0 + col as i64) as f64 + 0.5
+            let c = g.at(inv.mapX(px, py), inv.mapY(px, py))
+            out[i] = c.r
+            out[i + 1] = c.g
+            out[i + 2] = c.b
+            out[i + 3] = c.a
+            i += 4
+        }
+    }
+    return true
+}
+
+/// Blends the colors of `gradientColors` for the block whose top left
+/// pixel is (`x0`, `y0`) and that is `w` px wide into the part of `t`
+/// inside its clip and inside `x0..x1`, `y0..y1`, as `fillGradient` does.
+pub fn blendColors(t: Target, x0: i64, y0: i64, x1: i64, y1: i64, w: usize, colors: []u8) {
+    let cx0 = math.maxOf(i64, x0, t.x0)
+    let cy0 = math.maxOf(i64, y0, t.y0)
+    let cx1 = math.minOf(i64, x1, t.x1)
+    let cy1 = math.minOf(i64, y1, t.y1)
+    if cx1 <= cx0 || cy1 <= cy0 {
+        return
+    }
+    for row in cy0..cy1 {
+        var i = t.index(cx0, row)
+        var k = ((row - y0) as usize * w + (cx0 - x0) as usize) * 4
+        for col in cx0..cx1 {
+            let c = Color { r: colors[k], g: colors[k + 1], b: colors[k + 2], a: colors[k + 3] }
+            blend(t.pixels, i, c, c.a as u32)
+            i += 4
+            k += 4
+        }
+    }
+}
+
 // ---- gradient elements
 
 /// The gradient element that a paint `url(#id) [fallback]` (its text

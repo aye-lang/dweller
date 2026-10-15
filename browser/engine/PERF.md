@@ -624,6 +624,33 @@ the sign-in frame, 23 ms). The < 100 ms target is left to P4.44
 (GitHub's relayouts), P4.42 (a time budget for timers) and the
 scripts' later sheets (synchronous `net.prefetch`).
 
+### P4.35: damage tracking and the raster cache (2026-10-15)
+
+The window keeps the page's pixels between frames and draws only what
+changed: each display item's signature (a hash of what it draws with and
+its context, and its area) is compared with the last frame's, and a
+scroll by whole pixels moves the pixels and draws the band that came into
+view. Costly results (layers, gradient tiles, shadows) are kept in a
+raster cache. Same machine, fast builds, main (c50a841) / this branch,
+`window_perf.py`:
+
+| | loop p50 / p95 ms | draw p50 / p95 ms | idle CPU | damage per frame |
+|---|---:|---:|---:|---:|
+| react.dev scroll, main | 190.4 / 521.8 | 167.5 / 489.1 | | the whole page |
+| react.dev scroll, P4.35 | 43.5 / 249.1 | 25.7 / 111.7 | | band and sticky header, 1.15 of 2.98 Mpx |
+| mistral.ai idle, main | 20.8 | 10.1 | 101.7% | the whole page |
+| mistral.ai idle, P4.35 | 14.2 | 6.0 | 98.6% | 0.91 Mpx (a carousel moved 1 px) |
+
+react.dev per scroll frame now: paint ~15–20 ms (the band's conic
+gradient ~12 ms, each row computed once and kept), `paint_build` 3–7 ms
+(the list again for the sticky header), upload ~2 ms; in half the frames
+its scroll listeners run (timers 5 ms, relayout 15 ms). Misses (a layer
+or a shadow seen for the first time) make the p95. mistral.ai: the
+animation changes visible pixels every frame, so it keeps a core busy at
+59 frames/s: relayout 6.8 ms, scripts and the 6 ms draw per frame. What
+would help there is compositing a transform animation without layout or
+paint; rAF in hidden windows and background tabs is P4.55.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

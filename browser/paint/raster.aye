@@ -47,9 +47,13 @@ pub struct Canvas {
     width: usize
     height: usize
     pixels: []mut u8
-    // Drawing is limited to `clip` (always inside the canvas).
+    // Drawing is limited to `clip` (always inside the canvas). `bound`
+    // is the clip without the damage rectangle of `pushDamage`: what a
+    // layer covers does not depend on the part of a frame drawn again.
     clip: IRect
     clips: List(IRect)
+    bound: IRect
+    bounds: List(IRect)
 
     pub fn init(alloc: Allocator, width: usize, height: usize) AllocError!Canvas {
         let pixels = try alloc.alloc(255 as u8, width * height * 4)
@@ -60,12 +64,15 @@ pub struct Canvas {
             pixels: pixels,
             clip: IRect { x0: 0, y0: 0, x1: width as i64, y1: height as i64 },
             clips: List(IRect).init(alloc),
+            bound: IRect { x0: 0, y0: 0, x1: width as i64, y1: height as i64 },
+            bounds: List(IRect).init(alloc),
         }
     }
 
     pub fn deinit(self: *mut Self) {
         self.alloc.free(self.pixels)
         self.clips.deinit()
+        self.bounds.deinit()
     }
 
     /// Fills the whole canvas (ignoring the clip) with `c`.
@@ -82,13 +89,71 @@ pub struct Canvas {
 
     /// Limits drawing to `r` too, until the matching `popClip`.
     pub fn pushClip(self: *mut Self, r: IRect) AllocError!void {
-        try self.clips.append(self.clip)
+        try self.bounds.append(self.bound)
+        self.clips.append(self.clip) catch |e| {
+            _ = self.bounds.pop()
+            return e
+        }
         self.clip = intersect(self.clip, r)
+        self.bound = intersect(self.bound, r)
+    }
+
+    /// Limits drawing to the damage rectangle `r` (not `bound`), until
+    /// the matching `popClip`.
+    pub fn pushDamage(self: *mut Self, r: IRect) AllocError!void {
+        try self.pushClip(r)
+        self.bound = self.bounds.items()[self.bounds.len() - 1]
     }
 
     pub fn popClip(self: *mut Self) {
         if self.clips.pop() |prev| {
             self.clip = prev
+        }
+        if self.bounds.pop() |prev| {
+            self.bound = prev
+        }
+    }
+
+    /// Moves the pixels inside `area` by (`dx`, `dy`); what moves in
+    /// from outside `area` is left as it was.
+    pub fn shift(self: *mut Self, area: IRect, dx: i64, dy: i64) {
+        let w = area.x1 - area.x0 - abs(dx)
+        let h = area.y1 - area.y0 - abs(dy)
+        if w <= 0 || h <= 0 || (dx == 0 && dy == 0) {
+            return
+        }
+        // Rows in the order that reads each one before it is written.
+        let sx = area.x0 + max0(-dx)
+        let tx = area.x0 + max0(dx)
+        let bytes = w as usize * 4
+        var k: i64 = 0
+        while k < h {
+            var row = k
+            if dy > 0 {
+                row = h - 1 - k
+            }
+            let sy = area.y0 + max0(-dy) + row
+            let ty = area.y0 + max0(dy) + row
+            let from = (sy as usize * self.width + sx as usize) * 4
+            let to = (ty as usize * self.width + tx as usize) * 4
+            std.mem.copy(self.pixels[to..to + bytes], self.pixels[from..from + bytes])
+            k += 1
+        }
+    }
+
+    /// Copies the pixels of `r` of `src` to the same rectangle moved by
+    /// (`x`, `y`) (both cut to the canvases).
+    pub fn blit(self: *mut Self, src: *Canvas, r: IRect, x: i64, y: i64) {
+        var k = intersect(r, IRect { x0: 0, y0: 0, x1: src.width as i64, y1: src.height as i64 })
+        k = intersect(k, IRect { x0: -x, y0: -y, x1: self.width as i64 - x, y1: self.height as i64 - y })
+        if k.x1 <= k.x0 || k.y1 <= k.y0 {
+            return
+        }
+        let bytes = (k.x1 - k.x0) as usize * 4
+        for sy in k.y0..k.y1 {
+            let i = (sy as usize * src.width + k.x0 as usize) * 4
+            let j = ((sy + y) as usize * self.width + (k.x0 + x) as usize) * 4
+            std.mem.copy(self.pixels[j..j + bytes], src.pixels[i..i + bytes])
         }
     }
 
@@ -384,6 +449,20 @@ fn maxF(a: f64, b: f64) f64 {
         return a
     }
     return b
+}
+
+fn abs(v: i64) i64 {
+    if v < 0 {
+        return -v
+    }
+    return v
+}
+
+fn max0(v: i64) i64 {
+    if v > 0 {
+        return v
+    }
+    return 0
 }
 
 fn floorI(v: f64) i64 {
