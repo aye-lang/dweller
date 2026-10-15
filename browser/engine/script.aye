@@ -170,6 +170,9 @@ struct Timer {
     // until it runs or is cleared.
     load: u32 = 0
     delays_load: bool = false
+    // The load is a script's request (fetch, XMLHttpRequest:
+    // net.startRequest), not an image's.
+    request: bool = false
 }
 
 /// What a script asked the tab to do; the front end does it once the
@@ -1299,9 +1302,7 @@ fn runTimer(s: *mut Script, i: usize) AllocError!void {
     }
     // The task's load ends with it (its callback reads the response).
     defer {
-        if t.load != 0 {
-            releaseImageLoad(s.page, t.load)
-        }
+        releaseTimerLoad(s, t)
     }
     if t.repeat {
         var next = t.due + t.interval
@@ -1343,12 +1344,22 @@ fn runTimer(s: *mut Script, i: usize) AllocError!void {
     try runMicrotasks(s)
 }
 
+// The task `t` no longer needs its load (it ran or was cleared).
+fn releaseTimerLoad(s: *mut Script, t: Timer) {
+    if t.load == 0 {
+        return
+    }
+    if t.request {
+        net.releaseLoad(t.load)
+    } else {
+        releaseImageLoad(s.page, t.load)
+    }
+}
+
 fn removeTimer(s: *mut Script, id: u32) {
     for i, t in s.timers.items() {
         if t.id == id {
-            if t.load != 0 {
-                releaseImageLoad(s.page, t.load)
-            }
+            releaseTimerLoad(s, t)
             s.it.removeRoot(t.root)
             s.timers.orderedRemove(i)
             return

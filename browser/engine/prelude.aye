@@ -2140,22 +2140,42 @@ pub let PRELUDE =
     \\  else if (method === 'POST' || method === 'PUT') bytes = '';
     \\  return [url, method, lines, bytes];
     \\}
-    \\// fetch: the request is made at once (synchronously), the promise
-    \\// settles in a microtask.
+    \\// The response of an ak.fetchStart task's argument: the id of a
+    \\// background request, or the response itself.
+    \\function fetchTaken(x) {
+    \\  return typeof x === 'number' ? ak.fetchTake(x) : x;
+    \\}
+    \\// fetch: the request runs in the background (ak.fetchStart); the promise
+    \\// settles in a networking task once it ended. Aborting the signal before
+    \\// then aborts the request.
     \\hidden(G, 'fetch', function (input, init) {
     \\  return new Promise((resolve, reject) => {
     \\    const req = new Request(input, init);
-    \\    if (req.signal.aborted) {
-    \\      reject(req.signal.reason);
+    \\    const signal = req.signal;
+    \\    if (signal.aborted) {
+    \\      reject(signal.reason);
     \\      return;
     \\    }
-    \\    const r = ak.fetch(...fetchArgs(req.url, req.method, req.headers, req._body));
-    \\    if (r.error !== undefined) reject(new TypeError('Failed to fetch: ' + r.error));
-    \\    else {
-    \\      const headers = new Headers();
-    \\      if (r.type) headers.append('content-type', r.type);
-    \\      resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.body));
-    \\    }
+    \\    let done = false;
+    \\    const onAbort = () => {
+    \\      if (done) return;
+    \\      done = true;
+    \\      ak.clearTimer(task);
+    \\      reject(signal.reason);
+    \\    };
+    \\    const task = ak.fetchStart(...fetchArgs(req.url, req.method, req.headers, req._body), x => {
+    \\      const r = fetchTaken(x);
+    \\      if (done) return;
+    \\      done = true;
+    \\      signal.removeEventListener('abort', onAbort);
+    \\      if (r.error !== undefined) reject(new TypeError('Failed to fetch: ' + r.error));
+    \\      else {
+    \\        const headers = new Headers();
+    \\        if (r.type) headers.append('content-type', r.type);
+    \\        resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.body));
+    \\      }
+    \\    });
+    \\    signal.addEventListener('abort', onAbort);
     \\  });
     \\});
     \\
@@ -2874,9 +2894,11 @@ pub let PRELUDE =
     \\  return o;
     \\});
     \\
-    \\// XMLHttpRequest, on the browser's fetch (synchronous underneath; any
-    \\// method, body and headers, as fetch's); an asynchronous request
-    \\// completes in a task of its own.
+    \\// XMLHttpRequest, on the browser's fetch (any method, body and headers,
+    \\// as fetch's). An asynchronous request runs in the background
+    \\// (ak.fetchStart) and its events follow in a networking task once it
+    \\// ended (readystatechange 2 and 3, progress, readystatechange 4, load,
+    \\// loadend); a synchronous one is made at once (ak.fetch).
     \\function xhrError(method, message, name) {
     \\  return new DOMException("Failed to execute '" + method + "' on 'XMLHttpRequest': " + message, name);
     \\}
@@ -2899,6 +2921,7 @@ pub let PRELUDE =
     \\    hidden(this, '_sent', false);
     \\    hidden(this, '_headers', new Headers());
     \\    hidden(this, '_body', null);
+    \\    hidden(this, '_task', 0);
     \\  }
     \\  open(method, url, async) {
     \\    method = String(method);
@@ -2908,11 +2931,14 @@ pub let PRELUDE =
     \\    this._method = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT'].includes(upper) ? upper : method;
     \\    this._url = String(url);
     \\    this._async = async !== false;
+    \\    this._cancel();
     \\    this._sent = false;
     \\    this._headers = new Headers();
     \\    this._body = null;
     \\    this.status = 0;
     \\    this.responseText = '';
+    \\    // Opened again (a request in flight dropped): no readystatechange.
+    \\    if (this.readyState === 1) return;
     \\    this._state(1);
     \\  }
     \\  // A forbidden header is ignored; a name set again adds its value
@@ -2952,20 +2978,41 @@ pub let PRELUDE =
     \\      this._body = body;
     \\    }
     \\    this._sent = true;
-    \\    if (this._async) setTimeout(() => this._load(), 0);
-    \\    else this._load();
+    \\    const args = fetchArgs(this._url, this._method, this._headers, this._body);
+    \\    if (!this._async) {
+    \\      this._load(ak.fetch(...args));
+    \\      return;
+    \\    }
+    \\    this._fire('loadstart');
+    \\    if (!this._sent || this._task !== 0) return;
+    \\    this._task = ak.fetchStart(...args, x => {
+    \\      this._task = 0;
+    \\      this._load(fetchTaken(x));
+    \\    });
     \\  }
+    \\  // The XHR standard's abort(): a request in flight ends (readystatechange
+    \\  // 4, abort, loadend) and the object is UNSENT again.
     \\  abort() {
-    \\    if (!this._sent) return;
-    \\    this._sent = false;
-    \\    this.readyState = 0;
-    \\    this._fire('abort');
-    \\    this._fire('loadend');
+    \\    this._cancel();
+    \\    if ((this.readyState === 1 && this._sent) || this.readyState === 2 || this.readyState === 3) {
+    \\      this._sent = false;
+    \\      this._state(4);
+    \\      this._fire('abort');
+    \\      this._fire('loadend');
+    \\    }
+    \\    if (this.readyState === 4) {
+    \\      this._sent = false;
+    \\      this.readyState = 0;
+    \\    }
     \\  }
-    \\  _load() {
+    \\  _cancel() {
+    \\    if (this._task !== 0) ak.clearTimer(this._task);
+    \\    this._task = 0;
+    \\  }
+    \\  _load(r) {
     \\    if (!this._sent) return;
-    \\    const r = ak.fetch(...fetchArgs(this._url, this._method, this._headers, this._body));
     \\    if (r.error !== undefined) {
+    \\      this._sent = false;
     \\      this._state(4);
     \\      this._fire('error');
     \\      this._fire('loadend');
@@ -2978,6 +3025,8 @@ pub let PRELUDE =
     \\    this._state(2);
     \\    this.responseText = r.body;
     \\    this._state(3);
+    \\    if (this._async) this._fire('progress');
+    \\    this._sent = false;
     \\    this._state(4);
     \\    this._fire('load');
     \\    this._fire('loadend');
@@ -2987,7 +3036,10 @@ pub let PRELUDE =
     \\    this._fire('readystatechange');
     \\  }
     \\  _fire(type) {
-    \\    const ev = new Event(type);
+    \\    // loadstart, progress, load, loadend, error, abort and timeout are
+    \\    // ProgressEvents (of the body's length once there is one).
+    \\    const n = this.responseText.length;
+    \\    const ev = type === 'readystatechange' ? new Event(type) : new ProgressEvent(type, { loaded: n, total: n, lengthComputable: n > 0 });
     \\    // `onload` and the like are the EventTarget's (HANDLERS); the others
     \\    // are plain properties.
     \\    const h = HANDLERS.includes(type) ? null : this['on' + type];

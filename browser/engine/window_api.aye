@@ -52,6 +52,8 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "viewport", 1, akViewport)
     try defMethod(it, o, "storage", 3, akStorage)
     try defMethod(it, o, "fetch", 1, akFetch)
+    try defMethod(it, o, "fetchStart", 5, akFetchStart)
+    try defMethod(it, o, "fetchTake", 1, akFetchTake)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
@@ -484,12 +486,48 @@ fn akSetDispatch(it: *mut Interp, a: Args) JsError!Value {
 // or { error } when it failed. Arguments 1 to 3 are optional: the method
 // (GET), more headers ("name: value" lines separated by "\n") and the
 // body, a string of code units 0..255 (the bytes, as Blob keeps them).
+// The request is made now (a synchronous XMLHttpRequest).
 fn akFetch(it: *mut Interp, a: Args) JsError!Value {
+    return fetchWith(it, a, false)
+}
+
+// fetchStart(url, method, headers, body, callback): the request of
+// akFetch, in the background (net.startRequest) when it can be; queues
+// the task that calls `callback` once it ended, with the request's id
+// for fetchTake, or with the response (made now: another scheme, a
+// replay, an error). The task's id (ak.clearTimer aborts the request).
+// On the virtual clock the task is due at once and waits for the
+// request when it runs (script.aye's runnable), so that the order of
+// tasks never depends on the network.
+fn akFetchStart(it: *mut Interp, a: Args) JsError!Value {
+    _ = try js.callableArg(it, a, 4)
+    return fetchWith(it, a, true)
+}
+
+// fetchTake(id): the response of the background request `id` (its task
+// runs), as akFetch's.
+fn akFetchTake(it: *mut Interp, a: Args) JsError!Value {
+    let r = try it.newObject(it.object_proto)
+    try it.push(js.objVal(r))
+    var id: u32 = 0
+    let n = try it.toNumber(it.arg(a, 0))
+    if n == n && n >= 1.0 && n < 4294967295.0 {
+        id = n as u32
+    }
+    let res = net.requestResponse(id) orelse {
+        try setField(it, r, "error", net.requestError(id))
+        return it.pop()
+    }
+    try responseFields(it, r, res, "")
+    return it.pop()
+}
+
+fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     let r = try it.newObject(it.object_proto)
     try it.push(js.objVal(r))
     let target = try argUrl(it, a) orelse {
         try setField(it, r, "error", "not a URL")
-        return it.pop()
+        return fetchEnd(it, a, queue, 0)
     }
     defer target.deinit(it.alloc)
     let page = scriptOf(it).page
@@ -502,7 +540,7 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
         // As in browsers, a file is only read (net ignores the method).
         if text.eql(target.scheme, "file") && !text.eql(req.method, "GET") && !text.eql(req.method, "HEAD") {
             try setField(it, r, "error", "file: URLs take only GET")
-            return it.pop()
+            return fetchEnd(it, a, queue, 0)
         }
     }
     let headers = try it.builder()
@@ -522,6 +560,13 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
         sent.data = data.bytes()
         req.body = &sent
     }
+    if queue && net.liveRequest(&target) {
+        let id = net.startRequest(&target, req)
+        if id == 0 {
+            return JsError.OutOfMemory
+        }
+        return fetchEnd(it, a, queue, id)
+    }
     let res = net.request(it.alloc, &target, req) catch |e| {
         match e {
             .OutOfMemory => {
@@ -530,20 +575,60 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
             _ => {}
         }
         try setField(it, r, "error", net.describe(e))
-        return it.pop()
+        return fetchEnd(it, a, queue, 0)
     }
     defer res.deinit(it.alloc)
+    try responseFields(it, r, &res, target.href)
+    return fetchEnd(it, a, queue, 0)
+}
+
+// The fields of akFetch's result `r` for `res`, the response of a
+// request to `href` (when it has no `url` of its own).
+fn responseFields(it: *mut Interp, r: u32, res: *net.Response, href: []u8) JsError!void {
     let body = try encoding.toUtf8(it.alloc, res.body, encoding.sniff(res.body, res.charset))
     defer it.alloc.free(body)
     try it.defineOwn(r, try it.intern("status"), js.numVal(res.status as f64), js.F_DEFAULT)
     if res.url.len > 0 {
         try setField(it, r, "url", res.url)
     } else {
-        try setField(it, r, "url", target.href)
+        try setField(it, r, "url", href)
     }
     try setField(it, r, "type", res.mime)
     try setField(it, r, "body", body)
-    return it.pop()
+}
+
+// The end of fetchWith, its result object on the stack: the object
+// itself, or (`queue`) the id of the task that calls argument 4 with the
+// background request `waits` (0: with the object).
+fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
+    if !queue {
+        return it.pop()
+    }
+    let s = scriptOf(it)
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, it.arg(a, 4))
+    if waits != 0 {
+        try it.heap.pushElem(arr, js.numVal(waits as f64))
+    } else {
+        try it.heap.pushElem(arr, it.stack.items()[it.stack.len() - 2])
+    }
+    let root = it.addRoot(js.objVal(arr)) catch |e| {
+        net.releaseLoad(waits)
+        return e
+    }
+    it.pop()
+    it.pop()
+    tick(s)
+    let id = s.next_timer
+    s.next_timer += 1
+    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0 }) catch |e| {
+        it.removeRoot(root)
+        net.releaseLoad(waits)
+        return e
+    }
+    s.seq += 1
+    return js.numVal(id as f64)
 }
 
 // Appends to `out` the bytes of a string of code units 0..255 (a Blob's

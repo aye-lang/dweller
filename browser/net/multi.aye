@@ -73,7 +73,7 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
         if s.cache.has(href) || queued(&jobs, href) {
             continue
         }
-        let job = startJob(alloc, s, m, href, req) orelse continue
+        let job = startJob(alloc, s, m, href, req, "GET", null) orelse continue
         jobs.append(job) catch |e| {
             dropJob(alloc, m, job)
             return
@@ -116,8 +116,10 @@ fn queued(jobs: *List(*mut Job), href: []u8) bool {
     return false
 }
 
-// A request for `href` added to `m`; null when it cannot be made.
-fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, req: Request) ?*mut Job {
+// A request for `href` with `method` (NUL-terminated past its end
+// unless GET, POST or HEAD) and `post` (alive until the transfer ends)
+// added to `m`; null when it cannot be made.
+fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, req: Request, method: []u8, post: ?*Body) ?*mut Job {
     let at = url.parse(alloc, href) catch |e| {
         return null
     }
@@ -151,7 +153,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, re
         at.deinit(alloc)
         return null
     }
-    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, "GET", null, s, &mut job.sink) catch |e| {
+    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, &mut job.sink) catch |e| {
         freeJob(alloc, job)
         return null
     }

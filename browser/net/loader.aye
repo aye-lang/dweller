@@ -16,12 +16,20 @@
 // last one releases it, aborted if it still runs.
 // Under DWELLER_REPLAY a load is done at once (the archive answers the
 // request that follows).
+//
+// A script's request (`startRequest`: fetch(), an asynchronous
+// XMLHttpRequest) is a load of its own, never joined nor cached: any
+// method, headers and body, redirects as http.aye's `transfer`, and the
+// response kept in the load (`requestResponse`) until it is released.
 
+import perf
 import std
 import std.list.List
+import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 import url
+import url.Url
 
 /// Where a load is.
 pub enum LoadState {
@@ -44,6 +52,29 @@ struct Load {
     hops: i64
     // The transfer while running.
     job: ?*mut Job
+    // A script's request: what it asks and what it got.
+    ask: ?*mut Ask
+}
+
+// A script's request (`startRequest`). Every slice is owned.
+struct Ask {
+    // The method of the request asked for ("" for GET), its headers
+    // (as `Request.headers`) and its body.
+    method: []mut u8
+    headers: []mut u8
+    content_type: []mut u8
+    data: []mut u8
+    has_body: bool
+    // The method of the current hop, NUL-terminated (libcurl's custom
+    // request), and whether it still sends the body (a redirect may drop
+    // both, as `transfer`).
+    verb: []mut u8
+    post: bool
+    began: u64
+    // The response once done (`has_res`), or the failure.
+    has_res: bool
+    res: Response
+    failure: []u8
 }
 
 struct Loader {
@@ -94,6 +125,7 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
         state: LoadState.Done,
         hops: 0,
         job: null,
+        ask: null,
     }) catch |e| {
         release(ld.alloc, owned)
         release(ld.alloc, from)
@@ -105,7 +137,7 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
     }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(href) {
-        l.job = startJob(ld.alloc, s, ld.multi, href, Request { kind: kind, referrer: l.referrer })
+        l.job = startJob(ld.alloc, s, ld.multi, href, Request { kind: kind, referrer: l.referrer }, "GET", null)
         l.state = LoadState.Running
         if l.job == null {
             l.state = LoadState.Failed
@@ -214,6 +246,250 @@ pub fn releaseLoad(id: u32) {
     }
 }
 
+/// Can a script's request to `target` run in the background
+/// (`startRequest`)? Not without a session, under DWELLER_REPLAY (the
+/// archive answers at once), nor for a URL other than http or https:
+/// those are made with `request`.
+pub fn liveRequest(target: *Url) bool {
+    if session == null || archiveReplay() {
+        return false
+    }
+    return text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
+}
+
+/// Starts a script's request `req` to `target` (see `liveRequest`) in
+/// the background: a load of its own (never joined, never cached) whose
+/// id is returned; 0 when it cannot start (out of memory). Once it is
+/// no longer running, `requestResponse` or `requestError` tells what it
+/// got; `releaseLoad` ends it.
+pub fn startRequest(target: *Url, req: Request) u32 {
+    let s = session orelse return 0
+    let ld = loaderOf(s) orelse return 0
+    let l = newRequest(ld, target, req) catch |e| {
+        return 0
+    }
+    let a = l.ask.?
+    a.began = perf.start()
+    if !startHop(ld, s, l, l.href) {
+        failRequest(ld, l, FetchError.Network)
+    }
+    pumpLoads()
+    return l.id
+}
+
+/// The response of the script's request `id` once it is done; null
+/// while it runs, when it failed, or when there is none.
+pub fn requestResponse(id: u32) ?*Response {
+    let ld = loader orelse return null
+    let l = loadById(ld, id) orelse return null
+    let a = l.ask orelse return null
+    if l.state != LoadState.Done || !a.has_res {
+        return null
+    }
+    return &a.res
+}
+
+/// Why the script's request `id` failed (`describe`); "" when it did
+/// not.
+pub fn requestError(id: u32) []u8 {
+    let ld = loader orelse return "network error"
+    let l = loadById(ld, id) orelse return "network error"
+    let a = l.ask orelse return ""
+    if l.state != LoadState.Failed {
+        return ""
+    }
+    return a.failure
+}
+
+// The load of a script's request, added to the loader (not started).
+fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load {
+    let a = try ld.alloc.create(Ask {
+        method: []mut u8{},
+        headers: []mut u8{},
+        content_type: []mut u8{},
+        data: []mut u8{},
+        has_body: req.body != null,
+        verb: []mut u8{},
+        post: req.body != null,
+        began: 0,
+        has_res: false,
+        res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{} },
+        failure: "",
+    })
+    let l = ld.alloc.create(Load {
+        id: ld.next_id,
+        href: []mut u8{},
+        kind: req.kind,
+        referrer: []mut u8{},
+        users: 1,
+        state: LoadState.Running,
+        hops: 0,
+        job: null,
+        ask: a,
+    }) catch |e| {
+        ld.alloc.destroy(a)
+        return e
+    }
+    errdefer freeLoad(ld, l)
+    l.href = try dup(ld.alloc, target.withoutFragment())
+    l.referrer = try dup(ld.alloc, req.referrer)
+    a.method = try dup(ld.alloc, req.method)
+    a.headers = try dup(ld.alloc, req.headers)
+    if req.body |b| {
+        a.content_type = try dup(ld.alloc, b.content_type)
+        a.data = try dup(ld.alloc, b.data)
+    }
+    var verb = req.method
+    if verb.len == 0 {
+        verb = "GET"
+        if req.body != null {
+            verb = "POST"
+        }
+    }
+    a.verb = try ld.alloc.alloc(0 as u8, verb.len + 1)
+    std.mem.copy(a.verb, verb)
+    try ld.loads.append(l)
+    ld.next_id += 1
+    return l
+}
+
+// The body of the request `a` asks for (to point `Request.body` at).
+fn askBody(a: *Ask) Body {
+    return Body { content_type: a.content_type, data: a.data }
+}
+
+// Starts the transfer of the request `l` to `href` (its first hop or a
+// redirect's); false when it cannot be made.
+fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
+    let a = l.ask.?
+    var body = askBody(a)
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers }
+    if a.has_body {
+        req.body = &body
+    }
+    var post: ?*Body = null
+    if a.post {
+        post = &body
+    }
+    l.job = startJob(ld.alloc, s, ld.multi, href, req, a.verb[..a.verb.len - 1], post)
+    if l.job == null {
+        return false
+    }
+    l.state = LoadState.Running
+    return true
+}
+
+// The script's request `l` failed with `e`.
+fn failRequest(ld: *mut Loader, l: *mut Load, e: FetchError) {
+    let a = l.ask orelse return
+    l.state = LoadState.Failed
+    a.failure = describe(e)
+    endRequest(ld, l)
+}
+
+// The script's request `l` ended (done or failed): its timing record and
+// its archive entry (DWELLER_RECORD), as `request` makes them.
+fn endRequest(ld: *mut Loader, l: *mut Load) {
+    let a = l.ask.?
+    perf.end("requests", a.began, l.href)
+    let target = url.parse(ld.alloc, l.href) catch |e| {
+        return
+    }
+    defer target.deinit(ld.alloc)
+    var body = askBody(a)
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers }
+    if a.has_body {
+        req.body = &body
+    }
+    if a.has_res {
+        archiveWrite(ld.alloc, &target, req, &a.res, "")
+    } else {
+        archiveWrite(ld.alloc, &target, req, null, a.failure)
+    }
+}
+
+// The transfer of the script's request `l` ended with `result` (a
+// CURLcode): keeps its response, or follows its redirect (as `transfer`).
+fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
+    let job = l.job orelse return
+    l.job = null
+    defer dropJob(ld.alloc, ld.multi, job)
+    let a = l.ask.?
+    let s = session orelse return failRequest(ld, l, FetchError.Network)
+    if job.sink.out_of_memory {
+        return failRequest(ld, l, FetchError.OutOfMemory)
+    }
+    if job.sink.too_large {
+        return failRequest(ld, l, FetchError.TooLarge)
+    }
+    if result != 0 {
+        return failRequest(ld, l, curlError(result))
+    }
+    storeCookies(s, &job.at, &job.sink) catch |e| {
+        return failRequest(ld, l, FetchError.OutOfMemory)
+    }
+    var status: i64 = 0
+    curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
+    var location: ?[*]u8 = null
+    curl_easy_getinfo(job.curl, CURLINFO_REDIRECT_URL, &mut location)
+    if location |p| {
+        if status == 301 || status == 302 || status == 303 || status == 307 || status == 308 {
+            l.hops += 1
+            if l.hops > MAX_REDIRECTS {
+                return failRequest(ld, l, FetchError.TooManyRedirects)
+            }
+            let moved = p[0..strlen(p)]
+            if !text.startsWith(moved, "http://") && !text.startsWith(moved, "https://") {
+                return failRequest(ld, l, FetchError.Unsupported)
+            }
+            let verb = a.verb[..a.verb.len - 1]
+            let get_or_head = text.eql(verb, "GET") || text.eql(verb, "HEAD")
+            if (status == 303 && !get_or_head) || ((status == 301 || status == 302) && text.eql(verb, "POST")) {
+                a.post = false
+                let get = ld.alloc.alloc(0 as u8, 4) catch |e| {
+                    return failRequest(ld, l, FetchError.OutOfMemory)
+                }
+                std.mem.copy(get, "GET")
+                release(ld.alloc, a.verb)
+                a.verb = get
+            }
+            if !startHop(ld, s, l, withoutHash(moved)) {
+                failRequest(ld, l, FetchError.Network)
+            }
+            return
+        }
+    }
+    keepRequest(ld.alloc, l, job, status) catch |e| {
+        return failRequest(ld, l, e)
+    }
+    l.state = LoadState.Done
+    endRequest(ld, l)
+}
+
+// Keeps the response of `job`, the last hop of the script's request `l`.
+fn keepRequest(alloc: Allocator, l: *mut Load, job: *mut Job, status: i64) FetchError!void {
+    let a = l.ask.?
+    var content_type: ?[*]u8 = null
+    curl_easy_getinfo(job.curl, CURLINFO_CONTENT_TYPE, &mut content_type)
+    var ct: []u8 = ""
+    if content_type |p| {
+        ct = p[0..strlen(p)]
+    } else {
+        ct = typeOfPath(job.at.path)
+    }
+    let body = try job.sink.body.toOwned()
+    var res = try respond(alloc, ct, body)
+    res.status = status
+    if !text.eql(job.at.href, l.href) {
+        res.url = dup(alloc, job.at.href) catch |e| {
+            res.deinit(alloc)
+            return e
+        }
+    }
+    a.res = res
+    a.has_res = true
+}
+
 // The transfer of a request of the session (http.aye) on `curl`: on the
 // loads' multi handle while loads run, so that they progress while the
 // request waits; else curl_easy_perform. Its CURLcode.
@@ -281,7 +557,7 @@ fn loaderOf(s: *mut Session) ?*mut Loader {
 
 fn findLoad(ld: *Loader, href: []u8) ?*mut Load {
     for l in ld.loads.items() {
-        if text.eql(l.href, href) {
+        if l.ask == null && text.eql(l.href, href) {
             return l
         }
     }
@@ -313,6 +589,9 @@ fn failRunning(ld: *mut Loader) {
             dropJob(ld.alloc, ld.multi, j)
             l.job = null
             l.state = LoadState.Failed
+            if l.ask != null {
+                failRequest(ld, l, FetchError.Network)
+            }
         }
     }
 }
@@ -336,7 +615,11 @@ fn harvest(ld: *mut Loader) {
         for l in ld.loads.items() {
             if l.job |j| {
                 if easy == j.curl {
-                    finishLoad(ld, l, result)
+                    if l.ask != null {
+                        finishRequest(ld, l, result)
+                    } else {
+                        finishLoad(ld, l, result)
+                    }
                     break
                 }
             }
@@ -369,7 +652,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
                 return
             }
             l.hops += 1
-            l.job = startJob(ld.alloc, s, ld.multi, moved, Request { kind: l.kind, referrer: l.referrer })
+            l.job = startJob(ld.alloc, s, ld.multi, moved, Request { kind: l.kind, referrer: l.referrer }, "GET", null)
             if l.job != null {
                 l.state = LoadState.Running
             }
@@ -406,6 +689,17 @@ fn keepLoad(alloc: Allocator, s: *mut Session, l: *Load, job: *mut Job, status: 
 fn freeLoad(ld: *mut Loader, l: *mut Load) {
     if l.job |j| {
         dropJob(ld.alloc, ld.multi, j)
+    }
+    if l.ask |a| {
+        release(ld.alloc, a.method)
+        release(ld.alloc, a.headers)
+        release(ld.alloc, a.content_type)
+        release(ld.alloc, a.data)
+        release(ld.alloc, a.verb)
+        if a.has_res {
+            a.res.deinit(ld.alloc)
+        }
+        ld.alloc.destroy(a)
     }
     release(ld.alloc, l.href)
     release(ld.alloc, l.referrer)

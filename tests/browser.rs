@@ -549,10 +549,12 @@ fn http_images_concurrent() {
 }
 
 /// The log of `browser/tests/net/bg_images.html` on the virtual clock of a
-/// dump: the load events in the order of the requests.
+/// dump: the load events in the order of the requests. The second
+/// script's fetch settles in a networking task that does not delay the
+/// load event, so on the virtual clock it comes after it (as a
+/// `setTimeout(f, 0)` would).
 const BG_IMAGES_LOG: &str = "first script: complete=false,false,false,false
 second script: complete=false,false,false,false naturalWidth=0
-images in flight during the second script: some
 DOMContentLoaded: complete=false,false,false,false
 load a a 64x48 complete=true readyState=interactive
 load b b 64x48 complete=true readyState=interactive
@@ -561,6 +563,7 @@ load d d 64x48 complete=true readyState=interactive
 load e e2 64x48 complete=true readyState=interactive
 window load: true/64 true/64 true/64 true/64 true/64
 animation frames before it: 0
+images in flight during the second script: some
 ";
 
 /// Script-visible image requests load in the background: the scripts
@@ -3694,6 +3697,122 @@ fn xhr_methods() {
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// An asynchronous XMLHttpRequest fires its events in the XHR standard's
+/// order (`browser/tests/net/xhr_events.html` must print
+/// `xhr_events.txt`): loadstart at send, then in a networking task
+/// readystatechange 2 and 3, progress, readystatechange 4, load and
+/// loadend; a network error ends with readystatechange 4, error and
+/// loadend; abort() in flight fires readystatechange 4, abort and
+/// loadend and nothing after; open() again drops the request in flight.
+/// A synchronous one is done when send returns; fetch() settles in a
+/// task (after the microtasks), and aborting its signal rejects it.
+#[test]
+fn xhr_events() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/xhr_events.html", srv.base),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/xhr_events.txt"),
+        &text(&out.stdout),
+        "xhr_events",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Page fetch() and XMLHttpRequest run in the background of the window's
+/// event loop (`browser/tests/net/window_fetch.html`): while the server
+/// holds a fetch for 1.5 s, scripted input types into a field and
+/// scrolls, the XHR completes, no loop iteration takes 100 ms or more
+/// (`ui_loop` records of DWELLER_TIMING), and the fetch resolves
+/// afterwards with its body.
+#[test]
+fn window_fetch_in_background() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/window_fetch.html", srv.base);
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "300",
+            "--events",
+            "frame frame frame frame frame text:abc frame wheel:-3 frame wheel:-3 frame",
+            "--text",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while window.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = window.kill();
+            panic!("the window did not draw 300 frames in 60 s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let out = window.wait_with_output().unwrap();
+    let err = text(&out.stderr);
+    let mut loops = Vec::new();
+    for line in err.lines() {
+        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
+        assert!(
+            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
+            "stderr has more than timing records:\n{err}"
+        );
+        if fields[1] == "ui_loop" {
+            loops.push(fields[2].parse::<u64>().unwrap() / 1_000_000);
+        }
+    }
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let longest = loops.iter().copied().max().unwrap_or(0);
+    assert!(loops.len() > 100 && longest < 100, "longest loop {longest} ms of {}", loops.len());
+    let got = text(&out.stdout);
+    let want = [
+        "requests sent",
+        "input while the fetch waits: true",
+        "scroll while the fetch waits: true",
+        "xhr: 200 4 bytes while the fetch waits: true",
+        "fetched: true, field abc, scrolled true",
+    ];
+    let at: Vec<Option<usize>> = want.iter().map(|w| got.find(w)).collect();
+    assert!(
+        at.iter().all(|a| a.is_some()) && at.windows(2).all(|w| w[0] < w[1]),
+        "{got}"
+    );
 }
 
 // ---- B8: HTML and CSS
