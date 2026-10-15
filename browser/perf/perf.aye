@@ -6,7 +6,6 @@ import std
 
 extern fn getenv(name: [*]u8) ?[*]u8
 extern fn aye_std_monotonic_ns() u64
-extern fn write(fd: i32, buf: [*]u8, n: usize) isize
 
 var checked: bool = false
 var enabled: bool = false
@@ -38,9 +37,9 @@ pub fn end(phase: []u8, began: u64, label: []u8) {
         return
     }
     var buf = @zeroed([512]u8)
-    var n = put(buf[..], 0, "info: DWELLER_TIMING\t")
-    n = put(buf[..], n, phase)
-    n = put(buf[..], n, "\t")
+    var n = putText(buf[..], 0, "info: DWELLER_TIMING\t")
+    n = putText(buf[..], n, phase)
+    n = putText(buf[..], n, "\t")
     var digits = @zeroed([20]u8)
     var d: usize = 0
     var v = ns
@@ -49,16 +48,16 @@ pub fn end(phase: []u8, began: u64, label: []u8) {
         v = v / 10
         d += 1
     }
-    n = put(buf[..], n, digits[20 - d..])
-    n = put(buf[..], n, "\t")
+    n = putText(buf[..], n, digits[20 - d..])
+    n = putText(buf[..], n, "\t")
     // A long label is cut, so that the newline fits.
-    n = put(buf[..buf.len - 1], n, label)
+    n = putText(buf[..buf.len - 1], n, label)
     buf[n] = '\n'
     write(2, buf[..].ptr, n + 1)
 }
 
 // Copies `s` (what fits) into `buf` at `at`; the new end.
-fn put(buf: []mut u8, at: usize, s: []u8) usize {
+fn putText(buf: []mut u8, at: usize, s: []u8) usize {
     var n = at
     for b in s {
         if n >= buf.len {
