@@ -116,19 +116,6 @@ pub fn serveShared(host: dyn Host, conn: usize, mcp: bool, tmp: Allocator, line:
     }
 }
 
-/// Is `line` the hello `{"mcp":true}` that makes a connection speak
-/// MCP? (A connection whose first message is JSON-RPC speaks MCP too:
-/// `looksLikeRpc`.)
-pub fn isMcpHello(tmp: Allocator, line: []u8) bool {
-    var failure = ParseFailure { pos: 0, msg: "" }
-    var doc = Json.parse(tmp, line, &mut failure) catch |e| {
-        return false
-    }
-    defer doc.deinit()
-    let r = doc.root()
-    return doc.kind(r) == JKind.Object && (doc.getBool(r, "mcp") orelse false) && doc.get(r, "cmd") == null
-}
-
 /// The hello: a connection's first line when it is an object without
 /// `cmd` and without `jsonrpc` (no response). `mcp`: the connection
 /// speaks MCP; `name`: the Space's name ("" for "Agent N"); `space`: the
@@ -179,6 +166,8 @@ pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
     return h
 }
 
+/// Is `line` a JSON-RPC message? A connection whose first line is one
+/// speaks MCP, as after the hello `{"mcp":true}`.
 pub fn looksLikeRpc(tmp: Allocator, line: []u8) bool {
     var failure = ParseFailure { pos: 0, msg: "" }
     var doc = Json.parse(tmp, line, &mut failure) catch |e| {
