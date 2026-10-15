@@ -378,7 +378,7 @@ fn engineBufNew(it: *mut Interp, a: Args) JsError!Value {
     }
     // A large store counts toward the next collection like objects do.
     it.heap.since_gc += size / 256
-    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false }
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: false }
     return Value.Undefined
 }
 
@@ -396,12 +396,41 @@ fn engineBufDetached(it: *mut Interp, a: Args) JsError!Value {
 // bufDetach(buffer): frees its store; its views see length 0.
 fn engineBufDetach(it: *mut Interp, a: Args) JsError!Value {
     let o = try bufArg(it, a, 0)
+    if isExternal(it, o) {
+        return it.typeError("Cannot detach the buffer of a WebAssembly.Memory")
+    }
     let mem = storeMem(it, o)
     if mem.len > 0 {
         it.alloc.free(mem)
     }
-    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true }
+    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: false }
     return Value.Undefined
+}
+
+fn isExternal(it: *Interp, o: u32) bool {
+    return match it.heap.obj(o).data {
+        .Bytes { external, .. } => external
+        _ => false
+    }
+}
+
+/// Makes ArrayBuffer `o` alias host bytes `mem` (a WebAssembly memory),
+/// which the host keeps alive and frees: collecting `o` leaves them.
+pub fn setExternalBytes(it: *mut Interp, o: u32, mem: []mut u8) {
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: true }
+}
+
+/// Detaches ArrayBuffer `o` without freeing its bytes (Memory.grow).
+pub fn detachExternalBytes(it: *mut Interp, o: u32) {
+    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: true }
+}
+
+/// Is `o` an ArrayBuffer that aliases exactly `mem` and is not detached?
+pub fn aliasesBytes(it: *Interp, o: u32, mem: []mut u8) bool {
+    return match it.heap.obj(o).data {
+        .Bytes { mem: m, detached, .. } => !detached && m.ptr == mem.ptr && m.len == mem.len
+        _ => false
+    }
 }
 
 // bufCopy(dst, dstByte, src, srcByte, n): memmove between stores (they

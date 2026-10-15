@@ -576,10 +576,11 @@ compositor thread.
     macOS dylib links only `libSystem` and `libiconv`; Linux needs
     `-lpthread -ldl -lm`.
   - `wasm.h` declares its vector and reference types through
-    function-like macros (`WASM_DECLARE_VEC`, `WASM_DECLARE_REF`). If
-    `@cimport` cannot expand those, P11.17 records the gap in
-    `browser/COMPILER_GAPS.md` and writes the few declarations it uses
-    by hand.
+    function-like macros (`WASM_DECLARE_VEC`, `WASM_DECLARE_REF`).
+    `@cimport` reads the header through libclang, which expands them:
+    P11.17 declares the whole C API with `@cimport("wasmtime.h")` and
+    writes nothing by hand. The headers are vendored in
+    `browser/wasm/include`, so the browser builds without the library.
   - Calls the JS API needs: `wasmtime_module_new` and
     `wasmtime_module_validate`; `wasmtime_linker_*` or
     `wasmtime_instance_new` with host functions from

@@ -1,0 +1,1150 @@
+// wasm: the WebAssembly JS API (P11.17, docs/webgl.md §6) on wasmtime
+// with Cranelift. This file is the native half: wasmtime's C API
+// (`wasmtime.h`, vendored in include/ and declared with @cimport) behind
+// the natives of `__wasmHost`. The JS half (prelude.aye) builds the
+// spec's objects on them, as V8's src/wasm/wasm-js.cc does in C++.
+//
+// libwasmtime is optional: browser/wasm/fetch_wasmtime.sh puts it in
+// target/wasmtime/<version>/ with a pkg-config file that links it with
+// an rpath. Without it `available()` is false and `WebAssembly` stays
+// undefined.
+//
+// One wasmtime store serves every page of the process (`state`); it is
+// freed when the last page that used WebAssembly goes (`release`). The
+// natives name modules and externs (functions, memories, tables,
+// globals) by their index in its lists. Values cross as "raw" JS values:
+// i32, f32 and f64 numbers, i64 BigInts, an externref as the index of
+// the JS value in the prelude's table, a funcref as an extern index, and
+// null for a null reference. The prelude converts them to and from the
+// values scripts see (ToWebAssemblyValue, ToJSValue).
+
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.list.List
+import std.mem.copy
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+@linkOptional("wasmtime")
+
+let c = @cimport("wasmtime.h", "-Iinclude")
+
+/// Is libwasmtime linked (is there a `WebAssembly`)?
+pub fn available() bool {
+    return @hasLink("wasmtime")
+}
+
+// A JS function imported by a module: wasm calls `trampoline` (a root of
+// `it`), which converts the raw values and calls the script's function.
+struct HostFn {
+    it: *mut Interp
+    root: u32
+    // The value kinds of the parameters and results (typeString).
+    params: []u8
+    results: []u8
+}
+
+struct Ext {
+    ext: c.wasmtime_extern
+    // The type (typeString), owned.
+    ty: []mut u8
+    host: ?*mut HostFn
+}
+
+struct State {
+    alloc: Allocator
+    engine: ?*mut c.wasm_engine_t
+    store: ?*mut c.wasmtime_store
+    cx: ?*mut c.wasmtime_context
+    modules: List(?*mut c.wasmtime_module)
+    exts: List(Ext)
+    // Cell i holds i: an externref's data pointer is the address of the
+    // cell of its index (chunks of REF_CHUNK, never moved).
+    ref_cells: List([]mut u32)
+    // The ArrayBuffer of each Memory.buffer a script holds, detached when
+    // wasm's memory.grow moves or resizes the bytes (syncBuffers).
+    bound: List(Bound)
+    // The pages that installed `__wasmHost`.
+    users: usize
+    // The exception a JS import threw, carried through wasm's unwinding
+    // as a trap and rethrown by the call that entered wasm.
+    pending: Value
+    pending_error: ?JsError
+}
+
+// ArrayBuffer `obj` of `it` (kept alive by root `root`) aliases `mem`,
+// the bytes of memory extern `ext`.
+struct Bound {
+    it: *mut Interp
+    obj: u32
+    root: u32
+    ext: u32
+    mem: []mut u8
+}
+
+let REF_CHUNK: u32 = 1024
+
+var state: ?*mut State = null
+
+fn open(alloc: Allocator) AllocError!?*mut State {
+    if state |st| {
+        return st
+    }
+    let engine = c.wasm_engine_new()
+    if engine == null {
+        return null
+    }
+    let store = c.wasmtime_store_new(engine, null, null)
+    let st = try alloc.create(State {
+        alloc: alloc,
+        engine: engine,
+        store: store,
+        cx: c.wasmtime_store_context(store),
+        modules: List(?*mut c.wasmtime_module).init(alloc),
+        exts: List(Ext).init(alloc),
+        ref_cells: List([]mut u32).init(alloc),
+        bound: List(Bound).init(alloc),
+        users: 0,
+        pending: Value.Undefined,
+        pending_error: null,
+    })
+    state = st
+    return st
+}
+
+/// Installs `__wasmHost` (the prelude's natives) on the global object of
+/// `it`, for prelude.aye's WASM_PRELUDE; false when there is no wasmtime.
+pub fn install(it: *mut Interp) JsError!bool {
+    // Only the branch that runs is built: without wasmtime nothing below
+    // refers to it.
+    if @hasLink("wasmtime") {
+        return installHost(it)
+    }
+    return false
+}
+
+fn installHost(it: *mut Interp) JsError!bool {
+    let st = (try open(it.alloc)) orelse return false
+    st.users += 1
+    let o = try it.newObject(it.object_proto)
+    try it.defineValue(it.global, "__wasmHost", js.objVal(o))
+    try it.defineNative(o, "validate", 1, wValidate)
+    try it.defineNative(o, "compile", 1, wCompile)
+    try it.defineNative(o, "imports", 1, wImports)
+    try it.defineNative(o, "exports", 1, wExports)
+    try it.defineNative(o, "instantiate", 2, wInstantiate)
+    try it.defineNative(o, "hostFunc", 2, wHostFunc)
+    try it.defineNative(o, "call", 1, wCall)
+    try it.defineNative(o, "type", 1, wType)
+    try it.defineNative(o, "memNew", 2, wMemNew)
+    try it.defineNative(o, "memGrow", 2, wMemGrow)
+    try it.defineNative(o, "memStale", 2, wMemStale)
+    try it.defineNative(o, "memBind", 2, wMemBind)
+    try it.defineNative(o, "bufRelease", 1, wBufRelease)
+    try it.defineNative(o, "tableNew", 4, wTableNew)
+    try it.defineNative(o, "tableGet", 2, wTableGet)
+    try it.defineNative(o, "tableSet", 3, wTableSet)
+    try it.defineNative(o, "tableSize", 1, wTableSize)
+    try it.defineNative(o, "tableGrow", 3, wTableGrow)
+    try it.defineNative(o, "globalNew", 3, wGlobalNew)
+    try it.defineNative(o, "globalGet", 1, wGlobalGet)
+    try it.defineNative(o, "globalSet", 2, wGlobalSet)
+    try it.defineNative(o, "setErrors", 1, wSetErrors)
+    return true
+}
+
+/// The page of `it`, which installed `__wasmHost`, goes: the last one
+/// frees the store and everything in it.
+pub fn release(it: *mut Interp) {
+    if @hasLink("wasmtime") {
+        releaseHost(it)
+    }
+}
+
+fn releaseHost(it: *mut Interp) {
+    let st = state orelse return
+    var i = st.bound.len()
+    while i > 0 {
+        i -= 1
+        if st.bound.items()[i].it == it {
+            _ = st.bound.swapRemove(i)
+        }
+    }
+    if st.users > 1 {
+        st.users -= 1
+        return
+    }
+    state = null
+    c.wasmtime_store_delete(st.store)
+    for m in st.modules.items() {
+        c.wasmtime_module_delete(m)
+    }
+    for e in st.exts.items() {
+        st.alloc.free(e.ty)
+        if e.host |h| {
+            st.alloc.destroy(h)
+        }
+    }
+    for cells in st.ref_cells.items() {
+        st.alloc.free(cells)
+    }
+    st.modules.deinit()
+    st.exts.deinit()
+    st.ref_cells.deinit()
+    st.bound.deinit()
+    c.wasm_engine_delete(st.engine)
+    st.alloc.destroy(st)
+}
+
+fn current(it: *mut Interp) JsError!*mut State {
+    if state |st| {
+        return st
+    }
+    _ = try it.typeError("WebAssembly is not available")
+    return JsError.Thrown
+}
+
+// ---- errors
+
+// The prelude's `(kind, message) => new [CompileError, LinkError,
+// RuntimeError][kind](message)`, a root of each page.
+var error_factory_root: u32 = 0xFFFFFFFF
+
+let E_COMPILE: f64 = 0.0
+let E_LINK: f64 = 1.0
+let E_RUNTIME: f64 = 2.0
+
+fn wSetErrors(it: *mut Interp, a: Args) JsError!Value {
+    error_factory_root = try it.addRoot(it.arg(a, 0))
+    return Value.Undefined
+}
+
+fn throwKind(it: *mut Interp, kind: f64, msg: []u8) JsError!Value {
+    if error_factory_root == 0xFFFFFFFF || error_factory_root as usize >= it.roots.len() {
+        return it.typeError(msg)
+    }
+    let f = it.roots.items()[error_factory_root]
+    let m = try it.newString(msg)
+    let base = it.stack.len()
+    try it.push(m)
+    let e = try it.call2(f, Value.Undefined, js.numVal(kind), m)
+    it.truncate(base)
+    return it.throwValue(e)
+}
+
+// Throws the message of `err` (deleted) as error `kind`.
+fn throwWasmError(it: *mut Interp, kind: f64, err: ?*mut c.wasmtime_error) JsError!Value {
+    var msg = @zeroed(c.wasm_byte_vec_t)
+    c.wasmtime_error_message(err, &mut msg)
+    c.wasmtime_error_delete(err)
+    defer c.wasm_byte_vec_delete(&mut msg)
+    return throwKind(it, kind, bytesOfVec(&msg))
+}
+
+fn bytesOfVec(v: *c.wasm_byte_vec_t) []u8 {
+    if v.data |p| {
+        return p[0..v.size]
+    }
+    return []u8{}
+}
+
+// A call into wasm failed with `err` or `trap` (one is set; both are
+// deleted): the exception of the JS import that threw, else error `kind`
+// with the error's message, or a RuntimeError with the trap's.
+fn failed(it: *mut Interp, st: *mut State, err: ?*mut c.wasmtime_error, trap: ?*mut c.wasm_trap_t, kind: f64) JsError!Value {
+    if st.pending_error |e| {
+        if err != null {
+            c.wasmtime_error_delete(err)
+        }
+        if trap != null {
+            c.wasm_trap_delete(trap)
+        }
+        st.pending_error = null
+        let v = st.pending
+        st.pending = Value.Undefined
+        if e == JsError.Thrown {
+            return it.throwValue(v)
+        }
+        return e
+    }
+    if err != null {
+        return throwWasmError(it, kind, err)
+    }
+    var msg = @zeroed(c.wasm_byte_vec_t)
+    c.wasm_trap_message(trap, &mut msg)
+    c.wasm_trap_delete(trap)
+    defer c.wasm_byte_vec_delete(&mut msg)
+    var m = bytesOfVec(&msg)
+    // wasm_trap_message gives a NUL-terminated name.
+    if m.len > 0 && m[m.len - 1] == 0 {
+        m = m[..m.len - 1]
+    }
+    return throwKind(it, E_RUNTIME, m)
+}
+
+// ---- types
+
+// A value type's character in a type string.
+fn kindChar(vt: ?*c.wasm_valtype_t) u8 {
+    let k = c.wasm_valtype_kind(vt) as c_uint
+    if k == c.WASM_I32 {
+        return 'i'
+    }
+    if k == c.WASM_I64 {
+        return 'I'
+    }
+    if k == c.WASM_F32 {
+        return 'f'
+    }
+    if k == c.WASM_F64 {
+        return 'F'
+    }
+    if k == c.WASM_EXTERNREF {
+        return 'x'
+    }
+    if k == c.WASM_FUNCREF {
+        return 'r'
+    }
+    return 'v'
+}
+
+fn valtypeOf(k: u8) ?*mut c.wasm_valtype_t {
+    var kind = c.WASM_I32
+    if k == 'I' {
+        kind = c.WASM_I64
+    } else if k == 'f' {
+        kind = c.WASM_F32
+    } else if k == 'F' {
+        kind = c.WASM_F64
+    } else if k == 'x' {
+        kind = c.WASM_EXTERNREF
+    } else if k == 'r' {
+        kind = c.WASM_FUNCREF
+    }
+    return c.wasm_valtype_new(kind as u8)
+}
+
+fn appendKinds(b: *mut text.Builder, v: ?*c.wasm_valtype_vec_t) AllocError!void {
+    let vec = v orelse return
+    if vec.data |d| {
+        let items = @ptrCast([*]?*mut c.wasm_valtype_t, d)
+        for i in 0..vec.size {
+            try b.appendByte(kindChar(items[i]))
+        }
+    }
+}
+
+fn appendNum(b: *mut text.Builder, n: u64) AllocError!void {
+    var digits = @zeroed([24]u8)
+    var k: usize = 0
+    var x = n
+    while true {
+        digits[k] = '0' + (x % 10) as u8
+        k += 1
+        x = x / 10
+        if x == 0 {
+            break
+        }
+    }
+    while k > 0 {
+        k -= 1
+        try b.appendByte(digits[k])
+    }
+}
+
+// The type string of an extern type:
+//
+//     F<params>:<results>        a function ("Fii:i")
+//     M<min>:<max>               a memory, in pages (max "-" when none)
+//     T<elem><min>:<max>         a table
+//     G<value><mutable 0 or 1>   a global
+//
+// with value kinds i I f F (i32 i64 f32 f64), x (externref), r
+// (funcref), v (v128 or another type JS cannot hold).
+fn appendExternType(b: *mut text.Builder, et: ?*c.wasm_externtype_t) AllocError!void {
+    let kind = c.wasm_externtype_kind(et) as c_uint
+    if kind == c.WASM_EXTERN_FUNC {
+        try appendFuncType(b, c.wasm_externtype_as_functype_const(et))
+    } else if kind == c.WASM_EXTERN_MEMORY {
+        let mt = c.wasm_externtype_as_memorytype_const(et)
+        try b.appendByte('M')
+        try appendNum(b, c.wasmtime_memorytype_minimum(mt))
+        try b.appendByte(':')
+        var max: u64 = 0
+        if c.wasmtime_memorytype_maximum(mt, &mut max) {
+            try appendNum(b, max)
+        } else {
+            try b.appendByte('-')
+        }
+    } else if kind == c.WASM_EXTERN_TABLE {
+        let tt = c.wasm_externtype_as_tabletype_const(et)
+        try b.appendByte('T')
+        try b.appendByte(kindChar(c.wasm_tabletype_element(tt)))
+        if c.wasm_tabletype_limits(tt) |lim| {
+            try appendNum(b, lim.min as u64)
+            try b.appendByte(':')
+            if lim.max == 0xFFFFFFFF {
+                try b.appendByte('-')
+            } else {
+                try appendNum(b, lim.max as u64)
+            }
+        }
+    } else if kind == c.WASM_EXTERN_GLOBAL {
+        let gt = c.wasm_externtype_as_globaltype_const(et)
+        try appendGlobalType(b, gt)
+    } else {
+        try b.appendByte('?')
+    }
+}
+
+fn appendFuncType(b: *mut text.Builder, ft: ?*c.wasm_functype_t) AllocError!void {
+    try b.appendByte('F')
+    try appendKinds(b, c.wasm_functype_params(ft))
+    try b.appendByte(':')
+    try appendKinds(b, c.wasm_functype_results(ft))
+}
+
+fn appendGlobalType(b: *mut text.Builder, gt: ?*c.wasm_globaltype_t) AllocError!void {
+    try b.appendByte('G')
+    try b.appendByte(kindChar(c.wasm_globaltype_content(gt)))
+    if c.wasm_globaltype_mutability(gt) as c_uint == c.WASM_VAR {
+        try b.appendByte('1')
+    } else {
+        try b.appendByte('0')
+    }
+}
+
+// The type string of extern `e` of the store.
+fn externTypeString(st: *mut State, e: *c.wasmtime_extern) AllocError![]mut u8 {
+    var b = text.Builder.init(st.alloc)
+    defer b.deinit()
+    let et = c.wasmtime_extern_type(st.cx, e)
+    try appendExternType(&mut b, et)
+    c.wasm_externtype_delete(et)
+    let out = try st.alloc.alloc(0 as u8, b.bytes().len)
+    copy(out, b.bytes())
+    return out
+}
+
+// A new extern of the store; its index.
+fn addExt(st: *mut State, e: c.wasmtime_extern, host: ?*mut HostFn) AllocError!u32 {
+    let ty = try externTypeString(st, &e)
+    try st.exts.append(Ext { ext: e, ty: ty, host: host })
+    return (st.exts.len() - 1) as u32
+}
+
+// The index of function `f`: an extern already listed for it, or a new
+// one (so that a function keeps one JS wrapper).
+fn funcIndex(st: *mut State, f: c.wasmtime_func) AllocError!u32 {
+    for i, e in st.exts.items() {
+        if e.ext.kind as c_int == c.WASMTIME_EXTERN_FUNC && e.ext.of.func.store_id == f.store_id && e.ext.of.func.__private == f.__private {
+            return i as u32
+        }
+    }
+    return addExt(st, c.wasmtime_extern { kind: c.WASMTIME_EXTERN_FUNC as u8, of: c.wasmtime_extern_union { func: f } }, null)
+}
+
+fn extArg(it: *mut Interp, st: *mut State, a: Args, i: usize, kind: c_int) JsError!*mut Ext {
+    let n = try it.toNumber(it.arg(a, i))
+    if !(n >= 0.0) || n >= st.exts.len() as f64 {
+        _ = try it.typeError("not a WebAssembly object")
+        return JsError.Thrown
+    }
+    let e = &mut st.exts.items()[n as usize]
+    if e.ext.kind as c_int != kind {
+        _ = try it.typeError("wrong kind of WebAssembly object")
+        return JsError.Thrown
+    }
+    return e
+}
+
+// ---- values
+
+fn refCell(st: *mut State, idx: u32) AllocError![*]u8 {
+    while (st.ref_cells.len() as u32) * REF_CHUNK <= idx {
+        let base = (st.ref_cells.len() as u32) * REF_CHUNK
+        let cells = try st.alloc.alloc(0 as u32, REF_CHUNK as usize)
+        for k in 0..REF_CHUNK {
+            cells[k] = base + k
+        }
+        try st.ref_cells.append(cells)
+    }
+    let cells = st.ref_cells.items()[(idx / REF_CHUNK) as usize]
+    let k = (idx % REF_CHUNK) as usize
+    return @ptrCast([*]u8, cells[k..k + 1].ptr)
+}
+
+// The raw JS value of wasm value `v` of kind `k`.
+fn toRaw(it: *mut Interp, st: *mut State, k: u8, v: *c.wasmtime_val) JsError!Value {
+    if k == 'i' {
+        return js.numVal(v.of.i32_ as f64)
+    }
+    if k == 'I' {
+        return js.bigFromI64(it, v.of.i64_)
+    }
+    if k == 'f' {
+        return js.numVal(v.of.f32_ as f64)
+    }
+    if k == 'F' {
+        return js.numVal(v.of.f64_)
+    }
+    if k == 'x' {
+        if v.of.externref.store_id == 0 {
+            return Value.Null
+        }
+        let d = c.wasmtime_externref_data(st.cx, &v.of.externref) orelse return Value.Null
+        return js.numVal(@ptrCast(*u32, d).* as f64)
+    }
+    if k == 'r' {
+        if v.of.funcref.store_id == 0 {
+            return Value.Null
+        }
+        return js.numVal((try funcIndex(st, v.of.funcref)) as f64)
+    }
+    return Value.Undefined
+}
+
+// Wasm value of kind `k` from raw JS value `x` (the prelude converted it).
+fn fromRaw(it: *mut Interp, st: *mut State, k: u8, x: Value) JsError!c.wasmtime_val {
+    if k == 'i' {
+        let n = try it.toNumber(x)
+        var i: i32 = 0
+        if n == n && n >= -2147483648.0 && n <= 4294967295.0 {
+            var w = n as i64
+            if w > 2147483647 {
+                w -= 4294967296
+            }
+            i = w as i32
+        }
+        return c.wasmtime_val { kind: c.WASMTIME_I32 as u8, of: c.wasmtime_valunion { i32_: i } }
+    }
+    if k == 'I' {
+        return c.wasmtime_val { kind: c.WASMTIME_I64 as u8, of: c.wasmtime_valunion { i64_: js.bigToI64(it, x) } }
+    }
+    if k == 'f' {
+        let n = try it.toNumber(x)
+        return c.wasmtime_val { kind: c.WASMTIME_F32 as u8, of: c.wasmtime_valunion { f32_: n as f32 } }
+    }
+    if k == 'F' {
+        let n = try it.toNumber(x)
+        return c.wasmtime_val { kind: c.WASMTIME_F64 as u8, of: c.wasmtime_valunion { f64_: n } }
+    }
+    if k == 'x' {
+        var r = @zeroed(c.wasmtime_externref)
+        if !(x is .Null) {
+            let n = try it.toNumber(x)
+            let cell = try refCell(st, n as u32)
+            if !c.wasmtime_externref_new(st.cx, cell, null, &mut r) {
+                _ = try it.rangeError("cannot allocate an externref")
+                return JsError.Thrown
+            }
+        }
+        return c.wasmtime_val { kind: c.WASMTIME_EXTERNREF as u8, of: c.wasmtime_valunion { externref: r } }
+    }
+    if k == 'r' {
+        var f = @zeroed(c.wasmtime_func)
+        if !(x is .Null) {
+            let n = try it.toNumber(x)
+            if n >= 0.0 && n < st.exts.len() as f64 {
+                let e = &st.exts.items()[n as usize]
+                if e.ext.kind as c_int == c.WASMTIME_EXTERN_FUNC {
+                    f = e.ext.of.func
+                }
+            }
+        }
+        return c.wasmtime_val { kind: c.WASMTIME_FUNCREF as u8, of: c.wasmtime_valunion { funcref: f } }
+    }
+    _ = try it.typeError("a v128 value cannot cross to JS")
+    return JsError.Thrown
+}
+
+// ---- modules
+
+fn bytesArg(it: *mut Interp, a: Args, i: usize) []mut u8 {
+    let o = js.objectOf(it.arg(a, i))
+    if o == js.NONE {
+        return []mut u8{}
+    }
+    return js.viewBytes(it, o)
+}
+
+// validate(u8): is it a valid module?
+fn wValidate(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let b = bytesArg(it, a, 0)
+    let err = c.wasmtime_module_validate(st.engine, b.ptr, b.len)
+    if err == null {
+        return js.boolVal(true)
+    }
+    c.wasmtime_error_delete(err)
+    return js.boolVal(false)
+}
+
+// compile(u8): the module's index, or a CompileError.
+fn wCompile(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let b = bytesArg(it, a, 0)
+    var m: ?*mut c.wasmtime_module = null
+    let err = c.wasmtime_module_new(st.engine, b.ptr, b.len, &mut m)
+    if err != null {
+        return throwWasmError(it, E_COMPILE, err)
+    }
+    try st.modules.append(m)
+    return js.numVal((st.modules.len() - 1) as f64)
+}
+
+fn moduleArg(it: *mut Interp, st: *mut State, a: Args) JsError!?*mut c.wasmtime_module {
+    let n = try it.toNumber(it.arg(a, 0))
+    if !(n >= 0.0) || n >= st.modules.len() as f64 {
+        _ = try it.typeError("not a WebAssembly.Module")
+        return JsError.Thrown
+    }
+    return st.modules.items()[n as usize]
+}
+
+fn pushString(it: *mut Interp, arr: u32, s: []u8) JsError!void {
+    let v = try it.newString(s)
+    try it.heap.pushElem(arr, v)
+}
+
+// imports(module): [module, name, type, ...] for each import in order.
+fn wImports(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let m = try moduleArg(it, st, a)
+    var vec = @zeroed(c.wasm_importtype_vec_t)
+    c.wasmtime_module_imports(m, &mut vec)
+    defer c.wasm_importtype_vec_delete(&mut vec)
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    var b = text.Builder.init(it.alloc)
+    defer b.deinit()
+    if vec.data |d| {
+        let items = @ptrCast([*]?*mut c.wasm_importtype_t, d)
+        for i in 0..vec.size {
+            let imp = items[i]
+            try pushString(it, arr, bytesOfVec(c.wasm_importtype_module(imp).?))
+            try pushString(it, arr, bytesOfVec(c.wasm_importtype_name(imp).?))
+            b.clear()
+            try appendExternType(&mut b, c.wasm_importtype_type(imp))
+            try pushString(it, arr, b.bytes())
+        }
+    }
+    _ = it.pop()
+    return js.objVal(arr)
+}
+
+// exports(module): [name, type, ...] for each export in order.
+fn wExports(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let m = try moduleArg(it, st, a)
+    var vec = @zeroed(c.wasm_exporttype_vec_t)
+    c.wasmtime_module_exports(m, &mut vec)
+    defer c.wasm_exporttype_vec_delete(&mut vec)
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    var b = text.Builder.init(it.alloc)
+    defer b.deinit()
+    if vec.data |d| {
+        let items = @ptrCast([*]?*mut c.wasm_exporttype_t, d)
+        for i in 0..vec.size {
+            let ex = items[i]
+            try pushString(it, arr, bytesOfVec(c.wasm_exporttype_name(ex).?))
+            b.clear()
+            try appendExternType(&mut b, c.wasm_exporttype_type(ex))
+            try pushString(it, arr, b.bytes())
+        }
+    }
+    _ = it.pop()
+    return js.objVal(arr)
+}
+
+// instantiate(module, [extern index of each import]): [name, extern
+// index, type, ...] of the instance's exports. A failed link is a
+// LinkError, a trap of the start function a RuntimeError.
+fn wInstantiate(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let m = try moduleArg(it, st, a)
+    let list = it.arg(a, 1)
+    let n = try it.toNumber(try it.getProp(list, try it.intern("length")))
+    var imports = List(c.wasmtime_extern).init(it.alloc)
+    defer imports.deinit()
+    for i in 0..n as usize {
+        let id = try it.toNumber(try it.getIndex(list, js.numVal(i as f64)))
+        if !(id >= 0.0) || id >= st.exts.len() as f64 {
+            return it.typeError("instantiate: bad import")
+        }
+        try imports.append(st.exts.items()[id as usize].ext)
+    }
+    var inst = @zeroed(c.wasmtime_instance)
+    var trap: ?*mut c.wasm_trap_t = null
+    var first: ?*c.wasmtime_extern = null
+    if imports.len() > 0 {
+        first = &imports.items()[0]
+    }
+    let err = c.wasmtime_instance_new(st.cx, m, first, imports.len(), &mut inst, &mut trap)
+    syncBuffers(st)
+    if err != null || trap != null {
+        return failed(it, st, err, trap, E_LINK)
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    var k: usize = 0
+    while true {
+        var name: ?[*]u8 = null
+        var len: usize = 0
+        var item = @zeroed(c.wasmtime_extern)
+        if !c.wasmtime_instance_export_nth(st.cx, &inst, k, &mut name, &mut len, &mut item) {
+            break
+        }
+        k += 1
+        var id: u32 = 0
+        if item.kind as c_int == c.WASMTIME_EXTERN_FUNC {
+            id = try funcIndex(st, item.of.func)
+        } else {
+            id = try addExt(st, item, null)
+        }
+        if name |p| {
+            try pushString(it, arr, p[0..len])
+        } else {
+            try pushString(it, arr, "")
+        }
+        try it.heap.pushElem(arr, js.numVal(id as f64))
+        try pushString(it, arr, st.exts.items()[id as usize].ty)
+    }
+    _ = it.pop()
+    return js.objVal(arr)
+}
+
+// ---- functions
+
+// The kinds of the parameters and of the results of type string `ty`.
+fn splitFuncType(ty: []u8) [2][]u8 {
+    var colon: usize = 1
+    while colon < ty.len && ty[colon] != ':' {
+        colon += 1
+    }
+    if colon >= ty.len {
+        return [2][]u8{ty[1..1], ty[1..1]}
+    }
+    return [2][]u8{ty[1..colon], ty[colon + 1..]}
+}
+
+fn functypeOf(ty: []u8) ?*mut c.wasm_functype_t {
+    let parts = splitFuncType(ty)
+    var params = @zeroed(c.wasm_valtype_vec_t)
+    var results = @zeroed(c.wasm_valtype_vec_t)
+    c.wasm_valtype_vec_new_uninitialized(&mut params, parts[0].len)
+    c.wasm_valtype_vec_new_uninitialized(&mut results, parts[1].len)
+    if params.data |d| {
+        let items = @ptrCast([*]?*mut c.wasm_valtype_t, d)
+        for i, k in parts[0] {
+            items[i] = valtypeOf(k)
+        }
+    }
+    if results.data |d| {
+        let items = @ptrCast([*]?*mut c.wasm_valtype_t, d)
+        for i, k in parts[1] {
+            items[i] = valtypeOf(k)
+        }
+    }
+    return c.wasm_functype_new(&mut params, &mut results)
+}
+
+// hostFunc(type, trampoline): a wasm function of `type` that calls
+// trampoline(...raw arguments) and takes its raw result (an array of
+// them for several results).
+fn wHostFunc(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let tyv = it.arg(a, 0)
+    let tb = try it.builder()
+    defer it.release(tb)
+    try it.appendString(tb, tyv)
+    let ft = functypeOf(tb.bytes())
+    defer c.wasm_functype_delete(ft)
+    let root = try it.addRoot(it.arg(a, 1))
+    let h = try st.alloc.create(HostFn { it: it, root: root, params: []u8{}, results: []u8{} })
+    var f = @zeroed(c.wasmtime_func)
+    c.wasmtime_func_new(st.cx, ft, hostCall, @ptrCast([*]u8, h), null, &mut f)
+    let id = try addExt(st, c.wasmtime_extern { kind: c.WASMTIME_EXTERN_FUNC as u8, of: c.wasmtime_extern_union { func: f } }, h)
+    let parts = splitFuncType(st.exts.items()[id as usize].ty)
+    h.params = parts[0]
+    h.results = parts[1]
+    return js.numVal(id as f64)
+}
+
+fn hostCall(env: ?[*]u8, caller: ?*mut c.wasmtime_caller, args: ?*c.wasmtime_val, nargs: c_ulong, results: ?*mut c.wasmtime_val, nresults: c_ulong) ?*mut c.wasm_trap_t {
+    let st = state orelse return c.wasmtime_trap_new("no store".ptr, 8)
+    let e = env orelse return c.wasmtime_trap_new("no host".ptr, 7)
+    let h = @ptrCast(*mut HostFn, e)
+    hostCallJs(h, st, args, nargs as usize, results, nresults as usize) catch |err| {
+        st.pending_error = err
+        if err == JsError.Thrown {
+            st.pending = h.it.exception
+        }
+        return c.wasmtime_trap_new("JavaScript exception".ptr, 20)
+    }
+    return null
+}
+
+fn hostCallJs(h: *mut HostFn, st: *mut State, args: ?*c.wasmtime_val, nargs: usize, results: ?*mut c.wasmtime_val, nresults: usize) JsError!void {
+    let it = h.it
+    let base = it.stack.len()
+    defer it.truncate(base)
+    try it.push(it.roots.items()[h.root])
+    try it.push(Value.Undefined)
+    if args |p| {
+        let av = @ptrCast([*]c.wasmtime_val, p)
+        for i in 0..nargs {
+            try it.push(try toRaw(it, st, h.params[i], &av[i]))
+        }
+    }
+    let r = try it.callAt(base, nargs)
+    if nresults == 0 {
+        return
+    }
+    let rp = results orelse return
+    let rv = @ptrCast([*]c.wasmtime_val, rp)
+    if nresults == 1 {
+        rv[0] = try fromRaw(it, st, h.results[0], r)
+        return
+    }
+    try it.push(r)
+    for i in 0..nresults {
+        rv[i] = try fromRaw(it, st, h.results[i], try it.getIndex(r, js.numVal(i as f64)))
+    }
+}
+
+// call(func, ...raw arguments): the raw result (undefined for none, an
+// array for several); a trap is a RuntimeError, or the exception of the
+// JS import that caused it.
+fn wCall(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_FUNC)
+    let parts = splitFuncType(e.ty)
+    let f = e.ext.of.func
+    var buf = @zeroed([16]c.wasmtime_val)
+    var heap_vals = []mut c.wasmtime_val{}
+    defer {
+        if heap_vals.len > 0 {
+            it.alloc.free(heap_vals)
+        }
+    }
+    let total = parts[0].len + parts[1].len
+    var vals = buf[..]
+    if total > 16 {
+        heap_vals = try it.alloc.alloc(@zeroed(c.wasmtime_val), total)
+        vals = heap_vals
+    }
+    for i, k in parts[0] {
+        vals[i] = try fromRaw(it, st, k, it.arg(a, i + 1))
+    }
+    var args: ?*c.wasmtime_val = null
+    if parts[0].len > 0 {
+        args = &vals[0]
+    }
+    var res: ?*mut c.wasmtime_val = null
+    if parts[1].len > 0 {
+        res = &mut vals[parts[0].len]
+    }
+    var trap: ?*mut c.wasm_trap_t = null
+    let err = c.wasmtime_func_call(st.cx, &f, args, parts[0].len, res, parts[1].len, &mut trap)
+    syncBuffers(st)
+    if err != null || trap != null {
+        return failed(it, st, err, trap, E_RUNTIME)
+    }
+    let r = parts[1]
+    if r.len == 0 {
+        return Value.Undefined
+    }
+    if r.len == 1 {
+        return toRaw(it, st, r[0], &vals[parts[0].len])
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    for i, k in r {
+        try it.heap.pushElem(arr, try toRaw(it, st, k, &vals[parts[0].len + i]))
+    }
+    _ = it.pop()
+    return js.objVal(arr)
+}
+
+// type(extern): its type string.
+fn wType(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let n = try it.toNumber(it.arg(a, 0))
+    if !(n >= 0.0) || n >= st.exts.len() as f64 {
+        return it.typeError("not a WebAssembly object")
+    }
+    return it.newString(st.exts.items()[n as usize].ty)
+}
+
+// ---- memories
+
+fn optionalMax(it: *mut Interp, v: Value) JsError!f64 {
+    if v is .Undefined || v is .Null {
+        return -1.0
+    }
+    return it.toNumber(v)
+}
+
+// memNew(initial, maximum or undefined): a memory's index.
+fn wMemNew(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let min = try it.toNumber(it.arg(a, 0))
+    let max = try optionalMax(it, it.arg(a, 1))
+    var mt: ?*mut c.wasm_memorytype_t = null
+    let terr = c.wasmtime_memorytype_new(min as u64, max >= 0.0, max as u64, false, false, 16, &mut mt)
+    if terr != null {
+        c.wasmtime_error_delete(terr)
+        return it.rangeError("WebAssembly.Memory(): bad limits")
+    }
+    defer c.wasm_memorytype_delete(mt)
+    var mem = @zeroed(c.wasmtime_memory)
+    let err = c.wasmtime_memory_new(st.cx, mt, &mut mem)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return it.rangeError("WebAssembly.Memory(): could not allocate memory")
+    }
+    let id = try addExt(st, c.wasmtime_extern { kind: c.WASMTIME_EXTERN_MEMORY as u8, of: c.wasmtime_extern_union { memory: mem } }, null)
+    return js.numVal(id as f64)
+}
+
+// memGrow(memory, delta): the old size in pages, or -1.
+fn wMemGrow(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_MEMORY)
+    let delta = try it.toNumber(it.arg(a, 1))
+    var prev: u64 = 0
+    let err = c.wasmtime_memory_grow(st.cx, &e.ext.of.memory, delta as u64, &mut prev)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return js.numVal(-1.0)
+    }
+    return js.numVal(prev as f64)
+}
+
+fn memBytes(st: *mut State, e: *mut Ext) []mut u8 {
+    let n = c.wasmtime_memory_data_size(st.cx, &e.ext.of.memory)
+    if c.wasmtime_memory_data(st.cx, &e.ext.of.memory) |p| {
+        return p[0..n]
+    }
+    return []mut u8{}
+}
+
+// memStale(memory, buffer): does the buffer no longer alias the memory
+// (it grew, maybe from wasm's memory.grow)?
+fn wMemStale(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_MEMORY)
+    let o = js.objectOf(it.arg(a, 1))
+    if o == js.NONE {
+        return js.boolVal(true)
+    }
+    return js.boolVal(!js.aliasesBytes(it, o, memBytes(st, e)))
+}
+
+// memBind(memory, buffer): the ArrayBuffer aliases the memory's bytes.
+fn wMemBind(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_MEMORY)
+    let o = js.objectOf(it.arg(a, 1))
+    if o == js.NONE {
+        return it.typeError("memBind: not a buffer")
+    }
+    let mem = memBytes(st, e)
+    js.setExternalBytes(it, o, mem)
+    let root = try it.addRoot(js.objVal(o))
+    let ext = try it.toNumber(it.arg(a, 0))
+    try st.bound.append(Bound { it: it, obj: o, root: root, ext: ext as u32, mem: mem })
+    return Value.Undefined
+}
+
+// bufRelease(buffer): detaches a memory's old buffer.
+fn wBufRelease(it: *mut Interp, a: Args) JsError!Value {
+    let o = js.objectOf(it.arg(a, 0))
+    if o == js.NONE {
+        return Value.Undefined
+    }
+    js.detachExternalBytes(it, o)
+    if state |st| {
+        var i = st.bound.len()
+        while i > 0 {
+            i -= 1
+            let b = st.bound.items()[i]
+            if b.it == it && b.obj == o {
+                it.removeRoot(b.root)
+                _ = st.bound.swapRemove(i)
+            }
+        }
+    }
+    return Value.Undefined
+}
+
+// After wasm ran: the buffers of memories that grew are detached (the
+// next Memory.buffer makes a new one), as the spec's memory.grow does.
+fn syncBuffers(st: *mut State) {
+    var i = st.bound.len()
+    while i > 0 {
+        i -= 1
+        let b = st.bound.items()[i]
+        let mem = memBytes(st, &mut st.exts.items()[b.ext as usize])
+        if mem.len != b.mem.len || mem.ptr != b.mem.ptr {
+            js.detachExternalBytes(b.it, b.obj)
+            b.it.removeRoot(b.root)
+            _ = st.bound.swapRemove(i)
+        }
+    }
+}
+
+// ---- tables
+
+// tableNew(elem kind "x" or "r", initial, maximum, raw init): a table's
+// index.
+fn wTableNew(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let kb = try it.builder()
+    defer it.release(kb)
+    try it.appendString(kb, it.arg(a, 0))
+    var k: u8 = 'r'
+    if kb.bytes().len > 0 {
+        k = kb.bytes()[0]
+    }
+    let min = try it.toNumber(it.arg(a, 1))
+    let max = try optionalMax(it, it.arg(a, 2))
+    var lim = c.wasm_limits_t { min: min as c_uint, max: 0xFFFFFFFF }
+    if max >= 0.0 {
+        lim.max = max as c_uint
+    }
+    let tt = c.wasm_tabletype_new(valtypeOf(k), &lim)
+    defer c.wasm_tabletype_delete(tt)
+    let init = try fromRaw(it, st, k, it.arg(a, 3))
+    var t = @zeroed(c.wasmtime_table)
+    let err = c.wasmtime_table_new(st.cx, tt, &init, &mut t)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return it.rangeError("WebAssembly.Table(): could not allocate the table")
+    }
+    let id = try addExt(st, c.wasmtime_extern { kind: c.WASMTIME_EXTERN_TABLE as u8, of: c.wasmtime_extern_union { table: t } }, null)
+    return js.numVal(id as f64)
+}
+
+fn tableKind(e: *Ext) u8 {
+    if e.ty.len > 1 {
+        return e.ty[1]
+    }
+    return 'r'
+}
+
+// tableGet(table, index): the raw element; a RangeError out of bounds.
+fn wTableGet(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_TABLE)
+    let i = try it.toNumber(it.arg(a, 1))
+    var v = @zeroed(c.wasmtime_val)
+    if !(i >= 0.0) || !c.wasmtime_table_get(st.cx, &e.ext.of.table, i as u64, &mut v) {
+        return it.rangeError("WebAssembly.Table.get(): invalid address")
+    }
+    let r = try toRaw(it, st, tableKind(e), &v)
+    c.wasmtime_val_unroot(&mut v)
+    return r
+}
+
+// tableSet(table, index, raw value).
+fn wTableSet(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_TABLE)
+    let i = try it.toNumber(it.arg(a, 1))
+    let v = try fromRaw(it, st, tableKind(e), it.arg(a, 2))
+    if !(i >= 0.0) {
+        return it.rangeError("WebAssembly.Table.set(): invalid address")
+    }
+    let err = c.wasmtime_table_set(st.cx, &e.ext.of.table, i as u64, &v)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return it.rangeError("WebAssembly.Table.set(): invalid address")
+    }
+    return Value.Undefined
+}
+
+fn wTableSize(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_TABLE)
+    return js.numVal(c.wasmtime_table_size(st.cx, &e.ext.of.table) as f64)
+}
+
+// tableGrow(table, delta, raw init): the old size, or -1.
+fn wTableGrow(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_TABLE)
+    let delta = try it.toNumber(it.arg(a, 1))
+    let init = try fromRaw(it, st, tableKind(e), it.arg(a, 2))
+    var prev: u64 = 0
+    let err = c.wasmtime_table_grow(st.cx, &e.ext.of.table, delta as u64, &init, &mut prev)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return js.numVal(-1.0)
+    }
+    return js.numVal(prev as f64)
+}
+
+// ---- globals
+
+// globalNew(value kind, mutable, raw value): a global's index.
+fn wGlobalNew(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let kb = try it.builder()
+    defer it.release(kb)
+    try it.appendString(kb, it.arg(a, 0))
+    var k: u8 = 'i'
+    if kb.bytes().len > 0 {
+        k = kb.bytes()[0]
+    }
+    var mutability = c.WASM_CONST
+    if it.toBoolean(it.arg(a, 1)) {
+        mutability = c.WASM_VAR
+    }
+    let gt = c.wasm_globaltype_new(valtypeOf(k), mutability as u8)
+    defer c.wasm_globaltype_delete(gt)
+    let v = try fromRaw(it, st, k, it.arg(a, 2))
+    var g = @zeroed(c.wasmtime_global)
+    let err = c.wasmtime_global_new(st.cx, gt, &v, &mut g)
+    if err != null {
+        return throwWasmError(it, E_LINK, err)
+    }
+    let id = try addExt(st, c.wasmtime_extern { kind: c.WASMTIME_EXTERN_GLOBAL as u8, of: c.wasmtime_extern_union { global: g } }, null)
+    return js.numVal(id as f64)
+}
+
+fn globalKind(e: *Ext) u8 {
+    if e.ty.len > 1 {
+        return e.ty[1]
+    }
+    return 'i'
+}
+
+fn wGlobalGet(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_GLOBAL)
+    var v = @zeroed(c.wasmtime_val)
+    c.wasmtime_global_get(st.cx, &e.ext.of.global, &mut v)
+    let r = try toRaw(it, st, globalKind(e), &v)
+    c.wasmtime_val_unroot(&mut v)
+    return r
+}
+
+// globalSet(global, raw value); the prelude checks mutability.
+fn wGlobalSet(it: *mut Interp, a: Args) JsError!Value {
+    let st = try current(it)
+    let e = try extArg(it, st, a, 0, c.WASMTIME_EXTERN_GLOBAL)
+    let v = try fromRaw(it, st, globalKind(e), it.arg(a, 1))
+    let err = c.wasmtime_global_set(st.cx, &e.ext.of.global, &v)
+    if err != null {
+        c.wasmtime_error_delete(err)
+        return it.typeError("WebAssembly.Global: cannot set the value")
+    }
+    return Value.Undefined
+}

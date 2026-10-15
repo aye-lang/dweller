@@ -998,6 +998,13 @@ time as a P4 card on those files.
 - reference: `v8/src/wasm/wasm-js.cc` (the JS API), `v8/src/wasm/wasm-objects.h`; the WPT `wasm/jsapi/` tests
 - verify: `cargo test --release --test browser -- wasm_api > target/p11.17.log 2>&1; echo $?` → 0; `wasm_sim_bench` loads a copy of `sim_wasm_bg.wasm` with its glue and prints the step time, within 1.5x of P11.16's standalone number (29 µs per step on the user's Mac)
 - depends on: P11.3, P11.16; time box: 45 min (split Memory/Table/Global into P11.17b if larger); model: opus
+- partial 2026-10-15: the API is done; `wasm_sim_bench` and the wasm-bindgen glue check remain (they need the game's `sim_wasm_bg.wasm` and `sim_wasm.js`, P11.24's copy).
+  - `browser/wasm/`: `wasmtime.lock` (49.0.3, both SHA-256), `fetch_wasmtime.sh` (into `target/wasmtime/<ver>/lib`, with a `wasmtime.pc` whose `Libs` carry the rpath per OS), the C headers vendored in `include/` so the browser builds without the library, and `wasm.aye`: `@linkOptional("wasmtime")` and `@cimport("wasmtime.h")`. libclang expands `wasm.h`'s `WASM_DECLARE_*` macros, so no declaration is written by hand (765 functions; only its inline helpers are skipped). Without the library, or with `--no-link wasmtime`, `WebAssembly` is undefined.
+  - `engine/wasm_prelude.aye`: `Module` (`imports`, `exports`; `customSections` gives `[]`), `Instance`, `Memory`, `Table`, `Global`, the three errors, `validate`, `compile`, `instantiate` (both overloads), `compileStreaming` and `instantiateStreaming` (`application/wasm`, which `file:` now gives `.wasm`). Values: i32, i64 as BigInt, f32, f64, externref, funcref; multi-value results are arrays. A trap is a `RuntimeError`; an exception thrown by a JS import comes back through wasm as itself.
+  - `Memory.buffer` is an `ArrayBuffer` whose store is external (`js.setExternalBytes`): it aliases the linear memory, the GC does not free it, `transfer()` throws. `grow`, and a `memory.grow` inside wasm (checked after each call), detach it.
+  - `fetch` gives `arrayBuffer()` the raw bytes when decoding the body changed them (binary bodies were decoded as text).
+  - `tests/browser.rs` `wasm_api` (`browser/tests/wasm/api.wat`: 46 checks) and `wasm_loop_bench` (`loop.rs`, built for `wasm32-unknown-unknown`): 20M steps take 31-34 ms in Dweller and 36-42 ms in node 22 on this Linux x64 machine. CI fetches wasmtime on both OSes (cached by the lock).
+  - One store serves all pages and is freed with the last; modules and externs stay until then.
 
 #### P11.18: dedicated Workers
 - goal:
