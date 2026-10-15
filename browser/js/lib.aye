@@ -397,6 +397,16 @@ pub let LIB =
     \\const makeView = G.__engine.makeView;
     \\const viewGet = G.__engine.viewGet;
     \\const viewSet = G.__engine.viewSet;
+    \\const bufNew = G.__engine.bufNew;
+    \\const bufLen = G.__engine.bufLen;
+    \\const bufDetached = G.__engine.bufDetached;
+    \\const bufDetach = G.__engine.bufDetach;
+    \\const bufCopy = G.__engine.bufCopy;
+    \\const typedFill = G.__engine.typedFill;
+    \\const typedSetFrom = G.__engine.typedSetFrom;
+    \\const utf8Length = G.__engine.utf8Length;
+    \\const utf8Encode = G.__engine.utf8Encode;
+    \\const utf8Decode = G.__engine.utf8Decode;
     \\function asyncGenDriver(g) {
     \\  const queue = [];
     \\  let running = false;
@@ -1456,17 +1466,44 @@ pub let LIB =
     \\const KINDS = ['Int8', 'Uint8', 'Uint8Clamped', 'Int16', 'Uint16', 'Int32', 'Uint32', 'Float32', 'Float64', 'BigInt64', 'BigUint64'];
     \\const SIZES = [1, 1, 1, 2, 2, 4, 4, 4, 8, 8, 8];
     \\
+    \\// An ArrayBuffer's bytes are one native block (typed.aye bufNew), freed
+    \\// when it is collected or detached (transfer).
+    \\function toIndex(n, what) {
+    \\  const i = n === undefined ? 0 : Math.trunc(Number(n)) || 0;
+    \\  if (i < 0 || i > 9007199254740991) throw new RangeError('Invalid ' + what + ': ' + n);
+    \\  return i;
+    \\}
+    \\function liveBuffer(b, what) {
+    \\  if (bufDetached(b)) throw new TypeError('Cannot perform ' + what + ' on a detached ArrayBuffer');
+    \\  return b;
+    \\}
     \\class ArrayBuffer {
     \\  constructor(n) {
-    \\    n = Math.max(0, Math.trunc(Number(n)) || 0);
-    \\    hidden(this, '_bytes', new Array(n).fill(0));
+    \\    bufNew(this, toIndex(n, 'array buffer length'));
     \\  }
-    \\  get byteLength() { return this._bytes.length; }
+    \\  get byteLength() { return bufLen(this); }
+    \\  get maxByteLength() { return bufLen(this); }
+    \\  get resizable() { return false; }
+    \\  get detached() { return bufDetached(this); }
+    \\  get [Symbol.toStringTag]() { return 'ArrayBuffer'; }
     \\  slice(b, e) {
-    \\    const r = new ArrayBuffer(0);
-    \\    r._bytes = this._bytes.slice(b, e);
+    \\    liveBuffer(this, 'ArrayBuffer.prototype.slice');
+    \\    const n = bufLen(this);
+    \\    b = relIndex(b, n, 0);
+    \\    e = relIndex(e, n, n);
+    \\    const r = new ArrayBuffer(Math.max(0, e - b));
+    \\    if (e > b) bufCopy(r, 0, this, b, e - b);
     \\    return r;
     \\  }
+    \\  transfer(n) {
+    \\    liveBuffer(this, 'ArrayBuffer.prototype.transfer');
+    \\    const len = n === undefined ? bufLen(this) : toIndex(n, 'array buffer length');
+    \\    const r = new ArrayBuffer(len);
+    \\    bufCopy(r, 0, this, 0, Math.min(len, bufLen(this)));
+    \\    bufDetach(this);
+    \\    return r;
+    \\  }
+    \\  transferToFixedLength(n) { return this.transfer(n); }
     \\  static isView(v) { return v instanceof TypedArray || v instanceof DataView; }
     \\}
     \\hidden(G, 'ArrayBuffer', ArrayBuffer);
@@ -1491,13 +1528,43 @@ pub let LIB =
     \\class TypedArray {
     \\  get buffer() { return this._buf; }
     \\  get byteLength() { return this.length * this.constructor.BYTES_PER_ELEMENT; }
-    \\  get byteOffset() { return this._off; }
+    \\  get byteOffset() { return bufDetached(this._buf) ? 0 : this._off; }
     \\  get [Symbol.toStringTag]() { return this.constructor.name; }
     \\  set(src, offset) {
-    \\    offset = offset || 0;
-    \\    const a = Array.from(src);
-    \\    if (offset < 0 || offset + a.length > this.length) throw new RangeError('offset is out of bounds');
-    \\    for (let i = 0; i < a.length; i++) this[offset + i] = a[i];
+    \\    offset = Math.trunc(Number(offset)) || 0;
+    \\    if (offset < 0) throw new RangeError('offset is out of bounds');
+    \\    liveBuffer(this._buf, 'set');
+    \\    if (src instanceof TypedArray) {
+    \\      liveBuffer(src._buf, 'set');
+    \\      typedSetFrom(this, src, offset);
+    \\      return;
+    \\    }
+    \\    const a = Object(src);
+    \\    const n = Math.min(Math.max(0, Math.trunc(Number(a.length)) || 0), 9007199254740991);
+    \\    if (offset + n > this.length) throw new RangeError('offset is out of bounds');
+    \\    for (let i = 0; i < n; i++) this[offset + i] = a[i];
+    \\  }
+    \\  fill(v, b, e) {
+    \\    v = this instanceof BigInt64Array || this instanceof BigUint64Array ? BigInt(v) : Number(v);
+    \\    const n = this.length;
+    \\    b = relIndex(b, n, 0);
+    \\    e = relIndex(e, n, n);
+    \\    liveBuffer(this._buf, 'fill');
+    \\    typedFill(this, v, b, e);
+    \\    return this;
+    \\  }
+    \\  copyWithin(t, b, e) {
+    \\    const n = this.length;
+    \\    t = relIndex(t, n, 0);
+    \\    b = relIndex(b, n, 0);
+    \\    e = relIndex(e, n, n);
+    \\    const count = Math.min(e - b, n - t);
+    \\    if (count > 0) {
+    \\      liveBuffer(this._buf, 'copyWithin');
+    \\      const size = this.constructor.BYTES_PER_ELEMENT;
+    \\      bufCopy(this._buf, this._off + t * size, this._buf, this._off + b * size, count * size);
+    \\    }
+    \\    return this;
     \\  }
     \\  subarray(b, e) {
     \\    const n = this.length;
@@ -1510,7 +1577,12 @@ pub let LIB =
     \\    b = relIndex(b, n, 0);
     \\    e = relIndex(e, n, n);
     \\    const r = new this.constructor(Math.max(0, e - b));
-    \\    for (let i = b; i < e; i++) r[i - b] = this[i];
+    \\    if (e > b) {
+    \\      liveBuffer(this._buf, 'slice');
+    \\      const size = this.constructor.BYTES_PER_ELEMENT;
+    \\      if (r instanceof TypedArray && r.constructor.BYTES_PER_ELEMENT === size && r.constructor === this.constructor) bufCopy(r._buf, r._off, this._buf, this._off + b * size, (e - b) * size);
+    \\      else for (let i = b; i < e; i++) r[i - b] = this[i];
+    \\    }
     \\    return r;
     \\  }
     \\  map(f, t) { return new this.constructor(Array.prototype.map.call(this, f, t)); }
@@ -1530,7 +1602,7 @@ pub let LIB =
     \\  static from(src, f, t) { return new this(Array.from(src, f, t)); }
     \\  static of(...xs) { return new this(xs); }
     \\}
-    \\for (const k of ['at', 'every', 'fill', 'find', 'findIndex', 'findLast', 'findLastIndex', 'forEach', 'includes', 'indexOf', 'join', 'lastIndexOf', 'reduce', 'reduceRight', 'reverse', 'some', 'copyWithin']) {
+    \\for (const k of ['at', 'every', 'find', 'findIndex', 'findLast', 'findLastIndex', 'forEach', 'includes', 'indexOf', 'join', 'lastIndexOf', 'reduce', 'reduceRight', 'reverse', 'some']) {
     \\  hidden(TypedArray.prototype, k, Array.prototype[k]);
     \\}
     \\hidden(TypedArray.prototype, 'toString', function toString() { return this.join(); });
@@ -1544,6 +1616,7 @@ pub let LIB =
     \\        super();
     \\        let buf, off = 0, len;
     \\        if (arg instanceof ArrayBuffer) {
+    \\          liveBuffer(arg, 'Construct');
     \\          off = Math.trunc(Number(offset)) || 0;
     \\          if (off % size !== 0) throw new RangeError('start offset of ' + name + 'Array should be a multiple of ' + size);
     \\          if (off < 0 || off > arg.byteLength) throw new RangeError('Start offset ' + off + ' is outside the bounds of the buffer');
@@ -1555,12 +1628,21 @@ pub let LIB =
     \\            if (off + len * size > arg.byteLength) throw new RangeError('Invalid typed array length: ' + len);
     \\          }
     \\          buf = arg;
-    \\          makeView(this, buf._bytes, off, len, kind);
+    \\          makeView(this, buf, off, len, kind);
     \\          hidden(this, '_buf', buf);
     \\          hidden(this, '_off', off);
     \\          return;
     \\        }
     \\        let src = null;
+    \\        if (arg instanceof TypedArray) {
+    \\          liveBuffer(arg._buf, 'Construct');
+    \\          buf = new ArrayBuffer(arg.length * size);
+    \\          makeView(this, buf, 0, arg.length, kind);
+    \\          hidden(this, '_buf', buf);
+    \\          hidden(this, '_off', 0);
+    \\          typedSetFrom(this, arg, 0);
+    \\          return;
+    \\        }
     \\        if (arg !== null && typeof arg === 'object') {
     \\          src = Array.from(arg);
     \\          len = src.length;
@@ -1568,7 +1650,7 @@ pub let LIB =
     \\          len = Math.max(0, Math.trunc(Number(arg)) || 0);
     \\        }
     \\        buf = new ArrayBuffer(len * size);
-    \\        makeView(this, buf._bytes, 0, len, kind);
+    \\        makeView(this, buf, 0, len, kind);
     \\        hidden(this, '_buf', buf);
     \\        hidden(this, '_off', 0);
     \\        if (src) for (let i = 0; i < len; i++) this[i] = src[i];
@@ -1595,16 +1677,54 @@ pub let LIB =
     \\  const size = SIZES[kind];
     \\  hidden(DataView.prototype, 'get' + name, function (i, le) {
     \\    i = Math.trunc(Number(i)) || 0;
+    \\    liveBuffer(this.buffer, 'DataView.prototype.get' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
-    \\    return viewGet(this.buffer._bytes, this.byteOffset + i, kind, !!le);
+    \\    return viewGet(this.buffer, this.byteOffset + i, kind, !!le);
     \\  });
     \\  hidden(DataView.prototype, 'set' + name, function (i, v, le) {
     \\    i = Math.trunc(Number(i)) || 0;
+    \\    v = kind >= 9 ? BigInt(v) : Number(v);
+    \\    liveBuffer(this.buffer, 'DataView.prototype.set' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
-    \\    viewSet(this.buffer._bytes, this.byteOffset + i, kind, v, !!le);
+    \\    viewSet(this.buffer, this.byteOffset + i, kind, v, !!le);
     \\  });
     \\});
     \\hidden(G, 'DataView', DataView);
+    \\// TextEncoder and TextDecoder: UTF-8 only, on the bytes (typed.aye).
+    \\class TextEncoder {
+    \\  get encoding() { return 'utf-8'; }
+    \\  encode(s) {
+    \\    s = String(s === undefined ? '' : s);
+    \\    const u = new Uint8Array(utf8Length(s));
+    \\    utf8Encode(u, s);
+    \\    return u;
+    \\  }
+    \\  encodeInto(s, dest) {
+    \\    const u = this.encode(s);
+    \\    let n = Math.min(u.length, dest.length);
+    \\    while (n < u.length && n > 0 && (u[n] & 0xC0) === 0x80) n--;
+    \\    dest.set(u.subarray(0, n));
+    \\    return { read: new TextDecoder().decode(u.subarray(0, n)).length, written: n };
+    \\  }
+    \\}
+    \\class TextDecoder {
+    \\  constructor(label) {
+    \\    const l = label === undefined ? 'utf-8' : String(label).trim().toLowerCase();
+    \\    if (l !== 'utf-8' && l !== 'utf8' && l !== 'unicode-1-1-utf-8') throw new RangeError("Failed to construct 'TextDecoder': The encoding label provided ('" + label + "') is invalid.");
+    \\  }
+    \\  get encoding() { return 'utf-8'; }
+    \\  decode(input) {
+    \\    if (input === undefined) return '';
+    \\    let b;
+    \\    if (input instanceof ArrayBuffer) b = new Uint8Array(input);
+    \\    else if (ArrayBuffer.isView(input)) b = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    \\    else b = Uint8Array.from(input);
+    \\    if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) b = b.subarray(3);
+    \\    return utf8Decode(b);
+    \\  }
+    \\}
+    \\hidden(G, 'TextEncoder', TextEncoder);
+    \\hidden(G, 'TextDecoder', TextDecoder);
     \\
     \\// ---- Intl: English formats only
     \\
@@ -1738,7 +1858,9 @@ pub let LIB =
     \\    else if (v instanceof Map) out = new Map();
     \\    else if (v instanceof Set) out = new Set();
     \\    else if (v instanceof Error) out = new (cloneErrors[v.name] || Error)(v.message);
-    \\    else if (ArrayBuffer.isView(v)) out = new v.constructor(v);
+    \\    else if (v instanceof ArrayBuffer) out = v.slice(0);
+    \\    else if (v instanceof DataView) out = new DataView(clone(v.buffer), v.byteOffset, v.byteLength);
+    \\    else if (ArrayBuffer.isView(v)) out = new v.constructor(clone(v.buffer), v.byteOffset, v.length);
     \\    else if (tag === '[object Number]' || tag === '[object String]' || tag === '[object Boolean]') out = Object(v.valueOf());
     \\    else if (tag !== '[object Object]') fail(v);
     \\    else out = {};
