@@ -1,0 +1,57 @@
+<!doctype html>
+<title>WebGL 2 indexed quad</title>
+<style>body { margin: 10px; background: #fff; } canvas { display: block; }</style>
+<canvas id="c" width="160" height="120"></canvas>
+<script>
+// P11.5: drawElements of an indexed quad (four vertices, six
+// UNSIGNED_SHORT indices) with a uniform color and a 4x4 matrix: an
+// orange square turned 30 degrees and scaled to half, then a small blue
+// one moved to the top right (bufferSubData of the indices to draw
+// one triangle of it). No antialiasing: the edges are exact.
+const gl = document.getElementById('c').getContext('webgl2', {antialias: false});
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, `#version 300 es
+layout(location = 0) in vec2 pos;
+uniform mat4 transform;
+void main() {
+  gl_Position = transform * vec4(pos, 0.0, 1.0);
+}`));
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float;
+uniform vec4 color;
+out vec4 frag;
+void main() {
+  frag = color;
+}`));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.DYNAMIC_DRAW);
+const transform = gl.getUniformLocation(prog, 'transform');
+const color = gl.getUniformLocation(prog, 'color');
+// Column-major: scale s, rotate a, then move by (x, y); y scaled by the
+// canvas's aspect so the square stays square.
+function matrix(s, a, x, y) {
+  const c = Math.cos(a) * s, n = Math.sin(a) * s, k = 160 / 120;
+  return new Float32Array([c, n * k, 0, 0, -n, c * k, 0, 0, 0, 0, 1, 0, x, y, 0, 1]);
+}
+gl.clearColor(1, 1, 1, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.uniformMatrix4fv(transform, false, matrix(0.5, Math.PI / 6, -0.2, -0.1));
+gl.uniform4f(color, 1, 0.5, 0, 1);
+gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+gl.uniformMatrix4fv(transform, false, matrix(0.15, 0, 0.7, 0.6));
+gl.uniform4fv(color, [0, 0.25, 1, 1]);
+gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 6, new Uint16Array([1, 2, 3]));
+gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 6);
+</script>

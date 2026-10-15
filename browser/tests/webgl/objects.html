@@ -1,0 +1,217 @@
+<!doctype html>
+<title>WebGL 2 objects and draws</title>
+<canvas id="c" width="64" height="64"></canvas>
+<pre id="out"></pre>
+<script>
+// P11.5 (docs/webgl.md §3, §4): buffers, shaders, programs, uniforms and
+// draws, and the error of each WebGL rule: objects of another context,
+// deleted objects, buffer targets, uniform locations, out-of-range draws.
+const lines = [];
+const log = (...a) => lines.push(a.map(String).join(' '));
+const gl = document.getElementById('c').getContext('webgl2', {antialias: false});
+const err = what => log(what, gl.getError());
+function shader(type, src, g = gl) {
+  const s = g.createShader(type);
+  g.shaderSource(s, src);
+  g.compileShader(s);
+  return s;
+}
+const VS = `#version 300 es
+in vec2 pos;
+uniform vec2 offset;
+void main() {
+  gl_Position = vec4(pos + offset, 0.0, 1.0);
+}`;
+const FS = `#version 300 es
+precision mediump float;
+uniform vec4 color;
+uniform float unused[3];
+out vec4 frag;
+void main() {
+  frag = color;
+}`;
+function program(g = gl) {
+  const p = g.createProgram();
+  g.attachShader(p, shader(g.VERTEX_SHADER, VS, g));
+  g.attachShader(p, shader(g.FRAGMENT_SHADER, FS, g));
+  g.linkProgram(p);
+  return p;
+}
+// Without WebGL (no ANGLE) getContext gives null.
+function run() {
+  // Buffers.
+  const buf = gl.createBuffer();
+  log('buffer', buf instanceof WebGLBuffer, gl.isBuffer(buf));
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  log('bound', gl.isBuffer(buf), gl.getParameter(gl.ARRAY_BUFFER_BINDING) === buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0.5, -0.5, -0.5, 0.5, -0.5]), gl.STATIC_DRAW);
+  err('bufferData');
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([9, 9, 0, 0.5, -0.5, -0.5, 0.5, -0.5]), gl.STATIC_DRAW, 2, 6);
+  err('bufferData srcOffset length');
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(4), gl.STATIC_DRAW, 5);
+  err('bufferData srcOffset past the end');
+  gl.bufferSubData(gl.ARRAY_BUFFER, 20, new Float32Array(2));
+  err('bufferSubData past the store');
+  gl.bufferData(0x1234, 8, gl.STATIC_DRAW);
+  err('bufferData bad target');
+  gl.bufferData(gl.ARRAY_BUFFER, 8, 0x1234);
+  err('bufferData bad usage');
+  gl.bufferData(gl.COPY_READ_BUFFER, 8, gl.STATIC_DRAW);
+  err('bufferData without a buffer');
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf);
+  err('array buffer as element buffer');
+  const other = document.createElement('canvas').getContext('webgl2');
+  const foreign = other.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, foreign);
+  err('buffer of another context');
+  gl.deleteBuffer(foreign);
+  err('delete of another context');
+  const doomed = gl.createBuffer();
+  gl.bindBuffer(gl.COPY_WRITE_BUFFER, doomed);
+  gl.deleteBuffer(doomed);
+  log('deleted', gl.isBuffer(doomed), gl.getParameter(gl.COPY_WRITE_BUFFER_BINDING));
+  gl.deleteBuffer(doomed);
+  err('delete twice');
+  gl.bindBuffer(gl.ARRAY_BUFFER, doomed);
+  err('bind a deleted buffer');
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  // Shaders.
+  log('createShader bad type', gl.createShader(0x1234));
+  err('createShader bad type error');
+  const bad = shader(gl.VERTEX_SHADER, 'void main() { gl_Position = nope; }');
+  log('bad COMPILE_STATUS', gl.getShaderParameter(bad, gl.COMPILE_STATUS), gl.getShaderInfoLog(bad).length > 0);
+  log('SHADER_TYPE', gl.getShaderParameter(bad, gl.SHADER_TYPE) === gl.VERTEX_SHADER);
+  gl.getShaderParameter(bad, gl.LINK_STATUS);
+  err('getShaderParameter bad pname');
+  gl.deleteShader(bad);
+  log('deleted shader', gl.isShader(bad), gl.getShaderParameter(bad, gl.COMPILE_STATUS));
+  err('query a deleted shader');
+  // Programs.
+  const prog = program();
+  log('LINK_STATUS', gl.getProgramParameter(prog, gl.LINK_STATUS), JSON.stringify(gl.getProgramInfoLog(prog)));
+  log('ATTACHED_SHADERS', gl.getProgramParameter(prog, gl.ATTACHED_SHADERS), gl.getAttachedShaders(prog).length);
+  log('ACTIVE_ATTRIBUTES', gl.getProgramParameter(prog, gl.ACTIVE_ATTRIBUTES), 'ACTIVE_UNIFORMS', gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS));
+  const a = gl.getActiveAttrib(prog, 0);
+  log('active attrib', a instanceof WebGLActiveInfo, a.name, a.size, a.type === gl.FLOAT_VEC2);
+  const us = [0, 1].map(i => gl.getActiveUniform(prog, i)).map(u => u.name + ':' + u.size + ':' + u.type.toString(16)).sort();
+  log('active uniforms', us.join(' '));
+  log('active out of range', gl.getActiveUniform(prog, 9));
+  err('active out of range error');
+  log('attrib location', gl.getAttribLocation(prog, 'pos'), gl.getAttribLocation(prog, 'none'));
+  log('uniform location', gl.getUniformLocation(prog, 'color') instanceof WebGLUniformLocation, gl.getUniformLocation(prog, 'none'));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  err('draw without a program');
+  const color = gl.getUniformLocation(prog, 'color');
+  gl.uniform4f(color, 1, 0, 0, 1);
+  err('uniform of a program not in use');
+  gl.useProgram(prog);
+  log('CURRENT_PROGRAM', gl.getParameter(gl.CURRENT_PROGRAM) === prog);
+  gl.uniform4f(color, 1, 0, 0, 1);
+  err('uniform4f');
+  gl.uniform1i(color, 1);
+  err('uniform1i on a vec4');
+  gl.uniform4fv(color, [1, 0, 0]);
+  err('uniform4fv of 3');
+  gl.uniform4fv(color, new Float32Array([7, 0, 1, 0, 1, 7]), 1, 4);
+  err('uniform4fv srcOffset srcLength');
+  gl.uniform1fv(gl.getUniformLocation(prog, 'unused[0]'), [1, 2, 3]);
+  err('uniform1fv array');
+  gl.uniform4f(null, 1, 1, 1, 1);
+  err('null location');
+  const otherProg = program(other);
+  other.useProgram(otherProg);
+  gl.uniform4f(other.getUniformLocation(otherProg, 'color'), 0, 0, 0, 0);
+  err('location of another context');
+  gl.useProgram(otherProg);
+  err('program of another context');
+  // Attributes and a draw: green on blue.
+  const pos = gl.getAttribLocation(prog, 'pos');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  err('vertexAttribPointer');
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 2);
+  err('vertexAttribPointer unaligned offset');
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, -4);
+  err('vertexAttribPointer negative offset');
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  gl.vertexAttrib4f(5, 1, 2, 3, 4);
+  gl.vertexAttrib3fv(5, new Float32Array([1, 2, 3]));
+  gl.vertexAttribI4i(6, 1, 2, 3, 4);
+  gl.vertexAttribI4uiv(6, [1, 2, 3, 4]);
+  err('vertexAttrib*');
+  gl.vertexAttrib2fv(5, [1]);
+  err('vertexAttrib2fv of 1');
+  gl.vertexAttribIPointer(7, 1, gl.INT, 0, 0);
+  err('vertexAttribIPointer');
+  gl.vertexAttribIPointer(7, 1, gl.FLOAT, 0, 0);
+  err('vertexAttribIPointer FLOAT');
+  gl.clearColor(0, 0, 1, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform4f(color, 0, 1, 0, 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'offset'), 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  err('drawArrays');
+  const px = (x, y) => {
+    const p = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    return Array.from(p).join(',');
+  };
+  // The triangle spans x 16..48 at the bottom (y 16), its apex at (32, 48).
+  log('pixels: inside', px(32, 24), 'outside', px(4, 60), 'left edge', px(17, 17), 'just outside the edge', px(22, 34));
+  gl.drawArrays(gl.TRIANGLES, 0, 4);
+  err('drawArrays past the buffer');
+  gl.drawArrays(gl.TRIANGLES, -1, 3);
+  err('drawArrays negative first');
+  gl.drawArrays(0x1234, 0, 3);
+  err('drawArrays bad mode');
+  // Elements.
+  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 0);
+  err('drawElements without an element buffer');
+  const ebuf = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebuf);
+  log('ELEMENT_ARRAY_BUFFER_BINDING', gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) === ebuf);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ebuf);
+  err('element buffer as array buffer');
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 7]), gl.STATIC_DRAW);
+  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 0);
+  err('drawElements');
+  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 1);
+  err('drawElements odd offset');
+  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 2);
+  err('drawElements index past the vertices');
+  gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+  err('drawElements past the element buffer');
+  gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, -2);
+  err('drawElements negative offset');
+  // Relinks and deletes.
+  gl.linkProgram(prog);
+  gl.uniform4f(color, 0, 1, 0, 1);
+  err('location from before a relink');
+  gl.uniform4f(gl.getUniformLocation(prog, 'color'), 0, 1, 0, 1);
+  err('location after the relink');
+  gl.validateProgram(prog);
+  log('VALIDATE_STATUS', gl.getProgramParameter(prog, gl.VALIDATE_STATUS));
+  gl.deleteProgram(prog);
+  log('deleted in use', gl.isProgram(prog), gl.getProgramParameter(prog, gl.DELETE_STATUS), gl.getParameter(gl.CURRENT_PROGRAM) === prog);
+  err('deleteProgram in use');
+  gl.useProgram(prog);
+  err('useProgram deleted');
+  gl.useProgram(null);
+  log('freed', gl.getProgramParameter(prog, gl.LINK_STATUS));
+  err('query a freed program');
+  const p2 = program();
+  gl.attachShader(p2, gl.getAttachedShaders(p2)[0]);
+  err('attach twice');
+  gl.attachShader(p2, shader(gl.VERTEX_SHADER, VS));
+  err('attach a second vertex shader');
+  gl.bindAttribLocation(p2, 3, 'pos');
+  gl.linkProgram(p2);
+  log('bindAttribLocation', gl.getAttribLocation(p2, 'pos'));
+  gl.bindAttribLocation(p2, 0, 'webgl_x');
+  err('bindAttribLocation reserved name');
+  log('getParameter error', gl.getError());
+}
+if (gl) run();
+else log('webgl2 null');
+document.getElementById('out').textContent = lines.join('\n');
+</script>
