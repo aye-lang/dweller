@@ -377,7 +377,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js FILE | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -3217,6 +3217,16 @@ fn js_command_line() {
         text(&syntax.stderr).starts_with("Uncaught SyntaxError:"),
         "{}",
         text(&syntax.stderr)
+    );
+    // P4.61: no compiler yet, a hand-assembled function's disassembly
+    let bytecode = run(&["js", "--print-bytecode", "x.js"]);
+    assert_eq!(bytecode.status.code(), Some(0));
+    assert_eq!(text(&bytecode.stderr), "");
+    let out = text(&bytecode.stdout);
+    assert!(
+        out.contains("@   29 : 46 17          JumpLoop [23] (@ 6)\n")
+            && out.contains("Constant pool (size = 1)\n"),
+        "{out}"
     );
 }
 

@@ -60,7 +60,7 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js FILE | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -84,6 +84,9 @@ fn run(alloc: Allocator) i32 {
         return 2
     }
     if args.len >= 2 && text.eql(args[1], "js") {
+        if args.len == 4 && text.eql(args[2], "--print-bytecode") {
+            return js.printBytecodeStub(alloc, args[3])
+        }
         if args.len != 3 {
             std.log.err("usage: dweller js FILE")
             return 2

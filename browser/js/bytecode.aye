@@ -1,0 +1,1345 @@
+// js/bytecode: the instruction format of the bytecode VM (BYTECODE.md
+// section 2): the instruction table, `BytecodeArray`, the builder with
+// labels and jump patching, the constant pool, the handler table, the
+// source-position table and the disassembler. Nothing here executes
+// (the VM is P4.63).
+//
+// An accumulator and register machine as V8's Ignition: one byte of
+// opcode, one byte per operand, and the prefixes `Wide` and `ExtraWide`
+// that make every operand of the next instruction 16 or 32 bits (little
+// endian). Registers are signed operands: r0, r1, ... are the frame's
+// registers, -1 down to -nparams the parameters, -(nparams + 1) `this`.
+//
+// Ported from V8 `src/interpreter/bytecodes.h`, `bytecode-operands.h`,
+// `bytecode-array-builder.cc`, `bytecode-array-writer.cc` (jump
+// patching), `constant-array-builder.cc` (the pool's slices and
+// reserved entries), `bytecode-decoder.cc` (the disassembly format),
+// `handler-table-builder.cc` and `src/codegen/source-position-table.cc`,
+// and `src/objects/bytecode-array.cc` (`Disassemble`). Copyright the V8
+// project authors, BSD-3; see `browser/js/LICENSE-V8`.
+//
+// Aye has no `enum: u8` and no named constants in `match` patterns, so
+// an opcode is a `pub let BC_*: u8` and the table `BC_INFO` is indexed
+// by it; the VM's dispatch `match` uses the numbers, with the name in a
+// comment.
+
+import std
+import std.list.List
+import std.map.HashMap
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// ---- Opcodes (the order of BC_INFO)
+
+pub let BC_WIDE: u8 = 0
+pub let BC_EXTRA_WIDE: u8 = 1
+pub let BC_LDA_ZERO: u8 = 2
+pub let BC_LDA_SMI: u8 = 3
+pub let BC_LDA_UNDEFINED: u8 = 4
+pub let BC_LDA_NULL: u8 = 5
+pub let BC_LDA_THE_HOLE: u8 = 6
+pub let BC_LDA_TRUE: u8 = 7
+pub let BC_LDA_FALSE: u8 = 8
+pub let BC_LDA_CONSTANT: u8 = 9
+pub let BC_LDAR: u8 = 10
+pub let BC_STAR: u8 = 11
+pub let BC_MOV: u8 = 12
+pub let BC_ADD: u8 = 13
+pub let BC_SUB: u8 = 14
+pub let BC_MUL: u8 = 15
+pub let BC_DIV: u8 = 16
+pub let BC_MOD: u8 = 17
+pub let BC_EXP: u8 = 18
+pub let BC_BITWISE_OR: u8 = 19
+pub let BC_BITWISE_XOR: u8 = 20
+pub let BC_BITWISE_AND: u8 = 21
+pub let BC_SHIFT_LEFT: u8 = 22
+pub let BC_SHIFT_RIGHT: u8 = 23
+pub let BC_SHIFT_RIGHT_LOGICAL: u8 = 24
+pub let BC_ADD_SMI: u8 = 25
+pub let BC_SUB_SMI: u8 = 26
+pub let BC_MUL_SMI: u8 = 27
+pub let BC_DIV_SMI: u8 = 28
+pub let BC_MOD_SMI: u8 = 29
+pub let BC_EXP_SMI: u8 = 30
+pub let BC_BITWISE_OR_SMI: u8 = 31
+pub let BC_BITWISE_XOR_SMI: u8 = 32
+pub let BC_BITWISE_AND_SMI: u8 = 33
+pub let BC_SHIFT_LEFT_SMI: u8 = 34
+pub let BC_SHIFT_RIGHT_SMI: u8 = 35
+pub let BC_SHIFT_RIGHT_LOGICAL_SMI: u8 = 36
+pub let BC_INC: u8 = 37
+pub let BC_DEC: u8 = 38
+pub let BC_NEGATE: u8 = 39
+pub let BC_BITWISE_NOT: u8 = 40
+pub let BC_TO_NUMERIC: u8 = 41
+pub let BC_LOGICAL_NOT: u8 = 42
+pub let BC_TO_BOOLEAN_LOGICAL_NOT: u8 = 43
+pub let BC_TYPE_OF: u8 = 44
+pub let BC_TEST_EQUAL: u8 = 45
+pub let BC_TEST_EQUAL_STRICT: u8 = 46
+pub let BC_TEST_LESS_THAN: u8 = 47
+pub let BC_TEST_GREATER_THAN: u8 = 48
+pub let BC_TEST_LESS_THAN_OR_EQUAL: u8 = 49
+pub let BC_TEST_GREATER_THAN_OR_EQUAL: u8 = 50
+pub let BC_TEST_UNDETECTABLE: u8 = 51
+pub let BC_TEST_NULL: u8 = 52
+pub let BC_TEST_UNDEFINED: u8 = 53
+// Forward jumps with the offset as an immediate (from the opcode byte)...
+pub let BC_JUMP: u8 = 54
+pub let BC_JUMP_IF_TRUE: u8 = 55
+pub let BC_JUMP_IF_FALSE: u8 = 56
+pub let BC_JUMP_IF_TO_BOOLEAN_TRUE: u8 = 57
+pub let BC_JUMP_IF_TO_BOOLEAN_FALSE: u8 = 58
+pub let BC_JUMP_IF_NULL: u8 = 59
+pub let BC_JUMP_IF_UNDEFINED: u8 = 60
+pub let BC_JUMP_IF_UNDEFINED_OR_NULL: u8 = 61
+// ...and the same with the offset in the constant pool, for an offset
+// that did not fit the operand width reserved when the jump was emitted
+// (V8's `JumpConstant`). Each is its immediate twin plus BC_JUMP_CONST_DELTA.
+pub let BC_JUMP_CONSTANT: u8 = 62
+pub let BC_JUMP_IF_TRUE_CONSTANT: u8 = 63
+pub let BC_JUMP_IF_FALSE_CONSTANT: u8 = 64
+pub let BC_JUMP_IF_TO_BOOLEAN_TRUE_CONSTANT: u8 = 65
+pub let BC_JUMP_IF_TO_BOOLEAN_FALSE_CONSTANT: u8 = 66
+pub let BC_JUMP_IF_NULL_CONSTANT: u8 = 67
+pub let BC_JUMP_IF_UNDEFINED_CONSTANT: u8 = 68
+pub let BC_JUMP_IF_UNDEFINED_OR_NULL_CONSTANT: u8 = 69
+// The only backward jump: the loop's budget tick and interrupt check.
+pub let BC_JUMP_LOOP: u8 = 70
+// `SwitchOnSmi k, n, base`: the accumulator `v` in base..base+n jumps to
+// the offset in pool entry k + v - base, else falls through.
+pub let BC_SWITCH_ON_SMI: u8 = 71
+pub let BC_RETURN: u8 = 72
+pub let BC_COUNT: u8 = 73
+
+pub let BC_JUMP_CONST_DELTA: u8 = 8
+
+// The operand kinds (V8's `OperandType`).
+pub enum BcOp {
+    None
+    // a register read
+    Reg
+    // a register written
+    RegOut
+    // a signed immediate
+    Imm
+    // an unsigned immediate (jump offsets, counts)
+    UImm
+    // a constant-pool index
+    Const
+    // a feedback-slot index
+    Slot
+}
+
+// Flags of an instruction.
+// It may allocate on the JS heap: the accumulator is spilled to r0 first
+// (BYTECODE.md section 4).
+pub let BC_F_ALLOC: u8 = 1
+pub let BC_F_THROW: u8 = 2
+pub let BC_F_JUMP: u8 = 4
+pub let BC_F_JUMP_CONST: u8 = 8
+pub let BC_F_SWITCH: u8 = 16
+pub let BC_F_PREFIX: u8 = 32
+
+pub struct BcInfo {
+    name: []u8
+    ops: [3]BcOp
+    nops: u8
+    flags: u8
+}
+
+let BC_AT = BC_F_ALLOC | BC_F_THROW
+
+pub let BC_INFO = [_]BcInfo{
+    BcInfo { name: "Wide", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_F_PREFIX },
+    BcInfo { name: "ExtraWide", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_F_PREFIX },
+    BcInfo { name: "LdaZero", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaSmi", ops: [3]BcOp{BcOp.Imm, BcOp.None, BcOp.None}, nops: 1, flags: 0 },
+    BcInfo { name: "LdaUndefined", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaNull", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaTheHole", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaTrue", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaFalse", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "LdaConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_ALLOC },
+    BcInfo { name: "Ldar", ops: [3]BcOp{BcOp.Reg, BcOp.None, BcOp.None}, nops: 1, flags: 0 },
+    BcInfo { name: "Star", ops: [3]BcOp{BcOp.RegOut, BcOp.None, BcOp.None}, nops: 1, flags: 0 },
+    BcInfo { name: "Mov", ops: [3]BcOp{BcOp.Reg, BcOp.RegOut, BcOp.None}, nops: 2, flags: 0 },
+    BcInfo { name: "Add", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Sub", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Mul", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Div", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Mod", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Exp", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseOr", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseXor", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseAnd", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftLeft", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftRight", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftRightLogical", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "AddSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "SubSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "MulSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "DivSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ModSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ExpSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseOrSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseXorSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "BitwiseAndSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftLeftSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftRightSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ShiftRightLogicalSmi", ops: [3]BcOp{BcOp.Imm, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "Inc", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "Dec", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "Negate", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "BitwiseNot", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "ToNumeric", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "LogicalNot", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "ToBooleanLogicalNot", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "TypeOf", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_F_ALLOC },
+    BcInfo { name: "TestEqual", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "TestEqualStrict", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: 0 },
+    BcInfo { name: "TestLessThan", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "TestGreaterThan", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "TestLessThanOrEqual", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "TestGreaterThanOrEqual", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "TestUndetectable", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "TestNull", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "TestUndefined", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+    BcInfo { name: "Jump", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfTrue", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfFalse", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfToBooleanTrue", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfToBooleanFalse", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfNull", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfUndefined", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpIfUndefinedOrNull", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP },
+    BcInfo { name: "JumpConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfTrueConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfFalseConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfToBooleanTrueConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfToBooleanFalseConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfNullConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfUndefinedConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpIfUndefinedOrNullConstant", ops: [3]BcOp{BcOp.Const, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_JUMP_CONST },
+    BcInfo { name: "JumpLoop", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_JUMP | BC_F_THROW },
+    BcInfo { name: "SwitchOnSmi", ops: [3]BcOp{BcOp.Const, BcOp.UImm, BcOp.Imm}, nops: 3, flags: BC_F_SWITCH },
+    BcInfo { name: "Return", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
+}
+
+pub fn bcIsForwardJump(op: u8) bool {
+    return op >= BC_JUMP && op <= BC_JUMP_IF_UNDEFINED_OR_NULL
+}
+
+fn bcSigned(k: BcOp) bool {
+    return match k {
+        .Reg, .RegOut, .Imm => true
+        _ => false
+    }
+}
+
+// The operand width (1, 2 or 4 bytes) that holds `v`.
+fn bcScaleFor(v: i64, signed: bool) u8 {
+    if signed {
+        if v >= -128 && v <= 127 {
+            return 1
+        }
+        if v >= -32768 && v <= 32767 {
+            return 2
+        }
+        if v < -2147483648 || v > 2147483647 {
+            unreachable
+        }
+        return 4
+    }
+    if v < 0 || v > 4294967295 {
+        unreachable
+    }
+    if v <= 255 {
+        return 1
+    }
+    if v <= 65535 {
+        return 2
+    }
+    return 4
+}
+
+fn bcPrefixFor(scale: u8) u8 {
+    if scale == 2 {
+        return BC_WIDE
+    }
+    return BC_EXTRA_WIDE
+}
+
+// Writes `v` in `w` bytes at `code[at..]`, little endian (two's
+// complement for a negative value).
+fn bcPut(code: []mut u8, at: usize, v: i64, w: u8) {
+    for i in 0..w as usize {
+        code[at + i] = ((v >> (8 * i as i64)) & 0xFF) as u8
+    }
+}
+
+fn bcGet(code: []u8, at: usize, w: u8, signed: bool) i64 {
+    var v: i64 = 0
+    for i in 0..w as usize {
+        v = v | ((code[at + i] as i64) << (8 * i as i64))
+    }
+    if signed {
+        let half = (1 as i64) << (8 * w as i64 - 1)
+        if v >= half {
+            v -= half * 2
+        }
+    }
+    return v
+}
+
+/// Appends `op` with operands `ops` of width `scale` (which must hold
+/// them), after the prefix the width needs; gives the opcode's offset.
+pub fn bcEncode(out: *mut List(u8), op: u8, ops: [3]i64, scale: u8) AllocError!u32 {
+    let info = BC_INFO[op as usize]
+    if scale > 1 {
+        try out.append(bcPrefixFor(scale))
+    }
+    let opAt = out.len() as u32
+    try out.append(op)
+    let at = out.len()
+    for _ in 0..(info.nops as usize * scale as usize) {
+        try out.append(0)
+    }
+    let bytes = out.items()
+    for i in 0..info.nops as usize {
+        if bcScaleFor(ops[i], bcSigned(info.ops[i])) > scale {
+            unreachable
+        }
+        bcPut(bytes, at + i * scale as usize, ops[i], scale)
+    }
+    return opAt
+}
+
+// ---- Decoding (V8's `BytecodeDecoder` and `BytecodeArrayIterator`)
+
+pub struct BcInsn {
+    op: u8
+    // operand width: 1, 2 or 4
+    scale: u8
+    // the offset of the instruction (its prefix, if any)
+    at: u32
+    // the offset of the opcode byte: jump offsets count from here
+    opAt: u32
+    // bytes, the prefix included
+    size: u32
+    ops: [3]i64
+}
+
+/// Decodes the instruction at `at`.
+pub fn bcDecode(code: []u8, at: u32) BcInsn {
+    var p = at as usize
+    var scale: u8 = 1
+    if code[p] == BC_WIDE {
+        scale = 2
+        p += 1
+    } else if code[p] == BC_EXTRA_WIDE {
+        scale = 4
+        p += 1
+    }
+    let op = code[p]
+    if op >= BC_COUNT || op == BC_WIDE || op == BC_EXTRA_WIDE {
+        unreachable
+    }
+    let info = BC_INFO[op as usize]
+    var insn = BcInsn { op: op, scale: scale, at: at, opAt: p as u32, size: 0, ops: [3]i64{0, 0, 0} }
+    var q = p + 1
+    for i in 0..info.nops as usize {
+        insn.ops[i] = bcGet(code, q, scale, bcSigned(info.ops[i]))
+        q += scale as usize
+    }
+    insn.size = (q - at as usize) as u32
+    return insn
+}
+
+// ---- The constant pool (V8's `ConstantArrayBuilder`)
+//
+// Numbers, atoms, function ids, literal template ids and jump offsets;
+// never heap values, so the pool is not a GC root.
+
+pub enum BcConst {
+    Num { v: f64 }
+    Atom { id: u32 }
+    Func { id: u32 }
+    Template { id: u32 }
+    // a jump offset: of a `Jump*Constant`, or a `SwitchOnSmi` table entry
+    Offset { v: u32 }
+    // a free entry (padding between the slices, unbound table entries)
+    Hole
+}
+
+struct BcConstKey {
+    kind: u8
+    bits: u64
+}
+
+fn bcConstKey(c: BcConst) BcConstKey {
+    return match c {
+        .Num { v } => BcConstKey { kind: 0, bits: f64Bits(v) }
+        .Atom { id } => BcConstKey { kind: 1, bits: id as u64 }
+        .Func { id } => BcConstKey { kind: 2, bits: id as u64 }
+        .Template { id } => BcConstKey { kind: 3, bits: id as u64 }
+        .Offset { v } => BcConstKey { kind: 4, bits: v as u64 }
+        .Hole => BcConstKey { kind: 5, bits: 0 }
+    }
+}
+
+// The pool is cut in slices by the operand width of their indices: 0 to
+// 255 (one byte), 256 to 65535 (Wide), then ExtraWide. A forward jump
+// reserves an entry when it is emitted, in the smallest slice with
+// room, and gets that slice's width; when it is bound, an offset that
+// does not fit takes the reserved entry (it can, its index fits the
+// width) and an offset that fits gives the entry back.
+struct BcSlice {
+    start: u64
+    cap: u64
+    items: List(BcConst)
+    reserved: u64
+
+    fn room(self: *Self, n: u64) bool {
+        return self.items.len() as u64 + self.reserved + n <= self.cap
+    }
+}
+
+pub struct BcPool {
+    slices: [3]BcSlice
+    index: HashMap(BcConstKey, u32)
+
+    pub fn init(alloc: Allocator) BcPool {
+        return BcPool {
+            slices: [3]BcSlice{
+                BcSlice { start: 0, cap: 256, items: List(BcConst).init(alloc), reserved: 0 },
+                BcSlice { start: 256, cap: 65536 - 256, items: List(BcConst).init(alloc), reserved: 0 },
+                BcSlice { start: 65536, cap: 4294967296 - 65536, items: List(BcConst).init(alloc), reserved: 0 },
+            },
+            index: HashMap(BcConstKey, u32).init(alloc),
+        }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for i in 0..3 {
+            self.slices[i].items.deinit()
+        }
+        self.index.deinit()
+    }
+
+    fn sliceWithRoom(self: *Self, n: u64) usize {
+        for i in 0..3 {
+            if self.slices[i].room(n) {
+                return i
+            }
+        }
+        unreachable
+    }
+
+    fn append(self: *mut Self, s: usize, c: BcConst) AllocError!u32 {
+        let k = (self.slices[s].start + self.slices[s].items.len() as u64) as u32
+        try self.slices[s].items.append(c)
+        return k
+    }
+
+    /// The index of `c`, added when it is new (equal constants share an
+    /// entry; numbers are equal by their bits).
+    pub fn insert(self: *mut Self, c: BcConst) AllocError!u32 {
+        let key = bcConstKey(c)
+        if self.index.get(key) |k| {
+            return k
+        }
+        let k = try self.append(self.sliceWithRoom(1), c)
+        try self.index.put(key, k)
+        return k
+    }
+
+    /// Reserves an entry; gives the operand width of its slice.
+    pub fn reserve(self: *mut Self) u8 {
+        let s = self.sliceWithRoom(1)
+        self.slices[s].reserved += 1
+        return bcSliceScale(s)
+    }
+
+    /// Fills an entry reserved with width `scale`.
+    pub fn commitReserved(self: *mut Self, scale: u8, c: BcConst) AllocError!u32 {
+        let s = bcScaleSlice(scale)
+        self.slices[s].reserved -= 1
+        let key = bcConstKey(c)
+        if self.index.get(key) |k| {
+            if bcScaleFor(k as i64, false) <= scale {
+                return k
+            }
+        }
+        let k = try self.append(s, c)
+        if !self.index.contains(key) {
+            try self.index.put(key, k)
+        }
+        return k
+    }
+
+    pub fn discardReserved(self: *mut Self, scale: u8) {
+        self.slices[bcScaleSlice(scale)].reserved -= 1
+    }
+
+    /// `n` consecutive holes for a jump table; gives the first index.
+    pub fn insertJumpTable(self: *mut Self, n: u32) AllocError!u32 {
+        let s = self.sliceWithRoom(n as u64)
+        let k = (self.slices[s].start + self.slices[s].items.len() as u64) as u32
+        for _ in 0..n {
+            try self.slices[s].items.append(BcConst.Hole)
+        }
+        return k
+    }
+
+    pub fn set(self: *mut Self, k: u32, c: BcConst) {
+        let s = bcIndexSlice(k)
+        self.slices[s].items.items()[(k as u64 - self.slices[s].start) as usize] = c
+    }
+
+    pub fn get(self: *Self, k: u32) BcConst {
+        let s = bcIndexSlice(k)
+        return self.slices[s].items.items()[(k as u64 - self.slices[s].start) as usize]
+    }
+
+    pub fn len(self: *Self) u32 {
+        var n: u64 = 0
+        for i in 0..3 {
+            if self.slices[i].items.len() > 0 {
+                n = self.slices[i].start + self.slices[i].items.len() as u64
+            }
+        }
+        return n as u32
+    }
+
+    /// The entries in index order, the unused part of a slice as holes.
+    fn toOwned(self: *Self, alloc: Allocator) AllocError![]mut BcConst {
+        let n = self.len() as usize
+        let out = try alloc.alloc(BcConst.Hole, n)
+        for i in 0..3 {
+            let items = self.slices[i].items.items()
+            for j, c in items {
+                out[self.slices[i].start as usize + j] = c
+            }
+        }
+        return out
+    }
+}
+
+fn bcSliceScale(s: usize) u8 {
+    return match s {
+        0 => 1
+        1 => 2
+        _ => 4
+    }
+}
+
+fn bcScaleSlice(scale: u8) usize {
+    return match scale {
+        1 => 0
+        2 => 1
+        _ => 2
+    }
+}
+
+fn bcIndexSlice(k: u32) usize {
+    if k < 256 {
+        return 0
+    }
+    if k < 65536 {
+        return 1
+    }
+    return 2
+}
+
+// ---- The handler table (V8's `HandlerTableBuilder`)
+
+pub struct BcHandler {
+    // the try range [start, end) of instruction offsets
+    start: u32
+    end: u32
+    // where the handler starts
+    handler: u32
+    // the register that holds the context to restore
+    ctx: i32
+}
+
+/// The innermost handler whose try range holds `pc`. Entries are made
+/// when a `try` is entered, so an inner range comes after its outer one.
+pub fn bcHandlerFor(table: []BcHandler, pc: u32) ?usize {
+    var found: ?usize = null
+    for i, h in table {
+        if pc >= h.start && pc < h.end {
+            found = i
+        }
+    }
+    return found
+}
+
+// ---- The source-position table (V8's `source-position-table.cc`)
+//
+// One entry per instruction that starts a statement or an expression
+// worth reporting: the instruction's offset, a source position (the
+// compiler's choice: an AST node's source offset), and whether it is a
+// statement. Each entry is two variable-length numbers of 7 bits per
+// byte (the high bit says more follow), least significant first: the
+// offset delta shifted left once, with the statement bit, then the
+// position delta zigzag-encoded.
+
+fn bcPutVarint(out: *mut List(u8), value: u64) AllocError!void {
+    var v = value
+    while v > 127 {
+        try out.append(((v & 127) as u8) | 128)
+        v = v >> 7
+    }
+    try out.append(v as u8)
+}
+
+fn bcZigzag(v: i64) u64 {
+    if v >= 0 {
+        return v as u64 * 2
+    }
+    return (-(v + 1)) as u64 * 2 + 1
+}
+
+pub struct BcPosIter {
+    bytes: []u8
+    i: usize
+    // the current entry, after `next` gave true
+    offset: u32
+    pos: i64
+    stmt: bool
+
+    pub fn init(bytes: []u8) BcPosIter {
+        return BcPosIter { bytes: bytes, i: 0, offset: 0, pos: 0, stmt: false }
+    }
+
+    fn varint(self: *mut Self) u64 {
+        var v: u64 = 0
+        var shift: u64 = 0
+        while true {
+            let c = self.bytes[self.i]
+            self.i += 1
+            v = v | (((c & 127) as u64) << shift)
+            shift += 7
+            if c < 128 {
+                break
+            }
+        }
+        return v
+    }
+
+    pub fn next(self: *mut Self) bool {
+        if self.i >= self.bytes.len {
+            return false
+        }
+        let head = self.varint()
+        self.offset += (head >> 1) as u32
+        self.stmt = (head & 1) == 1
+        let z = self.varint()
+        if (z & 1) == 0 {
+            self.pos += (z >> 1) as i64
+        } else {
+            self.pos -= (z >> 1) as i64 + 1
+        }
+        return true
+    }
+}
+
+// ---- BytecodeArray
+
+/// A compiled function: kept beside its `FuncInfo`, not on the JS heap.
+pub struct BytecodeArray {
+    alloc: Allocator
+    code: []mut u8
+    consts: []mut BcConst
+    handlers: []mut BcHandler
+    positions: []mut u8
+    nparams: u32
+    nregs: u32
+    nslots: u32
+
+    pub fn deinit(self: *mut Self) {
+        self.alloc.free(self.code)
+        self.alloc.free(self.consts)
+        self.alloc.free(self.handlers)
+        self.alloc.free(self.positions)
+    }
+
+    /// The target of the jump `insn` (not for `SwitchOnSmi`).
+    pub fn jumpTarget(self: *Self, insn: BcInsn) u32 {
+        if insn.op == BC_JUMP_LOOP {
+            return insn.opAt - insn.ops[0] as u32
+        }
+        if (BC_INFO[insn.op as usize].flags & BC_F_JUMP_CONST) != 0 {
+            return match self.consts[insn.ops[0] as usize] {
+                .Offset { v } => insn.opAt + v
+                _ => unreachable
+            }
+        }
+        return insn.opAt + insn.ops[0] as u32
+    }
+}
+
+// ---- The builder (V8's `BytecodeArrayBuilder` and `BytecodeArrayWriter`)
+
+pub let BC_UNBOUND: u32 = 0xFFFFFFFF
+
+struct BcPending {
+    label: u32
+    // the opcode byte of the jump
+    opAt: u32
+    scale: u8
+}
+
+struct BcTable {
+    start: u32
+    n: u32
+    base: i32
+    // the opcode byte of the `SwitchOnSmi`
+    opAt: u32
+}
+
+pub struct BcBuilder {
+    alloc: Allocator
+    code: List(u8)
+    pool: BcPool
+    // per label: its offset, or BC_UNBOUND
+    labels: List(u32)
+    pending: List(BcPending)
+    tables: List(BcTable)
+    handlers: List(BcHandler)
+    positions: List(u8)
+    lastPosOffset: u32
+    lastPos: i64
+    // a position for the next instruction (-1: none)
+    nextPos: i64
+    nextStmt: bool
+    nparams: u32
+    // registers in use: r0 .. topReg - 1; the most ever used
+    topReg: i32
+    maxReg: i32
+    nslots: u32
+
+    pub fn init(alloc: Allocator, nparams: u32) BcBuilder {
+        return BcBuilder {
+            alloc: alloc,
+            code: List(u8).init(alloc),
+            pool: BcPool.init(alloc),
+            labels: List(u32).init(alloc),
+            pending: List(BcPending).init(alloc),
+            tables: List(BcTable).init(alloc),
+            handlers: List(BcHandler).init(alloc),
+            positions: List(u8).init(alloc),
+            lastPosOffset: 0,
+            lastPos: 0,
+            nextPos: -1,
+            nextStmt: false,
+            nparams: nparams,
+            topReg: 0,
+            maxReg: 0,
+            nslots: 0,
+        }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.code.deinit()
+        self.pool.deinit()
+        self.labels.deinit()
+        self.pending.deinit()
+        self.tables.deinit()
+        self.handlers.deinit()
+        self.positions.deinit()
+    }
+
+    /// The offset of the next instruction.
+    pub fn offset(self: *Self) u32 {
+        return self.code.len() as u32
+    }
+
+    // -- registers (V8's `BytecodeRegisterAllocator`: a stack)
+
+    /// Parameter `i` (0-based) as a register operand.
+    pub fn param(self: *Self, i: u32) i32 {
+        return i as i32 - self.nparams as i32
+    }
+
+    pub fn receiver(self: *Self) i32 {
+        return -(self.nparams as i32) - 1
+    }
+
+    pub fn newReg(self: *mut Self) i32 {
+        return self.newRegs(1)
+    }
+
+    /// `n` consecutive registers; gives the first.
+    pub fn newRegs(self: *mut Self, n: i32) i32 {
+        let r = self.topReg
+        self.topReg += n
+        if self.topReg > self.maxReg {
+            self.maxReg = self.topReg
+        }
+        return r
+    }
+
+    /// Frees the registers from `mark` (a past `newReg` result) up.
+    pub fn releaseRegs(self: *mut Self, mark: i32) {
+        self.topReg = mark
+    }
+
+    pub fn newSlot(self: *mut Self) u32 {
+        self.nslots += 1
+        return self.nslots - 1
+    }
+
+    // -- constants
+
+    pub fn constant(self: *mut Self, c: BcConst) AllocError!u32 {
+        return self.pool.insert(c)
+    }
+
+    pub fn number(self: *mut Self, v: f64) AllocError!u32 {
+        return self.pool.insert(BcConst.Num { v: v })
+    }
+
+    // -- source positions (V8 keeps one pending position for the next
+    // instruction; a statement position is not replaced by an expression's)
+
+    pub fn statementPos(self: *mut Self, pos: i64) {
+        self.nextPos = pos
+        self.nextStmt = true
+    }
+
+    pub fn expressionPos(self: *mut Self, pos: i64) {
+        if self.nextPos >= 0 && self.nextStmt {
+            return
+        }
+        self.nextPos = pos
+        self.nextStmt = false
+    }
+
+    fn flushPos(self: *mut Self) AllocError!void {
+        if self.nextPos < 0 {
+            return
+        }
+        let at = self.offset()
+        let head = ((at - self.lastPosOffset) as u64) * 2 + self.nextStmt as u64
+        try bcPutVarint(&mut self.positions, head)
+        try bcPutVarint(&mut self.positions, bcZigzag(self.nextPos - self.lastPos))
+        self.lastPosOffset = at
+        self.lastPos = self.nextPos
+        self.nextPos = -1
+    }
+
+    // -- emitting
+
+    fn put(self: *mut Self, op: u8, ops: [3]i64, minScale: u8) AllocError!u32 {
+        let info = BC_INFO[op as usize]
+        if (info.flags & BC_F_PREFIX) != 0 {
+            unreachable
+        }
+        var scale = minScale
+        for i in 0..info.nops as usize {
+            let s = bcScaleFor(ops[i], bcSigned(info.ops[i]))
+            if s > scale {
+                scale = s
+            }
+        }
+        try self.flushPos()
+        return bcEncode(&mut self.code, op, ops, scale)
+    }
+
+    /// Emits `op` with its operands (registers as `i32` indices, the
+    /// rest as numbers); the narrowest width that holds them all.
+    pub fn emit(self: *mut Self, op: u8, a: i64, b: i64, c: i64) AllocError!void {
+        let n = BC_INFO[op as usize].nops
+        if (BC_INFO[op as usize].flags & (BC_F_JUMP | BC_F_SWITCH)) != 0 {
+            unreachable
+        }
+        // operands beyond the instruction's count must be 0
+        if (n < 1 && a != 0) || (n < 2 && b != 0) || (n < 3 && c != 0) {
+            unreachable
+        }
+        _ = try self.put(op, [3]i64{a, b, c}, 1)
+    }
+
+    pub fn op0(self: *mut Self, op: u8) AllocError!void {
+        try self.emit(op, 0, 0, 0)
+    }
+
+    pub fn op1(self: *mut Self, op: u8, a: i64) AllocError!void {
+        try self.emit(op, a, 0, 0)
+    }
+
+    pub fn op2(self: *mut Self, op: u8, a: i64, b: i64) AllocError!void {
+        try self.emit(op, a, b, 0)
+    }
+
+    pub fn loadNumber(self: *mut Self, v: f64) AllocError!void {
+        if v >= -2147483648.0 && v <= 2147483647.0 && v == ((v as i64) as f64) && !isNegZero(v) {
+            if v == 0.0 {
+                try self.op0(BC_LDA_ZERO)
+            } else {
+                try self.op1(BC_LDA_SMI, v as i64)
+            }
+            return
+        }
+        try self.op1(BC_LDA_CONSTANT, try self.number(v) as i64)
+    }
+
+    // -- labels and jumps
+
+    pub fn newLabel(self: *mut Self) AllocError!u32 {
+        try self.labels.append(BC_UNBOUND)
+        return (self.labels.len() - 1) as u32
+    }
+
+    /// A forward jump to `label`, bound later. The jump reserves a pool
+    /// entry, which decides its operand width (V8's
+    /// `BytecodeArrayWriter::EmitJump`).
+    pub fn jump(self: *mut Self, op: u8, label: u32) AllocError!void {
+        if !bcIsForwardJump(op) || self.labels.items()[label as usize] != BC_UNBOUND {
+            unreachable
+        }
+        let scale = self.pool.reserve()
+        let opAt = try self.put(op, [3]i64{0, 0, 0}, scale)
+        try self.pending.append(BcPending { label: label, opAt: opAt, scale: scale })
+    }
+
+    /// Binds `label` to the next instruction and patches the jumps to it.
+    pub fn bind(self: *mut Self, label: u32) AllocError!void {
+        if self.labels.items()[label as usize] != BC_UNBOUND {
+            unreachable
+        }
+        let here = self.offset()
+        self.labels.items()[label as usize] = here
+        var i: usize = 0
+        while i < self.pending.len() {
+            let p = self.pending.items()[i]
+            if p.label != label {
+                i += 1
+                continue
+            }
+            _ = self.pending.swapRemove(i)
+            try self.patch(p, here - p.opAt)
+        }
+    }
+
+    fn patch(self: *mut Self, p: BcPending, delta: u32) AllocError!void {
+        let at = p.opAt as usize + 1
+        if bcScaleFor(delta as i64, false) <= p.scale {
+            self.pool.discardReserved(p.scale)
+            bcPut(self.code.items(), at, delta as i64, p.scale)
+            return
+        }
+        let k = try self.pool.commitReserved(p.scale, BcConst.Offset { v: delta })
+        let bytes = self.code.items()
+        bytes[p.opAt as usize] += BC_JUMP_CONST_DELTA
+        bcPut(bytes, at, k as i64, p.scale)
+    }
+
+    /// Binds a new label here for a loop header, for `jumpLoop`.
+    pub fn loopHeader(self: *mut Self) AllocError!u32 {
+        let l = try self.newLabel()
+        try self.bind(l)
+        return l
+    }
+
+    /// `JumpLoop` back to the bound `label`.
+    pub fn jumpLoop(self: *mut Self, label: u32) AllocError!void {
+        let target = self.labels.items()[label as usize]
+        if target == BC_UNBOUND {
+            unreachable
+        }
+        // the offset counts from the opcode, after a prefix if one is needed
+        var delta = (self.offset() - target) as i64
+        if bcScaleFor(delta, false) > 1 {
+            delta += 1
+        }
+        _ = try self.put(BC_JUMP_LOOP, [3]i64{delta, 0, 0}, 1)
+    }
+
+    // -- jump tables (`SwitchOnSmi`)
+
+    /// A table of `n` cases from `base`; gives its id.
+    pub fn newJumpTable(self: *mut Self, n: u32, base: i32) AllocError!u32 {
+        let start = try self.pool.insertJumpTable(n)
+        try self.tables.append(BcTable { start: start, n: n, base: base, opAt: BC_UNBOUND })
+        return (self.tables.len() - 1) as u32
+    }
+
+    pub fn switchOnSmi(self: *mut Self, table: u32) AllocError!void {
+        let t = self.tables.items()[table as usize]
+        let opAt = try self.put(BC_SWITCH_ON_SMI, [3]i64{t.start as i64, t.n as i64, t.base as i64}, 1)
+        self.tables.items()[table as usize].opAt = opAt
+    }
+
+    /// The case `value` of the table jumps here.
+    pub fn bindCase(self: *mut Self, table: u32, value: i32) {
+        let t = self.tables.items()[table as usize]
+        if t.opAt == BC_UNBOUND || value < t.base || value - t.base >= t.n as i32 {
+            unreachable
+        }
+        self.pool.set(t.start + (value - t.base) as u32, BcConst.Offset { v: self.offset() - t.opAt })
+    }
+
+    // -- handlers
+
+    pub fn newHandler(self: *mut Self) AllocError!u32 {
+        try self.handlers.append(BcHandler { start: 0, end: 0, handler: 0, ctx: 0 })
+        return (self.handlers.len() - 1) as u32
+    }
+
+    pub fn tryStart(self: *mut Self, h: u32) {
+        self.handlers.items()[h as usize].start = self.offset()
+    }
+
+    pub fn tryEnd(self: *mut Self, h: u32) {
+        self.handlers.items()[h as usize].end = self.offset()
+    }
+
+    /// The handler of `h` starts here; it restores the context from `ctx`.
+    pub fn handlerHere(self: *mut Self, h: u32, ctx: i32) {
+        self.handlers.items()[h as usize].handler = self.offset()
+        self.handlers.items()[h as usize].ctx = ctx
+    }
+
+    /// The finished function. Every jump must be bound.
+    pub fn finish(self: *mut Self) AllocError!BytecodeArray {
+        if self.pending.len() != 0 {
+            unreachable
+        }
+        let code = try bcCopy(u8, self.alloc, self.code.items(), 0)
+        errdefer self.alloc.free(code)
+        let consts = try self.pool.toOwned(self.alloc)
+        errdefer self.alloc.free(consts)
+        let handlers = try bcCopy(BcHandler, self.alloc, self.handlers.items(), BcHandler { start: 0, end: 0, handler: 0, ctx: 0 })
+        errdefer self.alloc.free(handlers)
+        let positions = try bcCopy(u8, self.alloc, self.positions.items(), 0)
+        return BytecodeArray {
+            alloc: self.alloc,
+            code: code,
+            consts: consts,
+            handlers: handlers,
+            positions: positions,
+            nparams: self.nparams,
+            nregs: self.maxReg as u32,
+            nslots: self.nslots,
+        }
+    }
+}
+
+fn bcCopy(comptime T: type, alloc: Allocator, xs: []T, fill: T) AllocError![]mut T {
+    let out = try alloc.alloc(fill, xs.len)
+    for i, x in xs {
+        out[i] = x
+    }
+    return out
+}
+
+// ---- The disassembler (V8's `BytecodeArray::Disassemble`)
+
+fn bcPad(b: *mut text.Builder, v: i64, width: usize) AllocError!void {
+    var digits: usize = 1
+    var x = v
+    if x < 0 {
+        digits += 1
+        x = -x
+    }
+    while x >= 10 {
+        digits += 1
+        x = x / 10
+    }
+    var i = digits
+    while i < width {
+        try b.appendByte(' ')
+        i += 1
+    }
+    try b.appendInt(v)
+}
+
+fn bcHex(b: *mut text.Builder, v: u8) AllocError!void {
+    let digits = "0123456789abcdef"
+    try b.appendByte(digits[(v >> 4) as usize])
+    try b.appendByte(digits[(v & 15) as usize])
+}
+
+fn bcReg(b: *mut text.Builder, r: i64, nparams: u32) AllocError!void {
+    let np = nparams as i64
+    if r >= 0 {
+        try b.append("r")
+        try b.appendInt(r)
+    } else if r >= -np {
+        try b.append("a")
+        try b.appendInt(np + r)
+    } else if r == -np - 1 {
+        try b.append("<this>")
+    } else {
+        try b.append("r")
+        try b.appendInt(r)
+    }
+}
+
+fn bcConstText(b: *mut text.Builder, c: BcConst, atoms: ?*Atoms) AllocError!void {
+    match c {
+        .Num { v } => try formatNumber(b, v)
+        .Atom { id } => {
+            if atoms |at| {
+                let s = at.name(id)
+                try b.appendByte('"')
+                if s.len > 32 {
+                    try b.append(s[0..29])
+                    try b.append("...")
+                } else {
+                    try b.append(s)
+                }
+                try b.appendByte('"')
+            } else {
+                try b.append("<atom ")
+                try b.appendUint(id as u64)
+                try b.append(">")
+            }
+        }
+        .Func { id } => {
+            try b.append("<function ")
+            try b.appendUint(id as u64)
+            try b.append(">")
+        }
+        .Template { id } => {
+            try b.append("<template ")
+            try b.appendUint(id as u64)
+            try b.append(">")
+        }
+        .Offset { v } => {
+            try b.append("<offset ")
+            try b.appendUint(v as u64)
+            try b.append(">")
+        }
+        .Hole => try b.append("<hole>")
+    }
+}
+
+/// One instruction as V8's `BytecodeDecoder::Decode` prints it, without
+/// the hex bytes: `Add r1, FBV[0]`, `LdaConstant.Wide [300:1.5]`.
+pub fn bcInsnText(b: *mut text.Builder, code: *BytecodeArray, insn: BcInsn, atoms: ?*Atoms) AllocError!void {
+    let info = BC_INFO[insn.op as usize]
+    try b.append(info.name)
+    if insn.scale == 2 {
+        try b.append(".Wide")
+    } else if insn.scale == 4 {
+        try b.append(".ExtraWide")
+    }
+    for i in 0..info.nops as usize {
+        if i == 0 {
+            try b.append(" ")
+        } else {
+            try b.append(", ")
+        }
+        let v = insn.ops[i]
+        match info.ops[i] {
+            .Reg, .RegOut => try bcReg(b, v, code.nparams)
+            .Imm, .UImm => {
+                try b.appendByte('[')
+                try b.appendInt(v)
+                try b.appendByte(']')
+            }
+            .Const => {
+                try b.appendByte('[')
+                try b.appendInt(v)
+                try b.appendByte(':')
+                try bcConstText(b, code.consts[v as usize], atoms)
+                try b.appendByte(']')
+            }
+            .Slot => {
+                try b.append("FBV[")
+                try b.appendInt(v)
+                try b.appendByte(']')
+            }
+            .None => unreachable
+        }
+    }
+    if (info.flags & BC_F_JUMP) != 0 {
+        try b.append(" (@ ")
+        try b.appendUint(code.jumpTarget(insn) as u64)
+        try b.append(")")
+    }
+    if (info.flags & BC_F_SWITCH) != 0 {
+        try b.append(" {")
+        for j in 0..insn.ops[1] as usize {
+            if j > 0 {
+                try b.append(",")
+            }
+            try b.append(" ")
+            try b.appendInt(insn.ops[2] + j as i64)
+            try b.append(": ")
+            match code.consts[insn.ops[0] as usize + j] {
+                .Offset { v } => {
+                    try b.append("@")
+                    try b.appendUint((insn.opAt + v) as u64)
+                }
+                _ => try b.append("<unbound>")
+            }
+        }
+        try b.append(" }")
+    }
+}
+
+/// The disassembly of `code`, one instruction per line: the source
+/// position (`S>` a statement, `E>` an expression), the offset, the
+/// bytes in hex, the instruction; then the constant pool, the handler
+/// table and the size of the source-position table. `atoms` names the
+/// atom constants when given.
+pub fn disassemble(b: *mut text.Builder, code: *BytecodeArray, atoms: ?*Atoms) AllocError!void {
+    try b.append("Parameter count ")
+    try b.appendUint(code.nparams as u64)
+    try b.append("\nRegister count ")
+    try b.appendUint(code.nregs as u64)
+    try b.append("\nFeedback slots ")
+    try b.appendUint(code.nslots as u64)
+    try b.append("\nBytecode length ")
+    try b.appendUint(code.code.len as u64)
+    try b.append("\n")
+    var pos = BcPosIter.init(code.positions)
+    var havePos = pos.next()
+    var at: u32 = 0
+    while (at as usize) < code.code.len {
+        let insn = bcDecode(code.code, at)
+        if havePos && pos.offset == at {
+            try bcPad(b, pos.pos, 5)
+            if pos.stmt {
+                try b.append(" S> ")
+            } else {
+                try b.append(" E> ")
+            }
+            havePos = pos.next()
+        } else {
+            try b.append("         ")
+        }
+        try b.append("@ ")
+        try bcPad(b, at as i64, 4)
+        try b.append(" : ")
+        for i in 0..insn.size {
+            try bcHex(b, code.code[(at + i) as usize])
+            try b.appendByte(' ')
+        }
+        var col = insn.size
+        while col < 5 {
+            try b.append("   ")
+            col += 1
+        }
+        try bcInsnText(b, code, insn, atoms)
+        try b.appendByte('\n')
+        at += insn.size
+    }
+    try b.append("Constant pool (size = ")
+    try b.appendUint(code.consts.len as u64)
+    try b.append(")\n")
+    for i, c in code.consts {
+        try bcPad(b, i as i64, 5)
+        try b.append(": ")
+        try bcConstText(b, c, atoms)
+        try b.appendByte('\n')
+    }
+    try b.append("Handler Table (size = ")
+    try b.appendUint(code.handlers.len as u64)
+    try b.append(")\n")
+    if code.handlers.len > 0 {
+        try b.append("   from   to       hdlr (context)\n")
+        for h in code.handlers {
+            try b.append("  (")
+            try bcPad(b, h.start as i64, 4)
+            try b.append(",")
+            try bcPad(b, h.end as i64, 4)
+            try b.append(")  ->  ")
+            try bcPad(b, h.handler as i64, 4)
+            try b.append(" (")
+            try bcReg(b, h.ctx as i64, code.nparams)
+            try b.append(")\n")
+        }
+    }
+    try b.append("Source Position Table (size = ")
+    try b.appendUint(code.positions.len as u64)
+    try b.append(")\n")
+}
+
+// ---- `dweller js --print-bytecode` (until the compiler, P4.63)
+
+let BC_DEMO_SOURCE =
+    \\function f(a, b) {
+    \\  let s = 0;
+    \\  for (let i = 0; i < a; i++) s += i & b;
+    \\  return s * 1.5;
+    \\}
+
+/// The bytecode of BC_DEMO_SOURCE, assembled by hand as the compiler
+/// will emit it (positions are offsets in the source).
+pub fn bcDemo(alloc: Allocator) AllocError!BytecodeArray {
+    var bb = BcBuilder.init(alloc, 2)
+    defer bb.deinit()
+    let s = bb.newReg()
+    let i = bb.newReg()
+    let a = bb.param(0)
+    let bp = bb.param(1)
+    bb.statementPos(21)
+    try bb.op0(BC_LDA_ZERO)
+    try bb.op1(BC_STAR, s as i64)
+    bb.statementPos(39)
+    try bb.op0(BC_LDA_ZERO)
+    try bb.op1(BC_STAR, i as i64)
+    let head = try bb.loopHeader()
+    let done = try bb.newLabel()
+    bb.expressionPos(50)
+    try bb.op1(BC_LDAR, a as i64)
+    try bb.op2(BC_TEST_LESS_THAN, i as i64, bb.newSlot() as i64)
+    try bb.jump(BC_JUMP_IF_FALSE, done)
+    bb.statementPos(62)
+    try bb.op1(BC_LDAR, bp as i64)
+    try bb.op2(BC_BITWISE_AND, i as i64, bb.newSlot() as i64)
+    try bb.op2(BC_ADD, s as i64, bb.newSlot() as i64)
+    try bb.op1(BC_STAR, s as i64)
+    bb.expressionPos(57)
+    try bb.op1(BC_LDAR, i as i64)
+    try bb.op1(BC_INC, bb.newSlot() as i64)
+    try bb.op1(BC_STAR, i as i64)
+    try bb.jumpLoop(head)
+    try bb.bind(done)
+    bb.statementPos(76)
+    try bb.loadNumber(1.5)
+    try bb.op2(BC_MUL, s as i64, bb.newSlot() as i64)
+    try bb.op0(BC_RETURN)
+    return bb.finish()
+}
+
+/// `dweller js --print-bytecode FILE`: the compiler does not exist yet,
+/// so this prints a hand-assembled function's disassembly.
+pub fn printBytecodeStub(alloc: Allocator, path: []u8) i32 {
+    var code = bcDemo(alloc) catch |e| {
+        std.log.err("out of memory")
+        return 1
+    }
+    defer code.deinit()
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    b.append("// ") catch |e| {
+        return 1
+    }
+    b.append(path) catch |e| {
+        return 1
+    }
+    b.append(": no compiler yet (P4.63); a hand-assembled function:\n") catch |e| {
+        return 1
+    }
+    b.append(BC_DEMO_SOURCE) catch |e| {
+        return 1
+    }
+    b.append("\n[generated bytecode for function: f]\n") catch |e| {
+        return 1
+    }
+    disassemble(&mut b, &code, null) catch |e| {
+        return 1
+    }
+    @print(b.bytes())
+    return 0
+}
