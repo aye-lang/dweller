@@ -4059,7 +4059,6 @@ fn window_login() {
 /// session-only cookie restored too (a browser that restores its
 /// session).
 #[test]
-#[ignore = "P4.50: cookies saved in the profile and restored on restart"]
 fn window_login_cookies() {
     use std::time::{Duration, Instant};
     if !has_sdl() {
@@ -4086,7 +4085,7 @@ fn window_login_cookies() {
             "--height",
             "300",
             "--frames",
-            "100000",
+            "16384",
             "--events",
             SIGN_IN,
         ])
@@ -4106,6 +4105,18 @@ fn window_login_cookies() {
     }
     window.kill().unwrap();
     window.wait().unwrap();
+    // Only the person can read the jar; no temporary file is left.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&jar).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "{}", jar.display());
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["cookies", "lock"]);
     let again = login_window(&account, "frame", Some(&dir));
     assert!(
         again.contains(&format!("url {account}\n"))

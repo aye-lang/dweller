@@ -1,0 +1,177 @@
+// The profile directory (P4.50): what the person's browsing keeps
+// between runs. The window opens `~/.dweller` (DWELLER_PROFILE names
+// another); `dump`, `screenshot`, the agent commands, headless test
+// windows and Spaces open none unless DWELLER_PROFILE is set (a Space
+// never: its jar stays in memory until P9.7). Inside it:
+//
+//     cookies    the cookie jar (cookies.aye's file format, session
+//                cookies too), mode 0600
+//     lock       held (flock) by the process that writes the profile
+//
+// Files are written whole and atomically: into a temporary file next to
+// the target (mode 0600), then renamed over it, so a kill or a crash
+// leaves the old file or the new one, never half of one. A second
+// process on a profile that another holds opens it read-only: it loads
+// what is saved and never writes (its changes end with it).
+
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+extern fn open(path: [*]u8, flags: i32, ...) i32
+extern fn close(fd: i32) i32
+extern fn write(fd: i32, buf: [*]u8, n: usize) isize
+extern fn fsync(fd: i32) i32
+extern fn flock(fd: i32, op: i32) i32
+extern fn mkdir(path: [*]u8, mode: u32) i32
+extern fn rename(from: [*]u8, to: [*]u8) i32
+extern fn unlink(path: [*]u8) i32
+extern fn getpid() i32
+
+let O_WRONLY: i32 = 1
+let O_RDWR: i32 = 2
+let LOCK_EX: i32 = 2
+let LOCK_NB: i32 = 4
+
+// O_CREAT | O_CLOEXEC, and O_TRUNC, which differ between macOS and
+// Linux.
+fn createFlags() i32 {
+    if @targetOs() is .macos {
+        return 0x200 | 0x1000000
+    }
+    return 0x40 | 0x80000
+}
+
+fn truncFlag() i32 {
+    if @targetOs() is .macos {
+        return 0x400
+    }
+    return 0x200
+}
+
+/// `dir` and `name` joined with a slash (free with `alloc.free`).
+pub fn joinPath(alloc: Allocator, dir: []u8, name: []u8) AllocError![]mut u8 {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append(dir)
+    if dir.len > 0 && dir[dir.len - 1] != '/' {
+        try b.appendByte('/')
+    }
+    try b.append(name)
+    let out = try alloc.alloc(0 as u8, b.bytes().len)
+    std.mem.copy(out, b.bytes())
+    return out
+}
+
+// `s` with a NUL after it, for C.
+fn cString(alloc: Allocator, s: []u8) AllocError![]mut u8 {
+    let out = try alloc.alloc(0 as u8, s.len + 1)
+    std.mem.copy(out[..s.len], s)
+    out[s.len] = 0
+    return out
+}
+
+/// Makes the directory `dir` (mode 0700) unless it exists; false when
+/// it cannot be made.
+pub fn makeDir(alloc: Allocator, dir: []u8) AllocError!bool {
+    if std.fs.exists(dir) {
+        return true
+    }
+    let c = try cString(alloc, dir)
+    defer alloc.free(c)
+    return mkdir(c.ptr, 0o700) == 0 || std.fs.exists(dir)
+}
+
+/// Takes the lock of the profile `dir` (`<dir>/lock`, kept until the
+/// process ends); its descriptor, or -1 when another process holds it
+/// or it cannot be made.
+pub fn lockProfile(alloc: Allocator, dir: []u8) AllocError!i32 {
+    let path = try joinPath(alloc, dir, "lock")
+    defer alloc.free(path)
+    let c = try cString(alloc, path)
+    defer alloc.free(c)
+    let fd = open(c.ptr, O_RDWR | createFlags(), 0o600)
+    if fd < 0 {
+        return -1
+    }
+    if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+        close(fd)
+        return -1
+    }
+    return fd
+}
+
+/// Releases a lock of `lockProfile`.
+pub fn unlockProfile(fd: i32) {
+    if fd >= 0 {
+        close(fd)
+    }
+}
+
+/// Replaces the file at `path` with `bytes` atomically (a temporary file
+/// of mode 0600 renamed over it); false when that fails (the old file
+/// is then unchanged).
+pub fn writeAtomic(alloc: Allocator, path: []u8, bytes: []u8) AllocError!bool {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append(path)
+    try b.append(".tmp")
+    try b.appendInt(getpid() as i64)
+    try b.appendByte(0)
+    let tmp = b.bytes()
+    let target = try cString(alloc, path)
+    defer alloc.free(target)
+    let fd = open(tmp.ptr, O_WRONLY | createFlags() | truncFlag(), 0o600)
+    if fd < 0 {
+        return false
+    }
+    var done: usize = 0
+    while done < bytes.len {
+        let n = write(fd, bytes[done..].ptr, bytes.len - done)
+        if n <= 0 {
+            close(fd)
+            unlink(tmp.ptr)
+            return false
+        }
+        done += n as usize
+    }
+    fsync(fd)
+    close(fd)
+    if rename(tmp.ptr, target.ptr) != 0 {
+        unlink(tmp.ptr)
+        return false
+    }
+    return true
+}
+
+test "profile files are written atomically; one process holds the lock" {
+    let alloc = @testAllocator()
+    let dir = "/tmp/dweller-profile-test"
+    std.fs.remove("/tmp/dweller-profile-test/cookies") catch |e| {
+    }
+    std.fs.remove("/tmp/dweller-profile-test/lock") catch |e| {
+    }
+    std.fs.remove(dir) catch |e| {
+    }
+    @expect(try makeDir(alloc, dir))
+    let path = try joinPath(alloc, dir, "cookies")
+    defer alloc.free(path)
+    @expect(try writeAtomic(alloc, path, "one\n"))
+    @expect(try writeAtomic(alloc, path, "two\n"))
+    let got = try std.fs.readFile(alloc, path)
+    defer alloc.free(got)
+    @expectEqual("two\n", got)
+    // No temporary file left.
+    var entries = try std.fs.readDir(alloc, dir)
+    defer entries.deinit()
+    @expectEqual(1, entries.items.len)
+    // A second holder is refused until the first lets go.
+    let first = try lockProfile(alloc, dir)
+    @expect(first >= 0)
+    @expectEqual(-1, try lockProfile(alloc, dir))
+    unlockProfile(first)
+    let again = try lockProfile(alloc, dir)
+    @expect(again >= 0)
+    unlockProfile(again)
+}

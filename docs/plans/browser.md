@@ -156,7 +156,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 14 | P10.5 | 1 | fetch/XHR tests under upstream `wpt serve` (`DWELLER_RESOLVE`) |
 | 15 | P10.6 | 1 | `testdriver.js` subset: clicks and keys through `--events` |
 | 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) (done) |
-| 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart |
+| 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart (done) |
 | 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab |
 | 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) (done) |
 | 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list |
@@ -271,7 +271,7 @@ read from code, for logged-in browsing in the human window:
 
 | Area | Status | Evidence |
 |---|---|---|
-| Cookies persisted and restored | partial | Only when `DWELLER_COOKIE_FILE` is set (`browser/net/session.aye:49-53`, load `:77-83`); no default profile directory (`~/.dweller` is used nowhere); written once in `net.stop()` (`session.aye:84-90`, `main.aye:66-69`), so a kill or crash loses the run's logins; session cookies are never saved (`browser/net/cookies.aye:322-326`). Test: `tests/browser.rs:3572`. |
+| Cookies persisted and restored | yes (P4.50) | Profile directory `~/.dweller` (`DWELLER_PROFILE` overrides; `browser/net/profile.aye`); the jar is written atomically within a second of a change and at exit, session cookies included, expired ones dropped on load; a second process on the profile is read-only. `DWELLER_COOKIE_FILE` still works (persistent cookies only). Test: `window_login_cookies`. |
 | Cookie attributes | partial | Domain/Path/Expires/Max-Age/Secure/HttpOnly, `__Secure-`/`__Host-` checked (`cookies.aye:4-11`, `:124-151`). SameSite ignored (`cookies.aye:8`): no Lax default, every cookie is sent cross-site, no third-party policy; no public suffix list (`:11`, only a bare-TLD check at `:141`). |
 | localStorage / sessionStorage / IndexedDB | no | `localStorage` in memory per process (`browser/engine/window_api.aye:4-5`, `prelude.aye:1580`), "not saved between runs at all" (`docs/browser.md:963`); `sessionStorage` is a per-document `Map` (`prelude.aye:1581-1609`), lost on navigation; no IndexedDB (`docs/browser.md:962`). |
 | Form login and redirects | yes | Redirects followed in `net/http.aye` with each hop's `Set-Cookie` stored (`http.aye:1-6`, `:237`); 303 and 301/302-after-POST become GET (`:253-258`); POST forms (`window_forms`, `tests/browser.rs:1466`); password fields masked (`ui/forms.aye:435`, `layout/controls.aye:284`). No autofill or password manager (not planned). |
@@ -299,6 +299,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/net/session.aye`, `browser/net/cookies.aye`, `browser/main.aye`, `browser/ui/window.aye`, `docs/browser.md`
 - verify: `cargo test --release --test browser window_login_cookies > target/p4.50.log 2>&1; echo $?` → 0 (log in at `/login`, SIGKILL the window, start it on the same profile: `/account` is 200)
 - depends on: P10.20; time box: 60 min; model: sonnet
+- status: done 2026-10-15. `net/profile.aye` (directory, `flock` on `<profile>/lock`, atomic 0600 writes) and `net/session.aye` (`openProfile`, `saveCookiesIfDue` from the window's loop, at most once a second, and at exit). `~/.dweller` for a window that is not headless; `DWELLER_PROFILE` for any command but `dweller space` (Spaces keep a jar in memory until P9.7). Session cookies are saved with expiry `0` and restored; expired ones dropped on load. A second process on a held profile opens it read-only (loads, never writes). `DWELLER_COOKIE_FILE` replaces `<profile>/cookies` with the old behaviour (persistent cookies only). `window_login_cookies` un-ignored (its `--frames 100000` was over the 16384 limit: 16384 now) and checks mode 0600 and no temporary file; unit tests "net: the jar saved and loaded…" and "net: profile files are written atomically…". Documented in `docs/browser.md` (B8, Profile directory).
 
 #### P4.51: localStorage on disk, sessionStorage per tab
 - lane: browser (Layer 0)
