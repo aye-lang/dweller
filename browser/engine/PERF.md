@@ -591,6 +591,35 @@ the loop started; the window shows the page and takes input until then.
 `dump` and `screenshot` keep the synchronous load: Markdown and screenshots
 of the 22 archived sites are byte-identical with the previous binary.
 
+### P4.43: import() and frames in the background, scripts as tasks (2026-10-15)
+
+On the window's clock `import()` loads its module and, a level at a
+time, the modules of its graph on the loader's multi handle (lib.aye
+`loadInBackground`, `graphInBackground`; window_api.aye `moduleLoad`);
+the module evaluates in a networking task once they are in, from the
+session's cache. The page's scripts run as tasks of at most 50 ms an
+iteration (one at least; `stepPageScripts`, `Ui.stepScripts`): the
+window takes input and draws, with the layout from before them, in
+between; its timers wait until they ran. The documents of its frames
+load in the background (`startFrameLoads`) before the load event.
+A classic `<script>` that a script inserts still does not run (P4.45).
+`dump` keeps its synchronous loads: Markdown and screenshots of the 22
+archived sites are byte-identical with main's binary. `window_perf.py
+scroll --frames 600..1200`, fast build, longest loop iteration after
+the first paint, before (e030237) / after:
+
+| Site | before ms | what it did | after ms | what it does |
+|---|---|---|---|---|
+| github.com/aye-lang/aye | 3107 | the page's scripts (474), 2 relayouts (1589), a timer with 33 synchronous `import()`s (887 ms of requests) | 1276, 1291 | 2 relayouts (1080, container queries: P4.44) and timers (660, forced layouts: P4.42); no synchronous request |
+| www.youtube.com | 1715 | all the scripts (1426), the sign-in frame fetched synchronously (152) | 1279 | one script task (`kevlar_base`, 1221) and 57 ms of others |
+| www.youtube.com, apart from that task | 426 | timers | 617, 382 | timers and a relayout fetching the sheets scripts inserted (`net.prefetch`, 224 ms) |
+
+Synchronous requests of more than 5 ms in loop iterations after the
+navigation: GitHub 13 (887 ms) → 0, YouTube 2 (175 ms) → 1 (a frame of
+the sign-in frame, 23 ms). The < 100 ms target is left to P4.44
+(GitHub's relayouts), P4.42 (a time budget for timers) and the
+scripts' later sheets (synchronous `net.prefetch`).
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

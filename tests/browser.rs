@@ -3958,6 +3958,87 @@ fn window_paints_early() {
     );
 }
 
+/// P4.43: twenty import()s whose modules take 200-390 ms, a module whose
+/// twenty imports do the same, and a frame whose document takes 1 s load
+/// in the background: no loop iteration waits for them, each import()
+/// settles with its module, the imports evaluate in their order, and the
+/// load event waits for the frame.
+#[test]
+fn window_dynamic_scripts() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/dynamic_scripts.html", srv.base);
+    let events = format!("{}wheel:-3 frame", "frame ".repeat(40));
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "400",
+            "--events",
+            events.as_str(),
+            "--text",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    // The iterations' times; those that run a page script (making the
+    // realm, CPU work that a debug build makes slow) apart.
+    let mut loops = Vec::new();
+    let mut script_loops = Vec::new();
+    let mut ran_script = false;
+    for line in err.lines() {
+        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
+        assert!(
+            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
+            "stderr has more than timing records:\n{err}"
+        );
+        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
+        match fields[1] {
+            "ui_loop" if ran_script => {
+                script_loops.push(ms);
+                ran_script = false;
+            }
+            "ui_loop" => loops.push(ms),
+            "scripts" => ran_script = true,
+            _ => {}
+        }
+    }
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let longest = loops.iter().copied().max().unwrap_or(0);
+    assert!(
+        loops.len() > 300 && longest < 100,
+        "longest loop {longest} ms of {}",
+        loops.len()
+    );
+    let longest_script = script_loops.iter().copied().max().unwrap_or(0);
+    assert!(
+        longest_script < 1000,
+        "a script's loop took {longest_script} ms"
+    );
+    let got = text(&out.stdout);
+    let graph: Vec<String> = (0..20).map(|i| format!("g={i}")).collect();
+    let want = format!(
+        "imports settled: 20, each with its module: true; graph: root {}; frame loaded: true",
+        graph.join(",")
+    );
+    assert!(got.contains(&want), "{got}");
+}
+
 // ---- P10.20: logged-in browsing (the login fixture of server.py)
 
 /// The `--events` words that type `s` (at most 31 bytes a word).
