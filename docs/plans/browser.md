@@ -86,7 +86,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 | P4 | Load times (W4) | `run --live --repeat 5` medians meet the targets | paused (backlog) |
 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | paused |
 | P6 | Release | manual checklist recorded; final site run; tag | paused |
-| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1 and P9.2 done 2026-10-14, P9.3 done 2026-10-15; P9.4 next |
+| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1 and P9.2 done 2026-10-14, P9.3 and P9.4 done 2026-10-15; P9.5 next |
 
 ## P8 split plan
 
@@ -256,6 +256,7 @@ in order.
 - files: `browser/ui/chrome.aye`, `browser/ui/spaces.aye`, `browser/ui/agents.aye`, `browser/tests/agent/spaces/chips.*`, a golden PNG of the toolbar with two Spaces (as the B4 window PNGs)
 - verify: `cargo test --release --test browser window_spaces > target/p9.4.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- done 2026-10-15: in `browser/ui/chrome.aye` (layout, hit testing), `browser/ui/agents.aye` (drawing, menu, hover) and `browser/ui/spaces.aye`. Choices recorded in `docs/agent-protocol.md` (Spaces, Chips): with `--spaces` the chips replace the `AI` badge, left of the Pause button, which still pauses every Space; the address bar ends before the chips (at least 160 px; long names are cut), so nothing changes height. A click on a chip opens a menu under it, over the page (Pause/Resume and Stop; Close for a done or crashed Space); the click that closes it does nothing else; Escape closes it. A stopped Space's chip goes when its process ends (grey until then). The status line shows a Space's new last action (`NAME: LAST`), what the person did to one (`Alpha paused`), and `NAME (STATE): LAST` while the mouse is over its chip; `--state`'s `status` shows the latter. A Space now sends its `status` before the `paused`/`resumed` event, so the window knows the state before the agent. `--save` draws the last frame again when the last events changed it (Cmd+Q right after events). The `spaces/` goldens drop the `activity` line (its order varies; the `space` lines keep each last action). Fixed on the way: with `--spaces`, the first context sent to the Spaces laid the person's page out again (a new document's refs) while the window kept its display list of the old layout, so the person's page showed garbage glyphs (`syncSlot` now has the window list the shown page again). The card's `spaces/chips.*` session is the Rust test `window_spaces_chips` instead (three agents; a session file has one); its golden PNG is `browser/tests/ui/spaces_chips.png` (Alpha paused, Beta idle under the mouse).
 
 #### P9.5: watching a Space
 - lane: browser

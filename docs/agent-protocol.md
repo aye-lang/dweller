@@ -538,11 +538,26 @@ person's input or the window's frames.
   each request and while it waits, so a pause or a stop counts from
   the agent's next request on; a request that runs goes on. In MCP the
   events are `notifications/message` (level `notice`) whose `data` is
-  the event. Per-Space Pause and Stop buttons come with the chips
-  (P9.4); in tests, the `--events` words `pause:N`, `resume:N` and
-  `stop:N` act on Space N.
-- The activity line and outline do not reach the window from Spaces yet
-  (P9.4); the `AI` badge shows while a connection is open.
+  the event. In tests, the `--events` words `pause:N`, `resume:N` and
+  `stop:N` act on Space N as its chip's menu does.
+- **Chips.** In place of the `AI` badge, the toolbar shows "You" (the
+  person's tabs, shown) and a chip per Space, left of the Pause button:
+  a dot by its state (purple: working or waiting; light purple: idle;
+  amber: paused; grey: done or being stopped; red: crashed) and its name
+  (long names are cut when the chips do not fit beside an address bar
+  160 px wide). The address bar ends before the chips; nothing else
+  moves, and no row is added. With the mouse over a chip the status
+  line reads `NAME (STATE): LAST`. A click on a chip opens its menu
+  under it, over the page: Pause (Resume) and Stop while an agent is
+  attached, Close for a done or crashed Space; a click elsewhere or
+  Escape closes it (that click does nothing else). Neither the chips
+  nor the menu take the focus or touch the person's page. A stopped
+  Space's chip goes when its process ends. Watching a Space from its
+  chip comes in P9.5.
+- **Activity.** A Space's new last action shows in the window's status
+  line after its name (`Alpha: click button "Sign in" [e3]`), and what
+  the person did to a Space after it (`Alpha paused`). The outline of an
+  agent's target shows only where that tab is shown (P9.5).
 - A Space exits when it is stopped or closed, or when the window closes
   or is killed (the end of file on its control connection, a
   socketpair). If a Space crashes, its agent gets

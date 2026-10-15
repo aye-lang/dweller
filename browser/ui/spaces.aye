@@ -772,7 +772,7 @@ fn serviceCtl(ui: *mut Ui, sp: *mut Space) AllocError!void {
         let line = try tmp.alloc(0 as u8, nl)
         std.mem.copy(line, sp.ctl_in.bytes()[..nl])
         try dropFront(ui.alloc, &mut sp.ctl_in, nl + 1)
-        if try fromSpace(sp, tmp, line) {
+        if try fromSpace(ui, sp, tmp, line) {
             changed = true
         }
     }
@@ -785,7 +785,8 @@ fn serviceCtl(ui: *mut Ui, sp: *mut Space) AllocError!void {
 }
 
 // A line of Space `sp`: `status` or `close`. Whether its status changed.
-fn fromSpace(sp: *mut Space, tmp: Allocator, line: []u8) AllocError!bool {
+// A new last action shows in the status line, after the Space's name.
+fn fromSpace(ui: *mut Ui, sp: *mut Space, tmp: Allocator, line: []u8) AllocError!bool {
     var failure = agent.ParseFailure { pos: 0, msg: "" }
     var doc = agent.Json.parse(tmp, line, &mut failure) catch |e| {
         return false
@@ -802,6 +803,13 @@ fn fromSpace(sp: *mut Space, tmp: Allocator, line: []u8) AllocError!bool {
     var changed = try setText(&mut sp.state, doc.getStr(r, "state") orelse "")
     if try setText(&mut sp.last, doc.getStr(r, "last") orelse "") {
         changed = true
+        if sp.last.len() > 0 {
+            let a = ui.agents.?
+            a.activity.clear()
+            try a.activity.append(sp.name.bytes())
+            try a.activity.append(": ")
+            try a.activity.append(sp.last.bytes())
+        }
     }
     if try setText(&mut sp.title, doc.getStr(r, "title") orelse "") {
         changed = true
@@ -1068,10 +1076,21 @@ fn setPaused(ui: *mut Ui, sp: *mut Space, on: bool) AllocError!void {
         return
     }
     sp.paused = on
+    ui.dirty = true
     if on {
+        try spaceActivity(ui, sp, " paused")
         return toSpace(ui, sp, "{\"ctl\":\"pause\"}\n")
     }
+    try spaceActivity(ui, sp, " resumed")
     return toSpace(ui, sp, "{\"ctl\":\"resume\"}\n")
+}
+
+// The status line: what the person did to Space `sp` ("Alpha paused").
+fn spaceActivity(ui: *mut Ui, sp: *mut Space, what: []u8) AllocError!void {
+    let a = ui.agents.?
+    a.activity.clear()
+    try a.activity.append(sp.name.bytes())
+    try a.activity.append(what)
 }
 
 /// Cmd+Shift+P while the person's tabs are shown: every Space.
@@ -1092,6 +1111,8 @@ fn stopSpace(ui: *mut Ui, sp: *mut Space) AllocError!void {
     }
     sp.stopping = true
     sp.stop_at = std.time.monotonicMs()
+    ui.dirty = true
+    try spaceActivity(ui, sp, " stopped")
     if sp.ctl < 0 {
         // A crashed one: it goes from the list.
         if !sp.attached {
@@ -1102,9 +1123,8 @@ fn stopSpace(ui: *mut Ui, sp: *mut Space) AllocError!void {
     return toSpace(ui, sp, "{\"ctl\":\"stop\"}\n")
 }
 
-/// The scripted words `pause:N`, `resume:N` and `stop:N` (Space N; the
-/// person's buttons for one Space come with its chip, P9.4). False when
-/// `word` is none of them.
+/// The scripted words `pause:N`, `resume:N` and `stop:N` (Space N, as
+/// its chip's menu). False when `word` is none of them.
 fn spaceWord(ui: *mut Ui, word: []u8) AllocError!bool {
     let w = spaceWordOf(word) orelse return false
     let a = ui.agents orelse return true
@@ -1371,8 +1391,9 @@ fn fromWindow(ui: *mut Ui, tmp: Allocator, line: []u8) AllocError!void {
         if a.paused {
             name = "paused"
         }
-        try toConns(ui, tmp, name, try spaceField(tmp, me.id))
-        return spaceStatus(ui)
+        // The window learns the state before the agent the event.
+        try spaceStatus(ui)
+        return toConns(ui, tmp, name, try spaceField(tmp, me.id))
     }
     if text.eql(ctl, "stop") {
         try toConns(ui, tmp, "stopped", try spaceField(tmp, me.id))
