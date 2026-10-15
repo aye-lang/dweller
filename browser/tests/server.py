@@ -59,6 +59,19 @@
 #   /held-now?A,B    as /held-now, but once the /held/ requests whose
 #                    queries are A and B are in flight (requests on
 #                    separate connections arrive in any order)
+#   /samesite/...    (GET and POST) the SameSite fixture (P10.21), on the
+#                    hosts 127.0.0.1 and localhost of one port (two
+#                    sites): /set sets strict, lax, dflt (no SameSite)
+#                    and none (SameSite=None without Secure: rejected);
+#                    /show a page "METHOD cookies: ..." of the Cookie
+#                    header; /echo the Cookie header as text/plain;
+#                    /omit-set the same, setting `omitted`; /script.js a
+#                    script showing the cookies it was sent; /go?to=U a
+#                    302 to U; /embed?host=H a page with an iframe of
+#                    H's /log/samesite-frame.html, H's /script.js and fetch() of H's /echo
+#                    with each credentials mode (and XHR with and without
+#                    withCredentials); /nav?method=M&to=U a page whose
+#                    script submits a form to U by M
 import gzip
 import html
 import json
@@ -263,6 +276,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.basic()
         elif path.startswith("/sso/"):
             self.sso()
+        elif path.startswith("/samesite/"):
+            self.samesite("GET")
         elif path == "/meta-charset":
             body = "<meta charset=windows-1252><p>\u201cquoted\u201d caf\u00e9</p>".encode("cp1252")
             self.reply(200, [("Content-Type", "text/html")], body)
@@ -298,6 +313,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.logout()
         elif self.path == "/echo-redirect":
             self.reply(303, [("Location", "/echo?redirected=1")])
+        elif self.path.startswith("/samesite/"):
+            self.samesite("POST")
         elif self.path.startswith("/log/"):
             self.log_request_line("POST", body)
         elif self.path == "/echo" or self.path.startswith("/echo?"):
@@ -467,6 +484,67 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path == "/sso/done":
             cookie = html.escape(self.headers.get("Cookie", ""))
             self.page(200, "SSO", "<p>SSO done on %s, cookies: %s</p>" % (host, cookie))
+        else:
+            self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
+
+    def samesite(self, method):
+        port = self.server.server_address[1]
+        parts = urllib.parse.urlsplit(self.path)
+        query = dict(urllib.parse.parse_qsl(parts.query))
+        cookie = self.headers.get("Cookie", "")
+        text_plain = [("Content-Type", "text/plain"), ("Cache-Control", "no-store")]
+        if parts.path == "/samesite/set":
+            self.reply(200, [
+                ("Content-Type", "text/html"),
+                ("Set-Cookie", "strict=1; Path=/; SameSite=Strict"),
+                ("Set-Cookie", "lax=1; Path=/; SameSite=Lax"),
+                ("Set-Cookie", "dflt=1; Path=/"),
+                ("Set-Cookie", "none=1; Path=/; SameSite=None"),
+            ], b"<p>set</p>")
+        elif parts.path == "/samesite/show":
+            self.page(200, "Show", "<p>%s cookies: %s</p>" % (method, html.escape(cookie)))
+        elif parts.path == "/samesite/echo":
+            self.reply(200, text_plain, cookie.encode())
+        elif parts.path == "/samesite/omit-set":
+            self.reply(200, text_plain + [("Set-Cookie", "omitted=1; Path=/")], cookie.encode())
+        elif parts.path == "/samesite/script.js":
+            body = "document.getElementById('script').textContent = 'script cookies: ' + %s;" % json.dumps(cookie)
+            self.reply(200, [("Content-Type", "text/javascript"), ("Cache-Control", "no-store")], body.encode())
+        elif parts.path == "/samesite/go":
+            self.reply(302, [("Location", query.get("to", "/"))])
+        elif parts.path == "/samesite/embed":
+            other = "http://%s:%d" % (query.get("host", "localhost"), port)
+            doc = (
+                "<iframe src='%s/log/samesite-frame.html'></iframe>"
+                "<p id=script>script: not run</p>"
+                "<p id=omit></p><p id=same></p><p id=include></p><p id=xhr></p><p id=xhrcred></p><p id=after></p>"
+                "<script src='%s/samesite/script.js'></script>"
+                "<script>"
+                "const at = '%s/samesite/';"
+                "const show = (id, t) => { document.getElementById(id).textContent = id + ': ' + t; };"
+                "(async () => {"
+                "  for (const mode of ['omit', 'same-origin', 'include']) {"
+                "    const r = await fetch(at + (mode === 'omit' ? 'omit-set' : 'echo'), { credentials: mode });"
+                "    show(mode === 'same-origin' ? 'same' : mode, await r.text());"
+                "  }"
+                "  for (const cred of [false, true]) {"
+                "    const x = new XMLHttpRequest();"
+                "    x.open('GET', at + 'echo', false);"
+                "    x.withCredentials = cred;"
+                "    x.send();"
+                "    show(cred ? 'xhrcred' : 'xhr', x.responseText);"
+                "  }"
+                "  show('after', await (await fetch(at + 'echo')).text());"
+                "})();"
+                "</script>"
+            ) % (other, other, other)
+            self.page(200, "Embed", doc)
+        elif parts.path == "/samesite/nav":
+            doc = (
+                "<form method=%s action='%s'><input name=x value=1></form>"
+                "<script>document.forms[0].submit()</script>"
+            ) % (html.escape(query.get("method", "get")), html.escape(query.get("to", "/")))
+            self.page(200, "Nav", doc)
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 

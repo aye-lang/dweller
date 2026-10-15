@@ -240,7 +240,7 @@ fn startFrameLoads(p: *mut Page) AllocError!void {
         for i, c in target.href {
             href[i] = c
         }
-        let id = net.startRequest(&target, net.Request { kind: net.Kind.Document, referrer: p.url.href })
+        let id = net.startRequest(&target, net.Request { kind: net.Kind.Document, referrer: p.url.href, top: rootPage(p).url.href })
         if id == 0 {
             p.alloc.free(href)
             return AllocError.OutOfMemory
@@ -328,7 +328,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
                 }
             } else {
                 try net.noteNavigation(target.href, p.url.href)
-                child = try fetchPage(p.alloc, &target, null, p.encoding)
+                child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href)
             }
         } else |e| {
             match e {
@@ -353,6 +353,9 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
 fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     c.parent = p
     c.depth = p.depth + 1
+    // Its subresources are for the top-level page's site (cookies).
+    net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
+    }
     c.no_scripts = p.no_scripts
     c.opaque = p.opaque
     if p.doc.isElement(el, "iframe") {
@@ -528,7 +531,7 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
-            let child = try fetchPage(p.alloc, &target, null, p.encoding)
+            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href)
             if e.state |st| {
                 try child.history.replace(child.url.href, st)
             }
@@ -566,7 +569,7 @@ pub fn slotPage(slot: FrameSlot) *mut Page {
 /// the old document): lay the tab's page out again.
 pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body) AllocError!void {
     let p = slot.parent
-    let child = try fetchPage(p.alloc, target, body, p.encoding)
+    let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href)
     return showInFrame(slot, child, null)
 }
 

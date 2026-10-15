@@ -2140,16 +2140,17 @@ pub let PRELUDE =
     \\  return value.split(',').some(m => ['CONNECT', 'TRACE', 'TRACK'].includes(m.trim().toUpperCase()));
     \\}
     \\// The arguments of ak.fetch for a request with `method`, `headers` (a
-    \\// Headers) and `body` (as extractBody keeps it, or null): the headers
-    \\// but the forbidden ones, and the body as bytes (undefined for none; an
-    \\// empty one for a POST or PUT without one, as Content-Length: 0).
-    \\function fetchArgs(url, method, headers, body) {
+    \\// Headers), `body` (as extractBody keeps it, or null) and `credentials`
+    \\// ('omit', 'same-origin', 'include'): the headers but the forbidden
+    \\// ones, and the body as bytes (undefined for none; an empty one for a
+    \\// POST or PUT without one, as Content-Length: 0).
+    \\function fetchArgs(url, method, headers, body, credentials) {
     \\  const lines = headers._sorted().filter(p => !forbiddenHeader(p[0], p[1])).map(p => p[0] + ': ' + p[1]).join('\n');
     \\  let bytes;
     \\  if (body instanceof FormData) bytes = formDataBytes(body);
     \\  else if (body !== null) bytes = blobBytes([body]);
     \\  else if (method === 'POST' || method === 'PUT') bytes = '';
-    \\  return [url, method, lines, bytes];
+    \\  return [url, method, lines, bytes, credentials];
     \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
@@ -2174,7 +2175,7 @@ pub let PRELUDE =
     \\      ak.clearTimer(task);
     \\      reject(signal.reason);
     \\    };
-    \\    const task = ak.fetchStart(...fetchArgs(req.url, req.method, req.headers, req._body), x => {
+    \\    const task = ak.fetchStart(...fetchArgs(req.url, req.method, req.headers, req._body, req.credentials), x => {
     \\      const r = fetchTaken(x);
     \\      if (done) return;
     \\      done = true;
@@ -2989,7 +2990,7 @@ pub let PRELUDE =
     \\      this._body = body;
     \\    }
     \\    this._sent = true;
-    \\    const args = fetchArgs(this._url, this._method, this._headers, this._body);
+    \\    const args = fetchArgs(this._url, this._method, this._headers, this._body, this.withCredentials ? 'include' : 'same-origin');
     \\    if (!this._async) {
     \\      this._load(ak.fetch(...args));
     \\      return;

@@ -5,7 +5,8 @@
 // responses go into the session's cache, where the fetches that follow,
 // one by one, find them. A load follows redirects; a response that may
 // not be cached (an error status, `no-store`) is kept for one use.
-// Cookies are sent and stored as for any request. The jobs (one transfer
+// Cookies are sent and stored as for any request (a subresource's
+// context: none to or from another site than the page's). The jobs (one transfer
 // each) are the loader's too.
 
 import perf
@@ -116,6 +117,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, re
             no_store: false,
             challenged: false,
             realm: text.Builder.init(alloc),
+            context: Context.SameSite,
         },
         result: -1,
     }) catch |e| {
@@ -124,7 +126,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, re
         at.deinit(alloc)
         return null
     }
-    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, &mut job.sink) catch |e| {
+    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, req.referrer, false, &mut job.sink) catch |e| {
         freeJob(alloc, job)
         return null
     }

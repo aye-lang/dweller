@@ -127,8 +127,8 @@ agent sessions load pages through `engine.load` and keep history in a
   between documents, one joint session history for a tab and its
   frames (a frame's `history.length` counts only its own entries);
   calendar, color and file pickers, `datalist`; rotations and skews
-  other than quarter turns are not drawn; sticky only against the viewport; no public suffix list for
-  cookies (a bare top-level name is refused, `co.uk` is not); no AVIF;
+  other than quarter turns are not drawn; sticky only against the viewport; no CORS (so no
+  `Access-Control-Allow-Credentials` check either); no AVIF;
   page loads are slow on big sites (in progress), and so is the JS
   interpreter (in progress). The list of public sites is in
   [`docs/browser-sites.md`](browser-sites.md), their expected state in
@@ -533,9 +533,10 @@ on (`--no-js` turns it off), `dump` with `--js`.
   - *Net* (`net/session.aye`, `net/cookies.aye`, `net/http.aye`): one
     session per process with one libcurl handle (connections, TLS
     sessions and DNS kept), gzip/deflate/br, a cookie jar (Domain, Path,
-    Expires, Max-Age, Secure, HttpOnly, `__Secure-`/`__Host-`;
-    kept in the profile directory, below; `document.cookie` reads and
-    writes it), a subresource cache,
+    Expires, Max-Age, Secure, HttpOnly, SameSite, `__Secure-`/`__Host-`,
+    the public suffix list; kept in the profile directory, below;
+    `document.cookie` reads and writes it; SameSite and third parties
+    below), a subresource cache,
     redirects followed by hand (each hop stores its cookies), Accept by
     kind, Accept-Language, Referer (strict-origin-when-cross-origin), a
     User-Agent with "Dweller" (also `navigator.userAgent`), 32 MB / 16
@@ -545,6 +546,43 @@ on (`--no-js` turns it off), `dump` with `--js`.
     host). The `<meta charset>` prescan follows WHATWG's (all the labels
     of windows-1252 and UTF-8). Background loads (`net/loader.aye`)
     share one multi handle driven by the main thread between tasks.
+  - *Cookies: SameSite, third parties, credentials* (P10.21,
+    `net/cookies.aye`, `net/psl.aye`): RFC 6265bis, kept simple.
+    `SameSite=Strict|Lax|None` is parsed; a cookie without it (or with
+    an unknown value) is Lax; `None` without `Secure` is rejected. A
+    `Domain` that is a public suffix (`co.uk`, `github.io`, `com`) is
+    rejected unless it is the host itself (then host-only); name and
+    value over 4096 bytes are rejected. The public suffix list is
+    Mozilla's, pinned (`net/psl.txt`: VERSION 2026-10-07_07-28-19_UTC,
+    COMMIT 3929462652695bad04f0a27afb600974014a3c8b, MPL 2.0; both
+    sections, punycode, sorted) and embedded with `@embedFile`; a rule
+    is found by binary search over the bytes. `python3 -I
+    browser/tools/gen_psl.py public_suffix_list.dat` makes the file from
+    a newer list. A site is a host's registrable domain (the host itself
+    when it has none: an IP address, `localhost`); schemes are not
+    compared. Each request (each hop of a redirect) has a context
+    (`contextOf`): a top-level navigation is same-site unless its
+    initiator (the page that navigates; the first URL of the chain when
+    the person typed it) or a hop so far is of another site; then Lax
+    and None cookies go on GET and HEAD, only None ones on a POST.
+    Every other request (a subresource, a frame's document, `fetch`,
+    XHR) is third-party when the top-level page (`Request.top`, else the
+    page of its referrer, else the referrer; frames are noted with
+    `net.noteFrame`) or its initiator is of another site than the URL.
+    **Third-party cookies are blocked** (as in Safari and Firefox's
+    Enhanced Tracking Protection): such a request sends no cookie and
+    its `Set-Cookie` is not stored, whatever the SameSite, and
+    `document.cookie` in a third-party frame reads "" and writes
+    nothing; there are no exceptions yet (no Storage Access API, no
+    per-site allow list). `fetch` honours `credentials` (`same-origin`,
+    the default, sends and stores cookies only for the page's origin on
+    each hop; `omit` never; `include` as any request), XHR sends
+    `include` with `withCredentials` and `same-origin` without. There
+    is no CORS, so `Access-Control-Allow-Credentials` is not checked.
+    Not done: the "Lax+POST" two-minute allowance of Chrome, schemeful
+    same-site, partitioned cookies (CHIPS). Tests: `net_samesite`, unit
+    tests "net: public suffixes...", "net: SameSite, the public suffix
+    list...", "net: cookie contexts...".
   - *Profile directory* (P4.50, `net/profile.aye`, `net/session.aye`):
     the window keeps what lasts between runs in `~/.dweller`;
     `DWELLER_PROFILE=DIR` names another (made with mode 0700 if
@@ -558,7 +596,9 @@ on (`--no-js` turns it off), `dump` with `--js`.
     Each write goes to a temporary file (mode 0600) renamed over
     `cookies`. Format: one cookie per line, tab-separated: domain,
     host-only, path, secure, http-only, expiry (seconds since 1970; `0`
-    for a session cookie), name, value. Session cookies (no Expires or
+    for a session cookie), SameSite (`strict`, `lax`, `none`), name,
+    value; a line without the SameSite field (an older file) loads as
+    Lax. Session cookies (no Expires or
     Max-Age) are saved and restored like a browser that restores its
     session, so a restart or a crash keeps those logins; expired cookies
     are dropped on load. One process writes a profile: it holds `flock`
