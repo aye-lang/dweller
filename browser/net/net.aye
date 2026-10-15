@@ -102,14 +102,43 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     let began = perf.start()
     defer perf.end("requests", began, target.href)
     if try archiveRead(alloc, target, req) |res| {
+        noteFailure(req.kind, res.status, target.href)
         return res
     }
     let res = requestLive(alloc, target, req) catch |e| {
         archiveWrite(alloc, target, req, null, describe(e))
+        if e != FetchError.Unsupported && e != FetchError.OutOfMemory {
+            noteFailure(req.kind, 0, target.href)
+        }
         return e
     }
     archiveWrite(alloc, target, req, &res, "")
+    noteFailure(req.kind, res.status, target.href)
     return res
+}
+
+/// Telemetry: a request for `kind` ended with `status` (0: no response).
+pub fn noteFailure(kind: Kind, status: i64, href: []u8) {
+    if !perf.telemetryOn() || (status > 0 && status < 400) {
+        return
+    }
+    var name: []u8 = "fetch"
+    match kind {
+        .Document => {
+            name = "document"
+        }
+        .Style => {
+            name = "stylesheet"
+        }
+        .Image => {
+            name = "image"
+        }
+        .Script => {
+            name = "script"
+        }
+        .Other => {}
+    }
+    perf.noteLoadFailed(name, status, href)
 }
 
 fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response {

@@ -637,6 +637,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     l.state = LoadState.Failed
     let s = session orelse return
     if result != 0 || job.sink.out_of_memory || job.sink.too_large {
+        noteFailure(l.kind, 0, l.href)
         return
     }
     storeCookies(s, &job.at, &job.sink) catch |e| {
@@ -663,6 +664,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     keepLoad(ld.alloc, s, l, job, status) catch |e| {
         return
     }
+    noteFailure(l.kind, status, l.href)
     l.state = LoadState.Done
 }
 

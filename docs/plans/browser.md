@@ -162,7 +162,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list |
 | 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache |
 | 22 | P10.23 | 1 | sign-in page needs: `autocomplete`, `navigator.credentials` absent without throwing, `Set-Cookie` on fetch/XHR |
-| 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` |
+| 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` (done) |
 | 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
 | 25 | P3.80 | 2 | bundle for the user, once W1–W9 and the cards above hold |
 | 26+ | P10.n | 1 | component cards per area from the baseline's failures (backlog below) |
@@ -344,12 +344,14 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/perf/`, `browser/engine/script.aye`, `browser/css/` (unknown property hook), `browser/engine/prelude.aye` (missing API), `browser/ui/window.aye`, `browser/tools/telemetry.py`, `docs/browser.md`
 - verify: `cargo test --release --test browser telemetry > target/p4.53.log 2>&1; echo $?` → 0: a test-server page triggers a JS throw, an unknown CSS property, a missing API, a slow script, a 404 image and a corrupt image; the day file holds one record of each; a grep for `?`, a path and the page's text finds nothing; `python3 browser/tools/telemetry.py summary --days 1` lists all six
 - time box: 120 min; model: opus
+- status: done 2026-10-15. `perf/telemetry.aye` (no allocation; a fixed buffer written every 5 s, at exit and by the crash handler). Records: the person's window and its Spaces (`DWELLER_TELEMETRY_DIR`, set by the window) and any run with `DWELLER_PROFILE` (`dump` too); headless test windows and `dump` without a profile record nothing, so no golden changed. Off: `DWELLER_TELEMETRY=0` or `telemetry=off` in `<profile>/settings`. Events `crash`, `js_error` (line: the last statement run, via a store per statement in `exec` and a table of parsed sources in the interpreter), `unsupported` (`css_property`, `css_value`, `js_global`, `js_method`), `slow_loop` (phases summed from the `DWELLER_TIMING` ones, which are now timed while telemetry is on), `page`, `scroll`, `load_failed`, `image_decode`; format and privacy rules in `docs/browser.md` "Telemetry". Test `window_telemetry` (also SIGSEGV with the last actions, `DWELLER_TELEMETRY=0`, a test window without a profile under a temporary `HOME`).
 
 ### Layer 0 backlog
 
 Not yet cards. Before one becomes a card, main checks it is still needed
 after the cards above.
 
+- P4.54 macOS crash record: install the telemetry crash handler on macOS so it writes the record and the process exits with 128+sig; today the handler runs but the process stays alive (SDL/Cocoa signal handling suspected); verify: `window_telemetry` SIGSEGV step on macOS (P4.53).
 - P3.64 slice 2: in a container-query document, restyle subtrees when no container's size changed; skip the whole-document `stylesCurrent` hash for attribute writes (details in `PERF.md`).
 - P4.11 partial restyle for DOM mutations incl. shadow roots and `:has()` (P4.10).
 - P4.14 event dispatch and MutationObserver from prelude JS into native Aye (~15% of JS samples) (P1.11).

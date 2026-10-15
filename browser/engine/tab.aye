@@ -2,6 +2,7 @@
 // history (history.aye): the pages it showed, and the entries their
 // scripts added (back and forward).
 
+import perf
 import std
 import std.list.List
 import std.mem.AllocError
@@ -109,6 +110,7 @@ pub struct Tab {
             return false
         }
         self.enter()
+        perf.noteNavigation()
         let p = try load(self.alloc, target)
         errdefer p.destroy()
         try self.push(target, p)
@@ -126,6 +128,7 @@ pub struct Tab {
             return false
         }
         self.enter()
+        perf.noteNavigation()
         let p = try loadParsed(self.alloc, target)
         errdefer p.destroy()
         try self.push(target, p)
@@ -221,6 +224,7 @@ pub struct Tab {
         if step != 0 && try self.inDocument(step) {
             return Moved.InDocument
         }
+        perf.noteNavigation()
         let target = url.parse(self.alloc, self.history.entries.items()[at].href) catch |e| {
             return AllocError.OutOfMemory
         }

@@ -312,9 +312,50 @@ fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.
         return svgImage(alloc, res.body, pic)
     }
     let bmp = image.decode(alloc, res.body) catch |e| {
+        if perf.telemetryOn() {
+            noteUndecodable(res.mime, res.body, e, responseHref)
+        }
         return null
     }
     return bmp
+}
+
+// Telemetry: an image that does not decode, by its format (the
+// signature's, else the response's type) and the decoder's error.
+fn noteUndecodable(mime: []u8, body: []u8, e: image.ImageError, href: []u8) {
+    var format = mime
+    match image.sniff(body) {
+        .Png => {
+            format = "png"
+        }
+        .Gif => {
+            format = "gif"
+        }
+        .Jpeg => {
+            format = "jpeg"
+        }
+        .Webp => {
+            format = "webp"
+        }
+        .Ico => {
+            format = "ico"
+        }
+        .Unknown => {}
+    }
+    if format.len == 0 {
+        format = "unknown"
+    }
+    var err: []u8 = "invalid"
+    match e {
+        .OutOfMemory => {
+            err = "out of memory"
+        }
+        .Unsupported => {
+            err = "unsupported"
+        }
+        .Invalid => {}
+    }
+    perf.noteImageDecode(format, err, href)
 }
 
 // Is the response an SVG image (by its type, or by a start that is

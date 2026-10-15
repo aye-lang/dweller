@@ -193,6 +193,46 @@ pub fn describeException(it: *mut Interp, b: *mut text.Builder) JsError!void {
     return describeThrown(it, b, "Uncaught ")
 }
 
+/// Is the pending exception an Error object (its description is then
+/// "Name: message")?
+pub fn thrownIsError(it: *Interp) bool {
+    if it.classOf(it.exception) |c| {
+        return c == Class.Error
+    }
+    return false
+}
+
+/// Where the statement that ran last is (the one that threw, for an
+/// uncaught exception): the URL of its script (sets `line`, from 1), or
+/// "" when it is not known.
+pub fn lastStatementPlace(it: *Interp, line: *mut u32) []u8 {
+    line.* = 0
+    let id = it.last_stmt
+    if id == 0 || id as usize >= it.ast.spans.len() {
+        return ""
+    }
+    let at = it.ast.spans.items()[id].start
+    let starts = it.chunk_starts.items()
+    var k = starts.len
+    while k > 0 && starts[k - 1] > at {
+        k -= 1
+    }
+    if k == 0 || it.chunk_urls.items()[k - 1] == 0 {
+        return ""
+    }
+    let src = it.ast.source.bytes()
+    var n: u32 = 1
+    var i = starts[k - 1] as usize
+    while i < at as usize && i < src.len {
+        if src[i] == '\n' {
+            n += 1
+        }
+        i += 1
+    }
+    line.* = n
+    return it.heap.atoms.name(it.chunk_urls.items()[k - 1])
+}
+
 /// describeException with another prefix ("Uncaught (in promise) ").
 pub fn describeThrown(it: *mut Interp, b: *mut text.Builder, prefix: []u8) JsError!void {
     let ex = it.exception
