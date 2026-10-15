@@ -4,6 +4,8 @@ pub let CANVAS_PRELUDE =
     \\(function () {
     \\const ak = globalThis.__canvasHost;
     \\delete globalThis.__canvasHost;
+    \\const webgl = globalThis.__webgl;
+    \\delete globalThis.__webgl;
     \\const identity = () => [1, 0, 0, 1, 0, 0];
     \\// Parsed colors by their text; the arrays are only read.
     \\const colors = new Map();
@@ -500,6 +502,7 @@ pub let CANVAS_PRELUDE =
     \\    this._sync();
     \\    image = sourceNode(image);
     \\    if (!image) throw new TypeError('Expected image source');
+    \\    if (contexts.get(image) instanceof webgl.Context) webgl.snapshot(image);
     \\    const a = Array.from(arguments).slice(1).map(Number);
     \\    const iw = image.naturalWidth || image.width, ih = image.naturalHeight || image.height;
     \\    let sx = 0, sy = 0, sw = iw, sh = ih, dx, dy, dw, dh;
@@ -677,16 +680,27 @@ pub let CANVAS_PRELUDE =
     \\// Image state and dimensions are installed by prelude.aye.
     \\const contexts = new WeakMap();
     \\const P = HTMLCanvasElement.prototype;
-    \\P.getContext = function (kind) {
-    \\  if (String(kind) !== '2d') return null;
+    \\// A canvas has one context: another kind gives null. 'webgl' and
+    \\// 'experimental-webgl' (WebGL 1) come with P11.29.
+    \\P.getContext = function (kind, options) {
+    \\  kind = String(kind);
     \\  let ctx = contexts.get(this);
-    \\  if (!ctx) {
-    \\    ctx = new CanvasRenderingContext2D(this);
-    \\    contexts.set(this, ctx);
+    \\  if (kind === '2d') {
+    \\    if (!ctx) {
+    \\      ctx = new CanvasRenderingContext2D(this);
+    \\      contexts.set(this, ctx);
+    \\    }
+    \\    return ctx instanceof CanvasRenderingContext2D ? ctx : null;
     \\  }
-    \\  return ctx;
+    \\  if (kind !== 'webgl2') return null;
+    \\  if (!ctx) {
+    \\    ctx = webgl.create(this, this, options);
+    \\    if (ctx) contexts.set(this, ctx);
+    \\  }
+    \\  return ctx instanceof webgl.Context ? ctx : null;
     \\};
     \\P.toDataURL = function () {
+    \\  if (contexts.get(this) instanceof webgl.Context) return webgl.png(this);
     \\  return ak.canvasPng(this);
     \\};
     \\P.toBlob = function (callback) {

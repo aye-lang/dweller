@@ -1,0 +1,115 @@
+<!doctype html>
+<title>WebGL 2 context</title>
+<canvas id="c" width="64" height="32"></canvas>
+<pre id="out"></pre>
+<script>
+// P11.4 (docs/webgl.md §2, §3): getContext('webgl2'), the attributes,
+// the drawing buffer, clears with scissor and color mask, readPixels,
+// getError and getParameter. Without WebGL getContext gives null.
+const lines = [];
+const log = (...a) => lines.push(a.map(String).join(' '));
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {antialias: false, stencil: true});
+if (!gl) {
+  log('webgl2 null');
+  log('2d after a failed webgl2', canvas.getContext('2d') !== null);
+} else {
+  log('same context', canvas.getContext('webgl2') === gl);
+  log('2d on a webgl2 canvas', canvas.getContext('2d'));
+  log('webgl (P11.29)', document.createElement('canvas').getContext('webgl'));
+  log('instance', gl instanceof WebGL2RenderingContext, Object.prototype.toString.call(gl.canvas));
+  log('constants', gl.COLOR_BUFFER_BIT, WebGL2RenderingContext.RGBA8, gl.CONTEXT_LOST_WEBGL, gl.MAX_CLIENT_WAIT_TIMEOUT_WEBGL);
+  const a = gl.getContextAttributes();
+  log('attributes', Object.keys(a).sort().map(k => k + '=' + a[k]).join(' '));
+  log('drawing buffer', gl.drawingBufferWidth, gl.drawingBufferHeight);
+  log('viewport', Array.from(gl.getParameter(gl.VIEWPORT)), gl.getParameter(gl.VIEWPORT) instanceof Int32Array);
+  log('scissor box', Array.from(gl.getParameter(gl.SCISSOR_BOX)));
+  log('VERSION', gl.getParameter(gl.VERSION));
+  log('SHADING_LANGUAGE_VERSION', gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+  log('VENDOR', gl.getParameter(gl.VENDOR), '/', gl.getParameter(gl.RENDERER));
+  const big = n => gl.getParameter(n) >= 0;
+  log('MAX_TEXTURE_SIZE >= 2048', gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 2048);
+  log('MAX_VERTEX_UNIFORM_VECTORS >= 256', gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) >= 256);
+  log('MAX_FRAGMENT_UNIFORM_VECTORS >= 224', gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 224);
+  log('MAX_SAMPLES >= 4', gl.getParameter(gl.MAX_SAMPLES) >= 4);
+  log('MAX_VIEWPORT_DIMS', gl.getParameter(gl.MAX_VIEWPORT_DIMS) instanceof Int32Array, gl.getParameter(gl.MAX_VIEWPORT_DIMS).length);
+  log('ALIASED_LINE_WIDTH_RANGE', gl.getParameter(gl.ALIASED_LINE_WIDTH_RANGE) instanceof Float32Array);
+  log('bits', gl.getParameter(gl.RED_BITS), gl.getParameter(gl.ALPHA_BITS), gl.getParameter(gl.DEPTH_BITS) >= 16, gl.getParameter(gl.STENCIL_BITS));
+  const p = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  log('highp float', p.rangeMin, p.rangeMax, p.precision);
+  log('error', gl.getError());
+  // The WebGL error rules: the first error is kept until getError.
+  gl.enable(0x0B10);
+  gl.clear(0x10);
+  log('enable(POINT_SMOOTH) then clear(bad)', gl.getError(), gl.getError());
+  gl.viewport(0, 0, -1, 1);
+  log('viewport(-1)', gl.getError());
+  log('getParameter(bad)', gl.getParameter(0x1234), gl.getError());
+  log('getShaderPrecisionFormat(bad)', gl.getShaderPrecisionFormat(0x1234, gl.HIGH_FLOAT), gl.getError());
+  // Clears: blue, a red scissor region, then green through a mask.
+  gl.clearColor(0, 0, 1, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(8, 8, 16, 8);
+  gl.clearColor(1, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.scissor(40, 4, 16, 24);
+  gl.colorMask(false, true, false, true);
+  gl.clearColor(1, 1, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.colorMask(true, true, true, true);
+  log('scissor test', gl.isEnabled(gl.SCISSOR_TEST), gl.getParameter(gl.SCISSOR_TEST));
+  log('color mask', gl.getParameter(gl.COLOR_WRITEMASK).join());
+  log('clear color', Array.from(gl.getParameter(gl.COLOR_CLEAR_VALUE)).join());
+  const px = new Uint8Array(4);
+  const at = (x, y) => { gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return Array.from(px).join(); };
+  log('pixels', at(1, 1), at(10, 10), at(45, 10), at(30, 30));
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, px);
+  log('readPixels(FLOAT into Uint8Array)', gl.getError());
+  gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  log('readPixels(too small)', gl.getError());
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  log('readPixels(null)', gl.getError());
+  // Resizing the canvas resizes and clears the drawing buffer; the
+  // viewport stays.
+  canvas.width = 20;
+  log('resized', gl.drawingBufferWidth, gl.drawingBufferHeight, Array.from(gl.getParameter(gl.VIEWPORT)).join(), at(1, 1));
+  log('error', gl.getError(), gl.isContextLost());
+  // preserveDrawingBuffer false: the frame is presented, then cleared.
+  const d = document.createElement('canvas');
+  d.width = d.height = 4;
+  const g2 = d.getContext('webgl2', {preserveDrawingBuffer: true, alpha: false, depth: false});
+  const a2 = g2.getContextAttributes();
+  log('attributes 2', a2.alpha, a2.depth, a2.stencil, a2.antialias, a2.preserveDrawingBuffer);
+  g2.clearColor(0.5, 0, 0, 0.5);
+  g2.clear(g2.COLOR_BUFFER_BIT);
+  g2.readPixels(0, 0, 1, 1, g2.RGBA, g2.UNSIGNED_BYTE, px);
+  log('alpha false', Array.from(px).join());
+  // drawImage of a WebGL canvas reads its drawing buffer.
+  const two = document.createElement('canvas');
+  two.width = two.height = 4;
+  const c2 = two.getContext('2d');
+  c2.drawImage(d, 0, 0);
+  log('drawImage', Array.from(c2.getImageData(1, 1, 1, 1).data).join());
+  log('toDataURL', d.toDataURL().slice(0, 22));
+  gl.clearColor(0, 1, 0, 1);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  const green = canvas.toDataURL();
+  const g2px = () => (g2.readPixels(0, 0, 1, 1, g2.RGBA, g2.UNSIGNED_BYTE, px), Array.from(px).join());
+  // The callbacks of a frame run before it is presented.
+  requestAnimationFrame(() => {
+    log('in the first frame', at(1, 1), g2px());
+    requestAnimationFrame(() => {
+      log('after a frame', at(1, 1), 'preserved', g2px());
+      const blank = document.createElement('canvas');
+      blank.width = 20;
+      blank.height = 32;
+      blank.getContext('webgl2');
+      log('toDataURL blank after the frame', green !== blank.toDataURL(), canvas.toDataURL() === blank.toDataURL(), gl.getError());
+      document.getElementById('out').textContent = lines.join('\n');
+    });
+  });
+}
+document.getElementById('out').textContent = lines.join('\n');
+</script>

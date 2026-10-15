@@ -628,6 +628,7 @@ fn setUp(s: *mut Script) JsError!void {
     }
     try s.it.runScript(PRELUDE)
     try s.it.runScript(FORM_PRELUDE)
+    try s.it.runScript(WEBGL_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
@@ -1509,6 +1510,19 @@ fn runTimer(s: *mut Script, i: usize) AllocError!void {
     try callReported(s, base + 1, argc)
     it.truncate(base)
     try runMicrotasks(s)
+    // The last animation frame callback of the frame ends it (WebGL).
+    if t.raf && !rafDue(s) {
+        presentCanvases(s.page)
+    }
+}
+
+fn rafDue(s: *mut Script) bool {
+    for t in s.timers.items() {
+        if t.raf && t.due <= s.now {
+            return true
+        }
+    }
+    return false
 }
 
 // The task `t` no longer needs its load (it ran or was cleared).
