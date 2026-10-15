@@ -1,0 +1,340 @@
+// HTTP Basic authentication (RFC 7617) for the process's session. The
+// credentials are kept per origin and realm until the process ends
+// (never written to the profile): those the person gives for a 401
+// (`addCredentials`, the window's sign-in prompt) and those of a URL's
+// userinfo (`http://user:pass@host/`, which libcurl sends) once the
+// server took them, with the realm unknown. A request to the origin
+// whose path is under the directory they were given for sends them at
+// once (RFC 7617 section 2.2); a 401 that names their realm on another
+// path of the origin is asked again with them (`transfer`, not the
+// background loads), and a 401 to the credentials sent drops them. The
+// realm of a page's 401 is kept for the window and the agents
+// (`authRealm`).
+
+import std
+import std.encoding
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+struct Credential {
+    // `scheme://host[:port]`.
+    origin: []mut u8
+    // "" when the realm is unknown (a URL's userinfo).
+    realm: []mut u8
+    // The path prefix that sends them at once, ending with `/`.
+    dir: []mut u8
+    // The base64 of `user:password`.
+    token: []mut u8
+}
+
+// A page's 401 with a Basic challenge.
+struct Challenge {
+    href: []mut u8
+    realm: []mut u8
+}
+
+struct Auth {
+    alloc: Allocator
+    creds: List(Credential)
+    // The last few, newest last.
+    challenges: List(Challenge)
+}
+
+var auth: ?*mut Auth = null
+
+let MAX_CHALLENGES: usize = 8
+
+fn authOf(s: *mut Session) AllocError!*mut Auth {
+    if auth |a| {
+        return a
+    }
+    let a = try s.alloc.create(Auth {
+        alloc: s.alloc,
+        creds: List(Credential).init(s.alloc),
+        challenges: List(Challenge).init(s.alloc),
+    })
+    auth = a
+    return a
+}
+
+// Forgets every credential (the session stops).
+fn stopAuth() {
+    let a = auth orelse return
+    auth = null
+    for c in a.creds.items() {
+        freeCredential(a.alloc, c)
+    }
+    for ch in a.challenges.items() {
+        release(a.alloc, ch.href)
+        release(a.alloc, ch.realm)
+    }
+    a.creds.deinit()
+    a.challenges.deinit()
+    a.alloc.destroy(a)
+}
+
+fn freeCredential(alloc: Allocator, c: Credential) {
+    release(alloc, c.origin)
+    release(alloc, c.realm)
+    release(alloc, c.dir)
+    release(alloc, c.token)
+}
+
+/// The realm of the Basic challenge of the 401 that the page at `href`
+/// got, if it got one.
+pub fn authRealm(href: []u8) ?[]u8 {
+    let a = auth orelse return null
+    let h = withoutHash(href)
+    var i = a.challenges.len()
+    while i > 0 {
+        i -= 1
+        let ch = a.challenges.items()[i]
+        if text.eql(ch.href, h) {
+            return ch.realm
+        }
+    }
+    return null
+}
+
+/// Keeps `user` and `password` for `realm` of the origin of `href` (a
+/// page that got a 401): its requests under the directory of `href`
+/// send them from now on.
+pub fn addCredentials(href: []u8, realm: []u8, user: []u8, password: []u8) AllocError!void {
+    let s = session orelse return
+    let a = try authOf(s)
+    let at = url.parse(a.alloc, href) catch |e| {
+        return
+    }
+    defer at.deinit(a.alloc)
+    let token = try tokenOf(a.alloc, user, password)
+    try keepCredential(a, &at, realm, token)
+}
+
+// The base64 of `user:password` (owned).
+fn tokenOf(alloc: Allocator, user: []u8, password: []u8) AllocError![]mut u8 {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append(user)
+    try b.appendByte(':')
+    try b.append(password)
+    return encoding.base64Encode(alloc, b.bytes())
+}
+
+// Keeps `token` (owned) for `realm` of the origin of `at`, from the
+// directory of its path; it replaces the credentials of that realm (or,
+// for an unknown realm, those of the same directory).
+fn keepCredential(a: *mut Auth, at: *Url, realm: []u8, token: []mut u8) AllocError!void {
+    var origin = text.Builder.init(a.alloc)
+    defer origin.deinit()
+    try originOf(at, &mut origin)
+    let dir = dirOf(at.path)
+    var i: usize = 0
+    while i < a.creds.len() {
+        let c = a.creds.items()[i]
+        let same = text.eql(c.origin, origin.bytes()) && text.eql(c.realm, realm)
+        if same && (realm.len > 0 || text.eql(c.dir, dir)) {
+            freeCredential(a.alloc, a.creds.orderedRemove(i))
+        } else {
+            i += 1
+        }
+    }
+    var c = Credential { origin: []mut u8{}, realm: []mut u8{}, dir: []mut u8{}, token: token }
+    errdefer freeCredential(a.alloc, c)
+    c.origin = try dup(a.alloc, origin.bytes())
+    c.realm = try dup(a.alloc, realm)
+    c.dir = try dup(a.alloc, dir)
+    try a.creds.append(c)
+}
+
+// `scheme://host[:port]` of `at`.
+fn originOf(at: *Url, out: *mut text.Builder) AllocError!void {
+    try out.append(at.scheme)
+    try out.append("://")
+    try out.append(at.host)
+    if at.port.len > 0 {
+        try out.appendByte(':')
+        try out.append(at.port)
+    }
+}
+
+// The directory of `path`: up to its last `/`.
+fn dirOf(path: []u8) []u8 {
+    var i = path.len
+    while i > 0 {
+        if path[i - 1] == '/' {
+            return path[..i]
+        }
+        i -= 1
+    }
+    return "/"
+}
+
+// The index of the credentials that a request to `at` sends at once:
+// the origin's with the longest directory over its path. None for a
+// URL with userinfo (libcurl sends that).
+fn credentialFor(at: *Url) ?usize {
+    let a = auth orelse return null
+    if at.username.len > 0 || at.password.len > 0 {
+        return null
+    }
+    var best: ?usize = null
+    var best_len: usize = 0
+    for i in 0..a.creds.len() {
+        let c = a.creds.items()[i]
+        if !sameOrigin(c.origin, at) || !text.startsWith(at.path, c.dir) {
+            continue
+        }
+        if best == null || c.dir.len > best_len {
+            best = i
+            best_len = c.dir.len
+        }
+    }
+    return best
+}
+
+fn sameOrigin(origin: []u8, at: *Url) bool {
+    var rest = origin
+    if !text.startsWith(rest, at.scheme) {
+        return false
+    }
+    rest = rest[at.scheme.len..]
+    if !text.startsWith(rest, "://") {
+        return false
+    }
+    rest = rest[3..]
+    if !text.startsWith(rest, at.host) {
+        return false
+    }
+    rest = rest[at.host.len..]
+    if at.port.len == 0 {
+        return rest.len == 0
+    }
+    return rest.len == at.port.len + 1 && rest[0] == ':' && text.eql(rest[1..], at.port)
+}
+
+// Appends the `Authorization` header that a request to `at` sends at
+// once, if any.
+fn authHeader(at: *Url, h: *mut text.Builder) AllocError!bool {
+    let i = credentialFor(at) orelse return false
+    let a = auth.?
+    try h.append("Authorization: Basic ")
+    try h.append(a.creds.items()[i].token)
+    return true
+}
+
+// After the response `status` of a request to `at` (whose own headers
+// are `headers`) with the Basic challenge `realm` (when `challenged`):
+// drops credentials the server refused, keeps a URL's userinfo the
+// server took, and remembers a page's challenge. True when the request
+// should be made again with credentials of the realm kept for another
+// directory (made to cover this one), at most once (`retried`).
+fn afterAuth(at: *Url, kind: Kind, headers: []u8, status: i64, challenged: bool, realm: []u8, retried: bool) AllocError!bool {
+    let s = session orelse return false
+    let a = try authOf(s)
+    if kind == Kind.Document {
+        try noteChallenge(a, at.withoutFragment(), challenged && status == 401, realm)
+    }
+    if status != 401 {
+        if (at.username.len > 0 || at.password.len > 0) && status < 400 {
+            let user = try url.percentDecode(a.alloc, at.username)
+            defer a.alloc.free(user)
+            let password = try url.percentDecode(a.alloc, at.password)
+            defer a.alloc.free(password)
+            let token = try tokenOf(a.alloc, user, password)
+            try keepCredential(a, at, "", token)
+        }
+        return false
+    }
+    if !challenged || hasHeader(headers, "authorization") {
+        return false
+    }
+    if credentialFor(at) |sent| {
+        // Refused: the person is asked again.
+        freeCredential(a.alloc, a.creds.orderedRemove(sent))
+        return false
+    }
+    if retried || at.username.len > 0 || at.password.len > 0 {
+        return false
+    }
+    let dir = dirOf(at.path)
+    for i in 0..a.creds.len() {
+        let c = &mut a.creds.items()[i]
+        if sameOrigin(c.origin, at) && realm.len > 0 && text.eql(c.realm, realm) {
+            // RFC 7617 section 2.2: the common prefix of both directories.
+            var n: usize = 0
+            while n < c.dir.len && n < dir.len && c.dir[n] == dir[n] {
+                n += 1
+            }
+            let wider = try dup(a.alloc, dirOf(dir[..n]))
+            release(a.alloc, c.dir)
+            c.dir = wider
+            return true
+        }
+    }
+    return false
+}
+
+// Remembers (or, when not `challenged`, forgets) the challenge `realm`
+// of the page at `href`.
+fn noteChallenge(a: *mut Auth, href: []u8, challenged: bool, realm: []u8) AllocError!void {
+    var i: usize = 0
+    while i < a.challenges.len() {
+        if text.eql(a.challenges.items()[i].href, href) || (challenged && i == 0 && a.challenges.len() >= MAX_CHALLENGES) {
+            let ch = a.challenges.orderedRemove(i)
+            release(a.alloc, ch.href)
+            release(a.alloc, ch.realm)
+        } else {
+            i += 1
+        }
+    }
+    if !challenged {
+        return
+    }
+    let h = try dup(a.alloc, href)
+    let r = dup(a.alloc, realm) catch |e| {
+        release(a.alloc, h)
+        return e
+    }
+    a.challenges.append(Challenge { href: h, realm: r }) catch |e| {
+        release(a.alloc, h)
+        release(a.alloc, r)
+        return e
+    }
+}
+
+// The realm of a `WWW-Authenticate` value of the Basic scheme, into
+// `out`; false for another scheme. Only the first challenge counts.
+fn basicRealm(value: []u8, out: *mut text.Builder) AllocError!bool {
+    if value.len < 5 || !text.eqlIgnoreCase(value[..5], "basic") || (value.len > 5 && value[5] != ' ' && value[5] != '\t') {
+        return false
+    }
+    out.clear()
+    var i: usize = 5
+    while i + 6 <= value.len {
+        if text.eqlIgnoreCase(value[i..i + 6], "realm=") && (value[i - 1] == ' ' || value[i - 1] == ',' || value[i - 1] == '\t') {
+            i += 6
+            if i < value.len && value[i] == '"' {
+                i += 1
+                while i < value.len && value[i] != '"' {
+                    if value[i] == '\\' && i + 1 < value.len {
+                        i += 1
+                    }
+                    try out.appendByte(value[i])
+                    i += 1
+                }
+            } else {
+                while i < value.len && value[i] != ',' && value[i] != ' ' {
+                    try out.appendByte(value[i])
+                    i += 1
+                }
+            }
+            return true
+        }
+        i += 1
+    }
+    return true
+}

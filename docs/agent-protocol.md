@@ -228,6 +228,21 @@ Scripts in a session (`todo.jsonl` in `browser/tests/agent/sessions/`):
 {"id":9,"ok":true,"result":"2",...}
 ```
 
+A page that answers 401 with `WWW-Authenticate: Basic` is shown like any
+other (`"result":"loaded URL (status 401)"`), and the response of the
+action that showed it has `auth_required`: `{"scheme":"Basic","realm":"..."}`
+(for MCP, a line `Authentication required: Basic, realm "..."` after
+`URL:` and `Title:`). An agent never gets the window's sign-in prompt:
+it navigates again with the credentials in the URL
+(`http://user:password@host/path`), and the process then sends them to
+that origin's paths under the same directory without userinfo:
+
+```
+{"id":1,"cmd":"navigate","url":"http://127.0.0.1:8000/basic"}
+{"id":1,"ok":true,"result":"loaded http://127.0.0.1:8000/basic (status 401)","url":"http://127.0.0.1:8000/basic","title":"Unauthorized","auth_required":{"scheme":"Basic","realm":"r"},"snapshot":"..."}
+{"id":2,"cmd":"navigate","url":"http://alice:wonderland@127.0.0.1:8000/basic"}
+```
+
 After an action, a response has `snapshot` when a new document is shown
 (a link followed), else `diff` when the snapshot changed: the changed
 lines, removed ones as `- old line` and added ones as `+ new line`:

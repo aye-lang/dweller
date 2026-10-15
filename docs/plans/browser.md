@@ -164,7 +164,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab (done) |
 | 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) (done) |
 | 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list |
-| 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache |
+| 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache (done) |
 | 22 | P10.23 | 1 | sign-in page needs: `autocomplete`, `navigator.credentials` absent without throwing, `Set-Cookie` on fetch/XHR |
 | 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` (done) |
 | 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
@@ -303,7 +303,7 @@ read from code, for logged-in browsing in the human window:
 | localStorage / sessionStorage / IndexedDB | yes (P4.51), no IndexedDB | `localStorage` per origin in `<profile>/storage/` (`browser/engine/storage.aye`), loaded on first use, saved like the jar, 5 MB per origin, `storage` events to the origin's other pages; `sessionStorage` per tab and origin across navigations, copied to a popup with an opener. Test: `window_login_storage`. No IndexedDB. |
 | Form login and redirects | yes | Redirects followed in `net/http.aye` with each hop's `Set-Cookie` stored (`http.aye:1-6`, `:237`); 303 and 301/302-after-POST become GET (`:253-258`); POST forms (`window_forms`, `tests/browser.rs:1466`); password fields masked (`ui/forms.aye:435`, `layout/controls.aye:284`). No autofill or password manager (not planned). |
 | OAuth/SSO popups | yes (P4.52) | `window.open`, `target=_blank`, `opener`, `close()`, `closed` and `postMessage` between tabs (`engine/contexts.aye`); test `window_login_popup`. Popup blocking not done. Cross-domain redirect chains work (cookies per hop). |
-| HTTP Basic auth | no | No 401 handling, no `Authorization` or URL userinfo support in `net/*.aye`. |
+| HTTP Basic auth | yes (P10.22) | A 401 Basic challenge opens a sign-in sheet in the person's window (`ui/auth.aye`); credentials per origin and realm for the process, sent at once under their directory (`net/auth.aye`); URL userinfo works and is cached; agents get `auth_required`. Tests: `window_login_basic`, `window_login_basic_prompt`, `window_login_basic_cancel`, `net_basic_auth`. No Digest. |
 | CSRF tokens, 2FA code pages | yes | Plain forms and scripts; nothing special once cookies and forms work. |
 | WebAuthn / passkeys | no; out of scope for now | No `navigator.credentials` anywhere. The user can log in with password and a 2FA code. Unknown whether any of their sites force passkeys; if one does, their report makes it a card. |
 | fetch/XHR `credentials` | partial | Parsed (`prelude.aye:1983`) but not passed to `ak.fetch` (`prelude.aye:2131-2152`): cookies always sent, `omit` ignored. No CORS enforcement (a compatibility gain, not a login blocker). |
@@ -357,6 +357,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/net/http.aye`, `browser/net/session.aye`, `browser/ui/chrome.aye`, `browser/ui/window.aye`
 - verify: `cargo test --release --test browser window_login_basic > target/p10.22.log 2>&1; echo $?` → 0 (`/basic` is 200 after the credentials; wrong ones show the sheet again)
 - depends on: P10.20; time box: 60 min; model: sonnet
+- status: done 2026-10-15. `net/auth.aye`: the credentials per origin and realm for the process (never written to the profile), sent at once (`Authorization: Basic`, unless the request has its own) to the origin's paths under the directory they were given for; a document 401 naming a kept realm on another path is asked again once with them, widening the directory to the common prefix (RFC 7617 2.2); a 401 to credentials sent drops them; URL userinfo that the server took is kept with the realm unknown (`window_login_basic` passes). `ui/auth.aye` and `ui/chrome.aye drawSheet`: the sign-in sheet under the toolbar for the person's navigations (not in a Space, not for agent tabs, not in `dump`): Username, Password masked, Cancel, Sign in; the focus stays in it; Enter signs in (reload of the entry), Escape or Cancel leaves the 401 page; a wrong password asks again, the username kept. The address bar leaves URL userinfo out. Agents: the response of an action that shows a Basic 401 page has `auth_required` (`{"scheme":"Basic","realm":...}`; MCP: a line), documented in `docs/agent-protocol.md`. Tests `window_login_basic_prompt` (sign in, wrong password, the focus held; golden `browser/tests/ui/auth_prompt.png`), `window_login_basic_cancel` (Escape, Cancel, Sign in by click, address without userinfo), `net_basic_auth` (agent `auth_required`, userinfo, the cache; `dump` shows the 401 page). Not done: Digest, proxy authentication, the prompt for frames and for subresources (cached credentials only).
 
 #### P10.23: sign-in page details
 - lane: browser (Layer 1, forms and JS)

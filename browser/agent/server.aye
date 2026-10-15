@@ -16,6 +16,7 @@
 
 import engine
 import html
+import net
 import std
 import std.heap.Arena
 import std.mem.AllocError
@@ -515,6 +516,15 @@ fn outcomeFields(s: *mut Session, tmp: Allocator, o: Outcome, w: *mut Writer) !v
     try w.string(o.message)
     try pageFields(s, tmp, w)
     if o.navigated {
+        if authRequired(s) |realm| {
+            try w.key("auth_required")
+            try w.beginObject()
+            try w.key("scheme")
+            try w.string("Basic")
+            try w.key("realm")
+            try w.string(realm)
+            try w.endObject()
+        }
         try w.key("snapshot")
         try w.string(try snapshotText(s, tmp, false))
     } else if o.diff.len > 0 {
@@ -825,6 +835,11 @@ fn callTool(s: *mut Session, tmp: Allocator, doc: *mut Json, cmd: []u8, args: ?u
     if o.navigated {
         try out.append("\n\n")
         try pageHeader(s, tmp, out)
+        if authRequired(s) |realm| {
+            try out.append("Authentication required: Basic, realm \"")
+            try out.append(realm)
+            try out.append("\" (navigate to the URL with user:password@ to sign in)\n")
+        }
         try out.append("\n")
         try out.append(try snapshotText(s, tmp, false))
     } else if o.diff.len > 0 {
@@ -832,6 +847,17 @@ fn callTool(s: *mut Session, tmp: Allocator, doc: *mut Json, cmd: []u8, args: ?u
         try out.append(o.diff)
     }
     return true
+}
+
+// The realm of the Basic challenge of the page shown, when it is a
+// 401 that asks for credentials (net/auth.aye): an agent never gets the
+// window's sign-in prompt, it retries with the URL's userinfo.
+fn authRequired(s: *mut Session) ?[]u8 {
+    let p = s.tab.page orelse return null
+    if p.status != 401 {
+        return null
+    }
+    return net.authRealm(p.url.href)
 }
 
 fn pageHeader(s: *mut Session, tmp: Allocator, out: *mut text.Builder) AllocError!void {

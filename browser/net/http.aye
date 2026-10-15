@@ -6,7 +6,8 @@
 // POST continue with a GET without the body and its Content-Type (307
 // and 308 keep the method and body). Every request sends a browser-like
 // User-Agent, an Accept header for its kind, Accept-Language, the
-// Referer (see `referrerOf`), the cookies of the jar and the request's
+// Referer (see `referrerOf`), the cookies of the jar, the Basic
+// credentials kept for it (auth.aye) and the request's
 // own headers (`Request.headers`); libcurl decodes
 // every content encoding it knows (gzip, deflate, br...). A connect
 // timeout of 10 s, a total timeout of 30 s, and at most 32 MB for a
@@ -81,6 +82,9 @@ struct Sink {
     cookies: text.Builder
     // `Cache-Control: no-store`.
     no_store: bool
+    // A `WWW-Authenticate` challenge of the Basic scheme, and its realm.
+    challenged: bool
+    realm: text.Builder
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -111,6 +115,7 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
         // A new response (after a 100 Continue): forget the last one's.
         sink.cookies.clear()
         sink.no_store = false
+        sink.challenged = false
         return total
     }
     let colon = std.mem.indexOf(line, ':') orelse return total
@@ -127,6 +132,11 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
         }
     } else if text.eqlIgnoreCase(name, "cache-control") && containsIgnoreCase(value, "no-store") {
         sink.no_store = true
+    } else if text.eqlIgnoreCase(name, "www-authenticate") && !sink.challenged {
+        sink.challenged = basicRealm(value, &mut sink.realm) catch |e| {
+            sink.out_of_memory = true
+            return 0
+        }
     }
     return total
 }
@@ -188,9 +198,12 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         too_large: false,
         cookies: text.Builder.init(alloc),
         no_store: false,
+        challenged: false,
+        realm: text.Builder.init(alloc),
     }
     defer sink.body.deinit()
     defer sink.cookies.deinit()
+    defer sink.realm.deinit()
     // The URL of the request; libcurl wants it NUL-terminated, without
     // the fragment.
     var here = text.Builder.init(alloc)
@@ -210,6 +223,8 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
     try method.appendByte(0)
     var hops: i64 = 0
     var status: i64 = 0
+    // Asked again with the credentials of the challenge's realm.
+    var retried = false
     while true {
         var at = url.parse(alloc, here.bytes()) catch |e| {
             return FetchError.Invalid
@@ -218,6 +233,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         sink.body.clear()
         sink.cookies.clear()
         sink.no_store = false
+        sink.challenged = false
         curl_easy_reset(curl)
         try here.appendByte(0)
         var headers: ?*mut CurlList = null
@@ -235,6 +251,12 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         }
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &mut status)
         try storeCookies(s, &at, &sink)
+        if s != null && try afterAuth(&at, req.kind, req.headers, status, sink.challenged, sink.realm.bytes(), retried) {
+            retried = true
+            here.clear()
+            try here.append(at.withoutFragment())
+            continue
+        }
         var location: ?[*]u8 = null
         curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &mut location)
         let next = location orelse break
@@ -361,6 +383,10 @@ fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*m
     let before = h.len()
     try referrerOf(alloc, req.referrer, at, &mut h)
     if h.len() > before {
+        list = try addHeader(list, &mut h)
+    }
+    h.clear()
+    if s != null && !hasHeader(req.headers, "authorization") && try authHeader(at, &mut h) {
         list = try addHeader(list, &mut h)
     }
     h.clear()

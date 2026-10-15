@@ -114,6 +114,8 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, re
             too_large: false,
             cookies: text.Builder.init(alloc),
             no_store: false,
+            challenged: false,
+            realm: text.Builder.init(alloc),
         },
         result: -1,
     }) catch |e| {
@@ -143,6 +145,7 @@ fn freeJob(alloc: Allocator, job: *mut Job) {
     curl_slist_free_all(job.headers)
     job.sink.body.deinit()
     job.sink.cookies.deinit()
+    job.sink.realm.deinit()
     alloc.free(job.address)
     job.at.deinit(alloc)
     alloc.destroy(job)
