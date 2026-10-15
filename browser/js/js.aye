@@ -47,6 +47,55 @@ pub fn runFile(alloc: Allocator, path: []u8) i32 {
     return runOnBigStackAt(alloc, src, target.href, text.endsWith(path, ".mjs"))
 }
 
+/// `dweller js --print-scopes FILE`: writes the scope tree of the script
+/// (or `.mjs` module) with each binding's home in the bytecode VM
+/// (resolve.printScopes) and runs nothing. A syntax error gives status 1.
+pub fn printScopesFile(alloc: Allocator, path: []u8) i32 {
+    let src = std.fs.readFile(alloc, path) catch |e| {
+        std.log.err("cannot read {}", path)
+        return 1
+    }
+    defer alloc.free(src)
+    let module = text.endsWith(path, ".mjs")
+    var it = Interp.create(alloc) catch |e| {
+        std.log.err("out of memory")
+        return 1
+    }
+    defer it.deinit()
+    installBuiltins(&mut it) catch |e| {
+        std.log.err("out of memory")
+        return 1
+    }
+    var info = ModuleInfo.init(alloc)
+    defer info.deinit()
+    var mi: ?*mut ModuleInfo = null
+    if module {
+        mi = &mut info
+    }
+    let root = it.parseCode(src, module, 0, mi) catch |e| {
+        return uncaughtStatus(&mut it, e)
+    }
+    var scope: u32 = 0
+    if module {
+        scope = it.ast.func(root).scope
+    } else {
+        match it.ast.node(root) {
+            .Block { scope: sc, .. } => {
+                scope = sc
+            }
+            _ => {}
+        }
+    }
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    printScopes(&mut it.ast, &mut it.heap.atoms, scope, &mut b) catch |e| {
+        std.log.err("out of memory")
+        return 1
+    }
+    std.fs.stdout().write(b.bytes()) catch |e| {}
+    return 0
+}
+
 // The interpreter recurses on the C stack (several KB per JS call in
 // debug builds), so scripts run on a thread with a large stack.
 let STACK_BYTES: usize = 1 << 30
