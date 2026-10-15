@@ -23,6 +23,7 @@ import css
 import css.Value
 import image
 import layout
+import std
 import std.list.List
 import std.math
 import std.mem.AllocError
@@ -739,8 +740,12 @@ fn shadows(b: *mut Builder, d: *Deco, inset: bool) AllocError!void {
     }
 }
 
-/// Draws a shadow (an `Item.Shadow`) onto `canvas` with view `v`.
-fn drawShadow(canvas: *mut Canvas, v: View, r: Rect, radii: Radii, dx: f64, dy: f64, blur: f64, spread: f64, c: Rgba, inset: bool) AllocError!void {
+/// Draws a shadow (an `Item.Shadow`) onto `canvas` with view `v`. With
+/// `local` (the window's `renderWith`) its coverage is rasterized from
+/// whole pixels of its own (so that where it falls on the canvas does
+/// not change it) over the whole shadow when that is at most
+/// `CACHE_MAX_PX`, and kept in `cache`.
+fn drawShadow(canvas: *mut Canvas, v: View, r: Rect, radii: Radii, dx: f64, dy: f64, blur: f64, spread: f64, c: Rgba, inset: bool, local: bool, cache: ?*mut RasterCache) AllocError!void {
     let k = v.scale
     let sigma = blur / 2.0 * k
     let reach = math.ceil(sigma * 3.0)
@@ -770,6 +775,34 @@ fn drawShadow(canvas: *mut Canvas, v: View, r: Rect, radii: Radii, dx: f64, dy: 
         x1 = math.ceil(bx + bw) as i64
         y1 = math.ceil(by + bh) as i64
     }
+    let g = ShadowGeom { sx: sx, sy: sy, sw: sw, sh: sh, bx: bx, by: by, bw: bw, bh: bh, radii: radii, spread: spread, k: k, sigma: sigma, inset: inset, local: local }
+    if local && x1 > x0 && y1 > y0 && (x1 - x0) * (y1 - y0) <= CACHE_MAX_PX {
+        let w = (x1 - x0) as usize
+        let h = (y1 - y0) as usize
+        if cache |rc| {
+            var hr: u64 = 0x5851f42d4c957f2d
+            if inset {
+                hr = 0x14057b7ef767814f
+            }
+            let fx = math.floor(sx)
+            let fy = math.floor(sy)
+            let gx = math.floor(bx)
+            let gy = math.floor(by)
+            let vs = [17]f64{k, spread, sigma, sx - fx, sy - fy, fx - x0 as f64, fy - y0 as f64, sw, sh, bx - gx, by - gy, gx - x0 as f64, gy - y0 as f64, bw, bh, w as f64, h as f64}
+            let key = cacheKey(hradii(hr, radii), vs[..])
+            if rc.find(key, w * h) |kept| {
+                canvas.blitMask(x0, y0, w, h, kept, w, c)
+                return
+            }
+            let shape = try shadowMask(rc.alloc, x0, y0, w, h, g)
+            canvas.blitMask(x0, y0, w, h, shape, w, c)
+            return rc.store(key, shape)
+        }
+        let shape = try shadowMask(canvas.alloc, x0, y0, w, h, g)
+        defer canvas.alloc.free(shape)
+        canvas.blitMask(x0, y0, w, h, shape, w, c)
+        return
+    }
     // What can show: the clip, with room for the blur.
     let room = reach as i64
     x0 = math.maxOf(i64, x0, canvas.clip.x0 - room)
@@ -781,50 +814,122 @@ fn drawShadow(canvas: *mut Canvas, v: View, r: Rect, radii: Radii, dx: f64, dy: 
     }
     let w = (x1 - x0) as usize
     let h = (y1 - y0) as usize
-    let shape = try coverage(canvas.alloc, x0, y0, w, h, sx, sy, sw, sh, scaledRadii(spreadRadii(radii, spread), k))
+    let shape = try shadowMask(canvas.alloc, x0, y0, w, h, g)
     defer canvas.alloc.free(shape)
-    if inset {
+    canvas.blitMask(x0, y0, w, h, shape, w, c)
+}
+
+// A shadow in device px: the shape blurred by `sigma` (`sx`, `sy`, `sw`,
+// `sh`), only outside the box (`bx`, `by`, `bw`, `bh`; inside it, for an
+// inset one); with `local`, each rasterized from the whole pixel at its
+// corner.
+struct ShadowGeom {
+    sx: f64
+    sy: f64
+    sw: f64
+    sh: f64
+    bx: f64
+    by: f64
+    bw: f64
+    bh: f64
+    radii: Radii
+    spread: f64
+    k: f64
+    sigma: f64
+    inset: bool
+    local: bool
+}
+
+// The coverage of the shadow `g` over the pixels `x0..x0 + w`,
+// `y0..y0 + h`.
+fn shadowMask(alloc: Allocator, x0: i64, y0: i64, w: usize, h: usize, g: ShadowGeom) AllocError![]mut u8 {
+    let shape = try coverageFrom(alloc, x0, y0, w, h, g.sx, g.sy, g.sw, g.sh, scaledRadii(spreadRadii(g.radii, g.spread), g.k), g.local)
+    errdefer alloc.free(shape)
+    if g.inset {
         for i in 0..shape.len {
             shape[i] = 255 - shape[i]
         }
     }
-    if sigma > 0.5 {
-        try boxBlur3(canvas.alloc, shape, w, h, sigma)
+    if g.sigma > 0.5 {
+        try boxBlur3(alloc, shape, w, h, g.sigma)
     }
     // Only outside the box (inside it, for an inset one).
-    let box = try coverage(canvas.alloc, x0, y0, w, h, bx, by, bw, bh, scaledRadii(radii, k))
-    defer canvas.alloc.free(box)
+    let box = try coverageFrom(alloc, x0, y0, w, h, g.bx, g.by, g.bw, g.bh, scaledRadii(g.radii, g.k), g.local)
+    defer alloc.free(box)
     for i in 0..shape.len {
         var keep = box[i] as u32
-        if !inset {
+        if !g.inset {
             keep = 255 - keep
         }
         shape[i] = ((shape[i] as u32 * keep + 127) / 255) as u8
     }
-    canvas.blitMask(x0, y0, w, h, shape, w, c)
+    return shape
+}
+
+// `coverage`; with `local`, rasterized from the whole pixel at the box's
+// corner, so that the coverage of a box moved by whole pixels moves
+// with it.
+fn coverageFrom(alloc: Allocator, x0: i64, y0: i64, pw: usize, ph: usize, x: f64, y: f64, w: f64, h: f64, radii: Radii, local: bool) AllocError![]mut u8 {
+    if !local {
+        return coverage(alloc, x0, y0, pw, ph, x, y, w, h, radii)
+    }
+    let fx = math.floor(x)
+    let fy = math.floor(y)
+    return coverage(alloc, x0 - fx as i64, y0 - fy as i64, pw, ph, x - fx, y - fy, w, h, radii)
 }
 
 // The coverage (0 to 255) of the rounded box at (`x`, `y`), `w` x `h`
 // (device px, corners `radii`) over the pixels `x0..x0 + pw`,
-// `y0..y0 + ph`, one byte each.
+// `y0..y0 + ph`, one byte each. The rows between the corners, where only
+// the straight left and right sides cross, all get the same coverage:
+// one of them is rasterized and copied to the others.
 fn coverage(alloc: Allocator, x0: i64, y0: i64, pw: usize, ph: usize, x: f64, y: f64, w: f64, h: f64, radii: Radii) AllocError![]mut u8 {
     let out = try alloc.alloc(0 as u8, pw * ph)
-    if w <= 0.0 || h <= 0.0 {
+    if w <= 0.0 || h <= 0.0 || pw == 0 || ph == 0 {
         return out
     }
-    let rgba = try alloc.alloc(0 as u8, pw * ph * 4)
-    defer alloc.free(rgba)
+    errdefer alloc.free(out)
     let pic = try svg.newPicture(alloc)
     defer alloc.destroy(pic)
     defer pic.deinit()
     try svg.addRoundBox(pic, 0.0, 0.0, w, h, radii.v, svg.Color { r: 255, g: 255, b: 255, a: 255 }, false, 0.0, 0.0, 0.0, 0.0, SQUARE.v)
-    let t = svg.Target { pixels: rgba, width: pw, ox: x0, oy: y0, x0: x0, y0: y0, x1: x0 + pw as i64, y1: y0 + ph as i64 }
-    // Unclipped by the box: the picture is placed at (x, y) as is.
-    try svg.render(alloc, pic, t, x, y, math.max(w, 1.0) + 2.0 * pw as f64, math.max(h, 1.0) + 2.0 * ph as f64, 1.0)
-    for i in 0..pw * ph {
-        out[i] = rgba[4 * i + 3]
+    let y1 = y0 + ph as i64
+    var m0 = math.ceil(y + math.max(radii.v[1], radii.v[3])) as i64 + 1
+    var m1 = math.floor(y + h - math.max(radii.v[5], radii.v[7])) as i64 - 1
+    m0 = math.maxOf(i64, m0, y0)
+    m1 = math.minOf(i64, m1, y1)
+    if m1 - m0 < 2 {
+        try coverRows(alloc, pic, out, x0, y0, pw, y0, y1, x, y, w, h)
+        return out
+    }
+    try coverRows(alloc, pic, out, x0, y0, pw, y0, m0 + 1, x, y, w, h)
+    try coverRows(alloc, pic, out, x0, y0, pw, m1, y1, x, y, w, h)
+    let first = (m0 - y0) as usize * pw
+    var row = m0 + 1
+    while row < m1 {
+        let at = (row - y0) as usize * pw
+        std.mem.copy(out[at..at + pw], out[first..first + pw])
+        row += 1
     }
     return out
+}
+
+// The coverage of the box picture `pic` placed at (`x`, `y`) over the
+// rows `r0..r1` of `out` (`pw` wide, its first pixel at (`x0`, `y0`)).
+fn coverRows(alloc: Allocator, pic: *svg.Picture, out: []mut u8, x0: i64, y0: i64, pw: usize, r0: i64, r1: i64, x: f64, y: f64, w: f64, h: f64) AllocError!void {
+    if r1 <= r0 {
+        return
+    }
+    let n = (r1 - r0) as usize * pw
+    let rgba = try alloc.alloc(0 as u8, n * 4)
+    defer alloc.free(rgba)
+    let t = svg.Target { pixels: rgba, width: pw, ox: x0, oy: r0, x0: x0, y0: r0, x1: x0 + pw as i64, y1: r1 }
+    // Unclipped by the box: the picture is placed at (x, y) as is.
+    try svg.render(alloc, pic, t, x, y, math.max(w, 1.0) + 2.0 * pw as f64, math.max(h, 1.0) + 2.0 * (out.len / pw) as f64, 1.0)
+    let at = (r0 - y0) as usize * pw
+    for i in 0..n {
+        out[at + i] = rgba[4 * i + 3]
+    }
 }
 
 // Blurs the `w` x `h` alpha bytes `a` by three box blurs, which together
@@ -869,8 +974,10 @@ fn blurLine(a: []mut u8, start: usize, step: usize, n: usize, radius: usize, tmp
 
 // ---- drawing tiles and layers
 
-/// Draws an `Item.Tiles` onto `canvas` with view `v`.
-fn drawTiles(canvas: *mut Canvas, v: View, clip: Rect, tile: Rect, sx: f64, sy: f64, rx: bool, ry: bool, src: Source) AllocError!void {
+/// Draws an `Item.Tiles` onto `canvas` with view `v`. With `local` (the
+/// window's `renderWith`) SVG and gradient tiles are rasterized from the
+/// whole pixel at their corner, and `cache` keeps gradient tiles.
+fn drawTiles(canvas: *mut Canvas, v: View, clip: Rect, tile: Rect, sx: f64, sy: f64, rx: bool, ry: bool, src: Source, local: bool, cache: ?*mut RasterCache) AllocError!void {
     if tile.w <= 0.0 || tile.h <= 0.0 || sx <= 0.0 || sy <= 0.0 {
         return
     }
@@ -901,6 +1008,15 @@ fn drawTiles(canvas: *mut Canvas, v: View, clip: Rect, tile: Rect, sx: f64, sy: 
         return
     }
     let t = svg.Target { pixels: canvas.pixels, width: canvas.width, ox: 0, oy: 0, x0: k.x0, y0: k.y0, x1: k.x1, y1: k.y1 }
+    var gh: u64 = 0
+    if cache != null {
+        match src {
+            .Gradient { g } => {
+                gh = hashGradient(g)
+            }
+            _ => {}
+        }
+    }
     var j = j0
     while j < j1 {
         var i = i0
@@ -914,16 +1030,72 @@ fn drawTiles(canvas: *mut Canvas, v: View, clip: Rect, tile: Rect, sx: f64, sy: 
             match src {
                 .Bitmap { w, h, pixels } => canvas.drawImage(d, w, h, pixels)
                 .Picture { pic } => {
-                    try svg.render(canvas.alloc, pic, t, d.x0 as f64, d.y0 as f64, (d.x1 - d.x0) as f64, (d.y1 - d.y0) as f64, v.scale)
+                    if local {
+                        try drawPicture(canvas, pic, d, k, v.scale)
+                    } else {
+                        try svg.render(canvas.alloc, pic, t, d.x0 as f64, d.y0 as f64, (d.x1 - d.x0) as f64, (d.y1 - d.y0) as f64, v.scale)
+                    }
                 }
                 .Gradient { g } => {
-                    let m = svg.mul(svg.Matrix { a: v.scale, b: 0.0, c: 0.0, d: v.scale, e: r.x * v.scale + v.dx, f: r.y * v.scale + v.dy }, g.m)
-                    svg.fillGradient(t, d.x0, d.y0, d.x1, d.y1, g, m)
+                    if local {
+                        // From the tile's corner pixel.
+                        let lt = svg.Target { pixels: canvas.pixels, width: canvas.width, ox: -d.x0, oy: -d.y0, x0: k.x0 - d.x0, y0: k.y0 - d.y0, x1: k.x1 - d.x0, y1: k.y1 - d.y0 }
+                        let lm = svg.mul(svg.Matrix { a: v.scale, b: 0.0, c: 0.0, d: v.scale, e: r.x * v.scale + v.dx - d.x0 as f64, f: r.y * v.scale + v.dy - d.y0 as f64 }, g.m)
+                        var done = false
+                        if cache |rc| {
+                            done = try gradientTile(rc, lt, d.x1 - d.x0, d.y1 - d.y0, g, gh, lm)
+                        }
+                        if !done {
+                            svg.fillGradient(lt, 0, 0, d.x1 - d.x0, d.y1 - d.y0, g, lm)
+                        }
+                    } else {
+                        let m = svg.mul(svg.Matrix { a: v.scale, b: 0.0, c: 0.0, d: v.scale, e: r.x * v.scale + v.dx, f: r.y * v.scale + v.dy }, g.m)
+                        svg.fillGradient(t, d.x0, d.y0, d.x1, d.y1, g, m)
+                    }
                 }
             }
         }
         j += 1.0
     }
+}
+
+// Draws the `w` x `h` gradient tile at the origin of the target `t` (its
+// space mapped by `m`) from the colors kept in `rc`; false when the tile
+// is too large to keep. The entry holds the colors of the whole tile and
+// a byte per row, set once the row's colors are there: a row is computed
+// the first time it is in the clip.
+fn gradientTile(rc: *mut RasterCache, t: svg.Target, w: i64, h: i64, g: *svg.Gradient, gh: u64, m: svg.Matrix) AllocError!bool {
+    if w * h > CACHE_MAX_PX {
+        return false
+    }
+    let colors_len = (w * h * 4) as usize
+    let n = colors_len + h as usize
+    let vs = [8]f64{m.a, m.b, m.c, m.d, m.e, m.f, w as f64, h as f64}
+    let key = cacheKey(gh, vs[..])
+    var data: []mut u8 = []mut u8{}
+    if rc.findMut(key, n) |kept| {
+        data = kept
+    } else {
+        if svg.invert(m) == null {
+            // As `fillGradient`: nothing drawn.
+            return true
+        }
+        data = try rc.alloc.alloc(0 as u8, n)
+        try rc.store(key, data)
+    }
+    let r0 = math.maxOf(i64, 0, t.y0)
+    let r1 = math.minOf(i64, h, t.y1)
+    var row = r0
+    while row < r1 {
+        if data[colors_len + row as usize] == 0 {
+            let at = row as usize * w as usize * 4
+            _ = svg.gradientColors(data[at..at + w as usize * 4], 0, row, w as usize, 1, g, m)
+            data[colors_len + row as usize] = 1
+        }
+        row += 1
+    }
+    svg.blendColors(t, 0, 0, w, h, w as usize, data[0..colors_len])
+    return true
 }
 
 /// A layer being drawn (between `Item.Layer` and `Item.EndLayer`).
@@ -936,6 +1108,11 @@ struct Frame {
     // Where the layer's top left pixel is on the canvas below.
     x0: i64
     y0: i64
+    // Begun by `beginWindowLayer`: blended with `layerPixels`, and kept
+    // in the raster cache under `key` when `keep`.
+    local: bool = false
+    key: u64 = 0
+    keep: bool = false
 }
 
 // A new layer over `r` (inside the clip of `outer`).
@@ -1043,6 +1220,138 @@ fn endLayer(f: Frame, r: Rect, radii: Radii, alpha: u8) AllocError!void {
                 out.pixels[j + ch] = ((src * 255 + out.pixels[j + ch] as u32 * rest + 127) / 255) as u8
             }
             out.pixels[j + 3] = (a + (out.pixels[j + 3] as u32 * rest + 127) / 255) as u8
+        }
+    }
+}
+
+// Begins the layer of item `at` (box `r`) for the window's
+// `renderWith`; true when the cache had its pixels, then blended below.
+// A layer of at most `LAYER_MAX_PX` whose filter does not spread pixels
+// covers its whole box (and is kept at its end, with a cache); one whose
+// filter spreads them covers what is in view (`bound`: its blur does not
+// depend on the part of the frame drawn again); another one what is in
+// the clip.
+fn beginWindowLayer(frames: *mut List(Frame), outer: *mut Canvas, v: View, r: Rect, ru: *mut Reuse, at: usize) AllocError!bool {
+    let sig = ru.sigs[at]
+    let e = deviceRect(r, v)
+    let w = e.x1 - e.x0
+    let h = e.y1 - e.y0
+    var d = e
+    var key: u64 = 0
+    var keep = false
+    if !sig.spread && w > 0 && h > 0 && w * h <= LAYER_MAX_PX {
+        let vs = [5]f64{v.scale, v.dx - e.x0 as f64, v.dy - e.y0 as f64, w as f64, h as f64}
+        key = cacheKey(sig.g, vs[..])
+        if ru.cache |rc| {
+            if rc.find(key, (w * h * 4) as usize) |kept| {
+                blendLayerPixels(outer, kept, e)
+                return true
+            }
+            keep = true
+        }
+    } else if sig.spread {
+        d = intersect(e, outer.bound)
+    } else {
+        d = intersect(e, outer.clip)
+    }
+    var lw: usize = 0
+    var lh: usize = 0
+    if d.x1 > d.x0 && d.y1 > d.y0 {
+        lw = (d.x1 - d.x0) as usize
+        lh = (d.y1 - d.y0) as usize
+    }
+    let layer = try newLayer(outer.alloc, lw, lh)
+    frames.append(Frame { outer: outer, outer_view: v, layer: layer, mask: null, x0: d.x0, y0: d.y0, local: true, key: key, keep: keep }) catch |err| {
+        dropCanvas(outer.alloc, layer)
+        return err
+    }
+    return false
+}
+
+// Ends a layer begun by `beginWindowLayer`: blends it below (inside the
+// clip there) and keeps its pixels in `cache` when the frame says so.
+fn endWindowLayer(f: Frame, r: Rect, radii: Radii, alpha: u8, cache: ?*mut RasterCache) AllocError!void {
+    let w = f.layer.width
+    let h = f.layer.height
+    if w == 0 || h == 0 {
+        return
+    }
+    var alloc = f.layer.alloc
+    if cache |rc| {
+        alloc = rc.alloc
+    }
+    let px = try alloc.alloc(0 as u8, w * h * 4)
+    layerPixels(f, r, radii, alpha, px) catch |e| {
+        alloc.free(px)
+        return e
+    }
+    blendLayerPixels(f.outer, px, IRect { x0: f.x0, y0: f.y0, x1: f.x0 + w as i64, y1: f.y0 + h as i64 })
+    if f.keep && cache != null {
+        return cache.?.store(f.key, px)
+    }
+    alloc.free(px)
+}
+
+// Frame `f`'s layer through its mask's alpha and the box `r` with
+// corners `radii` (rasterized from the whole pixel at its corner), with
+// opacity `alpha`, as `endLayer` blends it: per pixel the color and alpha
+// it blends below, into `out`.
+fn layerPixels(f: Frame, r: Rect, radii: Radii, alpha: u8, out: []mut u8) AllocError!void {
+    let layer = f.layer
+    let w = layer.width
+    let h = layer.height
+    var round: ?[]mut u8 = null
+    if isRound(radii) {
+        let v = f.outer_view
+        round = try coverageFrom(layer.alloc, f.x0, f.y0, w, h, r.x * v.scale + v.dx, r.y * v.scale + v.dy, r.w * v.scale, r.h * v.scale, scaledRadii(radii, v.scale), true)
+    }
+    defer if round |rc| {
+        layer.alloc.free(rc)
+    }
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) * 4
+            var k = alpha as u32
+            if f.mask |m| {
+                k = (k * m.pixels[i + 3] as u32 + 127) / 255
+            }
+            if round |rc| {
+                k = (k * rc[y * w + x] as u32 + 127) / 255
+            }
+            let a = (layer.pixels[i + 3] as u32 * k + 127) / 255
+            out[i + 3] = a as u8
+            if a == 0 {
+                continue
+            }
+            for ch in 0..3 {
+                out[i + ch] = ((layer.pixels[i + ch] as u32 * k + 127) / 255) as u8
+            }
+        }
+    }
+}
+
+// Blends the pixels of `layerPixels` for the device rectangle `e` onto
+// `out`, inside its clip.
+fn blendLayerPixels(out: *mut Canvas, px: []u8, e: IRect) {
+    let k = intersect(e, out.clip)
+    if k.x1 <= k.x0 || k.y1 <= k.y0 {
+        return
+    }
+    let w = (e.x1 - e.x0) as usize
+    for y in k.y0..k.y1 {
+        var i = ((y - e.y0) as usize * w + (k.x0 - e.x0) as usize) * 4
+        var j = (y as usize * out.width + k.x0 as usize) * 4
+        for x in k.x0..k.x1 {
+            let a = px[i + 3] as u32
+            if a != 0 {
+                let rest = 255 - a
+                for ch in 0..3 {
+                    out.pixels[j + ch] = ((px[i + ch] as u32 * 255 + out.pixels[j + ch] as u32 * rest + 127) / 255) as u8
+                }
+                out.pixels[j + 3] = (a + (out.pixels[j + 3] as u32 * rest + 127) / 255) as u8
+            }
+            i += 4
+            j += 4
         }
     }
 }

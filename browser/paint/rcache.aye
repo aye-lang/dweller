@@ -1,0 +1,134 @@
+// The raster cache (P4.35): what is costly to rasterize, kept between
+// frames by a key of everything its pixels depend on, so that a frame
+// that draws it again (a scroll, an animation elsewhere) blends the kept
+// pixels instead.
+//
+// - a layer (`Layer` .. `EndLayer`, a filter without blur included):
+//   its pixels ready to blend (layer, mask, rounded corners and opacity
+//   applied), keyed by the hash of its items and where they fall inside
+//   it; the layer then covers its whole box, not only what is in view.
+// - a gradient tile: the colors of its pixels (`svg.gradientColors`).
+// - a shadow: its blurred coverage.
+//
+// Keys hold the position inside the device pixel grid (the fraction
+// left after the whole pixels), not the position on the canvas, so a
+// scroll by whole pixels finds them. Entries not used for `KEEP_FRAMES`
+// frames go, and the oldest go first past `BUDGET` bytes.
+
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// The largest result kept, in pixels (a layer: `LAYER_MAX_PX`, as one
+// kept covers its whole box); larger ones are drawn as before.
+pub let CACHE_MAX_PX: i64 = 8388608
+pub let LAYER_MAX_PX: i64 = 2097152
+let BUDGET: usize = 268435456
+let KEEP_FRAMES: u64 = 120
+
+struct CacheEntry {
+    key: u64
+    data: []mut u8
+    used: u64
+}
+
+pub struct RasterCache {
+    alloc: Allocator
+    entries: List(CacheEntry)
+    frame: u64
+    bytes: usize
+    // This frame's lookups that found an entry, and those that did not.
+    hits: usize
+    misses: usize
+
+    pub fn init(alloc: Allocator) RasterCache {
+        return RasterCache { alloc: alloc, entries: List(CacheEntry).init(alloc), frame: 0, bytes: 0, hits: 0, misses: 0 }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.clear()
+        self.entries.deinit()
+    }
+
+    pub fn clear(self: *mut Self) {
+        for e in self.entries.items() {
+            self.alloc.free(e.data)
+        }
+        self.entries.clear()
+        self.bytes = 0
+    }
+
+    /// The pixels kept for `key` (`len` bytes), if any.
+    pub fn find(self: *mut Self, key: u64, len: usize) ?[]u8 {
+        if self.findMut(key, len) |data| {
+            return data
+        }
+        return null
+    }
+
+    /// `find`, for an entry filled in place as it is used.
+    pub fn findMut(self: *mut Self, key: u64, len: usize) ?[]mut u8 {
+        for k in 0..self.entries.len() {
+            let e = &mut self.entries.items()[k]
+            if e.key == key && e.data.len == len {
+                e.used = self.frame
+                self.hits += 1
+                return e.data
+            }
+        }
+        self.misses += 1
+        return null
+    }
+
+    /// Keeps `data` (allocated with the cache's allocator, now the
+    /// cache's) for `key`.
+    pub fn store(self: *mut Self, key: u64, data: []mut u8) AllocError!void {
+        self.entries.append(CacheEntry { key: key, data: data, used: self.frame }) catch |e| {
+            self.alloc.free(data)
+            return e
+        }
+        self.bytes += data.len
+    }
+
+    /// Ends a frame: drops what was not used lately, and the oldest
+    /// entries past the budget.
+    pub fn endFrame(self: *mut Self) {
+        var k: usize = 0
+        while k < self.entries.len() {
+            let e = self.entries.items()[k]
+            if e.used + KEEP_FRAMES < self.frame {
+                self.drop(k)
+                continue
+            }
+            k += 1
+        }
+        while self.bytes > BUDGET && self.entries.len() > 0 {
+            var oldest: usize = 0
+            for i, e in self.entries.items() {
+                if e.used < self.entries.items()[oldest].used {
+                    oldest = i
+                }
+            }
+            self.drop(oldest)
+        }
+        self.frame += 1
+        self.hits = 0
+        self.misses = 0
+    }
+
+    fn drop(self: *mut Self, k: usize) {
+        let e = self.entries.swapRemove(k)
+        self.bytes -= e.data.len
+        self.alloc.free(e.data)
+    }
+}
+
+/// A key from the hash `h` and the values `vs` (floats compared exactly).
+pub fn cacheKey(h: u64, vs: []f64) u64 {
+    var x = h
+    for v in vs {
+        x = (x ^ @hash(v)) *% 0x100000001b3
+        x = x ^ (x >> 31)
+    }
+    return x
+}

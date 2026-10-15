@@ -3374,6 +3374,60 @@ fn window_relayout_incremental() {
     assert!(count("restyle") >= 5, "no subtree restyles:\n{stderr}");
 }
 
+/// The window draws only what changed (P4.35, ui/pagedraw.aye): with
+/// `DWELLER_DAMAGE_CHECK` each frame is drawn whole too and compared; a
+/// canvas animation draws part of the page, an unchanged frame nothing.
+#[test]
+fn window_damage() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/canvas_animate.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "40",
+            "--events",
+            "frame frame wheel:-3 frame wheel:3 frame",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    let px: Vec<u64> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\tui_damage_px\t").nth(1))
+        .map(|r| {
+            r.split('\t')
+                .nth(1)
+                .unwrap()
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
+        })
+        .collect();
+    let full = 400 * 260;
+    assert!(
+        px.iter().any(|&p| p > 0 && p < full),
+        "no partial frame: {px:?}"
+    );
+    assert!(px.contains(&0), "no frame without damage: {px:?}");
+}
+
 /// The window and the scripts agree on the scroll offset: a script's
 /// `scrollTo` scrolls the window, and the wheel moves `scrollY`.
 #[test]

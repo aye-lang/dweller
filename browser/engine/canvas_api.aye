@@ -123,7 +123,7 @@ fn resetCanvas(p: *mut Page, h: NodeId, key: []u8) AllocError!void {
             }
             let px = try p.alloc.alloc(0 as u8, size)
             p.alloc.free(c.bmp.pixels)
-            c.bmp.* = image.Bitmap { width: w, height: ht, pixels: px }
+            c.bmp.* = image.Bitmap { width: w, height: ht, pixels: px, version: c.bmp.version + 1 }
             c.epoch += 1
             c.tainted = false
             return
@@ -1120,6 +1120,7 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
             }
         }
         canvasComposite(bmp.pixels, bmp.width, area, px, clip, alpha, it.heap.bytes(js.strOf(mode)))
+        bmp.version += 1
         scriptOf(it).active = page
         canvasChanged(it)
     }
@@ -1214,6 +1215,7 @@ fn akCanvasPixels(it: *mut Interp, a: Args) JsError!Value {
         }
     }
     if putting {
+        bmp.version += 1
         scriptOf(it).active = page
         canvasChanged(it)
         return Value.Undefined

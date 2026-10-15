@@ -1,0 +1,609 @@
+// Damage tracking (P4.35): what a frame must draw again.
+//
+// Each item of a display list gets a `Sig`: a hash of everything it
+// draws with (positions, colors, text, the content of its picture or
+// gradient, its image's pixels and their version) and the area it may
+// draw on. Two lists' signatures, compared from both ends, give the
+// items that changed; the device rectangles they cover, before and
+// after, are the frame's damage (`diff`). Paint draws only the damage
+// (`renderWith` skips the items outside it); a scroll moves the pixels
+// drawn before and adds the band that came into view. A layer whose
+// filter spreads pixels (a blur, a drop shadow) is drawn whole whenever
+// part of it is damaged (`spreadLayers`), as its pixels depend on what
+// the layer covers.
+//
+// Chromium: paint invalidation of changed display items and their raster
+// invalidation rectangles (third_party/blink/renderer/core/paint/
+// README.md, platform/graphics/compositing/README.md); taken: an item
+// keeps its pixels while it does not change; not taken: paint chunks,
+// property trees.
+
+import font
+import layout.Tree
+import perf
+import std.list.List
+import std.map.IntMap
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+import svg
+
+/// The signature of a display item.
+pub struct Sig {
+    h: u64
+    // The area it may draw on (CSS px): `Clip`, `Unclip`, `Layer`, `Mask`,
+    // `Filter` and `EndLayer` take their clip's or layer's.
+    b: Rect
+    // A `Layer`: the index of its `EndLayer` (a `Clip`: of its `Unclip`),
+    // the hash of the items from it to its end, and whether its filter
+    // spreads pixels.
+    end: usize
+    g: u64
+    spread: bool
+}
+
+/// The device rectangles a frame draws again (at most `MAX_RECTS`,
+/// overlapping ones merged).
+pub struct Damage {
+    rects: List(IRect)
+
+    pub fn init(alloc: Allocator) Damage {
+        return Damage { rects: List(IRect).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.rects.deinit()
+    }
+
+    pub fn clear(self: *mut Self) {
+        self.rects.clear()
+    }
+
+    pub fn isEmpty(self: *Self) bool {
+        return self.rects.len() == 0
+    }
+
+    /// Adds `r`: merged with the rectangles it overlaps or touches.
+    pub fn add(self: *mut Self, r: IRect) AllocError!void {
+        if r.x1 <= r.x0 || r.y1 <= r.y0 {
+            return
+        }
+        var cur = r
+        var k: usize = 0
+        while k < self.rects.len() {
+            let o = self.rects.items()[k]
+            if o.x0 <= cur.x1 && cur.x0 <= o.x1 && o.y0 <= cur.y1 && cur.y0 <= o.y1 {
+                cur = unite(cur, o)
+                _ = self.rects.swapRemove(k)
+                k = 0
+                continue
+            }
+            k += 1
+        }
+        try self.rects.append(cur)
+        while self.rects.len() > MAX_RECTS {
+            self.mergeCheapest()
+        }
+    }
+
+    /// The rectangle around all of them.
+    pub fn bbox(self: *Self) IRect {
+        var b = IRect { x0: 0, y0: 0, x1: 0, y1: 0 }
+        for i, r in self.rects.items() {
+            if i == 0 {
+                b = r
+            } else {
+                b = unite(b, r)
+            }
+        }
+        return b
+    }
+
+    pub fn intersects(self: *Self, r: IRect) bool {
+        for o in self.rects.items() {
+            if o.x0 < r.x1 && r.x0 < o.x1 && o.y0 < r.y1 && r.y0 < o.y1 {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// The pixels covered (counting overlaps once per rectangle).
+    pub fn area(self: *Self) i64 {
+        var a: i64 = 0
+        for r in self.rects.items() {
+            a += (r.x1 - r.x0) * (r.y1 - r.y0)
+        }
+        return a
+    }
+
+    // Merges the two rectangles whose union adds the fewest pixels.
+    fn mergeCheapest(self: *mut Self) {
+        let rs = self.rects.items()
+        var bi: usize = 0
+        var bj: usize = 1
+        var best: i64 = -1
+        for i in 0..rs.len {
+            for j in i + 1..rs.len {
+                let u = unite(rs[i], rs[j])
+                let extra = areaOf(u) - areaOf(rs[i]) - areaOf(rs[j])
+                if best < 0 || extra < best {
+                    best = extra
+                    bi = i
+                    bj = j
+                }
+            }
+        }
+        let u = unite(rs[bi], rs[bj])
+        _ = self.rects.swapRemove(bj)
+        self.rects.items()[bi] = u
+    }
+}
+
+let MAX_RECTS: usize = 8
+
+/// The signatures of the items of `list` (laid out in `t`, whose text
+/// they refer to), into `out`.
+pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocError!void {
+    let began = perf.start()
+    defer perf.end("paint_sig", began, "")
+    out.clear()
+    let items = list.items.items()
+    // The open layers and clips (indices into `out`), and the hash of
+    // each one's context (its own and its ancestors'): an item's hash
+    // takes its context, so that an item moved into or out of a clip or
+    // layer changes.
+    var open = List(usize).init(out.alloc)
+    defer open.deinit()
+    var ctx = List(u64).init(out.alloc)
+    defer ctx.deinit()
+    for i, it in items {
+        var within: u64 = 0x6a09e667f3bcc909
+        if ctx.len() > 0 {
+            within = ctx.items()[ctx.len() - 1]
+        }
+        let h = hmix(hashItem(it), within)
+        var s = Sig { h: h, b: EVERYWHERE, end: i, g: 0, spread: false }
+        match it {
+            .Layer { r } => {
+                s.b = r
+            }
+            .Clip { r } => {
+                s.b = r
+            }
+            .Unclip => {
+                if open.pop() |k| {
+                    s.b = out.items()[k].b
+                    out.items()[k].end = i
+                }
+                _ = ctx.pop()
+            }
+            .Mask => {
+                if open.len() > 0 {
+                    s.b = out.items()[open.items()[open.len() - 1]].b
+                }
+                // What follows draws the mask.
+                if ctx.len() > 0 {
+                    ctx.items()[ctx.len() - 1] = hmix(within, 0x3c6ef372fe94f82b)
+                }
+            }
+            .Filter { ops } => {
+                if open.len() > 0 {
+                    let k = open.items()[open.len() - 1]
+                    s.b = out.items()[k].b
+                    for op in ops {
+                        if op.kind != 0 {
+                            out.items()[k].spread = true
+                        }
+                    }
+                }
+            }
+            .EndLayer { r, radii, alpha } => {
+                if open.pop() |k| {
+                    s.b = united(out.items()[k].b, r)
+                    out.items()[k].end = i
+                }
+                _ = ctx.pop()
+            }
+            .Text { x, y, s: str, face, c } => {
+                // At most an em and a half a byte (measuring would shape
+                // the text again), with room for glyphs outside their
+                // advance.
+                let em = face.size
+                s.b = Rect { x: x - 2.0 * em, y: y - 2.0 * em, w: (str.len as f64 * 1.5 + 4.0) * em, h: 3.0 * em }
+            }
+            _ => {
+                if itemBounds(it, t) |b| {
+                    s.b = b
+                }
+                match it {
+                    .Shadow { r, radii, dx, dy, blur, spread, c, inset } => {
+                        s.b = Rect { x: s.b.x - 1.0, y: s.b.y - 1.0, w: s.b.w + 2.0, h: s.b.h + 2.0 }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // The open layers' hashes take this item.
+        for k in open.items() {
+            out.items()[k].g = hmix(out.items()[k].g, h)
+        }
+        try out.append(s)
+        match it {
+            .Layer { r } => {
+                out.items()[i].g = h
+                try open.append(i)
+                try ctx.append(h)
+            }
+            .Clip { r } => {
+                try open.append(i)
+                try ctx.append(h)
+            }
+            _ => {}
+        }
+    }
+}
+
+let EVERYWHERE = Rect { x: -1.0e9, y: -1.0e9, w: 2.0e9, h: 2.0e9 }
+
+/// The device pixels that the area `b` (CSS px) may touch with view `v`,
+/// with a pixel of margin.
+pub fn deviceBounds(b: Rect, v: View) IRect {
+    return IRect {
+        x0: clampPx(math.floor(b.x * v.scale + v.dx) - 1.0),
+        y0: clampPx(math.floor(b.y * v.scale + v.dy) - 1.0),
+        x1: clampPx(math.ceil((b.x + b.w) * v.scale + v.dx) + 1.0),
+        y1: clampPx(math.ceil((b.y + b.h) * v.scale + v.dy) + 1.0),
+    }
+}
+
+fn clampPx(v: f64) i64 {
+    return math.clamp(v, -1.0e9, 1.0e9) as i64
+}
+
+/// Adds to `out` what differs between the signatures `old` (pixels
+/// already moved to the view `v`) and `new`, inside `area`: the items of
+/// each list left out of a common subsequence of both, found walking
+/// both lists and skipping, at a difference, to the nearer next
+/// occurrence of either item in the other list. The items kept are in
+/// the same order and context in both lists, so a pixel that none of the
+/// others touches has the same items drawn over it.
+pub fn diff(old: []Sig, new: []Sig, v: View, area: IRect, out: *mut Damage) AllocError!void {
+    let n = math.minOf(usize, old.len, new.len)
+    // The common ends first: most frames change a few items.
+    var p: usize = 0
+    while p < n && old[p].h == new[p].h {
+        p += 1
+    }
+    var q: usize = 0
+    while q < n - p && old[old.len - 1 - q].h == new[new.len - 1 - q].h {
+        q += 1
+    }
+    let o = old[p..old.len - q]
+    let w = new[p..new.len - q]
+    if o.len == 0 || w.len == 0 {
+        for s in o {
+            try out.add(intersect(deviceBounds(s.b, v), area))
+        }
+        for s in w {
+            try out.add(intersect(deviceBounds(s.b, v), area))
+        }
+        return
+    }
+    var in_old = try Occurrences.init(out.rects.alloc, o)
+    defer in_old.deinit()
+    var in_new = try Occurrences.init(out.rects.alloc, w)
+    defer in_new.deinit()
+    var i: usize = 0
+    var j: usize = 0
+    while i < o.len && j < w.len {
+        if o[i].h == w[j].h {
+            i += 1
+            j += 1
+            continue
+        }
+        let jn = in_new.next(o[i].h, j)
+        let io = in_old.next(w[j].h, i)
+        if jn != null && (io == null || jn.? - j <= io.? - i) {
+            // `w[j..jn]` came in.
+            while j < jn.? {
+                try out.add(intersect(deviceBounds(w[j].b, v), area))
+                j += 1
+            }
+        } else if io != null {
+            // `o[i..io]` went.
+            while i < io.? {
+                try out.add(intersect(deviceBounds(o[i].b, v), area))
+                i += 1
+            }
+        } else {
+            try out.add(intersect(deviceBounds(o[i].b, v), area))
+            try out.add(intersect(deviceBounds(w[j].b, v), area))
+            i += 1
+            j += 1
+        }
+    }
+    while i < o.len {
+        try out.add(intersect(deviceBounds(o[i].b, v), area))
+        i += 1
+    }
+    while j < w.len {
+        try out.add(intersect(deviceBounds(w[j].b, v), area))
+        j += 1
+    }
+}
+
+// Where each hash occurs in a list of signatures: the first index and,
+// per index, the next one with the same hash; a cursor per hash moves
+// forward only (the walk of `diff` asks for positions that only grow).
+struct Occurrences {
+    first: IntMap(u64, usize)
+    after: []mut usize
+    alloc: Allocator
+
+    fn init(alloc: Allocator, sigs: []Sig) AllocError!Occurrences {
+        var first = IntMap(u64, usize).init(alloc)
+        errdefer first.deinit()
+        let after = try alloc.alloc(NONE, sigs.len)
+        errdefer alloc.free(after)
+        var k = sigs.len
+        while k > 0 {
+            k -= 1
+            if first.get(sigs[k].h) |f| {
+                after[k] = f
+            }
+            try first.put(sigs[k].h, k)
+        }
+        return Occurrences { first: first, after: after, alloc: alloc }
+    }
+
+    fn deinit(self: *mut Self) {
+        self.first.deinit()
+        self.alloc.free(self.after)
+    }
+
+    // The first index at or after `from` with hash `h`.
+    fn next(self: *mut Self, h: u64, from: usize) ?usize {
+        let cur = self.first.getPtr(h) orelse return null
+        while cur.* != NONE && cur.* < from {
+            cur.* = self.after[cur.*]
+        }
+        if cur.* == NONE {
+            return null
+        }
+        return cur.*
+    }
+}
+
+let NONE: usize = 0xffffffffffffffff
+
+/// Adds, whole, the layers of `sigs` whose filter spreads pixels and
+/// that cross the edge of `area` (after a scroll: their pixels depend on
+/// the part in view).
+pub fn edgeLayers(sigs: []Sig, v: View, area: IRect, out: *mut Damage) AllocError!void {
+    for s in sigs {
+        if s.spread {
+            let d = deviceBounds(s.b, v)
+            let k = intersect(d, area)
+            if k.x1 > k.x0 && k.y1 > k.y0 && (d.x0 < area.x0 || d.y0 < area.y0 || d.x1 > area.x1 || d.y1 > area.y1) {
+                try out.add(k)
+            }
+        }
+    }
+}
+
+/// Makes the damage hold, whole, each layer whose filter spreads pixels
+/// and that it touches (a change inside it spreads past its own area);
+/// true when there was one.
+pub fn spreadLayers(sigs: []Sig, v: View, area: IRect, out: *mut Damage) AllocError!bool {
+    var found = false
+    var changed = true
+    var rounds: usize = 0
+    while changed && rounds < 16 {
+        changed = false
+        rounds += 1
+        for s in sigs {
+            if !s.spread {
+                continue
+            }
+            let k = intersect(deviceBounds(s.b, v), area)
+            if k.x1 <= k.x0 || k.y1 <= k.y0 || !out.intersects(k) {
+                continue
+            }
+            found = true
+            let before = out.area()
+            let n = out.rects.len()
+            try out.add(k)
+            if out.area() != before || out.rects.len() != n {
+                changed = true
+            }
+        }
+    }
+    if rounds >= 16 && changed {
+        out.clear()
+        try out.add(area)
+    }
+    return found
+}
+
+fn unite(a: IRect, b: IRect) IRect {
+    return IRect { x0: math.minOf(i64, a.x0, b.x0), y0: math.minOf(i64, a.y0, b.y0), x1: math.maxOf(i64, a.x1, b.x1), y1: math.maxOf(i64, a.y1, b.y1) }
+}
+
+fn areaOf(r: IRect) i64 {
+    return (r.x1 - r.x0) * (r.y1 - r.y0)
+}
+
+// ---- hashing
+
+fn hmix(h: u64, v: u64) u64 {
+    return (h ^ v) *% 0x100000001b3 ^ (v >> 29)
+}
+
+fn hf(h: u64, v: f64) u64 {
+    return hmix(h, @hash(v))
+}
+
+fn hu(h: u64, v: u64) u64 {
+    return hmix(h, v)
+}
+
+fn hbytes(h: u64, s: []u8) u64 {
+    var x = hmix(h, s.len as u64)
+    for b in s {
+        x = (x ^ b as u64) *% 0x100000001b3
+    }
+    return x
+}
+
+fn bit(v: bool) u64 {
+    if v {
+        return 1
+    }
+    return 0
+}
+
+fn hrect(h: u64, r: Rect) u64 {
+    return hf(hf(hf(hf(h, r.x), r.y), r.w), r.h)
+}
+
+fn hrgba(h: u64, c: Rgba) u64 {
+    return hmix(h, (c.r as u64) | (c.g as u64) << 8 | (c.b as u64) << 16 | (c.a as u64) << 24)
+}
+
+fn hradii(h: u64, r: Radii) u64 {
+    var x = h
+    for v in r.v {
+        x = hf(x, v)
+    }
+    return x
+}
+
+fn hmatrix(h: u64, m: svg.Matrix) u64 {
+    return hf(hf(hf(hf(hf(hf(h, m.a), m.b), m.c), m.d), m.e), m.f)
+}
+
+fn hface(h: u64, f: font.Font) u64 {
+    var x = hf(h, f.size)
+    x = hu(x, bit(f.bold) | bit(f.italic) << 1 | bit(f.mono) << 2 | bit(f.serif) << 3 | bit(f.rtl) << 4)
+    x = hf(x, f.weight)
+    return hbytes(x, f.family)
+}
+
+/// A hash of what gradient `g` paints.
+pub fn hashGradient(g: *svg.Gradient) u64 {
+    var x = hu(0x9e3779b97f4a7c15, (g.kind as u64) | (g.spread as u64) << 8)
+    x = hmatrix(x, g.m)
+    let fs = [12]f64{g.x1, g.y1, g.x2, g.y2, g.cx, g.cy, g.r, g.r0, g.fx, g.fy, g.a0, g.t0}
+    for v in fs {
+        x = hf(x, v)
+    }
+    x = hf(x, g.t1)
+    for st in g.stops {
+        x = hf(x, st.t)
+        x = hu(x, @hash(st.c))
+    }
+    return x
+}
+
+/// A hash of what picture `p` draws.
+pub fn hashPicture(p: *svg.Picture) u64 {
+    var x = hu(0x2545f4914f6cdd1d, bit(p.image))
+    if p.view |vb| {
+        x = hu(x, @hash(vb))
+    }
+    x = hu(x, @hash(p.aspect))
+    x = hf(hf(x, p.width), p.height)
+    for s in p.shapes.items() {
+        x = hu(x, @hash(s))
+    }
+    x = hbytes(x, p.verbs.items())
+    for c in p.coords.items() {
+        x = hf(x, c)
+    }
+    for i in 0..p.gradients.len() {
+        x = hu(x, hashGradient(&p.gradients.items()[i]))
+    }
+    for d in p.dashes.items() {
+        x = hf(x, d)
+    }
+    for c in p.clips.items() {
+        x = hu(x, @hash(c))
+    }
+    for s in p.clip_shapes.items() {
+        x = hu(x, @hash(s))
+    }
+    return x
+}
+
+fn hsource(h: u64, src: Source) u64 {
+    match src {
+        .Bitmap { w, h: bh, pixels } => {
+            return hu(hu(hu(hu(h, 1), @hash(pixels.ptr)), pixels.len as u64), (w as u64) << 32 | bh as u64)
+        }
+        .Picture { pic } => {
+            return hu(hu(h, 2), hashPicture(pic))
+        }
+        .Gradient { g } => {
+            return hu(hu(h, 3), hashGradient(g))
+        }
+    }
+}
+
+/// A hash of everything item `it` draws with.
+pub fn hashItem(it: Item) u64 {
+    let seed: u64 = 0xcbf29ce484222325
+    match it {
+        .Fill { r, c } => {
+            return hrgba(hrect(hu(seed, 1), r), c)
+        }
+        .Quad { p, c } => {
+            var x = hu(seed, 2)
+            for v in p {
+                x = hf(x, v)
+            }
+            return hrgba(x, c)
+        }
+        .Text { x, y, s, face, c } => {
+            return hrgba(hface(hbytes(hf(hf(hu(seed, 3), x), y), s), face), c)
+        }
+        .Image { r, w, h, pixels, ver } => {
+            return hu(hu(hu(hu(hrect(hu(seed, 4), r), @hash(pixels.ptr)), pixels.len as u64), (w as u64) << 32 | h as u64), ver)
+        }
+        .Svg { r, pic } => {
+            return hu(hrect(hu(seed, 5), r), hashPicture(pic))
+        }
+        .Clip { r } => {
+            return hrect(hu(seed, 6), r)
+        }
+        .Unclip => {
+            return hu(seed, 7)
+        }
+        .Tiles { clip, tile, sx, sy, rx, ry, src } => {
+            return hsource(hu(hf(hf(hrect(hrect(hu(seed, 8), clip), tile), sx), sy), bit(rx) | bit(ry) << 1), src)
+        }
+        .Shadow { r, radii, dx, dy, blur, spread, c, inset } => {
+            return hu(hrgba(hf(hf(hf(hf(hradii(hrect(hu(seed, 9), r), radii), dx), dy), blur), spread), c), bit(inset))
+        }
+        .Layer { r } => {
+            return hrect(hu(seed, 10), r)
+        }
+        .Mask => {
+            return hu(seed, 11)
+        }
+        .Filter { ops } => {
+            var x = hu(seed, 12)
+            for op in ops {
+                x = hu(x, op.kind as u64)
+                for v in op.m {
+                    x = hf(x, v)
+                }
+                x = hrgba(hf(hf(hf(x, op.sigma), op.dx), op.dy), op.c)
+            }
+            return x
+        }
+        .EndLayer { r, radii, alpha } => {
+            return hu(hradii(hrect(hu(seed, 13), r), radii), alpha as u64)
+        }
+    }
+}

@@ -7,6 +7,9 @@
 // - glyphs.aye: text: FreeType glyphs through a glyph cache, or boxes
 //   for the fixed-metric test font.
 // - png.aye: the PNG encoder (zlib with fixed-Huffman deflate).
+// - damage.aye: item signatures and the damage of a frame (what changed).
+// - rcache.aye: the raster cache (layers, gradient tiles and shadows kept
+//   between the window's frames).
 //
 // The display list is in CSS px, in document coordinates; `render`
 // scales and translates it to device pixels with a `View`. Items, in
@@ -79,8 +82,9 @@ pub enum Item {
     Quad { p: [8]f64, c: Rgba }
     // `s` in the font `face`, its baseline starting at (`x`, `y`).
     Text { x: f64, y: f64, s: []u8, face: font.Font, c: Rgba }
-    // An image of `w` x `h` RGBA pixels (the page's), scaled into `r`.
-    Image { r: Rect, w: usize, h: usize, pixels: []u8 }
+    // An image of `w` x `h` RGBA pixels (the page's), scaled into `r`;
+    // `ver` counts the changes to those pixels (a canvas's).
+    Image { r: Rect, w: usize, h: usize, pixels: []u8, ver: u64 }
     // An SVG drawing fitted into `r` and clipped to it.
     Svg { r: Rect, pic: *svg.Picture }
     // Drawing is limited to `r` until the matching `Unclip`.
@@ -835,7 +839,7 @@ struct Builder {
             let bmp = imgs.urlBitmap(u) orelse return
             if w > 0.0 && h > 0.0 {
                 self.extend(x + w, y + h)
-                try self.add(Item.Image { r: Rect { x: x, y: y, w: w, h: h }, w: bmp.width, h: bmp.height, pixels: bmp.pixels })
+                try self.add(Item.Image { r: Rect { x: x, y: y, w: w, h: h }, w: bmp.width, h: bmp.height, pixels: bmp.pixels, ver: bmp.version })
             }
             return
         }
@@ -858,7 +862,7 @@ struct Builder {
                         if clip {
                             try self.add(Item.Clip { r: box })
                         }
-                        try self.add(Item.Image { r: r, w: bmp.width, h: bmp.height, pixels: bmp.pixels })
+                        try self.add(Item.Image { r: r, w: bmp.width, h: bmp.height, pixels: bmp.pixels, ver: bmp.version })
                         if clip {
                             try self.add(Item.Unclip)
                         }
@@ -1105,8 +1109,8 @@ fn transformed(it: Item, m: layout.Affine, t: *mut Tree) Item {
             }
             return Item.Quad { p: q, c: c }
         }
-        .Image { r, w, h, pixels } => {
-            return Item.Image { r: mapRect(r, m), w: w, h: h, pixels: pixels }
+        .Image { r, w, h, pixels, ver } => {
+            return Item.Image { r: mapRect(r, m), w: w, h: h, pixels: pixels, ver: ver }
         }
         .Svg { r, pic } => {
             return Item.Svg { r: mapRect(r, m), pic: pic }
@@ -1220,7 +1224,7 @@ fn itemBounds(it: Item, t: *mut Tree) ?Rect {
             let em = face.size
             return Rect { x: x - em, y: y - 2.0 * em, w: t.measure.width(face, s) + 2.0 * em, h: 3.0 * em }
         }
-        .Image { r, w, h, pixels } => {
+        .Image { r, w, h, pixels, ver } => {
             return r
         }
         .Svg { r, pic } => {
@@ -1256,7 +1260,7 @@ fn moved(it: Item, dx: f64, dy: f64) Item {
         .Fill { r, c } => Item.Fill { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, c: c }
         .Quad { p, c } => Item.Quad { p: movedQuad(p, dx, dy), c: c }
         .Text { x, y, s, face, c } => Item.Text { x: x + dx, y: y + dy, s: s, face: face, c: c }
-        .Image { r, w, h, pixels } => Item.Image { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, w: w, h: h, pixels: pixels }
+        .Image { r, w, h, pixels, ver } => Item.Image { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, w: w, h: h, pixels: pixels, ver: ver }
         .Svg { r, pic } => Item.Svg { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }, pic: pic }
         .Clip { r } => Item.Clip { r: Rect { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h } }
         .Unclip => Item.Unclip
@@ -1308,6 +1312,23 @@ pub fn deviceRect(r: Rect, v: View) IRect {
 /// Draws the items of `list` onto `canvas` (inside its clip). Text far
 /// outside the clip is skipped.
 pub fn render(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut TextPainter) AllocError!void {
+    return renderWith(list, target, view, painter, null)
+}
+
+/// What the window's `renderWith` uses: the signatures of the list's
+/// items (damage.aye) and the raster cache (rcache.aye), if any.
+pub struct Reuse {
+    sigs: []Sig
+    cache: ?*mut RasterCache
+}
+
+/// `render`; with `reuse` (the window), the items outside the clip are
+/// skipped, layers, gradient tiles and shadows come from (and go into)
+/// the raster cache, and SVGs, gradients, shadows and rounded layers are
+/// rasterized from whole pixels of their own: the same item moved by
+/// whole pixels or drawn in another clip gets the same pixels, so that
+/// what is kept between frames is what a new drawing would give.
+pub fn renderWith(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut TextPainter, reuse: ?*mut Reuse) AllocError!void {
     let began = perf.start()
     defer perf.end("paint", began, "viewport")
     // The layers being drawn; `canvas` and `v` are the top one's.
@@ -1315,72 +1336,189 @@ pub fn render(list: *DisplayList, target: *mut Canvas, view: View, painter: *mut
     defer dropFrames(&mut frames)
     var canvas = target
     var v = view
-    for it in list.items.items() {
-        match it {
-            .Fill { r, c } => canvas.fillRect(deviceRect(r, v), c)
-            .Quad { p, c } => {
-                var q = p
-                for k in 0..4 {
-                    q[k * 2] = p[k * 2] * v.scale + v.dx
-                    q[k * 2 + 1] = p[k * 2 + 1] * v.scale + v.dy
-                }
-                canvas.fillQuad(q, c)
-            }
-            .Text { x, y, s, face, c } => {
-                let base = y * v.scale + v.dy
-                let em = face.size * v.scale
-                if base + em >= canvas.clip.y0 as f64 && base - 2.0 * em <= canvas.clip.y1 as f64 {
-                    try painter.draw(canvas, x * v.scale + v.dx, base, s, face, v.scale, c)
-                }
-            }
-            .Image { r, w, h, pixels } => canvas.drawImage(deviceRect(r, v), w, h, pixels)
-            .Svg { r, pic } => {
-                let d = deviceRect(r, v)
-                let k = canvas.clip
-                let t = svg.Target { pixels: canvas.pixels, width: canvas.width, ox: 0, oy: 0, x0: k.x0, y0: k.y0, x1: k.x1, y1: k.y1 }
-                try svg.render(canvas.alloc, pic, t, d.x0 as f64, d.y0 as f64, (d.x1 - d.x0) as f64, (d.y1 - d.y0) as f64, v.scale)
-            }
-            .Clip { r } => {
-                try canvas.pushClip(deviceRect(r, v))
-            }
-            .Unclip => canvas.popClip()
-            .Tiles { clip, tile, sx, sy, rx, ry, src } => {
-                try drawTiles(canvas, v, clip, tile, sx, sy, rx, ry, src)
-            }
-            .Shadow { r, radii, dx, dy, blur, spread, c, inset } => {
-                try drawShadow(canvas, v, r, radii, dx, dy, blur, spread, c, inset)
-            }
-            .Layer { r } => {
-                try beginLayer(&mut frames, canvas, v, r)
-                let f = frames.items()[frames.len() - 1]
-                canvas = f.layer
-                v = layerView(f)
-            }
-            .Mask => {
-                if try beginMask(&mut frames) |m| {
-                    canvas = m
+    var cache: ?*mut RasterCache = null
+    let local = reuse != null
+    if reuse |ru| {
+        cache = ru.cache
+    }
+    let items = list.items.items()
+    var at: usize = 0
+    while at < items.len {
+        let it = items[at]
+        var next = at + 1
+        var skip = false
+        if reuse |ru| {
+            let sig = ru.sigs[at]
+            if !structural(it) && !touches(deviceBounds(sig.b, v), canvas.clip) {
+                skip = true
+                if isLayerItem(it) {
+                    next = sig.end + 1
                 }
             }
-            .Filter { ops } => {
-                if frames.len() > 0 {
-                    try applyFilter(frames.items()[frames.len() - 1].layer, ops, v.scale)
-                }
-            }
-            .EndLayer { r, radii, alpha } => {
-                if frames.pop() |f| {
-                    canvas = f.outer
-                    v = f.outer_view
-                    endLayer(f, r, radii, alpha) catch |e| {
-                        dropFrame(f)
-                        return e
+        }
+        if !skip {
+            match it {
+                .Fill { r, c } => canvas.fillRect(deviceRect(r, v), c)
+                .Quad { p, c } => {
+                    var q = p
+                    for k in 0..4 {
+                        q[k * 2] = p[k * 2] * v.scale + v.dx
+                        q[k * 2 + 1] = p[k * 2 + 1] * v.scale + v.dy
                     }
-                    dropFrame(f)
+                    canvas.fillQuad(q, c)
+                }
+                .Text { x, y, s, face, c } => {
+                    let base = y * v.scale + v.dy
+                    let em = face.size * v.scale
+                    if base + em >= canvas.clip.y0 as f64 && base - 2.0 * em <= canvas.clip.y1 as f64 {
+                        try painter.draw(canvas, x * v.scale + v.dx, base, s, face, v.scale, c)
+                    }
+                }
+                .Image { r, w, h, pixels, ver } => canvas.drawImage(deviceRect(r, v), w, h, pixels)
+                .Svg { r, pic } => {
+                    let d = deviceRect(r, v)
+                    if local {
+                        try drawPicture(canvas, pic, d, canvas.clip, v.scale)
+                    } else {
+                        let k = canvas.clip
+                        let t = svg.Target { pixels: canvas.pixels, width: canvas.width, ox: 0, oy: 0, x0: k.x0, y0: k.y0, x1: k.x1, y1: k.y1 }
+                        try svg.render(canvas.alloc, pic, t, d.x0 as f64, d.y0 as f64, (d.x1 - d.x0) as f64, (d.y1 - d.y0) as f64, v.scale)
+                    }
+                }
+                .Clip { r } => {
+                    try canvas.pushClip(deviceRect(r, v))
+                }
+                .Unclip => canvas.popClip()
+                .Tiles { clip, tile, sx, sy, rx, ry, src } => {
+                    try drawTiles(canvas, v, clip, tile, sx, sy, rx, ry, src, local, cache)
+                }
+                .Shadow { r, radii, dx, dy, blur, spread, c, inset } => {
+                    try drawShadow(canvas, v, r, radii, dx, dy, blur, spread, c, inset, local, cache)
+                }
+                .Layer { r } => {
+                    var kept = false
+                    if reuse |ru| {
+                        kept = try beginWindowLayer(&mut frames, canvas, v, r, ru, at)
+                    } else {
+                        try beginLayer(&mut frames, canvas, v, r)
+                    }
+                    if kept {
+                        next = layerEnd(reuse, at) + 1
+                    } else {
+                        let f = frames.items()[frames.len() - 1]
+                        canvas = f.layer
+                        v = layerView(f)
+                    }
+                }
+                .Mask => {
+                    if try beginMask(&mut frames) |m| {
+                        canvas = m
+                    }
+                }
+                .Filter { ops } => {
+                    if frames.len() > 0 {
+                        try applyFilter(frames.items()[frames.len() - 1].layer, ops, v.scale)
+                    }
+                }
+                .EndLayer { r, radii, alpha } => {
+                    if frames.pop() |f| {
+                        canvas = f.outer
+                        v = f.outer_view
+                        if f.local {
+                            endWindowLayer(f, r, radii, alpha, cache) catch |e| {
+                                dropFrame(f)
+                                return e
+                            }
+                        } else {
+                            endLayer(f, r, radii, alpha) catch |e| {
+                                dropFrame(f)
+                                return e
+                            }
+                        }
+                        dropFrame(f)
+                    }
                 }
             }
+        }
+        at = next
+    }
+}
+
+/// Draws `pic` fitted into the device rectangle `d`, inside `clip`. It is
+/// rasterized in its own pixels (from `d`'s corner), so that where it
+/// falls on the canvas does not change them: a scroll by whole pixels
+/// moves the pixels a new drawing would give.
+fn drawPicture(canvas: *mut Canvas, pic: *svg.Picture, d: IRect, clip: IRect, scale: f64) AllocError!void {
+    let t = svg.Target { pixels: canvas.pixels, width: canvas.width, ox: -d.x0, oy: -d.y0, x0: clip.x0 - d.x0, y0: clip.y0 - d.y0, x1: clip.x1 - d.x0, y1: clip.y1 - d.y0 }
+    return svg.render(canvas.alloc, pic, t, 0.0, 0.0, (d.x1 - d.x0) as f64, (d.y1 - d.y0) as f64, scale)
+}
+
+// The end of the layer of item `at` (`at` without signatures).
+fn layerEnd(reuse: ?*mut Reuse, at: usize) usize {
+    if reuse |ru| {
+        return ru.sigs[at].end
+    }
+    return at
+}
+
+// Items that open or close a clip or layer: never skipped alone (a
+// layer is skipped with its items).
+fn structural(it: Item) bool {
+    match it {
+        .Clip { r } => {
+            return true
+        }
+        .Unclip => {
+            return true
+        }
+        .Mask => {
+            return true
+        }
+        .Filter { ops } => {
+            return true
+        }
+        .EndLayer { r, radii, alpha } => {
+            return true
+        }
+        _ => {
+            return false
         }
     }
 }
 
+fn isLayerItem(it: Item) bool {
+    match it {
+        .Layer { r } => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn touches(a: IRect, b: IRect) bool {
+    return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+}
+
 fn sameRgba(a: Rgba, b: Rgba) bool {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+}
+
+pub fn kindName(it: Item) []u8 {
+    match it {
+        .Fill { r, c } => { return "fill" }
+        .Quad { p, c } => { return "quad" }
+        .Text { x, y, s, face, c } => { return "text" }
+        .Image { r, w, h, pixels, ver } => { return "image" }
+        .Svg { r, pic } => { return "svg" }
+        .Clip { r } => { return "clip" }
+        .Unclip => { return "unclip" }
+        .Tiles { clip, tile, sx, sy, rx, ry, src } => { return "tiles" }
+        .Shadow { r, radii, dx, dy, blur, spread, c, inset } => { return "shadow" }
+        .Layer { r } => { return "layer" }
+        .Mask => { return "mask" }
+        .Filter { ops } => { return "filter" }
+        .EndLayer { r, radii, alpha } => { return "endlayer" }
+    }
 }
