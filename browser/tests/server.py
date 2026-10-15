@@ -7,6 +7,10 @@
 #   /redirect-style  302 to /style/link.html (relative URLs resolve
 #                    against the final URL)
 #   /redirect-loop   302 to itself
+#   /oauth/approve?redirect_uri=U&state=S&seen=X
+#                    302 to U?code=c0de&state=S&seen=X (the sign-in
+#                    origin sending a popup back to its opener's
+#                    origin, tests/browser.rs `window_login_popup`)
 #   /agent           the request's User-Agent, as text/plain
 #   /gzip            an HTML page, gzip-encoded when the client accepts it
 #   /latin1          an HTML page in ISO-8859-1, declared by Content-Type
@@ -149,6 +153,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(302, [("Location", f"http://localhost:{port}/paint/img/photo.png")])
         elif path == "/redirect-loop":
             self.reply(302, [("Location", "/redirect-loop")])
+        elif path.startswith("/oauth/approve?"):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            back = query.get("redirect_uri", ["/"])[0]
+            extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
+            self.reply(302, [("Location", back + "?" + extra)])
         elif path == "/agent":
             agent = self.headers.get("User-Agent", "")
             self.reply(200, [("Content-Type", "text/plain")], agent.encode() + b"\n")

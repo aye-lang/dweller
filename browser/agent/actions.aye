@@ -123,6 +123,7 @@ fn goTo(s: *mut Session, tmp: Allocator, target: *Url) AllocError!Outcome {
         s.tab.settle(maxScroll(s))
         return done(try concat(tmp, "scrolled to #", target.fragment, ""))
     }
+    s.tab.enter()
     let p = try engine.load(s.alloc, target)
     if p.failure.len > 0 {
         return refused(tmp, p)
@@ -157,6 +158,7 @@ fn moveInHistory(s: *mut Session, tmp: Allocator, step: i64) AllocError!Outcome 
     let target = url.parse(tmp, href) catch |e| {
         return failed(try concat(tmp, "not a URL: ", href, ""))
     }
+    s.tab.enter()
     let p = try engine.loadState(s.alloc, &target, s.tab.stateAt(step))
     if p.failure.len > 0 {
         return refused(tmp, p)
@@ -449,6 +451,13 @@ fn submitNow(s: *mut Session, tmp: Allocator, p: *mut Page, form: NodeId, submit
         try fm.append(fo.message)
         return Outcome { ok: fo.ok, message: fm.bytes(), navigated: false, diff: "" }
     }
+    if try engine.submitElsewhere(p, form, &sub) {
+        // The window opens the tab (an agent's); without one, it loads
+        // in memory (engine/contexts.aye).
+        try engine.pumpContexts()
+        return done(try concat(tmp, what, "; the form submits in another tab", ""))
+    }
+    s.tab.enter()
     let loaded = try engine.loadWith(s.alloc, &sub.target, post)
     if loaded.failure.len > 0 {
         return refused(tmp, loaded)
@@ -480,6 +489,9 @@ fn followLink(s: *mut Session, tmp: Allocator, p: *mut Page, a: NodeId, who: []u
     var o = done("")
     if engine.targetFrame(p, engine.linkTarget(p, a)) |slot| {
         o = try loadInFrame(s, tmp, slot, &target, null)
+    } else if try engine.openElsewhere(p, a, &target) {
+        try engine.pumpContexts()
+        o = done(try concat(tmp, "it opens in another tab: ", target.href, ""))
     } else {
         o = try goTo(s, tmp, &target)
     }

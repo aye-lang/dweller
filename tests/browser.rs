@@ -4175,27 +4175,6 @@ fn window_login_basic() {
     );
 }
 
-/// P4.52: a click opens `popup.html` with `window.open`; it posts to its
-/// opener and closes, and the opener shows the message.
-#[test]
-#[ignore = "P4.52: window.open, window.opener and postMessage between tabs"]
-fn window_login_popup() {
-    if !has_sdl() {
-        println!("skipped: no SDL2");
-        return;
-    }
-    let Some(srv) = server() else {
-        println!("skipped: cannot start python3 for the test server");
-        return;
-    };
-    let opener = format!("{}/login/opener.html", srv.base);
-    let got = login_window(&opener, "frame click:50,25 frame frame frame", None);
-    assert!(
-        got.contains(&format!("url {opener}\n")) && got.contains("message: alice"),
-        "{got}"
-    );
-}
-
 // ---- B8: HTML and CSS
 
 /// `noscript` follows scripting: the dumps without `--js` show it (the
@@ -4725,4 +4704,107 @@ fn web_font_files() {
     } else {
         println!("WOFF 2 skipped: no libbrotlidec");
     }
+}
+
+/// P4.52: window.open, `target=_blank`, `window.opener` and postMessage
+/// between tabs (engine/contexts.aye), on the test server's two origins
+/// (`127.0.0.1` and `localhost`, `browser/tests/popup/`). The OAuth
+/// popup round trip: a click opens the sign-in page of origin B in a
+/// new tab, which sees its opener but not its document, and goes through
+/// a redirect back to the opener's origin; the callback posts the code
+/// to its opener (a message for the wrong origin is dropped) and closes
+/// itself, so the opener's tab is shown with the message, its
+/// `popup.closed` true and `event.source` the popup. `dump --js` loads
+/// the popup in memory with the same result. `target=_blank` opens a tab
+/// without an opener (with one for `rel=opener`); a named target is
+/// reused by window.open and by a link. First the P10.20 fixture: a
+/// click opens `login/popup.html`, which posts to its opener and closes,
+/// and the opener shows the message.
+#[test]
+fn window_login_popup() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let opener = format!("{base}/login/opener.html");
+    // The button is at y 10 to 40 of the page, under the 40 px toolbar.
+    let got = login_window(&opener, "frame click:50,65 frame frame frame", None);
+    assert!(
+        got.contains(&format!("url {opener}\n")) && got.contains("message: alice"),
+        "{got}"
+    );
+    let signed_in = "got code=c0de state=s1 seen=opener-true-SecurityError-signin from the popup closed true messages 1";
+    let window = |page: &str, events: &str| {
+        let url = format!("{base}/popup/{page}");
+        let out = run_window(&[
+            &url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
+            "--events", events, "--state", "--text",
+        ]);
+        assert!(
+            out.status.success() && out.stderr.is_empty(),
+            "{page} {events}: {}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        text(&out.stdout)
+    };
+    let got = window(
+        "opener.html",
+        "frame click:50,60 frame frame frame frame frame",
+    );
+    assert!(
+        got.starts_with(&format!("url {base}/popup/opener.html\n")),
+        "{got}"
+    );
+    assert!(!got.contains("\ntabs "), "the popup did not close:\n{got}");
+    assert!(got.contains(signed_in), "{got}");
+    // Without a window: the popup loads in memory.
+    let out = run(&[
+        "dump",
+        "--js",
+        "--text",
+        &format!("{base}/popup/opener.html#auto"),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}",
+        text(&out.stderr)
+    );
+    assert!(
+        text(&out.stdout).contains(signed_in),
+        "{}",
+        text(&out.stdout)
+    );
+    // target=_blank: a new tab, shown, without an opener; rel=opener
+    // gives it one.
+    for (y, search, opener) in [(60, "blank", "null"), (110, "opener", "set")] {
+        let got = window("links.html", &format!("frame click:50,{y} frame frame"));
+        assert!(
+            got.starts_with(&format!("url {base}/popup/target.html?{search}\n")),
+            "{got}"
+        );
+        assert!(got.contains("\ntabs 2, showing 2\n"), "{got}");
+        assert!(
+            got.contains(&format!("opener {opener} name  at ?{search}")),
+            "{got}"
+        );
+    }
+    // window.open(url, 'w1') twice, then a link with target=w1: one tab
+    // (the tab strip moves the page down 28 px once there are two).
+    let got = window(
+        "links.html",
+        "frame click:50,160 frame key:cmd+1 frame click:50,190 frame key:cmd+1 frame click:50,240 frame key:cmd+2 frame",
+    );
+    assert!(
+        got.starts_with(&format!("url {base}/popup/target.html?link\n")),
+        "{got}"
+    );
+    assert!(got.contains("\nhistory 3 of 3\n"), "{got}");
+    assert!(got.contains("\ntabs 2, showing 2\n"), "{got}");
+    assert!(got.contains("opener set name w1 at ?link"), "{got}");
 }

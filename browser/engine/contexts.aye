@@ -1,0 +1,555 @@
+// The top-level browsing contexts of the process: one for each tab (the
+// person's, an agent's, a Space's), for a page loaded without a tab
+// (`dump --js`, `screenshot`), and for each popup. A context outlives
+// the pages its tab shows, so a window object of another tab
+// (windows.aye) holds the context's id, not a page's: `popup.closed`,
+// `popup.postMessage` and `opener` keep working while the other tab
+// navigates (an OAuth popup going from the sign-in origin back to the
+// opener's callback page).
+//
+// What a script asks of another context waits in `requests` until the
+// front end serves it: open a new tab (window.open, a link or form with
+// `target=_blank` or a name no frame or tab has), navigate a named one,
+// or close one that a script opened. The window serves them with tabs
+// (ui/tabs.aye `serveContexts`): a context opened from an agent's tab
+// (or in a Space) is an agent's tab too, never one of the person's.
+// Without a window (`dump`, the agent's stdio server) `pumpContexts`
+// loads them in memory: the popup's page runs its scripts, follows the
+// navigations they ask for, and reaches its opener by `opener` and
+// `postMessage`, but is never shown.
+//
+// Names (window.name, `target=NAME`) are looked up among the contexts
+// of the same side: the person's pages never reach an agent's tab by
+// name, nor an agent's page the person's.
+
+import dom
+import net
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+/// A top-level browsing context.
+pub struct BrowsingContext {
+    id: u32
+    // The page it shows (null before the first one loaded).
+    page: ?*mut Page
+    // The context whose script or link opened it (0: none, `noopener`).
+    opener: u32
+    // window.name (owned).
+    name: []mut u8
+    // window.open made it: its scripts may close it (window.close()).
+    by_script: bool
+    // An agent's (opened from an agent's tab, or in a Space).
+    agent: bool
+    // A page loaded without a tab: the context goes with the page.
+    loose: bool
+    // Without a window: the tab the engine keeps it in (`pumpContexts`).
+    own: ?*mut Tab
+}
+
+/// What a request asks of the front end.
+pub enum ContextAsk {
+    // Open a new tab for the context and load `href` in it.
+    Open
+    // Load `href` in the context's tab.
+    Navigate
+    // Close the context's tab.
+    Close
+}
+
+/// A request of a script (or a link) to the front end.
+pub struct ContextRequest {
+    ask: ContextAsk
+    context: u32
+    // The URL to load (owned; empty for Close).
+    href: []mut u8
+    // A form's POST body and its content type (owned; `post` false: GET).
+    post: bool
+    content_type: []mut u8
+    body: []mut u8
+}
+
+struct ContextTable {
+    alloc: Allocator
+    items: List(BrowsingContext)
+    requests: List(ContextRequest)
+    next_id: u32
+    // The context the next page loaded for a tab goes into (`Tab.enter`).
+    loading: u32
+    pumping: bool
+}
+
+var bc_table: ?*mut ContextTable = null
+// A window serves the requests (else `pumpContexts` does, in memory).
+var bc_tab_host: bool = false
+
+fn bcTable(alloc: Allocator) AllocError!*mut ContextTable {
+    if bc_table |t| {
+        return t
+    }
+    let t = try alloc.create(ContextTable {
+        alloc: alloc,
+        items: List(BrowsingContext).init(alloc),
+        requests: List(ContextRequest).init(alloc),
+        next_id: 1,
+        loading: 0,
+        pumping: false,
+    })
+    bc_table = t
+    return t
+}
+
+// Frees the table once nothing is in it.
+fn bcRelease() {
+    let t = bc_table orelse return
+    if t.items.len() > 0 || t.requests.len() > 0 || t.pumping {
+        return
+    }
+    t.items.deinit()
+    t.requests.deinit()
+    t.alloc.destroy(t)
+    bc_table = null
+}
+
+fn bcIndex(id: u32) ?usize {
+    let t = bc_table orelse return null
+    if id == 0 {
+        return null
+    }
+    for i, c in t.items.items() {
+        if c.id == id {
+            return i
+        }
+    }
+    return null
+}
+
+/// The context with `id`; null when it is closed (or never was).
+pub fn contextOf(id: u32) ?*mut BrowsingContext {
+    let i = bcIndex(id) orelse return null
+    return &mut bc_table.?.items.items()[i]
+}
+
+/// The page context `id` shows; null when it is closed or has none yet.
+pub fn contextPage(id: u32) ?*mut Page {
+    let c = contextOf(id) orelse return null
+    return c.page
+}
+
+fn addContext(alloc: Allocator, loose: bool) AllocError!u32 {
+    let t = try bcTable(alloc)
+    let id = t.next_id
+    t.next_id += 1
+    let name = try alloc.alloc(0 as u8, 0)
+    errdefer alloc.free(name)
+    try t.items.append(BrowsingContext { id: id, page: null, opener: 0, name: name, by_script: false, agent: false, loose: loose, own: null })
+    return id
+}
+
+fn removeContext(id: u32) {
+    let i = bcIndex(id) orelse return
+    let t = bc_table.?
+    let c = t.items.orderedRemove(i)
+    t.alloc.free(c.name)
+    bcRelease()
+}
+
+/// A new context for a tab (`Tab.init`).
+pub fn newTabContext(alloc: Allocator) AllocError!u32 {
+    return addContext(alloc, false)
+}
+
+/// The tab of context `id` is gone (`Tab.deinit`, after its page).
+pub fn tabContextGone(id: u32) {
+    removeContext(id)
+}
+
+/// Makes `tab` show context `id` (a context a script opened, which the
+/// front end gives a tab): the tab's own context goes.
+pub fn adoptContext(tab: *mut Tab, id: u32) {
+    if tab.context == id {
+        return
+    }
+    if contextOf(tab.context) |old| {
+        if old.page |p| {
+            if contextOf(id) |c| {
+                c.page = p
+            }
+            p.context = id
+        }
+    }
+    removeContext(tab.context)
+    tab.context = id
+}
+
+/// Marks context `id` as an agent's (the front end, for an agent's tab).
+pub fn setContextAgent(id: u32, agent: bool) {
+    if contextOf(id) |c| {
+        c.agent = agent
+    }
+}
+
+/// The next page loaded (`loadWith`, `loadState`) is for context `id`'s
+/// tab (`Tab.enter`).
+pub fn setLoadingContext(id: u32) {
+    if bc_table |t| {
+        t.loading = id
+    }
+}
+
+// The context of page `p`, just loaded: the tab's that asked
+// (`setLoadingContext`), else a context of its own that goes with it.
+fn attachLoading(p: *mut Page) AllocError!void {
+    let t = try bcTable(p.alloc)
+    var id = t.loading
+    t.loading = 0
+    if contextOf(id) == null {
+        id = try addContext(p.alloc, true)
+    }
+    let c = contextOf(id).?
+    c.page = p
+    p.context = id
+}
+
+// Page `p` is freed: its context no longer shows it (a loose context
+// goes with it).
+fn contextPageGone(p: *mut Page) {
+    if p.context == 0 {
+        return
+    }
+    let c = contextOf(p.context) orelse return
+    if c.page == p {
+        c.page = null
+        if c.loose {
+            removeContext(p.context)
+        }
+    }
+}
+
+/// The context of the tab whose page (or frame) `p` is; 0 for none.
+pub fn contextOfPage(p: *mut Page) u32 {
+    return rootPage(p).context
+}
+
+/// The page with `id` in any context (a frame of another tab too).
+fn findPageAnywhere(id: u32) ?*mut Page {
+    let t = bc_table orelse return null
+    for c in t.items.items() {
+        if c.page |p| {
+            if findBelow(p, id) |found| {
+                return found
+            }
+        }
+    }
+    return null
+}
+
+/// The open context named `name` on the same side (person or agent) as
+/// context `from`; 0 for none.
+fn namedContext(from: u32, name: []u8) u32 {
+    let t = bc_table orelse return 0
+    var agent = false
+    if contextOf(from) |f| {
+        agent = f.agent
+    }
+    for c in t.items.items() {
+        if c.agent == agent && !c.loose && c.name.len > 0 && text.eql(c.name, name) {
+            return c.id
+        }
+    }
+    return 0
+}
+
+/// Sets the name of context `id` (window.name).
+pub fn setContextName(id: u32, name: []u8) AllocError!void {
+    let c = contextOf(id) orelse return
+    let t = bc_table.?
+    let copy = try t.alloc.alloc(0 as u8, name.len)
+    std.mem.copy(copy, name)
+    t.alloc.free(c.name)
+    c.name = copy
+}
+
+// ---- requests
+
+fn ownedBytes(alloc: Allocator, b: []u8) AllocError![]mut u8 {
+    let c = try alloc.alloc(0 as u8, b.len)
+    std.mem.copy(c, b)
+    return c
+}
+
+fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body) AllocError!void {
+    let t = bc_table orelse return
+    let h = try ownedBytes(t.alloc, href)
+    errdefer t.alloc.free(h)
+    var ct = ""
+    var data = ""
+    if body |b| {
+        ct = b.content_type
+        data = b.data
+    }
+    let c = try ownedBytes(t.alloc, ct)
+    errdefer t.alloc.free(c)
+    let d = try ownedBytes(t.alloc, data)
+    errdefer t.alloc.free(d)
+    try t.requests.append(ContextRequest { ask: ask, context: id, href: h, post: body != null, content_type: c, body: d })
+}
+
+/// The oldest request not served yet (the caller frees it:
+/// `freeContextRequest`).
+pub fn takeContextRequest() ?ContextRequest {
+    let t = bc_table orelse return null
+    if t.requests.len() == 0 {
+        return null
+    }
+    return t.requests.orderedRemove(0)
+}
+
+pub fn freeContextRequest(r: ContextRequest) {
+    let t = bc_table orelse return
+    t.alloc.free(r.href)
+    t.alloc.free(r.content_type)
+    t.alloc.free(r.body)
+    bcRelease()
+}
+
+/// Are requests waiting?
+pub fn hasContextRequests() bool {
+    if bc_table |t| {
+        return t.requests.len() > 0
+    }
+    return false
+}
+
+/// A window serves the requests from now on (else `pumpContexts`).
+pub fn setTabHost(on: bool) {
+    bc_tab_host = on
+}
+
+/// Opens a new context named `name` (empty: none; `_blank` is none)
+/// from context `from` (its opener unless `no_opener`), which loads
+/// `href` (by POST with `body`) once the front end gave it a tab. Its id.
+fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body) AllocError!u32 {
+    let t = bc_table orelse return 0
+    let id = try addContext(t.alloc, false)
+    let c = contextOf(id).?
+    if !no_opener {
+        c.opener = from
+    }
+    c.by_script = by_script
+    if contextOf(from) |f| {
+        c.agent = f.agent
+    }
+    if !text.eqlIgnoreCase(name, "_blank") {
+        try setContextName(id, name)
+    }
+    try pushRequest(ContextAsk.Open, id, href, body)
+    return id
+}
+
+/// Context `id` loads `href` (by POST with `body`) in its tab.
+fn navigateContext(id: u32, href: []u8, body: ?*net.Body) AllocError!void {
+    return pushRequest(ContextAsk.Navigate, id, href, body)
+}
+
+/// Asks the front end to close context `id`.
+fn closeContext(id: u32) AllocError!void {
+    let t = bc_table orelse return
+    for r in t.requests.items() {
+        if r.context == id && r.ask is .Close {
+            return
+        }
+    }
+    return pushRequest(ContextAsk.Close, id, "", null)
+}
+
+/// May a script of context `from` close context `id`? Only one that a
+/// script opened (or its own tab with one entry, as browsers allow).
+fn mayCloseContext(id: u32) bool {
+    let c = contextOf(id) orelse return false
+    if c.by_script {
+        return true
+    }
+    if c.page |p| {
+        return p.sessionHistory().len() <= 1 && c.opener != 0
+    }
+    return false
+}
+
+// ---- links and forms with a target
+
+// Is `rel` (a link's or form's) one with `token`?
+fn relHas(rel: []u8, token: []u8) bool {
+    var words = text.split(rel, " ")
+    while words.next() |w| {
+        if text.eqlIgnoreCase(text.trim(w), token) {
+            return true
+        }
+    }
+    return false
+}
+
+// What the `target` `name` of a link or form of `p` names outside the
+// tab: 0 when it loads in the tab (no target, `_self`, `_top`,
+// `_parent`, a frame's name), else the context it loads in (opened
+// now when `_blank` or a name no tab has). `noopener` follows the
+// HTML rules: `_blank` gets no opener unless `rel=opener`.
+fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) AllocError!u32 {
+    let name = linkTarget(p, el)
+    if name.len == 0 || text.eqlIgnoreCase(name, "_self") || text.eqlIgnoreCase(name, "_top") || text.eqlIgnoreCase(name, "_parent") {
+        return 0
+    }
+    if targetFrame(p, name) != null {
+        return 0
+    }
+    let from = contextOfPage(p)
+    if bc_table == null || contextOf(from) == null {
+        return 0
+    }
+    let rel = p.doc.attr(el, "rel") orelse ""
+    if !text.eqlIgnoreCase(name, "_blank") {
+        let named = namedContext(from, name)
+        if named != 0 {
+            try navigateContext(named, href, body)
+            return named
+        }
+    }
+    var no_opener = relHas(rel, "noopener") || relHas(rel, "noreferrer")
+    if text.eqlIgnoreCase(name, "_blank") && !relHas(rel, "opener") {
+        no_opener = true
+    }
+    return openContext(from, href, name, no_opener, false, body)
+}
+
+/// A link `el` of `p` to `target` whose `target` attribute names another
+/// tab (`_blank`, a tab's name, a name no frame or tab has): asks the
+/// front end to load it there and returns true; false when it loads in
+/// this tab or a frame of it.
+pub fn openElsewhere(p: *mut Page, el: dom.NodeId, target: *Url) AllocError!bool {
+    if text.eql(target.scheme, "javascript") || text.eql(target.scheme, "mailto") {
+        return false
+    }
+    return (try targetContext(p, el, target.href, null)) != 0
+}
+
+/// `openElsewhere` for the submission `sub` of `form`.
+pub fn submitElsewhere(p: *mut Page, form: dom.NodeId, sub: *Submission) AllocError!bool {
+    if !sub.post {
+        return (try targetContext(p, form, sub.target.href, null)) != 0
+    }
+    var body = net.Body { content_type: sub.content_type, data: sub.body }
+    return (try targetContext(p, form, sub.target.href, &body)) != 0
+}
+
+// ---- without a window
+
+/// Serves the requests in memory when no window does (`dump`, the
+/// agent's stdio server): opens each context in a tab of the engine's,
+/// loads its page, runs its due timers and follows the navigations its
+/// scripts ask for, until nothing changes (16 rounds at most).
+pub fn pumpContexts() AllocError!void {
+    let t = bc_table orelse return
+    if bc_tab_host || t.pumping {
+        return
+    }
+    t.pumping = true
+    defer {
+        t.pumping = false
+        bcRelease()
+    }
+    for round in 0..16 {
+        var did = false
+        while takeContextRequest() |r| {
+            did = true
+            defer freeContextRequest(r)
+            try serveInMemory(t, r)
+        }
+        var k: usize = 0
+        while k < t.items.len() {
+            let c = t.items.items()[k]
+            k += 1
+            let tab = c.own orelse continue
+            let p = tab.page orelse continue
+            let ran = try runDueTimers(p)
+            let nav = takeNavigation(tab.page.?)
+            if nav.kind is .To {
+                let target = url.parse(t.alloc, nav.href) catch |e| {
+                    continue
+                }
+                defer target.deinit(t.alloc)
+                try tab.navigate(&target)
+                did = true
+            } else if ran {
+                did = true
+            }
+        }
+        if !did {
+            break
+        }
+    }
+}
+
+fn serveInMemory(t: *mut ContextTable, r: ContextRequest) AllocError!void {
+    let c = contextOf(r.context) orelse return
+    if r.ask is .Close {
+        if c.own |tab| {
+            c.own = null
+            tab.deinit()
+            t.alloc.destroy(tab)
+        }
+        return
+    }
+    if c.own == null {
+        let fresh = try t.alloc.create(Tab.init(t.alloc))
+        adoptContext(fresh, r.context)
+        contextOf(r.context).?.own = fresh
+    }
+    let tab = contextOf(r.context).?.own.?
+    let target = url.parse(t.alloc, r.href) catch |e| {
+        return
+    }
+    defer target.deinit(t.alloc)
+    try loadInTab(tab, &target, r)
+}
+
+/// Loads the URL of request `r` (`target`, parsed) in `tab`, by POST
+/// when it has a body. Returns whether a new page was loaded.
+pub fn loadInTab(tab: *mut Tab, target: *Url, r: ContextRequest) AllocError!bool {
+    if !r.post {
+        return tab.navigate(target)
+    }
+    var body = net.Body { content_type: r.content_type, data: r.body }
+    tab.enter()
+    let p = try loadWith(tab.alloc, target, &body)
+    errdefer p.destroy()
+    try tab.push(target, p)
+    return true
+}
+
+/// Closes the contexts loaded in memory and drops the requests left (at
+/// the end of a `dump`).
+pub fn closeContexts() {
+    let t = bc_table orelse return
+    t.pumping = true
+    while takeContextRequest() |r| {
+        freeContextRequest(r)
+    }
+    var k: usize = 0
+    while k < t.items.len() {
+        let c = &mut t.items.items()[k]
+        if c.own |tab| {
+            c.own = null
+            tab.deinit()
+            t.alloc.destroy(tab)
+            k = 0
+            continue
+        }
+        k += 1
+    }
+    t.pumping = false
+    bcRelease()
+}

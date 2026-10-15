@@ -1423,6 +1423,8 @@ pub fn runDueTimers(p: *mut Page) AllocError!bool {
             }
         }
     }
+    // Without a window, popups the scripts opened load in memory.
+    try pumpContexts()
     return ran
 }
 
@@ -1512,7 +1514,11 @@ pub fn advanceClock(p: *mut Page, ms: f64) AllocError!void {
 pub fn runUntilIdle(p: *mut Page, max_ms: f64) AllocError!void {
     let end = pageClock(p) + max_ms
     var n: usize = 0
+    // Popups the page opened load in memory first: what they post to it
+    // is a task of the page (contexts.aye).
+    try pumpContexts()
     while n < MAX_TASKS && try runNextTimer(p, end) {
+        try pumpContexts()
         n += 1
     }
 }
@@ -1700,6 +1706,15 @@ pub fn evalInPage(p: *mut Page, src: []u8, out: *mut text.Builder) AllocError!bo
     try runMicrotasks(s)
     try afterTask(s)
     return true
+}
+
+/// Did a script ask for a navigation that `takeNavigation` did not take
+/// yet (one that a script of the page asked for while it loaded)?
+pub fn navigationPending(p: *mut Page) bool {
+    if p.script |s| {
+        return s.nav_kind != NavKind.None
+    }
+    return false
 }
 
 /// The navigation a script asked for (location.href = ..., history.back(),

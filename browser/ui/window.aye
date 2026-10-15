@@ -219,6 +219,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     engine.setScripting(o.js)
     engine.setCanvasFixed(system == null)
     engine.setRealClock(true)
+    // window.open and `target=_blank` open tabs of the window.
+    engine.setTabHost(true)
     // The console goes to stderr, except in headless test runs.
     engine.setConsoleEcho(o.frames == 0 && !o.exit_when_idle)
     if SDL_Init(SDL_INIT_VIDEO) != 0 {
@@ -464,6 +466,7 @@ pub struct Ui {
         for i in 0..self.count {
             freeSlot(self.alloc, self.slots[i].?)
         }
+        engine.closeContexts()
         self.address.deinit()
         self.find.deinit()
         self.matches.deinit()
@@ -572,7 +575,9 @@ pub struct Ui {
             try self.flushWheel()
             if self.tab.page |p| {
                 let t_timers = perf.start()
-                if try engine.runDueTimers(p) {
+                if (try engine.runDueTimers(p)) || engine.navigationPending(p) {
+                    // A navigation that a script asked for while the page
+                    // loaded is followed here too (one per iteration).
                     try self.afterScripts()
                     contextMayChange(self)
                 }
@@ -580,6 +585,9 @@ pub struct Ui {
             }
             try runSpaceTimers(self)
             try pollAgents(self)
+            if engine.hasContextRequests() {
+                try serveContexts(self)
+            }
             if self.resized {
                 self.resized = false
                 if try self.resize() {
@@ -1439,6 +1447,9 @@ pub struct Ui {
         }
         if engine.takeScriptScroll(p) |y| {
             self.scrollTo(y)
+        }
+        if engine.hasContextRequests() {
+            try serveContexts(self)
         }
     }
 

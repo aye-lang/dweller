@@ -17,6 +17,7 @@ import engine
 import font
 import std.mem.AllocError
 import std.mem.Allocator
+import url
 
 /// A tab of the window.
 pub struct TabSlot {
@@ -205,4 +206,88 @@ fn clickTabStrip(ui: *mut Ui, x: f64) AllocError!void {
     if i != ui.active {
         try showTab(ui, i)
     }
+}
+
+// ---- other browsing contexts (engine/contexts.aye)
+
+/// The index of the tab that shows context `id`.
+fn contextSlot(ui: *Ui, id: u32) ?usize {
+    if id == 0 {
+        return null
+    }
+    for i in 0..ui.count {
+        if ui.slots[i].?.session.tab.context == id {
+            return i
+        }
+    }
+    return null
+}
+
+/// Serves what scripts and links asked of other tabs: window.open and
+/// `target=_blank` open a tab (shown, as browsers show a popup; an
+/// agent's in the background, and an agent's tab), a named target loads
+/// in its tab, window.close() closes a tab a script opened (showing its
+/// opener's tab when it was shown).
+fn serveContexts(ui: *mut Ui) AllocError!void {
+    while engine.takeContextRequest() |r| {
+        defer engine.freeContextRequest(r)
+        try serveContext(ui, r)
+    }
+}
+
+fn serveContext(ui: *mut Ui, r: engine.ContextRequest) AllocError!void {
+    let c = engine.contextOf(r.context) orelse return
+    match r.ask {
+        .Close => {
+            let i = contextSlot(ui, r.context) orelse return
+            if ui.count <= 1 {
+                return
+            }
+            let shown = i == ui.active
+            let opener = c.opener
+            if try removeTab(ui, i) |slot| {
+                forgetTab(ui, slot.id)
+                freeSlot(ui.alloc, slot)
+            }
+            if shown {
+                if contextSlot(ui, opener) |k| {
+                    if k != ui.active {
+                        try showTab(ui, k)
+                    }
+                }
+            }
+        }
+        .Open => {
+            let agent_side = c.agent || isSpace(ui)
+            let i = (try openTab(ui, !agent_side)) orelse return
+            let slot = ui.slots[i].?
+            slot.agent = agent_side
+            engine.adoptContext(slot.session.tab, r.context)
+            engine.setContextAgent(r.context, agent_side)
+            try loadInSlot(ui, i, r)
+        }
+        .Navigate => {
+            let i = contextSlot(ui, r.context) orelse return
+            try loadInSlot(ui, i, r)
+        }
+    }
+}
+
+// Loads the URL of request `r` in tab `i` (the shown one as the address
+// bar would; another in the background).
+fn loadInSlot(ui: *mut Ui, i: usize, r: engine.ContextRequest) AllocError!void {
+    let target = url.parse(ui.alloc, r.href) catch |e| {
+        return
+    }
+    defer target.deinit(ui.alloc)
+    let slot = ui.slots[i].?
+    if i == ui.active {
+        let loaded = try engine.loadInTab(ui.tab, &target, r)
+        return ui.navigated(loaded)
+    }
+    if try engine.loadInTab(slot.session.tab, &target, r) {
+        // The agents' refs are of the old document.
+        slot.shown += 1
+    }
+    ui.dirty = true
 }

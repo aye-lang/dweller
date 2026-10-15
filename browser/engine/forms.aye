@@ -71,6 +71,16 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
             target.deinit(page.alloc)
             return Activation.Nothing
         }
+        // `target=_blank` or another tab's name: that tab loads it
+        // (contexts.aye).
+        let elsewhere = openElsewhere(page, el, &target) catch |e| {
+            target.deinit(page.alloc)
+            return AllocError.OutOfMemory
+        }
+        if elsewhere {
+            target.deinit(page.alloc)
+            return Activation.Nothing
+        }
         return Activation.Follow { target: target }
     }
     if doc.isElement(el, "label") {
@@ -756,6 +766,7 @@ pub fn navigateTo(tab: *mut Tab, sub: *Submission) AllocError!bool {
         return tab.navigate(&sub.target)
     }
     var body = net.Body { content_type: sub.content_type, data: sub.body }
+    tab.enter()
     let p = try loadWith(tab.alloc, &sub.target, &body)
     errdefer p.destroy()
     try tab.push(&sub.target, p)

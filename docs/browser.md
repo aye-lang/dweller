@@ -684,6 +684,27 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `target`. The snapshot and `read` give refs inside frames and agent
     actions work there; in the window, clicks reach the frame's
     document.
+  - *Popups and other tabs* (P4.52, `engine/contexts.aye`):
+    `window.open(url, name, features)` returns the new tab's window
+    at once and the window opens the tab (shown; a popup is a tab)
+    once the script returned; `target=_blank` links and forms, and a
+    target name no frame or tab has, open a tab too. `_blank` links
+    get no opener unless `rel=opener`; `noopener`/`noreferrer` (rel or
+    features) drop it, and window.open then returns null. A named
+    target (window.open's or a link's) loads in the tab of that name.
+    `window.opener`, `window.name`, `window.close()` (for a tab a
+    script opened), `popup.close()`, `popup.closed`, `popup.location`
+    and `postMessage` between tabs with its origin check and
+    `event.source`/`event.origin`; a closed popup's tab gives way to
+    its opener's. A tab an agent's page opens is an agent's tab, in
+    the background (in a Space, the Space's); names never reach across
+    the person's and the agents' tabs. Without a window (`dump --js`,
+    `screenshot`, `dweller agent` and `mcp`) the new context loads in
+    memory: its scripts run, the navigations they ask for are
+    followed (16 rounds at most per pump), it reaches its opener by
+    `opener` and `postMessage` and closes, but it is never shown or
+    dumped; the page's dump shows what it received. Popup blocking
+    (only after a click) is not done yet.
   - *HTML5 forms* (by GPT-6.1-sol through pi): text-like and calendar
     inputs (date, time, datetime-local, month, week), number controls,
     draggable range sliders, color swatches, file placeholders,

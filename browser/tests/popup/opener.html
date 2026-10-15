@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<title>Opener</title>
+<!-- The OAuth popup pattern (tests/browser.rs window_login_popup): this
+     page (origin A) opens the sign-in page of origin B (localhost) in a
+     popup; B redirects back to A's callback page, which posts the code
+     to its opener and closes itself. With #auto the popup opens at load
+     (`dump --js`, which has no clicks). -->
+<button id="signin" style="position:absolute;left:0;top:0;width:200px;height:50px">Sign in</button>
+<p id="out">waiting</p>
+<script>
+let popup = null;
+let messages = 0;
+function signIn() {
+  const back = location.origin + '/popup/callback.html';
+  const signin = 'http://localhost:' + location.port + '/popup/authorize.html?redirect_uri=' + encodeURIComponent(back) + '&state=s1';
+  popup = window.open(signin, 'signin', 'popup,width=500,height=600');
+  document.getElementById('out').textContent = 'opened ' + (popup !== null) + ' closed ' + (popup && popup.closed);
+}
+document.getElementById('signin').addEventListener('click', signIn);
+window.addEventListener('message', function (e) {
+  messages += 1;
+  if (e.origin !== location.origin) {
+    document.getElementById('out').textContent += ' | ignored ' + e.origin;
+    return;
+  }
+  const d = e.data;
+  document.getElementById('out').textContent = 'got code=' + d.code + ' state=' + d.state + ' seen=' + d.seen +
+    ' from ' + (e.source === popup ? 'the popup' : 'elsewhere') + ' closed ' + popup.closed + ' messages ' + messages;
+  document.title = 'Signed in';
+});
+if (location.hash === '#auto') signIn();
+</script>
