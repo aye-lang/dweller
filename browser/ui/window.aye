@@ -31,6 +31,7 @@ import engine
 import font
 import layout
 import paint
+import perf
 import std
 import std.list.List
 import std.mem.AllocError
@@ -497,14 +498,24 @@ pub struct Ui {
             // The time of this iteration without its wait for events
             // (`loop_max_ms` in `--state`).
             let start = std.time.monotonicMs()
+            let t_loop = perf.start()
             var waited: u64 = 0
+            var waited_ns: u64 = 0
             if self.dirty || frames > 0 {
+                let t_draw = perf.start()
                 try self.draw()
+                perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 drawn += 1
             }
             if frames > 0 && drawn >= frames {
                 return
+            }
+            if frames > 0 && self.rest.len() > 0 {
+                // The script words after a `frame` (script.aye).
+                let t_script = perf.start()
+                try resumeScript(self)
+                perf.end("ui_events", t_script, "script")
             }
             var ev = @zeroed(SDL_Event)
             var timeout: i32 = 1000
@@ -523,31 +534,39 @@ pub struct Ui {
                 }
             }
             let before = std.time.monotonicMs()
+            let before_ns = perf.start()
             if isSpace(self) {
                 // No person: wait for the agent (and the window) instead.
                 waitInSpace(self, timeout)
                 waited = std.time.monotonicMs() - before
+                waited_ns = perf.start() - before_ns
                 while SDL_PollEvent(&mut ev) != 0 {
                     try self.handle(&ev)
                 }
             } else if SDL_WaitEventTimeout(&mut ev, timeout) != 0 {
                 waited = std.time.monotonicMs() - before
+                waited_ns = perf.start() - before_ns
+                let t_events = perf.start()
                 try self.handle(&ev)
                 while SDL_PollEvent(&mut ev) != 0 {
                     try self.handle(&ev)
                 }
                 // The Spaces get the person's new context.
                 contextMayChange(self)
+                perf.end("ui_events", t_events, "")
             } else {
                 waited = std.time.monotonicMs() - before
+                waited_ns = perf.start() - before_ns
             }
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
             if self.tab.page |p| {
+                let t_timers = perf.start()
                 if try engine.runDueTimers(p) {
                     try self.afterScripts()
                     contextMayChange(self)
                 }
+                perf.end("ui_timers", t_timers, "")
             }
             try runSpaceTimers(self)
             try pollAgents(self)
@@ -558,6 +577,9 @@ pub struct Ui {
                 }
             }
             noteLoopTime(self, std.time.monotonicMs() - start - waited)
+            if t_loop != 0 {
+                perf.end("ui_loop", t_loop + waited_ns, "")
+            }
         }
     }
 
@@ -650,6 +672,8 @@ pub struct Ui {
     // Lays the page out again for the window and rebuilds the display
     // list (and the find matches).
     fn relayout(self: *mut Self) AllocError!void {
+        let t_relayout = perf.start()
+        defer perf.end("ui_relayout", t_relayout, "")
         self.dropList()
         if self.tab.page |p| {
             try p.layoutPage(self.measure, self.win_w as f64, self.layoutHeight())
@@ -666,7 +690,9 @@ pub struct Ui {
     // ---- navigation
 
     fn go(self: *mut Self, target: *url.Url) AllocError!void {
+        let t_go = perf.start()
         let loaded = try self.tab.navigate(target)
+        perf.end("ui_navigate", t_go, "")
         try self.navigated(loaded)
     }
 

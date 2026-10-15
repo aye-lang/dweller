@@ -418,6 +418,95 @@ Next, in priority order:
   workload from fixed-font Markdown.
 - Add response-header/cookie journals before authenticated benchmarks.
 
+## Window: where the time goes for a person (2026-10-15)
+
+The user's report: "still too laggy; some sites are extremely slow, while
+Chrome shows them with no problem at all". Measured in the window, not
+`dump`: live network (Taiwan, about 220 ms to US hosts), fast build,
+1024×768 at scale 2, same M2 Pro, at 194c357 (before P4.31's wheel
+change). Cards P4.32–P4.39 in `docs/plans/browser.md`.
+
+**Method.** With `DWELLER_TIMING=1` the window loop writes `ui_navigate`
+(a navigation, page load included), `ui_relayout` (`Ui.relayout`:
+`layoutPage` and the display list), `ui_draw` (raster and texture
+upload), `ui_events` (input handling), `ui_timers` (due timers and the
+layout after them) and `ui_loop` (one iteration without its wait). The
+`--events` word `frame` makes the rest of the script wait for the next
+frame, so `wheel:-3 frame` repeated scrolls one step per frame.
+`loop_max_ms` in `--state` only counts while agents are connected, so the
+tool reads `ui_loop` instead:
+
+```sh
+browser/build.sh target/dweller-perf
+python3 browser/tools/window_perf.py scroll URL --binary target/dweller-perf  # load + 40 wheel frames
+python3 browser/tools/window_perf.py idle URL --binary target/dweller-perf    # CPU% of 10 idle s
+```
+
+Chrome: `agent-browser` (bare), first-contentful-paint, load event and
+buffered `longtask` entries. Scroll frames are headless `--frames` runs
+(each iteration draws). Idle CPU is a real window, 5 s after its first
+frame, for 10 s.
+
+| Site | First paint Dweller / Chrome FCP (load) s | Scroll frame p50 / p95 ms | Idle CPU | Longest loop ms | Main cost (profile, records) |
+|---|---|---|---:|---:|---|
+| github.com/aye-lang/aye | 5.4 / 1.45 (2.0) | 18 / 419 | 21.5% | 2898 | 129 synchronous requests (3.0 s) before paint; each DOM change after load = 2 full cascades (~330 ms each, container queries) + layout 370 ms; typing 1157 ms p50 per key while timers run |
+| en.wikipedia.org | 1.8 / 0.89 (1.6) | 9 / 10 | 0.3% | 38 | serial network: sheets fetched after the scripts, images (0.43 s) before the first paint |
+| developer.mozilla.org | 5.1 / 0.48 (0.57) | 11 / 13 | 0.1% | 53 | `index.js` takes 3.6 s: 48 webpack chunks fetched one by one, synchronously, inside it |
+| www.bbc.com/news | 4.1 / 2.0 (5.8) | 23 / 31 | 1.1% | 455 | prefetch 2.5 s + 91 synchronous requests before paint; draw 20 ms |
+| www.youtube.com | 15.8 / 0.63 (2.5) | 16 / 750 | 6.6% | 5440 | the first layout waits 6.1 s for images; timers make synchronous `videoplayback`/XHR requests (6 × 0.6 s in one iteration) |
+| react.dev | 1.7 / 0.56 (0.8) | 201 / 534 | 0.9% | 749 | draw (92% of main-thread samples): gradient tiles 41%, SVG 23%, opacity/filter layers 23%, blurred shadows 19%, every frame |
+| mistral.ai | 2.6 / 0.75 (2.5) | 61 / 70 | **100.9%** | 230 | an animation changes the DOM every tick: `Ui.relayout` → `restyleWithSizes` (full cascade) is 71% of samples, forever |
+| news.ycombinator.com | 1.7–2.4 / 1.2 cold | 7 / 9 | 0.1% | 16 | serial network: `news.css` fetched after `hn.js`, on a new TLS connection (753 ms; 260 ms reused) |
+| www.apple.com | 1.7 / 0.65 (1.3) | 27 / 182 | 7.5% | 1139 | relayouts (0.65–0.95 s) with image prefetch inside; draw 28 ms |
+| medium.com | 0.5 / 0.29 (0.41) | 26 / 34 | 0.0% | 73 | draw 25 ms |
+
+stackoverflow.com/questions (Cloudflare challenge) and www.reddit.com (block
+page) served Dweller no content; not comparable. The longest loop does not
+include the first load: the first navigation runs before `Ui.loop`, and
+the window shows nothing and takes no input until it ends (the "first
+paint" column). Network wait before the first paint (synchronous requests
+plus prefetch batches): YouTube 14.1 of 15.8 s, MDN 4.8 of 5.1, GitHub
+4.1 of 5.4, BBC 3.6 of 4.1, HN 1.6 of 1.7, Wikipedia 1.7 of 1.8.
+
+### Root causes, by what a person feels
+
+1. **The window thread waits for the network.** `Tab.navigate` loads the
+   document, fetches and runs every script, then `relayout` fetches the
+   sheets and every image, and only then the first frame is drawn; a
+   batch is per kind (scripts, then sheets, then images), each waiting for
+   the previous one. Page `fetch()`/XHR and dynamic script chunks are
+   synchronous (`akFetch`; prelude XHR "synchronous underneath"), so each
+   costs a round trip (0.1–0.8 s) of a frozen window, also after load
+   (GitHub partials, YouTube's player). Chrome paints before scripts and
+   images and never blocks input on the network.
+2. **Every DOM change restyles and lays out the whole document.** The
+   window's `relayout` calls `layoutPage`, which runs `restyleWithSizes`
+   (full cascade; twice with container queries) and a full layout, then
+   rebuilds the display list. The P3.63/P3.64 subtree restyle and
+   incremental layout serve only the scripts' forced reads (a separate
+   `Geometry`). GitHub: 0.4–0.9 s per change; Mistral: every animation
+   tick, so the idle page takes a full core.
+3. **Paint keeps nothing between frames.** Each frame rasterizes the whole
+   visible display list again at device resolution: CSS gradients pixel
+   by pixel (`fillGradient`), SVGs, blurred shadows and layers, then
+   uploads the full texture. react.dev scrolls at ~5 fps; simple pages
+   take 7–25 ms per frame at 1024×768 (more in a larger window).
+4. **Busy pages stay busy.** Timers keep the idle CPU at 21.5% (GitHub),
+   7.5% (Apple), 6.6% (YouTube); this is causes 1 and 2 repeating.
+5. **Connections are not reused across batches** (HN: the sheet batch
+   opened a new TLS connection, 753 ms instead of 260 ms).
+
+Interaction itself is cheap where nothing else runs: a wheel step costs
+its frame's draw (`ui_events` ≈ 0 ms; scroll listeners run as tasks),
+typing in the address bar 7 ms, a key in GitHub's "Go to file" field
+~30–50 ms (a full `relayout` per key, styles current). The lag is the
+work above sharing the one thread.
+
+The user's log lines are from mistral.ai: `SVGAElement is not defined`
+from Astro's `ClientRouter` click handler (`t instanceof SVGAElement`,
+on every click that is not on an `<a>`), and `e.getTotalLength is not a
+function` from its `layout` script's SVG path polyfill.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and
