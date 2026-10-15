@@ -250,6 +250,8 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         .Page => "page"
         .Address => "address"
         .Find => "find"
+        .AuthUser => "auth_user"
+        .AuthPassword => "auth_password"
     })
     try out.append("\naddress ")
     try out.append(ui.address.bytes())
@@ -266,6 +268,14 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
+    if ui.auth.open {
+        // The sign-in prompt (auth.aye): its realm and username.
+        try out.append("auth ")
+        try out.append(ui.auth.realm.bytes())
+        try out.append(" user ")
+        try out.append(ui.auth.user.bytes())
+        try out.append("\n")
+    }
     if ui.tab.page |p| {
         if p.frames.len() > 0 {
             // How far each frame's document is scrolled.

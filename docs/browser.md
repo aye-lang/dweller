@@ -567,6 +567,33 @@ on (`--no-js` turns it off), `dump` with `--js`.
     corrupt the file. `DWELLER_COOKIE_FILE=FILE` still works and takes
     the place of `<profile>/cookies`, with the persistent cookies only
     (as before profiles).
+  - *HTTP Basic authentication* (P10.22, `net/auth.aye`,
+    `ui/auth.aye`; RFC 7617): a 401 with `WWW-Authenticate: Basic
+    realm="..."` on the person's navigation in the window opens a
+    sign-in sheet under the toolbar ("Sign in to host:port", the realm,
+    Username, Password masked, Cancel and Sign in). The focus stays in
+    the sheet while it is open (Tab between the fields; clicks elsewhere
+    and window shortcuts wait, but Cmd+Q); Enter or Sign in loads the
+    page again with `Authorization: Basic`, and a wrong password brings
+    the sheet back with the username kept; Escape or Cancel closes it
+    and leaves the 401 page. `--state` prints `auth REALM user NAME`
+    while it is open and the focus `auth_user` or `auth_password`.
+    Credentials are kept per origin and realm for the process only
+    (never in the profile) and sent at once to the origin's paths under
+    the directory they were given for; a 401 naming a kept realm
+    elsewhere on the origin is asked again once with them (document
+    requests; subresources, `fetch` and XHR only send what applies at
+    once and never prompt); a 401 to credentials sent drops them. URL
+    userinfo (`http://user:pass@host/`) is sent by libcurl and, once the
+    server takes it, kept for the origin's directory like the sheet's
+    (realm unknown); the address bar leaves `user:pass@` out. Agents and
+    Spaces never get the sheet: their navigation shows the 401 page and
+    the reply has `auth_required` (agent-protocol.md), so the agent
+    retries with userinfo. `dump` shows the 401 page. Digest and proxy
+    authentication are not done. Tests `window_login_basic`,
+    `window_login_basic_prompt` (with the golden
+    `browser/tests/ui/auth_prompt.png`), `window_login_basic_cancel`,
+    `net_basic_auth`.
   - *Web Storage* (P4.51, `engine/storage.aye`): `localStorage` is per
     origin and shared by every page of the process. With a profile, an
     origin's items are read from `<profile>/storage/<origin>` (the

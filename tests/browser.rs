@@ -4530,7 +4530,6 @@ fn storage_between_tabs() {
 /// per origin and realm for the process: the same page without them, in
 /// the same run, is 200 too.
 #[test]
-#[ignore = "P10.22: HTTP Basic authentication (per-realm cache)"]
 fn window_login_basic() {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -4546,6 +4545,214 @@ fn window_login_basic() {
     assert!(
         got.contains(&format!("url {basic}\n")) && got.contains("Basic: signed in as alice"),
         "{got}"
+    );
+}
+
+/// P10.22: the sign-in prompt of a 401 with `WWW-Authenticate: Basic` in
+/// the person's window (ui/auth.aye): typing the username, Tab, the
+/// password and Enter loads `/basic` again with the credentials; a wrong
+/// password brings the prompt back with the username kept and the focus
+/// on the password. The prompt is `browser/tests/ui/auth_prompt.png`
+/// (`DWELLER_BLESS=1` rewrites it; the fixed font draws every digit of
+/// the server's port alike).
+#[test]
+fn window_login_basic_prompt() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let basic = format!("{}/basic", srv.base);
+    let asked = login_window(&basic, "frame", None);
+    assert!(
+        asked.contains("focus auth_user\n")
+            && asked.contains("auth r user \n")
+            && asked.contains("401: sign in to realm r"),
+        "{asked}"
+    );
+    let signed = login_window(
+        &basic,
+        "frame text:alice key:tab text:wonderland key:return frame frame",
+        None,
+    );
+    assert!(
+        signed.contains(&format!("url {basic}\nscroll 0\nfocus page\n"))
+            && signed.contains("history 1 of 1\n")
+            && signed.contains("Basic: signed in as alice")
+            && !signed.contains("\nauth "),
+        "{signed}"
+    );
+    let wrong = login_window(
+        &basic,
+        "frame text:alice key:tab text:queen key:return frame frame",
+        None,
+    );
+    assert!(
+        wrong.contains("focus auth_password\n")
+            && wrong.contains("auth r user alice\n")
+            && wrong.contains("401: sign in to realm r"),
+        "{wrong}"
+    );
+    let again = login_window(
+        &basic,
+        "frame text:alice key:tab text:queen key:return frame frame \
+         text:wonderland key:return frame frame",
+        None,
+    );
+    assert!(again.contains("Basic: signed in as alice"), "{again}");
+    // While the prompt is open a click on the page or a key for the
+    // window leaves the focus in it.
+    let held = login_window(&basic, "frame click:200,280 key:cmd+l text:al", None);
+    assert!(
+        held.contains("focus auth_user\n") && held.contains("auth r user al\n"),
+        "{held}"
+    );
+    let png = scratch().join("auth_prompt.png");
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .args([
+            &basic,
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "40",
+            "--events",
+            "frame text:alice key:tab text:wonder",
+            "--save",
+            png.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}",
+        text(&out.stderr)
+    );
+    let golden = root().join("browser/tests/ui/auth_prompt.png");
+    let got = std::fs::read(&png).unwrap();
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+    } else {
+        assert!(
+            got == std::fs::read(&golden).unwrap(),
+            "the sign-in prompt differs from {}: {}",
+            golden.display(),
+            png.display()
+        );
+    }
+}
+
+/// P10.22: Escape or Cancel closes the sign-in prompt and leaves the 401
+/// page shown, the focus on the page; Sign in (a click) signs in. With
+/// URL userinfo the address bar leaves `user:pass@` out.
+#[test]
+fn window_login_basic_cancel() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let basic = format!("{}/basic", srv.base);
+    // In a 400 px window the sheet is x 30-370 from y 39; Cancel is at
+    // x 206-278 and Sign in at 298-370, y 153-177.
+    for events in [
+        "frame text:alice key:escape frame",
+        "frame text:alice click:240,165 frame",
+    ] {
+        let got = login_window(&basic, events, None);
+        assert!(
+            got.contains("focus page\n")
+                && !got.contains("\nauth ")
+                && got.contains("401: sign in to realm r"),
+            "{events}: {got}"
+        );
+    }
+    let clicked = login_window(
+        &basic,
+        "frame text:alice key:tab text:wonderland click:330,165 frame frame",
+        None,
+    );
+    assert!(clicked.contains("Basic: signed in as alice"), "{clicked}");
+    let userinfo = basic.replace("http://", "http://alice:wonderland@");
+    let shown = login_window(&userinfo, "frame", None);
+    assert!(
+        shown.contains(&format!("url {userinfo}\n"))
+            && shown.contains(&format!("address {basic}\n"))
+            && shown.contains("Basic: signed in as alice"),
+        "{shown}"
+    );
+}
+
+/// P10.22: an agent never gets the sign-in prompt: its navigation to a
+/// 401 with a Basic challenge shows the 401 page and the reply says
+/// `auth_required` with the realm; it signs in with URL userinfo, and
+/// the credentials are cached for the process. `dump` shows the 401
+/// page.
+#[test]
+fn net_basic_auth() {
+    use std::io::Write;
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let basic = format!("{}/basic", srv.base);
+    let userinfo = basic.replace("http://", "http://alice:wonderland@");
+    let mut child = Command::new(dweller())
+        .current_dir(root())
+        .arg("agent")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = format!(
+        "{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{basic}\"}}\n\
+         {{\"id\":2,\"cmd\":\"navigate\",\"url\":\"{userinfo}\"}}\n\
+         {{\"id\":3,\"cmd\":\"navigate\",\"url\":\"{basic}\"}}\n"
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3, "{got}");
+    assert!(
+        lines[0].contains(&format!("\"result\":\"loaded {basic} (status 401)\""))
+            && lines[0].contains("\"auth_required\":{\"scheme\":\"Basic\",\"realm\":\"r\"}"),
+        "{got}"
+    );
+    for line in &lines[1..] {
+        assert!(
+            line.contains("Basic: signed in as alice") && !line.contains("auth_required"),
+            "{got}"
+        );
+    }
+    expect(
+        &["dump", "--text", &basic],
+        0,
+        "401: sign in to realm r\n",
+        "",
     );
 }
 

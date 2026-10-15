@@ -381,14 +381,14 @@ pub fn drawTabStrip(ui: *mut Ui) AllocError!void {
     }
 }
 
-// How far the text of field `f` is shifted left so that its caret
-// shows in a box `r` wide; 0 when the field has no focus (the start of
-// the text shows).
-fn fieldShift(ui: *mut Ui, fd: *Field, r: paint.Rect, f: font.Font, focused: bool) f64 {
+// How far the text `s` of a field is shifted left so that its caret
+// (at byte `caret`) shows in a box `r` wide; 0 when the field has no
+// focus (the start of the text shows).
+fn fieldShift(ui: *mut Ui, s: []u8, caret: usize, r: paint.Rect, f: font.Font, focused: bool) f64 {
     if !focused {
         return 0.0
     }
-    let caret_x = ui.measure.width(f, fd.bytes()[..fd.caret])
+    let caret_x = ui.measure.width(f, s[..caret])
     let room = r.w - 2.0 * PAD
     if caret_x > room {
         return caret_x - room
@@ -397,6 +397,32 @@ fn fieldShift(ui: *mut Ui, fd: *Field, r: paint.Rect, f: font.Font, focused: boo
 }
 
 fn drawField(ui: *mut Ui, fd: *Field, r: paint.Rect, focused: bool, size: f64) AllocError!void {
+    return drawText(ui, fd.bytes(), fd.caret, fd.all, r, focused, size)
+}
+
+// A password field: a bullet for each character.
+fn drawMasked(ui: *mut Ui, fd: *Field, r: paint.Rect, focused: bool, size: f64) AllocError!void {
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+    let v = fd.bytes()
+    var caret: usize = 0
+    var i: usize = 0
+    while i < v.len {
+        if i == fd.caret {
+            caret = b.len()
+        }
+        try b.append("\xE2\x80\xA2")
+        i += text.decode(v[i..]).len
+    }
+    if fd.caret >= v.len {
+        caret = b.len()
+    }
+    return drawText(ui, b.bytes(), caret, fd.all, r, focused, size)
+}
+
+// A field showing `s` with the caret at byte `caret` (everything
+// selected when `all`).
+fn drawText(ui: *mut Ui, s: []u8, caret: usize, all: bool, r: paint.Rect, focused: bool, size: f64) AllocError!void {
     let f = uiFont(size)
     fill(ui, r.x, r.y, r.w, r.h, PAPER)
     if focused {
@@ -406,16 +432,15 @@ fn drawField(ui: *mut Ui, fd: *Field, r: paint.Rect, focused: bool, size: f64) A
     }
     let inner = paint.Rect { x: r.x + 2.0, y: r.y + 2.0, w: r.w - 4.0, h: r.h - 4.0 }
     try ui.canvas.pushClip(paint.deviceRect(inner, screen(ui)))
-    let shift = fieldShift(ui, fd, r, f, focused)
+    let shift = fieldShift(ui, s, caret, r, f, focused)
     let x = r.x + PAD - shift
     let base = centered(ui, r.y, r.h, f)
-    let s = fd.bytes()
-    if focused && fd.all && s.len > 0 {
+    if focused && all && s.len > 0 {
         fill(ui, x, r.y + 5.0, ui.measure.width(f, s), r.h - 10.0, SELECTION)
     }
     try label(ui, x, base, s, f, INK)
-    if focused && !fd.all {
-        fill(ui, x + ui.measure.width(f, s[..fd.caret]), r.y + 6.0, 1.0, r.h - 12.0, INK)
+    if focused && !all {
+        fill(ui, x + ui.measure.width(f, s[..caret]), r.y + 6.0, 1.0, r.h - 12.0, INK)
     }
     ui.canvas.popClip()
 }
@@ -425,7 +450,7 @@ pub fn caretAt(ui: *mut Ui, x: f64) usize {
     let f = uiFont(14.0)
     let r = addressRect(ui)
     let s = ui.address.bytes()
-    let rel = x - (r.x + PAD - fieldShift(ui, &ui.address, r, f, ui.focus == Focus.Address))
+    let rel = x - (r.x + PAD - fieldShift(ui, s, ui.address.caret, r, f, ui.focus == Focus.Address))
     var best: usize = 0
     var best_d = math.abs(rel)
     var i: usize = 0
@@ -481,4 +506,90 @@ pub fn drawFindBar(ui: *mut Ui, bottom: f64) AllocError!void {
     }
     try b.append("    Enter: next, Shift+Enter: previous, Esc: close")
     try label(ui, 302.0, centered(ui, y, FINDBAR, f), b.bytes(), f, INK)
+}
+
+// ---- the sign-in prompt (auth.aye)
+
+let SHEET_W: f64 = 340.0
+let SHEET_H: f64 = 150.0
+let SHEET_LABEL: f64 = 84.0
+let SHEET_BUTTON_W: f64 = 72.0
+let SHEET_BUTTON_H: f64 = 24.0
+let PRIMARY_INK = Rgba { r: 255, g: 255, b: 255, a: 255 }
+
+/// Where the parts of the sign-in prompt are: a sheet hanging from the
+/// toolbar (under the tab strip), centered.
+pub struct Sheet {
+    box: paint.Rect
+    user: paint.Rect
+    password: paint.Rect
+    cancel: paint.Rect
+    sign_in: paint.Rect
+}
+
+pub fn sheetOf(ui: *Ui) Sheet {
+    var w = SHEET_W
+    if w > ui.win_w as f64 - 2.0 * PAD {
+        w = ui.win_w as f64 - 2.0 * PAD
+    }
+    let x = math.floor((ui.win_w as f64 - w) / 2.0)
+    let y = ui.top() - 1.0
+    let fx = x + 12.0 + SHEET_LABEL
+    let fw = w - 24.0 - SHEET_LABEL
+    let by = y + SHEET_H - 12.0 - SHEET_BUTTON_H
+    let right = x + w - 12.0
+    return Sheet {
+        box: paint.Rect { x: x, y: y, w: w, h: SHEET_H },
+        user: paint.Rect { x: fx, y: y + 50.0, w: fw, h: 24.0 },
+        password: paint.Rect { x: fx, y: y + 80.0, w: fw, h: 24.0 },
+        cancel: paint.Rect { x: right - 2.0 * SHEET_BUTTON_W - 8.0, y: by, w: SHEET_BUTTON_W, h: SHEET_BUTTON_H },
+        sign_in: paint.Rect { x: right - SHEET_BUTTON_W, y: by, w: SHEET_BUTTON_W, h: SHEET_BUTTON_H },
+    }
+}
+
+pub fn inRect(r: paint.Rect, x: f64, y: f64) bool {
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+}
+
+pub fn drawSheet(ui: *mut Ui, origin: []u8, realm: []u8) AllocError!void {
+    let sh = sheetOf(ui)
+    let b = sh.box
+    // A shadow under the sheet, then the sheet.
+    fill(ui, b.x + 2.0, b.y + 2.0, b.w, b.h, Rgba { r: 0, g: 0, b: 0, a: 40 })
+    fill(ui, b.x, b.y, b.w, b.h, BAR_BG)
+    frame(ui, b, 1.0, LINE)
+    try ui.canvas.pushClip(paint.deviceRect(b, screen(ui)))
+    let title = font.Font { size: 14.0, bold: true, italic: false, mono: false }
+    var t = text.Builder.init(ui.alloc)
+    defer t.deinit()
+    try t.append("Sign in to ")
+    try t.append(origin)
+    try label(ui, b.x + 12.0, centered(ui, b.y + 8.0, 20.0, title), t.bytes(), title, INK)
+    let f = uiFont(12.0)
+    t.clear()
+    try t.append("Realm: ")
+    try t.append(realm)
+    try label(ui, b.x + 12.0, centered(ui, b.y + 28.0, 18.0, f), t.bytes(), f, INK)
+    let small = uiFont(13.0)
+    try label(ui, b.x + 12.0, centered(ui, sh.user.y, sh.user.h, small), "Username", small, INK)
+    try label(ui, b.x + 12.0, centered(ui, sh.password.y, sh.password.h, small), "Password", small, INK)
+    ui.canvas.popClip()
+    try drawField(ui, &ui.auth.user, sh.user, ui.focus == Focus.AuthUser, 13.0)
+    try drawMasked(ui, &ui.auth.password, sh.password, ui.focus == Focus.AuthPassword, 13.0)
+    try drawButton(ui, sh.cancel, "Cancel", false)
+    try drawButton(ui, sh.sign_in, "Sign in", true)
+}
+
+fn drawButton(ui: *mut Ui, r: paint.Rect, s: []u8, primary: bool) AllocError!void {
+    let f = uiFont(13.0)
+    var ink = INK
+    if primary {
+        fill(ui, r.x, r.y, r.w, r.h, FOCUS_RING)
+        ink = PRIMARY_INK
+    } else {
+        fill(ui, r.x, r.y, r.w, r.h, PAPER)
+        frame(ui, r, 1.0, LINE)
+    }
+    let w = ui.measure.width(f, s)
+    try label(ui, math.floor(r.x + (r.w - w) / 2.0 + 0.5), centered(ui, r.y, r.h, f), s, f, ink)
 }

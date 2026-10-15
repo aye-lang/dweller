@@ -92,6 +92,9 @@ pub enum Focus {
     Page
     Address
     Find
+    // The sign-in prompt's fields (auth.aye).
+    AuthUser
+    AuthPassword
 }
 
 struct UiOptions {
@@ -393,6 +396,8 @@ pub struct Ui {
     find: Field
     matches: List(paint.Rect)
     current: usize
+    // The sign-in prompt of a 401 (auth.aye).
+    auth: AuthPrompt
     // The URL of the link under the mouse (resolved), for the status
     // line; empty for none.
     hover: text.Builder
@@ -470,6 +475,7 @@ pub struct Ui {
             find: Field.init(alloc),
             matches: List(paint.Rect).init(alloc),
             current: 0,
+            auth: AuthPrompt.init(alloc),
             hover: text.Builder.init(alloc),
             hand: false,
             dropdown: null,
@@ -517,6 +523,7 @@ pub struct Ui {
         engine.closeContexts()
         self.address.deinit()
         self.find.deinit()
+        self.auth.deinit()
         self.matches.deinit()
         self.hover.deinit()
     }
@@ -850,7 +857,7 @@ pub struct Ui {
         self.slots[self.active].?.shown += 1
         self.dropList()
         self.matches.clear()
-        try self.address.set(self.tab.href())
+        try setAddress(self)
         if self.focus == Focus.Address {
             self.focus = Focus.Page
         }
@@ -860,6 +867,7 @@ pub struct Ui {
         // What is in already (file: and data: URLs, the cache) is shown
         // at once, its scripts run.
         try self.advanceLoad(true)
+        try askAuth(self)
     }
 
     // The page shown early (tab.navigateEarly): laid out once its sheets
@@ -976,13 +984,16 @@ pub struct Ui {
             }
         }
         self.scrollTo(y)
-        try self.address.set(self.tab.href())
+        try setAddress(self)
         if self.focus == Focus.Address {
             self.focus = Focus.Page
         }
         self.hover.clear()
         try self.setTitle()
         self.dirty = true
+        if loaded {
+            try askAuth(self)
+        }
     }
 
     fn setTitle(self: *mut Self) AllocError!void {
@@ -1291,6 +1302,9 @@ pub struct Ui {
     }
 
     fn key(self: *mut Self, sym: i32, mods: u16) AllocError!void {
+        if self.auth.open {
+            return authKey(self, sym, mods)
+        }
         self.swallow = false
         if sym == SDLK_ESCAPE && closeSpaceMenu(self) {
             self.swallow = true
@@ -1352,7 +1366,7 @@ pub struct Ui {
             if self.finding {
                 self.closeFind()
             } else if self.focus == Focus.Address {
-                try self.address.set(self.tab.href())
+                try setAddress(self)
                 self.focus = Focus.Page
                 self.dirty = true
             }
@@ -1418,6 +1432,12 @@ pub struct Ui {
     fn field(self: *mut Self) *mut Field {
         if self.focus == Focus.Address {
             return &mut self.address
+        }
+        if self.focus == Focus.AuthUser {
+            return &mut self.auth.user
+        }
+        if self.focus == Focus.AuthPassword {
+            return &mut self.auth.password
         }
         return &mut self.find
     }
@@ -1528,6 +1548,9 @@ pub struct Ui {
     }
 
     fn click(self: *mut Self, x: f64, y: f64) AllocError!void {
+        if self.auth.open {
+            return authClick(self, x, y)
+        }
         if try clickMenu(self, x, y) {
             return
         }
@@ -1687,8 +1710,8 @@ pub struct Ui {
             try self.setTitle()
         }
         // pushState, replaceState or a fragment navigation of the scripts.
-        if self.focus != Focus.Address && !text.eql(self.address.bytes(), self.tab.href()) {
-            try self.address.set(self.tab.href())
+        if self.focus != Focus.Address && !addressShown(self) {
+            try setAddress(self)
             self.dirty = true
         }
         if engine.takeScriptScroll(p) |y| {
@@ -1774,6 +1797,9 @@ pub struct Ui {
         }
         if self.finding {
             try drawFindBar(self, bottom)
+        }
+        if self.auth.open {
+            try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }
         try drawSpaceMenu(self)
         if self.texture |t| {

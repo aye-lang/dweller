@@ -1,0 +1,220 @@
+// The sign-in prompt of HTTP Basic authentication (net/auth.aye): when
+// the person's navigation in the window gets a 401 with a Basic
+// challenge, a sheet under the toolbar asks for a username and a
+// password (masked) for the origin and realm. The focus stays in the
+// sheet while it is open: Tab moves between its fields, Enter (or Sign
+// in) reloads the page with the credentials (kept by net for the
+// process), Escape (or Cancel) closes it and leaves the 401 page shown.
+// Wrong credentials get the 401 again, and the sheet again. A Space
+// never asks (its agent is told `auth_required`, agents.aye), nor does
+// `dump`.
+
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+pub struct AuthPrompt {
+    open: bool
+    // The page that got the 401, its origin and the challenge's realm.
+    href: text.Builder
+    origin: text.Builder
+    realm: text.Builder
+    user: Field
+    password: Field
+
+    fn init(alloc: Allocator) AuthPrompt {
+        return AuthPrompt {
+            open: false,
+            href: text.Builder.init(alloc),
+            origin: text.Builder.init(alloc),
+            realm: text.Builder.init(alloc),
+            user: Field.init(alloc),
+            password: Field.init(alloc),
+        }
+    }
+
+    fn deinit(self: *mut Self) {
+        self.href.deinit()
+        self.origin.deinit()
+        self.realm.deinit()
+        self.user.deinit()
+        self.password.deinit()
+    }
+}
+
+/// After a navigation of the person's tab: opens the prompt when its
+/// page got a 401 with a Basic challenge, else closes it.
+fn askAuth(ui: *mut Ui) AllocError!void {
+    closeAuth(ui)
+    if isSpace(ui) {
+        return
+    }
+    let p = ui.tab.page orelse return
+    if p.status != 401 {
+        return
+    }
+    let realm = net.authRealm(p.url.href) orelse return
+    let a = &mut ui.auth
+    // Asked again (wrong credentials): the username stays.
+    let again = text.eql(a.href.bytes(), p.url.href)
+    a.open = true
+    a.href.clear()
+    try a.href.append(p.url.href)
+    a.origin.clear()
+    try a.origin.append(p.url.host)
+    if p.url.port.len > 0 {
+        try a.origin.appendByte(':')
+        try a.origin.append(p.url.port)
+    }
+    a.realm.clear()
+    try a.realm.append(realm)
+    try a.password.set("")
+    if !again {
+        try a.user.set("")
+    }
+    if p.url.username.len > 0 {
+        let user = try url.percentDecode(ui.alloc, p.url.username)
+        defer ui.alloc.free(user)
+        try a.user.set(user)
+    }
+    ui.focus = Focus.AuthUser
+    if again && a.user.bytes().len > 0 {
+        ui.focus = Focus.AuthPassword
+    }
+    ui.dirty = true
+}
+
+fn closeAuth(ui: *mut Ui) {
+    if !ui.auth.open {
+        return
+    }
+    ui.auth.open = false
+    ui.auth.password.set("") catch |e| {
+    }
+    if ui.focus == Focus.AuthUser || ui.focus == Focus.AuthPassword {
+        ui.focus = Focus.Page
+    }
+    ui.dirty = true
+}
+
+/// Sign in: the credentials go to net and the page is loaded again.
+fn signIn(ui: *mut Ui) AllocError!void {
+    let a = &mut ui.auth
+    try net.addCredentials(a.href.bytes(), a.realm.bytes(), a.user.bytes(), a.password.bytes())
+    closeAuth(ui)
+    try ui.reload()
+}
+
+/// A key while the prompt is open (it takes them all).
+fn authKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!void {
+    ui.swallow = false
+    let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
+    if cmd {
+        ui.swallow = true
+        if sym == 'q' {
+            ui.quit = true
+        } else if sym == 'a' {
+            ui.field().selectAll()
+            ui.dirty = true
+        }
+        return
+    }
+    if sym == SDLK_ESCAPE {
+        ui.swallow = true
+        closeAuth(ui)
+        return
+    }
+    if sym == SDLK_RETURN || sym == SDLK_KP_ENTER {
+        ui.swallow = true
+        return signIn(ui)
+    }
+    if sym == SDLK_TAB {
+        ui.swallow = true
+        if ui.focus == Focus.AuthUser {
+            ui.focus = Focus.AuthPassword
+        } else {
+            ui.focus = Focus.AuthUser
+        }
+        ui.field().selectAll()
+        ui.dirty = true
+        return
+    }
+    let f = ui.field()
+    if sym == SDLK_BACKSPACE {
+        try f.backspace()
+    } else if sym == SDLK_DELETE {
+        try f.delete()
+    } else if sym == SDLK_LEFT {
+        f.left()
+    } else if sym == SDLK_RIGHT {
+        f.right()
+    } else if sym == SDLK_HOME || sym == SDLK_UP {
+        f.home()
+    } else if sym == SDLK_END || sym == SDLK_DOWN {
+        f.end()
+    } else {
+        return
+    }
+    ui.dirty = true
+}
+
+/// A click while the prompt is open: on its fields and buttons; the
+/// rest of the window waits.
+fn authClick(ui: *mut Ui, x: f64, y: f64) AllocError!void {
+    let sh = sheetOf(ui)
+    if inRect(sh.user, x, y) {
+        ui.focus = Focus.AuthUser
+    } else if inRect(sh.password, x, y) {
+        ui.focus = Focus.AuthPassword
+    } else if inRect(sh.sign_in, x, y) {
+        return signIn(ui)
+    } else if inRect(sh.cancel, x, y) {
+        closeAuth(ui)
+    }
+    ui.dirty = true
+}
+
+/// Shows the tab's URL in the address bar, without its userinfo
+/// (`user:pass@`).
+fn setAddress(ui: *mut Ui) AllocError!void {
+    let href = ui.tab.href()
+    let at = userinfoAt(href)
+    try ui.address.set(href[..at.start])
+    try ui.address.buf.append(href[at.end..])
+    ui.address.caret = ui.address.buf.len()
+}
+
+/// Does the address bar show the tab's URL (as `setAddress`)?
+fn addressShown(ui: *mut Ui) bool {
+    let href = ui.tab.href()
+    let at = userinfoAt(href)
+    let s = ui.address.bytes()
+    let n = at.start + href.len - at.end
+    return s.len == n && text.eql(s[..at.start], href[..at.start]) && text.eql(s[at.start..], href[at.end..])
+}
+
+struct Span {
+    start: usize
+    end: usize
+}
+
+// Where the userinfo of `href` is, with its `@` (empty: none).
+fn userinfoAt(href: []u8) Span {
+    let none = Span { start: 0, end: 0 }
+    let i = text.indexOf(href, "://") orelse return none
+    let start = i + 3
+    var j = start
+    while j < href.len && href[j] != '/' && href[j] != '?' && href[j] != '#' {
+        j += 1
+    }
+    var k = j
+    while k > start {
+        k -= 1
+        if href[k] == '@' {
+            return Span { start: start, end: k + 1 }
+        }
+    }
+    return none
+}
