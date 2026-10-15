@@ -155,7 +155,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 13 | P4.42 | 0 | loop priorities (input and frames before timers and network tasks) and the threading model note |
 | 14 | P10.5 | 1 | fetch/XHR tests under upstream `wpt serve` (`DWELLER_RESOLVE`) |
 | 15 | P10.6 | 1 | `testdriver.js` subset: clicks and keys through `--events` |
-| 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) |
+| 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) (done) |
 | 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart |
 | 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab |
 | 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) |
@@ -291,6 +291,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/tests/server.py`, `tests/browser.rs` (`window_login`), `browser/tests/login/`
 - verify: `cargo test --release --test browser window_login > target/p10.20.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- status: done 2026-10-15. `server.py` serves `/login` (GET: the form with a one-use CSRF token and `next`; POST: 403 for an unknown token, the form again with 401 "Wrong password", else a 303 setting `sid` (HttpOnly, SameSite=Lax, Max-Age 30 days, Secure over https) and the session-only `tab`), `/account` (the user's name with a valid `sid`, whether `tab` came; else 302 to `/login?next=/account`), `/logout` (expires both, 303 to `/login`), `/basic`, `/sso/start` → `/sso/cb` on the other host → `/sso/done`, and `browser/tests/login/` (`store.html`/`read.html`: a token in `localStorage` and a `sessionStorage` value; `stale.html`: a form with a stale token; `opener.html`/`popup.html`). `window_login` passes now: stranger redirected, wrong password, stale CSRF refused, sign-in lands on `/account`, sign-out, the two-host chain keeps each host's cookies, `/basic` 401 and 200 with URL userinfo (libcurl sends it already, so the audit's "no URL userinfo" holds only for the cache and the sheet), `localStorage` within a run. Ignored, each un-ignored by its card: `window_login_cookies` (P4.50: kill the window after sign-in, restart on `DWELLER_PROFILE`, still signed in with `tab`; then signing out is saved), `window_login_storage` (P4.51: token after restart; `sessionStorage` kept across a navigation, not a restart), `window_login_basic` (P10.22: the credentials reused for `/basic` without userinfo in the run), `window_login_popup` (P4.52: `opener.html` shows the popup's message). All four fail today.
 
 #### P4.50: profile directory and cookie persistence
 - lane: browser (Layer 0)
