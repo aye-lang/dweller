@@ -155,6 +155,7 @@ fn removeContext(id: u32) {
     let t = bc_table.?
     let c = t.items.orderedRemove(i)
     t.alloc.free(c.name)
+    dropSessionStorage(id)
     bcRelease()
 }
 
@@ -339,6 +340,7 @@ fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bo
     let c = contextOf(id).?
     if !no_opener {
         c.opener = from
+        try copySessionStorage(from, id)
     }
     c.by_script = by_script
     if contextOf(from) |f| {

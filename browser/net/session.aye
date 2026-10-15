@@ -130,6 +130,13 @@ pub fn profileDir() []u8 {
     return s.profile
 }
 
+/// Is the profile written to? Not without one, nor when another process
+/// holds it.
+pub fn profileWritable() bool {
+    let s = session orelse return false
+    return s.profile.len > 0 && s.lock >= 0
+}
+
 /// Milliseconds until changed cookies are due to be saved
 /// (`saveCookiesIfDue`), or null when nothing waits.
 pub fn msUntilCookieSave() ?i64 {

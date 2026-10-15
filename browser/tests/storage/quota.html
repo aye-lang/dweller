@@ -1,0 +1,27 @@
+<!doctype html>
+<title>Quota</title>
+<!-- localStorage holds 5 MB of keys and values per origin
+     (tests/browser.rs storage_quota). -->
+<p id="out">no script</p>
+<script>
+const out = [];
+function attempt(what, f) {
+  try {
+    f();
+    out.push(what + ": ok");
+  } catch (e) {
+    out.push(what + ": " + e.name + (e instanceof DOMException ? " (DOMException)" : ""));
+  }
+}
+localStorage.clear();
+const mb = "x".repeat(1024 * 1024);
+attempt("6 MB", function () { localStorage.setItem("big", mb.repeat(6)); });
+attempt("3 MB", function () { localStorage.setItem("a", mb.repeat(3)); });
+attempt("3 MB more", function () { localStorage.setItem("b", mb.repeat(3)); });
+attempt("replace with 4 MB", function () { localStorage.setItem("a", mb.repeat(4)); });
+attempt("session 6 MB", function () { sessionStorage.setItem("big", mb.repeat(6)); });
+out.push("keys " + localStorage.length + " " + localStorage.key(0) + " " + localStorage.getItem("a").length);
+localStorage.removeItem("a");
+attempt("after removing, 5 MB", function () { localStorage.setItem("b", mb.repeat(5).slice(1)); });
+document.getElementById("out").textContent = out.join(" | ");
+</script>

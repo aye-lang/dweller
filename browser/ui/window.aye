@@ -589,6 +589,11 @@ pub struct Ui {
                     timeout = ms as i32
                 }
             }
+            if engine.msUntilStorageSave() |ms| {
+                if ms < timeout as i64 {
+                    timeout = ms as i32
+                }
+            }
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -650,6 +655,7 @@ pub struct Ui {
                 try serveContexts(self)
             }
             net.saveCookiesIfDue()
+            engine.saveStorageIfDue()
             if self.resized {
                 self.resized = false
                 if try self.resize() {

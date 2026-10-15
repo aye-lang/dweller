@@ -1,0 +1,23 @@
+<!doctype html>
+<title>Tabs</title>
+<!-- Web Storage between tabs (tests/browser.rs storage_between_tabs):
+     this tab opens child.html twice, with and without an opener. Each
+     child writes to localStorage what it found in sessionStorage; this
+     tab sees those writes as `storage` events, never the children's
+     sessionStorage. -->
+<p id="out">no script</p>
+<script>
+localStorage.clear();
+sessionStorage.setItem("mine", "from the opener");
+const seen = [];
+window.addEventListener("storage", function (e) {
+  seen.push(e.key + "=" + e.newValue + " (old " + e.oldValue + ", " +
+    (e.storageArea === localStorage ? "local" : "session") + ", from " + e.url.split("/").pop() + ")");
+  document.getElementById("out").textContent = seen.join(" | ") +
+    " | own session child: " + sessionStorage.getItem("child") +
+    " | own length " + sessionStorage.length;
+});
+window.open("child.html?copy");
+window.open("child.html?fresh", "_blank", "noopener");
+document.getElementById("out").textContent = "opened";
+</script>

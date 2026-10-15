@@ -420,8 +420,7 @@ on (`--no-js` turns it off), `dump` with `--js`.
   timers, `requestAnimationFrame`, `queueMicrotask`, `location`
   (setting it navigates after the script returns), `history` (session
   history in B8, below),
-  `localStorage` (in memory, per origin, while a page is open) and
-  `sessionStorage`, `alert`/`confirm`/`prompt` (console messages, never
+  `localStorage` and `sessionStorage` (Web Storage, B8 below), `alert`/`confirm`/`prompt` (console messages, never
   blocking), microtasks (the engine's job queue, which Promise uses),
   and `fetch` (synchronous underneath, settling in a microtask;
   `text()`, `json()`, an aborted `signal`; methods and bodies in B8,
@@ -568,6 +567,32 @@ on (`--no-js` turns it off), `dump` with `--js`.
     corrupt the file. `DWELLER_COOKIE_FILE=FILE` still works and takes
     the place of `<profile>/cookies`, with the persistent cookies only
     (as before profiles).
+  - *Web Storage* (P4.51, `engine/storage.aye`): `localStorage` is per
+    origin and shared by every page of the process. With a profile, an
+    origin's items are read from `<profile>/storage/<origin>` (the
+    origin's bytes other than letters, digits, `.` and `-` written as
+    `_XX`: `http_3a_2f_2f127.0.0.1_3a8000`) when a page of the origin
+    first touches them, and written back like the jar: atomically, mode
+    0600, at most once a second after a change (the window's loop), when
+    the last page closes and at exit; an emptied origin's file is
+    removed; a read-only profile never writes. Format: per item, in
+    order, `<key bytes> <value bytes>\n`, the key, the value and `\n`.
+    Without a profile (`dump`, tests, Spaces until P9.7) it lives in
+    memory while a page is open. `sessionStorage` is per top-level
+    browsing context (a tab or popup, `engine/contexts.aye`) and origin,
+    in memory: it lasts across the tab's navigations and reloads, goes
+    with the tab, and a tab opened by a page (`window.open`,
+    `target=_blank`) starts with a copy of its opener's, unless
+    `noopener`. Each area holds 5 MB of keys and values (UTF-8 bytes); a
+    `setItem` past it throws a `QuotaExceededError` DOMException and
+    changes nothing. A change (a new value, a removal, a `clear()` that
+    removed something) queues a `storage` event (`key`, `oldValue`,
+    `newValue`, `url`, `storageArea`; `onstorage`) at every other page
+    and frame of the origin that shares the area: all tabs for
+    `localStorage`, the same tab for `sessionStorage`. Not done:
+    named-property access (`localStorage.token`), a SecurityError for
+    opaque origins, IndexedDB. Tests: `window_login_storage`,
+    `storage_quota`, `storage_between_tabs`.
   - *HTML and CSS:* `template` contents in an inert fragment, foster
     parenting, quirks mode from the doctype, `noscript` following
     scripting in the dumps, svg/math text kept out of them;
@@ -841,7 +866,7 @@ selection and was scrolled to 200 px.
 | R2 | No agent request blocks the window (input within 16 ms, frames unchanged) | done behind `--spaces` (P9.2, 2026-10-14) | With `--spaces` each connection is served by a Space process (`ui/spaces.aye`) and the window only copies bytes: while A ran a 1.5 s `eval` and B loaded a page whose server waited 1.5 s, C's `tabs` took 11 ms and the window's `loop_max_ms` was 13 (the test's debug build, during the full browser suite; 8 to 32 ms across runs on a loaded machine, 3 when idle), against 3122 ms (C: 2834 ms) without `--spaces`. A Space answers its first request about 20 to 35 ms after the connection's first line and takes about 43 MB after a small form page; it starts with `posix_spawnp`, about 1 ms of the window's loop. Tests: `window_spaces_responsive`, `window_spaces_crash`. Spaces become the default in P9.9. Before P9.2: requests run on the window's thread (`pollAgents` in `Ui.loop`, `ui/window.aye`). While connection A loaded a page whose server took 2 s, connection B's `user_context` waited 1733 ms; during a 2 s `eval` loop, 1714 ms; the person's input waits the same way. `wait` does not block (B answered in 4 ms during A's 2 s `wait`), nor did a small `screenshot`. Every request also laid out the shown tab again (`afterAgent`; since P9.1 only a request served on the shown tab or that changed it), and answers come at most every 15 ms (`POLL_MS`). Background tabs run their timers only during a `wait` (`checkWait`). |
 | R3 | Each agent's tabs form a Space, shown apart from the person's tabs | no | Agent tabs are appended to the person's tab strip (`openTab`), count against the same 16 tabs, and `tabs` lists every tab; an agent can `tab_select` any tab, including the one the person sees. |
 | R4 | Several agents at once, each in its own Space | partial (P9.2, P9.3, 2026-10-15) | With `--spaces`: each connection in a Space of its own (P9.2); the person pauses, resumes or stops one Space while the others work, the hello names a Space or attaches to a done one, `spaces` lists them (P9.3, `window_spaces_control`). Spaces become the default and the three-agent test comes in P9.9. Before P9.2: up to 8 connections (`MAX_AGENTS`), each with its own tab. But one agent's load or `eval` stalls all the others (R2), pause is for all of them, and the activity line and outline show only the last action of any agent. |
-| R5 | Spaces use the person's cookies and storage; an isolated profile is an option | partial | One net session per process (`net/session.aye`) and one `localStorage` per process (`engine/window_api.aye`): all tabs share the person's logins. There is no isolated profile. |
+| R5 | Spaces use the person's cookies and storage; an isolated profile is an option | partial | One net session per process (`net/session.aye`) and one `localStorage` per process (`engine/storage.aye`): all tabs share the person's logins. There is no isolated profile. |
 | R6 | The person sees which Spaces work, watches one live, pauses or stops one, takes over a tab | partial (P9.3, P9.4, 2026-10-15) | The control connection carries pause, resume and stop per Space (events `paused`, `resumed`, `stopped`), the person's context and Cmd+Shift+K pointing to every Space, and each Space's status (state, last action, tabs); `--state` lists `space ID "NAME" STATE: LAST`. Cmd+Shift+P and the Pause button pause every Space. The toolbar shows "You" and a chip per Space (a dot by its state, its name; the mouse over it shows `NAME (STATE): LAST` in the status line); a click opens its menu: Pause/Resume and Stop for that Space (P9.4, `window_spaces_chips`; in tests also the `--events` words `pause:N`, `resume:N`, `stop:N`). The status line shows each Space's new last action. Not yet: watching (P9.5), take over (P9.6). Before P9.3: one `AI` badge for all agents and one status line (`drawAgentChrome`, `agentStatus`). An agent's background tab can be watched by clicking it in the strip. Pause is global (`togglePause`); no stop per agent; input in an agent's tab does not stop the agent. |
 | R7 | Code mode: one request runs a script calling snapshot, click, fill, wait, navigate, read, screenshot | no | `eval` runs a script in the page's realm and returns its last value: it can read the DOM and call `el.click()`, but has no refs, snapshot, `wait` or screenshot, and a navigation ends the realm it runs in. |
 
@@ -1050,8 +1075,8 @@ height because of agents:
   login in one is seen by the next request of the other, not the
   current one), and two writes of one cookie settle by arrival order.
   `sessionStorage`, IndexedDB and in-memory page state are not shared
-  (Dweller has no IndexedDB). Today `localStorage` is not saved
-  between runs at all.
+  (Dweller has no IndexedDB). `localStorage` is saved in the window's
+  profile (P4.51); a Space keeps its own in memory until P9.7.
 - *Frames (R6).* A 1600×1200 canvas (800×600 at scale 2) is 7.7 MB per
   frame; frames are sent only while the person watches, at most 30 per
   second, through a file both processes map.

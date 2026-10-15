@@ -160,7 +160,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 15 | P10.6 | 1 | `testdriver.js` subset: clicks and keys through `--events` |
 | 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) (done) |
 | 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart (done) |
-| 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab |
+| 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab (done) |
 | 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) (done) |
 | 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list |
 | 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache |
@@ -290,7 +290,7 @@ read from code, for logged-in browsing in the human window:
 |---|---|---|
 | Cookies persisted and restored | yes (P4.50) | Profile directory `~/.dweller` (`DWELLER_PROFILE` overrides; `browser/net/profile.aye`); the jar is written atomically within a second of a change and at exit, session cookies included, expired ones dropped on load; a second process on the profile is read-only. `DWELLER_COOKIE_FILE` still works (persistent cookies only). Test: `window_login_cookies`. |
 | Cookie attributes | partial | Domain/Path/Expires/Max-Age/Secure/HttpOnly, `__Secure-`/`__Host-` checked (`cookies.aye:4-11`, `:124-151`). SameSite ignored (`cookies.aye:8`): no Lax default, every cookie is sent cross-site, no third-party policy; no public suffix list (`:11`, only a bare-TLD check at `:141`). |
-| localStorage / sessionStorage / IndexedDB | no | `localStorage` in memory per process (`browser/engine/window_api.aye:4-5`, `prelude.aye:1580`), "not saved between runs at all" (`docs/browser.md:963`); `sessionStorage` is a per-document `Map` (`prelude.aye:1581-1609`), lost on navigation; no IndexedDB (`docs/browser.md:962`). |
+| localStorage / sessionStorage / IndexedDB | yes (P4.51), no IndexedDB | `localStorage` per origin in `<profile>/storage/` (`browser/engine/storage.aye`), loaded on first use, saved like the jar, 5 MB per origin, `storage` events to the origin's other pages; `sessionStorage` per tab and origin across navigations, copied to a popup with an opener. Test: `window_login_storage`. No IndexedDB. |
 | Form login and redirects | yes | Redirects followed in `net/http.aye` with each hop's `Set-Cookie` stored (`http.aye:1-6`, `:237`); 303 and 301/302-after-POST become GET (`:253-258`); POST forms (`window_forms`, `tests/browser.rs:1466`); password fields masked (`ui/forms.aye:435`, `layout/controls.aye:284`). No autofill or password manager (not planned). |
 | OAuth/SSO popups | yes (P4.52) | `window.open`, `target=_blank`, `opener`, `close()`, `closed` and `postMessage` between tabs (`engine/contexts.aye`); test `window_login_popup`. Popup blocking not done. Cross-domain redirect chains work (cookies per hop). |
 | HTTP Basic auth | no | No 401 handling, no `Authorization` or URL userinfo support in `net/*.aye`. |
@@ -324,6 +324,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/engine/window_api.aye`, `browser/engine/prelude.aye`, `browser/ui/tabs.aye`, `docs/browser.md` (drop "not saved between runs at all")
 - verify: `cargo test --release --test browser window_login_storage > target/p4.51.log 2>&1; echo $?` → 0 (a page stores a token, the window restarts, a page reads it; `sessionStorage` survives a navigation, not a new tab)
 - depends on: P4.50; time box: 60 min; model: sonnet
+- status: done 2026-10-15. `engine/storage.aye` (moved out of `window_api.aye`): `localStorage` per origin, read from `<profile>/storage/<origin>` when a page of the origin first touches it, written atomically (0600) at most once a second after a change (`saveStorageIfDue` from the window's loop, beside the jar's), when the last page closes and at exit (`main.aye`); a read-only profile never writes (`net.profileWritable`); no profile (`dump`, tests, Spaces until P9.7): in memory as before. `sessionStorage` per top-level browsing context and origin (`contexts.aye`: dropped with the context, copied to a context opened with an opener, not with `noopener`), so it lasts across navigations and reloads of the tab. 5 MB of UTF-8 keys and values per area; past it `setItem` throws a `QuotaExceededError` DOMException. A change queues `storage` (`StorageEvent` with `storageArea`, `onstorage`) at the origin's other pages and frames sharing the area. `window_login_storage` un-ignored (and checks one storage file of mode 0600); tests `storage_quota`, `storage_between_tabs` (`browser/tests/storage/`), unit test "storage: file names and the item format". Not done: named properties (`localStorage.token`), SecurityError for opaque origins.
 
 #### P4.52: popups, `target=_blank`, `window.opener`
 - lane: browser (Layer 0)
