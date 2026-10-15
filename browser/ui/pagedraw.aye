@@ -159,9 +159,11 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     }
     let t = perf.start()
     perf.end("ui_damage_px", t, damageLabel(pd))
-    // The layers blended from the raster cache and those rasterized
-    // ("KEPT DRAWN", P4.56).
-    perf.end("ui_layers", t, pairLabel(reuse.kept as u64, reuse.drawn as u64))
+    // The layers a frame that drew blended from the raster cache and
+    // those it rasterized ("KEPT DRAWN", P4.56).
+    if drew {
+        perf.end("ui_layers", t, pairLabel(reuse.kept as u64, reuse.drawn as u64))
+    }
     pd.drawn.clear()
     for sg in pd.sigs.items() {
         try pd.drawn.append(sg)
