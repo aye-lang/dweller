@@ -7,8 +7,10 @@
 // Nodes are freed from the pool only when scripts are done with them
 // (design.md's JS boundary): a node that JavaScript holds has `js_refs`
 // above 0 (one per wrapper), and `releaseIfUnused` frees a tree taken out
-// of the document once no node of it is held. Their strings stay in the
-// arena until the document is freed.
+// of the document once no node of it is held. While a layout of the
+// document is shown (`hold_frees`), such trees wait in `held` until it
+// is dropped (`releaseHeld`): its boxes and hit tests name their nodes.
+// Their strings stay in the arena until the document is freed.
 
 import std.heap.Arena
 import std.list.List
@@ -157,6 +159,11 @@ pub struct Document {
     // Changes to the tree, recorded while `recording` (scripts observe).
     log: List(Mutation)
     recording: bool
+    // A layout of the document names its nodes (the page shows it):
+    // `releaseIfUnused` keeps the trees it would free in `held` until
+    // `releaseHeld`.
+    hold_frees: bool
+    held: List(NodeId)
 
     /// An empty document: only the `Document` node.
     pub fn init(alloc: Allocator) AllocError!Document {
@@ -187,6 +194,8 @@ pub struct Document {
             adopted: List(Adopted).init(alloc),
             log: List(Mutation).init(alloc),
             recording: false,
+            hold_frees: false,
+            held: List(NodeId).init(alloc),
         }
     }
 
@@ -199,6 +208,7 @@ pub struct Document {
         self.changed_slots.deinit()
         self.adopted.deinit()
         self.log.deinit()
+        self.held.deinit()
         self.controls.deinit()
         self.strings.deinit()
         self.alloc.destroy(self.strings)
@@ -250,7 +260,8 @@ pub struct Document {
 
     /// The node of `h`. A `NodeId` stays valid until its node is freed
     /// (`releaseIfUnused`), which happens only to trees out of the
-    /// document that scripts no longer hold; `isLive` tells.
+    /// document that scripts no longer hold, and not while a layout of
+    /// it is shown (`hold_frees`); `isLive` tells.
     pub fn node(self: *Self, h: NodeId) *mut Node {
         return self.nodes.get(h) orelse unreachable
     }
@@ -589,6 +600,17 @@ pub struct Document {
 
     // ---- freeing nodes
 
+    /// The layout of the document shown is dropped: frees the trees
+    /// `releaseIfUnused` kept meanwhile (those still out of the document
+    /// and not held), and frees trees at once again until the next
+    /// `hold_frees`.
+    pub fn releaseHeld(self: *mut Self) {
+        self.hold_frees = false
+        while self.held.pop() |h| {
+            self.releaseIfUnused(h)
+        }
+    }
+
     /// Does `h` name a node of the pool (not one freed)?
     pub fn isLive(self: *Self, h: NodeId) bool {
         return self.nodes.get(h) != null
@@ -626,6 +648,7 @@ pub struct Document {
 
     /// Frees the tree that `h` is in when it is out of the document and
     /// no node of it is held by a script (`js_refs`). True if it did.
+    /// While `hold_frees`, the tree waits in `held` instead (false).
     pub fn releaseIfUnused(self: *mut Self, h: NodeId) bool {
         if !self.isLive(h) {
             return false
@@ -640,6 +663,13 @@ pub struct Document {
                 return false
             }
             cur = self.following(c, top)
+        }
+        if self.hold_frees {
+            // Out of memory: the tree stays until the document is freed.
+            self.held.append(top) catch |e| {
+                return false
+            }
+            return false
         }
         // Children before their parent, so the walk never visits a freed
         // node.
@@ -836,6 +866,31 @@ test "build, query and walk a tree" {
     doc.detach(second)
     @expect(isSame(doc.nextSibling(first), third))
     @expect(doc.parent(second) == null)
+}
+
+test "trees out of the document wait while a layout of it is shown" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let body = try doc.createElement("body", []Attr{})
+    doc.appendChild(doc.root, body)
+    let a = try doc.createElement("a", []Attr{})
+    doc.appendChild(body, a)
+    let p = try doc.createElement("p", []Attr{})
+    doc.appendChild(body, p)
+    doc.hold_frees = true
+    doc.detach(a)
+    @expect(!doc.releaseIfUnused(a))
+    @expect(doc.isElement(a, "a"))
+    doc.detach(p)
+    @expect(!doc.releaseIfUnused(p))
+    // Put back meanwhile: it stays.
+    doc.appendChild(body, p)
+    doc.releaseHeld()
+    @expect(!doc.hold_frees)
+    @expect(!doc.isLive(a))
+    @expect(doc.isLive(p))
+    doc.detach(p)
+    @expect(doc.releaseIfUnused(p))
 }
 
 test "trees out of the document are freed when nothing holds them" {

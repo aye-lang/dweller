@@ -4425,6 +4425,52 @@ fn window_fetch_in_background() {
     );
 }
 
+/// The mouse moves over a link while the page's scripts run one per loop
+/// iteration (`browser/tests/net/hover_scripts.html`): the window keeps
+/// the layout from before them, whose boxes name the links the scripts
+/// replace and a collection frees. The hit test must not reach a freed
+/// node (it crashed in `Document.isElement` under `engine.linkAt`); once
+/// the scripts ran, the status shows the last link.
+#[test]
+fn window_hover_during_scripts() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/hover_scripts.html", srv.base);
+    let events: String = (0..200)
+        .map(|i| format!("move:{},70 frame ", 20 + i % 30))
+        .collect();
+    let args = [
+        page.as_str(),
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "210",
+        "--state",
+        "--events",
+        events.trim_end(),
+    ];
+    let out = run_window(&args);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let want = format!("\nstatus {}/net/link6.html", srv.base);
+    assert!(got.contains(&want), "expected {want:?} in:\n{got}");
+}
+
 /// P4.33: the window paints a page once its document and its sheet are
 /// in (0.3 s), before its script and its image arrive (1.5 s), and the
 /// click and the wheel during the load are handled before the script

@@ -219,6 +219,8 @@ pub struct Page {
         }
         self.tree = null
         self.tree_borrowed = false
+        // No layout names the nodes scripts took out meanwhile.
+        self.doc.releaseHeld()
     }
 
     // The layout scripts read stops using the styles of `styling`, before
@@ -312,6 +314,10 @@ pub struct Page {
                 lost.deinit()
                 return e
             }
+            // Its boxes name nodes: none is freed until it is dropped
+            // (the window hit-tests it while scripts run, until the next
+            // layout).
+            self.doc.hold_frees = true
             perf.end("layout", layout_began, self.url.href)
             if self.script |s| {
                 if self.doc.shadows.len() == 0 {
@@ -371,6 +377,7 @@ pub struct Page {
         }
         self.tree = g.tree
         self.tree_borrowed = true
+        self.doc.hold_frees = true
         try layoutFrames(self, measure)
         return true
     }
