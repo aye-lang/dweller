@@ -183,6 +183,7 @@ bytecode/register VM is the next substantial step: compile statements,
 loops, lvalue evaluation and calls, with rooted register windows and
 shared layouts. Keep the existing interpreter as a differential oracle.
 The bounded recipes are useful groundwork, not a replacement VM.
+The VM's design and cards: `BYTECODE.md` (P4.30, 2026-10-15).
 
 Then measure polymorphic/deeper-chain caches, value-only slots with a
 separate descriptor fallback, virtual call frames for general uncaptured
