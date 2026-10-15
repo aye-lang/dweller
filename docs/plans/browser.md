@@ -154,7 +154,17 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 13 | P4.42 | 0 | loop priorities (input and frames before timers and network tasks) and the threading model note |
 | 14 | P10.5 | 1 | fetch/XHR tests under upstream `wpt serve` (`DWELLER_RESOLVE`) |
 | 15 | P10.6 | 1 | `testdriver.js` subset: clicks and keys through `--events` |
-| 16+ | P10.n | 1 | component cards per area from the baseline's failures (backlog below) |
+| 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) |
+| 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart |
+| 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab |
+| 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) |
+| 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list |
+| 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache |
+| 22 | P10.23 | 1 | sign-in page needs: `autocomplete`, `navigator.credentials` absent without throwing, `Set-Cookie` on fetch/XHR |
+| 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` |
+| 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
+| 25 | P3.80 | 2 | bundle for the user, once W1–W9 and the cards above hold |
+| 26+ | P10.n | 1 | component cards per area from the baseline's failures (backlog below) |
 | last | P3, P6 | 2 | sites and release |
 
 Common to all cards: run only the tests named in verify, never two
@@ -246,6 +256,83 @@ them from coming back.
 - chromium: `docs/threading_and_tasks.md`, `third_party/blink/renderer/platform/scheduler/TaskSchedulingInBlink.md`. Take: tasks on sequences, not threads; the input queue has the highest priority; only the main thread touches the DOM. Not taken: many task queues, frame scheduling heuristics.
 - verify: the perf gate's `feed.html` longest loop under budget with a timer storm added; `cargo test --release --test browser window_ > target/p4.42.log 2>&1; echo $?` → 0
 - time box: 60 min; model: opus
+
+### Login readiness and telemetry (before the user bundle)
+
+The user's daily sites all need a login (P3.80). Audit of 2026-10-15,
+read from code, for logged-in browsing in the human window:
+
+| Area | Status | Evidence |
+|---|---|---|
+| Cookies persisted and restored | partial | Only when `DWELLER_COOKIE_FILE` is set (`browser/net/session.aye:49-53`, load `:77-83`); no default profile directory (`~/.dweller` is used nowhere); written once in `net.stop()` (`session.aye:84-90`, `main.aye:66-69`), so a kill or crash loses the run's logins; session cookies are never saved (`browser/net/cookies.aye:322-326`). Test: `tests/browser.rs:3572`. |
+| Cookie attributes | partial | Domain/Path/Expires/Max-Age/Secure/HttpOnly, `__Secure-`/`__Host-` checked (`cookies.aye:4-11`, `:124-151`). SameSite ignored (`cookies.aye:8`): no Lax default, every cookie is sent cross-site, no third-party policy; no public suffix list (`:11`, only a bare-TLD check at `:141`). |
+| localStorage / sessionStorage / IndexedDB | no | `localStorage` in memory per process (`browser/engine/window_api.aye:4-5`, `prelude.aye:1580`), "not saved between runs at all" (`docs/browser.md:963`); `sessionStorage` is a per-document `Map` (`prelude.aye:1581-1609`), lost on navigation; no IndexedDB (`docs/browser.md:962`). |
+| Form login and redirects | yes | Redirects followed in `net/http.aye` with each hop's `Set-Cookie` stored (`http.aye:1-6`, `:237`); 303 and 301/302-after-POST become GET (`:253-258`); POST forms (`window_forms`, `tests/browser.rs:1466`); password fields masked (`ui/forms.aye:435`, `layout/controls.aye:284`). No autofill or password manager (not planned). |
+| OAuth/SSO popups | no | No `window.open` (only `Document.open`, `prelude.aye:1096`; `Window.close` is a no-op, `:1422`); `target=_blank` loads in the same tab (`engine/frames.aye:513`); no `window.opener`; `postMessage` reaches only frames of the tab (`prelude.aye:1388`). Cross-domain redirect chains work (cookies per hop). |
+| HTTP Basic auth | no | No 401 handling, no `Authorization` or URL userinfo support in `net/*.aye`. |
+| CSRF tokens, 2FA code pages | yes | Plain forms and scripts; nothing special once cookies and forms work. |
+| WebAuthn / passkeys | no; out of scope for now | No `navigator.credentials` anywhere. The user can log in with password and a 2FA code. Unknown whether any of their sites force passkeys; if one does, their report makes it a card. |
+| fetch/XHR `credentials` | partial | Parsed (`prelude.aye:1983`) but not passed to `ak.fetch` (`prelude.aye:2131-2152`): cookies always sent, `omit` ignored. No CORS enforcement (a compatibility gain, not a login blocker). |
+| P9.7 shared logins with Spaces | planned, not started | R5 is "partial" (`docs/browser.md:754`): one jar and one `localStorage` per process, so a Space (its own process) does not see the person's logins; `"profile":"isolated"` is rejected until P9.7 (`docs/plans/browser.md:310`). Space profiles are therefore not separate by design but not shared yet either; P9.7 builds on P4.50/P4.51. |
+
+IndexedDB is not filed: no daily-login blocker is known; the user's
+reports decide. The fixture of P10.20 serves the other login cards.
+
+#### P10.20: login fixture and `window_login`
+- lane: browser (Layer 1)
+- goal: `browser/tests/server.py` gets `/login` (GET form with a hidden CSRF token and a password field; POST checks the token, sets a session cookie and a persistent cookie on a 303 to `/account`), `/account` (200 only with the cookie, else 302 to `/login`), `/basic` (401 with `WWW-Authenticate: Basic realm="r"` until `Authorization` matches), `/sso/start` and `/sso/cb` (a redirect chain from `127.0.0.1` to `localhost` and back, each setting a cookie) and `/popup` (a page that posts a message to `window.opener`). A test `window_login` walks them through `--events` in the window; each later card turns on its assertions (the others `#[ignore]` with the card ID).
+- files: `browser/tests/server.py`, `tests/browser.rs` (`window_login`), `browser/tests/login/`
+- verify: `cargo test --release --test browser window_login > target/p10.20.log 2>&1; echo $?` → 0
+- time box: 60 min; model: sonnet
+
+#### P4.50: profile directory and cookie persistence
+- lane: browser (Layer 0)
+- goal: the window opens a profile directory (`~/.dweller`; `DWELLER_PROFILE` overrides; `dump`, `screenshot` and tests use none unless it is set; `DWELLER_COOKIE_FILE` still works). Cookies go to `<profile>/cookies` atomically (temp file, rename) after any change, at most once a second, and at exit. Session cookies are saved with a flag and restored on restart (a browser that restores its session); expired ones are dropped. A second window on the same profile does not corrupt the file.
+- files: `browser/net/session.aye`, `browser/net/cookies.aye`, `browser/main.aye`, `browser/ui/window.aye`, `docs/browser.md`
+- verify: `cargo test --release --test browser window_login_cookies > target/p4.50.log 2>&1; echo $?` → 0 (log in at `/login`, SIGKILL the window, start it on the same profile: `/account` is 200)
+- depends on: P10.20; time box: 60 min; model: sonnet
+
+#### P4.51: localStorage on disk, sessionStorage per tab
+- lane: browser (Layer 0)
+- goal: `localStorage` is saved per origin under the profile (`<profile>/storage/`, 5 MB per origin, written after changes with the same rate limit) and loaded at start; the `storage` event fires in other pages of the origin. `sessionStorage` is kept per tab and origin across navigations and reloads, not across tabs or restart. The Spaces copy (P9.7) uses the same store.
+- files: `browser/engine/window_api.aye`, `browser/engine/prelude.aye`, `browser/ui/tabs.aye`, `docs/browser.md` (drop "not saved between runs at all")
+- verify: `cargo test --release --test browser window_login_storage > target/p4.51.log 2>&1; echo $?` → 0 (a page stores a token, the window restarts, a page reads it; `sessionStorage` survives a navigation, not a new tab)
+- depends on: P4.50; time box: 60 min; model: sonnet
+
+#### P4.52: popups, `target=_blank`, `window.opener`
+- lane: browser (Layer 0)
+- goal: `window.open(url, name, features)` returns a WindowProxy of a new tab (popups only after a click; a blocked one is shown in the chrome). `target=_blank` and `rel=noopener` follow the HTML rules. `window.opener.postMessage`, `window.close()` and `popup.closed` work between tabs of the process, with the origin check `postMessage` already has.
+- files: `browser/engine/prelude.aye`, `browser/engine/frames.aye`, `browser/ui/tabs.aye`, `browser/ui/window.aye`
+- verify: `cargo test --release --test browser window_login_popup > target/p4.52.log 2>&1; echo $?` → 0 (`/popup` posts to its opener, the opener shows the message, the popup closes)
+- depends on: P10.20; time box: 90 min; model: opus
+
+#### P10.21: cookies: SameSite, third-party policy, credentials
+- lane: browser (Layer 1, fetch/storage)
+- goal: `SameSite` is parsed; a missing one means Lax; `None` needs Secure. Lax and Strict cookies are not sent on cross-site subresource requests or cross-site POST navigations; Lax is sent on top-level GET navigations. Cookies from a third-party response are not sent when the top-level site differs, except `SameSite=None; Secure`. A pinned public suffix list rejects `Domain=co.uk`. `fetch`/XHR honour `credentials` and `withCredentials` (`omit` sends and stores nothing). `document.cookie` limit of 4096 bytes.
+- files: `browser/net/cookies.aye`, `browser/net/http.aye`, `browser/engine/prelude.aye`, `browser/net/psl.txt`
+- verify: `cargo test --release --test browser net_cookies window_login > target/p10.21.log 2>&1; echo $?` → 0; `python3 browser/tools/wpt.py run cookies -j 8` does not regress and `python3 browser/tools/conformance.py check; echo $?` → 0
+- depends on: P10.20; time box: 90 min; model: opus
+
+#### P10.22: HTTP authentication
+- lane: browser (Layer 1, fetch)
+- goal: a 401 with `WWW-Authenticate: Basic` shows a sign-in sheet in the window (Cancel shows the 401 page); the answer is cached per origin and realm for the process and sent preemptively; `http://user:pass@host/` URLs send the credentials. Digest only if libcurl gives it for free; proxy auth out of scope.
+- files: `browser/net/http.aye`, `browser/net/session.aye`, `browser/ui/chrome.aye`, `browser/ui/window.aye`
+- verify: `cargo test --release --test browser window_login_basic > target/p10.22.log 2>&1; echo $?` → 0 (`/basic` is 200 after the credentials; wrong ones show the sheet again)
+- depends on: P10.20; time box: 60 min; model: sonnet
+
+#### P10.23: sign-in page details
+- lane: browser (Layer 1, forms and JS)
+- goal: sign-in pages do not break on what Dweller lacks. `autocomplete` values are accepted and ignored; `navigator.credentials.get()` rejects with `NotSupportedError` and `PublicKeyCredential` is absent, so pages offer the password path (passkeys are out of scope for now); `Set-Cookie` on `fetch`/XHR responses reaches the jar and a following `document.cookie` (check; fix if not); Enter in a field submits; `requestSubmit()` and a `submit` handler with `preventDefault` plus `fetch` login work; a password value is never in the agent tree or the telemetry.
+- files: `browser/engine/prelude.aye`, `browser/ui/forms.aye`
+- verify: `cargo test --release --test browser window_login_forms > target/p10.23.log 2>&1; echo $?` → 0
+- depends on: P10.20; time box: 60 min; model: sonnet
+
+#### P4.53: local telemetry
+- lane: browser (Layer 0)
+- goal: the window and `dump` append events to `~/.dweller/telemetry/YYYY-MM-DD.jsonl` (each file capped at 5 MB, rotating to `-1`, `-2`; the oldest deleted past 30 files). Local only, no upload; a remote sink such as Sentry is a later product decision. Off: `DWELLER_TELEMETRY=0` or a settings flag. Events: crash (signal, backtrace, the last few window actions); uncaught JS error (message, type, script origin and line); unsupported feature hit (unknown CSS property or value, missing DOM/JS API such as a ReferenceError on a global like `SVGAElement`, unimplemented method); loop iteration over 100 ms with the phase breakdown (network wait, style, layout, paint, script) from `DWELLER_TIMING` (PR #23); per-origin first paint and load time and scroll frame p50/p95; failed resource load (kind, status, origin); image decode failure. Privacy: scheme and host only, never a path, query, page text, form value, cookie or header; messages cut to 200 characters with every URL reduced to its origin. `browser/tools/telemetry.py summary [--days N]` groups events and ranks issues by frequency times sites affected, as input for new cards. The user bundle ships with it on.
+- files: `browser/perf/`, `browser/engine/script.aye`, `browser/css/` (unknown property hook), `browser/engine/prelude.aye` (missing API), `browser/ui/window.aye`, `browser/tools/telemetry.py`, `docs/browser.md`
+- verify: `cargo test --release --test browser telemetry > target/p4.53.log 2>&1; echo $?` → 0: a test-server page triggers a JS throw, an unknown CSS property, a missing API, a slow script, a 404 image and a corrupt image; the day file holds one record of each; a grep for `?`, a path and the page's text finds nothing; `python3 browser/tools/telemetry.py summary --days 1` lists all six
+- time box: 120 min; model: opus
 
 ### Layer 0 backlog
 
@@ -346,6 +433,7 @@ in order.
 - lane: browser
 - goal: R5. A `shared` Space starts with the window's jar (persistent and session cookies) and `localStorage`; each side sends every change (`cookie` after `Jar.store`, `storage` after a store write) and applies the other's. `"profile":"isolated"` starts empty and sends nothing.
 - serves: R5
+- order: after P4.50 (the persistent profile jar) and P4.51 (the stored `localStorage`); part of login readiness before the user bundle (P3.80).
 - files: `browser/net/cookies.aye` (a hook after `store`, a save that includes session cookies), `browser/net/session.aye`, `browser/engine/window_api.aye` (a hook after store writes), `browser/ui/spaces.aye`, `tests/browser.rs` (`window_spaces_logins`)
 - test: over the test server, the person's tab opens `/net/start` (sets cookies); a Space navigates `/headers` and its Markdown shows those cookies; the Space sets a cookie with `eval` (`document.cookie`) and a `localStorage` item, and the person's next `/headers` and a script on the person's page see them; an `isolated` Space sees none.
 - verify: `cargo test --release --test browser window_spaces_logins > target/p9.7.log 2>&1; echo $?` → 0
@@ -534,7 +622,7 @@ same list. A site defect found here is first matched to a Layer 1 area
 (its WPT tests are run); it stays a Layer 2 card only when it is
 specific to that site's page or to the tools.
 
-- P3.80 popular live sites: the user names the sites they use daily; they join `sites.json` as live-only entries (no archive, `check --live`: no crash, Markdown text, a `visual` verdict), so Layer 2 covers more than the 20 recorded sites.
+- P3.80 user acceptance (decided by the user 2026-10-15): the sites the user uses every day all need a login, so Layer 2's final validation is the user's own daily use of a bundled build. Once W1–W9 hold and the login-readiness cards (P10.20, P4.50–P4.53, P10.21–P10.23) are done, the assistant bundles a build (with local telemetry on, P4.53); the user uses it on their logged-in daily sites and reports problems, which become cards (matched first to a Layer 1 area, as above). No site list is requested.
 - P3.7 Mistral: short iframe widgets, `setTransform` errors; recheck after P3.48.
 - P3.35 YouTube search agent task: expect results URL plus a title; recapture with the `youtubei/v1/search` POST (P3.30).
 - P3.41 BBC ☰ menu button missing in replay (still seen 2026-10-14: no menu/search button at the left, no Register/Sign In at the right); diagnose to its area.
