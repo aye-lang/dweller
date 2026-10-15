@@ -4611,6 +4611,92 @@ fn window_dynamic_scripts() {
     assert!(got.contains(&want), "{got}");
 }
 
+/// P4.45: scripts that a script inserts (`net/inserted_scripts.html`):
+/// an async one, twenty `async = false` ones whose loads end last first,
+/// a webpack-style JSONP chunk, a missing script and one of another
+/// origin served as HTML, in `dump` (twice:
+/// the same output) and in the window, where no loop iteration waits
+/// for their loads.
+#[test]
+fn inserted_scripts() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/inserted_scripts.html", srv.base);
+    let ordered: Vec<String> = (0..20).map(|i| format!("o{i}")).collect();
+    let want = format!(
+        "async: true; ordered: {}; chunk: lazy module; missing: true; html of another origin: blocked; loads: 21",
+        ordered.join(",")
+    );
+    let port = srv.base.rsplit(':').next().unwrap();
+    let missing = format!(
+        "[error] Failed to load script: {}/net/inserted_missing.js\n[error] Blocked a script of another origin served as HTML: http://localhost:{port}/log/inserted.html\n",
+        srv.base
+    );
+    let mut dumps = Vec::new();
+    for _ in 0..2 {
+        let out = run(&["dump", "--text", "--js", &page]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        assert_eq!(text(&out.stderr), missing);
+        let got = text(&out.stdout);
+        assert!(got.contains(&want), "{got}");
+        dumps.push(got);
+    }
+    assert_eq!(dumps[0], dumps[1]);
+    if !has_sdl() {
+        println!("window part skipped: no SDL2");
+        return;
+    }
+    let events = format!("{}wheel:-3 frame", "frame ".repeat(40));
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "400",
+            "--events",
+            events.as_str(),
+            "--text",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    // The iterations' times, apart from those that run the page's script.
+    let mut loops = Vec::new();
+    let mut ran_script = false;
+    for line in err.lines() {
+        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
+        if fields.len() < 3 || fields[0] != "DWELLER_TIMING" {
+            continue;
+        }
+        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
+        match fields[1] {
+            "ui_loop" if ran_script => ran_script = false,
+            "ui_loop" => loops.push(ms),
+            "scripts" => ran_script = true,
+            _ => {}
+        }
+    }
+    let longest = loops.iter().copied().max().unwrap_or(0);
+    assert!(
+        loops.len() > 300 && longest < 100,
+        "longest loop {longest} ms of {}",
+        loops.len()
+    );
+    let got = text(&out.stdout);
+    assert!(got.contains(&want), "{got}");
+}
+
 // ---- P10.20: logged-in browsing (the login fixture of server.py)
 
 /// The `--events` words that type `s` (at most 31 bytes a word).

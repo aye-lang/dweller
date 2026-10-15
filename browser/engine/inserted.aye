@@ -1,0 +1,319 @@
+// Scripts that a script inserts (HTML's "prepare the script element" for
+// elements that are not parser-inserted): createElement('script') with a
+// src (webpack and Vite chunk loaders, analytics snippets), inline ones,
+// and those of createContextualFragment. The prelude's mutation hook
+// (`prepareScript`) asks `scriptPrepare` what an element connected or
+// changed needs: an inline one runs at once, an external one is fetched
+// in a task (`scriptFetch`: on the loader's multi handle, as
+// `moduleLoad`; on the virtual clock the task waits for it in its turn,
+// so that `dump` never depends on the network) and runs then
+// (`scriptRun`). A script runs at most once: the page's scripts, those
+// that innerHTML or DOMParser made and those that ran are "already
+// started" (`Script.started`).
+
+import dom
+import dom.NodeId
+import encoding
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+import std.list.List
+import std.mem.AllocError
+import std.text
+import url.Url
+
+fn installInserted(it: *mut Interp, ak: u32) JsError!void {
+    try defMethod(it, ak, "scriptsIn", 1, akScriptsIn)
+    try defMethod(it, ak, "scriptPrepare", 1, akScriptPrepare)
+    try defMethod(it, ak, "scriptFetch", 2, akScriptFetch)
+    try defMethod(it, ak, "scriptRun", 1, akScriptRun)
+    try defMethod(it, ak, "unstartScripts", 1, akUnstartScripts)
+}
+
+// ---- already started
+
+fn markStarted(s: *mut Script, el: NodeId) AllocError!void {
+    try s.started.put(el.index, el.generation)
+}
+
+fn isStarted(s: *Script, el: NodeId) bool {
+    if s.started.get(el.index) |g| {
+        return g == el.generation
+    }
+    return false
+}
+
+// Marks the `script` elements of the subtree of `top` already started
+// (the fragment parser's, DOMParser's).
+fn markScriptsIn(p: *mut Page, top: NodeId) AllocError!void {
+    let s = p.script orelse return
+    var cur: ?NodeId = top
+    while cur |h| {
+        if p.doc.isElement(h, "script") {
+            try markStarted(s, h)
+        }
+        cur = p.doc.following(h, top)
+    }
+}
+
+// A copy (cloneNode) keeps the flag of each script it copies: `from` and
+// `to` are trees of the same shape.
+fn copyStarted(s: *mut Script, from: NodeId, to: NodeId) AllocError!void {
+    if s.started.len() == 0 || s.active != s.page {
+        return
+    }
+    let doc = &mut s.page.doc
+    var a: ?NodeId = from
+    var b: ?NodeId = to
+    while a |x| {
+        let y = b orelse return
+        if doc.isElement(x, "script") && isStarted(s, x) {
+            try markStarted(s, y)
+        }
+        a = doc.following(x, from)
+        b = doc.following(y, to)
+    }
+}
+
+// unstartScripts(node): the scripts of node's subtree may run when they
+// are inserted (createContextualFragment parses with innerHTML).
+fn akUnstartScripts(it: *mut Interp, a: Args) JsError!Value {
+    let top = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return Value.Undefined
+    let s = scriptOf(it)
+    if s.active != s.page {
+        return Value.Undefined
+    }
+    let doc = &mut s.page.doc
+    var cur: ?NodeId = top
+    while cur |h| {
+        if doc.isElement(h, "script") && isStarted(s, h) {
+            s.started.remove(h.index)
+        }
+        cur = doc.following(h, top)
+    }
+    return Value.Undefined
+}
+
+// ---- preparing
+
+// scriptsIn(node): the `script` elements of node's subtree in tree order
+// when node is connected and some have not started, else null (the hook
+// asks for every node a script inserts).
+fn akScriptsIn(it: *mut Interp, a: Args) JsError!Value {
+    let top = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return Value.Null
+    let s = scriptOf(it)
+    if s.active != s.page || !s.page.doc.isConnected(top) {
+        return Value.Null
+    }
+    let doc = &mut s.page.doc
+    var found = List(NodeId).init(s.alloc)
+    defer found.deinit()
+    var cur: ?NodeId = top
+    while cur |h| {
+        if doc.isElement(h, "script") && !isStarted(s, h) {
+            try found.append(h)
+        }
+        cur = doc.following(h, top)
+    }
+    if found.len() == 0 {
+        return Value.Null
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    for h in found.items() {
+        try it.heap.pushElem(arr, try wrap(it, h))
+    }
+    return it.pop()
+}
+
+// scriptPrepare(script): what the element, connected or changed by a
+// script, needs: 0 nothing (not connected, started, empty, not a type
+// that runs), 1 it ran (inline: classic, module, import map), 2 a fetch
+// (`scriptFetch`), 3 an error event (its src is empty or no URL). It is
+// already started from then on.
+fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
+    let el = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return js.numVal(0.0)
+    let s = scriptOf(it)
+    let p = s.page
+    if s.active != p || !p.doc.isElement(el, "script") || isStarted(s, el) {
+        return js.numVal(0.0)
+    }
+    let src = p.doc.attr(el, "src")
+    if src == null && !hasText(p, el) {
+        return js.numVal(0.0)
+    }
+    if !p.doc.isConnected(el) {
+        return js.numVal(0.0)
+    }
+    let module = isModuleScript(p, el)
+    let importmap = isScriptType(p, el, "importmap")
+    if !module && !importmap && !isClassicScript(p, el) {
+        return js.numVal(0.0)
+    }
+    try markStarted(s, el)
+    if importmap {
+        // An external import map is not supported (an error event).
+        if src != null {
+            return js.numVal(3.0)
+        }
+        try addImportMap(s, el)
+        return js.numVal(1.0)
+    }
+    if src |raw| {
+        if text.trim(raw).len == 0 {
+            return js.numVal(3.0)
+        }
+        let target = p.resolve(s.alloc, raw) catch |e| {
+            return js.numVal(3.0)
+        }
+        target.deinit(s.alloc)
+        return js.numVal(2.0)
+    }
+    let outer = s.current
+    defer s.current = outer
+    if module {
+        try runModuleElement(s, el)
+    } else {
+        var b = text.Builder.init(s.alloc)
+        defer b.deinit()
+        try p.doc.textContent(el, &mut b)
+        try runCode(s, el, b.bytes(), false)
+    }
+    return js.numVal(1.0)
+}
+
+// Has the script `el` child text (its source)?
+fn hasText(p: *mut Page, el: NodeId) bool {
+    var cur = p.doc.firstChild(el)
+    while cur |c| {
+        if p.doc.node(c).kind == dom.Kind.Text && p.doc.node(c).data.len > 0 {
+            return true
+        }
+        cur = p.doc.nextSibling(c)
+    }
+    return false
+}
+
+// scriptFetch(script, done): queues the task that calls done once the
+// script's source is in, loading it in the background (another scheme, a
+// replay, in the cache: `scriptRun` fetches it). On the virtual clock the
+// task is due at once and waits for the load when it runs (script.aye's
+// runnable), so that the order of tasks never depends on the network.
+// The task delays the load event.
+fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
+    let el = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return Value.Undefined
+    let done = try js.callableArg(it, a, 1)
+    let s = scriptOf(it)
+    let p = s.page
+    if s.active != p {
+        return Value.Undefined
+    }
+    var waits: u32 = 0
+    if p.doc.attr(el, "src") |src| {
+        if p.resolve(s.alloc, src) |target| {
+            defer target.deinit(s.alloc)
+            if net.liveRequest(&target) {
+                waits = net.startLoad(target.withoutFragment(), net.Kind.Script, p.url.href)
+                if waits != 0 && net.loadState(waits) != net.LoadState.Running {
+                    net.releaseLoad(waits)
+                    waits = 0
+                }
+            }
+        } else |e| {
+        }
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, done)
+    let root = it.addRoot(js.objVal(arr)) catch |e| {
+        if waits != 0 {
+            net.releaseLoad(waits)
+        }
+        return e
+    }
+    it.pop()
+    tick(s)
+    let tid = s.next_timer
+    s.next_timer += 1
+    s.timers.append(Timer { id: tid, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, delays_load: true, request: waits != 0 }) catch |e| {
+        it.removeRoot(root)
+        if waits != 0 {
+            net.releaseLoad(waits)
+        }
+        return e
+    }
+    s.seq += 1
+    return Value.Undefined
+}
+
+// scriptRun(script): fetches the external script (from the cache once
+// `scriptFetch`'s load ended) and runs it; false when the fetch failed
+// (no response, or a status that is not ok), for the error event. A
+// module's graph is fetched, linked and evaluated. document.write is
+// ignored there.
+fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
+    let el = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return js.boolVal(false)
+    let s = scriptOf(it)
+    let p = s.page
+    if s.active != p {
+        return js.boolVal(false)
+    }
+    let outer = s.current
+    defer s.current = outer
+    s.writes_ignored += 1
+    defer s.writes_ignored -= 1
+    if isModuleScript(p, el) {
+        try runModuleElement(s, el)
+        return js.boolVal(true)
+    }
+    let src = p.doc.attr(el, "src") orelse return js.boolVal(false)
+    let target = p.resolve(s.alloc, src) catch |e| {
+        return js.boolVal(false)
+    }
+    defer target.deinit(s.alloc)
+    let res = net.request(s.alloc, &target, net.Request { kind: net.Kind.Script, referrer: p.url.href }) catch |e| {
+        match e {
+            .OutOfMemory => {
+                return JsError.OutOfMemory
+            }
+            _ => {}
+        }
+        try addConsole(s, "[error] Failed to load script: ", target.href)
+        return js.boolVal(false)
+    }
+    defer res.deinit(s.alloc)
+    if res.status != 0 && (res.status < 200 || res.status > 299) {
+        try addConsole(s, "[error] Failed to load script: ", target.href)
+        return js.boolVal(false)
+    }
+    // As Chrome's opaque response blocking: a script of another origin
+    // served as HTML does not run (zol.com.cn's JSONP endpoints).
+    if isHtml(res.mime) && !sameOriginUrl(&originPage(p).url, &target) {
+        try addConsole(s, "[error] Blocked a script of another origin served as HTML: ", target.href)
+        return js.boolVal(false)
+    }
+    let code = try encoding.toUtf8(s.alloc, res.body, encoding.sniffOr(res.body, res.charset, p.encoding))
+    defer s.alloc.free(code)
+    try runCode(s, el, code, false)
+    return js.boolVal(true)
+}
+
+// Is the MIME type `mime` (maybe with parameters) text/html?
+fn isHtml(mime: []u8) bool {
+    var essence = mime
+    if text.indexOf(mime, ";") |semi| {
+        essence = mime[..semi]
+    }
+    return text.eqlIgnoreCase(text.trim(essence), "text/html")
+}
+
+// Have the URLs `a` and `b` the same origin (file: URLs share one)?
+fn sameOriginUrl(a: *Url, b: *Url) bool {
+    if text.eql(a.scheme, "file") && text.eql(b.scheme, "file") {
+        return true
+    }
+    return text.eql(a.scheme, b.scheme) && text.eql(a.host, b.host) && text.eql(a.port, b.port)
+}

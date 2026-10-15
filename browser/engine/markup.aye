@@ -112,6 +112,14 @@ fn parseFragment(p: *mut Page, context: []u8, src: []u8, out: *mut List(NodeId))
     let was = p.doc.recording
     p.doc.recording = false
     defer p.doc.recording = was
+    // In a raw text element the markup is its text (`script.innerHTML =
+    // code` keeps the code's `a<b` and `c>d`).
+    if html.isIn(context, "script style xmp iframe noembed noframes") {
+        if src.len > 0 {
+            try out.append(try p.doc.createText(src))
+        }
+        return
+    }
     // Table parts and options need their context to be parsed at all.
     var path = [3][]u8{"", "", ""}
     var depth: usize = 0
@@ -151,7 +159,10 @@ fn parseFragment(p: *mut Page, context: []u8, src: []u8, out: *mut List(NodeId))
     let top = box orelse return
     var cur = tmp.firstChild(top)
     while cur |c| {
-        try out.append(try importNode(&mut p.doc, &tmp, c))
+        let n = try importNode(&mut p.doc, &tmp, c)
+        // The fragment parser's scripts never run (inserted.aye).
+        try markScriptsIn(p, n)
+        try out.append(n)
         cur = tmp.nextSibling(c)
     }
 }
@@ -165,7 +176,9 @@ fn parseDocumentElement(p: *mut Page, src: []u8) AllocError!?NodeId {
     var tmp = try html.parseWith(p.alloc, src, false)
     defer tmp.deinit()
     let root = tmp.documentElement() orelse return null
-    return try importNode(&mut p.doc, &tmp, root)
+    let copy = try importNode(&mut p.doc, &tmp, root)
+    try markScriptsIn(p, copy)
+    return copy
 }
 
 fn firstChildNamed(doc: *Document, parent: NodeId, name: []u8) ?NodeId {

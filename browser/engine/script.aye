@@ -350,6 +350,12 @@ pub struct Script {
     queue: List(NodeId)
     queue_at: usize = 0
     queue_later: usize = 0
+    // The `script` elements that are already started (inserted.aye): node
+    // index to generation.
+    started: IntMap(u32, u32)
+    // document.write is ignored while above 0 (a script that a script
+    // inserted runs from the network).
+    writes_ignored: u32 = 0
 
     // ---- js.Host
 
@@ -563,6 +569,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         geom: null,
         restyle: List(Change).init(alloc),
         queue: List(NodeId).init(alloc),
+        started: IntMap(u32, u32).init(alloc),
         restyle_seen: IntMap(u64, usize).init(alloc),
         restyle_all: false,
         paint_boxes: List(usize).init(alloc),
@@ -663,6 +670,7 @@ pub fn destroyScript(s: *mut Script) {
     }
     s.timers.deinit()
     s.queue.deinit()
+    s.started.deinit()
     for line in s.console.items() {
         s.alloc.free(line)
     }
@@ -703,6 +711,7 @@ fn beginPageScripts(p: *mut Page) AllocError!void {
     var later = List(NodeId).init(p.alloc)
     defer later.deinit()
     for el in all.items() {
+        try markStarted(s, el)
         let external = p.doc.attr(el, "src") != null
         if isModuleScript(p, el) || (external && (p.doc.attr(el, "defer") != null || p.doc.attr(el, "async") != null)) {
             try later.append(el)
@@ -1010,31 +1019,43 @@ fn addImportMap(s: *mut Script, el: NodeId) AllocError!void {
 }
 
 fn runSourceOf(s: *mut Script, el: NodeId, code: []u8) AllocError!void {
+    return runCode(s, el, code, true)
+}
+
+// Runs `code`, the source of the script `el`: a script of the parser
+// (`parser`: the markup it writes is inserted after it), or one that a
+// script inserted, maybe while another runs (inserted.aye).
+fn runCode(s: *mut Script, el: NodeId, code: []u8, parser: bool) AllocError!void {
     var base = try s.page.currentBase(s.alloc)
     defer base.deinit(s.alloc)
     s.it.script_url = s.it.intern(base.href) catch return AllocError.OutOfMemory
     let began = perf.start()
     let source = s.page.doc.attr(el, "src") orelse "inline"
     defer perf.end("script", began, source)
+    let outer = s.current
+    let outer_source = s.it.source_url
     s.current = el
-    s.written.clear()
+    if parser {
+        s.written.clear()
+    }
     if perf.telemetryOn() {
         try noteSourceUrl(s, el)
     }
     enter(s)
+    var failed: ?JsError = null
     s.it.runScript(code) catch |e| {
-        s.it.source_url = 0
-        leave(s)
-        s.current = null
-        try uncaught(s, e)
-        try runMicrotasks(s)
-        return insertWritten(s, el)
+        failed = e
     }
-    s.it.source_url = 0
+    s.it.source_url = outer_source
     leave(s)
-    s.current = null
+    s.current = outer
+    if failed |e| {
+        try uncaught(s, e)
+    }
     try runMicrotasks(s)
-    try insertWritten(s, el)
+    if parser {
+        try insertWritten(s, el)
+    }
 }
 
 // Telemetry: the code about to be parsed is the script `el`'s (its
@@ -1112,6 +1133,7 @@ fn insertWritten(s: *mut Script, el: NodeId) AllocError!void {
         var cur: ?NodeId = n
         while cur |h| {
             if p.doc.isElement(h, "script") && (isClassicScript(p, h) || isModuleScript(p, h)) {
+                try markStarted(s, h)
                 try scripts.append(h)
             }
             cur = p.doc.following(h, n)

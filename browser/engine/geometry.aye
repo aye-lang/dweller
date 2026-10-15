@@ -117,6 +117,26 @@ fn installGeometry(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "setLayoutHook", 1, akSetLayoutHook)
     try defMethod(it, o, "watchScroll", 0, akWatchScroll)
     try defMethod(it, o, "renderedSize", 2, akRenderedSize)
+    try defMethod(it, o, "elementAt", 2, akElementAt)
+}
+
+// elementAt(x, y): the topmost element at the point (x, y) of the
+// viewport (document.elementFromPoint): the root element where no box
+// is, null outside the viewport.
+fn akElementAt(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let x = try it.toNumber(it.arg(a, 0))
+    let y = try it.toNumber(it.arg(a, 1))
+    if !(x >= 0.0 && y >= 0.0 && x < s.width && y < s.height) {
+        return Value.Null
+    }
+    let g = try geometry(s)
+    let doc = &mut s.page.doc
+    var hit = nodeAt(g.tree, x + s.scroll_x, y + s.scroll_y) orelse doc.documentElement() orelse return Value.Null
+    if doc.node(hit).kind != dom.Kind.Element {
+        hit = doc.parent(hit) orelse return Value.Null
+    }
+    return wrap(it, hit)
 }
 
 fn akSetLayoutHook(it: *mut Interp, a: Args) JsError!Value {

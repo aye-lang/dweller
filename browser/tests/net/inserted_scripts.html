@@ -1,0 +1,55 @@
+<!doctype html><title>Inserted scripts</title>
+<p id="t">Scripts that a script inserts load in the background.</p>
+<pre id="log">waiting</pre>
+<div style="height: 3000px">A tall page to scroll.</div>
+<!-- tests/browser.rs: inserted_scripts. Scripts that a script inserts
+     (P4.45), in dump and in the window: an async one; twenty with
+     async = false whose loads take 390 ms down to 200 ms (the first
+     arrives last), which run in insertion order; a webpack-style JSONP
+     chunk loader whose chunk registers itself through the global array;
+     a missing script, which fires error; a script of another origin
+     (localhost) served as HTML, which does not run (Chrome's opaque
+     response blocking) and fires error. The load event waits for them;
+     no loop iteration of the window waits for their loads. -->
+<script>
+window.ran = [];
+const events = [];
+function insert(src, ordered) {
+  const s = document.createElement('script');
+  if (ordered) s.async = false;
+  s.src = src;
+  s.onload = () => events.push('load ' + src.slice(src.lastIndexOf('/') + 1));
+  s.onerror = () => events.push('error ' + src.slice(src.lastIndexOf('/') + 1));
+  document.head.appendChild(s);
+}
+insert('/delay/100/net/inserted_script.js?async', false);
+for (let i = 0; i < 20; i++) insert('/delay/' + (200 + 10 * (19 - i)) + '/net/inserted_script.js?o' + i, true);
+insert('/net/inserted_missing.js', false);
+insert('http://localhost:' + location.port + '/log/inserted.html', false);
+// The chunk loader of a webpack runtime.
+const installed = {};
+const factories = {};
+const chunkArray = self.webpackChunkApp = self.webpackChunkApp || [];
+chunkArray.push = ([ids, more]) => {
+  for (const id of ids) installed[id] = 0;
+  Object.assign(factories, more);
+};
+let chunk = 'pending';
+new Promise((resolve, reject) => {
+  const s = document.createElement('script');
+  s.src = '/delay/150/net/inserted_chunk.js';
+  s.onload = s.onerror = () => installed.lazy === 0 ? resolve() : reject(new Error('Loading chunk lazy failed'));
+  document.head.appendChild(s);
+}).then(() => {
+  const module = {};
+  factories.lazy(module);
+  chunk = module.exports;
+}, e => { chunk = String(e); });
+window.addEventListener('load', () => {
+  const order = window.ran.filter(q => q.startsWith('o')).join(',');
+  document.getElementById('log').textContent = 'async: ' + window.ran.includes('async') +
+    '; ordered: ' + order + '; chunk: ' + chunk + '; missing: ' + events.includes('error inserted_missing.js') +
+    '; html of another origin: ' + (events.includes('error inserted.html') ? 'blocked' : 'ran') +
+    '; loads: ' + events.filter(e => e.startsWith('load')).length;
+});
+</script>

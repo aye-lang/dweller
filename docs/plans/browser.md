@@ -102,10 +102,10 @@ the one place with more than one process.
   first paint 1.7–15.8 s against Chrome's 0.3–2.0 s. Five root causes;
   cards P4.32–P4.37. P4.31 (macOS wheel and trackpad) and P4.32 (page
   fetch/XHR in the background) are done; P4.43 moved `import()` and
-  frames to the background and runs the page's scripts as tasks; scripts
-  that a script inserts do not run yet (P4.45).
-- Sites: `page_load.py check` passes on the recorded archives; W3 is 7
-  of 20 (P3.65 and P3.73b done). The open visual defects are re-filed
+  frames to the background and runs the page's scripts as tasks; P4.45
+  runs the scripts that a script inserts (fetched in the background).
+- Sites: `page_load.py check` passes on the recorded archives; W3 is 8
+  of 20 (P3.65, P3.73b and P4.45 done). The open visual defects are re-filed
   below under their Layer 1 area or Layer 2.
 - Archives live in each checkout's `target/sites/` (untracked), so steps
   that replay sites or take screenshots run locally.
@@ -143,7 +143,9 @@ may run beside P4 cards; two cards never edit the same files at once.
 |---|---|---|---|
 | 1 | P4.32 | 0 | page `fetch()`/XHR complete as tasks; the window thread never waits on them (done) |
 | 1b | P4.43 | 0 | `import()` and frames load in the background; the page's scripts run as tasks (done) |
-| 1c | P4.45 | 0 | scripts that a script inserts (`<script src>`, JSONP chunk loaders) run, loaded in the background |
+| 1c | P4.45 | 0 | scripts that a script inserts (`<script src>`, JSONP chunk loaders) run, loaded in the background (done) |
+| 1c2 | P4.47 | 0 | `blob:` URLs: scripts, fetch and XHR read the Blob that `URL.createObjectURL` named |
+| 1c3 | P4.48 | 0 | what the scripts sites insert cost `dump` since P4.45 (mistral +19 s, reddit +16 s) |
 | 1d | P4.46 | 0 | back, forward and reload in steps, as the other navigations |
 | 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources (done) |
 | 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle (done) |
@@ -215,6 +217,19 @@ them from coming back.
 - files: `browser/engine/script.aye`, `browser/engine/dom_api.aye` (insertion steps), `browser/engine/prelude.aye` (`resourceMutations`), `browser/engine/window_api.aye`
 - test: a jsdom fixture (inline and external inserted scripts, `async = false` order, load/error events, a script moved or inserted twice runs once); the window test of P4.43 extended with 20 inserted `<script src>` of 200 ms delays: in order, every loop iteration < 100 ms outside script tasks.
 - verify: `cargo test --release --test browser -- jsdom_fixtures window_dynamic_scripts > target/p4.45.log 2>&1; echo $?` → 0; `page_load.py check` exit 0 after the reviewed rebless
+- status: done 2026-10-15. The prelude's mutation hook asks `ak.scriptPrepare` (`browser/engine/inserted.aye`) about every script element a script connects, gives text to or gives a `src`: an inline classic script, module or import map runs at once (`document.currentScript` set, restored after: it may run inside another script); an external one is loaded on the loader's multi handle (on the virtual clock its task waits for the load in its turn, so `dump` stays deterministic) and runs in a task that delays the load event, `async` ones as they arrive, `async = false` ones in insertion order; `load`/`error` at the element (error for a failed load, a status that is not 2xx, an empty `src`, and, as Chrome's opaque response blocking, a script of another origin served as `text/html`); `type` (module, importmap, non-JavaScript types ignored) and `noModule` respected; `document.write` from a fetched inserted script is ignored. A script runs once: the parser's scripts, those of innerHTML, outerHTML and DOMParser, and every script that ran are already started (`Script.started`), clones keep the flag, `createContextualFragment` clears it. `crossorigin` and CSP/`nonce` are not implemented (no CORS, no CSP). Engine gaps the newly running site scripts hit, fixed here: a `/` after a function declaration's or a block's `}` starts a regex (zol's ad SDK), `async [key]()` methods, `{length: -1}` array-likes (LengthOfArrayLike, not ToUint32: BBC hung), `push` on an array-like object in O(arguments) (ZOL: O(n²)), Promise species (`then` and the statics construct `this`/the species: core-js replaced BBC's `Promise.prototype.finally` with undefined), `script.innerHTML` as raw text, `document.elementFromPoint`/`elementsFromPoint`. Golden review against Chrome (`PERF.md` "P4.45"): closer on bbc, wikipedia, wikipedia-en; neutral on mistral, zol (console 0 → 4, Chrome's own errors), reddit and stackoverflow (excluded); the 15 others byte-identical; none worse. W3 7 → 8 of 20 (wikipedia's Appearance panel, P3.66, now filled; BBC's Register/Sign In of P3.41 now drawn). Tests `inserted_scripts` (dump twice, the window: 20 `async = false` scripts of 200–390 ms in order, longest loop < 100 ms), the jsdom fixture `inserted_scripts.html`, `js/258_site_script_fixes.js`.
+
+#### P4.47: blob: URLs
+- goal: `URL.createObjectURL(blob)` registers the Blob under its URL (until `revokeObjectURL`) and `<script src="blob:...">`, `fetch` and XHR of that URL read it; old.reddit.com's login page inserts a `blob:` script (P4.45 review: "Failed to load script: blob:https://old.reddit.com/...").
+- files: `browser/engine/prelude.aye` (createObjectURL, the Blob store), `browser/engine/inserted.aye`, `browser/engine/window_api.aye` (fetch)
+- test: a jsdom fixture: a script inserted from a `blob:` URL runs and fires load; `fetch(blobUrl)` resolves with the Blob's text; after `revokeObjectURL` both fail.
+- verify: `cargo test --release --test browser -- jsdom_fixtures > target/p4.47.log 2>&1; echo $?` → 0
+
+#### P4.48: what the newly running site scripts cost in dump
+- goal: since P4.45 the scripts sites insert run, and `dump` CPU grew: mistral 26 → 45 s (timers 24.7 → 46.8 s: forced layouts 6.2 → 26.4 s, cascade 3.0 → 17.9 s, after gtag and the axept.io consent SDK run), reddit's login wall 0.05 → 16 s, bbc 0.36 → 6.7 s (`PERF.md` "P4.45"). Find which timers force the layouts and cascades (`DWELLER_TIMING` per callback) and remove the work Chrome does not do (a layout per read that changed nothing, a cascade per class toggle).
+- files: `browser/engine/geometry.aye`, `browser/engine/script.aye` (timers)
+- test: a jsdom fixture reproducing the pattern found, with its forced layouts counted.
+- verify: `page_load.py run --site mistral,reddit,bbc` CPU within 20% of before P4.45 (26 s, 0.05 s, 0.36 s) or the remaining time explained as Chrome's own work; `page_load.py check` exit 0
 
 #### P4.46: back, forward and reload in steps
 - goal: the window's back, forward and reload (`Ui.goBy`, `Ui.reload`, the history traversals scripts ask for) go through the incremental navigation of P4.33/P4.43 (`navigateEarly`, `stepPageScripts`) instead of a synchronous load: the page is shown once its sheets are in, its scripts run as tasks, its frames load in the background; the scroll position restored after its scripts ran.
@@ -1017,7 +1032,7 @@ current `main`.
 - **CSS positioning:** B8: sticky only against the viewport.
 - **CSS backgrounds and borders:** P3.70 abehiroshi's tiled background image missing.
 - **CSS transforms:** B8: rotations and skews other than quarter turns are not drawn.
-- **Forms:** P3.51 form control content not centred vertically: GitHub commit messages about 10 px above the file names, DuckDuckGo's query text at the top of its box, YouTube's search-button icon at the top of the button (Google's bevelled buttons not reproduced 2026-10-14: Chrome draws the archive the same). P3.66 Wikipedia's Appearance panel empty (Chrome: Text, Width, Color radio buttons); confirm it is form controls, not script. B8: calendar, color and file pickers, `datalist`.
+- **Forms:** P3.51 form control content not centred vertically: GitHub commit messages about 10 px above the file names, DuckDuckGo's query text at the top of its box, YouTube's search-button icon at the top of the button (Google's bevelled buttons not reproduced 2026-10-14: Chrome draws the archive the same). P3.66 Wikipedia's Appearance panel was script, not form controls: filled since P4.45 (inserted scripts run). B8: calendar, color and file pickers, `datalist`.
 - **Images and SVG:** P3.56 `<video poster>` loaded and painted like an image (empty video frame on wikipedia-en). P3.16 a script changing an img in another same-origin frame may record the failed load in the wrong page's cache. P4.39 `getTotalLength()`/`getPointAtLength()` on SVG geometry elements (Mistral's `layout` script); verify also: a fixture path's length matches Chrome's within 0.5 px. B8: no AVIF (out of scope for now).
 - **URL and encoding:** P3.19 URL parser accepts `http://[`; WHATWG IPv6 host parsing (P3.15).
 - **Fetch and XHR:** P3.21 fetch guards: immutable Response headers, forbidden Request header names, abort listener removed on settle. P3.25 send `Origin` on non-GET and CORS-mode fetches. P3.31 XHR `loadstart`/`progress` events and `xhr.upload`. B8: no public suffix list for cookies (a bare top-level name is refused, `co.uk` is not).
@@ -1035,7 +1050,7 @@ specific to that site's page or to the tools.
 - P3.80 user acceptance (decided by the user 2026-10-15): the sites the user uses every day all need a login, so Layer 2's final validation is the user's own daily use of a bundled build. Once W1–W9 hold and the login-readiness cards (P10.20, P4.50–P4.53, P10.21–P10.23) are done, the assistant bundles a build (with local telemetry on, P4.53); the user uses it on their logged-in daily sites and reports problems, which become cards (matched first to a Layer 1 area, as above). No site list is requested.
 - P3.7 Mistral: short iframe widgets, `setTransform` errors; recheck after P3.48.
 - P3.35 YouTube search agent task: expect results URL plus a title; recapture with the `youtubei/v1/search` POST (P3.30).
-- P3.41 BBC ☰ menu button missing in replay (still seen 2026-10-14: no menu/search button at the left, no Register/Sign In at the right); diagnose to its area.
+- P3.41 BBC header: Register/Sign In drawn since P4.45 (inserted scripts run, 2026-10-15); the ☰/search button at the left was drawn already. Done.
 - P3.61 `screenshot` runs the page as long as `dump` (Mistral's title animation caught half-way; "Introducing Mistral Large 4" not drawn, "Le chonk" 240 px low).
 - P3.67 MDN: the "Try it" demo shows an `about:blank` link instead of the code editor and output; the language switcher is drawn twice.
 - P3.72 react.dev: the "My video" demo thumbnail is an empty white box (Chrome: blue gradient with a play icon).
