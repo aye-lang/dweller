@@ -1,0 +1,16 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "ArrayBuffer bytes in web APIs"
+      "\n"
+      <!--  P11.3: Blob, Response and FileReader bodies, TextEncoder/TextDecoder\n     and crypto.getRandomValues read and write the ArrayBuffer's bytes.  -->
+      "\n"
+    <body>
+      <pre id="out">
+        "blob size 11\nrandom true 16\nrandom errors TypeMismatchError QuotaExceededError\nblob bytes [0,1,127,128,200,255,195,169,65,66,122]\nblob slice text é\nresponse [0,1,127,128,200,255]\nresponse text héllo\nfilereader [128,200,255]\n"
+      "\n"
+      <script>
+        "\nconst out = document.getElementById('out');\nconst log = (...xs) => { out.textContent += xs.join(' ') + '\\n'; };\nconst show = u => '[' + Array.from(u).join(',') + ']';\nconst bytes = new Uint8Array([0, 1, 127, 128, 200, 255]);\nconst blob = new Blob([bytes, 'é', new Uint16Array([0x4241]).buffer, new Blob(['z'])]);\nlog('blob size', blob.size);\nconst r = new Uint8Array(16);\nlog('random', crypto.getRandomValues(r) === r, r.length);\nlet err = '';\ntry { crypto.getRandomValues(new Float32Array(2)); } catch (e) { err = e.name; }\ntry { crypto.getRandomValues(new Uint8Array(65537)); } catch (e) { err += ' ' + e.name; }\nlog('random errors', err);\n(async () => {\n  log('blob bytes', show(new Uint8Array(await blob.arrayBuffer())));\n  log('blob slice text', await blob.slice(6, 8).text());\n  log('response', show(new Uint8Array(await new Response(bytes).arrayBuffer())));\n  log('response text', await new Response(new TextEncoder().encode('héllo')).text());\n  const fr = new FileReader();\n  fr.onload = () => log('filereader', show(new Uint8Array(fr.result)));\n  fr.readAsArrayBuffer(new Blob([bytes.subarray(3)]));\n})();\n"
+      "\n"

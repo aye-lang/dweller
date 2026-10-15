@@ -1160,7 +1160,17 @@ fn akCanvasPixels(it: *mut Interp, a: Args) JsError!Value {
     defer if incoming |bytes| {
         it.alloc.free(bytes)
     }
-    if putting {
+    // A Uint8ClampedArray (ImageData.data) gives and takes its bytes.
+    var view = []mut u8{}
+    let vo = js.objectOf(data)
+    if vo != js.NONE {
+        view = js.viewBytes(it, vo)
+    }
+    let out = js.objectOf(it.arg(a, 6))
+    if putting && view.len == w * h * 4 {
+        incoming = try it.alloc.alloc(0 as u8, w * h * 4)
+        std.mem.copy(incoming.?, view)
+    } else if putting {
         incoming = try it.alloc.alloc(0 as u8, w * h * 4)
         for i in 0..incoming.?.len {
             let v = try it.toNumber(try canvasIndex(it, data, i))
@@ -1183,6 +1193,23 @@ fn akCanvasPixels(it: *mut Interp, a: Args) JsError!Value {
         }
     }
     var arr: u32 = js.NONE
+    var pixels = []mut u8{}
+    if out != js.NONE {
+        pixels = js.viewBytes(it, out)
+    }
+    if !putting && pixels.len == w * h * 4 {
+        for y in 0..h {
+            for x in 0..w {
+                let xx = x0 + x as i64
+                let yy = y0 + y as i64
+                if xx >= 0 && yy >= 0 && xx < bmp.width as i64 && yy < bmp.height as i64 && bmp.pixels.len > 0 {
+                    let i = (yy as usize * bmp.width + xx as usize) * 4
+                    std.mem.copy(pixels[(y * w + x) * 4..(y * w + x) * 4 + 4], bmp.pixels[i..i + 4])
+                }
+            }
+        }
+        return Value.Undefined
+    }
     if !putting {
         arr = try it.newArray(0)
         try it.push(js.objVal(arr))

@@ -277,20 +277,13 @@ pub let CANVAS_PRELUDE =
     \\function dimensions(w, h) {
     \\  if (!finite([w, h]) || !Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0 || w > 16384 || h > 16384 || w*h > 16777216) throw new DOMException('Invalid bitmap size', 'IndexSizeError');
     \\}
-    \\// The interpreter's typed arrays are JS polyfills. Use the existing one
-    \\// when installed, rather than installing a second typed-array subsystem.
-    \\// Its arrays are Arrays with its prototype: give a fresh array of bytes
-    \\// that prototype rather than copying it element by element.
-    \\function clamped(a) {
-    \\  return typeof Uint8ClampedArray === 'function' ? Object.setPrototypeOf(a, Uint8ClampedArray.prototype) : a;
-    \\}
     \\class ImageData {
     \\  constructor(data, width, height) {
     \\    if (typeof data === 'number') {
     \\      height = Math.abs(Math.trunc(width));
     \\      width = Math.abs(Math.trunc(data));
     \\      dimensions(width, height);
-    \\      data = clamped(new Array(width*height*4).fill(0));
+    \\      data = new Uint8ClampedArray(width*height*4);
     \\    } else {
     \\      width = Math.trunc(width);
     \\      height = height === undefined ? data.length/(width*4) : Math.trunc(height);
@@ -556,8 +549,9 @@ pub let CANVAS_PRELUDE =
     \\      y += h;
     \\      h = -h;
     \\    }
-    \\    const d = ak.canvasPixels(this._node, x, y, w, h, null);
-    \\    return new ImageData(clamped(d), w, h);
+    \\    const d = new Uint8ClampedArray(w*h*4);
+    \\    ak.canvasPixels(this._node, x, y, w, h, null, d);
+    \\    return new ImageData(d, w, h);
     \\  }
     \\  putImageData(data, x, y, dirtyX, dirtyY, dirtyW, dirtyH) {
     \\    this._sync();

@@ -175,6 +175,30 @@ and prototype changes, deletion/dictionaries, freezing, proxies, recipe
 bailout/coercion/TDZ, escaping environments, JSON/number edge cases, and
 lazy-prototype reflection (including getter non-invocation).
 
+## P11.3: `ArrayBuffer` on one contiguous byte store
+
+An `ArrayBuffer` is now an object whose data is `ObjData.Bytes`: one
+native allocation (V8's BackingStore), outside the lists the collector
+scans, freed with the object (`heap.freeObj`) or on `transfer()`
+(detach). Views (`ObjData.View`) name the buffer itself and read/write
+little-endian bytes; `set` (typed source), `slice`, `copyWithin`,
+`fill`, `ArrayBuffer.prototype.slice`/`transfer` are memmove/memcpy
+natives (`typed.aye`). Same machine, `dweller js`, before (main
+c87a96f) / after:
+
+| | before | after |
+|---|---|---|
+| `new Float32Array(1 << 20)` | 264 ms | 11–14 ms (19–24x) |
+| `new Float32Array(4 << 20)` (16 MB) | 991 ms | 44–45 ms |
+| fill 16 MB element by element (`a[i] = i * 0.5`, global `var` loop) | 15466 ms | 14733–14853 ms |
+| sum 16 MB element by element | 16276 ms | 15533–16294 ms |
+| `Float32Array(1 << 20).fill(1.5)` | 705 ms (generic Array `fill`) | 0 ms |
+
+The element loops are the interpreter's: an empty `for` over 1M global
+`var`s takes 1.8–2.4 s, a plain `Array` store loop 3.7 s, the typed one
+3.5 s. Element access was never the cost there; the loops need the
+interpreter work of "Next steps".
+
 ## Next steps
 
 The general interpreter is still the bottleneck. Small property tables

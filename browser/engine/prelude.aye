@@ -5,7 +5,7 @@
 // attributes, `value`, Attr, select), the interfaces scripts construct
 // or patch, the window (timers, location, history, localStorage, alert,
 // getComputedStyle, performance), fetch, and more web APIs (URL, atob,
-// TextEncoder, AbortController, the observers, matchMedia,
+// AbortController, the observers, matchMedia,
 // XMLHttpRequest, Web Animations...). It
 // calls the native functions of the `ak` object (window_api.aye) and
 // hands `hostEvent` to the browser.
@@ -1855,10 +1855,11 @@ pub let PRELUDE =
     \\}
     \\function byteArray(s) {
     \\  const u = new Uint8Array(s.length);
-    \\  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    \\  ak.latin1Into(u, s);
     \\  return u;
     \\}
     \\function byteString(u) {
+    \\  if (u instanceof Uint8Array) return ak.latin1Of(u);
     \\  let s = '';
     \\  for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
     \\  return s;
@@ -2232,56 +2233,6 @@ pub let PRELUDE =
     \\  return out;
     \\});
     \\
-    \\// TextEncoder and TextDecoder: UTF-8 only
-    \\class TextEncoder {
-    \\  get encoding() { return 'utf-8'; }
-    \\  encode(s) {
-    \\    const bytes = [];
-    \\    for (const ch of String(s === undefined ? '' : s)) {
-    \\      let c = ch.codePointAt(0);
-    \\      if (c >= 0xD800 && c <= 0xDFFF) c = 0xFFFD;
-    \\      if (c < 0x80) bytes.push(c);
-    \\      else if (c < 0x800) bytes.push(0xC0 | (c >> 6), 0x80 | (c & 63));
-    \\      else if (c < 0x10000) bytes.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
-    \\      else bytes.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
-    \\    }
-    \\    return new Uint8Array(bytes);
-    \\  }
-    \\}
-    \\class TextDecoder {
-    \\  constructor(label) {
-    \\    const l = label === undefined ? 'utf-8' : String(label).trim().toLowerCase();
-    \\    if (l !== 'utf-8' && l !== 'utf8' && l !== 'unicode-1-1-utf-8') throw new RangeError("Failed to construct 'TextDecoder': The encoding label provided ('" + label + "') is invalid.");
-    \\  }
-    \\  get encoding() { return 'utf-8'; }
-    \\  decode(input) {
-    \\    if (input === undefined) return '';
-    \\    const b = input instanceof ArrayBuffer ? new Uint8Array(input) : input;
-    \\    let out = '';
-    \\    let i = 0;
-    \\    if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) i = 3;
-    \\    while (i < b.length) {
-    \\      const x = b[i];
-    \\      const need = x < 0x80 ? 0 : x >= 0xC2 && x < 0xE0 ? 1 : x >= 0xE0 && x < 0xF0 ? 2 : x >= 0xF0 && x < 0xF5 ? 3 : -1;
-    \\      let c = need === 0 ? x : need === 1 ? x & 31 : need === 2 ? x & 15 : x & 7;
-    \\      let j = 1;
-    \\      while (need > 0 && j <= need && i + j < b.length && (b[i + j] & 0xC0) === 0x80) {
-    \\        c = (c << 6) | (b[i + j] & 63);
-    \\        j++;
-    \\      }
-    \\      if (need < 0 || j <= need || (need === 2 && (c < 0x800 || (c >= 0xD800 && c <= 0xDFFF))) || (need === 3 && (c < 0x10000 || c > 0x10FFFF))) {
-    \\        out += '�';
-    \\        i += need < 0 ? 1 : j;
-    \\      } else {
-    \\        out += String.fromCodePoint(c);
-    \\        i += j;
-    \\      }
-    \\    }
-    \\    return out;
-    \\  }
-    \\}
-    \\hidden(G, 'TextEncoder', TextEncoder);
-    \\hidden(G, 'TextDecoder', TextDecoder);
     \\
     \\// URLSearchParams and URL (the parsing is the browser's: ak.parseUrl)
     \\function formEncode(s) {
@@ -2708,7 +2659,9 @@ pub let PRELUDE =
     \\const crypto = {
     \\  getRandomValues(a) {
     \\    if (!ArrayBuffer.isView(a)) throw new TypeError("Failed to execute 'getRandomValues' on 'Crypto': parameter 1 is not of type 'ArrayBufferView'.");
-    \\    for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 4294967296);
+    \\    if (a instanceof Float32Array || a instanceof Float64Array || a instanceof DataView) throw new DOMException("Failed to execute 'getRandomValues' on 'Crypto': The provided ArrayBufferView is of type '" + a.constructor.name + "', which is not an integer array type.", 'TypeMismatchError');
+    \\    if (a.byteLength > 65536) throw new DOMException("Failed to execute 'getRandomValues' on 'Crypto': The ArrayBufferView's byte length (" + a.byteLength + ") exceeds the number of bytes of entropy available via this API (65536).", 'QuotaExceededError');
+    \\    ak.randomFill(a);
     \\    return a;
     \\  },
     \\  randomUUID() {
@@ -3133,10 +3086,9 @@ pub let PRELUDE =
     \\  for (const p of parts || []) {
     \\    if (p instanceof Blob) s += p._bytes;
     \\    else if (p instanceof ArrayBuffer || ArrayBuffer.isView(p)) {
-    \\      const u = p instanceof ArrayBuffer ? new Uint8Array(p) : new Uint8Array(p.buffer, p.byteOffset, p.byteLength);
-    \\      for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+    \\      s += ak.latin1Of(p instanceof ArrayBuffer ? new Uint8Array(p) : new Uint8Array(p.buffer, p.byteOffset, p.byteLength));
     \\    } else {
-    \\      for (const b of new TextEncoder().encode(String(p))) s += String.fromCharCode(b);
+    \\      s += ak.latin1Of(new TextEncoder().encode(String(p)));
     \\    }
     \\  }
     \\  return s;
@@ -3153,11 +3105,7 @@ pub let PRELUDE =
     \\    b._bytes = this._bytes.slice(start === undefined ? 0 : start, end === undefined ? this._bytes.length : end);
     \\    return b;
     \\  }
-    \\  _array() {
-    \\    const u = new Uint8Array(this._bytes.length);
-    \\    for (let i = 0; i < u.length; i++) u[i] = this._bytes.charCodeAt(i);
-    \\    return u;
-    \\  }
+    \\  _array() { return byteArray(this._bytes); }
     \\  text() { return Promise.resolve(new TextDecoder().decode(this._array())); }
     \\  arrayBuffer() { return Promise.resolve(this._array().buffer); }
     \\}

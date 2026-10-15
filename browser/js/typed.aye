@@ -1,9 +1,15 @@
-// js/typed: the elements of typed arrays. An ArrayBuffer (lib.aye) keeps
-// its bytes in a plain array of numbers (`_bytes`), the store; a typed
+// js/typed: ArrayBuffer byte stores and the elements of typed arrays.
+// An ArrayBuffer (lib.aye) is an object whose data is Bytes: one native
+// allocation (V8's BackingStore), outside the lists the collector scans,
+// freed when the buffer is collected (heap.freeObj) or detached. A typed
 // array is an object of class TypedArray whose View data names that
-// store, a byte offset, a length and an element kind. Every view of one
-// buffer reads and writes the same store, little-endian. DataView reads
-// and writes the store through viewGet and viewSet.
+// buffer, a byte offset, a length and an element kind. Every view of one
+// buffer reads and writes the same bytes, little-endian. DataView reads
+// and writes them through viewGet and viewSet. Native code (WebGL, WASM)
+// takes a view's bytes with viewBytes.
+
+import std.mem.copy
+import std.text
 
 // Element kinds, in the order of lib.aye's KINDS.
 let K_INT8: u32 = 0
@@ -21,7 +27,20 @@ fn installTyped(it: *mut Interp, e: u32) JsError!void {
     try it.defineNative(e, "makeView", 5, engineMakeView)
     try it.defineNative(e, "viewGet", 4, engineViewGet)
     try it.defineNative(e, "viewSet", 5, engineViewSet)
+    try it.defineNative(e, "bufNew", 2, engineBufNew)
+    try it.defineNative(e, "bufLen", 1, engineBufLen)
+    try it.defineNative(e, "bufDetached", 1, engineBufDetached)
+    try it.defineNative(e, "bufDetach", 1, engineBufDetach)
+    try it.defineNative(e, "bufCopy", 5, engineBufCopy)
+    try it.defineNative(e, "typedFill", 4, engineTypedFill)
+    try it.defineNative(e, "typedSetFrom", 3, engineTypedSetFrom)
+    try it.defineNative(e, "utf8Length", 1, engineUtf8Length)
+    try it.defineNative(e, "utf8Encode", 2, engineUtf8Encode)
+    try it.defineNative(e, "utf8Decode", 1, engineUtf8Decode)
 }
+
+// The largest ArrayBuffer: offsets are u32.
+let MAX_BYTES: f64 = 2147483647.0
 
 /// The bytes of one element of `kind`.
 pub fn kindSize(kind: u32) u32 {
@@ -61,31 +80,87 @@ fn f64Bits(n: f64) u64 {
     return p.*
 }
 
-fn storeByte(it: *Interp, store: u32, i: u32) u64 {
-    let ob = it.heap.obj(store)
-    if i < ob.nelems {
-        match ob.elems[i] {
-            .Num { n } => {
-                return toUint32(n) as u64 & 255
-            }
-            _ => {}
-        }
+/// The bytes of buffer `store` (empty when detached or not a buffer).
+pub fn storeMem(it: *Interp, store: u32) []mut u8 {
+    return match it.heap.obj(store).data {
+        .Bytes { mem, .. } => mem
+        _ => []mut u8{}
     }
-    return 0
 }
 
-/// The element of `kind` at byte `at` of `store`.
-pub fn viewRead(it: *Interp, store: u32, at: u32, kind: u32, le: bool) f64 {
-    let size = kindSize(kind)
+fn isBuffer(it: *Interp, o: u32) bool {
+    return match it.heap.obj(o).data {
+        .Bytes { .. } => true
+        _ => false
+    }
+}
+
+fn isDetached(it: *Interp, o: u32) bool {
+    return match it.heap.obj(o).data {
+        .Bytes { detached, .. } => detached
+        _ => false
+    }
+}
+
+/// The bytes of typed array o, for native code: a slice of its buffer's
+/// store, empty when detached or out of bounds. Valid until the next
+/// script call (which may detach or collect the buffer).
+pub fn viewBytes(it: *Interp, o: u32) []mut u8 {
+    match it.heap.obj(o).data {
+        .View { store, off, len, kind } => {
+            let mem = storeMem(it, store)
+            let n = len as usize * kindSize(kind) as usize
+            if off as usize + n <= mem.len {
+                return mem[off as usize..off as usize + n]
+            }
+        }
+        _ => {}
+    }
+    return []mut u8{}
+}
+
+fn loadBits(mem: []mut u8, at: u32, size: u32, le: bool) u64 {
     var x: u64 = 0
     for k in 0..size {
-        let b = storeByte(it, store, at + k)
+        let b = mem[at + k] as u64
         if le {
             x = x | (b << (8 * k as u64))
         } else {
             x = (x << 8) | b
         }
     }
+    return x
+}
+
+fn storeBits(mem: []mut u8, at: u32, size: u32, x: u64, le: bool) {
+    for k in 0..size {
+        var shift = 8 * (size - 1 - k) as u64
+        if le {
+            shift = 8 * k as u64
+        }
+        mem[at + k] = ((x >> shift) & 255) as u8
+    }
+}
+
+/// The element of `kind` at byte `at` of buffer `store` (0 out of bounds).
+pub fn viewRead(it: *Interp, store: u32, at: u32, kind: u32, le: bool) f64 {
+    let size = kindSize(kind)
+    let mem = storeMem(it, store)
+    if at as usize + size as usize > mem.len {
+        return 0.0
+    }
+    if kind <= K_CLAMPED {
+        let b = mem[at]
+        if kind == K_INT8 && b >= 128 {
+            return b as f64 - 256.0
+        }
+        return b as f64
+    }
+    let x = loadBits(mem, at, size, le)
+    return bitsNumber(x, kind)
+}
+
+fn bitsNumber(x: u64, kind: u32) f64 {
     let v = x as f64
     if kind == K_INT8 {
         if v >= 128.0 {
@@ -150,48 +225,59 @@ fn int64Bits(n: f64) u64 {
     return ~((0.0 - t) as u64) + 1
 }
 
-/// Writes number n as an element of `kind` at byte `at` of `store`.
+/// The bits of number n as an element of `kind`.
+fn numberBits(kind: u32, n: f64) u64 {
+    if kind == K_CLAMPED {
+        return clampByte(n)
+    }
+    if kind == K_FLOAT32 {
+        return f32Bits(n) as u64
+    }
+    if kind == K_FLOAT64 {
+        return f64Bits(n)
+    }
+    if kind >= K_BIGINT64 {
+        return int64Bits(n)
+    }
+    return toUint32(n) as u64
+}
+
+/// Writes number n as an element of `kind` at byte `at` of buffer `store`
+/// (ignored out of bounds).
 pub fn viewWrite(it: *mut Interp, store: u32, at: u32, kind: u32, n: f64, le: bool) {
     let size = kindSize(kind)
-    var x: u64 = 0
-    if kind == K_CLAMPED {
-        x = clampByte(n)
-    } else if kind == K_FLOAT32 {
-        x = f32Bits(n) as u64
-    } else if kind == K_FLOAT64 {
-        x = f64Bits(n)
-    } else if kind >= K_BIGINT64 {
-        x = int64Bits(n)
-    } else {
-        x = toUint32(n) as u64
-    }
-    let ob = it.heap.obj(store)
-    if at + size > ob.nelems {
+    let mem = storeMem(it, store)
+    if at as usize + size as usize > mem.len {
         return
     }
-    for k in 0..size {
-        var shift = 8 * (size - 1 - k) as u64
-        if le {
-            shift = 8 * k as u64
-        }
-        ob.elems[at + k] = numVal(((x >> shift) & 255) as f64)
+    let x = numberBits(kind, n)
+    if size == 1 {
+        mem[at] = (x & 255) as u8
+        return
     }
+    storeBits(mem, at, size, x, le)
 }
 
 /// The length of typed array o.
 pub fn typedLen(it: *Interp, o: u32) u32 {
-    return match it.heap.obj(o).data {
-        .View { len, .. } => len
-        _ => 0
+    match it.heap.obj(o).data {
+        .View { store, off, len, kind } => {
+            if off as usize + len as usize * kindSize(kind) as usize <= storeMem(it, store).len {
+                return len
+            }
+        }
+        _ => {}
     }
+    return 0
 }
 
 /// o[idx] of typed array o (undefined past its end).
 pub fn typedGet(it: *Interp, o: u32, idx: u32) Value {
     match it.heap.obj(o).data {
         .View { store, off, len, kind } => {
-            if idx < len {
-                return numVal(viewRead(it, store, off + idx * kindSize(kind), kind, true))
+            let at = off + idx * kindSize(kind)
+            if idx < len && at as usize + kindSize(kind) as usize <= storeMem(it, store).len {
+                return numVal(viewRead(it, store, at, kind, true))
             }
         }
         _ => {}
@@ -264,5 +350,340 @@ fn engineViewSet(it: *mut Interp, a: Args) JsError!Value {
     let kind = try argU32(it, a, 2)
     let n = try elemNumber(it, it.arg(a, 3))
     viewWrite(it, store, at, kind, n, it.toBoolean(it.arg(a, 4)))
+    return Value.Undefined
+}
+
+fn bufArg(it: *mut Interp, a: Args, i: usize) JsError!u32 {
+    let o = objectOf(it.arg(a, i))
+    if o == NONE || !isBuffer(it, o) {
+        _ = try it.typeError("not an ArrayBuffer")
+    }
+    return o
+}
+
+// bufNew(o, byteLength): gives o a zeroed byte store.
+fn engineBufNew(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(it.arg(a, 0))
+    if o == NONE || isBuffer(it, o) {
+        return it.typeError("bufNew: not a new object")
+    }
+    let n = try it.toNumber(it.arg(a, 1))
+    if !(n >= 0.0) || n > MAX_BYTES {
+        return it.rangeError("Array buffer allocation failed")
+    }
+    let size = n as usize
+    var mem = []mut u8{}
+    if size > 0 {
+        mem = try it.alloc.alloc(0 as u8, size)
+    }
+    // A large store counts toward the next collection like objects do.
+    it.heap.since_gc += size / 256
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false }
+    return Value.Undefined
+}
+
+// bufLen(buffer): its byte length (0 once detached).
+fn engineBufLen(it: *mut Interp, a: Args) JsError!Value {
+    let o = try bufArg(it, a, 0)
+    return numVal(storeMem(it, o).len as f64)
+}
+
+fn engineBufDetached(it: *mut Interp, a: Args) JsError!Value {
+    let o = try bufArg(it, a, 0)
+    return Value.Bool { b: isDetached(it, o) }
+}
+
+// bufDetach(buffer): frees its store; its views see length 0.
+fn engineBufDetach(it: *mut Interp, a: Args) JsError!Value {
+    let o = try bufArg(it, a, 0)
+    let mem = storeMem(it, o)
+    if mem.len > 0 {
+        it.alloc.free(mem)
+    }
+    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true }
+    return Value.Undefined
+}
+
+// bufCopy(dst, dstByte, src, srcByte, n): memmove between stores (they
+// may be the same and overlap).
+fn engineBufCopy(it: *mut Interp, a: Args) JsError!Value {
+    let dst = try bufArg(it, a, 0)
+    let src = try bufArg(it, a, 2)
+    let d = try argU32(it, a, 1) as usize
+    let s = try argU32(it, a, 3) as usize
+    let n = try argU32(it, a, 4) as usize
+    let dm = storeMem(it, dst)
+    let sm = storeMem(it, src)
+    if d + n > dm.len || s + n > sm.len {
+        return it.rangeError("Offset is outside the bounds of the buffer")
+    }
+    copy(dm[d..d + n], sm[s..s + n])
+    return Value.Undefined
+}
+
+// typedFill(view, value, start, end): elements start..end of view set to
+// value, converted once and then copied.
+fn engineTypedFill(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(it.arg(a, 0))
+    let n = try elemNumber(it, it.arg(a, 1))
+    let start = try argU32(it, a, 2) as usize
+    let end = try argU32(it, a, 3) as usize
+    match it.heap.obj(o).data {
+        .View { kind, .. } => {
+            let mem = viewBytes(it, o)
+            let size = kindSize(kind) as usize
+            if start >= end || end * size > mem.len {
+                return Value.Undefined
+            }
+            let part = mem[start * size..end * size]
+            storeBits(part, 0, size as u32, numberBits(kind, n), true)
+            var done = size
+            while done < part.len {
+                var m = done
+                if m > part.len - done {
+                    m = part.len - done
+                }
+                copy(part[done..done + m], part[0..m])
+                done += m
+            }
+        }
+        _ => {}
+    }
+    return Value.Undefined
+}
+
+// typedSetFrom(dst, src, offset): the elements of typed array src into
+// typed array dst from element offset. The same kind is one memmove;
+// another kind converts element by element, from a copy of src when the
+// two share bytes (TypedArray.prototype.set, SetTypedArrayFromTypedArray).
+fn engineTypedSetFrom(it: *mut Interp, a: Args) JsError!Value {
+    let dst = objectOf(it.arg(a, 0))
+    let src = objectOf(it.arg(a, 1))
+    let at = try argU32(it, a, 2) as usize
+    var dkind: u32 = 0
+    var skind: u32 = 0
+    var dstore: u32 = NONE
+    var sstore: u32 = NONE
+    var doff: usize = 0
+    var soff: usize = 0
+    match it.heap.obj(dst).data {
+        .View { store, off, kind, .. } => {
+            dkind = kind
+            dstore = store
+            doff = off as usize
+        }
+        _ => {
+            return it.typeError("not a typed array")
+        }
+    }
+    match it.heap.obj(src).data {
+        .View { store, off, kind, .. } => {
+            skind = kind
+            sstore = store
+            soff = off as usize
+        }
+        _ => {
+            return it.typeError("not a typed array")
+        }
+    }
+    let dm = viewBytes(it, dst)
+    let sm = viewBytes(it, src)
+    let dsize = kindSize(dkind) as usize
+    let ssize = kindSize(skind) as usize
+    let count = sm.len / ssize
+    if (at + count) * dsize > dm.len {
+        return it.rangeError("offset is out of bounds")
+    }
+    let to = dm[at * dsize..(at + count) * dsize]
+    if dkind == skind || (dsize == 1 && ssize == 1 && dkind != K_CLAMPED) {
+        copy(to, sm)
+        return Value.Undefined
+    }
+    var from = sm
+    var owned = false
+    let tlo = doff + at * dsize
+    if dstore == sstore && soff < tlo + to.len && tlo < soff + sm.len {
+        let c = try it.alloc.alloc(0 as u8, sm.len)
+        copy(c, sm)
+        from = c
+        owned = true
+    }
+    for i in 0..count {
+        let x = loadBits(from, (i * ssize) as u32, ssize as u32, true)
+        let v = bitsNumber(x, skind)
+        storeBits(to, (i * dsize) as u32, dsize as u32, numberBits(dkind, v), true)
+    }
+    if owned {
+        it.alloc.free(from)
+    }
+    return Value.Undefined
+}
+
+fn strArg(it: *mut Interp, a: Args, i: usize) []u8 {
+    return match it.arg(a, i) {
+        .Str { s } => it.heap.bytes(s)
+        _ => []u8{}
+    }
+}
+
+// utf8Length(s): the UTF-8 length of string s (its WTF-8 length: a lone
+// surrogate's three bytes become U+FFFD's three).
+fn engineUtf8Length(it: *mut Interp, a: Args) JsError!Value {
+    return numVal(strArg(it, a, 0).len as f64)
+}
+
+// utf8Encode(view, s): the UTF-8 bytes of s into Uint8Array view, which
+// is utf8Length(s) long (TextEncoder.encode).
+fn engineUtf8Encode(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(it.arg(a, 0))
+    if o == NONE {
+        return it.typeError("utf8Encode: not a view")
+    }
+    let src = strArg(it, a, 1)
+    let out = viewBytes(it, o)
+    if out.len < src.len {
+        return it.rangeError("utf8Encode: view too short")
+    }
+    copy(out, src)
+    var i: usize = 0
+    while i + 2 < src.len {
+        // ED A0..BF xx: a lone surrogate.
+        if src[i] == 0xED && src[i + 1] >= 0xA0 {
+            out[i] = 0xEF
+            out[i + 1] = 0xBF
+            out[i + 2] = 0xBD
+            i += 3
+        } else {
+            i += 1
+        }
+    }
+    return Value.Undefined
+}
+
+// utf8Decode(view): the string of the UTF-8 bytes of view, each maximal
+// invalid subsequence a U+FFFD (the Encoding standard's UTF-8 decoder).
+fn engineUtf8Decode(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(it.arg(a, 0))
+    if o == NONE {
+        return it.typeError("utf8Decode: not a view")
+    }
+    let m = viewBytes(it, o)
+    var out = text.Builder.init(it.alloc)
+    defer out.deinit()
+    var i: usize = 0
+    var run: usize = 0
+    while i < m.len {
+        let b = m[i]
+        if b < 0x80 {
+            i += 1
+            continue
+        }
+        var need: usize = 0
+        var lower: u8 = 0x80
+        var upper: u8 = 0xBF
+        if b >= 0xC2 && b <= 0xDF {
+            need = 1
+        } else if b >= 0xE0 && b <= 0xEF {
+            need = 2
+            if b == 0xE0 {
+                lower = 0xA0
+            }
+            if b == 0xED {
+                upper = 0x9F
+            }
+        } else if b >= 0xF0 && b <= 0xF4 {
+            need = 3
+            if b == 0xF0 {
+                lower = 0x90
+            }
+            if b == 0xF4 {
+                upper = 0x8F
+            }
+        }
+        var j: usize = 1
+        while need > 0 && j <= need {
+            if i + j >= m.len || m[i + j] < lower || m[i + j] > upper {
+                break
+            }
+            lower = 0x80
+            upper = 0xBF
+            j += 1
+        }
+        if need > 0 && j > need {
+            i += j
+            continue
+        }
+        try out.append(m[run..i])
+        try out.appendByte(0xEF)
+        try out.appendByte(0xBF)
+        try out.appendByte(0xBD)
+        i += j
+        run = i
+    }
+    try out.append(m[run..m.len])
+    return it.takeString(&mut out)
+}
+
+// ---- byte natives for the page's prelude (window_api.aye `ak`)
+
+fn viewArg(it: *mut Interp, a: Args, i: usize) []mut u8 {
+    let o = objectOf(it.arg(a, i))
+    if o == NONE {
+        return []mut u8{}
+    }
+    return viewBytes(it, o)
+}
+
+/// latin1Into(view, s): code units 0..255 of string s (a byte string)
+/// into the Uint8Array view, which is s.length long.
+pub fn hostLatin1Into(it: *mut Interp, a: Args) JsError!Value {
+    let out = viewArg(it, a, 0)
+    let src = strArg(it, a, 1)
+    var i: usize = 0
+    var k: usize = 0
+    while i < src.len && k < out.len {
+        let c = decodeAt(src, i)
+        out[k] = (c.cp & 255) as u8
+        // A code point above U+FFFF is two code units.
+        if c.cp > 0xFFFF && k + 1 < out.len {
+            k += 1
+            out[k] = ((0xDC00 | (c.cp & 0x3FF)) & 255) as u8
+            out[k - 1] = ((0xD800 | ((c.cp - 0x10000) >> 10)) & 255) as u8
+        }
+        i += c.len
+        k += 1
+    }
+    return Value.Undefined
+}
+
+/// latin1Of(view): the byte string (code units 0..255) of a view's bytes.
+pub fn hostLatin1Of(it: *mut Interp, a: Args) JsError!Value {
+    let m = viewArg(it, a, 0)
+    var out = text.Builder.init(it.alloc)
+    defer out.deinit()
+    for b in m {
+        if b < 0x80 {
+            try out.appendByte(b)
+        } else {
+            try out.appendByte(0xC0 | (b >> 6))
+            try out.appendByte(0x80 | (b & 0x3F))
+        }
+    }
+    return it.takeString(&mut out)
+}
+
+/// randomFill(view): random bytes into the view (crypto.getRandomValues).
+pub fn hostRandomFill(it: *mut Interp, a: Args) JsError!Value {
+    let m = viewArg(it, a, 0)
+    var i: usize = 0
+    while i < m.len {
+        let r = arc4random()
+        for k in 0..4 {
+            if i < m.len {
+                m[i] = ((r >> (8 * k as u32)) & 255) as u8
+                i += 1
+            }
+        }
+    }
     return Value.Undefined
 }

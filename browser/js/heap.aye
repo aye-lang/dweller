@@ -88,6 +88,9 @@ pub enum ObjData {
     // A typed array's elements: `len` elements of `kind` (typed.aye) from
     // byte `off` of `store`, the byte array of its ArrayBuffer.
     View { store: u32, off: u32, len: u32, kind: u32 }
+    // An ArrayBuffer's byte store (typed.aye): one allocation outside the
+    // GC-scanned lists, freed with the object; empty once detached.
+    Bytes { mem: []mut u8, detached: bool }
 }
 
 // Prop.flags
@@ -307,6 +310,15 @@ pub struct Heap {
             }
             self.alloc.destroy(ki)
         }
+        match ob.data {
+            .Bytes { mem, .. } => {
+                if mem.len > 0 {
+                    self.alloc.free(mem)
+                }
+            }
+            _ => {}
+        }
+        ob.data = ObjData.None
         ob.keys = null
         ob.props = []mut Prop{}
         ob.elems = []mut Value{}
