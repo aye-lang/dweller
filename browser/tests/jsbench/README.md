@@ -23,6 +23,20 @@ and calls are written for this suite, as are the other five. Octane's
 `deltablue.js` (GPL-2) and `raytrace.js` (no license statement) are not
 vendored; see `browser/js/BYTECODE.md` section 1.
 
+`three.js` runs three.js r170 (`vendor/three/three.cjs`, the CommonJS build
+of the npm package `three@0.170.0`, unmodified; MIT, `vendor/three/LICENSE`).
+The `// @include THREE vendor/three/three.cjs` line is replaced by the runner
+with the file wrapped as a module (`dweller js` has no `require`). It updates
+2000 `Object3D`s (100 parents with 19 children each) for 100 frames
+(position, rotation, quaternion, scale, `scene.updateMatrixWorld()`), then
+runs 100000 iterations of `Vector3`/`Matrix4`/`Quaternion` math. The
+checksums are rounded sums of the world matrices and the loop accumulator,
+equal in Node. `dom.js` (marked `// @dom`) is wrapped in an HTML page by the
+runner and run with `dweller dump --text --js`: it creates, attributes,
+queries (`querySelectorAll`), rewrites (`textContent`), restyles and removes
+10000 nodes, with forced layout reads (`offsetHeight`). There is no Node
+reference, so its checksum is a golden of dweller (`dom.out`).
+
 Licenses:
 
 | file | license |
@@ -30,6 +44,7 @@ Licenses:
 | `richards.js`, `splay.js` | BSD-3-Clause (Copyright 2006-2008 / 2009 the V8 project authors; notice in the file header) |
 | `navier-stokes.js` | MIT (Copyright 2013 the V8 project authors, 2009 Oliver Hunt; notice in the file header) |
 | `crypto.js` | Tom Wu's license (Copyright 2003-2005 Tom Wu; permission notice and disclaimer kept in the file header) |
+| `vendor/three/three.cjs` | MIT (Copyright 2010-2024 three.js authors; `vendor/three/LICENSE`) |
 | all other files | the repository license (MIT OR Apache-2.0) |
 
 ## Running
@@ -66,6 +81,10 @@ Intel(R) Xeon(R) Processor @ 2.10GHz, 4 cores, 16093 MiB, Linux 6.18.44-fc-v114 
 | richards | 1.962 | 0.202 | 9.7× | 2916400 |
 | splay | 3.913 | 0.499 | 7.8× | 729063963 |
 | strings | 0.150 | 0.081 | 1.9× | 650400 |
+| three | 11.916 | 1.290 | 9.2× | scene -1636728, math 4005250 |
+| dom | 5.223 | none | none | dom 43788 |
+
+`three` and `dom` were added by P4.60 (same machine, same build; the other rows are untouched).
 
 These are whole-process measurements, not Octane scores. The machine is
 shared with other agents; use repeated/interleaved runs for comparisons.
