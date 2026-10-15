@@ -407,6 +407,14 @@ function FluidField(canvas) {
 }
 
 setupNavierStokes();
-for (var frame = 0; frame < 15; frame++) runNavierStokes();
-console.log(result);
-tearDownNavierStokes();
+var smokeScale = (typeof SMOKE === 'number') ? SMOKE : 1; // smoke test divisor; 1 = full size
+for (var frame = 0; frame < Math.floor(15 / smokeScale); frame++) runNavierStokes();
+if (smokeScale === 1) {
+    console.log(result);
+    tearDownNavierStokes();
+} else {
+    // fewer frames than the 15 checkResult needs: fold the density field instead
+    var smokeDens = solver.getDens(), smokeSum = 0;
+    for (var k = 0; k < smokeDens.length; k++) smokeSum += ~~(smokeDens[k] * 100);
+    console.log(smokeSum);
+}

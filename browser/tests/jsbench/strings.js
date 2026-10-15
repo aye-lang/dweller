@@ -1,7 +1,8 @@
 // Rope construction/flattening, numeric formatting, and regexp matching.
+var smokeScale = (typeof SMOKE === 'number') ? SMOKE : 1; // smoke test divisor; 1 = full size
 function strings() {
   var sum = 0;
-  for (var r = 0; r < 120; r++) {
+  for (var r = 0; r < Math.floor(120 / smokeScale); r++) {
     var s = "";
     for (var i = 0; i < 300; i++) s += "item-" + i + ":" + (i % 17) + ";";
     var words = s.match(/item-[0-9]+:[0-9]+/g);

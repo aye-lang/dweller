@@ -3205,6 +3205,32 @@ fn js_case(js: &Path, bless: bool) -> Option<String> {
     }
 }
 
+/// Every workload of `browser/tests/jsbench/` once at a small size
+/// (`SMOKE=10`); its checksum must equal the golden `NAME.smoke.out`.
+/// Timing is `browser/tools/jsbench.py` without `--smoke`.
+#[test]
+fn jsbench_smoke() {
+    let out = match Command::new("python3")
+        .current_dir(root())
+        .args(["browser/tools/jsbench.py", "--smoke"])
+        .env("BENCH_BIN", dweller())
+        .env("BENCH_REF", "none")
+        .output()
+    {
+        Ok(out) => out,
+        Err(_) => {
+            println!("skipped: cannot start python3");
+            return;
+        }
+    };
+    assert!(
+        out.status.success(),
+        "jsbench smoke failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn js_conformance() {
     let dir = root().join("browser").join("tests").join("js");
