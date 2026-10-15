@@ -10,8 +10,9 @@
         A real window, no input: the CPU% of the 10 s that start 5 s
         after the first frame, and what the loop did meanwhile.
 
-Both read the DWELLER_TIMING records (`ui_navigate`, `ui_relayout`,
-`ui_draw`, `ui_events`, `ui_timers`, `ui_loop`); --log keeps them.
+Both read the DWELLER_TIMING records (`ui_navigate`, `ui_first_paint`,
+`ui_relayout`, `ui_draw`, `ui_events`, `ui_timers`, `ui_loop`); --log
+keeps them.
 """
 import argparse
 import json
@@ -66,7 +67,9 @@ def scroll(a):
     frames = [it for it in its if any(k == "ui_events" and l == "script" for k, _, l in it)][3:]
     out = {
         "url": a.url,
-        "first_paint_ms": round(first.get("ui_navigate", 0) + first.get("ui_relayout", 0) + first.get("ui_draw", 0)),
+        # `ui_first_paint` (P4.33): from the navigation to the first frame
+        # that shows the page; before it, the load ran before the loop.
+        "first_paint_ms": round(first.get("ui_first_paint", first.get("ui_navigate", 0) + first.get("ui_relayout", 0) + first.get("ui_draw", 0))),
         "navigate_ms": round(first.get("ui_navigate", 0)),
         "first_relayout_ms": round(first.get("ui_relayout", 0)),
         "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),

@@ -1,11 +1,12 @@
 // Fetching many subresources at once (the images, style sheets or
 // scripts of a page) with libcurl's multi interface: `prefetch` runs the
-// GET requests concurrently (at most 6 connections per host, HTTP/2
-// streams shared) and puts the responses in the session's cache, where
-// the fetches that follow, one by one, find them. A redirect is not
-// followed here (that later fetch does it); a response that may not be
-// cached (an error status, `no-store`) is kept for one use. Cookies are
-// sent and stored as for any request.
+// GET requests concurrently as loads of the loader (loader.aye: at most
+// 6 connections per host, HTTP/2 streams shared) and waits for them; the
+// responses go into the session's cache, where the fetches that follow,
+// one by one, find them. A load follows redirects; a response that may
+// not be cached (an error status, `no-store`) is kept for one use.
+// Cookies are sent and stored as for any request. The jobs (one transfer
+// each) are the loader's too.
 
 import perf
 import std
@@ -35,7 +36,7 @@ let CURLMOPT_MAX_HOST_CONNECTIONS: i32 = 7
 let CURLMOPT_MAX_TOTAL_CONNECTIONS: i32 = 13
 let CURLMSG_DONE: i32 = 1
 
-// One request of a batch.
+// One transfer of a load.
 struct Job {
     curl: *mut Curl
     at: Url
@@ -48,9 +49,11 @@ struct Job {
 
 /// Fetches the `http:` and `https:` URLs of `hrefs` (one per line, no
 /// fragments) concurrently into the session's cache, for requests of
-/// `kind` from the page at `referrer`. URLs already cached are skipped;
-/// failures are left to the fetch that follows. Does nothing without a
-/// session.
+/// `kind` from the page at `referrer`, and waits for them. They are
+/// loads of the loader (loader.aye): one multi handle, so they share its
+/// connections and join the loads of the same URLs that run. URLs
+/// already cached are skipped; failures are left to the fetch that
+/// follows. Does nothing without a session.
 pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
     let began = perf.start()
     defer perf.end("prefetch", began, referrer)
@@ -58,62 +61,28 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
         return
     }
     let s = session orelse return
-    let m = curl_multi_init() orelse return
-    defer curl_multi_cleanup(m)
-    curl_multi_setopt(m, CURLMOPT_MAX_HOST_CONNECTIONS, 6 as i64)
-    curl_multi_setopt(m, CURLMOPT_MAX_TOTAL_CONNECTIONS, 16 as i64)
-    var jobs = List(*mut Job).init(alloc)
-    defer finishJobs(alloc, s, m, &mut jobs)
-    let req = Request { kind: kind, referrer: referrer }
+    var ids = List(u32).init(alloc)
+    defer ids.deinit()
     var lines = text.split(hrefs, "\n")
     while lines.next() |href| {
-        if !text.startsWith(href, "http://") && !text.startsWith(href, "https://") {
+        if s.cache.has(href) {
             continue
         }
-        if s.cache.has(href) || queued(&jobs, href) {
+        let id = startLoad(href, kind, referrer)
+        if id == 0 {
             continue
         }
-        let job = startJob(alloc, s, m, href, req, "GET", null) orelse continue
-        jobs.append(job) catch |e| {
-            dropJob(alloc, m, job)
-            return
-        }
-    }
-    var running: i32 = 1
-    while running > 0 {
-        if curl_multi_perform(m, &mut running) != 0 {
+        ids.append(id) catch |e| {
+            releaseLoad(id)
             break
         }
-        // The background loads go on meanwhile (loader.aye).
-        pumpLoads()
-        if running > 0 {
-            var wait: i32 = 1000
-            if loadsRunning() {
-                wait = 10
-            }
-            curl_multi_poll(m, null, 0, wait, null)
-        }
     }
-    var left: i32 = 0
-    while curl_multi_info_read(m, &mut left) |msg| {
-        if msg.msg != CURLMSG_DONE {
-            continue
-        }
-        for job in jobs.items() {
-            if msg.easy == job.curl {
-                job.result = msg.result
-            }
-        }
+    for id in ids.items() {
+        waitLoad(id)
     }
-}
-
-fn queued(jobs: *List(*mut Job), href: []u8) bool {
-    for job in jobs.items() {
-        if text.eql(job.at.href, href) {
-            return true
-        }
+    for id in ids.items() {
+        releaseLoad(id)
     }
-    return false
 }
 
 // A request for `href` with `method` (NUL-terminated past its end
@@ -162,41 +131,6 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, re
         return null
     }
     return job
-}
-
-// After the transfers: keeps the responses and frees the jobs.
-fn finishJobs(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, jobs: *mut List(*mut Job)) {
-    for job in jobs.items() {
-        if job.result == 0 && !job.sink.out_of_memory && !job.sink.too_large {
-            keepResponse(alloc, s, job) catch |e| {
-            }
-        }
-        dropJob(alloc, m, job)
-    }
-    jobs.deinit()
-}
-
-fn keepResponse(alloc: Allocator, s: *mut Session, job: *mut Job) FetchError!void {
-    try storeCookies(s, &job.at, &job.sink)
-    var status: i64 = 0
-    curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
-    if status >= 300 && status < 400 {
-        return
-    }
-    var content_type: ?[*]u8 = null
-    curl_easy_getinfo(job.curl, CURLINFO_CONTENT_TYPE, &mut content_type)
-    var ct: []u8 = ""
-    if content_type |p| {
-        ct = p[0..strlen(p)]
-    } else {
-        ct = typeOfPath(job.at.path)
-    }
-    let body = try job.sink.body.toOwned()
-    var res = try respond(alloc, ct, body)
-    defer res.deinit(alloc)
-    res.status = status
-    let lasting = status >= 200 && status < 300 && !job.sink.no_store
-    try s.cache.keep(job.at.href, &res, !lasting)
 }
 
 fn dropJob(alloc: Allocator, m: *mut CurlMulti, job: *mut Job) {

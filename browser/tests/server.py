@@ -43,6 +43,8 @@
 #   /slow/NAME       after 0.3 s: the file NAME of the directory when
 #                    there is one (the query ignored), else a small body
 #                    of the type of NAME's extension (as /log/NAME)
+#   /delay/MS/NAME   after MS ms: as /slow/NAME (not counted in
+#                    /slow-peak)
 #   /slow-peak       the most /slow/ requests that were in flight at
 #                    once, as text/plain
 #   /held/NAME       as /slow/NAME, but answered once a /held-now
@@ -229,6 +231,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with SLOW_LOCK:
                 SLOW["now"] -= 1
             self.reply_file(path[len("/slow/"):])
+        elif path.startswith("/delay/"):
+            ms, _, name = path[len("/delay/"):].partition("/")
+            time.sleep(int(ms) / 1000)
+            self.reply_file(name)
         elif path.startswith("/sleep?ms="):
             ms = int(path[len("/sleep?ms="):])
             time.sleep(ms / 1000)

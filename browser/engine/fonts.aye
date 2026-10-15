@@ -44,8 +44,12 @@ struct Wanted {
 }
 
 /// Fetches the web fonts of `author` that `measure` wants and adds them
-/// to it; `referrer` is the page's URL. Whether it added any.
-fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer) AllocError!bool {
+/// to it; `referrer` is the page's URL. With `held` (the image cache of
+/// a window's page, `ImageCache.background`), a font that is not in yet
+/// loads in the background, held there, and is left out of this layout
+/// (as `font-display: swap`); the layout after its load adds it.
+/// Whether it added any.
+fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer, held: ?*mut ImageCache) AllocError!bool {
     let faces = author.font_faces.items()
     if faces.len == 0 {
         return false
@@ -89,9 +93,21 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
     if wanted.len() == 0 {
         return false
     }
-    net.prefetch(alloc, hrefs.bytes(), net.Kind.Script, referrer)
+    if held == null {
+        net.prefetch(alloc, hrefs.bytes(), net.Kind.Script, referrer)
+    }
+    var added = false
     for w in wanted.items() {
         let d = descOf(faces[w.face], w.href)
+        if held |cache| {
+            let ok = cache.loadedInBackground(w.href, net.Kind.Script) orelse continue
+            if !ok {
+                // Failed: the fallback faces from now on.
+                try measure.addWebFont(d, "")
+                added = true
+                continue
+            }
+        }
         var file: []u8 = ""
         var owned: ?[]mut u8 = null
         defer {
@@ -116,8 +132,9 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         measure.addWebFont(d, file) catch |e| {
             return e
         }
+        added = true
     }
-    return true
+    return added
 }
 
 fn descOf(f: css.FontFace, href: []u8) font.FaceDesc {
