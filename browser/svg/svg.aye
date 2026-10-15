@@ -7,6 +7,8 @@
 //   elements of a page; an SVG image (`<img src=x.svg>`) is a document
 //   of its own, built once when it is loaded (`parseImage`).
 // - path.aye: matrices, `transform`, `viewBox`, path data, shapes.
+// - geometry.aye: `pointAtLength`, for getTotalLength() and
+//   getPointAtLength().
 // - raster.aye: `render`: curves flattened, strokes as polygons,
 //   scanline filling with antialiasing, into an RGBA buffer.
 //
@@ -314,6 +316,80 @@ fn absoluteLength(doc: *Document, el: NodeId, name: []u8) f64 {
         }
     }
     return 0.0
+}
+
+/// The path of the basic shape or `path` element `el` (named `name`) into
+/// `pen`, in its user space with percentages of the viewport `vw` x `vh`;
+/// false for other elements.
+pub fn shapePath(doc: *Document, el: NodeId, name: []u8, pen: *mut Pen, vw: f64, vh: f64) AllocError!bool {
+    if text.eql(name, "path") {
+        if doc.attr(el, "d") |d| {
+            try parsePath(pen, d)
+        }
+        return true
+    }
+    if text.eql(name, "rect") {
+        let x = attrLength(doc, el, "x", vw, 0.0)
+        let y = attrLength(doc, el, "y", vh, 0.0)
+        let w = attrLength(doc, el, "width", vw, 0.0)
+        let h = attrLength(doc, el, "height", vh, 0.0)
+        if w <= 0.0 || h <= 0.0 {
+            return true
+        }
+        var rx = attrLength(doc, el, "rx", vw, -1.0)
+        var ry = attrLength(doc, el, "ry", vh, -1.0)
+        if rx < 0.0 {
+            rx = ry
+        }
+        if ry < 0.0 {
+            ry = rx
+        }
+        try rectPath(pen, x, y, w, h, math.clamp(rx, 0.0, w / 2.0), math.clamp(ry, 0.0, h / 2.0))
+        return true
+    }
+    if text.eql(name, "circle") {
+        let r = attrLength(doc, el, "r", math.sqrt((vw * vw + vh * vh) / 2.0), 0.0)
+        if r > 0.0 {
+            try ellipsePath(pen, attrLength(doc, el, "cx", vw, 0.0), attrLength(doc, el, "cy", vh, 0.0), r, r)
+        }
+        return true
+    }
+    if text.eql(name, "ellipse") {
+        var rx = attrLength(doc, el, "rx", vw, -1.0)
+        var ry = attrLength(doc, el, "ry", vh, -1.0)
+        if rx < 0.0 {
+            rx = ry
+        }
+        if ry < 0.0 {
+            ry = rx
+        }
+        if rx > 0.0 && ry > 0.0 {
+            try ellipsePath(pen, attrLength(doc, el, "cx", vw, 0.0), attrLength(doc, el, "cy", vh, 0.0), rx, ry)
+        }
+        return true
+    }
+    if text.eql(name, "line") {
+        try pen.moveTo(attrLength(doc, el, "x1", vw, 0.0), attrLength(doc, el, "y1", vh, 0.0))
+        try pen.lineTo(attrLength(doc, el, "x2", vw, 0.0), attrLength(doc, el, "y2", vh, 0.0))
+        return true
+    }
+    if text.eql(name, "polyline") || text.eql(name, "polygon") {
+        if doc.attr(el, "points") |p| {
+            try pointsPath(pen, p, text.eql(name, "polygon"))
+        }
+        return true
+    }
+    return false
+}
+
+// The length attribute `name` of `el` (percentages of `ref`), or `d`.
+fn attrLength(doc: *Document, el: NodeId, name: []u8, ref: f64, d: f64) f64 {
+    if doc.attr(el, name) |v| {
+        if lengthOf(v, ref) |n| {
+            return n
+        }
+    }
+    return d
 }
 
 let BLACK = Color { r: 0, g: 0, b: 0, a: 255 }
@@ -718,74 +794,12 @@ struct Builder {
     // The path of a basic shape or `path` into `pen`; false for other
     // elements.
     fn shape(self: *mut Self, el: NodeId, name: []u8, pen: *mut Pen, ctx: Ctx) AllocError!bool {
-        if text.eql(name, "path") {
-            if self.doc.attr(el, "d") |d| {
-                try parsePath(pen, d)
-            }
-            return true
-        }
-        if text.eql(name, "rect") {
-            let x = self.len(el, "x", ctx.vw, 0.0)
-            let y = self.len(el, "y", ctx.vh, 0.0)
-            let w = self.len(el, "width", ctx.vw, 0.0)
-            let h = self.len(el, "height", ctx.vh, 0.0)
-            if w <= 0.0 || h <= 0.0 {
-                return true
-            }
-            var rx = self.len(el, "rx", ctx.vw, -1.0)
-            var ry = self.len(el, "ry", ctx.vh, -1.0)
-            if rx < 0.0 {
-                rx = ry
-            }
-            if ry < 0.0 {
-                ry = rx
-            }
-            try rectPath(pen, x, y, w, h, math.clamp(rx, 0.0, w / 2.0), math.clamp(ry, 0.0, h / 2.0))
-            return true
-        }
-        if text.eql(name, "circle") {
-            let r = self.len(el, "r", math.sqrt((ctx.vw * ctx.vw + ctx.vh * ctx.vh) / 2.0), 0.0)
-            if r > 0.0 {
-                try ellipsePath(pen, self.len(el, "cx", ctx.vw, 0.0), self.len(el, "cy", ctx.vh, 0.0), r, r)
-            }
-            return true
-        }
-        if text.eql(name, "ellipse") {
-            var rx = self.len(el, "rx", ctx.vw, -1.0)
-            var ry = self.len(el, "ry", ctx.vh, -1.0)
-            if rx < 0.0 {
-                rx = ry
-            }
-            if ry < 0.0 {
-                ry = rx
-            }
-            if rx > 0.0 && ry > 0.0 {
-                try ellipsePath(pen, self.len(el, "cx", ctx.vw, 0.0), self.len(el, "cy", ctx.vh, 0.0), rx, ry)
-            }
-            return true
-        }
-        if text.eql(name, "line") {
-            try pen.moveTo(self.len(el, "x1", ctx.vw, 0.0), self.len(el, "y1", ctx.vh, 0.0))
-            try pen.lineTo(self.len(el, "x2", ctx.vw, 0.0), self.len(el, "y2", ctx.vh, 0.0))
-            return true
-        }
-        if text.eql(name, "polyline") || text.eql(name, "polygon") {
-            if self.doc.attr(el, "points") |p| {
-                try pointsPath(pen, p, text.eql(name, "polygon"))
-            }
-            return true
-        }
-        return false
+        return shapePath(self.doc, el, name, pen, ctx.vw, ctx.vh)
     }
 
     // The length attribute `name` of `el` (percentages of `ref`), or `d`.
     fn len(self: *mut Self, el: NodeId, name: []u8, ref: f64, d: f64) f64 {
-        if self.doc.attr(el, name) |v| {
-            if lengthOf(v, ref) |n| {
-                return n
-            }
-        }
-        return d
+        return attrLength(self.doc, el, name, ref, d)
     }
 
     // A nested `svg` (`el`), or a `symbol` (`el`) used by a `use`

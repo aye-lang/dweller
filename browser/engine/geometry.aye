@@ -39,6 +39,7 @@ import std.map.IntMap
 import std.math
 import std.mem.AllocError
 import std.text
+import svg
 
 let NO_BOX: usize = 0xFFFFFFFFFFFFFFFF
 
@@ -118,6 +119,7 @@ fn installGeometry(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "watchScroll", 0, akWatchScroll)
     try defMethod(it, o, "renderedSize", 2, akRenderedSize)
     try defMethod(it, o, "elementAt", 2, akElementAt)
+    try defMethod(it, o, "svgPointAtLength", 2, akSvgPointAtLength)
 }
 
 // elementAt(x, y): the topmost element at the point (x, y) of the
@@ -137,6 +139,26 @@ fn akElementAt(it: *mut Interp, a: Args) JsError!Value {
         hit = doc.parent(hit) orelse return Value.Null
     }
     return wrap(it, hit)
+}
+
+// svgPointAtLength(el, d): [x, y, total length] of the SVG basic shape
+// or `path` `el` at distance `d` along it (svg.pointAtLength); null for
+// other elements. Needs no layout, so detached elements work too.
+fn akSvgPointAtLength(it: *mut Interp, a: Args) JsError!Value {
+    let at = try it.toNumber(it.arg(a, 1))
+    let el = ownHandle(it, it.arg(a, 0)) orelse return Value.Null
+    let s = scriptOf(it)
+    let doc = &s.page.doc
+    if doc.node(el).kind != dom.Kind.Element || doc.namespaceOf(el) != dom.NS_SVG {
+        return Value.Null
+    }
+    let p = (try svg.pointAtLength(s.alloc, doc, el, at)) orelse return Value.Null
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    for v in p {
+        try it.heap.pushElem(arr, js.numVal(v))
+    }
+    return it.pop()
 }
 
 fn akSetLayoutHook(it: *mut Interp, a: Args) JsError!Value {

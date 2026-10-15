@@ -76,61 +76,88 @@ pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: b
     try d.shorthand(prop, comps)
 }
 
-/// Telemetry: the declaration `name: toks` was dropped. An unknown
-/// property is noted by name, an unknown value by the property and the
-/// value's first keyword, function or unit (never strings or URLs).
-/// Vendor-prefixed properties are left out.
-pub fn noteDropped(sheet: *mut Sheet, name: []u8, toks: []Token) AllocError!void {
-    var buf = @zeroed([32]u8)
-    if name.len == 0 || name.len > buf.len || name[0] == '-' {
+/// Telemetry: the declaration `name: toks` was dropped (`droppedName`).
+pub fn noteDropped(name: []u8, toks: []Token) {
+    var b = @zeroed([96]u8)
+    let n = droppedName(name, toks, b[..])
+    if n == 0 {
         return
+    }
+    if text.indexOf(b[..n], ":") != null {
+        perf.noteUnsupported("css_value", b[..n])
+    } else {
+        perf.noteUnsupported("css_property", b[..n])
+    }
+}
+
+/// What telemetry notes for the dropped declaration `name: toks`, into
+/// `out` (its length; 0 for nothing): a property `isProperty` does not
+/// know by name (`translate`), else the property and the part of the
+/// value it could not parse (`width: max-content`, `right: env()`): never
+/// strings or URLs. Vendor-prefixed properties are left out.
+pub fn droppedName(name: []u8, toks: []Token, out: []mut u8) usize {
+    if name.len == 0 || name.len + 8 > out.len || name[0] == '-' {
+        return 0
     }
     for i, c in name {
-        buf[i] = lowerAscii(c)
+        out[i] = lowerAscii(c)
     }
-    let prop = buf[0..name.len]
-    // A known property takes `inherit`.
-    let before = sheet.decls.len()
-    let inherit = [1]Token{Token { kind: Tok.Ident, text: "inherit", num: 0.0, delim: 0, flag: false }}
-    try addDeclaration(sheet, prop, inherit[..], false)
-    let known = sheet.decls.len() > before
-    while sheet.decls.len() > before {
-        _ = sheet.decls.pop()
+    var n = name.len
+    if !isProperty(out[..n]) {
+        return n
     }
-    if !known {
-        perf.noteUnsupported("css_property", prop)
-        return
-    }
-    var b = @zeroed([96]u8)
-    var n: usize = 0
-    for c in prop {
-        b[n] = c
-        n += 1
-    }
-    b[n] = ':'
-    b[n + 1] = ' '
+    out[n] = ':'
+    out[n + 1] = ' '
     n += 2
-    var word: []u8 = ""
-    var call = false
-    for t in toks {
-        if t.kind == Tok.Ident || t.kind == Tok.Function || t.kind == Tok.Dimension {
-            word = t.text
-            call = t.kind == Tok.Function
-            break
-        }
-    }
-    for c in word {
-        if n + 3 < b.len {
-            b[n] = lowerAscii(c)
+    let t = droppedPart(toks) orelse return n
+    for c in t.text {
+        if n + 3 < out.len {
+            out[n] = lowerAscii(c)
             n += 1
         }
     }
-    if call {
-        b[n] = '('
-        b[n + 1] = ')'
+    if t.kind == Tok.Function {
+        out[n] = '('
+        out[n + 1] = ')'
         n += 2
     }
-    perf.noteUnsupported("css_value", b[..n])
+    return n
+}
+
+// The token of a dropped value to blame: in a math function, the first
+// function or unit calc() cannot evaluate (`max(0px, 1lh)`: `lh`); else
+// the first keyword, function or unit.
+fn droppedPart(toks: []Token) ?Token {
+    var in_math = false
+    for t in toks {
+        if isMathFunction(t) {
+            in_math = true
+        } else if in_math && t.kind == Tok.Function && !text.eqlIgnoreCase(t.text, "var") {
+            return t
+        } else if in_math && t.kind == Tok.Dimension && !knownUnit(t.text) {
+            return t
+        }
+    }
+    for t in toks {
+        if t.kind == Tok.Ident || t.kind == Tok.Function || t.kind == Tok.Dimension {
+            return t
+        }
+    }
+    return null
+}
+
+// Is `unit` a length unit calc() evaluates, or a non-length unit?
+fn knownUnit(unit: []u8) bool {
+    if viewportAxis(unit) != 0 || isContextUnit(unit) || absoluteLength(1.0, unit) != null {
+        return true
+    }
+    let others = [_][]u8{"em", "rem", "ex", "ch", "deg", "rad", "grad", "turn", "s", "ms", "fr", "dpi", "dpcm", "dppx", "x", "hz", "khz"}
+    for w in others {
+        if text.eqlIgnoreCase(unit, w) {
+            return true
+        }
+    }
+    return false
 }
 
 // Does the declaration `prop: toks` parse (math functions evaluated
@@ -235,10 +262,12 @@ fn pairLonghands(name: []u8) ?[2]usize {
 }
 
 /// Is `name` (lower case) a property the cascade knows, longhand or
-/// shorthand? (`'transform' in el.style`.)
+/// shorthand, logical or `-webkit-` alias? (`'transform' in el.style`,
+/// and what telemetry calls supported.)
 pub fn isProperty(name: []u8) bool {
+    let prop = unprefixed(logicalAlias(name))
     var longhands = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-    return propertyIndex(name) != null || shorthandLonghands(name, longhands[..]) > 0
+    return propertyIndex(prop) != null || shorthandLonghands(prop, longhands[..]) > 0
 }
 
 // The longhands of the shorthand `name` into `out`; how many (0 when
@@ -338,6 +367,18 @@ fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         n = 1
     } else if text.eql(name, "text-decoration") {
         first = TEXT_DECORATION_LINE
+        n = 1
+    } else if text.eql(name, "grid-column") || text.eql(name, "grid-row") || text.eql(name, "grid-area") {
+        first = GRID_COLUMN_START
+        n = 4
+    } else if text.eql(name, "grid-gap") {
+        first = ROW_GAP
+        n = 2
+    } else if text.eql(name, "grid-row-gap") {
+        first = ROW_GAP
+        n = 1
+    } else if text.eql(name, "grid-column-gap") {
+        first = COLUMN_GAP
         n = 1
     } else if text.eql(name, "font") {
         out[0] = FONT_STYLE

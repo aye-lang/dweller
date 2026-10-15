@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<title>SVG geometry: getTotalLength, getPointAtLength, SVGAElement</title>
+<svg id="svg" width="200" height="100" viewBox="0 0 200 100">
+  <a id="link" href="#x"><path id="line" d="M0 0 L30 40"/></a>
+  <path id="square" d="M0 0 H100 V100 Z"/>
+  <path id="rel" d="m10 10 h10 v10 z"/>
+  <path id="two" d="M0 0 H10 M100 100 H110"/>
+  <path id="arc" d="M0 0 A50 50 0 0 1 100 0"/>
+  <path id="small" d="M0 0 A10 10 0 0 1 100 0"/>
+  <path id="quad" d="M0 0 Q50 100 100 0"/>
+  <path id="cubic" d="M0 0 C0 100 100 100 100 0"/>
+  <path id="empty"/>
+  <line id="seg" x1="0" y1="0" x2="3" y2="4"/>
+  <polyline id="pl" points="0,0 10,0 10,10"/>
+  <polygon id="pg" points="0,0 10,0 10,10"/>
+  <rect id="rect" x="5" y="5" width="10" height="20"/>
+  <rect id="round" width="40" height="20" rx="5"/>
+  <circle id="circle" cx="50" cy="50" r="10"/>
+  <ellipse id="ellipse" cx="0" cy="0" rx="20" ry="10"/>
+  <g id="g"><text id="t">x</text></g>
+</svg>
+<a id="html-a" href="#y">html</a>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.join(' ') + '\n'; }
+const $ = id => document.getElementById(id);
+const near = (a, b) => Math.abs(a - b) <= 0.5;
+function len(id, want) {
+  const got = $(id).getTotalLength();
+  log(id, 'length', near(got, want) ? 'ok' : 'got ' + got + ' want ' + want);
+}
+function at(id, d, x, y) {
+  const p = $(id).getPointAtLength(d);
+  log(id, 'at', d, near(p.x, x) && near(p.y, y) ? 'ok' : 'got ' + p.x + ',' + p.y + ' want ' + x + ',' + y);
+}
+len('line', 50); at('line', 25, 15, 20);
+len('square', 341.421); at('square', 150, 100, 50); at('square', 300, 29.289, 29.289);
+len('rel', 34.142); at('rel', 15, 20, 15);
+len('two', 20); at('two', 15, 105, 100);
+len('arc', 157.08); at('arc', 78.54, 50, -50);
+len('small', 157.08);
+len('quad', 147.894); at('quad', 73.947, 50, 50);
+len('cubic', 200); at('cubic', 100, 50, 75);
+len('empty', 0); at('empty', 5, 0, 0);
+len('seg', 5); at('seg', 2.5, 1.5, 2);
+len('pl', 20); at('pl', 15, 10, 5);
+len('pg', 34.142);
+len('rect', 60); at('rect', 15, 15, 10);
+len('round', 111.416);
+len('circle', 62.832); at('circle', 0, 60, 50); at('circle', 15.708, 50, 60);
+len('ellipse', 96.884); at('ellipse', 0, 20, 0);
+// Clamped to the outline.
+at('line', -10, 0, 0); at('line', 1000, 30, 40);
+// Detached elements have geometry too.
+const d = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+d.setAttribute('d', 'M0 0 h7');
+log('detached', d.getTotalLength());
+try { $('line').getPointAtLength(NaN); } catch (e) { log('NaN', e.name); }
+try { $('line').getPointAtLength(); } catch (e) { log('no argument', e.name); }
+const p = $('line').getPointAtLength(0);
+log(p instanceof DOMPoint, p.x, p.y);
+// Interfaces.
+log($('link') instanceof SVGAElement, $('link') instanceof SVGGraphicsElement, $('link') instanceof SVGElement);
+log($('html-a') instanceof SVGAElement, $('html-a') instanceof HTMLAnchorElement);
+log($('line') instanceof SVGPathElement, $('line') instanceof SVGGeometryElement, $('circle') instanceof SVGCircleElement);
+log($('g') instanceof SVGGElement, $('t') instanceof SVGGeometryElement, typeof $('t').getTotalLength);
+log(Object.getPrototypeOf(SVGAElement.prototype) === SVGGraphicsElement.prototype, Object.getPrototypeOf(SVGPathElement.prototype) === SVGGeometryElement.prototype);
+document.addEventListener('click', e => log('click on', e.target.tagName, e.target instanceof SVGAElement));
+$('html-a').click();
+</script>
