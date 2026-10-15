@@ -690,3 +690,44 @@ fn numericIncrement(it: *mut Interp, v: Value, inc: bool) JsError!Value {
     }
     return numVal(try it.toNumber(v) + delta)
 }
+
+/// The low 64 bits of BigInt `v`, two's complement (BigInt.asIntN(64)),
+/// for WebAssembly's i64.
+pub fn bigToI64(it: *mut Interp, v: Value) i64 {
+    var x: u64 = 0
+    match v {
+        .Big { s } => {
+            let bytes = it.heap.bytes(s)
+            var i: usize = 1
+            var shift: u64 = 0
+            while i < bytes.len && shift < 64 {
+                x = x | (bytes[i] as u64 << shift)
+                shift += 8
+                i += 1
+            }
+            if bytes[0] != 0 {
+                x = ~x +% 1
+            }
+        }
+        _ => {}
+    }
+    // The same bits as an i64 (`as` checks the range).
+    return @ptrCast(*i64, &x).*
+}
+
+/// The BigInt of `n` (WebAssembly's i64 to JS).
+pub fn bigFromI64(it: *mut Interp, n: i64) JsError!Value {
+    var x = BigMag.init(it.alloc)
+    defer x.words.deinit()
+    x.neg = n < 0
+    var bits = n
+    var m = @ptrCast(*u64, &bits).*
+    if x.neg {
+        m = ~m +% 1
+    }
+    while m > 0 {
+        try x.words.append((m & 65535) as u32)
+        m = m >> 16
+    }
+    return bigSave(it, &mut x)
+}

@@ -1,0 +1,385 @@
+// The WebAssembly JS API (P11.17; the JS-API spec, V8's
+// src/wasm/wasm-js.cc) over the natives of wasm/wasm.aye: Module,
+// Instance, Memory, Table, Global, the three error classes, validate,
+// compile, instantiate and their streaming forms. It runs only when
+// libwasmtime is linked (wasm.install); otherwise `WebAssembly` is
+// undefined. Values cross the natives raw (wasm.aye): this file does
+// ToWebAssemblyValue and ToJSValue.
+pub let WASM_PRELUDE =
+    \\(function () {
+    \\'use strict';
+    \\const W = globalThis.__wasmHost;
+    \\delete globalThis.__wasmHost;
+    \\function hidden(o, k, v) {
+    \\  Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
+    \\}
+    \\function tag(C, name) {
+    \\  Object.defineProperty(C.prototype, Symbol.toStringTag, { value: 'WebAssembly.' + name, configurable: true });
+    \\}
+    \\
+    \\// ---- errors
+    \\class CompileError extends Error {}
+    \\class LinkError extends Error {}
+    \\class RuntimeError extends Error {}
+    \\for (const [C, n] of [[CompileError, 'CompileError'], [LinkError, 'LinkError'], [RuntimeError, 'RuntimeError']]) {
+    \\  hidden(C.prototype, 'name', n);
+    \\}
+    \\const ERRORS = [CompileError, LinkError, RuntimeError];
+    \\W.setErrors((k, m) => new ERRORS[k](m));
+    \\
+    \\// ---- values: kinds i I f F (i32 i64 f32 f64), x externref, r funcref
+    \\const refs = [];
+    \\const refIndex = new Map();
+    \\function refOf(v) {
+    \\  let i = refIndex.get(v);
+    \\  if (i === undefined) {
+    \\    i = refs.length;
+    \\    refs.push(v);
+    \\    refIndex.set(v, i);
+    \\  }
+    \\  return i;
+    \\}
+    \\const funcIds = new WeakMap();
+    \\const funcs = new Map();
+    \\function toWasm(k, v) {
+    \\  switch (k) {
+    \\    case 'i': return v | 0;
+    \\    case 'I':
+    \\      if (typeof v === 'number') throw new TypeError('Cannot convert ' + v + ' to a BigInt');
+    \\      return BigInt.asIntN(64, BigInt(v));
+    \\    case 'f': case 'F': return +v;
+    \\    case 'x': return v === null ? null : refOf(v);
+    \\    case 'r': {
+    \\      if (v === null) return null;
+    \\      const id = funcIds.get(v);
+    \\      if (id === undefined) throw new TypeError('type incompatibility when transforming from/to JS');
+    \\      return id;
+    \\    }
+    \\  }
+    \\  throw new TypeError('type incompatibility when transforming from/to JS');
+    \\}
+    \\function toJs(k, raw) {
+    \\  if (k === 'x') return raw === null ? null : refs[raw];
+    \\  if (k === 'r') return raw === null ? null : exportedFunction(raw);
+    \\  return raw;
+    \\}
+    \\function split(ty) {
+    \\  const c = ty.indexOf(':');
+    \\  return [ty.slice(1, c), ty.slice(c + 1)];
+    \\}
+    \\function exportedFunction(id) {
+    \\  let f = funcs.get(id);
+    \\  if (f !== undefined) return f;
+    \\  const [p, r] = split(W.type(id));
+    \\  const np = p.length;
+    \\  const conv = (raw) => {
+    \\    if (r.length <= 1) return r.length === 0 ? undefined : toJs(r, raw);
+    \\    const out = [];
+    \\    for (let i = 0; i < r.length; i++) out.push(toJs(r[i], raw[i]));
+    \\    return out;
+    \\  };
+    \\  if (np === 0) f = function () { return conv(W.call(id)); };
+    \\  else if (np === 1) f = function (a) { return conv(W.call(id, toWasm(p, a))); };
+    \\  else if (np === 2) f = function (a, b) { return conv(W.call(id, toWasm(p[0], a), toWasm(p[1], b))); };
+    \\  else {
+    \\    f = function (...args) {
+    \\      const raw = [id];
+    \\      for (let i = 0; i < np; i++) raw.push(toWasm(p[i], args[i]));
+    \\      return conv(W.call.apply(W, raw));
+    \\    };
+    \\  }
+    \\  Object.defineProperty(f, 'name', { value: String(id), configurable: true });
+    \\  Object.defineProperty(f, 'length', { value: np, configurable: true });
+    \\  funcs.set(id, f);
+    \\  funcIds.set(f, id);
+    \\  return f;
+    \\}
+    \\function hostFunction(ty, fn) {
+    \\  const [p, r] = split(ty);
+    \\  return W.hostFunc(ty, function (...raw) {
+    \\    const args = [];
+    \\    for (let i = 0; i < p.length; i++) args.push(toJs(p[i], raw[i]));
+    \\    const res = fn(...args);
+    \\    if (r.length === 0) return undefined;
+    \\    if (r.length === 1) return toWasm(r, res);
+    \\    const vals = [...res];
+    \\    if (vals.length !== r.length) throw new TypeError('multi-return length mismatch');
+    \\    return vals.map((v, i) => toWasm(r[i], v));
+    \\  });
+    \\}
+    \\
+    \\// ---- arguments
+    \\function bytesOf(src, what) {
+    \\  if (src instanceof ArrayBuffer) return new Uint8Array(src.slice(0));
+    \\  if (ArrayBuffer.isView(src)) return new Uint8Array(src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength));
+    \\  throw new TypeError(what + ': Argument 0 must be a buffer source');
+    \\}
+    \\function index(v, what) {
+    \\  const n = Number(v);
+    \\  if (!Number.isFinite(n)) throw new TypeError(what + ' must be convertible to a valid number');
+    \\  const t = Math.trunc(n);
+    \\  if (t < 0 || t > 0xFFFFFFFF) throw new TypeError(what + ' is outside the valid range');
+    \\  return t;
+    \\}
+    \\function descriptor(d, what) {
+    \\  if (d === null || typeof d !== 'object') throw new TypeError(what + ': Argument 0 must be a ' + what.slice(12).toLowerCase() + ' descriptor');
+    \\  return d;
+    \\}
+    \\function limits(d, what, most) {
+    \\  let initial = d.initial;
+    \\  if (initial === undefined) initial = d.minimum;
+    \\  if (initial === undefined) throw new TypeError(what + ": Property 'initial' is required");
+    \\  initial = index(initial, what + ": Property 'initial'");
+    \\  let maximum = d.maximum;
+    \\  if (maximum !== undefined) {
+    \\    maximum = index(maximum, what + ": Property 'maximum'");
+    \\    if (maximum < initial) throw new RangeError(what + ": Property 'maximum' is less than 'initial'");
+    \\  }
+    \\  if (initial > most || (maximum !== undefined && maximum > most)) throw new RangeError(what + ': limits exceed ' + most);
+    \\  return [initial, maximum];
+    \\}
+    \\
+    \\// ---- the objects: each holds its extern index and type
+    \\const slots = new WeakMap();
+    \\const objects = new Map();
+    \\function slotOf(o, C, what) {
+    \\  const s = slots.get(o);
+    \\  if (s === undefined || s.C !== C) throw new TypeError(what + ': Receiver is not a WebAssembly.' + C.name);
+    \\  return s;
+    \\}
+    \\function attach(o, C, id, ty) {
+    \\  slots.set(o, { C, id, ty });
+    \\  objects.set(id, o);
+    \\  return o;
+    \\}
+    \\function externValue(id, ty) {
+    \\  if (ty[0] === 'F') return exportedFunction(id);
+    \\  const o = objects.get(id);
+    \\  if (o !== undefined) return o;
+    \\  const C = ty[0] === 'M' ? Memory : ty[0] === 'T' ? Table : Global;
+    \\  return attach(Object.create(C.prototype), C, id, ty);
+    \\}
+    \\const KINDS = { F: 'function', M: 'memory', T: 'table', G: 'global' };
+    \\
+    \\class Module {
+    \\  constructor(bytes) {
+    \\    slots.set(this, { C: Module, id: W.compile(bytesOf(bytes, 'WebAssembly.Module()')) });
+    \\  }
+    \\  static imports(m) {
+    \\    const a = W.imports(slotOf(m, Module, 'WebAssembly.Module.imports()').id);
+    \\    const out = [];
+    \\    for (let i = 0; i < a.length; i += 3) out.push({ module: a[i], name: a[i + 1], kind: KINDS[a[i + 2][0]] || 'tag' });
+    \\    return out;
+    \\  }
+    \\  static exports(m) {
+    \\    const a = W.exports(slotOf(m, Module, 'WebAssembly.Module.exports()').id);
+    \\    const out = [];
+    \\    for (let i = 0; i < a.length; i += 2) out.push({ name: a[i], kind: KINDS[a[i + 1][0]] || 'tag' });
+    \\    return out;
+    \\  }
+    \\  static customSections(m, name) {
+    \\    slotOf(m, Module, 'WebAssembly.Module.customSections()');
+    \\    if (name === undefined) throw new TypeError('WebAssembly.Module.customSections(): Argument 1 is required');
+    \\    return [];
+    \\  }
+    \\}
+    \\tag(Module, 'Module');
+    \\
+    \\function isObject(v) {
+    \\  return v !== null && (typeof v === 'object' || typeof v === 'function');
+    \\}
+    \\function importIds(mid, imports) {
+    \\  const a = W.imports(mid);
+    \\  if (imports !== undefined && !isObject(imports)) throw new TypeError('WebAssembly.Instance(): Argument 1 must be an object');
+    \\  if (a.length > 0 && imports === undefined) throw new TypeError('WebAssembly.Instance(): Imports argument must be present and must be an object');
+    \\  const ids = [];
+    \\  for (let i = 0; i < a.length; i += 3) {
+    \\    const mod = a[i], name = a[i + 1], ty = a[i + 2];
+    \\    const what = 'WebAssembly.Instance(): Import #' + (i / 3) + ' "' + mod + '" "' + name + '"';
+    \\    const o = imports[mod];
+    \\    if (!isObject(o)) throw new TypeError('WebAssembly.Instance(): Import #' + (i / 3) + ' "' + mod + '": module is not an object or function');
+    \\    const v = o[name];
+    \\    const s = slots.get(v);
+    \\    switch (ty[0]) {
+    \\      case 'F':
+    \\        if (typeof v !== 'function') throw new LinkError(what + ': function import requires a callable');
+    \\        ids.push(funcIds.has(v) ? funcIds.get(v) : hostFunction(ty, v));
+    \\        break;
+    \\      case 'G':
+    \\        if (s !== undefined && s.C === Global) ids.push(s.id);
+    \\        else if (ty[2] === '1') throw new LinkError(what + ': imported mutable global must be a WebAssembly.Global object');
+    \\        else if (ty[1] === 'I' ? typeof v === 'bigint' : ty[1] === 'x' || ty[1] === 'r' || typeof v === 'number') ids.push(W.globalNew(ty[1], false, toWasm(ty[1], v)));
+    \\        else throw new LinkError(what + ': global import must be a number, valid Wasm reference, or WebAssembly.Global object');
+    \\        break;
+    \\      case 'M':
+    \\        if (s === undefined || s.C !== Memory) throw new LinkError(what + ': memory import must be a WebAssembly.Memory object');
+    \\        ids.push(s.id);
+    \\        break;
+    \\      case 'T':
+    \\        if (s === undefined || s.C !== Table) throw new LinkError(what + ': table import requires a WebAssembly.Table');
+    \\        ids.push(s.id);
+    \\        break;
+    \\      default:
+    \\        throw new LinkError(what + ': this import kind is not supported');
+    \\    }
+    \\  }
+    \\  return ids;
+    \\}
+    \\
+    \\const exportsOf = new WeakMap();
+    \\class Instance {
+    \\  constructor(module, imports) {
+    \\    const s = slots.get(module);
+    \\    if (s === undefined || s.C !== Module) throw new TypeError('WebAssembly.Instance(): Argument 0 must be a WebAssembly.Module');
+    \\    const ex = W.instantiate(s.id, importIds(s.id, imports));
+    \\    const exports = Object.create(null);
+    \\    for (let i = 0; i < ex.length; i += 3) exports[ex[i]] = externValue(ex[i + 1], ex[i + 2]);
+    \\    exportsOf.set(this, Object.freeze(exports));
+    \\  }
+    \\  get exports() {
+    \\    const e = exportsOf.get(this);
+    \\    if (e === undefined) throw new TypeError('WebAssembly.Instance.exports: Receiver is not a WebAssembly.Instance');
+    \\    return e;
+    \\  }
+    \\}
+    \\tag(Instance, 'Instance');
+    \\
+    \\// The buffer of each Memory, until a grow detaches it.
+    \\const buffers = new WeakMap();
+    \\function release(m) {
+    \\  const b = buffers.get(m);
+    \\  if (b !== undefined) {
+    \\    W.bufRelease(b);
+    \\    buffers.delete(m);
+    \\  }
+    \\}
+    \\class Memory {
+    \\  constructor(d) {
+    \\    d = descriptor(d, 'WebAssembly.Memory()');
+    \\    if (d.shared) throw new TypeError('WebAssembly.Memory(): shared memory is not supported');
+    \\    const [initial, maximum] = limits(d, 'WebAssembly.Memory()', 65536);
+    \\    const id = W.memNew(initial, maximum);
+    \\    attach(this, Memory, id, W.type(id));
+    \\  }
+    \\  get buffer() {
+    \\    const s = slotOf(this, Memory, 'WebAssembly.Memory.buffer');
+    \\    let b = buffers.get(this);
+    \\    if (b === undefined || W.memStale(s.id, b)) {
+    \\      // The memory grew from wasm (memory.grow): the old buffer is
+    \\      // detached and a new one aliases the new size.
+    \\      if (b !== undefined) W.bufRelease(b);
+    \\      b = new ArrayBuffer(0);
+    \\      W.memBind(s.id, b);
+    \\      buffers.set(this, b);
+    \\    }
+    \\    return b;
+    \\  }
+    \\  grow(delta) {
+    \\    const s = slotOf(this, Memory, 'WebAssembly.Memory.grow()');
+    \\    const old = W.memGrow(s.id, index(delta, 'WebAssembly.Memory.grow(): Argument 0'));
+    \\    if (old < 0) throw new RangeError('WebAssembly.Memory.grow(): Maximum memory size exceeded');
+    \\    release(this);
+    \\    return old;
+    \\  }
+    \\}
+    \\tag(Memory, 'Memory');
+    \\
+    \\function elemKind(e, what) {
+    \\  if (e === 'anyfunc' || e === 'funcref') return 'r';
+    \\  if (e === 'externref') return 'x';
+    \\  throw new TypeError(what + ": Descriptor property 'element' must be a WebAssembly reference type");
+    \\}
+    \\class Table {
+    \\  constructor(d, value) {
+    \\    d = descriptor(d, 'WebAssembly.Table()');
+    \\    const k = elemKind(String(d.element), 'WebAssembly.Table()');
+    \\    const [initial, maximum] = limits(d, 'WebAssembly.Table()', 10000000);
+    \\    const init = arguments.length < 2 && k === 'r' ? null : toWasm(k, value);
+    \\    const id = W.tableNew(k, initial, maximum, init);
+    \\    attach(this, Table, id, W.type(id));
+    \\  }
+    \\  get length() {
+    \\    return W.tableSize(slotOf(this, Table, 'WebAssembly.Table.length').id);
+    \\  }
+    \\  get(i) {
+    \\    const s = slotOf(this, Table, 'WebAssembly.Table.get()');
+    \\    return toJs(s.ty[1], W.tableGet(s.id, index(i, 'WebAssembly.Table.get(): Argument 0')));
+    \\  }
+    \\  set(i, value) {
+    \\    const s = slotOf(this, Table, 'WebAssembly.Table.set()');
+    \\    const k = s.ty[1];
+    \\    W.tableSet(s.id, index(i, 'WebAssembly.Table.set(): Argument 0'), arguments.length < 2 && k === 'r' ? null : toWasm(k, value));
+    \\  }
+    \\  grow(delta, value) {
+    \\    const s = slotOf(this, Table, 'WebAssembly.Table.grow()');
+    \\    const k = s.ty[1];
+    \\    const old = W.tableGrow(s.id, index(delta, 'WebAssembly.Table.grow(): Argument 0'), arguments.length < 2 && k === 'r' ? null : toWasm(k, value));
+    \\    if (old < 0) throw new RangeError('WebAssembly.Table.grow(): failed to grow table by ' + delta);
+    \\    return old;
+    \\  }
+    \\}
+    \\tag(Table, 'Table');
+    \\
+    \\const VALUE_KINDS = { i32: 'i', i64: 'I', f32: 'f', f64: 'F', externref: 'x', anyfunc: 'r', funcref: 'r' };
+    \\class Global {
+    \\  constructor(d, value) {
+    \\    d = descriptor(d, 'WebAssembly.Global()');
+    \\    const mutable = !!d.mutable;
+    \\    const k = VALUE_KINDS[String(d.value)];
+    \\    if (k === undefined) throw new TypeError("WebAssembly.Global(): Descriptor property 'value' must be a WebAssembly type");
+    \\    let raw;
+    \\    if (value === undefined && k !== 'x') raw = k === 'I' ? 0n : k === 'r' ? null : 0;
+    \\    else raw = toWasm(k, value);
+    \\    const id = W.globalNew(k, mutable, raw);
+    \\    attach(this, Global, id, W.type(id));
+    \\  }
+    \\  get value() {
+    \\    const s = slotOf(this, Global, 'get WebAssembly.Global.value');
+    \\    return toJs(s.ty[1], W.globalGet(s.id));
+    \\  }
+    \\  set value(v) {
+    \\    const s = slotOf(this, Global, 'set WebAssembly.Global.value');
+    \\    if (s.ty[2] !== '1') throw new TypeError("set WebAssembly.Global.value: Can't set the value of an immutable global.");
+    \\    W.globalSet(s.id, toWasm(s.ty[1], v));
+    \\  }
+    \\  valueOf() {
+    \\    return this.value;
+    \\  }
+    \\}
+    \\tag(Global, 'Global');
+    \\
+    \\// ---- the namespace
+    \\function compile(bytes) {
+    \\  return new Promise((resolve) => resolve(new Module(bytes)));
+    \\}
+    \\function instantiate(source, imports) {
+    \\  if (slots.has(source) && slots.get(source).C === Module) {
+    \\    return Promise.resolve().then(() => new Instance(source, imports));
+    \\  }
+    \\  return compile(source).then((module) => ({ module, instance: new Instance(module, imports) }));
+    \\}
+    \\function streamedModule(source, what) {
+    \\  return Promise.resolve(source).then((r) => {
+    \\    if (typeof Response === 'undefined' || !(r instanceof Response)) throw new TypeError(what + ': Argument 0 must be provided and must be a Response');
+    \\    const type = (r.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    \\    if (type !== 'application/wasm') throw new TypeError(what + ": Incorrect response MIME type. Expected 'application/wasm'.");
+    \\    if (!r.ok) throw new TypeError(what + ': HTTP status code is not ok');
+    \\    return r.arrayBuffer();
+    \\  }).then((b) => new Module(b));
+    \\}
+    \\const WebAssembly = {};
+    \\for (const [k, v] of Object.entries({
+    \\  Module, Instance, Memory, Table, Global, CompileError, LinkError, RuntimeError, compile, instantiate,
+    \\  validate(bytes) {
+    \\    return W.validate(bytesOf(bytes, 'WebAssembly.validate()'));
+    \\  },
+    \\  compileStreaming(source) {
+    \\    return streamedModule(source, 'WebAssembly.compileStreaming()');
+    \\  },
+    \\  instantiateStreaming(source, imports) {
+    \\    return streamedModule(source, 'WebAssembly.instantiateStreaming()').then((module) => ({ module, instance: new Instance(module, imports) }));
+    \\  },
+    \\})) hidden(WebAssembly, k, v);
+    \\Object.defineProperty(WebAssembly, Symbol.toStringTag, { value: 'WebAssembly', configurable: true });
+    \\hidden(globalThis, 'WebAssembly', WebAssembly);
+    \\})();

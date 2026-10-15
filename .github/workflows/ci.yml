@@ -37,6 +37,17 @@ jobs:
             echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
           fi
 
+      - name: Cache wasmtime
+        uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
+
+      - name: Fetch wasmtime
+        run: |
+          pc="$(browser/wasm/fetch_wasmtime.sh)"
+          echo "PKG_CONFIG_PATH=$pc" >> "$GITHUB_ENV"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache the pinned aye
