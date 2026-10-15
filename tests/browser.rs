@@ -432,7 +432,6 @@ fn gpu_smoke() {
     assert!(got.ends_with("ff0000ff\nok\n"), "{got}");
 }
 
-<<<<<<< HEAD
 /// Whether ANGLE is there for the WebGL tests: `DWELLER_ANGLE` or
 /// `target/angle/<rev>/lib`. Without it, the WebGL tests check the
 /// unavailable path, and only while browser/gpu/angle.lock has no hashes
@@ -629,7 +628,8 @@ fn webgl_objects() {
     }
     let want = std::fs::read_to_string(&golden).unwrap();
     assert_eq!(got, want, "differs from {}", golden.display());
-=======
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
@@ -706,7 +706,6 @@ fn wasm_loop_bench() {
     {
         println!("node (V8): {}", text(&node.stdout).trim());
     }
->>>>>>> 04aaa63 (P11.17: the WebAssembly JS API on wasmtime (partial))
 }
 
 #[test]
