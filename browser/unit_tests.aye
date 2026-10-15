@@ -15,7 +15,23 @@ import std.heap.Arena
 import std.list.List
 import std.mem.Allocator
 import std.text
+import ui
 import url
+
+test "wheel deltas: trackpad units are 10 px, wheel notches 40 px" {
+    // SDL's cocoa backend: a precise device's deltas are fractional
+    // (NSEvent deltaY, scrollingDeltaY / 10), a wheel's whole notches.
+    @expectEqual(ui.PRECISE_STEP, ui.wheelStep(0.0, -0.3, false))
+    @expectEqual(ui.PRECISE_STEP, ui.wheelStep(1.5, 0.0, false))
+    @expectEqual(40.0, ui.wheelStep(0.0, -1.0, false))
+    @expectEqual(40.0, ui.wheelStep(-2.0, 0.0, false))
+    // A whole delta in a trackpad's stream (10 points) stays precise.
+    @expectEqual(ui.PRECISE_STEP, ui.wheelStep(0.0, 1.0, true))
+    @expectEqual(10.0, ui.PRECISE_STEP)
+    @expectEqual(true, ui.isFractional(0.5))
+    @expectEqual(true, ui.isFractional(-0.1))
+    @expectEqual(false, ui.isFractional(-3.0))
+}
 
 test "content types" {
     let ct = net.parseContentType("text/html; charset=\"UTF-8\"")

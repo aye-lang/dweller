@@ -146,6 +146,20 @@ are in `browser/COMPILER_GAPS.md`.
 - SDL2 window: address bar, back/forward/reload, scrolling (wheel and
   keys), hover cursor on links, clicking links, window resize, Cmd+L,
   Cmd+[ and Cmd+], find in page (Cmd+F).
+- Window input (`ui/window.aye` `wheel`, `flushWheel`): wheel and
+  trackpad deltas as macOS gives them. SDL's fractional deltas come from
+  a precise device (trackpad, Magic Mouse: NSEvent `deltaY`, which is
+  `scrollingDeltaY` / 10) and scroll 10 px a unit, with the momentum
+  events macOS sends (no smoothing of our own); a whole delta is a wheel
+  notch of 40 px, unless a fractional one came within 500 ms. The sign
+  already follows the system's scrolling direction (natural scrolling
+  sets `SDL_MOUSEWHEEL_FLIPPED` on deltas SDL inverted already), so it
+  is not flipped again. X scrolls a wide page sideways; Y scrolls the
+  frame under the mouse, else the page. The wheel events of one loop
+  iteration are summed: one `wheel` event at the element under the
+  mouse (deltaMode 0, CSS px, positive right and down; canceling it
+  stops the scroll, but listeners of the window, document, root and
+  body are passive by default), one scroll, one repaint without layout.
 - **Acceptance:** screenshot golden tests compared by pixel hash; a
   manual checklist run once per milestone for the window.
 - Done: `dweller screenshot FILE|URL -o out.png [--width W] [--height
