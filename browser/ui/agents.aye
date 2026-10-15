@@ -115,8 +115,19 @@ pub struct Agents {
     space_font: []u8
     space_js: bool
     reap: List(i32)
-    // In a Space: the control connection to its window (-1: none).
+    // The Spaces (window side, spaces.aye), and the id of the last one
+    // started.
+    space_list: [8]?*mut Space
+    next_space: u32
+    // The person's context as last sent to the Spaces (a `context`
+    // line), whether it may have changed since, and when it was made.
+    ctx_msg: text.Builder
+    ctx_due: bool
+    ctx_at: u64
+    // In a Space: the control connection to its window (-1: none), and
+    // what the window told it.
     control: i32
+    inside: ?*mut Inside
     // The longest iteration of the window's loop while an agent was
     // connected, without its wait for events, in ms.
     loop_max_ms: u64
@@ -151,7 +162,13 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
         space_font: "",
         space_js: true,
         reap: List(i32).init(ui.alloc),
+        space_list: @zeroed([8]?*mut Space),
+        next_space: 0,
+        ctx_msg: text.Builder.init(ui.alloc),
+        ctx_due: false,
+        ctx_at: 0,
         control: -1,
+        inside: null,
         loop_max_ms: 0,
     })
     ui.agents = a
@@ -181,6 +198,7 @@ fn stopAgents(ui: *mut Ui) {
     a.flash_label.deinit()
     a.pointed.deinit()
     a.pointed_text.deinit()
+    a.ctx_msg.deinit()
     ui.alloc.destroy(a)
     ui.agents = null
 }
@@ -241,16 +259,24 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             gone: false,
             space: null,
         })
-        if a.control >= 0 && !a.ever {
-            // A Space: its agent acts on its first tab.
+        if a.inside |me| {
+            // A Space: its agent acts on its first tab, or on the tab
+            // its last agent acted on.
             a.conns[i].?.tab = ui.slots[0].?.id
+            if slotIndex(ui, me.last_tab) != null {
+                a.conns[i].?.tab = me.last_tab
+            }
+            try spaceStatus(ui)
         }
         a.ever = true
         ui.dirty = true
     }
     var buf = @zeroed([16384]u8)
     if a.control >= 0 {
-        watchControl(ui, buf[..])
+        try watchControl(ui, buf[..])
+    }
+    if a.spaces {
+        try pollSpaces(ui)
     }
     for i in 0..MAX_AGENTS {
         let c = a.conns[i] orelse continue
@@ -271,8 +297,15 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         }
         try serveLines(ui, i)
         if c.gone && !c.waiting && std.mem.indexOf(c.pending.bytes(), '\n') == null {
-            dropConn(ui.alloc, c)
             a.conns[i] = null
+            if a.inside |me| {
+                // A Space: done, before its agent's connection closes.
+                if c.tab != 0 {
+                    me.last_tab = c.tab
+                }
+                try spaceStatus(ui)
+            }
+            dropConn(ui.alloc, c)
             ui.dirty = true
         }
     }
@@ -295,7 +328,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
 fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[i].?
-    while !c.waiting {
+    while !c.waiting && !ui.quit {
         let bytes = c.pending.bytes()
         var end = bytes.len
         var next = bytes.len
@@ -314,6 +347,15 @@ fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
         std.mem.copy(rest, bytes[next..])
         c.pending.clear()
         try c.pending.append(rest)
+        if a.control >= 0 {
+            // A Space: the person's pause or stop counts from the next
+            // request on.
+            var buf = @zeroed([4096]u8)
+            try watchControl(ui, buf[..])
+            if ui.quit {
+                return
+            }
+        }
         try serveLine(ui, i, tmp, text.trim(line))
     }
 }
@@ -325,8 +367,12 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         return
     }
     if c.mode == 0 {
-        if agent.isMcpHello(tmp, line) {
-            c.mode = 2
+        // The hello (its name and Space are the window's, spaces.aye).
+        if agent.helloOf(tmp, line) |h| {
+            c.mode = 1
+            if h.mcp {
+                c.mode = 2
+            }
             return
         }
         c.mode = 1
@@ -346,9 +392,18 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     try syncSlot(ui, slot)
     let before = shownNow(ui)
     var out = text.Builder.init(tmp)
+    if a.inside |me| {
+        me.serving = true
+        try spaceStatus(ui)
+    }
     try agent.serveShared(ui, i, c.mode == 2, tmp, line, &mut out)
     let touched = slot == ui.slots[ui.active].?
     a.served += 1
+    if a.inside |me| {
+        // The window learns the new status before the agent its answer.
+        me.serving = false
+        try spaceStatus(ui)
+    }
     if out.len() > 0 {
         try out.appendByte('\n')
         if !sendAll(c.fd, out.bytes()) {
@@ -359,6 +414,7 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         freeSlot(ui.alloc, closed)
         a.dropped = null
     }
+    afterSpaceRequest(ui)
     try afterAgent(ui, before, touched)
     try resumeScript(ui)
 }
@@ -577,10 +633,28 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         return true
     }
     if text.eql(cmd, "user_context") {
-        if a.control >= 0 {
-            return refuse(reply, NO_CONTEXT)
+        if a.inside |me| {
+            // As the window sent it last.
+            if !me.has_context {
+                return refuse(reply, NO_CONTEXT)
+            }
+            reply.message = "the user's context"
+            reply.fields = me.context.bytes()
+            reply.detail = me.context_text.bytes()
+            return true
         }
-        try contextReply(ui, tmp, reply)
+        try contextReply(ui, tmp, reply, true)
+        return true
+    }
+    if text.eql(cmd, "spaces") {
+        try spacesReply(ui, tmp, reply)
+        return true
+    }
+    if text.eql(cmd, "space_close") {
+        if a.inside == null {
+            return refuse(reply, "no Space to close: the window runs without --spaces")
+        }
+        try closeOwnSpace(ui, tmp, reply)
         return true
     }
     if text.eql(cmd, "wait") {
@@ -738,10 +812,14 @@ fn refText(tmp: Allocator, r: u32) AllocError![]u8 {
 
 // `user_context`: the shown tab, its URL, title and scroll offset, the
 // selection, the hovered and focused elements' refs, and what the user
-// pointed at last.
-fn contextReply(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+// pointed at last. Without `layout` (for the Spaces, spaces.aye) the
+// page is laid out again only for a new document: the refs need no
+// layout.
+fn contextReply(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply, layout: bool) AllocError!void {
     let slot = ui.slots[ui.active].?
-    try syncSlot(ui, slot)
+    if layout || slot.shown != slot.seen {
+        try syncSlot(ui, slot)
+    }
     let s = &mut slot.session
     var b = text.Builder.init(tmp)
     var w = agent.Writer.init(&mut b)
@@ -912,6 +990,9 @@ fn pointAt(ui: *mut Ui) AllocError!void {
             try flashRect(ui, slot, paint.Rect { x: r.x, y: r.y, w: r.w, h: r.h }, name)
         }
     }
+    if a.spaces {
+        try pointSpaces(ui, members(&b))
+    }
     for c in a.conns {
         if c |conn| {
             if conn.mode == 0 {
@@ -928,10 +1009,13 @@ fn pointAt(ui: *mut Ui) AllocError!void {
 }
 
 /// Cmd+Shift+P or the toolbar's button: pauses the agents (their
-/// actions fail with "paused by user") or lets them go on.
+/// actions fail with "paused by user") or lets them go on; with Spaces,
+/// every Space (the person's tabs are shown).
 fn togglePause(ui: *mut Ui) {
     let a = ui.agents orelse return
     a.paused = !a.paused
+    pauseSpaces(ui, a.paused) catch |e| {
+    }
     a.activity.clear()
     if a.paused {
         a.activity.append("agents paused (Cmd+Shift+P to resume)") catch |e| {
@@ -1065,6 +1149,7 @@ fn answerWait(ui: *mut Ui, conn: usize, tmp: Allocator, slot: *mut TabSlot, repl
         try w.endObject()
         r.fields = members(&b)
     }
+    try spaceStatus(ui)
     var out = text.Builder.init(tmp)
     try agent.writeLater(c.mode == 2, tmp, c.wait_id.bytes(), r, &mut out)
     try out.appendByte('\n')

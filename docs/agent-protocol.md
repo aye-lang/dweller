@@ -359,7 +359,9 @@ agent works in a Space, a process of its own ([Spaces](#spaces)).
 - Each connection speaks JSON lines, as `dweller agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC
   message: then it speaks MCP, as `dweller mcp`. At most 8 agents
-  connect at once.
+  connect at once. The hello is any object without `cmd` and without
+  `jsonrpc` as the first line; its `name`, `space` and `profile` are for
+  [Spaces](#spaces) and are ignored without `--spaces`.
 - The window serves requests between its own events, on its thread: a
   request never runs while the page handles the person's input.
 - **Own tab.** A connection acts on the tab it opened (`tab_new`) or
@@ -432,6 +434,8 @@ The commands only a window has (MCP: `browser_` and the name):
 | `tab_select` | `tab` (an id) | `result` ("acting on tab 2", or for a person's tab "looking at tab 1 (the user's tab: you can only look)"), `tab` |
 | `tab_close` | `tab` (default: the one the connection acts on) | `result`; only agents' tabs; connections on it get a new tab on their next command that needs a page |
 | `user_context` | | `tab`, `url`, `title` and `scroll` (px) of the shown tab; `selection` (the selected text of the focused text field, else the find bar's query while it has matches; never a password); `hovered` and `focused`: `{"ref","element","text"}` or `null`; `pointed`: the last `user_pointed` event's members, or `null` |
+| `spaces` | | `result` ("2 spaces"), `spaces`: the Spaces ([Spaces](#spaces)); without `--spaces` "0 spaces" and `[]` |
+| `space_close` | | `result` ("closing Space 3"); closes this connection's Space, then the connection; without `--spaces` it fails: `"no Space to close: the window runs without --spaces"` |
 
 Tab ids are numbers that are never reused. The argument is `tab`, not
 `id`, which is the request's own. A session (from
@@ -466,34 +470,112 @@ person's input or the window's frames.
   --height H`, internal: the window program, headless, with the
   window's size, font and `--no-js`; `DIR` is
   `/tmp/dweller-WINDOWPID-XXXXXX`, a directory only the user can
-  read), and from then on copies the bytes both ways without reading
-  them. A Space starts in about 25 ms and takes about 45 MB.
+  read), or attaches it to a done Space (below), and from then on
+  copies the bytes both ways without reading them. A Space starts in
+  about 25 ms and takes about 45 MB.
 - The Space serves the whole protocol, JSON lines or MCP, as the window
   does, on tabs of its own: ids from 1, its agent acts on tab 1 until it
   opens or selects another, and `shown` is false (the person sees none
-  of them). It runs the timers of all its tabs.
-- A Space cannot see the person's tabs yet: they are not in it, so an
-  agent can neither act on them nor look at them. `tabs` lists only the
-  Space's tabs, and `user_context` fails with `"the user's context is
-  not available in a Space yet"`. Pause, pointing (Cmd+Shift+K) and the
-  activity line and outline do not reach Spaces yet; the `AI` badge
-  shows while a connection is open.
-- A Space exits when its connection ends (it answers what it was sent
-  first), or when the window closes or is killed (the end of file on
-  its control connection, a socketpair). If a Space crashes, its agent
-  gets `{"id":null,"ok":false,"error":"the Space crashed"}` (MCP: a
-  `notifications/message` of level `error` with
-  `{"error":"the Space crashed"}`) and its connection is closed; the
-  window and the other Spaces go on. The window reaps its Spaces and,
-  when it closes, kills those still running after a second.
+  of them). It runs the timers of all its tabs. The person's tabs are
+  not in it: `tabs` lists only the Space's tabs, and an agent can
+  neither act on the person's tabs nor `tab_select` them.
+- **The hello.** The first line may be the hello, an object without
+  `cmd` and without `jsonrpc` (no response):
+  `{"mcp":true,"name":"Claude Code","space":"new","profile":"shared"}`.
+  `mcp` (default false): the connection speaks MCP. `name`: the
+  Space's name (default `"Agent N"`, N its id). `space`: `"new"` (the
+  default) or the id of a `done` Space to attach to (then `name`, if
+  given, renames it). `profile`: only `"shared"` until P9.7. A hello
+  that cannot be honored gets `{"id":null,"ok":false,"error":...}`
+  (MCP: a `notifications/message` of level `error` with
+  `{"error":...}`) and the connection is closed: `"no Space 9: see
+  \"spaces\""`, `"Space 3 has an agent: only a done Space can be
+  attached to"`, `"Space 3 crashed"`, `"the profile \"isolated\" is not
+  available yet: only \"shared\""`, `"\"space\" is \"new\" or the id
+  of a done Space (a number)"`, `"too many Spaces (8)"`.
+- **Spaces stay.** A Space whose agent leaves stays, `done`, with its
+  tabs, until an agent attaches to it, the person stops it, or the
+  window closes. An agent that attaches acts on the tab the last one
+  acted on. At most 8 Spaces: a new one replaces the oldest `done` or
+  `crashed` one. Ids are never reused.
+- **`spaces`** lists them: the connection's own Space first, then the
+  others by id: `{"id":3,"name":"Claude Code","mine":true,"state":
+  "working","last":"click button \"Sign in\" [e3]","tabs":2,"profile":
+  "shared","watched":false}`. `state` is `working` (a request runs;
+  the asking Space is always `working`, or `paused`), `waiting` (a
+  `wait`), `idle`, `paused`, `done` (no agent) or `crashed`; `last` is
+  the last action (as in the status bar, without `agent: `); `watched`
+  is false until P9.5. The other Spaces are as the window last heard
+  from them (their status comes over the control connection, below).
+  MCP: one line per Space, `- Space 3 "Claude Code" (yours): working,
+  2 tabs; last: ...`.
+- **`space_close`** answers `"closing Space 3"`, then the Space ends and
+  the connection is closed (the agent's later requests are not
+  served); the Space is gone from `spaces`.
+- **The person's context.** `user_context` in a Space answers what the
+  window last sent: the same members as in the window (the person's
+  shown tab, scroll, selection, hovered, focused, pointed). The window
+  sends the context when it changed, at most every 100 ms (after the
+  person's input, a load, or the page's timers; refs of the person's
+  tab are computed without laying it out again, except for a new
+  document), and at once on Cmd+Shift+K; a new Space gets it before
+  its first request. So a context can be up to about 100 ms old.
+- **Pointing.** Cmd+Shift+K sends every Space the new context, then the
+  `user_pointed` event, which the Space gives to its agent as in the
+  window.
+- **Pause and stop.** The person pauses a Space: its actions fail with
+  `"paused by user"` (as in the window: the acting commands and the tab
+  commands; looking still works) and its agent gets
+  `{"event":"paused","space":3}`; resuming gives
+  `{"event":"resumed","space":3}`. The toolbar's Pause button and
+  Cmd+Shift+P pause or resume every Space (the person's tabs are shown;
+  P9.5 makes them act on a shown Space only); a Space started while
+  paused starts paused (without an event). Stopping a Space gives its
+  agent `{"event":"stopped","space":3}`, then the end of its
+  connection, and the Space ends (gone from `spaces`); one that does
+  not exit within a second (a long `eval`) is killed, and its agent
+  then gets only the end. The Space reads the window's messages before
+  each request and while it waits, so a pause or a stop counts from
+  the agent's next request on; a request that runs goes on. In MCP the
+  events are `notifications/message` (level `notice`) whose `data` is
+  the event. Per-Space Pause and Stop buttons come with the chips
+  (P9.4); in tests, the `--events` words `pause:N`, `resume:N` and
+  `stop:N` act on Space N.
+- The activity line and outline do not reach the window from Spaces yet
+  (P9.4); the `AI` badge shows while a connection is open.
+- A Space exits when it is stopped or closed, or when the window closes
+  or is killed (the end of file on its control connection, a
+  socketpair). If a Space crashes, its agent gets
+  `{"id":null,"ok":false,"error":"the Space crashed"}` (MCP: a
+  `notifications/message` of level `error` with `{"error":"the Space
+  crashed"}`) and its connection is closed; the Space is listed as
+  `crashed`; the window and the other Spaces go on. The window reaps
+  its Spaces and, when it closes, kills those still running after a
+  second.
+
+The control connection (internal; both ways JSON lines, `{"ctl":...}`;
+the window never waits on it: what a Space's socket does not take is
+kept, and of the list of Spaces and the context only the newest is
+sent once the rest went):
+
+| From | `ctl` | Members | Meaning |
+|---|---|---|---|
+| window | `spaces` | `id`, `name`, `profile` (the Space's own), `others` (the other Spaces' objects, as in `spaces`), `detail` (their lines for MCP) | sent when a Space comes, goes or its status changes |
+| window | `context` | the members of `user_context`, and `detail` (its text for MCP) | the person's context, when it changed |
+| window | `pointed` | the members of the `user_pointed` event | Cmd+Shift+K (after the new `context`) |
+| window | `pause`, `resume`, `stop` | | the person paused, resumed or stopped this Space |
+| Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
+| Space | `close` | | its agent sent `space_close` (then it exits) |
 
 ### `dweller connect`
 
 MCP clients start a server as a command and talk to its stdio.
-`dweller connect PATH [--mcp]` is that command for a window: it copies
-stdin to the socket and the socket to stdout until either ends (when
-stdin ends, the window answers what it was sent, then closes). With
-`--mcp` it sends the hello first. With Claude Code:
+`dweller connect PATH [--mcp] [--name NAME] [--space N]` is that
+command for a window: it copies stdin to the socket and the socket to
+stdout until either ends (when stdin ends, the window answers what it
+was sent, then closes). With `--mcp`, `--name` or `--space` it sends
+the hello first (`{"mcp":true,"name":"NAME","space":N}`, with the
+members asked for). With Claude Code:
 
 ```
 dweller --agent-socket /tmp/dweller.sock https://example.com/ &
@@ -501,8 +583,8 @@ claude mcp add dweller -- dweller connect /tmp/dweller.sock --mcp
 ```
 
 The tools are those of `dweller mcp` plus `browser_tabs`,
-`browser_tab_new`, `browser_tab_select`, `browser_tab_close` and
-`browser_user_context`, and the instructions tell the model that a
+`browser_tab_new`, `browser_tab_select`, `browser_tab_close`,
+`browser_user_context`, `browser_spaces` and `browser_space_close`, and the instructions tell the model that a
 person shares the window.
 
 ### Headless (tests)
@@ -513,11 +595,15 @@ lets `--events`, `--state`, `--text` and `--save` work without
 wait until the agents made N requests (the MCP hello does not count);
 `--state` then adds the tabs, the page viewport's size (`viewport
 800x532`), whether the agents are paused, the status bar's activity
-line, and `loop_max_ms N`: the longest iteration of the window's loop
-while an agent was connected, without its wait for events. With
-`--spaces`, `agents:N` waits for N lines from the Spaces. `cargo test
+line, one line `space ID "NAME" STATE: LAST` per Space (`: LAST`
+only when it did something), and `loop_max_ms N`: the longest
+iteration of the window's loop while an agent was connected, without
+its wait for events. With `--spaces`, `agents:N` waits for N lines from
+the Spaces (answers and events), and the words `pause:N`, `resume:N`
+and `stop:N` pause, resume or stop Space N. `cargo test
 --test browser window_agents` runs `browser/tests/agent/window/X.jsonl`
 with the events of `X.events`, over the socket from the test or through
 `dweller connect --mcp` for `X.mcp.jsonl`, against `X.out` (without
 the `loop_max_ms` line); `window_spaces` does the same with `--spaces`
-for `browser/tests/agent/spaces/`.
+for `browser/tests/agent/spaces/`, where `waited N ms` stands for the
+time a `wait` took.

@@ -2253,7 +2253,11 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
 /// the bytes. `browser/tests/agent/spaces/X.jsonl` runs as in
 /// `window_agents` (copies of `isolation` and `frames`): the agent's
 /// own work answers as in the window, the user's tab stays as it was,
-/// and no Space is left after the window exits.
+/// and no Space is left after the window exits. P9.3: `pause` (Cmd+Shift+P
+/// pauses the Space, `paused` and `resumed`, `stop:1` ends it with
+/// `stopped`), `pointing` (the person's context and Cmd+Shift+K reach
+/// the Space, named by the hello), `attach` (a hello that names no done
+/// Space). `waited N ms` stands for the time a `wait` took.
 #[test]
 fn window_spaces() {
     if !has_sdl() {
@@ -2282,7 +2286,7 @@ fn window_spaces() {
         match window_agent_session(input, i, true) {
             Ok(got) => check_golden(
                 &input.with_extension("out"),
-                &rooted(&got),
+                &waited_n(&rooted(&got)),
                 &name,
                 &mut failures,
             ),
@@ -2296,6 +2300,24 @@ fn window_spaces() {
         inputs.len(),
         failures.join("\n")
     );
+}
+
+// `waited 512 ms` as `waited N ms`: a `wait` in real time takes a
+// little longer each run.
+fn waited_n(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(at) = rest.find("waited ") {
+        out.push_str(&rest[..at + 7]);
+        rest = &rest[at + 7..];
+        let digits = rest.bytes().take_while(|b| b.is_ascii_digit()).count();
+        if digits > 0 && rest[digits..].starts_with(" ms") {
+            out.push('N');
+            rest = &rest[digits..];
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 // A headless window listening at `sock` for the Space tests.
@@ -2544,6 +2566,143 @@ fn window_spaces_crash() {
     no_spaces_left(window.id()).unwrap();
 }
 
+// Waits (at most 5 s) until the window `pid` runs `n` Spaces.
+fn wait_for_spaces(pid: u32, n: usize) {
+    let start = std::time::Instant::now();
+    while spaces_of(pid).len() != n {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "expected {n} Spaces, found {:?}",
+            spaces_of(pid)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// B9 R4, R6 (P9.3): the window controls each Space over its control
+/// connection. Two agents, A and B, named by their hellos: the person
+/// pauses A (the scripted word `pause:1`): A gets `paused` and its
+/// actions fail with "paused by user" while B's work; `resume:1` lets A
+/// go on; `stop:2` ends B (`stopped`, then the end of its connection,
+/// and its Space's process exits) while A goes on. `spaces` lists the
+/// Spaces with their names and states. A Space whose agent left stays
+/// `done`, and a new connection attaches to it (`"space":3` in the
+/// hello); attaching to a Space that has an agent, or to none, fails;
+/// `space_close` ends the Space. No Space is left after the window.
+#[test]
+fn window_spaces_control() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let sock = format!("target/spaces-control-{}.sock", std::process::id());
+    let window = spaces_window(
+        &sock,
+        &[
+            "--spaces",
+            "--state",
+            "--events",
+            "agents:2 pause:1 agents:5 resume:1 agents:7 stop:2",
+        ],
+    );
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    a.send(r#"{"name":"Alpha"}"#);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let mut b = AgentConn::open(&sock);
+    b.send(r#"{"name":"Beta"}"#);
+    let (got, _) = b.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    assert_eq!(spaces_of(pid).len(), 2);
+    // The person pauses A only.
+    assert_eq!(a.line(), "{\"event\":\"paused\",\"space\":1}\n");
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"click","ref":"e4"}"#);
+    assert_eq!(got, "{\"id\":2,\"ok\":false,\"error\":\"paused by user\"}\n");
+    let (got, _) = b.ask(r#"{"id":2,"cmd":"click","ref":"e6"}"#);
+    assert!(got.contains("\"result\":\"clicked button \\\"Subscribe\\\" [e6]\""), "{got}");
+    assert_eq!(a.line(), "{\"event\":\"resumed\",\"space\":1}\n");
+    let (got, _) = a.ask(r#"{"id":3,"cmd":"click","ref":"e4"}"#);
+    assert!(got.contains("\"result\":\"checked checkbox"), "{got}");
+    // The person stops B: its connection ends, its Space exits, A goes on.
+    assert_eq!(b.line(), "{\"event\":\"stopped\",\"space\":2}\n");
+    assert_eq!(b.line(), "", "B's connection ends");
+    wait_for_spaces(pid, 1);
+    let (got, _) = a.ask(r#"{"id":4,"cmd":"spaces"}"#);
+    assert!(
+        got.starts_with("{\"id\":4,\"ok\":true,\"result\":\"1 space\",\"spaces\":[{\"id\":1,\"name\":\"Alpha\",\"mine\":true,\"state\":\"working\",\"last\":\"click checkbox"),
+        "{got}"
+    );
+    // C leaves: its Space stays, done.
+    let mut c = AgentConn::open(&sock);
+    c.send(r#"{"name":"Gamma"}"#);
+    let (got, _) = c.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/docs.html"}"#);
+    assert!(got.contains("\"title\":\"Docs\""), "{got}");
+    c.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(c.line(), "");
+    assert_eq!(spaces_of(pid).len(), 2, "a done Space stays");
+    let (got, _) = a.ask(r#"{"id":5,"cmd":"spaces"}"#);
+    assert!(got.contains("\"result\":\"2 spaces\""), "{got}");
+    assert!(
+        got.contains("{\"id\":3,\"name\":\"Gamma\",\"mine\":false,\"state\":\"done\",\"last\":\"navigate browser/tests/agent/site/docs.html\",\"tabs\":1,\"profile\":\"shared\",\"watched\":false}"),
+        "{got}"
+    );
+    // D attaches to it and finds C's page.
+    let mut d = AgentConn::open(&sock);
+    d.send(r#"{"name":"Delta","space":3}"#);
+    let (got, _) = d.ask(r#"{"id":1,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"title\":\"Docs\""), "{got}");
+    let (got, _) = d.ask(r#"{"id":2,"cmd":"spaces"}"#);
+    assert!(
+        got.contains("[{\"id\":3,\"name\":\"Delta\",\"mine\":true,\"state\":\"working\""),
+        "{got}"
+    );
+    assert!(got.contains("{\"id\":1,\"name\":\"Alpha\",\"mine\":false"), "{got}");
+    // Only a done Space can be attached to; the profile is shared.
+    for (hello, why) in [
+        (r#"{"space":3}"#, "Space 3 has an agent: only a done Space can be attached to"),
+        (r#"{"space":9}"#, "no Space 9: see \"spaces\""),
+        (r#"{"profile":"isolated"}"#, "the profile \"isolated\" is not available yet: only \"shared\""),
+    ] {
+        let mut e = AgentConn::open(&sock);
+        e.send(hello);
+        assert_eq!(
+            e.line(),
+            format!("{{\"id\":null,\"ok\":false,\"error\":{}}}\n", serde_like(why)),
+            "{hello}"
+        );
+        assert_eq!(e.line(), "", "{hello}");
+    }
+    // D closes its Space.
+    let (got, _) = d.ask(r#"{"id":3,"cmd":"space_close"}"#);
+    assert_eq!(got, "{\"id\":3,\"ok\":true,\"result\":\"closing Space 3\"}\n");
+    assert_eq!(d.line(), "");
+    wait_for_spaces(pid, 1);
+    let (got, _) = a.ask(r#"{"id":6,"cmd":"spaces"}"#);
+    assert!(got.contains("\"result\":\"1 space\""), "{got}");
+    a.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(a.line(), "");
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let state = text(&out.stdout);
+    assert!(
+        state.contains("\nspace 1 \"Alpha\" done: spaces\n")
+            || state.contains("\nspace 1 \"Alpha\" done: click checkbox"),
+        "{state}"
+    );
+    no_spaces_left(pid).unwrap();
+}
+
+// `s` as a JSON string (quotes and backslashes escaped).
+fn serde_like(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 /// `dweller connect` and `--agent-socket` errors.
 #[test]
 fn window_agents_errors() {
@@ -2551,7 +2710,7 @@ fn window_agents_errors() {
         &["connect"],
         2,
         "",
-        "error: usage: dweller connect SOCKET [--mcp]\n",
+        "error: usage: dweller connect SOCKET [--mcp] [--name NAME] [--space N]\n",
     );
     expect(
         &["connect", "target/no-such.sock"],

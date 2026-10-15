@@ -536,6 +536,8 @@ pub struct Ui {
                 while SDL_PollEvent(&mut ev) != 0 {
                     try self.handle(&ev)
                 }
+                // The Spaces get the person's new context.
+                contextMayChange(self)
             } else {
                 waited = std.time.monotonicMs() - before
             }
@@ -544,6 +546,7 @@ pub struct Ui {
             if self.tab.page |p| {
                 if try engine.runDueTimers(p) {
                     try self.afterScripts()
+                    contextMayChange(self)
                 }
             }
             try runSpaceTimers(self)

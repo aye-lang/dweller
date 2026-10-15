@@ -742,7 +742,7 @@ fn rpcError(w: *mut Writer, id: []u8, code: i64, message: []u8) AllocError!void 
 
 let TOOLS = "browser_navigate browser_back browser_forward browser_reload browser_snapshot browser_read browser_click browser_type browser_select browser_press browser_scroll browser_find browser_wait browser_eval browser_screenshot"
 
-let WINDOW_TOOLS = "browser_tabs browser_tab_new browser_tab_select browser_tab_close browser_user_context"
+let WINDOW_TOOLS = "browser_tabs browser_tab_new browser_tab_select browser_tab_close browser_user_context browser_spaces browser_space_close"
 
 let SHARED_INSTRUCTIONS = "A web browser window that a person is using too. You work in a tab of your own, in the background: your first command that needs a page opens it (or browser_tab_new). The person's tabs are look-only to you: browser_user_context tells what they see, selected, hover, focused or pointed at, and after browser_tab_select on one of their tabs browser_snapshot, browser_read and browser_find work, but actions fail with \"this is the user's tab\". You cannot change which tab they see. Start with browser_navigate: it lists the page as an accessibility tree whose interactive elements and headings carry refs like e12; act on them with browser_click, browser_type, browser_select. If they pause you, actions fail with \"paused by user\": wait for them. browser_wait waits in real time."
 
@@ -920,6 +920,10 @@ fn windowTools(w: *mut Writer) AllocError!void {
     try toolEnd(w, "", false)
     try toolStart(w, "browser_user_context", "User context", "What the user is doing in the window: the tab and URL they see, the scroll position, the selected text, the element under the mouse and the focused element (refs), and what they last pointed at with Cmd+Shift+K.")
     try toolEnd(w, "", true)
+    try toolStart(w, "browser_spaces", "Spaces", "The window's Spaces (with --spaces each agent works in a Space of its own): id, name, state (working, waiting, idle, paused, done, crashed), last action and number of tabs; yours first.")
+    try toolEnd(w, "", true)
+    try toolStart(w, "browser_space_close", "Close your Space", "Close your Space and its tabs; then the connection ends.")
+    try toolEnd(w, "", false)
 }
 
 fn toolStart(w: *mut Writer, name: []u8, title: []u8, description: []u8) AllocError!void {
