@@ -3815,6 +3815,334 @@ fn window_fetch_in_background() {
     );
 }
 
+// ---- P10.20: logged-in browsing (the login fixture of server.py)
+
+/// The `--events` words that type `s` (at most 31 bytes a word).
+fn typed(s: &str) -> String {
+    s.as_bytes()
+        .chunks(31)
+        .map(|c| format!("text:{}", std::str::from_utf8(c).unwrap()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The `--events` words that go to `url` through the address bar.
+fn go_to(url: &str) -> String {
+    format!("key:cmd+l {} key:return frame frame", typed(url))
+}
+
+/// Signing in at `/login`: the username, the password, Enter.
+const SIGN_IN: &str = "key:tab text:alice key:tab text:wonderland key:return frame frame";
+
+/// The window on `url` with `events`, headless, with the profile
+/// directory `profile` when given (`DWELLER_PROFILE`, P4.50); its
+/// `--state` and `--text`.
+fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
+    let mut c = Command::new(dweller());
+    c.current_dir(root()).env("SDL_VIDEODRIVER", "dummy");
+    if let Some(p) = profile {
+        c.env("DWELLER_PROFILE", p);
+    }
+    let out = c
+        .args([
+            url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "40",
+            "--state", "--text", "--events", events,
+        ])
+        .output()
+        .unwrap();
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{url} --events {events:?}: {}\n{}\n{got}",
+        out.status,
+        text(&out.stderr)
+    );
+    got
+}
+
+/// A fresh profile directory for one test.
+fn profile(name: &str) -> PathBuf {
+    let dir = scratch().join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Form login in one run of the window: `/account` sends a stranger to
+/// the sign-in form, a wrong password shows it again, a stale CSRF
+/// token is refused, the right password lands on `/account` (a POST, a
+/// 303 and two cookies), signing out ends the session; a redirect chain
+/// across two hosts keeps each host's cookies apart; `localStorage`
+/// holds a token between pages of the run; `/basic` is 401 without
+/// credentials and 200 with URL userinfo. Later cards turn on what
+/// lasts across a restart (`window_login_cookies`, P4.50, and
+/// `window_login_storage`, P4.51), HTTP Basic (`window_login_basic`,
+/// P10.22) and popups (`window_login_popup`, P4.52).
+#[test]
+fn window_login() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let account = format!("{base}/account");
+    let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+        assert!(
+            want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+            "{what}: want {want:?}, not {not:?}, got:\n{got}"
+        );
+    };
+    let stranger = login_window(&account, "frame", None);
+    has(
+        &stranger,
+        &[
+            &format!("url {base}/login?next=/account\n"),
+            "Not signed in",
+        ],
+        &["Signed in as"],
+        "a stranger at /account",
+    );
+    let wrong = login_window(
+        &account,
+        "key:tab text:alice key:tab text:queen key:return frame frame",
+        None,
+    );
+    has(
+        &wrong,
+        &[&format!("url {base}/login\n"), "Wrong password"],
+        &["Signed in as"],
+        "a wrong password",
+    );
+    let stale = login_window(&format!("{base}/login/stale.html"), SIGN_IN, None);
+    has(
+        &stale,
+        &["bad CSRF token"],
+        &["Signed in as"],
+        "a stale CSRF token",
+    );
+    let signed_in = login_window(&account, SIGN_IN, None);
+    has(
+        &signed_in,
+        &[
+            &format!("url {account}\n"),
+            "history 2 of 2\n",
+            "Signed in as Alice Liddell",
+            "tab cookie: yes",
+        ],
+        &[],
+        "signing in",
+    );
+    // Sign out (the button after the fields), then /account again.
+    let out = login_window(
+        &account,
+        &format!(
+            "{SIGN_IN} key:tab key:return frame frame {}",
+            go_to(&account)
+        ),
+        None,
+    );
+    has(
+        &out,
+        &[
+            &format!("url {base}/login?next=/account\n"),
+            "Not signed in",
+        ],
+        &["Signed in as"],
+        "signing out",
+    );
+    // 127.0.0.1 -> localhost -> 127.0.0.1, a cookie at each hop: back on
+    // 127.0.0.1 only its own cookie comes.
+    let sso = login_window(&format!("{base}/sso/start"), "frame", None);
+    has(
+        &sso,
+        &[
+            &format!("url {base}/sso/done\n"),
+            "SSO done on 127.0.0.1, cookies: sso1=127.0.0.1",
+        ],
+        &["sso2"],
+        "the SSO redirect chain",
+    );
+    // HTTP Basic: the 401 page without credentials, 200 with URL
+    // userinfo (libcurl sends it). The sheet and the cache are P10.22's.
+    let basic = format!("{base}/basic");
+    let refused = login_window(&basic, "frame", None);
+    has(
+        &refused,
+        &["401: sign in to realm r"],
+        &["signed in as alice"],
+        "/basic without credentials",
+    );
+    let userinfo = login_window(
+        &basic.replace("http://", "http://alice:wonderland@"),
+        "frame",
+        None,
+    );
+    has(
+        &userinfo,
+        &["Basic: signed in as alice"],
+        &[],
+        "/basic with URL userinfo",
+    );
+    // localStorage between pages of one run.
+    let storage = login_window(
+        &format!("{base}/login/store.html"),
+        &format!("frame {}", go_to(&format!("{base}/login/read.html"))),
+        None,
+    );
+    has(
+        &storage,
+        &["token: tok-alice-42"],
+        &[],
+        "localStorage in one run",
+    );
+}
+
+/// P4.50: signed in at `/login`, the window is killed (no clean exit);
+/// started again on the same profile it is still signed in, the
+/// session-only cookie restored too (a browser that restores its
+/// session).
+#[test]
+#[ignore = "P4.50: cookies saved in the profile and restored on restart"]
+fn window_login_cookies() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let account = format!("{base}/account");
+    let dir = profile("login-cookies");
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_PROFILE", &dir)
+        .args([
+            account.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "100000",
+            "--events",
+            SIGN_IN,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    // Cookies are saved within a second of a change (P4.50).
+    let jar = dir.join("cookies");
+    let start = Instant::now();
+    while !std::fs::read_to_string(&jar).is_ok_and(|s| s.contains("sid")) {
+        if start.elapsed() > Duration::from_secs(30) || window.try_wait().unwrap().is_some() {
+            let _ = window.kill();
+            panic!("no sid cookie in {} after signing in", jar.display());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    window.kill().unwrap();
+    window.wait().unwrap();
+    let again = login_window(&account, "frame", Some(&dir));
+    assert!(
+        again.contains(&format!("url {account}\n"))
+            && again.contains("Signed in as Alice Liddell")
+            && again.contains("tab cookie: yes"),
+        "after the restart:\n{again}"
+    );
+    // Signing out is saved too: the next start is signed out.
+    login_window(&account, "key:tab key:return frame frame", Some(&dir));
+    let out = login_window(&account, "frame", Some(&dir));
+    assert!(out.contains("Not signed in"), "after signing out:\n{out}");
+}
+
+/// P4.51: a token in `localStorage` is there after a restart on the same
+/// profile; `sessionStorage` lasts across a navigation in the tab, not
+/// across a restart.
+#[test]
+#[ignore = "P4.51: localStorage saved in the profile, sessionStorage per tab"]
+fn window_login_storage() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let read = format!("{base}/login/read.html");
+    let dir = profile("login-storage");
+    let first = login_window(
+        &format!("{base}/login/store.html"),
+        &format!("frame {}", go_to(&read)),
+        Some(&dir),
+    );
+    assert!(
+        first.contains("token: tok-alice-42") && first.contains("session: kept"),
+        "in the first run:\n{first}"
+    );
+    let again = login_window(&read, "frame", Some(&dir));
+    assert!(
+        again.contains("token: tok-alice-42") && again.contains("session: null"),
+        "after the restart:\n{again}"
+    );
+}
+
+/// P10.22: credentials for `/basic` (here from URL userinfo) are cached
+/// per origin and realm for the process: the same page without them, in
+/// the same run, is 200 too.
+#[test]
+#[ignore = "P10.22: HTTP Basic authentication (per-realm cache)"]
+fn window_login_basic() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let basic = format!("{}/basic", srv.base);
+    let url = basic.replace("http://", "http://alice:wonderland@");
+    let got = login_window(&url, &format!("frame {}", go_to(&basic)), None);
+    assert!(
+        got.contains(&format!("url {basic}\n")) && got.contains("Basic: signed in as alice"),
+        "{got}"
+    );
+}
+
+/// P4.52: a click opens `popup.html` with `window.open`; it posts to its
+/// opener and closes, and the opener shows the message.
+#[test]
+#[ignore = "P4.52: window.open, window.opener and postMessage between tabs"]
+fn window_login_popup() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let opener = format!("{}/login/opener.html", srv.base);
+    let got = login_window(&opener, "frame click:50,25 frame frame frame", None);
+    assert!(
+        got.contains(&format!("url {opener}\n")) && got.contains("message: alice"),
+        "{got}"
+    );
+}
+
 // ---- B8: HTML and CSS
 
 /// `noscript` follows scripting: the dumps without `--js` show it (the

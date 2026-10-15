@@ -59,6 +59,7 @@ import json
 import http.server
 import mimetypes
 import os
+import secrets
 import socket
 import sys
 import threading
@@ -90,6 +91,15 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+
+# The login fixture: the accounts, the CSRF tokens handed out and the
+# signed-in sessions (sid -> user name).
+USERS = {"alice": ("wonderland", "Alice Liddell")}
+CSRF = set()
+SESSIONS = {}
+LOGIN_LOCK = threading.Lock()
+SESSION_AGE = 30 * 24 * 3600
+BASIC = "Basic " + __import__("base64").b64encode(b"alice:wonderland").decode()
 
 BODIES = {
     ".css": ("text/css", b"p { color: green }"),
@@ -228,6 +238,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path == "/gbk":
             body = "<title>\u4e2d\u6587</title><p>\u4e2d\u6587\u7f51\u9875</p>".encode("gbk")
             self.reply(200, [("Content-Type", "text/html; charset=GBK")], body)
+        elif path == "/login" or path.startswith("/login?"):
+            self.login_form()
+        elif path == "/account":
+            self.account()
+        elif path == "/logout":
+            self.logout()
+        elif path == "/basic":
+            self.basic()
+        elif path.startswith("/sso/"):
+            self.sso()
         elif path == "/meta-charset":
             body = "<meta charset=windows-1252><p>\u201cquoted\u201d caf\u00e9</p>".encode("cp1252")
             self.reply(200, [("Content-Type", "text/html")], body)
@@ -257,6 +277,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         body = self.rfile.read(length)
         if self.path.startswith("/fetch-"):
             self.fetch_route(body)
+        elif self.path == "/login" or self.path.startswith("/login?"):
+            self.login_post(body)
+        elif self.path == "/logout":
+            self.logout()
         elif self.path == "/echo-redirect":
             self.reply(303, [("Location", "/echo?redirected=1")])
         elif self.path.startswith("/log/"):
@@ -304,6 +328,132 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
+
+    # ---- the login fixture
+
+    def cookies(self):
+        """The request's cookies, as a dict."""
+        jar = {}
+        for part in self.headers.get("Cookie", "").split(";"):
+            name, eq, value = part.strip().partition("=")
+            if eq:
+                jar[name] = value
+        return jar
+
+    def page(self, status, title, body):
+        doc = "<!doctype html><title>%s</title>%s" % (title, body)
+        headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")]
+        self.reply(status, headers, doc.encode())
+
+    def login_page(self, status, next_path, message):
+        token = secrets.token_hex(8)
+        with LOGIN_LOCK:
+            CSRF.add(token)
+        body = (
+            "<h1>Sign in</h1><p>%s</p>"
+            '<form method="post" action="/login">'
+            '<input type="hidden" name="csrf" value="%s">'
+            '<input type="hidden" name="next" value="%s">'
+            '<p><input name="username" autocomplete="username"></p>'
+            '<p><input type="password" name="password" autocomplete="current-password"></p>'
+            '<p><button type="submit">Sign in</button></p></form>'
+            % (html.escape(message), token, html.escape(next_path, quote=True))
+        )
+        self.page(status, "Sign in", body)
+
+    def login_form(self):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        self.login_page(200, query.get("next", ["/account"])[0], "Not signed in")
+
+    def login_post(self, body):
+        fields = dict(form_fields(self.headers.get("Content-Type", ""), body))
+        with LOGIN_LOCK:
+            known = fields.get("csrf", "") in CSRF
+            CSRF.discard(fields.get("csrf", ""))
+        if not known:
+            self.page(403, "Forbidden", "<h1>Forbidden</h1><p>bad CSRF token</p>")
+            return
+        user = USERS.get(fields.get("username", ""))
+        next_path = fields.get("next", "/account")
+        if not next_path.startswith("/") or next_path.startswith("//"):
+            next_path = "/account"
+        if user is None or user[0] != fields.get("password", ""):
+            self.login_page(401, next_path, "Wrong password")
+            return
+        sid = secrets.token_hex(16)
+        with LOGIN_LOCK:
+            SESSIONS[sid] = fields["username"]
+        # Secure only over https, which this server never speaks: a
+        # Secure cookie would not come back over http.
+        secure = "; Secure" if getattr(self.server, "tls", False) else ""
+        self.reply(
+            303,
+            [
+                ("Location", next_path),
+                ("Set-Cookie", "sid=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d%s" % (sid, SESSION_AGE, secure)),
+                ("Set-Cookie", "tab=1; Path=/; SameSite=Lax"),
+            ],
+        )
+
+    def account(self):
+        jar = self.cookies()
+        with LOGIN_LOCK:
+            name = SESSIONS.get(jar.get("sid", ""))
+        if name is None:
+            self.reply(302, [("Location", "/login?next=/account")])
+            return
+        body = "<h1>Account</h1><p>Signed in as %s</p><p>tab cookie: %s</p>" % (
+            html.escape(USERS[name][1]),
+            "yes" if jar.get("tab") == "1" else "no",
+        )
+        body += '<form method="post" action="/logout"><button>Sign out</button></form>'
+        self.page(200, "Account", body)
+
+    def logout(self):
+        if self.command == "POST":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            self.rfile.read(length)
+        with LOGIN_LOCK:
+            SESSIONS.pop(self.cookies().get("sid", ""), None)
+        self.reply(
+            303,
+            [
+                ("Location", "/login"),
+                ("Set-Cookie", "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
+                ("Set-Cookie", "tab=; Path=/; SameSite=Lax; Max-Age=0"),
+            ],
+        )
+
+    def basic(self):
+        if self.headers.get("Authorization", "") != BASIC:
+            self.reply(
+                401,
+                [("WWW-Authenticate", 'Basic realm="r"'), ("Content-Type", "text/html")],
+                b"<title>Unauthorized</title><p>401: sign in to realm r</p>",
+            )
+            return
+        self.page(200, "Basic", "<p>Basic: signed in as alice</p>")
+
+    def sso(self):
+        port = self.server.server_address[1]
+        host = self.headers.get("Host", "").split(":")[0]
+        other = "localhost" if host == "127.0.0.1" else "127.0.0.1"
+        path = urllib.parse.urlsplit(self.path).path
+        if path == "/sso/start":
+            self.reply(302, [
+                ("Location", "http://%s:%d/sso/cb" % (other, port)),
+                ("Set-Cookie", "sso1=%s; Path=/" % host),
+            ])
+        elif path == "/sso/cb":
+            self.reply(302, [
+                ("Location", "http://127.0.0.1:%d/sso/done" % port),
+                ("Set-Cookie", "sso2=%s; Path=/" % host),
+            ])
+        elif path == "/sso/done":
+            cookie = html.escape(self.headers.get("Cookie", ""))
+            self.page(200, "SSO", "<p>SSO done on %s, cookies: %s</p>" % (host, cookie))
+        else:
+            self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
     def echo(self, method, body):
         query = urllib.parse.urlsplit(self.path).query
