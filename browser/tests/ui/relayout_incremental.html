@@ -1,0 +1,41 @@
+<!doctype html>
+<title>incremental relayout</title>
+<style>
+.box { width: 100px; height: 20px; background: #c00 }
+.wide { width: 200px }
+p.on { color: blue }
+</style>
+<div id="rest"></div>
+<div id="a" class="box"></div>
+<p id="t">frame 0</p>
+<ul id="l"></ul>
+<script>
+// Enough elements before the changing ones (a change restyles its
+// following siblings) that the frames below stay under the geometry.aye
+// `RESTYLE_ROUNDS` bound, after which all is styled again.
+for (let i = 0; i < 100; i++) {
+  const p = document.createElement('p');
+  p.textContent = 'paragraph ' + i;
+  document.getElementById('rest').appendChild(p);
+}
+// Each frame changes what the window lays out again: an opacity (paint
+// only), a height, a class, a text and a list (window_relayout_incremental).
+let n = 0;
+function tick() {
+  n++;
+  const a = document.getElementById('a');
+  a.style.opacity = String((n % 10) / 10);
+  a.style.height = (20 + n) + 'px';
+  a.classList.toggle('wide', n % 2 == 0);
+  const t = document.getElementById('t');
+  t.textContent = 'frame ' + n;
+  t.classList.toggle('on');
+  if (n % 3 == 0) {
+    const li = document.createElement('li');
+    li.textContent = 'item ' + n;
+    document.getElementById('l').appendChild(li);
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>

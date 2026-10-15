@@ -3222,6 +3222,59 @@ fn window_timers_yield_to_frames() {
     );
 }
 
+/// The window lays out a script's changes again where they are, with the
+/// layout the scripts read (`Page.tree_borrowed`): one full cascade for
+/// the load, none for the frames after; and each layout that keeps boxes
+/// matches a full one (`DWELLER_LAYOUT_CHECK`, styles and boxes).
+#[test]
+fn window_relayout_incremental() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |env: &str, without: &str| {
+        let out = Command::new(dweller())
+            .current_dir(root())
+            .env("SDL_VIDEODRIVER", "dummy")
+            .env(env, "1")
+            .env_remove(without)
+            .args([
+                "browser/tests/ui/relayout_incremental.html",
+                "--font",
+                "fixed",
+                "--width",
+                "400",
+                "--height",
+                "300",
+                "--frames",
+                "40",
+                "--text",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            text(&out.stdout).contains("frame "),
+            "{}",
+            text(&out.stdout)
+        );
+        (out.status, text(&out.stderr))
+    };
+    let (status, stderr) = run("DWELLER_LAYOUT_CHECK", "DWELLER_TIMING");
+    assert!(status.success() && stderr.is_empty(), "{status}\n{stderr}");
+    // Without the check, whose full cascades would count.
+    let (status, stderr) = run("DWELLER_TIMING", "DWELLER_LAYOUT_CHECK");
+    let count = |phase: &str| {
+        stderr
+            .lines()
+            .filter(|l| l.contains(&format!("DWELLER_TIMING\t{phase}\t")))
+            .count()
+    };
+    assert!(status.success(), "{status}\n{stderr}");
+    assert!(count("ui_relayout") >= 6, "too few relayouts:\n{stderr}");
+    assert_eq!(count("cascade"), 1, "full cascades after the load:\n{stderr}");
+    assert!(count("restyle") >= 5, "no subtree restyles:\n{stderr}");
+}
+
 /// The window and the scripts agree on the scroll offset: a script's
 /// `scrollTo` scrolls the window, and the wheel moves `scrollY`.
 #[test]

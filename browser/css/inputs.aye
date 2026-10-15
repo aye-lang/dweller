@@ -241,24 +241,7 @@ pub fn styleInputs(doc: *Document, media: Media, styles: *Styles) u64 {
         h = inputNode(doc, styles, n, h)
         cur = dom.shadowIncludingFollowing(doc, n, doc.root)
     }
-    let ctl = &doc.controls
-    h = inputNodeId(h, ctl.focus)
-    h = inputNodeId(h, ctl.validation)
-    h = inputWord(h, inputBit(ctl.focus_visible))
-    // The controls in any order: a sum of their own fingerprints.
-    var controls: u64 = 0
-    var it = ctl.map.iterator()
-    while it.next() |e| {
-        let c = e.value
-        var x = inputWord(INPUT_SEED, e.key as u64)
-        x = inputWord(x, c.generation as u64)
-        x = inputText(x, c.value)
-        x = inputText(x, c.custom)
-        x = inputWord(x, inputBit(c.dirty) | (inputBit(c.checked) << 1) | (inputBit(c.checked_dirty) << 2) | (inputBit(c.selected) << 3) | (inputBit(c.selected_dirty) << 4))
-        controls = controls +% x
-    }
-    h = inputWord(h, controls)
-    h = inputWord(h, ctl.map.len() as u64)
+    h = inputWord(h, controlInputs(doc))
     h = inputWord(h, doc.sheets.generation)
     for ad in doc.adopted.items() {
         h = inputNodeId(h, ad.root)
@@ -283,6 +266,29 @@ pub fn styleInputs(doc: *Document, media: Media, styles: *Styles) u64 {
 }
 
 let INPUT_SEED: u64 = 14695981039346656037
+
+/// The fingerprint of the state of the form controls of `doc` and its
+/// focus (part of `styleInputs`).
+pub fn controlInputs(doc: *Document) u64 {
+    let ctl = &doc.controls
+    var h = inputNodeId(INPUT_SEED, ctl.focus)
+    h = inputNodeId(h, ctl.validation)
+    h = inputWord(h, inputBit(ctl.focus_visible))
+    // The controls in any order: a sum of their own fingerprints.
+    var controls: u64 = 0
+    var it = ctl.map.iterator()
+    while it.next() |e| {
+        let c = e.value
+        var x = inputWord(INPUT_SEED, e.key as u64)
+        x = inputWord(x, c.generation as u64)
+        x = inputText(x, c.value)
+        x = inputText(x, c.custom)
+        x = inputWord(x, inputBit(c.dirty) | (inputBit(c.checked) << 1) | (inputBit(c.checked_dirty) << 2) | (inputBit(c.selected) << 3) | (inputBit(c.selected_dirty) << 4))
+        controls = controls +% x
+    }
+    h = inputWord(h, controls)
+    return inputWord(h, ctl.map.len() as u64)
+}
 
 // The key of the class `name` in `ClassInfo.keys`: FNV-1a of it in
 // lower case (quirks mode matches classes ignoring case).

@@ -348,6 +348,9 @@ pub struct Ui {
     list: ?paint.DisplayList
     // The page's fixed or sticky boxes moved since `list` was built.
     relist: bool
+    // The page tree's scroll offset when `list` was built (the scripts'
+    // layout, the same tree, may move its fixed boxes).
+    list_scroll: f64 = 0.0
     focus: Focus
     address: Field
     // Find in page: the bar is open, its query, the matches (document
@@ -687,6 +690,7 @@ pub struct Ui {
             self.laid_version = engine.treeVersion(p)
             if p.tree |t| {
                 self.list = try paint.build(self.alloc, t)
+                self.list_scroll = t.scroll_y
             }
         }
         try self.findAll(false)
@@ -830,9 +834,16 @@ pub struct Ui {
     fn followScroll(self: *mut Self) {
         if self.tab.page |p| {
             if p.tree |t| {
+                if t.scroll_y != self.list_scroll {
+                    // The scripts' layout moved them (`Page.tree_borrowed`):
+                    // back to where `list` has them.
+                    _ = layout.scrollTo(t, self.list_scroll)
+                }
                 if t.scroll_y != self.tab.scroll && layout.scrollTo(t, self.tab.scroll) {
                     self.relist = true
                 }
+                // Else `list` is right at this offset too.
+                self.list_scroll = t.scroll_y
             }
         }
     }
@@ -850,6 +861,7 @@ pub struct Ui {
         if p.tree |t| {
             self.dropList()
             self.list = try paint.build(self.alloc, t)
+            self.list_scroll = t.scroll_y
         }
         self.dirty = true
         return true
@@ -1458,6 +1470,7 @@ pub struct Ui {
                 if p.tree |t| {
                     self.dropList()
                     self.list = try paint.build(self.alloc, t)
+                    self.list_scroll = t.scroll_y
                 }
             }
         }
