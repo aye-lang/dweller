@@ -117,8 +117,29 @@ fn onArrayLike(it: *mut Interp, a: Args, f: NativeFn) JsError!Value {
     return r
 }
 
+// push on another object sets its next indices and `length` (not through
+// a copy: a page pushed thousands of times onto an array-like object).
 fn genericPush(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayPush)
+    if !isObject(a.this) {
+        return onArrayLike(it, a, arrayPush)
+    }
+    let cls = it.heap.obj(objectOf(a.this)).class
+    if cls == Class.Array || cls == Class.Arguments {
+        return arrayPush(it, a)
+    }
+    let n = try it.toNumber(try it.getProp(a.this, A_LENGTH))
+    var len = 0.0
+    if n >= 9007199254740991.0 {
+        len = 9007199254740991.0
+    } else if n >= 1.0 {
+        len = (n as u64) as f64
+    }
+    for i in 0..a.argc {
+        try it.setIndex(a.this, numVal(len + i as f64), it.arg(a, i))
+    }
+    len += a.argc as f64
+    try it.setProp(a.this, A_LENGTH, numVal(len))
+    return numVal(len)
 }
 
 fn genericPop(it: *mut Interp, a: Args) JsError!Value {

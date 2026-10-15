@@ -1123,7 +1123,15 @@ pub fn pushArrayLike(it: *mut Interp, v: Value) JsError!usize {
     try it.push(v)
     let at = it.stack.len() - 1
     let lenv = try it.getProp(v, A_LENGTH)
-    let len = toUint32(try it.toNumber(lenv))
+    // LengthOfArrayLike: a negative or NaN length is 0 (ToUint32 made -1
+    // four billion elements: a page's `{length: -1}` hung).
+    let n = try it.toNumber(lenv)
+    var len: u32 = 0
+    if n >= 4294967295.0 {
+        len = 4294967295
+    } else if n >= 1.0 {
+        len = n as u32
+    }
     for i in 0..len {
         let e = try it.getIndex(v, numVal(i as f64))
         try it.push(e)

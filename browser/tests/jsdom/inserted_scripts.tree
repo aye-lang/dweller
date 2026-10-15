@@ -1,0 +1,40 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "Inserted scripts"
+      "\n"
+      <script id="inl">
+        "log.push(\"inline ran, currentScript \" + document.currentScript.id)"
+      <script id="sa" src="scripts/inserted/a.js">
+      <script src="scripts/inserted/b.js">
+      <script src="scripts/inserted/c.js">
+      <script src="scripts/inserted/missing.js">
+      <script src="scripts/inserted/chunk.js">
+    <body>
+      <pre id="out">
+        "before append\ninline ran, currentScript inl\nafter append\nfragment ran\nlate text ran\nraw text ran 2 times\nelementFromPoint: true true\nend of parser script\na.js ran, currentScript sa\na.js load\nb.js ran\nb.js load\nc.js ran\nc.js load\nmissing.js error\nempty src error\nonce.js load\nchunk: chunk 7 module\nload event, once.js ran 1 time(s)"
+      "\n"
+      <!--  Scripts that a script inserts (P4.45): inline ones run at once,\n     external ones in a task once fetched (async as they come, async=false\n     in insertion order), load/error at the element, document.currentScript,\n     a script runs once however often it is moved or inserted, innerHTML\n     scripts never run, createContextualFragment ones do, the innerHTML\n     of a script is its text, types that are\n     not JavaScript and nomodule do not run, a webpack-style JSONP chunk\n     loader registers its chunk.  -->
+      "\n"
+      <script>
+        "\nwindow.log = [];\nconst base = 'scripts/inserted/';\nfunction add(src, opts) {\n  const s = document.createElement('script');\n  Object.assign(s, opts || {});\n  s.src = base + src;\n  s.onload = () => log.push(src + ' load');\n  s.onerror = () => log.push(src + ' error');\n  document.head.appendChild(s);\n  return s;\n}\n// Inline: runs during appendChild.\nconst inline = document.createElement('script');\ninline.text = 'log.push(\"inline ran, currentScript \" + document.currentScript.id)';\ninline.id = 'inl';\nlog.push('before append');\ndocument.body.appendChild(inline);\nlog.push('after append');\n// Moved and inserted again: still once.\ndocument.head.appendChild(inline);\n// Async and in order.\nadd('a.js', { id: 'sa' });\nadd('b.js', { async: false });\nadd('c.js', { async: false });\n// A missing file and an empty src: error events.\nadd('missing.js');\nconst empty = document.createElement('script');\nempty.setAttribute('src', '');\nempty.onerror = () => log.push('empty src error');\ndocument.body.appendChild(empty);\n// Not JavaScript, nomodule: nothing.\nconst data = document.createElement('script');\ndata.type = 'text/plain';\ndata.text = 'log.push(\"text/plain ran\")';\ndocument.body.appendChild(data);\nconst nm = document.createElement('script');\nnm.noModule = true;\nnm.text = 'log.push(\"nomodule ran\")';\ndocument.body.appendChild(nm);\n// innerHTML: never; createContextualFragment: yes.\nconst box = document.createElement('div');\ndocument.body.appendChild(box);\nbox.innerHTML = '<script>log.push(\"innerHTML ran\")<\\/script>';\nbox.appendChild(box.firstChild.cloneNode(true));\ndocument.body.appendChild(document.createRange().createContextualFragment('<script>log.push(\"fragment ran\")<\\/script>'));\n// Empty when inserted, its text later: runs then.\nconst late = document.createElement('script');\ndocument.body.appendChild(late);\nlate.textContent = 'log.push(\"late text ran\")';\n// innerHTML of a script is its text, `<` and `>` included.\nconst raw = document.createElement('script');\nraw.innerHTML = 'for (var i = 0; i<2; i++) window.rawRuns = (window.rawRuns || 0) + 1; if (2>1) log.push(\"raw text ran \" + window.rawRuns + \" times\")';\ndocument.body.appendChild(raw);\n// Not connected: nothing until it is.\nconst detached = document.createElement('script');\ndetached.text = 'log.push(\"detached ran\")';\nbox.cloneNode().appendChild(detached);\n// Twice: once.\nconst once1 = add('once.js');\nonce1.remove();\ndocument.body.appendChild(once1);\n// A webpack-style JSONP chunk loader.\nconst installed = {};\nconst modules = {};\nfunction jsonp(data) {\n  const [ids, more] = data;\n  for (const id of ids) installed[id] = 0;\n  Object.assign(modules, more);\n}\nconst chunks = self.webpackChunk = self.webpackChunk || [];\nchunks.push = jsonp;\nfunction ensureChunk(id) {\n  return new Promise((resolve, reject) => {\n    const s = document.createElement('script');\n    s.src = base + 'chunk.js';\n    s.onload = s.onerror = () => {\n      if (installed[id] === 0) resolve(); else reject(new Error('Loading chunk ' + id + ' failed'));\n    };\n    document.head.appendChild(s);\n  });\n}\nensureChunk(7).then(() => {\n  const module = {};\n  modules[7](module);\n  log.push('chunk: ' + module.exports);\n}, e => log.push(String(e)));\nlog.push('elementFromPoint: ' + (document.elementFromPoint(-1, 0) === null) + ' ' + (document.elementFromPoint(1, 1) instanceof Element));\nlog.push('end of parser script');\nwindow.addEventListener('load', () => {\n  log.push('load event, once.js ran ' + window.onceRuns + ' time(s)');\n  document.getElementById('out').textContent = log.join('\\n');\n});\n"
+      "\n"
+      <script src="">
+      <script type="text/plain">
+        "log.push(\"text/plain ran\")"
+      <script nomodule="">
+        "log.push(\"nomodule ran\")"
+      <div>
+        <script>
+          "log.push(\"innerHTML ran\")"
+        <script>
+          "log.push(\"innerHTML ran\")"
+      <script>
+        "log.push(\"fragment ran\")"
+      <script>
+        "log.push(\"late text ran\")"
+      <script>
+        "for (var i = 0; i<2; i++) window.rawRuns = (window.rawRuns || 0) + 1; if (2>1) log.push(\"raw text ran \" + window.rawRuns + \" times\")"
+      <script src="scripts/inserted/once.js">

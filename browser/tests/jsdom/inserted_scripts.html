@@ -1,0 +1,104 @@
+<!doctype html><title>Inserted scripts</title>
+<pre id="out"></pre>
+<!-- Scripts that a script inserts (P4.45): inline ones run at once,
+     external ones in a task once fetched (async as they come, async=false
+     in insertion order), load/error at the element, document.currentScript,
+     a script runs once however often it is moved or inserted, innerHTML
+     scripts never run, createContextualFragment ones do, the innerHTML
+     of a script is its text, types that are
+     not JavaScript and nomodule do not run, a webpack-style JSONP chunk
+     loader registers its chunk. -->
+<script>
+window.log = [];
+const base = 'scripts/inserted/';
+function add(src, opts) {
+  const s = document.createElement('script');
+  Object.assign(s, opts || {});
+  s.src = base + src;
+  s.onload = () => log.push(src + ' load');
+  s.onerror = () => log.push(src + ' error');
+  document.head.appendChild(s);
+  return s;
+}
+// Inline: runs during appendChild.
+const inline = document.createElement('script');
+inline.text = 'log.push("inline ran, currentScript " + document.currentScript.id)';
+inline.id = 'inl';
+log.push('before append');
+document.body.appendChild(inline);
+log.push('after append');
+// Moved and inserted again: still once.
+document.head.appendChild(inline);
+// Async and in order.
+add('a.js', { id: 'sa' });
+add('b.js', { async: false });
+add('c.js', { async: false });
+// A missing file and an empty src: error events.
+add('missing.js');
+const empty = document.createElement('script');
+empty.setAttribute('src', '');
+empty.onerror = () => log.push('empty src error');
+document.body.appendChild(empty);
+// Not JavaScript, nomodule: nothing.
+const data = document.createElement('script');
+data.type = 'text/plain';
+data.text = 'log.push("text/plain ran")';
+document.body.appendChild(data);
+const nm = document.createElement('script');
+nm.noModule = true;
+nm.text = 'log.push("nomodule ran")';
+document.body.appendChild(nm);
+// innerHTML: never; createContextualFragment: yes.
+const box = document.createElement('div');
+document.body.appendChild(box);
+box.innerHTML = '<script>log.push("innerHTML ran")<\/script>';
+box.appendChild(box.firstChild.cloneNode(true));
+document.body.appendChild(document.createRange().createContextualFragment('<script>log.push("fragment ran")<\/script>'));
+// Empty when inserted, its text later: runs then.
+const late = document.createElement('script');
+document.body.appendChild(late);
+late.textContent = 'log.push("late text ran")';
+// innerHTML of a script is its text, `<` and `>` included.
+const raw = document.createElement('script');
+raw.innerHTML = 'for (var i = 0; i<2; i++) window.rawRuns = (window.rawRuns || 0) + 1; if (2>1) log.push("raw text ran " + window.rawRuns + " times")';
+document.body.appendChild(raw);
+// Not connected: nothing until it is.
+const detached = document.createElement('script');
+detached.text = 'log.push("detached ran")';
+box.cloneNode().appendChild(detached);
+// Twice: once.
+const once1 = add('once.js');
+once1.remove();
+document.body.appendChild(once1);
+// A webpack-style JSONP chunk loader.
+const installed = {};
+const modules = {};
+function jsonp(data) {
+  const [ids, more] = data;
+  for (const id of ids) installed[id] = 0;
+  Object.assign(modules, more);
+}
+const chunks = self.webpackChunk = self.webpackChunk || [];
+chunks.push = jsonp;
+function ensureChunk(id) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = base + 'chunk.js';
+    s.onload = s.onerror = () => {
+      if (installed[id] === 0) resolve(); else reject(new Error('Loading chunk ' + id + ' failed'));
+    };
+    document.head.appendChild(s);
+  });
+}
+ensureChunk(7).then(() => {
+  const module = {};
+  modules[7](module);
+  log.push('chunk: ' + module.exports);
+}, e => log.push(String(e)));
+log.push('elementFromPoint: ' + (document.elementFromPoint(-1, 0) === null) + ' ' + (document.elementFromPoint(1, 1) instanceof Element));
+log.push('end of parser script');
+window.addEventListener('load', () => {
+  log.push('load event, once.js ran ' + window.onceRuns + ' time(s)');
+  document.getElementById('out').textContent = log.join('\n');
+});
+</script>

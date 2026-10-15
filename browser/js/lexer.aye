@@ -182,6 +182,16 @@ struct Lexer {
     parens: List(bool)
     // The last token is a `)` that closed such a head.
     head_closed: bool = false
+    // For each open `{`: is it a block statement or the body of a
+    // function declaration? After its `}` a `/` starts a regex:
+    // `function f(){}/a/.test(s)`.
+    blocks: List(bool)
+    // The last token is a `}` that closed such a block.
+    block_closed: bool = false
+    // A `function` keyword starts a statement; its body is the next `{`
+    // with `fn_parens` open parentheses.
+    fn_decl: bool = false
+    fn_parens: usize = 0
 
     fn fail(self: *mut Self, msg: []u8) SyntaxErr!void {
         self.out.message.clear()
@@ -209,6 +219,14 @@ struct Lexer {
             len: len as u32,
         })
         self.nl = false
+    }
+
+    // Does the token about to be emitted start a statement (as far as the
+    // tokens before it tell)?
+    fn startsStatement(self: *Self) bool {
+        let k = self.lastKind() orelse return true
+        return k == Tok.Semi || k == Tok.LBrace || k == Tok.RBrace || k == Tok.KwElse ||
+            (k == Tok.RParen && self.head_closed) || (self.nl && endsExpr(k))
     }
 
     fn lastKind(self: *Self) ?Tok {
@@ -320,7 +338,12 @@ struct Lexer {
                 try self.out.cooked.append(self.src[plain..self.pos])
                 return self.emit(Tok.Ident, start, 0.0, off, self.out.cooked.len() - off)
             }
-            return self.emit(keyword(self.src[start..self.pos]), start, 0.0, 0, 0)
+            let word = keyword(self.src[start..self.pos])
+            if word == Tok.KwFunction && self.startsStatement() {
+                self.fn_decl = true
+                self.fn_parens = self.parens.len()
+            }
+            return self.emit(word, start, 0.0, 0, 0)
         }
         if c == '#' && isIdStart(self.peekAt(1)) {
             // A private name `#x`: an identifier whose text keeps the `#`.
@@ -355,7 +378,7 @@ struct Lexer {
         if c == '/' {
             var regex = true
             if self.lastKind() |k| {
-                regex = !endsExpr(k) || (k == Tok.RParen && self.head_closed)
+                regex = !endsExpr(k) || (k == Tok.RParen && self.head_closed) || (k == Tok.RBrace && self.block_closed)
             }
             if regex {
                 return self.regex(start)
@@ -672,19 +695,32 @@ struct Lexer {
         var kind = Tok.Eof
         var n: usize = 1
         var closed = false
+        var closed_block = false
         if c == '{' {
             kind = Tok.LBrace
             self.depth += 1
+            let body = self.fn_decl && self.parens.len() == self.fn_parens
+            if body {
+                self.fn_decl = false
+            }
+            var block = body || self.startsStatement()
+            if self.lastKind() |k| {
+                block = block || k == Tok.KwTry || k == Tok.KwFinally || k == Tok.KwDo
+            }
+            try self.blocks.append(block)
         } else if c == '}' {
             kind = Tok.RBrace
             if self.depth > 0 {
                 self.depth -= 1
             }
+            if self.blocks.pop() |body| {
+                closed_block = body
+            }
         } else if c == '(' {
             kind = Tok.LParen
             var head = false
             if self.lastKind() |k| {
-                head = k == Tok.KwIf || k == Tok.KwWhile || k == Tok.KwFor
+                head = k == Tok.KwIf || k == Tok.KwWhile || k == Tok.KwFor || k == Tok.KwCatch || k == Tok.KwSwitch
             }
             try self.parens.append(head)
         } else if c == ')' {
@@ -858,6 +894,7 @@ struct Lexer {
             return self.fail("Invalid or unexpected token")
         }
         self.head_closed = closed
+        self.block_closed = closed_block
         self.pos += n
         return self.emit(kind, start, 0.0, 0, 0)
     }
@@ -874,9 +911,11 @@ pub fn tokenize(alloc: Allocator, src: []u8, out: *mut Lexed) SyntaxErr!void {
         depth: 0,
         nl: false,
         parens: List(bool).init(alloc),
+        blocks: List(bool).init(alloc),
     }
     defer lx.braces.deinit()
     defer lx.parens.deinit()
+    defer lx.blocks.deinit()
     return lx.run()
 }
 

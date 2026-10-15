@@ -198,10 +198,14 @@ pub let LIB =
     \\  }
     \\  then(onFulfilled, onRejected) {
     \\    let resolve, reject;
-    \\    const next = new Promise((res, rej) => {
+    \\    // The species constructor makes the promise it returns (core-js
+    \\    // replaces a Promise whose then ignores it).
+    \\    const C = speciesOf(this);
+    \\    const next = new C((res, rej) => {
     \\      resolve = res;
     \\      reject = rej;
     \\    });
+    \\    if (typeof resolve !== 'function' || typeof reject !== 'function') throw new TypeError('Promise resolve or reject function is not callable');
     \\    const r = { onFulfilled, onRejected, resolve, reject };
     \\    this._handled = true;
     \\    if (this._state === 0) this._reactions.push(r);
@@ -216,18 +220,20 @@ pub let LIB =
     \\      e => Promise.resolve(f()).then(() => { throw e; }),
     \\    );
     \\  }
+    \\  static get [Symbol.species]() { return this; }
     \\  static resolve(v) {
-    \\    if (v instanceof Promise) return v;
-    \\    return new Promise(res => res(v));
+    \\    const C = ctorOf(this);
+    \\    if (v instanceof Promise && v.constructor === C) return v;
+    \\    return new C(res => res(v));
     \\  }
-    \\  static reject(e) { return new Promise((res, rej) => rej(e)); }
+    \\  static reject(e) { return new (ctorOf(this))((res, rej) => rej(e)); }
     \\  static withResolvers() {
     \\    let resolve, reject;
-    \\    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    \\    const promise = new (ctorOf(this))((res, rej) => { resolve = res; reject = rej; });
     \\    return { promise, resolve, reject };
     \\  }
     \\  static all(items) {
-    \\    return new Promise((resolve, reject) => {
+    \\    return new (ctorOf(this))((resolve, reject) => {
     \\      const list = Array.from(items);
     \\      const out = new Array(list.length);
     \\      let left = list.length;
@@ -241,7 +247,7 @@ pub let LIB =
     \\    });
     \\  }
     \\  static allSettled(items) {
-    \\    return new Promise(resolve => {
+    \\    return new (ctorOf(this))(resolve => {
     \\      const list = Array.from(items);
     \\      const out = new Array(list.length);
     \\      let left = list.length;
@@ -256,12 +262,12 @@ pub let LIB =
     \\    });
     \\  }
     \\  static race(items) {
-    \\    return new Promise((resolve, reject) => {
+    \\    return new (ctorOf(this))((resolve, reject) => {
     \\      for (const p of items) Promise.resolve(p).then(resolve, reject);
     \\    });
     \\  }
     \\  static any(items) {
-    \\    return new Promise((resolve, reject) => {
+    \\    return new (ctorOf(this))((resolve, reject) => {
     \\      const list = Array.from(items);
     \\      let left = list.length;
     \\      const errors = new Array(left);
@@ -274,6 +280,19 @@ pub let LIB =
     \\  }
     \\}
     \\Object.defineProperty(Promise.prototype, Symbol.toStringTag, { value: 'Promise', configurable: true });
+    \\// The constructor a static method makes its promise with: `this` (a
+    \\// subclass), Promise when called unbound.
+    \\function ctorOf(c) { return typeof c === 'function' ? c : Promise; }
+    \\// SpeciesConstructor(p, Promise).
+    \\function speciesOf(p) {
+    \\  const c = p.constructor;
+    \\  if (c === Promise || c === undefined) return Promise;
+    \\  if (c === null || (typeof c !== 'object' && typeof c !== 'function')) throw new TypeError('The .constructor property is not an object');
+    \\  const s = c[Symbol.species];
+    \\  if (s === undefined || s === null) return Promise;
+    \\  if (typeof s !== 'function') throw new TypeError('object.constructor[Symbol.species] is not a constructor');
+    \\  return s;
+    \\}
     \\// The resolve and reject functions of a promise: the first call wins.
     \\function resolvers(p) {
     \\  let done = false;

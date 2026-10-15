@@ -714,6 +714,64 @@ is not a transform: its scripts change the `width` of `.js-square` divs
 each frame (layout), and most frames lay the whole document out because
 a `layout_version` bump is not noted (P4.57).
 
+### P4.45: scripts that a script inserts run (2026-10-15)
+
+Before, a `<script>` that a script connected never ran (no fetch at
+all): webpack/Vite JSONP chunks, consent and analytics SDKs, jQuery's
+JSONP and `globalEval`. Now an inline one runs at once and an external
+one loads on the loader's multi handle and runs in a task (`async` as it
+arrives, `async = false` in insertion order), with `load`/`error` at the
+element (`browser/engine/inserted.aye`). In `dump` the task waits for
+its load in its turn, so the output does not depend on the network: two
+replays give the same bytes.
+
+The archives of `target/sites/` lacked the newly fetched scripts:
+each was completed by replaying with `DWELLER_RECORD` set to the same
+directory (`dump --md --js`, `screenshot` and an agent navigation; misses
+fetched live on 2026-10-15 and recorded, nothing else re-recorded),
+then replayed without it: no archive miss. Review of every site whose
+Markdown, 1280x2000 screenshot or console changed, main (320be32)
+against this branch, both on the completed archives, compared with
+Chrome (agent-browser on the live site):
+
+| Site | What changed | Chrome | Verdict |
+|---|---|---|---|
+| bbc | Register / Sign In at the top right, the ad slot ("ADVERTISEMENT"), the story images instead of grey placeholders (Markdown: 4 placeholder images gone) | the same | closer |
+| wikipedia-en | Appearance panel (Text, Width, Color), table-of-contents toggles, the video's 0:24 badge, "Jump up to:" back-links (6), the navboxes collapsed | the same (innerText: 6 "Jump up to", "Duration: 24 seconds", navbox groups `mw-collapsed`) | closer |
+| wikipedia (ja) | the same as wikipedia-en ("以下の位置に戻る" 2, navboxes and authority control collapsed) | the same; screenshots side by side match | closer |
+| mistral | the logo's background a shade lighter (115x20 px) | - | neutral |
+| zol | Markdown and screenshot unchanged; console 0 → 4: pc-common-module.js line 452 reads `_zpv_cfg.custom.ns` (undefined), and three JSONP endpoints answer `text/html` from other origins | Chrome throws the same (the expression throws there; a muted "Script error."), and fires `error` for both `text/html` JSONP scripts tried (opaque response blocking) | neutral |
+| reddit (excluded) | the login wall's background pattern drawn smaller; a `blob:` script fails | (live: a different page) | neutral; `blob:` URLs filed as P4.47 |
+| stackoverflow (excluded) | console: `pO is not a function` on its challenge page | - | neutral |
+| the other 15 | byte-identical Markdown, screenshot and console | | |
+
+None got worse. W3 7 → 8 of 20: wikipedia's only defect (P3.66, the
+empty Appearance panel) is gone; BBC's P3.41 (no Register/Sign In) is
+gone, its P3.59 stays; wikipedia-en keeps P3.56.
+
+What the newly running scripts hit, fixed here (each a crash, hang or
+`Uncaught` on a recorded site): a `/` after the `}` of a function
+declaration or a block was taken for division (zol's ad SDK:
+`function f(){}/re/.test(ua)`); `static async[key]()` was a syntax
+error; `Array.prototype.every.call({length: -1})` walked 2^32 indices
+(ToUint32 instead of LengthOfArrayLike: BBC's dump hung);
+`[].push.call(arrayLike)` copied the object each call (ZOL: O(n²), past
+600 s); `then` and the Promise statics ignored species, so core-js took
+the native Promise for broken and left `Promise.prototype.finally`
+undefined (BBC's prebid: `race(...).finally is not a function`);
+`script.innerHTML = code` parsed the code as HTML (`i<n` lost: BBC's
+`__tcfapi` stub); `document.elementFromPoint` was missing (BBC). And,
+as Chrome: a script of another origin served as `text/html` does not
+run (zol).
+
+Cost: `dump` CPU, main → this branch (`page_load.py check`): bbc 0.36 →
+6.7 s, wikipedia-en 0.12 → 0.62 s, wikipedia 0.11 → 0.50 s, youtube 3.0
+→ 4.5 s, mistral 26 → 45 s (timers 24.7 → 46.8 s, of which forced
+layouts 6.2 → 26.4 s and cascade 3.0 → 17.9 s, after gtag and the
+axept.io consent SDK run), reddit 0.05 → 16 s; filed as P4.48.
+Window (`inserted_scripts` test): twenty `async = false` scripts of
+200–390 ms in order, longest loop iteration 3 ms (fast build).
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

@@ -2819,10 +2819,36 @@ pub let PRELUDE =
     \\    if (!el.__imageRequest) imageUpdate(el);
     \\  }
     \\}
+    \\// Scripts that a script inserts (inserted.aye): an inline one runs in
+    \\// scriptPrepare; an external one runs in the task of its fetch, at
+    \\// once when async, else when those inserted before it ran.
+    \\const scriptsInOrder = [];
+    \\function prepareScript(el) {
+    \\  const how = ak.scriptPrepare(el);
+    \\  if (how === 3) ak.imageTask(() => hostEvent(el, 'error'), 0);
+    \\  if (how !== 2) return;
+    \\  const entry = { el, ready: false };
+    \\  const ordered = !el.async;
+    \\  if (ordered) scriptsInOrder.push(entry);
+    \\  ak.scriptFetch(el, () => {
+    \\    entry.ready = true;
+    \\    if (!ordered) runFetchedScript(el);
+    \\    else while (scriptsInOrder.length > 0 && scriptsInOrder[0].ready) runFetchedScript(scriptsInOrder.shift().el);
+    \\  });
+    \\}
+    \\function runFetchedScript(el) {
+    \\  hostEvent(el, ak.scriptRun(el) ? 'load' : 'error');
+    \\}
     \\function resourceMutations(recs) {
     \\  for (let i = 0; i < recs.length; i += 7) {
     \\    const kind = recs[i], target = recs[i + 1], node = recs[i + 2], name = recs[i + 5];
     \\    if (!target) continue;
+    \\    if (kind === 3 && node) {
+    \\      const scripts = ak.scriptsIn(node);
+    \\      if (scripts !== null) for (const el of scripts) prepareScript(el);
+    \\    }
+    \\    // Text put in a connected script, or a src given to one.
+    \\    if (target instanceof HTMLScriptElement && (kind === 3 || (kind === 1 && name === 'src'))) prepareScript(target);
     \\    // Adding async clears a dynamically created script's force-async flag,
     \\    // even when the content attribute is later removed without a getter.
     \\    if (kind === 1 && target instanceof HTMLScriptElement && name === 'async' && target.hasAttribute('async')) hidden(target, '__forceAsync', false);
@@ -3471,6 +3497,8 @@ pub let PRELUDE =
     \\    box.innerHTML = html;
     \\    const f = document.createDocumentFragment();
     \\    while (box.firstChild) f.appendChild(box.firstChild);
+    \\    // Its scripts run when it is inserted.
+    \\    ak.unstartScripts(f);
     \\    return f;
     \\  }
     \\  insertNode(n) {
@@ -4200,6 +4228,12 @@ pub let PRELUDE =
     \\hidden(G, 'CustomElementRegistry', CustomElementRegistry);
     \\hidden(G, 'customElements', new CustomElementRegistry());
     \\
+    \\hidden(Document.prototype, 'elementFromPoint', function (x, y) { return ak.elementAt(+x, +y); });
+    \\hidden(Document.prototype, 'elementsFromPoint', function (x, y) {
+    \\  const all = [];
+    \\  for (let el = ak.elementAt(+x, +y); el; el = el.parentElement) all.push(el);
+    \\  return all;
+    \\});
     \\// Elements a script makes are constructed at once when their definition
     \\// exists; clones are upgraded.
     \\hidden(Document.prototype, 'createElement', function (name, options) {

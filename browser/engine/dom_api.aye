@@ -928,6 +928,7 @@ fn nodeCloneNode(it: *mut Interp, a: Args) JsError!Value {
         return domError(it, "NotSupportedError", "Failed to execute 'cloneNode' on 'Node': cloning a document is not supported.")
     }
     let copy = try copyNode(doc, h, it.toBoolean(it.arg(a, 0)))
+    try copyStarted(scriptOf(it), h, copy)
     return wrap(it, copy)
 }
 
@@ -2044,7 +2045,7 @@ fn writeArgs(it: *mut Interp, a: Args, line: bool) JsError!Value {
     if line {
         try b.appendByte('\n')
     }
-    if s.current != null && s.ready == 0 {
+    if s.current != null && s.ready == 0 && s.writes_ignored == 0 {
         try s.written.append(b.bytes())
     }
     return Value.Undefined
