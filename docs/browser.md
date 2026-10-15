@@ -89,7 +89,16 @@ agent sessions load pages through `engine.load` and keep history in a
   excluded, both bot walls; the run of 2026-10-06, before the work
   below, had 8 ✅, 7 ⚠️, 5 ❌ of 20).
 
-The remaining work, in phases and steps, is in [`docs/plan.md`](plan.md).
+The remaining work, in phases and steps, is in
+[`docs/plans/browser.md`](plans/browser.md). Since 2026-10-15 it goes
+foundations first, in three layers: (0) the core architecture (an async
+event loop and networking, an incremental rendering pipeline for the
+window, the threading model; the agent Spaces of B9 alongside), measured
+by interactivity and first-paint criteria and a CI perf gate; (1) the
+components, measured by the standard conformance suites (WPT, test262)
+in a per-area table, `docs/conformance.md`; (2) real sites (the list
+below and the sites the user uses) as the final check rather than the
+driver.
 
 The compiler gaps the browser met, and which of them M9.5/M9.6 fixed,
 are in `browser/COMPILER_GAPS.md`.
