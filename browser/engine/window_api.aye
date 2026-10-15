@@ -1,8 +1,7 @@
 // The natives of the window: the `ak` object that the prelude uses (and
 // deletes from the global object), and `console`.
 //
-// localStorage lives in memory, per origin, for as long as a page of the
-// process is open (`local_store`).
+// Web Storage (`localStorage`, `sessionStorage`) is in storage.aye.
 
 import css
 import dom
@@ -50,7 +49,8 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "reload", 0, akReload)
     try defMethod(it, o, "alert", 2, akAlert)
     try defMethod(it, o, "viewport", 1, akViewport)
-    try defMethod(it, o, "storage", 3, akStorage)
+    try defMethod(it, o, "storage", 4, akStorage)
+    try defMethod(it, o, "setStorageHandler", 1, akSetStorageHandler)
     try defMethod(it, o, "fetch", 1, akFetch)
     try defMethod(it, o, "fetchStart", 5, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
@@ -801,142 +801,4 @@ fn akSetCookie(it: *mut Interp, a: Args) JsError!Value {
 fn setField(it: *mut Interp, o: u32, name: []u8, v: []u8) JsError!void {
     let sv = try it.newString(v)
     try it.defineOwn(o, try it.intern(name), sv, js.F_DEFAULT)
-}
-
-// ---- localStorage
-
-// The items, three strings each (origin, key, value), owned. Not a
-// List of a struct: stage0 allows at most 64 instances of `List` in a
-// program (browser/COMPILER_GAPS.md).
-struct Store {
-    alloc: Allocator
-    items: List([]mut u8)
-}
-
-var local_store: ?*mut Store = null
-var store_users: usize = 0
-
-fn useStorage(alloc: Allocator) {
-    store_users += 1
-}
-
-// The last page closed: the storage goes.
-fn releaseStorage() {
-    if store_users > 0 {
-        store_users -= 1
-    }
-    if store_users > 0 {
-        return
-    }
-    if local_store |st| {
-        for item in st.items.items() {
-            st.alloc.free(item)
-        }
-        st.items.deinit()
-        st.alloc.destroy(st)
-        local_store = null
-    }
-}
-
-// Removes item i (its three strings).
-fn removeItem(st: *mut Store, i: usize) {
-    for k in 0..3 {
-        st.alloc.free(st.items.orderedRemove(i * 3))
-    }
-}
-
-fn storeFor(alloc: Allocator) AllocError!*mut Store {
-    if local_store |st| {
-        return st
-    }
-    let st = try alloc.create(Store { alloc: alloc, items: List([]mut u8).init(alloc) })
-    local_store = st
-    return st
-}
-
-fn ownedCopy(alloc: Allocator, b: []u8) AllocError![]mut u8 {
-    let c = try alloc.alloc(0 as u8, b.len)
-    std.mem.copy(c, b)
-    return c
-}
-
-// storage(op, key, value): 0 getItem, 1 setItem, 2 removeItem, 3 clear,
-// 4 key(index), 5 length; for the page's origin.
-fn akStorage(it: *mut Interp, a: Args) JsError!Value {
-    let s = scriptOf(it)
-    let st = try storeFor(s.alloc)
-    let origin = try it.builder()
-    defer it.release(origin)
-    let u = &s.page.url
-    try origin.append(u.scheme)
-    try origin.append("://")
-    try origin.append(u.host)
-    if u.port.len > 0 {
-        try origin.appendByte(':')
-        try origin.append(u.port)
-    }
-    let op = try it.toNumber(it.arg(a, 0))
-    if op == 3.0 {
-        var i: usize = 0
-        while i * 3 < st.items.len() {
-            if text.eql(st.items.items()[i * 3], origin.bytes()) {
-                removeItem(st, i)
-            } else {
-                i += 1
-            }
-        }
-        return Value.Undefined
-    }
-    let count = st.items.len() / 3
-    if op == 4.0 || op == 5.0 {
-        let want = try it.toNumber(it.arg(a, 1))
-        var n: usize = 0
-        for i in 0..count {
-            if text.eql(st.items.items()[i * 3], origin.bytes()) {
-                if op == 4.0 && n as f64 == want {
-                    return it.newString(st.items.items()[i * 3 + 1])
-                }
-                n += 1
-            }
-        }
-        if op == 5.0 {
-            return js.numVal(n as f64)
-        }
-        return Value.Null
-    }
-    let key = try it.builder()
-    defer it.release(key)
-    try argText(it, a, 1, key)
-    for i in 0..count {
-        let items = st.items.items()
-        if text.eql(items[i * 3], origin.bytes()) && text.eql(items[i * 3 + 1], key.bytes()) {
-            if op == 0.0 {
-                return it.newString(items[i * 3 + 2])
-            }
-            if op == 2.0 {
-                removeItem(st, i)
-                return Value.Undefined
-            }
-            let v = try it.builder()
-            defer it.release(v)
-            try argText(it, a, 2, v)
-            let copy = try ownedCopy(st.alloc, v.bytes())
-            st.alloc.free(st.items.items()[i * 3 + 2])
-            st.items.items()[i * 3 + 2] = copy
-            return Value.Undefined
-        }
-    }
-    if op == 1.0 {
-        let v = try it.builder()
-        defer it.release(v)
-        try argText(it, a, 2, v)
-        try st.items.append(try ownedCopy(st.alloc, origin.bytes()))
-        try st.items.append(try ownedCopy(st.alloc, key.bytes()))
-        try st.items.append(try ownedCopy(st.alloc, v.bytes()))
-        return Value.Undefined
-    }
-    if op == 0.0 {
-        return Value.Null
-    }
-    return Value.Undefined
 }

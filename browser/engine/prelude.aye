@@ -1591,36 +1591,33 @@ pub let PRELUDE =
     \\  getter(G, 'on' + type, function () { return handlerOf(G, type); }, function (v) { setHandler(G, type, v); });
     \\}
     \\
-    \\// localStorage: in memory, per origin, shared by the pages of the process.
+    \\// localStorage (per origin, kept in the profile) and sessionStorage
+    \\// (per tab and origin) are the engine's (storage.aye): ak.storage(op,
+    \\// key, value, session). A change there fires `storage` at the other
+    \\// pages of the origin.
     \\class Storage {
-    \\  constructor(local) { hidden(this, '_local', local); hidden(this, '_items', new Map()); }
-    \\  getItem(k) {
-    \\    k = String(k);
-    \\    if (this._local) return ak.storage(0, k);
-    \\    return this._items.has(k) ? this._items.get(k) : null;
-    \\  }
+    \\  constructor(session) { hidden(this, '_session', session); }
+    \\  getItem(k) { return ak.storage(0, String(k), '', this._session); }
     \\  setItem(k, v) {
-    \\    if (this._local) ak.storage(1, String(k), String(v));
-    \\    else this._items.set(String(k), String(v));
+    \\    if (ak.storage(1, String(k), String(v), this._session) === false) {
+    \\      throw new DOMException("Failed to execute 'setItem' on 'Storage': Setting the value of '" + k + "' exceeded the quota.", 'QuotaExceededError');
+    \\    }
     \\  }
-    \\  removeItem(k) {
-    \\    if (this._local) ak.storage(2, String(k));
-    \\    else this._items.delete(String(k));
-    \\  }
-    \\  clear() {
-    \\    if (this._local) ak.storage(3);
-    \\    else this._items.clear();
-    \\  }
-    \\  key(i) {
-    \\    if (this._local) return ak.storage(4, Number(i));
-    \\    const keys = Array.from(this._items.keys());
-    \\    return i >= 0 && i < keys.length ? keys[i] : null;
-    \\  }
-    \\  get length() { return this._local ? ak.storage(5) : this._items.size; }
+    \\  removeItem(k) { ak.storage(2, String(k), '', this._session); }
+    \\  clear() { ak.storage(3, '', '', this._session); }
+    \\  key(i) { return ak.storage(4, Number(i), '', this._session); }
+    \\  get length() { return ak.storage(5, 0, '', this._session); }
     \\}
+    \\Object.defineProperty(Storage.prototype, Symbol.toStringTag, { value: 'Storage', configurable: true });
     \\hidden(G, 'Storage', Storage);
-    \\hidden(G, 'localStorage', new Storage(true));
-    \\hidden(G, 'sessionStorage', new Storage(false));
+    \\hidden(G, 'localStorage', new Storage(false));
+    \\hidden(G, 'sessionStorage', new Storage(true));
+    \\ak.setStorageHandler(function hostStorage(key, oldValue, newValue, url, session) {
+    \\  const ev = new G.StorageEvent('storage', { key, oldValue, newValue, url, storageArea: session ? G.sessionStorage : G.localStorage });
+    \\  ev.isTrusted = true;
+    \\  dispatch(G, ev);
+    \\});
+    \\getter(G, 'onstorage', function () { return handlerOf(G, 'storage'); }, function (v) { setHandler(G, 'storage', v); });
     \\
     \\// ---- fetch (Promise is the engine's: js/lib.aye)
     \\

@@ -1,0 +1,578 @@
+// Web Storage: `localStorage` and `sessionStorage` (the prelude's
+// Storage class calls `ak.storage`).
+//
+// localStorage is per origin and shared by every page of the process.
+// With a profile directory (net/profile.aye) an origin's items are read
+// from `<profile>/storage/<origin>` the first time a page of the origin
+// touches them, and written back (whole, atomically, mode 0600) at most
+// once a second after a change (`saveStorageIfDue`, from the window's
+// loop), when the last page closes and at exit (`saveStorage`). Without
+// a profile (`dump`, tests, Spaces until P9.7) they live in memory for
+// as long as a page is open. A file holds, for each item in order,
+// "<key bytes> <value bytes>\n", the key, the value and "\n".
+//
+// sessionStorage is per top-level browsing context (contexts.aye: a
+// tab, a popup) and origin, in memory: it survives the tab's
+// navigations and reloads, goes with the tab, and a tab that a page
+// opens (window.open, `target=_blank`, unless `noopener`) starts with a
+// copy of its opener's.
+//
+// Each storage area holds at most 5 MB of keys and values (UTF-8
+// bytes): a setItem past it throws QuotaExceededError. A change fires
+// `storage` at the other pages (and frames) of the origin that share
+// the area: every tab for localStorage, the same tab for sessionStorage.
+
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// The items, three strings each (area, key, value), owned. The area is
+// the origin, or "<context> <origin>" for sessionStorage. Not a List of
+// a struct: stage0 allows at most 64 instances of `List` in a program
+// (browser/COMPILER_GAPS.md).
+struct Store {
+    alloc: Allocator
+    items: List([]mut u8)
+    // localStorage: the origins read from the profile, and those changed
+    // since the last save (owned).
+    loaded: List([]mut u8)
+    dirty: List([]mut u8)
+}
+
+var local_store: ?*mut Store = null
+var session_store: ?*mut Store = null
+var store_users: usize = 0
+// `std.time.monotonicMs` of the last save of localStorage.
+var storage_saved_ms: u64 = 0
+
+let STORAGE_QUOTA: usize = 5242880
+let STORAGE_SAVE_MS: u64 = 1000
+
+fn useStorage(alloc: Allocator) {
+    store_users += 1
+}
+
+// The last page closed: localStorage is saved and leaves memory.
+fn releaseStorage() {
+    if store_users > 0 {
+        store_users -= 1
+    }
+    if store_users > 0 {
+        return
+    }
+    saveStorage()
+    if local_store |st| {
+        local_store = null
+        freeStore(st)
+    }
+}
+
+fn newStore(alloc: Allocator) AllocError!*mut Store {
+    return alloc.create(Store {
+        alloc: alloc,
+        items: List([]mut u8).init(alloc),
+        loaded: List([]mut u8).init(alloc),
+        dirty: List([]mut u8).init(alloc),
+    })
+}
+
+fn freeStore(st: *mut Store) {
+    for s in st.items.items() {
+        st.alloc.free(s)
+    }
+    for s in st.loaded.items() {
+        st.alloc.free(s)
+    }
+    for s in st.dirty.items() {
+        st.alloc.free(s)
+    }
+    st.items.deinit()
+    st.loaded.deinit()
+    st.dirty.deinit()
+    st.alloc.destroy(st)
+}
+
+fn ownedCopy(alloc: Allocator, b: []u8) AllocError![]mut u8 {
+    let c = try alloc.alloc(0 as u8, b.len)
+    std.mem.copy(c, b)
+    return c
+}
+
+fn hasString(l: *List([]mut u8), s: []u8) bool {
+    for x in l.items() {
+        if text.eql(x, s) {
+            return true
+        }
+    }
+    return false
+}
+
+// Removes item i (its three strings).
+fn removeStoreItem(st: *mut Store, i: usize) {
+    for k in 0..3 {
+        st.alloc.free(st.items.orderedRemove(i * 3))
+    }
+}
+
+fn appendItem(st: *mut Store, area: []u8, key: []u8, value: []u8) AllocError!void {
+    try st.items.append(try ownedCopy(st.alloc, area))
+    try st.items.append(try ownedCopy(st.alloc, key))
+    try st.items.append(try ownedCopy(st.alloc, value))
+}
+
+// The item of `area` with `key`; its index (of three strings).
+fn findItem(st: *mut Store, area: []u8, key: []u8) ?usize {
+    let items = st.items.items()
+    for i in 0..items.len / 3 {
+        if text.eql(items[i * 3], area) && text.eql(items[i * 3 + 1], key) {
+            return i
+        }
+    }
+    return null
+}
+
+// Bytes of the keys and values of `area`.
+fn areaBytes(st: *mut Store, area: []u8) usize {
+    var n: usize = 0
+    let items = st.items.items()
+    for i in 0..items.len / 3 {
+        if text.eql(items[i * 3], area) {
+            n += items[i * 3 + 1].len + items[i * 3 + 2].len
+        }
+    }
+    return n
+}
+
+// ---- the profile's files
+
+// `<profile>/storage/<origin>` with the origin's bytes other than
+// letters, digits, '.' and '-' written as _XX (free with `alloc.free`).
+fn storagePath(alloc: Allocator, dir: []u8, origin: []u8) AllocError![]mut u8 {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append(dir)
+    try b.append("/storage/")
+    let hex = "0123456789abcdef"
+    for c in origin {
+        if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' {
+            try b.appendByte(c)
+        } else {
+            try b.appendByte('_')
+            try b.appendByte(hex[(c >> 4) as usize])
+            try b.appendByte(hex[(c & 15) as usize])
+        }
+    }
+    return ownedCopy(alloc, b.bytes())
+}
+
+// Reads the items of `origin` from the profile, once.
+fn loadOrigin(st: *mut Store, origin: []u8) AllocError!void {
+    if hasString(&st.loaded, origin) {
+        return
+    }
+    try st.loaded.append(try ownedCopy(st.alloc, origin))
+    let dir = net.profileDir()
+    if dir.len == 0 {
+        return
+    }
+    let path = try storagePath(st.alloc, dir, origin)
+    defer st.alloc.free(path)
+    if !std.fs.exists(path) {
+        return
+    }
+    let saved = std.fs.readFile(st.alloc, path) catch |e| {
+        return
+    }
+    defer st.alloc.free(saved)
+    try parseItems(st, origin, saved)
+}
+
+// Appends the items of a file of `origin`; stops at anything malformed.
+fn parseItems(st: *mut Store, origin: []u8, bytes: []u8) AllocError!void {
+    var i: usize = 0
+    while i < bytes.len {
+        let sp = i + (std.mem.indexOf(bytes[i..], ' ') orelse return)
+        let nl = sp + (std.mem.indexOf(bytes[sp..], '\n') orelse return)
+        let klen = text.parseInt(bytes[i..sp]) catch |e| {
+            return
+        }
+        let vlen = text.parseInt(bytes[sp + 1..nl]) catch |e| {
+            return
+        }
+        if klen < 0 || vlen < 0 || (bytes.len - nl - 1) as i64 <= klen + vlen {
+            return
+        }
+        let ks = nl + 1
+        let vs = ks + klen as usize
+        let end = vs + vlen as usize
+        if findItem(st, origin, bytes[ks..vs]) == null {
+            try appendItem(st, origin, bytes[ks..vs], bytes[vs..end])
+        }
+        i = end + 1
+    }
+}
+
+fn markDirty(st: *mut Store, origin: []u8) AllocError!void {
+    if net.profileDir().len == 0 || hasString(&st.dirty, origin) {
+        return
+    }
+    try st.dirty.append(try ownedCopy(st.alloc, origin))
+}
+
+/// Milliseconds until changed localStorage is due to be saved
+/// (`saveStorageIfDue`), or null when nothing waits.
+pub fn msUntilStorageSave() ?i64 {
+    let st = local_store orelse return null
+    if st.dirty.len() == 0 || !net.profileWritable() {
+        return null
+    }
+    let since = std.time.monotonicMs() - storage_saved_ms
+    if since >= STORAGE_SAVE_MS {
+        return 0
+    }
+    return (STORAGE_SAVE_MS - since) as i64
+}
+
+/// Saves localStorage if it changed and the last save is a second ago.
+pub fn saveStorageIfDue() {
+    if msUntilStorageSave() |ms| {
+        if ms == 0 {
+            saveStorage()
+        }
+    }
+}
+
+/// Writes the changed origins of localStorage to the profile (at exit,
+/// and when the last page closes).
+pub fn saveStorage() {
+    let st = local_store orelse return
+    if st.dirty.len() == 0 || !net.profileWritable() {
+        return
+    }
+    storage_saved_ms = std.time.monotonicMs()
+    saveDirty(st) catch |e| {
+    }
+}
+
+fn saveDirty(st: *mut Store) AllocError!void {
+    let dir = net.profileDir()
+    let sub = try net.joinPath(st.alloc, dir, "storage")
+    defer st.alloc.free(sub)
+    if !(try net.makeDir(st.alloc, sub)) {
+        return
+    }
+    while st.dirty.len() > 0 {
+        let origin = st.dirty.items()[st.dirty.len() - 1]
+        var b = text.Builder.init(st.alloc)
+        defer b.deinit()
+        let items = st.items.items()
+        for i in 0..items.len / 3 {
+            if text.eql(items[i * 3], origin) {
+                try b.appendInt(items[i * 3 + 1].len as i64)
+                try b.appendByte(' ')
+                try b.appendInt(items[i * 3 + 2].len as i64)
+                try b.appendByte('\n')
+                try b.append(items[i * 3 + 1])
+                try b.append(items[i * 3 + 2])
+                try b.appendByte('\n')
+            }
+        }
+        let path = try storagePath(st.alloc, dir, origin)
+        defer st.alloc.free(path)
+        if b.bytes().len == 0 {
+            std.fs.remove(path) catch |e| {
+            }
+        } else if !(try net.writeAtomic(st.alloc, path, b.bytes())) {
+            return
+        }
+        st.alloc.free(st.dirty.orderedRemove(st.dirty.len() - 1))
+    }
+}
+
+// ---- sessionStorage and browsing contexts
+
+// The area prefix of context `id`: "<id> ".
+fn contextPrefix(b: *mut text.Builder, id: u32) AllocError!void {
+    try b.appendInt(id as i64)
+    try b.appendByte(' ')
+}
+
+/// Context `id` closed: its sessionStorage goes (contexts.aye).
+fn dropSessionStorage(id: u32) {
+    let st = session_store orelse return
+    var b = text.Builder.init(st.alloc)
+    defer b.deinit()
+    contextPrefix(&mut b, id) catch |e| {
+        return
+    }
+    var i: usize = 0
+    while i * 3 < st.items.len() {
+        if text.startsWith(st.items.items()[i * 3], b.bytes()) {
+            removeStoreItem(st, i)
+        } else {
+            i += 1
+        }
+    }
+    if st.items.len() == 0 {
+        session_store = null
+        freeStore(st)
+    }
+}
+
+/// Context `to`, opened by a page of context `from`, starts with a copy
+/// of `from`'s sessionStorage (contexts.aye).
+fn copySessionStorage(from: u32, to: u32) AllocError!void {
+    let st = session_store orelse return
+    var src = text.Builder.init(st.alloc)
+    defer src.deinit()
+    try contextPrefix(&mut src, from)
+    var area = text.Builder.init(st.alloc)
+    defer area.deinit()
+    let n = st.items.len() / 3
+    for i in 0..n {
+        let a = st.items.items()[i * 3]
+        if text.startsWith(a, src.bytes()) {
+            area.clear()
+            try contextPrefix(&mut area, to)
+            try area.append(a[src.bytes().len..])
+            try appendItem(st, area.bytes(), st.items.items()[i * 3 + 1], st.items.items()[i * 3 + 2])
+        }
+    }
+}
+
+// ---- the natives
+
+// The origin of page `p` as the storage key: scheme://host[:port] of
+// the page whose origin it has (an about:blank frame its parent's).
+fn appendStorageOrigin(b: *mut text.Builder, p: *mut Page) AllocError!void {
+    let u = &originPage(p).url
+    try b.append(u.scheme)
+    try b.append("://")
+    try b.append(u.host)
+    if u.port.len > 0 {
+        try b.appendByte(':')
+        try b.append(u.port)
+    }
+}
+
+fn storeOf(alloc: Allocator, session: bool) AllocError!*mut Store {
+    if session {
+        if session_store |st| {
+            return st
+        }
+        let st = try newStore(alloc)
+        session_store = st
+        return st
+    }
+    if local_store |st| {
+        return st
+    }
+    let st = try newStore(alloc)
+    local_store = st
+    return st
+}
+
+// storage(op, key, value, session): 0 getItem, 1 setItem (false when the
+// area would exceed its quota), 2 removeItem, 3 clear, 4 key(index),
+// 5 length; for the page's origin, of sessionStorage when `session`.
+fn akStorage(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let session = it.toBoolean(it.arg(a, 3))
+    let area = try it.builder()
+    defer it.release(area)
+    var ctx: u32 = 0
+    if session {
+        ctx = contextOfPage(s.page)
+        try contextPrefix(area, ctx)
+    }
+    try appendStorageOrigin(area, s.page)
+    let st = try storeOf(s.alloc, session)
+    if !session {
+        try loadOrigin(st, area.bytes())
+    }
+    let op = try it.toNumber(it.arg(a, 0))
+    if op == 3.0 {
+        var i: usize = 0
+        var cleared = false
+        while i * 3 < st.items.len() {
+            if text.eql(st.items.items()[i * 3], area.bytes()) {
+                removeStoreItem(st, i)
+                cleared = true
+            } else {
+                i += 1
+            }
+        }
+        if cleared {
+            if !session {
+                try markDirty(st, area.bytes())
+            }
+            try storageChanged(s, ctx, session, null, null, null)
+        }
+        return Value.Undefined
+    }
+    if op == 4.0 || op == 5.0 {
+        let want = try it.toNumber(it.arg(a, 1))
+        var n: usize = 0
+        let items = st.items.items()
+        for i in 0..items.len / 3 {
+            if text.eql(items[i * 3], area.bytes()) {
+                if op == 4.0 && n as f64 == want {
+                    return it.newString(items[i * 3 + 1])
+                }
+                n += 1
+            }
+        }
+        if op == 5.0 {
+            return js.numVal(n as f64)
+        }
+        return Value.Null
+    }
+    let key = try it.builder()
+    defer it.release(key)
+    try argText(it, a, 1, key)
+    let found = findItem(st, area.bytes(), key.bytes())
+    if op == 0.0 {
+        if found |i| {
+            return it.newString(st.items.items()[i * 3 + 2])
+        }
+        return Value.Null
+    }
+    if op == 2.0 {
+        let i = found orelse return Value.Undefined
+        let old = try it.builder()
+        defer it.release(old)
+        try old.append(st.items.items()[i * 3 + 2])
+        removeStoreItem(st, i)
+        if !session {
+            try markDirty(st, area.bytes())
+        }
+        try storageChanged(s, ctx, session, key.bytes(), old.bytes(), null)
+        return Value.Undefined
+    }
+    if op != 1.0 {
+        return Value.Undefined
+    }
+    let v = try it.builder()
+    defer it.release(v)
+    try argText(it, a, 2, v)
+    var used = areaBytes(st, area.bytes()) + key.bytes().len + v.bytes().len
+    if found |i| {
+        if text.eql(st.items.items()[i * 3 + 2], v.bytes()) {
+            return Value.Undefined
+        }
+        used -= key.bytes().len + st.items.items()[i * 3 + 2].len
+    }
+    if used > STORAGE_QUOTA {
+        // The prelude throws QuotaExceededError.
+        return js.boolVal(false)
+    }
+    let old = try it.builder()
+    defer it.release(old)
+    if found |i| {
+        try old.append(st.items.items()[i * 3 + 2])
+        let copy = try ownedCopy(st.alloc, v.bytes())
+        st.alloc.free(st.items.items()[i * 3 + 2])
+        st.items.items()[i * 3 + 2] = copy
+    } else {
+        try appendItem(st, area.bytes(), key.bytes(), v.bytes())
+    }
+    if !session {
+        try markDirty(st, area.bytes())
+    }
+    var was: ?[]u8 = null
+    if found != null {
+        was = old.bytes()
+    }
+    try storageChanged(s, ctx, session, key.bytes(), was, v.bytes())
+    return Value.Undefined
+}
+
+fn akSetStorageHandler(it: *mut Interp, a: Args) JsError!Value {
+    let f = try js.callableArg(it, a, 0)
+    scriptOf(it).on_storage = try it.addRoot(f)
+    return Value.Undefined
+}
+
+// A storage area of `s`'s page changed: a `storage` task at every other
+// page of the origin that shares it (in context `ctx` only for
+// sessionStorage). `key` null: clear().
+fn storageChanged(s: *mut Script, ctx: u32, session: bool, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
+    let t = bc_table orelse return
+    for c in t.items.items() {
+        if session && c.id != ctx {
+            continue
+        }
+        if c.page |p| {
+            try storageTo(s, p, session, key, old, new)
+        }
+    }
+}
+
+fn storageTo(s: *mut Script, p: *mut Page, session: bool, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
+    if p != s.page && !p.opaque && sameOrigin(s.page, p) {
+        if p.script |ts| {
+            if ts.on_storage != js.NONE {
+                try queueStorage(ts, s.page.url.href, session, key, old, new)
+            }
+        }
+    }
+    for f in p.frames.items() {
+        try storageTo(s, f.page, session, key, old, new)
+    }
+}
+
+// A task of `ts`'s page: the prelude's hostStorage(key, oldValue,
+// newValue, url, session). The strings must not be in `ts`'s heap.
+fn queueStorage(ts: *mut Script, href: []u8, session: bool, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
+    let it = &mut ts.it
+    let base = it.stack.len()
+    defer it.truncate(base)
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, it.roots.items()[ts.on_storage])
+    try pushOptString(it, arr, key)
+    try pushOptString(it, arr, old)
+    try pushOptString(it, arr, new)
+    let u = try it.newString(href)
+    try it.heap.pushElem(arr, u)
+    try it.heap.pushElem(arr, js.boolVal(session))
+    let root = try it.addRoot(js.objVal(arr))
+    tick(ts)
+    let id = ts.next_timer
+    ts.next_timer += 1
+    try ts.timers.append(Timer { id: id, due: ts.now, interval: 0.0, repeat: false, raf: false, root: root, seq: ts.seq })
+    ts.seq += 1
+}
+
+fn pushOptString(it: *mut Interp, arr: u32, s: ?[]u8) JsError!void {
+    if s |bytes| {
+        let v = try it.newString(bytes)
+        try it.heap.pushElem(arr, v)
+    } else {
+        try it.heap.pushElem(arr, Value.Null)
+    }
+}
+
+test "storage: file names and the item format" {
+    let alloc = @testAllocator()
+    let path = try storagePath(alloc, "/p", "http://127.0.0.1:8000")
+    defer alloc.free(path)
+    @expectEqual("/p/storage/http_3a_2f_2f127.0.0.1_3a8000", path)
+    let st = try newStore(alloc)
+    defer freeStore(st)
+    try parseItems(st, "o", "5 3\ntokenabc\n0 2\n\na\n\n3 1\nbad")
+    @expectEqual(6, st.items.len())
+    @expectEqual("token", st.items.items()[1])
+    @expectEqual("abc", st.items.items()[2])
+    @expectEqual("", st.items.items()[4])
+    @expectEqual("\na", st.items.items()[5])
+    @expectEqual(10, areaBytes(st, "o"))
+}
