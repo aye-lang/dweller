@@ -1,0 +1,73 @@
+<!doctype html>
+<title>XHR events</title>
+<pre id="out"></pre>
+<script>
+// The order of an asynchronous XMLHttpRequest's events (the XHR
+// standard, as Chrome fires them) and fetch() aborted in flight, through
+// the test server (tests/browser.rs: xhr_events). The requests run one
+// after the other.
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const TYPES = ['readystatechange', 'loadstart', 'progress', 'load', 'error', 'abort', 'loadend'];
+// An XHR that logs each of its events as "NAME: type readyState", with
+// whether a ProgressEvent counted bytes; resolves at loadend.
+function traced(name, method, url) {
+  const x = new XMLHttpRequest();
+  const ended = new Promise(resolve => {
+    for (const t of TYPES) {
+      x.addEventListener(t, e => {
+        log(name + ': ' + t + ' ' + x.readyState + (e instanceof ProgressEvent ? ' bytes=' + (e.loaded > 0) : ''));
+        if (t === 'loadend') resolve(x);
+      });
+    }
+  });
+  x.open(method, url);
+  return [x, ended];
+}
+(async () => {
+  let [x, ended] = traced('get', 'GET', '/fetch-echo?a');
+  x.send();
+  log('get: after send ' + x.readyState);
+  await ended;
+  log('get: status ' + x.status + ' ' + JSON.parse(x.responseText).path);
+
+  [x, ended] = traced('refused', 'GET', 'http://127.0.0.1:1/');
+  x.send();
+  log('refused: after send ' + x.readyState);
+  await ended;
+  log('refused: status ' + x.status);
+
+  [x, ended] = traced('aborted', 'GET', '/slow/aborted.txt');
+  x.send();
+  x.abort();
+  log('aborted: after abort ' + x.readyState);
+  await new Promise(r => setTimeout(r, 600));
+  log('aborted: nothing after abort');
+
+  // open() again while a request runs drops it.
+  [x, ended] = traced('reopened', 'GET', '/slow/first.txt');
+  x.send();
+  x.open('GET', '/fetch-echo?second');
+  x.send();
+  await ended;
+  log('reopened: ' + JSON.parse(x.responseText).path);
+
+  const sync = new XMLHttpRequest();
+  sync.open('POST', '/fetch-echo?sync', false);
+  sync.send('body');
+  log('sync: done before send returned ' + sync.readyState + ' ' + JSON.parse(sync.responseText).body);
+
+  const order = [];
+  const p = fetch('/fetch-echo?order').then(r => r.json()).then(j => order.push('fetch ' + j.path));
+  Promise.resolve().then(() => order.push('microtask'));
+  order.push('sync');
+  await p;
+  log('fetch: ' + order.join(', '));
+
+  const c = new AbortController();
+  const aborted = fetch('/slow/fetch.txt', { signal: c.signal }).then(() => 'resolved', e => e.name);
+  c.abort();
+  log('fetch aborted: ' + await aborted);
+  log('done');
+})();
+</script>

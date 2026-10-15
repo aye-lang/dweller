@@ -99,8 +99,9 @@ site. Spaces (P9) are the one place with more than one process.
   "Window") measured 10 live sites against Chrome. Longest loop up to
   5440 ms (YouTube), scroll p95 up to 750 ms, idle CPU 101% on Mistral,
   first paint 1.7–15.8 s against Chrome's 0.3–2.0 s. Five root causes;
-  cards P4.32–P4.37. P4.31 (macOS wheel and trackpad) is done; P4.32
-  is in progress.
+  cards P4.32–P4.37. P4.31 (macOS wheel and trackpad) and P4.32 (page
+  fetch/XHR in the background) are done; dynamic script loads, left
+  synchronous by P4.32, are P4.43.
 - Sites: `page_load.py check` passes on the recorded archives; W3 is 7
   of 20 (P3.65 and P3.73b done). The open visual defects are re-filed
   below under their Layer 1 area or Layer 2.
@@ -121,7 +122,7 @@ site. Spaces (P9) are the one place with more than one process.
 | – | P0, P1, PW | one clean `main`; "done" checked by a command; wrap-up | – | done |
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing |
-| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32 running |
+| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32 done; P4.43 and P4.33 next |
 | 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | parallel track; P9.1–P9.4 done, P9.5 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | next: harness P10.1–P10.4, parallel with P4 |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | final check after P4 and P10 |
@@ -137,7 +138,8 @@ may run beside P4 cards; two cards never edit the same files at once.
 
 | # | Card | Layer | One line |
 |---|---|---|---|
-| 1 | P4.32 | 0 | page `fetch()`/XHR and dynamic scripts complete as tasks; the window thread never waits on the network (running) |
+| 1 | P4.32 | 0 | page `fetch()`/XHR complete as tasks; the window thread never waits on them (done) |
+| 1b | P4.43 | 0 | dynamic script loads (inserted `<script src>`, webpack chunks) load in the background and run as tasks |
 | 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources |
 | 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle |
 | 4 | P4.40 | 0 | CI perf gate: synthetic heavy pages on the test server, budgets, a `perf` job |
@@ -174,7 +176,12 @@ them from coming back.
 - files: `browser/net/loader.aye`, `browser/net/multi.aye`, `browser/engine/script.aye`, `browser/engine/prelude.aye` (XHR), `browser/ui/window.aye` (`Ui.loop`)
 - chromium: `services/network/README.md`, `net/docs/life-of-a-url-request.md`, `third_party/blink/renderer/platform/scheduler/TaskSchedulingInBlink.md`. Take: a request's completion is a task posted to the main thread's queue; the main thread never blocks on a socket. Dweller has no network process: libcurl multi, polled by the loop, plays that part.
 - verify: `python3 browser/tools/window_perf.py scroll https://github.com/aye-lang/aye --binary target/dweller` longest loop < 100 ms (was 2898); YouTube < 100 ms (was 5440); `cargo test --release --test browser -- net_http fetch_methods xhr_methods window_scripts > target/p4.32.log 2>&1; echo $?` → 0
-- status: in progress (2026-10-15)
+- status: done 2026-10-15 for page `fetch()` and asynchronous XHR; dynamic script loads moved to P4.43. A script's request is a load of its own on the loader's multi handle (`net.startRequest`: any method, headers, body, redirects as `transfer`), settled by a networking task (script.aye's load timers: polled by the loop on the window's clock; due at once and waiting for the request on the virtual clock, so `dump` stays deterministic); other schemes, replays and no session answer at once. `fetch()` settles in that task and its signal aborts it; async XHR fires loadstart, readystatechange 2/3, progress, readystatechange 4, load, loadend; `abort()`/`open()` drop a request in flight; sync XHR still blocks. `window_perf.py scroll` longest loop: YouTube 3061–6749 → 588–771 ms (idle 3575 → 119), GitHub 1763–2467 → 1912–2061 (what is left is relayout, cause 2, and 92 synchronous chunk loads, 0.8 s: P4.43); no loop waits for a page fetch/XHR (`PERF.md` "P4.32"). The < 100 ms targets need P4.34 and P4.43 (GitHub) and P4.33 (YouTube's relayout prefetch). Page Markdown of every archived site unchanged. Tests `xhr_events`, `window_fetch_in_background` (1.5 s fetch while typing and scrolling: longest loop < 100 ms); `bg_images` log: the second script's fetch settles after the load event on the virtual clock. Async request records are `background_requests` (start to end), so `requests` are the synchronous ones.
+
+#### P4.43: dynamic script loads in the background
+- goal: a `<script src>` that a script inserts (webpack chunks, `import()`) loads on the loader's multi handle and runs as a task once it arrived, in the order the HTML standard gives (async by default; `async=false` ones in insertion order), instead of a synchronous request on the window thread. Left by P4.32: GitHub's first loop after the load waits 0.8 s for 92 `chunk-lazy-*.js` requests, one by one.
+- files: `browser/engine/script.aye`, `browser/engine/sources.aye`, `browser/net/loader.aye`
+- verify: `window_perf.py scroll https://github.com/aye-lang/aye`: no synchronous `requests` record for a script inside a `ui_loop`; `page_load.py check` exit 0 with every site's Markdown unchanged; `cargo test --release --test browser -- window_scripts jsdom_fixtures > target/p4.43.log 2>&1; echo $?` → 0
 
 #### P4.33: progressive first paint
 - goal: the window draws as soon as the document is parsed and its render-blocking sheets (in `<head>`, media matching) are in, before scripts at the end of the body, async/defer scripts and images finish; images fill in as they decode. The first navigation runs inside `Ui.loop`, so the window takes input while the page loads. One prefetch batch for every sheet, script and image the document names (a scan of the markup ahead of the parser), not one batch per kind (cause 1).

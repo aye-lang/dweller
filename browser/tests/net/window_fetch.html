@@ -1,0 +1,40 @@
+<!doctype html><title>Fetch in the background</title>
+<input id="f">
+<pre id="log"></pre>
+<div style="height:3000px">A tall page to scroll.</div>
+<script>
+// A slow fetch (the server answers after 1.5 s) and an XHR start in the
+// window's event loop while scripted input types into the field and
+// scrolls (tests/browser.rs: window_fetch_in_background): the input is
+// handled while the fetch waits, and the fetch resolves afterwards.
+const f = document.getElementById('f');
+const lines = [];
+function note(s) {
+  lines.push(s);
+  document.getElementById('log').textContent = lines.join('\n');
+}
+let pending = false, typed = false, scrolled = false;
+f.focus();
+f.addEventListener('input', () => {
+  if (typed) return;
+  typed = true;
+  note('input while the fetch waits: ' + pending);
+});
+addEventListener('scroll', () => {
+  if (scrolled) return;
+  scrolled = true;
+  note('scroll while the fetch waits: ' + pending);
+});
+setTimeout(() => {
+  pending = true;
+  fetch('/sleep?ms=1500').then(r => r.text()).then(t => {
+    pending = false;
+    note('fetched: ' + /slept 1500 ms/.test(t) + ', field ' + f.value + ', scrolled ' + (scrollY > 0));
+  });
+  const x = new XMLHttpRequest();
+  x.open('GET', '/slow/window.txt');
+  x.onload = () => note('xhr: ' + x.status + ' ' + x.responseText.trim().length + ' bytes while the fetch waits: ' + pending);
+  x.send();
+  note('requests sent');
+}, 0);
+</script>
