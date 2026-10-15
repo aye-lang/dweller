@@ -322,6 +322,10 @@ pub struct Page {
             if self.script |s| {
                 if self.doc.shadows.len() == 0 {
                     try adoptLayout(s, st, self.tree.?)
+                    // Laid out with the images as they are.
+                    if self.images |imgs| {
+                        imgs.nodes.takeChanged().clear()
+                    }
                 }
             }
             try layoutFrames(self, measure)
@@ -368,7 +372,7 @@ pub struct Page {
         if self.images |imgs| {
             if imgs.nodes.changes != changes {
                 // New bitmaps change sizes, not styles.
-                s.layout_version += 1
+                try noteImageChanges(s, &mut imgs.nodes)
                 g = try geometry(s)
                 if !g.shared {
                     return false

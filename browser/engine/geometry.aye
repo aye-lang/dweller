@@ -289,6 +289,25 @@ fn noteStateChange(s: *mut Script, el: NodeId) AllocError!void {
     return noteLayoutChange(s, el, css.STATE_CHANGED)
 }
 
+/// The images of elements changed (a new bitmap: a new natural size):
+/// their boxes are laid out again, or the whole document's when an
+/// image of the style sheets or too many changed (`layout.Images`).
+fn noteImageChanges(s: *mut Script, images: *mut layout.Images) AllocError!void {
+    let any = images.any_changed
+    let els = images.takeChanged()
+    defer els.clear()
+    if any {
+        s.layout_version += 1
+        return
+    }
+    let doc = &s.page.doc
+    for el in els.items() {
+        if doc.isLive(el) {
+            try noteLayoutChange(s, el, css.CHILDREN_CHANGED)
+        }
+    }
+}
+
 /// A change to the document that may change the style of any element
 /// (style sheets, document.write, form state).
 fn noteLayoutChangeAnywhere(s: *mut Script) {
@@ -358,10 +377,12 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
         }
         if fresh && local && !kept {
             s.paint_whole = true
+            let dirty_began = perf.start()
             kept = relayoutDirty(s, g, dirty.items()) catch |e| {
                 dropGeometry(s)
                 return e
             }
+            perf.end("layout_dirty", dirty_began, p.url.href)
         }
         if kept {
             kept = settleContainers(s, g, st) catch |e| {
@@ -393,7 +414,9 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
                 g.deps.deinit()
                 s.alloc.destroy(g)
             }
+            let full_began = perf.start()
             let laid = try layOut(s, g.styles)
+            perf.end("layout_full", full_began, p.url.href)
             g.tree = laid.tree
             g.first = laid.first
             g.next = laid.next
@@ -434,7 +457,9 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
         quirks = &styles.quirks
     }
     try deps.build(&st.author, &st.ua, quirks)
+    let full_began = perf.start()
     var laid = try layOut(s, styles)
+    perf.end("layout_full", full_began, p.url.href)
     let g = s.alloc.create(Geometry { tree: laid.tree, styles: styles, first: laid.first, next: laid.next, version: version, width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, floats: laid.floats, built: laid.tree.boxes.len() }) catch |e| {
         laid.tree.deinit()
         s.alloc.destroy(laid.tree)
@@ -911,6 +936,11 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     let t = g.tree
     if g.floats || (g.styles.queried && !g.shared) || doc.shadows.len() > 0 || t.boxes.len() > 2 * g.built + 1024 {
         return false
+    }
+    // The page's images, made since the tree was laid out (a bitmap that
+    // arrived after the first layout).
+    if s.page.images |imgs| {
+        t.images = &imgs.nodes
     }
     var roots = List(usize).init(s.alloc)
     defer roots.deinit()

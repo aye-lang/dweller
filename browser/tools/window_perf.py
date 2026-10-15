@@ -11,7 +11,8 @@
         after the first frame, and what the loop did meanwhile.
 
 Both read the DWELLER_TIMING records (`ui_navigate`, `ui_first_paint`,
-`ui_relayout`, `ui_draw`, `ui_events`, `ui_timers`, `ui_loop`); --log
+`ui_relayout`, `ui_draw`, `ui_events`, `ui_timers`, `ui_loop`, and
+`layout_full`/`layout` vs `layout_dirty`); --log
 keeps them.
 """
 import argparse
@@ -94,8 +95,12 @@ def idle(a):
 
     def cpu():
         s = subprocess.run(["ps", "-o", "time=", "-p", str(p.pid)], capture_output=True, text=True).stdout.strip()
-        m, sec = s.split(":")
-        return int(m) * 60 + float(sec)
+        # [[DD-]HH:]MM:SS (procps) or MM:SS.ss (macOS).
+        days, _, s = s.rpartition("-")
+        t = 0.0
+        for part in s.split(":"):
+            t = t * 60 + float(part)
+        return t + int(days or 0) * 86400
 
     try:
         drawn = None
@@ -124,6 +129,10 @@ def idle(a):
         "idle_cpu_pct": round(100 * (c1 - c0) / (w1 - w0), 1),
         "iterations": len(loops),
         "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),
+        # The layouts scripts and relayouts did: of the whole document,
+        # or of the boxes of the elements that changed (P4.57).
+        "full_layouts": sum(1 for k, _, _ in recs if k in ("layout_full", "layout")),
+        "dirty_layouts": sum(1 for k, _, _ in recs if k == "layout_dirty"),
         "draws": sum(1 for k, _, _ in recs if k == "ui_draw"),
         "longest_loop_ms": round(max(loops, default=0)),
     }))

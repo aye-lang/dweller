@@ -54,10 +54,14 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
     let mapped = cache.nodes.get(h)
     let loaded = try loadElementImage(cache, &p.doc, h, &base, css.Media { width: s.width, height: s.height }, ImageFetch.Background, waited)
     // A new bitmap changes the element's natural size: the next geometry
-    // query must lay out again though the document did not change (its
-    // styles stay), and so must the page.
+    // query must lay out its boxes again though the document did not
+    // change (its styles stay), and so must the page.
     if cache.nodes.get(h) != mapped {
-        s.layout_version += 1
+        if p == s.page {
+            try noteImageChanges(s, &mut cache.nodes)
+        } else {
+            s.layout_version += 1
+        }
         s.image_version += 1
     }
     defer {

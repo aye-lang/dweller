@@ -34,12 +34,13 @@ pub fn hasFloats(t: *Tree) bool {
     return false
 }
 
-// Is box `i` in block flow: a block box whose size does not depend on
-// the widths of its content (not shrink-to-fit, not a flex, grid or
-// table item), and not in the flow of a line clamp?
+// Is box `i` in block flow: a block box (or a block-level flex or grid
+// container) whose size does not depend on the widths of its content
+// (not shrink-to-fit, not a flex, grid or table item), and not in the
+// flow of a line clamp?
 fn inBlockFlow(t: *Tree, i: usize) bool {
     let b = t.bx(i)
-    if (b.kind != BoxKind.Block && b.kind != BoxKind.Anonymous) || b.inline_level || b.oof() || lineClamp(t, i) > 0 || isFrameset(t, i) {
+    if !blockLevelKind(b.kind) || b.inline_level || b.oof() || lineClamp(t, i) > 0 || isFrameset(t, i) {
         return false
     }
     if b.parent |p| {
@@ -47,6 +48,12 @@ fn inBlockFlow(t: *Tree, i: usize) bool {
         return pk == BoxKind.Block || pk == BoxKind.Anonymous
     }
     return true
+}
+
+// The kinds of box that block flow lays out as a block: their children
+// may be laid out otherwise (a flex container's items).
+fn blockLevelKind(k: BoxKind) bool {
+    return k == BoxKind.Block || k == BoxKind.Anonymous || k == BoxKind.Flex || k == BoxKind.Grid
 }
 
 // Are box `i` and the boxes above it all in block flow?
@@ -96,19 +103,19 @@ fn forgetBoxes(t: *mut Tree, i: usize, out: *mut List(NodeId)) AllocError!void {
 }
 
 /// Can the boxes under box `i` be built again (`rebuild`) and laid out
-/// again (`relayout`)? A block box of an element, in block flow up to
-/// the root, that its computed values keep as it is (not a list item,
+/// again (`relayout`)? A block box, or a block-level flex or grid
+/// container, of an element, in block flow up to the root, that its computed values keep as it is (not a list item,
 /// control or `details`, not out of flow).
 pub fn canRebuild(t: *Tree, i: usize) bool {
     let el = t.bx(i).node orelse return false
-    if t.bx(i).pseudo != 0 || t.bx(i).kind != BoxKind.Block || t.doc.node(el).kind != Kind.Element || !blockFlowUp(t, i) {
+    if t.bx(i).pseudo != 0 || !rebuildKind(t.bx(i).kind) || t.doc.node(el).kind != Kind.Element || !blockFlowUp(t, i) {
         return false
     }
     let style = t.styles.get(el) orelse return false
     let display = keywordOf(style[css.DISPLAY])
     let name = t.doc.node(el).name
     let k = kindOf(name, display) orelse return false
-    if k.kind != BoxKind.Block || k.inline_level || text.eql(display, "list-item") || text.eql(name, "details") || text.eql(name, "frameset") {
+    if !rebuildKind(k.kind) || k.inline_level || text.eql(display, "list-item") || text.eql(name, "details") || text.eql(name, "frameset") {
         return false
     }
     if isReplacedInput(t.doc, el) || controlKind(t.doc, el) != ControlKind.None {
@@ -119,6 +126,12 @@ pub fn canRebuild(t: *Tree, i: usize) bool {
         return false
     }
     return allStyled(t, el)
+}
+
+// A block box, or a flex or grid container (whose items its own layout
+// places).
+fn rebuildKind(k: BoxKind) bool {
+    return k == BoxKind.Block || k == BoxKind.Flex || k == BoxKind.Grid
 }
 
 /// Builds the boxes under box `i` (`canRebuild`) again from its element's

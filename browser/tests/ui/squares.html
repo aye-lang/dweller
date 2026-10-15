@@ -1,0 +1,48 @@
+<!doctype html>
+<title>squares</title>
+<style>
+body { margin: 0; font: 14px sans-serif }
+header { display: flex; gap: 8px; align-items: center; padding: 8px }
+header img { width: 24px; height: 24px }
+.grid { display: grid; grid-template-columns: repeat(3, 120px); gap: 6px; padding: 8px }
+.cell { display: flex; height: 30px; background: #eee }
+.js-square { width: 10px; height: 30px; background: #f60 }
+.hero { height: 60px; background: url(../image/png_pil_rgb.png) }
+</style>
+<header><img src="../image/png_pil_rgb.png" alt="logo"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='red'/%3E%3C/svg%3E" alt="icon"><span>squares</span></header>
+<div class="hero"></div>
+<div class="grid">
+<div class="cell"><div class="js-square"></div></div>
+<div class="cell"><div class="js-square"></div></div>
+<div class="cell"><div class="js-square"></div></div>
+<div class="cell"><div class="js-square"></div></div>
+<div class="cell"><div class="js-square"></div></div>
+<div class="cell"><div class="js-square"></div></div>
+</div>
+<div id="rest"></div>
+<script>
+// A larger page: enough elements that the frames below stay under the
+// geometry.aye `RESTYLE_ROUNDS` bound, after which all is styled again.
+const rest = document.getElementById('rest');
+for (let i = 0; i < 500; i++) {
+  const p = document.createElement('p');
+  p.textContent = 'paragraph ' + i;
+  if (i % 20 == 0) {
+    const img = document.createElement('img');
+    img.src = '../image/png_pil_rgb.png';
+    p.appendChild(img);
+  }
+  rest.appendChild(p);
+}
+// mistral.ai's squares (window_width_animation): each frame changes the
+// `width` of 6 divs in a grid of flex cells, which lays out again only
+// their boxes and those around them (P4.57), images and all.
+const squares = document.querySelectorAll('.js-square');
+let n = 0;
+function tick() {
+  n++;
+  squares.forEach((sq, i) => { sq.style.width = (10 + (n + i * 7) % 100) + 'px'; });
+  if (n < 60) requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
