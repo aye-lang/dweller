@@ -1,0 +1,94 @@
+name: angle
+
+# Builds ANGLE at browser/gpu/angle.rev (docs/webgl.md §1).
+# - Pushing the tag `angle-<rev>` builds both archives and uploads them to
+#   the release `angle-<rev>`. An asset that is already there is never
+#   replaced: its SHA-256 is in browser/gpu/angle.lock.
+# - Running it by hand builds and keeps the archives as run artifacts.
+# After a release, copy the two `sha256  asset` lines of the run summary
+# into browser/gpu/angle.lock.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['angle-*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag names angle.rev
+        if: github.ref_type == 'tag'
+        run: test "$GITHUB_REF_NAME" = "angle-$(tr -d ' \n' < browser/gpu/angle.rev)"
+
+      - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Select the newest Xcode (macOS)
+        # This ANGLE revision is built upstream with the macOS 26.2 SDK.
+        if: runner.os == 'macOS'
+        run: |
+          x=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$x"
+          xcrun --show-sdk-version
+
+      - name: Install depot_tools
+        run: |
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/depot_tools"
+          echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+
+      - name: Build ANGLE
+        env:
+          ANGLE_SRC: ${{ runner.temp }}/angle-src
+          DEPOT_TOOLS_UPDATE: '1'
+        run: browser/gpu/build_angle.sh
+
+      - name: Smoke test (SwiftShader)
+        run: |
+          a=target/angle/$(tr -d ' \n' < browser/gpu/angle.rev)
+          cc -I"$a/include" scripts/angle-smoke.c -L"$a/lib" -lEGL -lGLESv2 \
+            -Wl,-rpath,"$PWD/$a/lib" -o target/angle-smoke
+          target/angle-smoke swiftshader
+
+      - name: Hash
+        run: |
+          cd target/angle
+          shasum -a 256 angle-*.tar.zst | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the archive (manual run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: angle-${{ runner.os }}
+          path: target/angle/angle-*.tar.zst
+
+      - name: Upload to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          asset=$(ls target/angle/angle-*.tar.zst)
+          # Both jobs may create the release; the loser sees it exists.
+          gh release view "$tag" > /dev/null 2>&1 \
+            || gh release create "$tag" --verify-tag --title "$tag" \
+                 --notes "ANGLE $tag built by the angle workflow (docs/webgl.md §1)." \
+            || gh release view "$tag" > /dev/null
+          if gh release view "$tag" --json assets -q '.assets[].name' | grep -qx "$(basename "$asset")"; then
+            echo "::warning::$(basename "$asset") is already in $tag; not replaced"
+          else
+            gh release upload "$tag" "$asset"
+          fi

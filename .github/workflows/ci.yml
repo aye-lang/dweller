@@ -23,6 +23,20 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install sdl2 freetype harfbuzz brotli pkgconf
 
+      - name: Cache ANGLE
+        uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+
+      - name: Fetch ANGLE
+        run: |
+          if grep -q '^[0-9a-f]\{64\}  ' browser/gpu/angle.lock; then
+            browser/gpu/fetch_angle.sh
+          else
+            echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache the pinned aye
