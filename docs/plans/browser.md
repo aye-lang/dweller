@@ -159,7 +159,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 6 | P4.36 | 0 | scroll by moving the last frame and drawing only the new band |
 | 7 | P4.37 | 0 | one connection pool across batches and navigations |
 | 7b | P4.59, P4.60 | 0 ∥ JS | JS benchmark set (splay, crypto, raytrace, loops, three.js r170, DOM) and `baseline.json` |
-| 7c | P4.61–P4.64 | 0 ∥ JS | bytecode format, resolver registers, VM core, control flow (behind `DWELLER_JS_VM=1`) |
+| 7c | P4.61–P4.64 | 0 ∥ JS | bytecode format (P4.61 done), resolver registers, VM core, control flow (behind `DWELLER_JS_VM=1`) |
 | 7d | P4.65–P4.70 | 0 ∥ JS | calls, closures, properties and globals, exceptions, the rest of the syntax, classes |
 | 7e | P4.71–P4.74 | 0 ∥ JS | generators and async on resumable frames; polymorphic ICs; prototype shapes |
 | 7f | P4.75 | 0 ∥ JS | the VM on by default (full gates) |
@@ -465,6 +465,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- aye_unit_tests > target/p4.61.log 2>&1; echo $?` → 0
 - estimate: no speedup
 - model: opus (the format decides later cards)
+- status: done 2026-10-15. `browser/js/bytecode.aye`: 73 opcodes (`Wide`/`ExtraWide`, loads, 12 binary operators with their `Smi` forms, unary and update operators, compares, 8 forward jumps with their `*Constant` twins, `JumpLoop`, `SwitchOnSmi`, `Return`) as `pub let BC_*: u8` with the table `BC_INFO` (name, operand kinds, may-allocate and may-throw flags), because Aye has neither `enum: u8` nor named constants in patterns. Operands are one byte, or two or four after a prefix (little endian, registers signed: parameters negative, `<this>` below them). `BcBuilder` emits with the narrowest width, allocates registers as a stack and feedback slots, keeps source positions (V8's varint/zigzag deltas), handler entries and `SwitchOnSmi` tables; a forward jump reserves a constant-pool entry that fixes its width (V8's pool slices 0–255, 256–65535, then the rest) and on `bind` becomes `Jump*Constant` when the offset does not fit. Constants dedup (numbers by their bits). `disassemble` prints V8's `--print-bytecode` layout without addresses; `dweller js --print-bytecode FILE` prints a hand-assembled loop until the compiler exists. 12 unit tests ("js: bytecode: ..."), `js_command_line` checks the command.
 
 #### P4.62: resolver: registers or context slots
 - goal: the resolver tells for every binding whether a nested function refers to it (captured). The tree walker ignores the new data; the compiler uses it.

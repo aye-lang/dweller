@@ -1,6 +1,8 @@
 // Unit tests of the JS engine's pieces (`aye test browser/js`). The
 // conformance scripts in browser/tests/js/ test the engine as a whole.
 
+import std.list.List
+import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
@@ -356,4 +358,400 @@ test "weak collections under GC stress" {
     let v = try it.evalScript(WEAK_STRESS)
     @expectEqual("ok", it.heap.bytes(strOf(v)))
     @expect(it.gc_count > 100)
+}
+
+// ---- bytecode.aye (P4.61)
+
+fn bcTestValue(k: BcOp, scale: u8, i: usize) i64 {
+    let signed = k is .Reg || k is .RegOut || k is .Imm
+    // a value that needs exactly `scale` bytes, different per operand
+    let n = i as i64
+    if signed {
+        return match scale {
+            1 => -5 - n
+            2 => -300 - n
+            _ => -70000 - n
+        }
+    }
+    return match scale {
+        1 => 200 + n
+        2 => 300 + n
+        _ => 70000 + n
+    }
+}
+
+test "bytecode: the table has one entry per opcode" {
+    @expectEqual(BC_COUNT as usize, BC_INFO.len)
+    @expectEqual("Ldar", BC_INFO[BC_LDAR as usize].name)
+    @expectEqual("Return", BC_INFO[BC_RETURN as usize].name)
+    @expectEqual("SwitchOnSmi", BC_INFO[BC_SWITCH_ON_SMI as usize].name)
+    let a = @testAllocator()
+    var b = text.Builder.init(a)
+    defer b.deinit()
+    for op in BC_JUMP..BC_JUMP_IF_UNDEFINED_OR_NULL + 1 {
+        b.clear()
+        try b.append(BC_INFO[op as usize].name)
+        try b.append("Constant")
+        @expectEqual(b.bytes(), BC_INFO[(op + BC_JUMP_CONST_DELTA) as usize].name)
+    }
+}
+
+test "bytecode: encode and decode every opcode at each width" {
+    let a = @testAllocator()
+    var out = List(u8).init(a)
+    defer out.deinit()
+    let scales = [3]u8{1, 2, 4}
+    var count: usize = 0
+    for op in BC_LDA_ZERO..BC_COUNT {
+        let info = BC_INFO[op as usize]
+        for scale in scales {
+            if info.nops == 0 && scale > 1 {
+                continue
+            }
+            var ops = [3]i64{0, 0, 0}
+            for i in 0..info.nops as usize {
+                ops[i] = bcTestValue(info.ops[i], scale, i)
+            }
+            out.clear()
+            _ = try bcEncode(&mut out, op, ops, scale)
+            let insn = bcDecode(out.items(), 0)
+            @expectEqual(op, insn.op)
+            @expectEqual(scale, insn.scale)
+            var size = 1 + info.nops as u32 * scale as u32
+            if scale > 1 {
+                size += 1
+            }
+            @expectEqual(size, insn.size)
+            @expectEqual(out.len() as u32, insn.size)
+            for i in 0..3 {
+                @expectEqual(ops[i], insn.ops[i])
+            }
+            count += 1
+        }
+    }
+    // 71 instructions, 58 of them with operands (3 widths each)
+    @expectEqual(13 + 58 * 3, count)
+}
+
+test "bytecode: the builder picks the narrowest width" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    try bb.op1(BC_LDA_SMI, 127)
+    try bb.op1(BC_LDA_SMI, -129)
+    try bb.op1(BC_LDA_SMI, 100000)
+    try bb.op2(BC_MOV, 3, 300)
+    var code = try bb.finish()
+    defer code.deinit()
+    let i0 = bcDecode(code.code, 0)
+    @expectEqual(1, i0.scale)
+    let i1 = bcDecode(code.code, i0.size)
+    @expectEqual(2, i1.scale)
+    @expectEqual(-129, i1.ops[0])
+    let i2 = bcDecode(code.code, i0.size + i1.size)
+    @expectEqual(4, i2.scale)
+    @expectEqual(100000, i2.ops[0])
+    let i3 = bcDecode(code.code, i0.size + i1.size + i2.size)
+    @expectEqual(BC_MOV, i3.op)
+    @expectEqual(2, i3.scale)
+    @expectEqual(3, i3.ops[0])
+    @expectEqual(300, i3.ops[1])
+}
+
+fn bcFill(bb: *mut BcBuilder, n: usize) AllocError!void {
+    for _ in 0..n {
+        try bb.op0(BC_LDA_ZERO)
+    }
+}
+
+test "bytecode: forward jumps are patched" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    let near = try bb.newLabel()
+    let far = try bb.newLabel()
+    try bb.jump(BC_JUMP_IF_TRUE, near)
+    try bb.jump(BC_JUMP, far)
+    try bb.jump(BC_JUMP_IF_FALSE, near)
+    try bcFill(&mut bb, 10)
+    try bb.bind(near)
+    try bcFill(&mut bb, 300)
+    try bb.bind(far)
+    try bb.op0(BC_RETURN)
+    var code = try bb.finish()
+    defer code.deinit()
+    // two jumps to one label
+    let j0 = bcDecode(code.code, 0)
+    @expectEqual(BC_JUMP_IF_TRUE, j0.op)
+    @expectEqual(16, code.jumpTarget(j0))
+    let j2 = bcDecode(code.code, 4)
+    @expectEqual(BC_JUMP_IF_FALSE, j2.op)
+    @expectEqual(16, code.jumpTarget(j2))
+    // 314 bytes do not fit the byte the jump reserved: the offset went to
+    // the pool entry it reserved
+    let j1 = bcDecode(code.code, 2)
+    @expectEqual(BC_JUMP_CONSTANT, j1.op)
+    @expectEqual(1, j1.scale)
+    @expectEqual(316, code.jumpTarget(j1))
+    @expectEqual(1, code.consts.len)
+    @expectEqual(BC_RETURN, code.code[316])
+}
+
+test "bytecode: a jump reserves an entry of a wider slice when the first is full" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    for i in 0..256 {
+        _ = try bb.number(i as f64 + 0.5)
+    }
+    let l = try bb.newLabel()
+    try bb.jump(BC_JUMP, l)
+    try bcFill(&mut bb, 20)
+    try bb.bind(l)
+    try bb.op0(BC_RETURN)
+    var code = try bb.finish()
+    defer code.deinit()
+    let j = bcDecode(code.code, 0)
+    @expectEqual(BC_JUMP, j.op)
+    @expectEqual(2, j.scale)
+    @expectEqual(4, j.size)
+    @expectEqual(24, code.jumpTarget(j))
+    @expectEqual(256, code.consts.len)
+}
+
+test "bytecode: JumpLoop goes back, with a prefix when far" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    let near = try bb.loopHeader()
+    try bcFill(&mut bb, 5)
+    try bb.jumpLoop(near)
+    let far = try bb.loopHeader()
+    try bcFill(&mut bb, 256)
+    let farJump = bb.offset()
+    try bb.jumpLoop(far)
+    var code = try bb.finish()
+    defer code.deinit()
+    let j0 = bcDecode(code.code, 5)
+    @expectEqual(BC_JUMP_LOOP, j0.op)
+    @expectEqual(1, j0.scale)
+    @expectEqual(0, code.jumpTarget(j0))
+    let j1 = bcDecode(code.code, farJump)
+    @expectEqual(BC_JUMP_LOOP, j1.op)
+    @expectEqual(2, j1.scale)
+    // 256 bytes back from the prefix, 257 from the opcode
+    @expectEqual(257, j1.ops[0])
+    @expectEqual(7, code.jumpTarget(j1))
+}
+
+test "bytecode: SwitchOnSmi jump table" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    _ = try bb.number(9.0)
+    let t = try bb.newJumpTable(3, 1)
+    try bb.switchOnSmi(t)
+    try bb.op0(BC_LDA_ZERO)
+    bb.bindCase(t, 2)
+    try bb.op0(BC_LDA_TRUE)
+    bb.bindCase(t, 1)
+    bb.bindCase(t, 3)
+    try bb.op0(BC_RETURN)
+    var code = try bb.finish()
+    defer code.deinit()
+    var b = text.Builder.init(a)
+    defer b.deinit()
+    try bcInsnText(&mut b, &code, bcDecode(code.code, 0), null)
+    @expectEqual("SwitchOnSmi [1:<offset 6>], [3], [1] { 1: @6, 2: @5, 3: @6 }", b.bytes())
+}
+
+test "bytecode: constant pool dedup" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    let k0 = try bb.number(1.5)
+    @expectEqual(k0, try bb.number(1.5))
+    let z = try bb.number(0.0)
+    @expect(z != try bb.number(-0.0))
+    let nan = try bb.number(0.0 / 0.0)
+    @expectEqual(nan, try bb.number(0.0 / 0.0))
+    let atom = try bb.constant(BcConst.Atom { id: 7 })
+    let func = try bb.constant(BcConst.Func { id: 7 })
+    @expect(atom != func)
+    @expectEqual(atom, try bb.constant(BcConst.Atom { id: 7 }))
+    @expectEqual(6, bb.pool.len())
+    // the 301st constant needs a Wide index
+    for i in 0..300 {
+        _ = try bb.number(i as f64 + 0.25)
+    }
+    try bb.loadNumber(299.25)
+    try bb.loadNumber(1.5)
+    try bb.loadNumber(-0.0)
+    try bb.loadNumber(-7.0)
+    var code = try bb.finish()
+    defer code.deinit()
+    @expectEqual(306, code.consts.len)
+    let i0 = bcDecode(code.code, 0)
+    @expectEqual(BC_LDA_CONSTANT, i0.op)
+    @expectEqual(2, i0.scale)
+    @expectEqual(305, i0.ops[0])
+    let i1 = bcDecode(code.code, i0.size)
+    @expectEqual(1, i1.scale)
+    @expectEqual(k0 as i64, i1.ops[0])
+    let i2 = bcDecode(code.code, i0.size + i1.size)
+    @expectEqual(BC_LDA_CONSTANT, i2.op)
+    let i3 = bcDecode(code.code, i0.size + i1.size + i2.size)
+    @expectEqual(BC_LDA_SMI, i3.op)
+    @expectEqual(-7, i3.ops[0])
+}
+
+test "bytecode: handler table lookup finds the innermost range" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 1)
+    defer bb.deinit()
+    let ctx = bb.newReg()
+    let outer = try bb.newHandler()
+    let inner = try bb.newHandler()
+    bb.tryStart(outer)
+    try bb.op0(BC_LDA_ZERO)
+    bb.tryStart(inner)
+    try bb.op0(BC_LDA_TRUE)
+    try bb.op0(BC_LDA_FALSE)
+    bb.tryEnd(inner)
+    try bb.op0(BC_LDA_NULL)
+    bb.tryEnd(outer)
+    try bb.op0(BC_RETURN)
+    bb.handlerHere(inner, ctx)
+    try bb.op0(BC_RETURN)
+    bb.handlerHere(outer, bb.param(0))
+    try bb.op0(BC_RETURN)
+    var code = try bb.finish()
+    defer code.deinit()
+    @expectEqual(0, bcHandlerFor(code.handlers, 0).?)
+    @expectEqual(1, bcHandlerFor(code.handlers, 1).?)
+    @expectEqual(1, bcHandlerFor(code.handlers, 2).?)
+    @expectEqual(0, bcHandlerFor(code.handlers, 3).?)
+    @expect(bcHandlerFor(code.handlers, 4) == null)
+    @expectEqual(5, code.handlers[1].handler)
+    @expectEqual(6, code.handlers[0].handler)
+    var b = text.Builder.init(a)
+    defer b.deinit()
+    try disassemble(&mut b, &code, null)
+    let want =
+        \\Parameter count 1
+        \\Register count 1
+        \\Feedback slots 0
+        \\Bytecode length 7
+        \\         @    0 : 02             LdaZero
+        \\         @    1 : 07             LdaTrue
+        \\         @    2 : 08             LdaFalse
+        \\         @    3 : 05             LdaNull
+        \\         @    4 : 48             Return
+        \\         @    5 : 48             Return
+        \\         @    6 : 48             Return
+        \\Constant pool (size = 0)
+        \\Handler Table (size = 2)
+        \\   from   to       hdlr (context)
+        \\  (   0,   4)  ->     6 (a0)
+        \\  (   1,   3)  ->     5 (r0)
+        \\Source Position Table (size = 0)
+        \\
+    @expectEqual(want, b.bytes())
+}
+
+test "bytecode: source positions" {
+    let a = @testAllocator()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    bb.statementPos(10)
+    bb.expressionPos(12)
+    try bb.op0(BC_LDA_ZERO)
+    try bb.op0(BC_LDA_ZERO)
+    bb.expressionPos(3)
+    try bb.op1(BC_LDA_SMI, 1000)
+    bb.statementPos(100000)
+    try bb.op0(BC_RETURN)
+    var code = try bb.finish()
+    defer code.deinit()
+    var it = BcPosIter.init(code.positions)
+    @expect(it.next())
+    @expectEqual(0, it.offset)
+    @expectEqual(10, it.pos)
+    @expect(it.stmt)
+    @expect(it.next())
+    @expectEqual(2, it.offset)
+    @expectEqual(3, it.pos)
+    @expect(!it.stmt)
+    @expect(it.next())
+    @expectEqual(6, it.offset)
+    @expectEqual(100000, it.pos)
+    @expect(it.stmt)
+    @expect(!it.next())
+}
+
+test "bytecode: disassembly of the --print-bytecode function" {
+    let a = @testAllocator()
+    var code = try bcDemo(a)
+    defer code.deinit()
+    var b = text.Builder.init(a)
+    defer b.deinit()
+    try disassemble(&mut b, &code, null)
+    let want =
+        \\Parameter count 2
+        \\Register count 2
+        \\Feedback slots 5
+        \\Bytecode length 37
+        \\   21 S> @    0 : 02             LdaZero
+        \\         @    1 : 0b 00          Star r0
+        \\   39 S> @    3 : 02             LdaZero
+        \\         @    4 : 0b 01          Star r1
+        \\   50 E> @    6 : 0a fe          Ldar a0
+        \\         @    8 : 2f 01 00       TestLessThan r1, FBV[0]
+        \\         @   11 : 38 14          JumpIfFalse [20] (@ 31)
+        \\   62 S> @   13 : 0a ff          Ldar a1
+        \\         @   15 : 15 01 01       BitwiseAnd r1, FBV[1]
+        \\         @   18 : 0d 00 02       Add r0, FBV[2]
+        \\         @   21 : 0b 00          Star r0
+        \\   57 E> @   23 : 0a 01          Ldar r1
+        \\         @   25 : 25 03          Inc FBV[3]
+        \\         @   27 : 0b 01          Star r1
+        \\         @   29 : 46 17          JumpLoop [23] (@ 6)
+        \\   76 S> @   31 : 09 00          LdaConstant [0:1.5]
+        \\         @   33 : 0f 00 04       Mul r0, FBV[4]
+        \\         @   36 : 48             Return
+        \\Constant pool (size = 1)
+        \\    0: 1.5
+        \\Handler Table (size = 0)
+        \\Source Position Table (size = 12)
+        \\
+    @expectEqual(want, b.bytes())
+}
+
+test "bytecode: atoms and wide operands in the disassembly" {
+    let a = @testAllocator()
+    var atoms = Atoms.init(a)
+    defer atoms.deinit()
+    var bb = BcBuilder.init(a, 0)
+    defer bb.deinit()
+    let name = try bb.constant(BcConst.Atom { id: try atoms.intern("length") })
+    try bb.op1(BC_LDA_CONSTANT, name as i64)
+    try bb.op2(BC_TEST_EQUAL_STRICT, bb.receiver() as i64, 1000)
+    try bb.op2(BC_ADD_SMI, -70000, 2)
+    var code = try bb.finish()
+    defer code.deinit()
+    var b = text.Builder.init(a)
+    defer b.deinit()
+    var at: u32 = 0
+    while (at as usize) < code.code.len {
+        let insn = bcDecode(code.code, at)
+        try bcInsnText(&mut b, &code, insn, &atoms)
+        try b.append("\n")
+        at += insn.size
+    }
+    let want =
+        \\LdaConstant [0:"length"]
+        \\TestEqualStrict.Wide <this>, FBV[1000]
+        \\AddSmi.ExtraWide [-70000], FBV[2]
+        \\
+    @expectEqual(want, b.bytes())
 }

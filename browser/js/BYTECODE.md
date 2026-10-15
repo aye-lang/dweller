@@ -208,6 +208,16 @@ New instructions are added only when a card needs them. Each has one
 entry in a table (`bytecode.aye`) with its name, operands and two flags:
 **may allocate** (section 4) and **may throw**.
 
+As built (P4.61): Aye has no `enum: u8` and no named constants in
+`match` patterns, so an opcode is a `pub let BC_NAME: u8` and the table
+`BC_INFO` is indexed by it; the dispatch `match` of P4.63 uses the
+numbers with the name in a comment. A forward jump's operand width is
+fixed when it is emitted by reserving a constant-pool entry (V8's
+`ConstantArrayBuilder` slices); an offset that does not fit at `bind`
+goes to that entry and the jump becomes its `Jump*Constant` twin. Jump
+offsets count from the opcode byte (after a prefix). `SwitchOnSmi k, n,
+base` reads its targets from pool entries `k` to `k + n - 1`.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register
