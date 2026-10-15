@@ -1,0 +1,52 @@
+<!doctype html>
+<title>WebGL 2 triangle</title>
+<style>body { margin: 10px; background: #fff; } canvas { display: block; }</style>
+<canvas id="c" width="160" height="120"></canvas>
+<script>
+// P11.5: a GLSL ES 3.00 shader pair and one interleaved buffer of
+// positions and per-vertex colors: a red, green and blue triangle,
+// interpolated, on dark gray (antialiased edges: the default context).
+const gl = document.getElementById('c').getContext('webgl2');
+const vs = `#version 300 es
+in vec2 pos;
+in vec3 color;
+out vec3 v_color;
+void main() {
+  v_color = color;
+  gl_Position = vec4(pos, 0.0, 1.0);
+}`;
+const fs = `#version 300 es
+precision mediump float;
+in vec3 v_color;
+out vec4 frag;
+void main() {
+  frag = vec4(v_color, 1.0);
+}`;
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  0.0, 0.8, 1, 0, 0,
+  -0.8, -0.8, 0, 1, 0,
+  0.8, -0.8, 0, 0, 1,
+]), gl.STATIC_DRAW);
+const pos = gl.getAttribLocation(prog, 'pos');
+const color = gl.getAttribLocation(prog, 'color');
+gl.enableVertexAttribArray(pos);
+gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 20, 0);
+gl.enableVertexAttribArray(color);
+gl.vertexAttribPointer(color, 3, gl.FLOAT, false, 20, 8);
+gl.clearColor(0.2, 0.2, 0.2, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.drawArrays(gl.TRIANGLES, 0, 3);
+</script>

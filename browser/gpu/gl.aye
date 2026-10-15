@@ -119,6 +119,63 @@ pub struct Api {
     glFramebufferTexture2D: fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint, c.GLint)
     glRenderbufferStorageMultisample: fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei)
     glBlitFramebuffer: fn(c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLbitfield, c.GLenum)
+    // P11.5: buffers, shaders, programs, uniforms, attributes, draws. The
+    // pointer arguments that WebGL gives as byte offsets are usize.
+    glGenBuffers: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteBuffers: fn(c.GLsizei, ?*c.GLuint)
+    glBindBuffer: fn(c.GLenum, c.GLuint)
+    glBufferData: fn(c.GLenum, c.GLsizeiptr, ?[*]u8, c.GLenum)
+    glBufferSubData: fn(c.GLenum, c.GLintptr, c.GLsizeiptr, ?[*]u8)
+    glCreateShader: fn(c.GLenum) c.GLuint
+    glDeleteShader: fn(c.GLuint)
+    glShaderSource: fn(c.GLuint, c.GLsizei, ?*[*]u8, ?*c.GLint)
+    glCompileShader: fn(c.GLuint)
+    glGetShaderiv: fn(c.GLuint, c.GLenum, ?*mut c.GLint)
+    glGetShaderInfoLog: fn(c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?[*]u8)
+    glCreateProgram: fn() c.GLuint
+    glDeleteProgram: fn(c.GLuint)
+    glAttachShader: fn(c.GLuint, c.GLuint)
+    glDetachShader: fn(c.GLuint, c.GLuint)
+    glLinkProgram: fn(c.GLuint)
+    glValidateProgram: fn(c.GLuint)
+    glUseProgram: fn(c.GLuint)
+    glGetProgramiv: fn(c.GLuint, c.GLenum, ?*mut c.GLint)
+    glGetProgramInfoLog: fn(c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?[*]u8)
+    glGetAttribLocation: fn(c.GLuint, [*]u8) c.GLint
+    glBindAttribLocation: fn(c.GLuint, c.GLuint, [*]u8)
+    glGetUniformLocation: fn(c.GLuint, [*]u8) c.GLint
+    glGetActiveAttrib: fn(c.GLuint, c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?*mut c.GLint, ?*mut c.GLenum, ?[*]u8)
+    glGetActiveUniform: fn(c.GLuint, c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?*mut c.GLint, ?*mut c.GLenum, ?[*]u8)
+    glUniform1fv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform2fv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform3fv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform4fv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform1iv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform2iv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform3iv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform4iv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform1uiv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform2uiv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform3uiv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniform4uiv: fn(c.GLint, c.GLsizei, ?[*]u8)
+    glUniformMatrix2fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix3fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix4fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix2x3fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix3x2fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix2x4fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix4x2fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix3x4fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glUniformMatrix4x3fv: fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8)
+    glVertexAttribPointer: fn(c.GLuint, c.GLint, c.GLenum, c.GLboolean, c.GLsizei, usize)
+    glVertexAttribIPointer: fn(c.GLuint, c.GLint, c.GLenum, c.GLsizei, usize)
+    glEnableVertexAttribArray: fn(c.GLuint)
+    glDisableVertexAttribArray: fn(c.GLuint)
+    glVertexAttrib4f: fn(c.GLuint, c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat)
+    glVertexAttribI4i: fn(c.GLuint, c.GLint, c.GLint, c.GLint, c.GLint)
+    glVertexAttribI4ui: fn(c.GLuint, c.GLuint, c.GLuint, c.GLuint, c.GLuint)
+    glDrawArrays: fn(c.GLenum, c.GLint, c.GLsizei)
+    glDrawElements: fn(c.GLenum, c.GLsizei, c.GLenum, usize)
 }
 
 /// The process's EGL display, initialized, on `backend`.
@@ -325,6 +382,61 @@ fn bind(egl: [*]u8) ?Api {
         glFramebufferTexture2D: @ptrCast(fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint, c.GLint), get("glFramebufferTexture2D".ptr) orelse return null),
         glRenderbufferStorageMultisample: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei), get("glRenderbufferStorageMultisample".ptr) orelse return null),
         glBlitFramebuffer: @ptrCast(fn(c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLbitfield, c.GLenum), get("glBlitFramebuffer".ptr) orelse return null),
+        glGenBuffers: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenBuffers".ptr) orelse return null),
+        glDeleteBuffers: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteBuffers".ptr) orelse return null),
+        glBindBuffer: @ptrCast(fn(c.GLenum, c.GLuint), get("glBindBuffer".ptr) orelse return null),
+        glBufferData: @ptrCast(fn(c.GLenum, c.GLsizeiptr, ?[*]u8, c.GLenum), get("glBufferData".ptr) orelse return null),
+        glBufferSubData: @ptrCast(fn(c.GLenum, c.GLintptr, c.GLsizeiptr, ?[*]u8), get("glBufferSubData".ptr) orelse return null),
+        glCreateShader: @ptrCast(fn(c.GLenum) c.GLuint, get("glCreateShader".ptr) orelse return null),
+        glDeleteShader: @ptrCast(fn(c.GLuint), get("glDeleteShader".ptr) orelse return null),
+        glShaderSource: @ptrCast(fn(c.GLuint, c.GLsizei, ?*[*]u8, ?*c.GLint), get("glShaderSource".ptr) orelse return null),
+        glCompileShader: @ptrCast(fn(c.GLuint), get("glCompileShader".ptr) orelse return null),
+        glGetShaderiv: @ptrCast(fn(c.GLuint, c.GLenum, ?*mut c.GLint), get("glGetShaderiv".ptr) orelse return null),
+        glGetShaderInfoLog: @ptrCast(fn(c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?[*]u8), get("glGetShaderInfoLog".ptr) orelse return null),
+        glCreateProgram: @ptrCast(fn() c.GLuint, get("glCreateProgram".ptr) orelse return null),
+        glDeleteProgram: @ptrCast(fn(c.GLuint), get("glDeleteProgram".ptr) orelse return null),
+        glAttachShader: @ptrCast(fn(c.GLuint, c.GLuint), get("glAttachShader".ptr) orelse return null),
+        glDetachShader: @ptrCast(fn(c.GLuint, c.GLuint), get("glDetachShader".ptr) orelse return null),
+        glLinkProgram: @ptrCast(fn(c.GLuint), get("glLinkProgram".ptr) orelse return null),
+        glValidateProgram: @ptrCast(fn(c.GLuint), get("glValidateProgram".ptr) orelse return null),
+        glUseProgram: @ptrCast(fn(c.GLuint), get("glUseProgram".ptr) orelse return null),
+        glGetProgramiv: @ptrCast(fn(c.GLuint, c.GLenum, ?*mut c.GLint), get("glGetProgramiv".ptr) orelse return null),
+        glGetProgramInfoLog: @ptrCast(fn(c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?[*]u8), get("glGetProgramInfoLog".ptr) orelse return null),
+        glGetAttribLocation: @ptrCast(fn(c.GLuint, [*]u8) c.GLint, get("glGetAttribLocation".ptr) orelse return null),
+        glBindAttribLocation: @ptrCast(fn(c.GLuint, c.GLuint, [*]u8), get("glBindAttribLocation".ptr) orelse return null),
+        glGetUniformLocation: @ptrCast(fn(c.GLuint, [*]u8) c.GLint, get("glGetUniformLocation".ptr) orelse return null),
+        glGetActiveAttrib: @ptrCast(fn(c.GLuint, c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?*mut c.GLint, ?*mut c.GLenum, ?[*]u8), get("glGetActiveAttrib".ptr) orelse return null),
+        glGetActiveUniform: @ptrCast(fn(c.GLuint, c.GLuint, c.GLsizei, ?*mut c.GLsizei, ?*mut c.GLint, ?*mut c.GLenum, ?[*]u8), get("glGetActiveUniform".ptr) orelse return null),
+        glUniform1fv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform1fv".ptr) orelse return null),
+        glUniform2fv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform2fv".ptr) orelse return null),
+        glUniform3fv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform3fv".ptr) orelse return null),
+        glUniform4fv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform4fv".ptr) orelse return null),
+        glUniform1iv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform1iv".ptr) orelse return null),
+        glUniform2iv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform2iv".ptr) orelse return null),
+        glUniform3iv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform3iv".ptr) orelse return null),
+        glUniform4iv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform4iv".ptr) orelse return null),
+        glUniform1uiv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform1uiv".ptr) orelse return null),
+        glUniform2uiv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform2uiv".ptr) orelse return null),
+        glUniform3uiv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform3uiv".ptr) orelse return null),
+        glUniform4uiv: @ptrCast(fn(c.GLint, c.GLsizei, ?[*]u8), get("glUniform4uiv".ptr) orelse return null),
+        glUniformMatrix2fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix2fv".ptr) orelse return null),
+        glUniformMatrix3fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix3fv".ptr) orelse return null),
+        glUniformMatrix4fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix4fv".ptr) orelse return null),
+        glUniformMatrix2x3fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix2x3fv".ptr) orelse return null),
+        glUniformMatrix3x2fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix3x2fv".ptr) orelse return null),
+        glUniformMatrix2x4fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix2x4fv".ptr) orelse return null),
+        glUniformMatrix4x2fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix4x2fv".ptr) orelse return null),
+        glUniformMatrix3x4fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix3x4fv".ptr) orelse return null),
+        glUniformMatrix4x3fv: @ptrCast(fn(c.GLint, c.GLsizei, c.GLboolean, ?[*]u8), get("glUniformMatrix4x3fv".ptr) orelse return null),
+        glVertexAttribPointer: @ptrCast(fn(c.GLuint, c.GLint, c.GLenum, c.GLboolean, c.GLsizei, usize), get("glVertexAttribPointer".ptr) orelse return null),
+        glVertexAttribIPointer: @ptrCast(fn(c.GLuint, c.GLint, c.GLenum, c.GLsizei, usize), get("glVertexAttribIPointer".ptr) orelse return null),
+        glEnableVertexAttribArray: @ptrCast(fn(c.GLuint), get("glEnableVertexAttribArray".ptr) orelse return null),
+        glDisableVertexAttribArray: @ptrCast(fn(c.GLuint), get("glDisableVertexAttribArray".ptr) orelse return null),
+        glVertexAttrib4f: @ptrCast(fn(c.GLuint, c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat), get("glVertexAttrib4f".ptr) orelse return null),
+        glVertexAttribI4i: @ptrCast(fn(c.GLuint, c.GLint, c.GLint, c.GLint, c.GLint), get("glVertexAttribI4i".ptr) orelse return null),
+        glVertexAttribI4ui: @ptrCast(fn(c.GLuint, c.GLuint, c.GLuint, c.GLuint, c.GLuint), get("glVertexAttribI4ui".ptr) orelse return null),
+        glDrawArrays: @ptrCast(fn(c.GLenum, c.GLint, c.GLsizei), get("glDrawArrays".ptr) orelse return null),
+        glDrawElements: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, usize), get("glDrawElements".ptr) orelse return null),
     }
 }
 

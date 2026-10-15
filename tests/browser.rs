@@ -521,6 +521,93 @@ fn webgl_screenshot() {
     );
 }
 
+/// P11.5 (docs/webgl.md §3, §4): `dweller screenshot` on SwiftShader of
+/// the pages in `browser/tests/webgl` that draw: a triangle with
+/// per-vertex colors (`triangle.html`), an indexed quad with a uniform
+/// color and matrix (`quad.html`), and the info logs of a shader that
+/// does not compile and a program that does not link
+/// (`shader_errors.html`); each is its `.png`. Without ANGLE the canvases
+/// stay blank.
+#[test]
+fn webgl_triangle() {
+    for page in ["triangle", "quad", "shader_errors"] {
+        let out_png = scratch().join(format!("webgl_{page}.png"));
+        let res = Command::new(dweller())
+            .current_dir(root())
+            .args([
+                "screenshot",
+                &format!("browser/tests/webgl/{page}.html"),
+                "-o",
+                out_png.to_str().unwrap(),
+                "--font",
+                "fixed",
+                "--width",
+                "200",
+                "--height",
+                "160",
+            ])
+            .env("DWELLER_GL", "swiftshader")
+            .output()
+            .unwrap();
+        assert!(
+            res.status.success() && res.stderr.is_empty(),
+            "{page}: {}\n{}",
+            res.status,
+            text(&res.stderr)
+        );
+        if !angle_present() {
+            println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+            return;
+        }
+        let got = std::fs::read(&out_png).unwrap();
+        let golden = root().join(format!("browser/tests/webgl/{page}.png"));
+        if std::env::var_os("DWELLER_BLESS").is_some() {
+            std::fs::write(&golden, &got).unwrap();
+            continue;
+        }
+        assert!(
+            got == std::fs::read(&golden).unwrap(),
+            "the image differs from {} (new one: {})",
+            golden.display(),
+            out_png.display()
+        );
+    }
+}
+
+/// P11.5: `dump --text --js` of `browser/tests/webgl/objects.html` on
+/// SwiftShader prints `objects.txt`: the error of each WebGL object rule
+/// (another context, deleted objects, buffer targets, uniform locations
+/// after a relink, draws), active attributes and uniforms, and the pixels
+/// of a drawn triangle.
+#[test]
+fn webgl_objects() {
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["dump", "--text", "--js", "browser/tests/webgl/objects.html"])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/objects.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 #[test]
 fn aye_unit_tests() {
     // The tests of every module under `browser` (15 modules have tests:
