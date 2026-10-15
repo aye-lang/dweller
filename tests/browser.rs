@@ -2199,7 +2199,10 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
     }
     got.push_str("--- window\n");
     for line in text(&out.stdout).lines() {
-        if !line.starts_with("loop_max_ms ") {
+        // With Spaces the status line shows the person's acts and the
+        // Spaces' last actions in the order they reached the window,
+        // which varies; the `space` lines have each Space's last action.
+        if !line.starts_with("loop_max_ms ") && !(spaces && line.starts_with("activity ")) {
             got.push_str(line);
             got.push('\n');
         }
@@ -2696,6 +2699,122 @@ fn window_spaces_control() {
         "{state}"
     );
     no_spaces_left(pid).unwrap();
+}
+
+/// B9 R6 (P9.4): the toolbar's agent area shows "You" and a chip per
+/// Space (a dot by its state, its name); the mouse over a chip shows the
+/// Space's state and last action in the status line; a click on a chip
+/// opens its menu: Pause (Resume) and Stop act on that Space only. Three
+/// agents: the person pauses Alpha with its chip (Alpha's actions fail
+/// while Beta's work), stops Gamma (it gets `stopped`, its Space exits,
+/// its chip goes), then points at Beta's chip. The person's page keeps
+/// its scroll and its height (the chips sit in the toolbar, the menu
+/// over the page), and the window's loop stays responsive. The last
+/// frame, with two Spaces (Alpha paused, Beta idle) and Beta's status,
+/// is `browser/tests/ui/spaces_chips.png` (`DWELLER_BLESS=1` rewrites it).
+#[test]
+fn window_spaces_chips() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    // The address bar is in the PNG: the person's page is a copy at a
+    // fixed path.
+    let fixed_dir = "/tmp/dweller-chips";
+    let page = format!("{fixed_dir}/long.html");
+    std::fs::create_dir_all(fixed_dir).unwrap();
+    std::fs::write(&page, std::fs::read(root().join("browser/tests/ui/long.html")).unwrap()).unwrap();
+    // The person's scroll after the same wheel, without agents.
+    let alone = run_window(&[
+        &page, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "1", "--state",
+        "--events", "wheel:-3",
+    ]);
+    let alone = text(&alone.stdout);
+    let scroll = alone.lines().find(|l| l.starts_with("scroll ")).unwrap().to_string();
+    assert_ne!(scroll, "scroll 0", "{alone}");
+    // With --font fixed in 800 px, the chips are You 503-536, Alpha
+    // 541-599, Beta 604-656, Gamma 661-719 (y 9-31); a menu's items are
+    // 24 px from y 38, under its chip. Without Gamma, Beta is 667-719.
+    let sock = format!("target/spaces-chips-{}.sock", std::process::id());
+    let png = scratch().join("spaces_chips.png");
+    let events = "wheel:-3 agents:3 click:570,20 click:560,50 \
+                  agents:6 click:690,20 click:680,74 \
+                  agents:8 move:690,20 key:cmd+q";
+    let window = spaces_window(
+        &sock,
+        &["--spaces", "--state", "--save", png.to_str().unwrap(), "--events", events, &page],
+    );
+    let pid = window.id();
+    let mut agents = Vec::new();
+    for (name, site) in [("Alpha", "form.html"), ("Beta", "index.html"), ("Gamma", "docs.html")] {
+        let mut c = AgentConn::open(&sock);
+        c.send(&format!("{{\"name\":\"{name}\"}}"));
+        let (got, _) = c.ask(&format!(
+            "{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"browser/tests/agent/site/{site}\"}}"
+        ));
+        assert!(got.contains("\"ok\":true"), "{name}: {got}");
+        agents.push(c);
+    }
+    let mut gamma = agents.pop().unwrap();
+    let mut beta = agents.pop().unwrap();
+    let mut alpha = agents.pop().unwrap();
+    // Pause on Alpha's chip: Alpha only.
+    assert_eq!(alpha.line(), "{\"event\":\"paused\",\"space\":1}\n");
+    let (got, _) = beta.ask(r#"{"id":2,"cmd":"click","ref":"e6"}"#);
+    assert!(got.contains("\"result\":\"clicked button \\\"Subscribe\\\" [e6]\""), "{got}");
+    let (got, _) = alpha.ask(r#"{"id":2,"cmd":"click","ref":"e4"}"#);
+    assert_eq!(got, "{\"id\":2,\"ok\":false,\"error\":\"paused by user\"}\n");
+    // Stop on Gamma's chip: Gamma ends, the others stay.
+    assert_eq!(gamma.line(), "{\"event\":\"stopped\",\"space\":3}\n");
+    assert_eq!(gamma.line(), "", "Gamma's connection ends");
+    wait_for_spaces(pid, 2);
+    let (got, _) = alpha.ask(r#"{"id":3,"cmd":"spaces"}"#);
+    assert!(got.contains("\"result\":\"2 spaces\""), "{got}");
+    assert!(got.contains("{\"id\":1,\"name\":\"Alpha\",\"mine\":true,\"state\":\"paused\""), "{got}");
+    assert!(got.contains("{\"id\":2,\"name\":\"Beta\",\"mine\":false,\"state\":\"idle\""), "{got}");
+    // The person points at Beta's chip and closes the window.
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let state = text(&out.stdout);
+    for want in [
+        format!("\n{scroll}\n"),
+        "\nfocus page\n".to_string(),
+        "\nviewport 800x532\n".to_string(),
+        "\nstatus Beta (idle): click button \"Subscribe\" [e6]\n".to_string(),
+        "\nspace 1 \"Alpha\" paused".to_string(),
+        "\nspace 2 \"Beta\" idle: click button \"Subscribe\" [e6]\n".to_string(),
+    ] {
+        assert!(state.contains(&want), "{want:?} in:\n{state}");
+    }
+    assert!(!state.contains("\nspace 3 "), "Gamma's chip goes:\n{state}");
+    assert!(state.contains("\nactivity Gamma stopped\n"), "{state}");
+    let loop_max: u64 = state
+        .lines()
+        .find_map(|l| l.strip_prefix("loop_max_ms "))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(loop_max < 50, "loop_max_ms {loop_max}");
+    drop(alpha);
+    drop(beta);
+    no_spaces_left(pid).unwrap();
+    let golden = root().join("browser/tests/ui/spaces_chips.png");
+    let got = std::fs::read(&png).unwrap();
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+    } else {
+        assert!(
+            got == std::fs::read(&golden).unwrap(),
+            "the chips differ from {}: {}",
+            golden.display(),
+            png.display()
+        );
+    }
 }
 
 // `s` as a JSON string (quotes and backslashes escaped).

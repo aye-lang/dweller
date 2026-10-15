@@ -1,6 +1,7 @@
 // The browser chrome, drawn into the window's canvas: the toolbar with
 // back, forward and reload buttons and the address bar (and, while the
-// window listens for agents, the "AI" badge and the pause button), the
+// window listens for agents, the "AI" badge, or with Spaces "You" and a
+// chip per Space, and the pause button), the
 // tab strip, the status line (the URL of the link under the mouse, or
 // what an agent did) and the find bar. Positions are in CSS px (window
 // points), scaled like the page.
@@ -21,6 +22,18 @@ let PAD: f64 = 8.0
 // The right end of the toolbar while agents may connect: the badge and
 // the pause button.
 let AGENT_CHROME: f64 = 112.0
+// With Spaces, the agent area holds "You" and a chip per Space, left of
+// the pause button: the chips' box, the dot of a Space's state, the
+// widest a name is drawn, and the narrowest the address bar gets.
+let CHIP_Y: f64 = 9.0
+let CHIP_H: f64 = 22.0
+let CHIP_GAP: f64 = 4.0
+let CHIP_DOT: f64 = 8.0
+let CHIP_NAME: f64 = 96.0
+let ADDRESS_MIN: f64 = 160.0
+// A chip's menu, under it.
+let MENU_W: f64 = 96.0
+let MENU_ITEM: f64 = 24.0
 // The close box at the right of a tab in the strip.
 let TAB_CLOSE: f64 = 22.0
 let TAB_MAX: f64 = 220.0
@@ -39,6 +52,7 @@ pub enum Button {
     Reload
     Address
     Pause
+    Chip
     None
 }
 
@@ -46,10 +60,20 @@ fn uiFont(size: f64) font.Font {
     return font.Font { size: size, bold: false, italic: false, mono: false }
 }
 
-pub fn addressRect(ui: *Ui) paint.Rect {
+pub fn addressRect(ui: *mut Ui) paint.Rect {
     var w = ui.win_w as f64 - ADDRESS_X - PAD
-    if ui.agents != null {
-        w -= AGENT_CHROME
+    if ui.agents |a| {
+        if a.spaces {
+            // It ends before the chips, or the pause button.
+            let c = chipsOf(ui)
+            var left = pauseRect(ui).x
+            if c.n > 0 {
+                left = c.x[0]
+            }
+            w = left - PAD - ADDRESS_X
+        } else {
+            w -= AGENT_CHROME
+        }
     }
     if w < 20.0 {
         w = 20.0
@@ -58,7 +82,7 @@ pub fn addressRect(ui: *Ui) paint.Rect {
 }
 
 /// What part of the toolbar is at (`x`, `y`).
-pub fn buttonAt(ui: *Ui, x: f64, y: f64) Button {
+pub fn buttonAt(ui: *mut Ui, x: f64, y: f64) Button {
     if y < 6.0 || y >= 6.0 + BUTTON {
         return Button.None
     }
@@ -80,6 +104,9 @@ pub fn buttonAt(ui: *Ui, x: f64, y: f64) Button {
         if x >= p.x && x < p.x + p.w {
             return Button.Pause
         }
+        if chipAt(ui, x, y) != null {
+            return Button.Chip
+        }
     }
     return Button.None
 }
@@ -87,6 +114,124 @@ pub fn buttonAt(ui: *Ui, x: f64, y: f64) Button {
 /// The pause button of the agents, at the right end of the toolbar.
 fn pauseRect(ui: *Ui) paint.Rect {
     return paint.Rect { x: ui.win_w as f64 - AGENT_CHROME + 36.0, y: 6.0, w: AGENT_CHROME - 36.0 - PAD, h: BUTTON }
+}
+
+/// The chips of the agent area with Spaces, left to right: "You" (id 0)
+/// and the Spaces by id (none without Spaces).
+struct Chips {
+    n: usize
+    id: [9]u32
+    x: [9]f64
+    w: [9]f64
+    // The widest a Space's name is drawn.
+    name_w: f64
+}
+
+/// Lays the chips out from the pause button leftwards. When they do not
+/// fit beside an address bar ADDRESS_MIN wide, long names are cut.
+fn chipsOf(ui: *mut Ui) Chips {
+    var c = Chips { n: 0, id: @zeroed([9]u32), x: @zeroed([9]f64), w: @zeroed([9]f64), name_w: CHIP_NAME }
+    let a = ui.agents orelse return c
+    if !a.spaces {
+        return c
+    }
+    let list = spacesById(a)
+    var count: usize = 0
+    for s in list {
+        if s != null {
+            count += 1
+        }
+    }
+    if count == 0 {
+        return c
+    }
+    let f = uiFont(12.0)
+    let right = pauseRect(ui).x - CHIP_GAP
+    let room = right - (ADDRESS_X + ADDRESS_MIN + PAD)
+    let you_w = ui.measure.width(f, "You") + 2.0 * PAD
+    // Everything but the names: the paddings, dots and gaps.
+    let fixed = you_w + CHIP_GAP + count as f64 * (2.0 * PAD + CHIP_DOT + 5.0 + CHIP_GAP)
+    var names: f64 = 0.0
+    for s in list {
+        let sp = s orelse continue
+        names += math.min(ui.measure.width(f, sp.name.bytes()), CHIP_NAME)
+    }
+    if fixed + names > room {
+        c.name_w = math.max(16.0, math.min(CHIP_NAME, (room - fixed) / count as f64))
+    }
+    c.id[0] = 0
+    c.w[0] = you_w
+    c.n = 1
+    var total = you_w
+    for s in list {
+        let sp = s orelse continue
+        c.id[c.n] = sp.id
+        c.w[c.n] = 2.0 * PAD + CHIP_DOT + 5.0 + math.min(ui.measure.width(f, sp.name.bytes()), c.name_w)
+        total += CHIP_GAP + c.w[c.n]
+        c.n += 1
+    }
+    var x = right - total
+    for k in 0..c.n {
+        c.x[k] = x
+        x += c.w[k] + CHIP_GAP
+    }
+    return c
+}
+
+/// The chip at (`x`, `y`): its Space's id, 0 for "You"; null for none.
+fn chipAt(ui: *mut Ui, x: f64, y: f64) ?u32 {
+    if y < CHIP_Y || y >= CHIP_Y + CHIP_H {
+        return null
+    }
+    let c = chipsOf(ui)
+    for k in 0..c.n {
+        if x >= c.x[k] && x < c.x[k] + c.w[k] {
+            return c.id[k]
+        }
+    }
+    return null
+}
+
+/// The open chip menu's box (under its chip), and its number of items;
+/// null when no menu is open or its Space is gone.
+fn menuRect(ui: *mut Ui) ?paint.Rect {
+    let a = ui.agents orelse return null
+    if a.menu == 0 {
+        return null
+    }
+    let sp = spaceOf(a, a.menu) orelse return null
+    let c = chipsOf(ui)
+    for k in 0..c.n {
+        if c.id[k] == a.menu {
+            var x = c.x[k]
+            if x + MENU_W > ui.win_w as f64 - 4.0 {
+                x = ui.win_w as f64 - 4.0 - MENU_W
+            }
+            return paint.Rect { x: x, y: CHIP_Y + CHIP_H + 3.0, w: MENU_W, h: menuItems(sp) as f64 * MENU_ITEM + 8.0 }
+        }
+    }
+    return null
+}
+
+/// The item of the open menu at (`x`, `y`) (0, 1), null for none.
+fn menuItemAt(ui: *mut Ui, x: f64, y: f64) ?usize {
+    let a = ui.agents orelse return null
+    let r = menuRect(ui) orelse return null
+    if x < r.x || x >= r.x + r.w || y < r.y + 4.0 {
+        return null
+    }
+    let k = math.floor((y - r.y - 4.0) / MENU_ITEM) as usize
+    let sp = spaceOf(a, a.menu) orelse return null
+    if k >= menuItems(sp) {
+        return null
+    }
+    return k
+}
+
+/// Is (`x`, `y`) on the open menu?
+fn overMenu(ui: *mut Ui, x: f64, y: f64) bool {
+    let r = menuRect(ui) orelse return false
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 }
 
 // ---- drawing helpers (CSS px)
@@ -115,6 +260,25 @@ fn label(ui: *mut Ui, x: f64, y: f64, s: []u8, f: font.Font, c: Rgba) AllocError
 fn centered(ui: *mut Ui, top: f64, h: f64, f: font.Font) f64 {
     let m = ui.measure.metrics(f)
     return math.floor(top + (h + m.ascent - m.descent) / 2.0 + 0.5)
+}
+
+// A disc of radius `r` centered at (`cx`, `cy`), its edge smoothed.
+fn disc(ui: *mut Ui, cx: f64, cy: f64, r: f64, c: Rgba) {
+    let s = ui.scale
+    let rr = r * s
+    let ox = cx * s
+    let oy = cy * s
+    for py in math.floor(oy - rr) as i64..math.ceil(oy + rr) as i64 {
+        for px in math.floor(ox - rr) as i64..math.ceil(ox + rr) as i64 {
+            let dx = px as f64 + 0.5 - ox
+            let dy = py as f64 + 0.5 - oy
+            let cover = math.min(1.0, math.max(0.0, rr - math.sqrt(dx * dx + dy * dy) + 0.5))
+            if cover > 0.0 {
+                let ink = Rgba { r: c.r, g: c.g, b: c.b, a: (c.a as f64 * cover) as u8 }
+                ui.canvas.fillRect(paint.IRect { x0: px, y0: py, x1: px + 1, y1: py + 1 }, ink)
+            }
+        }
+    }
 }
 
 // A triangle `size` tall centered at (`cx`, `cy`), pointing left or

@@ -278,6 +278,13 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                 return 1
             }
             if o.save.len > 0 {
+                // The last frame shows what the last events did.
+                if ui.dirty {
+                    ui.draw() catch |e| {
+                        std.log.err("out of memory")
+                        return 1
+                    }
+                }
                 saveCanvas(&mut ui, o.save) catch |e| {
                     std.log.err("cannot write {}", o.save)
                     return 1
@@ -935,6 +942,7 @@ pub struct Ui {
                 self.dirty = true
             } else if we.event == SDL_WINDOWEVENT_LEAVE {
                 self.mouse_in = false
+                hoverChips(self, -1.0, -1.0)
                 try self.clearHover(false)
             }
         } else if kind == SDL_KEYDOWN {
@@ -1018,6 +1026,10 @@ pub struct Ui {
 
     fn key(self: *mut Self, sym: i32, mods: u16) AllocError!void {
         self.swallow = false
+        if sym == SDLK_ESCAPE && closeSpaceMenu(self) {
+            self.swallow = true
+            return
+        }
         let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
         let shift = (mods & KMOD_SHIFT) != 0
         if cmd && try windowKey(self, sym, shift) {
@@ -1166,6 +1178,10 @@ pub struct Ui {
         if self.range_drag {
             try dragRange(self, wx + self.tab.scroll_x)
         }
+        if hoverChips(self, wx, y) {
+            // Over a chip's menu.
+            return self.clearHover(false)
+        }
         if y < self.top() {
             let r = addressRect(self)
             let over_field = wx >= r.x && wx < r.x + r.w
@@ -1246,6 +1262,9 @@ pub struct Ui {
     }
 
     fn click(self: *mut Self, x: f64, y: f64) AllocError!void {
+        if try clickMenu(self, x, y) {
+            return
+        }
         if y >= TOOLBAR && y < self.top() {
             return clickTabStrip(self, x)
         }
@@ -1268,6 +1287,9 @@ pub struct Ui {
                 }
                 .Pause => {
                     togglePause(self)
+                }
+                .Chip => {
+                    clickChip(self, x, y)
                 }
                 .None => {}
             }
@@ -1468,12 +1490,15 @@ pub struct Ui {
         }
         if self.hover.len() > 0 {
             try drawStatus(self, bottom, self.hover.bytes())
+        } else if chipStatus(self).len > 0 {
+            try drawStatus(self, bottom, chipStatus(self))
         } else if agentStatus(self).len > 0 {
             try drawStatus(self, bottom, agentStatus(self))
         }
         if self.finding {
             try drawFindBar(self, bottom)
         }
+        try drawSpaceMenu(self)
         if self.texture |t| {
             SDL_UpdateTexture(t, null, self.canvas.pixels.ptr, (self.canvas.width * 4) as i32)
             SDL_RenderClear(self.renderer)
