@@ -410,6 +410,117 @@ fn gpu_smoke() {
     assert!(got.ends_with("ff0000ff\nok\n"), "{got}");
 }
 
+/// Whether ANGLE is there for the WebGL tests: `DWELLER_ANGLE` or
+/// `target/angle/<rev>/lib`. Without it, the WebGL tests check the
+/// unavailable path, and only while browser/gpu/angle.lock has no hashes
+/// (CI fetches ANGLE once it has them).
+fn angle_present() -> bool {
+    let rev = std::fs::read_to_string(root().join("browser/gpu/angle.rev")).unwrap();
+    let lib = root().join("target/angle").join(rev.trim()).join("lib");
+    let present = std::env::var_os("DWELLER_ANGLE").is_some()
+        || ["libEGL.dylib", "libEGL.so"]
+            .iter()
+            .any(|f| lib.join(f).exists());
+    if !present {
+        let lock = std::fs::read_to_string(root().join("browser/gpu/angle.lock")).unwrap();
+        let pinned = lock
+            .lines()
+            .any(|l| !l.starts_with('#') && !l.trim().is_empty());
+        assert!(
+            !pinned,
+            "ANGLE not found in {}: run browser/gpu/fetch_angle.sh",
+            lib.display()
+        );
+    }
+    present
+}
+
+/// P11.4 (docs/webgl.md §2, §3): `dump --text --js` of
+/// `browser/tests/webgl/context.html` on SwiftShader prints its `.txt`:
+/// the context attributes, drawing buffer size, limits, `getError`
+/// sequences, cleared pixels, and the drawing buffer cleared after a
+/// frame. Without ANGLE, `getContext('webgl2')` gives null.
+#[test]
+fn webgl_context() {
+    let page = "browser/tests/webgl/context.html";
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["dump", "--text", "--js", page])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(
+            got.contains("webgl2 null\n2d after a failed webgl2 true"),
+            "{got}"
+        );
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/context.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
+/// P11.4: `dweller screenshot` of `browser/tests/webgl/clear.html` on
+/// SwiftShader shows its WebGL canvases (scissored clears, premultiplied
+/// alpha over the page, a frame drawn in requestAnimationFrame) exactly
+/// as `clear.png`. Without ANGLE the canvases stay blank.
+#[test]
+fn webgl_screenshot() {
+    let out_png = scratch().join("webgl_clear.png");
+    let res = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "screenshot",
+            "browser/tests/webgl/clear.html",
+            "-o",
+            out_png.to_str().unwrap(),
+            "--font",
+            "fixed",
+            "--width",
+            "200",
+            "--height",
+            "180",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        res.status.success() && res.stderr.is_empty(),
+        "{}\n{}",
+        res.status,
+        text(&res.stderr)
+    );
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let got = std::fs::read(&out_png).unwrap();
+    let golden = root().join("browser/tests/webgl/clear.png");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    assert!(
+        got == std::fs::read(&golden).unwrap(),
+        "the image differs from {} (new one: {})",
+        golden.display(),
+        out_png.display()
+    );
+}
+
 #[test]
 fn aye_unit_tests() {
     // The tests of every module under `browser` (15 modules have tests:

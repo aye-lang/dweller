@@ -1,0 +1,330 @@
+// WebGL 2 (docs/webgl.md §3): the native half of WebGL2RenderingContext.
+// The JS classes, constants and argument checks are in
+// webgl_prelude.aye. A context belongs to its canvas's bitmap
+// (CanvasBitmap.gl), so every native takes the canvas element first.
+// The canvas bitmap holds the last presented frame: paint, screenshots and
+// drawImage read it as they read a 2D canvas (`presentCanvases`).
+
+import gpu
+import image
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import paint
+import std
+import std.math
+
+fn installWebGL(it: *mut Interp, o: u32) JsError!void {
+    try defMethod(it, o, "webglCreate", 7, akWebglCreate)
+    try defMethod(it, o, "webglInfo", 1, akWebglInfo)
+    try defMethod(it, o, "webglCall", 6, akWebglCall)
+    try defMethod(it, o, "webglIsEnabled", 2, akWebglIsEnabled)
+    try defMethod(it, o, "webglGet", 4, akWebglGet)
+    try defMethod(it, o, "webglError", 1, akWebglError)
+    try defMethod(it, o, "webglRaise", 2, akWebglRaise)
+    try defMethod(it, o, "webglPrecision", 3, akWebglPrecision)
+    try defMethod(it, o, "webglReadPixels", 6, akWebglReadPixels)
+    try defMethod(it, o, "webglPng", 1, akWebglPng)
+    try defMethod(it, o, "webglSnapshot", 1, akWebglSnapshot)
+}
+
+fn webglOf(it: *mut Interp, v: Value) JsError!*mut gpu.Context {
+    let c = try canvasBitmap(it, v)
+    if c.gl |ctx| {
+        return ctx
+    }
+    try it.typeError("Canvas has no WebGL context")
+    return JsError.Thrown
+}
+
+// IDL GLenum/GLbitfield/GLuint (ToUint32) and GLint/GLsizei (ToInt32).
+fn argU32(it: *mut Interp, a: Args, i: usize) JsError!u32 {
+    return js.toUint32(try it.toNumber(it.arg(a, i)))
+}
+
+fn argI32(it: *mut Interp, a: Args, i: usize) JsError!i32 {
+    return js.toInt32(try it.toNumber(it.arg(a, i)))
+}
+
+fn argF32(it: *mut Interp, a: Args, i: usize) JsError!f32 {
+    return (try it.toNumber(it.arg(a, i))) as f32
+}
+
+fn glBool(it: *mut Interp, a: Args, i: usize) u8 {
+    if it.toBoolean(it.arg(a, i)) {
+        return 1
+    }
+    return 0
+}
+
+// webglCreate(canvas, alpha, depth, stencil, antialias,
+// premultipliedAlpha, preserveDrawingBuffer): true when the canvas has a
+// context; false without WebGL (no ANGLE, DWELLER_GL=off).
+fn akWebglCreate(it: *mut Interp, a: Args) JsError!Value {
+    let c = try canvasBitmap(it, it.arg(a, 0))
+    if c.gl != null {
+        return js.boolVal(true)
+    }
+    let attrs = gpu.Attrs { alpha: it.toBoolean(it.arg(a, 1)), depth: it.toBoolean(it.arg(a, 2)), stencil: it.toBoolean(it.arg(a, 3)), antialias: it.toBoolean(it.arg(a, 4)), premultiplied: it.toBoolean(it.arg(a, 5)), preserve: it.toBoolean(it.arg(a, 6)) }
+    c.gl = gpu.createWebGL(it.alloc, attrs, c.bmp.width as i32, c.bmp.height as i32)
+    return js.boolVal(c.gl != null)
+}
+
+// [drawingBufferWidth, drawingBufferHeight, antialias granted, lost].
+fn akWebglInfo(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, js.numVal(ctx.width as f64))
+    try it.heap.pushElem(arr, js.numVal(ctx.height as f64))
+    try it.heap.pushElem(arr, js.boolVal(ctx.attrs.antialias))
+    try it.heap.pushElem(arr, js.boolVal(ctx.lost))
+    it.pop()
+    return js.objVal(arr)
+}
+
+// The state calls without a result: webglCall(canvas, op, a, b, c, d).
+let OP_CLEAR_COLOR: u32 = 0
+let OP_CLEAR: u32 = 1
+let OP_VIEWPORT: u32 = 2
+let OP_SCISSOR: u32 = 3
+let OP_ENABLE: u32 = 4
+let OP_DISABLE: u32 = 5
+let OP_COLOR_MASK: u32 = 6
+let OP_DEPTH_MASK: u32 = 7
+let OP_STENCIL_MASK_SEPARATE: u32 = 8
+let OP_CLEAR_DEPTH: u32 = 9
+let OP_CLEAR_STENCIL: u32 = 10
+
+fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let op = try argU32(it, a, 1)
+    let gl = ctx.gl()
+    if op == OP_CLEAR_COLOR {
+        gl.glClearColor(try argF32(it, a, 2), try argF32(it, a, 3), try argF32(it, a, 4), try argF32(it, a, 5))
+    } else if op == OP_CLEAR {
+        gl.glClear(try argU32(it, a, 2))
+        ctx.dirty = true
+        canvasChanged(it)
+    } else if op == OP_VIEWPORT {
+        gl.glViewport(try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5))
+    } else if op == OP_SCISSOR {
+        gl.glScissor(try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5))
+    } else if op == OP_ENABLE {
+        gl.glEnable(try argU32(it, a, 2))
+    } else if op == OP_DISABLE {
+        gl.glDisable(try argU32(it, a, 2))
+    } else if op == OP_COLOR_MASK {
+        gl.glColorMask(glBool(it, a, 2), glBool(it, a, 3), glBool(it, a, 4), glBool(it, a, 5))
+    } else if op == OP_DEPTH_MASK {
+        gl.glDepthMask(glBool(it, a, 2))
+    } else if op == OP_STENCIL_MASK_SEPARATE {
+        gl.glStencilMaskSeparate(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_CLEAR_DEPTH {
+        gl.glClearDepthf(try argF32(it, a, 2))
+    } else if op == OP_CLEAR_STENCIL {
+        gl.glClearStencil(try argI32(it, a, 2))
+    }
+    return Value.Undefined
+}
+
+fn akWebglIsEnabled(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let cap = try argU32(it, a, 1)
+    return js.boolVal(ctx.gl().glIsEnabled(cap) != 0)
+}
+
+// webglGet(canvas, pname, kind, n): GL's value of pname as an array of n
+// numbers (kind 0 integers, 1 floats, 2 booleans as 0/1), or its string
+// (kind 3).
+fn akWebglGet(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let pname = try argU32(it, a, 1)
+    let kind = try argU32(it, a, 2)
+    let n = math.minOf(u32, try argU32(it, a, 3), 16) as usize
+    let gl = ctx.gl()
+    if kind == 3 {
+        return it.newString(gpu.cstr(gl.glGetString(pname)))
+    }
+    var ints = @zeroed([16]i32)
+    var floats = @zeroed([16]f32)
+    var bools = @zeroed([16]u8)
+    if kind == 0 {
+        gl.glGetIntegerv(pname, &mut ints[0])
+    } else if kind == 1 {
+        gl.glGetFloatv(pname, &mut floats[0])
+    } else {
+        gl.glGetBooleanv(pname, &mut bools[0])
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    for i in 0..n {
+        var v = ints[i] as f64
+        if kind == 1 {
+            v = floats[i] as f64
+        } else if kind == 2 {
+            v = bools[i] as f64
+        }
+        try it.heap.pushElem(arr, js.numVal(v))
+    }
+    it.pop()
+    return js.objVal(arr)
+}
+
+fn akWebglError(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    return js.numVal(ctx.takeError() as f64)
+}
+
+fn akWebglRaise(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    ctx.raise(try argU32(it, a, 1))
+    return Value.Undefined
+}
+
+// [rangeMin, rangeMax, precision], or null when GL refused the enums.
+fn akWebglPrecision(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let gl = ctx.gl()
+    var range = @zeroed([2]i32)
+    var precision: i32 = 0
+    // An error before the call is kept for getError.
+    let before = gl.glGetError() as u32
+    if before != 0 {
+        ctx.raise(before)
+    }
+    gl.glGetShaderPrecisionFormat(try argU32(it, a, 1), try argU32(it, a, 2), &mut range[0], &mut precision)
+    let e = gl.glGetError() as u32
+    if e != 0 {
+        ctx.raise(e)
+        return Value.Null
+    }
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, js.numVal(range[0] as f64))
+    try it.heap.pushElem(arr, js.numVal(range[1] as f64))
+    try it.heap.pushElem(arr, js.numVal(precision as f64))
+    it.pop()
+    return js.objVal(arr)
+}
+
+// webglReadPixels(canvas, x, y, w, h, view): RGBA/UNSIGNED_BYTE into a
+// Uint8Array the prelude checked is large enough.
+fn akWebglReadPixels(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let x = try argI32(it, a, 1)
+    let y = try argI32(it, a, 2)
+    let w = try argI32(it, a, 3)
+    let h = try argI32(it, a, 4)
+    let o = js.objectOf(it.arg(a, 5))
+    if o == js.NONE || w < 0 || h < 0 {
+        return Value.Undefined
+    }
+    let bytes = js.viewBytes(it, o)
+    if bytes.len < w as usize * h as usize * 4 {
+        return Value.Undefined
+    }
+    ctx.readPixels(x, y, w, h, bytes)
+    return Value.Undefined
+}
+
+// toDataURL of a WebGL canvas: the drawing buffer as it is now (blank
+// after a frame was presented without preserveDrawingBuffer, as in other
+// browsers); the canvas keeps showing its last frame.
+fn akWebglPng(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let w = ctx.width as usize
+    let h = ctx.height as usize
+    let px = try it.alloc.alloc(0 as u8, w * h * 4)
+    defer it.alloc.free(px)
+    ctx.snapshot(px)
+    let png = try paint.encodePng(it.alloc, w, h, px)
+    defer it.alloc.free(png)
+    return pngDataUrl(it, png)
+}
+
+// Before drawImage of a WebGL canvas: what it drew since the last frame.
+fn akWebglSnapshot(it: *mut Interp, a: Args) JsError!Value {
+    let c = try canvasBitmap(it, it.arg(a, 0))
+    if c.gl |ctx| {
+        if ctx.dirty {
+            try copyFrame(it.alloc, ctx, c.bmp, false)
+        }
+    }
+    return Value.Undefined
+}
+
+// The frame of `ctx` into the canvas bitmap (nearest pixels when the
+// drawing buffer was scaled down to the device's size); `present` also
+// ends the frame (clears the buffer without preserveDrawingBuffer).
+fn copyFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bitmap, present: bool) std.mem.AllocError!void {
+    let w = ctx.width as usize
+    let h = ctx.height as usize
+    if bmp.pixels.len == 0 {
+        if present {
+            ctx.present(bmp.pixels)
+        }
+        return
+    }
+    var px = bmp.pixels
+    let same = bmp.width == w && bmp.height == h
+    if !same {
+        px = try alloc.alloc(0 as u8, w * h * 4)
+    }
+    defer if !same {
+        alloc.free(px)
+    }
+    if present {
+        ctx.present(px)
+    } else {
+        ctx.snapshot(px)
+    }
+    if !same {
+        for y in 0..bmp.height {
+            let sy = y * h / bmp.height
+            for x in 0..bmp.width {
+                let sx = x * w / bmp.width
+                for k in 0..4 {
+                    bmp.pixels[(y * bmp.width + x) * 4 + k] = px[(sy * w + sx) * 4 + k]
+                }
+            }
+        }
+    }
+    bmp.version += 1
+}
+
+/// The end of a frame (docs/webgl.md §2): every WebGL canvas of the page
+/// and its frames that drew since the last frame shows what it drew,
+/// and its drawing buffer is cleared unless preserveDrawingBuffer.
+/// Rendering (`Page.layoutPage`) and the end of the animation frame
+/// callbacks call it.
+pub fn presentCanvases(p: *mut Page) {
+    if p.images |cache| {
+        for i in 0..cache.canvases.len() {
+            let c = &mut cache.canvases.items()[i]
+            if c.gl |ctx| {
+                if ctx.dirty {
+                    copyFrame(p.alloc, ctx, c.bmp, true) catch {}
+                }
+            }
+        }
+    }
+    for f in p.frames.items() {
+        presentCanvases(f.page)
+    }
+}
+
+// A canvas's width or height changed: the drawing buffer follows.
+fn resizeWebGL(c: *mut CanvasBitmap) {
+    if c.gl |ctx| {
+        ctx.resize(c.bmp.width as i32, c.bmp.height as i32)
+    }
+}
+
+fn freeWebGL(alloc: std.mem.Allocator, c: CanvasBitmap) {
+    if c.gl |ctx| {
+        gpu.destroyWebGL(alloc, ctx)
+    }
+}

@@ -7,6 +7,7 @@ import css
 import dom
 import dom.NodeId
 import font
+import gpu
 import image
 import js
 import js.Args
@@ -25,6 +26,8 @@ struct CanvasBitmap {
     bmp: *mut image.Bitmap
     epoch: u64
     tainted: bool
+    // Its WebGL context (webgl_api.aye), if it has one.
+    gl: ?*mut gpu.Context = null
 }
 
 // A bounded allocation, also for detached and offscreen canvases. Keeping
@@ -47,6 +50,7 @@ fn installCanvas(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "canvasHit", 4, akCanvasHit)
     try defMethod(it, o, "canvasText", 4, akCanvasText)
     try defMethod(it, o, "canvasPath", 2, akCanvasPath)
+    try installWebGL(it, o)
 }
 
 fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
@@ -77,6 +81,7 @@ fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
         if p.doc.isLive(old.node) {
             i += 1
         } else {
+            freeWebGL(p.alloc, old)
             old.bmp.deinit(p.alloc)
             p.alloc.destroy(old.bmp)
             cache.canvases.swapRemove(i)
@@ -126,6 +131,7 @@ fn resetCanvas(p: *mut Page, h: NodeId, key: []u8) AllocError!void {
             c.bmp.* = image.Bitmap { width: w, height: ht, pixels: px, version: c.bmp.version + 1 }
             c.epoch += 1
             c.tainted = false
+            resizeWebGL(c)
             return
         }
     }
@@ -1260,6 +1266,10 @@ fn akCanvasPng(it: *mut Interp, a: Args) JsError!Value {
     }
     let png = try paint.encodePng(it.alloc, c.bmp.width, c.bmp.height, c.bmp.pixels)
     defer it.alloc.free(png)
+    return pngDataUrl(it, png)
+}
+
+fn pngDataUrl(it: *mut Interp, png: []u8) JsError!Value {
     let b = try it.builder()
     defer it.release(b)
     try b.append("data:image/png;base64,")

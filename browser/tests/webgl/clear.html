@@ -1,0 +1,33 @@
+<!doctype html>
+<title>WebGL 2 clears</title>
+<style>body { margin: 10px; background: #fff; } canvas { display: block; margin-bottom: 10px; }</style>
+<canvas id="a" width="160" height="100"></canvas>
+<canvas id="b" width="80" height="40"></canvas>
+<script>
+// P11.4: `dweller screenshot` shows WebGL canvases (read back at the
+// frame's end). Canvas a: navy, a red scissor region at the bottom left
+// (GL's origin), a green one at the top right, and a premultiplied
+// half-transparent red one (pink over the white page). Canvas b draws in
+// an animation frame without preserveDrawingBuffer: what shows is that
+// frame.
+const gl = document.getElementById('a').getContext('webgl2');
+gl.clearColor(0, 0, 0.5, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.enable(gl.SCISSOR_TEST);
+const box = (x, y, w, h, r, g, b, a) => {
+  gl.scissor(x, y, w, h);
+  gl.clearColor(r, g, b, a);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+};
+box(10, 10, 40, 30, 1, 0, 0, 1);
+box(110, 60, 40, 30, 0, 1, 0, 1);
+box(60, 30, 40, 40, 0.5, 0, 0, 0.5);
+const g2 = document.getElementById('b').getContext('webgl2', {antialias: true});
+let frames = 0;
+function frame() {
+  g2.clearColor(frames % 2, 0.5, 0, 1);
+  g2.clear(g2.COLOR_BUFFER_BIT);
+  if (++frames < 2) requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

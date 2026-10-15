@@ -99,6 +99,26 @@ pub struct Api {
     glClearColor: fn(c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat)
     glClear: fn(c.GLbitfield)
     glReadPixels: fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8)
+    glEnable: fn(c.GLenum)
+    glDisable: fn(c.GLenum)
+    glIsEnabled: fn(c.GLenum) c.GLboolean
+    glScissor: fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei)
+    glColorMask: fn(c.GLboolean, c.GLboolean, c.GLboolean, c.GLboolean)
+    glDepthMask: fn(c.GLboolean)
+    glStencilMaskSeparate: fn(c.GLenum, c.GLuint)
+    glClearDepthf: fn(c.GLfloat)
+    glClearStencil: fn(c.GLint)
+    glGetIntegerv: fn(c.GLenum, ?*mut c.GLint)
+    glGetFloatv: fn(c.GLenum, ?*mut c.GLfloat)
+    glGetBooleanv: fn(c.GLenum, ?*mut c.GLboolean)
+    glGetShaderPrecisionFormat: fn(c.GLenum, c.GLenum, ?*mut c.GLint, ?*mut c.GLint)
+    glGenTextures: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteTextures: fn(c.GLsizei, ?*c.GLuint)
+    glBindTexture: fn(c.GLenum, c.GLuint)
+    glTexStorage2D: fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei)
+    glFramebufferTexture2D: fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint, c.GLint)
+    glRenderbufferStorageMultisample: fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei)
+    glBlitFramebuffer: fn(c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLbitfield, c.GLenum)
 }
 
 /// The process's EGL display, initialized, on `backend`.
@@ -285,6 +305,26 @@ fn bind(egl: [*]u8) ?Api {
         glClearColor: @ptrCast(fn(c.GLfloat, c.GLfloat, c.GLfloat, c.GLfloat), get("glClearColor".ptr) orelse return null),
         glClear: @ptrCast(fn(c.GLbitfield), get("glClear".ptr) orelse return null),
         glReadPixels: @ptrCast(fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8), get("glReadPixels".ptr) orelse return null),
+        glEnable: @ptrCast(fn(c.GLenum), get("glEnable".ptr) orelse return null),
+        glDisable: @ptrCast(fn(c.GLenum), get("glDisable".ptr) orelse return null),
+        glIsEnabled: @ptrCast(fn(c.GLenum) c.GLboolean, get("glIsEnabled".ptr) orelse return null),
+        glScissor: @ptrCast(fn(c.GLint, c.GLint, c.GLsizei, c.GLsizei), get("glScissor".ptr) orelse return null),
+        glColorMask: @ptrCast(fn(c.GLboolean, c.GLboolean, c.GLboolean, c.GLboolean), get("glColorMask".ptr) orelse return null),
+        glDepthMask: @ptrCast(fn(c.GLboolean), get("glDepthMask".ptr) orelse return null),
+        glStencilMaskSeparate: @ptrCast(fn(c.GLenum, c.GLuint), get("glStencilMaskSeparate".ptr) orelse return null),
+        glClearDepthf: @ptrCast(fn(c.GLfloat), get("glClearDepthf".ptr) orelse return null),
+        glClearStencil: @ptrCast(fn(c.GLint), get("glClearStencil".ptr) orelse return null),
+        glGetIntegerv: @ptrCast(fn(c.GLenum, ?*mut c.GLint), get("glGetIntegerv".ptr) orelse return null),
+        glGetFloatv: @ptrCast(fn(c.GLenum, ?*mut c.GLfloat), get("glGetFloatv".ptr) orelse return null),
+        glGetBooleanv: @ptrCast(fn(c.GLenum, ?*mut c.GLboolean), get("glGetBooleanv".ptr) orelse return null),
+        glGetShaderPrecisionFormat: @ptrCast(fn(c.GLenum, c.GLenum, ?*mut c.GLint, ?*mut c.GLint), get("glGetShaderPrecisionFormat".ptr) orelse return null),
+        glGenTextures: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenTextures".ptr) orelse return null),
+        glDeleteTextures: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteTextures".ptr) orelse return null),
+        glBindTexture: @ptrCast(fn(c.GLenum, c.GLuint), get("glBindTexture".ptr) orelse return null),
+        glTexStorage2D: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei), get("glTexStorage2D".ptr) orelse return null),
+        glFramebufferTexture2D: @ptrCast(fn(c.GLenum, c.GLenum, c.GLenum, c.GLuint, c.GLint), get("glFramebufferTexture2D".ptr) orelse return null),
+        glRenderbufferStorageMultisample: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei), get("glRenderbufferStorageMultisample".ptr) orelse return null),
+        glBlitFramebuffer: @ptrCast(fn(c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLint, c.GLbitfield, c.GLenum), get("glBlitFramebuffer".ptr) orelse return null),
     }
 }
 
@@ -365,7 +405,7 @@ fn hasExtension(exts: []u8, name: []u8) bool {
     return false
 }
 
-fn cstr(p: ?[*]u8) []u8 {
+pub fn cstr(p: ?[*]u8) []u8 {
     if p |s| {
         return s[0..strlen(s)]
     }

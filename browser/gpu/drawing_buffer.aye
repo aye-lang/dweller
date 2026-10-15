@@ -1,0 +1,396 @@
+// gpu: the drawing buffer of a WebGL context (docs/webgl.md §2), as
+// Blink's DrawingBuffer (platform/graphics/gpu/drawing_buffer.cc) does
+// it: a framebuffer of the context's own, with a color texture (RGBA8,
+// RGB8 without alpha) and a depth/stencil renderbuffer as the attributes
+// ask. With antialias, the page draws into a multisampled framebuffer
+// that is resolved into the texture (glBlitFramebuffer) when the pixels
+// are read. `present` reads the frame and, without preserveDrawingBuffer,
+// clears the buffer after it, restoring the page's state.
+
+import std
+import std.mem.Allocator
+
+/// The context attributes, as granted (`getContextAttributes`).
+pub struct Attrs {
+    alpha: bool
+    depth: bool
+    stencil: bool
+    antialias: bool
+    premultiplied: bool
+    preserve: bool
+}
+
+pub struct Context {
+    egl: c.EGLContext
+    attrs: Attrs
+    // Samples of the multisampled buffer; 0 without antialias.
+    samples: i32
+    width: i32
+    height: i32
+    max_size: i32
+    // The framebuffer read at the frame's end, and its attachments.
+    fbo: u32
+    color: u32
+    depth_stencil: u32
+    // With antialias: the framebuffer the page draws into.
+    msaa_fbo: u32
+    msaa_color: u32
+    msaa_depth_stencil: u32
+    // Drawn into since it was last presented.
+    dirty: bool
+    // The first error the front end raised since getError (0: none).
+    err: u32
+    lost: bool
+
+    /// Makes this context current (eglMakeCurrent only on a switch).
+    pub fn makeCurrent(self: *Self) {
+        if current != self.egl {
+            let d = display().?
+            d.api.eglMakeCurrent(d.egl, null, null, self.egl)
+            current = self.egl
+        }
+    }
+
+    /// The framebuffer `bindFramebuffer(null)` binds: the page's drawing
+    /// target.
+    pub fn drawFbo(self: *Self) u32 {
+        if self.msaa_fbo != 0 {
+            return self.msaa_fbo
+        }
+        return self.fbo
+    }
+
+    /// Sizes the drawing buffer to the canvas: `width` x `height`, scaled
+    /// down to the device's largest size (keeping the aspect ratio), at
+    /// least 1 x 1. The new buffer is cleared (robust resource init).
+    pub fn resize(self: *mut Self, width: i32, height: i32) {
+        var w = width
+        var h = height
+        if w < 1 {
+            w = 1
+        }
+        if h < 1 {
+            h = 1
+        }
+        if w > self.max_size || h > self.max_size {
+            let k = self.max_size as f64 / std.math.maxOf(i32, w, h) as f64
+            w = std.math.maxOf(i32, 1, (w as f64 * k) as i32)
+            h = std.math.maxOf(i32, 1, (h as f64 * k) as i32)
+        }
+        if w == self.width && h == self.height {
+            return
+        }
+        self.makeCurrent()
+        let gl = glApi()
+        // The page's bindings outlive the new storage.
+        var tex: c.GLint = 0
+        var rb: c.GLint = 0
+        var draw: c.GLint = 0
+        var read: c.GLint = 0
+        gl.glGetIntegerv(c.GL_TEXTURE_BINDING_2D as c.GLenum, &mut tex)
+        gl.glGetIntegerv(c.GL_RENDERBUFFER_BINDING as c.GLenum, &mut rb)
+        gl.glGetIntegerv(c.GL_DRAW_FRAMEBUFFER_BINDING as c.GLenum, &mut draw)
+        gl.glGetIntegerv(c.GL_READ_FRAMEBUFFER_BINDING as c.GLenum, &mut read)
+        self.freeAttachments()
+        self.width = w
+        self.height = h
+        let fb = c.GL_FRAMEBUFFER as c.GLenum
+        let rbt = c.GL_RENDERBUFFER as c.GLenum
+        var color_format = c.GL_RGBA8 as c.GLenum
+        if !self.attrs.alpha {
+            color_format = c.GL_RGB8 as c.GLenum
+        }
+        gl.glGenTextures(1, &mut self.color)
+        gl.glBindTexture(c.GL_TEXTURE_2D as c.GLenum, self.color)
+        gl.glTexStorage2D(c.GL_TEXTURE_2D as c.GLenum, 1, color_format, w, h)
+        gl.glBindFramebuffer(fb, self.fbo)
+        gl.glFramebufferTexture2D(fb, c.GL_COLOR_ATTACHMENT0 as c.GLenum, c.GL_TEXTURE_2D as c.GLenum, self.color, 0)
+        if self.msaa_fbo != 0 {
+            gl.glGenRenderbuffers(1, &mut self.msaa_color)
+            gl.glBindRenderbuffer(rbt, self.msaa_color)
+            gl.glRenderbufferStorageMultisample(rbt, self.samples, color_format, w, h)
+            gl.glBindFramebuffer(fb, self.msaa_fbo)
+            gl.glFramebufferRenderbuffer(fb, c.GL_COLOR_ATTACHMENT0 as c.GLenum, rbt, self.msaa_color)
+        }
+        // Depth and stencil belong to the framebuffer the page draws into.
+        if self.attrs.depth || self.attrs.stencil {
+            var format = c.GL_DEPTH24_STENCIL8 as c.GLenum
+            var attach = c.GL_DEPTH_STENCIL_ATTACHMENT as c.GLenum
+            if !self.attrs.stencil {
+                format = c.GL_DEPTH_COMPONENT24 as c.GLenum
+                attach = c.GL_DEPTH_ATTACHMENT as c.GLenum
+            } else if !self.attrs.depth {
+                format = c.GL_STENCIL_INDEX8 as c.GLenum
+                attach = c.GL_STENCIL_ATTACHMENT as c.GLenum
+            }
+            var target = &mut self.depth_stencil
+            if self.msaa_fbo != 0 {
+                target = &mut self.msaa_depth_stencil
+            }
+            gl.glGenRenderbuffers(1, target)
+            gl.glBindRenderbuffer(rbt, target.*)
+            if self.msaa_fbo != 0 {
+                gl.glRenderbufferStorageMultisample(rbt, self.samples, format, w, h)
+            } else {
+                gl.glRenderbufferStorage(rbt, format, w, h)
+            }
+            gl.glBindFramebuffer(fb, self.drawFbo())
+            gl.glFramebufferRenderbuffer(fb, attach, rbt, target.*)
+        }
+        gl.glBindTexture(c.GL_TEXTURE_2D as c.GLenum, tex as c.GLuint)
+        gl.glBindRenderbuffer(rbt, rb as c.GLuint)
+        // A first resize leaves the page's framebuffer bound.
+        if draw == 0 {
+            draw = self.drawFbo() as c.GLint
+            read = draw
+        }
+        gl.glBindFramebuffer(c.GL_DRAW_FRAMEBUFFER as c.GLenum, draw as c.GLuint)
+        gl.glBindFramebuffer(c.GL_READ_FRAMEBUFFER as c.GLenum, read as c.GLuint)
+        // The first frame shows the new, cleared buffer.
+        self.dirty = true
+    }
+
+    fn freeAttachments(self: *mut Self) {
+        let gl = glApi()
+        if self.color != 0 {
+            gl.glDeleteTextures(1, &self.color)
+        }
+        if self.depth_stencil != 0 {
+            gl.glDeleteRenderbuffers(1, &self.depth_stencil)
+        }
+        if self.msaa_color != 0 {
+            gl.glDeleteRenderbuffers(1, &self.msaa_color)
+        }
+        if self.msaa_depth_stencil != 0 {
+            gl.glDeleteRenderbuffers(1, &self.msaa_depth_stencil)
+        }
+        self.color = 0
+        self.depth_stencil = 0
+        self.msaa_color = 0
+        self.msaa_depth_stencil = 0
+    }
+
+    /// Resolves the multisampled buffer into the color texture, then
+    /// leaves `fbo` bound for reading; returns the page's read binding.
+    fn bindForRead(self: *Self) c.GLint {
+        let gl = glApi()
+        var read: c.GLint = 0
+        gl.glGetIntegerv(c.GL_READ_FRAMEBUFFER_BINDING as c.GLenum, &mut read)
+        if self.msaa_fbo != 0 {
+            var draw: c.GLint = 0
+            var scissor = gl.glIsEnabled(c.GL_SCISSOR_TEST as c.GLenum)
+            gl.glGetIntegerv(c.GL_DRAW_FRAMEBUFFER_BINDING as c.GLenum, &mut draw)
+            gl.glDisable(c.GL_SCISSOR_TEST as c.GLenum)
+            gl.glBindFramebuffer(c.GL_READ_FRAMEBUFFER as c.GLenum, self.msaa_fbo)
+            gl.glBindFramebuffer(c.GL_DRAW_FRAMEBUFFER as c.GLenum, self.fbo)
+            gl.glBlitFramebuffer(0, 0, self.width, self.height, 0, 0, self.width, self.height, c.GL_COLOR_BUFFER_BIT as c.GLbitfield, c.GL_NEAREST as c.GLenum)
+            gl.glBindFramebuffer(c.GL_DRAW_FRAMEBUFFER as c.GLenum, draw as c.GLuint)
+            if scissor != 0 {
+                gl.glEnable(c.GL_SCISSOR_TEST as c.GLenum)
+            }
+        }
+        gl.glBindFramebuffer(c.GL_READ_FRAMEBUFFER as c.GLenum, self.fbo)
+        return read
+    }
+
+    /// `readPixels` of the default framebuffer: RGBA bytes, bottom row
+    /// first, as GL gives them.
+    pub fn readPixels(self: *Self, x: i32, y: i32, w: i32, h: i32, out: []mut u8) {
+        self.makeCurrent()
+        let read = self.bindForRead()
+        glApi().glReadPixels(x, y, w, h, c.GL_RGBA as c.GLenum, c.GL_UNSIGNED_BYTE as c.GLenum, out.ptr)
+        glApi().glBindFramebuffer(c.GL_READ_FRAMEBUFFER as c.GLenum, read as c.GLuint)
+    }
+
+    /// The whole drawing buffer as straight RGBA, top row first, into
+    /// `out` (width * height * 4 bytes): what the canvas shows.
+    pub fn snapshot(self: *Self, out: []mut u8) {
+        let w = self.width as usize
+        let h = self.height as usize
+        if out.len < w * h * 4 {
+            return
+        }
+        self.readPixels(0, 0, self.width, self.height, out)
+        // GL's rows go up; the bitmap's go down.
+        let row = w * 4
+        for y in 0..h / 2 {
+            let a = y * row
+            let b = (h - 1 - y) * row
+            for k in 0..row {
+                let t = out[a + k]
+                out[a + k] = out[b + k]
+                out[b + k] = t
+            }
+        }
+        for i in 0..w * h {
+            let p = i * 4
+            if !self.attrs.alpha {
+                out[p + 3] = 255
+            } else if self.attrs.premultiplied {
+                let a = out[p + 3] as u32
+                if a != 0 && a != 255 {
+                    for k in 0..3 {
+                        out[p + k] = std.math.minOf(u32, 255, (out[p + k] as u32 * 255 + a / 2) / a) as u8
+                    }
+                }
+            }
+        }
+    }
+
+    /// The frame's end: reads the frame into `out` (as `snapshot`), and
+    /// without preserveDrawingBuffer clears the buffer to its spec
+    /// values (color 0, depth 1, stencil 0), as Blink's
+    /// DrawingBuffer::ClearFramebuffers does, leaving the page's state as
+    /// it was.
+    pub fn present(self: *mut Self, out: []mut u8) {
+        self.snapshot(out)
+        self.dirty = false
+        if !self.attrs.preserve {
+            self.clearBuffer()
+        }
+    }
+
+    fn clearBuffer(self: *Self) {
+        let gl = glApi()
+        var draw: c.GLint = 0
+        var color = @zeroed([4]c.GLfloat)
+        var mask = @zeroed([4]c.GLboolean)
+        var depth_mask: c.GLboolean = 0
+        var depth: c.GLfloat = 0.0
+        var front: c.GLint = 0
+        var back: c.GLint = 0
+        var stencil: c.GLint = 0
+        let scissor = gl.glIsEnabled(c.GL_SCISSOR_TEST as c.GLenum)
+        let discard = gl.glIsEnabled(c.GL_RASTERIZER_DISCARD as c.GLenum)
+        gl.glGetIntegerv(c.GL_DRAW_FRAMEBUFFER_BINDING as c.GLenum, &mut draw)
+        gl.glGetFloatv(c.GL_COLOR_CLEAR_VALUE as c.GLenum, &mut color[0])
+        gl.glGetBooleanv(c.GL_COLOR_WRITEMASK as c.GLenum, &mut mask[0])
+        gl.glGetBooleanv(c.GL_DEPTH_WRITEMASK as c.GLenum, &mut depth_mask)
+        gl.glGetFloatv(c.GL_DEPTH_CLEAR_VALUE as c.GLenum, &mut depth)
+        gl.glGetIntegerv(c.GL_STENCIL_WRITEMASK as c.GLenum, &mut front)
+        gl.glGetIntegerv(c.GL_STENCIL_BACK_WRITEMASK as c.GLenum, &mut back)
+        gl.glGetIntegerv(c.GL_STENCIL_CLEAR_VALUE as c.GLenum, &mut stencil)
+        gl.glDisable(c.GL_SCISSOR_TEST as c.GLenum)
+        gl.glDisable(c.GL_RASTERIZER_DISCARD as c.GLenum)
+        gl.glBindFramebuffer(c.GL_DRAW_FRAMEBUFFER as c.GLenum, self.drawFbo())
+        gl.glClearColor(0.0, 0.0, 0.0, 0.0)
+        gl.glColorMask(1, 1, 1, 1)
+        var bits = c.GL_COLOR_BUFFER_BIT as c.GLbitfield
+        if self.attrs.depth {
+            gl.glClearDepthf(1.0)
+            gl.glDepthMask(1)
+            bits = bits | c.GL_DEPTH_BUFFER_BIT as c.GLbitfield
+        }
+        if self.attrs.stencil {
+            gl.glClearStencil(0)
+            gl.glStencilMaskSeparate(c.GL_FRONT_AND_BACK as c.GLenum, 0xffffffff)
+            bits = bits | c.GL_STENCIL_BUFFER_BIT as c.GLbitfield
+        }
+        gl.glClear(bits)
+        gl.glClearColor(color[0], color[1], color[2], color[3])
+        gl.glColorMask(mask[0], mask[1], mask[2], mask[3])
+        gl.glClearDepthf(depth)
+        gl.glDepthMask(depth_mask)
+        gl.glClearStencil(stencil)
+        gl.glStencilMaskSeparate(c.GL_FRONT as c.GLenum, (front as i64 & 0xffffffff) as c.GLuint)
+        gl.glStencilMaskSeparate(c.GL_BACK as c.GLenum, (back as i64 & 0xffffffff) as c.GLuint)
+        gl.glBindFramebuffer(c.GL_DRAW_FRAMEBUFFER as c.GLenum, draw as c.GLuint)
+        if scissor != 0 {
+            gl.glEnable(c.GL_SCISSOR_TEST as c.GLenum)
+        }
+        if discard != 0 {
+            gl.glEnable(c.GL_RASTERIZER_DISCARD as c.GLenum)
+        }
+    }
+
+    /// The backend's GL API, with this context current.
+    pub fn gl(self: *Self) Api {
+        self.makeCurrent()
+        return glApi()
+    }
+
+    /// Records the first front-end error until getError.
+    pub fn raise(self: *mut Self, code: u32) {
+        if self.err == 0 {
+            self.err = code
+        }
+    }
+
+    /// getError: the front end's error first, then GL's.
+    pub fn takeError(self: *mut Self) u32 {
+        if self.err != 0 {
+            let e = self.err
+            self.err = 0
+            return e
+        }
+        return self.gl().glGetError() as u32
+    }
+}
+
+var current: c.EGLContext = null
+
+/// A context with a `width` x `height` drawing buffer (limited to the
+/// device's sizes), or null when WebGL is unavailable or it cannot be
+/// made.
+pub fn createWebGL(alloc: Allocator, attrs: Attrs, width: i32, height: i32) ?*mut Context {
+    let d = display() orelse return null
+    let egl = createContext(d)
+    if egl == null {
+        return null
+    }
+    current = egl
+    let gl = d.api
+    var tex: c.GLint = 0
+    var rb: c.GLint = 0
+    var samples: c.GLint = 0
+    gl.glGetIntegerv(c.GL_MAX_TEXTURE_SIZE as c.GLenum, &mut tex)
+    gl.glGetIntegerv(c.GL_MAX_RENDERBUFFER_SIZE as c.GLenum, &mut rb)
+    gl.glGetIntegerv(c.GL_MAX_SAMPLES as c.GLenum, &mut samples)
+    var granted = attrs
+    var n: i32 = 0
+    if attrs.antialias && samples > 0 {
+        n = 4
+        if samples < 4 {
+            n = samples
+        }
+    } else {
+        granted.antialias = false
+    }
+    var max = tex
+    if rb < max {
+        max = rb
+    }
+    let ctx = alloc.create(Context { egl: egl, attrs: granted, samples: n, width: 0, height: 0, max_size: max, fbo: 0, color: 0, depth_stencil: 0, msaa_fbo: 0, msaa_color: 0, msaa_depth_stencil: 0, dirty: false, err: 0, lost: false }) catch {
+        destroyContext(d, egl)
+        current = null
+        return null
+    }
+    gl.glGenFramebuffers(1, &mut ctx.fbo)
+    if n > 0 {
+        gl.glGenFramebuffers(1, &mut ctx.msaa_fbo)
+    }
+    ctx.resize(width, height)
+    // The viewport and scissor box start as the drawing buffer.
+    gl.glViewport(0, 0, ctx.width, ctx.height)
+    gl.glScissor(0, 0, ctx.width, ctx.height)
+    return ctx
+}
+
+pub fn destroyWebGL(alloc: Allocator, ctx: *mut Context) {
+    if display() |d| {
+        ctx.makeCurrent()
+        ctx.freeAttachments()
+        let gl = d.api
+        gl.glDeleteFramebuffers(1, &ctx.fbo)
+        if ctx.msaa_fbo != 0 {
+            gl.glDeleteFramebuffers(1, &ctx.msaa_fbo)
+        }
+        destroyContext(d, ctx.egl)
+        current = null
+    }
+    alloc.destroy(ctx)
+}
+
+fn glApi() Api {
+    return display().?.api
+}
