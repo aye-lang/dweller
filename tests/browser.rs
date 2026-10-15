@@ -2422,6 +2422,31 @@ enum Record {
     Answer(String),
 }
 
+// The window's `Record`s in `err`, the stderr of a window with Spaces
+// and DWELLER_TIMING, and the lines of `err` that are not records.
+fn space_records(err: &str) -> (Vec<Record>, String) {
+    let mut records = Vec::new();
+    let mut rest = String::new();
+    for line in err.lines() {
+        let Some(record) = line.strip_prefix("info: DWELLER_TIMING\t") else {
+            rest.push_str(line);
+            rest.push('\n');
+            continue;
+        };
+        let fields: Vec<&str> = record.split('\t').collect();
+        assert_eq!(fields.len(), 3, "{line}");
+        match (fields[0], fields[2]) {
+            ("ui_loop", "") => {
+                records.push(Record::Loop(fields[1].parse::<u64>().unwrap() / 1_000_000))
+            }
+            ("ui_space_sent", name) => records.push(Record::Sent(name.to_string())),
+            ("ui_space_answer", name) => records.push(Record::Answer(name.to_string())),
+            _ => {}
+        }
+    }
+    (records, rest)
+}
+
 // Agent A runs a 1500 ms `eval` loop and B loads a page whose server
 // waits 1500 ms; while both run, C asks for `tabs` and the user clicks
 // into a text field and types (`agents:4`: after C's answer).
@@ -2470,26 +2495,7 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
     drop(b);
     drop(c);
     let out = window.wait_with_output().unwrap();
-    let err = text(&records_in.join().unwrap());
-    let mut records = Vec::new();
-    let mut rest = String::new();
-    for line in err.lines() {
-        let Some(record) = line.strip_prefix("info: DWELLER_TIMING\t") else {
-            rest.push_str(line);
-            rest.push('\n');
-            continue;
-        };
-        let fields: Vec<&str> = record.split('\t').collect();
-        assert_eq!(fields.len(), 3, "{line}");
-        match (fields[0], fields[2]) {
-            ("ui_loop", "") => {
-                records.push(Record::Loop(fields[1].parse::<u64>().unwrap() / 1_000_000))
-            }
-            ("ui_space_sent", name) => records.push(Record::Sent(name.to_string())),
-            ("ui_space_answer", name) => records.push(Record::Answer(name.to_string())),
-            _ => {}
-        }
-    }
+    let (records, rest) = space_records(&text(&records_in.join().unwrap()));
     assert!(
         out.status.success() && rest.is_empty(),
         "the window: {}\n{rest}",
@@ -2811,7 +2817,8 @@ fn window_spaces_control() {
 /// while Beta's work), stops Gamma (it gets `stopped`, its Space exits,
 /// its chip goes), then points at Beta's chip. The person's page keeps
 /// its scroll and its height (the chips sit in the toolbar, the menu
-/// over the page), and the window's loop stays responsive. The last
+/// over the page), and the window never waits for a Space (its
+/// DWELLER_TIMING records; the times bounded generously). The last
 /// frame, with two Spaces (Alpha paused, Beta idle) and Beta's status,
 /// is `browser/tests/ui/spaces_chips.png` (`DWELLER_BLESS=1` rewrites it).
 #[test]
@@ -2842,11 +2849,20 @@ fn window_spaces_chips() {
     let events = "wheel:-3 agents:3 click:570,20 click:560,50 \
                   agents:6 click:690,20 click:680,74 \
                   agents:8 move:690,20 key:cmd+q";
-    let window = spaces_window(
+    let mut window = spaces_window_env(
         &sock,
         &["--spaces", "--state", "--save", png.to_str().unwrap(), "--events", events, &page],
+        &[("DWELLER_TIMING", "1")],
     );
     let pid = window.id();
+    // The records are read as they come: a full pipe would stall the
+    // window and its Spaces.
+    let mut stderr = window.stderr.take().unwrap();
+    let records_in = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        std::io::Read::read_to_end(&mut stderr, &mut v).unwrap();
+        v
+    });
     let mut agents = Vec::new();
     for (name, site) in [("Alpha", "form.html"), ("Beta", "index.html"), ("Gamma", "docs.html")] {
         let mut c = AgentConn::open(&sock);
@@ -2876,11 +2892,11 @@ fn window_spaces_chips() {
     assert!(got.contains("{\"id\":2,\"name\":\"Beta\",\"mine\":false,\"state\":\"idle\""), "{got}");
     // The person points at Beta's chip and closes the window.
     let out = window.wait_with_output().unwrap();
+    let (records, rest) = space_records(&text(&records_in.join().unwrap()));
     assert!(
-        out.status.success() && out.stderr.is_empty(),
-        "the window: {}\n{}",
-        out.status,
-        text(&out.stderr)
+        out.status.success() && rest.is_empty(),
+        "the window: {}\n{rest}",
+        out.status
     );
     let state = text(&out.stdout);
     for want in [
@@ -2895,13 +2911,37 @@ fn window_spaces_chips() {
     }
     assert!(!state.contains("\nspace 3 "), "Gamma's chip goes:\n{state}");
     assert!(state.contains("\nactivity Gamma stopped\n"), "{state}");
+    // The window never waits for a Space: each one's first request (its
+    // navigate, which opens a page in the Space) goes out and comes back
+    // in different loop iterations, with others between them.
+    for name in ["Alpha", "Beta", "Gamma"] {
+        let sent = records
+            .iter()
+            .position(|r| *r == Record::Sent(name.to_string()));
+        let answer = records
+            .iter()
+            .position(|r| *r == Record::Answer(name.to_string()));
+        let loops = match (sent, answer) {
+            (Some(s), Some(a)) if s < a => records[s..a]
+                .iter()
+                .filter(|r| matches!(r, Record::Loop(_)))
+                .count(),
+            _ => 0,
+        };
+        assert!(
+            loops >= 3,
+            "{name}'s first request: {loops} loop iterations before its answer: {records:?}"
+        );
+    }
     let loop_max: u64 = state
         .lines()
         .find_map(|l| l.strip_prefix("loop_max_ms "))
         .unwrap()
         .parse()
         .unwrap();
-    assert!(loop_max < 50, "loop_max_ms {loop_max}");
+    // Generous: a few ms, tens on a loaded machine; a wait for a Space
+    // opening a page holds an iteration for over 120 ms.
+    assert!(loop_max < 120, "loop_max_ms {loop_max}");
     drop(alpha);
     drop(beta);
     no_spaces_left(pid).unwrap();
@@ -3942,12 +3982,130 @@ fn xhr_events() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+// ---- the window's loop iterations, from its DWELLER_TIMING records
+
+/// A phase that ended in a loop iteration of the window: a DWELLER_TIMING
+/// record (`info: DWELLER_TIMING\tPHASE\tNS\tLABEL`), in ms.
+#[derive(Debug)]
+struct Phase {
+    name: String,
+    ms: u64,
+    label: String,
+}
+
+/// A loop iteration of the window: its `ui_loop` time (ms, without its
+/// wait for events) and the phases that ended in it, in order.
+#[derive(Debug, Default)]
+struct Iteration {
+    ms: u64,
+    phases: Vec<Phase>,
+}
+
+/// The phases in which the window's thread waits for the network: a
+/// request made at once (one in the cache returns at once), a batch of
+/// prefetches, a task's wait for its background load.
+const NET_WAITS: [&str; 3] = ["requests", "prefetch", "image_wait"];
+
+/// The longest a loop iteration may wait for the network (`NET_WAITS`,
+/// summed). What arrived in the background is read from the cache in
+/// well under 1 ms; the slow parts of the pages take 200 ms or more.
+const NET_WAIT_MS: u64 = 100;
+
+/// The longest a loop iteration may take besides running a page's
+/// scripts (making its realm and running them is CPU work that a loaded
+/// machine makes slow). Its other work takes a few ms, tens on a loaded
+/// machine; a wait for the slow parts of the pages takes 1 s or more.
+const LOOP_MS: u64 = 1000;
+
+impl Iteration {
+    /// The ms of its phases named in `names`.
+    fn ms_in(&self, names: &[&str]) -> u64 {
+        self.phases
+            .iter()
+            .filter(|p| names.contains(&p.name.as_str()))
+            .map(|p| p.ms)
+            .sum()
+    }
+
+    /// Its waits for the network (`NET_WAITS`), but for the request of
+    /// the document `page` itself, which the navigation makes at once.
+    fn net_wait_ms(&self, page: &str) -> u64 {
+        self.phases
+            .iter()
+            .filter(|p| NET_WAITS.contains(&p.name.as_str()))
+            .filter(|p| !(p.name == "requests" && p.label == page))
+            .map(|p| p.ms)
+            .sum()
+    }
+
+    /// Does a phase `name` whose label contains `label` end in it?
+    fn has(&self, name: &str, label: &str) -> bool {
+        self.phases
+            .iter()
+            .any(|p| p.name == name && p.label.contains(label))
+    }
+}
+
+/// The window's loop iterations from `err`, its stderr, which must hold
+/// only DWELLER_TIMING records. A record is written when its phase ends,
+/// so before the `ui_loop` record of its iteration; the records before
+/// the first `ui_loop` (opening the page) belong to the first iteration,
+/// those after the last (the iteration that drew the last frame and
+/// ended the window) make an iteration of 0 ms.
+fn iterations(err: &str) -> Vec<Iteration> {
+    let mut v = vec![Iteration::default()];
+    for line in err.lines() {
+        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
+        assert!(
+            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
+            "stderr has more than timing records:\n{err}"
+        );
+        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
+        if fields[1] == "ui_loop" {
+            v.last_mut().unwrap().ms = ms;
+            v.push(Iteration::default());
+        } else {
+            v.last_mut().unwrap().phases.push(Phase {
+                name: fields[1].to_string(),
+                ms,
+                label: fields[3].to_string(),
+            });
+        }
+    }
+    v
+}
+
+/// The index of the first iteration in which a phase `name` whose label
+/// contains `label` ends.
+fn iteration_of(loops: &[Iteration], name: &str, label: &str) -> usize {
+    loops
+        .iter()
+        .position(|it| it.has(name, label))
+        .unwrap_or_else(|| panic!("no {name} record of {label:?}: {loops:#?}"))
+}
+
+/// The window never waits for the network in a loop iteration: in each,
+/// the waits are short (`NET_WAIT_MS`), and what is not a page's scripts
+/// takes less than `LOOP_MS`. Panics with the iteration otherwise.
+fn assert_no_net_wait(loops: &[Iteration], page: &str) {
+    for (i, it) in loops.iter().enumerate() {
+        let waited = it.net_wait_ms(page);
+        let other = it.ms.saturating_sub(it.ms_in(&["scripts"]));
+        assert!(
+            waited < NET_WAIT_MS && other < LOOP_MS,
+            "iteration {i} of {} waited {waited} ms for the network, {other} ms besides scripts: {it:#?}",
+            loops.len()
+        );
+    }
+}
+
 /// Page fetch() and XMLHttpRequest run in the background of the window's
 /// event loop (`browser/tests/net/window_fetch.html`): while the server
 /// holds a fetch for 1.5 s, scripted input types into a field and
-/// scrolls, the XHR completes, no loop iteration takes 100 ms or more
-/// (`ui_loop` records of DWELLER_TIMING), and the fetch resolves
-/// afterwards with its body.
+/// scrolls, the XHR completes, and the fetch resolves afterwards with
+/// its body. In the DWELLER_TIMING records, their responses end
+/// iterations after the one whose task sent them, and no iteration waits
+/// for the network (`assert_no_net_wait`).
 #[test]
 fn window_fetch_in_background() {
     use std::time::{Duration, Instant};
@@ -3992,20 +4150,18 @@ fn window_fetch_in_background() {
     }
     let out = window.wait_with_output().unwrap();
     let err = text(&out.stderr);
-    let mut loops = Vec::new();
-    for line in err.lines() {
-        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
-        assert!(
-            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
-            "stderr has more than timing records:\n{err}"
-        );
-        if fields[1] == "ui_loop" {
-            loops.push(fields[2].parse::<u64>().unwrap() / 1_000_000);
-        }
-    }
+    let loops = iterations(&err);
     assert!(out.status.success(), "{}\n{err}", out.status);
-    let longest = loops.iter().copied().max().unwrap_or(0);
-    assert!(loops.len() > 100 && longest < 100, "longest loop {longest} ms of {}", loops.len());
+    assert!(loops.len() > 100, "{} loop iterations", loops.len());
+    assert_no_net_wait(&loops, &page);
+    // The page's first task sends the requests.
+    let sent = iteration_of(&loops, "timers", &page);
+    let xhr = iteration_of(&loops, "background_requests", "/slow/window.txt");
+    let fetched = iteration_of(&loops, "background_requests", "/sleep?ms=1500");
+    assert!(
+        sent + 3 <= xhr && xhr + 3 <= fetched,
+        "sent in iteration {sent}, the XHR's response in {xhr}, the fetch's in {fetched}"
+    );
     let got = text(&out.stdout);
     let want = [
         "requests sent",
@@ -4024,7 +4180,9 @@ fn window_fetch_in_background() {
 /// P4.33: the window paints a page once its document and its sheet are
 /// in (0.3 s), before its script and its image arrive (1.5 s), and the
 /// click and the wheel during the load are handled before the script
-/// runs; no loop iteration waits for the network.
+/// runs. In the DWELLER_TIMING records, the first paint comes iterations
+/// before the script runs and the image is read, and no iteration waits
+/// for the network (`assert_no_net_wait`).
 #[test]
 fn window_paints_early() {
     use std::time::{Duration, Instant};
@@ -4070,40 +4228,17 @@ fn window_paints_early() {
     }
     let out = window.wait_with_output().unwrap();
     let err = text(&out.stderr);
-    // The iterations' times; the one that runs the page's scripts (a
-    // `scripts` record: making the realm and running them, CPU work that
-    // a debug build under a parallel test run makes slow) apart.
-    let mut loops = Vec::new();
-    let mut scripts_loop = None;
-    let mut ran_scripts = false;
-    let mut first_paint = None;
-    for line in err.lines() {
-        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
-        assert!(
-            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
-            "stderr has more than timing records:\n{err}"
-        );
-        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
-        match fields[1] {
-            "ui_loop" if ran_scripts => {
-                scripts_loop = Some(ms);
-                ran_scripts = false;
-            }
-            "ui_loop" => loops.push(ms),
-            "scripts" => ran_scripts = true,
-            "ui_first_paint" => first_paint = first_paint.or(Some(ms)),
-            _ => {}
-        }
-    }
+    let loops = iterations(&err);
     assert!(out.status.success(), "{}\n{err}", out.status);
-    let first_paint = first_paint.expect("no ui_first_paint record");
-    assert!(first_paint < 1200, "first paint after {first_paint} ms");
-    let longest = loops.iter().copied().max().unwrap_or(0);
-    assert!(loops.len() > 100 && longest < 100, "longest loop {longest} ms of {}", loops.len());
-    // It does not wait for the network either (the script and the image
-    // take 1.5 s).
-    let scripts_loop = scripts_loop.expect("the scripts did not run in a loop iteration");
-    assert!(scripts_loop < 1000, "the scripts' loop took {scripts_loop} ms");
+    assert!(loops.len() > 100, "{} loop iterations", loops.len());
+    assert_no_net_wait(&loops, &page);
+    let painted = iteration_of(&loops, "ui_first_paint", &page);
+    let script = iteration_of(&loops, "script", "/delay/1500/net/early_paint.js");
+    let image = iteration_of(&loops, "requests", "/delay/1500/paint/img/badge.png");
+    assert!(
+        painted + 3 <= script && painted + 3 <= image,
+        "first paint in iteration {painted}, the script runs in {script}, the image is read in {image}"
+    );
     let got = text(&out.stdout);
     assert!(
         got.contains("script ran; checked before it: true, scrolled before it: true, color: rgb(0, 128, 0)"),
@@ -4113,9 +4248,12 @@ fn window_paints_early() {
 
 /// P4.43: twenty import()s whose modules take 200-390 ms, a module whose
 /// twenty imports do the same, and a frame whose document takes 1 s load
-/// in the background: no loop iteration waits for them, each import()
-/// settles with its module, the imports evaluate in their order, and the
-/// load event waits for the frame.
+/// in the background: each import() settles with its module, the imports
+/// evaluate in their order, and the load event waits for the frame. In
+/// the DWELLER_TIMING records, the modules are read in several
+/// iterations, the frame's document ends iterations after the page's
+/// script ran, and no iteration waits for the network
+/// (`assert_no_net_wait`).
 #[test]
 fn window_dynamic_scripts() {
     if !has_sdl() {
@@ -4149,39 +4287,26 @@ fn window_dynamic_scripts() {
         .output()
         .unwrap();
     let err = text(&out.stderr);
-    // The iterations' times; those that run a page script (making the
-    // realm, CPU work that a debug build makes slow) apart.
-    let mut loops = Vec::new();
-    let mut script_loops = Vec::new();
-    let mut ran_script = false;
-    for line in err.lines() {
-        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
-        assert!(
-            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
-            "stderr has more than timing records:\n{err}"
-        );
-        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
-        match fields[1] {
-            "ui_loop" if ran_script => {
-                script_loops.push(ms);
-                ran_script = false;
-            }
-            "ui_loop" => loops.push(ms),
-            "scripts" => ran_script = true,
-            _ => {}
-        }
-    }
+    let loops = iterations(&err);
     assert!(out.status.success(), "{}\n{err}", out.status);
-    let longest = loops.iter().copied().max().unwrap_or(0);
-    assert!(
-        loops.len() > 300 && longest < 100,
-        "longest loop {longest} ms of {}",
-        loops.len()
+    assert!(loops.len() > 300, "{} loop iterations", loops.len());
+    assert_no_net_wait(&loops, &page);
+    // The iterations in which a module is read (its task runs).
+    let modules: Vec<usize> = (0..loops.len())
+        .filter(|&i| {
+            loops[i].has("requests", "/net/dynamic_module.js")
+                || loops[i].has("requests", "/net/dynamic_root.js")
+        })
+        .collect();
+    let ran = iteration_of(&loops, "script", "inline");
+    let frame = iteration_of(
+        &loops,
+        "background_requests",
+        "/delay/1000/net/dynamic_frame.html",
     );
-    let longest_script = script_loops.iter().copied().max().unwrap_or(0);
     assert!(
-        longest_script < 1000,
-        "a script's loop took {longest_script} ms"
+        modules.len() >= 3 && ran + 3 <= frame,
+        "modules read in iterations {modules:?}, the page's script ran in {ran}, the frame's document ended in {frame}"
     );
     let got = text(&out.stdout);
     let graph: Vec<String> = (0..20).map(|i| format!("g={i}")).collect();
