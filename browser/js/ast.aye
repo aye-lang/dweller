@@ -211,6 +211,69 @@ pub struct ScopeInfo {
     // FuncDecl nodes created when the scope is entered.
     funcs: u32
     nfuncs: u32
+    // Where the bytecode VM keeps each binding (P4.62, resolve.aye
+    // `allocate`); the tree walker ignores these.
+    kind: u8 = SCOPE_BLOCK
+    // The enclosing scope the resolver visited (NONE for a script's or a
+    // module's root).
+    parent: u32 = NONE
+    func: u32 = NONE
+    // The scope's bindings: a run of `Ast.vars`.
+    vars: u32 = 0
+    nvars: u32 = 0
+    // Context slots (0: the scope makes no context).
+    nctx: u32 = 0
+    // Function and script scopes: registers, r0 included.
+    nregs: u32 = 0
+    // A `for` scope whose bindings are context slots: a fresh context
+    // per iteration (CopyContext).
+    per_iteration: bool = false
+    // A direct `eval` call in this scope or an inner one.
+    eval: bool = false
+    // Sloppy function with simple parameters that uses `arguments`: the
+    // object aliases the parameters, which go to the context.
+    mapped_args: bool = false
+    // Parameter expressions create a closure: the spec's separate
+    // environment for the body's vars (FunctionDeclarationInstantiation
+    // step 28; V8's varblock scope).
+    param_scope: bool = false
+}
+
+pub let SCOPE_BLOCK: u8 = 0
+pub let SCOPE_FUNCTION: u8 = 1
+pub let SCOPE_ARROW: u8 = 2
+pub let SCOPE_SCRIPT: u8 = 3
+pub let SCOPE_MODULE: u8 = 4
+pub let SCOPE_CATCH: u8 = 5
+pub let SCOPE_FOR: u8 = 6
+pub let SCOPE_SWITCH: u8 = 7
+pub let SCOPE_CLASS: u8 = 8
+
+/// A binding's home in the bytecode VM (V8's `VariableLocation`).
+pub let LOC_REGISTER: u8 = 0
+/// A parameter register (`index` is the parameter; NONE: `this`).
+pub let LOC_PARAM: u8 = 1
+/// A slot of the scope's context.
+pub let LOC_CONTEXT: u8 = 2
+/// A module cell (imports and exported locals).
+pub let LOC_MODULE: u8 = 3
+
+/// Why a binding is in the context.
+pub let WHY_NONE: u8 = 0
+pub let WHY_CAPTURED: u8 = 1
+pub let WHY_EVAL: u8 = 2
+pub let WHY_MAPPED: u8 = 3
+
+pub struct VarInfo {
+    name: u32
+    // The tree walker's Env slot.
+    slot: u32
+    loc: u8
+    // Register, parameter or context slot index.
+    index: u32
+    why: u8
+    // A parameter copied into a register or the context (else NONE).
+    param: u32
 }
 
 pub struct ClassInfo {
@@ -235,6 +298,7 @@ pub struct Ast {
     funcs: List(FuncInfo)
     scopes: List(ScopeInfo)
     classes: List(ClassInfo)
+    vars: List(VarInfo)
     // The text of every script, one after the other (spans index it).
     source: text.Builder
 
@@ -246,6 +310,7 @@ pub struct Ast {
             funcs: List(FuncInfo).init(alloc),
             scopes: List(ScopeInfo).init(alloc),
             classes: List(ClassInfo).init(alloc),
+            vars: List(VarInfo).init(alloc),
             source: text.Builder.init(alloc),
         }
         try a.nodes.append(Node.Empty)
@@ -259,6 +324,7 @@ pub struct Ast {
         self.lists.deinit()
         self.funcs.deinit()
         self.scopes.deinit()
+        self.vars.deinit()
         self.classes.deinit()
         self.source.deinit()
     }

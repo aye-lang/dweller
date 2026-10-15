@@ -269,6 +269,8 @@ stack: ... | fn | this | a0 a1 ... a(argc-1) | (undefined up to nparams) | r0 r1
 Today every variable is a slot of a heap `Env`, and every call makes
 one (`invoke` frees it at exit when no closure was created).
 
+- `dweller js --print-scopes FILE` shows the resolver's allocation
+  (P4.62; goldens in `browser/tests/js/scopes/`).
 - The resolver (P4.62) marks each binding **captured** when a nested
   function refers to it (V8: `Variable::IsContextSlot`). A binding that
   is not captured is a register. A captured one is a slot of the

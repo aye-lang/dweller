@@ -9,6 +9,9 @@
 //! - `browser/tests/js/X.js`: `dweller js` must print `X.out` (Node's
 //!   output) and exit 0 with an empty stderr, or, when `X.err` exists,
 //!   print it on stderr and exit 1 (an uncaught exception).
+//! - `browser/tests/js/scopes/X.js` (or `.mjs`): `dweller js
+//!   --print-scopes` must print `X.scopes` (the resolver's register and
+//!   context allocation, P4.62).
 //!
 //! To accept new output after a deliberate change, run
 //! `DWELLER_BLESS=1 cargo test --test browser` and review the diff.
@@ -3258,6 +3261,40 @@ fn js_conformance() {
         scripts.len(),
         failures.join("\n\n")
     );
+}
+
+/// `browser/tests/js/scopes/X.js` and `X.mjs`: `dweller js --print-scopes`
+/// prints `X.scopes`, exit 0 and an empty stderr.
+#[test]
+fn js_print_scopes() {
+    let dir = root().join("browser/tests/js/scopes");
+    let mut scripts: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "js" || e == "mjs"))
+        .collect();
+    scripts.sort();
+    assert!(scripts.len() >= 10, "expected at least 10 scope scripts");
+    let mut failures = Vec::new();
+    for js in &scripts {
+        let rel = js.strip_prefix(root()).unwrap().display().to_string();
+        let out = run(&["js", "--print-scopes", &rel]);
+        if out.status.code() != Some(0) || !out.stderr.is_empty() {
+            failures.push(format!(
+                "{rel}: status {:?}, stderr:\n{}",
+                out.status.code(),
+                text(&out.stderr)
+            ));
+            continue;
+        }
+        check_golden(
+            &js.with_extension("scopes"),
+            &text(&out.stdout),
+            &rel,
+            &mut failures,
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
 #[test]

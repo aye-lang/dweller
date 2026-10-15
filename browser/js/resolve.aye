@@ -13,6 +13,29 @@
 //   environment, which every script of the engine shares.
 //
 // A name found nowhere is a property of the global object.
+//
+// For the bytecode VM (P4.62, BYTECODE.md section 2) each scope also
+// records where every binding lives (`allocate`, written to
+// `Ast.scopes` and `Ast.vars`), following V8's
+// `Scope::AllocateVariablesRecursively` (src/ast/scopes.cc, BSD-3):
+//
+// - a binding an inner function refers to (captured, V8's
+//   `Variable::ForceContextAllocation` from `ResolveTo`) is a slot of
+//   its scope's context; so is every binding of a scope that contains a
+//   direct `eval` call, or of any scope around one
+//   (`Scope::MustAllocateInContext`, `inner_scope_calls_eval`);
+// - the others are registers of the enclosing function's frame (block
+//   scopes take theirs from the function, `AllocateStackSlot`); simple
+//   parameters and `this` stay in their argument slots;
+// - a sloppy function with simple parameters that uses `arguments` puts
+//   its parameters in the context, since the object aliases them
+//   (`DeclarationScope::AllocateParameterLocals`);
+// - a `for` scope whose bindings are context slots copies its context
+//   per iteration;
+// - in a module, imports and exported locals are module cells.
+//
+// Unlike V8 a catch binding is a register unless captured (V8 always
+// gives a catch scope a context), as BYTECODE.md section 2 asks.
 
 import std.list.List
 import std.map.IntMap
@@ -26,6 +49,10 @@ struct Binding {
     flags: u32
     // let, const, class (a block function's Annex B var skips the name).
     lexical: bool
+    // An inner function refers to it.
+    captured: bool = false
+    // Exported from a module.
+    exported: bool = false
 }
 
 struct RScope {
@@ -43,6 +70,13 @@ struct RScope {
     // Function scope, sloppy code: the names of functions declared in
     // blocks that are also `var`s here (Annex B.3.3).
     annexb: List(u32)
+    kind: u8
+    parent: u32
+    // A direct `eval` call in this scope or an inner one.
+    eval: bool = false
+    // Function and top scopes: the scope ids of the blocks inside (not
+    // inside nested functions), in source order, for their registers.
+    blocks: List(u32)
 
     fn hasEnv(self: *Self) bool {
         return !self.top && (self.is_func || self.nslots > 0)
@@ -83,6 +117,8 @@ pub struct Resolver {
     annex_pass: bool
     // The function of module code: it has no `arguments`.
     module_fn: u32 = NONE
+    // Functions and classes seen so far.
+    closures_made: u32 = 0
 
     /// Frees the resolver's lists (also after an error).
     pub fn cleanup(self: *mut Self) {
@@ -91,6 +127,7 @@ pub struct Resolver {
             s.bindings.deinit()
             s.funcs.deinit()
             s.annexb.deinit()
+            s.blocks.deinit()
         }
         self.scopes.deinit()
         self.top_vars.deinit()
@@ -108,7 +145,14 @@ pub struct Resolver {
         return SyntaxErr.Syntax
     }
 
-    fn pushScope(self: *mut Self, isFunc: bool, arrow: bool, top: bool, func: u32, scopeId: u32) AllocError!void {
+    fn pushScope(self: *mut Self, kind: u8, isFunc: bool, arrow: bool, top: bool, func: u32, scopeId: u32) AllocError!void {
+        var parent = NONE
+        if self.scopes.len() > 0 {
+            parent = self.current().scope_id
+            if !isFunc && !top {
+                try self.varScope().blocks.append(scopeId)
+            }
+        }
         try self.scopes.append(RScope {
             is_func: isFunc,
             arrow: arrow,
@@ -120,6 +164,9 @@ pub struct Resolver {
             funcs: List(u32).init(self.alloc),
             closures: false,
             annexb: List(u32).init(self.alloc),
+            kind: kind,
+            parent: parent,
+            blocks: List(u32).init(self.alloc),
         })
     }
 
@@ -139,10 +186,137 @@ pub struct Resolver {
         if s.is_func && s.func != NONE {
             self.ast.funcs.items()[s.func].scope = s.scope_id
         }
+        try self.allocate(s)
         s.bindings.deinit()
         s.funcs.deinit()
         s.annexb.deinit()
+        s.blocks.deinit()
         self.scopes.pop()
+    }
+
+    // ---- allocation for the bytecode VM (P4.62)
+
+    // The parameter that binds `name` (the last one, as V8's
+    // `AllocateParameterLocals`), else NONE.
+    fn paramIndex(self: *Self, f: u32, name: u32) u32 {
+        let fi = self.ast.func(f)
+        var p = NONE
+        for k in 0..fi.nparams {
+            var t = self.ast.item(fi.params, k)
+            match self.ast.node(t) {
+                .Default { target, .. } => {
+                    t = target
+                }
+                _ => {}
+            }
+            match self.ast.node(t) {
+                .Ident { name: n, .. } => {
+                    if n == name {
+                        p = k as u32
+                    }
+                }
+                _ => {}
+            }
+        }
+        return p
+    }
+
+    // Writes where each binding of scope s lives (`Ast.vars`); a function
+    // or top scope also numbers the registers of its blocks, which were
+    // allocated (and popped) before it.
+    fn allocate(self: *mut Self, s: *mut RScope) AllocError!void {
+        let isFn = s.is_func && s.func != NONE
+        var simple = false
+        var mapped = false
+        if isFn {
+            let fi = self.ast.func(s.func)
+            simple = fi.simple
+            mapped = s.kind == SCOPE_FUNCTION && !fi.strict && fi.simple && fi.args_slot != NONE
+        }
+        let first = self.ast.vars.len() as u32
+        var nctx: u32 = 0
+        for b in s.bindings.items() {
+            var v = VarInfo { name: b.name, slot: b.slot, loc: LOC_REGISTER, index: NONE, why: WHY_NONE, param: NONE }
+            var p = NONE
+            if isFn {
+                p = self.paramIndex(s.func, b.name)
+            }
+            if isFn && b.name == A_THIS {
+                v.loc = LOC_PARAM
+            } else if p != NONE {
+                v.param = p
+                if simple {
+                    v.loc = LOC_PARAM
+                    v.index = p
+                }
+            }
+            if s.kind == SCOPE_MODULE && ((b.flags & IDENT_IMPORT) != 0 || b.exported) {
+                v.loc = LOC_MODULE
+                v.index = NONE
+            } else {
+                if b.captured {
+                    v.why = WHY_CAPTURED
+                } else if s.eval {
+                    v.why = WHY_EVAL
+                } else if mapped && p != NONE {
+                    v.why = WHY_MAPPED
+                }
+                if v.why != WHY_NONE {
+                    v.loc = LOC_CONTEXT
+                    v.index = nctx
+                    nctx += 1
+                }
+            }
+            try self.ast.vars.append(v)
+        }
+        let info = &mut self.ast.scopes.items()[s.scope_id]
+        info.kind = s.kind
+        info.parent = s.parent
+        info.func = s.func
+        info.eval = s.eval
+        info.vars = first
+        info.nvars = self.ast.vars.len() as u32 - first
+        info.nctx = nctx
+        info.mapped_args = mapped
+        info.per_iteration = s.kind == SCOPE_FOR && nctx > 0
+        if !s.is_func && !s.top {
+            return
+        }
+        // r0 is the accumulator's home (BYTECODE.md section 2).
+        var next: u32 = 1
+        next = self.numberRegisters(s.scope_id, next)
+        for id in s.blocks.items() {
+            next = self.numberRegisters(id, next)
+        }
+        self.ast.scopes.items()[s.scope_id].nregs = next
+    }
+
+    fn numberRegisters(self: *mut Self, id: u32, start: u32) u32 {
+        var next = start
+        let info = self.ast.scopes.items()[id]
+        let vs = self.ast.vars.items()
+        for k in info.vars..info.vars + info.nvars {
+            if vs[k].loc == LOC_REGISTER {
+                vs[k].index = next
+                next += 1
+            }
+        }
+        return next
+    }
+
+    // A call `eval(...)` of the global eval is a direct eval: every open
+    // scope may be read by name (V8's `Scope::RecordEvalCall`).
+    fn directEval(self: *mut Self, callee: u32) {
+        match self.ast.node(callee) {
+            .Ident { name, depth, .. } => {
+                if depth == DEPTH_GLOBAL && text.eql(self.atoms.name(name), "eval") {
+                    for i in 0..self.scopes.len() {
+                        self.scopes.items()[i].eval = true
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn current(self: *Self) *mut RScope {
@@ -223,12 +397,20 @@ pub struct Resolver {
 
     fn lookup(self: *mut Self, id: u32, name: u32) AllocError!void {
         var depth: u32 = 0
+        // A function boundary lies between the use and the scope: the
+        // binding is captured (V8's `Scope::ResolveTo`).
+        var crossed = false
         var i = self.scopes.len()
         while i > 0 {
             i -= 1
             let s = &mut self.scopes.items()[i]
-            for b in s.bindings.items() {
-                if b.name == name {
+            let bs = s.bindings.items()
+            for j in 0..bs.len {
+                if bs[j].name == name {
+                    if crossed {
+                        bs[j].captured = true
+                    }
+                    let b = bs[j]
                     self.ast.nodes.items()[id] = Node.Ident { name: name, depth: depth, slot: b.slot, flags: b.flags }
                     return
                 }
@@ -237,13 +419,16 @@ pub struct Resolver {
                 // First use of `arguments` in this function: give it a slot.
                 let slot = s.nslots
                 s.nslots += 1
-                try s.bindings.append(Binding { name: name, slot: slot, flags: 0, lexical: false })
+                try s.bindings.append(Binding { name: name, slot: slot, flags: 0, lexical: false, captured: crossed })
                 self.ast.funcs.items()[s.func].args_slot = slot
                 self.ast.nodes.items()[id] = Node.Ident { name: name, depth: depth, slot: slot, flags: 0 }
                 return
             }
             if s.hasEnv() {
                 depth += 1
+            }
+            if s.is_func {
+                crossed = true
             }
         }
         if self.globals.map.get(name) |v| {
@@ -416,7 +601,7 @@ pub struct Resolver {
     pub fn script(self: *mut Self, root: u32) SyntaxErr!void {
         match self.ast.node(root) {
             .Block { list, n, scope } => {
-                try self.pushScope(false, false, true, NONE, scope)
+                try self.pushScope(SCOPE_SCRIPT, false, false, true, NONE, scope)
                 try self.collectVarsList(self.current(), list, n)
                 try self.declareLexical(list, n)
                 try self.annexPass(self.current(), list, n)
@@ -470,13 +655,13 @@ pub struct Resolver {
                 try self.stmt(alt)
             }
             .Block { list, n, scope } => {
-                try self.pushScope(false, false, false, NONE, scope)
+                try self.pushScope(SCOPE_BLOCK, false, false, false, NONE, scope)
                 try self.declareLexical(list, n)
                 try self.stmts(list, n)
                 try self.popScope()
             }
             .For { init, cond, update, body, scope } => {
-                try self.pushScope(false, false, false, NONE, scope)
+                try self.pushScope(SCOPE_FOR, false, false, false, NONE, scope)
                 match self.ast.node(init) {
                     .VarDecl { .. } => {
                         try self.declareFor(init)
@@ -493,7 +678,7 @@ pub struct Resolver {
             .ForIn { left, right, body, scope, .. } => {
                 // The object is evaluated outside the loop's scope.
                 try self.expr(right)
-                try self.pushScope(false, false, false, NONE, scope)
+                try self.pushScope(SCOPE_FOR, false, false, false, NONE, scope)
                 match self.ast.node(left) {
                     .VarDecl { .. } => {
                         try self.declareFor(left)
@@ -516,7 +701,7 @@ pub struct Resolver {
             .Try { block, param, handler, finalizer, scope } => {
                 try self.stmt(block)
                 if handler != 0 {
-                    try self.pushScope(false, false, false, NONE, scope)
+                    try self.pushScope(SCOPE_CATCH, false, false, false, NONE, scope)
                     if param != 0 {
                         try self.declarePattern(self.current(), param, 0, true)
                         try self.pattern(param)
@@ -528,7 +713,7 @@ pub struct Resolver {
             }
             .Switch { disc, list, n, scope } => {
                 try self.expr(disc)
-                try self.pushScope(false, false, false, NONE, scope)
+                try self.pushScope(SCOPE_SWITCH, false, false, false, NONE, scope)
                 for k in 0..n {
                     match self.ast.node(self.ast.item(list, k)) {
                         .Case { list: cl, n: cn, .. } => try self.declareLexical(cl, cn)
@@ -651,6 +836,7 @@ pub struct Resolver {
             .Call { callee, list, n, .. } => {
                 try self.expr(callee)
                 try self.exprs(list, n)
+                self.directEval(callee)
             }
             .New { callee, list, n } => {
                 try self.expr(callee)
@@ -692,6 +878,12 @@ pub struct Resolver {
                             try self.expr(value)
                             match self.ast.node(value) {
                                 .Ident { name, depth, .. } => {
+                                    let bs = self.current().bindings.items()
+                                    for j in 0..bs.len {
+                                        if depth == 0 && bs[j].name == name {
+                                            bs[j].exported = true
+                                        }
+                                    }
                                     if depth >= DEPTH_GLOBAL_LEX && self.message.len() == 0 {
                                         try self.message.append("Export '")
                                         try self.message.append(self.atoms.name(name))
@@ -724,6 +916,7 @@ pub struct Resolver {
 
     // Marks every open scope as containing a closure.
     fn markClosures(self: *mut Self) {
+        self.closures_made += 1
         for i in 0..self.scopes.len() {
             self.scopes.items()[i].closures = true
         }
@@ -735,7 +928,13 @@ pub struct Resolver {
         let outer = self.strict
         self.strict = fi.strict
         defer self.strict = outer
-        try self.pushScope(true, fi.arrow, false, f, fi.scope)
+        var kind = SCOPE_FUNCTION
+        if fi.arrow {
+            kind = SCOPE_ARROW
+        } else if f == self.module_fn {
+            kind = SCOPE_MODULE
+        }
+        try self.pushScope(kind, true, fi.arrow, false, f, fi.scope)
         let s = self.current()
         if !fi.arrow {
             let slot = try self.declareIn(s, A_THIS, 0, false)
@@ -766,8 +965,12 @@ pub struct Resolver {
                 self.ast.funcs.items()[f].self_slot = slot
             }
         }
+        let made = self.closures_made
         for k in 0..fi.nparams {
             try self.pattern(self.ast.item(fi.params, k))
+        }
+        if !fi.simple && self.closures_made != made {
+            self.ast.scopes.items()[fi.scope].param_scope = true
         }
         try self.stmts(fi.body, fi.nbody)
         try self.expr(fi.expr)
@@ -778,7 +981,7 @@ pub struct Resolver {
         self.markClosures()
         let ci = self.ast.classes.items()[c]
         if ci.scope != NONE {
-            try self.pushScope(false, false, false, NONE, ci.scope)
+            try self.pushScope(SCOPE_CLASS, false, false, false, NONE, ci.scope)
             try self.declareIn(self.current(), ci.name, IDENT_CONST, true)
         }
         try self.expr(ci.heritage)
@@ -798,4 +1001,120 @@ pub struct Resolver {
             try self.popScope()
         }
     }
+}
+
+// ---- `dweller js --print-scopes FILE` (V8's --print-scopes)
+
+/// Writes the scope tree under `root` (a script's or module's scope):
+/// one line per scope with its registers and context, one per binding
+/// with its home: `this`, `a<i>` (parameter register), `r<i>`,
+/// `c<i>` (context slot) or `module`. Scopes without bindings are left
+/// out (their inner scopes are shown one level up).
+pub fn printScopes(ast: *mut Ast, atoms: *mut Atoms, root: u32, out: *mut text.Builder) AllocError!void {
+    try printScope(ast, atoms, root, 0, out)
+}
+
+fn printScope(ast: *mut Ast, atoms: *mut Atoms, id: u32, depth: u32, out: *mut text.Builder) AllocError!void {
+    let info = ast.scopes.items()[id]
+    let isFn = info.kind == SCOPE_FUNCTION || info.kind == SCOPE_ARROW || info.kind == SCOPE_MODULE || info.kind == SCOPE_SCRIPT
+    var inner = depth
+    if isFn || info.nvars > 0 {
+        inner = depth + 1
+        try indent(out, depth)
+        try out.append(scopeKindName(info.kind))
+        if info.kind == SCOPE_FUNCTION || info.kind == SCOPE_ARROW {
+            try out.appendByte(' ')
+            let fi = ast.func(info.func)
+            if fi.name == A_EMPTY {
+                try out.append("(anonymous)")
+            } else {
+                try out.append(atoms.name(fi.name))
+            }
+        }
+        if isFn {
+            try out.append(" regs ")
+            try out.appendUint(info.nregs as u64)
+        }
+        if info.nctx > 0 {
+            try out.append(" context ")
+            try out.appendUint(info.nctx as u64)
+        }
+        if info.per_iteration {
+            try out.append(" per-iteration")
+        }
+        if info.mapped_args {
+            try out.append(" mapped-arguments")
+        }
+        if info.param_scope {
+            try out.append(" param-scope")
+        }
+        if info.eval {
+            try out.append(" eval")
+        }
+        try out.appendByte('\n')
+        for k in info.vars..info.vars + info.nvars {
+            let v = ast.vars.items()[k]
+            try indent(out, inner)
+            try out.append(atoms.name(v.name))
+            try out.append(": ")
+            if v.loc == LOC_PARAM && v.index == NONE {
+                try out.append("this")
+            } else if v.loc == LOC_PARAM {
+                try out.appendByte('a')
+                try out.appendUint(v.index as u64)
+            } else if v.loc == LOC_REGISTER {
+                try out.appendByte('r')
+                try out.appendUint(v.index as u64)
+            } else if v.loc == LOC_CONTEXT {
+                try out.appendByte('c')
+                try out.appendUint(v.index as u64)
+            } else {
+                try out.append("module")
+            }
+            if v.param != NONE && v.loc != LOC_PARAM {
+                try out.append(" param ")
+                try out.appendUint(v.param as u64)
+            }
+            if v.why == WHY_CAPTURED {
+                try out.append(" captured")
+            } else if v.why == WHY_EVAL {
+                try out.append(" eval")
+            } else if v.why == WHY_MAPPED {
+                try out.append(" mapped")
+            }
+            try out.appendByte('\n')
+        }
+    }
+    for c in 0..ast.scopes.len() {
+        if ast.scopes.items()[c].parent == id {
+            try printScope(ast, atoms, c as u32, inner, out)
+        }
+    }
+}
+
+fn indent(out: *mut text.Builder, depth: u32) AllocError!void {
+    for k in 0..depth {
+        try out.append("  ")
+    }
+}
+
+fn scopeKindName(kind: u8) []u8 {
+    if kind == SCOPE_FUNCTION {
+        return "function"
+    } else if kind == SCOPE_ARROW {
+        return "arrow"
+    } else if kind == SCOPE_SCRIPT {
+        return "script"
+    } else if kind == SCOPE_MODULE {
+        return "module"
+    } else if kind == SCOPE_CATCH {
+        return "catch"
+    } else if kind == SCOPE_FOR {
+        return "for"
+    } else if kind == SCOPE_SWITCH {
+        return "switch"
+    } else if kind == SCOPE_CLASS {
+        return "class"
+    }
+    return "block"
 }
