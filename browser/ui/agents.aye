@@ -441,6 +441,12 @@ fn syncSlot(ui: *mut Ui, slot: *mut TabSlot) AllocError!void {
     let fresh = slot.shown != slot.seen
     slot.seen = slot.shown
     try agent.syncSession(&mut slot.session, ui.win_w as f64, ui.layoutHeight(), fresh)
+    if slot == ui.slots[ui.active].? {
+        // The shown page was laid out again: the window's display list
+        // pointed into the old layout.
+        ui.relist = true
+        ui.dirty = true
+    }
 }
 
 // The document the window showed before a request.
