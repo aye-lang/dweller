@@ -594,7 +594,7 @@ Common to these cards:
 - estimate: suite geomean 3–4× against the baseline; site `scripts` phase 1.5–2.5×
 - model: opus
 
-#### P4.76: typed arrays over real bytes
+#### P4.76: typed arrays over real bytes (covered by P11.3)
 - goal: `ArrayBuffer` keeps its bytes in native memory, not in an array of `Value`s (`_bytes` in `lib.aye`, 16 bytes per byte), and typed-array element get/set in compiled code is a keyed IC fast path. Needed for three.js `BufferAttribute` and for WebGL uploads.
 - design: an `ObjData` byte store owned by the buffer (freed with it); `typed.aye` reads and writes it directly; `Float32Array`/`Uint8Array`/... element kinds in the keyed IC with bounds and detach checks; `DataView` through the same store. The WebGL design gets a zero-copy view of the bytes from this store (coordinate with that card).
 - files: `browser/js/typed.aye`, `browser/js/lib.aye`, `browser/js/heap.aye`, `browser/js/gc.aye`, `browser/js/vm.aye`
