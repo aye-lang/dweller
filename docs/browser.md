@@ -488,8 +488,8 @@ on (`--no-js` turns it off), `dump` with `--js`.
     session per process with one libcurl handle (connections, TLS
     sessions and DNS kept), gzip/deflate/br, a cookie jar (Domain, Path,
     Expires, Max-Age, Secure, HttpOnly, `__Secure-`/`__Host-`;
-    `DWELLER_COOKIE_FILE` keeps persistent cookies between runs,
-    `document.cookie` reads and writes it), a subresource cache,
+    kept in the profile directory, below; `document.cookie` reads and
+    writes it), a subresource cache,
     redirects followed by hand (each hop stores its cookies), Accept by
     kind, Accept-Language, Referer (strict-origin-when-cross-origin), a
     User-Agent with "Dweller" (also `navigator.userAgent`), 32 MB / 16
@@ -499,6 +499,28 @@ on (`--no-js` turns it off), `dump` with `--js`.
     host). The `<meta charset>` prescan follows WHATWG's (all the labels
     of windows-1252 and UTF-8). Background loads (`net/loader.aye`)
     share one multi handle driven by the main thread between tasks.
+  - *Profile directory* (P4.50, `net/profile.aye`, `net/session.aye`):
+    the window keeps what lasts between runs in `~/.dweller`;
+    `DWELLER_PROFILE=DIR` names another (made with mode 0700 if
+    missing). `dump`, `screenshot`, `agent`, `mcp`, headless windows
+    (`--frames`, `--exit-when-idle`, so the tests) use none unless
+    `DWELLER_PROFILE` is set, and a Space (`dweller space`) never does:
+    its jar stays in memory until P9.7 shares the person's. Layout:
+    `cookies` (the jar) and `lock`. The jar is loaded at the start and
+    written after any change, at most once a second (the window's loop),
+    and at exit, so a killed window loses at most a second of cookies.
+    Each write goes to a temporary file (mode 0600) renamed over
+    `cookies`. Format: one cookie per line, tab-separated: domain,
+    host-only, path, secure, http-only, expiry (seconds since 1970; `0`
+    for a session cookie), name, value. Session cookies (no Expires or
+    Max-Age) are saved and restored like a browser that restores its
+    session, so a restart or a crash keeps those logins; expired cookies
+    are dropped on load. One process writes a profile: it holds `flock`
+    on `lock`; a second window on the same profile loads the cookies but
+    never writes them (its own changes end with it), so it cannot
+    corrupt the file. `DWELLER_COOKIE_FILE=FILE` still works and takes
+    the place of `<profile>/cookies`, with the persistent cookies only
+    (as before profiles).
   - *HTML and CSS:* `template` contents in an inert fragment, foster
     parenting, quirks mode from the doctype, `noscript` following
     scripting in the dumps, svg/math text kept out of them;

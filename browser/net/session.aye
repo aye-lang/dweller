@@ -4,7 +4,10 @@
 // concurrent fetches of multi.aye; the cookie jar (cookies.aye), the
 // cache of subresources (cache.aye), and the referrer of the next
 // navigation. Without a session (unit tests), every request has a handle
-// of its own and no cookies or cache.
+// of its own and no cookies or cache. With a profile directory
+// (`openProfile`, profile.aye) the jar is loaded from it and saved to it
+// after changes, at most once a second (`saveCookiesIfDue`, called by
+// the window's loop) and at the end.
 
 import std
 import std.mem.AllocError
@@ -31,8 +34,16 @@ struct Session {
     share: ?*mut CurlShare
     jar: Jar
     cache: Cache
-    // DWELLER_COOKIE_FILE, or empty.
+    // DWELLER_COOKIE_FILE, `<profile>/cookies`, or empty.
     cookie_file: []mut u8
+    // The cookie file has session cookies too (a profile's).
+    sessions: bool
+    // The profile directory (`openProfile`), or empty; its lock (-1 when
+    // another process holds it: the profile is then read-only).
+    profile: []mut u8
+    lock: i32
+    // `std.time.monotonicMs` of the last save of the cookies.
+    saved_ms: u64
     // `noteNavigation`: the URL of the next navigation from a page and
     // the page's URL.
     nav_target: []mut u8
@@ -58,6 +69,10 @@ pub fn start(alloc: Allocator) AllocError!void {
         jar: Jar.init(alloc),
         cache: Cache.init(alloc),
         cookie_file: file,
+        sessions: false,
+        profile: []mut u8{},
+        lock: -1,
+        saved_ms: 0,
         nav_target: []mut u8{},
         nav_referrer: []mut u8{},
     }) catch |e| {
@@ -75,8 +90,77 @@ pub fn start(alloc: Allocator) AllocError!void {
             return
         }
         defer alloc.free(saved)
-        try s.jar.load(saved, now())
+        try s.jar.load(saved, now(), false)
     }
+}
+
+/// Opens the profile directory `dir` (made if missing): the session's
+/// cookies are loaded from `<dir>/cookies` and saved there, unless
+/// DWELLER_COOKIE_FILE names the cookie file. When another process
+/// holds the profile, its cookies are loaded but never written.
+pub fn openProfile(dir: []u8) AllocError!void {
+    let s = session orelse return
+    if s.profile.len > 0 || dir.len == 0 {
+        return
+    }
+    s.profile = try dup(s.alloc, dir)
+    if !(try makeDir(s.alloc, dir)) {
+        std.log.err("cannot make the profile directory {}", dir)
+        return
+    }
+    s.lock = try lockProfile(s.alloc, dir)
+    if s.cookie_file.len > 0 {
+        return
+    }
+    let file = try joinPath(s.alloc, dir, "cookies")
+    s.cookie_file = file
+    s.sessions = true
+    if std.fs.exists(file) {
+        let saved = std.fs.readFile(s.alloc, file) catch |e| {
+            return
+        }
+        defer s.alloc.free(saved)
+        try s.jar.load(saved, now(), true)
+    }
+}
+
+/// The profile directory, or empty.
+pub fn profileDir() []u8 {
+    let s = session orelse return ""
+    return s.profile
+}
+
+/// Milliseconds until changed cookies are due to be saved
+/// (`saveCookiesIfDue`), or null when nothing waits.
+pub fn msUntilCookieSave() ?i64 {
+    let s = session orelse return null
+    if !writesCookies(s) || !s.jar.changed {
+        return null
+    }
+    let since = std.time.monotonicMs() - s.saved_ms
+    if since >= SAVE_MS {
+        return 0
+    }
+    return (SAVE_MS - since) as i64
+}
+
+/// Saves the cookies if they changed and the last save is a second ago.
+pub fn saveCookiesIfDue() {
+    if msUntilCookieSave() |ms| {
+        if ms == 0 {
+            let s = session.?
+            saveCookies(s) catch |e| {
+            }
+        }
+    }
+}
+
+let SAVE_MS: u64 = 1000
+
+// Are the cookies written to a file? Not without one, nor on a profile
+// that another process holds.
+fn writesCookies(s: *Session) bool {
+    return s.cookie_file.len > 0 && (!s.sessions || s.lock >= 0)
 }
 
 /// Ends the session: saves the cookies (when there is a cookie file and
@@ -84,10 +168,11 @@ pub fn start(alloc: Allocator) AllocError!void {
 pub fn stop() {
     let s = session orelse return
     session = null
-    if s.cookie_file.len > 0 && s.jar.changed {
+    if writesCookies(s) && s.jar.changed {
         saveCookies(s) catch |e| {
         }
     }
+    unlockProfile(s.lock)
     stopLoads()
     if s.curl |c| {
         curl_easy_cleanup(c)
@@ -98,6 +183,7 @@ pub fn stop() {
     s.jar.deinit()
     s.cache.deinit()
     release(s.alloc, s.cookie_file)
+    release(s.alloc, s.profile)
     release(s.alloc, s.nav_target)
     release(s.alloc, s.nav_referrer)
     s.alloc.destroy(s)
@@ -106,12 +192,10 @@ pub fn stop() {
 fn saveCookies(s: *mut Session) AllocError!void {
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
-    try s.jar.save(now(), &mut b)
-    let f = std.fs.create(s.cookie_file) catch |e| {
-        return
-    }
-    defer f.close()
-    f.write(b.bytes()) catch |e| {
+    try s.jar.save(now(), s.sessions, &mut b)
+    s.saved_ms = std.time.monotonicMs()
+    if try writeAtomic(s.alloc, s.cookie_file, b.bytes()) {
+        s.jar.changed = false
     }
 }
 

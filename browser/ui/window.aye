@@ -30,6 +30,7 @@ import dom.NodeId
 import engine
 import font
 import layout
+import net
 import paint
 import perf
 import std
@@ -188,6 +189,21 @@ pub fn run(alloc: Allocator, args: [][]u8) i32 {
     } else {
         std.log.err(UI_USAGE)
         return 2
+    }
+    // The person's window keeps its profile in ~/.dweller unless
+    // DWELLER_PROFILE named one (main.aye); headless test runs have none.
+    if o.frames == 0 && !o.exit_when_idle {
+        if std.os.getenv("HOME") |home| {
+            if home.len > 0 {
+                let dir = net.joinPath(alloc, home, ".dweller") catch |e| {
+                    std.log.err("out of memory")
+                    return 1
+                }
+                defer alloc.free(dir)
+                net.openProfile(dir) catch |e| {
+                }
+            }
+        }
     }
     return runWith(alloc, o)
 }
@@ -558,6 +574,11 @@ pub struct Ui {
                 timeout = POLL_MS
             }
             timeout = spacesTimeout(self, timeout)
+            if net.msUntilCookieSave() |ms| {
+                if ms < timeout as i64 {
+                    timeout = ms as i32
+                }
+            }
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -610,6 +631,7 @@ pub struct Ui {
             if engine.hasContextRequests() {
                 try serveContexts(self)
             }
+            net.saveCookiesIfDue()
             if self.resized {
                 self.resized = false
                 if try self.resize() {
