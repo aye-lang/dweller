@@ -156,6 +156,13 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 5e | P4.58 | 0 | window tests read the window's pipes while it runs (a full stderr pipe blocks it) |
 | 6 | P4.36 | 0 | scroll by moving the last frame and drawing only the new band |
 | 7 | P4.37 | 0 | one connection pool across batches and navigations |
+| 7b | P4.59, P4.60 | 0 ∥ JS | JS benchmark set (splay, crypto, raytrace, loops, three.js r170, DOM) and `baseline.json` |
+| 7c | P4.61–P4.64 | 0 ∥ JS | bytecode format, resolver registers, VM core, control flow (behind `DWELLER_JS_VM=1`) |
+| 7d | P4.65–P4.70 | 0 ∥ JS | calls, closures, properties and globals, exceptions, the rest of the syntax, classes |
+| 7e | P4.71–P4.74 | 0 ∥ JS | generators and async on resumable frames; polymorphic ICs; prototype shapes |
+| 7f | P4.75 | 0 ∥ JS | the VM on by default (full gates) |
+| 7g | P4.76–P4.78 | 0 ∥ JS | typed arrays over bytes; register optimizer; remove the tree walker's paths |
+| 7h | P4.79 | 0 ∥ JS | f1 game per-frame JS cost (after WebGL and WebAssembly) |
 | 8 | P10.1 | 1 | WPT testharness runner: fetch at a pinned rev, static server, `dweller wpt` |
 | 9 | P10.2 | 1 | WPT reftest and crashtest runner (screenshots against the reference) |
 | 10 | P10.3 | 1 | test262 runner over `dweller js --test262` at a pinned rev |
@@ -397,6 +404,211 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - time box: 120 min; model: opus
 - status: done 2026-10-15. `perf/telemetry.aye` (no allocation; a fixed buffer written every 5 s, at exit and by the crash handler). Records: the person's window and its Spaces (`DWELLER_TELEMETRY_DIR`, set by the window) and any run with `DWELLER_PROFILE` (`dump` too); headless test windows and `dump` without a profile record nothing, so no golden changed. Off: `DWELLER_TELEMETRY=0` or `telemetry=off` in `<profile>/settings`. Events `crash`, `js_error` (line: the last statement run, via a store per statement in `exec` and a table of parsed sources in the interpreter), `unsupported` (`css_property`, `css_value`, `js_global`, `js_method`), `slow_loop` (phases summed from the `DWELLER_TIMING` ones, which are now timed while telemetry is on), `page`, `scroll`, `load_failed`, `image_decode`; format and privacy rules in `docs/browser.md` "Telemetry". Test `window_telemetry` (also SIGSEGV with the last actions, `DWELLER_TELEMETRY=0`, a test window without a profile under a temporary `HOME`).
 
+### JS engine: the bytecode VM (P4.30)
+
+P4.30 is the umbrella: the engine gets a bytecode compiler and an
+accumulator-and-register interpreter with inline caches (Ignition-like).
+The design, the baseline numbers and the reasons are in
+`browser/js/BYTECODE.md`. The cards touch `browser/js/` and
+`browser/tests/jsbench/` only, so they run beside the window cards. They
+run in order: each one builds on the one before.
+
+Common to these cards:
+- Each card names its V8 reference (paths under `~/Documents/chromium/src/v8/`, read with the Read and Grep tools; `BYTECODE.md` section 7). Ported code carries the V8 attribution in the file header.
+- Speedups are against `browser/tests/jsbench/baseline.json` (P4.59). The estimates below are estimates; the status line records the measured number (`BENCH_BASELINE=<main's binary> BENCH_RUNS=5 browser/tests/jsbench/run.sh <workloads>`).
+- The VM gates (`BYTECODE.md` section 5): `js_conformance` and `js_conformance_vm` in every card, also with `DWELLER_JS_GC=stress`; from P4.67 on also `jsdom_fixtures jsdom_gc_stress` and `page_load.py check` with `DWELLER_JS_VM=1`; test262 with the VM on, no fewer passes than off, once P10.3 has landed.
+- `DWELLER_JS_VM_STATS=1` must show the card's constructs gone from the fallback reasons.
+- time box: 45 min each; stop rules as usual (the same verify fails twice: stop and report).
+
+#### P4.59: JS benchmark set and baseline
+- goal: the benchmark set of `BYTECODE.md` section 1 that does not need three.js or the DOM, a reference column from `node --jitless`, and the numbers of the day committed.
+- design: vendor Octane `splay.js` (BSD-3) and `crypto.js` (Tom Wu's license) as the present `richards.js` is (harness removed, assertions kept, deterministic checksum, license notice in the header; README license table). Write `raytrace.js` (a small ray tracer: spheres, planes, lights, a 64×64 image, checksum of the pixels) and `loop.js`, `globals.js`, `calls.js` (the three loops of `BYTECODE.md` section 1). `run.sh`: `BENCH_REF=node` adds a `node --jitless` column; `--json FILE` writes the medians. Commit `baseline.json` (fast build of the merge base, median of 5) and the table in the README. Do not vendor Octane `deltablue.js` (GPL-2) or `raytrace.js` (no license).
+- files: `browser/tests/jsbench/` (`run.sh`, `README.md`, new `.js`/`.out`, `baseline.json`)
+- v8: none (Octane: github.com/chromium/octane)
+- verify: `BENCH_RUNS=5 BENCH_REF=node browser/tests/jsbench/run.sh --json target/jsbench.json > target/p4.59.log 2>&1; echo $?` → 0 with every checksum equal to Node's
+- estimate: no speedup (measurement)
+- model: sonnet
+
+#### P4.60: three.js and DOM benchmarks
+- goal: the `three` and `dom` workloads of `BYTECODE.md` section 1, in the baseline.
+- design: vendor `three.module.min.js` 0.170.0 (the version of `~/Documents/f1/web`) with its MIT license as `browser/tests/jsbench/vendor/three/`. `three.mjs` imports it, builds a scene of 2000 `Object3D`s (groups of 20 under 100 parents), and for 300 frames sets each object's position and quaternion (`setFromAxisAngle`), calls `scene.updateMatrixWorld()`, and does `Vector3.applyMatrix4`/`Matrix4.multiplyMatrices` work; the checksum is a rounded sum of the world matrices. If `dweller js` cannot run the module build, find out why and fix the engine bug in the same card, or use `three.cjs` wrapped (note which). `dom.html`: 20k `createElement`/`appendChild`/`setAttribute`/`classList.add`, 2k `querySelectorAll`, 10k `dispatchEvent` to a listener; run through `dweller dump --js` and timed by its `scripts` phase (DWELLER_TIMING). Add both to `run.sh` and `baseline.json`.
+- files: `browser/tests/jsbench/` (`three.mjs`, `vendor/three/`, `dom.html`, `run.sh`, `README.md`, `baseline.json`)
+- v8: none
+- verify: `BENCH_RUNS=5 BENCH_REF=node browser/tests/jsbench/run.sh three dom > target/p4.60.log 2>&1; echo $?` → 0, checksums equal to Node's (dom: to a recorded golden)
+- estimate: no speedup (measurement)
+- model: sonnet
+
+#### P4.61: bytecode format, builder, disassembler
+- goal: the data structures of the VM, with no execution: the instruction table, `BytecodeArray`, a builder with labels and jump patching, the constant pool, the handler table, the source-position table, and a disassembler.
+- design: `browser/js/bytecode.aye`: `enum Bc: u8` with the first set of `BYTECODE.md` section 2 (only what P4.63 to P4.64 use; later cards add theirs), a table of name, operand kinds, may-allocate and may-throw flags; one-byte operands with `Wide`/`ExtraWide` prefixes; `Builder` (emit, labels, forward jumps, `JumpLoop` backward) as in V8's `BytecodeArrayBuilder`; `disassemble(code) -> text` in V8's `--print-bytecode` style. Unit tests build small arrays by hand and compare the disassembly. Adds `browser/js/LICENSE-V8`.
+- files: `browser/js/bytecode.aye`, `browser/js/unit_tests.aye`, `browser/js/LICENSE-V8`
+- v8: `src/interpreter/bytecodes.h`, `bytecode-operands.h`, `bytecode-array-builder.h`, `bytecode-label.h`, `handler-table-builder.h`, `src/codegen/source-position-table.h`
+- verify: `cargo test --release --test browser -- aye_unit_tests > target/p4.61.log 2>&1; echo $?` → 0
+- estimate: no speedup
+- model: opus (the format decides later cards)
+
+#### P4.62: resolver: registers or context slots
+- goal: the resolver tells for every binding whether a nested function refers to it (captured). The tree walker ignores the new data; the compiler uses it.
+- design: in `resolve.aye`, mark a binding captured when an identifier resolves to it across a function boundary (V8: `Variable::IsContextSlot`); per scope, the count of captured bindings and a map from slot to register or context slot. `arguments`, the function's own name and `this` captured by arrows follow the same rule. Unit tests on small sources print the classification.
+- files: `browser/js/resolve.aye`, `browser/js/ast.aye` (`ScopeInfo` fields), `browser/js/unit_tests.aye`
+- v8: `src/ast/scopes.h` (`Scope::AllocateVariablesRecursively`, `MustAllocateInContext`), `src/ast/variables.h`
+- verify: `cargo test --release --test browser -- aye_unit_tests js_conformance > target/p4.62.log 2>&1; echo $?` → 0
+- estimate: no speedup (no behavior change)
+- model: sonnet
+
+#### P4.63: VM core: frames, dispatch, straight-line code
+- goal: the dispatch loop runs compiled functions behind `DWELLER_JS_VM=1`: literals, registers (parameters and uncaptured locals), all unary, binary, comparison and update operators, assignments to registers, expression statements and `return`. Anything else leaves the function on the tree walker.
+- design: `browser/js/vm.aye` (the loop: a `match` on the opcode, the accumulator in a local) and `browser/js/compiler.aye` (AST to bytecode, V8's `BytecodeGenerator` shape: visit an expression into the accumulator, a register allocator for temporaries). Lazy compilation from `invoke`, with the result or the reason kept per `FuncInfo`. The frame of `BYTECODE.md` section 2 (above `[fn, this, args]`, r0 the accumulator's home, new `Frame` fields); the may-allocate rule of section 4. Operators call the existing `Interp` helpers (`add`, `binary`, `lessThan`, `looseEquals`, ...) after a numeric fast path. `DWELLER_JS_VM_STATS=1`. New test `js_conformance_vm` in `tests/browser.rs`: the js scripts with `DWELLER_JS_VM=1` against the same goldens, and a second pass with `DWELLER_JS_GC=stress` too. Check that the dispatch `match` still compiles to one jump table (`aye emit-c` plus `clang -S`, note in `BYTECODE.md`).
+- files: `browser/js/vm.aye`, `browser/js/compiler.aye`, `browser/js/bytecode.aye`, `browser/js/interp.aye` (`invoke`, `Frame`), `tests/browser.rs`
+- v8: `src/interpreter/bytecode-generator.cc` (`VisitBinaryOperation`, `VisitAssignment`, `VisitCountOperation`), `bytecode-register-allocator.h`, `interpreter-generator.cc` (handler semantics)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm aye_unit_tests > target/p4.63.log 2>&1; echo $?` → 0
+- estimate: straight-line arithmetic functions 2–3×; suite unchanged (loops not compiled yet)
+- model: opus
+
+#### P4.64: control flow
+- goal: `if`, `while`, `do`, `for` (with `var` or uncaptured `let`), `break`/`continue` with and without labels, `switch`, `?:`, `&&`, `||`, `??`, the comma operator, `void`.
+- design: V8's `LoopBuilder`, `SwitchBuilder`, `BreakableControlFlowBuilder`; `JumpIfToBooleanFalse` and friends; `JumpLoop` does the budget tick (`Interp.tick`) and the interrupt check; `SwitchOnSmi` for dense integer `case`s.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/bytecode.aye`
+- v8: `src/interpreter/control-flow-builders.h`, `bytecode-generator.cc` (`VisitIfStatement`, `VisitForStatement`, `VisitSwitchStatement`, `VisitLogicalOrExpression`)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.64.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 browser/tests/jsbench/run.sh loop` checksum equal
+- estimate: `loop` 3–5×; suite 1.0–1.2×
+- model: sonnet
+
+#### P4.65: calls and `new`
+- goal: calls and constructions from compiled code: `f(...)`, `o.m(...)` (with the property load still generic until P4.67), `new F(...)` for functions and base classes, natives and bound functions, `arguments`, default and rest parameters, missing and extra arguments, sloppy and strict `this`.
+- design: `CallProperty`, `CallUndefinedReceiver`, `Construct`. A call to a compiled function pushes a frame and continues the loop (no C recursion); others go through `callAt`/`constructAt`. `Return` pops; an `entry` frame leaves the loop. `MAX_DEPTH` counts frames; the C stack check stays for entries from natives. `CreateArguments`, `CreateRestParameter`.
+- files: `browser/js/vm.aye`, `browser/js/compiler.aye`, `browser/js/interp.aye` (`callAt`, `constructAt`, `invoke`)
+- v8: `bytecode-generator.cc` (`VisitCall`, `VisitCallNew`, `BuildCreateArguments`), `interpreter-generator.cc` (`CallProperty`, `Construct`), `src/builtins/builtins-call-gen.cc` (receiver conversion)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm js_command_line > target/p4.65.log 2>&1; echo $?` → 0; `calls`, `richards` checksums equal
+- estimate: `calls` 1.5–2× (property access still generic)
+- model: opus
+
+#### P4.66: closures and contexts
+- goal: nested functions and captured variables: `CreateClosure`, the function context for captured bindings, block contexts, per-iteration copies of captured `let` loop variables, TDZ checks, named function expressions.
+- design: `BYTECODE.md` section 2 "Scopes, closures and `let`": context `Env` made at entry only when the function has captured bindings; `LdaContextSlot depth, slot`, `PushContext`/`PopContext`, `CopyContext` once per iteration, `ThrowReferenceErrorIfHole`. Closures created by the VM are the same function objects as the tree walker's (`makeClosure`).
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/interp.aye` (`makeClosure`)
+- v8: `bytecode-generator.cc` (`BuildVariableLoad`, `BuildVariableAssignment`, `VisitBlock`, `BuildNewLocalBlockContext`, the per-iteration copy in `VisitIterationBody`), `src/ast/scopes.h`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.66.log 2>&1; echo $?` → 0; `closures` checksum equal
+- estimate: `closures` 2–3×
+- model: opus
+
+#### P4.67: properties, literals, globals, the top level
+- goal: named and keyed get/set, object and array literals, `delete`, `in`, `instanceof`, `typeof`, global reads and writes, top-level `let`/`const` (`glex`), and the script's top level and `evalScript` code compiled as a function body.
+- design: `GetNamedProperty r, name, [s]` and friends; each `[s]` gets the present monomorphic `PropCache` (one per feedback slot instead of per AST node); `LdaGlobal`/`StaGlobal` cache `(global shape, slot)`; keyed loads of dense arrays and strings skip the generic path; `CreateObjectLiteral` uses `literalShape`; `CreateArrayLiteral`. From this card on, the DOM gates run with the VM on.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/shapes.aye`, `browser/js/interp.aye` (`runScript`, `evalScript`)
+- v8: `bytecode-generator.cc` (`VisitProperty`, `VisitObjectLiteral`, `VisitArrayLiteral`, `BuildGlobalLoad`), `src/ic/ic.cc` (`LoadIC::Load`, `StoreIC::Store`)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.67.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 python3 browser/tools/page_load.py check` exit 0 (local)
+- estimate: `globals` 5–10×, `calls` 3–5×; richards, navier-stokes, methods 1.8–2.5×
+- model: opus
+
+#### P4.68: exceptions
+- goal: `throw`, `try`/`catch`/`finally` in compiled code, with unwinding through VM frames, natives and the tree walker, and error traces and telemetry positions from the source-position table.
+- design: `BYTECODE.md` section 2 "Exceptions and `finally`": handler table, the unwind step, the token-and-value `finally` of V8's `ControlScopeForTryFinally`; `Terminated` and `OutOfMemory` skip handlers; `gen_return` keeps its rule. `appendTrace`, `DWELLER_JS_TRACE` and `last_stmt` read positions from the table.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/interp.aye` (`appendTrace`)
+- v8: `bytecode-generator.cc` (`VisitTryCatchStatement`, `VisitTryFinallyStatement`, `ControlScopeForTryFinally`), `control-flow-builders.h` (`TryCatchBuilder`, `TryFinallyBuilder`), `handler-table-builder.h`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures > target/p4.68.log 2>&1; echo $?` → 0
+- estimate: coverage (functions with `try` compile); no suite change
+- model: opus
+
+#### P4.69: the rest of the syntax
+- goal: destructuring (declarations, assignments, parameters), spread in calls, arrays and objects, `for-in`, `for-of` with iterator close, template literals and tagged templates, optional chaining, `**`, `new.target`, regexp literals, getters and setters in object literals.
+- design: `GetIterator`, `ForInPrepare`/`ForInNext`/`ForInStep`, `CallWithSpread`; optional chaining as `JumpIfUndefinedOrNull` to the end of the chain (no `ShortCircuit`); slow pieces through `CallRuntime` into the existing `Interp` helpers (`bindPattern`'s logic, `evalTagged`, `copyDataProps`).
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/bytecode.aye`
+- v8: `bytecode-generator.cc` (`BuildDestructuringArrayAssignment`, `BuildDestructuringObjectAssignment`, `VisitForOfStatement`, `VisitForInStatement`, `BuildGetIteratorRecord`, `BuildIteratorClose`, `VisitOptionalChain`)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures > target/p4.69.log 2>&1; echo $?` → 0; test262 `test/language/statements/for-of test/language/expressions/assignment` with the VM on, no fewer passes than off (once P10.3 has landed)
+- estimate: coverage; site `scripts` phase starts to drop (1.2–1.5×)
+- model: opus
+
+#### P4.70: classes
+- goal: class declarations and expressions: methods, accessors, static members, fields and static blocks, private names, computed keys, `super.x` and `super(...)`, derived constructors (`this_obj`, `ctor_this`), default constructors.
+- design: one `CallRuntime` for the class definition (reusing `evalClass`'s object building), then compiled bodies for methods, field initializers and constructors; derived constructor `this` in a register with the TDZ check after `super()`.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/interp.aye` (`evalClass`, `superConstruct`, `initFields`)
+- v8: `bytecode-generator.cc` (`BuildClassLiteral`, `VisitSuperCallReference`, `BuildPrivateBrandCheck`, `BuildInstanceMemberInitialization`)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures > target/p4.70.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 python3 browser/tools/page_load.py check` exit 0; test262 `test/language/statements/class` VM on ≥ off
+- estimate: `three` 1.5–2× (its classes compile); site `scripts` 1.3–2×
+- model: opus
+
+#### P4.71: generators on resumable frames
+- goal: `function*` runs in the VM without a coroutine: `yield`, `yield*`, `return(v)` and `throw(e)` with `finally`.
+- design: `BYTECODE.md` section 2 "Generators and async functions": `SuspendGenerator` copies the registers and context into the generator object (a new `ObjData` case traced by the collector), `ResumeGenerator` and `SwitchOnGeneratorState` jump back; the generator object and its `next`/`throw`/`return` natives stay the same for both engines.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/coroutine.aye`, `browser/js/heap.aye`, `browser/js/gc.aye`
+- v8: `bytecode-generator.cc` (`VisitYield`, `VisitYieldStar`, `BuildSuspendPoint`, `BuildGeneratorPrologue`), `src/objects/js-generator.h`, `src/runtime/runtime-generator.cc`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.71.log 2>&1; echo $?` → 0 (also with `DWELLER_JS_GC=stress`); test262 `test/language/expressions/yield test/built-ins/GeneratorPrototype` VM on ≥ off
+- estimate: generator-heavy code 2–5×; no 256 MB stack per generator
+- model: opus
+
+#### P4.72: async functions on resumable frames
+- goal: `async function`, async arrows and methods, `await`, async generators, `for await`, and module top-level await run in the VM on the frames of P4.71, with the driver in `lib.aye` unchanged.
+- design: `await` suspends with kind "await" and returns to the driver; the driver resumes with the settled value or throws into the frame. Modules: the module function compiles like an async function. `coroutine.aye` keeps only the tree walker's uses.
+- files: `browser/js/compiler.aye`, `browser/js/vm.aye`, `browser/js/coroutine.aye`, `browser/js/modules.aye`
+- v8: `bytecode-generator.cc` (`VisitAwait`, `BuildAwait`, `BuildAsyncReturn`, async generator paths), `src/builtins/builtins-async-function-gen.cc`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures window_dynamic_scripts > target/p4.72.log 2>&1; echo $?` → 0; test262 `test/language/expressions/await test/language/statements/for-await-of` VM on ≥ off
+- estimate: async-heavy site code 2–3×
+- model: opus
+
+#### P4.73: inline caches: polymorphic, megamorphic, stores, calls, elements
+- goal: the IC table of `BYTECODE.md` section 3, except prototype chains deeper than one (P4.74).
+- design: a feedback vector per compiled function; load and store entries go monomorphic → up to 4 → megamorphic (a global 4096-entry stub cache keyed by `(shape, atom)`); store transitions record `(old shape, new shape, slot)` and whether `props` grows (`shapes.aye` returns both); call entries skip checks for a compiled target; keyed entries by element kind (dense array, string, arguments; typed arrays in P4.76). `DWELLER_JS_VM_STATS=1` adds IC state counts.
+- files: `browser/js/vm.aye`, `browser/js/shapes.aye`, `browser/js/compiler.aye` (slot allocation)
+- v8: `src/objects/feedback-vector.h`, `src/ic/ic.h`, `src/ic/ic.cc`, `src/ic/stub-cache.h`, `src/ic/handler-configuration.h`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.73.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 browser/tests/jsbench/run.sh` all checksums equal
+- estimate: 1.2–1.4× on richards, splay, raytrace, three
+- model: opus
+
+#### P4.74: prototype shapes and the prototype epoch
+- goal: loads that find the property up a prototype chain of any depth hit the IC (class hierarchies, three.js methods).
+- design: `BYTECODE.md` section 3, items 2 and 3: a root shape per prototype object (`rootShape(proto)`), so a shape fixes the prototype; `Object.setPrototypeOf` and `__proto__` writes move an object to the new root or to dictionary mode; objects used as prototypes are marked, and a change of their keys, flags or prototype increments `Heap.proto_epoch`; load entries for a holder up the chain record the epoch. Count epoch bumps after load on the 22 sites (`DWELLER_JS_VM_STATS=1`) and note them.
+- files: `browser/js/shapes.aye`, `browser/js/heap.aye`, `browser/js/interp.aye` (prototype writes), `browser/js/vm.aye`
+- v8: `src/objects/prototype-info.h`, `src/objects/map.h` (prototype in the map), `src/ic/ic.cc` (`LoadIC::ComputeHandler` holder lookups)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.74.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 python3 browser/tools/page_load.py check` exit 0
+- estimate: 1.1–1.3× on three, raytrace, methods
+- model: opus
+
+#### P4.75: the VM on by default
+- goal: `DWELLER_JS_VM` defaults to 1; `DWELLER_JS_VM=0` keeps the tree walker as an escape hatch.
+- design: all gates of `BYTECODE.md` section 5 with the VM on: js suite (also GC stress), DOM fixtures, the window tests, `page_load.py check` on the 22 sites, test262 VM on ≥ off; `DWELLER_JS_VM_STATS=1` fallback reasons empty on the js suite and listed for the 22 sites (each reason left becomes a card or is fixed here). Record the suite against `baseline.json` and `node --jitless`, and the site `scripts`/`timers` phases, in `BYTECODE.md` and `PERF.md`.
+- files: `browser/js/interp.aye`, `browser/js/BYTECODE.md`, `browser/js/PERF.md`, `docs/browser.md` (engine pipeline)
+- v8: none
+- verify: `cargo test --release --test browser > target/p4.75.log 2>&1; echo $?` → 0 (the one full run of this plan, on the branch before the merge; then CI); `python3 browser/tools/page_load.py check` exit 0
+- estimate: suite geomean 3–4× against the baseline; site `scripts` phase 1.5–2.5×
+- model: opus
+
+#### P4.76: typed arrays over real bytes
+- goal: `ArrayBuffer` keeps its bytes in native memory, not in an array of `Value`s (`_bytes` in `lib.aye`, 16 bytes per byte), and typed-array element get/set in compiled code is a keyed IC fast path. Needed for three.js `BufferAttribute` and for WebGL uploads.
+- design: an `ObjData` byte store owned by the buffer (freed with it); `typed.aye` reads and writes it directly; `Float32Array`/`Uint8Array`/... element kinds in the keyed IC with bounds and detach checks; `DataView` through the same store. The WebGL design gets a zero-copy view of the bytes from this store (coordinate with that card).
+- files: `browser/js/typed.aye`, `browser/js/lib.aye`, `browser/js/heap.aye`, `browser/js/gc.aye`, `browser/js/vm.aye`
+- v8: `src/objects/js-array-buffer.h`, `src/builtins/builtins-typed-array.cc`, `src/builtins/typed-array-*.tq`, `src/objects/elements-kind.h`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures > target/p4.76.log 2>&1; echo $?` → 0; test262 `test/built-ins/TypedArray test/built-ins/ArrayBuffer test/built-ins/DataView` ≥ before; `browser/tests/jsbench/run.sh three` checksum equal
+- estimate: typed-array loops 5–20×; `three` 1.5–3×
+- model: opus
+
+#### P4.77: register optimizer and fused instructions
+- goal: fewer instructions per JS operation, chosen by measurement.
+- design: port V8's register optimizer (removes `Ldar`/`Star` pairs and `Mov`s while emitting); count instruction pairs over the suite and the 22 sites (`DWELLER_JS_VM_STATS=pairs`) and add fused forms only for the top pairs that win on the suite (candidates: compare-and-jump, `GetNamedProperty` on `this`, three-address numeric operators). Keep only changes that improve the suite geomean; record the rest as tried in `BYTECODE.md`.
+- files: `browser/js/compiler.aye`, `browser/js/bytecode.aye`, `browser/js/vm.aye`, `browser/js/BYTECODE.md`
+- v8: `src/interpreter/bytecode-register-optimizer.h`, `bytecode-register-optimizer.cc`, `bytecode-peephole-table.h` (if present in the checkout)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.77.log 2>&1; echo $?` → 0; `BENCH_BASELINE=<main's binary> BENCH_RUNS=5 browser/tests/jsbench/run.sh` geomean > 1.05
+- estimate: 1.1–1.25×
+- model: opus
+
+#### P4.78: remove the tree walker's execution paths
+- goal: once P4.75 has been on `main` with no fallback reason on the js suite, test262 and the 22 sites, delete the tree walker's evaluation (`eval`/`exec` paths of `interp.aye` the VM does not call), `fast_expr.aye`, the per-AST-node `prop_caches`, the coroutine path of `coroutine.aye`, and `DWELLER_JS_VM`.
+- design: the AST, the resolver and the `Interp` helpers stay. A construct that still falls back is compiled first, in this card or a new one, not kept on the tree walker.
+- files: `browser/js/interp.aye`, `browser/js/fast_expr.aye`, `browser/js/coroutine.aye`, `browser/js/shapes.aye`, `tests/browser.rs` (`js_conformance_vm` folds into `js_conformance`), `docs/browser.md`, `browser/js/PERF.md`
+- v8: none
+- verify: `cargo test --release --test browser -- js_conformance js_command_line jsdom_fixtures jsdom_gc_stress window_dynamic_scripts > target/p4.78.log 2>&1; echo $?` → 0; `python3 browser/tools/page_load.py check` exit 0; `wc -l browser/js/*.aye` smaller
+- estimate: no speedup; less code
+- model: sonnet
+
+#### P4.79: per-frame JS cost of the f1 game
+- goal: the user's game `~/Documents/f1/web` (three ^0.170, read-only) loads in Dweller and its per-frame JS time is measured: `window_perf.py` gets a `frames URL` mode that prints the p50/p95 of script time per animation frame (the `ui_timers` records of rAF callbacks), recorded in `BYTECODE.md` with the matching numbers from Chrome.
+- depends on: the WebGL cards (designed in parallel) and WebAssembly (the game's physics; no design yet, see the Layer 0 backlog)
+- files: `browser/tools/window_perf.py`, `browser/js/BYTECODE.md`
+- v8: none
+- verify: `python3 browser/tools/window_perf.py frames http://localhost:5173/ --binary target/dweller` prints frame-script p50/p95 (the game served by `pnpm dev` in `~/Documents/f1/web`)
+- estimate: measurement
+- model: sonnet
+
 ### Layer 0 backlog
 
 Not yet cards. Before one becomes a card, main checks it is still needed
@@ -406,7 +618,9 @@ after the cards above.
 - P3.64 slice 2: in a container-query document, restyle subtrees when no container's size changed; skip the whole-document `stylesCurrent` hash for attribute writes (details in `PERF.md`).
 - P4.11 partial restyle for DOM mutations incl. shadow roots and `:has()` (P4.10).
 - P4.14 event dispatch and MutationObserver from prelude JS into native Aye (~15% of JS samples) (P1.11).
-- JS engine speed: P4.21 GC threshold factor (GC 14.5% of JS samples); P4.24 smaller JS objects, property storage that shrinks, GC threshold relative to live size; P4.28 slab for unshared computed-style arrays; P4.29 `Prop` 48 → 32 B, accessors stored separately; P4.30 decision: the next large JS speedup is a bytecode compiler, design doc first.
+- JS engine speed: P4.21 GC threshold factor (GC 14.5% of JS samples); P4.24 smaller JS objects, property storage that shrinks, GC threshold relative to live size; P4.28 slab for unshared computed-style arrays; P4.29 `Prop` 48 → 32 B, accessors stored separately; P4.30 bytecode VM: now an umbrella, designed in `browser/js/BYTECODE.md`, cards P4.59–P4.79 above.
+- JS builtins speed, after P4.75 (V8 references in `BYTECODE.md` section 7): shortest-decimal number formatting and exact parsing instead of the snprintf/strtod loop (`json` workload; v8 `src/base/numbers/fast-dtoa.h`, `bignum-dtoa.h`, `strtod.cc`); a nonrecursive regexp engine (no 1 GB thread for deep matches; v8 `src/regexp/regexp-bytecode-generator.h`, `regexp-interpreter.h`).
+- WebAssembly: the user's game (`~/Documents/f1/web`) runs its physics in WASM; Dweller has none. Needs its own design (an interpreter in Aye first, as this plan does for JS); P4.79 waits on it and on WebGL.
 
 ## Parallel track: P9 agents without disturbing the user
 
