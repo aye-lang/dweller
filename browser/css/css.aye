@@ -105,7 +105,7 @@ pub struct Property {
     initial: Value
 }
 
-pub let NPROPS: usize = 114
+pub let NPROPS: usize = 115
 
 pub let DISPLAY: usize = 0
 pub let POSITION: usize = 1
@@ -219,6 +219,8 @@ pub let TEXT_OVERFLOW: usize = 111
 // The line clamp of `display: -webkit-box` (layout/inline.aye).
 pub let WEBKIT_LINE_CLAMP: usize = 112
 pub let WEBKIT_BOX_ORIENT: usize = 113
+// `filter` (paint/filter.aye), kept as text (`PKind.Layers`).
+pub let FILTER: usize = 114
 
 /// Does nothing in layout/ and engine/geometry.aye read the property
 /// (a box, line or script geometry cannot change with it)? Taken from
@@ -235,8 +237,8 @@ pub fn paintOnly(p: usize) bool {
         return true
     }
     // SVG paint and `opacity`; backgrounds, masks, corner radii,
-    // shadows and dashes.
-    return (p >= FILL && p <= STOP_OPACITY) || (p >= BACKGROUND_IMAGE && p <= STROKE_DASHOFFSET)
+    // shadows and dashes; `filter`.
+    return p == FILTER || (p >= FILL && p <= STOP_OPACITY) || (p >= BACKGROUND_IMAGE && p <= STROKE_DASHOFFSET)
 }
 
 let DISPLAYS = "inline block list-item inline-block table inline-table table-row-group table-header-group table-footer-group table-row table-cell table-column-group table-column table-caption flex inline-flex grid inline-grid flow-root contents none -webkit-box -webkit-inline-box"
@@ -248,7 +250,7 @@ let ALIGNS = "normal stretch flex-start flex-end start end self-start self-end c
 let BLACK = Color { r: 0, g: 0, b: 0, a: 1.0 }
 let TRANSPARENT = Color { r: 0, g: 0, b: 0, a: 0.0 }
 
-pub let PROPERTIES = [114]Property{
+pub let PROPERTIES = [115]Property{
     Property { name: "display", inherited: false, kind: PKind.Keywords, keywords: DISPLAYS, initial: Value.Keyword { k: "inline" } },
     Property { name: "position", inherited: false, kind: PKind.Keywords, keywords: "static relative absolute fixed sticky", initial: Value.Keyword { k: "static" } },
     Property { name: "color", inherited: true, kind: PKind.Color, keywords: "", initial: Value.Rgba { c: BLACK } },
@@ -365,6 +367,7 @@ pub let PROPERTIES = [114]Property{
     Property { name: "text-overflow", inherited: false, kind: PKind.Keywords, keywords: "clip ellipsis", initial: Value.Keyword { k: "clip" } },
     Property { name: "-webkit-line-clamp", inherited: false, kind: PKind.Int, keywords: "none", initial: Value.Keyword { k: "none" } },
     Property { name: "-webkit-box-orient", inherited: false, kind: PKind.Keywords, keywords: "horizontal vertical inline-axis block-axis", initial: Value.Keyword { k: "horizontal" } },
+    Property { name: "filter", inherited: false, kind: PKind.Layers, keywords: "none", initial: Value.Keyword { k: "none" } },
 }
 
 /// The index of the longhand property `name` (lower case).

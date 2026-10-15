@@ -2,7 +2,7 @@
 // `background-attachment` and the `background` shorthand), masks
 // (`mask-image` to `mask-repeat`, `mask`), corner radii (the four
 // `border-*-radius` and `border-radius`), `box-shadow` and
-// `stroke-dasharray`. Their values are kept as text (`PKind.Layers`):
+// `stroke-dasharray`, `filter`. Their values are kept as text (`PKind.Layers`):
 // components separated by a space and layers by ", ", with lengths in px
 // (relative units and math functions are resolved at computed-value time,
 // so a declaration with one is kept as tokens until then, as with
@@ -25,7 +25,7 @@ pub fn unprefixed(name: []u8) []u8 {
         return name
     }
     let rest = name[8..]
-    if inList(rest, "mask mask-image mask-position mask-size mask-repeat border-radius border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius box-shadow background-size background-clip background-origin") != null {
+    if inList(rest, "mask mask-image mask-position mask-size mask-repeat border-radius border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius box-shadow background-size background-clip background-origin filter") != null {
         return rest
     }
     return name
@@ -75,6 +75,12 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
             n += 1
         }
         if n != 1 {
+            return null
+        }
+    }
+    if prop == FILTER {
+        var fns = List(FilterFn).init(sheet.arena.allocator())
+        if !(try readFilter(sheet.arena.allocator(), comps, &mut fns)) {
             return null
         }
     }
@@ -906,6 +912,104 @@ pub fn readShadow(comps: []Comp) ?Shadow {
     }
     s.spread = lens[3]
     return s
+}
+
+/// A function of `filter` (Filter Effects 1).
+pub struct FilterFn {
+    // Its name, lower case: `invert`, `grayscale`, `sepia`, `saturate`,
+    // `hue-rotate`, `brightness`, `contrast`, `opacity`, `blur` or
+    // `drop-shadow`.
+    name: []u8
+    // A number (a percentage divided by 100; not clamped), the angle of
+    // `hue-rotate` in degrees, the radius of `blur` in px.
+    amount: f64
+    // The shadow of `drop-shadow`.
+    shadow: Shadow
+}
+
+/// The functions of a `filter` value (its components `comps`) into
+/// `out`, in order; `url()` references are skipped. False when the value
+/// is invalid.
+pub fn readFilter(alloc: Allocator, comps: []Comp, out: *mut List(FilterFn)) AllocError!bool {
+    if comps.len == 0 {
+        return false
+    }
+    for c in comps {
+        let t = c.toks[0]
+        if t.kind == Tok.Url {
+            continue
+        }
+        if t.kind != Tok.Function {
+            return false
+        }
+        var args = List(Comp).init(alloc)
+        defer args.deinit()
+        try splitComps(argsOf(c.toks), &mut args)
+        let a = args.items()
+        var f = FilterFn { name: "", amount: 1.0, shadow: Shadow { inset: false, x: 0.0, y: 0.0, blur: 0.0, spread: 0.0, color: Value.CurrentColor } }
+        if inList(t.text, "url") != null {
+            continue
+        } else if inList(t.text, "invert grayscale sepia saturate brightness contrast opacity") |k| {
+            f.name = k
+            if a.len > 1 {
+                return false
+            }
+            if a.len == 1 {
+                f.amount = filterAmount(a[0]) orelse return false
+            }
+        } else if inList(t.text, "hue-rotate") |k| {
+            f.name = k
+            f.amount = 0.0
+            if a.len > 1 {
+                return false
+            }
+            if a.len == 1 {
+                f.amount = angleOf(a[0]) orelse return false
+            }
+        } else if inList(t.text, "blur") |k| {
+            f.name = k
+            f.amount = 0.0
+            if a.len > 1 {
+                return false
+            }
+            if a.len == 1 {
+                let l = lenPctOf(a[0]) orelse return false
+                if l.pct != 0.0 || l.px < 0.0 {
+                    return false
+                }
+                f.amount = l.px
+            }
+        } else if inList(t.text, "drop-shadow") |k| {
+            f.name = k
+            let s = readShadow(a) orelse return false
+            if s.inset || s.spread != 0.0 {
+                return false
+            }
+            f.shadow = s
+        } else {
+            return false
+        }
+        try out.append(f)
+    }
+    return true
+}
+
+// A number or percentage that is not negative, as a number.
+fn filterAmount(c: Comp) ?f64 {
+    if c.toks.len != 1 {
+        return null
+    }
+    let t = c.toks[0]
+    var n = t.num
+    if t.kind == Tok.Percentage {
+        n = t.num / 100.0
+    } else if t.kind != Tok.Number {
+        return null
+    }
+    if n < 0.0 {
+        return null
+    }
+    return n
 }
 
 /// The numbers of a list like `stroke-dasharray` (lengths in px) into

@@ -47,12 +47,12 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
   backlog (P3.50–P3.61). The screens review of 2026-10-14 (P1.14) put
   a `visual` verdict on every judged site in `sites.json`: `check`
   counts W3 at 4 of 20 (hn, cnn-lite, lobsters, google); the defects
-  are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.66–P3.73 (P3.65 done: W3 6 of 20). P3.50 is done:
+  are P3.41, P3.51, P3.56, P3.59, P3.61 and P3.66–P3.73 (P3.65 done: W3 6 of 20; P3.73b done: W3 7 of 20). P3.50 is done:
   html.duckduckgo.com has no scripts and its server prints the raw date
   (`2026-07-20T00:00:00.0000000`); Chrome shows the same text, so the
   defect was not ours. `Date.parse` now takes fractions of any length. P3.69 and
   P3.73 are done (font weights, SVG image scaling, `noscript` sheets);
-  P3.73b (CSS `filter`) is left.
+  P3.73b (CSS `filter`) is done too.
 - Archives live in each checkout's `target/sites/` (untracked), so steps
   that replay sites or take screenshots run locally.
 - P3.48 is not merged: the merge 34f6f93 passed `cargo test` but failed
@@ -360,7 +360,7 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.71 ZOL: 找产品 product names wrap and the rows misalign; the 新品首发/本月销量最高 tabs stack (screens review 2026-10-14).
 - P3.72 react.dev: the "My video" demo thumbnail is an empty white box (Chrome: blue gradient with a play icon) (screens review 2026-10-14).
 - P3.73 rustdoc: the Rust logo is a black blob; headings and sidebar titles drawn regular instead of Fira Sans Medium/bold; the copy-path icon is missing (screens review 2026-10-14). Done 2026-10-14: (1) "Fira Sans", "Inter", "Source Code Pro"... were in the list of system families, which ended the web-font lookup before the page's `@font-face` faces; an `@font-face` family now comes first (also MDN and Mistral's Inter, GitHub's Mona Sans). (2) An SVG image without a viewBox (the logo, 106 px) is scaled to its box (48 px) like a bitmap; it was drawn 1:1 and clipped. (3) `noscript.css` (inside `<noscript>`) applied while scripts run and hid `#copy-path`; sheets inside `noscript` now apply only with scripting off.
-- P3.73b CSS `filter` is not drawn: rustdoc's copy-path and toolbar icons are black, Chrome draws them gray (`filter: invert(50%)`) (P3.73).
+- P3.73b CSS `filter` is not drawn: rustdoc's copy-path and toolbar icons are black, Chrome draws them gray (`filter: invert(50%)`) (P3.73). Done 2026-10-14: `filter` is a paint-only property (kept as text, invalid lists dropped at parse time). A box (or an inline box's items on a line) with a filter is a group like opacity: drawn into its own layer, which grows by the reach of blurs and shadows, then `Item.Filter` applies the functions to the layer before `EndLayer` clips and blends it with the opacity. `invert`, `grayscale`, `sepia`, `saturate`, `hue-rotate`, `brightness`, `contrast` and `opacity` are the spec's color matrices on unpremultiplied sRGB; `blur` is three box blurs per channel (an approximation of the Gaussian; content outside the visible clip does not blur in); `drop-shadow` is the alpha moved, blurred by half its radius, colored, below the content; `url()` is ignored. New fixture `browser/tests/paint/filter.html` (pixels equal the spec matrices: invert(50%) 128, grayscale 118, sepia 165/147/114, hue-rotate(90deg) 50/146/35...). rustdoc's icons are #808080 as in Chrome; W3 6 → 7 of 20 (dweller, this PR).
 - P4.1 react.dev: diagnose live vs replay time (DNS/TLS, discovery, module waits, HTTP/2) (P1.4).
 - P4.2 react.dev: fix the cause found by P4.1.
 - P4.3 ZOL live: separate discovery waits from transfer waits (`browser/engine/PERF.md`).
