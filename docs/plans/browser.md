@@ -183,7 +183,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` (done) |
 | 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
 | 25 | P3.80 | 2 | bundle for the user, once W1–W9 and the cards above hold |
-| 25b | P11.1–P11.3 | 0 ∥ | ANGLE binaries, EGL/GLES `@cimport` smoke test, `ArrayBuffer` on contiguous bytes |
+| 25b | P11.1–P11.3 | 0 ∥ | ANGLE binaries, EGL/GLES `@cimport` smoke test (done), `ArrayBuffer` on contiguous bytes |
 | 25c | P11.4–P11.9 | 0 ∥ | WebGL 2: context, triangle, textures, readback into the window, state objects, three.js cube |
 | 25d | P11.10–P11.11 | 0 ∥ | rAF at vsync and `performance.now()` precision; key codes, pointer events, Pointer Lock, Fullscreen |
 | 25e | P11.12–P11.15 | 0 ∥ | the rest of WebGL 2, extensions, conformance runner, context loss |
@@ -816,6 +816,7 @@ time as a P4 card on those files.
 - reference: `ui/gl/gl_context_egl.cc` (attributes), `ui/gl/generate_bindings.py` (run-time binding), `third_party/angle/include/EGL/eglext_angle.h`
 - verify: `DWELLER_GL=swiftshader target/dweller gpu-smoke` prints `ff0000ff`; `cargo test --release --test browser -- gpu_smoke > target/p11.2.log 2>&1; echo $?` → 0 on both CI OSes
 - depends on: P11.1; time box: 45 min; model: opus (FFI, gap triage)
+- status: done 2026-10-15. Aye calls C function pointers: `eglGetProcAddress` gives `?fn()`, unwrapped and `@ptrCast` to a written-out `fn(...)` per entry point (25, in `gpu.Api`); no `@link`. Two `@ptrCast` gaps (COMPILER_GAPS.md 57, not blocking): it cannot make a header's `PFN...PROC` (`?fn`), nor a function from `dlsym`'s `void *` (gl.aye declares `dlsym` returning `?fn()`). `browser/gpu/include/` holds the pinned ANGLE's EGL/GLES/KHR headers (read through `angle.h`, with `EGL_EGL_PROTOTYPES=0`, `GL_GLES_PROTOTYPES=0`, `EGL_NO_X11`), so Dweller builds without ANGLE. Libraries: `DWELLER_ANGLE`, the binary's directory, `../Frameworks`, `target/angle/<rev>/lib` (relative to the working directory). The display is lazy and per process; the context is surfaceless ES 3.0 with no config, and, as in `gl_context_egl.cc`, each WebGL attribute is passed only when the display has its extension (Metal has no `EGL_EXT_create_context_robustness`: passing it gives `EGL_BAD_ATTRIBUTE`). `gpu-smoke` (64x64 RGBA8 renderbuffer FBO) on M2 Pro: default/metal "ANGLE Metal Renderer: Apple M2 Pro" `ff0000ff`, swiftshader "SwiftShader Device (LLVM 10.0.0)" `ff0000ff`, null no GL error (reads `2a2a2a2a`), all "OpenGL ES 3.0"; no ANGLE, `DWELLER_GL=off` or an unknown name print "WebGL unavailable: ..." and exit 0. Test `gpu_smoke` (swiftshader): without ANGLE it checks the unavailable message and skips, unless `angle.lock` has hashes (then it fails). SwiftShader on the macOS arm64 runner is checked by that test once `angle.lock` has hashes.
 
 #### P11.3: `ArrayBuffer` on one contiguous byte store
 - goal: an `ArrayBuffer` keeps its bytes in one heap-owned block (pointer, length, detached flag), freed by the GC. It does not keep them in a JS array of numbers (`lib.aye` `_bytes`). The views (`typed.aye`) and `DataView` read and write the block. Native code gets a slice of `(ptr, len)` for a view.

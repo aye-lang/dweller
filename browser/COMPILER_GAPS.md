@@ -22,8 +22,39 @@ removed in cff3f60.
 
 ## Open
 
-None as of 2026-10-14 (aye criterion O3: gaps 49 to 56 are fixed or
-declined).
+Gaps 49 to 56 were fixed or declined by 2026-10-14 (aye criterion O3).
+
+#### 57. `@ptrCast` cannot make a `?fn` (a header's `PFN...PROC`) or a function from `void *`
+
+- **Need:** bind ANGLE's entry points at run time (docs/webgl.md §1):
+  `dlsym` gives `eglGetProcAddress` as C's `void *`, and each entry
+  point should take the header's `PFN...PROC` type, which `@cimport`
+  declares as `?fn(...)`. Calling a C function pointer works.
+- **Repro:**
+
+  ```aye
+  let c = @cimport("EGL/egl.h", "-DEGL_EGL_PROTOTYPES=0")
+  let dl = @cimport("dlfcn.h")
+
+  pub fn main() {
+      let h = dl.dlopen("libEGL.dylib".ptr, dl.RTLD_NOW)
+      let p = dl.dlsym(h, "eglGetProcAddress".ptr)
+      let get = @ptrCast(fn(?[*]u8) ?fn(), p)                // E0092: `@ptrCast` to a function type converts a function, found `?[*]u8`
+      let f = @ptrCast(c.PFNEGLGETERRORPROC, get("eglGetError".ptr))  // E0092: ... not to `?fn() i32`
+  }
+  ```
+
+- **Workaround:** `browser/gpu/gl.aye` declares `extern fn dlsym(...)
+  ?fn()` itself (the same bits as `void *`), unwraps each `?fn()` from
+  `eglGetProcAddress` and casts it to a `fn(...)` written out by hand
+  (25 signatures that repeat the header's `PFN...PROC` types; a typo is
+  not caught).
+- **Proposed fix (aye):** `@ptrCast` to `?fn(...)` from `?fn(...)`
+  (null stays null), so `@ptrCast(c.PFNEGLGETERRORPROC, p)` works; and
+  from `?[*]u8`/`[*]u8` to a function type (C allows the cast on every
+  target Aye builds for: POSIX `dlsym` requires it).
+- **Hit by:** gpu (P11.2).
+- **Status:** open; not blocking (the workaround is ABI-exact).
 
 ## Declined by design
 
