@@ -86,7 +86,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
 | P4 | Load times (W4) | `run --live --repeat 5` medians meet the targets | paused (backlog) |
 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | paused |
 | P6 | Release | manual checklist recorded; final site run; tag | paused |
-| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1 done 2026-10-14; P9.2 next |
+| P9 | Agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1 and P9.2 done 2026-10-14; P9.3 next |
 
 ## P8 split plan
 
@@ -238,6 +238,7 @@ in order.
 - verify: `cargo test --release --test browser window_spaces > target/p9.2.log 2>&1; echo $?` → 0
 - risk: the Space must die with the window (it gets an end of file on the control connection and exits) and a crashed Space must not stop the window (its socket is closed, the connection gets `{"id":null,"ok":false,"error":"the Space crashed"}`); the test kills a Space with SIGKILL and checks both.
 - time box: 120 min; model: opus (process lifecycle)
+- done 2026-10-14: as specified, in `browser/ui/spaces.aye`. Choices recorded in `docs/agent-protocol.md` (Spaces): a Space cannot see the person's tabs until P9.3 relays the context (`user_context` fails with "the user's context is not available in a Space yet"; `tabs` lists only the Space's tabs, `shown` false), so the `spaces/` copies of `isolation` and `frames` answer the agent's own work exactly as in the window (`frames` lines 1-5 are the same) but differ where the agent looked at the person's tab, and the window part shows the person's tab untouched; a third copy, `handshake.mcp`, runs MCP through a Space. A Space's tab 1 exists from the start and is its agent's. Pause, pointing and the activity line do not reach Spaces yet (P9.3, P9.4). The Space's socket is `/tmp/dweller-WINDOWPID-XXXXXX/agent.sock` (a 0700 directory per Space, removed by the Space, or by the window for a crashed one); the tests find Spaces with `pgrep -f` on that prefix. Spaces start with `posix_spawnp` (the runtime's fork took 5 to 15 ms of the window's loop per Space); the window's sockets are FD_CLOEXEC, so a Space holds no other connection open. While it relays, the window waits at most 4 ms for events; a Space waits on its sockets with `poll` and runs all its tabs' timers. `loop_max_ms` is in `--state` whenever the window listens (also without `--spaces`, where the same load gives about 3000); the window goldens drop that line. An MCP connection whose Space crashed gets a `notifications/message` of level `error`. The test is `window_spaces_responsive` (A: 1.5 s `eval`, B: `/sleep?ms=1500`, C: `tabs` within 100 ms, the person clicks and types while they run, `loop_max_ms` under 50; without `--spaces` at least 1000) and `window_spaces_crash` (SIGKILL of a Space: its agent gets the error and EOF, the other agent goes on, the window exits 0; SIGKILL of the window: its Space exits and removes its directory); every `window_spaces` session checks that no Space is left.
 
 #### P9.3: the control connection
 - lane: browser

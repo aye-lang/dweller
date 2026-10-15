@@ -1260,7 +1260,7 @@ fn screenshot_errors() {
     );
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--spaces] [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -2079,7 +2079,7 @@ fn window_agents() {
     let mut failures = Vec::new();
     for (i, input) in inputs.iter().enumerate() {
         let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        match window_agent_session(input, i) {
+        match window_agent_session(input, i, false) {
             Ok(got) => check_golden(
                 &input.with_extension("out"),
                 &rooted(&got),
@@ -2098,15 +2098,17 @@ fn window_agents() {
     );
 }
 
-// Runs one session of `window_agents`: what the agent got, then
-// `--- window` and the window's state.
-fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
+// Runs one session of `window_agents` (or with `--spaces`, of
+// `window_spaces`): what the agent got, then `--- window` and the
+// window's state without `loop_max_ms` (it varies).
+fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, String> {
     use std::io::{Read, Write};
     use std::process::Stdio;
     use std::time::{Duration, Instant};
     let name = input.file_name().unwrap().to_string_lossy().into_owned();
     // A short relative path: sockets' paths are limited to ~100 bytes.
-    let sock = format!("target/agent-window-{}-{n}.sock", std::process::id());
+    let kind = if spaces { "spaces" } else { "window" };
+    let sock = format!("target/agent-{kind}-{}-{n}.sock", std::process::id());
     let _ = std::fs::remove_file(root().join(&sock));
     let mut args = vec![
         "--agent-socket".to_string(),
@@ -2115,6 +2117,9 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
         "--font".into(),
         "fixed".into(),
     ];
+    if spaces {
+        args.push("--spaces".into());
+    }
     args.extend(["--width", "800", "--height", "600", "--state"].map(String::from));
     if let Ok(events) = std::fs::read_to_string(input.with_extension("events")) {
         args.push("--events".into());
@@ -2172,6 +2177,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
         s.shutdown(std::net::Shutdown::Write).unwrap();
         s.read_to_string(&mut got).unwrap();
     }
+    let window_pid = window.id();
     // The window leaves once its last agent did.
     let start = Instant::now();
     while window.try_wait().unwrap().is_none() {
@@ -2188,9 +2194,354 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     if root().join(&sock).exists() {
         return Err("the window left its socket file".into());
     }
+    if spaces {
+        no_spaces_left(window_pid)?;
+    }
     got.push_str("--- window\n");
-    got.push_str(&text(&out.stdout));
+    for line in text(&out.stdout).lines() {
+        if !line.starts_with("loop_max_ms ") {
+            got.push_str(line);
+            got.push('\n');
+        }
+    }
     Ok(got)
+}
+
+/// The Spaces the window `pid` started and that still run (`pgrep` on
+/// their sockets' directories, `/tmp/dweller-PID-*`).
+fn spaces_of(pid: u32) -> Vec<u32> {
+    let out = Command::new("pgrep")
+        .args(["-f", &format!("/tmp/dweller-{pid}-")])
+        .output()
+        .unwrap();
+    text(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect()
+}
+
+/// After the window `pid` exited: none of its Spaces runs (within 5 s),
+/// and their sockets' directories are gone.
+fn no_spaces_left(pid: u32) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    let start = Instant::now();
+    loop {
+        let left = spaces_of(pid);
+        if left.is_empty() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(5) {
+            return Err(format!("Spaces left running after the window: {left:?}"));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let prefix = format!("dweller-{pid}-");
+    let dirs: Vec<String> = std::fs::read_dir("/tmp")
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(&prefix))
+        .collect();
+    if !dirs.is_empty() {
+        return Err(format!("Spaces' directories left in /tmp: {dirs:?}"));
+    }
+    Ok(())
+}
+
+/// The window with `--spaces` (B9 R2, ui/spaces.aye): each connection
+/// is served by a Space, a process of its own, and the window copies
+/// the bytes. `browser/tests/agent/spaces/X.jsonl` runs as in
+/// `window_agents` (copies of `isolation` and `frames`): the agent's
+/// own work answers as in the window, the user's tab stays as it was,
+/// and no Space is left after the window exits.
+#[test]
+fn window_spaces() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = root()
+        .join("browser")
+        .join("tests")
+        .join("agent")
+        .join("spaces");
+    let mut inputs: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        .collect();
+    inputs.sort();
+    assert!(
+        inputs.len() >= 3,
+        "expected at least 3 Space sessions, found {}",
+        inputs.len()
+    );
+    let mut failures = Vec::new();
+    for (i, input) in inputs.iter().enumerate() {
+        let name = input.file_name().unwrap().to_string_lossy().into_owned();
+        match window_agent_session(input, i, true) {
+            Ok(got) => check_golden(
+                &input.with_extension("out"),
+                &rooted(&got),
+                &name,
+                &mut failures,
+            ),
+            Err(e) => failures.push(format!("{name}: {e}")),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {} Space sessions failed:\n\n{}",
+        failures.len(),
+        inputs.len(),
+        failures.join("\n")
+    );
+}
+
+// A headless window listening at `sock` for the Space tests.
+fn spaces_window(sock: &str, extra: &[&str]) -> std::process::Child {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let _ = std::fs::remove_file(root().join(sock));
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .args(["--agent-socket", sock, "--exit-when-idle", "--font", "fixed"])
+        .args(["--width", "800", "--height", "600"])
+        .args(extra)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while !root().join(sock).exists() {
+        if start.elapsed() > Duration::from_secs(20) || window.try_wait().unwrap().is_some() {
+            let _ = window.kill();
+            let out = window.wait_with_output().unwrap();
+            panic!("the window does not listen: {}", text(&out.stderr));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    window
+}
+
+// A connection to the window's socket (relative to the root: short).
+struct AgentConn {
+    stream: std::os::unix::net::UnixStream,
+    read: std::io::BufReader<std::os::unix::net::UnixStream>,
+}
+
+impl AgentConn {
+    fn open(sock: &str) -> AgentConn {
+        let path = root().join(sock);
+        let rel = path.strip_prefix(std::env::current_dir().unwrap()).unwrap_or(&path);
+        let stream = std::os::unix::net::UnixStream::connect(rel).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .unwrap();
+        let read = std::io::BufReader::new(stream.try_clone().unwrap());
+        AgentConn { stream, read }
+    }
+
+    fn send(&mut self, line: &str) {
+        use std::io::Write;
+        self.stream.write_all(line.as_bytes()).unwrap();
+        self.stream.write_all(b"\n").unwrap();
+    }
+
+    // The next line ("" at the end).
+    fn line(&mut self) -> String {
+        use std::io::BufRead;
+        let mut s = String::new();
+        self.read.read_line(&mut s).unwrap();
+        s
+    }
+
+    // A request and its answer, and how long it took in ms.
+    fn ask(&mut self, line: &str) -> (String, u128) {
+        let start = std::time::Instant::now();
+        self.send(line);
+        let got = self.line();
+        (got, start.elapsed().as_millis())
+    }
+}
+
+// What `window_spaces_responsive` measured in one window.
+struct Responsive {
+    loop_max_ms: u64,
+    // C's `tabs` while A and B were busy, in ms.
+    c_ms: u128,
+    a: (String, u128),
+    b: (String, u128),
+    state: String,
+}
+
+// Agent A runs a 1500 ms `eval` loop and B loads a page whose server
+// waits 1500 ms; while both run, C asks for `tabs` and the user clicks
+// into a text field and types (`agents:4`: after C's answer).
+fn responsive_session(base: &str, spaces: bool) -> Responsive {
+    let sock = format!("target/spaces-resp-{}-{spaces}.sock", std::process::id());
+    let mut extra = vec![
+        "--state",
+        "--events",
+        "agents:4 click:60,100 text:hello",
+        "browser/tests/agent/site/notes.html",
+    ];
+    if spaces {
+        extra.push("--spaces");
+    }
+    let window = spaces_window(&sock, &extra);
+    let window_pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    let mut b = AgentConn::open(&sock);
+    let mut c = AgentConn::open(&sock);
+    // Each one's Space is up.
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"data:text/html,<title>A</title>"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = b.ask(r#"{"id":1,"cmd":"tabs"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = c.ask(r#"{"id":1,"cmd":"tabs"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let start = std::time::Instant::now();
+    a.send(r#"{"id":2,"cmd":"eval","expression":"var t = Date.now(); while (Date.now() - t < 1500) {} 'spun'"}"#);
+    b.send(&format!(r#"{{"id":2,"cmd":"navigate","url":"{base}/sleep?ms=1500"}}"#));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let (got, c_ms) = c.ask(r#"{"id":2,"cmd":"tabs"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let a_got = a.line();
+    let a_ms = start.elapsed().as_millis();
+    let b_got = b.line();
+    let b_ms = start.elapsed().as_millis();
+    drop(a);
+    drop(b);
+    drop(c);
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let state = text(&out.stdout);
+    let loop_max_ms = state
+        .lines()
+        .find_map(|l| l.strip_prefix("loop_max_ms "))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no loop_max_ms in the state:\n{state}"));
+    if spaces {
+        no_spaces_left(window_pid).unwrap();
+    }
+    Responsive {
+        loop_max_ms,
+        c_ms,
+        a: (a_got, a_ms),
+        b: (b_got, b_ms),
+        state,
+    }
+}
+
+/// B9 R2: while agent A runs a 1500 ms `eval` loop and agent B loads a
+/// page whose server waits 1500 ms, the window with `--spaces` answers
+/// a third agent within 100 ms, handles the user's click and typing,
+/// and its longest loop iteration (`loop_max_ms`) stays under 50 ms.
+/// Without `--spaces` the same load holds the loop up for over a second
+/// (the measure measures).
+#[test]
+fn window_spaces_responsive() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let r = responsive_session(&srv.base, true);
+    assert!(
+        r.a.0.contains("\"result\":\"spun\"") && r.a.1 >= 1400,
+        "A: {} ms: {}",
+        r.a.1,
+        r.a.0
+    );
+    assert!(
+        r.b.0.contains("\"title\":\"Slept\"") && r.b.1 >= 1400,
+        "B: {} ms: {}",
+        r.b.1,
+        r.b.0
+    );
+    assert!(r.c_ms < 100, "C waited {} ms", r.c_ms);
+    assert!(r.loop_max_ms < 50, "loop_max_ms {}\n{}", r.loop_max_ms, r.state);
+    assert!(r.state.contains("\nvalue hello\n"), "{}", r.state);
+    let old = responsive_session(&srv.base, false);
+    assert!(
+        old.loop_max_ms >= 1000,
+        "without --spaces: loop_max_ms {}\n{}",
+        old.loop_max_ms,
+        old.state
+    );
+    println!(
+        "loop_max_ms {} with --spaces (C {} ms), {} without (C {} ms)",
+        r.loop_max_ms, r.c_ms, old.loop_max_ms, old.c_ms
+    );
+}
+
+/// A Space that crashes (SIGKILL) ends only its own agent's connection,
+/// with `{"id":null,"ok":false,"error":"the Space crashed"}`; the window
+/// and the other agents go on. A Space whose window is killed exits (the
+/// end of file on its control connection) and removes its directory.
+#[test]
+fn window_spaces_crash() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let sock = format!("target/spaces-crash-{}.sock", std::process::id());
+    let mut window = spaces_window(&sock, &["--spaces"]);
+    let mut a = AgentConn::open(&sock);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let first = spaces_of(window.id());
+    assert_eq!(first.len(), 1, "{first:?}");
+    let mut b = AgentConn::open(&sock);
+    let (got, _) = b.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    assert_eq!(spaces_of(window.id()).len(), 2);
+    let status = Command::new("kill")
+        .args(["-9", &first[0].to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(
+        a.line(),
+        "{\"id\":null,\"ok\":false,\"error\":\"the Space crashed\"}\n"
+    );
+    assert_eq!(a.line(), "", "the connection ends");
+    assert!(window.try_wait().unwrap().is_none(), "the window goes on");
+    let (got, _) = b.ask(r#"{"id":2,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"title\":\"Site home\""), "{got}");
+    b.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(b.line(), "");
+    let window_pid = window.id();
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    no_spaces_left(window_pid).unwrap();
+
+    // The window killed: its Space exits by itself.
+    let sock = format!("target/spaces-kill-{}.sock", std::process::id());
+    let mut window = spaces_window(&sock, &["--spaces"]);
+    let mut a = AgentConn::open(&sock);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    assert_eq!(spaces_of(window.id()).len(), 1);
+    window.kill().unwrap();
+    window.wait().unwrap();
+    let _ = std::fs::remove_file(root().join(&sock));
+    no_spaces_left(window.id()).unwrap();
 }
 
 /// `dweller connect` and `--agent-socket` errors.

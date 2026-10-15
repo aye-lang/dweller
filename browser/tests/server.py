@@ -34,6 +34,7 @@
 #   /big             33 MiB of text (with Content-Length; /big?stream
 #                    without, the end of the body closing the connection)
 #   /meta-charset    a Windows-1252 page declared only by <meta charset>
+#   /sleep?ms=N      after N ms: a small HTML page ("Slept", "slept N ms")
 #   /gbk             a GBK page declared only by Content-Type
 #   /slow/NAME       after 0.3 s: the file NAME of the directory when
 #                    there is one (the query ignored), else a small body
@@ -209,6 +210,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with SLOW_LOCK:
                 SLOW["now"] -= 1
             self.reply_file(path[len("/slow/"):])
+        elif path.startswith("/sleep?ms="):
+            ms = int(path[len("/sleep?ms="):])
+            time.sleep(ms / 1000)
+            body = b"<title>Slept</title><p>slept %d ms</p>" % ms
+            self.reply(200, [("Content-Type", "text/html")], body)
         elif path == "/slow-peak":
             self.reply(200, [("Content-Type", "text/plain")], b"%d\n" % SLOW["peak"])
         elif path == "/big":

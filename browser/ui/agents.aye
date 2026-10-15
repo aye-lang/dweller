@@ -12,7 +12,9 @@
 //
 // The window polls the socket between its events (it waits at most
 // POLL_MS for them while it listens), so requests run on the window's
-// thread and the page is never touched by two threads. A `wait` is
+// thread and the page is never touched by two threads. With `--spaces`
+// (spaces.aye) the window serves no request: each connection is served
+// by a Space, a process of its own, and the window copies its bytes. A `wait` is
 // answered later, in real time, while the user goes on using the window.
 //
 // What agents do shows: their target element is outlined with its ref
@@ -32,6 +34,7 @@ import paint
 import paint.Rgba
 import std
 import std.heap.Arena
+import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -72,6 +75,8 @@ pub struct Conn {
     wait_idle: bool
     // The peer is gone: the connection is closed after this round.
     gone: bool
+    // With --spaces: the Space serving it (null: not started yet).
+    space: ?*mut Space
 }
 
 /// The agents' side of a window.
@@ -103,6 +108,18 @@ pub struct Agents {
     pointed_text: text.Builder
     // A tab an agent closed, freed once its request is answered.
     dropped: ?*mut TabSlot
+    // --spaces (spaces.aye): Spaces serve the connections; how to start
+    // one (the window's font and scripts), and the Spaces that ended and
+    // are not reaped yet.
+    spaces: bool
+    space_font: []u8
+    space_js: bool
+    reap: List(i32)
+    // In a Space: the control connection to its window (-1: none).
+    control: i32
+    // The longest iteration of the window's loop while an agent was
+    // connected, without its wait for events, in ms.
+    loop_max_ms: u64
 }
 
 /// Starts listening at `path`; null (after a message) when it cannot.
@@ -130,6 +147,12 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
         pointed: text.Builder.init(ui.alloc),
         pointed_text: text.Builder.init(ui.alloc),
         dropped: null,
+        spaces: false,
+        space_font: "",
+        space_js: true,
+        reap: List(i32).init(ui.alloc),
+        control: -1,
+        loop_max_ms: 0,
     })
     ui.agents = a
     // The tab strip is there from now on.
@@ -141,6 +164,7 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
 /// Closes the connections and the socket (removing its file).
 fn stopAgents(ui: *mut Ui) {
     let a = ui.agents orelse return
+    endSpaces(ui)
     for i in 0..MAX_AGENTS {
         if a.conns[i] |c| {
             dropConn(ui.alloc, c)
@@ -148,6 +172,8 @@ fn stopAgents(ui: *mut Ui) {
     }
     closeFd(a.fd)
     removeSocket(a.path)
+    leaveSpace(ui)
+    a.reap.deinit()
     if a.dropped |slot| {
         freeSlot(ui.alloc, slot)
     }
@@ -213,13 +239,25 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             wait_end: 0,
             wait_idle: false,
             gone: false,
+            space: null,
         })
+        if a.control >= 0 && !a.ever {
+            // A Space: its agent acts on its first tab.
+            a.conns[i].?.tab = ui.slots[0].?.id
+        }
         a.ever = true
         ui.dirty = true
     }
     var buf = @zeroed([16384]u8)
+    if a.control >= 0 {
+        watchControl(ui, buf[..])
+    }
     for i in 0..MAX_AGENTS {
         let c = a.conns[i] orelse continue
+        if a.spaces {
+            try relay(ui, i, buf[..])
+            continue
+        }
         if c.waiting {
             try checkWait(ui, i)
         }
@@ -243,6 +281,9 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         if std.time.monotonicMs() - a.flash_start >= FLASH_MS {
             a.flash = false
         }
+    }
+    if a.spaces {
+        reapSpaces(a)
     }
     if a.exit_when_idle && a.ever && agentCount(ui) == 0 {
         ui.quit = true
@@ -536,6 +577,9 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         return true
     }
     if text.eql(cmd, "user_context") {
+        if a.control >= 0 {
+            return refuse(reply, NO_CONTEXT)
+        }
         try contextReply(ui, tmp, reply)
         return true
     }
@@ -594,6 +638,7 @@ fn members(b: *text.Builder) []u8 {
 // `tabs`: each tab's id, URL, title, and whether the user sees it and
 // this connection acts on it.
 fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+    let a = ui.agents.?
     var mine: u32 = 0
     if connTab(ui, c) |t| {
         mine = t.id
@@ -613,8 +658,10 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
         try w.string(slot.session.tab.href())
         try w.key("title")
         try w.string(slotTitle(slot))
+        // In a Space the user sees none of its tabs.
+        let shown = i == ui.active && a.control < 0
         try w.key("shown")
-        try w.boolean(i == ui.active)
+        try w.boolean(shown)
         try w.key("agent")
         try w.boolean(slot.id == mine)
         try w.endObject()
@@ -630,7 +677,7 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
             try detail.append(slot.session.tab.href())
             try detail.appendByte('>')
         }
-        if i == ui.active {
+        if shown {
             try detail.append(" [shown]")
         }
         if slot.id == mine {

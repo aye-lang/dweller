@@ -352,9 +352,9 @@ on a Unix domain socket at `PATH` (a stale socket file there is
 replaced; the file is removed when the window closes). Agents connect
 to it while a person uses the window: each one works in tabs of its
 own, in the background, and can look at the person's tabs but not act
-on them; the person sees what the agents do. (Planned: each agent works
-in a Space of its own, in a process of its own; see `docs/browser.md`,
-B9.)
+on them; the person sees what the agents do. With `--spaces` each
+agent works in a Space, a process of its own ([Spaces](#spaces)).
+(Planned: Spaces by default; see `docs/browser.md`, B9.)
 
 - Each connection speaks JSON lines, as `dweller agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC
@@ -454,6 +454,39 @@ key:cmd+shift+k`):
 {"id":13,"ok":false,"error":"this is the user's tab: open your own with tab_new"}
 ```
 
+### Spaces
+
+`dweller --agent-socket PATH --spaces [FILE|URL]`: each connection is
+served by a Space, a process of its own, so no agent request runs on
+the window's thread; a slow load or a long `eval` never holds up the
+person's input or the window's frames.
+
+- The window reads a connection's first line, then starts its Space
+  (`dweller space --control FD --agent-socket DIR/agent.sock --width W
+  --height H`, internal: the window program, headless, with the
+  window's size, font and `--no-js`; `DIR` is
+  `/tmp/dweller-WINDOWPID-XXXXXX`, a directory only the user can
+  read), and from then on copies the bytes both ways without reading
+  them. A Space starts in about 25 ms and takes about 45 MB.
+- The Space serves the whole protocol, JSON lines or MCP, as the window
+  does, on tabs of its own: ids from 1, its agent acts on tab 1 until it
+  opens or selects another, and `shown` is false (the person sees none
+  of them). It runs the timers of all its tabs.
+- A Space cannot see the person's tabs yet: they are not in it, so an
+  agent can neither act on them nor look at them. `tabs` lists only the
+  Space's tabs, and `user_context` fails with `"the user's context is
+  not available in a Space yet"`. Pause, pointing (Cmd+Shift+K) and the
+  activity line and outline do not reach Spaces yet; the `AI` badge
+  shows while a connection is open.
+- A Space exits when its connection ends (it answers what it was sent
+  first), or when the window closes or is killed (the end of file on
+  its control connection, a socketpair). If a Space crashes, its agent
+  gets `{"id":null,"ok":false,"error":"the Space crashed"}` (MCP: a
+  `notifications/message` of level `error` with
+  `{"error":"the Space crashed"}`) and its connection is closed; the
+  window and the other Spaces go on. The window reaps its Spaces and,
+  when it closes, kills those still running after a second.
+
 ### `dweller connect`
 
 MCP clients start a server as a command and talk to its stdio.
@@ -479,8 +512,12 @@ lets `--events`, `--state`, `--text` and `--save` work without
 `--frames`. In `--events`, the word `agents:N` makes the events after it
 wait until the agents made N requests (the MCP hello does not count);
 `--state` then adds the tabs, the page viewport's size (`viewport
-800x532`), whether the agents are paused, and the status bar's
-activity line. `cargo test --test browser window_agents`
-runs `browser/tests/agent/window/X.jsonl` with the events of
-`X.events`, over the socket from the test or through `dweller connect
---mcp` for `X.mcp.jsonl`, against `X.out`.
+800x532`), whether the agents are paused, the status bar's activity
+line, and `loop_max_ms N`: the longest iteration of the window's loop
+while an agent was connected, without its wait for events. With
+`--spaces`, `agents:N` waits for N lines from the Spaces. `cargo test
+--test browser window_agents` runs `browser/tests/agent/window/X.jsonl`
+with the events of `X.events`, over the socket from the test or through
+`dweller connect --mcp` for `X.mcp.jsonl`, against `X.out` (without
+the `loop_max_ms` line); `window_spaces` does the same with `--spaces`
+for `browser/tests/agent/spaces/`.

@@ -192,7 +192,8 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
 /// The tab's state, for `--state`: the URL, the scroll offset, the
 /// focus, the address bar, the find matches and the status line; with
 /// `--agent-socket`, the tabs, the page viewport's size, whether the
-/// agents are paused and what they did last; and when an element of the page has the focus, its
+/// agents are paused, what they did last and the longest loop iteration
+/// while they were connected (`loop_max_ms`); and when an element of the page has the focus, its
 /// name and value.
 fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
     try out.append("url ")
@@ -252,6 +253,11 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         }
         try out.append("\nactivity ")
         try out.append(a.activity.bytes())
+        try out.append("\n")
+        // The longest loop iteration while an agent was connected (it
+        // varies from run to run: the tests check it, not the goldens).
+        try out.append("loop_max_ms ")
+        try out.appendUint(a.loop_max_ms)
         try out.append("\n")
     }
     try writeFocus(ui, out)

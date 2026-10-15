@@ -3,7 +3,10 @@
 // that socket for MCP clients that only start commands.
 //
 // Reads never block: `readSome` asks `poll` first. Writes go through
-// `send` without SIGPIPE (a closed peer is an error, not a signal). The
+// `send` without SIGPIPE (a closed peer is an error, not a signal);
+// `sendSome` never waits either (Spaces, spaces.aye). The sockets made
+// here are closed in the programs the window starts (FD_CLOEXEC), so a
+// Space never holds another connection open. The
 // few constants that differ between macOS and Linux (the layout of
 // `sockaddr_un`, MSG_NOSIGNAL or SO_NOSIGPIPE) are chosen by
 // `@targetOs()` when the program is built.
@@ -33,6 +36,9 @@ extern fn rename(from: [*]u8, to: [*]u8) i32
 extern fn read(fd: i32, buf: [*]u8, n: usize) isize
 extern fn write(fd: i32, buf: [*]u8, n: usize) isize
 extern fn close(fd: i32) i32
+extern fn fcntl(fd: i32, cmd: i32, ...) i32
+extern("__error") fn darwinErrno() *i32
+extern("__errno_location") fn linuxErrno() *i32
 
 let AF_UNIX: i32 = 1
 let SOCK_STREAM: i32 = 1
@@ -42,6 +48,14 @@ let SHUT_WR: i32 = 1
 let MSG_NOSIGNAL_LINUX: i32 = 0x4000
 let SOL_SOCKET_DARWIN: i32 = 0xffff
 let SO_NOSIGPIPE_DARWIN: i32 = 0x1022
+let MSG_DONTWAIT_DARWIN: i32 = 0x80
+let MSG_DONTWAIT_LINUX: i32 = 0x40
+let EAGAIN_DARWIN: i32 = 35
+let EAGAIN_LINUX: i32 = 11
+let EINTR: i32 = 4
+// fcntl: F_SETFD and FD_CLOEXEC (the same on macOS and Linux).
+let F_SETFD: i32 = 2
+let FD_CLOEXEC: i32 = 1
 
 // A `sockaddr_un` for `path` in `addr`; its length, or 0 when the path
 // is too long (or empty).
@@ -74,6 +88,18 @@ fn noSigpipe(fd: i32) {
     }
 }
 
+/// Closes `fd` in the programs this process starts.
+fn cloexec(fd: i32) {
+    fcntl(fd, F_SETFD, FD_CLOEXEC)
+}
+
+fn errno() i32 {
+    if @targetOs() is .macos {
+        return darwinErrno().*
+    }
+    return linuxErrno().*
+}
+
 /// A socket listening at `path` (a stale socket file there is removed
 /// first); -1 on failure. The file appears at `path` only once the socket
 /// listens: bind() creates the file before listen() runs, and a client
@@ -98,6 +124,7 @@ fn listenAt(path: []u8) i32 {
     if fd < 0 {
         return -1
     }
+    cloexec(fd)
     if bind(fd, tmp[..].ptr, n + 2) != 0 {
         close(fd)
         return -1
@@ -129,6 +156,7 @@ fn connectTo(path: []u8) i32 {
     if fd < 0 {
         return -1
     }
+    cloexec(fd)
     if connect(fd, addr[..].ptr, n) != 0 {
         close(fd)
         return -1
@@ -150,6 +178,7 @@ fn acceptNow(fd: i32) i32 {
     }
     let c = accept(fd, null, null)
     if c >= 0 {
+        cloexec(c)
         noSigpipe(c)
     }
     return c
@@ -183,6 +212,35 @@ fn sendAll(fd: i32, data: []u8) bool {
         off += n as usize
     }
     return true
+}
+
+/// Sends what the socket `fd` takes now, without waiting: the number of
+/// bytes (0 when it takes none now), -1 when the peer is gone.
+fn sendSome(fd: i32, data: []u8) isize {
+    if data.len == 0 {
+        return 0
+    }
+    var flags = MSG_DONTWAIT_DARWIN
+    var again = EAGAIN_DARWIN
+    if !(@targetOs() is .macos) {
+        flags = MSG_DONTWAIT_LINUX | MSG_NOSIGNAL_LINUX
+        again = EAGAIN_LINUX
+    }
+    let n = send(fd, data.ptr, data.len, flags)
+    if n >= 0 {
+        return n
+    }
+    let e = errno()
+    if e == again || e == EINTR {
+        return 0
+    }
+    return -1
+}
+
+/// Ends what this side sends on the socket `fd` (the peer reads the end
+/// of file); it can still read.
+fn shutdownWrite(fd: i32) {
+    shutdown(fd, SHUT_WR)
 }
 
 fn closeFd(fd: i32) {
