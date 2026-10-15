@@ -111,8 +111,9 @@ pub struct Page {
     // The top-level browsing context a tab's page is in (contexts.aye);
     // 0 for frames.
     context: u32 = 0
-    // Laid out before its scripts run (`startEarly`), which they will:
-    // styled as a page with scripts (`noscript` hidden).
+    // Shown before its scripts run (`loadParsed`), which they will:
+    // styled as a page with scripts (`noscript` hidden), and holding the
+    // storage (`useStorage`) until they run.
     scripts_pending: bool = false
     // Where the window scrolled it before its scripts ran: their
     // scrollY to begin with.
@@ -125,6 +126,9 @@ pub struct Page {
         if self.script |s| {
             self.script = null
             destroyScript(s)
+        }
+        if self.scripts_pending {
+            releaseStorage()
         }
         self.dropTree()
         self.dropStyling()
@@ -456,6 +460,12 @@ pub fn loadParsed(alloc: Allocator, target: *Url) AllocError!*mut Page {
     let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252)
     errdefer p.destroy()
     try attachLoading(p)
+    p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
+    if p.scripts_pending {
+        // Its scripts will use the storage of the pages before it, which
+        // may close meanwhile.
+        useStorage(alloc)
+    }
     return p
 }
 
@@ -468,7 +478,6 @@ pub fn loadParsed(alloc: Allocator, target: *Url) AllocError!*mut Page {
 /// the scan walks the tree. The ids are released by the caller.
 pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32), scripts: *mut List(u32)) AllocError!void {
     let media = css.Media { width: width, height: height }
-    p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
     var base = try documentBase(p.alloc, &p.doc, &p.url)
     defer base.deinit(p.alloc)
     var hrefs = text.Builder.init(p.alloc)
@@ -522,7 +531,13 @@ pub fn releaseLoads(ids: *mut List(u32)) {
 /// Runs the scripts of `p` (from `loadParsed`), loads its frames and
 /// fires the load events, as `load` does after the fetch.
 pub fn runPageScripts(p: *mut Page) AllocError!void {
+    let held = p.scripts_pending
     p.scripts_pending = false
+    defer {
+        if held {
+            releaseStorage()
+        }
+    }
     try runDocument(p, scriptingEnabled())
 }
 
