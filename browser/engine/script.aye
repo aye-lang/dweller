@@ -1614,6 +1614,35 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
     return true
 }
 
+/// Fires `wheel` at `target` for the user's wheel or trackpad: deltaMode
+/// 0, `dx` and `dy` CSS px (positive: right and down, as the page
+/// scrolls), at viewport point (`x`, `y`). False when a listener
+/// canceled it: do not scroll.
+pub fn dispatchWheel(p: *mut Page, target: NodeId, x: f64, y: f64, dx: f64, dy: f64) AllocError!bool {
+    let s = p.script orelse return true
+    if s.dispatcher == js.NONE || !p.doc.isLive(target) {
+        return true
+    }
+    let it = &mut s.it
+    let base = it.stack.len()
+    try jsPush(s, it.roots.items()[s.dispatcher])
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, try wrapFor(s, target))
+    try jsPush(s, try stringFor(s, "wheel"))
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, js.numVal(x))
+    try jsPush(s, js.numVal(y))
+    try jsPush(s, js.numVal(dx))
+    try jsPush(s, js.numVal(dy))
+    let r = try callReported(s, base, 7)
+    try runMicrotasks(s)
+    try afterTask(s)
+    if r |v| {
+        return s.it.toBoolean(v)
+    }
+    return true
+}
+
 /// Runs `src` as a script of the page and writes the value of its last
 /// expression to `out` (a string as it is, anything else as
 /// console.log shows it), or the uncaught exception. False for an

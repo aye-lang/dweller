@@ -2981,6 +2981,102 @@ fn window_scroll_follows_scripts() {
     }
 }
 
+/// macOS wheel and trackpad scrolling (window.aye `wheel`): a fractional
+/// SDL delta is a precise device's (10 px a unit, summed exactly), a
+/// whole one a wheel notch (40 px); SDL_MOUSEWHEEL_FLIPPED (natural
+/// scrolling) is not flipped again; X scrolls sideways; and the wheel
+/// events of one loop iteration make one `wheel` DOM event (deltaMode 0,
+/// positive down and right), one scroll and no layout.
+#[test]
+fn window_wheel() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let repeat = |word: &str, n: usize| vec![word; n].join(" ");
+    let run = |page: &str, events: &str, extra: &[&str]| {
+        let mut args = vec![
+            page, "--font", "fixed", "--width", "400", "--height", "340", "--frames", "30",
+            "--state", "--events", events,
+        ];
+        args.extend_from_slice(extra);
+        run_window(&args)
+    };
+    let long = "browser/tests/ui/long.html";
+    // Events, then the scroll offset of long.html (300 px viewport).
+    let cases = [
+        (repeat("wheel:-0.05", 30), 15),
+        (repeat("wheel:-0.25", 10), 25),
+        ("wheel:-1".to_string(), 40),
+        (repeat("wheel:0,-0.5,flipped", 4), 20),
+        ("wheel:0,-1,flipped".to_string(), 40),
+        // A whole delta in a trackpad's stream is the trackpad's.
+        ("wheel:-0.5 wheel:-1".to_string(), 15),
+        (format!("{} {}", repeat("wheel:-0.5", 40), repeat("wheel:0.25", 4)), 190),
+    ];
+    let mut failures = Vec::new();
+    for (events, want) in &cases {
+        let out = run(long, events, &[]);
+        let got = text(&out.stdout);
+        let line = format!("\nscroll {want}\n");
+        if !out.status.success() || !out.stderr.is_empty() || !got.contains(&line) {
+            failures.push(format!("{events}: expected scroll {want}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    // Sideways: 4 x 95 px brings the far right link of wide.html under x
+    // 250 (one frame, as in window_sideways_scroll).
+    let events = format!("{} move:250,80", repeat("wheel:9.5,0", 4));
+    let out = run_window(&[
+        "browser/tests/ui/wide.html", "--font", "fixed", "--width", "400", "--height", "340", "--frames", "1",
+        "--state", "--events", &events,
+    ]);
+    let got = text(&out.stdout);
+    if !out.status.success() || !got.lines().any(|l| l.starts_with("status ") && l.ends_with("other.html")) {
+        failures.push(format!("sideways: expected other.html under the mouse:\n{got}{}", text(&out.stderr)));
+    }
+    // One wheel event of the summed deltas for 8 SDL events; the window's
+    // own listener is passive; ?cancel: the div's listener cancels it.
+    let page = root().join("browser/tests/ui/wheel.html");
+    let events = format!("move:100,200 {}", repeat("wheel:0.5,-0.25", 8));
+    for (query, scroll, line) in [
+        ("", 20, "wheel=1 dx=40 dy=20 mode=0 scrolls=1 y=20"),
+        ("?cancel", 0, "wheel=1 dx=40 dy=20 mode=0 scrolls=0 y=0"),
+    ] {
+        let target = format!("file://{}{query}", page.display());
+        let out = run(&target, &events, &["--text"]);
+        let got = text(&out.stdout);
+        let want = format!("\nscroll {scroll}\n");
+        if !out.status.success() || !out.stderr.is_empty() || !got.contains(&want) || !got.contains(line) {
+            failures.push(format!("wheel.html{query}: expected {want:?} and {line:?}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    // Scrolling repaints: no layout, and no display list built again; in
+    // a frame (frames.html), one list for all the events of an iteration.
+    let phases = |page: &str, events: &str| {
+        let out = Command::new(dweller())
+            .current_dir(root())
+            .env("SDL_VIDEODRIVER", "dummy")
+            .env("DWELLER_TIMING", "1")
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340", "--frames", "3", "--events", events])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        let count = |phase: &str| err.lines().filter(|l| l.contains(&format!("DWELLER_TIMING\t{phase}\t"))).count();
+        (count("layout"), count("script_layout"), count("paint_build"), count("paint"))
+    };
+    let frames = "browser/tests/ui/frames.html";
+    for (page, one, many) in [
+        (long, "move:100,200".to_string(), format!("move:100,200 {}", repeat("wheel:-0.3", 50))),
+        (frames, "move:200,100 wheel:-1".to_string(), format!("move:200,100 {}", repeat("wheel:-0.3", 50))),
+    ] {
+        let (a, b) = (phases(page, &one), phases(page, &many));
+        if a != b {
+            failures.push(format!("{page}: phases (layout, script_layout, paint_build, paint) {a:?} for {one:?}, {b:?} for 50 wheel events"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// One run of a DOM fixture: `args` then the page; stdout must be
 /// `golden`, and stderr (console messages, uncaught exceptions) must be
 /// `err_golden`, or empty when there is no such file.

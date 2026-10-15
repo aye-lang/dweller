@@ -10,7 +10,12 @@
 //     click:X,Y       a left click at a window point
 //     move:X,Y        the mouse moves there
 //     release:X,Y     release the left button (after a slider drag)
-//     wheel:N         the wheel turns N notches (negative: down)
+//     wheel:Y         a wheel event of SDL's deltas (negative: down); a
+//                     whole Y is that many notches of a wheel, a
+//                     fractional one a trackpad's delta (10 px a unit)
+//     wheel:X,Y       the same with X (positive: right); ",flipped"
+//                     after Y sets SDL_MOUSEWHEEL_FLIPPED (natural
+//                     scrolling: the deltas are already inverted)
 //     agents:N        no event: the words after it wait until agents
 //                     made N requests (`--agent-socket`, agents.aye)
 //
@@ -91,13 +96,39 @@ fn scriptEvent(word: []u8) ?SDL_Event {
         return ev
     }
     if text.startsWith(word, "wheel:") {
-        let n = text.parseInt(word[6..]) catch |e| {
-            return null
+        // wheel:Y or wheel:X,Y[,flipped]
+        var parts = text.split(word[6..], ",")
+        var v = [2]f64{0.0, 0.0}
+        var n: usize = 0
+        var flipped = false
+        while parts.next() |part| {
+            if n == 2 && text.eql(part, "flipped") {
+                flipped = true
+                n += 1
+                continue
+            }
+            if n >= 2 {
+                return null
+            }
+            v[n] = text.parseFloat(part) catch |e| {
+                return null
+            }
+            n += 1
+        }
+        if n == 1 {
+            v[1] = v[0]
+            v[0] = 0.0
         }
         ev.kind = SDL_MOUSEWHEEL
         let we = &mut ev.wheel
-        we.y = n as i32
-        we.precise_y = n as f32
+        // SDL rounds the whole deltas toward zero.
+        we.x = v[0] as i32
+        we.y = v[1] as i32
+        we.precise_x = v[0] as f32
+        we.precise_y = v[1] as f32
+        if flipped {
+            we.direction = SDL_MOUSEWHEEL_FLIPPED
+        }
         return ev
     }
     return null
@@ -187,6 +218,7 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             try ui.handle(&ev)
         }
     }
+    try ui.flushWheel()
 }
 
 /// The tab's state, for `--state`: the URL, the scroll offset, the

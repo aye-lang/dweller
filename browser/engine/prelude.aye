@@ -58,9 +58,10 @@ pub let PRELUDE =
     \\    this.timeStamp = ak.now();
     \\    hidden(this, '_stop', false);
     \\    hidden(this, '_stopNow', false);
+    \\    hidden(this, '_passive', false);
     \\    hidden(this, '_path', null);
     \\  }
-    \\  preventDefault() { if (this.cancelable) this.defaultPrevented = true; }
+    \\  preventDefault() { if (this.cancelable && !this._passive) this.defaultPrevented = true; }
     \\  stopPropagation() { this._stop = true; }
     \\  stopImmediatePropagation() { this._stop = true; this._stopNow = true; }
     \\  get srcElement() { return this.target; }
@@ -149,9 +150,16 @@ pub let PRELUDE =
     \\  if (type === 'scroll') watchScroll(t);
     \\  const capture = captureOf(opts);
     \\  const once = !!(opts && typeof opts === 'object' && opts.once);
+    \\  const passive = opts && typeof opts === 'object' && opts.passive !== undefined ? !!opts.passive : defaultPassive(t, type);
     \\  const ls = listenersOf(t);
     \\  for (const l of ls) if (l.type === type && l.fn === fn && l.capture === capture) return;
-    \\  ls.push({ type, fn, capture, once, removed: false });
+    \\  ls.push({ type, fn, capture, once, passive, removed: false });
+    \\}
+    \\// DOM's default passive value: wheel and touch listeners of the window,
+    \\// the document, its root and its body cannot cancel the scroll.
+    \\function defaultPassive(t, type) {
+    \\  if (type !== 'wheel' && type !== 'mousewheel' && type !== 'touchstart' && type !== 'touchmove') return false;
+    \\  return t === G || t === document || t === document.documentElement || t === document.body;
     \\}
     \\function removeListener(t, type, fn, opts) {
     \\  const ls = t.__listeners;
@@ -235,7 +243,9 @@ pub let PRELUDE =
     \\  for (const l of ls.slice()) {
     \\    if (l.removed || l.type !== ev.type || l.capture !== capture) continue;
     \\    if (l.once) removeListener(t, l.type, l.fn, l.capture);
+    \\    ev._passive = l.passive;
     \\    callListener(l.fn, t, ev, false);
+    \\    ev._passive = false;
     \\    if (ev._stopNow) return;
     \\  }
     \\}
@@ -331,7 +341,7 @@ pub let PRELUDE =
     \\}
     \\
     \\// An event the browser makes (a click, a key, the load of the page).
-    \\function hostEvent(target, type, key, x, y) {
+    \\function hostEvent(target, type, key, x, y, dx, dy) {
     \\  // The user scrolled the window: `scroll` follows as a task, as for a
     \\  // script's scroll.
     \\  if (type === 'scroll') {
@@ -343,6 +353,8 @@ pub let PRELUDE =
     \\    ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, composed: true, key });
     \\  } else if (type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') {
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
+    \\  } else if (type === 'wheel') {
+    \\    ev = new WheelEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, deltaX: dx, deltaY: dy, deltaMode: 0 });
     \\  } else if (type === 'input') {
     \\    ev = new InputEvent(type, { bubbles: true, composed: true, data: key === undefined ? null : key, inputType: 'insertText' });
     \\  } else if (type === 'focus' || type === 'blur') {

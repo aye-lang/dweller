@@ -49,8 +49,33 @@ pub let TABBAR: f64 = 28.0
 pub let MAX_TABS: usize = 16
 /// The find bar height.
 pub let FINDBAR: f64 = 32.0
-/// Lines of a wheel notch and of the arrow keys, in CSS px.
+/// Lines of a wheel notch and of the arrow keys, in CSS px (Chrome's
+/// 40 px a wheel tick).
 let LINE_STEP: f64 = 40.0
+/// CSS px of one unit of a precise (trackpad, Magic Mouse) wheel delta.
+/// SDL's cocoa backend sends NSEvent `deltaY`, which for precise
+/// devices is `scrollingDeltaY` (points, what Safari and Chrome scroll
+/// by) divided by 10 (GLFW makes the same `* 0.1` conversion).
+pub let PRECISE_STEP: f64 = 10.0
+/// A whole wheel delta within this many ms of a fractional one comes
+/// from the same precise device (a trackpad delta can be whole: 10
+/// points); else it is a notch of a wheel (SDL rounds those up).
+pub let PRECISE_HOLD_MS: u32 = 500
+
+/// The CSS px of one unit of a wheel delta (`x`, `y` as SDL gives them):
+/// a fractional delta is from a precise device, as is a whole one when
+/// one of those was seen just before (`recent_precise`); else it is a
+/// notch.
+pub fn wheelStep(x: f64, y: f64, recent_precise: bool) f64 {
+    if recent_precise || isFractional(x) || isFractional(y) {
+        return PRECISE_STEP
+    }
+    return LINE_STEP
+}
+
+pub fn isFractional(v: f64) bool {
+    return std.math.floor(v) != v
+}
 
 pub enum Focus {
     Page
@@ -346,6 +371,13 @@ pub struct Ui {
     mouse_in: bool
     mouse_x: f64
     mouse_y: f64
+    // Wheel scrolling not applied yet, in CSS px (right and down): the
+    // wheel events of a loop iteration scroll once (`flushWheel`).
+    wheel_x: f64
+    wheel_y: f64
+    // The SDL timestamp of the last fractional (precise) wheel delta.
+    precise_seen: bool
+    precise_at: u32
     // Scripted events not fed yet (script.aye): they wait for agents.
     rest: text.Builder
 
@@ -394,6 +426,10 @@ pub struct Ui {
             mouse_in: false,
             mouse_x: 0.0,
             mouse_y: 0.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            precise_seen: false,
+            precise_at: 0,
             rest: text.Builder.init(alloc),
         }
     }
@@ -503,6 +539,8 @@ pub struct Ui {
             } else {
                 waited = std.time.monotonicMs() - before
             }
+            // All the wheel events of this iteration scroll once.
+            try self.flushWheel()
             if self.tab.page |p| {
                 if try engine.runDueTimers(p) {
                     try self.afterScripts()
@@ -852,6 +890,12 @@ pub struct Ui {
 
     fn handle(self: *mut Self, ev: *SDL_Event) AllocError!void {
         let kind = ev.kind
+        if kind == SDL_MOUSEWHEEL {
+            self.wheel(&ev.wheel)
+            return
+        }
+        // The wheel scrolled before this event.
+        try self.flushWheel()
         if kind == SDL_QUIT {
             self.quit = true
         } else if kind == SDL_WINDOWEVENT {
@@ -886,32 +930,61 @@ pub struct Ui {
             if ev.button.button == SDL_BUTTON_LEFT {
                 try releaseRange(self)
             }
-        } else if kind == SDL_MOUSEWHEEL {
-            let wh = &ev.wheel
-            var dy = wh.precise_y as f64
-            if dy == 0.0 {
-                dy = wh.y as f64
-            }
-            var dx = wh.precise_x as f64
-            if dx == 0.0 {
-                dx = wh.x as f64
-            }
-            if wh.direction == SDL_MOUSEWHEEL_FLIPPED {
-                dy = -dy
-                dx = -dx
-            }
-            if (SDL_GetModState() & KMOD_SHIFT) != 0 && dx == 0.0 {
-                // Shift turns the wheel sideways.
-                dx = -dy
-                dy = 0.0
-            }
+        }
+    }
+
+    // Adds a wheel event to the scrolling of this loop iteration. SDL's
+    // deltas already follow the system's scrolling direction: with
+    // macOS's natural scrolling, `direction` is FLIPPED and the deltas
+    // are the inverted ones (SDL_cocoamouse.m sends NSEvent `deltaY`),
+    // so the page moves with the fingers as they are; flipping them back
+    // is for games that want the device's motion.
+    fn wheel(self: *mut Self, wh: *SDL_MouseWheelEvent) {
+        var dy = wh.precise_y as f64
+        if dy == 0.0 {
+            dy = wh.y as f64
+        }
+        var dx = wh.precise_x as f64
+        if dx == 0.0 {
+            dx = wh.x as f64
+        }
+        if isFractional(dx) || isFractional(dy) {
+            self.precise_seen = true
+            self.precise_at = wh.timestamp
+        }
+        let recent = self.precise_seen && wh.timestamp >= self.precise_at && wh.timestamp - self.precise_at < PRECISE_HOLD_MS
+        let step = wheelStep(dx, dy, recent)
+        if (SDL_GetModState() & KMOD_SHIFT) != 0 && dx == 0.0 {
+            // Shift turns a wheel sideways (macOS does it for its mice).
+            dx = -dy
+            dy = 0.0
+        }
+        // SDL: x > 0 scrolls right, y > 0 scrolls up.
+        self.wheel_x += dx * step
+        self.wheel_y -= dy * step
+    }
+
+    // Scrolls by the wheel events of this loop iteration at once: one
+    // `wheel` event for the page's scripts (canceling it scrolls
+    // nothing), one scroll, one repaint (no layout unless scripts
+    // changed the document).
+    fn flushWheel(self: *mut Self) AllocError!void {
+        let dx = self.wheel_x
+        let dy = self.wheel_y
+        if dx == 0.0 && dy == 0.0 {
+            return
+        }
+        self.wheel_x = 0.0
+        self.wheel_y = 0.0
+        if try self.wheelScripts(dx, dy) {
             if dx != 0.0 {
-                self.scrollSideways(dx * LINE_STEP)
+                self.scrollSideways(dx)
             }
-            if dy != 0.0 && !(try self.scrollFrame(-dy * LINE_STEP)) {
-                self.scrollBy(-dy * LINE_STEP)
+            if dy != 0.0 && !(try self.scrollFrame(dy)) {
+                self.scrollBy(dy)
             }
         }
+        try self.afterScripts()
     }
 
     fn key(self: *mut Self, sym: i32, mods: u16) AllocError!void {
@@ -1212,6 +1285,22 @@ pub struct Ui {
             }
         }
         return go_on
+    }
+
+    // Fires `wheel` (deltaMode 0: `dx`, `dy` CSS px, positive right and
+    // down) at the element under the mouse; false when a listener
+    // canceled it.
+    fn wheelScripts(self: *mut Self, dx: f64, dy: f64) AllocError!bool {
+        let p = self.tab.page orelse return true
+        if !engine.hasScripts(p) || !self.mouse_in || self.mouse_y < self.top() {
+            return true
+        }
+        let t = p.tree orelse return true
+        var el = engine.nodeAt(t, self.mouse_x + self.tab.scroll_x, self.mouse_y - self.top() + self.tab.scroll) orelse return true
+        if p.doc.node(el).kind != dom.Kind.Element {
+            el = p.doc.parent(el) orelse return true
+        }
+        return engine.dispatchWheel(p, el, self.mouse_x, self.mouse_y - self.top(), dx, dy)
     }
 
     // Fires keydown at the element scripts focused (else the body); false

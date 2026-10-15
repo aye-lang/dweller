@@ -377,6 +377,7 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P4.28 slab for unshared computed-style arrays (P4.27).
 - P4.29 `Prop` 48 → 32 B, accessors stored separately (P4.26).
 - P4.30 decision: next large JS speedup is a bytecode compiler; design doc first, its own phase after P3 (P4.16, P4.17, P4.20).
+- P4.31 macOS-native wheel and trackpad scrolling (user feedback 2026-10-15: "Windows mouse-wheel logic"). Done 2026-10-15: every SDL delta was 40 px a unit, so a trackpad (SDL sends NSEvent `deltaY` = `scrollingDeltaY` / 10) scrolled 4x too far, and `SDL_MOUSEWHEEL_FLIPPED` was flipped again, against the fingers under natural scrolling. Now a fractional delta (or a whole one within 500 ms of one) is 10 px a unit, a wheel notch 40 px; the sign is used as SDL gives it; X scrolls sideways; the wheel events of a loop iteration are summed into one scroll, one cancelable `wheel` DOM event (deltaMode 0) and one repaint (an iframe built its display list 3x per event: 303 → 6 builds for 100 events); wheel listeners of the window, document, root and body are passive by default. Test `window_wheel`.
 - P5 one step per `docs/browser.md` "What remains" item, each tied to a listed site or declared out of scope.
 - P6.1 manual checklist on macOS, recorded; P6.2 final `docs/browser-sites.md` run; P6.3 docs pass and a tag.
 
