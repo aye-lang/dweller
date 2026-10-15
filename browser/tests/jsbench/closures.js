@@ -1,4 +1,5 @@
 // Escaping environments, object literals, and short-lived closures.
+var smokeScale = (typeof SMOKE === 'number') ? SMOKE : 1; // smoke test divisor; 1 = full size
 function factory(seed) {
   var state = { x: seed, y: seed + 1, count: 0 };
   return function(delta) {
@@ -9,7 +10,7 @@ function factory(seed) {
 }
 function closures() {
   var sum = 0;
-  for (var i = 0; i < 300000; i++) {
+  for (var i = 0; i < Math.floor(300000 / smokeScale); i++) {
     var f = factory(i % 97);
     for (var j = 0; j < 4; j++) {
       var o = f(j);

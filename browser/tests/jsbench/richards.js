@@ -539,5 +539,6 @@ Packet.prototype.toString = function () {
 };
 
 var richardsChecksum = 0;
-for (var round = 0; round < 40; round++) runRichards();
+var smokeScale = (typeof SMOKE === 'number') ? SMOKE : 1; // smoke test divisor; 1 = full size
+for (var round = 0; round < Math.floor(40 / smokeScale); round++) runRichards();
 console.log(richardsChecksum);

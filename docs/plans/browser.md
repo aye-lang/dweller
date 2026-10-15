@@ -443,6 +443,7 @@ Common to these cards:
 - verify: `BENCH_RUNS=5 BENCH_REF=node browser/tests/jsbench/run.sh --json target/jsbench.json > target/p4.59.log 2>&1; echo $?` → 0 with every checksum equal to Node's
 - estimate: no speedup (measurement)
 - model: sonnet
+- status: done 2026-10-15. Vendored Octane `splay.js` (BSD-3) and `crypto.js` (Tom Wu's license) with the harness removed and Octane's deterministic `Math.random`; wrote `raytrace`, `loop`, `globals`, `calls`. The runner is `browser/tools/jsbench.py` (`run.sh` builds and calls it): `node --jitless` column when node is installed, `--json FILE`, and `--smoke` (every workload once at a tenth of its size against `NAME.smoke.out`; test `jsbench_smoke`). `baseline.json` is from a 4-core Xeon 2.1 GHz Linux box, fast build, median of 5, every checksum equal to Node's; geometric mean 6.7× node --jitless (calls 17×, globals 25×, navier-stokes 9×, richards 10×, strings 1.9×). The three-loop sizes are smaller than the BYTECODE.md table (globals 3M, calls 2M iterations) and the old M2 Pro numbers there are a different machine: compare ratios, not seconds. Octane `deltablue.js` (GPL-2) and `raytrace.js` (no license) not vendored.
 
 #### P4.60: three.js and DOM benchmarks
 - goal: the `three` and `dom` workloads of `BYTECODE.md` section 1, in the baseline.
