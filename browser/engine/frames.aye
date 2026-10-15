@@ -68,9 +68,14 @@ pub fn rootPage(p: *mut Page) *mut Page {
     return cur
 }
 
-/// The page with `id` among the pages of `p`'s tab; null when it is gone.
+/// The page with `id` among the pages of `p`'s tab, else of the other
+/// tabs; null when it is gone.
 pub fn findPage(p: *mut Page, id: u32) ?*mut Page {
-    return findBelow(rootPage(p), id)
+    if findBelow(rootPage(p), id) |found| {
+        return found
+    }
+    // A page of another tab (a popup and its opener, contexts.aye).
+    return findPageAnywhere(id)
 }
 
 fn findBelow(p: *mut Page, id: u32) ?*mut Page {

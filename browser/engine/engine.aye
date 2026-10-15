@@ -14,6 +14,8 @@
 //   where a link with a target loads.
 // - windows.aye: what the scripts of a page see of the other pages of
 //   its tab (window.parent, frames, contentDocument, postMessage).
+// - contexts.aye: the top-level browsing contexts of the process (tabs,
+//   popups): window.open, opener, close, named targets.
 // - forms.aye: default actions (links, buttons, checkboxes, labels),
 //   focus, form submission.
 //
@@ -106,10 +108,14 @@ pub struct Page {
     history: SessionHistory
     // The tab's history, once the tab shows the page (tab.aye).
     shared: ?*mut SessionHistory = null
+    // The top-level browsing context a tab's page is in (contexts.aye);
+    // 0 for frames.
+    context: u32 = 0
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
         let alloc = self.alloc
+        contextPageGone(self)
         if self.script |s| {
             self.script = null
             destroyScript(s)
@@ -405,6 +411,7 @@ pub fn load(alloc: Allocator, target: *Url) AllocError!*mut Page {
 pub fn loadWith(alloc: Allocator, target: *Url, body: ?*net.Body) AllocError!*mut Page {
     let p = try fetchPage(alloc, target, body, encoding.Encoding.Windows1252)
     errdefer p.destroy()
+    try attachLoading(p)
     try runDocument(p, scriptingEnabled())
     return p
 }
@@ -417,6 +424,7 @@ pub fn loadState(alloc: Allocator, target: *Url, state: ?[]u8) AllocError!*mut P
     if state |st| {
         try p.history.replace(p.url.href, st)
     }
+    try attachLoading(p)
     try runDocument(p, scriptingEnabled())
     return p
 }

@@ -32,8 +32,12 @@ pub struct Tab {
     // or else the fragment to scroll to (owned; empty for none).
     restore: ?f64
     fragment: []mut u8
+    // Its top-level browsing context (contexts.aye), which outlives the
+    // pages it shows.
+    context: u32
 
     pub fn init(alloc: Allocator) Tab {
+        let context = newTabContext(alloc) catch unreachable
         return Tab {
             alloc: alloc,
             page: null,
@@ -42,15 +46,26 @@ pub struct Tab {
             scroll_x: 0.0,
             restore: null,
             fragment: alloc.alloc(0 as u8, 0) catch unreachable,
+            context: context,
         }
     }
 
     pub fn deinit(self: *mut Self) {
         if self.page |p| {
+            self.page = null
             p.destroy()
         }
         self.history.deinit()
         self.alloc.free(self.fragment)
+        tabContextGone(self.context)
+    }
+
+    /// The next page loaded (`load`, `loadWith`, `loadState`) is for this
+    /// tab: its scripts see the tab's context (window.opener, name) while
+    /// they run at load. Callers that load a page and then `push` it call
+    /// this first.
+    pub fn enter(self: *mut Self) {
+        setLoadingContext(self.context)
     }
 
     /// The URL of the current entry ("" before the first navigation).
@@ -78,6 +93,7 @@ pub struct Tab {
             try self.toFragment(target)
             return false
         }
+        self.enter()
         let p = try load(self.alloc, target)
         errdefer p.destroy()
         try self.push(target, p)
@@ -148,6 +164,7 @@ pub struct Tab {
             return AllocError.OutOfMemory
         }
         defer target.deinit(self.alloc)
+        self.enter()
         let p = try loadState(self.alloc, &target, self.history.entries.items()[at].state)
         errdefer p.destroy()
         try self.moveTo(step, p)
@@ -223,6 +240,10 @@ pub struct Tab {
             old.destroy()
         }
         self.page = p
+        if contextOf(self.context) |c| {
+            c.page = p
+        }
+        p.context = self.context
         self.scroll = 0.0
         self.scroll_x = 0.0
     }

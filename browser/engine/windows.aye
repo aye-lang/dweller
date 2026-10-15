@@ -26,6 +26,7 @@ import js.Args
 import js.Interp
 import js.JsError
 import js.Value
+import std
 import std.map.IntMap
 import std.mem.AllocError
 import std.text
@@ -61,6 +62,12 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "winClosed", 1, akWinClosed)
     try defMethod(it, o, "setWindowProto", 1, akSetWindowProto)
     try defMethod(it, o, "setMessageHandler", 1, akSetMessageHandler)
+    try defMethod(it, o, "openWindow", 3, akOpenWindow)
+    try defMethod(it, o, "openerWindow", 0, akOpenerWindow)
+    try defMethod(it, o, "dropOpener", 0, akDropOpener)
+    try defMethod(it, o, "closeWindow", 0, akCloseWindow)
+    try defMethod(it, o, "winClose", 1, akWinClose)
+    try defMethod(it, o, "setWindowName", 1, akSetWindowName)
 }
 
 // ---- wrappers of other documents
@@ -153,11 +160,15 @@ fn appendOrigin(b: *mut text.Builder, p: *mut Page) AllocError!void {
 // ---- window objects
 
 // The window object of `page` in the engine of `s`: the global object
-// for its own page, else a stand-in made once.
+// for its own page, else a stand-in made once (a tab's page: its
+// context's, `contextValue`).
 fn windowValue(s: *mut Script, page: *mut Page) JsError!Value {
     let it = &mut s.it
     if page == s.page {
         return js.objVal(it.global)
+    }
+    if page.parent == null && page.context != 0 {
+        return contextValue(s, page.context)
     }
     if s.windows.get(page.id) |r| {
         return it.roots.items()[r]
@@ -169,6 +180,33 @@ fn windowValue(s: *mut Script, page: *mut Page) JsError!Value {
     let o = try it.newHostObject(proto, TAG_WINDOW, page.id, 0)
     let r = try it.addRoot(js.objVal(o))
     try s.windows.put(page.id, r)
+    return js.objVal(o)
+}
+
+// Stand-ins of contexts are keyed apart from those of pages.
+let CONTEXT_KEY: u32 = 0x80000000
+
+// The window object of top-level context `id` (contexts.aye) in the
+// engine of `s`: a stand-in that holds the context, not its page, so it
+// stays the same object while the context navigates (generation 1 marks
+// it). The global object when it is `s`'s own page.
+fn contextValue(s: *mut Script, id: u32) JsError!Value {
+    let it = &mut s.it
+    if contextPage(id) |p| {
+        if p == s.page {
+            return js.objVal(it.global)
+        }
+    }
+    if s.windows.get(id | CONTEXT_KEY) |r| {
+        return it.roots.items()[r]
+    }
+    var proto = s.window_proto
+    if proto == js.NONE {
+        proto = it.object_proto
+    }
+    let o = try it.newHostObject(proto, TAG_WINDOW, id, 1)
+    let r = try it.addRoot(js.objVal(o))
+    try s.windows.put(id | CONTEXT_KEY, r)
     return js.objVal(o)
 }
 
@@ -191,8 +229,11 @@ fn winPage(it: *mut Interp, v: Value) ?*mut Page {
         return s.page
     }
     match it.heap.obj(o).data {
-        .Host { tag, index, .. } => {
+        .Host { tag, index, generation } => {
             if tag == TAG_WINDOW {
+                if generation == 1 {
+                    return contextPage(index)
+                }
                 return findPage(s.page, index)
             }
         }
@@ -278,9 +319,16 @@ fn akFrameElement(it: *mut Interp, a: Args) JsError!Value {
     return wrap(it, slot.parent.frames.items()[slot.index].el)
 }
 
-// The `name` of the frame element that shows the page ("" for a tab's).
+// The `name` of the frame element that shows the page; a tab's: its
+// context's (window.name, a window.open target).
 fn akWindowName(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
+    if s.page.parent == null {
+        if contextOf(s.page.context) |c| {
+            return it.newString(c.name)
+        }
+        return it.newString("")
+    }
     if slotOf(s.page) |slot| {
         if slot.parent.doc.attr(slot.parent.frames.items()[slot.index].el, "name") |n| {
             return it.newString(n)
@@ -486,8 +534,179 @@ fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
     return Value.Undefined
 }
 
+// The context of a window object: a context's stand-in, or the global
+// object or a stand-in of a tab's page; 0 for a frame's window or none.
+fn winContext(it: *mut Interp, v: Value) u32 {
+    let o = js.objectOf(v)
+    if o == js.NONE {
+        return 0
+    }
+    match it.heap.obj(o).data {
+        .Host { tag, index, generation } => {
+            if tag == TAG_WINDOW && generation == 1 {
+                return index
+            }
+        }
+        _ => {}
+    }
+    if winPage(it, v) |p| {
+        if p.parent == null {
+            return p.context
+        }
+    }
+    return 0
+}
+
 fn akWinClosed(it: *mut Interp, a: Args) JsError!Value {
+    let id = winContext(it, it.arg(a, 0))
+    if id != 0 {
+        return js.boolVal(contextOf(id) == null)
+    }
     return js.boolVal((try argWindow(it, a)) == null)
+}
+
+// ---- other tabs (contexts.aye)
+
+// Is the `features` argument of window.open one with `name` (alone, or
+// `name=yes`, `=1`, `=true`)?
+fn featureOn(features: []u8, name: []u8) bool {
+    var parts = text.split(features, ",")
+    while parts.next() |part| {
+        let f = text.trim(part)
+        var key = f
+        var value = "yes"
+        if std.mem.indexOf(f, '=') |eq| {
+            key = text.trim(f[..eq])
+            value = text.trim(f[eq + 1..])
+        }
+        if text.eqlIgnoreCase(key, name) {
+            return !(text.eqlIgnoreCase(value, "no") || text.eql(value, "0") || text.eqlIgnoreCase(value, "false"))
+        }
+    }
+    return false
+}
+
+// openWindow(url, target, features): window.open. `_self`, `_parent`,
+// `_top` and a frame's name navigate that page of the tab; a tab's name
+// (on the same side: the person's or an agent's) navigates that tab;
+// else a new context (a tab, named `target` unless `_blank`) loads the
+// URL, its opener this page's context unless `noopener` or `noreferrer`
+// (then the result is null). The window of where it loads.
+fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let ub = try it.builder()
+    defer it.release(ub)
+    try argText(it, a, 0, ub)
+    let tb = try it.builder()
+    defer it.release(tb)
+    try argText(it, a, 1, tb)
+    let fb = try it.builder()
+    defer it.release(fb)
+    try argText(it, a, 2, fb)
+    var href = text.trim(ub.bytes())
+    if href.len == 0 {
+        href = "about:blank"
+    }
+    let target = s.page.resolve(it.alloc, href) catch |e| {
+        return domError(it, "SyntaxError", "Failed to execute 'open' on 'Window': Unable to open a window with invalid URL.")
+    }
+    defer target.deinit(it.alloc)
+    var name = text.trim(tb.bytes())
+    if name.len == 0 {
+        name = "_blank"
+    }
+    let no_opener = featureOn(fb.bytes(), "noopener") || featureOn(fb.bytes(), "noreferrer")
+    var here: ?*mut Page = null
+    if text.eqlIgnoreCase(name, "_self") {
+        here = s.page
+    } else if text.eqlIgnoreCase(name, "_parent") {
+        here = s.page.parent orelse s.page
+    } else if text.eqlIgnoreCase(name, "_top") {
+        here = rootPage(s.page)
+    } else if !text.eqlIgnoreCase(name, "_blank") {
+        if namedFrame(rootPage(s.page), name) |slot| {
+            here = slotPage(slot)
+        }
+    }
+    if here |p| {
+        if p.script |ts| {
+            try setNavigation(ts, target.href)
+        }
+        return windowValue(s, p)
+    }
+    let from = contextOfPage(s.page)
+    if contextOf(from) == null {
+        return Value.Null
+    }
+    if !text.eqlIgnoreCase(name, "_blank") {
+        let named = namedContext(from, name)
+        if named != 0 {
+            try navigateContext(named, target.href, null)
+            return contextValue(s, named)
+        }
+    }
+    let id = try openContext(from, target.href, name, no_opener, true, null)
+    if no_opener || id == 0 {
+        return Value.Null
+    }
+    return contextValue(s, id)
+}
+
+// The window of the context that opened this page's (null for none, or
+// when it is closed).
+fn akOpenerWindow(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    if s.page.parent != null {
+        return Value.Null
+    }
+    let c = contextOf(s.page.context) orelse return Value.Null
+    if c.opener == 0 || contextOf(c.opener) == null {
+        return Value.Null
+    }
+    return contextValue(s, c.opener)
+}
+
+// window.opener = null: the page lets go of its opener.
+fn akDropOpener(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    if s.page.parent == null {
+        if contextOf(s.page.context) |c| {
+            c.opener = 0
+        }
+    }
+    return Value.Undefined
+}
+
+// window.close() of a tab's page: the front end closes the tab once the
+// script returned, when a script opened it (else nothing happens, as in
+// browsers).
+fn akCloseWindow(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    if s.page.parent == null && mayCloseContext(s.page.context) {
+        try closeContext(s.page.context)
+    }
+    return Value.Undefined
+}
+
+// close() of another tab's window: `popup.close()`.
+fn akWinClose(it: *mut Interp, a: Args) JsError!Value {
+    let id = winContext(it, it.arg(a, 0))
+    if id != 0 && mayCloseContext(id) {
+        try closeContext(id)
+    }
+    return Value.Undefined
+}
+
+// window.name = v of a tab's page (a frame's stays in the prelude).
+fn akSetWindowName(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    if s.page.parent == null {
+        let b = try it.builder()
+        defer it.release(b)
+        try argText(it, a, 0, b)
+        try setContextName(s.page.context, b.bytes())
+    }
+    return Value.Undefined
 }
 
 fn akSetWindowProto(it: *mut Interp, a: Args) JsError!Value {

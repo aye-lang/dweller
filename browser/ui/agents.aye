@@ -397,6 +397,7 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         // needs a page.
         if try openTab(ui, false) |k| {
             ui.slots[k].?.agent = true
+            engine.setContextAgent(ui.slots[k].?.session.tab.context, true)
             c.tab = ui.slots[k].?.id
         }
     }
@@ -425,6 +426,11 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     if a.dropped |closed| {
         freeSlot(ui.alloc, closed)
         a.dropped = null
+    }
+    // Tabs the agent's page opened (window.open, `target=_blank`): the
+    // agent's own, before its next request.
+    if engine.hasContextRequests() {
+        try serveContexts(ui)
     }
     afterSpaceRequest(ui)
     try afterAgent(ui, before, touched)
@@ -595,6 +601,7 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         }
         let slot = ui.slots[i].?
         slot.agent = true
+        engine.setContextAgent(slot.session.tab.context, true)
         c.tab = slot.id
         try activity(ui, "agent: opened a tab")
         reply.message = try tabMessage(tmp, "opened tab ", slot.id)

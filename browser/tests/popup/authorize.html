@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<title>Sign in (origin B)</title>
+<!-- The sign-in origin: it sees its opener but not the opener's
+     document, then sends the popup on to /oauth/approve, which
+     redirects back to the opener's origin. -->
+<p>Signing in</p>
+<script>
+const q = new URLSearchParams(location.search);
+let blocked = 'no';
+try {
+  opener.document;
+} catch (e) {
+  blocked = e.name;
+}
+const seen = 'opener-' + (window.opener !== null) + '-' + blocked + '-' + window.name;
+location.replace('/oauth/approve?redirect_uri=' + encodeURIComponent(q.get('redirect_uri')) + '&state=' + q.get('state') + '&seen=' + seen);
+</script>
