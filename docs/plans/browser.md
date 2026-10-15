@@ -978,9 +978,10 @@ time as a P4 card on those files.
 - reference: `v8/src/wasm/` (the semantics the JS API must keep: memory growth, traps)
 - verify: the table in the PR, with the commands to rerun it
 - depends on: none (any time); time box: 45 min; model: sonnet
+- done 2026-10-15: wasmtime 49.0.3 with Cranelift. Numbers and reasons are in `docs/webgl.md` §6 (WebAssembly runtime). Median µs per step: native 9.0, wasmtime 29.1, node 22 (V8) 32.3, wasm3 362, WAMR fast-interp 500. wasm3 and WAMR also take 12 to 19 s to build the racing line, against 1.2 s in V8. Differences from the card: the bench wraps `sim_wasm::SimHandle` (as `main.ts` calls it) and is built for `wasm32-unknown-unknown` plus `wasm-opt -O`, as `wasm-pack` builds the shipped module; its five wasm-bindgen imports are never called and become traps. WAMR AOT and LLVM JIT were not measured: `wamrc` does not build against LLVM 23, and AOT does not fit wasm fetched at run time. There was no Ubuntu x64 machine. The harness and the commands to rerun are in the PR.
 
 #### P11.17: the WebAssembly JS API
-- goal: on the runtime P11.16 chose (C API via `@cimport`; binaries built like ANGLE's or taken from the project's releases at a pinned version, in `browser/wasm/`):
+- goal: on wasmtime with Cranelift (P11.16; `docs/webgl.md` §6, WebAssembly runtime). Its C API (`wasm.h`, `wasmtime.h`) comes through `@cimport`. Dweller builds nothing: `browser/wasm/wasmtime.lock` pins the version (49.0.3 to start) and the SHA-256 of the upstream release assets `wasmtime-v<ver>-{aarch64-macos,x86_64-linux}-c-api.tar.xz`. `browser/wasm/fetch_wasmtime.sh` downloads and checks them into `target/wasmtime/<ver>/`; CI caches that directory, keyed by the lock. Dweller links `libwasmtime` with an rpath. Without the library, `WebAssembly` is undefined. The functions to implement:
   - `WebAssembly.Module`, `Instance`, `instantiate`, `instantiateStreaming` (needs `application/wasm`), `compile`, `validate`.
   - `Memory`: its `buffer` is an `ArrayBuffer` over the linear memory (P11.3, external store), detached on `grow`.
   - `Table`, `Global`, `CompileError`, `LinkError`, `RuntimeError`.
@@ -988,7 +989,7 @@ time as a P4 card on those files.
   - wasm-bindgen glue (`sim_wasm.js`: `TextDecoder`, `FinalizationRegistry`, `externref` tables) works.
 - files: `browser/wasm/` (new), `browser/engine/prelude.aye`, `browser/js/lib.aye` (external `ArrayBuffer` store), `tests/browser.rs` (`wasm_api`, `wasm_sim_bench`), `browser/tests/wasm/`
 - reference: `v8/src/wasm/wasm-js.cc` (the JS API), `v8/src/wasm/wasm-objects.h`; the WPT `wasm/jsapi/` tests
-- verify: `cargo test --release --test browser -- wasm_api > target/p11.17.log 2>&1; echo $?` → 0; `wasm_sim_bench` loads a copy of `sim_wasm_bg.wasm` with its glue and prints the step time, within 1.5x of P11.16's standalone number
+- verify: `cargo test --release --test browser -- wasm_api > target/p11.17.log 2>&1; echo $?` → 0; `wasm_sim_bench` loads a copy of `sim_wasm_bg.wasm` with its glue and prints the step time, within 1.5x of P11.16's standalone number (29 µs per step on the user's Mac)
 - depends on: P11.3, P11.16; time box: 45 min (split Memory/Table/Global into P11.17b if larger); model: opus
 
 #### P11.18: dedicated Workers

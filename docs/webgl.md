@@ -508,24 +508,133 @@ compositor thread.
 | `FinalizationRegistry`, `TextDecoder`/`TextEncoder` (wasm-bindgen glue) | yes | present | – |
 | `devicePixelRatio`, `ResizeObserver` | yes | present | – |
 
-**WebAssembly runtime (P11.16 decides, P11.17 builds).**
+**WebAssembly runtime: wasmtime (Cranelift), chosen by P11.16.**
 
 - An interpreter in Aye would run the sim's 200 Hz step far too slowly.
   The budget is at most 0.5 ms per step (about 3.3 steps per 60 Hz
   frame, under 2 ms of the frame).
-- Candidates, all embeddable through a C API (`@cimport`):
-  - **wasmtime** (C API `wasm.h`/`wasmtime.h`; Cranelift JIT on arm64
-    and x86-64; Apache-2.0 with the LLVM exception; a 15 to 25 MB
-    library).
-  - **WAMR** (fast interpreter, Fast JIT on x86-64 only, LLVM JIT; AOT
-    needs `wamrc` ahead of time, which does not fit wasm fetched at run
-    time; Apache-2.0 with the LLVM exception).
-  - **wasm3** (interpreter, MIT; in minimal maintenance since 2024).
-  - **A wasm-to-native compiler in Aye**, later.
-- P11.16 measures the sim's step time under each candidate against
-  native, on the user's Mac, outside the browser. The fastest one that
-  meets the budget and runs on both platforms wins. The expectation is
-  wasmtime, and the measurement decides.
+- **Measurement (P11.16, 2026-10-15).** The user's Mac (Apple Silicon,
+  arm64, macOS 26), with an ANGLE build running on the same machine.
+  - The bench is a `sim-bench` crate added to a scratch copy of the
+    game. It wraps `sim_wasm::SimHandle` exactly as `web/src/main.ts`
+    uses it: `new SimHandle('sepang')`, `set_autopilot(true, true)`,
+    then `step(1)` 20,000 times (100 s of race time), and reads
+    `snapshot().speed_kmh` as a checksum.
+  - It exports three C-ABI functions (`bench_init`, `bench_step`,
+    `bench_speed`). It is built for `wasm32-unknown-unknown` with the
+    workspace's release profile, then optimized with `wasm-opt -O`, as
+    `wasm-pack` builds the shipped `sim_wasm_bg.wasm` (2.1 MB).
+  - The five wasm-bindgen imports are never called on this path. Each
+    harness turns them into traps.
+  - Every wasm runtime gives the same checksum (268.5856). Native gives
+    269.8566 because arm64 code contracts to FMA.
+  - Each number is the median of 5 runs. "Init" is instantiation plus
+    `new SimHandle`, which builds the racing line (about 0.4 s native).
+    It is the load-time cost.
+
+| Runtime (version, mode) | µs per step | × native | steps/s | init | peak RSS | library size |
+|---|---|---|---|---|---|---|
+| native (`aarch64-apple-darwin`, LTO) | 9.0 | 1.0 | 111,000 | 0.40 s | 5 MB | – |
+| node 22.22 (V8: Liftoff, then TurboFan) | 32.3 | 3.6 | 31,000 | 1.22 s | 89 MB | – |
+| node 22.22, the game's own glue and `sim_wasm_bg.wasm` | 31.0 | 3.4 | 32,000 | 1.28 s | 99 MB | – |
+| node 22.22 `--liftoff-only` (V8 baseline) | 60.4 | 6.7 | 16,600 | 2.16 s | 57 MB | – |
+| **wasmtime 49.0.3, Cranelift** (C API) | **29.1** | **3.2** | **34,300** | 1.66 s (compile 0.14 s) | 165 MB | 25.5 MB dylib, 19.6 MB static (macOS); 31.6 MB `.so` (Linux x64) |
+| wasmtime 49.0.3, Winch (baseline JIT) | 93.5 | 10.4 | 10,700 | 3.20 s (compile 0.04 s) | 62 MB | (same library) |
+| wasmtime 49.0.3, Pulley (interpreter) | 892 | 99 | 1,100 | 34.0 s | 192 MB | (same library) |
+| wasm3 (main at 28ecb9a, interpreter) | 362 | 40 | 2,800 | 12.2 s | 8 MB | 0.28 MB |
+| WAMR 2.4.5, fast interpreter | 500 | 56 | 2,000 | 18.9 s | 20 MB | 0.33 MB (with AOT loader) |
+
+- **Not measured:**
+  - WAMR AOT and LLVM JIT. `wamrc` does not build against the
+    installed LLVM 23 (`LLVMOrcThreadSafeContextGetContext` was
+    removed). WAMR's pinned LLVM is a source build of over an hour on
+    half the cores.
+  - WAMR Fast JIT, which exists only on x86-64.
+  - `node --jitless`, which has no `WebAssembly` object.
+  - AOT does not fit wasm fetched at run time anyway. An LLVM JIT
+    would ship LLVM, which is larger than wasmtime.
+- **Decision: wasmtime with Cranelift.**
+  - It is the fastest runtime measured, slightly ahead of V8. A step
+    takes 29 µs, 6% of the 0.5 ms budget and 0.6% of the 5 ms step
+    period. Three steps per frame take under 0.1 ms.
+  - Load time is the same as in a browser (1.7 s, against V8's 1.2 s).
+  - The interpreters fail the "comfortably" criterion:
+    - wasm3 at 362 µs and WAMR at 500 µs pass or touch the 0.5 ms line
+      with one car. A race steps every AI car too, which scales the
+      cost with the field.
+    - `new SimHandle` takes 12 to 19 s instead of 1.2 s.
+  - The simpler embeddings (wasm3, WAMR: C, under 0.4 MB) therefore
+    lose on the game's own numbers, not only on peak speed.
+  - Winch and Pulley stay available in the same library through
+    `wasmtime_config_strategy_set` and `wasmtime_config_target_set`.
+    Pulley is the fallback for a platform without a Cranelift backend.
+- **Embedding.**
+  - The C API is `wasm.h` plus `wasmtime.h`. They are plain C (C11
+    `stdint`/`stdbool`). The `.hh` files are an optional C++ wrapper
+    that Dweller does not include.
+  - The library is Rust with a C ABI. It needs no C++ runtime: the
+    macOS dylib links only `libSystem` and `libiconv`; Linux needs
+    `-lpthread -ldl -lm`.
+  - `wasm.h` declares its vector and reference types through
+    function-like macros (`WASM_DECLARE_VEC`, `WASM_DECLARE_REF`). If
+    `@cimport` cannot expand those, P11.17 records the gap in
+    `browser/COMPILER_GAPS.md` and writes the few declarations it uses
+    by hand.
+  - Calls the JS API needs: `wasmtime_module_new` and
+    `wasmtime_module_validate`; `wasmtime_linker_*` or
+    `wasmtime_instance_new` with host functions from
+    `wasmtime_func_new` (imports call JS); `wasmtime_func_call`
+    (exports); `wasmtime_memory_data` and `wasmtime_memory_grow`
+    (`Memory.buffer`); `wasmtime_table_*` and `wasmtime_global_*`.
+    Traps come back as `wasm_trap_t`, which becomes `RuntimeError`.
+- **Shipping.**
+  - Bytecode Alliance publishes the C API as release assets for both
+    platforms (`wasmtime-v<ver>-aarch64-macos-c-api.tar.xz`,
+    `wasmtime-v<ver>-x86_64-linux-c-api.tar.xz`). Unlike ANGLE, Dweller
+    builds nothing.
+  - `browser/wasm/wasmtime.lock` holds the version and each asset's
+    SHA-256. `browser/wasm/fetch_wasmtime.sh` downloads and checks them
+    into `target/wasmtime/<ver>/` (`lib/`, `include/`). CI caches that
+    directory, keyed by the lock file.
+  - Dweller links `libwasmtime.dylib` (`.so` on Linux) with an rpath,
+    as P11.2 does for ANGLE. Without it, `WebAssembly` is undefined.
+  - App bundle (P6): `Contents/Frameworks/libwasmtime.dylib`. A
+    hardened-runtime signature needs the
+    `com.apple.security.cs.allow-jit` entitlement for Cranelift's
+    executable memory. Ad-hoc signing without the hardened runtime
+    does not.
+  - The full asset also carries WASI, the component model, GC and
+    Winch. A build from source of `wasmtime-c-api` with only
+    `cranelift` (Rust is already in CI) is the way to shrink it, if
+    25 MB matters.
+- **Licenses.**
+  - wasmtime: Apache-2.0 WITH LLVM-exception.
+  - WAMR: Apache-2.0 WITH LLVM-exception.
+  - wasm3: MIT.
+  - The wasmtime `LICENSE` goes in `licenses/`.
+- **Platforms.**
+  - wasmtime has Cranelift backends and C API release builds for
+    macOS arm64 and Linux x86-64.
+  - WAMR's interpreters run on both. Its Fast JIT is x86-64 only.
+  - wasm3 runs on both.
+  - wasm3 is maintained again: over 100 commits in the past year
+    (atomics and exception handling in 2026-09).
+- **Security.**
+  - wasmtime:
+    - On 64-bit hosts it reserves 4 GiB plus guard pages per 32-bit
+      memory, so an out-of-bounds access faults into a trap with no
+      check per access.
+    - Indirect calls are checked by signature, and table accesses
+      have Spectre hardening.
+    - It is fuzzed continuously (OSS-Fuzz) and has a published
+      security-advisory process.
+  - WAMR's interpreters check every access in software. On 64-bit
+    hosts its AOT and JIT use guard pages too.
+  - wasm3 checks bounds in software. Of the three, it has the smallest
+    fuzzing and audit history.
+- **Rerun.**
+  - The harness sources and commands are in the P11.16 pull request.
+  - P11.17's `wasm_sim_bench` compares against wasmtime's 29 µs.
 - V8's `src/wasm/` is the reference for the JS API's semantics (memory
   growth detaching `buffer`, import and export wrapping), not for code
   to port.
