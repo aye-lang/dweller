@@ -430,7 +430,11 @@ change). Cards P4.32–P4.39 in `docs/plans/browser.md`.
 (a navigation, page load included), `ui_relayout` (`Ui.relayout`:
 `layoutPage` and the display list), `ui_draw` (raster and texture
 upload), `ui_events` (input handling), `ui_timers` (due timers and the
-layout after them) and `ui_loop` (one iteration without its wait). The
+layout after them) and `ui_loop` (one iteration without its wait;
+labelled `space` in a Space, which shares the window's stderr). With
+`--spaces` the window also writes `ui_space_sent` and `ui_space_answer`
+(labelled with the Space's name) when it relays an agent's bytes to its
+Space or the Space's answer back. Each record is one write. The
 `--events` word `frame` makes the rest of the script wait for the next
 frame, so `wheel:-3 frame` repeated scrolls one step per frame.
 `loop_max_ms` in `--state` only counts while agents are connected, so the

@@ -6,6 +6,7 @@ import std
 
 extern fn getenv(name: [*]u8) ?[*]u8
 extern fn aye_std_monotonic_ns() u64
+extern fn write(fd: i32, buf: [*]u8, n: usize) isize
 
 var checked: bool = false
 var enabled: bool = false
@@ -23,14 +24,48 @@ pub fn start() u64 {
     return 0
 }
 
+/// One record, written to stderr in one call: the window's Spaces share
+/// its stderr, and their records must not interleave with its own.
 pub fn end(phase: []u8, began: u64, label: []u8) {
-    if began != 0 {
-        let ns = aye_std_monotonic_ns() - began
-        if tm_on {
-            notePhase(phase, ns)
-        }
-        if enabled {
-            std.log.info("DWELLER_TIMING\t{}\t{}\t{}", phase, ns, label)
-        }
+    if began == 0 {
+        return
     }
+    let ns = aye_std_monotonic_ns() - began
+    if tm_on {
+        notePhase(phase, ns)
+    }
+    if !enabled {
+        return
+    }
+    var buf = @zeroed([512]u8)
+    var n = put(buf[..], 0, "info: DWELLER_TIMING\t")
+    n = put(buf[..], n, phase)
+    n = put(buf[..], n, "\t")
+    var digits = @zeroed([20]u8)
+    var d: usize = 0
+    var v = ns
+    while d == 0 || v > 0 {
+        digits[19 - d] = '0' + (v % 10) as u8
+        v = v / 10
+        d += 1
+    }
+    n = put(buf[..], n, digits[20 - d..])
+    n = put(buf[..], n, "\t")
+    // A long label is cut, so that the newline fits.
+    n = put(buf[..buf.len - 1], n, label)
+    buf[n] = '\n'
+    write(2, buf[..].ptr, n + 1)
+}
+
+// Copies `s` (what fits) into `buf` at `at`; the new end.
+fn put(buf: []mut u8, at: usize, s: []u8) usize {
+    var n = at
+    for b in s {
+        if n >= buf.len {
+            break
+        }
+        buf[n] = b
+        n += 1
+    }
+    return n
 }

@@ -48,6 +48,7 @@
 
 import agent
 import engine
+import perf
 import std
 import std.heap.Arena
 import std.list.List
@@ -524,6 +525,9 @@ fn relay(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!void {
             sp.ended = true
         } else if sent > 0 {
             try dropFront(ui.alloc, &mut c.pending, sent as usize)
+            // DWELLER_TIMING: the agent's bytes went to the Space in this
+            // loop iteration (window_spaces_responsive).
+            perf.end("ui_space_sent", perf.start(), sp.name.bytes())
         }
         if c.gone && c.pending.len() == 0 && !sp.shut {
             shutdownWrite(sp.fd)
@@ -548,6 +552,7 @@ fn relay(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!void {
             try sp.down.append(buf[0..n as usize])
         }
         if lines > 0 {
+            perf.end("ui_space_answer", perf.start(), sp.name.bytes())
             // Scripted events wait for answers (`agents:N`).
             a.served += lines
             try resumeScript(ui)
