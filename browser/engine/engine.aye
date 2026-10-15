@@ -72,6 +72,9 @@ pub struct Page {
     // The stylesheet source fingerprint for styling (sheet_cache.aye).
     sheet_key: u64
     tree: ?*mut layout.Tree
+    // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
+    // which owns it.
+    tree_borrowed: bool = false
     // The page's JavaScript (null when scripts are off).
     script: ?*mut Script
     // The decoded images (images.aye), from the first layout on.
@@ -181,13 +184,32 @@ pub struct Page {
 
     fn dropTree(self: *mut Self) {
         if self.tree |t| {
-            t.deinit()
-            self.alloc.destroy(t)
+            if self.tree_borrowed {
+                // The frames' trees may go before the next layout.
+                t.frames.clear()
+            } else {
+                t.deinit()
+                self.alloc.destroy(t)
+            }
         }
         self.tree = null
+        self.tree_borrowed = false
+    }
+
+    // The layout scripts read stops using the styles of `styling`, before
+    // they are computed again in full or freed.
+    fn unshareStyles(self: *mut Self) {
+        if self.script |s| {
+            if s.geom |g| {
+                if g.shared {
+                    dropGeometry(s)
+                }
+            }
+        }
     }
 
     fn dropStyling(self: *mut Self) {
+        self.unshareStyles()
         if self.styling |st| {
             st.styles.deinit()
             st.author.deinit()
@@ -203,6 +225,9 @@ pub struct Page {
     /// (media queries and `vw`/`vh` depend on it), or their sources
     /// changed; ordinary DOM changes reuse the parsed sheets.
     pub fn layoutPage(self: *mut Self, measure: dyn font.Measurer, width: f64, height: f64) AllocError!void {
+        if try self.layoutShared(measure, width, height) {
+            return
+        }
         self.dropTree()
         self.measure = measure
         try syncFrames(self)
@@ -217,7 +242,18 @@ pub struct Page {
                 if st.media.width == width && st.media.height == height && self.sheet_key == key {
                     try dom.assignSlots(&mut self.doc)
                     if !stylesCurrent(&self.doc, st.media, &st.styles) {
-                        try restyleWithSizes(self.alloc, &self.doc, &st.ua, &st.author, st.media, &mut st.styles)
+                        self.unshareStyles()
+                        var taken: ?css.Styles = null
+                        if self.script |s| {
+                            taken = takeGeometryStyles(s, st, st.media)
+                        }
+                        if taken |fresh| {
+                            // The scripts' layout just computed them.
+                            st.styles.deinit()
+                            st.styles = fresh
+                        } else {
+                            try restyleWithSizes(self.alloc, &self.doc, &st.ua, &st.author, st.media, &mut st.styles)
+                        }
                     }
                     st.version = domVersion(self)
                     same = true
@@ -230,7 +266,7 @@ pub struct Page {
             }
         }
         if self.styling |st| {
-            try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure)
+            _ = try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure)
         }
         let images_began = perf.start()
         try updateImages(self, css.Media { width: width, height: height })
@@ -248,8 +284,64 @@ pub struct Page {
                 return e
             }
             perf.end("layout", layout_began, self.url.href)
+            if self.script |s| {
+                if !st.styles.queried && self.doc.shadows.len() == 0 {
+                    try adoptLayout(s, st, self.tree.?)
+                }
+            }
             try layoutFrames(self, measure)
         }
+    }
+
+    // `layoutPage` when the page's layout is the one scripts read
+    // (geometry.aye `adoptLayout`) and the viewport and style sheets are
+    // the same: the changes since are styled and laid out again where
+    // they are (`geometry`). False when it is not that layout (any more).
+    fn layoutShared(self: *mut Self, measure: dyn font.Measurer, width: f64, height: f64) AllocError!bool {
+        let s = self.script orelse return false
+        let st = self.styling orelse return false
+        var shared = false
+        if s.geom |g| {
+            shared = g.shared && g.styling == st && g.controls == css.controlInputs(&self.doc)
+        }
+        if !shared || st.media.width != width || st.media.height != height || self.sheet_key != sheetSourceKey(&self.doc) {
+            return false
+        }
+        self.dropTree()
+        self.measure = measure
+        try syncFrames(self)
+        setViewport(self, width, height)
+        if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure) {
+            // Text measures differently: lay out again in full.
+            s.layout_version += 1
+        }
+        try dom.assignSlots(&mut self.doc)
+        var g = try geometry(s)
+        if !g.shared {
+            return false
+        }
+        st.version = domVersion(self)
+        let images_began = perf.start()
+        var changes: u64 = 0
+        if self.images |imgs| {
+            changes = imgs.nodes.changes
+        }
+        try updateImages(self, st.media)
+        perf.end("images", images_began, self.url.href)
+        if self.images |imgs| {
+            if imgs.nodes.changes != changes {
+                // New bitmaps change sizes, not styles.
+                s.layout_version += 1
+                g = try geometry(s)
+                if !g.shared {
+                    return false
+                }
+            }
+        }
+        self.tree = g.tree
+        self.tree_borrowed = true
+        try layoutFrames(self, measure)
+        return true
     }
 
     /// Computes the styles again after the document changed, with the
@@ -265,6 +357,7 @@ pub struct Page {
             }
             try dom.assignSlots(&mut self.doc)
             if !stylesCurrent(&self.doc, st.media, &st.styles) {
+                self.unshareStyles()
                 try restyleWithSizes(self.alloc, &self.doc, &st.ua, &st.author, st.media, &mut st.styles)
             }
             st.version = domVersion(self)

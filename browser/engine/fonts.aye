@@ -44,11 +44,11 @@ struct Wanted {
 }
 
 /// Fetches the web fonts of `author` that `measure` wants and adds them
-/// to it; `referrer` is the page's URL.
-fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer) AllocError!void {
+/// to it; `referrer` is the page's URL. Whether it added any.
+fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer) AllocError!bool {
     let faces = author.font_faces.items()
     if faces.len == 0 {
-        return
+        return false
     }
     var wanted = List(Wanted).init(alloc)
     defer {
@@ -87,7 +87,7 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         try hrefs.appendByte('\n')
     }
     if wanted.len() == 0 {
-        return
+        return false
     }
     net.prefetch(alloc, hrefs.bytes(), net.Kind.Script, referrer)
     for w in wanted.items() {
@@ -117,6 +117,7 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
             return e
         }
     }
+    return true
 }
 
 fn descOf(f: css.FontFace, href: []u8) font.FaceDesc {

@@ -122,7 +122,7 @@ site. Spaces (P9) are the one place with more than one process.
 | – | P0, P1, PW | one clean `main`; "done" checked by a command; wrap-up | – | done |
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing |
-| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32 done; P4.43 and P4.33 next |
+| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32 and P4.34 done; P4.43 and P4.33 next |
 | 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | parallel track; P9.1–P9.4 done, P9.5 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | next: harness P10.1–P10.4, parallel with P4 |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | final check after P4 and P10 |
@@ -141,7 +141,8 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 1 | P4.32 | 0 | page `fetch()`/XHR complete as tasks; the window thread never waits on them (done) |
 | 1b | P4.43 | 0 | dynamic script loads (inserted `<script src>`, webpack chunks) load in the background and run as tasks |
 | 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources |
-| 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle |
+| 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle (done) |
+| 3b | P4.44 | 0 | incremental restyle and layout in documents with container queries (GitHub) |
 | 4 | P4.40 | 0 | CI perf gate: synthetic heavy pages on the test server, budgets, a `perf` job |
 | 5 | P4.35 | 0 | raster cache for gradients, SVGs, blurred shadows and filter layers |
 | 6 | P4.36 | 0 | scroll by moving the last frame and drawing only the new band |
@@ -208,6 +209,12 @@ them from coming back.
 - test: `DWELLER_LAYOUT_CHECK=1` over the jsdom and layout fixtures and the window tests (each incremental relayout compared with a full one); a fixture whose timer toggles a class 100 times: `DWELLER_TIMING` shows no `style_full` record after load.
 - verify: `window_perf.py idle https://mistral.ai` CPU < 20% (now 101%); GitHub `ui_relayout` after load < 50 ms (now 370–900); `DWELLER_LAYOUT_CHECK=1 cargo test --release --test browser -- jsdom_fixtures layout_fixtures script_layout interleaved window_ > target/p4.34.log 2>&1; echo $?` → 0
 - time box: 150 min; model: opus
+- status: done 2026-10-15 for documents without container queries or shadow trees. After a full styling and layout the page's tree and styles become the scripts' layout (`adoptLayout`: `Geometry.shared`, `Page.tree_borrowed`); `layoutPage` then brings that one state up to date through `geometry` (subtree restyle, kept boxes or `relayoutDirty`) instead of `restyleWithSizes` plus a full layout, and the scripts' forced reads use the same state. The lifecycle is the shared geometry's version: a frame after no change does nothing, a paint-only change rebuilds only the display list. Falls back to the full path (and adopts again) when the sheets, the viewport, the form controls' state (`css.controlInputs`) or a change the scripts did not note (`Page.mutations`, now also `<details>` toggled by the front end) moved; new bitmaps or web fonts lay out again with the styles kept. Mistral live (`window_perf.py idle https://mistral.ai`): full cascades per loop 1.01 → 0.01, `ui_relayout` 31.1 → 6.8 ms, loop 44.6 → 18.8 ms; its rAF animation now runs at 53 instead of 22 frames/s, so idle CPU stays 101 → 102%: what is left per frame is the draw (9.7 ms, P4.35/P4.36), timers (JS, 2.6 ms), the forced reads (2.5 ms) and `paint_build` (2.2 ms). The < 20% target needs those, or a frame-rate cap for animations (a product decision). GitHub unchanged (`ui_relayout` 342–1054 ms): its styles use container queries, which stay on the full path (P4.44). `DWELLER_LAYOUT_CHECK=1` now also compares the kept styles with a full cascade ("STYLE CHECK"); the window path over the 22 recorded sites (`--frames 60` with wheel steps) logs no difference, screenshots byte-identical, `page_load.py check` exit 0. Test `window_relayout_incremental`.
+
+#### P4.44: incremental restyle and layout with container queries
+- goal: documents whose styles use container queries (`Styles.queried`: GitHub; Mistral's visual-intelligence iframe) take the P4.34 path: restyle the noted subtrees and lay out again incrementally, then compare the containers' sizes (`containerSizes`) and fall back to `layoutQueried` only when one moved. Left by P4.34, which keeps them on the full path (`adoptLayout`, `relayoutDirty`).
+- files: `browser/engine/geometry.aye`, `browser/engine/containers.aye`, `browser/engine/engine.aye`
+- verify: GitHub `ui_relayout` after load < 50 ms (now 342–1054); `DWELLER_LAYOUT_CHECK=1 cargo test --release --test browser -- jsdom_fixtures window_ > target/p4.44.log 2>&1; echo $?` → 0; the window path over the recorded sites logs no LAYOUT/STYLE CHECK
 
 #### P4.40: CI perf gate
 - goal: a PR that brings back a W7 regression fails CI, without network and without the recorded archives.

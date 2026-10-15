@@ -540,6 +540,29 @@ fetching sheets and prefetching images (0.37 s) plus timer callbacks
 (0.23 s). The card's < 100 ms needs P4.34 and P4.43 (GitHub) and P4.33
 (YouTube's relayout prefetch).
 
+### P4.34: the window's relayout is incremental (2026-10-15)
+
+After a full styling and layout, the page's tree and styles become the
+layout scripts read (geometry.aye `adoptLayout`); the window's next
+`layoutPage` brings that one state up to date through `geometry` (subtree
+restyle, kept boxes or `relayoutDirty`), as a forced read does, instead
+of `restyleWithSizes` and a full layout. Container-query documents and
+shadow trees stay on the full path (P4.44). mistral.ai live,
+`window_perf.py idle` (fast build), per loop iteration of the 10 idle
+seconds, before (c99b872) / after:
+
+| | loops/s | loop ms | `ui_relayout` ms | full cascades | draw ms | idle CPU |
+|---|---:|---:|---:|---:|---:|---:|
+| before | 22.6 | 44.6 | 31.1 | 1.01 | 9.6 | 100.9% |
+| after | 53.3 | 18.8 | 6.8 | 0.01 | 9.7 | 102.0% |
+
+The page's animation is `requestAnimationFrame` (a 16 ms timer): with
+each frame 2.4 times cheaper it runs at 53 frames/s instead of 22, so the
+CPU stays at one core. Per frame now: draw 9.7 ms (P4.35, P4.36), timers
+2.6, the scripts' forced read 2.5 (restyle 1.0), `paint_build` 2.2, image
+walk 0.8. GitHub's `ui_relayout` is unchanged (342–1054 ms: container
+queries, P4.44).
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

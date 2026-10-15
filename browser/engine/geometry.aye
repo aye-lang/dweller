@@ -70,6 +70,15 @@ struct Geometry {
     // out from scratch (`relayoutDirty`).
     floats: bool
     built: usize
+    // The page's own layout (`adoptLayout`): `styles` are those of
+    // `Page.styling` (`styling`), which the page owns, and the page shows
+    // `tree` (`Page.tree_borrowed`). `sheets_seen`: `Script.style_version`
+    // when the page's sheets were last found to be the document's;
+    // `controls`: the state of the form controls the styles are for
+    // (`css.controlInputs`), which the front end changes without a note.
+    shared: bool = false
+    sheets_seen: u64 = 0
+    controls: u64 = 0
 }
 
 // At most this many different changes are kept for the next layout
@@ -150,17 +159,26 @@ fn runLayoutHook(s: *mut Script) AllocError!void {
 fn dropGeometry(s: *mut Script) {
     if s.geom |g| {
         dropTree(s, g)
-        g.styles.deinit()
-        s.alloc.destroy(g.styles)
+        if !g.shared {
+            g.styles.deinit()
+            s.alloc.destroy(g.styles)
+        }
         g.deps.deinit()
         s.alloc.destroy(g)
     }
     s.geom = null
 }
 
+// Frees the tree of `g`, unless the page shows it: the page then owns it
+// (and frees it at its next layout), so that it stays valid until then.
 fn dropTree(s: *mut Script, g: *mut Geometry) {
-    g.tree.deinit()
-    s.alloc.destroy(g.tree)
+    let p = s.page
+    if p.tree_borrowed {
+        p.tree_borrowed = false
+    } else {
+        g.tree.deinit()
+        s.alloc.destroy(g.tree)
+    }
     g.first.deinit()
     g.next.deinit()
 }
@@ -249,7 +267,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     }
     let began = perf.start()
     defer perf.end("script_layout", began, p.url.href)
-    let st = try computedStyling(s)
+    let st = try layoutStyling(s)
     if s.geom |g| {
         // When only children and `style` and `class` attributes changed:
         // the elements whose boxes to build again (`relayoutDirty`).
@@ -300,8 +318,10 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             dropTree(s, g)
             s.geom = null
             errdefer {
-                g.styles.deinit()
-                s.alloc.destroy(g.styles)
+                if !g.shared {
+                    g.styles.deinit()
+                    s.alloc.destroy(g.styles)
+                }
                 g.deps.deinit()
                 s.alloc.destroy(g)
             }
@@ -351,7 +371,68 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
 // Are the styles of `g` still those of the document, for the sheets of
 // `st` and the window's size (`stylesCurrent`)?
 fn sameStyles(s: *mut Script, g: *Geometry, st: *Styling) bool {
-    return g.width == s.width && g.height == s.height && g.styling == st && g.sheets == s.computed_sheets && stylesCurrent(&s.page.doc, st.media, g.styles)
+    return g.width == s.width && g.height == s.height && g.styling == st && sameSheets(s, g) && stylesCurrent(&s.page.doc, st.media, g.styles)
+}
+
+// Were the styles of `g` computed with the sheets of `Script.computed`
+// as they are now? The page's (`Geometry.shared`) were checked by
+// `layoutStyling`.
+fn sameSheets(s: *Script, g: *Geometry) bool {
+    return g.shared || g.sheets == s.computed_sheets
+}
+
+// The styling the layout is computed with: the page's when the layout is
+// the page's (`adoptLayout`) and the page's sheets are still those of the
+// document, else `computedStyling` (and the page's layout is the page's
+// alone again).
+fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
+    let p = s.page
+    if s.geom |g| {
+        if g.shared {
+            if p.styling |st| {
+                if g.styling == st && st.media.width == s.width && st.media.height == s.height {
+                    if g.sheets_seen == s.style_version {
+                        return st
+                    }
+                    if p.sheet_key == sheetSourceKey(&p.doc) {
+                        g.sheets_seen = s.style_version
+                        return st
+                    }
+                }
+            }
+            dropGeometry(s)
+        }
+    }
+    return computedStyling(s)
+}
+
+/// Makes the page's layout `tree`, laid out with the styles of `st` (the
+/// page's styling) for the viewport the scripts see, the layout scripts
+/// read too: the changes scripts make from now on style and lay out
+/// again only what they touch (`geometry`), for the page as for the
+/// scripts. The layout owns `tree` (`Page.tree_borrowed`). Not for
+/// styles that depend on container sizes (`layoutQueried`) or documents
+/// with shadow trees, whose changes are styled again in full.
+fn adoptLayout(s: *mut Script, st: *mut Styling, tree: *mut layout.Tree) AllocError!void {
+    let p = s.page
+    dropGeometry(s)
+    clearChanges(s)
+    s.restyle_all = false
+    var deps = css.RestyleDeps.init(s.alloc)
+    errdefer deps.deinit()
+    var quirks: ?*css.Sheet = null
+    if p.doc.quirks {
+        quirks = &st.styles.quirks
+    }
+    try deps.build(&st.author, &st.ua, quirks)
+    var first = IntMap(u32, usize).init(s.alloc)
+    errdefer first.deinit()
+    var next = List(usize).init(s.alloc)
+    errdefer next.deinit()
+    try indexBoxes(tree, &mut first, &mut next)
+    let g = try s.alloc.create(Geometry { tree: tree, styles: &mut st.styles, first: first, next: next, version: layoutVersion(p), width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, floats: layout.hasFloats(tree), built: tree.boxes.len(), shared: true, sheets_seen: s.style_version, controls: css.controlInputs(&p.doc) })
+    s.geom = g
+    p.tree_borrowed = true
 }
 
 /// The styles of the layout scripts read, when they are those of the
@@ -360,7 +441,7 @@ fn sameStyles(s: *mut Script, g: *Geometry, st: *Styling) bool {
 /// next one computes them again). Null otherwise.
 fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Styles {
     let g = s.geom orelse return null
-    if g.styling != st || g.width != media.width || g.height != media.height || g.sheets != s.computed_sheets || !stylesCurrent(&s.page.doc, media, g.styles) {
+    if g.shared || g.styling != st || g.width != media.width || g.height != media.height || g.sheets != s.computed_sheets || !stylesCurrent(&s.page.doc, media, g.styles) {
         return null
     }
     let styles = g.styles.*
@@ -382,7 +463,7 @@ fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Style
 // values stay as they are, for the boxes of `g` to keep pointing at.
 fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocError!bool {
     let p = s.page
-    let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && g.sheets == s.computed_sheets && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && !g.styles.queried && p.doc.shadows.len() == 0 && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
+    let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && sameSheets(s, g) && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && !g.styles.queried && p.doc.shadows.len() == 0 && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
     if !ok {
         return false
     }
@@ -605,6 +686,13 @@ fn layOut(s: *mut Script, styles: *mut css.Styles) AllocError!Boxes {
     errdefer first.deinit()
     var next = List(usize).init(s.alloc)
     errdefer next.deinit()
+    try indexBoxes(tree, &mut first, &mut next)
+    return Boxes { tree: tree, first: first, next: next, floats: layout.hasFloats(tree) }
+}
+
+// Each node's first box in `first`, and each box's next box of the same
+// node in `next` (`Geometry`).
+fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut List(usize)) AllocError!void {
     // Boxes in reverse order, so that each node's chain is in tree order.
     for i in 0..tree.boxes.len() {
         try next.append(NO_BOX)
@@ -619,7 +707,6 @@ fn layOut(s: *mut Script, styles: *mut css.Styles) AllocError!Boxes {
             try first.put(n.index, k)
         }
     }
-    return Boxes { tree: tree, first: first, next: next, floats: layout.hasFloats(tree) }
 }
 
 // Builds the boxes of each element of `dirty` again (of the nearest
@@ -745,6 +832,7 @@ fn checkLayout(s: *mut Script, g: *mut Geometry) AllocError!void {
     if !check_on {
         return
     }
+    try checkStyles(s, g)
     var full = try layOut(s, g.styles)
     defer {
         full.tree.deinit()
@@ -763,6 +851,39 @@ fn checkLayout(s: *mut Script, g: *mut Geometry) AllocError!void {
     }
     if a.root != null || b.root != null {
         std.log.info("LAYOUT CHECK {}: a root box only in one layout", s.page.url.href)
+    }
+}
+
+// DWELLER_LAYOUT_CHECK=1: the styles of a layout that keeps boxes,
+// computed again change by change (`restyle`), are compared with styles
+// computed in full, and the first difference is logged ("STYLE CHECK").
+fn checkStyles(s: *mut Script, g: *Geometry) AllocError!void {
+    let p = s.page
+    let st = g.styling
+    var full = try css.Styles.init(s.alloc)
+    defer full.deinit()
+    try css.computeStyles(&p.doc, &st.ua, &st.author, st.media, &mut full)
+    var cur: ?NodeId = p.doc.root
+    while cur |h| {
+        cur = dom.shadowIncludingFollowing(&p.doc, h, p.doc.root)
+        if p.doc.node(h).kind != dom.Kind.Element {
+            continue
+        }
+        let a = g.styles.get(h)
+        let b = full.get(h)
+        if (a == null) != (b == null) {
+            std.log.info("STYLE CHECK {}: <{}> styled in one only", p.url.href, p.doc.node(h).name)
+            return
+        }
+        if a |x| {
+            let y = b.?
+            for k in 0..y.len {
+                if !css.sameValue(x[k], y[k]) {
+                    std.log.info("STYLE CHECK {}: <{}> {} differs", p.url.href, p.doc.node(h).name, css.PROPERTIES[k].name)
+                    return
+                }
+            }
+        }
     }
 }
 

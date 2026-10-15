@@ -40,6 +40,9 @@ import svg
 pub struct Images {
     map: IntMap(u32, ImageRef)
     urls: StrMap(ImageRef)
+    // Counts the images put that differ from the ones there before (a
+    // layout with them may differ).
+    changes: u64 = 0
 
     pub fn init(alloc: Allocator) Images {
         return Images { map: IntMap(u32, ImageRef).init(alloc), urls: StrMap(ImageRef).init(alloc) }
@@ -52,7 +55,18 @@ pub struct Images {
 
     /// The image of a style sheet's `url()`; `pic` for an SVG image.
     pub fn putUrl(self: *mut Self, key: []u8, bmp: *image.Bitmap, pic: ?*svg.Picture) AllocError!void {
-        try self.urls.put(key, ImageRef { generation: 0, bmp: bmp, pic: pic, density: 1.0 })
+        let now = ImageRef { generation: 0, bmp: bmp, pic: pic, density: 1.0 }
+        self.noteChange(self.urls.get(key), now)
+        try self.urls.put(key, now)
+    }
+
+    fn noteChange(self: *mut Self, old: ?ImageRef, now: ImageRef) {
+        if old |o| {
+            if o.generation == now.generation && o.bmp == now.bmp && o.pic == now.pic && o.density == now.density {
+                return
+            }
+        }
+        self.changes += 1
     }
 
     pub fn hasUrl(self: *Self, key: []u8) bool {
@@ -76,18 +90,24 @@ pub struct Images {
     }
 
     pub fn put(self: *mut Self, el: NodeId, bmp: *image.Bitmap) AllocError!void {
-        try self.map.put(el.index, ImageRef { generation: el.generation, bmp: bmp, pic: null, density: 1.0 })
+        let now = ImageRef { generation: el.generation, bmp: bmp, pic: null, density: 1.0 }
+        self.noteChange(self.map.get(el.index), now)
+        try self.map.put(el.index, now)
     }
 
     /// An image of `density` pixels per CSS px (a srcset candidate):
     /// its natural size is its size divided by that.
     pub fn putScaled(self: *mut Self, el: NodeId, bmp: *image.Bitmap, density: f64) AllocError!void {
-        try self.map.put(el.index, ImageRef { generation: el.generation, bmp: bmp, pic: null, density: density })
+        let now = ImageRef { generation: el.generation, bmp: bmp, pic: null, density: density }
+        self.noteChange(self.map.get(el.index), now)
+        try self.map.put(el.index, now)
     }
 
     /// An SVG image: `bmp` has its natural size (and no pixels).
     pub fn putPicture(self: *mut Self, el: NodeId, bmp: *image.Bitmap, pic: *svg.Picture) AllocError!void {
-        try self.map.put(el.index, ImageRef { generation: el.generation, bmp: bmp, pic: pic, density: 1.0 })
+        let now = ImageRef { generation: el.generation, bmp: bmp, pic: pic, density: 1.0 }
+        self.noteChange(self.map.get(el.index), now)
+        try self.map.put(el.index, now)
     }
 
     /// The pixels per CSS px of the image of `el` (1 for most).
