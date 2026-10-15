@@ -455,6 +455,7 @@ Common to these cards:
 - verify: `BENCH_RUNS=5 BENCH_REF=node browser/tests/jsbench/run.sh three dom > target/p4.60.log 2>&1; echo $?` → 0, checksums equal to Node's (dom: to a recorded golden)
 - estimate: no speedup (measurement)
 - model: sonnet
+- status: done (2026-10-15). Used the CommonJS build (`vendor/three/three.cjs`, unmodified r170) inlined by the runner (`// @include`), since `dweller js` has no `require`; no JS gaps hit. 100 frames / 100k math iterations (300 frames took 32 s). `dom.js` (`// @dom`) is wrapped in a page and run with `dump --text --js`; 10k nodes, 500 queries, 10 forced layouts (200 took 100 s: forced layout of 20k boxes is ~0.5 s). Baseline: three 11.9 s vs node --jitless 1.29 s (9.2×); dom 5.2 s (no reference, golden of dweller).
 
 #### P4.61: bytecode format, builder, disassembler
 - goal: the data structures of the VM, with no execution: the instruction table, `BytecodeArray`, a builder with labels and jump patching, the constant pool, the handler table, the source-position table, and a disassembler.

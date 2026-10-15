@@ -17,7 +17,7 @@ Environment: BENCH_BIN (binary, default target/dweller), BENCH_RUNS,
 BENCH_BASELINE (an older binary: interleaved, adds speedup columns),
 BENCH_REF (`node` by default when found, `none` to disable).
 """
-import math, os, pathlib, platform, shutil, statistics, subprocess, sys, tempfile, time
+import math, os, re, pathlib, platform, shutil, statistics, subprocess, sys, tempfile, time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DIR = ROOT / "browser" / "tests" / "jsbench"
@@ -62,18 +62,54 @@ def node_version(node):
     return subprocess.run([node, "--version"], capture_output=True, text=True).stdout.strip()
 
 
-def with_smoke(path, tmp):
-    out = pathlib.Path(tmp) / path.name
-    out.write_text(f"var SMOKE = {SMOKE};\n" + path.read_text())
+def prepare(path, tmp, smoke=False):
+    """The script to run: `// @include NAME FILE` lines are replaced by the
+    FILE (relative to the workload's directory) wrapped as a CommonJS
+    module bound to `var NAME`, and `var SMOKE` is prepended for --smoke.
+    Scripts without either run in place."""
+    text = path.read_text()
+    dom = is_dom(path)
+    if "// @include " not in text and not smoke and not dom:
+        return path
+
+    def inline(m):
+        src = (path.parent / m.group(2)).read_text()
+        return (f"var {m.group(1)} = (function () {{ var module = {{ exports: {{}} }}; "
+                f"var exports = module.exports;\n{src}\nreturn module.exports; }})();")
+
+    text = re.sub(r"^// @include (\w+) (\S+)$", inline, text, flags=re.M)
+    if smoke:
+        text = f"var SMOKE = {SMOKE};\n" + text
+    if dom:
+        out = pathlib.Path(tmp) / (path.stem + ".html")
+        out.write_text("<!doctype html><body><script>\n" + text + "\n</script></body>\n")
+    else:
+        out = pathlib.Path(tmp) / path.name
+        out.write_text(text)
     return out
 
 
-def run_once(cmd, golden, what, ignore_stderr=False):
+def is_dom(path):
+    """`// @dom` in a workload: a script run inside a page by `dweller dump --js`
+    (the runner wraps it in HTML); its console.log lines arrive on stderr."""
+    return "// @dom" in path.read_text()
+
+
+def command(exe, script, dom):
+    return exe + (["dump", "--text", "--js", "--id", "none"] if dom else ["js"]) + [str(script)]
+
+
+def run_once(cmd, golden, what, ignore_stderr=False, dom=False):
     start = time.perf_counter()
     r = subprocess.run(cmd, capture_output=True, timeout=600)
     elapsed = time.perf_counter() - start
-    if r.returncode or r.stdout != golden or (r.stderr and not ignore_stderr):
-        raise SystemExit(f"{what}: failed (status {r.returncode}): stdout {r.stdout!r} stderr {r.stderr[:300]!r}, expected {golden!r}")
+    if dom:
+        out, err = r.stderr.replace(b"[log] ", b""), b""
+        ok = not r.stdout.strip()
+    else:
+        out, err, ok = r.stdout, r.stderr, True
+    if r.returncode or not ok or out != golden or (err and not ignore_stderr):
+        raise SystemExit(f"{what}: failed (status {r.returncode}): stdout {out!r} stderr {err[:300]!r}, expected {golden!r}")
     return elapsed
 
 
@@ -111,7 +147,7 @@ def main(argv):
     try:
         if update or smoke:
             return smoke_mode(paths, binary, node, tmp, update)
-        return timing_mode(paths, binary, baseline, node, runs, json_out)
+        return timing_mode(paths, binary, baseline, node, runs, json_out, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -119,17 +155,20 @@ def main(argv):
 def smoke_mode(paths, binary, node, tmp, update):
     failed = []
     for path in paths:
-        script = with_smoke(path, tmp)
+        script = prepare(path, tmp, True)
         golden_path = path.with_suffix(".smoke.out")
         if update:
+            if is_dom(path):
+                continue  # no Node reference: dom.smoke.out and dom.out are goldens of dweller
             r = subprocess.run(["node", str(script)], capture_output=True, check=True)
             golden_path.write_bytes(r.stdout)
             print(f"{path.stem}\t{r.stdout.decode().strip()}")
             continue
         golden = golden_path.read_bytes()
         try:
-            t = run_once([binary, "js", str(script)], golden, f"{path.stem} (dweller)")
-            if node:
+            dom = is_dom(path)
+            t = run_once(command([binary], script, dom), golden, f"{path.stem} (dweller)", dom=dom)
+            if node and not dom:
                 run_once([node, str(script)], golden, f"{path.stem} (node)")
         except SystemExit as e:
             failed.append(str(e))
@@ -140,7 +179,8 @@ def smoke_mode(paths, binary, node, tmp, update):
     return 0
 
 
-def timing_mode(paths, binary, baseline, node, runs, json_out):
+def timing_mode(paths, binary, baseline, node_all, runs, json_out, tmp):
+    node = node_all
     cols = ["benchmark", "dweller_s"]
     if baseline:
         cols = ["benchmark", "baseline_s", "dweller_s", "speedup"]
@@ -154,8 +194,11 @@ def timing_mode(paths, binary, baseline, node, runs, json_out):
     ratios = []
     for path in paths:
         golden = path.with_suffix(".out").read_bytes()
+        script = prepare(path, tmp)
+        dom = is_dom(path)
+        node = None if dom else node_all
         if node:
-            run_once([node, str(path)], golden, f"{path.stem} (node)")
+            run_once([node, str(script)], golden, f"{path.stem} (node)")
         exes = {"dweller": [binary]}
         if baseline:
             exes["baseline"] = [baseline]
@@ -168,8 +211,8 @@ def timing_mode(paths, binary, baseline, node, runs, json_out):
             if i % 2:
                 order.reverse()
             for k in order:
-                cmd = exes[k] + (["js"] if k != "node" else []) + [str(path)]
-                times[k].append(run_once(cmd, golden, f"{path.stem} ({k})", ignore_stderr=(k == "node")))
+                cmd = exes[k] + [str(script)] if k == "node" else command(exes[k], script, dom)
+                times[k].append(run_once(cmd, golden, f"{path.stem} ({k})", ignore_stderr=(k == "node"), dom=dom))
         med = {k: statistics.median(v) for k, v in times.items()}
         row = [path.stem]
         if baseline:
@@ -179,7 +222,9 @@ def timing_mode(paths, binary, baseline, node, runs, json_out):
             sp = med["baseline"] / med["dweller"]
             speedups.append(sp)
             row.append(f"{sp:.2f}")
-        if node:
+        if node_all and not node:
+            row += ["-", "-"]
+        elif node:
             row.append(f"{med['node']:.3f}")
             ratio = med["dweller"] / med["node"]
             ratios.append(ratio)
