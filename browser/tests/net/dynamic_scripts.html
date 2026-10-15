@@ -1,0 +1,38 @@
+<!doctype html><title>Dynamic scripts</title>
+<p id="t">Dynamic script loads in the background.</p>
+<pre id="log">waiting</pre>
+<iframe src="/delay/1000/net/dynamic_frame.html" width="200" height="40"></iframe>
+<div style="height: 3000px">A tall page to scroll.</div>
+<!-- tests/browser.rs: window_dynamic_scripts. Twenty import()s whose
+     modules take 200-390 ms, a module whose twenty imports do the same
+     (the last first), and a frame whose document takes 1 s:
+     no loop iteration waits for them, each import() settles with its
+     module, the imports of the module evaluate in their order, and the
+     load event waits for the frame. -->
+<script>
+window.evaluated = [];
+const log = document.getElementById('log');
+const settled = [];
+let loaded = false;
+let root = null;
+function report() {
+  if (settled.length < 20 || root === null || !loaded) return;
+  const graph = window.evaluated.filter(q => q.startsWith('g=')).join(',');
+  log.textContent = 'imports settled: ' + settled.length + ', each with its module: ' + settled.every(([i, v]) => v === 'n=' + i) +
+    '; graph: ' + root + ' ' + graph + '; frame loaded: ' + loaded;
+}
+for (let i = 0; i < 20; i++) {
+  import('/delay/' + (200 + 10 * (19 - i)) + '/net/dynamic_module.js?n=' + i).then(m => {
+    settled.push([i, m.default]);
+    report();
+  });
+}
+import('/net/dynamic_root.js').then(m => {
+  root = m.default;
+  report();
+});
+window.addEventListener('load', () => {
+  loaded = document.querySelector('iframe').contentDocument.title === 'Frame';
+  report();
+});
+</script>

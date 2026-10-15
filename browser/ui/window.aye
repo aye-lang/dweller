@@ -57,6 +57,9 @@ let LINE_STEP: f64 = 40.0
 // While a page loads (its sheets, scripts or images), the loop looks at
 // the loads at least this often (ms).
 let LOAD_POLL_MS: i32 = 8
+// The page's scripts run for at most this many ms an iteration while it
+// loads (one at least), so that input and frames come between them.
+let SCRIPTS_MS: u64 = 50
 // Images that arrived lay the page out again at most every this many ms,
 // or twice the last layout's time when that is longer.
 let IMAGE_RELAYOUT_MS: u64 = 100
@@ -548,7 +551,7 @@ pub struct Ui {
             let t_loop = perf.start()
             var waited: u64 = 0
             var waited_ns: u64 = 0
-            try self.advanceLoad()
+            try self.advanceLoad(false)
             try self.imagesIn()
             if self.dirty || frames > 0 {
                 let t_draw = perf.start()
@@ -595,6 +598,10 @@ pub struct Ui {
                 if (self.tab.early || engine.imagesLoading(p)) && timeout > LOAD_POLL_MS {
                     timeout = LOAD_POLL_MS
                 }
+                // The next script runs at once (its frames: polled).
+                if self.tab.stepping && !engine.scriptsRan(p) {
+                    timeout = 0
+                }
             }
             let before = std.time.monotonicMs()
             let before_ns = perf.start()
@@ -623,7 +630,11 @@ pub struct Ui {
             }
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
-            if self.tab.page |p| {
+            // The page's timers wait until its scripts ran one per
+            // iteration (`advanceLoad`), as when one task ran them all;
+            // they run while its frames load.
+            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
+                let p = self.tab.page.?
                 let t_timers = perf.start()
                 if (try engine.runDueTimers(p)) || engine.navigationPending(p) {
                     // A navigation that a script asked for while the page
@@ -755,6 +766,12 @@ pub struct Ui {
             self.dirty = true
             return
         }
+        // While its scripts run, one per iteration, the page keeps the
+        // layout from before them (`advanceLoad` lays it out after).
+        if self.tab.stepping && !engine.scriptsRan(self.tab.page.?) {
+            self.dirty = true
+            return
+        }
         let t_relayout = perf.start()
         defer perf.end("ui_relayout", t_relayout, "")
         let began = std.time.monotonicMs()
@@ -801,17 +818,20 @@ pub struct Ui {
         try self.setTitle()
         self.dirty = true
         // What is in already (file: and data: URLs, the cache) is shown
-        // at once.
-        try self.advanceLoad()
+        // at once, its scripts run.
+        try self.advanceLoad(true)
     }
 
     // The page shown early (tab.navigateEarly): laid out once its sheets
-    // are in, then its scripts run once they are in too.
-    fn advanceLoad(self: *mut Self) AllocError!void {
-        if !self.tab.early || !self.tab.sheetsIn() {
+    // are in, then its scripts run once they are in too, as tasks of at
+    // most SCRIPTS_MS an iteration (`stepScripts`), and its frames load
+    // in the background. What is in `at_once` (when the navigation
+    // began) runs before the first paint, in this call.
+    fn advanceLoad(self: *mut Self, at_once: bool) AllocError!void {
+        if !self.tab.early || (!self.tab.stepping && !self.tab.sheetsIn()) {
             return
         }
-        if !self.tab.scriptsIn() {
+        if !self.tab.stepping && (!self.tab.scriptsIn() || (!at_once && !self.tab.painted)) {
             if !self.tab.painted {
                 self.tab.painted = true
                 try self.relayout()
@@ -820,7 +840,9 @@ pub struct Ui {
             return
         }
         let painted = self.tab.painted
-        try self.tab.finishEarly()
+        if !(try self.stepScripts(at_once)) {
+            return
+        }
         if self.tab.page |p| {
             perf.noteLoaded(p.url.href)
         }
@@ -834,6 +856,26 @@ pub struct Ui {
         }
         try self.setTitle()
         try self.afterScripts()
+    }
+
+    // Runs steps of the load of the page shown early (tab.stepEarly):
+    // scripts until SCRIPTS_MS passed (one at least; all when
+    // `at_once`), then whether its frames are in. True once it loaded.
+    fn stepScripts(self: *mut Self, at_once: bool) AllocError!bool {
+        let began = std.time.monotonicMs()
+        while true {
+            if try self.tab.stepEarly() {
+                return true
+            }
+            let p = self.tab.page orelse return true
+            if engine.scriptsRan(p) {
+                return self.tab.stepEarly()
+            }
+            if !at_once && std.time.monotonicMs() - began >= SCRIPTS_MS {
+                return false
+            }
+        }
+        return false
     }
 
     // After the first layout of a new page: scrolls where the tab wants,

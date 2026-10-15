@@ -839,6 +839,57 @@ pub let LIB =
     \\  for (const p of m.asyncParents) asyncRejected(p, e);
     \\  if (m.capability !== null) m.capability.reject(e);
     \\}
+    \\// The browser's background loads (`background`): loadLater(url,
+    \\// referrer, done) starts loading url and calls done in a later task,
+    \\// or returns false when url is to be fetched as usual. Without them
+    \\// (the command-line runner, a page on the virtual clock) import()
+    \\// fetches its graph at once.
+    \\let loadLater = null;
+    \\// Loads urls in the background, then calls done (at once when there is
+    \\// nothing to wait for).
+    \\function loadInBackground(urls, referrer, done) {
+    \\  if (loadLater === null || urls.length === 0) { done(); return; }
+    \\  let left = 1;
+    \\  const one = () => { if (--left === 0) done(); };
+    \\  for (const url of urls) {
+    \\    left++;
+    \\    if (!loadLater(url, referrer, one)) left--;
+    \\  }
+    \\  one();
+    \\}
+    \\// Loads in the background the modules of root's graph that the map
+    \\// lacks, a level at a time (as loadLevels fetches them), then calls
+    \\// done; runGraph then finds them in the session's cache. Errors are
+    \\// left to runGraph.
+    \\function graphInBackground(root, done) {
+    \\  if (loadLater === null) { done(); return; }
+    \\  const seen = new Set();
+    \\  let level = [root];
+    \\  const step = () => {
+    \\    const wanted = [];
+    \\    const urls = [];
+    \\    for (const m of level) {
+    \\      if (seen.has(m) || m.deps !== null || m.json !== undefined) continue;
+    \\      seen.add(m);
+    \\      for (let i = 0; i < m.requests.length; i++) {
+    \\        try {
+    \\          const url = resolveSpecifier(m.url, m.requests[i][0]);
+    \\          wanted.push([url, m.requests[i][1], m.url]);
+    \\          if (!moduleMap.has(moduleKey(url, m.requests[i][1])) && !urls.includes(url)) urls.push(url);
+    \\        } catch (e) {}
+    \\      }
+    \\    }
+    \\    if (wanted.length === 0) { done(); return; }
+    \\    loadInBackground(urls, root.url, () => {
+    \\      level = [];
+    \\      for (const [url, type, referrer] of wanted) {
+    \\        try { level.push(getModule(url, type, referrer)); } catch (e) {}
+    \\      }
+    \\      step();
+    \\    });
+    \\  };
+    \\  step();
+    \\}
     \\// Loads, links and evaluates the graph of m; the promise of its
     \\// evaluation. Loading and linking errors throw.
     \\function runGraph(m) {
@@ -868,15 +919,25 @@ pub let LIB =
     \\        }
     \\      } catch (e) { reject(e); return; }
     \\      enqueue(() => {
-    \\        let m;
-    \\        let p;
+    \\        let url;
     \\        try {
-    \\          m = getModule(resolveSpecifier(referrer, spec), type, referrer);
-    \\          p = runGraph(m);
+    \\          url = resolveSpecifier(referrer, spec);
     \\        } catch (e) { reject(e); return; }
-    \\        p.then(() => {
-    \\          try { resolve(namespaceOf(m)); } catch (e) { reject(e); }
-    \\        }, reject);
+    \\        loadInBackground(moduleMap.has(moduleKey(url, type)) ? [] : [url], referrer, () => {
+    \\          let m;
+    \\          try {
+    \\            m = getModule(url, type, referrer);
+    \\          } catch (e) { reject(e); return; }
+    \\          graphInBackground(m, () => {
+    \\            let p;
+    \\            try {
+    \\              p = runGraph(m);
+    \\            } catch (e) { reject(e); return; }
+    \\            p.then(() => {
+    \\              try { resolve(namespaceOf(m)); } catch (e) { reject(e); }
+    \\            }, reject);
+    \\          });
+    \\        });
     \\      });
     \\    });
     \\  },
@@ -911,6 +972,10 @@ pub let LIB =
     \\  // import.meta.resolve, bound to the module's URL.
     \\  resolve(referrer, specifier) {
     \\    return resolveSpecifier(referrer, String(specifier));
+    \\  },
+    \\  // The browser's background loads for import() (loadLater).
+    \\  background(f) {
+    \\    loadLater = f;
     \\  },
     \\};
     \\G.__engine.setDrivers(asyncDriver, asyncGenDriver, takeUnhandled, moduleLoader);

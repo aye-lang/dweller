@@ -90,6 +90,16 @@ pub fn addImportMap(it: *mut Interp, json: []u8, base: []u8) JsError!void {
     try callLoader(it, "importMap", j, b, Value.Undefined, Value.Undefined)
 }
 
+/// Gives the module loader the browser's background loads for import():
+/// `f(url, referrer, done)` starts loading url and calls done in a later
+/// task, or returns false when url is to be fetched at once.
+pub fn setBackgroundLoads(it: *mut Interp, f: Value) JsError!void {
+    let at = it.stack.len()
+    defer it.truncate(at)
+    try it.push(f)
+    try callLoader(it, "background", f, Value.Undefined, Value.Undefined, Value.Undefined)
+}
+
 fn engineIsModuleNamespace(it: *mut Interp, a: Args) JsError!Value {
     return boolVal(it.classOf(it.arg(a, 0)) == Class.ModuleNamespace)
 }

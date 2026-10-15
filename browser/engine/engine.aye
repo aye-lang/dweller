@@ -118,6 +118,10 @@ pub struct Page {
     // Where the window scrolled it before its scripts ran: their
     // scrollY to begin with.
     early_scroll: f64 = 0.0
+    // How far `stepPageScripts` is: 0 not begun, 1 running the
+    // scripts, 2 loading the frames' documents (`frame_loads`).
+    load_step: u8 = 0
+    frame_loads: List(FrameLoad)
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
@@ -143,6 +147,8 @@ pub struct Page {
             f.page.destroy()
         }
         self.frames.deinit()
+        dropFrameLoads(self)
+        self.frame_loads.deinit()
         self.frame_elements.nodes.deinit()
         self.history.deinit()
         self.doc.deinit()
@@ -247,7 +253,7 @@ pub struct Page {
         self.dropTree()
         self.measure = measure
         // Before its scripts ran, the page has no frames yet: they load
-        // with the scripts (`runPageScripts`).
+        // with the scripts (`stepPageScripts`).
         if !self.scripts_pending {
             try syncFrames(self)
         }
@@ -329,7 +335,9 @@ pub struct Page {
         }
         self.dropTree()
         self.measure = measure
-        try syncFrames(self)
+        if !self.scripts_pending {
+            try syncFrames(self)
+        }
         setViewport(self, width, height)
         if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads()) {
             // Text measures differently: lay out again in full.
@@ -455,7 +463,7 @@ pub fn loadState(alloc: Allocator, target: *Url, state: ?[]u8) AllocError!*mut P
 
 /// The window's navigation, in steps: fetches and parses `target`
 /// without running its scripts. `startEarly` starts loading what it
-/// names, `runPageScripts` runs its scripts once they are in.
+/// names, `stepPageScripts` runs its scripts once they are in.
 pub fn loadParsed(alloc: Allocator, target: *Url) AllocError!*mut Page {
     let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252)
     errdefer p.destroy()
@@ -529,8 +537,44 @@ pub fn releaseLoads(ids: *mut List(u32)) {
 }
 
 /// Runs the scripts of `p` (from `loadParsed`), loads its frames and
-/// fires the load events, as `load` does after the fetch.
-pub fn runPageScripts(p: *mut Page) AllocError!void {
+/// fires the load events, as `load` does after the fetch, in tasks for
+/// the window: each call does one step and says whether the page is now
+/// loaded. The first call starts its scripts, the
+/// next ones run one script each (the window takes input and draws
+/// between them), then DOMContentLoaded fires and the documents of its
+/// frames load in the background; the last call loads the frames with
+/// them and fires the load events.
+pub fn stepPageScripts(p: *mut Page) AllocError!bool {
+    match p.load_step {
+        0 => {
+            if !scriptingEnabled() || p.plain || p.no_scripts {
+                p.load_step = 2
+                try startFrameLoads(p)
+                return false
+            }
+            let began = perf.start()
+            try beginPageScripts(p)
+            perf.end("scripts", began, p.url.href)
+            p.load_step = 1
+            return false
+        }
+        1 => {
+            let s = p.script.?
+            let began = perf.start()
+            defer perf.end("scripts", began, p.url.href)
+            if try runQueuedScript(s) {
+                return false
+            }
+            try endPageScripts(s)
+            p.load_step = 2
+            try startFrameLoads(p)
+            return false
+        }
+        _ => {}
+    }
+    if !frameLoadsIn(p) {
+        return false
+    }
     let held = p.scripts_pending
     p.scripts_pending = false
     defer {
@@ -538,7 +582,23 @@ pub fn runPageScripts(p: *mut Page) AllocError!void {
             releaseStorage()
         }
     }
-    try runDocument(p, scriptingEnabled())
+    p.load_step = 0
+    if !p.plain {
+        try loadFrames(p)
+    }
+    dropFrameLoads(p)
+    if p.script != null {
+        let began = perf.start()
+        try fireFrameLoads(p)
+        try finishPageScripts(p)
+        perf.end("scripts", began, p.url.href)
+    }
+    return true
+}
+
+/// Is `stepPageScripts` past the scripts of `p` (its frames load)?
+pub fn scriptsRan(p: *Page) bool {
+    return p.load_step == 2
 }
 
 // Fetches `target` (by POST with `body`) and parses the document, whose
@@ -558,6 +618,12 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
     }
     perf.end("fetch", fetch_began, target.href)
     defer res.deinit(alloc)
+    return pageOf(alloc, target, &res, fallback)
+}
+
+// The page of `res`, the response to a request for `target`, parsed as
+// `fetchPage` does.
+fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding.Encoding) AllocError!*mut Page {
     var located = finalUrl(alloc, target, res.url) catch |e| {
         return AllocError.OutOfMemory
     }
@@ -634,6 +700,7 @@ fn newPage(alloc: Allocator, located: Url, status: i64, failure: []u8, doc: Docu
         script: null,
         images: null,
         frames: List(Frame).init(alloc),
+        frame_loads: List(FrameLoad).init(alloc),
         frame_elements: FrameElementIndex.init(alloc),
         id: id,
         parent: null,

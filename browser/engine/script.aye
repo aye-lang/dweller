@@ -332,6 +332,12 @@ pub struct Script {
     // The root of the prelude's `hostHistory` (NONE before it ran):
     // traversals and fragment navigations of the front end (history.aye).
     history_hook: u32 = js.NONE
+    // The scripts of the document that have not run yet
+    // (`beginPageScripts`): `queue_at` is the next, from `queue_later`
+    // on they are deferred.
+    queue: List(NodeId)
+    queue_at: usize = 0
+    queue_later: usize = 0
 
     // ---- js.Host
 
@@ -543,6 +549,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         depth: 0,
         geom: null,
         restyle: List(Change).init(alloc),
+        queue: List(NodeId).init(alloc),
         restyle_seen: IntMap(u64, usize).init(alloc),
         restyle_all: false,
         fixed: font.Fixed.init(),
@@ -597,6 +604,12 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(PRELUDE)
     try s.it.runScript(FORM_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
+    // On the window's clock import() loads in the background
+    // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
+    if s.real {
+        let f = try s.it.newNative("moduleLoad", 3, moduleLoad)
+        try js.setBackgroundLoads(&mut s.it, js.objVal(f))
+    }
 }
 
 /// Frees the script of a page (before its document).
@@ -632,6 +645,7 @@ pub fn destroyScript(s: *mut Script) {
         }
     }
     s.timers.deinit()
+    s.queue.deinit()
     for line in s.console.items() {
         s.alloc.free(line)
     }
@@ -648,6 +662,17 @@ pub fn destroyScript(s: *mut Script) {
 /// DOMContentLoaded; `finishPageScripts` fires load once the frames
 /// loaded. Timers stay pending for the event loop.
 fn startPageScripts(p: *mut Page) AllocError!void {
+    try beginPageScripts(p)
+    let s = p.script.?
+    while try runQueuedScript(s) {
+    }
+    try endPageScripts(s)
+}
+
+/// `startPageScripts` in steps (the window: each script a task of its
+/// own): makes the page's engine and the queue of its scripts, which
+/// `runQueuedScript` runs one at a time and `endPageScripts` ends.
+fn beginPageScripts(p: *mut Page) AllocError!void {
     let s = try createScript(p)
     p.script = s
     var all = List(NodeId).init(p.alloc)
@@ -665,14 +690,37 @@ fn startPageScripts(p: *mut Page) AllocError!void {
         if isModuleScript(p, el) || (external && (p.doc.attr(el, "defer") != null || p.doc.attr(el, "async") != null)) {
             try later.append(el)
         } else {
-            try runScriptElement(s, el)
+            try s.queue.append(el)
         }
     }
-    s.ready = 1
+    s.queue_later = s.queue.len()
     for el in later.items() {
-        try runScriptElement(s, el)
+        try s.queue.append(el)
     }
-    try fireLoadEvent(s, p.doc.root, "DOMContentLoaded")
+}
+
+/// Runs the next script of the queue (`beginPageScripts`); false when
+/// none was left. The deferred ones run once the document is
+/// interactive.
+fn runQueuedScript(s: *mut Script) AllocError!bool {
+    if s.queue_at >= s.queue.len() {
+        return false
+    }
+    if s.queue_at == s.queue_later {
+        s.ready = 1
+    }
+    let el = s.queue.items()[s.queue_at]
+    s.queue_at += 1
+    try runScriptElement(s, el)
+    return true
+}
+
+// The queue ran: DOMContentLoaded.
+fn endPageScripts(s: *mut Script) AllocError!void {
+    s.queue.clear()
+    s.queue_at = 0
+    s.ready = 1
+    try fireLoadEvent(s, s.page.doc.root, "DOMContentLoaded")
 }
 
 /// The page and its frames loaded: the load event at the window, once

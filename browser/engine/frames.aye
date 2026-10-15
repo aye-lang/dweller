@@ -193,6 +193,98 @@ fn loadFrames(p: *mut Page) AllocError!void {
     }
 }
 
+/// A frame's document requested in the background (`startFrameLoads`)
+/// until `loadFrames` takes it: its URL (owned) and the request.
+pub struct FrameLoad {
+    href: []mut u8
+    id: u32
+}
+
+// Starts the requests of the documents of the frames that `loadFrames`
+// would load now (those it fetches over http or https), so that it finds
+// them there instead of fetching them (the window, `stepPageScripts`).
+fn startFrameLoads(p: *mut Page) AllocError!void {
+    if p.plain || p.depth >= MAX_FRAME_DEPTH {
+        return
+    }
+    var n = countFrames(rootPage(p))
+    var cur: ?NodeId = p.doc.root
+    while cur |h| {
+        cur = p.doc.following(h, p.doc.root)
+        if !isFrameElement(&p.doc, h) || frameIndex(p, h) != null {
+            continue
+        }
+        if n >= MAX_FRAMES {
+            return
+        }
+        n += 1
+        let key = try sourceKey(p.alloc, &p.doc, h)
+        defer p.alloc.free(key)
+        if !text.startsWith(key, "src ") {
+            continue
+        }
+        let target = p.resolve(p.alloc, key[4..]) catch |e| {
+            match e {
+                .OutOfMemory => {
+                    return AllocError.OutOfMemory
+                }
+                _ => {}
+            }
+            continue
+        }
+        defer target.deinit(p.alloc)
+        if !net.liveRequest(&target) {
+            continue
+        }
+        let href = try p.alloc.alloc(0 as u8, target.href.len)
+        for i, c in target.href {
+            href[i] = c
+        }
+        let id = net.startRequest(&target, net.Request { kind: net.Kind.Document, referrer: p.url.href })
+        if id == 0 {
+            p.alloc.free(href)
+            return AllocError.OutOfMemory
+        }
+        p.frame_loads.append(FrameLoad { href: href, id: id }) catch |e| {
+            p.alloc.free(href)
+            net.releaseLoad(id)
+            return e
+        }
+    }
+}
+
+// Are the requests of `startFrameLoads` over?
+fn frameLoadsIn(p: *mut Page) bool {
+    net.pumpLoads()
+    for l in p.frame_loads.items() {
+        if net.loadState(l.id) == net.LoadState.Running {
+            return false
+        }
+    }
+    return true
+}
+
+// The request of `startFrameLoads` for `href`, which the caller now
+// releases.
+fn takeFrameLoad(p: *mut Page, href: []u8) ?u32 {
+    for i, l in p.frame_loads.items() {
+        if text.eql(l.href, href) {
+            p.alloc.free(l.href)
+            p.frame_loads.orderedRemove(i)
+            return l.id
+        }
+    }
+    return null
+}
+
+// Releases the requests of `startFrameLoads` that no frame took.
+fn dropFrameLoads(p: *mut Page) {
+    while p.frame_loads.pop() |l| {
+        p.alloc.free(l.href)
+        net.releaseLoad(l.id)
+    }
+}
+
 // Loads the document of the frame element `el` of `p` (nothing for a
 // `frame` without a `src`): fetched, added to `p.frames`, its scripts
 // run and its own frames loaded. Its load event at `el` is pending.
@@ -227,8 +319,17 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
             child = try sourcePage(p, "about:blank", "")
         } else if p.resolve(p.alloc, src) |target| {
             defer target.deinit(p.alloc)
-            try net.noteNavigation(target.href, p.url.href)
-            child = try fetchPage(p.alloc, &target, null, p.encoding)
+            if takeFrameLoad(p, target.href) |id| {
+                defer net.releaseLoad(id)
+                if net.requestResponse(id) |res| {
+                    child = try pageOf(p.alloc, &target, res, p.encoding)
+                } else {
+                    child = try errorPage(p.alloc, &target, net.requestError(id))
+                }
+            } else {
+                try net.noteNavigation(target.href, p.url.href)
+                child = try fetchPage(p.alloc, &target, null, p.encoding)
+            }
         } else |e| {
             match e {
                 .OutOfMemory => {
