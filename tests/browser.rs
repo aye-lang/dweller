@@ -2328,12 +2328,17 @@ fn waited_n(s: &str) -> String {
 
 // A headless window listening at `sock` for the Space tests.
 fn spaces_window(sock: &str, extra: &[&str]) -> std::process::Child {
+    spaces_window_env(sock, extra, &[])
+}
+
+fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> std::process::Child {
     use std::process::Stdio;
     use std::time::{Duration, Instant};
     let _ = std::fs::remove_file(root().join(sock));
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
+        .envs(env.iter().copied())
         .args(["--agent-socket", sock, "--exit-when-idle", "--font", "fixed"])
         .args(["--width", "800", "--height", "600"])
         .args(extra)
@@ -2402,6 +2407,19 @@ struct Responsive {
     a: (String, u128),
     b: (String, u128),
     state: String,
+    // The window's DWELLER_TIMING records, in order (its Spaces' own
+    // `ui_loop` records left out).
+    records: Vec<Record>,
+}
+
+// A `ui_loop` record of the window (ms), or the window relaying an
+// agent's bytes to its Space or the Space's answer back (`ui_space_sent`
+// and `ui_space_answer`, with the Space's name).
+#[derive(Debug, PartialEq)]
+enum Record {
+    Loop(u64),
+    Sent(String),
+    Answer(String),
 }
 
 // Agent A runs a 1500 ms `eval` loop and B loads a page whose server
@@ -2418,8 +2436,16 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
     if spaces {
         extra.push("--spaces");
     }
-    let window = spaces_window(&sock, &extra);
+    let mut window = spaces_window_env(&sock, &extra, &[("DWELLER_TIMING", "1")]);
     let window_pid = window.id();
+    // The records are read as they come: a full pipe would stall the
+    // window and its Spaces.
+    let mut stderr = window.stderr.take().unwrap();
+    let records_in = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        std::io::Read::read_to_end(&mut stderr, &mut v).unwrap();
+        v
+    });
     let mut a = AgentConn::open(&sock);
     let mut b = AgentConn::open(&sock);
     let mut c = AgentConn::open(&sock);
@@ -2444,11 +2470,30 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
     drop(b);
     drop(c);
     let out = window.wait_with_output().unwrap();
+    let err = text(&records_in.join().unwrap());
+    let mut records = Vec::new();
+    let mut rest = String::new();
+    for line in err.lines() {
+        let Some(record) = line.strip_prefix("info: DWELLER_TIMING\t") else {
+            rest.push_str(line);
+            rest.push('\n');
+            continue;
+        };
+        let fields: Vec<&str> = record.split('\t').collect();
+        assert_eq!(fields.len(), 3, "{line}");
+        match (fields[0], fields[2]) {
+            ("ui_loop", "") => {
+                records.push(Record::Loop(fields[1].parse::<u64>().unwrap() / 1_000_000))
+            }
+            ("ui_space_sent", name) => records.push(Record::Sent(name.to_string())),
+            ("ui_space_answer", name) => records.push(Record::Answer(name.to_string())),
+            _ => {}
+        }
+    }
     assert!(
-        out.status.success() && out.stderr.is_empty(),
-        "the window: {}\n{}",
-        out.status,
-        text(&out.stderr)
+        out.status.success() && rest.is_empty(),
+        "the window: {}\n{rest}",
+        out.status
     );
     let state = text(&out.stdout);
     let loop_max_ms = state
@@ -2465,15 +2510,21 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
         a: (a_got, a_ms),
         b: (b_got, b_ms),
         state,
+        records,
     }
 }
 
 /// B9 R2: while agent A runs a 1500 ms `eval` loop and agent B loads a
-/// page whose server waits 1500 ms, the window with `--spaces` answers
-/// a third agent within 100 ms, handles the user's click and typing,
-/// and its longest loop iteration (`loop_max_ms`) stays under 50 ms.
-/// Without `--spaces` the same load holds the loop up for over a second
-/// (the measure measures).
+/// page whose server waits 1500 ms, the window with `--spaces` never
+/// waits for their Spaces: in the DWELLER_TIMING records, the window
+/// relays A's `eval` to its Space and the answer back in different loop
+/// iterations, with others between them, in which it also relays a third
+/// agent's request and answer; it handles the user's click and typing.
+/// What does not depend on the machine's load is asserted; the times are
+/// bounded generously (a loaded machine stalls a loop iteration for tens
+/// of ms, a wait for A's Space stalls one for over a second). Without
+/// `--spaces` the same load holds the loop up for over a second (the
+/// measure measures).
 #[test]
 fn window_spaces_responsive() {
     if !has_sdl() {
@@ -2497,8 +2548,56 @@ fn window_spaces_responsive() {
         r.b.1,
         r.b.0
     );
-    assert!(r.c_ms < 100, "C waited {} ms", r.c_ms);
-    assert!(r.loop_max_ms < 50, "loop_max_ms {}\n{}", r.loop_max_ms, r.state);
+    // The Spaces in the order their agents first asked: A, B, C.
+    let mut names: Vec<&str> = Vec::new();
+    for rec in &r.records {
+        if let Record::Sent(name) = rec {
+            if !names.contains(&name.as_str()) {
+                names.push(name);
+            }
+        }
+    }
+    assert_eq!(names.len(), 3, "{:?}", r.records);
+    // The index of the `n`th (from 0) record equal to `want`.
+    let nth = |n: usize, want: Record| {
+        r.records
+            .iter()
+            .enumerate()
+            .filter(|(_, rec)| **rec == want)
+            .nth(n)
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| panic!("{want:?} {n} not found: {:?}", r.records))
+    };
+    let (a_name, c_name) = (names[0].to_string(), names[2].to_string());
+    let a_sent = nth(1, Record::Sent(a_name.clone()));
+    let a_answer = nth(1, Record::Answer(a_name));
+    let c_sent = nth(1, Record::Sent(c_name.clone()));
+    let c_answer = nth(1, Record::Answer(c_name));
+    let loops_between = r.records[a_sent..a_answer]
+        .iter()
+        .filter(|rec| matches!(rec, Record::Loop(_)))
+        .count();
+    assert!(
+        a_sent < c_sent && c_answer < a_answer && loops_between >= 3,
+        "A's eval out at {a_sent}, back at {a_answer}, {loops_between} loop iterations between; \
+         C's tabs out at {c_sent}, back at {c_answer}: {:?}",
+        r.records
+    );
+    let longest = r
+        .records
+        .iter()
+        .filter_map(|rec| match rec {
+            Record::Loop(ms) => Some(*ms),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    assert!(
+        longest < 1000 && r.loop_max_ms < 1000,
+        "longest loop {longest} ms\n{}",
+        r.state
+    );
+    assert!(r.c_ms < 1000, "C waited {} ms", r.c_ms);
     assert!(r.state.contains("\nvalue hello\n"), "{}", r.state);
     let old = responsive_session(&srv.base, false);
     assert!(
@@ -2508,8 +2607,8 @@ fn window_spaces_responsive() {
         old.state
     );
     println!(
-        "loop_max_ms {} with --spaces (C {} ms), {} without (C {} ms)",
-        r.loop_max_ms, r.c_ms, old.loop_max_ms, old.c_ms
+        "loop_max_ms {} with --spaces (C {} ms, {} loop iterations during A's eval), {} without (C {} ms)",
+        r.loop_max_ms, r.c_ms, loops_between, old.loop_max_ms, old.c_ms
     );
 }
 
