@@ -49,8 +49,55 @@ browser/
   ui/             SDL2 window, chrome (address bar, tabs), input, the
                   agent socket (`--agent-socket`, `connect`), Spaces
                   (`--spaces`)
+  perf/           `DWELLER_TIMING` phase records; local telemetry
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
+
+## Telemetry
+
+The person's window, its Spaces, and any run with `DWELLER_PROFILE`
+set (`dump` too) append events to
+`<profile>/telemetry/YYYY-MM-DD.jsonl` (the date in UTC; the profile is
+`DWELLER_PROFILE`, else `~/.dweller`). Nothing leaves the machine. A
+headless test window (`--frames`, `--events`, `--exit-when-idle`) and
+`dump` without a profile record nothing. It is off with
+`DWELLER_TELEMETRY=0` or a line `telemetry=off` in `<profile>/settings`.
+`perf/telemetry.aye` writes it: off, every hook is a test of one
+global; on, records go to a fixed 64 KB buffer written out when it
+fills, every 5 s from the window's loop, at exit, and from the crash
+handler. A day file past 5 MB is renamed to `YYYY-MM-DD-1.jsonl`
+(`-2`, ...); at start the oldest files past 30 are deleted. A run
+writes an identical record (but its time) once, and at most 5000
+records.
+
+Each line is one JSON object: `t` (RFC 3339, UTC, seconds), `ev`, `site`
+(the origin of the page whose code ran), and the event's fields:
+
+| `ev` | fields | where |
+|------|--------|-------|
+| `crash` | `signal` (SIGSEGV, SIGBUS, SIGABRT, SIGFPE, SIGILL), `backtrace` (return addresses as offsets in their file, for `addr2line -e`), `actions` (the last 8 window actions: `key`, `text`, `click`, `wheel`, `resize`) | a signal handler; then the signal's previous action (a sent signal is sent again) |
+| `js_error` | `type` (the Error's name, or `(not an Error)` with no message), `message`, `script` (origin of the script's URL), `line` (in the script; 0 unknown) | `engine/script.aye`: uncaught exceptions and unhandled rejections |
+| `unsupported` | `feature`: `css_property` (`name` the property), `css_value` (`name` "property: first keyword, function() or unit"), `js_global` (a ReferenceError for an undefined global, also when caught), `js_method` (a call of an undefined property: its name) | `css/parser.aye` (dropped declarations, not in `@supports`, not vendor-prefixed, not the UA sheet), `js/interp.aye` |
+| `slow_loop` | `ms` (the iteration without its wait), `phases` {`net`, `style`, `layout`, `paint`, `script`, `decode`} in ms, summed from the `DWELLER_TIMING` phases (nested ones overlap); at most one a second | `ui/window.aye` `Ui.loop` |
+| `page` | `first_paint_ms` and `load_ms` from the start of the navigation | `engine/tab.aye`, `ui/window.aye` |
+| `scroll` | `frames`, `p50_ms`, `p95_ms` of the frames drawn after a scroll, when the page is left | `ui/window.aye` |
+| `load_failed` | `kind` (`document`, `stylesheet`, `image`, `script`, `fetch`), `status` (0: no response), `origin` of the resource | `net/net.aye` `request`, `net/loader.aye` background loads |
+| `image_decode` | `format` (sniffed, else the response's type), `error`, `origin` of the image | `engine/images.aye` |
+
+Privacy: a record names a site, script or resource by its origin only
+(scheme, host, port; never a user name, path, query or fragment).
+Messages are cut to 200 bytes on one line and every URL in them is
+reduced to its origin; a page that puts its own text in an error message
+gets that text recorded. No page text, form value, cookie or header is
+recorded.
+
+`python3 browser/tools/telemetry.py summary [--days N] [--profile DIR]`
+reads the last N days (default 7), groups the events into issues (an
+error's type and message with origins and numbers masked, a feature, a
+failed load's kind and status, a decode's format and error, a slow
+loop's largest phase, a crash's signal and top frame), and ranks them
+by count times sites affected, then lists each site's median first
+paint, load and scroll frame times.
 
 ## Milestones
 

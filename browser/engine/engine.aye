@@ -562,6 +562,8 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
         return AllocError.OutOfMemory
     }
     errdefer located.deinit(alloc)
+    // Telemetry names the site of what the page does (its sheets).
+    perf.telemetryPage(located.href)
     let decode_began = perf.start()
     let enc = encoding.sniffOr(res.body, res.charset, fallback)
     let src = try encoding.toUtf8(alloc, res.body, enc)

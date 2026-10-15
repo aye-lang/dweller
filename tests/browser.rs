@@ -4909,3 +4909,225 @@ fn window_login_popup() {
     assert!(got.contains("\ntabs 2, showing 2\n"), "{got}");
     assert!(got.contains("opener set name w1 at ?link"), "{got}");
 }
+
+/// Local telemetry (`browser/perf/telemetry.aye`): a window on a temporary
+/// `DWELLER_PROFILE` showing `browser/tests/telemetry/page.html` (a JS
+/// throw, an unknown CSS property and value, a missing API, a slow task,
+/// a 404 image and a corrupt image) writes one record of each to the day
+/// file, with origins only: no path, query, page text or form value.
+/// `telemetry.py summary` lists them; `DWELLER_TELEMETRY=0` and a test
+/// window without a profile write nothing; a crash (SIGSEGV) is recorded
+/// with the window's last actions.
+#[test]
+fn window_telemetry() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = std::env::temp_dir().join(format!("dweller-telemetry-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let profile = base.join("profile");
+    let off = base.join("off");
+    let home = base.join("home");
+    for d in [&profile, &off, &home] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let page = format!("{}/telemetry/page.html?user=QUERYSECRET-2", srv.base);
+    let window = |profile: Option<&Path>, telemetry: Option<&str>, frames: &str| {
+        let mut c = Command::new(dweller());
+        c.current_dir(root())
+            .env("SDL_VIDEODRIVER", "dummy")
+            .env("HOME", &home)
+            .env_remove("DWELLER_PROFILE")
+            .env_remove("DWELLER_TELEMETRY")
+            .env_remove("DWELLER_TELEMETRY_DIR")
+            .args([
+                page.as_str(),
+                "--font",
+                "fixed",
+                "--width",
+                "400",
+                "--height",
+                "300",
+                "--frames",
+                frames,
+                "--events",
+                "frame wheel:-3 frame wheel:-3 frame wheel:-3 frame",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        if let Some(p) = profile {
+            c.env("DWELLER_PROFILE", p);
+        }
+        if let Some(t) = telemetry {
+            c.env("DWELLER_TELEMETRY", t);
+        }
+        c
+    };
+    let records = |profile: &Path| -> String {
+        let dir = profile.join("telemetry");
+        let mut all = String::new();
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            let mut names: Vec<PathBuf> = entries.map(|e| e.unwrap().path()).collect();
+            names.sort();
+            for n in names {
+                all.push_str(&std::fs::read_to_string(n).unwrap());
+            }
+        }
+        all
+    };
+
+    let out = window(Some(&profile), None, "200").output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let day = chrono_free_today();
+    let file = profile.join("telemetry").join(format!("{day}.jsonl"));
+    let got = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    let origin = srv.base.clone();
+    for want in [
+        "\"ev\":\"js_error\",".to_string(),
+        "\"type\":\"Error\",\"message\":\"failed at ".to_string() + &origin + "\"",
+        "\"feature\":\"css_property\",\"name\":\"zoomy-frobnicate\"".to_string(),
+        "\"feature\":\"css_value\",\"name\":\"display: grid-lanes\"".to_string(),
+        "\"feature\":\"js_global\",\"name\":\"SVGAElement\"".to_string(),
+        "\"kind\":\"image\",\"status\":404,\"origin\":\"".to_string() + &origin + "\"",
+        "\"ev\":\"image_decode\",".to_string(),
+        "\"ev\":\"page\",".to_string(),
+        "\"ev\":\"scroll\",".to_string(),
+    ] {
+        assert_eq!(got.matches(&want).count(), 1, "one {want} in:\n{got}");
+    }
+    // The slow task's loop iteration, by its script phase (a debug build
+    // may have other slow ones).
+    let slow_script = got
+        .lines()
+        .filter(|l| l.contains("\"ev\":\"slow_loop\""))
+        .any(|l| {
+            l.split("\"script\":")
+                .nth(1)
+                .and_then(|v| v.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|ms| ms >= 200)
+        });
+    assert!(slow_script, "no slow_loop of the slow script in:\n{got}");
+    for line in got.lines() {
+        assert!(
+            line.starts_with("{\"t\":\"") && line.ends_with('}'),
+            "not a record: {line}"
+        );
+        assert!(
+            line.contains(&format!("\"site\":\"{origin}\"")),
+            "not of the page's site: {line}"
+        );
+    }
+    // Origins only: no path, query, page text or form value.
+    for secret in [
+        "?",
+        "/telemetry",
+        "page.html",
+        "missing.png",
+        "broken.png",
+        "QUERYSECRET",
+        "PATHSECRET",
+        "PAGETEXT",
+        "FORMVALUE",
+        "only the page has this text",
+    ] {
+        assert!(!got.contains(secret), "{secret} in:\n{got}");
+    }
+
+    let summary = Command::new("python3")
+        .current_dir(root())
+        .args([
+            "browser/tools/telemetry.py",
+            "summary",
+            "--days",
+            "1",
+            "--profile",
+        ])
+        .arg(&profile)
+        .output()
+        .unwrap();
+    let listed = text(&summary.stdout);
+    assert!(summary.status.success(), "{}", text(&summary.stderr));
+    for want in [
+        "js_error      Error: failed at <origin>",
+        "unsupported   css_property zoomy-frobnicate",
+        "unsupported   css_value display: grid-lanes",
+        "unsupported   js_global SVGAElement",
+        "slow_loop     loop > 100 ms, mostly script",
+        "load_failed   image 404",
+        "image_decode  png ",
+    ] {
+        assert!(listed.contains(want), "{want} not in:\n{listed}");
+    }
+
+    // Off: DWELLER_TELEMETRY=0, and a test window without a profile.
+    let out = window(Some(&off), Some("0"), "60").output().unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!off.join("telemetry").exists(), "{}", records(&off));
+    let out = window(None, None, "60").output().unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!home.join(".dweller").exists());
+
+    // A crash: the records so far and the crash, with the last actions.
+    let crashed = base.join("crashed");
+    std::fs::create_dir_all(&crashed).unwrap();
+    let mut child = window(Some(&crashed), None, "3000").spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+    let killed = Command::new("kill")
+        .args(["-SEGV", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let start = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            let _ = child.kill();
+            panic!("the window did not end on SIGSEGV");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let got = records(&crashed);
+    let crash = got
+        .lines()
+        .find(|l| l.contains("\"ev\":\"crash\""))
+        .unwrap_or_else(|| panic!("no crash record in:\n{got}"));
+    assert!(
+        crash.contains("\"signal\":\"SIGSEGV\"")
+            && crash.contains("\"backtrace\":[\"0x")
+            && crash.contains("\"actions\":[\"wheel\",\"wheel\",\"wheel\"]"),
+        "{crash}"
+    );
+    assert!(got.contains("\"ev\":\"js_error\""), "{got}");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Today's date in UTC as YYYY-MM-DD (the name of telemetry's day file).
+fn chrono_free_today() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+        / 86400;
+    // civil-from-days (Howard Hinnant), as std.time does.
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    format!("{year:04}-{month:02}-{day:02}")
+}

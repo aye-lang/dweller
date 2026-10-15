@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- tests/browser.rs window_telemetry: each kind of telemetry event once. -->
+<html>
+<head>
+<title>Telemetry</title>
+<style>
+p { color: navy; zoomy-frobnicate: 3px; display: grid-lanes; }
+</style>
+</head>
+<body>
+<div style="height: 3000px">
+<p id="secret">PAGETEXT-7f3a only the page has this text</p>
+<form><input name="q" value="FORMVALUE-91c2"></form>
+</div>
+<img src="missing.png?token=QUERYSECRET-5d1e" width="20" height="20">
+<img src="broken.png" width="20" height="20">
+<script>
+// A missing API, caught by the page: noted when it is thrown.
+try { new SVGAElement(); } catch (e) {}
+// A slow task (> 100 ms) in a loop iteration of the window.
+setTimeout(function () {
+  var t0 = Date.now();
+  while (Date.now() - t0 < 250) {}
+}, 50);
+// An uncaught error whose message has the page's URL (path and query).
+setTimeout(function () {
+  throw new Error("failed at " + location.href);
+}, 100);
+</script>
+</body>
+</html>

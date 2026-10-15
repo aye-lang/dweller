@@ -650,7 +650,11 @@ struct Parser {
         if end <= j {
             return
         }
+        let before = self.sheet.decls.len()
         try addDeclaration(self.sheet, toks[lo].text, toks[j..end], important)
+        if perf.telemetryOn() && self.sheet.decls.len() == before {
+            try noteDropped(self.sheet, toks[lo].text, toks[j..end])
+        }
     }
 }
 

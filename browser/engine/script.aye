@@ -953,18 +953,62 @@ fn runSourceOf(s: *mut Script, el: NodeId, code: []u8) AllocError!void {
     defer perf.end("script", began, source)
     s.current = el
     s.written.clear()
+    if perf.telemetryOn() {
+        try noteSourceUrl(s, el)
+    }
     enter(s)
     s.it.runScript(code) catch |e| {
+        s.it.source_url = 0
         leave(s)
         s.current = null
         try uncaught(s, e)
         try runMicrotasks(s)
         return insertWritten(s, el)
     }
+    s.it.source_url = 0
     leave(s)
     s.current = null
     try runMicrotasks(s)
     try insertWritten(s, el)
+}
+
+// Telemetry: the code about to be parsed is the script `el`'s (its
+// `src`, else the page's URL), for the place of its errors.
+fn noteSourceUrl(s: *mut Script, el: NodeId) AllocError!void {
+    if s.page.doc.attr(el, "src") |src| {
+        let r = s.page.resolve(s.alloc, src) catch |e| {
+            s.it.source_url = s.it.intern(s.page.url.href) catch return AllocError.OutOfMemory
+            return
+        }
+        defer r.deinit(s.alloc)
+        s.it.source_url = s.it.intern(r.href) catch return AllocError.OutOfMemory
+        return
+    }
+    s.it.source_url = s.it.intern(s.page.url.href) catch return AllocError.OutOfMemory
+}
+
+// Telemetry: the pending exception, described as `desc` after `prefix`,
+// was not caught.
+fn noteUncaught(s: *mut Script, desc: []u8, prefix: []u8) {
+    var rest = desc
+    if text.startsWith(rest, prefix) {
+        rest = rest[prefix.len..]
+    }
+    var kind: []u8 = "(not an Error)"
+    var message: []u8 = ""
+    if js.thrownIsError(&s.it) {
+        kind = rest
+        if text.indexOf(rest, ": ") |colon| {
+            kind = rest[..colon]
+            message = rest[colon + 2..]
+        }
+    }
+    var line: u32 = 0
+    var script = js.lastStatementPlace(&s.it, &mut line)
+    if script.len == 0 {
+        script = s.page.url.href
+    }
+    perf.noteJsError(kind, message, script, line)
 }
 
 // Scripts that document.write wrote, nested at most this deep.
@@ -1044,6 +1088,7 @@ fn fireLoadEvent(s: *mut Script, at: ?NodeId, name: []u8) AllocError!void {
 // budget (nested calls share it).
 fn enter(s: *mut Script) {
     if s.depth == 0 {
+        perf.telemetryPage(s.page.url.href)
         s.it.markStackBase(PAGE_ROOM)
         if js.gcStressRequested() {
             s.it.startBudget(0, STRESS_STEPS)
@@ -1111,6 +1156,9 @@ fn reportException(s: *mut Script) AllocError!void {
     defer b.deinit()
     js.describeException(&mut s.it, &mut b) catch |e| {
         return AllocError.OutOfMemory
+    }
+    if perf.telemetryOn() {
+        noteUncaught(s, b.bytes(), "Uncaught ")
     }
     s.it.exception = Value.Undefined
     return addConsole(s, "[error] ", b.bytes())
@@ -1228,6 +1276,9 @@ fn reportRejections(s: *mut Script) AllocError!void {
         b.clear()
         js.describeThrown(&mut s.it, &mut b, "Uncaught (in promise) ") catch |e| {
             return AllocError.OutOfMemory
+        }
+        if perf.telemetryOn() {
+            noteUncaught(s, b.bytes(), "Uncaught (in promise) ")
         }
         s.it.exception = Value.Undefined
         try addConsole(s, "[error] ", b.bytes())

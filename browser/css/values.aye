@@ -19,6 +19,7 @@
 // `var()` or a math function (`calc()`...) is kept as tokens too, for each
 // longhand it sets, and parsed at computed-value time (cascade.aye).
 
+import perf
 import std.list.List
 import std.math
 import std.mem.AllocError
@@ -73,6 +74,63 @@ pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: b
         return
     }
     try d.shorthand(prop, comps)
+}
+
+/// Telemetry: the declaration `name: toks` was dropped. An unknown
+/// property is noted by name, an unknown value by the property and the
+/// value's first keyword, function or unit (never strings or URLs).
+/// Vendor-prefixed properties are left out.
+pub fn noteDropped(sheet: *mut Sheet, name: []u8, toks: []Token) AllocError!void {
+    var buf = @zeroed([32]u8)
+    if name.len == 0 || name.len > buf.len || name[0] == '-' {
+        return
+    }
+    for i, c in name {
+        buf[i] = lowerAscii(c)
+    }
+    let prop = buf[0..name.len]
+    // A known property takes `inherit`.
+    let before = sheet.decls.len()
+    let inherit = [1]Token{Token { kind: Tok.Ident, text: "inherit", num: 0.0, delim: 0, flag: false }}
+    try addDeclaration(sheet, prop, inherit[..], false)
+    let known = sheet.decls.len() > before
+    while sheet.decls.len() > before {
+        _ = sheet.decls.pop()
+    }
+    if !known {
+        perf.noteUnsupported("css_property", prop)
+        return
+    }
+    var b = @zeroed([96]u8)
+    var n: usize = 0
+    for c in prop {
+        b[n] = c
+        n += 1
+    }
+    b[n] = ':'
+    b[n + 1] = ' '
+    n += 2
+    var word: []u8 = ""
+    var call = false
+    for t in toks {
+        if t.kind == Tok.Ident || t.kind == Tok.Function || t.kind == Tok.Dimension {
+            word = t.text
+            call = t.kind == Tok.Function
+            break
+        }
+    }
+    for c in word {
+        if n + 3 < b.len {
+            b[n] = lowerAscii(c)
+            n += 1
+        }
+    }
+    if call {
+        b[n] = '('
+        b[n + 1] = ')'
+        n += 2
+    }
+    perf.noteUnsupported("css_value", b[..n])
 }
 
 // Does the declaration `prop: toks` parse (math functions evaluated

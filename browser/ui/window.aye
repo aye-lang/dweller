@@ -245,6 +245,10 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     engine.setTabHost(true)
     // The console goes to stderr, except in headless test runs.
     engine.setConsoleEcho(o.frames == 0 && !o.exit_when_idle)
+    // Telemetry (perf/telemetry.aye): the person's window, its Spaces, or
+    // a run with DWELLER_PROFILE set.
+    perf.telemetryStart(o.frames == 0 && !o.exit_when_idle && o.events.len == 0 && o.control < 0)
+    defer perf.telemetryStop()
     if SDL_Init(SDL_INIT_VIDEO) != 0 {
         sdlError("cannot start SDL")
         return 1
@@ -540,6 +544,7 @@ pub struct Ui {
             // The time of this iteration without its wait for events
             // (`loop_max_ms` in `--state`).
             let start = std.time.monotonicMs()
+            perf.loopBegin()
             let t_loop = perf.start()
             var waited: u64 = 0
             var waited_ns: u64 = 0
@@ -547,7 +552,9 @@ pub struct Ui {
             try self.imagesIn()
             if self.dirty || frames > 0 {
                 let t_draw = perf.start()
+                let drew = std.time.monotonicMs()
                 try self.draw()
+                perf.noteFrame(std.time.monotonicMs() - drew)
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 drawn += 1
@@ -638,7 +645,14 @@ pub struct Ui {
                     try self.relayout()
                 }
             }
-            noteLoopTime(self, std.time.monotonicMs() - start - waited)
+            let busy = std.time.monotonicMs() - start - waited
+            noteLoopTime(self, busy)
+            if perf.telemetryOn() {
+                if self.tab.page |p| {
+                    perf.telemetryPage(p.url.href)
+                }
+                perf.loopEnd(busy)
+            }
             if t_loop != 0 {
                 perf.end("ui_loop", t_loop + waited_ns, "")
             }
@@ -855,6 +869,11 @@ pub struct Ui {
     // After the tab moved: lay out a new page, scroll where the tab
     // wants, and show the URL and title.
     fn navigated(self: *mut Self, loaded: bool) AllocError!void {
+        if loaded {
+            if self.tab.page |p| {
+                perf.noteLoaded(p.url.href)
+            }
+        }
         self.dropdown = null
         self.range_drag = false
         if loaded {
@@ -948,6 +967,7 @@ pub struct Ui {
         self.tab.clampScroll(self.maxScroll())
         if self.tab.scroll != before {
             self.dirty = true
+            perf.noteScroll()
             self.followScroll()
         }
         if self.tab.page |p| {
@@ -1084,6 +1104,7 @@ pub struct Ui {
     fn handle(self: *mut Self, ev: *SDL_Event) AllocError!void {
         let kind = ev.kind
         if kind == SDL_MOUSEWHEEL {
+            perf.noteAction("wheel")
             self.wheel(&ev.wheel)
             return
         }
@@ -1094,6 +1115,7 @@ pub struct Ui {
         } else if kind == SDL_WINDOWEVENT {
             let we = &ev.window
             if we.event == SDL_WINDOWEVENT_SIZE_CHANGED {
+                perf.noteAction("resize")
                 self.resized = true
             } else if we.event == SDL_WINDOWEVENT_EXPOSED {
                 self.dirty = true
@@ -1103,6 +1125,7 @@ pub struct Ui {
                 try self.clearHover(false)
             }
         } else if kind == SDL_KEYDOWN {
+            perf.noteAction("key")
             let ke = &ev.key
             try self.key(ke.keysym.sym, ke.keysym.mods)
         } else if kind == SDL_TEXTINPUT {
@@ -1111,6 +1134,7 @@ pub struct Ui {
             while n < te.text.len && te.text[n] != 0 {
                 n += 1
             }
+            perf.noteAction("text")
             try self.typed(te.text[0..n])
         } else if kind == SDL_MOUSEMOTION {
             let me = &ev.motion
@@ -1118,6 +1142,7 @@ pub struct Ui {
         } else if kind == SDL_MOUSEBUTTONDOWN {
             let be = &ev.button
             if be.button == SDL_BUTTON_LEFT {
+                perf.noteAction("click")
                 try self.click(be.x as f64, be.y as f64)
             }
         } else if kind == SDL_MOUSEBUTTONUP {

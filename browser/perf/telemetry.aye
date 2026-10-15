@@ -1,0 +1,1028 @@
+// Local telemetry (docs/browser.md, "Telemetry"): the window, its Spaces
+// and `dump` (when a profile is set) append events as JSON lines to
+// `<profile>/telemetry/YYYY-MM-DD.jsonl`, for `tools/telemetry.py
+// summary`. Nothing is sent anywhere.
+//
+// Privacy: a record names sites by origin (scheme, host, port) only;
+// messages are cut to 200 bytes with every URL in them reduced to its
+// origin. No path, query, page text, form value, cookie or header.
+//
+// Cheap: off, every hook is one test of a global. On, records go to a
+// fixed buffer, written out when it fills, every few seconds from the
+// window's loop, and at the end; no allocation. A crash handler writes
+// the buffer and a crash record before the signal's default action.
+
+import std
+import std.text
+import std.time
+
+extern fn open(path: [*]u8, flags: i32, mode: i32) i32
+extern fn write(fd: i32, p: [*]u8, n: usize) isize
+extern fn close(fd: i32) i32
+extern fn setenv(name: [*]u8, value: [*]u8, overwrite: i32) i32
+extern fn sigaction(sig: i32, act: *SigAction, old: *mut SigAction) i32
+extern fn raise(sig: i32) i32
+extern fn backtrace(buf: [*]usize, n: i32) i32
+extern fn dladdr(addr: usize, info: *mut DlInfo) i32
+
+// Linux's `struct sigaction` (glibc layout) and `Dl_info`.
+extern struct SigAction {
+    action: ?fn(i32, ?[*]u8, ?[*]u8)
+    mask: [16]u64
+    flags: i32
+    restorer: usize
+}
+
+extern struct DlInfo {
+    fname: ?[*]u8
+    fbase: usize
+    sname: ?[*]u8
+    saddr: usize
+}
+
+// O_WRONLY | O_CREAT | O_APPEND
+let OPEN_APPEND: i32 = 0x441
+// SA_SIGINFO | SA_ONSTACK: the handler gets the signal's origin and runs
+// on Aye's alternate stack when there is one.
+let SA_FLAGS: i32 = 0x08000004
+// A day file is rotated past this size; at most this many files are kept.
+let MAX_FILE: u64 = 5242880
+let MAX_FILES: usize = 30
+// Messages are cut to this many bytes.
+let MAX_MESSAGE: usize = 200
+// A loop iteration slower than this (ms) is recorded.
+let SLOW_LOOP_MS: u64 = 100
+// At most this many records per process (a busy page cannot fill the disk).
+let MAX_RECORDS: u64 = 5000
+
+var tm_on: bool = false
+var muted: bool = false
+// `<profile>/telemetry/`, NUL-terminated at dir_len.
+var dir: [1024]u8 = @zeroed([1024]u8)
+var dir_len: usize = 0
+// Records not written yet.
+var out: [65536]u8 = @zeroed([65536]u8)
+var out_len: usize = 0
+// The end of the last whole record in `out`.
+var whole_len: usize = 0
+var flushed_ms: u64 = 0
+var records: u64 = 0
+// The origin of the page that runs (`telemetryPage`).
+var site: [256]u8 = @zeroed([256]u8)
+var site_len: usize = 0
+// Hashes of the records written, so that each is written once per run.
+var seen: [4096]u64 = @zeroed([4096]u64)
+// The last window actions (names only), a ring.
+var actions: [8][]u8 = [8][]u8{"", "", "", "", "", "", "", ""}
+var action_next: usize = 0
+// The phases of this loop iteration (ns): net, style, layout, paint,
+// script, decode.
+var phase_ns: [6]u64 = [6]u64{0, 0, 0, 0, 0, 0}
+let PHASES = [6][]u8{"net", "style", "layout", "paint", "script", "decode"}
+var slow_ms: u64 = 0
+// The page shown: when its navigation began, its load time, whether it
+// was painted since, and its scroll frames (ms).
+var nav_ms: u64 = 0
+var load_ms: u64 = 0
+var page_open: bool = false
+var painted: bool = false
+var page_site: [256]u8 = @zeroed([256]u8)
+var page_site_len: usize = 0
+var frames: [512]u16 = @zeroed([512]u16)
+var frame_count: usize = 0
+var scrolled: bool = false
+// The crash handler's state.
+let CRASH_SIGNALS = [5]i32{4, 6, 7, 8, 11}
+let CRASH_NAMES = [5][]u8{"SIGILL", "SIGABRT", "SIGBUS", "SIGFPE", "SIGSEGV"}
+var old_actions: [5]SigAction = @zeroed([5]SigAction)
+var trace: [24]usize = @zeroed([24]usize)
+
+/// Starts telemetry unless `DWELLER_TELEMETRY=0` or the profile's
+/// `settings` say `telemetry=off`. The profile is `DWELLER_PROFILE`, else
+/// `~/.dweller` for the person's window (`person`); a process that the
+/// window started (a Space) gets its directory in
+/// `DWELLER_TELEMETRY_DIR`. Without any of them, it stays off.
+pub fn telemetryStart(person: bool) {
+    if tm_on {
+        return
+    }
+    if std.os.getenv("DWELLER_TELEMETRY") |v| {
+        if text.eql(v, "0") || text.eqlIgnoreCase(v, "off") || text.eqlIgnoreCase(v, "false") {
+            return
+        }
+    }
+    var profile: []u8 = ""
+    var home = false
+    if std.os.getenv("DWELLER_PROFILE") |p| {
+        profile = p
+    } else if std.os.getenv("DWELLER_TELEMETRY_DIR") |d| {
+        if d.len == 0 || d.len + 2 >= dir.len {
+            return
+        }
+        dir_len = 0
+        putPath(d)
+        if dir[dir_len - 1] != '/' {
+            putPath("/")
+        }
+    } else if person {
+        profile = std.os.getenv("HOME") orelse return
+        home = true
+    } else {
+        return
+    }
+    if profile.len > 0 {
+        if profile.len + 32 >= dir.len {
+            return
+        }
+        dir_len = 0
+        putPath(profile)
+        if home {
+            putPath("/.dweller")
+        }
+        if dir[dir_len - 1] != '/' {
+            putPath("/")
+        }
+        if settingsSayOff() {
+            return
+        }
+        makeDir()
+        putPath("telemetry/")
+    }
+    makeDir()
+    if !std.fs.exists(dir[..dir_len]) {
+        return
+    }
+    tm_on = true
+    flushed_ms = std.time.monotonicMs()
+    // A Space started by this window records to the same place.
+    dir[dir_len] = 0
+    _ = setenv("DWELLER_TELEMETRY_DIR".ptr, dir[..].ptr, 1)
+    prune()
+    installCrashHandler()
+}
+
+/// Is telemetry recording?
+pub fn telemetryOn() bool {
+    return tm_on
+}
+
+/// Writes what is left (the open page's records too) and stops.
+pub fn telemetryStop() {
+    if !tm_on {
+        return
+    }
+    endPage()
+    flush()
+    tm_on = false
+}
+
+/// The page whose code runs now is `href` (its origin names the site of
+/// later records).
+pub fn telemetryPage(href: []u8) {
+    if !tm_on {
+        return
+    }
+    site_len = originOf(href, site[..])
+}
+
+/// Writes the records out when the last write is a few seconds old (the
+/// window's loop calls it).
+pub fn telemetryTick() {
+    if !tm_on || out_len == 0 {
+        return
+    }
+    if std.time.monotonicMs() - flushed_ms >= 5000 {
+        flush()
+    }
+}
+
+/// A window action (a name such as "click"; never what it acted on),
+/// kept for a crash record.
+pub fn noteAction(name: []u8) {
+    if !tm_on {
+        return
+    }
+    actions[action_next] = name
+    action_next = (action_next + 1) % actions.len
+}
+
+/// An uncaught JavaScript exception: its type ("TypeError"), message,
+/// the script's URL (its origin is kept) and line (0: unknown).
+pub fn noteJsError(kind: []u8, message: []u8, script: []u8, line: u32) {
+    if !tm_on {
+        return
+    }
+    let mark = begin("js_error")
+    putStr("type", kind)
+    putMessage("message", message)
+    putOrigin("script", script)
+    putInt("line", line as u64)
+    finish(mark)
+}
+
+/// While `on`, unsupported features are not noted (the user-agent sheet
+/// is parsed).
+pub fn telemetryMute(on: bool) {
+    muted = on
+}
+
+/// A feature the page used that Dweller lacks: `feature` is
+/// "css_property", "css_value", "js_global" or "js_method", `name` what
+/// it was (a property or API name; a value's keyword).
+pub fn noteUnsupported(feature: []u8, name: []u8) {
+    if !tm_on || muted {
+        return
+    }
+    let mark = begin("unsupported")
+    putStr("feature", feature)
+    putMessage("name", name)
+    finish(mark)
+}
+
+/// A subresource or page that failed to load: its kind ("image"), the
+/// HTTP status (0: a network error) and URL (its origin is kept).
+pub fn noteLoadFailed(kind: []u8, status: i64, href: []u8) {
+    if !tm_on {
+        return
+    }
+    let mark = begin("load_failed")
+    putStr("kind", kind)
+    var s: u64 = 0
+    if status > 0 {
+        s = status as u64
+    }
+    putInt("status", s)
+    putOrigin("origin", href)
+    finish(mark)
+}
+
+/// An image that was fetched but could not be decoded: its format (as
+/// sniffed), the decoder's error and the image's URL (origin kept).
+pub fn noteImageDecode(format: []u8, err: []u8, href: []u8) {
+    if !tm_on {
+        return
+    }
+    let mark = begin("image_decode")
+    putMessage("format", format)
+    putStr("error", err)
+    putOrigin("origin", href)
+    finish(mark)
+}
+
+// ---- the window's loop, pages and scrolling
+
+/// A loop iteration starts: the phase times count from here.
+pub fn loopBegin() {
+    if !tm_on {
+        return
+    }
+    for i in 0..phase_ns.len {
+        phase_ns[i] = 0
+    }
+}
+
+/// The loop iteration took `ms` (without its wait for events): over
+/// 100 ms it is recorded with its phases (DWELLER_TIMING's, summed).
+pub fn loopEnd(ms: u64) {
+    if !tm_on {
+        return
+    }
+    // At most one a second: a busy page is slow loop after loop.
+    let now = std.time.monotonicMs()
+    if ms > SLOW_LOOP_MS && now - slow_ms >= 1000 {
+        slow_ms = now
+        let mark = begin("slow_loop")
+        putInt("ms", ms)
+        putByte(',')
+        putQuoted("phases")
+        put(":{")
+        for i, name in PHASES {
+            if i > 0 {
+                putByte(',')
+            }
+            putQuoted(name)
+            putByte(':')
+            putUint(phase_ns[i] / 1000000)
+        }
+        putByte('}')
+        endUnique(mark, false)
+    }
+    telemetryTick()
+}
+
+// The phase `phase` (perf.end's name) took `ns`.
+fn notePhase(phase: []u8, ns: u64) {
+    var i: usize = 6
+    if text.eql(phase, "requests") || text.eql(phase, "image_wait") {
+        i = 0
+    } else if text.eql(phase, "cascade") || text.eql(phase, "restyle") || text.eql(phase, "css_parse") {
+        i = 1
+    } else if text.eql(phase, "layout") || text.eql(phase, "script_layout") {
+        i = 2
+    } else if text.eql(phase, "paint") || text.eql(phase, "paint_build") {
+        i = 3
+    } else if text.eql(phase, "script") || text.eql(phase, "timers") {
+        i = 4
+    } else if text.eql(phase, "image_decode") || text.eql(phase, "html") || text.eql(phase, "decode") {
+        i = 5
+    }
+    if i < 6 {
+        phase_ns[i] += ns
+    }
+}
+
+/// A navigation starts (the page before it ends).
+pub fn noteNavigation() {
+    if !tm_on {
+        return
+    }
+    endPage()
+    nav_ms = std.time.monotonicMs()
+}
+
+/// The navigation's page `href` loaded (its load event ran).
+pub fn noteLoaded(href: []u8) {
+    if !tm_on || nav_ms == 0 {
+        return
+    }
+    endPage()
+    load_ms = std.time.monotonicMs() - nav_ms
+    page_site_len = originOf(href, page_site[..])
+    page_open = true
+    painted = false
+}
+
+/// The window drew a frame (`ms` long); `scroll`: after a scroll.
+pub fn noteFrame(ms: u64) {
+    if !tm_on || !page_open {
+        return
+    }
+    if !painted {
+        painted = true
+        let mark = beginAt("page", page_site[..page_site_len])
+        putInt("first_paint_ms", std.time.monotonicMs() - nav_ms)
+        putInt("load_ms", load_ms)
+        endUnique(mark, false)
+        return
+    }
+    if scrolled {
+        scrolled = false
+        if frame_count < frames.len {
+            var v = ms
+            if v > 65535 {
+                v = 65535
+            }
+            frames[frame_count] = v as u16
+            frame_count += 1
+        }
+    }
+}
+
+/// The page scrolled: the next frame is a scroll frame.
+pub fn noteScroll() {
+    if tm_on {
+        scrolled = true
+    }
+}
+
+// The page shown ends: its scroll frames' p50 and p95.
+fn endPage() {
+    if !page_open {
+        return
+    }
+    page_open = false
+    if frame_count > 0 {
+        // Insertion sort: at most 512 frames.
+        for i in 1..frame_count {
+            let v = frames[i]
+            var j = i
+            while j > 0 && frames[j - 1] > v {
+                frames[j] = frames[j - 1]
+                j -= 1
+            }
+            frames[j] = v
+        }
+        let mark = beginAt("scroll", page_site[..page_site_len])
+        putInt("frames", frame_count as u64)
+        putInt("p50_ms", frames[(frame_count - 1) * 50 / 100] as u64)
+        putInt("p95_ms", frames[(frame_count - 1) * 95 / 100] as u64)
+        endUnique(mark, false)
+    }
+    frame_count = 0
+    scrolled = false
+}
+
+// ---- records
+
+// Starts a record of event `ev` at the end of `out`; returns where it
+// starts (`end` drops it again if it was written before).
+fn begin(ev: []u8) usize {
+    return beginAt(ev, site[..site_len])
+}
+
+// begin for the site `origin`.
+fn beginAt(ev: []u8, origin: []u8) usize {
+    if out.len - out_len < 4096 {
+        flush()
+    }
+    let mark = out_len
+    put("{\"t\":\"")
+    putTime()
+    put("\",\"ev\":")
+    putQuoted(ev)
+    put(",\"site\":")
+    putQuoted(origin)
+    return mark
+}
+
+
+fn finish(mark: usize) {
+    endUnique(mark, true)
+}
+
+// Ends the record that starts at `mark`; `unique`: dropped when the
+// same record (but its time) was written in this run.
+fn endUnique(mark: usize, unique: bool) {
+    if records >= MAX_RECORDS {
+        out_len = mark
+        return
+    }
+    if unique {
+        // The hash leaves out the time (`{"t":"...",`).
+        var h: u64 = 14695981039346656037
+        var i = mark + 1
+        while i < out_len && out[i] != ',' {
+            i += 1
+        }
+        while i < out_len {
+            h = (h ^ out[i] as u64) *% 1099511628211
+            i += 1
+        }
+        if h == 0 {
+            h = 1
+        }
+        var slot = (h % seen.len as u64) as usize
+        var probes: usize = 0
+        while seen[slot] != 0 && probes < 64 {
+            if seen[slot] == h {
+                out_len = mark
+                return
+            }
+            slot = (slot + 1) % seen.len
+            probes += 1
+        }
+        if probes < 64 {
+            seen[slot] = h
+        }
+    }
+    put("}\n")
+    records += 1
+    whole_len = out_len
+}
+
+fn put(s: []u8) {
+    for c in s {
+        putByte(c)
+    }
+}
+
+fn putByte(c: u8) {
+    if out_len < out.len {
+        out[out_len] = c
+        out_len += 1
+    }
+}
+
+// A JSON string.
+fn putQuoted(s: []u8) {
+    putByte('"')
+    for c in s {
+        if c == '"' || c == '\\' {
+            putByte('\\')
+            putByte(c)
+        } else if c < 0x20 {
+            put("\\u00")
+            putByte(hexDigit(c >> 4))
+            putByte(hexDigit(c & 15))
+        } else {
+            putByte(c)
+        }
+    }
+    putByte('"')
+}
+
+fn hexDigit(v: u8) u8 {
+    if v < 10 {
+        return '0' + v
+    }
+    return 'a' + v - 10
+}
+
+fn putStr(key: []u8, value: []u8) {
+    putByte(',')
+    putQuoted(key)
+    putByte(':')
+    putQuoted(value)
+}
+
+fn putInt(key: []u8, v: u64) {
+    putByte(',')
+    putQuoted(key)
+    putByte(':')
+    putUint(v)
+}
+
+fn putUint(v: u64) {
+    var digits = [20]u8{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    var n: usize = 0
+    var x = v
+    while true {
+        digits[19 - n] = '0' + (x % 10) as u8
+        n += 1
+        x /= 10
+        if x == 0 {
+            break
+        }
+    }
+    put(digits[20 - n..])
+}
+
+fn putOrigin(key: []u8, href: []u8) {
+    var o = @zeroed([256]u8)
+    let n = originOf(href, o[..])
+    putStr(key, o[..n])
+}
+
+// A message: at most MAX_MESSAGE bytes (not cutting a UTF-8 sequence),
+// every URL in it reduced to its origin, on one line.
+fn putMessage(key: []u8, msg: []u8) {
+    var b = @zeroed([256]u8)
+    let n = scrub(msg, b[..])
+    putStr(key, b[..n])
+}
+
+fn scrub(msg: []u8, b: []mut u8) usize {
+    var n: usize = 0
+    var i: usize = 0
+    while i < msg.len && n < MAX_MESSAGE {
+        let c = msg[i]
+        if c == ':' && i + 2 < msg.len && msg[i + 1] == '/' && msg[i + 2] == '/' {
+            // scheme://host[:port], then the rest of the URL is dropped.
+            i += 3
+            if n + 3 <= MAX_MESSAGE {
+                b[n] = ':'
+                b[n + 1] = '/'
+                b[n + 2] = '/'
+                n += 3
+            }
+            let host_start = i
+            while i < msg.len && !endsUrl(msg[i]) && msg[i] != '/' && msg[i] != '?' && msg[i] != '#' {
+                i += 1
+            }
+            // Without a user name.
+            var k = i
+            while k > host_start && msg[k - 1] != '@' {
+                k -= 1
+            }
+            let host = msg[k..i]
+            for h in host {
+                if n < MAX_MESSAGE {
+                    b[n] = h
+                    n += 1
+                }
+            }
+            while i < msg.len && !endsUrl(msg[i]) {
+                i += 1
+            }
+            continue
+        }
+        if c == '\n' || c == '\r' || c == '\t' {
+            b[n] = ' '
+        } else {
+            b[n] = c
+        }
+        n += 1
+        i += 1
+    }
+    // Not in the middle of a UTF-8 sequence.
+    if n == MAX_MESSAGE && i < msg.len {
+        while n > 0 && (b[n - 1] & 0xC0) == 0x80 {
+            n -= 1
+        }
+        if n > 0 && b[n - 1] >= 0xC0 {
+            n -= 1
+        }
+    }
+    return n
+}
+
+fn endsUrl(c: u8) bool {
+    return c == ' ' || c == '"' || c == '\'' || c == ')' || c == '>' || c == '<' || c == ',' || c == '\n' || c == '\r' || c == '\t' || c == '`'
+}
+
+/// The origin of `href` written to `o`: "https://host[:port]" (never a
+/// user name, path, query or fragment); "data:", "about:" and the like
+/// for URLs without a host; "" when it is not a URL. Returns its length.
+pub fn originOf(href: []u8, o: []mut u8) usize {
+    var s = href
+    if text.startsWith(s, "blob:") {
+        s = s[5..]
+    }
+    var colon: usize = 0
+    while colon < s.len && s[colon] != ':' {
+        let c = s[colon]
+        if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
+            return 0
+        }
+        colon += 1
+    }
+    if colon == 0 || colon >= s.len || colon + 3 >= o.len {
+        return 0
+    }
+    var n: usize = 0
+    for k in 0..colon + 1 {
+        o[n] = lowerAscii(s[k])
+        n += 1
+    }
+    if !text.startsWith(s[colon + 1..], "//") {
+        return n
+    }
+    o[n] = '/'
+    o[n + 1] = '/'
+    n += 2
+    var i = colon + 3
+    var host_start = i
+    while i < s.len && s[i] != '/' && s[i] != '?' && s[i] != '#' && s[i] != '\\' {
+        if s[i] == '@' {
+            host_start = i + 1
+        }
+        i += 1
+    }
+    for k in host_start..i {
+        if n < o.len {
+            o[n] = lowerAscii(s[k])
+            n += 1
+        }
+    }
+    return n
+}
+
+fn lowerAscii(c: u8) u8 {
+    if c >= 'A' && c <= 'Z' {
+        return c + 32
+    }
+    return c
+}
+
+// The time as RFC 3339 in UTC, to the second.
+fn putTime() {
+    let d = std.time.fromUnixMs(std.time.now())
+    putPadded(d.year as u64, 4)
+    putByte('-')
+    putPadded(d.month as u64, 2)
+    putByte('-')
+    putPadded(d.day as u64, 2)
+    putByte('T')
+    putPadded(d.hour as u64, 2)
+    putByte(':')
+    putPadded(d.minute as u64, 2)
+    putByte(':')
+    putPadded(d.second as u64, 2)
+    putByte('Z')
+}
+
+fn putPadded(v: u64, width: u64) {
+    var w: u64 = 1
+    var digits: u64 = 1
+    while w * 10 <= v {
+        w *= 10
+        digits += 1
+    }
+    while digits < width {
+        putByte('0')
+        digits += 1
+    }
+    putUint(v)
+}
+
+// ---- files
+
+fn putPath(s: []u8) {
+    for c in s {
+        if dir_len + 1 < dir.len {
+            dir[dir_len] = c
+            dir_len += 1
+        }
+    }
+}
+
+// Makes the directory `dir` (its parent exists, or it fails quietly).
+fn makeDir() {
+    std.fs.mkdir(dir[..dir_len]) catch |e| {}
+}
+
+// Does `<profile>/settings` (`dir`) have a line `telemetry=off`?
+fn settingsSayOff() bool {
+    var path = @zeroed([1100]u8)
+    var n: usize = 0
+    for c in dir[..dir_len] {
+        path[n] = c
+        n += 1
+    }
+    for c in "settings" {
+        path[n] = c
+        n += 1
+    }
+    let f = std.fs.open(path[..n]) catch |e| {
+        return false
+    }
+    defer f.close()
+    var buf = @zeroed([4096]u8)
+    let got = f.read(buf[..]) catch |e| {
+        return false
+    }
+    var lines = text.split(buf[..got], "\n")
+    while lines.next() |line| {
+        let eq = text.indexOf(line, "=") orelse continue
+        if !text.eql(text.trim(line[..eq]), "telemetry") {
+            continue
+        }
+        let v = text.trim(line[eq + 1..])
+        if text.eql(v, "off") || text.eql(v, "0") || text.eql(v, "false") {
+            return true
+        }
+    }
+    return false
+}
+
+// `dir` + today's file name (+ "-k" when k > 0), NUL-terminated in `p`.
+fn dayPath(p: []mut u8, k: u64) usize {
+    var n: usize = 0
+    for c in dir[..dir_len] {
+        p[n] = c
+        n += 1
+    }
+    let d = std.time.fromUnixMs(std.time.now())
+    var date = @zeroed([16]u8)
+    var dl: usize = 0
+    let parts = [3]u64{d.year as u64, d.month as u64, d.day as u64}
+    let widths = [3]usize{4, 2, 2}
+    for j in 0..3 {
+        if j > 0 {
+            date[dl] = '-'
+            dl += 1
+        }
+        var v = parts[j]
+        var w = widths[j]
+        while w > 0 {
+            date[dl + w - 1] = '0' + (v % 10) as u8
+            v /= 10
+            w -= 1
+        }
+        dl += widths[j]
+    }
+    for c in date[..dl] {
+        p[n] = c
+        n += 1
+    }
+    if k > 0 {
+        p[n] = '-'
+        n += 1
+        var digits = @zeroed([20]u8)
+        var m: usize = 0
+        var x = k
+        while x > 0 {
+            digits[19 - m] = '0' + (x % 10) as u8
+            m += 1
+            x /= 10
+        }
+        for c in digits[20 - m..] {
+            p[n] = c
+            n += 1
+        }
+    }
+    for c in ".jsonl" {
+        p[n] = c
+        n += 1
+    }
+    p[n] = 0
+    return n
+}
+
+// Appends the records to today's file, rotating it past MAX_FILE.
+fn flush() {
+    flushed_ms = std.time.monotonicMs()
+    if out_len == 0 || dir_len == 0 {
+        return
+    }
+    var path = @zeroed([1100]u8)
+    let n = dayPath(path[..], 0)
+    let size = fileSize(path[..n])
+    if size > 0 {
+        if size + out_len as u64 > MAX_FILE {
+            var k: u64 = 1
+            var older = @zeroed([1100]u8)
+            var m = dayPath(older[..], k)
+            while std.fs.exists(older[..m]) && k < 1000 {
+                k += 1
+                m = dayPath(older[..], k)
+            }
+            std.fs.rename(path[..n], older[..m]) catch |e| {}
+        }
+    }
+    writeOut(path[..])
+}
+
+fn fileSize(path: []u8) u64 {
+    let st = std.fs.stat(path) catch |e| {
+        return 0
+    }
+    return st.size
+}
+
+// Writes `out` to the file `path` (NUL-terminated) and empties it.
+fn writeOut(path: []u8) {
+    let fd = open(path.ptr, OPEN_APPEND, 0x180)
+    if fd >= 0 {
+        var at: usize = 0
+        while at < out_len {
+            let w = write(fd, out[at..].ptr, out_len - at)
+            if w <= 0 {
+                break
+            }
+            at += w as usize
+        }
+        _ = close(fd)
+    }
+    out_len = 0
+    whole_len = 0
+}
+
+// Deletes the oldest files past MAX_FILES (the names sort by date, a
+// rotated `-k` file before the day's current one).
+fn prune() {
+    var gpa = std.heap.General.init()
+    defer gpa.deinit()
+    let alloc = gpa.allocator()
+    let entries = std.fs.readDir(alloc, dir[..dir_len]) catch |e| {
+        return
+    }
+    defer entries.deinit()
+    var names = std.list.List([]u8).init(alloc)
+    defer names.deinit()
+    for e in entries.items {
+        if text.endsWith(e.name, ".jsonl") {
+            names.append(e.name) catch |e2| {
+                return
+            }
+        }
+    }
+    if names.len() <= MAX_FILES {
+        return
+    }
+    let items = names.items()
+    for i in 1..items.len {
+        let v = items[i]
+        var j = i
+        while j > 0 && lessName(v, items[j - 1]) {
+            items[j] = items[j - 1]
+            j -= 1
+        }
+        items[j] = v
+    }
+    var path = @zeroed([1100]u8)
+    for i in 0..items.len - MAX_FILES {
+        var n: usize = 0
+        for c in dir[..dir_len] {
+            path[n] = c
+            n += 1
+        }
+        for c in items[i] {
+            if n < path.len {
+                path[n] = c
+                n += 1
+            }
+        }
+        std.fs.remove(path[..n]) catch |e| {}
+    }
+}
+
+fn lessName(a: []u8, b: []u8) bool {
+    let n = std.math.minOf(usize, a.len, b.len)
+    for i in 0..n {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+    }
+    return a.len < b.len
+}
+
+// ---- crashes
+
+fn installCrashHandler() {
+    // backtrace loads its unwinder on the first call: not in the handler.
+    _ = backtrace(trace[..].ptr, 1)
+    for i, sig in CRASH_SIGNALS {
+        var sa = @zeroed(SigAction)
+        sa.action = onCrash
+        sa.flags = SA_FLAGS
+        _ = sigaction(sig, &sa, &mut old_actions[i])
+    }
+}
+
+// Writes the records and a crash record, then lets the signal do what it
+// did before: a fault comes again when the handler returns; a signal that
+// was sent (kill, abort) is sent again.
+fn onCrash(sig: i32, info: ?[*]u8, ctx: ?[*]u8) {
+    var which: usize = 0
+    for i, s in CRASH_SIGNALS {
+        if s == sig {
+            which = i
+        }
+    }
+    // siginfo_t's si_code (after si_signo and si_errno): 0 or less when a
+    // process sent the signal. It ends the process as it would have
+    // without handlers; a fault goes to the handler there was before.
+    var sent = true
+    if info |i| {
+        let code = (i[8] as u32) | ((i[9] as u32) << 8) | ((i[10] as u32) << 16) | ((i[11] as u32) << 24)
+        sent = code == 0 || code >= 0x80000000
+    }
+    var ignored = @zeroed(SigAction)
+    if sent {
+        let dfl = @zeroed(SigAction)
+        _ = sigaction(sig, &dfl, &mut ignored)
+    } else {
+        _ = sigaction(sig, &old_actions[which], &mut ignored)
+    }
+    defer {
+        if sent {
+            _ = raise(sig)
+        }
+    }
+    if !tm_on {
+        return
+    }
+    // Not a record cut by the crash.
+    out_len = whole_len
+    if out.len - out_len < 4096 {
+        out_len = 0
+    }
+    put("{\"t\":\"")
+    putTime()
+    put("\",\"ev\":\"crash\",\"site\":")
+    putQuoted(site[..site_len])
+    putStr("signal", CRASH_NAMES[which])
+    // Return addresses as offsets in their file (`addr2line -e`).
+    put(",\"backtrace\":[")
+    let n = backtrace(trace[..].ptr, trace.len as i32)
+    var first = true
+    var k: i32 = 2
+    while k < n {
+        let a = trace[k as usize]
+        var dl = @zeroed(DlInfo)
+        var off = a
+        if dladdr(a, &mut dl) != 0 && dl.fbase <= a {
+            off = a - dl.fbase
+        }
+        if !first {
+            putByte(',')
+        }
+        first = false
+        put("\"0x")
+        putHex(off as u64)
+        putByte('"')
+        k += 1
+    }
+    put("],\"actions\":[")
+    first = true
+    for j in 0..actions.len {
+        let name = actions[(action_next + j) % actions.len]
+        if name.len > 0 {
+            if !first {
+                putByte(',')
+            }
+            first = false
+            putQuoted(name)
+        }
+    }
+    put("]}\n")
+    var path = @zeroed([1100]u8)
+    _ = dayPath(path[..], 0)
+    writeOut(path[..])
+}
+
+fn putHex(v: u64) {
+    var digits = @zeroed([16]u8)
+    var n: usize = 0
+    var x = v
+    while true {
+        digits[15 - n] = hexDigit((x & 15) as u8)
+        n += 1
+        x >>= 4
+        if x == 0 {
+            break
+        }
+    }
+    put(digits[16 - n..])
+}

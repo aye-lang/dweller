@@ -10,6 +10,7 @@
 // stack before the next allocation (or call). Calls take their callee,
 // `this` and arguments from the stack: [f, this, a0, a1, ...].
 
+import perf
 import std
 import std.list.List
 import std.map.IntMap
@@ -274,6 +275,13 @@ pub struct Interp {
     import_meta: IntMap(u32, u32)
     // Strictness of classic top-level code (functions carry it in FuncInfo).
     script_strict: bool = false
+    // Where an uncaught exception came from (telemetry): the statement
+    // that ran last, and for each parsed source its start in
+    // `ast.source` and its URL (`source_url` when it was parsed).
+    last_stmt: u32 = 0
+    source_url: u32 = 0
+    chunk_starts: List(u32)
+    chunk_urls: List(u32)
 
     pub fn create(alloc: Allocator) JsError!Interp {
         var it = Interp {
@@ -294,6 +302,8 @@ pub struct Interp {
             expr_this_slot: NONE,
             expr_this: Value.Undefined,
             import_meta: IntMap(u32, u32).init(alloc),
+            chunk_starts: List(u32).init(alloc),
+            chunk_urls: List(u32).init(alloc),
             globals: GlobalNames.init(alloc),
             natives: List(NativeEntry).init(alloc),
             stack: List(Value).init(alloc),
@@ -389,6 +399,8 @@ pub struct Interp {
 
     pub fn deinit(self: *mut Self) {
         self.import_meta.deinit()
+        self.chunk_starts.deinit()
+        self.chunk_urls.deinit()
         destroyCoroutines(self)
         self.coroutines.deinit()
         self.co_saved.deinit()
@@ -2733,6 +2745,7 @@ pub struct Interp {
     }
 
     fn typeErrorRef(self: *mut Self, name: u32) JsError!Value {
+        perf.noteUnsupported("js_global", self.heap.atoms.name(name))
         self.msg.clear()
         try self.msg.append(self.heap.atoms.name(name))
         try self.msg.append(" is not defined")
@@ -2933,6 +2946,9 @@ pub struct Interp {
                 }
                 let argc = try self.pushArgs(list, n)
                 if !self.isCallable(self.slot(base)) {
+                    if perf.telemetryOn() && isUndef(self.slot(base)) {
+                        noteMissingMethod(self, callee)
+                    }
                     self.truncate(base)
                     return self.typeErrorAbout("", self.ast.srcText(callee), " is not a function")
                 }
@@ -3932,6 +3948,7 @@ pub struct Interp {
 
     pub fn exec(self: *mut Self, id: u32) JsError!Flow {
         try self.tick()
+        self.last_stmt = id
         if self.stackExhausted() {
             try self.rangeError("Maximum call stack size exceeded")
         }
@@ -4011,6 +4028,8 @@ pub struct Interp {
             }
             .Throw { arg } => {
                 let v = try self.eval(arg)
+                // Its argument may have run other statements.
+                self.last_stmt = id
                 self.exception = v
                 return JsError.Thrown
             }
@@ -4489,6 +4508,12 @@ pub struct Interp {
         defer lx.deinit()
         let base = self.ast.source.len() as u32
         try self.ast.source.append(src)
+        var src_url = self.source_url
+        if src_url == 0 {
+            src_url = referrer
+        }
+        try self.chunk_starts.append(base)
+        try self.chunk_urls.append(src_url)
         let message = try self.builder()
         defer self.release(message)
         tokenize(self.alloc, src, &mut lx) catch |e| {
@@ -4657,5 +4682,15 @@ pub struct Interp {
     /// A host object (a DOM node wrapper) with prototype `proto`.
     pub fn newHostObject(self: *mut Self, proto: u32, tag: u32, index: u32, generation: u32) JsError!u32 {
         return self.newObjectOf(Class.Host, proto, ObjData.Host { tag: tag, index: index, generation: generation })
+    }
+}
+
+// Telemetry: `x.name()` where `x` has no `name`, an API Dweller may lack.
+fn noteMissingMethod(it: *mut Interp, callee: u32) {
+    match it.ast.nodes.items()[callee] {
+        .Member { obj, name, .. } => {
+            perf.noteUnsupported("js_method", it.heap.atoms.name(name))
+        }
+        _ => {}
     }
 }

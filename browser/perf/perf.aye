@@ -1,5 +1,7 @@
 // Opt-in wall-clock phase tracing. No stdout changes, allocation or clock
 // reads when disabled. Durations are nanoseconds; nested phases overlap.
+// With telemetry on (telemetry.aye), the phases are timed for its slow
+// loop records whether or not DWELLER_TIMING logs them.
 import std
 
 extern fn getenv(name: [*]u8) ?[*]u8
@@ -15,7 +17,7 @@ pub fn start() u64 {
             enabled = p[0] == '1'
         }
     }
-    if enabled {
+    if enabled || tm_on {
         return aye_std_monotonic_ns()
     }
     return 0
@@ -23,6 +25,12 @@ pub fn start() u64 {
 
 pub fn end(phase: []u8, began: u64, label: []u8) {
     if began != 0 {
-        std.log.info("DWELLER_TIMING\t{}\t{}\t{}", phase, aye_std_monotonic_ns() - began, label)
+        let ns = aye_std_monotonic_ns() - began
+        if tm_on {
+            notePhase(phase, ns)
+        }
+        if enabled {
+            std.log.info("DWELLER_TIMING\t{}\t{}\t{}", phase, ns, label)
+        }
     }
 }
