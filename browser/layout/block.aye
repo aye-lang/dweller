@@ -178,6 +178,9 @@ fn isFormattingRoot(t: *Tree, i: usize) bool {
 /// (and `cb_h` high, or -1): its size, margins and content; its parent
 /// sets its position.
 fn layoutBlockLevel(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) AllocError!void {
+    if keepsLayout(t, i, cb_w, cb_h) {
+        return
+    }
     let kind = t.bx(i).kind
     t.bx(i).cb_w = cb_w
     t.bx(i).cb_h = cb_h
@@ -207,6 +210,15 @@ fn layoutBlockLevel(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) AllocError!voi
         b.through = false
     }
     relOffsets(t, i, cb_w, cb_h)
+    t.bx(i).laid = true
+}
+
+// Does box `i` keep the layout it has (`Tree.keep_under`)?
+fn keepsLayout(t: *Tree, i: usize, cb_w: f64, cb_h: f64) bool {
+    let under = t.keep_under orelse return false
+    let b = t.bx(i)
+    let p = b.parent orelse return false
+    return p == under && b.laid && b.cb_w == cb_w && b.cb_h == cb_h
 }
 
 /// Lays out an atomic inline (inline-block, image, inline table or

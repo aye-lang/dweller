@@ -651,6 +651,48 @@ animation changes visible pixels every frame, so it keeps a core busy at
 would help there is compositing a transform animation without layout or
 paint; rAF in hidden windows and background tabs is P4.55.
 
+### P4.44: incremental restyle and layout with container queries (2026-10-15)
+
+Documents whose styles use container queries now take the P4.34 path:
+the page's layout is adopted after `layoutQueried`, a change restyles
+the noted subtrees and lays out again incrementally, and then
+`settleContainers` (geometry.aye) compares the query containers' sizes
+in the tree with those the styles were computed for
+(containers.aye `changedContainers`). The subtrees of exactly the
+containers that moved (or are new) are styled again with the new sizes,
+the elements whose values moved are laid out again (`relayoutDirty`),
+and that repeats while a container moves, at most 2 rounds, as
+`layoutQueried`; beyond, the full path. An element whose
+`container-type` or `container-name` changes has all its descendants
+styled again (cascade.aye `sameContainer`). A container flip often
+changes the document's height, so two limits of P3.64 went: the
+relayout walk lays out the root again instead of giving up, and a block
+it lays out again keeps the layout of its children that did not change
+when their containing block is the same (`Box.laid`, `Tree.keep_under`);
+a side column's flip went from a full layout (~40 ms here) to 3.5 ms.
+
+Fixture `browser/tests/ui/container_feed.html` on the test server
+(`server.py`): ~4000 boxes, 245 `@container` rules on nested
+containers, 60 frames that each insert and remove a list item (itself a
+container); every 15th flips the side column's width, every 7th makes
+a box a container or not, every 11th resizes a `size` container, every
+10th sets the title. 1024×768, `--frames 90`, fast build, before
+(d514728) / after:
+
+| | `ui_relayout` p50 / p90 ms | full cascades after load | full layouts after load | `ui_loop` total ms |
+|---|---:|---:|---:|---:|
+| before | 64.9 / 82.4 | 122 | 61 | 4581 |
+| after | 5.8 / 10.2 | 0 | 0 | 919 |
+
+After: 60 container rounds (`container_restyle`, 0.1–0.6 ms each), and
+3 layouts with the styles kept when the boxes rebuilt passed twice the
+tree (P3.64's bound). `DWELLER_LAYOUT_CHECK=1` checks each of the 60
+layouts against a full styling (with the same container sizes) and a
+full layout: no difference. Live github.com/aye-lang/aye is unchanged
+(`window_perf.py scroll`: relayouts after load p50 460–570 ms, 15
+cascades): its document has one shadow root, and shadow trees still
+take the full path (`adoptLayout`); that is GitHub's next step.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

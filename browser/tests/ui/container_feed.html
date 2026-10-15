@@ -1,0 +1,81 @@
+<!doctype html>
+<title>container feed</title>
+<link rel="stylesheet" href="container_feed.css">
+<div class="layout">
+  <div class="side" id="side"><span class="label">Repositories</span><div class="more"></div><div id="repos"></div></div>
+  <div class="main" id="main"><div class="head">Feed</div><div class="sized" id="sized"><span class="cell">a size container</span></div><div id="boxes"></div><ul class="feed" id="feed"></ul></div>
+</div>
+<script>
+// Shaped like GitHub's dashboard: nested query containers (layout, side,
+// main, boxes, rows), many `@container` rules, and a script that changes
+// a list every frame for 60 frames; every 15th frame the side column
+// changes width, which flips its `@container side` conditions; others
+// make a box a query container or not, resize a `size` container and
+// set the title (window_container_queries).
+const repos = document.getElementById('repos');
+for (let i = 0; i < 40; i++) {
+  const d = document.createElement('div');
+  d.className = 's' + (i % 10) + ' c' + (i % 60);
+  d.textContent = 'repo ' + i;
+  repos.appendChild(d);
+}
+const boxes = document.getElementById('boxes');
+for (let b = 0; b < 30; b++) {
+  const box = document.createElement('div');
+  box.className = 'box m' + (b % 12);
+  for (let r = 0; r < 25; r++) {
+    const row = document.createElement('div');
+    row.className = 'row c' + ((b * 25 + r) % 60);
+    const cell = document.createElement('span');
+    cell.className = 'cell c' + (r % 60);
+    cell.textContent = 'file ' + b + '.' + r;
+    const unit = document.createElement('div');
+    unit.className = 'unit c' + ((r * 7) % 60);
+    unit.textContent = 'commit message ' + r;
+    row.appendChild(cell);
+    row.appendChild(unit);
+    box.appendChild(row);
+  }
+  boxes.appendChild(box);
+}
+const feed = document.getElementById('feed');
+function item(n) {
+  const li = document.createElement('li');
+  li.className = 'c' + (n % 60);
+  const t = document.createElement('span');
+  t.className = 'cell';
+  t.textContent = 'event ' + n;
+  const m = document.createElement('span');
+  m.className = 'meta';
+  m.textContent = n + ' minutes ago';
+  li.appendChild(t);
+  li.appendChild(m);
+  return li;
+}
+for (let n = 0; n < 20; n++) {
+  feed.appendChild(item(n));
+}
+let n = 20;
+let frames = 0;
+function tick() {
+  frames++;
+  feed.insertBefore(item(n++), feed.firstChild);
+  feed.removeChild(feed.lastChild);
+  if (frames % 15 == 0) {
+    document.getElementById('side').classList.toggle('wide');
+  }
+  if (frames % 7 == 0) {
+    boxes.children[3].classList.toggle('plain');
+  }
+  if (frames % 11 == 0) {
+    document.getElementById('sized').classList.toggle('tall');
+  }
+  if (frames % 10 == 0) {
+    document.title = 'frame ' + frames;
+  }
+  if (frames < 60) {
+    requestAnimationFrame(tick);
+  }
+}
+requestAnimationFrame(tick);
+</script>
