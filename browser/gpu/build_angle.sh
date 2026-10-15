@@ -89,7 +89,7 @@ EOF
 build() {
   local jobs=()
   if [ -n "${ANGLE_JOBS:-}" ]; then jobs=(-j "$ANGLE_JOBS"); fi
-  (cd "$SRC" && autoninja "${jobs[@]}" -C "$OUT" libEGL libGLESv2 swiftshader_libvulkan icd_file)
+  (cd "$SRC" && autoninja ${jobs[@]+"${jobs[@]}"} -C "$OUT" libEGL libGLESv2 swiftshader_libvulkan icd_file)
 }
 
 # Third-party code in the built libraries, as name:path-in-checkout.
