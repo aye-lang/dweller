@@ -1,7 +1,8 @@
 // Spaces (docs/browser.md, B9): with `--spaces`, each agent connection
 // is served by a process of its own, so no agent request runs on the
-// window's thread. The window reads a connection's first line, starts
-// its Space,
+// window's thread. The window reads a connection's first line (the
+// hello, or a request), starts its Space or finds the done Space the
+// hello attaches to (`"space":N`),
 //
 //     dweller space --control FD --agent-socket DIR/agent.sock
 //         --width W --height H [--font fixed|system] [--no-js]
@@ -13,21 +14,37 @@
 // it polls before it reads and sends without waiting (`sendSome`).
 //
 // A Space serves the whole protocol as the window does, on tabs of its
-// own: its agent acts on its first tab. It cannot see the user's tabs
-// (P9.3 sends the user's context over the control connection):
-// `user_context` fails with NO_CONTEXT, and `tabs` lists only its own.
-// It runs the timers of all its tabs, and waits for its sockets instead
-// of SDL's events.
+// own: its agent acts on its first tab. It runs the timers of all its
+// tabs, and waits for its sockets instead of SDL's events.
 //
-// Lifecycle. A Space exits when its connection ends (the window passes
-// the agent's end of file on and the Space quits as `--exit-when-idle`)
-// or when the window goes: the end of file on the control connection,
-// which the kernel gives also when the window is killed. A Space that
-// ends while its agent is still connected crashed: the agent gets
-// CRASHED and its connection is closed; the window goes on. The window
-// reaps its Spaces (waitpid) and, when it closes, ends those left
-// (SIGKILL after END_MS). A Space removes its socket and directory when
-// it exits; the window removes those of a crashed one.
+// The control connection (both ways JSON lines `{"ctl":...}`; docs/
+// agent-protocol.md, Spaces). The window sends `spaces` (the Space's id
+// and name, and the other Spaces), `context` (the person's context, the
+// members of `user_context`, when it changed: at most every CONTEXT_MS),
+// `pointed` (Cmd+Shift+K), `pause`, `resume` and `stop`; the Space
+// sends `status` (its state, last action, tabs, title and URL, when it
+// changed) and `close` (its agent closed it). The window never waits
+// on a Space: it reads the control connection when it is readable and
+// keeps what the socket does not take (`ctl_out`); the list of Spaces
+// and the context are written only when that is empty, newest only.
+// A Space reads its control connection before it serves its agent, and
+// sends its status before the answer, so what one side sends is seen by
+// the other before what follows it.
+//
+// Lifecycle. A Space whose agent leaves stays (`done`) until an agent
+// attaches to it, the person stops it, or the window closes; at most
+// MAX_AGENTS Spaces (a new one replaces the oldest done or crashed
+// one). A Space exits when it is stopped (`stop`: its agent gets
+// `stopped`, then the end of its connection), when its agent closes it
+// (`space_close`), or when the window goes: the end of file on the
+// control connection, which the kernel gives also when the window is
+// killed. A Space that ends unasked while its agent is connected
+// crashed: the agent gets CRASHED and its connection is closed; the
+// window goes on and lists it as `crashed`. The window reaps its Spaces
+// (waitpid) and, when it closes, ends those left (SIGKILL after END_MS);
+// a stopped Space that has not exited after END_MS is killed. A Space
+// removes its socket and directory when it exits; the window removes
+// those of a crashed one.
 
 import agent
 import engine
@@ -52,40 +69,95 @@ let WNOHANG: i32 = 1
 let SIGKILL: i32 = 9
 // A Space has this long to listen on its socket, in ms.
 let START_MS: u64 = 10000
-// When the window closes, its Spaces have this long to exit, in ms.
+// When the window closes, its Spaces have this long to exit, in ms; a
+// stopped Space too.
 let END_MS: u64 = 1000
 // The window waits at most this long for events while it relays, in ms.
 let SPACE_POLL_MS: i32 = 4
 // The most bytes the window holds for one direction of a connection.
 let RELAY_CAP: usize = 262144
+// The person's context goes to the Spaces at most this often, in ms.
+let CONTEXT_MS: u64 = 100
 
-/// What an agent gets when its Space ended under it (JSON lines).
-let CRASHED = "{\"id\":null,\"ok\":false,\"error\":\"the Space crashed\"}\n"
-// The same for MCP: a log notification (a response needs a request id).
-let CRASHED_MCP = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"error\",\"logger\":\"dweller\",\"data\":{\"error\":\"the Space crashed\"}}}\n"
-/// Why `user_context` fails in a Space.
-let NO_CONTEXT = "the user's context is not available in a Space yet"
+/// What an agent gets when its Space ended under it.
+let CRASHED = "the Space crashed"
+/// Why `user_context` fails in a Space that has no context yet.
+let NO_CONTEXT = "the user's context is not available yet"
 
 let SPACE_USAGE = "usage: dweller space --control FD --agent-socket PATH [--width W] [--height H] [--font fixed|system] [--no-js]"
 
-/// The Space serving a connection, as the window sees it.
+/// A Space, as the window sees it.
 pub struct Space {
+    // Its number for agents and the person (never reused).
+    id: u32
     pid: i32
-    // The window's end of the control connection.
+    // The window's end of the control connection (-1 once the Space
+    // ended), what came over it and is no whole line yet, and what the
+    // socket did not take yet.
     ctl: i32
-    // The window's connection to the Space's socket (-1 until it
-    // listens), and that socket.
+    ctl_in: text.Builder
+    ctl_out: text.Builder
+    // The list of Spaces and the person's context are to be sent (when
+    // `ctl_out` is empty).
+    lists_due: bool
+    ctx_due: bool
+    // The window's connection to the Space's socket for its agent (-1
+    // until it listens, and while no agent is attached), and that socket.
     fd: i32
     path: text.Builder
-    // Its first line is MCP's (the error it gets on a crash).
+    // An agent is attached to it; its first line was MCP's (the error it
+    // gets on a crash); when it was attached (ms on the monotonic clock).
+    attached: bool
     mcp: bool
-    // When it was started (ms on the monotonic clock).
     started: u64
     // Bytes the Space sent and the agent did not take yet.
     down: text.Builder
     // The agent's end of file was passed on; the Space closed its side.
     shut: bool
     ended: bool
+    // Its name (the hello's, else "Agent N"), and its last status.
+    name: text.Builder
+    state: text.Builder
+    last: text.Builder
+    tabs: u32
+    title: text.Builder
+    url: text.Builder
+    // The person paused it.
+    paused: bool
+    // The person stopped it (at `stop_at`), or its agent closed it: it
+    // goes when its process ends.
+    stopping: bool
+    stop_at: u64
+    closing: bool
+    // It ended unasked.
+    crashed: bool
+}
+
+/// A Space's own side: what the window told it, and what it told the
+/// window.
+pub struct Inside {
+    id: u32
+    name: text.Builder
+    // The other Spaces: their objects (the members of an array), how
+    // many, and their lines for MCP.
+    others: text.Builder
+    others_n: u32
+    others_text: text.Builder
+    // The person's context: the members of `user_context`, its text for
+    // MCP, and whether one came.
+    context: text.Builder
+    context_text: text.Builder
+    has_context: bool
+    // What came over the control connection and is no whole line yet.
+    ctl_in: text.Builder
+    // The status sent last.
+    status: text.Builder
+    // A request is being served.
+    serving: bool
+    // Its agent closed it (`space_close`): it tells the window and quits.
+    closing: bool
+    // The tab its last agent acted on: an agent that attaches acts on it.
+    last_tab: u32
 }
 
 // ---- the window
@@ -103,6 +175,21 @@ fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
     if o.control >= 0 {
         a.control = o.control
         ui.slots[0].?.agent = true
+        a.inside = try ui.alloc.create(Inside {
+            id: 0,
+            name: text.Builder.init(ui.alloc),
+            others: text.Builder.init(ui.alloc),
+            others_n: 0,
+            others_text: text.Builder.init(ui.alloc),
+            context: text.Builder.init(ui.alloc),
+            context_text: text.Builder.init(ui.alloc),
+            has_context: false,
+            ctl_in: text.Builder.init(ui.alloc),
+            status: text.Builder.init(ui.alloc),
+            serving: false,
+            closing: false,
+            last_tab: ui.slots[0].?.id,
+        })
     }
     return true
 }
@@ -113,10 +200,10 @@ fn isSpace(ui: *Ui) bool {
     return a.control >= 0
 }
 
-// Starts the Space of connection `c`, whose first line came. On failure
-// the agent gets CRASHED and the connection ends.
-fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
-    let a = ui.agents.?
+// Starts a Space for connection `c` (or attaches it to a done one), as
+// its first line says. When that cannot be, the agent gets the error
+// and the connection ends.
+fn openSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     let first = c.pending.bytes()
     var line = first
     if std.mem.indexOf(first, '\n') |nl| {
@@ -125,7 +212,33 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
-    let mcp = agent.isMcpHello(tmp, text.trim(line)) || agent.looksLikeRpc(tmp, text.trim(line))
+    let t = text.trim(line)
+    var mcp = agent.looksLikeRpc(tmp, t)
+    var name: []u8 = ""
+    var attach: u32 = 0
+    if agent.helloOf(tmp, t) |h| {
+        mcp = h.mcp
+        if h.why.len > 0 {
+            return failConn(ui.alloc, c, mcp, h.why)
+        }
+        name = h.name
+        attach = h.space
+    }
+    if attach > 0 {
+        return attachSpace(ui, c, tmp, attach, name, mcp)
+    }
+    return startSpace(ui, c, name, mcp)
+}
+
+// Starts a new Space for connection `c`.
+fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool) AllocError!void {
+    let a = ui.agents.?
+    let k = spaceSlot(ui) orelse {
+        return failConn(ui.alloc, c, mcp, "too many Spaces (8)")
+    }
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
     // A directory only the user can read, for the Space's socket.
     var dir = text.Builder.init(tmp)
     try dir.append("/tmp/dweller-")
@@ -137,8 +250,7 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     var sv = [2]i32{-1, -1}
     if mkdtemp(template.ptr) == null || socketpair(AF_UNIX, SOCK_STREAM, 0, sv[..].ptr) != 0 {
         std.log.err("cannot start a Space")
-        failConn(c, mcp)
-        return
+        return failConn(ui.alloc, c, mcp, CRASHED)
     }
     cloexec(sv[0])
     noSigpipe(sv[0])
@@ -171,21 +283,116 @@ fn startSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
         closeFd(sv[1])
         rmdir(template.ptr)
         path.deinit()
-        failConn(c, mcp)
-        return
+        return failConn(ui.alloc, c, mcp, CRASHED)
     }
     closeFd(sv[1])
-    c.space = try ui.alloc.create(Space {
+    a.next_space += 1
+    let sp = try ui.alloc.create(Space {
+        id: a.next_space,
         pid: pid,
         ctl: sv[0],
+        ctl_in: text.Builder.init(ui.alloc),
+        ctl_out: text.Builder.init(ui.alloc),
+        lists_due: false,
+        ctx_due: false,
         fd: -1,
         path: path,
+        attached: true,
         mcp: mcp,
         started: std.time.monotonicMs(),
         down: text.Builder.init(ui.alloc),
         shut: false,
         ended: false,
+        name: text.Builder.init(ui.alloc),
+        state: text.Builder.init(ui.alloc),
+        last: text.Builder.init(ui.alloc),
+        tabs: 1,
+        title: text.Builder.init(ui.alloc),
+        url: text.Builder.init(ui.alloc),
+        paused: false,
+        stopping: false,
+        stop_at: 0,
+        closing: false,
+        crashed: false,
     })
+    if name.len > 0 {
+        try sp.name.append(name)
+    } else {
+        try sp.name.append("Agent ")
+        try sp.name.appendUint(sp.id as u64)
+    }
+    try sp.state.append("idle")
+    a.space_list[k] = sp
+    c.space = sp
+    // Its id and the others, and the person's context, before anything
+    // of its agent's.
+    if a.ctx_msg.len() == 0 {
+        try pushContext(ui, false)
+    }
+    sp.ctx_due = true
+    try listsChanged(ui)
+    if a.paused {
+        try setPaused(ui, sp, true)
+    }
+}
+
+// Attaches connection `c` to the done Space `id`.
+fn attachSpace(ui: *mut Ui, c: *mut Conn, tmp: Allocator, id: u32, name: []u8, mcp: bool) AllocError!void {
+    let a = ui.agents.?
+    var found: ?*mut Space = null
+    for s in a.space_list {
+        if s |sp| {
+            if sp.id == id && !sp.stopping && !sp.closing {
+                found = sp
+            }
+        }
+    }
+    let sp = found orelse {
+        return failConn(ui.alloc, c, mcp, try spaceMessage(tmp, "no Space ", id, ": see \"spaces\""))
+    }
+    if sp.crashed {
+        return failConn(ui.alloc, c, mcp, try spaceMessage(tmp, "Space ", id, " crashed"))
+    }
+    if sp.attached {
+        return failConn(ui.alloc, c, mcp, try spaceMessage(tmp, "Space ", id, " has an agent: only a done Space can be attached to"))
+    }
+    sp.attached = true
+    sp.fd = -1
+    sp.mcp = mcp
+    sp.started = std.time.monotonicMs()
+    sp.down.clear()
+    sp.shut = false
+    sp.ended = false
+    if name.len > 0 {
+        sp.name.clear()
+        try sp.name.append(name)
+    }
+    c.space = sp
+    try listsChanged(ui)
+}
+
+fn spaceMessage(tmp: Allocator, before: []u8, id: u32, after: []u8) AllocError![]u8 {
+    var b = text.Builder.init(tmp)
+    try b.append(before)
+    try b.appendUint(id as u64)
+    try b.append(after)
+    return b.bytes()
+}
+
+// A free place in the list of Spaces: the oldest done or crashed Space
+// makes room when there is none. Null when every Space has an agent.
+fn spaceSlot(ui: *mut Ui) ?usize {
+    let a = ui.agents.?
+    var oldest: ?usize = null
+    for k in 0..MAX_AGENTS {
+        let sp = a.space_list[k] orelse return k
+        if !sp.attached && (oldest == null || sp.id < a.space_list[oldest.?].?.id) {
+            oldest = k
+        }
+    }
+    let k = oldest orelse return null
+    removeSpace(ui, a.space_list[k].?)
+    return k
 }
 
 // Starts the program `argv[0]` (found on the PATH when it has no `/`)
@@ -250,13 +457,23 @@ fn number(tmp: Allocator, v: i64) AllocError![]u8 {
     return b.bytes()
 }
 
-// The connection could not get a Space: it gets the error and ends.
-fn failConn(c: *mut Conn, mcp: bool) {
-    var msg = CRASHED
+// Connection `c` could not get a Space, or its Space crashed: it gets
+// the error (JSON lines: a response without id; MCP: a log message of
+// level error) and ends.
+fn failConn(alloc: Allocator, c: *mut Conn, mcp: bool, why: []u8) AllocError!void {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    var w = agent.Writer.init(&mut b)
     if mcp {
-        msg = CRASHED_MCP
+        try b.append("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"error\",\"logger\":\"dweller\",\"data\":{\"error\":")
+        try w.string(why)
+        try b.append("}}}\n")
+    } else {
+        try b.append("{\"id\":null,\"ok\":false,\"error\":")
+        try w.string(why)
+        try b.append("}\n")
     }
-    sendSome(c.fd, msg)
+    sendSome(c.fd, b.bytes())
     c.gone = true
     c.pending.clear()
 }
@@ -280,16 +497,18 @@ fn relay(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!void {
     }
     if c.space == null {
         if std.mem.indexOf(c.pending.bytes(), '\n') != null || (c.gone && c.pending.len() > 0) {
-            try startSpace(ui, c)
+            try openSpace(ui, c)
         }
         if c.space == null {
             if c.gone {
-                endConn(ui, i)
+                try endConn(ui, i)
             }
             return
         }
     }
     let sp = c.space.?
+    // What the Space told the window comes before what it tells its agent.
+    try serviceCtl(ui, sp)
     if sp.fd < 0 {
         let fd = connectTo(sp.path.bytes())
         if fd >= 0 {
@@ -337,18 +556,22 @@ fn relay(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!void {
     if sp.down.len() > 0 {
         let sent = sendSome(c.fd, sp.down.bytes())
         if sent < 0 {
-            // The agent is gone: so is its Space.
-            endConn(ui, i)
+            // The agent is gone: its Space is done.
+            try endConn(ui, i)
             return
         }
         try dropFront(ui.alloc, &mut sp.down, sent as usize)
     }
     if sp.ended && sp.down.len() == 0 {
-        if !sp.shut {
+        // The Space said `close` (or its last status) before it closed
+        // the connection.
+        try serviceCtl(ui, sp)
+        if !sp.shut && !sp.stopping && !sp.closing {
             // The Space ended before its agent: it crashed.
-            failConn(c, sp.mcp)
+            sp.crashed = true
+            try failConn(ui.alloc, c, sp.mcp, CRASHED)
         }
-        endConn(ui, i)
+        try endConn(ui, i)
     }
 }
 
@@ -379,33 +602,94 @@ fn dropFront(alloc: Allocator, b: *mut text.Builder, n: usize) AllocError!void {
     try b.append(rest)
 }
 
-// Closes connection `i` and its Space's sockets: the Space exits (or
-// has), and is reaped later.
-fn endConn(ui: *mut Ui, i: usize) {
+// Closes connection `i`; its Space stays (done), unless it was stopped,
+// closed or crashed.
+fn endConn(ui: *mut Ui, i: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[i].?
     if c.space |sp| {
-        closeSpace(ui.alloc, a, sp)
         c.space = null
+        try detach(ui, sp)
     }
     dropConn(ui.alloc, c)
     a.conns[i] = null
     ui.dirty = true
 }
 
-fn closeSpace(alloc: Allocator, a: *mut Agents, sp: *mut Space) {
+// The agent of `sp` is gone.
+fn detach(ui: *mut Ui, sp: *mut Space) AllocError!void {
     if sp.fd >= 0 {
         closeFd(sp.fd)
+        sp.fd = -1
     }
-    closeFd(sp.ctl)
+    sp.attached = false
+    sp.down.clear()
+    if sp.stopping || sp.closing {
+        return removeSpace(ui, sp)
+    }
+    if sp.crashed {
+        crashed(ui, sp)
+    }
+    return listsChanged(ui)
+}
+
+// `sp` crashed: its process and sockets go, it stays in the list.
+fn crashed(ui: *mut Ui, sp: *mut Space) {
+    let a = ui.agents.?
+    sp.crashed = true
+    if sp.pid > 0 && !exited(sp) {
+        kill(sp.pid, SIGKILL)
+    }
+    releaseSpace(a, sp)
+    sp.state.clear()
+    sp.state.append("crashed") catch |e| {
+    }
+}
+
+// Removes `sp` from the list (its process is ended or ends).
+fn removeSpace(ui: *mut Ui, sp: *mut Space) {
+    let a = ui.agents.?
+    for k in 0..MAX_AGENTS {
+        if a.space_list[k] |s| {
+            if s == sp {
+                a.space_list[k] = null
+            }
+        }
+    }
+    for c in a.conns {
+        if c |conn| {
+            if conn.space |s| {
+                if s == sp {
+                    conn.space = null
+                }
+            }
+        }
+    }
+    releaseSpace(a, sp)
+    freeSpace(ui.alloc, sp)
+    listsChanged(ui) catch |e| {
+    }
+}
+
+// Closes the sockets of `sp`: its process exits (or has), and is reaped
+// later. Its socket and directory go (a crashed Space left them).
+fn releaseSpace(a: *mut Agents, sp: *mut Space) {
+    if sp.fd >= 0 {
+        closeFd(sp.fd)
+        sp.fd = -1
+    }
+    if sp.ctl >= 0 {
+        closeFd(sp.ctl)
+        sp.ctl = -1
+    }
     if sp.pid > 0 && !exited(sp) {
         a.reap.append(sp.pid) catch |e| {
         }
+        sp.pid = 0
     }
-    // A crashed Space left its socket and directory.
-    removeSocket(sp.path.bytes())
     let p = sp.path.bytes()
     if p.len > 11 {
+        removeSocket(p)
         var dir = @zeroed([110]u8)
         let n = p.len - 11
         if n < 109 {
@@ -415,9 +699,476 @@ fn closeSpace(alloc: Allocator, a: *mut Agents, sp: *mut Space) {
             rmdir(dir[..].ptr)
         }
     }
+    sp.path.clear()
+}
+
+fn freeSpace(alloc: Allocator, sp: *mut Space) {
+    sp.ctl_in.deinit()
+    sp.ctl_out.deinit()
     sp.path.deinit()
     sp.down.deinit()
+    sp.name.deinit()
+    sp.state.deinit()
+    sp.last.deinit()
+    sp.title.deinit()
+    sp.url.deinit()
     alloc.destroy(sp)
+}
+
+/// The window's side of the control connections, each round: what the
+/// Spaces sent, what waits to be sent, the person's context when it
+/// changed, stopped Spaces that do not exit, Spaces that ended.
+fn pollSpaces(ui: *mut Ui) AllocError!void {
+    let a = ui.agents.?
+    let now = std.time.monotonicMs()
+    if a.ctx_due && now - a.ctx_at >= CONTEXT_MS {
+        try pushContext(ui, false)
+    }
+    for k in 0..MAX_AGENTS {
+        let sp = a.space_list[k] orelse continue
+        if sp.ctl >= 0 {
+            try serviceCtl(ui, sp)
+        }
+        if sp.stopping && sp.pid > 0 && now - sp.stop_at > END_MS {
+            kill(sp.pid, SIGKILL)
+        }
+        if sp.ctl < 0 && !sp.attached && !sp.crashed {
+            if sp.stopping || sp.closing {
+                removeSpace(ui, sp)
+            } else {
+                // A done Space ended unasked.
+                crashed(ui, sp)
+                try listsChanged(ui)
+            }
+        }
+    }
+}
+
+// Reads what Space `sp` sent over the control connection and sends
+// what waits.
+fn serviceCtl(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    if sp.ctl < 0 {
+        return
+    }
+    var buf = @zeroed([4096]u8)
+    while true {
+        let n = readSome(sp.ctl, buf[..])
+        if n < 0 {
+            break
+        }
+        if n == 0 {
+            // The Space's process ended.
+            closeFd(sp.ctl)
+            sp.ctl = -1
+            break
+        }
+        try sp.ctl_in.append(buf[0..n as usize])
+    }
+    var changed = false
+    while std.mem.indexOf(sp.ctl_in.bytes(), '\n') |nl| {
+        var arena = Arena.init(ui.alloc)
+        defer arena.deinit()
+        let tmp = arena.allocator()
+        let line = try tmp.alloc(0 as u8, nl)
+        std.mem.copy(line, sp.ctl_in.bytes()[..nl])
+        try dropFront(ui.alloc, &mut sp.ctl_in, nl + 1)
+        if try fromSpace(sp, tmp, line) {
+            changed = true
+        }
+    }
+    if changed {
+        ui.dirty = true
+        try listsChanged(ui)
+    } else {
+        try flushCtl(ui, sp)
+    }
+}
+
+// A line of Space `sp`: `status` or `close`. Whether its status changed.
+fn fromSpace(sp: *mut Space, tmp: Allocator, line: []u8) AllocError!bool {
+    var failure = agent.ParseFailure { pos: 0, msg: "" }
+    var doc = agent.Json.parse(tmp, line, &mut failure) catch |e| {
+        return false
+    }
+    let r = doc.root()
+    let ctl = doc.getStr(r, "ctl") orelse return false
+    if text.eql(ctl, "close") {
+        sp.closing = true
+        return false
+    }
+    if !text.eql(ctl, "status") {
+        return false
+    }
+    var changed = try setText(&mut sp.state, doc.getStr(r, "state") orelse "")
+    if try setText(&mut sp.last, doc.getStr(r, "last") orelse "") {
+        changed = true
+    }
+    if try setText(&mut sp.title, doc.getStr(r, "title") orelse "") {
+        changed = true
+    }
+    if try setText(&mut sp.url, doc.getStr(r, "url") orelse "") {
+        changed = true
+    }
+    let tabs = (doc.getNum(r, "tabs") orelse 0.0) as u32
+    if tabs != sp.tabs {
+        sp.tabs = tabs
+        changed = true
+    }
+    return changed
+}
+
+// Sets `b` to `v`; whether it changed.
+fn setText(b: *mut text.Builder, v: []u8) AllocError!bool {
+    if text.eql(b.bytes(), v) {
+        return false
+    }
+    b.clear()
+    try b.append(v)
+    return true
+}
+
+// Sends what waits for Space `sp`, as much as its socket takes now: the
+// messages, then the list of Spaces and the person's context when they
+// are due.
+fn flushCtl(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    let a = ui.agents.?
+    while sp.ctl >= 0 {
+        if sp.ctl_out.len() > 0 {
+            let n = sendSome(sp.ctl, sp.ctl_out.bytes())
+            if n < 0 {
+                // It ended: the end of file tells.
+                return
+            }
+            try dropFront(ui.alloc, &mut sp.ctl_out, n as usize)
+            if sp.ctl_out.len() > 0 {
+                return
+            }
+        }
+        if sp.lists_due {
+            sp.lists_due = false
+            try listsMessage(ui, sp, &mut sp.ctl_out)
+        } else if sp.ctx_due {
+            sp.ctx_due = false
+            try sp.ctl_out.append(a.ctx_msg.bytes())
+        } else {
+            return
+        }
+    }
+}
+
+// Sends `msg` (a line) to Space `sp`, after what waits.
+fn toSpace(ui: *mut Ui, sp: *mut Space, msg: []u8) AllocError!void {
+    if sp.ctl < 0 {
+        return
+    }
+    try sp.ctl_out.append(msg)
+    return flushCtl(ui, sp)
+}
+
+/// The Spaces changed (one came, went, or its status changed): each one
+/// gets the new list.
+fn listsChanged(ui: *mut Ui) AllocError!void {
+    let a = ui.agents.?
+    for s in a.space_list {
+        if s |sp| {
+            if sp.ctl >= 0 {
+                sp.lists_due = true
+                try flushCtl(ui, sp)
+            }
+        }
+    }
+}
+
+// The Spaces by id.
+fn spacesById(a: *Agents) [8]?*mut Space {
+    var out = @zeroed([8]?*mut Space)
+    var n: usize = 0
+    var after: u32 = 0
+    while n < MAX_AGENTS {
+        var next: ?*mut Space = null
+        for s in a.space_list {
+            if s |sp| {
+                if sp.id > after && (next == null || sp.id < next.?.id) {
+                    next = sp
+                }
+            }
+        }
+        let sp = next orelse break
+        out[n] = sp
+        n += 1
+        after = sp.id
+    }
+    return out
+}
+
+// `{"ctl":"spaces","id":..,"name":..,"profile":"shared","others":[...],
+// "detail":..}`: Space `sp`'s id and name, and the other Spaces.
+fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!void {
+    let a = ui.agents.?
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    var detail = text.Builder.init(tmp)
+    var w = agent.Writer.init(out)
+    try w.beginObject()
+    try w.key("ctl")
+    try w.string("spaces")
+    try w.key("id")
+    try w.int(sp.id as i64)
+    try w.key("name")
+    try w.string(sp.name.bytes())
+    try w.key("profile")
+    try w.string("shared")
+    try w.key("others")
+    try w.beginArray()
+    for s in spacesById(a) {
+        let o = s orelse continue
+        if o == sp {
+            continue
+        }
+        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
+        try spaceLine(&mut detail, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
+    }
+    try w.endArray()
+    try w.key("detail")
+    try w.string(detail.bytes())
+    try w.endObject()
+    try out.appendByte('\n')
+}
+
+// A Space in `spaces`.
+fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32) AllocError!void {
+    try w.beginObject()
+    try w.key("id")
+    try w.int(id as i64)
+    try w.key("name")
+    try w.string(name)
+    try w.key("mine")
+    try w.boolean(mine)
+    try w.key("state")
+    try w.string(state)
+    try w.key("last")
+    try w.string(last)
+    try w.key("tabs")
+    try w.int(tabs as i64)
+    try w.key("profile")
+    try w.string("shared")
+    try w.key("watched")
+    try w.boolean(false)
+    try w.endObject()
+}
+
+// A Space for MCP: `- Space 2 "Name" (yours): idle, 1 tab; last: ...`.
+fn spaceLine(b: *mut text.Builder, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32) AllocError!void {
+    if b.len() > 0 {
+        try b.appendByte('\n')
+    }
+    try b.append("- Space ")
+    try b.appendUint(id as u64)
+    try b.append(" \"")
+    try b.append(name)
+    try b.appendByte('"')
+    if mine {
+        try b.append(" (yours)")
+    }
+    try b.append(": ")
+    try b.append(state)
+    try b.append(", ")
+    try b.appendUint(tabs as u64)
+    if tabs == 1 {
+        try b.append(" tab")
+    } else {
+        try b.append(" tabs")
+    }
+    if last.len > 0 {
+        try b.append("; last: ")
+        try b.append(last)
+    }
+}
+
+/// The person's context may have changed (their input, a load, the
+/// page's scripts): it goes to the Spaces within CONTEXT_MS.
+fn contextMayChange(ui: *mut Ui) {
+    let a = ui.agents orelse return
+    if a.spaces {
+        a.ctx_due = true
+    }
+}
+
+// Sends the person's context (`user_context`'s members) to every Space
+// when it changed (or `force`).
+fn pushContext(ui: *mut Ui, force: bool) AllocError!void {
+    let a = ui.agents.?
+    a.ctx_due = false
+    a.ctx_at = std.time.monotonicMs()
+    var any = false
+    for s in a.space_list {
+        if s |sp| {
+            if sp.ctl >= 0 {
+                any = true
+            }
+        }
+    }
+    if !any && a.ctx_msg.len() > 0 {
+        return
+    }
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    var reply = agent.newReply()
+    try contextReply(ui, tmp, &mut reply, false)
+    var b = text.Builder.init(tmp)
+    try b.append("{\"ctl\":\"context\",")
+    try b.append(reply.fields)
+    try b.append(",\"detail\":")
+    try agent.writeString(&mut b, reply.detail)
+    try b.append("}\n")
+    if !force && text.eql(b.bytes(), a.ctx_msg.bytes()) {
+        return
+    }
+    a.ctx_msg.clear()
+    try a.ctx_msg.append(b.bytes())
+    for s in a.space_list {
+        if s |sp| {
+            if sp.ctl >= 0 {
+                sp.ctx_due = true
+                try flushCtl(ui, sp)
+            }
+        }
+    }
+}
+
+/// Cmd+Shift+K with Spaces: each one gets the new context, then
+/// `pointed` (the members of the `user_pointed` event).
+fn pointSpaces(ui: *mut Ui, fields: []u8) AllocError!void {
+    let a = ui.agents.?
+    try pushContext(ui, false)
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+    try b.append("{\"ctl\":\"pointed\",")
+    try b.append(fields)
+    try b.append("}\n")
+    for s in a.space_list {
+        if s |sp| {
+            if sp.ctl < 0 {
+                continue
+            }
+            if sp.ctx_due {
+                sp.ctx_due = false
+                try sp.ctl_out.append(a.ctx_msg.bytes())
+            }
+            try toSpace(ui, sp, b.bytes())
+        }
+    }
+}
+
+/// The person pauses (or resumes) Space `sp`.
+fn setPaused(ui: *mut Ui, sp: *mut Space, on: bool) AllocError!void {
+    if sp.paused == on {
+        return
+    }
+    sp.paused = on
+    if on {
+        return toSpace(ui, sp, "{\"ctl\":\"pause\"}\n")
+    }
+    return toSpace(ui, sp, "{\"ctl\":\"resume\"}\n")
+}
+
+/// Cmd+Shift+P while the person's tabs are shown: every Space.
+fn pauseSpaces(ui: *mut Ui, on: bool) AllocError!void {
+    let a = ui.agents orelse return
+    for s in a.space_list {
+        if s |sp| {
+            try setPaused(ui, sp, on)
+        }
+    }
+}
+
+/// The person stops Space `sp`: its agent gets `stopped` and the end of
+/// its connection; the Space goes.
+fn stopSpace(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    if sp.stopping {
+        return
+    }
+    sp.stopping = true
+    sp.stop_at = std.time.monotonicMs()
+    if sp.ctl < 0 {
+        // A crashed one: it goes from the list.
+        if !sp.attached {
+            removeSpace(ui, sp)
+        }
+        return
+    }
+    return toSpace(ui, sp, "{\"ctl\":\"stop\"}\n")
+}
+
+/// The scripted words `pause:N`, `resume:N` and `stop:N` (Space N; the
+/// person's buttons for one Space come with its chip, P9.4). False when
+/// `word` is none of them.
+fn spaceWord(ui: *mut Ui, word: []u8) AllocError!bool {
+    let w = spaceWordOf(word) orelse return false
+    let a = ui.agents orelse return true
+    for s in a.space_list {
+        if s |sp| {
+            if sp.id == w.id {
+                if w.what == 2 {
+                    try stopSpace(ui, sp)
+                } else {
+                    try setPaused(ui, sp, w.what == 0)
+                }
+                return true
+            }
+        }
+    }
+    return true
+}
+
+struct SpaceWord {
+    // 0 pause, 1 resume, 2 stop.
+    what: u8
+    id: u32
+}
+
+fn spaceWordOf(word: []u8) ?SpaceWord {
+    var what: u8 = 0
+    var rest: []u8 = ""
+    if text.startsWith(word, "pause:") {
+        rest = word[6..]
+    } else if text.startsWith(word, "resume:") {
+        what = 1
+        rest = word[7..]
+    } else if text.startsWith(word, "stop:") {
+        what = 2
+        rest = word[5..]
+    } else {
+        return null
+    }
+    let n = text.parseInt(rest) catch |e| {
+        return null
+    }
+    if n < 1 || n > 4294967295 {
+        return null
+    }
+    return SpaceWord { what: what, id: n as u32 }
+}
+
+/// `--state`: `space ID "NAME" STATE: LAST` for each Space.
+fn writeSpaces(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
+    let a = ui.agents orelse return
+    for s in spacesById(a) {
+        let sp = s orelse continue
+        try out.append("space ")
+        try out.appendUint(sp.id as u64)
+        try out.append(" \"")
+        try out.append(sp.name.bytes())
+        try out.append("\" ")
+        try out.append(sp.state.bytes())
+        if sp.last.len() > 0 {
+            try out.append(": ")
+            try out.append(sp.last.bytes())
+        }
+        try out.appendByte('\n')
+    }
 }
 
 /// Reaps the Spaces that exited.
@@ -440,12 +1191,16 @@ fn reapSpaces(a: *mut Agents) {
 /// killed. None is left behind.
 fn endSpaces(ui: *mut Ui) {
     let a = ui.agents orelse return
-    for i in 0..MAX_AGENTS {
-        if a.conns[i] |c| {
-            if c.space |sp| {
-                closeSpace(ui.alloc, a, sp)
-                c.space = null
-            }
+    for c in a.conns {
+        if c |conn| {
+            conn.space = null
+        }
+    }
+    for k in 0..MAX_AGENTS {
+        if a.space_list[k] |sp| {
+            releaseSpace(a, sp)
+            freeSpace(ui.alloc, sp)
+            a.space_list[k] = null
         }
     }
     let end = std.time.monotonicMs() + END_MS
@@ -536,19 +1291,268 @@ fn waitInSpace(ui: *mut Ui, timeout: i32) {
     poll(fds[..].ptr, n as u64, t)
 }
 
-/// The window's control connection: at its end (the window closed or
-/// was killed) the Space quits. P9.2 sends nothing over it yet.
-fn watchControl(ui: *mut Ui, buf: []mut u8) {
+/// The window's control connection: what the window sends (see the top
+/// of this file); at its end (the window closed or was killed) the Space
+/// quits.
+fn watchControl(ui: *mut Ui, buf: []mut u8) AllocError!void {
     let a = ui.agents.?
+    let me = a.inside.?
     while true {
         let n = readSome(a.control, buf)
         if n < 0 {
-            return
+            break
         }
         if n == 0 {
             ui.quit = true
-            return
+            break
         }
+        try me.ctl_in.append(buf[0..n as usize])
+    }
+    while std.mem.indexOf(me.ctl_in.bytes(), '\n') |nl| {
+        var arena = Arena.init(ui.alloc)
+        defer arena.deinit()
+        let tmp = arena.allocator()
+        let line = try tmp.alloc(0 as u8, nl)
+        std.mem.copy(line, me.ctl_in.bytes()[..nl])
+        try dropFront(ui.alloc, &mut me.ctl_in, nl + 1)
+        try fromWindow(ui, tmp, line)
+    }
+}
+
+// A line of the window's.
+fn fromWindow(ui: *mut Ui, tmp: Allocator, line: []u8) AllocError!void {
+    let a = ui.agents.?
+    let me = a.inside.?
+    var failure = agent.ParseFailure { pos: 0, msg: "" }
+    var doc = agent.Json.parse(tmp, line, &mut failure) catch |e| {
+        return
+    }
+    let r = doc.root()
+    let ctl = doc.getStr(r, "ctl") orelse return
+    if text.eql(ctl, "spaces") {
+        me.id = (doc.getNum(r, "id") orelse 0.0) as u32
+        me.name.clear()
+        try me.name.append(doc.getStr(r, "name") orelse "")
+        me.others.clear()
+        me.others_n = 0
+        if doc.get(r, "others") |arr| {
+            var b = text.Builder.init(tmp)
+            try doc.write(arr, &mut b)
+            let s = b.bytes()
+            if s.len >= 2 {
+                try me.others.append(s[1..s.len - 1])
+            }
+            var cur = doc.first(arr)
+            while cur |k| {
+                me.others_n += 1
+                cur = doc.next(k)
+            }
+        }
+        me.others_text.clear()
+        try me.others_text.append(doc.getStr(r, "detail") orelse "")
+        return
+    }
+    if text.eql(ctl, "context") {
+        me.context.clear()
+        try membersExcept(&mut doc, r, &mut me.context)
+        me.context_text.clear()
+        try me.context_text.append(doc.getStr(r, "detail") orelse "")
+        me.has_context = true
+        return
+    }
+    if text.eql(ctl, "pointed") {
+        var b = text.Builder.init(tmp)
+        try membersExcept(&mut doc, r, &mut b)
+        return toConns(ui, tmp, "user_pointed", b.bytes())
+    }
+    if text.eql(ctl, "pause") || text.eql(ctl, "resume") {
+        a.paused = text.eql(ctl, "pause")
+        var name = "resumed"
+        if a.paused {
+            name = "paused"
+        }
+        try toConns(ui, tmp, name, try spaceField(tmp, me.id))
+        return spaceStatus(ui)
+    }
+    if text.eql(ctl, "stop") {
+        try toConns(ui, tmp, "stopped", try spaceField(tmp, me.id))
+        ui.quit = true
+    }
+}
+
+// The members of object `r` of `doc` but `ctl` and `detail`, to `out`.
+fn membersExcept(doc: *mut agent.Json, r: usize, out: *mut text.Builder) AllocError!void {
+    var cur = doc.first(r)
+    while cur |k| {
+        let key = doc.node(k).key
+        if !text.eql(key, "ctl") && !text.eql(key, "detail") {
+            if out.len() > 0 {
+                try out.appendByte(',')
+            }
+            try agent.writeString(out, key)
+            try out.appendByte(':')
+            try doc.write(k, out)
+        }
+        cur = doc.next(k)
+    }
+}
+
+fn spaceField(tmp: Allocator, id: u32) AllocError![]u8 {
+    var b = text.Builder.init(tmp)
+    try b.append("\"space\":")
+    try b.appendUint(id as u64)
+    return b.bytes()
+}
+
+// Event `name` with `fields` to each connection of this Space.
+fn toConns(ui: *mut Ui, tmp: Allocator, name: []u8, fields: []u8) AllocError!void {
+    let a = ui.agents.?
+    for c in a.conns {
+        if c |conn| {
+            if conn.mode == 0 || conn.gone {
+                continue
+            }
+            var out = text.Builder.init(tmp)
+            try agent.writeEvent(conn.mode == 2, name, fields, &mut out)
+            try out.appendByte('\n')
+            if !sendAll(conn.fd, out.bytes()) {
+                conn.gone = true
+            }
+        }
+    }
+}
+
+/// A Space tells the window its status when it changed: `state`
+/// (`working` while a request runs, `waiting` during a `wait`, `idle`,
+/// `paused`, `done` when no agent is attached), `last` (its last
+/// action), `tabs`, and the `title` and `url` of its agent's tab.
+fn spaceStatus(ui: *mut Ui) AllocError!void {
+    let a = ui.agents orelse return
+    let me = a.inside orelse return
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    var state = "idle"
+    var slot: ?*mut TabSlot = null
+    var any = false
+    var waiting = false
+    for c in a.conns {
+        if c |conn| {
+            any = true
+            if conn.waiting {
+                waiting = true
+            }
+            if slot == null {
+                slot = connTab(ui, conn)
+            }
+        }
+    }
+    if !any {
+        state = "done"
+    } else if a.paused {
+        state = "paused"
+    } else if me.serving {
+        state = "working"
+    } else if waiting {
+        state = "waiting"
+    }
+    if slot == null {
+        if slotIndex(ui, me.last_tab) |k| {
+            slot = ui.slots[k].?
+        } else {
+            slot = ui.slots[0].?
+        }
+    }
+    let s = slot.?
+    var b = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut b)
+    try w.beginObject()
+    try w.key("ctl")
+    try w.string("status")
+    try w.key("state")
+    try w.string(state)
+    try w.key("last")
+    try w.string(spaceLast(a))
+    try w.key("tabs")
+    try w.int(ui.count as i64)
+    try w.key("title")
+    try w.string(slotTitle(s))
+    try w.key("url")
+    try w.string(s.session.tab.href())
+    try w.endObject()
+    try b.appendByte('\n')
+    if text.eql(b.bytes(), me.status.bytes()) {
+        return
+    }
+    me.status.clear()
+    try me.status.append(b.bytes())
+    sendAll(a.control, b.bytes())
+}
+
+// The Space's last action, without "agent: ".
+fn spaceLast(a: *Agents) []u8 {
+    let s = a.activity.bytes()
+    if text.startsWith(s, "agent: ") {
+        return s[7..]
+    }
+    return s
+}
+
+/// `spaces` in a Space: its own first (`working`, as it serves this
+/// request, or `paused`), then the others as the window last told.
+fn spacesReply(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+    let a = ui.agents.?
+    var b = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut b)
+    var detail = text.Builder.init(tmp)
+    var n: u32 = 0
+    try w.beginObject()
+    try w.key("spaces")
+    try w.beginArray()
+    if a.inside |me| {
+        var state = "working"
+        if a.paused {
+            state = "paused"
+        }
+        try spaceEntry(&mut w, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32)
+        try spaceLine(&mut detail, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32)
+        n = 1 + me.others_n
+        if me.others.len() > 0 {
+            try b.appendByte(',')
+            try b.append(me.others.bytes())
+            try detail.appendByte('\n')
+            try detail.append(me.others_text.bytes())
+        }
+    }
+    try w.endArray()
+    try w.endObject()
+    var msg = text.Builder.init(tmp)
+    try msg.appendUint(n as u64)
+    if n == 1 {
+        try msg.append(" space")
+    } else {
+        try msg.append(" spaces")
+    }
+    reply.message = msg.bytes()
+    reply.fields = members(&b)
+    reply.detail = detail.bytes()
+}
+
+/// `space_close` in a Space: answered, then the window is told and the
+/// Space quits (`afterSpaceRequest`).
+fn closeOwnSpace(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+    let me = ui.agents.?.inside.?
+    me.closing = true
+    reply.message = try spaceMessage(tmp, "closing Space ", me.id, "")
+}
+
+/// After a request was answered in a Space: `space_close` ends it.
+fn afterSpaceRequest(ui: *mut Ui) {
+    let a = ui.agents orelse return
+    let me = a.inside orelse return
+    if me.closing && !ui.quit {
+        sendAll(a.control, "{\"ctl\":\"close\"}\n")
+        ui.quit = true
     }
 }
 
@@ -560,6 +1564,17 @@ fn leaveSpace(ui: *mut Ui) {
         return
     }
     closeFd(a.control)
+    if a.inside |me| {
+        me.name.deinit()
+        me.others.deinit()
+        me.others_text.deinit()
+        me.context.deinit()
+        me.context_text.deinit()
+        me.ctl_in.deinit()
+        me.status.deinit()
+        ui.alloc.destroy(me)
+        a.inside = null
+    }
     let p = a.path
     var end = p.len
     while end > 0 && p[end - 1] != '/' {
@@ -604,7 +1619,8 @@ pub fn spaceMain(alloc: Allocator, args: [][]u8) i32 {
         return 2
     }
     o.control = control as i32
-    o.exit_when_idle = true
+    // It stays when its agent leaves (done), until the window stops it.
+    o.exit_when_idle = false
     // Headless: no window shows, no person types.
     setenv("SDL_VIDEODRIVER".ptr, "dummy".ptr, 1)
     return runWith(alloc, o)

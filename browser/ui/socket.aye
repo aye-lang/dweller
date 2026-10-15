@@ -11,6 +11,7 @@
 // `sockaddr_un`, MSG_NOSIGNAL or SO_NOSIGPIPE) are chosen by
 // `@targetOs()` when the program is built.
 
+import agent
 import std
 import std.mem.AllocError
 import std.mem.Allocator
@@ -260,24 +261,62 @@ fn writeAll(fd: i32, data: []u8) bool {
     return true
 }
 
-let CONNECT_USAGE = "usage: dweller connect SOCKET [--mcp]"
+// The hello of `dweller connect`: `{"mcp":true,"name":..,"space":N}`.
+fn connectHello(w: *mut agent.Writer, mcp: bool, name: ?[]u8, space: i64) AllocError!void {
+    try w.beginObject()
+    if mcp {
+        try w.key("mcp")
+        try w.boolean(true)
+    }
+    if name |n| {
+        try w.key("name")
+        try w.string(n)
+    }
+    if space > 0 {
+        try w.key("space")
+        try w.int(space)
+    }
+    try w.endObject()
+    try w.out.appendByte('\n')
+}
 
-/// `dweller connect SOCKET [--mcp]`: copies stdin to the window's agent
-/// socket and the socket to stdout, until either ends. With `--mcp`, the
-/// connection speaks MCP (it starts with the hello `{"mcp":true}`). The
-/// exit status.
+let CONNECT_USAGE = "usage: dweller connect SOCKET [--mcp] [--name NAME] [--space N]"
+
+/// `dweller connect SOCKET [--mcp] [--name NAME] [--space N]`: copies
+/// stdin to the window's agent socket and the socket to stdout, until
+/// either ends. It starts with the hello when one is asked for: with
+/// `--mcp` the connection speaks MCP (`{"mcp":true}`), `--name` names
+/// its Space, `--space N` attaches to the done Space N. The exit status.
 pub fn connectMain(alloc: Allocator, args: [][]u8) i32 {
     var path: []u8 = ""
     var mcp = false
-    for a in args {
+    var name: ?[]u8 = null
+    var space: i64 = 0
+    var i: usize = 0
+    while i < args.len {
+        let a = args[i]
         if text.eql(a, "--mcp") {
             mcp = true
+        } else if text.eql(a, "--name") && i + 1 < args.len {
+            name = args[i + 1]
+            i += 1
+        } else if text.eql(a, "--space") && i + 1 < args.len {
+            space = text.parseInt(args[i + 1]) catch |e| {
+                std.log.err(CONNECT_USAGE)
+                return 2
+            }
+            if space < 1 {
+                std.log.err(CONNECT_USAGE)
+                return 2
+            }
+            i += 1
         } else if path.len == 0 && !text.startsWith(a, "-") {
             path = a
         } else {
             std.log.err(CONNECT_USAGE)
             return 2
         }
+        i += 1
     }
     if path.len == 0 {
         std.log.err(CONNECT_USAGE)
@@ -289,9 +328,18 @@ pub fn connectMain(alloc: Allocator, args: [][]u8) i32 {
         return 1
     }
     defer closeFd(fd)
-    if mcp && !sendAll(fd, "{\"mcp\":true}\n") {
-        std.log.err("the window closed the connection")
-        return 1
+    if mcp || name != null || space > 0 {
+        var hello = text.Builder.init(alloc)
+        defer hello.deinit()
+        var w = agent.Writer.init(&mut hello)
+        connectHello(&mut w, mcp, name, space) catch |e| {
+            std.log.err("out of memory")
+            return 1
+        }
+        if !sendAll(fd, hello.bytes()) {
+            std.log.err("the window closed the connection")
+            return 1
+        }
     }
     let buf = alloc.alloc(0 as u8, 65536) catch |e| {
         std.log.err("out of memory")

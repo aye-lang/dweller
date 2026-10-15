@@ -14,6 +14,7 @@
 import dom
 import dom.NodeId
 import html
+import std
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -54,7 +55,7 @@ pub fn newReply() Reply {
 }
 
 // The commands a window runs itself (ui/agents.aye).
-let WINDOW_COMMANDS = "tabs tab_new tab_select tab_close user_context wait"
+let WINDOW_COMMANDS = "tabs tab_new tab_select tab_close user_context wait spaces space_close"
 // The commands refused while the user paused the agents (the others
 // only look).
 let ACTING = "navigate back forward reload click type select press scroll eval tab_new tab_select tab_close"
@@ -126,6 +127,56 @@ pub fn isMcpHello(tmp: Allocator, line: []u8) bool {
     defer doc.deinit()
     let r = doc.root()
     return doc.kind(r) == JKind.Object && (doc.getBool(r, "mcp") orelse false) && doc.get(r, "cmd") == null
+}
+
+/// The hello: a connection's first line when it is an object without
+/// `cmd` and without `jsonrpc` (no response). `mcp`: the connection
+/// speaks MCP; `name`: the Space's name ("" for "Agent N"); `space`: the
+/// id of a done Space to attach to, 0 for a new one; `why`: why the
+/// hello cannot be honored ("" when it can).
+pub struct Hello {
+    mcp: bool
+    name: []u8
+    space: u32
+    why: []u8
+}
+
+/// The hello of `line`, or null when `line` is not one.
+pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var doc = Json.parse(tmp, line, &mut failure) catch |e| {
+        return null
+    }
+    defer doc.deinit()
+    let r = doc.root()
+    if doc.kind(r) != JKind.Object || doc.get(r, "cmd") != null || doc.get(r, "jsonrpc") != null {
+        return null
+    }
+    let name = doc.getStr(r, "name") orelse ""
+    let copy = tmp.alloc(0 as u8, name.len) catch |e| {
+        return null
+    }
+    std.mem.copy(copy, name)
+    var h = Hello { mcp: doc.getBool(r, "mcp") orelse false, name: copy, space: 0, why: "" }
+    if doc.get(r, "space") != null {
+        let n = doc.getNum(r, "space") orelse -1.0
+        let new = doc.getStr(r, "space") orelse ""
+        if n >= 1.0 && n <= 4294967295.0 && n == std.math.floor(n) {
+            h.space = n as u32
+        } else if !text.eql(new, "new") {
+            h.why = "\"space\" is \"new\" or the id of a done Space (a number)"
+        }
+    }
+    if doc.getStr(r, "profile") |profile| {
+        if text.eql(profile, "isolated") {
+            h.why = "the profile \"isolated\" is not available yet: only \"shared\""
+        } else if !text.eql(profile, "shared") {
+            h.why = "\"profile\" is \"shared\" or \"isolated\""
+        }
+    } else if doc.get(r, "profile") != null {
+        h.why = "\"profile\" is \"shared\" or \"isolated\""
+    }
+    return h
 }
 
 pub fn looksLikeRpc(tmp: Allocator, line: []u8) bool {
