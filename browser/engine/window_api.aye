@@ -52,7 +52,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "storage", 4, akStorage)
     try defMethod(it, o, "setStorageHandler", 1, akSetStorageHandler)
     try defMethod(it, o, "fetch", 1, akFetch)
-    try defMethod(it, o, "fetchStart", 5, akFetchStart)
+    try defMethod(it, o, "fetchStart", 6, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
@@ -483,15 +483,16 @@ fn akSetDispatch(it: *mut Interp, a: Args) JsError!Value {
 // ---- fetch
 
 // The response to a request of argument 0: { status, url, type, body },
-// or { error } when it failed. Arguments 1 to 3 are optional: the method
-// (GET), more headers ("name: value" lines separated by "\n") and the
-// body, a string of code units 0..255 (the bytes, as Blob keeps them).
-// The request is made now (a synchronous XMLHttpRequest).
+// or { error } when it failed. Arguments 1 to 4 are optional: the method
+// (GET), more headers ("name: value" lines separated by "\n"), the
+// body, a string of code units 0..255 (the bytes, as Blob keeps them),
+// and the credentials mode ("omit", "same-origin", the default, or
+// "include"). The request is made now (a synchronous XMLHttpRequest).
 fn akFetch(it: *mut Interp, a: Args) JsError!Value {
     return fetchWith(it, a, false)
 }
 
-// fetchStart(url, method, headers, body, callback): the request of
+// fetchStart(url, method, headers, body, credentials, callback): the request of
 // akFetch, in the background (net.startRequest) when it can be; queues
 // the task that calls `callback` once it ended, with the request's id
 // for fetchTake, or with the response (made now: another scheme, a
@@ -500,7 +501,7 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
 // request when it runs (script.aye's runnable), so that the order of
 // tasks never depends on the network.
 fn akFetchStart(it: *mut Interp, a: Args) JsError!Value {
-    _ = try js.callableArg(it, a, 4)
+    _ = try js.callableArg(it, a, 5)
     return fetchWith(it, a, true)
 }
 
@@ -575,7 +576,17 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     }
     defer target.deinit(it.alloc)
     let page = scriptOf(it).page
-    var req = net.Request { kind: net.Kind.Other, referrer: page.url.href }
+    var req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, credentials: net.Credentials.SameOrigin }
+    if !js.isUndef(it.arg(a, 4)) {
+        let mode = try it.builder()
+        defer it.release(mode)
+        try argText(it, a, 4, mode)
+        if text.eql(mode.bytes(), "omit") {
+            req.credentials = net.Credentials.Omit
+        } else if text.eql(mode.bytes(), "include") {
+            req.credentials = net.Credentials.Include
+        }
+    }
     let method = try it.builder()
     defer it.release(method)
     if !js.isUndef(it.arg(a, 1)) {
@@ -642,7 +653,7 @@ fn responseFields(it: *mut Interp, r: u32, res: *net.Response, href: []u8) JsErr
 }
 
 // The end of fetchWith, its result object on the stack: the object
-// itself, or (`queue`) the id of the task that calls argument 4 with the
+// itself, or (`queue`) the id of the task that calls argument 5 with the
 // background request `waits` (0: with the object).
 fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     if !queue {
@@ -651,7 +662,7 @@ fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     let s = scriptOf(it)
     let arr = try it.newArray(0)
     try it.push(js.objVal(arr))
-    try it.heap.pushElem(arr, it.arg(a, 4))
+    try it.heap.pushElem(arr, it.arg(a, 5))
     if waits != 0 {
         try it.heap.pushElem(arr, js.numVal(waits as f64))
     } else {
@@ -826,7 +837,8 @@ fn dropComputed(s: *mut Script) {
 fn akCookie(it: *mut Interp, a: Args) JsError!Value {
     let b = try it.builder()
     defer it.release(b)
-    net.scriptCookies(&scriptOf(it).page.url, b) catch |e| {
+    let page = scriptOf(it).page
+    net.scriptCookies(&page.url, &rootPage(page).url, b) catch |e| {
         return JsError.OutOfMemory
     }
     return it.newString(b.bytes())
@@ -836,7 +848,8 @@ fn akSetCookie(it: *mut Interp, a: Args) JsError!Value {
     let b = try it.builder()
     defer it.release(b)
     try argText(it, a, 0, b)
-    net.setScriptCookie(&scriptOf(it).page.url, b.bytes()) catch |e| {
+    let page = scriptOf(it).page
+    net.setScriptCookie(&page.url, &rootPage(page).url, b.bytes()) catch |e| {
         return JsError.OutOfMemory
     }
     return Value.Undefined

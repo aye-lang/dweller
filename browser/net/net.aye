@@ -71,6 +71,17 @@ pub enum Kind {
     Other
 }
 
+/// Whether a request sends and stores cookies (Fetch's credentials
+/// mode): navigations and subresources include them; fetch() is
+/// same-origin unless told otherwise, XMLHttpRequest too without
+/// `withCredentials`.
+pub enum Credentials {
+    Include
+    // Only to the origin of `Request.referrer` (each hop of a redirect).
+    SameOrigin
+    Omit
+}
+
 pub struct Request {
     kind: Kind = Kind.Document
     // The URL of the page that asks, sent as the Referer (see
@@ -84,6 +95,13 @@ pub struct Request {
     // More headers (a script's), "name: value" lines separated by "\n".
     // An Accept or Accept-Language here replaces the default one.
     headers: []u8 = ""
+    // The URL of the top-level page the request is for, whose site is
+    // the site for cookies (cookies.aye `contextOf`): set for a frame's
+    // document. "" for a top-level navigation (a Document), and for a
+    // subresource of a page, whose top-level page is its `referrer`'s
+    // (`noteFrame`).
+    top: []u8 = ""
+    credentials: Credentials = Credentials.Include
 }
 
 /// Fetches `target` as a document the user asked for.

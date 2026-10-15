@@ -5,10 +5,25 @@
 // domain the host is not in, or one without a dot, rejects the cookie),
 // Path (the directory of the URL without it), Expires, Max-Age (wins
 // over Expires; zero or less deletes), Secure (set and sent over
-// https only), HttpOnly (hidden from scripts); SameSite is ignored. The
-// `__Secure-` and `__Host-` name prefixes are checked. A cookie with the
-// name, domain and path of a stored one replaces it (keeping its
-// creation order). No public suffix list.
+// https only), HttpOnly (hidden from scripts), SameSite (RFC 6265bis:
+// Strict, Lax or None; Lax when it is missing or unknown; None needs
+// Secure, else the cookie is rejected). A Domain that is a public suffix
+// (psl.aye: "co.uk", "github.io") rejects the cookie, unless it is the
+// host itself (then host-only). A name and value of more than 4096 bytes
+// reject it. The `__Secure-` and `__Host-` name prefixes are checked. A
+// cookie with the name, domain and path of a stored one replaces it
+// (keeping its creation order).
+//
+// Which cookies go with a request is its `Context` (`contextOf`, from
+// the request and the site for cookies): all of them on a same-site
+// request; Lax and None ones on a cross-site top-level navigation by
+// GET or HEAD, None ones on any other cross-site top-level navigation
+// (a POST); none at all on a third-party request (a subresource, a
+// frame's document, a fetch, of another site than the top-level page),
+// whose `Set-Cookie` is not stored either: third-party cookies are
+// blocked, as in Safari and Firefox's Enhanced Tracking Protection, with
+// no exceptions yet (not even `SameSite=None; Secure`). `credentials:
+// "omit"` (and "same-origin" across origins) sends and stores none.
 //
 // The jar lives in memory for the process; with a profile directory
 // (profile.aye) it is loaded from `<profile>/cookies` at the start and
@@ -18,15 +33,51 @@
 // environment variable DWELLER_COOKIE_FILE names a file, that file is
 // used instead, with the persistent cookies only, as before profiles.
 // The file has one cookie per line: domain, host-only, path, secure,
-// http-only, expiry (0 for a session cookie), name and value, separated
-// by tabs. Expired cookies are dropped on load.
+// http-only, expiry (0 for a session cookie), SameSite ("strict", "lax"
+// or "none"), name and value, separated by tabs; a line without the
+// SameSite field (written before it) is Lax. Expired cookies are dropped
+// on load.
 
 import std
 import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
+import url
 import url.Url
+
+/// A cookie's SameSite attribute (Lax when it has none).
+pub enum SameSite {
+    Strict
+    Lax
+    None
+}
+
+/// How the jar's cookies go with a request (`contextOf`).
+pub enum Context {
+    // A same-site request: every cookie is sent, any can be set.
+    SameSite
+    // A cross-site top-level navigation by GET or HEAD: Lax and None
+    // cookies are sent; any can be set.
+    CrossSiteGet
+    // A cross-site top-level navigation by another method (a POST):
+    // None cookies are sent; any can be set.
+    CrossSitePost
+    // A request of another site than the top-level page's (a
+    // subresource, a frame's document, fetch): third-party cookies are
+    // blocked, nothing is sent or set.
+    ThirdParty
+    // `credentials: "omit"`, or "same-origin" across origins.
+    Omit
+}
+
+/// Are cookies set by the response of a request in `context` stored?
+pub fn storesIn(context: Context) bool {
+    return context != Context.ThirdParty && context != Context.Omit
+}
+
+// The largest name and value, together, of a cookie (RFC 6265bis).
+let MAX_NAME_VALUE: usize = 4096
 
 struct Cookie {
     name: []mut u8
@@ -40,6 +91,7 @@ struct Cookie {
     host_only: bool
     secure: bool
     http_only: bool
+    same_site: SameSite
     // The order of creation (sent first among equal paths).
     created: u64
 }
@@ -78,7 +130,7 @@ pub struct Jar {
             name = text.trim(pair[..eq])
             value = text.trim(pair[eq + 1..])
         }
-        if name.len == 0 && value.len == 0 {
+        if (name.len == 0 && value.len == 0) || name.len + value.len > MAX_NAME_VALUE {
             return
         }
         var domain: []u8 = ""
@@ -88,6 +140,7 @@ pub struct Jar {
         var max_age = false
         var secure = false
         var http_only = false
+        var same_site = SameSite.Lax
         while parts.next() |part| {
             let attr = text.trim(part)
             var key = attr
@@ -130,10 +183,12 @@ pub struct Jar {
                 secure = true
             } else if text.eqlIgnoreCase(key, "httponly") {
                 http_only = true
+            } else if text.eqlIgnoreCase(key, "samesite") {
+                same_site = sameSiteOf(arg)
             }
         }
         let https = text.eql(from.scheme, "https")
-        if (secure && !https) || (script && http_only) {
+        if (secure && !https) || (script && http_only) || (same_site == SameSite.None && !secure) {
             return
         }
         let host = from.host
@@ -142,11 +197,21 @@ pub struct Jar {
             if !domainMatch(host, domain) {
                 return
             }
-            // A bare top-level name ("com") is a public suffix.
-            if std.mem.indexOf(domain, '.') == null && !text.eqlIgnoreCase(domain, host) {
+            // A public suffix ("com", "co.uk"): only for the host itself,
+            // as a host-only cookie.
+            var lower = [256]u8{0, ..}
+            if domain.len > lower.len {
                 return
             }
-            host_only = false
+            std.mem.copy(lower[..domain.len], domain)
+            text.toLower(lower[..domain.len])
+            if isPublicSuffix(lower[..domain.len]) {
+                if !text.eqlIgnoreCase(domain, host) {
+                    return
+                }
+            } else {
+                host_only = false
+            }
         } else {
             domain = host
         }
@@ -188,6 +253,7 @@ pub struct Jar {
             host_only: host_only,
             secure: secure,
             http_only: http_only,
+            same_site: same_site,
             created: created,
         }
         self.cookies.append(c) catch |e| {
@@ -200,11 +266,12 @@ pub struct Jar {
         self.changed = true
     }
 
-    /// Appends to `out` the cookies to send to `to` ("a=1; b=2"), in
-    /// the order browsers send them (longer paths first, then older);
-    /// for a script (`document.cookie`), without the HttpOnly ones.
-    pub fn header(self: *mut Self, to: *Url, script: bool, clock: i64, out: *mut text.Builder) AllocError!void {
-        if !isHttp(to) || to.host.len == 0 {
+    /// Appends to `out` the cookies to send to `to` ("a=1; b=2") in
+    /// `context`, in the order browsers send them (longer paths first,
+    /// then older); for a script (`document.cookie`), without the
+    /// HttpOnly ones.
+    pub fn header(self: *mut Self, to: *Url, script: bool, context: Context, clock: i64, out: *mut text.Builder) AllocError!void {
+        if !isHttp(to) || to.host.len == 0 || !storesIn(context) {
             return
         }
         self.dropExpired(clock)
@@ -221,7 +288,7 @@ pub struct Jar {
         while true {
             var best: ?usize = null
             for i, c in self.cookies.items() {
-                if !self.sends(c, to.host, path, https, script) || !after(c, last_len, last_created, first) {
+                if !self.sends(c, to.host, path, https, script) || !sentIn(c.same_site, context) || !after(c, last_len, last_created, first) {
                     continue
                 }
                 if best |b| {
@@ -286,17 +353,24 @@ pub struct Jar {
     pub fn load(self: *mut Self, saved: []u8, clock: i64, sessions: bool) AllocError!void {
         var lines = text.split(saved, "\n")
         while lines.next() |line| {
-            var f = [8][]u8{"", "", "", "", "", "", "", ""}
+            var f = [9][]u8{"", "", "", "", "", "", "", "", ""}
             var fields = text.split(line, "\t")
             var n: usize = 0
             while fields.next() |field| {
-                if n < 8 {
+                if n < 9 {
                     f[n] = field
                 }
                 n += 1
             }
-            if n != 8 || f[0].len == 0 {
+            if (n != 8 && n != 9) || f[0].len == 0 {
                 continue
+            }
+            // Before the SameSite field: Lax, the name and value one on.
+            var same_site = SameSite.Lax
+            if n == 9 {
+                same_site = sameSiteOf(f[6])
+                f[6] = f[7]
+                f[7] = f[8]
             }
             let expires = text.parseInt(f[5]) catch |e| {
                 continue
@@ -315,6 +389,7 @@ pub struct Jar {
                 host_only: text.eql(f[1], "1"),
                 secure: text.eql(f[3], "1"),
                 http_only: text.eql(f[4], "1"),
+                same_site: same_site,
                 created: self.next,
             }
             self.cookies.append(c) catch |e| {
@@ -346,11 +421,122 @@ pub struct Jar {
                 try out.appendByte('0')
             }
             try out.appendByte('\t')
+            try out.append(nameOfSameSite(c.same_site))
+            try out.appendByte('\t')
             try out.append(c.name)
             try out.appendByte('\t')
             try out.append(c.value)
             try out.appendByte('\n')
         }
+    }
+}
+
+/// The `Context` of the jar's cookies for `req`, one hop to `at` with
+/// `method` ("GET", "POST"...). A top-level navigation (a Document
+/// request without `top`) is cross-site when its initiator (`initiator`:
+/// the referrer, or the first URL of the chain when the user asked for
+/// it) or a URL of its redirect chain so far (`crossed`) is of another
+/// site; any other request is third-party when the site of its
+/// top-level page (`req.top`, else `frameTop` of the referrer, else the
+/// referrer) or of its initiator is another site than `at`'s.
+pub fn contextOf(alloc: Allocator, req: Request, at: *Url, method: []u8, initiator: []u8, crossed: bool) AllocError!Context {
+    if req.credentials == Credentials.Omit {
+        return Context.Omit
+    }
+    var from: ?Url = null
+    if initiator.len > 0 {
+        if url.parse(alloc, initiator) |f| {
+            from = f
+        } else |e| {
+            match e {
+                .OutOfMemory => {
+                    return AllocError.OutOfMemory
+                }
+                _ => {}
+            }
+        }
+    }
+    defer {
+        if from |f| {
+            f.deinit(alloc)
+        }
+    }
+    if req.credentials == Credentials.SameOrigin {
+        if from |f| {
+            if !sameOrigin(&f, at) {
+                return Context.Omit
+            }
+        }
+    }
+    if req.kind == Kind.Document && req.top.len == 0 {
+        var cross = crossed
+        if from |f| {
+            if !sameSite(&f, at) {
+                cross = true
+            }
+        }
+        if !cross {
+            return Context.SameSite
+        }
+        if text.eql(method, "GET") || text.eql(method, "HEAD") {
+            return Context.CrossSiteGet
+        }
+        return Context.CrossSitePost
+    }
+    var top = req.top
+    if top.len == 0 {
+        top = frameTop(req.referrer) orelse req.referrer
+    }
+    if top.len == 0 {
+        return Context.SameSite
+    }
+    let site = url.parse(alloc, top) catch |e| {
+        match e {
+            .OutOfMemory => {
+                return AllocError.OutOfMemory
+            }
+            _ => {}
+        }
+        return Context.ThirdParty
+    }
+    defer site.deinit(alloc)
+    if !sameSite(&site, at) {
+        return Context.ThirdParty
+    }
+    if from |f| {
+        if !sameSite(&f, at) {
+            return Context.ThirdParty
+        }
+    }
+    return Context.SameSite
+}
+
+// The SameSite of the attribute's value `v` (Lax when unknown).
+fn sameSiteOf(v: []u8) SameSite {
+    if text.eqlIgnoreCase(v, "strict") {
+        return SameSite.Strict
+    }
+    if text.eqlIgnoreCase(v, "none") {
+        return SameSite.None
+    }
+    return SameSite.Lax
+}
+
+fn nameOfSameSite(v: SameSite) []u8 {
+    return match v {
+        .Strict => "strict"
+        .Lax => "lax"
+        .None => "none"
+    }
+}
+
+// Is a cookie of `same_site` sent in `context`?
+fn sentIn(same_site: SameSite, context: Context) bool {
+    return match context {
+        .SameSite => true
+        .CrossSiteGet => same_site != SameSite.Strict
+        .CrossSitePost => same_site == SameSite.None
+        .ThirdParty, .Omit => false
     }
 }
 
@@ -634,21 +820,22 @@ test "the jar saved and loaded, session cookies with the flag" {
     {
         var jar = Jar.init(alloc)
         defer jar.deinit()
-        try jar.load("example.com\t1\t/\t0\t1\t2000\tsid\tabc\nexample.com\t1\t/\t0\t0\t0\ttab\t1\nexample.com\t1\t/\t0\t0\t500\told\tx\nbad line\n", 1000, true)
+        try jar.load("example.com\t1\t/\t0\t1\t2000\tsid\tabc\nexample.com\t1\t/\t0\t0\t0\tstrict\ttab\t1\nexample.com\t1\t/\t0\t0\t500\told\tx\nbad line\n", 1000, true)
         @expectEqual(2, jar.cookies.len())
         @expect(!jar.changed)
         try jar.save(1000, true, &mut saved)
-        @expectEqual("example.com\t1\t/\t0\t1\t2000\tsid\tabc\nexample.com\t1\t/\t0\t0\t0\ttab\t1\n", saved.bytes())
-        // Without sessions (DWELLER_COOKIE_FILE): the persistent one.
+        @expectEqual("example.com\t1\t/\t0\t1\t2000\tlax\tsid\tabc\nexample.com\t1\t/\t0\t0\t0\tstrict\ttab\t1\n", saved.bytes())
+        // Without sessions (DWELLER_COOKIE_FILE): the persistent one. A line
+        // of the old format (no SameSite field) is Lax.
         var persistent = text.Builder.init(alloc)
         defer persistent.deinit()
         try jar.save(1000, false, &mut persistent)
-        @expectEqual("example.com\t1\t/\t0\t1\t2000\tsid\tabc\n", persistent.bytes())
+        @expectEqual("example.com\t1\t/\t0\t1\t2000\tlax\tsid\tabc\n", persistent.bytes())
         // Expired by the time of saving: dropped.
         var later = text.Builder.init(alloc)
         defer later.deinit()
         try jar.save(3000, true, &mut later)
-        @expectEqual("example.com\t1\t/\t0\t0\t0\ttab\t1\n", later.bytes())
+        @expectEqual("example.com\t1\t/\t0\t0\t0\tstrict\ttab\t1\n", later.bytes())
         @expect(jar.changed)
     }
     var jar = Jar.init(alloc)
@@ -656,4 +843,107 @@ test "the jar saved and loaded, session cookies with the flag" {
     try jar.load(saved.bytes(), 1000, false)
     @expectEqual(1, jar.cookies.len())
     @expect(jar.cookies.items()[0].persistent)
+}
+
+// The cookies the jar sends to `href` in `context`.
+fn sentTo(jar: *mut Jar, href: []u8, context: Context, out: *mut text.Builder) []u8 {
+    out.clear()
+    let to = url.parse(jar.alloc, href) catch |e| {
+        return "bad URL"
+    }
+    defer to.deinit(jar.alloc)
+    jar.header(&to, false, context, 1000, out) catch |e| {
+        return "out of memory"
+    }
+    return out.bytes()
+}
+
+test "SameSite, the public suffix list and the size limit" {
+    let alloc = @testAllocator()
+    var jar = Jar.init(alloc)
+    defer jar.deinit()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+    let from = try url.parse(alloc, "https://www.example.co.uk/a")
+    defer from.deinit(alloc)
+    try jar.store(&from, "strict=1; SameSite=Strict", false, 1000)
+    try jar.store(&from, "lax=1; SameSite=lax", false, 1000)
+    try jar.store(&from, "dflt=1", false, 1000)
+    try jar.store(&from, "odd=1; SameSite=sometimes", false, 1000)
+    try jar.store(&from, "none=1; SameSite=None; Secure", false, 1000)
+    // None without Secure: rejected.
+    try jar.store(&from, "insecure=1; SameSite=None", false, 1000)
+    // A public suffix as Domain: rejected; the registrable domain is fine.
+    try jar.store(&from, "suffix=1; Domain=co.uk", false, 1000)
+    try jar.store(&from, "site=1; Domain=example.co.uk", false, 1000)
+    @expectEqual(6, jar.cookies.len())
+    @expectEqual("strict=1; lax=1; dflt=1; odd=1; none=1; site=1", sentTo(&mut jar, "https://www.example.co.uk/", Context.SameSite, &mut out))
+    // Missing or unknown SameSite: Lax.
+    @expectEqual("lax=1; dflt=1; odd=1; none=1; site=1", sentTo(&mut jar, "https://www.example.co.uk/", Context.CrossSiteGet, &mut out))
+    @expectEqual("none=1", sentTo(&mut jar, "https://www.example.co.uk/", Context.CrossSitePost, &mut out))
+    @expectEqual("", sentTo(&mut jar, "https://www.example.co.uk/", Context.ThirdParty, &mut out))
+    @expectEqual("", sentTo(&mut jar, "https://www.example.co.uk/", Context.Omit, &mut out))
+    // A host that is itself a public suffix may set a host-only cookie
+    // with its own name as Domain.
+    let suffix = try url.parse(alloc, "https://github.io/")
+    defer suffix.deinit(alloc)
+    try jar.store(&suffix, "own=1; Domain=github.io", false, 1000)
+    @expectEqual("own=1", sentTo(&mut jar, "https://github.io/", Context.SameSite, &mut out))
+    @expectEqual("", sentTo(&mut jar, "https://alice.github.io/", Context.SameSite, &mut out))
+    // More than 4096 bytes of name and value: rejected.
+    var big = text.Builder.init(alloc)
+    defer big.deinit()
+    try big.append("big=")
+    for i in 0..4094 {
+        try big.appendByte('x')
+    }
+    try jar.store(&from, big.bytes(), false, 1000)
+    @expectEqual(7, jar.cookies.len())
+    try jar.store(&from, big.bytes()[1..], false, 1000)
+    @expectEqual(8, jar.cookies.len())
+}
+
+// The context of `req` for a request to `href` by `method`.
+fn contextFor(alloc: Allocator, req: Request, href: []u8, method: []u8, initiator: []u8, crossed: bool) Context {
+    let at = url.parse(alloc, href) catch |e| {
+        return Context.Omit
+    }
+    defer at.deinit(alloc)
+    return contextOf(alloc, req, &at, method, initiator, crossed) catch |e| {
+        return Context.Omit
+    }
+}
+
+test "cookie contexts: navigations, subresources, credentials" {
+    let alloc = @testAllocator()
+    let a = "https://www.a.example/page"
+    let nav = Request {}
+    // Top-level navigations: the initiator's site decides, and a chain
+    // that crossed sites stays cross-site.
+    @expect(contextFor(alloc, nav, "https://a.example/", "GET", a, false) == Context.SameSite)
+    @expect(contextFor(alloc, nav, "https://b.example/", "GET", a, false) == Context.CrossSiteGet)
+    @expect(contextFor(alloc, nav, "https://b.example/", "POST", a, false) == Context.CrossSitePost)
+    @expect(contextFor(alloc, nav, "https://a.example/", "GET", a, true) == Context.CrossSiteGet)
+    @expect(contextFor(alloc, nav, "http://127.0.0.1:8000/", "GET", "http://localhost:8000/", false) == Context.CrossSiteGet)
+    // Subresources and fetch: third-party when the top-level site
+    // differs (the referrer's, or `top`'s for a frame).
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a }, "https://img.a.example/x.png", "GET", a, false) == Context.SameSite)
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a }, "https://b.example/x.png", "GET", a, false) == Context.ThirdParty)
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: "file:///tmp/x.html" }, "https://b.example/x.png", "GET", "file:///tmp/x.html", false) == Context.ThirdParty)
+    let frame = Request { kind: Kind.Document, referrer: a, top: a }
+    @expect(contextFor(alloc, frame, "https://b.example/frame.html", "GET", a, false) == Context.ThirdParty)
+    @expect(contextFor(alloc, frame, "https://a.example/frame.html", "GET", a, false) == Context.SameSite)
+    // A same-site frame of a cross-site page: third-party.
+    let inner = Request { kind: Kind.Other, referrer: "https://b.example/f", top: a }
+    @expect(contextFor(alloc, inner, "https://b.example/api", "GET", "https://b.example/f", false) == Context.ThirdParty)
+    // credentials: omit; same-origin only to the initiator's origin.
+    @expect(contextFor(alloc, Request { kind: Kind.Other, referrer: a, credentials: Credentials.Omit }, "https://www.a.example/api", "GET", a, false) == Context.Omit)
+    let same = Request { kind: Kind.Other, referrer: a, credentials: Credentials.SameOrigin }
+    @expect(contextFor(alloc, same, "https://www.a.example/api", "POST", a, false) == Context.SameSite)
+    @expect(contextFor(alloc, same, "https://api.a.example/api", "GET", a, false) == Context.Omit)
+    let include = Request { kind: Kind.Other, referrer: a, credentials: Credentials.Include }
+    @expect(contextFor(alloc, include, "https://api.a.example/api", "GET", a, false) == Context.SameSite)
+    @expect(contextFor(alloc, include, "https://b.example/api", "GET", a, false) == Context.ThirdParty)
+    // No page (a command line fetch): same-site.
+    @expect(contextFor(alloc, Request { kind: Kind.Other }, "https://b.example/api", "GET", "", false) == Context.SameSite)
 }

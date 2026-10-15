@@ -65,6 +65,9 @@ struct Ask {
     content_type: []mut u8
     data: []mut u8
     has_body: bool
+    // `Request.top` and `Request.credentials`.
+    top: []mut u8
+    credentials: Credentials
     // The method of the current hop, NUL-terminated (libcurl's custom
     // request), and whether it still sends the body (a redirect may drop
     // both, as `transfer`).
@@ -309,6 +312,8 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         content_type: []mut u8{},
         data: []mut u8{},
         has_body: req.body != null,
+        top: []mut u8{},
+        credentials: req.credentials,
         verb: []mut u8{},
         post: req.body != null,
         began: 0,
@@ -335,6 +340,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
     l.referrer = try dup(ld.alloc, req.referrer)
     a.method = try dup(ld.alloc, req.method)
     a.headers = try dup(ld.alloc, req.headers)
+    a.top = try dup(ld.alloc, req.top)
     if req.body |b| {
         a.content_type = try dup(ld.alloc, b.content_type)
         a.data = try dup(ld.alloc, b.data)
@@ -363,7 +369,7 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers }
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials }
     if a.has_body {
         req.body = &body
     }
@@ -398,7 +404,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
     }
     defer target.deinit(ld.alloc)
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers }
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials }
     if a.has_body {
         req.body = &body
     }
@@ -696,6 +702,7 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
     if l.ask |a| {
         release(ld.alloc, a.method)
         release(ld.alloc, a.headers)
+        release(ld.alloc, a.top)
         release(ld.alloc, a.content_type)
         release(ld.alloc, a.data)
         release(ld.alloc, a.verb)

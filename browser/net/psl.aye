@@ -1,0 +1,179 @@
+// The public suffix list (psl.txt, a pinned copy of Mozilla's list made
+// by browser/tools/gen_psl.py) and what cookies take from it: the public
+// suffix and the registrable domain of a host, and whether two URLs are
+// of the same site. The rules are found by binary search over the
+// embedded bytes (sorted lines after the header), so nothing is built
+// at run time. A host the list does not know has its last label as
+// public suffix (the list's implicit `*` rule): `localhost` is its own
+// site, `a.localhost` another one.
+
+import std
+import std.text
+import url.Url
+
+let PSL = @embedFile("psl.txt")
+
+// The rules: the lines after the header's blank line.
+fn rules() []u8 {
+    var i: usize = 0
+    while i + 1 < PSL.len {
+        if PSL[i] == '\n' && PSL[i + 1] == '\n' {
+            return PSL[i + 2..]
+        }
+        i += 1
+    }
+    return ""
+}
+
+// Compares the line `line` with the rule `head` followed by `tail`
+// (bytes, as the list is sorted): -1, 0 or 1.
+fn compareRule(line: []u8, head: []u8, tail: []u8) i32 {
+    let n = head.len + tail.len
+    var i: usize = 0
+    while i < line.len && i < n {
+        var c = tail[0]
+        if i < head.len {
+            c = head[i]
+        } else {
+            c = tail[i - head.len]
+        }
+        if line[i] < c {
+            return -1
+        }
+        if line[i] > c {
+            return 1
+        }
+        i += 1
+    }
+    if line.len < n {
+        return -1
+    }
+    if line.len > n {
+        return 1
+    }
+    return 0
+}
+
+// Is `head` followed by `tail` (lower case) a rule of the list?
+fn hasRule(head: []u8, tail: []u8) bool {
+    let all = rules()
+    var lo: usize = 0
+    var hi = all.len
+    while lo < hi {
+        // The line around the middle: back to its first.
+        var first = lo + (hi - lo) / 2
+        while first > lo && all[first - 1] != '\n' {
+            first -= 1
+        }
+        var end = first
+        while end < hi && all[end] != '\n' {
+            end += 1
+        }
+        let c = compareRule(all[first..end], head, tail)
+        if c == 0 {
+            return true
+        }
+        if c < 0 {
+            lo = end + 1
+        } else {
+            hi = first
+        }
+    }
+    return false
+}
+
+/// The public suffix of `host` (lower case, without a trailing dot): the
+/// part of it that the longest matching rule names ("co.uk" of
+/// "www.example.co.uk"), its last label when no rule matches. An
+/// exception rule (`!city.kawasaki.jp`) takes its first label off.
+pub fn publicSuffix(host: []u8) []u8 {
+    var i: usize = 0
+    while true {
+        let suffix = host[i..]
+        if hasRule("!", suffix) {
+            let dot = std.mem.indexOf(suffix, '.') orelse return suffix
+            return suffix[dot + 1..]
+        }
+        if hasRule("", suffix) {
+            return suffix
+        }
+        let dot = std.mem.indexOf(suffix, '.') orelse return suffix
+        if hasRule("*.", suffix[dot + 1..]) {
+            return suffix
+        }
+        i += dot + 1
+    }
+    return host
+}
+
+/// Is `host` a public suffix ("co.uk", "github.io", "com")?
+pub fn isPublicSuffix(host: []u8) bool {
+    return publicSuffix(host).len == host.len
+}
+
+/// The registrable domain of `host`: its public suffix and the label
+/// before it ("example.co.uk"); an IP address is its own; "" for a
+/// public suffix.
+pub fn registrableDomain(host: []u8) []u8 {
+    if isIp(host) {
+        return host
+    }
+    let suffix = publicSuffix(host)
+    if suffix.len >= host.len {
+        return ""
+    }
+    var first = host.len - suffix.len - 1
+    while first > 0 && host[first - 1] != '.' {
+        first -= 1
+    }
+    return host[first..]
+}
+
+/// The site of a host: its registrable domain, or the host itself when
+/// it has none (a public suffix, `localhost`).
+pub fn siteOf(host: []u8) []u8 {
+    let reg = registrableDomain(host)
+    if reg.len == 0 {
+        return host
+    }
+    return reg
+}
+
+/// Are `a` and `b` of the same site (RFC 6265bis "same-site", without
+/// the scheme): http(s) URLs whose hosts have one registrable domain?
+/// A URL that is not http(s) (an opaque origin: `file:`, `data:`) is
+/// of no site, so never the same.
+pub fn sameSite(a: *Url, b: *Url) bool {
+    if !isHttp(a) || !isHttp(b) || a.host.len == 0 || b.host.len == 0 {
+        return false
+    }
+    return text.eqlIgnoreCase(siteOf(a.host), siteOf(b.host))
+}
+
+/// Are `a` and `b` of the same origin (scheme, host and port)?
+pub fn sameOrigin(a: *Url, b: *Url) bool {
+    return text.eql(a.scheme, b.scheme) && text.eqlIgnoreCase(a.host, b.host) && text.eql(a.port, b.port) && a.host.len > 0
+}
+
+test "public suffixes and registrable domains" {
+    @expectEqual("co.uk", publicSuffix("www.example.co.uk"))
+    @expectEqual("example.co.uk", registrableDomain("www.example.co.uk"))
+    @expect(isPublicSuffix("co.uk"))
+    @expect(isPublicSuffix("com"))
+    @expect(!isPublicSuffix("example.com"))
+    @expectEqual("", registrableDomain("co.uk"))
+    // A private rule: each github.io user is a site.
+    @expect(isPublicSuffix("github.io"))
+    @expectEqual("alice.github.io", registrableDomain("www.alice.github.io"))
+    // Wildcard and exception: *.kawasaki.jp, !city.kawasaki.jp.
+    @expect(isPublicSuffix("foo.kawasaki.jp"))
+    @expectEqual("city.kawasaki.jp", registrableDomain("www.city.kawasaki.jp"))
+    // Unknown to the list: the implicit `*` rule.
+    @expect(isPublicSuffix("localhost"))
+    @expectEqual("localhost", siteOf("localhost"))
+    @expectEqual("a.localhost", siteOf("a.localhost"))
+    @expectEqual("example.zzzunknown", registrableDomain("www.example.zzzunknown"))
+    @expectEqual("127.0.0.1", siteOf("127.0.0.1"))
+    @expect(!hasRule("", "c"))
+    @expect(hasRule("", "aaa"))
+}

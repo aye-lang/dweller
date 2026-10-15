@@ -10,6 +10,7 @@
 // the window's loop) and at the end.
 
 import std
+import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -48,6 +49,17 @@ struct Session {
     // the page's URL.
     nav_target: []mut u8
     nav_referrer: []mut u8
+    // `noteFrame`: the documents shown in frames and their top-level
+    // pages.
+    frames: List(FrameTop)
+}
+
+// A frame's page (its id), the URL of its document and of its
+// top-level page (owned).
+struct FrameTop {
+    page: u32
+    doc: []mut u8
+    top: []mut u8
 }
 
 var session: ?*mut Session = null
@@ -75,6 +87,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         saved_ms: 0,
         nav_target: []mut u8{},
         nav_referrer: []mut u8{},
+        frames: List(FrameTop).init(alloc),
     }) catch |e| {
         release(alloc, file)
         return e
@@ -189,6 +202,11 @@ pub fn stop() {
         curl_share_cleanup(sh)
     }
     s.jar.deinit()
+    for f in s.frames.items() {
+        release(s.alloc, f.doc)
+        release(s.alloc, f.top)
+    }
+    s.frames.deinit()
     s.cache.deinit()
     release(s.alloc, s.cookie_file)
     release(s.alloc, s.profile)
@@ -228,17 +246,77 @@ pub fn noteNavigation(target: []u8, referrer: []u8) AllocError!void {
     s.nav_referrer = r
 }
 
-/// Appends to `out` the cookies that a script of the page at `page`
-/// sees (`document.cookie`).
-pub fn scriptCookies(page: *Url, out: *mut text.Builder) AllocError!void {
+/// Notes that the page `page` (its id) shows the document at `doc` in
+/// a frame of the top-level page at `top`: the requests whose referrer
+/// is `doc` are for `top`'s site (cookies.aye `contextOf`). A later
+/// note of the page replaces it; `forgetFrame` drops it.
+pub fn noteFrame(page: u32, doc: []u8, top: []u8) AllocError!void {
     let s = session orelse return
-    return s.jar.header(page, true, now(), out)
+    forgetFrame(page)
+    let d = try dup(s.alloc, doc)
+    let t = dup(s.alloc, top) catch |e| {
+        release(s.alloc, d)
+        return e
+    }
+    s.frames.append(FrameTop { page: page, doc: d, top: t }) catch |e| {
+        release(s.alloc, d)
+        release(s.alloc, t)
+        return e
+    }
 }
 
-/// Stores a cookie set by a script of the page at `page`
-/// (`document.cookie = line`).
-pub fn setScriptCookie(page: *Url, line: []u8) AllocError!void {
+/// The page `page` is gone (or shows no frame any more).
+pub fn forgetFrame(page: u32) {
     let s = session orelse return
+    var i: usize = 0
+    while i < s.frames.len() {
+        let f = s.frames.items()[i]
+        if f.page == page {
+            release(s.alloc, f.doc)
+            release(s.alloc, f.top)
+            s.frames.orderedRemove(i)
+        } else {
+            i += 1
+        }
+    }
+}
+
+// The URL of the top-level page of the frame that shows the document
+// at `doc` (the last noted), if one does.
+fn frameTop(doc: []u8) ?[]u8 {
+    let s = session orelse return null
+    var found: ?[]u8 = null
+    for f in s.frames.items() {
+        if text.eql(f.doc, doc) {
+            found = f.top
+        }
+    }
+    return found
+}
+
+// The context of `document.cookie` in the page at `page` whose
+// top-level page is at `top`: third-party in a frame of another site.
+fn scriptContext(page: *Url, top: *Url) Context {
+    if text.eql(page.href, top.href) || sameSite(page, top) {
+        return Context.SameSite
+    }
+    return Context.ThirdParty
+}
+
+/// Appends to `out` the cookies that a script of the page at `page`
+/// sees (`document.cookie`), its top-level page at `top`.
+pub fn scriptCookies(page: *Url, top: *Url, out: *mut text.Builder) AllocError!void {
+    let s = session orelse return
+    return s.jar.header(page, true, scriptContext(page, top), now(), out)
+}
+
+/// Stores a cookie set by a script of the page at `page`, its top-level
+/// page at `top` (`document.cookie = line`); none in a third-party frame.
+pub fn setScriptCookie(page: *Url, top: *Url, line: []u8) AllocError!void {
+    let s = session orelse return
+    if !storesIn(scriptContext(page, top)) {
+        return
+    }
     return s.jar.store(page, line, true, now())
 }
 

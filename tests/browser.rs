@@ -3899,6 +3899,130 @@ fn net_http() {
     );
 }
 
+/// P10.21: SameSite (Lax by default), the third-party policy and
+/// fetch/XHR `credentials`, on the test server's two sites (`127.0.0.1`
+/// and `localhost` of one port; `/samesite/` in `server.py`), cookies
+/// kept between runs in a profile. `localhost` sets strict, lax, dflt
+/// (no SameSite) and none (`SameSite=None` without Secure: rejected).
+/// A same-site request gets all three; a cross-site top-level GET
+/// navigation (a redirect from the other site, a form) lax and dflt; a
+/// cross-site POST navigation and every third-party request (an
+/// iframe, a script, fetch with any credentials mode) none. fetch with
+/// `omit` sends none and does not store its Set-Cookie. (The public
+/// suffix list: the unit tests "net: public suffixes..." and "net:
+/// SameSite, the public suffix list...".)
+#[test]
+fn net_samesite() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let site = srv.base.clone();
+    let other = site.replace("127.0.0.1", "localhost");
+    let dir = profile("samesite");
+    let dump = |args: &[&str]| {
+        let out = Command::new(dweller())
+            .current_dir(root())
+            .env("DWELLER_PROFILE", &dir)
+            .arg("dump")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success() && out.stderr.is_empty(),
+            "{args:?}: {}",
+            text(&out.stderr)
+        );
+        text(&out.stdout)
+    };
+    assert_eq!(dump(&["--text", &format!("{other}/samesite/set")]), "set\n");
+    let saved = std::fs::read_to_string(dir.join("cookies")).unwrap();
+    assert_eq!(
+        saved,
+        "localhost\t1\t/\t0\t0\t0\tstrict\tstrict\t1\n\
+         localhost\t1\t/\t0\t0\t0\tlax\tlax\t1\n\
+         localhost\t1\t/\t0\t0\t0\tlax\tdflt\t1\n"
+    );
+    let all = "strict=1; lax=1; dflt=1";
+    // A URL the user typed: same-site.
+    assert_eq!(
+        dump(&["--text", &format!("{other}/samesite/show")]),
+        format!("GET cookies: {all}\n")
+    );
+    // Typed on 127.0.0.1, redirected to localhost: cross-site GET.
+    assert_eq!(
+        dump(&[
+            "--text",
+            &format!("{site}/samesite/go?to={other}/samesite/show")
+        ]),
+        "GET cookies: lax=1; dflt=1\n"
+    );
+    // Embedded in a page of the other site: nothing (third-party); in
+    // a page of its own site: all, but for fetch's omit. The frames'
+    // requests are in the server's log.
+    assert_eq!(
+        dump(&[
+            "--text",
+            "--js",
+            &format!("{site}/samesite/embed?host=localhost")
+        ]),
+        "script cookies:\n\nomit:\n\nsame:\n\ninclude:\n\nxhr:\n\nxhrcred:\n\nafter:\n"
+    );
+    assert_eq!(
+        dump(&[
+            "--text",
+            "--js",
+            &format!("{other}/samesite/embed?host=localhost")
+        ]),
+        format!(
+            "script cookies: {all}\n\nomit:\n\nsame: {all}\n\ninclude: {all}\n\n\
+             xhr: {all}\n\nxhrcred: {all}\n\nafter: {all}\n"
+        )
+    );
+    let log = dump(&["--text", &format!("{site}/log")]);
+    let frames: Vec<&str> = log
+        .lines()
+        .filter(|l| l.contains("samesite-frame"))
+        .collect();
+    assert!(
+        frames.len() == 2
+            && frames.iter().filter(|l| l.contains("| cookie:")).count() == 1
+            && frames.iter().any(|l| l.contains(&format!(
+                "referer: {other}/samesite/embed?host=localhost | cookie: {all}"
+            ))),
+        "{log}"
+    );
+    // fetch with omit stored nothing.
+    assert_eq!(
+        dump(&["--text", &format!("{other}/samesite/show")]),
+        format!("GET cookies: {all}\n")
+    );
+    if !has_sdl() {
+        println!("skipped the navigations: no SDL2");
+        return;
+    }
+    // A form submitted by the page's script: by GET from the other site
+    // Lax goes, by POST nothing; from its own site all.
+    let all_get = format!("GET cookies: {all}");
+    let all_post = format!("POST cookies: {all}");
+    for (method, from, want) in [
+        ("get", &site, "GET cookies: lax=1; dflt=1"),
+        ("post", &site, "POST cookies:"),
+        ("get", &other, all_get.as_str()),
+        ("post", &other, all_post.as_str()),
+    ] {
+        let got = login_window(
+            &format!("{from}/samesite/nav?method={method}&to={other}/samesite/show"),
+            "frame frame",
+            Some(&dir),
+        );
+        assert!(
+            got.contains(&format!("url {other}/samesite/show")) && got.trim_end().ends_with(want),
+            "{method} from {from}: want {want:?}, got:\n{got}"
+        );
+    }
+}
+
 /// `fetch` with each method, kind of body and request headers
 /// (`browser/tests/net/fetch_methods.html`, through the server's
 /// `/fetch-echo`) must print `fetch_methods.txt`: what the server
