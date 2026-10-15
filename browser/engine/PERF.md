@@ -563,6 +563,34 @@ CPU stays at one core. Per frame now: draw 9.7 ms (P4.35, P4.36), timers
 walk 0.8. GitHub's `ui_relayout` is unchanged (342–1054 ms: container
 queries, P4.44).
 
+### P4.33: progressive first paint (2026-10-15)
+
+The window's navigation is incremental (`Tab.navigateEarly`, `Ui.go`):
+the document is fetched and parsed, one batch on the loader's multi handle
+starts every sheet, script and image it names (`engine.startEarly`), the
+loop draws the page once its sheets are in and runs its scripts once they
+are in too. Images and web fonts never block a layout of the window's
+pages; they fill in as they arrive. `ui_first_paint` is the time from the
+navigation to the first frame that shows the page (`window_perf.py` reads
+it; before, `ui_navigate + ui_relayout + ui_draw`). Same machine and
+network, fast build, `window_perf.py scroll`, before (9bca5cc) / after,
+three runs each:
+
+| Site | first paint before ms | after ms | median before → after |
+|---|---|---|---|
+| news.ycombinator.com | 1525, 1237, 1226 | 607, 622, 636 | 1237 → 622 |
+| en.wikipedia.org | 956, 952, 1028 | 652, 656, 643 | 956 → 652 |
+| www.youtube.com | 6285, 4155, 6598 | 2084, 1981, 2178 | 6285 → 2084 |
+
+YouTube after: the document in 0.2–0.25 s, its five sheets 1.7 s later
+(they share the connection with 2+ MB of scripts and the images; libcurl
+gives no priorities), layout 0.08 s. Its longest loop is now the one that
+runs the scripts (1.8–2.0 s: 1.4 s of JavaScript, 0.19 s for the sign-in
+iframe, fetched synchronously by `loadFrames`), which used to run before
+the loop started; the window shows the page and takes input until then.
+`dump` and `screenshot` keep the synchronous load: Markdown and screenshots
+of the 22 archived sites are byte-identical with the previous binary.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

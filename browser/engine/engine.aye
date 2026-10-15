@@ -111,6 +111,12 @@ pub struct Page {
     // The top-level browsing context a tab's page is in (contexts.aye);
     // 0 for frames.
     context: u32 = 0
+    // Laid out before its scripts run (`startEarly`), which they will:
+    // styled as a page with scripts (`noscript` hidden).
+    scripts_pending: bool = false
+    // Where the window scrolled it before its scripts ran: their
+    // scrollY to begin with.
+    early_scroll: f64 = 0.0
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
@@ -236,7 +242,11 @@ pub struct Page {
         }
         self.dropTree()
         self.measure = measure
-        try syncFrames(self)
+        // Before its scripts ran, the page has no frames yet: they load
+        // with the scripts (`runPageScripts`).
+        if !self.scripts_pending {
+            try syncFrames(self)
+        }
         setViewport(self, width, height)
         var same = false
         if self.styling |st| {
@@ -272,7 +282,7 @@ pub struct Page {
             }
         }
         if self.styling |st| {
-            _ = try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure)
+            _ = try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads())
         }
         let images_began = perf.start()
         try updateImages(self, css.Media { width: width, height: height })
@@ -317,7 +327,7 @@ pub struct Page {
         self.measure = measure
         try syncFrames(self)
         setViewport(self, width, height)
-        if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure) {
+        if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads()) {
             // Text measures differently: lay out again in full.
             s.layout_version += 1
         }
@@ -370,6 +380,16 @@ pub struct Page {
         }
     }
 
+    // The image cache that holds the background loads of the window's
+    // page (`ImageCache.background`): web fonts load there too.
+    fn heldLoads(self: *mut Self) ?*mut ImageCache {
+        let imgs = self.images orelse return null
+        if imgs.background {
+            return imgs
+        }
+        return null
+    }
+
     fn styleFor(self: *mut Self, media: css.Media) AllocError!*mut Styling {
         try dom.assignSlots(&mut self.doc)
         if try takeReaderStyling(self, media) |cached| {
@@ -378,7 +398,7 @@ pub struct Page {
         var ua = try css.Sheet.init(self.alloc)
         errdefer ua.deinit()
         try css.uaSheet(&mut ua, media)
-        if self.script != null {
+        if self.script != null || self.scripts_pending {
             try css.parseSheet(&mut ua, "noscript { display: none }", media)
         }
         var author = try css.Sheet.init(self.alloc)
@@ -427,6 +447,83 @@ pub fn loadState(alloc: Allocator, target: *Url, state: ?[]u8) AllocError!*mut P
     try attachLoading(p)
     try runDocument(p, scriptingEnabled())
     return p
+}
+
+/// The window's navigation, in steps: fetches and parses `target`
+/// without running its scripts. `startEarly` starts loading what it
+/// names, `runPageScripts` runs its scripts once they are in.
+pub fn loadParsed(alloc: Allocator, target: *Url) AllocError!*mut Page {
+    let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252)
+    errdefer p.destroy()
+    try attachLoading(p)
+    return p
+}
+
+/// Starts loading the subresources that the document of `p` (from
+/// `loadParsed`) names, in one batch on the loader's multi handle, the
+/// way a preload scanner does: its style sheets whose media match (ids
+/// into `sheets`), its scripts (into `scripts`), then the images of its
+/// elements (held by its image cache, which no layout waits for from
+/// now on: `preloadImages`). The document is parsed in full already, so
+/// the scan walks the tree. The ids are released by the caller.
+pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32), scripts: *mut List(u32)) AllocError!void {
+    let media = css.Media { width: width, height: height }
+    p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
+    var base = try documentBase(p.alloc, &p.doc, &p.url)
+    defer base.deinit(p.alloc)
+    var hrefs = text.Builder.init(p.alloc)
+    defer hrefs.deinit()
+    var queries = try css.Sheet.init(p.alloc)
+    defer queries.deinit()
+    try sheetHrefs(p.alloc, &p.doc, &base, media, &mut queries, &mut hrefs)
+    try startLoads(hrefs.bytes(), net.Kind.Style, p.url.href, sheets)
+    if p.scripts_pending {
+        hrefs.clear()
+        try scriptHrefs(p, &mut hrefs)
+        try startLoads(hrefs.bytes(), net.Kind.Script, p.url.href, scripts)
+    }
+    try preloadImages(p, media)
+}
+
+// Starts the loads of `hrefs` (one per line) and adds their ids to `ids`.
+fn startLoads(hrefs: []u8, kind: net.Kind, referrer: []u8, ids: *mut List(u32)) AllocError!void {
+    var lines = text.split(hrefs, "\n")
+    while lines.next() |href| {
+        let id = net.startLoad(href, kind, referrer)
+        if id == 0 {
+            continue
+        }
+        ids.append(id) catch |e| {
+            net.releaseLoad(id)
+            return e
+        }
+    }
+}
+
+/// Is every load of `ids` (from `startEarly`) over?
+pub fn loadsIn(ids: []u32) bool {
+    net.pumpLoads()
+    for id in ids {
+        if net.loadState(id) == net.LoadState.Running {
+            return false
+        }
+    }
+    return true
+}
+
+/// Releases the loads of `ids` and empties it.
+pub fn releaseLoads(ids: *mut List(u32)) {
+    for id in ids.items() {
+        net.releaseLoad(id)
+    }
+    ids.clear()
+}
+
+/// Runs the scripts of `p` (from `loadParsed`), loads its frames and
+/// fires the load events, as `load` does after the fetch.
+pub fn runPageScripts(p: *mut Page) AllocError!void {
+    p.scripts_pending = false
+    try runDocument(p, scriptingEnabled())
 }
 
 // Fetches `target` (by POST with `body`) and parses the document, whose

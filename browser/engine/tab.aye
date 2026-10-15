@@ -3,6 +3,7 @@
 // scripts added (back and forward).
 
 import std
+import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -35,6 +36,13 @@ pub struct Tab {
     // Its top-level browsing context (contexts.aye), which outlives the
     // pages it shows.
     context: u32
+    // The page shown before its scripts ran (`navigateEarly`): the loads
+    // of its style sheets and of its scripts, and whether it was laid
+    // out with its sheets in (`painted`).
+    early: bool
+    painted: bool
+    sheet_loads: List(u32)
+    script_loads: List(u32)
 
     pub fn init(alloc: Allocator) Tab {
         let context = newTabContext(alloc) catch unreachable
@@ -47,10 +55,17 @@ pub struct Tab {
             restore: null,
             fragment: alloc.alloc(0 as u8, 0) catch unreachable,
             context: context,
+            early: false,
+            painted: false,
+            sheet_loads: List(u32).init(alloc),
+            script_loads: List(u32).init(alloc),
         }
     }
 
     pub fn deinit(self: *mut Self) {
+        self.dropEarly()
+        self.sheet_loads.deinit()
+        self.script_loads.deinit()
         if self.page |p| {
             self.page = null
             p.destroy()
@@ -98,6 +113,52 @@ pub struct Tab {
         errdefer p.destroy()
         try self.push(target, p)
         return true
+    }
+
+    /// `navigate` in steps, for the window: the page is shown once its
+    /// document is parsed, its scripts have not run, and the loads of
+    /// its sheets, scripts and images (`startEarly`, for a viewport
+    /// `width` x `height`) go on. `sheetsIn` says when to lay it out,
+    /// `scriptsIn` when to run its scripts (`finishEarly`).
+    pub fn navigateEarly(self: *mut Self, target: *Url, width: f64, height: f64) AllocError!bool {
+        if self.sameDocument(target) {
+            try self.toFragment(target)
+            return false
+        }
+        self.enter()
+        let p = try loadParsed(self.alloc, target)
+        errdefer p.destroy()
+        try self.push(target, p)
+        self.early = true
+        try startEarly(p, width, height, &mut self.sheet_loads, &mut self.script_loads)
+        return true
+    }
+
+    /// Are the sheets of the page shown early (`navigateEarly`) in?
+    pub fn sheetsIn(self: *Self) bool {
+        return loadsIn(self.sheet_loads.items())
+    }
+
+    /// Are its scripts in?
+    pub fn scriptsIn(self: *Self) bool {
+        return loadsIn(self.script_loads.items())
+    }
+
+    /// Runs the scripts of the page shown early, once they are in: the
+    /// page is loaded as `navigate` leaves it.
+    pub fn finishEarly(self: *mut Self) AllocError!void {
+        self.dropEarly()
+        if self.page |p| {
+            p.early_scroll = self.scroll
+            try runPageScripts(p)
+        }
+    }
+
+    fn dropEarly(self: *mut Self) {
+        releaseLoads(&mut self.sheet_loads)
+        releaseLoads(&mut self.script_loads)
+        self.early = false
+        self.painted = false
     }
 
     /// Is `target` a fragment of the document shown?
@@ -236,6 +297,7 @@ pub struct Tab {
     // Replaces the page with `p`, the current entry's (which has the URL
     // after redirects: the page's own entry).
     fn show(self: *mut Self, p: *mut Page) AllocError!void {
+        self.dropEarly()
         if self.page |old| {
             old.destroy()
         }

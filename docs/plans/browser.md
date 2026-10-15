@@ -122,7 +122,7 @@ site. Spaces (P9) are the one place with more than one process.
 | – | P0, P1, PW | one clean `main`; "done" checked by a command; wrap-up | – | done |
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing |
-| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32 and P4.34 done; P4.43 and P4.33 next |
+| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32, P4.33 and P4.34 done; P4.43 next |
 | 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | parallel track; P9.1–P9.4 done, P9.5 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | next: harness P10.1–P10.4, parallel with P4 |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | final check after P4 and P10 |
@@ -140,7 +140,7 @@ may run beside P4 cards; two cards never edit the same files at once.
 |---|---|---|---|
 | 1 | P4.32 | 0 | page `fetch()`/XHR complete as tasks; the window thread never waits on them (done) |
 | 1b | P4.43 | 0 | dynamic script loads (inserted `<script src>`, webpack chunks) load in the background and run as tasks |
-| 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources |
+| 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources (done) |
 | 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle (done) |
 | 3b | P4.44 | 0 | incremental restyle and layout in documents with container queries (GitHub) |
 | 4 | P4.40 | 0 | CI perf gate: synthetic heavy pages on the test server, budgets, a `perf` job |
@@ -201,6 +201,7 @@ them from coming back.
 - test: a local page with a sheet at `/sleep?ms=300`-style delays, a body-end script delayed 1500 ms and images delayed 2000 ms: `--state` after the first frame shows the styled text before the script ran; a click during the load is handled.
 - verify: `window_perf.py scroll` first paint HN ≤ 1.3 s (now 1.7–2.4), Wikipedia ≤ 1.0 s (1.8), YouTube ≤ 3 s (15.8); `cargo test --release --test browser window_ > target/p4.33.log 2>&1; echo $?` → 0
 - time box: 120 min; model: opus (load ordering)
+- status: done 2026-10-15. The window's navigations (`Ui.go`: the first one, the address bar, links, GET forms) go in steps (`Tab.navigateEarly`): the document is fetched and parsed, then one batch on the loader's multi handle starts every linked sheet whose media match, every script and modulepreload, and every `img` (`engine.startEarly`; the parser has the whole document, so the scan walks the tree instead of the unparsed markup); the loop lays the page out once the sheets are in (first paint, `ui_first_paint` record) and runs the scripts once they are in too, while it takes input. Images and web fonts (as `font-display: swap`) load in the background on the window's pages and fill in as they arrive (a relayout at most every 100 ms or twice the last relayout); frames load with the scripts. `net.prefetch` (the synchronous batches that are left: `dump`, scripts' later sheets) now runs on the loader's multi handle too, joining loads in flight. `window_perf.py scroll` first paint, median of 3, before (9bca5cc) / after: HN 1237 → 622 ms, Wikipedia 956 → 652 ms, YouTube 6285 → 2084 ms (`PERF.md` "P4.33"). Back/forward/reload and agents' navigations stay synchronous. Markdown and screenshots of all 22 archived sites byte-identical with the previous binary. Test `window_paints_early` (sheet 0.3 s, image and script 1.5 s: first paint < 1.2 s, a click and a wheel during the load handled, longest loop < 100 ms outside the scripts' run). Left: the iteration that runs the scripts (YouTube 1.8–2.0 s: 1.4 s of JavaScript plus a synchronous iframe fetch) is now inside the loop: each script as its own task (P4.42) and frames in the background; sheets compete with scripts for bandwidth (no priorities): YouTube's sheets arrive 1.7 s after the document.
 
 #### P4.34: one lifecycle, incremental window relayout
 - goal: `Ui.relayout` reuses the scripts' subtree restyle and incremental layout (P3.63/P3.64) instead of `restyleWithSizes` plus a full layout per DOM change (cause 2). One styles-and-geometry state per page, shared by the window's frames and the scripts' forced reads, with a lifecycle field (style clean, layout clean, display list clean); a frame advances it only as far as needed; a paint-only change rebuilds only the display list. Brings in P4.10 (container-query re-pass on container subtrees) where Mistral or GitHub need it.

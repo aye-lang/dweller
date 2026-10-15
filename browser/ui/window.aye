@@ -53,6 +53,12 @@ pub let FINDBAR: f64 = 32.0
 /// Lines of a wheel notch and of the arrow keys, in CSS px (Chrome's
 /// 40 px a wheel tick).
 let LINE_STEP: f64 = 40.0
+// While a page loads (its sheets, scripts or images), the loop looks at
+// the loads at least this often (ms).
+let LOAD_POLL_MS: i32 = 8
+// Images that arrived lay the page out again at most every this many ms,
+// or twice the last layout's time when that is longer.
+let IMAGE_RELAYOUT_MS: u64 = 100
 /// CSS px of one unit of a precise (trackpad, Magic Mouse) wheel delta.
 /// SDL's cocoa backend sends NSEvent `deltaY`, which for precise
 /// devices is `scrollingDeltaY` (points, what Safari and Chrome scroll
@@ -393,6 +399,13 @@ pub struct Ui {
     precise_at: u32
     // Scripted events not fed yet (script.aye): they wait for agents.
     rest: text.Builder
+    // perf.start() of the navigation whose first paint is not drawn yet
+    // (the `ui_first_paint` record); 0 for none.
+    paint_began: u64 = 0
+    // When images that arrived were last laid out (monotonic ms), and
+    // how long the last relayout took.
+    images_at: u64 = 0
+    relayout_ms: u64 = 0
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
         var slots = @zeroed([16]?*mut TabSlot)
@@ -514,12 +527,18 @@ pub struct Ui {
             let t_loop = perf.start()
             var waited: u64 = 0
             var waited_ns: u64 = 0
+            try self.advanceLoad()
+            try self.imagesIn()
             if self.dirty || frames > 0 {
                 let t_draw = perf.start()
                 try self.draw()
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 drawn += 1
+                if self.paint_began != 0 && self.list != null {
+                    perf.end("ui_first_paint", self.paint_began, self.tab.href())
+                    self.paint_began = 0
+                }
             }
             if frames > 0 && drawn >= frames {
                 return
@@ -544,6 +563,9 @@ pub struct Ui {
                     if ms < timeout as f64 {
                         timeout = ms as i32
                     }
+                }
+                if (self.tab.early || engine.imagesLoading(p)) && timeout > LOAD_POLL_MS {
+                    timeout = LOAD_POLL_MS
                 }
             }
             let before = std.time.monotonicMs()
@@ -690,8 +712,16 @@ pub struct Ui {
     // Lays the page out again for the window and rebuilds the display
     // list (and the find matches).
     fn relayout(self: *mut Self) AllocError!void {
+        // A page shown early is laid out once its sheets are in
+        // (`advanceLoad`).
+        if self.tab.early && !self.tab.painted {
+            self.dropList()
+            self.dirty = true
+            return
+        }
         let t_relayout = perf.start()
         defer perf.end("ui_relayout", t_relayout, "")
+        let began = std.time.monotonicMs()
         self.dropList()
         if self.tab.page |p| {
             try p.layoutPage(self.measure, self.win_w as f64, self.layoutHeight())
@@ -704,15 +734,100 @@ pub struct Ui {
         try self.findAll(false)
         self.tab.clampScroll(self.maxScroll())
         self.dirty = true
+        self.relayout_ms = std.time.monotonicMs() - began
     }
 
     // ---- navigation
 
+    // Goes to `target` in steps (tab.navigateEarly): the page is shown
+    // once its document is parsed and its sheets are in, its scripts run
+    // once they are in too, and its images fill in as they arrive; the
+    // loop goes on meanwhile (`advanceLoad`, `imagesIn`).
     fn go(self: *mut Self, target: *url.Url) AllocError!void {
         let t_go = perf.start()
-        let loaded = try self.tab.navigate(target)
+        let loaded = try self.tab.navigateEarly(target, self.win_w as f64, self.layoutHeight())
         perf.end("ui_navigate", t_go, "")
-        try self.navigated(loaded)
+        if !loaded {
+            return self.navigated(false)
+        }
+        self.paint_began = t_go
+        self.dropdown = null
+        self.range_drag = false
+        // The agents' refs are of the old document.
+        self.slots[self.active].?.shown += 1
+        self.dropList()
+        self.matches.clear()
+        try self.address.set(self.tab.href())
+        if self.focus == Focus.Address {
+            self.focus = Focus.Page
+        }
+        self.hover.clear()
+        try self.setTitle()
+        self.dirty = true
+        // What is in already (file: and data: URLs, the cache) is shown
+        // at once.
+        try self.advanceLoad()
+    }
+
+    // The page shown early (tab.navigateEarly): laid out once its sheets
+    // are in, then its scripts run once they are in too.
+    fn advanceLoad(self: *mut Self) AllocError!void {
+        if !self.tab.early || !self.tab.sheetsIn() {
+            return
+        }
+        if !self.tab.scriptsIn() {
+            if !self.tab.painted {
+                self.tab.painted = true
+                try self.relayout()
+                self.settleScroll()
+            }
+            return
+        }
+        let painted = self.tab.painted
+        try self.tab.finishEarly()
+        try self.relayout()
+        if !painted {
+            self.settleScroll()
+        } else if self.tab.page |p| {
+            if engine.takeScriptScroll(p) |y| {
+                self.scrollTo(y)
+            }
+        }
+        try self.setTitle()
+        try self.afterScripts()
+    }
+
+    // After the first layout of a new page: scrolls where the tab wants,
+    // or where a script of the page scrolled while it loaded.
+    fn settleScroll(self: *mut Self) {
+        self.tab.settle(self.maxScroll())
+        var y = self.tab.scroll
+        if self.tab.page |p| {
+            if engine.takeScriptScroll(p) |want| {
+                y = want
+            }
+        }
+        self.scrollTo(y)
+    }
+
+    // Lays the page out again when images that its layout left out
+    // arrived (engine.preloadImages), not more often than
+    // IMAGE_RELAYOUT_MS or twice the last relayout's time.
+    fn imagesIn(self: *mut Self) AllocError!void {
+        if self.tab.early && !self.tab.painted {
+            return
+        }
+        let p = self.tab.page orelse return
+        let now = std.time.monotonicMs()
+        var gap = IMAGE_RELAYOUT_MS
+        if 2 * self.relayout_ms > gap {
+            gap = 2 * self.relayout_ms
+        }
+        if now - self.images_at < gap || !engine.imagesArrived(p) {
+            return
+        }
+        try self.relayout()
+        self.images_at = std.time.monotonicMs()
     }
 
     // After the tab moved: lay out a new page, scroll where the tab

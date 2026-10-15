@@ -59,8 +59,12 @@ pub struct ImageCache {
     // The keys of `nodes.urls` (owned).
     keys: List([]mut u8)
     // The background loads that were still running when their last
-    // request dropped them (`holdLoad`).
+    // request dropped them, or that rendering started (`holdLoad`).
     loads: List(u32)
+    // Rendering never waits for an http(s) image (the window's pages,
+    // `preloadImages`): it loads them in the background, held in
+    // `loads`, and leaves them out until they are in.
+    background: bool = false
 
     pub fn init(alloc: Allocator) ImageCache {
         return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc) }
@@ -157,6 +161,38 @@ pub struct ImageCache {
             return false
         }
         return true
+    }
+
+    // Loads `href` (http or https) in the background, held until it
+    // ends; a URL loaded or held already is not loaded again.
+    fn loadHeldInBackground(self: *mut Self, href: []u8) {
+        _ = self.loadedInBackground(href, net.Kind.Image)
+    }
+
+    // `loadHeldInBackground` for a request of `kind`: null while it
+    // loads, else whether it is in (the session's cache has it, or it is
+    // not an http or https URL) rather than failed. A failed image is
+    // kept as such.
+    fn loadedInBackground(self: *mut Self, href: []u8, kind: net.Kind) ?bool {
+        let id = net.startLoad(href, kind, self.referrer)
+        if id == 0 {
+            return true
+        }
+        if net.loadState(id) == net.LoadState.Running {
+            if !self.holdLoad(id) {
+                net.releaseLoad(id)
+            }
+            return null
+        }
+        var ok = true
+        if net.failedHref(id) |failed| {
+            ok = false
+            if kind == net.Kind.Image {
+                self.noteFailed(failed) catch |e| {}
+            }
+        }
+        net.releaseLoad(id)
+        return ok
     }
 
     // Lets go of the loads held that ended, keeping the URLs of those
@@ -427,6 +463,9 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
     }
     var base = try documentBase(cache.alloc, doc, address)
     defer base.deinit(cache.alloc)
+    if cache.background {
+        cache.settleLoads()
+    }
     var arena = Arena.init(cache.alloc)
     defer arena.deinit()
     var keys = List([]u8).init(arena.allocator())
@@ -442,6 +481,10 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
             continue
         }
         defer target.deinit(cache.alloc)
+        // Still loading in the background.
+        if !cache.known(target.withoutFragment()) && net.loadHeld(target.withoutFragment()) {
+            continue
+        }
         if try cache.bitmapOf(target.withoutFragment()) |bmp| {
             let owned = try cache.alloc.alloc(0 as u8, key.len)
             std.mem.copy(owned, key)
@@ -466,7 +509,8 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
 
 // Fetches the new images of `doc` (and the URLs `extra` of its style
 // sheets) concurrently into the session's cache (net.prefetch), before
-// `fillImages` takes them one by one.
+// `fillImages` takes them one by one; with `cache.background`, starts
+// loading them in the background instead.
 fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][]u8, media: css.Media) AllocError!void {
     var hrefs = text.Builder.init(cache.alloc)
     defer hrefs.deinit()
@@ -501,7 +545,55 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
         try hrefs.append(target.withoutFragment())
         try hrefs.appendByte('\n')
     }
+    if cache.background {
+        var lines = text.split(hrefs.bytes(), "\n")
+        while lines.next() |href| {
+            cache.loadHeldInBackground(href)
+        }
+        return
+    }
     net.prefetch(cache.alloc, hrefs.bytes(), net.Kind.Image, cache.referrer)
+}
+
+/// The window's pages: starts loading the images of the elements of
+/// `page` in the background now (before its first layout), and from now
+/// on its layouts leave out an http(s) image that is not in yet instead
+/// of waiting for it (`ImageCache.background`); `imagesArrived` tells
+/// when to lay out again.
+pub fn preloadImages(page: *mut Page, media: css.Media) AllocError!void {
+    if page.images == null {
+        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+    }
+    let cache = page.images.?
+    cache.background = true
+    if cache.referrer.len == 0 {
+        try cache.setReferrer(page.url.href)
+    }
+    var base = try documentBase(cache.alloc, &page.doc, &page.url)
+    defer base.deinit(cache.alloc)
+    try prefetchImages(cache, &page.doc, &base, [][]u8{}, media)
+}
+
+/// Did an image that a layout of `page` left out (`preloadImages`) end
+/// loading since? The next layout shows it.
+pub fn imagesArrived(page: *mut Page) bool {
+    let cache = page.images orelse return false
+    if !cache.background {
+        return false
+    }
+    net.pumpLoads()
+    for id in cache.loads.items() {
+        if net.loadState(id) != net.LoadState.Running {
+            return true
+        }
+    }
+    return false
+}
+
+/// Are images of `page` loading in the background (`preloadImages`)?
+pub fn imagesLoading(page: *mut Page) bool {
+    let cache = page.images orelse return false
+    return cache.background && cache.loads.len() > 0
 }
 
 // The URLs of the images of the style sheets (as their computed values

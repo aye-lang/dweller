@@ -3868,6 +3868,96 @@ fn window_fetch_in_background() {
     );
 }
 
+/// P4.33: the window paints a page once its document and its sheet are
+/// in (0.3 s), before its script and its image arrive (1.5 s), and the
+/// click and the wheel during the load are handled before the script
+/// runs; no loop iteration waits for the network.
+#[test]
+fn window_paints_early() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/early_paint.html", srv.base);
+    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "300",
+            "--events",
+            events.as_str(),
+            "--text",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while window.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = window.kill();
+            panic!("the window did not draw 300 frames in 60 s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let out = window.wait_with_output().unwrap();
+    let err = text(&out.stderr);
+    // The iterations' times; the one that runs the page's scripts (a
+    // `scripts` record: making the realm and running them, CPU work that
+    // a debug build under a parallel test run makes slow) apart.
+    let mut loops = Vec::new();
+    let mut scripts_loop = None;
+    let mut ran_scripts = false;
+    let mut first_paint = None;
+    for line in err.lines() {
+        let fields: Vec<&str> = line.trim_start_matches("info: ").split('\t').collect();
+        assert!(
+            fields.len() == 4 && fields[0] == "DWELLER_TIMING",
+            "stderr has more than timing records:\n{err}"
+        );
+        let ms = fields[2].parse::<u64>().unwrap() / 1_000_000;
+        match fields[1] {
+            "ui_loop" if ran_scripts => {
+                scripts_loop = Some(ms);
+                ran_scripts = false;
+            }
+            "ui_loop" => loops.push(ms),
+            "scripts" => ran_scripts = true,
+            "ui_first_paint" => first_paint = first_paint.or(Some(ms)),
+            _ => {}
+        }
+    }
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let first_paint = first_paint.expect("no ui_first_paint record");
+    assert!(first_paint < 1200, "first paint after {first_paint} ms");
+    let longest = loops.iter().copied().max().unwrap_or(0);
+    assert!(loops.len() > 100 && longest < 100, "longest loop {longest} ms of {}", loops.len());
+    // It does not wait for the network either (the script and the image
+    // take 1.5 s).
+    let scripts_loop = scripts_loop.expect("the scripts did not run in a loop iteration");
+    assert!(scripts_loop < 1000, "the scripts' loop took {scripts_loop} ms");
+    let got = text(&out.stdout);
+    assert!(
+        got.contains("script ran; checked before it: true, scrolled before it: true, color: rgb(0, 128, 0)"),
+        "{got}"
+    );
+}
+
 // ---- P10.20: logged-in browsing (the login fixture of server.py)
 
 /// The `--events` words that type `s` (at most 31 bytes a word).
