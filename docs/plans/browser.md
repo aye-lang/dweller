@@ -48,8 +48,9 @@ Blink/Chromium docs and code to read first (a local checkout:
 it that is not upstream Chromium). Each card says in one or two lines
 what Dweller takes. Dweller keeps its simpler design: one window thread
 that owns the DOM, scripts, style, layout and paint; network completions
-as tasks on that thread; no compositor thread, no GPU, no process per
-site. Spaces (P9) are the one place with more than one process.
+as tasks on that thread; no compositor thread, no process per site, and no GPU except for
+WebGL and, later, compositing (P11, `docs/webgl.md`). Spaces (P9) are
+the one place with more than one process.
 
 ## Done criteria
 
@@ -125,6 +126,7 @@ site. Spaces (P9) are the one place with more than one process.
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing |
 | 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32, P4.33, P4.34, P4.35, P4.43, P4.44 and P4.51 done |
 | 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | parallel track; P9.1–P9.4 done, P9.5 next |
+| 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | parallel track; P11.1 next, P11.16 any time |
 | 1 | P10 | components measured by WPT and test262 | W9 | next: harness P10.1–P10.4, parallel with P4 |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | final check after P4 and P10 |
 | 2 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | items re-filed under P10 areas |
@@ -172,6 +174,12 @@ may run beside P4 cards; two cards never edit the same files at once.
 | 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` (done) |
 | 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
 | 25 | P3.80 | 2 | bundle for the user, once W1–W9 and the cards above hold |
+| 25b | P11.1–P11.3 | 0 ∥ | ANGLE binaries, EGL/GLES `@cimport` smoke test, `ArrayBuffer` on contiguous bytes |
+| 25c | P11.4–P11.9 | 0 ∥ | WebGL 2: context, triangle, textures, readback into the window, state objects, three.js cube |
+| 25d | P11.10–P11.11 | 0 ∥ | rAF at vsync and `performance.now()` precision; key codes, pointer events, Pointer Lock, Fullscreen |
+| 25e | P11.12–P11.15 | 0 ∥ | the rest of WebGL 2, extensions, conformance runner, context loss |
+| 25f | P11.16–P11.20 | 0 ∥ | WASM runtime choice (any time) and JS API, Workers, Web Audio |
+| 25g | P11.21–P11.24 | 0 ∥ | the game's frame budget, GPU compositing, the user's game accepted |
 | 26+ | P10.n | 1 | component cards per area from the baseline's failures (backlog below) |
 | last | P3, P6 | 2 | sites and release |
 
@@ -513,6 +521,352 @@ in order.
 - time box: 90 min; model: sonnet
 
 
+## Parallel track: P11 WebGL and the APIs games need
+
+Decision of 2026-10-15 (Decisions): the user builds 3D web games, so
+WebGL is required. The design is in `docs/webgl.md`, and every card
+below cites its section there.
+
+- **Acceptance target:** the user's game, `~/Documents/f1/web` (Vite +
+  TypeScript, three 0.170.0, read-only).
+- **three.js r163 and later need WebGL 2,** so WebGL 2 comes first.
+- **GPU backend:** ANGLE, through EGL + GLES 3.0 headers via
+  `@cimport`. Contexts use ANGLE's WebGL compatibility mode, which
+  validates and translates every shader.
+- **Pixels reach the window in two steps:** a per-frame readback into
+  the existing raster cache first (P11.7), GPU compositing of the whole
+  page later (P11.22, P11.23).
+
+P11 runs beside P4. The GPU compositing cards (P11.22, P11.23) edit
+`ui/pagedraw.aye` and `ui/window.aye`, so they do not run at the same
+time as a P4 card on those files.
+
+**Rules for every card:**
+
+- **Reference first.** Every card names a reference in the read-only
+  checkout `/Users/solemnis/Documents/chromium/src` (paths below are
+  relative to it). Read the known implementation before writing code.
+- **Licenses.** V8 and ANGLE (BSD): porting is allowed, with a comment
+  naming the source file and the license in `browser/licenses/`. Blink:
+  algorithm reference only, never copy code (some files are LGPL).
+- **Tests.**
+  - Run only the tests named in verify, with output to a log under
+    `target/`.
+  - WebGL tests run headless with `DWELLER_GL=swiftshader`.
+  - Fixtures live in `browser/tests/webgl/`.
+  - Rust test names start with `webgl_` or `gpu_`.
+
+#### P11.1: ANGLE binaries
+- goal: pin ANGLE (`browser/gpu/angle.rev`: the `angle_revision` of the reference checkout's `DEPS`), and add:
+  - `browser/gpu/build_angle.sh`: standalone `fetch angle` + `gclient sync` into `~/.cache/dweller/angle-src`, `gn gen` with the args of `docs/webgl.md` §1, `autoninja libEGL libGLESv2` + the SwiftShader ICD, and the outputs, headers and license files copied to `target/angle/<rev>/`;
+  - `browser/gpu/fetch_angle.sh`: downloads the release asset and checks `browser/gpu/angle.lock`;
+  - `.github/workflows/angle.yml` (manual or on `angle.rev` change): builds on `macos-latest` and `ubuntu-24.04` and uploads `angle-<rev>-<os>-<arch>.tar.zst` to release `angle-<rev>`;
+  - in the `browser` job of `ci.yml`: `fetch_angle.sh`, cached by `angle.lock`.
+- files: `browser/gpu/`, `.github/workflows/angle.yml`, `.github/workflows/ci.yml`, `scripts/setup-ubuntu.sh` (Vulkan loader, if the build needs it)
+- reference: `third_party/angle/doc/DevSetup.md`, `third_party/angle/gni/angle.gni`, `third_party/angle/DEPS`
+- verify: `browser/gpu/build_angle.sh > target/angle-build.log 2>&1; echo $?` → 0 (run in the background, one blocking wait); `nm -gU target/angle/*/lib/libEGL.dylib | grep -c eglGetPlatformDisplay` → 1; the `angle` workflow green on both OSes, and the asset hash in `angle.lock`
+- time box: 45 min of agent work, plus the build wait; model: sonnet
+
+#### P11.2: EGL/GLES `@cimport` smoke test
+- goal: `browser/gpu/gl.aye`:
+  - `dlopen` of libEGL and libGLESv2 (the search order of §1), entry points from `eglGetProcAddress`, types and constants from `@cimport` of `EGL/egl.h`, `EGL/eglext.h`, `GLES3/gl3.h` and `GLES2/gl2ext.h`;
+  - one lazy display per process (`DWELLER_GL`: metal, vulkan, gl, swiftshader, null, off; §2);
+  - a surfaceless ES 3.0 context with the WebGL attributes of §2.
+
+  New CLI mode `dweller gpu-smoke`: a 64x64 FBO cleared to red, then `glReadPixels`; prints the backend, `GL_RENDERER` and `ff0000ff`.
+- Check whether Aye can call a C function pointer from an `@cimport` typedef. If it cannot, add an entry to `browser/COMPILER_GAPS.md` and use `@link` + rpath instead.
+- Record whether SwiftShader works on the macOS arm64 runner. If it does not, macOS CI uses `null` (§2).
+- files: `browser/gpu/gl.aye` (new), `browser/main.aye`, `tests/browser.rs` (`gpu_smoke`), `browser/COMPILER_GAPS.md` if needed
+- reference: `ui/gl/gl_context_egl.cc` (attributes), `ui/gl/generate_bindings.py` (run-time binding), `third_party/angle/include/EGL/eglext_angle.h`
+- verify: `DWELLER_GL=swiftshader target/dweller gpu-smoke` prints `ff0000ff`; `cargo test --release --test browser -- gpu_smoke > target/p11.2.log 2>&1; echo $?` → 0 on both CI OSes
+- depends on: P11.1; time box: 45 min; model: opus (FFI, gap triage)
+
+#### P11.3: `ArrayBuffer` on one contiguous byte store
+- goal: an `ArrayBuffer` keeps its bytes in one heap-owned block (pointer, length, detached flag), freed by the GC. It does not keep them in a JS array of numbers (`lib.aye` `_bytes`). The views (`typed.aye`) and `DataView` read and write the block. Native code gets a slice of `(ptr, len)` for a view.
+- Behavior and results stay the same, and creating a `Float32Array` of 1M elements becomes 10x faster or more.
+- First check the Aye repo's WIP P3.58 ("native `TypedArray`", 34c2234) and take it over if it fits.
+- Prerequisite for WebGL buffers and textures (§3), WASM memory and Worker transfer.
+- files: `browser/js/lib.aye`, `browser/js/typed.aye`, `browser/js/heap.aye`, `browser/js/gc.aye`
+- reference: `v8/src/objects/js-array-buffer.h` (backing store, detach), `v8/src/objects/backing-store.h`
+- verify: `cargo test --release --test browser -- js_conformance > target/p11.3.log 2>&1; echo $?` → 0 (the 530 scripts of `browser/tests/js`, `256_typed_array_views.js` among them); test262 `built-ins/TypedArray*` and `ArrayBuffer` pass rate not lower (P10.3 when it exists, else `dweller js --test262` over that directory); a 1M `Float32Array` fill benchmark before and after in the PR
+- time box: 45 min (split off the GC part if it is larger); model: opus
+
+#### P11.4: WebGL 2 context and drawing buffer
+- goal:
+  - `canvas.getContext('webgl2', attrs)` returns a `WebGL2RenderingContext` (one per canvas; `null` without ANGLE).
+  - The drawing buffer is an FBO with color + depth/stencil and an MSAA renderbuffer resolved at frame end (§2).
+  - Context attributes and `getContextAttributes`.
+  - `drawingBufferWidth`/`Height`, resized on `canvas.width` and `height`.
+  - `clearColor`, `clear`, `viewport`, `scissor`, `enable`/`disable`, `colorMask`, `readPixels` into a `Uint8Array`, and `getError` with the WebGL error rules (§3).
+  - `getParameter` for the state above plus the limits three.js queries at startup (`MAX_TEXTURE_SIZE`, `MAX_*_UNIFORM_VECTORS`, `VERSION`, `SHADING_LANGUAGE_VERSION`, `MAX_SAMPLES`), and `getShaderPrecisionFormat`.
+  - Constants generated from `gl3.h` into a table.
+- files: `browser/engine/webgl_api.aye` (new), `browser/engine/webgl_prelude.aye` (new), `browser/engine/canvas_prelude.aye` (`getContext` dispatch), `tests/browser.rs` (`webgl_context`), `browser/tests/webgl/context.html`
+- reference: `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc`, `webgl2_rendering_context_base.cc` (validation order, error codes), `third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.cc`
+- verify: `cargo test --release --test browser -- webgl_context > target/p11.4.log 2>&1; echo $?` → 0 (`dump --js` of `context.html` prints the cleared pixel, the attributes, `getError` sequences and limits matching its `.txt`)
+- depends on: P11.2, P11.3; time box: 45 min; model: opus
+
+#### P11.5: buffers, shaders, programs, draws: a triangle
+- goal:
+  - `createBuffer`, `bindBuffer`, `bufferData`, `bufferSubData`.
+  - `createShader`, `shaderSource`, `compileShader`, `getShaderParameter`, `getShaderInfoLog`; `createProgram`, `attachShader`, `linkProgram`, `getProgramParameter`, `getProgramInfoLog`, `useProgram`.
+  - `getAttribLocation`, `bindAttribLocation`, `vertexAttribPointer`, `enableVertexAttribArray`, `vertexAttrib*`.
+  - `getUniformLocation` and `uniform*` / `uniformMatrix*` with the location validity rules; `getActiveAttrib`, `getActiveUniform`.
+  - `drawArrays`, `drawElements`, and `delete*` / `is*`.
+  - WebGL object wrappers with context ownership and deleted-state checks (§3).
+  - Shaders go to ANGLE as given and are never parsed by Dweller (§4).
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `browser/tests/webgl/triangle.html` (+ golden PNG), `tests/browser.rs` (`webgl_triangle`)
+- reference: as P11.4; `third_party/angle/src/libANGLE/Compiler.cpp` (`SelectShaderSpec`: WebGL spec applied by ANGLE)
+- verify: `cargo test --release --test browser -- webgl_triangle webgl_context > target/p11.5.log 2>&1; echo $?` → 0: `readPixels` at 3 points gives the triangle's color, the background and the edge; a bad shader gives `COMPILE_STATUS` false and a non-empty log; a buffer from another context gives `INVALID_OPERATION`
+- depends on: P11.4; time box: 45 min; model: sonnet
+
+#### P11.6: textures
+- goal:
+  - `createTexture`, `bindTexture`, `texParameter*`, `generateMipmap`, `activeTexture`, `texStorage2D`.
+  - `texImage2D` and `texSubImage2D` from an `ArrayBufferView` (type checked against format and type), `ImageData`, `HTMLImageElement`, `HTMLCanvasElement` (2D), `ImageBitmap` and `OffscreenCanvas`.
+  - `pixelStorei` with `UNPACK_FLIP_Y_WEBGL`, `UNPACK_PREMULTIPLY_ALPHA_WEBGL`, `UNPACK_COLORSPACE_CONVERSION_WEBGL` and `UNPACK_ALIGNMENT`.
+  - A non-origin-clean image throws `SecurityError` (§3).
+  - `createImageBitmap` options `imageOrientation` and `premultiplyAlpha` (three's `ImageBitmapLoader` uses them).
+- files: `browser/engine/webgl_api.aye`, `browser/engine/canvas_prelude.aye` (`ImageBitmap` options), `browser/tests/webgl/textures.html`, `tests/browser.rs` (`webgl_textures`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc` (`TexImageHelper*`, `WebGLImageConversion`), `third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.cc` (algorithm only)
+- verify: `cargo test --release --test browser -- webgl_textures > target/p11.6.log 2>&1; echo $?` → 0: a textured quad from a PNG, a 2D canvas and an `ImageData`, read back with and without `FLIP_Y`; a cross-origin image throws `SecurityError`
+- depends on: P11.5; time box: 45 min; model: sonnet
+
+#### P11.7: WebGL canvases in the window, screenshots and `toDataURL` (readback compositing)
+- goal: step 1 of §5.
+  - At frame end, a context that drew resolves its MSAA buffer and reads into a pixel-pack buffer with a fence. The next frame maps it into the canvas's `image.Bitmap` (Y flip; un-premultiplied only when `alpha && premultipliedAlpha`) and bumps `Bitmap.version`, so the damage tracking and raster cache work unchanged.
+  - `preserveDrawingBuffer: false` clears after the take.
+  - `toDataURL`, `toBlob`, `drawImage(webglCanvas)`, `screenshot` and `dump` take the frame synchronously when needed.
+  - The DWELLER_TIMING record `webgl_readback`.
+- files: `browser/engine/webgl_api.aye`, `browser/engine/script.aye` (frame end hook), `browser/ui/window.aye`, `browser/shot.aye`, `tests/browser.rs` (`window_webgl`, `webgl_screenshot`)
+- reference: `third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.cc` (`PrepareTransferableResource`, preserve semantics), `docs/how_cc_works.md` (TextureLayer, idea only)
+- verify: `cargo test --release --test browser -- window_webgl webgl_screenshot window_damage > target/p11.7.log 2>&1; echo $?` → 0. `window_webgl` runs a 120-frame rAF spinning triangle at 1280x720 under `DWELLER_DAMAGE_CHECK=1`: 120 canvas updates, no damage outside the canvas. The PR records `webgl_readback` p50/p95 ms at 1280x720 on the user's Mac (estimate 3–5 ms).
+- depends on: P11.6; time box: 45 min; model: opus
+
+#### P11.8: WebGL 2 state objects
+- goal:
+  - VAOs (`createVertexArray` and the rest), instancing (`drawArraysInstanced`, `drawElementsInstanced`, `vertexAttribDivisor`), `drawRangeElements`, `vertexAttribIPointer`.
+  - MRT (`drawBuffers`); framebuffers and renderbuffers (`framebufferTexture2D`, `framebufferTextureLayer`, `renderbufferStorageMultisample`, `checkFramebufferStatus`).
+  - Uniform buffers (`getUniformBlockIndex`, `uniformBlockBinding`, `bindBufferBase`, `bindBufferRange`).
+  - Samplers.
+  - 3D and 2D-array textures (`texImage3D`, `texStorage3D`, `texSubImage3D`), and integer and float formats (`R16F`, `RGBA16F`, `R32F`, `RGBA32F`, `DEPTH24_STENCIL8`, `DEPTH_COMPONENT32F`, sRGB).
+  - `uniform[1234]ui`, `uniformMatrix[234]x[234]fv`.
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `browser/tests/webgl/webgl2_objects.html`, `tests/browser.rs` (`webgl2_objects`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`
+- verify: `cargo test --release --test browser -- webgl2_objects > target/p11.8.log 2>&1; echo $?` → 0: instanced quads, rendering to a float MRT FBO then sampling it, a UBO-driven color, and a 2D-array texture layer, each read back
+- depends on: P11.5, P11.6; time box: 45 min (split UBO, samplers and 3D textures into P11.8b if larger); model: sonnet
+
+#### P11.9: three.js hello cube
+- goal:
+  - Copy `three.module.min.js` r170 and its `LICENSE` (MIT) from `~/Documents/f1/web/node_modules/three/build/` into `browser/tests/webgl/three/`.
+  - Add `browser/tests/webgl/three_cube.html`: a `WebGLRenderer` (default options), a `MeshStandardMaterial` cube with a PNG texture, one directional light, `setAnimationLoop`.
+  - Fix what three's startup needs: `getExtension` returns `null` for unsupported ones; `KHR_parallel_shader_compile` is absent or works.
+  - The PR records the JS time per frame (DWELLER_TIMING `scripts` in rAF) and the GPU-side time.
+- files: `browser/tests/webgl/three/` (new, vendored), `three_cube.html` (+ golden), `tests/browser.rs` (`webgl_three_cube`), `browser/engine/webgl_*.aye`
+- reference: three's own `src/renderers/webgl/WebGLExtensions.js`, `WebGLCapabilities.js` (what it queries) in the vendored copy's source on npm; `third_party/blink/renderer/modules/webgl/` for the API calls it hits
+- verify: `cargo test --release --test browser -- webgl_three_cube > target/p11.9.log 2>&1; echo $?` → 0: no JS error, the screenshot golden (SwiftShader) matches, and `window_webgl`-style 60 frames draw in the window
+- depends on: P11.7, P11.8; time box: 45 min; model: opus (unknowns)
+
+#### P11.10: rAF at display vsync, frame timestamp, `performance.now()` precision
+- goal: §6 frame timing.
+  - rAF callbacks run in the window's frame step, before style, layout and paint, all with the same frame timestamp, at the display refresh rate (`SDL_GetWindowDisplayMode`), presented with `SDL_RENDERER_PRESENTVSYNC`. They are not a 16 ms timer.
+  - `performance.now()` comes from a microsecond monotonic clock coarsened to 100 µs. The virtual clock of `dump` is unchanged.
+  - Measure input latency from SDL event timestamp to present (`DWELLER_TIMING` `input_to_present`).
+  - Hidden windows stay throttled (P4.55).
+- files: `browser/engine/prelude.aye` (rAF), `browser/engine/script.aye` (`tick`, timers), `browser/ui/window.aye` (frame loop, vsync), `tests/browser.rs` (`window_raf_vsync`)
+- reference: `third_party/blink/renderer/core/frame/frame_request_callback_collection.cc`, the HTML spec "update the rendering"; `third_party/blink/renderer/core/timing/performance.cc` (coarsening, algorithm only)
+- verify: `cargo test --release --test browser -- window_raf_vsync window_damage window_transform_composite > target/p11.10.log 2>&1; echo $?` → 0. `window_raf_vsync`: 120 rAF frames; all callbacks of a frame see the same timestamp; intervals median within 10% of the display period; `performance.now()` values not all whole ms.
+- depends on: none (can run after P11.2 in parallel with P11.4–P11.9, but not with a P4 card on `ui/window.aye`); time box: 45 min; model: opus
+
+#### P11.11: game input: key codes, pointer events, Pointer Lock, Fullscreen
+- goal:
+  - Trusted `KeyboardEvent`s carry `code` (from the SDL scancode), `repeat`, `location` and the modifier flags.
+  - The window dispatches `pointerdown`, `pointermove`, `pointerup`, `pointercancel` and `pointerleave` (mouse `pointerId` 1, `isPrimary`) before the mouse events, as the spec orders them.
+  - `MouseEvent.movementX`/`Y`.
+  - `element.requestPointerLock()` returns a promise; it uses `SDL_SetRelativeMouseMode` and allows only a user activation. `document.pointerLockElement`, `pointerlockchange`, `pointerlockerror`; Escape exits.
+  - `requestFullscreen` / `exitFullscreen` / `fullscreenElement` / `fullscreenchange` via `SDL_SetWindowFullscreen`.
+  - `visibilitychange` and `document.visibilityState`.
+  - `structuredClone` (the algorithm P11.18 reuses).
+- files: `browser/ui/window.aye`, `browser/ui/sdl.aye`, `browser/engine/prelude.aye`, `tests/browser.rs` (`window_pointer_lock`, `window_input_codes`), `browser/tests/js/NNN_structured_clone.js`
+- reference: `third_party/blink/renderer/core/page/pointer_lock_controller.cc`, `third_party/blink/renderer/core/fullscreen/fullscreen.cc`, `third_party/blink/renderer/core/input/pointer_event_manager.cc` (algorithm only); `ui/events/keycodes/dom/dom_code_data.inc` (scancode → `code` table, BSD)
+- verify: `cargo test --release --test browser -- window_pointer_lock window_input_codes js_conformance > target/p11.11.log 2>&1; echo $?` → 0
+- depends on: none; time box: 45 min (split Fullscreen into P11.11b if needed); model: sonnet
+
+#### P11.12: the rest of WebGL 2
+- goal:
+  - Queries (`OCCLUSION`, `ANY_SAMPLES_PASSED`; results available only after a frame, as the spec requires); `fenceSync`, `clientWaitSync` (timeout clamped to 0 on the main thread), `getSyncParameter`.
+  - Transform feedback.
+  - `blitFramebuffer`, `readBuffer`, `readPixels` into a `PIXEL_PACK_BUFFER`, `getBufferSubData`, `copyBufferSubData`, `copyTexSubImage2D`/`3D`, `clearBuffer[fiuv]`, `invalidateFramebuffer`, `getIndexedParameter`, `getInternalformatParameter`.
+- files: `browser/engine/webgl_api.aye`, `browser/tests/webgl/webgl2_rest.html`, `tests/browser.rs` (`webgl2_rest`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`, `webgl_query.cc`, `webgl_sync.cc`
+- verify: `cargo test --release --test browser -- webgl2_rest > target/p11.12.log 2>&1; echo $?` → 0
+- depends on: P11.8; time box: 45 min; model: sonnet
+
+#### P11.13: WebGL 2 extensions
+- goal: `getSupportedExtensions` and `getExtension` for the WebGL 2 set of §3, each enabled with `glRequestExtensionANGLE` only when ANGLE lists it as requestable (`GL_REQUESTABLE_EXTENSIONS_ANGLE`):
+  - `EXT_color_buffer_float`, `EXT_color_buffer_half_float`, `EXT_float_blend`
+  - `EXT_texture_filter_anisotropic`, `OES_texture_float_linear`, `EXT_texture_norm16`
+  - `KHR_parallel_shader_compile`, `WEBGL_lose_context`, `WEBGL_debug_renderer_info` (generic strings)
+  - the compressed formats ANGLE has: `WEBGL_compressed_texture_s3tc`/`_s3tc_srgb`/`_etc`/`_astc`, `EXT_texture_compression_bptc`/`_rgtc`, with `compressedTexImage2D`/`3D` and the size checks of each extension spec.
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `browser/tests/webgl/extensions.html`, `tests/browser.rs` (`webgl_extensions`)
+- reference: `third_party/blink/renderer/modules/webgl/` (one file per extension), `third_party/angle/include/GLES2/gl2ext_angle.h`
+- verify: `cargo test --release --test browser -- webgl_extensions > target/p11.13.log 2>&1; echo $?` → 0: render to an `RGBA16F` FBO, anisotropy set and read back, an S3TC or ETC2 texture uploaded (whichever SwiftShader has), and `getExtension('NOPE')` is `null`
+- depends on: P11.8; time box: 45 min; model: sonnet
+
+#### P11.14: WebGL conformance runner and baseline
+- goal: §7.
+  - `browser/tools/webgl_cts.rev` pins KhronosGroup/WebGL. The suite is fetched and cached like WPT, not vendored.
+  - `browser/tools/webgl_conformance.py run|check` serves the suite (the P10.1 static server) and runs each page of the first `conformance2/` subset in `dump --js` with `DWELLER_GL=swiftshader`. A prelude hook defines `window.webglTestHarness` (`reportResults`, `notifyFinished`). Each page has a 30 s timeout.
+  - The script writes "WebGL 2: <dir>" rows into `docs/conformance.md`.
+  - A weekly CI job on Ubuntu.
+- files: `browser/tools/webgl_conformance.py` (new), `browser/tools/webgl_cts.rev`, `browser/engine/prelude.aye` (the hook behind a flag), `docs/conformance.md`, `.github/workflows/conformance.yml`
+- reference: `third_party/webgl/src/sdk/tests/00_test_list.txt`, `conformance2/00_test_list.txt`, `js/js-test-pre.js` (`reportTestResultsToHarness`, `notifyFinishedToHarness`)
+- verify: `python3 browser/tools/webgl_conformance.py run --subset first > target/p11.14.log 2>&1; echo $?` → 0 (the run completes); the baseline table committed
+- depends on: P11.9 (and P10.1 for the server; if P10.1 has not landed, use `browser/tests/server.py`); time box: 45 min; model: sonnet
+
+#### P11.15: context loss, many contexts, limits
+- goal: §2 and §4.
+  - Robustness reset check each frame. `webglcontextlost` / `webglcontextrestored` with `preventDefault`, and every call's lost-context return value.
+  - `WEBGL_lose_context` `loseContext` / `restoreContext`.
+  - At most 16 live contexts per page (the least recently used one is lost, with a console warning).
+  - The canvas GC finalizer frees its context.
+  - The limit clamps of §4 (texture size, drawing buffer size, shader source size).
+- files: `browser/engine/webgl_api.aye`, `browser/tests/webgl/context_loss.html`, `tests/browser.rs` (`webgl_context_loss`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc` (`LoseContextImpl`, `kMaxGLActiveContexts`), `webgl_context_group.cc`
+- verify: `cargo test --release --test browser -- webgl_context_loss > target/p11.15.log 2>&1; echo $?` → 0; the conformance rows for `conformance2/context` not lower
+- depends on: P11.13; time box: 45 min; model: sonnet
+
+#### P11.16: WebAssembly runtime choice (measurement, no browser code)
+- goal: decide the WASM engine with numbers (§6).
+  - Copy `~/Documents/f1` to the scratchpad; never modify the user's repo.
+  - Add a small `sim-bench` crate there: it steps the sim of `crates/sim-core` 20,000 times at 200 Hz on a fixed input, with no wasm-bindgen imports, and builds for `wasm32-wasip1`.
+  - Measure the median step time natively and under: wasmtime (Cranelift), WAMR (fast-interp and, on x86-64, Fast JIT), wasm3. The machine is the user's Mac (arm64); add Ubuntu x64 if available.
+  - Record the table and the choice in `docs/webgl.md` §6. The rule: the fastest runtime with a C API that runs on macOS arm64 and Linux x64 and meets ≤ 0.5 ms per step. Also record the library size and license.
+- files: `docs/webgl.md` only
+- reference: `v8/src/wasm/` (the semantics the JS API must keep: memory growth, traps)
+- verify: the table in the PR, with the commands to rerun it
+- depends on: none (any time); time box: 45 min; model: sonnet
+
+#### P11.17: the WebAssembly JS API
+- goal: on the runtime P11.16 chose (C API via `@cimport`; binaries built like ANGLE's or taken from the project's releases at a pinned version, in `browser/wasm/`):
+  - `WebAssembly.Module`, `Instance`, `instantiate`, `instantiateStreaming` (needs `application/wasm`), `compile`, `validate`.
+  - `Memory`: its `buffer` is an `ArrayBuffer` over the linear memory (P11.3, external store), detached on `grow`.
+  - `Table`, `Global`, `CompileError`, `LinkError`, `RuntimeError`.
+  - Imports call JS functions; exports are JS functions; traps throw `RuntimeError`.
+  - wasm-bindgen glue (`sim_wasm.js`: `TextDecoder`, `FinalizationRegistry`, `externref` tables) works.
+- files: `browser/wasm/` (new), `browser/engine/prelude.aye`, `browser/js/lib.aye` (external `ArrayBuffer` store), `tests/browser.rs` (`wasm_api`, `wasm_sim_bench`), `browser/tests/wasm/`
+- reference: `v8/src/wasm/wasm-js.cc` (the JS API), `v8/src/wasm/wasm-objects.h`; the WPT `wasm/jsapi/` tests
+- verify: `cargo test --release --test browser -- wasm_api > target/p11.17.log 2>&1; echo $?` → 0; `wasm_sim_bench` loads a copy of `sim_wasm_bg.wasm` with its glue and prints the step time, within 1.5x of P11.16's standalone number
+- depends on: P11.3, P11.16; time box: 45 min (split Memory/Table/Global into P11.17b if larger); model: opus
+
+#### P11.18: dedicated Workers
+- goal:
+  - `new Worker(url, {type: 'classic'|'module'})`: one OS thread with its own `Interp` and event loop.
+  - `postMessage` and `onmessage` both ways, with structured clone (P11.11) and `transfer` of `ArrayBuffer`s (P11.3); `importScripts`; `terminate`; `self.close`; `error` events.
+  - `URL.createObjectURL` gets a real blob registry (`blob:` resolves in fetch and Worker), plus `revokeObjectURL`.
+  - Audit the module-level state of `browser/js/` (1 `var`) and `browser/engine/` (15) first, and record what is thread-local.
+  - The worker global has `fetch`, timers, `performance`, `WebAssembly`, `OffscreenCanvas` (2D) and `TextDecoder`.
+- files: `browser/engine/workers.aye` (new), `browser/engine/prelude.aye`, `browser/engine/script.aye`, `tests/browser.rs` (`worker_basic`, `worker_module`, `worker_transfer`)
+- reference: `third_party/blink/renderer/core/workers/` (`dedicated_worker.cc`, `worker_global_scope.cc`; algorithm only); the HTML spec "Workers"; the WPT `workers/` tests
+- verify: `cargo test --release --test browser -- worker_ > target/p11.18.log 2>&1; echo $?` → 0, including a module worker that computes a 512x512 noise `Float32Array` and transfers it back (as the game's `cloudNoise.worker.ts` does)
+- depends on: P11.3, P11.11; time box: 45 min (split the blob registry into P11.18b if needed); model: opus (threads)
+
+#### P11.19: Web Audio core
+- goal: §6 Web Audio.
+  - `AudioContext` (`state`, `resume`/`suspend` with user activation, `currentTime`, `sampleRate`, `destination`).
+  - Output through `SDL_OpenAudioDevice` (float32 stereo 48 kHz), fed from a ring buffer that the window thread fills in 128-frame quanta about 30 ms ahead.
+  - `AudioBuffer`, `createBuffer`, `decodeAudioData` (WAV: PCM 8, 16 and 24 bit, float32).
+  - `AudioBufferSourceNode` (`start`/`stop` with `when`, `loop`, `loopStart`/`loopEnd`, `playbackRate`, `detune`, `ended`); `GainNode`.
+  - `AudioParam` (`value`, `setValueAtTime`, `linearRampToValueAtTime`, `exponentialRampToValueAtTime`, `setTargetAtTime`, `cancelScheduledValues`); `connect`/`disconnect`.
+  - Headless runs use an offline sink, so tests compare samples: `OfflineAudioContext` with the same graph code.
+- files: `browser/audio/` (new: graph, nodes, WAV decoder), `browser/ui/sdl.aye` (audio), `browser/engine/audio_api.aye` (new), `tests/browser.rs` (`webaudio_core`)
+- reference: `third_party/blink/renderer/modules/webaudio/` (`audio_buffer_source_handler.cc`, `audio_param_timeline.cc`; algorithm only); the WPT `webaudio/` tests
+- verify: `cargo test --release --test browser -- webaudio_core > target/p11.19.log 2>&1; echo $?` → 0. An `OfflineAudioContext` renders a looped buffer through a gain ramp; samples match the expected values within 1e-4.
+- depends on: P11.3; time box: 45 min (split AudioParam automation into P11.19b if needed); model: opus
+
+#### P11.20: Web Audio effects
+- goal: `BiquadFilterNode` (all 8 types, `getFrequencyResponse`), `StereoPannerNode`, `DynamicsCompressorNode` (`reduction`), `ConvolverNode` (`normalize`, partitioned FFT convolution), as the spec defines them. These are the nodes the game uses.
+- files: `browser/audio/`, `browser/engine/audio_api.aye`, `tests/browser.rs` (`webaudio_effects`)
+- reference: the Web Audio spec (biquad coefficients from the Audio EQ Cookbook); `third_party/blink/renderer/platform/audio/biquad.cc`, `dynamics_compressor.cc`, `reverb_convolver.cc` (algorithm only)
+- verify: `cargo test --release --test browser -- webaudio_effects > target/p11.20.log 2>&1; echo $?` → 0: offline renders match reference sample files made with Chrome's `OfflineAudioContext`, within 1e-3
+- depends on: P11.19; time box: 45 min; model: sonnet
+
+#### P11.21: the game's frame budget
+- goal: measure where a frame of the game goes before the acceptance run.
+  - Build a copy of the game (as P11.24) and load its main scene in the window at 1280x720.
+  - Record per frame: JS in rAF (split three's `render` from the game's code), `webgl_readback`, `ui_draw`, GPU wait, WASM step time. Use 300 frames, p50 and p95.
+  - If JS is over 8 ms p50, write the follow-up into the plan: the bytecode compiler (`browser/js/PERF.md`, P4.30) or targeted builtins (`Float32Array` math, property access in three's `Matrix4`).
+- files: `browser/engine/PERF.md` (a "WebGL game" section), `docs/plans/browser.md`
+- reference: `browser/js/PERF.md`
+- verify: the table in `PERF.md`, with the command to rerun it
+- depends on: P11.9, P11.10, P11.17, P11.18, P11.19; time box: 45 min; model: sonnet
+
+#### P11.22: GPU compositing, part 1: the window presents through ANGLE
+- goal: step 2 of §5, first half.
+  - The SDL window gets an EGL window surface: `SDL_WINDOW_METAL` + `SDL_Metal_GetLayer` on macOS; the X11 window or `wl_egl_window` on Linux.
+  - `eglSwapInterval(1)`.
+  - `pagedraw.aye`'s pixels become 256x256 texture tiles, and only damaged tiles are uploaded. The chrome is its own texture.
+  - `ui/compositor.aye` draws quads with one shader. `SDL_Renderer` stays as the fallback (`DWELLER_GL=off`, no ANGLE).
+  - `DWELLER_DAMAGE_CHECK` compares the composited frame, read back, with a whole CPU frame.
+- files: `browser/ui/compositor.aye` (new), `browser/ui/window.aye`, `browser/ui/pagedraw.aye`, `browser/ui/chrome.aye`, `browser/ui/sdl.aye`
+- reference: `docs/how_cc_works.md` (tiles, damage, idea only); `ui/gl/gl_surface_egl.cc` (window surfaces); the sample windows in `third_party/angle/util/`
+- verify: `DWELLER_DAMAGE_CHECK=1 cargo test --release --test browser -- window_ > target/p11.22.log 2>&1; echo $?` → 0 on both OSes; `window_perf.py scroll https://react.dev` draw p95 not higher than with `DWELLER_GL=off`
+- depends on: P11.7, P11.10; not in parallel with P4 cards on `ui/`; time box: 45 min (split the tiles from the present path if larger); model: opus
+
+#### P11.23: GPU compositing, part 2: canvases, layers and scrolling on the GPU
+- goal:
+  - WebGL canvases are drawn from their color texture through an `EGLImage` (`EGL_KHR_gl_texture_2D_image`), with two textures swapped for `preserveDrawingBuffer: false`. There is no readback in the window (screenshots still read back).
+  - Promoted layers (P4.56) are textures with transform and opacity in the quad shader.
+  - Scrolling moves tile quads, and only exposed tiles are rasterized.
+- files: `browser/ui/compositor.aye`, `browser/ui/pagedraw.aye`, `browser/engine/webgl_api.aye`
+- reference: `docs/how_cc_works.md` (TextureLayer, scrolling on the compositor, idea only); `third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.cc` (buffer swap)
+- verify: `DWELLER_DAMAGE_CHECK=1 cargo test --release --test browser -- window_webgl window_transform_composite window_damage > target/p11.23.log 2>&1; echo $?` → 0; `webgl_readback` absent from the window's timing; `window_perf.py scroll` p95 on react.dev and github.com lower than after P11.22 (recorded)
+- depends on: P11.22; time box: 45 min; model: opus
+
+#### P11.24: acceptance: the user's game in Dweller
+- goal:
+  - Copy `~/Documents/f1/web` to the scratchpad without `node_modules`, then `pnpm install --frozen-lockfile && pnpm build` (`tsc && vite build`; the six HTML entries of `vite.config.ts` go into `dist/`). Never modify the user's repo.
+  - Serve `dist/` with a static server that sends `application/wasm` (`browser/tests/server.py` or `python3 -m http.server`). The `/api/*` routes exist only under `vite dev`; the game must tolerate their 404, and if it does not, note it for the user.
+  - Open `index.html` in the window at 1280x720. A scripted run (agent protocol plus `--events`) starts a session and drives for 30 s with keys.
+  - Acceptance: no JS errors; median frame rate at or above 50 fps; the car moves (the wasm sim steps; the screen changes); audio plays (the SDL device is open and samples are non-zero); Pointer Lock works in the garage page.
+  - Screenshots go side by side with Chrome's for the user to judge.
+- files: `browser/tools/game_check.py` (new; the path to the game comes from an argument, never from a committed path), `docs/plans/browser.md` (results)
+- reference: the cards above
+- verify: `python3 browser/tools/game_check.py ~/Documents/f1/web > target/p11.24.log 2>&1; echo $?` → 0, and the user's judgement of the screenshots
+- depends on: P11.9–P11.23; time box: 45 min, and defects become cards; model: opus
+
+**If the user's game needs it** (the game's source does not use these
+today; main checks again before a card starts):
+
+- **P11.25 OffscreenCanvas in workers and WebGL in OffscreenCanvas.**
+  - Today: main-thread 2D only. The game uses OffscreenCanvas only in the recorder page, with insertable streams.
+  - The card: `transferControlToOffscreen`, `OffscreenCanvas` 2D and `webgl2` in a Worker (P11.18), and `transferToImageBitmap` to the main thread.
+  - reference: `third_party/blink/renderer/core/offscreencanvas/`.
+  - verify: `worker_offscreen` test.
+- **P11.26 KTX2 / Basis compressed textures.**
+  - The game has no `KTX2Loader` today; its textures are WebP.
+  - If added, three's `KTX2Loader` runs the Basis transcoder as WASM in a Worker (P11.17, P11.18) and needs the compressed-format extensions (P11.13).
+  - The card runs three's KTX2 example on a vendored `.ktx2` and checks that the transcoder picks ASTC or ETC2 on Apple Silicon (Metal) and BC7 or S3TC on Linux.
+  - verify: `webgl_ktx2` screenshot test.
+- **P11.27 Gamepad API.**
+  - `navigator.getGamepads`, `gamepadconnected` and `gamepaddisconnected` from `SDL_GameController`, using the standard mapping.
+  - reference: `third_party/blink/renderer/modules/gamepad/`.
+  - verify: `window_gamepad` with SDL's virtual joystick (`SDL_JoystickAttachVirtual`).
+- **P11.28 Video textures and `requestVideoFrameCallback`.**
+  - These need video decoding, which Dweller does not have (a separate design: platform decoders or a C library).
+  - After that: `texImage2D(video)` and `requestVideoFrameCallback`.
+
+**For other sites (not the game):**
+
+#### P11.29: WebGL 1
+- goal:
+  - `getContext('webgl')` and `'experimental-webgl'`: an ES 2.0 WebGL compatibility context (ANGLE applies `SH_WEBGL_SPEC`, with its loop and index rules), sharing all of P11.4–P11.7's code.
+  - The WebGL 1 extension set of §3: `OES_vertex_array_object`, `ANGLE_instanced_arrays`, `WEBGL_depth_texture`, `OES_texture_float`, `OES_texture_half_float`, `OES_element_index_uint`, `OES_standard_derivatives`, `EXT_shader_texture_lod`, `EXT_frag_depth`, `EXT_blend_minmax`, `WEBGL_draw_buffers`, `EXT_sRGB`, plus the shared ones.
+  - Conformance `conformance/` rows.
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `tests/browser.rs` (`webgl1_basic`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl_rendering_context.cc`, the extension files
+- verify: `cargo test --release --test browser -- webgl1_basic > target/p11.29.log 2>&1; echo $?` → 0; `webgl_conformance.py run --suite 1` baseline committed
+- depends on: P11.13; time box: 45 min; model: sonnet
+
 ## Layer 1: P10, components measured by WPT and test262
 
 **Suites and revisions.** WPT (web-platform-tests) for HTML, DOM, CSS,
@@ -728,6 +1082,18 @@ card adds a site fix or a feature.
 
 ## Decisions
 
+- **WebGL (user, 2026-10-15):** the user builds 3D web games, so
+  Dweller needs WebGL. The acceptance target is the user's game
+  (`~/Documents/f1/web`, three 0.170.0). WebGL 2 comes first, because
+  three.js r163 and later need it. The GPU backend is ANGLE, built from
+  a pinned revision and shipped as prebuilt release assets. ANGLE's
+  WebGL compatibility mode validates and translates every shader. Pixels
+  reach the window first by a per-frame readback, later by GPU
+  compositing. Design: `docs/webgl.md`; cards: P11.
+- **Reference sources (user, 2026-10-15):** cards name the known
+  implementation to read in the local checkout (V8, Blink, ANGLE).
+  Porting from V8 and ANGLE (BSD) is allowed with attribution. Blink is
+  an algorithm reference only, because some of its files are LGPL.
 - **Three layers, foundations first (user, 2026-10-15):** see "Strategy
   (2026-10-15)". It replaces the maintenance mode of 2026-10-08 (no new
   site fixes or features until Aye's O6–O9), which work had already left
