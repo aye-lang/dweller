@@ -1,7 +1,7 @@
 // Typed array views share one ArrayBuffer: offsets, unsigned reads,
 // float views over the same bytes, DataView both endians, subarray
 // shares and slice copies, and Lit's template digest (run with
-// ANYKNOWN_JS_GC=stress).
+// DWELLER_JS_GC=stress).
 function show(a) { return a.constructor.name + "[" + Array.from(a).join(",") + "]"; }
 
 // views over one buffer

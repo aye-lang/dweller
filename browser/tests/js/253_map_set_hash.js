@@ -1,6 +1,6 @@
 // Map and Set keys by SameValueZero through the hash index: NaN, +0/-0,
 // mixed types, many keys in insertion order, changes during iteration,
-// and object keys kept across collections (run with ANYKNOWN_JS_GC=stress).
+// and object keys kept across collections (run with DWELLER_JS_GC=stress).
 
 // NaN and +0/-0
 var m = new Map();

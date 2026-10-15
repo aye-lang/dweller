@@ -1,17 +1,17 @@
-//! Tests of the anyknown browser (`browser/`, written in Aye).
+//! Tests of the Dweller browser (`browser/`, written in Aye).
 //!
-//! - `browser/tests/X.html`: `anyknown dump --tree` must print `X.tree` and
-//!   `anyknown dump --text` must print `X.txt`, with an empty stderr (the
+//! - `browser/tests/X.html`: `dweller dump --tree` must print `X.tree` and
+//!   `dweller dump --text` must print `X.txt`, with an empty stderr (the
 //!   browser is built in debug mode, so a leak would show there).
 //! - `aye test` on the browser's root module and on its standalone modules
 //!   (`url`, `dom`, `encoding`) must pass.
 //! - A few command-line cases: `data:` URLs, `--id`/`--tag`, errors.
-//! - `browser/tests/js/X.js`: `anyknown js` must print `X.out` (Node's
+//! - `browser/tests/js/X.js`: `dweller js` must print `X.out` (Node's
 //!   output) and exit 0 with an empty stderr, or, when `X.err` exists,
 //!   print it on stderr and exit 1 (an uncaught exception).
 //!
 //! To accept new output after a deliberate change, run
-//! `ANYKNOWN_BLESS=1 cargo test --test browser` and review the diff.
+//! `DWELLER_BLESS=1 cargo test --test browser` and review the diff.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -33,12 +33,12 @@ fn aye() -> Command {
 }
 
 /// The browser, built once for all tests.
-fn anyknown() -> &'static Path {
+fn dweller() -> &'static Path {
     static EXE: OnceLock<PathBuf> = OnceLock::new();
     EXE.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("anyknown-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dweller-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("anyknown");
+        let exe = dir.join("dweller");
         let out = aye()
             .arg("build")
             .arg("browser")
@@ -56,7 +56,7 @@ fn anyknown() -> &'static Path {
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(anyknown())
+    Command::new(dweller())
         .current_dir(root())
         .args(args)
         .output()
@@ -81,7 +81,7 @@ fn fixtures() {
         "expected at least 20 fixtures, found {}",
         htmls.len()
     );
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let mut failures = Vec::new();
     for html in &htmls {
         let rel = html
@@ -123,7 +123,7 @@ fn fixtures() {
     );
 }
 
-/// `browser/tests/style/X.html`: `anyknown dump --style` must print
+/// `browser/tests/style/X.html`: `dweller dump --style` must print
 /// `X.style`; `media.html` is also dumped 400px wide into
 /// `media.w400.style`.
 #[test]
@@ -162,7 +162,7 @@ fn style_fixtures() {
         ],
         dir.join("media.w400.style"),
     ));
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let mut failures = Vec::new();
     for (args, golden) in &runs {
         let mut all = vec!["dump", "--style"];
@@ -194,7 +194,7 @@ fn style_fixtures() {
     );
 }
 
-/// `browser/tests/layout/X.html`: `anyknown dump --layout` (fixed-metric
+/// `browser/tests/layout/X.html`: `dweller dump --layout` (fixed-metric
 /// font, 800x600 viewport) must print `X.layout`; `percentages.html` is
 /// also laid out 400px wide into `percentages.w400.layout`.
 #[test]
@@ -233,7 +233,7 @@ fn layout_fixtures() {
         ],
         dir.join("percentages.w400.layout"),
     ));
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let mut failures = Vec::new();
     for (args, golden) in &runs {
         let mut all = vec!["dump", "--layout"];
@@ -316,16 +316,16 @@ fn aye_unit_tests() {
     assert!(modules >= 15, "only {modules} modules ran tests: {summary}");
 }
 
-/// `anyknown args...` must exit with `status` and print exactly `stdout`
+/// `dweller args...` must exit with `status` and print exactly `stdout`
 /// (and `stderr`).
 fn expect(args: &[&str], status: i32, stdout: &str, stderr: &str) {
     let out = run(args);
-    assert_eq!(text(&out.stdout), stdout, "stdout of anyknown {args:?}");
-    assert_eq!(text(&out.stderr), stderr, "stderr of anyknown {args:?}");
+    assert_eq!(text(&out.stdout), stdout, "stdout of dweller {args:?}");
+    assert_eq!(text(&out.stderr), stderr, "stderr of dweller {args:?}");
     assert_eq!(
         out.status.code(),
         Some(status),
-        "status of anyknown {args:?}"
+        "status of dweller {args:?}"
     );
 }
 
@@ -372,12 +372,12 @@ fn queries() {
 
 #[test]
 fn errors() {
-    let usage = "error: usage: anyknown dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
+    let usage = "error: usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
     expect(
         &[],
         2,
         "",
-        "error: usage: anyknown [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js FILE | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js FILE | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -475,7 +475,7 @@ fn http() {
     expect(
         &["dump", "--text", &format!("{base}/agent")],
         0,
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) anyknown/0.1\n",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Dweller/0.1\n",
         "",
     );
     expect(
@@ -576,11 +576,11 @@ fn http_images_background() {
     };
     let page = format!("{}/net/bg_images.html", srv.base);
     for stress in [false, true] {
-        let mut c = Command::new(anyknown());
+        let mut c = Command::new(dweller());
         c.current_dir(root())
             .args(["dump", "--text", "--js", &page]);
         if stress {
-            c.env("ANYKNOWN_JS_GC", "stress");
+            c.env("DWELLER_JS_GC", "stress");
         }
         let out = c.output().unwrap();
         assert!(
@@ -610,7 +610,7 @@ fn window_images_load_in_background() {
         return;
     };
     let page = format!("{}/net/bg_images.html", srv.base);
-    let mut window = Command::new(anyknown())
+    let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args([
@@ -690,11 +690,11 @@ fn http_image_events_background() {
     };
     let page = format!("{}/net/bg_image_events.html", srv.base);
     for stress in [false, true] {
-        let mut c = Command::new(anyknown());
+        let mut c = Command::new(dweller());
         c.current_dir(root())
             .args(["dump", "--text", "--js", &page]);
         if stress {
-            c.env("ANYKNOWN_JS_GC", "stress");
+            c.env("DWELLER_JS_GC", "stress");
         }
         let out = c.output().unwrap();
         assert!(
@@ -730,7 +730,7 @@ error b: complete=true naturalWidth=0
             println!("skipped: cannot start python3 for the test server");
             return;
         };
-        let mut c = Command::new(anyknown());
+        let mut c = Command::new(dweller());
         c.current_dir(root()).args([
             "dump",
             "--text",
@@ -738,7 +738,7 @@ error b: complete=true naturalWidth=0
             &format!("{}/net/failed_image_once.html", srv.base),
         ]);
         if stress {
-            c.env("ANYKNOWN_JS_GC", "stress");
+            c.env("DWELLER_JS_GC", "stress");
         }
         let out = c.output().unwrap();
         assert!(
@@ -770,7 +770,7 @@ fn window_relayout_after_image_load() {
         return;
     };
     let page = format!("{}/net/window_relayout.html", srv.base);
-    let mut window = Command::new(anyknown())
+    let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args([
@@ -832,12 +832,12 @@ fn window_relayout_after_image_load() {
 
 /// A scratch directory for the files the browser writes.
 fn scratch() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("anyknown-out-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dweller-out-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-/// `browser/tests/paint/X.html`: `anyknown screenshot --font fixed` in a
+/// `browser/tests/paint/X.html`: `dweller screenshot --font fixed` in a
 /// 400x300 viewport must write exactly `X.png`; `full.html` is also taken
 /// with `--full` into `full.full.png`.
 #[test]
@@ -872,7 +872,7 @@ fn screenshot_fixtures() {
         vec!["--full"],
         dir.join("full.full.png"),
     ));
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let out_dir = scratch();
     let mut failures = Vec::new();
     for (i, (page, extra, golden)) in runs.iter().enumerate() {
@@ -1226,7 +1226,7 @@ fn screenshot_viewport_lazy_image() {
 
 #[test]
 fn screenshot_errors() {
-    let usage = "error: usage: anyknown screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full]\n";
+    let usage = "error: usage: dweller screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full]\n";
     expect(&["screenshot", "browser/tests/basic.html"], 2, "", usage);
     expect(&["screenshot", "-o", "x.png"], 2, "", usage);
     expect(
@@ -1260,7 +1260,7 @@ fn screenshot_errors() {
     );
 }
 
-const WINDOW_USAGE: &str = "usage: anyknown [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -1269,9 +1269,9 @@ fn has_sdl() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// `anyknown args...` with SDL's dummy video driver (no display).
+/// `dweller args...` with SDL's dummy video driver (no display).
 fn run_window(args: &[&str]) -> Output {
-    Command::new(anyknown())
+    Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args(args)
@@ -1301,14 +1301,14 @@ fn window_frames() {
         let out = run_window(&args);
         assert!(
             out.status.success(),
-            "anyknown {args:?}: {}\n{}{}",
+            "dweller {args:?}: {}\n{}{}",
             out.status,
             text(&out.stdout),
             text(&out.stderr)
         );
         assert!(
             out.stderr.is_empty(),
-            "anyknown {args:?}: {}",
+            "dweller {args:?}: {}",
             text(&out.stderr)
         );
     }
@@ -1619,7 +1619,7 @@ fn window_forms_html5() {
     ];
     // The address bar is part of the golden PNG, so the page is loaded
     // from a copy at a fixed path that does not depend on the checkout.
-    let fixed_dir = "/tmp/anyknown-forms-html5";
+    let fixed_dir = "/tmp/dweller-forms-html5";
     let fixed = format!("{fixed_dir}/forms_html5.html");
     std::fs::create_dir_all(fixed_dir).unwrap();
     for name in ["forms_html5.html", "result.html"] {
@@ -1667,7 +1667,7 @@ fn window_forms_html5() {
     }
     let golden = root().join("browser/tests/ui/forms_html5.validation.png");
     let got = std::fs::read(&image).unwrap();
-    if std::env::var_os("ANYKNOWN_BLESS").is_some() {
+    if std::env::var_os("DWELLER_BLESS").is_some() {
         std::fs::write(&golden, &got).unwrap();
     } else {
         assert_eq!(
@@ -1697,7 +1697,7 @@ fn rooted(s: &str) -> String {
 
 /// Compares `got` with the golden file (or writes it when blessing).
 fn check_golden(golden: &Path, got: &str, what: &str, failures: &mut Vec<String>) {
-    if std::env::var_os("ANYKNOWN_BLESS").is_some() {
+    if std::env::var_os("DWELLER_BLESS").is_some() {
         std::fs::write(golden, got).unwrap();
         return;
     }
@@ -1710,8 +1710,8 @@ fn check_golden(golden: &Path, got: &str, what: &str, failures: &mut Vec<String>
     }
 }
 
-/// `browser/tests/agent/X.html`: `anyknown dump --a11y` must print
-/// `X.a11y` and `anyknown dump --md` must print `X.md`; a few fixtures
+/// `browser/tests/agent/X.html`: `dweller dump --a11y` must print
+/// `X.a11y` and `dweller dump --md` must print `X.md`; a few fixtures
 /// also have `--boxes`, `--json` and `--refs` variants.
 #[test]
 fn agent_fixtures() {
@@ -1784,8 +1784,8 @@ fn agent_fixtures() {
     );
 }
 
-/// `browser/tests/agent/sessions/X.jsonl`: requests fed to `anyknown
-/// agent` (or `anyknown mcp` for `X.mcp.jsonl`) on stdin; the responses
+/// `browser/tests/agent/sessions/X.jsonl`: requests fed to `dweller
+/// agent` (or `dweller mcp` for `X.mcp.jsonl`) on stdin; the responses
 /// must be `X.out` (`X.mcp.out`).
 #[test]
 fn agent_sessions() {
@@ -1814,7 +1814,7 @@ fn agent_sessions() {
         } else {
             "agent"
         };
-        let mut child = Command::new(anyknown())
+        let mut child = Command::new(dweller())
             .current_dir(root())
             .arg(mode)
             .stdin(std::process::Stdio::piped())
@@ -1859,7 +1859,7 @@ fn text_overflow_markdown() {
 
 #[test]
 fn agent_errors() {
-    let usage = "error: usage: anyknown dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL\n";
+    let usage = "error: usage: dweller dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL\n";
     expect(&["dump", "--a11y"], 2, "", usage);
     expect(
         &[
@@ -1886,7 +1886,7 @@ fn agent_errors() {
         &["agent", "--color"],
         2,
         "",
-        "error: usage: anyknown agent|mcp [--width PX] [--height PX] [--no-js]\n",
+        "error: usage: dweller agent|mcp [--width PX] [--height PX] [--no-js]\n",
     );
     expect(
         &["dump", "--a11y", "data:text/html,<button>OK</button>"],
@@ -1933,13 +1933,13 @@ fn json_str<'a>(line: &'a str, key: &str) -> &'a str {
     &line[at..at + line[at..].find('"').unwrap()]
 }
 
-/// `screenshot` in `anyknown agent` and `browser_screenshot` in `anyknown
+/// `screenshot` in `dweller agent` and `browser_screenshot` in `dweller
 /// mcp`: PNGs (base64) of the viewport, the whole page and one element.
 #[test]
 fn agent_screenshot() {
     use std::io::Write;
     let session = |mode: &str, input: &str| -> Vec<String> {
-        let mut child = Command::new(anyknown())
+        let mut child = Command::new(dweller())
             .current_dir(root())
             .args([mode, "--width", "400", "--height", "300"])
             .stdin(std::process::Stdio::piped())
@@ -2050,7 +2050,7 @@ fn agent_screenshot() {
 
 /// A window shared by its user and agents (`--agent-socket`,
 /// ui/agents.aye): `browser/tests/agent/window/X.jsonl` is sent over the
-/// window's Unix socket (from this test, or through `anyknown connect
+/// window's Unix socket (from this test, or through `dweller connect
 /// --mcp` for `X.mcp.jsonl`) while the window runs headless with the
 /// scripted events of `X.events` (`agents:N` waits for N requests); the
 /// responses, then the window's `--state`, must be `X.out`.
@@ -2120,7 +2120,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
         args.push("--events".into());
         args.push(events.trim().to_string());
     }
-    let mut window = Command::new(anyknown())
+    let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args(&args)
@@ -2140,7 +2140,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     let requests = std::fs::read(input).unwrap();
     let mut got = String::new();
     if name.ends_with(".mcp.jsonl") {
-        let mut connect = Command::new(anyknown())
+        let mut connect = Command::new(dweller())
             .current_dir(root())
             .args(["connect", &sock, "--mcp"])
             .stdin(Stdio::piped())
@@ -2153,7 +2153,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
         if !out.status.success() || !out.stderr.is_empty() {
             let _ = window.kill();
             return Err(format!(
-                "anyknown connect: {}\n{}",
+                "dweller connect: {}\n{}",
                 out.status,
                 text(&out.stderr)
             ));
@@ -2193,20 +2193,20 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     Ok(got)
 }
 
-/// `anyknown connect` and `--agent-socket` errors.
+/// `dweller connect` and `--agent-socket` errors.
 #[test]
 fn window_agents_errors() {
     expect(
         &["connect"],
         2,
         "",
-        "error: usage: anyknown connect SOCKET [--mcp]\n",
+        "error: usage: dweller connect SOCKET [--mcp]\n",
     );
     expect(
         &["connect", "target/no-such.sock"],
         1,
         "",
-        "error: cannot connect to target/no-such.sock: is a window listening (anyknown --agent-socket target/no-such.sock)?\n",
+        "error: cannot connect to target/no-such.sock: is a window listening (dweller --agent-socket target/no-such.sock)?\n",
     );
     if has_sdl() {
         let out = run_window(&[
@@ -2239,7 +2239,7 @@ fn agent_http() {
         return;
     };
     let base = &srv.base;
-    let mut child = Command::new(anyknown())
+    let mut child = Command::new(dweller())
         .current_dir(root())
         .arg("agent")
         .stdin(std::process::Stdio::piped())
@@ -2278,7 +2278,7 @@ fn agent_http() {
 }
 
 /// Form submission over HTTP: `browser/tests/agent/http/X.jsonl` (with
-/// `$BASE` for the test server's address) fed to `anyknown agent` must
+/// `$BASE` for the test server's address) fed to `dweller agent` must
 /// print `X.out`. The forms in `browser/tests/forms/` submit to the
 /// server's `/echo`, whose page shows the request (method, path,
 /// Content-Type, fields, raw body).
@@ -2308,7 +2308,7 @@ fn agent_forms_http() {
     let mut failures = Vec::new();
     for input in &inputs {
         let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        let mut child = Command::new(anyknown())
+        let mut child = Command::new(dweller())
             .current_dir(root())
             .arg("agent")
             .stdin(std::process::Stdio::piped())
@@ -2404,8 +2404,8 @@ fn js_conformance() {
         "expected at least 150 JS scripts, found {}",
         scripts.len()
     );
-    anyknown();
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    dweller();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless))
         .into_iter()
         .flatten()
@@ -2427,7 +2427,7 @@ fn js_command_line() {
         "",
         "error: cannot read browser/tests/js/missing.js\n",
     );
-    expect(&["js"], 2, "", "error: usage: anyknown js FILE\n");
+    expect(&["js"], 2, "", "error: usage: dweller js FILE\n");
     expect(
         &["js", "browser/tests/js/modules/entry.mjs"],
         0,
@@ -2549,7 +2549,7 @@ fn window_timers_yield_to_frames() {
         println!("skipped: no SDL2");
         return;
     }
-    let mut window = Command::new(anyknown())
+    let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
         .args([
@@ -2649,9 +2649,9 @@ fn jsdom_case(
     all.push(&rel);
     // Each forced layout that keeps boxes is compared with a full one; a
     // difference goes to stderr ("LAYOUT CHECK").
-    let out = Command::new(anyknown())
+    let out = Command::new(dweller())
         .current_dir(root())
-        .env("ANYKNOWN_LAYOUT_CHECK", "1")
+        .env("DWELLER_LAYOUT_CHECK", "1")
         .args(&all)
         .output()
         .unwrap();
@@ -2694,7 +2694,7 @@ fn jsdom_case(
     }
 }
 
-/// `browser/tests/jsdom/X.html`: `anyknown dump --tree --js` must print
+/// `browser/tests/jsdom/X.html`: `dweller dump --tree --js` must print
 /// `X.tree` (the document after its scripts and timers ran), with the
 /// console on stderr equal to `X.err` (or empty). `X.style` and `X.a11y`,
 /// when they exist, are `dump --style --js` and `dump --a11y --js`.
@@ -2712,7 +2712,7 @@ fn jsdom_fixtures() {
         "expected at least 25 DOM fixtures, found {}",
         pages.len()
     );
-    let bless = std::env::var_os("ANYKNOWN_BLESS").is_some();
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
     let mut runs: Vec<(Vec<&str>, PathBuf, PathBuf, Option<PathBuf>)> = Vec::new();
     for p in &pages {
         runs.push((
@@ -2728,7 +2728,7 @@ fn jsdom_fixtures() {
             }
         }
     }
-    anyknown();
+    dweller();
     let failures: Vec<String> = common::run_queue(&runs, |(args, page, golden, err)| {
         jsdom_case(args, page, golden, err.as_deref(), bless)
     })
@@ -2744,16 +2744,16 @@ fn jsdom_fixtures() {
     );
 }
 
-/// Under `ANYKNOWN_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
+/// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
 /// clock, which a task's steps move: a loop that waits for `Date.now()`
 /// ends, after the same work on every run.
 #[test]
 fn benchmark_date_follows_virtual_clock() {
     let page = "browser/tests/benchmark/date_now.html";
     let dump = || {
-        let out = Command::new(anyknown())
+        let out = Command::new(dweller())
             .current_dir(root())
-            .env("ANYKNOWN_BENCHMARK", "1")
+            .env("DWELLER_BENCHMARK", "1")
             .args(["dump", "--text", "--js", page])
             .output()
             .unwrap();
@@ -2774,7 +2774,7 @@ fn benchmark_date_follows_virtual_clock() {
 }
 
 /// The DOM fixtures again with a collection at every allocation
-/// (`ANYKNOWN_JS_GC=stress`): the bindings keep what they hold reachable.
+/// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
 /// `gc_wrappers` allocates too much for that.
 #[test]
 fn jsdom_gc_stress() {
@@ -2793,16 +2793,16 @@ fn jsdom_gc_stress() {
         "layout_many_changes.html",
     ];
     pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
-    anyknown();
+    dweller();
     let failures: Vec<String> = common::run_queue(&pages, |page| {
         let rel = page
             .strip_prefix(root())
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        let out = Command::new(anyknown())
+        let out = Command::new(dweller())
             .current_dir(root())
-            .env("ANYKNOWN_JS_GC", "stress")
+            .env("DWELLER_JS_GC", "stress")
             .args(["dump", "--tree", "--js", &rel])
             .output()
             .unwrap();
@@ -2844,14 +2844,14 @@ fn net_http() {
         headers,
         "",
     );
-    // ANYKNOWN_COOKIE_FILE keeps the persistent cookies (p, Max-Age)
+    // DWELLER_COOKIE_FILE keeps the persistent cookies (p, Max-Age)
     // from one run to the next; session cookies (a, d) end with the run.
     let file = scratch().join("cookies.txt");
     let _ = std::fs::remove_file(&file);
     let with_file = |url: String| {
-        Command::new(anyknown())
+        Command::new(dweller())
             .current_dir(root())
-            .env("ANYKNOWN_COOKIE_FILE", &file)
+            .env("DWELLER_COOKIE_FILE", &file)
             .args(["dump", "--text", &url])
             .output()
             .unwrap()
@@ -3091,7 +3091,7 @@ fn dump_scrolls_through() {
         "Endless page\n\nChunk 1\n",
         "",
     );
-    let usage = "error: usage: anyknown dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL\n";
+    let usage = "error: usage: dweller dump --a11y [--boxes] [--json] | --md [--refs] [--js] [--width PX] [--no-scroll | --scroll-steps N] FILE|URL\n";
     expect(
         &[
             "dump",

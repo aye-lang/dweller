@@ -32,18 +32,9 @@ jobs:
           path: ~/.cargo/bin/aye
           key: aye-${{ runner.os }}-${{ hashFiles('AYE_REV') }}
 
-      # aye-lang/aye is private: the AYE_TOKEN secret (a token that can read
-      # it) is put into the clone URL through git's insteadOf, so the token
-      # is not recorded in cargo's install metadata.
       - name: Install the pinned aye
         if: steps.aye-cache.outputs.cache-hit != 'true'
-        env:
-          AYE_TOKEN: ${{ secrets.AYE_TOKEN }}
-          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-        run: |
-          git config --global url."https://x-access-token:${AYE_TOKEN}@github.com/aye-lang/aye".insteadOf https://github.com/aye-lang/aye
-          cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
-          git config --global --unset-all url."https://x-access-token:${AYE_TOKEN}@github.com/aye-lang/aye".insteadOf
+        run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
 
       - name: aye check browser
         run: aye check browser

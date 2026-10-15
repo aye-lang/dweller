@@ -1,16 +1,16 @@
 # Page-load performance
 
 Measured 2026-10-07 on an Apple M2 Pro (10 CPUs, 32 GB), macOS 26.5.
-The workload is `anyknown dump --md --js URL`, fast mode, fixed-metric
+The workload is `dweller dump --md --js URL`, fast mode, fixed-metric
 layout as used by the Markdown CLI. No JS interpreter, script-budget or
 existing golden changes are included.
 
 ## Timing and offline replay
 
-`ANYKNOWN_TIMING=1` writes tab-separated records to **stderr**:
+`DWELLER_TIMING=1` writes tab-separated records to **stderr**:
 
 ```
-info: ANYKNOWN_TIMING<TAB>phase<TAB>nanoseconds<TAB>source
+info: DWELLER_TIMING<TAB>phase<TAB>nanoseconds<TAB>source
 ```
 
 Stdout is unchanged. Disabled hooks allocate nothing and do not read the
@@ -32,7 +32,7 @@ python3 browser/tools/page_load.py run --archive target/page-load-new \
     --repeat 7 --json target/page-load-new/after.json
 # Alternating AB/BA order; one excluded warmup per binary and site:
 python3 browser/tools/page_load.py run --archive target/page-load-new \
-    --compare target/anyknown-perf-before --repeat 7 \
+    --compare target/dweller-perf-before --repeat 7 \
     --json target/page-load-new/comparison.json
 ```
 
@@ -90,12 +90,12 @@ painted without them.
 
 ### Archive semantics
 
-- `ANYKNOWN_RECORD=DIR` saves the first response for each URL/POST body:
+- `DWELLER_RECORD=DIR` saves the first response for each URL/POST body:
   status, MIME, charset, redirect destination, raw decompressed body, or
   fetch failure. Original URLs, HTML, CSS and JS are **not rewritten**.
-- `ANYKNOWN_REPLAY=DIR` serves these files and disables HTTP prefetch.
+- `DWELLER_REPLAY=DIR` serves these files and disables HTTP prefetch.
   A miss fails locally, is printed, and **never falls through to HTTP**.
-  With `ANYKNOWN_RECORD` set as well (capture's screenshot), a miss is
+  With `DWELLER_RECORD` set as well (capture's screenshot), a miss is
   fetched and recorded instead. A non-GET request (a POST beacon) whose
   body has no record gets the latest-recorded non-GET response for its
   URL, whatever its body; this prints `archive fallback:` and `check`
@@ -107,13 +107,13 @@ painted without them.
   Each `.response` has six newline-delimited metadata fields, then body
   bytes. Filenames are stable 64-bit FNV hashes of URL and optional POST
   content type/body; reading also verifies the original URL.
-- The runner sets `ANYKNOWN_BENCHMARK=1`: a benchmark-only engine prelude
+- The runner sets `DWELLER_BENCHMARK=1`: a benchmark-only engine prelude
   freezes JS Date at 2026-10-07 00:00 UTC and seeds Math.random with 1.
   Otherwise timestamp/random cache-busters cannot replay. Normal browsing
   retains the real builtins; the existing virtual timer clock is unchanged.
 - This is an immutable benchmark snapshot, **not a general HTTP cache**.
   Response headers, cookie-jar updates, expiry and authenticated sessions
-  are not replayed. The runner clears `ANYKNOWN_COOKIE_FILE`; avoid
+  are not replayed. The runner clears `DWELLER_COOKIE_FILE`; avoid
   personalized pages. Keep snapshots private (site directories are mode
   0700). If dynamic state still changes requests/output, the runner fails
   rather than silently substituting another resource (the non-GET
@@ -147,7 +147,7 @@ git diff ec6961c 8f3ace3 -- browser/net/net.aye browser/net/multi.aye \
     browser/engine/images.aye browser/engine/script.aye | \
     git apply --directory target/perf-before-src
 target/release/aye build target/perf-before-src/browser \
-    -o target/anyknown-perf-before --mode fast
+    -o target/dweller-perf-before --mode fast
 ```
 
 Use a fresh source directory. Either binary replays the saved snapshot
@@ -294,7 +294,7 @@ strings and screenshot PNG unchanged).
 Temporary logging in `geometry()` (not committed) recorded, for each
 forced layout, the changes noted since the last one and why
 `restyle()` refused a subtree restyle. Forced layouts and their cost
-per document (`ANYKNOWN_TIMING` `script_layout`, one run):
+per document (`DWELLER_TIMING` `script_layout`, one run):
 
 | Document | Layouts | Before | After | What it notes between layouts | Path before → after |
 |---|---:|---:|---:|---|---|
@@ -351,7 +351,7 @@ counts them; an image's new source or bitmap is not) and is a children,
   and when dropped boxes (`rebuild` leaves them in the arena) pass twice
   the boxes of the last full layout.
 
-`ANYKNOWN_LAYOUT_CHECK=1` lays out the whole document after each kept or
+`DWELLER_LAYOUT_CHECK=1` lays out the whole document after each kept or
 partial layout and logs the first box that differs ("LAYOUT CHECK"); the
 DOM fixtures run with it (`tests/browser.rs`), and so did a Mistral
 replay (0 differences). Fixture:
@@ -373,7 +373,7 @@ reads restyle the whole document because it uses container queries
 `queried` document when no query container's size changed
 (`Styles.sizes`), and skip `stylesCurrent` when the noted changes are
 attribute writes that the subtree restyle can take. Measure per-read
-costs first (`ANYKNOWN_TIMING` `script_layout`, `cascade`). The canvas
+costs first (`DWELLER_TIMING` `script_layout`, `cascade`). The canvas
 raster (~10 s, `canvasComposite`) stays a separate card.
 
 ## Live network check and remaining work

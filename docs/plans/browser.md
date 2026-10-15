@@ -1,7 +1,10 @@
-# Plan: the anyknown browser lane
+# Plan: the Dweller browser lane
 
 The browser lane of [`docs/plan.md`](../plan.md): the work on `browser/`.
 **Maintenance mode since 2026-10-08:** no new site fixes or features.
+The repository (`aye-lang/dweller`) is public and open source under MIT
+OR Apache-2.0 since 2026-10-15; maintenance mode covers what the lane
+works on, not who can read or contribute.
 The lane keeps `cargo test --release` green (the browser tests are the
 language's biggest integration test), fixes breakage caused by language
 changes, and records language gaps in `browser/COMPILER_GAPS.md`. It
@@ -60,7 +63,7 @@ step that moves `browser/` into its own repo (P8.2). Finished steps:
   not built (native `TypedArray` in `browser/js/typed.aye`, test
   `browser/tests/js/256_typed_array_views.js`).
 - Open gaps the browser met: none (2026-10-14: gaps 49 to 56 fixed or
-  declined, aye criterion O3; anyknown #1, 215e3a1).
+  declined, aye criterion O3; Dweller #1, 215e3a1).
 - Maintenance steps done 2026-10-14 (squash commits on `main`): #1 215e3a1
   `COMPILER_GAPS.md` gaps 49 to 56 closed; #2 8546630 P-flaky
   `window_relayout_after_image_load`; #3 c13bc8b O1.17c `virtual_clock.html`
@@ -98,10 +101,10 @@ against the copy, passed 62 of 62 with one changed line.
 - `browser/` has no symlinks, no import of `std/` or `framework/` files
   (std is built into the compiler), and no source-level path into the
   repo. The only `@cimport`s are system headers (`pthread.h`,
-  `dirent.h` (gone since P8.x, 2026-10-14, anyknown #6), SDL2, FreeType, libcurl, HarfBuzz, brotli), found through
+  `dirent.h` (gone since P8.x, 2026-10-14, Dweller #6), SDL2, FreeType, libcurl, HarfBuzz, brotli), found through
   `pkg-config` and `~/.cache/aye`.
 - `aye build` named the binary after the directory (`browser`), not
-  `anyknown`. Fixed: `browser/aye.toml` has `name = "anyknown"` and no
+  `dweller`. Fixed: `browser/aye.toml` has `name = "dweller"` and no
   `[deps]` (the browser imports no library besides std).
 - `browser/build.sh` ran `cargo build` and `target/release/aye` from the
   parent directory, so it failed anywhere but the Aye repo. Fixed: it
@@ -161,10 +164,10 @@ against Aye with a path or URL dependency" is met by the pinned
 compiler, since a library dependency does not exist.
 
 **How `tests/browser.rs` becomes the new repo's test.** It is a plain
-Rust integration test: it runs `aye build browser -o <tmp>/anyknown`
+Rust integration test: it runs `aye build browser -o <tmp>/dweller`
 once, then spawns that binary on fixtures under `browser/tests` and a
 Python `server.py`; it also runs `aye test browser`. The new repo gets a
-`Cargo.toml` with no dependencies (package `anyknown-tests`,
+`Cargo.toml` with no dependencies (package `dweller-tests`,
 `publish = false`) and the three files above. One line changes: `aye()`
 starts `std::env::var_os("AYE")` or `aye` instead of
 `env!("CARGO_BIN_EXE_aye")`. `current_dir(root())` and every
@@ -174,19 +177,19 @@ scratch root with `AYE` set, this passed (62 tests, 191 s).
 **P8.2 and later.** Run P8.2 when O6–O9 hold. It leaves the Aye repo
 untouched; P8.3 removes the browser from it after P8.2 is verified.
 
-#### P8.2: create `aye-lang/anyknown` with history
+#### P8.2: create `aye-lang/dweller` with history
 - lane: browser
-- goal: a new repo `aye-lang/anyknown` holds `browser/`, its tests and docs with their git history, builds against a pinned Aye, and passes the browser tests in CI on macOS and Ubuntu.
+- goal: a new repo `aye-lang/dweller` holds `browser/`, its tests and docs with their git history, builds against a pinned Aye, and passes the browser tests in CI on macOS and Ubuntu.
 - serves: W1 (and P8's exit check)
 - files: in the new repo only: the moved files above, plus `Cargo.toml` (tests only), `AYE_REV`, `.github/workflows/ci.yml`, `scripts/setup-ubuntu.sh` (apt line copied), `README.md` at the root (one paragraph and the build commands), the one-line change in `tests/browser.rs`, and links fixed in `browser/README.md` (`../docs/practices/README.md` becomes `docs/practices/browser.md`)
 - steps: (1) `git clone --no-local` the Aye repo to a scratch directory, then `git filter-repo --path browser --path tests/browser.rs --path tests/browser --path docs/browser.md --path docs/agent-protocol.md --path docs/browser-sites.md --path docs/browser-manual-checklist.md --path docs/practices/browser.md --path docs/plans/browser.md`; (2) copy `tests/common/mod.rs` and the apt line; (3) add `Cargo.toml`, `AYE_REV` (the current `main` of Aye), the `AYE` change and the CI file; (4) the user creates the repo and pushes (do not push or create it from an agent); (5) CI: matrix macOS and Ubuntu 24.04, install the SDL2, FreeType, libcurl, HarfBuzz, brotli packages and python3, `cargo install --git ... --rev $(cat AYE_REV) --locked aye` (cached), then `aye check browser`, `aye test browser` and `cargo test --release --test browser`.
-- verify: in a fresh clone of the new repo with only the pinned `aye` installed, run one at a time: `aye check browser; echo $?` → 0; `aye test browser` → exit 0 and `131 passed; 0 failed; 15 modules` (or the then-current counts); `AYE=$(command -v aye) cargo test --release --test browser; echo $?` → 0 (62 tests); `aye build browser` writes `./anyknown`; `git log --oneline --follow browser/engine/sheets.aye | wc -l` is the same as in the Aye repo; the CI run is green on both systems.
+- verify: in a fresh clone of the new repo with only the pinned `aye` installed, run one at a time: `aye check browser; echo $?` → 0; `aye test browser` → exit 0 and `131 passed; 0 failed; 15 modules` (or the then-current counts); `AYE=$(command -v aye) cargo test --release --test browser; echo $?` → 0 (62 tests); `aye build browser` writes `./dweller`; `git log --oneline --follow browser/engine/sheets.aye | wc -l` is the same as in the Aye repo; the CI run is green on both systems.
 - depends on: O6–O9 hold; no `browser/` step in flight (merge them first; a branch cut before the split is rebased by `git filter-repo`'s commit map or redone by hand)
 - parallel with: nothing in `browser/`; Aye-lane steps may continue
 - where: local (the filter-repo run and the pinned install); the CI run is on GitHub
 - model: sonnet for the files; opus for the filter-repo path list check
 - time box: 90 min
-- notes: P8.3 (separate card, after this one): in the Aye repo delete the moved files, fix the stay-side mentions listed above, and add a downstream check (`scripts/downstream.sh`: clone `aye-lang/anyknown` at a rev recorded in `tests/downstream/ANYKNOWN_REV`, run `aye test browser` and the browser test with `AYE=target/release/aye`) that the merge agent runs after codegen, sema or std merges. That replaces M1, which `cargo test --release` no longer covers.
+- notes: P8.3 (separate card, after this one): in the Aye repo delete the moved files, fix the stay-side mentions listed above, and add a downstream check (`scripts/downstream.sh`: clone `aye-lang/dweller` at a rev recorded in `tests/downstream/ANYKNOWN_REV`, run `aye test browser` and the browser test with `AYE=target/release/aye`) that the merge agent runs after codegen, sema or std merges. That replaces M1, which `cargo test --release` no longer covers.
 
 ## P9: agents without disturbing the user
 
@@ -204,7 +207,7 @@ merge.
 | Card | Requirement | One line | Verify |
 |---|---|---|---|
 | P9.1 | R1 | A connection acts on a tab of its own by default; the person's tabs are look-only; no `show`; the tab strip row stays while the window listens | `cargo test --release --test browser window_agents` |
-| P9.2 | R2 | `anyknown space`: a Space process per connection behind `--spaces`; the window copies bytes; `loop_max_ms` in `--state` | `cargo test --release --test browser window_spaces` |
+| P9.2 | R2 | `dweller space`: a Space process per connection behind `--spaces`; the window copies bytes; `loop_max_ms` in `--state` | `cargo test --release --test browser window_spaces` |
 | P9.3 | R4, R6 | The control connection: pause, resume and stop per Space, `user_context` and `user_pointed` relayed, Space status, `spaces`, `space_close`, the hello's `name`/`space`, `done` Spaces | `cargo test --release --test browser window_spaces` |
 | P9.4 | R6 | Space chips in the toolbar's agent area, their state and last action, per-Space Pause and Stop | `cargo test --release --test browser window_spaces` |
 | P9.5 | R6 | Watching: the Space's frames shown in the page area, Cmd+Shift+0..8 | `cargo test --release --test browser window_spaces_watch` |
@@ -228,7 +231,7 @@ in order.
 
 #### P9.2: a process per Space
 - lane: browser
-- goal: R2. With `--spaces`, the window starts `anyknown space --control FD` (the window program, headless with `SDL_VIDEODRIVER=dummy`, its agent socket in a private directory) for each connection after reading its first line, then copies bytes between the connection and the Space's socket without parsing them; the Space exits when its connection ends (P9.3 keeps it). The Space runs its own tabs' timers. The window's `--state` gets `loop_max_ms N`: the longest iteration of `Ui.loop` while an agent was connected. `browser/tests/server.py` gets `/sleep?ms=N`.
+- goal: R2. With `--spaces`, the window starts `dweller space --control FD` (the window program, headless with `SDL_VIDEODRIVER=dummy`, its agent socket in a private directory) for each connection after reading its first line, then copies bytes between the connection and the Space's socket without parsing them; the Space exits when its connection ends (P9.3 keeps it). The Space runs its own tabs' timers. The window's `--state` gets `loop_max_ms N`: the longest iteration of `Ui.loop` while an agent was connected. `browser/tests/server.py` gets `/sleep?ms=N`.
 - serves: R2
 - files: `browser/ui/socket.aye` (socketpair, a non-blocking copy), `browser/ui/agents.aye`, `browser/ui/window.aye` (`--spaces`, `space` mode, `loop_max_ms`), `browser/main.aye`, `browser/ui/script.aye`, `browser/tests/server.py`, `browser/tests/agent/spaces/` (new: copies of `isolation` and `frames` that must give the same `.out`), `tests/browser.rs` (`window_spaces`, `window_spaces_responsive`)
 - test: `window_spaces` runs `browser/tests/agent/spaces/X.jsonl` like `window_agents` with `--spaces`. `window_spaces_responsive` opens three connections: A runs a 1500 ms `eval` loop, B navigates to `/sleep?ms=1500` on the test server, C sends `tabs` while both run: C's answer within 100 ms, and `loop_max_ms` under 50 in the window's `--state`.
@@ -280,7 +283,7 @@ in order.
 
 #### P9.8: code mode (`run`)
 - lane: browser
-- goal: R7. `run` executes `code` as a function body in a realm of its own with the functions listed in B9, each a synchronous call into the session's command; it answers `value`, `log`, `calls`; pause and stop are checked between calls; `ms` bounds the run. It works in `anyknown agent`, `anyknown mcp` (`browser_run`) and in Spaces.
+- goal: R7. `run` executes `code` as a function body in a realm of its own with the functions listed in B9, each a synchronous call into the session's command; it answers `value`, `log`, `calls`; pause and stop are checked between calls; `ms` bounds the run. It works in `dweller agent`, `dweller mcp` (`browser_run`) and in Spaces.
 - serves: R7
 - files: `browser/agent/run.aye` (new), `browser/agent/server.aye`, `browser/js/` (a realm with host functions), `browser/tests/agent/sessions/run.{jsonl,out}`, `browser/tests/agent/spaces/run.*`
 - first: a unit test that a second realm calls into a page's realm and back (a click whose handler runs page script) under GC stress; if it fails, stop and report (B9 risks).
@@ -323,11 +326,11 @@ card adds a site fix or a feature.
 Paused until P8. Before any site item becomes a card, its symptom is
 confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 
-- P7 flaky `http_failed_image_fetched_once` under load: the failed image was requested twice (`GET /fail/once.png` ×2) in the full suite on main 0e61757 with three agents building; 3/3 alone pass. P3.23 removed a sleep; a second fetch still races. Same class on Linux arm64: `window_relayout_after_image_load` failed once in the full suite (main 71fd28a, an amd64 Rosetta run beside it), 3/3 alone pass. Diagnose step; verify 30× under load (merge-agent check) (main, 2026-10-08). Done 2026-10-14: an image's load/error fires in the task that finishes its background load (anyknown #2, 8546630); a dropped in-flight image load is held until it ends, so a failed URL is fetched once per document (anyknown #4, aee0c41).
-- P3.63 Mistral costs ~40 s CPU (was 4 s) since P3.48: its real animations run, and each forced layout re-runs layout over the whole document; the inline-style subtree restyle (0d7dddf) helps little because the main page notes other changes between writes, and one iframe uses container queries (`g.styles.queried`). Needs incremental layout; first log what the main page notes between layouts (P3.48b/d, 2026-10-08). Done 2026-10-14 (diagnosed, one contained fix): the main page's 697 full cascades came from Tailwind `group-has-*` (`:where(.group\/toggle):has(:checked) *`) setting `RestyleDeps.whole`; the keys of a one-compound `:where()`/`:is()` now anchor the `:has()`, so they restyle a subtree. Mistral CPU 45.4 → 32.6 s, wall 46.3 → 33.0 s; Markdown and screenshot unchanged. Findings table and the incremental-layout design in `browser/engine/PERF.md` (anyknown, this PR).
-- P3.64 incremental layout for forced reads: paint-only `style` writes skip layout; a text/size change lays out its subtree and walks up only while sizes change (design in `browser/engine/PERF.md`, P3.63). Mistral's remaining ~10 s of layout; its canvas raster (~10 s, `canvasComposite`) is separate. Done 2026-10-14 (slice 1): forced layouts keep the boxes when only values layout does not read changed (`css.paintOnly`), else build and lay out again the nearest block in block flow around each dirty element and walk up while its size changes (`browser/layout/incremental.aye`); floats, container queries, shadow trees and a walk to the root stay whole-document. `ANYKNOWN_LAYOUT_CHECK=1` compares each with a full layout (DOM fixtures run with it; new `layout_incremental.html`). Mistral CPU 32.5 → 26.2 s, wall 33.0 → 26.4 s (main page script layout 4.8 → 1.2 s); zol, github unchanged; Markdown and screenshots unchanged (anyknown, this PR). Next slice (proposal): the visual-intelligence iframe's reads are now style work: restyle subtrees in a container-query document when no container's size changed, and skip the whole-document `stylesCurrent` hash for attribute writes (details in PERF.md).
+- P7 flaky `http_failed_image_fetched_once` under load: the failed image was requested twice (`GET /fail/once.png` ×2) in the full suite on main 0e61757 with three agents building; 3/3 alone pass. P3.23 removed a sleep; a second fetch still races. Same class on Linux arm64: `window_relayout_after_image_load` failed once in the full suite (main 71fd28a, an amd64 Rosetta run beside it), 3/3 alone pass. Diagnose step; verify 30× under load (merge-agent check) (main, 2026-10-08). Done 2026-10-14: an image's load/error fires in the task that finishes its background load (Dweller #2, 8546630); a dropped in-flight image load is held until it ends, so a failed URL is fetched once per document (Dweller #4, aee0c41).
+- P3.63 Mistral costs ~40 s CPU (was 4 s) since P3.48: its real animations run, and each forced layout re-runs layout over the whole document; the inline-style subtree restyle (0d7dddf) helps little because the main page notes other changes between writes, and one iframe uses container queries (`g.styles.queried`). Needs incremental layout; first log what the main page notes between layouts (P3.48b/d, 2026-10-08). Done 2026-10-14 (diagnosed, one contained fix): the main page's 697 full cascades came from Tailwind `group-has-*` (`:where(.group\/toggle):has(:checked) *`) setting `RestyleDeps.whole`; the keys of a one-compound `:where()`/`:is()` now anchor the `:has()`, so they restyle a subtree. Mistral CPU 45.4 → 32.6 s, wall 46.3 → 33.0 s; Markdown and screenshot unchanged. Findings table and the incremental-layout design in `browser/engine/PERF.md` (Dweller, this PR).
+- P3.64 incremental layout for forced reads: paint-only `style` writes skip layout; a text/size change lays out its subtree and walks up only while sizes change (design in `browser/engine/PERF.md`, P3.63). Mistral's remaining ~10 s of layout; its canvas raster (~10 s, `canvasComposite`) is separate. Done 2026-10-14 (slice 1): forced layouts keep the boxes when only values layout does not read changed (`css.paintOnly`), else build and lay out again the nearest block in block flow around each dirty element and walk up while its size changes (`browser/layout/incremental.aye`); floats, container queries, shadow trees and a walk to the root stay whole-document. `DWELLER_LAYOUT_CHECK=1` compares each with a full layout (DOM fixtures run with it; new `layout_incremental.html`). Mistral CPU 32.5 → 26.2 s, wall 33.0 → 26.4 s (main page script layout 4.8 → 1.2 s); zol, github unchanged; Markdown and screenshots unchanged (Dweller, this PR). Next slice (proposal): the visual-intelligence iframe's reads are now style work: restyle subtrees in a container-query document when no container's size changed, and skip the whole-document `stylesCurrent` hash for attribute writes (details in PERF.md).
 - P8.2, P8.3 split `browser/` into its own repo with `git filter-repo`, move `tests/browser.rs` and the browser docs with it (decision 2026-10-08; P8.1 dry run done 2026-10-11; cards in "P8 split plan").
-- P1.6 `page_load.py` writes `last.stdout`/`last.stderr` into the archive folder; move them under `target/page-load-out/`; set a floor for the 0.8 CPU/wall warning (P1.5). Done 2026-10-14: output is in `target/page-load-out/<site>/`; the warning fires only when wall >= 1 s (the browser's fixed non-CPU time of tens of ms is under 10% of wall there; a 0.6 s `example` replay had cpu/wall 0.16 with nothing wrong) (anyknown, this PR).
+- P1.6 `page_load.py` writes `last.stdout`/`last.stderr` into the archive folder; move them under `target/page-load-out/`; set a floor for the 0.8 CPU/wall warning (P1.5). Done 2026-10-14: output is in `target/page-load-out/<site>/`; the warning fires only when wall >= 1 s (the browser's fixed non-CPU time of tens of ms is under 10% of wall there; a 0.6 s `example` replay had cpu/wall 0.16 with nothing wrong) (Dweller, this PR).
 - P1.14 `visual` field per site in `sites.json` (ok / defects / date), printed by `check`; W3 needs it (screens review 2026-10-08). Done 2026-10-14: `check` prints a visual column, the defects and the W3 count; the screens review of 2026-10-14 (`check --screens` against the live pages in Chrome) filled the field.
 - P3.7 Mistral: short iframe widgets, `setTransform` errors; recheck after P3.48 (old P3 table).
 - P3.9 dump virtual clock: an `onload` set inside `setTimeout(0)` after `src` misses the load event (async images follow-up).
@@ -348,7 +351,7 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 - P3.59 intrinsic sizing passes no container height (`browser/layout/intrinsic.aye`, `cb_h = -1`); BBC NEWS `<h1>` 300px instead of 100px (P3.47). Still seen 2026-10-14: the NEWS wordmark is 100 px left of centre.
 - P3.60 move the JS lexer, parser and AST out of the `js` module for a bundler; pure move (framework F4, `docs/framework.md`).
 - P3.61 `screenshot` runs the page as long as `dump` (Mistral's title animation caught half-way) (P3.48). Still seen 2026-10-14: "Introducing Mistral Large 4" not drawn, "Le chonk" 240 px low.
-- P3.65 `opacity` not drawn on some text: example.com's script-added `p+p {opacity: .6}`, go.dev's `.Article-idLink {opacity: 0}` heading ¶ links (screens review 2026-10-14). Done 2026-10-14: paint only skipped `opacity: 0` on block boxes; other opacities and inline boxes were not drawn. Now a box with `opacity` below 1 is a layer (a stacking context, painted like a positioned box) drawn as a group: its items go into a layer bounded by their extent, blended below with the opacity (`EndLayer.alpha`); an inline box's items on a line are a group too; 0 draws nothing but keeps layout and hit testing (Chrome hits opacity-0 elements too). An inline `svg`'s own opacity is its box's (no longer applied twice). New fixture `browser/tests/paint/opacity.html`; example and go-docs match Chrome, W3 4 → 6 of 20 (anyknown, this PR).
+- P3.65 `opacity` not drawn on some text: example.com's script-added `p+p {opacity: .6}`, go.dev's `.Article-idLink {opacity: 0}` heading ¶ links (screens review 2026-10-14). Done 2026-10-14: paint only skipped `opacity: 0` on block boxes; other opacities and inline boxes were not drawn. Now a box with `opacity` below 1 is a layer (a stacking context, painted like a positioned box) drawn as a group: its items go into a layer bounded by their extent, blended below with the opacity (`EndLayer.alpha`); an inline box's items on a line are a group too; 0 draws nothing but keeps layout and hit testing (Chrome hits opacity-0 elements too). An inline `svg`'s own opacity is its box's (no longer applied twice). New fixture `browser/tests/paint/opacity.html`; example and go-docs match Chrome, W3 4 → 6 of 20 (Dweller, this PR).
 - P3.66 Wikipedia (en, ja): the Appearance panel is empty; Chrome shows the Text, Width and Color radio buttons (screens review 2026-10-14).
 - P3.67 MDN: the "Try it" demo shows an `about:blank` link instead of the code editor and output; the language switcher is drawn twice (screens review 2026-10-14).
 - P3.68 Python docs: the sidebar is drawn right of the text; Chrome draws it on the left (screens review 2026-10-14).
@@ -380,6 +383,10 @@ confirmed on current `main` (`docs/plan.md` rule 8). Source in brackets.
 
 - **Maintenance mode (2026-10-08):** see the top of this file and
   `docs/plan.md`, "Standing decisions".
+- **Renamed to Dweller and open-sourced (user, 2026-10-15):** the browser
+  and its repository, formerly `aye-lang/anyknown`, are named Dweller
+  (`aye-lang/dweller`, binary `dweller`, env vars `DWELLER_*`) and
+  licensed MIT OR Apache-2.0; the repository is public.
 - **Load-time target (W4):** per site, live median minus replay median
   ≤ 0.5 s over `run --live --repeat 5`; absolute targets in `sites.json`
   after P1.4 measured them.

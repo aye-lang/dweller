@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds the anyknown browser for real use: `--mode fast` (optimized, no
+# Builds the Dweller browser for real use: `--mode fast` (optimized, no
 # safety checks; the tests build it in debug mode). The output goes to
-# target/anyknown in this checkout (your worktree) unless a path is
+# target/dweller in this checkout (your worktree) unless a path is
 # given; a relative path is taken from the checkout's root. Do not give a
 # path outside your worktree or a fixed name that other agents share (the
 # session scratchpad): another agent's build can replace your binary
@@ -10,7 +10,7 @@
 #     browser/build.sh [OUT] [--mode safe|fast|debug]
 #
 # In the Aye repository it builds the compiler first and uses
-# target/release/aye. Anywhere else (the anyknown repository) it uses the
+# target/release/aye. Anywhere else (the Dweller repository) it uses the
 # `aye` named by $AYE, or `aye` on the PATH.
 #
 # `--mode safe` keeps the bounds and overflow checks (a panic names the
@@ -18,7 +18,7 @@
 # real site.
 set -e
 cd "$(dirname "$0")/.."
-out=target/anyknown
+out=target/dweller
 mode=fast
 while [ $# -gt 0 ]; do
     case "$1" in

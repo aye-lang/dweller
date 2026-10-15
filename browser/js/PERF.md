@@ -36,10 +36,10 @@ Reproduce (the baseline binary must be saved before editing the engine):
 
 ```sh
 browser/build.sh
-cp target/anyknown /tmp/anyknown-baseline
+cp target/dweller /tmp/dweller-baseline
 # Build the changed engine, then:
 browser/build.sh
-BENCH_BIN=target/anyknown BENCH_BASELINE=/tmp/anyknown-baseline \
+BENCH_BIN=target/dweller BENCH_BASELINE=/tmp/dweller-baseline \
   BENCH_RUNS=5 browser/tests/jsbench/run.sh
 ```
 
@@ -50,7 +50,7 @@ five workloads are original to this suite.
 
 ### Real page
 
-`anyknown dump --md --js https://react.dev/` succeeded for both builds.
+`dweller dump --md --js https://react.dev/` succeeded for both builds.
 The initial baseline was 5.640 s. The final paired measurement was
 **3.897 s baseline → 4.191 s after**; an earlier pair was 3.586 → 3.593 s.
 Both final outputs were byte-identical (10,126 bytes of Markdown), with
@@ -63,7 +63,7 @@ engine's existing limitations still apply (including skipped modules).
 Native macOS `sample` identified costs before changing the engine:
 
 ```sh
-target/anyknown js browser/tests/jsbench/navier-stokes.js & pid=$!
+target/dweller js browser/tests/jsbench/navier-stokes.js & pid=$!
 sample "$pid" 3 1 -file /tmp/navier.sample
 wait "$pid"
 ```
@@ -201,7 +201,7 @@ work.
 - `cargo build --release` and `browser/build.sh`: passed (fast binary).
 - `target/release/aye check browser`: passed.
 - All 228 conformance scripts match stdout/stderr/exit-status goldens in
-  fast mode, and all 228 pass with `ANYKNOWN_JS_GC=stress`.
+  fast mode, and all 228 pass with `DWELLER_JS_GC=stress`.
 - All eight benchmark checksums agree with Node v22.22.2.
 - `cargo test --test browser`: 34 passed (including debug JS conformance,
   DOM GC stress, browser/Aye unit tests, and host/UI fixtures).

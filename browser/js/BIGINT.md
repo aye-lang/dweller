@@ -60,4 +60,4 @@ user coercion are rooted on the interpreter's stack.
 output goldens. They include cross-limb/cross-sign arithmetic, exact f64
 comparison and rounding boundaries, coercion side effects, wrappers,
 JSON hooks, errors and large-width reductions. Run all three with both
-`target/anyknown js FILE` and `ANYKNOWN_JS_GC=stress`.
+`target/dweller js FILE` and `DWELLER_JS_GC=stress`.

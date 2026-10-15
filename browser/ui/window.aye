@@ -4,7 +4,7 @@
 // - window.aye: the window, the event loop and navigation.
 // - tabs.aye: the window's tabs (Cmd+T, Cmd+W, Cmd+1..9, the tab strip).
 // - agents.aye: agents connected to the window (`--agent-socket`).
-// - socket.aye: Unix domain sockets, and `anyknown connect`.
+// - socket.aye: Unix domain sockets, and `dweller connect`.
 // - chrome.aye: the toolbar (back, forward, reload, address bar), the
 //   tab strip, the status line and the find bar.
 // - field.aye: one-line text fields.
@@ -38,7 +38,7 @@ import std.mem.Allocator
 import std.text
 import url
 
-let UI_USAGE = "usage: anyknown [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
+let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
 /// The toolbar height, in CSS px.
 pub let TOOLBAR: f64 = 40.0
@@ -139,7 +139,7 @@ fn uiOptions(args: [][]u8) ?UiOptions {
     return o
 }
 
-/// `anyknown [open] FILE|URL ...`: opens a window on the page; returns
+/// `dweller [open] FILE|URL ...`: opens a window on the page; returns
 /// the exit status.
 pub fn run(alloc: Allocator, args: [][]u8) i32 {
     var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false }
@@ -189,7 +189,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     }
     defer SDL_Quit()
     let flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
-    let w = SDL_CreateWindow("anyknown".ptr, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, o.width, o.height, flags)
+    let w = SDL_CreateWindow("Dweller".ptr, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, o.width, o.height, flags)
     if w |window| {
         defer SDL_DestroyWindow(window)
         var r = SDL_CreateRenderer(window, -1, 0)
@@ -634,7 +634,7 @@ pub struct Ui {
         if self.tab.page == null {
             try b.append("New tab")
         }
-        try b.append(" - anyknown")
+        try b.append(" - Dweller")
         try b.appendByte(0)
         SDL_SetWindowTitle(self.window, b.bytes().ptr)
     }

@@ -357,7 +357,7 @@ catch (e) { for (const m of given) m.deps = null; throw e; }
 **Context:** a native that makes a closure in the global scope
 (`moduleRecord` in `browser/js/modules.aye`).
 **Bad:** setting `it.env = NONE` around `makeClosure` let a collection
-free the calling JS function's environment; under `ANYKNOWN_JS_GC=stress`
+free the calling JS function's environment; under `DWELLER_JS_GC=stress`
 the loader then wrote into a freed environment.
 **Good:** push the saved environment on `it.outer_envs` while `it.env` is
 `NONE`, as `runScript` does, and run new module fixtures under GC stress.
@@ -477,7 +477,7 @@ agent and screenshot fixtures).
 **Bad:** re-blessing everything after a merge hides regressions along
 with the intended changes.
 **Good:** run `cargo test --test browser`, read each difference, then
-`ANYKNOWN_BLESS=1 cargo test --test browser` (`tests/browser.rs:14`) and
+`DWELLER_BLESS=1 cargo test --test browser` (`tests/browser.rs:14`) and
 check that `git diff` shows only the expected lines. `7081aa9` is an
 example: two forms goldens changed only in the lines of `pre` text, and
 the commit says so.
@@ -577,10 +577,10 @@ socket libcurl read first; release only what has ended.
 **Bad:** the window with `--frames N` (or `--exit-when-idle`) turns the
 console echo off for tests (`browser/ui/window.aye:183-184`), so errors
 do not appear.
-**Good:** `anyknown dump --text --js URL` runs the scripts and timers and
+**Good:** `dweller dump --text --js URL` runs the scripts and timers and
 writes console messages, alerts and uncaught exceptions to stderr
 (`browser/main.aye:253-256`). For minified scripts, set
-`ANYKNOWN_JS_TRACE=1`: each error message then shows the start of the
+`DWELLER_JS_TRACE=1`: each error message then shows the start of the
 source of the running functions (`browser/js/gc.aye:22`).
 **Why:** the headless window is quiet so that test output stays
 deterministic.
@@ -589,7 +589,7 @@ deterministic.
 **Context:** a bug that needs clicks, scrolling or keys.
 **Good:** script the input instead of clicking by hand:
 ```
-anyknown URL --frames 30 --events "click:120,40 wheel:-5 key:cmd+f" --state --save out.png
+dweller URL --frames 30 --events "click:120,40 wheel:-5 key:cmd+f" --state --save out.png
 ```
 The words are documented in `browser/ui/script.aye:1-18`; `--state`
 prints the tab's state at the end, `--save` writes the last frame, and
@@ -600,7 +600,7 @@ into a test in `tests/browser.rs`.
 ### Trace a canceled click from the page's own listener lists
 **Context:** an agent `click` or `submit` says "a script canceled" it
 and the URL does not change (an SPA router).
-**Good:** in one `anyknown agent` session on the replay: `eval` a script
+**Good:** in one `dweller agent` session on the replay: `eval` a script
 that wraps each `l.fn` of `node.__listeners` on the target, its
 ancestors, `document` and `window` (log the call, and `defaultPrevented`
 after it) and wraps `fetch` and `History.prototype.pushState`; then
@@ -672,7 +672,7 @@ grows every frame is a leak.
 ### Measure end to end before claiming a speedup
 **Context:** performance work on the engine or on JS.
 **Bad:** the JS work measured a 1.95x geometric mean on its benchmarks,
-but `anyknown dump --md --js https://react.dev/` was not faster
+but `dweller dump --md --js https://react.dev/` was not faster
 (`browser/js/PERF.md:5-6`, `:53-61`).
 **Good:** report the micro benchmarks and a real page load, with
 interleaved runs of the baseline and the change, as `browser/js/PERF.md`
@@ -690,7 +690,7 @@ geometry query after any DOM change. YouTube's Polymer code writes and
 reads in turns: 137 forced layouts of 50-130 ms each made the watch
 replay 13.6 s instead of 4.2 s, scripts hit their time limit, and the
 related list stayed empty.
-**Good:** measure the count and cost per call first (`ANYKNOWN_TIMING=1`
+**Good:** measure the count and cost per call first (`DWELLER_TIMING=1`
 phases `script_layout`, `cascade`, `restyle`), then keep the forced
 layout's styles and style again only what the change can reach
 (`browser/engine/geometry.aye` `restyleRoots`,
@@ -713,7 +713,7 @@ a rebuilt box from its old position, which held its old transform: the
 boxes came out 5 px off, and nothing but a comparison showed it.
 **Good:** derive the list from what `layout/` reads (`grep -o
 'css\.[A-Z_]*' browser/layout/*.aye`), and run every kept or partial
-layout against a full one with `ANYKNOWN_LAYOUT_CHECK=1` (the DOM
+layout against a full one with `DWELLER_LAYOUT_CHECK=1` (the DOM
 fixtures do; run a real replay with it too) before measuring.
 **Why:** a stale box is a wrong number for a script, not a crash; only a
 comparison with the full layout finds it.
@@ -824,7 +824,7 @@ error; a count that misses a release only keeps memory, never shares a
 write.
 
 ### Replay must not change what a page sees
-**Context:** offline replays (`ANYKNOWN_REPLAY`) for performance work.
+**Context:** offline replays (`DWELLER_REPLAY`) for performance work.
 **Bad:** the archive answered `data:` URLs too and missed them; once img
 elements reported errors, YouTube re-set its placeholder on every error
 and the replay ran 30,000 image requests (`99432a0`).
@@ -840,8 +840,8 @@ the screenshot).
 **Bad:** `capture` recorded only the dump; the screenshot replayed BBC
 with 38 misses (Reith fonts, story images), so the page painted in a
 fallback serif with empty image frames (P3.40).
-**Good:** capture's screenshot runs with both `ANYKNOWN_REPLAY` and
-`ANYKNOWN_RECORD` on the same directory (`screen(record=True)`,
+**Good:** capture's screenshot runs with both `DWELLER_REPLAY` and
+`DWELLER_RECORD` on the same directory (`screen(record=True)`,
 `browser/tools/page_load.py`): it is served the dump's responses and
 fetches and records only its misses (`archiveRead`,
 `browser/net/archive.aye`).
@@ -860,7 +860,7 @@ results and asked for other thumbnails, and `check` passed 3 runs in 7
 **Good:** on the virtual clock, tasks and microtask checkpoints count
 steps alone (`enter`, `checkpointOver`, `browser/engine/script.aye`);
 the window keeps the time budget. To find such an input, log the set
-of requested URLs per run (`ANYKNOWN_TIMING=1` `requests` lines) with
+of requested URLs per run (`DWELLER_TIMING=1` `requests` lines) with
 and without `yes > /dev/null` load, and diff the sets.
 **Why:** the same page and virtual clock must give the same requests;
 an archive records one run's requests, and a replay that asks for others
@@ -969,11 +969,11 @@ the loop never ended and `--frames 30` hung (`f126cc6`).
 **Good:** a turn stops at the timers scheduled before it began; the
 window draws between turns (`window_timers_yield_to_frames`). When a
 window run hangs, sample it: a `timers` count far above the `paint`
-count with `ANYKNOWN_TIMING=1` is this starvation.
+count with `DWELLER_TIMING=1` is this starvation.
 **Why:** a page may always have a due task; frames must still come.
 
 ### Show a socket file only once it listens
-**Context:** a test (or `anyknown connect`) waits for the agent socket's
+**Context:** a test (or `dweller connect`) waits for the agent socket's
 file, then connects (`window_agents`, P3.57).
 **Bad:** `bind()` creates the file before `listen()` runs; a client that
 saw the file in between got "connection refused" (once, under load).

@@ -8,7 +8,7 @@ if [ -z "${BENCH_BIN:-}" ]; then
 fi
 exec python3 - "$@" <<'PY'
 import math, os, pathlib, shutil, statistics, subprocess, sys, time
-binary = os.environ.get("BENCH_BIN", "target/anyknown")
+binary = os.environ.get("BENCH_BIN", "target/dweller")
 runs = int(os.environ.get("BENCH_RUNS", "3"))
 baseline = os.environ.get("BENCH_BASELINE")
 if runs < 1:
