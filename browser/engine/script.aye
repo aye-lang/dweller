@@ -1281,8 +1281,35 @@ fn reportException(s: *mut Script) AllocError!void {
     if perf.telemetryOn() {
         noteUncaught(s, b.bytes(), "Uncaught ")
     }
+    let thrown = s.it.exception
     s.it.exception = Value.Undefined
-    return addConsole(s, "[error] ", b.bytes())
+    try addConsole(s, "[error] ", b.bytes())
+    return fireErrorEvent(s, thrown, b.bytes())
+}
+
+var reporting_error: bool = false
+
+// Fires the `error` event of an uncaught exception at the window (an
+// ErrorEvent with `message` and `error`; testharness.js listens for it).
+// An exception of a listener is logged but fires no event again.
+fn fireErrorEvent(s: *mut Script, thrown: Value, message: []u8) AllocError!void {
+    if s.dispatcher == js.NONE || reporting_error {
+        return
+    }
+    reporting_error = true
+    let it = &mut s.it
+    let base = it.stack.len()
+    try jsPush(s, it.roots.items()[s.dispatcher])
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, js.objVal(it.global))
+    try jsPush(s, try stringFor(s, "error"))
+    try jsPush(s, try stringFor(s, message))
+    try jsPush(s, thrown)
+    _ = callReported(s, base, 4) catch |e| {
+        reporting_error = false
+        return e
+    }
+    reporting_error = false
 }
 
 /// Adds a console message: `kind` ("[log] ") then `msg`.
@@ -1736,6 +1763,42 @@ pub fn runUntilIdle(p: *mut Page, max_ms: f64) AllocError!void {
         try pumpContexts()
         n += 1
     }
+}
+
+/// `runUntilIdle` that stops at the first console message of the page
+/// that console.log wrote starting with `prefix` (`dweller wpt`: the
+/// line of testharnessreport.js), with what follows the prefix appended
+/// to `out`. False when no such line came before the page went idle or
+/// `max_ms` of its time passed.
+pub fn runUntilConsole(p: *mut Page, max_ms: f64, prefix: []u8, out: *mut text.Builder) AllocError!bool {
+    let end = pageClock(p) + max_ms
+    var n: usize = 0
+    try pumpContexts()
+    while true {
+        if try findConsole(p, prefix, out) {
+            return true
+        }
+        if n >= MAX_TASKS || !try runNextTimer(p, end) {
+            return false
+        }
+        try pumpContexts()
+        n += 1
+    }
+    return false
+}
+
+// Appends to `out` what follows "[log] " and `prefix` in the first
+// console message of `p` that starts so.
+fn findConsole(p: *mut Page, prefix: []u8, out: *mut text.Builder) AllocError!bool {
+    let s = p.script orelse return false
+    let kind = "[log] "
+    for line in s.console.items() {
+        if text.startsWith(line, kind) && text.startsWith(line[kind.len..], prefix) {
+            try out.append(line[kind.len + prefix.len..])
+            return true
+        }
+    }
+    return false
 }
 
 /// Milliseconds until the next timer is due (0 when one is due); null

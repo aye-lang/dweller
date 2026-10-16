@@ -7,6 +7,7 @@
 //     dweller dump --layout [--width PX] [--font fixed|system] FILE|URL
 //     dweller screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full]
 //     dweller js FILE
+//     dweller wpt FILE|URL [--timeout S]
 //     dweller gpu-smoke
 //
 // FILE is a path; URL is a `file:`, `data:`, `http:` or `https:` URL.
@@ -24,6 +25,16 @@
 // when it comes into view is in the dump (engine.scrollThrough); console
 // messages go to stderr. `gpu-smoke` clears a framebuffer to red on
 // ANGLE (gpu/gl.aye; DWELLER_GL picks the backend) and reads it back.
+// `wpt` runs a WPT testharness.js page (P10.1): it loads the page with
+// its scripts as `dump --js` does and runs the event loop until
+// browser/tools/wpt/testharnessreport.js logs its "DWELLER_WPT {json}"
+// line, or until S seconds (default 10) of the page's time passed, when
+// it calls the harness's timeout(). It prints one JSON line:
+//
+//     {"status":"OK|ERROR|TIMEOUT|CRASH","message":M,"subtests":[{"name":N,"status":"PASS|FAIL|TIMEOUT|NOTRUN","message":M}, ...]}
+//
+// (M null or a string); TIMEOUT with no subtests when the harness did
+// not report even then, CRASH (exit 1) when the page did not load.
 //
 // For AI agents (browser/agent, docs/agent-protocol.md):
 //
@@ -63,7 +74,7 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | gpu-smoke | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -122,6 +133,12 @@ fn run(alloc: Allocator) i32 {
     // window opens ~/.dweller without it (ui.run).
     if std.os.getenv("DWELLER_PROFILE") |dir| {
         net.openProfile(dir) catch |e| {
+        }
+    }
+    if args.len >= 2 && text.eql(args[1], "wpt") {
+        return wpt(alloc, args[2..]) catch |e| {
+            std.log.err("{}", e)
+            return 1
         }
     }
     if args.len >= 2 && text.eql(args[1], "dump") && agent.isAgentDump(args[2..]) {
@@ -337,6 +354,92 @@ fn dumpScripted(alloc: Allocator, o: *Options, location: *Url) !i32 {
     try dumpRoots(alloc, o, &p.doc, &p.url, roots.items(), &mut out)
     try std.fs.stdout().write(out.bytes())
     return 0
+}
+
+// ---- `dweller wpt` (P10.1)
+
+let WPT_USAGE = "usage: dweller wpt FILE|URL [--timeout S]"
+// What browser/tools/wpt/testharnessreport.js logs before its JSON.
+let WPT_PREFIX = "DWELLER_WPT "
+
+fn wpt(alloc: Allocator, args: [][]u8) !i32 {
+    var target: []u8 = ""
+    var timeout_s: f64 = 10.0
+    var i: usize = 0
+    while i < args.len {
+        if text.eql(args[i], "--timeout") && i + 1 < args.len {
+            timeout_s = text.parseFloat(args[i + 1]) catch -1.0
+            if timeout_s <= 0.0 {
+                std.log.err(WPT_USAGE)
+                return 2
+            }
+            i += 1
+        } else if target.len == 0 && !text.startsWith(args[i], "--") {
+            target = args[i]
+        } else {
+            std.log.err(WPT_USAGE)
+            return 2
+        }
+        i += 1
+    }
+    if target.len == 0 {
+        std.log.err(WPT_USAGE)
+        return 2
+    }
+    let location = toUrl(alloc, target) catch |e| {
+        std.log.err("not a URL or file: {}", target)
+        return 1
+    }
+    defer location.deinit(alloc)
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+    engine.setScripting(true)
+    let p = try engine.load(alloc, &location)
+    defer p.destroy()
+    defer engine.closeContexts()
+    if p.failure.len > 0 {
+        var msg = text.Builder.init(alloc)
+        defer msg.deinit()
+        try msg.append("cannot fetch ")
+        try msg.append(location.href)
+        try msg.append(": ")
+        try msg.append(p.failure)
+        try wptLine(&mut out, "CRASH", msg.bytes())
+        try out.appendByte('\n')
+        try std.fs.stdout().write(out.bytes())
+        return 1
+    }
+    engine.setViewport(p, 800.0, 600.0)
+    if !try engine.runUntilConsole(p, timeout_s * 1000.0, WPT_PREFIX, &mut out) {
+        // The harness reports the tests that did not finish as timed out.
+        var ignored = text.Builder.init(alloc)
+        defer ignored.deinit()
+        _ = try engine.evalInPage(p, "typeof timeout === 'function' && timeout()", &mut ignored)
+        if !try engine.runUntilConsole(p, 1000.0, WPT_PREFIX, &mut out) {
+            try wptLine(&mut out, "TIMEOUT", "no result from testharnessreport.js")
+        }
+    }
+    try out.appendByte('\n')
+    try std.fs.stdout().write(out.bytes())
+    return 0
+}
+
+// A result without subtests: {"status":STATUS,"message":MSG,"subtests":[]}.
+fn wptLine(out: *mut text.Builder, status: []u8, msg: []u8) !void {
+    try out.append("{\"status\":\"")
+    try out.append(status)
+    try out.append("\",\"message\":\"")
+    for c in msg {
+        if c == '"' || c == '\\' {
+            try out.appendByte('\\')
+            try out.appendByte(c)
+        } else if c < 0x20 {
+            try out.appendByte(' ')
+        } else {
+            try out.appendByte(c)
+        }
+    }
+    try out.append("\",\"subtests\":[]}")
 }
 
 // The document of a response: HTML is parsed; plain text becomes the

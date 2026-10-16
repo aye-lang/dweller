@@ -4056,8 +4056,8 @@ pub struct Interp {
             .Switch { disc, list, n, scope } => {
                 return self.execSwitch(disc, list, n, scope)
             }
-            .Labeled { label, body } => {
-                return self.execLabeled(label, body)
+            .Labeled { .. } => {
+                return self.execLabeled(id)
             }
             _ => {
                 return Flow.Normal
@@ -4065,47 +4065,79 @@ pub struct Interp {
         }
     }
 
-    fn execLabeled(self: *mut Self, label: u32, body: u32) JsError!Flow {
+    // A run of labels `a: b: stmt` is one set: the loop it labels takes
+    // the head node plus one as its tag, and `loopControl` matches a
+    // pending label against every label of the run.
+    fn execLabeled(self: *mut Self, id: u32) JsError!Flow {
+        var body = id
+        while true {
+            match self.ast.node(body) {
+                .Labeled { body: b, .. } => { body = b }
+                _ => { break }
+            }
+        }
+        let tag = id + 1
         var flow = Flow.Normal
         match self.ast.node(body) {
             .For { init, cond, update, body: b, scope } => {
-                flow = try self.execFor(init, cond, update, b, scope, label)
+                flow = try self.execFor(init, cond, update, b, scope, tag)
             }
             .ForIn { left, right, body: b, scope, of, wait } => {
-                flow = try self.execForIn(left, right, b, scope, of, wait, label)
+                flow = try self.execForIn(left, right, b, scope, of, wait, tag)
             }
             .While { cond, body: b } => {
-                flow = try self.execWhile(cond, b, false, label)
+                flow = try self.execWhile(cond, b, false, tag)
             }
             .DoWhile { body: b, cond } => {
-                flow = try self.execWhile(cond, b, true, label)
+                flow = try self.execWhile(cond, b, true, tag)
             }
             _ => {
                 flow = try self.exec(body)
             }
         }
-        if flow == Flow.Break && self.label == label {
+        if flow == Flow.Break && self.labelIn(tag) {
             self.label = 0
             return Flow.Normal
         }
         return flow
     }
 
+    // Whether the pending label is one of the run of labels tagged `tag`
+    // (the head `Labeled` node plus one; 0: no labels).
+    fn labelIn(self: *mut Self, tag: u32) bool {
+        if tag == 0 {
+            return false
+        }
+        var n = tag - 1
+        while true {
+            match self.ast.node(n) {
+                .Labeled { label, body } => {
+                    if label == self.label {
+                        return true
+                    }
+                    n = body
+                }
+                _ => { return false }
+            }
+        }
+        return false
+    }
+
     // What a loop does after its body: 0 go on, 1 leave the loop, 2 leave
-    // with `flow`.
+    // with `flow`. `myLabel` is the loop's label tag (see `labelIn`).
     fn loopControl(self: *mut Self, flow: Flow, myLabel: u32) u32 {
         if flow == Flow.Normal {
             return 0
         }
         if flow == Flow.Break {
-            if self.label == 0 || self.label == myLabel {
+            if self.label == 0 || self.labelIn(myLabel) {
                 self.label = 0
                 return 1
             }
             return 2
         }
         if flow == Flow.Continue {
-            if self.label == 0 || self.label == myLabel {
+            if self.label == 0 || self.labelIn(myLabel) {
                 self.label = 0
                 return 0
             }
