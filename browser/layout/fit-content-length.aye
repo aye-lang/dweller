@@ -1,0 +1,17 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-sizing-3/#valdef-width-fit-content-length-percentage
+fn fitContentLength(b: *Box, pct: f64, px: f64, base: f64, edges: f64) ?f64 {
+    if pct != 0.0 && base < 0.0 {
+        return null
+    }
+
+    let n = math.max(0.0, px + pct * math.max(base, 0.0) / 100.0)
+    var limit = n + edges
+
+    if borderBoxSizing(b.style) {
+        limit = math.max(n, edges)
+    }
+
+    return math.min(b.max_w, math.max(b.min_w, limit))
+}

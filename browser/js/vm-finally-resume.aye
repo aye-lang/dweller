@@ -1,0 +1,19 @@
+fn vmFinallyResume(c: *mut Compiler, fin: *mut VmFinally, token: u32) CompileError!void {
+    if token < VM_TOKEN_JUMPS {
+        try c.b.op1(BC_LDAR, fin.value as i64)
+
+        return vmFinallyExit(c, token)
+    }
+
+    let cmd = fin.jumps.items()[(token - VM_TOKEN_JUMPS) as usize]
+
+    try c.b.jump(BC_JUMP, try c.target(cmd / 2, (cmd & 1) == 1))
+}
+
+fn vmFinallyExit(c: *mut Compiler, token: u32) CompileError!void {
+    if token == VM_TOKEN_THROW {
+        return c.b.op1(BC_THROW, 0)
+    }
+
+    return vmReturn(c)
+}

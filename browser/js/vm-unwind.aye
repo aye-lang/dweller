@@ -1,0 +1,33 @@
+// v8: src/execution/isolate.cc (Isolate::UnwindAndFindHandler)
+
+fn vmUnwind(it: *mut Interp, st: *mut VmState, e: JsError, f: *mut VmFault, depth: usize) JsError!Value {
+    if vmCatchable(it, e) {
+        while true {
+            if bcHandlerFor(f.code.handlers, (f.pc - 1) as u32) |i| {
+                vmEnterHandler(it, f, f.code.handlers[i])
+
+                return Value.Undefined
+            }
+
+            if st.saved.len() == depth {
+                break
+            }
+
+            vmLeaveFrame(it, st, f)
+        }
+    }
+
+    while st.saved.len() > depth {
+        st.saved.pop()
+        vmPopFrame(it)
+    }
+
+    return e
+}
+
+fn vmCatchable(it: *mut Interp, e: JsError) bool {
+    return match e {
+        .Thrown => !it.isGenReturn()
+        _ => false
+    }
+}

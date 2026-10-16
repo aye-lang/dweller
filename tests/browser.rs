@@ -2161,6 +2161,50 @@ fn window_events() {
     );
 }
 
+/// `pointer-events: none` (`browser/tests/ui/pointer_events.html`): the
+/// click and the hover go to the link beneath an overlay; a child with
+/// `auto` takes them back; `none` inherits to the children.
+#[test]
+fn window_pointer_events() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let ui = format!("file://{}/browser/tests/ui/", root().display());
+    let cases: &[(&str, &str, &str)] = &[
+        ("click:50,90", "url other.html\n", "status \n"),
+        ("click:250,90", "url result.html\n", "status \n"),
+        ("move:50,90", "url pointer_events.html\n", "status other.html\n"),
+        ("move:250,90", "url pointer_events.html\n", "status result.html\n"),
+        ("move:50,202", "url pointer_events.html\n", "status long.html\n"),
+        ("click:50,202", "url long.html\n", "status \n"),
+    ];
+    let mut failures = Vec::new();
+    for (events, url, status) in cases {
+        let out = run_window(&[
+            "browser/tests/ui/pointer_events.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "340",
+            "--frames",
+            "1",
+            "--state",
+            "--events",
+            events,
+        ]);
+        let got = text(&out.stdout).replace(&ui, "");
+        let ok = got.lines().any(|l| format!("{l}\n") == *url)
+            && got.lines().any(|l| format!("{l}\n") == *status);
+        if !out.status.success() || !out.stderr.is_empty() || !ok {
+            failures.push(format!("--events {events:?}: want {url}{status}got\n{got}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Forms in the window (`browser/tests/ui/form.html`, 400x340): clicks
 /// and Tab focus controls, typing edits a field, Enter submits (by GET
 /// to `result.html`), Space toggles a checkbox, a select opens a
@@ -4646,7 +4690,9 @@ fn window_damage() {
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed
 /// header and the sticky heading (or nothing), never the whole page, and
-/// `DWELLER_DAMAGE_CHECK` finds each frame equal to a whole drawing.
+/// `DWELLER_DAMAGE_CHECK` finds each frame equal to a whole drawing. The
+/// fixed and sticky boxes are layers moved at draw time (P4.36a): no
+/// scroll frame builds the display list again.
 #[test]
 fn window_fractional_scroll() {
     if !has_sdl() {
@@ -4680,6 +4726,8 @@ fn window_fractional_scroll() {
     assert!(out.status.success(), "{}\n{err}", out.status);
     assert!(!err.contains("DAMAGE CHECK"), "{err}");
     assert!(text(&out.stdout).contains("\nscroll 72\n"), "{}", text(&out.stdout));
+    let builds = err.matches("DWELLER_TIMING\tpaint_build\t").count();
+    assert!(builds <= 2, "{builds} display lists built:\n{err}");
     let px: Vec<u64> = err
         .lines()
         .filter_map(|l| l.split("DWELLER_TIMING\tui_damage_px\t").nth(1))
@@ -6201,6 +6249,50 @@ fn window_hover_during_scripts() {
     );
     let want = format!("\nstatus {}/net/link6.html", srv.base);
     assert!(got.contains(&want), "expected {want:?} in:\n{got}");
+}
+
+/// P11.24b: the window does not end a task of the page. A script that
+/// runs 4 s of CPU (`browser/tests/ui/long_task.html`) finishes and sets
+/// its marker, and the window then handles the typed input. `dump` keeps
+/// the step budget: a script without end is terminated and the page goes
+/// on.
+#[test]
+fn window_long_task() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/long_task.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "4",
+        "--events",
+        "frame text:abc frame frame",
+        "--text",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("ran 4 s, typed abc"), "{got}");
+    let out = run(&["dump", "--text", "--js", "browser/tests/ui/long_task_forever.html"]);
+    let got = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(got.contains("before") && !got.contains("ran\n"), "{got}");
+    assert!(
+        got.contains("Script terminated: it ran too long")
+            || text(&out.stderr).contains("Script terminated: it ran too long"),
+        "{got}"
+    );
 }
 
 /// P4.33: the window paints a page once its document and its sheet are

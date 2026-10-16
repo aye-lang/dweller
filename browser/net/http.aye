@@ -20,6 +20,7 @@
 
 @link("libcurl")
 
+import perf
 import std
 import std.mem.AllocError
 import std.mem.Allocator
@@ -256,7 +257,9 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         if sink.context == Context.CrossSiteGet || sink.context == Context.CrossSitePost {
             crossed = true
         }
+        let sync_began = perf.start()
         let code = performShared(curl)
+        perf.end("net_sync", sync_began, "request")
         if sink.out_of_memory {
             return FetchError.OutOfMemory
         }

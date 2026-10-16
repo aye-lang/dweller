@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn writeFitContent(pct: f64, px: f64, out: *mut text.Builder) AllocError!void {
+    try out.append("fit-content(")
+    try writeValue(lengthOfParts(pct, px), out)
+    try out.append(")")
+}
+
+fn lengthOfParts(pct: f64, px: f64) Value {
+    if pct == 0.0 {
+        return Value.Px { v: px }
+    }
+
+    if px == 0.0 {
+        return Value.Percent { v: pct }
+    }
+
+    return Value.Calc { pct: pct, px: px }
+}

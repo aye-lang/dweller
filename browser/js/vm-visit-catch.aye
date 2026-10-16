@@ -1,0 +1,17 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitTryCatchStatement)
+
+fn vmVisitCatch(c: *mut Compiler, param: u32, handler: u32, scope: u32) CompileError!void {
+    let ex = c.b.newReg()
+
+    try c.b.op1(BC_STAR, ex as i64)
+    try vmEnterScope(c, scope)
+
+    if param != 0 {
+        try c.b.op1(BC_LDAR, ex as i64)
+        try vmBindCatchParam(c, param)
+    }
+
+    try c.visitStatement(handler)
+    try vmExitScope(c, scope)
+    c.b.releaseRegs(ex)
+}

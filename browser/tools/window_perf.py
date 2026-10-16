@@ -10,6 +10,13 @@
     window_perf.py idle URL [--binary B] [--real-window]
         A window, no input: the CPU% of the 10 s that start 5 s
         after the first frame, and what the loop did meanwhile.
+    window_perf.py gate BUDGETS.json [--binary B] [--update]
+        The CI perf gate (P4.40, perf_gate.py): the synthetic pages of
+        browser/tests/perf/ over browser/tests/server.py, the median of
+        3 runs of each; exits 1 when a counter (`style_full`,
+        `layout_full`, `net_sync`, `raster_px`) is over its budget or
+        more than 20% under it. --update lowers the budgets (never
+        raises them).
 
 Both use SDL's dummy video driver; --real-window opens a real window
 that does not take the focus (DWELLER_BACKGROUND=1).
@@ -148,17 +155,22 @@ def idle(a):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["scroll", "idle"])
-    ap.add_argument("url")
+    ap.add_argument("mode", choices=["scroll", "idle", "gate"])
+    ap.add_argument("url", help="the page, or the budgets of `gate`")
     ap.add_argument("--binary", default="target/dweller")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
     ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
     ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
+    ap.add_argument("--update", action="store_true", help="gate: lower the budgets to the values measured")
     a = ap.parse_args()
     if not os.path.exists(a.binary):
         sys.exit(f"no binary {a.binary} (browser/build.sh)")
-    scroll(a) if a.mode == "scroll" else idle(a)
+    if a.mode == "gate":
+        import perf_gate
+        perf_gate.gate(a)
+    else:
+        scroll(a) if a.mode == "scroll" else idle(a)
 
 
 if __name__ == "__main__":

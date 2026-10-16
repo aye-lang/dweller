@@ -1,0 +1,18 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitTryCatchStatement)
+
+fn vmVisitTryCatch(c: *mut Compiler, block: u32, param: u32, handler: u32, scope: u32) CompileError!void {
+    let h = try c.b.newHandler()
+    let ctx = c.b.newReg()
+    let end = try c.b.newLabel()
+
+    try c.b.op1(BC_SAVE_CONTEXT, ctx as i64)
+    c.b.tryStart(h)
+    try c.visitStatement(block)
+    c.b.tryEnd(h)
+    try c.b.jump(BC_JUMP, end)
+
+    c.b.handlerHere(h, ctx)
+    try vmVisitCatch(c, param, handler, scope)
+    try c.b.bind(end)
+    c.b.releaseRegs(ctx)
+}

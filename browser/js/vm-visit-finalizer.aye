@@ -1,0 +1,12 @@
+fn vmVisitFinalizer(c: *mut Compiler, finalizer: u32) CompileError!void {
+    if c.completion < 0 {
+        return c.visitStatement(finalizer)
+    }
+
+    let saved = c.b.newReg()
+
+    try c.b.op2(BC_MOV, c.completion as i64, saved as i64)
+    try c.visitStatement(finalizer)
+    try c.b.op2(BC_MOV, saved as i64, c.completion as i64)
+    c.b.releaseRegs(saved)
+}

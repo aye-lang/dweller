@@ -76,6 +76,8 @@ struct Compiler {
     // loop or statement they label.
     pending: List(u32)
     ctxregs: List(i32)
+    fins: List(*mut VmFinally)
+    completion: i32 = -1
 
     fn fail(self: *mut Self, why: []u8) CompileError!void {
         self.reason = why
@@ -549,6 +551,9 @@ struct Compiler {
             if c.label != label {
                 continue
             }
+            if try vmFinallyTarget(self, k, label, isContinue) |l| {
+                return l
+            }
             if isContinue {
                 if c.cont == NONE {
                     continue
@@ -823,6 +828,9 @@ struct Compiler {
                         .Declarator { target, .. } => {
                             match self.ast.node(target) {
                                 .Ident { depth, slot, .. } => {
+                                    if depth >= DEPTH_GLOBAL_LEX {
+                                        continue
+                                    }
                                     let r = try self.identReg(depth, slot)
                                     if r >= 0 {
                                         self.tdz.items()[r as usize] = true
@@ -860,6 +868,10 @@ struct Compiler {
                             try self.fail("unsupported: destructuring")
                         }
                     }
+                    if depth >= DEPTH_GLOBAL_LEX {
+                        try vmGlobalDecl(self, kind, target, init)
+                        continue
+                    }
                     let r = try self.identReg(depth, slot)
                     if init == 0 {
                         if kind == DECL_VAR {
@@ -894,6 +906,9 @@ struct Compiler {
             .Empty => {}
             .ExprStmt { e } => {
                 try self.visit(e)
+                if self.completion >= 0 {
+                    try self.b.op1(BC_STAR, self.completion as i64)
+                }
             }
             .VarDecl { kind, list, n } => {
                 if kind != DECL_VAR && kind != DECL_LET && kind != DECL_CONST {
@@ -907,7 +922,13 @@ struct Compiler {
                 } else {
                     try self.visit(arg)
                 }
-                try self.b.op0(BC_RETURN)
+                try vmReturn(self)
+            }
+            .Throw { arg } => {
+                try vmVisitThrow(self, id, arg)
+            }
+            .Try { block, param, handler, finalizer, scope } => {
+                try vmVisitTry(self, block, param, handler, finalizer, scope)
             }
             .If { cond, cons, alt } => {
                 let other = try self.b.newLabel()
@@ -1143,11 +1164,13 @@ pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc
         ctl: List(Ctl).init(alloc),
         pending: List(u32).init(alloc),
         ctxregs: List(i32).init(alloc),
+        fins: List(*mut VmFinally).init(alloc),
     }
     defer {
         c.ctl.deinit()
         c.pending.deinit()
         c.ctxregs.deinit()
+        c.fins.deinit()
         c.b.deinit()
         c.scopes.deinit()
         c.tdz.deinit()

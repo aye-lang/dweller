@@ -38,6 +38,7 @@ pub struct VmState {
     stats: bool
     ninsns: u64
     ncalls: u64
+    nwalked: u64 = 0
     // The callers of the frames pushed by the dispatch loop itself
     // (JS-to-JS calls without C recursion), innermost last.
     saved: List(VmSaved)
@@ -144,7 +145,9 @@ fn vmPrintStats(st: *mut VmState) AllocError!void {
     try b.appendUint(fallback as u64)
     try b.append(" on the tree walker, ")
     try b.appendUint(st.ncalls)
-    try b.append(" calls, ")
+    try b.append(" calls (")
+    try b.appendUint(st.nwalked)
+    try b.append(" on the tree walker), ")
     try b.appendUint(st.ninsns)
     try b.append(" instructions\n")
     // most frequent first
@@ -180,6 +183,7 @@ pub fn vmLookup(it: *mut Interp, st: *mut VmState, func: u32) JsError!?VmFunc {
         st.funcs.items()[func] = f
     }
     if f.code == null {
+        st.nwalked += 1
         return null
     }
     return f
@@ -449,15 +453,14 @@ fn vmImm(bytes: []u8, at: usize, w: u8) i64 {
         }
         return b
     }
-    return bcGet(bytes, at, w, true)
-}
-
-// An unsigned operand (a constant-pool index).
-fn vmIdx(bytes: []u8, at: usize, w: u8) i64 {
-    if w == 1 {
-        return bytes[at] as i64
+    if w == 2 {
+        let v = (bytes[at] as i64) | ((bytes[at + 1] as i64) << 8)
+        if v >= 0x8000 {
+            return v - 0x10000
+        }
+        return v
     }
-    return bcGet(bytes, at, w, false)
+    return bcGet(bytes, at, w, true)
 }
 
 // The jump offset in constant-pool entry `k` (`Jump*Constant`, the
@@ -476,33 +479,47 @@ fn vmConstOffset(consts: []BcConst, k: i64) usize {
 /// frames the loop pushed (the stack above them is the entry's to pop).
 fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize, argBase: usize, argc: usize) JsError!Value {
     let depth = st.saved.len()
-    return vmLoop(it, st, code, fp, argBase, argc, depth) catch |e| {
-        while st.saved.len() > depth {
-            st.saved.pop()
-            vmPopFrame(it)
+    var f = VmFault { code: code, pc: 0, fp: fp, argBase: argBase, argc: argc, acc: Value.Undefined, resume: false }
+
+    while true {
+        f.resume = false
+        let r = vmLoop(it, st, &mut f, depth) catch |e| try vmUnwind(it, st, e, &mut f, depth)
+
+        if !f.resume {
+            return r
         }
-        return e
     }
+
+    unreachable
 }
 
 /// The dispatch loop. A call to a compiled function pushes its frame
 /// and goes on in this loop (BYTECODE.md section 2, frame layout); its
 /// `Return` resumes the caller saved in `st.saved` above `depth`, and the
 /// entry frame's `Return` leaves the loop.
-fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, argBase0: usize, argc0: usize, depth: usize) JsError!Value {
-    var code = code0
-    var fp = fp0
+fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsError!Value {
+    var code = f.code
+    var fp = f.fp
     // where the frame's arguments are (they stay below the parameters)
-    var argBase = argBase0
-    var nargs = argc0
+    var argBase = f.argBase
+    var nargs = f.argc
     var bytes = code.code
     var consts = code.consts
     let count = st.stats
     var base = fp as i64
-    var acc = Value.Undefined
+    var acc = f.acc
     // reloaded after anything that may call JS (the stack may move)
     var regs = it.stack.items()
-    var pc: usize = 0
+    var pc = f.pc
+
+    errdefer {
+        f.code = code
+        f.pc = pc
+        f.fp = fp
+        f.argBase = argBase
+        f.argc = nargs
+    }
+
     while true {
         if count {
             st.ninsns += 1
@@ -1407,12 +1424,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 let id = vmIdx(bytes, pc, w) as u32
                 pc += w as usize
                 regs[fp] = acc
-                match it.ast.node(id) {
-                    .Ident { name, depth: d, slot, .. } => {
-                        acc = try it.readIdent(id, name, d, slot)
-                    }
-                    _ => unreachable
-                }
+                acc = try vmLdaGlobal(it, id)
                 regs = it.stack.items()
             }
             75 => {
@@ -1654,6 +1666,30 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 regs[fp] = acc
                 try it.heap.pushElem(o, acc)
                 regs = it.stack.items()
+            }
+            102 => {
+                // v8: src/interpreter/interpreter-generator.cc (StaGlobal)
+                regs[fp] = acc
+                try it.assignIdent(vmIdx(bytes, pc, w) as u32, acc, true)
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            103 => {
+                // v8: src/interpreter/interpreter-generator.cc (Throw)
+                let id = vmIdx(bytes, pc, w) as u32
+                pc += w as usize
+
+                if id != 0 {
+                    it.last_stmt = id
+                }
+
+                it.exception = acc
+                return JsError.Thrown
+            }
+            104 => {
+                // v8: src/interpreter/control-flow-builders.cc (TryCatchBuilder::BeginTry)
+                regs[(base + vmImm(bytes, pc, w)) as usize] = Value.Num { n: it.env as f64 }
+                pc += w as usize
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

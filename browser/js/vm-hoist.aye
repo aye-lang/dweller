@@ -6,10 +6,8 @@ fn vmHoist(c: *mut Compiler, scope: u32) CompileError!void {
     for k in 0..sc.nfuncs {
         match c.ast.node(c.ast.item(sc.funcs, k)) {
             .FuncDecl { f, target } => {
-                let id = vmIdent(c, target)
-
                 try c.b.op1(BC_CREATE_CLOSURE, f as i64)
-                try vmStoreBinding(c, try c.identReg(id.depth, id.slot), id.depth, id.slot)
+                try vmInitBinding(c, target)
             }
             _ => {}
         }

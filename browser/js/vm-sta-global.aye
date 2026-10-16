@@ -2,9 +2,17 @@
 
 fn vmStaGlobal(it: *mut Interp, id: u32, v: Value) JsError!void {
     match it.ast.node(id) {
-        .Ident { name, depth, flags, .. } => {
-            if depth > DEPTH_GLOBAL_LEX && (flags & IDENT_CONST) == 0 && vmGlobalCacheHit(it, id, name) {
-                return setCachedProp(it, id, objVal(it.global), name, v)
+        .Ident { name, depth, .. } => {
+            let ob = it.heap.obj(it.global)
+
+            if depth == DEPTH_GLOBAL && !ob.frozen && ob.class != Class.Host {
+                let i = vmGlobalSlot(it, id, name)
+
+                if i != NONE && (ob.props[i].flags & (F_ACCESSOR | F_WRITE)) == F_WRITE {
+                    ob.props[i].value = v
+
+                    return
+                }
             }
         }
         _ => {}

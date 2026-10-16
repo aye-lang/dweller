@@ -1,0 +1,19 @@
+// v8: src/interpreter/control-flow-builders.cc (TryFinallyBuilder), the dispatch of ControlScopeForTryFinally
+
+fn vmFinallyDispatch(c: *mut Compiler, fin: *mut VmFinally) CompileError!void {
+    let n = VM_TOKEN_JUMPS + fin.jumps.len() as u32
+
+    for token in VM_TOKEN_THROW..n {
+        if token == VM_TOKEN_RETURN && !fin.returns {
+            continue
+        }
+
+        let next = try c.b.newLabel()
+
+        try c.b.loadNumber(token as f64)
+        try c.b.op2(BC_TEST_EQUAL_STRICT, fin.token as i64, c.b.newSlot() as i64)
+        try c.b.jump(BC_JUMP_IF_FALSE, next)
+        try vmFinallyResume(c, fin, token)
+        try c.b.bind(next)
+    }
+}

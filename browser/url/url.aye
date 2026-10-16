@@ -12,6 +12,8 @@ import std.mem
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
+import encoding.Encoding
+import encoding
 
 pub error UrlError { Invalid, OutOfMemory }
 
@@ -58,12 +60,16 @@ pub struct Url {
 
 /// Parses an absolute URL.
 pub fn parse(alloc: Allocator, input: []u8) UrlError!Url {
-    return parseWith(alloc, null, input)
+    return parseWith(alloc, null, input, Encoding.Utf8)
 }
 
 /// Resolves `input` (absolute or relative) against `base`.
 pub fn resolve(alloc: Allocator, base: *Url, input: []u8) UrlError!Url {
-    return parseWith(alloc, base, input)
+    return parseWith(alloc, base, input, Encoding.Utf8)
+}
+
+pub fn resolveIn(alloc: Allocator, base: *Url, input: []u8, query_encoding: Encoding) UrlError!Url {
+    return parseWith(alloc, base, input, query_encoding)
 }
 
 // The parts of a URL before serialization: slices of the input or the
@@ -82,9 +88,10 @@ struct Parts {
     fragment: []u8
     has_query: bool
     has_fragment: bool
+    query_encoding: Encoding
 }
 
-fn parseWith(alloc: Allocator, base: ?*Url, raw: []u8) UrlError!Url {
+fn parseWith(alloc: Allocator, base: ?*Url, raw: []u8, query_encoding: Encoding) UrlError!Url {
     // Leading and trailing controls and spaces go; tabs and newlines
     // anywhere are removed.
     var clean = text.Builder.init(alloc)
@@ -119,6 +126,7 @@ fn parseWith(alloc: Allocator, base: ?*Url, raw: []u8) UrlError!Url {
         fragment: "",
         has_query: false,
         has_fragment: false,
+        query_encoding: query_encoding,
     }
 
     let scheme_len = schemeLength(s)
@@ -452,7 +460,7 @@ fn build(alloc: Allocator, p: *Parts, segments: [][]u8) UrlError!Url {
     if p.has_query {
         try out.appendByte('?')
         query_lo = out.len()
-        try encode(&mut out, p.query, Set.Query, special)
+        try encodeQuery(alloc, &mut out, p, special)
         query_hi = out.len()
     }
     var frag_lo = out.len()
