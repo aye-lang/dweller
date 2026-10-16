@@ -5035,7 +5035,10 @@ fn window_paints_early() {
         return;
     };
     let page = format!("{}/net/early_paint.html", srv.base);
-    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    // The click waits for the first paint (`painted`), which comes
+    // 0.3 s into the 1.5 s the script is delayed, not for a number of
+    // frames (40 take longer than 1.5 s on a loaded runner).
+    let events = "painted click:14,54 frame wheel:-3 frame";
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
@@ -5051,7 +5054,7 @@ fn window_paints_early() {
             "--frames",
             "300",
             "--events",
-            events.as_str(),
+            events,
             "--text",
         ])
         .spawn_drained();

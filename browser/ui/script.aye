@@ -23,6 +23,9 @@
 //     stop:N
 //     frame           no event: the words after it wait for the next
 //                     frame (with `--frames`)
+//     painted         no event: the words after it wait until the page
+//                     was painted for the first time (the
+//                     `ui_first_paint` record; with `--frames`)
 //
 // `--state` prints the tab's state when the window closes, and `--save
 // FILE.png` writes the last frame.
@@ -157,7 +160,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") {
             return false
         }
     }
@@ -204,6 +207,10 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             if served < want {
                 return
             }
+        }
+        if text.eql(w, "painted") && ui.paint_began != 0 {
+            // The page is not drawn yet (`Ui.loop` resumes the script).
+            return
         }
         // Drop the word before handling it (handling may resume again).
         var next = end

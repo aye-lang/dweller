@@ -102,8 +102,8 @@ the one place with more than one process.
   `frame` words; on the slow runner those frames take longer than the
   1500 ms the page's script is delayed, so the click lands after the
   script ("checked before it: false"). It waits on wall time, which #42
-  removed from the other timing tests. Card P4.80, step A1 below; until
-  it lands, M1 does not hold.
+  removed from the other timing tests. Fixed by P4.80 (2026-10-16): the
+  click waits for the first paint (`--events` word `painted`).
 - **Layer 0 (P4).** Done: P4.31–P4.35, P4.38, P4.39, P4.43–P4.45,
   P4.50–P4.53, P4.56–P4.58, and the VM preparation P4.59–P4.62 (benchmark
   set, bytecode format, resolver). The window never waits on page
@@ -185,7 +185,7 @@ under 100 ms with a timer storm.
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | open | – |
+| A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | done | – |
 | A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | open | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
 | A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | open | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | open | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
@@ -472,6 +472,7 @@ them from coming back.
 - files: `tests/browser.rs` (`window_paints_early`, the `--events` word if new), `browser/ui/script.aye` (the word)
 - verify: `cargo test --release --test browser -- window_paints_early window_fetch_in_background > target/p4.80.log 2>&1; echo $?` → 0, five runs in a row under `nice -n 19` with the machine busy (`yes > /dev/null &` ×4), and green on the PR's macOS job
 - time box: 45 min; model: sonnet
+- status: done 2026-10-16. New `--events` word `painted` (`browser/ui/script.aye`): the words after it wait until the page's first paint (`Ui.paint_began` is 0, the `ui_first_paint` record). `window_paints_early` now runs `painted click:14,54 frame wheel:-3 frame`, so the click comes 0.3 s into the script's 1.5 s delay on any runner; the `script` and image records are still checked against the first paint's iteration. The window is unchanged. Verify: the two tests pass; five runs in a row under `nice -n 19` with 4 `yes` processes: 5 of 5 (6.6-6.7 s each).
 
 #### P4.57: mistral.ai idle CPU
 - goal: mistral.ai idle under 25% CPU. Found in P4.56: its rAF animation changes the `width` of `.js-square` elements a pixel a frame (`moved` in the cascade every frame), and in ~70% of the frames `localChanges` fails on `version - g.version != layout_noted - g.noted` (a `layout_version` bump without a note: `image_api.aye` new bitmap, `dom_api.aye:106` or `engine.aye` web fonts / image changes), so the frame styles and lays out the whole document instead of `relayoutDirty`. Find the bump, keep such frames incremental, and measure what is left (the scripts' timers, `paint_build`).
