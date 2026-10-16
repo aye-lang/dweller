@@ -622,9 +622,7 @@ fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
 /// again only what they touch (`geometry`), for the page as for the
 /// scripts. The layout owns `tree` (`Page.tree_borrowed`). With
 /// container queries, `tree` is `layoutQueried`'s, and the containers
-/// whose size a change moves are styled again (`settleContainers`). Not
-/// for documents with shadow trees, whose changes are styled again in
-/// full.
+/// whose size a change moves are styled again (`settleContainers`).
 fn adoptLayout(s: *mut Script, st: *mut Styling, tree: *mut layout.Tree) AllocError!void {
     let p = s.page
     dropGeometry(s)
@@ -926,7 +924,7 @@ fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut Lis
 // Builds the boxes of each element of `dirty` again (of the nearest
 // element above it whose box can be, when its own cannot) and lays them out
 // again (layout/incremental.aye), when that is what a full layout gives:
-// not for a tree with floats or shadow trees, or container queries but in
+// not for a tree with floats, near a shadow tree, or container queries but in
 // the page's layout (`settleContainers`), nor
 // after so many boxes were built again that the tree is mostly dropped
 // ones. False when it did not; the tree may then be changed in part and
@@ -934,7 +932,7 @@ fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut Lis
 fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!bool {
     let doc = &s.page.doc
     let t = g.tree
-    if g.floats || (g.styles.queried && !g.shared) || doc.shadows.len() > 0 || t.boxes.len() > 2 * g.built + 1024 {
+    if g.floats || (g.styles.queried && !g.shared) || t.boxes.len() > 2 * g.built + 1024 {
         return false
     }
     // The page's images, made since the tree was laid out (a bitmap that
@@ -944,6 +942,8 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     }
     var roots = List(usize).init(s.alloc)
     defer roots.deinit()
+    var root_nodes = List(NodeId).init(s.alloc)
+    defer root_nodes.deinit()
     for d in dirty {
         if !doc.isLive(d) || !doc.isConnected(d) || (g.first.get(d.index) == null && undisplayed(g, d)) {
             continue
@@ -976,7 +976,11 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
         }
         if !known {
             try roots.append(b)
+            try root_nodes.append(t.bx(b).node.?)
         }
+    }
+    if !clearOfShadows(doc, root_nodes.items()) {
+        return false
     }
     // Only the outermost: the others are built again with them.
     var outer = List(usize).init(s.alloc)
