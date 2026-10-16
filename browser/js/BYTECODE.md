@@ -262,6 +262,25 @@ has a mapped one in the context and falls back) and
 V8): copied from their slot at entry, in order, with defaults and the
 rest array; each is in its dead zone until then.
 
+As built (P4.66): the current context is `Interp.env`, and a context
+is the tree walker's `Env` (a binding keeps its tree-walker slot), so
+closures move freely between the engines. `vmPushFrame` sets
+`Interp.env` to the callee's closure environment and `vmPopFrame`
+restores the caller's (the `Frame.env` it saved). A function makes its
+context at entry (`CreateFunctionContext n`) only when it creates
+closures or has context slots; a block or `for` scope with slots that
+creates closures uses `PushContext r, n` (it makes the block context
+itself; the outer one is saved in r as a number, an ancestor the
+collector reaches through the current context) and `PopContext r`,
+which `break`/`continue` also emit for each context they leave. Scopes
+without a context are skipped when counting `LdaContextSlot depth,
+slot`. `CopyContext` replaces the loop context with a copy (same
+parent) before the update expression. `LdaClosure` loads the running
+function (a named function expression's own name).
+`ThrowReferenceErrorIfHole name` follows reads of block-level and outer
+bindings; function-level contexts start undefined, as the tree
+walker's.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register
