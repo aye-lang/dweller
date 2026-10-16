@@ -174,23 +174,28 @@ def analyse(rel):
 
 
 NEW_FILE_LIMITS = {"comment_lines": 0, "lines": MAX_FILE_LINES, "long_functions": 1, "blank_line_violations": 0}
+RATCHETED = ("comment_lines", "long_functions")
 
 
 def main():
-    update = "--update" in sys.argv[1:]
-    add_missing = "--add-missing" in sys.argv[1:]
+    args = sys.argv[1:]
+    rebaseline = "--rebaseline" in args
+    update = "--update" in args or rebaseline
     baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
     files = list(aye_files())
     failed = False
     new_baseline = {}
-    totals = {"comment_lines": 0, "over_300": 0}
+    totals = {"comment_lines": 0, "over_300": 0, "lines_added": 0, "blank_added": 0}
     for rel in files:
         numbers, where = analyse(rel)
         totals["comment_lines"] += numbers["comment_lines"]
         totals["over_300"] += numbers["lines"] > MAX_FILE_LINES
         entry = baseline.get(rel)
         exempt = entry.get("exempt") if entry else None
-        limits = {k: entry[k] for k in NEW_FILE_LIMITS if entry and k in entry} if entry else NEW_FILE_LIMITS
+        limits = {k: entry[k] for k in RATCHETED if k in entry} if entry else NEW_FILE_LIMITS
+        if entry:
+            totals["lines_added"] += max(0, numbers["lines"] - entry.get("lines", numbers["lines"]))
+            totals["blank_added"] += max(0, numbers["blank_line_violations"] - entry.get("blank_line_violations", numbers["blank_line_violations"]))
         for key, limit in limits.items():
             if key == "long_functions" and exempt:
                 continue
@@ -198,8 +203,11 @@ def main():
                 failed = True
                 for line, rule in where[key]:
                     print(f"{rel}:{line}: {rule} ({key} {numbers[key]} > {limit})")
-        if update and (entry or add_missing):
-            kept = {k: min(numbers[k], limits[k]) if entry else numbers[k] for k in NEW_FILE_LIMITS}
+        if update and (entry or rebaseline):
+            kept = dict(numbers)
+            if entry and not rebaseline:
+                for k in RATCHETED:
+                    kept[k] = min(numbers[k], limits[k])
             if exempt:
                 kept["exempt"] = exempt
             new_baseline[rel] = kept
@@ -209,7 +217,8 @@ def main():
     if update:
         BASELINE.write_text(json.dumps(new_baseline, indent=1, sort_keys=True) + "\n")
         failed = False
-    print(f"taste: {len(files)} files, {totals['comment_lines']} comment lines, {totals['over_300']} files over 300 lines")
+    print(f"taste: {len(files)} files, {totals['comment_lines']} comment lines, {totals['over_300']} files over 300 lines, "
+          f"baseline files grew by {totals['lines_added']} lines and {totals['blank_added']} blank-line violations (not ratcheted)")
     return 1 if failed else 0
 
 
