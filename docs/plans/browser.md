@@ -112,7 +112,7 @@ the one place with more than one process.
   not shadow trees); paint keeps the page's pixels with damage tracking
   and a raster cache; transform and opacity changes composite; a scroll
   moves the page as a texture offset and fixed and sticky boxes as layers
-  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
+  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55b; backlog P4.54, P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
@@ -192,7 +192,7 @@ under 100 ms with a timer storm.
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | done | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
 | A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | done | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
 | A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | open | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
-| A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | open | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
+| A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | done (P4.55b open) | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
 | A8 | P4.54 | macOS crash record exits with 128+sig | – | backlog | – |
 
 ### Phase B: paint and the gate (Layer 0, lane paint)
@@ -522,6 +522,13 @@ them from coming back.
 - chromium: `third_party/blink/renderer/core/frame/local_frame_view.cc` (throttled frames), `third_party/blink/renderer/platform/scheduler/` (background timer throttling, 1 s alignment).
 - verify: `window_perf.py idle https://mistral.ai` with the window minimized after its first frame: idle CPU < 2% (98.6% shown); a test with two tabs: the background tab's 100 ms interval runs at most once a second and its rAF not at all, both resume when shown; `cargo test --release --test browser -- window_ > target/p4.55.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- status: done 2026-10-16, except the real-window measurement (P4.55b). A page is hidden while its window is minimized or hidden or its tab is in the background (`syncTabs`, ui/sync-tabs.aye, each loop iteration and before the timers): `engine.setHidden` marks it (and its frames) and fires `visibilitychange` once per change; a hidden page runs no animation frame (`animationFrameRequested` is false, its rAF timers never run, `msUntilNextTimer` is null). The timers of a hidden page run at most once a second (`runBackgroundTimers`: each tab's `next_run_ns`, the shown tab too while the window is hidden); the loop's 1 s wait wakes them. Not done: an offscreen iframe's rAF, a fully occluded window (SDL2 has no occlusion event), `visibilityState` of iframe documents. SDL's dummy driver sends HIDDEN events for a window its flags say is shown, so a real event counts only when the window's flags are hidden or minimized (`windowGone`; a scripted event has no window id and counts). The script words `window:hidden` and `window:shown` (SDL's minimized and restored) already existed and feed the same handler, so no `hide`/`show` words were added. Tests `window_hidden_raf` (no rAF between the two visibilitychange events, rAF back after) and `window_background_tab_throttled` (background interval ticks at least 1 s apart, its rAF not at all, both resume when shown).
+
+#### P4.55b: idle CPU of a minimized window
+- goal: measure P4.55 in a real window: `window_perf.py idle https://mistral.ai` with the window minimized after its first frame: idle CPU < 2% (98.6% shown).
+- how: local macOS check with `DWELLER_BACKGROUND=1` (the window is a background app that is never raised, X1); the Linux cloud box runs SDL's dummy driver, which cannot minimize.
+- verify: the idle CPU of the minimized window < 2%, shown ~ as before.
+- time box: 20 min; model: sonnet
 
 #### P4.36: scroll by moving the last frame
 - goal: a scroll moves the previous frame's pixels and draws only the band that scrolled in, then fixed and sticky boxes over it; a frame with no change draws nothing (cause 3).
