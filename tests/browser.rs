@@ -3680,6 +3680,106 @@ fn js_command_line() {
     );
 }
 
+// ---- P10.1: WPT testharness.js pages (`dweller wpt`, browser/tests/wpt)
+
+/// `dweller wpt` on each fixture of browser/tests/wpt (file URLs: the
+/// pages load browser/tools/wpt/testharnessreport.js by a relative path)
+/// prints its one JSON line on stdout, with an empty stderr.
+#[test]
+fn wpt_runner() {
+    let ok = |name: &str| format!(r#"{{"name":"{name}","status":"PASS","message":null}}"#);
+    let line = |status: &str, message: &str, subtests: &[String]| {
+        format!(
+            r#"{{"status":"{status}","message":{message},"subtests":[{}]}}"#,
+            subtests.join(",")
+        ) + "\n"
+    };
+    let cases: &[(&[&str], String)] = &[
+        (
+            &["browser/tests/wpt/pass.html"],
+            line("OK", "null", &[ok("addition"), ok("a timer"), ok("a promise")]),
+        ),
+        (
+            &["browser/tests/wpt/fail.html"],
+            line(
+                "OK",
+                "null",
+                &[
+                    ok("passes"),
+                    r#"{"name":"fails","status":"FAIL","message":"assert_equals: one is two expected 2 but got 1"}"#.into(),
+                ],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/error.html"],
+            line(
+                "ERROR",
+                r#""Uncaught Error: outside any test""#,
+                &[ok("before the error")],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/timeout.html"],
+            line(
+                "TIMEOUT",
+                "null",
+                &[
+                    ok("finishes"),
+                    r#"{"name":"never finishes","status":"TIMEOUT","message":"Test timed out"}"#.into(),
+                ],
+            ),
+        ),
+        // 15 s of the page's (virtual) time: past the default 10 s.
+        (
+            &["browser/tests/wpt/slow.html"],
+            line(
+                "TIMEOUT",
+                "null",
+                &[r#"{"name":"after 15 s","status":"TIMEOUT","message":"Test timed out"}"#.into()],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/slow.html", "--timeout", "60"],
+            line("OK", "null", &[ok("after 15 s")]),
+        ),
+        (
+            &["browser/tests/wpt/sum.any.html"],
+            line("OK", "null", &[ok("reduce sums"), ok("split")]),
+        ),
+    ];
+    for (args, stdout) in cases {
+        let mut all = vec!["wpt"];
+        all.extend_from_slice(args);
+        expect(&all, 0, stdout, "");
+    }
+    // A page that does not load: CRASH, exit 1.
+    let missing = root().join("browser/tests/wpt/missing.html");
+    expect(
+        &["wpt", "browser/tests/wpt/missing.html"],
+        1,
+        &format!(
+            "{{\"status\":\"CRASH\",\"message\":\"cannot fetch file://{}: not found\",\"subtests\":[]}}\n",
+            missing.display()
+        ),
+        "",
+    );
+    // A page without testharness.js never reports: TIMEOUT, no subtests.
+    expect(
+        &["wpt", "browser/tests/basic.html", "--timeout", "1"],
+        0,
+        "{\"status\":\"TIMEOUT\",\"message\":\"no result from testharnessreport.js\",\"subtests\":[]}\n",
+        "",
+    );
+    let usage = "error: usage: dweller wpt FILE|URL [--timeout S]\n";
+    expect(&["wpt"], 2, "", usage);
+    expect(
+        &["wpt", "browser/tests/wpt/pass.html", "--timeout", "0"],
+        2,
+        "",
+        usage,
+    );
+}
+
 // ---- page scripts and the DOM bindings (browser/engine/script.aye)
 
 /// The window, headless: a click and a key reach the page's listeners,
