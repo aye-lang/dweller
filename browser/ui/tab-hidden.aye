@@ -1,0 +1,16 @@
+import engine
+import std.mem.AllocError
+
+fn tabHidden(p: *mut engine.Page, hidden: bool) AllocError!void {
+    let root = p.doc.documentElement() orelse return
+
+    if !engine.setHidden(p, hidden) {
+        return
+    }
+
+    if hidden {
+        _ = try engine.dispatchEvent(p, root, "__host", "hidden")
+    } else {
+        _ = try engine.dispatchEvent(p, root, "__host", "visible")
+    }
+}

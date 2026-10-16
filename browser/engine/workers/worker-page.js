@@ -1,24 +1,8 @@
 (function (G, h, wire) {
   const MESSAGE = 0, ERROR = 1, CONSOLE = 2;
   const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
-  const blobs = new Map();
+  const blobs = URL._blobStore;
   const workers = new Map();
-  const makeUrl = URL.createObjectURL;
-  hidden(URL, 'createObjectURL', function createObjectURL(blob) {
-    if (!(blob instanceof Blob)) throw new TypeError("Failed to execute 'createObjectURL' on 'URL': Overload resolution failed.");
-    const url = makeUrl(blob);
-    blobs.set(url, blob);
-    return url;
-  });
-  hidden(URL, 'revokeObjectURL', function revokeObjectURL(url) { blobs.delete(String(url)); });
-  const pageFetch = G.fetch;
-  hidden(G, 'fetch', function fetch(input, init) {
-    const url = typeof input === 'string' || input instanceof URL ? String(input) : null;
-    if (url === null || !url.startsWith('blob:')) return pageFetch.call(this, input, init);
-    const blob = blobs.get(url.split('#')[0]);
-    if (!blob) return Promise.reject(new TypeError('Failed to fetch'));
-    return Promise.resolve(new Response(blob, { headers: { 'content-type': blob.type } }));
-  });
   function fire(target, name, ev) {
     target.dispatchEvent(ev);
     return ev;
