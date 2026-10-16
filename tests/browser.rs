@@ -3881,7 +3881,11 @@ fn wpt_py_serve() {
         return;
     };
     let stdout = String::from_utf8_lossy(&run.stdout);
-    assert!(run.status.success(), "wpt.py run failed: {stdout}{}", String::from_utf8_lossy(&run.stderr));
+    assert!(
+        run.status.success(),
+        "wpt.py run failed: {stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
     for want in [
         "error.html: 1/1 ERROR",
         "fail.html: 1/2 OK",
@@ -3894,7 +3898,10 @@ fn wpt_py_serve() {
         assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
     }
     let json = std::fs::read_to_string(out.join("root.json")).expect("results file");
-    assert!(json.contains("\"passed\": 9") && json.contains("\"total\": 11"), "{json}");
+    assert!(
+        json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
+        "{json}"
+    );
 }
 
 // ---- page scripts and the DOM bindings (browser/engine/script.aye)
