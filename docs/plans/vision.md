@@ -7,7 +7,7 @@ the browser lanes until V2 is done. Card format and rules as in
 
 | Step | Card | What | Depends on | Status |
 |---|---|---|---|---|
-| V1 | V1 | layering rules written down and checked in CI; `layout` stops importing `js` | – | open |
+| V1 | V1 | layering rules written down and checked in CI; `layout` stops importing `js` | – | done |
 | V2 | V2 | native shell spike: an Aye program opens a window on the engine with a DOM built from code | V1 | open |
 | V3 | V3 | component API: one DOM-shaped interface, engine and wasm implementations | V2, framework F4 | open |
 | V4 | V4 | terminal emulator spike: PTY, VT parser, cell grid drawn by the text stack | V1 | open |
@@ -22,6 +22,7 @@ the browser lanes until V2 is done. Card format and rules as in
 - files: `browser/tools/check_layers.py`, `.github/workflows/ci.yml`, `docs/browser.md`, `browser/layout/inline.aye`, `browser/js/` (the `caseMap` move)
 - verify: `python3 browser/tools/check_layers.py; echo $?` → 0; adding `import js` to a `paint/` file makes it exit 1 with the file:line (checked by hand, not committed); `cargo test --release --test browser -- js_conformance layout > target/v1.log 2>&1; echo $?` → 0
 - time box: 45 min; model: sonnet
+- status: done 2026-10-16. Layer table as enforced by `browser/tools/check_layers.py` (CI step "Module layers", table in `docs/browser.md`): platform = ui gpu audio font net perf; render core = css layout paint image svg webfont encoding url dom; front end = html js wasm engine agent. Core modules and platform modules other than `ui` import no front-end module; only root files of `browser/` import `ui`. `ui` is the window shell and imports engine/agent by design. `caseMap` moved to `font/casemap.aye`; `layout/inline.aye` no longer imports `js`. Exceptions left: `svg/` → `html` (removed by V6), `layout/controls.aye` and `paint/form_widgets.aye` → `html` (allowed, none present today; removed by V6).
 
 #### V2: native shell spike
 - goal: an Aye program, not the browser, opens a window and runs a small app on the engine: a counter (text and a button), a list of 1000 rows that scrolls, a text input. The DOM is built from code (`dom.Document` as the scene graph); no HTML parser, no JS VM linked in. A click changes the DOM and the frame relays out incrementally, as the browser's window does. Report: binary size, time to the first frame, idle CPU, frame time while scrolling, against `dweller` on an equivalent HTML page.
