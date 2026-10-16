@@ -5325,6 +5325,7 @@ fn jsdom_case(
     let out = Command::new(dweller())
         .current_dir(root())
         .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_JS_VM", "1")
         .args(&all)
         .output()
         .unwrap();
@@ -5476,6 +5477,7 @@ fn jsdom_gc_stress() {
         let out = Command::new(dweller())
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
+            .env("DWELLER_JS_VM", "1")
             .args(["dump", "--tree", "--js", &rel])
             .output()
             .unwrap();

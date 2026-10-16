@@ -1,0 +1,22 @@
+let VM_TARGET_LOCAL: u8 = 0
+let VM_TARGET_GLOBAL: u8 = 1
+let VM_TARGET_PROPERTY: u8 = 2
+
+fn vmTargetKind(c: *Compiler, id: u32) u8 {
+    match c.ast.node(id) {
+        .Ident { depth, .. } => {
+            if depth >= DEPTH_GLOBAL_LEX {
+                return VM_TARGET_GLOBAL
+            }
+        }
+        .Member { .. } => {
+            return VM_TARGET_PROPERTY
+        }
+        .Index { .. } => {
+            return VM_TARGET_PROPERTY
+        }
+        _ => {}
+    }
+
+    return VM_TARGET_LOCAL
+}

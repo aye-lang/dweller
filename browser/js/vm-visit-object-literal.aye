@@ -1,0 +1,38 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitObjectLiteral)
+
+fn vmVisitObjectLiteral(c: *mut Compiler, id: u32, list: u32, n: u32) CompileError!void {
+    for k in 0..n {
+        match c.ast.node(c.ast.item(list, k)) {
+            .Prop { kind, computed, .. } => {
+                if kind == PROP_SPREAD || computed {
+                    try c.fail("unsupported: computed or spread property")
+                }
+            }
+            _ => {
+                try c.fail("unsupported: ObjectLit")
+            }
+        }
+    }
+
+    let mark = c.b.topReg
+    let r = c.b.newReg()
+
+    try c.b.op1(BC_CREATE_OBJECT_LITERAL, id as i64)
+    try c.b.op1(BC_STAR, r as i64)
+
+    for k in 0..n {
+        let p = c.ast.item(list, k)
+
+        match c.ast.node(p) {
+            .Prop { value, .. } => {
+                try c.visit(value)
+            }
+            _ => {}
+        }
+
+        try c.b.emit(BC_DEFINE_NAMED_OWN_PROPERTY, r as i64, p as i64, k as i64)
+    }
+
+    try c.b.op1(BC_LDAR, r as i64)
+    c.b.releaseRegs(mark)
+}

@@ -178,6 +178,8 @@ struct Compiler {
             .Gt => BC_TEST_GREATER_THAN
             .Le => BC_TEST_LESS_THAN_OR_EQUAL
             .Ge => BC_TEST_GREATER_THAN_OR_EQUAL
+            .In => BC_TEST_IN
+            .Instanceof => BC_TEST_INSTANCE_OF
             _ => 0
         }
     }
@@ -245,17 +247,11 @@ struct Compiler {
 
     fn visitUnary(self: *mut Self, op: Op, arg: u32) CompileError!void {
         if op == Op.Delete {
-            try self.fail("unsupported: delete")
+            return vmVisitDelete(self, arg)
         }
-        if op == Op.Typeof {
-            match self.ast.node(arg) {
-                .Ident { depth, .. } => {
-                    if depth >= DEPTH_GLOBAL_LEX {
-                        try self.fail("unsupported: global variable")
-                    }
-                }
-                _ => {}
-            }
+        if op == Op.Typeof && vmTargetKind(self, arg) == VM_TARGET_GLOBAL {
+            try self.b.op1(BC_TYPE_OF_GLOBAL, arg as i64)
+            return
         }
         try self.visit(arg)
         if op == Op.Void {
@@ -278,6 +274,13 @@ struct Compiler {
     // V8 `VisitCountOperation`: prefix `Ldar x; Inc; Star x`, postfix
     // keeps the old value (ToNumeric) in a temporary.
     fn visitUpdate(self: *mut Self, inc: bool, prefix: bool, arg: u32) CompileError!void {
+        let kind = vmTargetKind(self, arg)
+        if kind == VM_TARGET_GLOBAL {
+            return vmUpdateGlobal(self, inc, prefix, arg)
+        }
+        if kind == VM_TARGET_PROPERTY {
+            return vmUpdateProperty(self, inc, prefix, arg)
+        }
         let r = try self.writeReg(arg)
         if r == VM_CONTEXT {
             return vmUpdateContext(self, inc, prefix, arg)
@@ -303,26 +306,12 @@ struct Compiler {
     }
 
     fn visitAssign(self: *mut Self, op: Op, target: u32, value: u32) CompileError!void {
-        match self.ast.node(target) {
-            .Member { obj, .. } => {
-                if op != Op.None {
-                    try self.fail("unsupported: compound assignment to a property")
-                }
-                // The object is evaluated first: a register the value
-                // may write is copied.
-                let mark = self.b.topReg
-                var r = try self.valueReg(obj)
-                if r < mark && self.mayWrite(value) {
-                    let t = self.b.newReg()
-                    try self.b.op2(BC_MOV, r as i64, t as i64)
-                    r = t
-                }
-                try self.visit(value)
-                try self.b.op2(BC_SET_NAMED_PROPERTY, r as i64, target as i64)
-                self.b.releaseRegs(mark)
-                return
-            }
-            _ => {}
+        let kind = vmTargetKind(self, target)
+        if kind == VM_TARGET_GLOBAL {
+            return vmAssignGlobal(self, op, target, value)
+        }
+        if kind == VM_TARGET_PROPERTY {
+            return vmAssignProperty(self, op, target, value)
         }
         let r = try self.writeReg(target)
         if r == VM_CONTEXT {
@@ -400,6 +389,13 @@ struct Compiler {
                     try self.b.op1(BC_STAR, (r + 1) as i64)
                     try self.b.op2(BC_GET_NAMED_PROPERTY, (r + 1) as i64, callee as i64)
                     try self.b.op1(BC_STAR, r as i64)
+                }
+                .Index { obj, key, optional } => {
+                    if optional {
+                        try self.fail("unsupported: OptChain")
+                    }
+                    op = BC_CALL_PROPERTY
+                    try vmIndexCallee(self, r, obj, key)
                 }
                 _ => {
                     try self.visit(callee)
@@ -484,6 +480,18 @@ struct Compiler {
                 let r = try self.valueReg(obj)
                 try self.b.op2(BC_GET_NAMED_PROPERTY, r as i64, id as i64)
                 self.b.releaseRegs(mark)
+            }
+            .Index { obj, key, optional } => {
+                if optional {
+                    try self.fail("unsupported: OptChain")
+                }
+                try vmVisitIndex(self, obj, key)
+            }
+            .ObjectLit { list, n } => {
+                try vmVisitObjectLiteral(self, id, list, n)
+            }
+            .ArrayLit { list, n } => {
+                try vmVisitArrayLiteral(self, list, n)
             }
             .Func { f } => {
                 try self.b.op1(BC_CREATE_CLOSURE, f as i64)
