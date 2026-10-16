@@ -1,0 +1,36 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+
+fn vmVisitYieldStar(c: *mut Compiler, arg: u32) CompileError!void {
+    let mark = c.b.topReg
+    let r = c.b.newRegs(4) as i64
+    let g = c.gen_reg as i64
+    let done = try c.b.newLabel()
+    let end = try c.b.newLabel()
+
+    try c.visit(arg)
+    try c.b.op1(BC_STAR, r)
+    try c.b.op0(BC_LDA_THE_HOLE)
+    try c.b.op1(BC_STAR, r + 1)
+    try c.b.op0(BC_LDA_ZERO)
+    try c.b.op1(BC_STAR, r + 2)
+    try c.b.op0(BC_LDA_UNDEFINED)
+    try c.b.op1(BC_STAR, r + 3)
+
+    let loop = try c.b.loopHeader()
+
+    try c.b.op1(BC_YIELD_STAR_STEP, r)
+    try c.b.jump(BC_JUMP_IF_TRUE, done)
+    try c.b.op1(BC_LDAR, r + 3)
+    try c.b.op1(BC_SUSPEND_GENERATOR, g)
+    try c.b.op2(BC_RESUME_GENERATOR, g, r + 3)
+    try c.b.op1(BC_STAR, r + 2)
+    try c.b.jumpLoop(loop)
+    try c.b.bind(done)
+    try c.b.op1(BC_LDAR, r + 2)
+    try c.b.jump(BC_JUMP_IF_TO_BOOLEAN_FALSE, end)
+    try c.b.op1(BC_LDAR, r + 3)
+    try vmReturn(c)
+    try c.b.bind(end)
+    try c.b.op1(BC_LDAR, r + 3)
+    c.b.releaseRegs(mark)
+}

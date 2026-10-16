@@ -79,6 +79,7 @@ struct Compiler {
     fins: List(*mut VmFinally)
     completion: i32 = -1
     opt_nullish: u32 = NONE
+    gen_reg: i32 = -1
 
     fn fail(self: *mut Self, why: []u8) CompileError!void {
         self.reason = why
@@ -508,6 +509,9 @@ struct Compiler {
             }
             .SuperIndex { key, this_node } => {
                 try vmVisitSuperProperty(self, id, key, this_node)
+            }
+            .Yield { arg, delegate } => {
+                try vmVisitYield(self, id, arg, delegate)
             }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
@@ -1106,8 +1110,8 @@ struct Compiler {
 
     fn visitFunction(self: *mut Self) CompileError!void {
         let fi = self.ast.func(self.func)
-        if fi.generator || fi.is_async {
-            try self.fail("unsupported: generator or async function")
+        if fi.is_async {
+            try self.fail("unsupported: async function")
         }
         for k in 0..fi.nparams {
             match self.ast.node(self.ast.item(fi.params, k)) {
@@ -1150,14 +1154,23 @@ struct Compiler {
         if fi.this_slot != NONE {
             self.this_reg = self.b.newReg()
         }
+        if fi.generator {
+            self.gen_reg = self.b.newReg()
+        }
         for _ in 0..self.b.topReg {
             try self.tdz.append(false)
         }
         try self.scopes.append(fi.scope)
+        if fi.generator {
+            try self.b.op1(BC_SWITCH_ON_GENERATOR_STATE, self.gen_reg as i64)
+        }
         try vmFunctionContext(self, fi)
         try vmSelfBinding(self, fi)
         try self.visitParams(fi)
         try vmHoist(self, fi.scope)
+        if fi.generator {
+            try vmGeneratorPrologue(self)
+        }
         if fi.default_ctor {
             return vmDefaultConstructor(self, fi)
         }

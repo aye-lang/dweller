@@ -1847,6 +1847,43 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 acc = try vmGetSuperProperty(it, thisv, acc, id)
                 regs = it.stack.items()
             }
+            123 => {
+                // v8: src/interpreter/interpreter-generator.cc (SwitchOnGeneratorState)
+                let g = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += w as usize
+                if isObject(g) {
+                    pc = vmGenFrame(it, objectOf(g)).pc as usize
+                }
+            }
+            124 => {
+                // v8: src/runtime/runtime-generator.cc (Runtime_CreateJSGeneratorObject)
+                regs[fp] = acc
+                acc = try vmCreateGenerator(it)
+                regs = it.stack.items()
+            }
+            125 => {
+                // v8: src/interpreter/interpreter-generator.cc (SuspendGenerator)
+                let g = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                pc += w as usize
+                regs[fp] = acc
+                try vmSuspendGenerator(it, g, fp - code.nparams as usize, (code.nparams + code.nregs) as usize, pc)
+                return acc
+            }
+            126 => {
+                // v8: src/interpreter/interpreter-generator.cc (ResumeGenerator)
+                let gf = vmGenFrame(it, objectOf(regs[(base + vmImm(bytes, pc, w)) as usize]))
+                regs[(base + vmImm(bytes, pc + w as usize, w)) as usize] = gf.input
+                pc += 2 * w as usize
+                acc = Value.Num { n: gf.mode as f64 }
+            }
+            127 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmYieldStarStep(it, at)
+                regs = it.stack.items()
+            }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)
                 unreachable
