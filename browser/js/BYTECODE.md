@@ -238,6 +238,30 @@ deadline like a tree-walked one. The VM reads a jump's offset from the
 opcode byte; `SwitchOnSmi` falls through for a value that is not an
 integer in range, to the `Jump` to the default that follows it.
 
+As built (P4.65): `CallProperty r, argc, [n]`, `CallUndefinedReceiver`
+and `Construct` take the callee, `this` and the arguments in
+consecutive registers from `r`; `[n]` is the AST `Call`/`New` node (the
+callee's text for the TypeError). The values are copied to the top of
+the stack, where `callAt`/`constructAt` expect them. A plain compiled
+function is entered in the same loop: `vmPushFrame` builds its frame
+above the copy, the caller's code, pc, fp and arguments go to
+`VmState.saved`, and its `Return` pops back (a construction keeps the
+new object unless an object is returned); everything else (natives,
+bound functions, proxies, class constructors, generators, functions on
+the tree walker) goes through `callAt`/`constructAt` and recurses in C.
+`MAX_DEPTH` counts the frames either way. A throw unwinds the frames
+the loop pushed. The saved callers live in `VmState.saved`, not in new
+`Frame` fields: `Frame` stays as it was. Until the inline caches of
+P4.67, `LdaGlobal [n]`, `GetNamedProperty r, [n]` and
+`SetNamedProperty r, [n]` are generic and use the tree walker's
+per-node property cache (`[n]` the `Ident` or `Member` node).
+`CreateArguments` (unmapped; a sloppy function with simple parameters
+has a mapped one in the context and falls back) and
+`CreateRestParameter k` read the arguments the frame keeps (`argBase`,
+`argc`). Non-simple parameters are registers (the resolver's choice, as
+V8): copied from their slot at entry, in order, with defaults and the
+rest array; each is in its dead zone until then.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

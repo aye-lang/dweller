@@ -12,6 +12,10 @@
 // accumulator is written there, so the collector, which marks the
 // stack, sees it (section 4). The accumulator is a local of the loop.
 //
+// A call to a compiled function pushes its frame and stays in the same
+// dispatch loop (the caller saved in `VmState.saved`); other calls go
+// through `callAt`/`constructAt`.
+//
 // The dispatch loop is one `match` on the opcode byte, which clang turns
 // into a jump table. Handler semantics follow V8
 // `src/interpreter/interpreter-generator.cc` (`IGNITION_HANDLER`s of the
@@ -21,6 +25,7 @@
 // (`add`, `binary`, `looseEquals`, `lessThan`). Copyright the V8 project
 // authors, BSD-3; see `browser/js/LICENSE-V8`.
 
+import perf
 import std
 import std.list.List
 import std.mem.AllocError
@@ -33,6 +38,31 @@ pub struct VmState {
     stats: bool
     ninsns: u64
     ncalls: u64
+    // The callers of the frames pushed by the dispatch loop itself
+    // (JS-to-JS calls without C recursion), innermost last.
+    saved: List(VmSaved)
+}
+
+// A caller suspended by a call that stays in the dispatch loop: where it
+// resumes, and the call's values at stack[top..] (popped on return).
+struct VmSaved {
+    code: *BytecodeArray
+    pc: usize
+    fp: usize
+    top: usize
+    construct: bool
+    // the caller's arguments (CreateArguments)
+    argBase: usize
+    argc: usize
+}
+
+// A callee the dispatch loop can enter without recursing.
+struct VmEntry {
+    code: *mut BytecodeArray
+    this_reg: i32
+    func: u32
+    fobj: u32
+    thisv: Value
 }
 
 /// Turns the VM on when DWELLER_JS_VM=1 (once per engine).
@@ -49,7 +79,7 @@ pub fn vmInit(it: *mut Interp) {
     if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
         stats = p[0] == '1'
     }
-    let st = it.alloc.create(VmState { funcs: List(VmFunc).init(it.alloc), stats: stats, ninsns: 0, ncalls: 0 }) catch |e| {
+    let st = it.alloc.create(VmState { funcs: List(VmFunc).init(it.alloc), stats: stats, ninsns: 0, ncalls: 0, saved: List(VmSaved).init(it.alloc) }) catch |e| {
         return
     }
     it.vm = st
@@ -68,6 +98,7 @@ pub fn vmDeinit(it: *mut Interp) {
             }
         }
         st.funcs.deinit()
+        st.saved.deinit()
         it.alloc.destroy(st)
         it.vm = null
     }
@@ -162,6 +193,18 @@ pub fn vmCall(it: *mut Interp, st: *mut VmState, vf: VmFunc, func: u32, fobj: u3
 }
 
 fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
+    let mark = it.stack.len()
+    let fp = try vmPushFrame(it, st, code, this_reg, func, fobj, thisv, argBase, argc, newTarget)
+    defer {
+        vmPopFrame(it)
+        it.truncate(mark)
+    }
+    return vmRun(it, st, code, fp, argBase, argc)
+}
+
+// Pushes the frame of `code` above the arguments at
+// stack[argBase..argBase + argc]; gives its fp.
+fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!usize {
     st.ncalls += 1
     let mark = it.stack.len()
     let np = code.nparams as usize
@@ -193,12 +236,138 @@ fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg
     }
     try it.frames.append(Frame { func: fobj, env: it.env, this_obj: it.derived_this, new_target: newTarget })
     it.derived_this = NONE
-    defer {
-        it.ctor_this = it.frames.items()[it.frames.len() - 1].this_obj
-        it.frames.pop()
-        it.truncate(mark)
+    return fp
+}
+
+fn vmPopFrame(it: *mut Interp) {
+    it.ctor_this = it.frames.items()[it.frames.len() - 1].this_obj
+    it.frames.pop()
+}
+
+// The callee of the call (op CallProperty, CallUndefinedReceiver or
+// Construct) of the values at stack[top..] when it can run in this
+// dispatch loop: a compiled plain function (`invoke` and `constructAt`
+// without the C recursion). For a construction it makes the new object,
+// in the `this` slot at stack[top + 1].
+fn vmInlineCallee(it: *mut Interp, st: *mut VmState, op: u8, top: usize) JsError!?VmEntry {
+    let f = it.slot(top)
+    let o = objectOf(f)
+    if o == NONE || it.heap.obj(o).class != Class.Function {
+        return null
     }
-    return vmRun(it, st, code, fp)
+    var func: u32 = 0
+    match it.heap.obj(o).data {
+        .Closure { func: fn_, .. } => {
+            func = fn_
+        }
+        _ => {
+            return null
+        }
+    }
+    let fi = it.ast.func(func)
+    if fi.generator || fi.is_async || fi.ctor {
+        return null
+    }
+    if op == BC_CONSTRUCT && (fi.arrow || fi.method) {
+        return null
+    }
+    let vf = (try vmLookup(it, st, func)) orelse return null
+    let code = vf.code orelse return null
+    if it.frames.len() >= it.max_depth {
+        _ = try it.rangeError("Maximum call stack size exceeded")
+    }
+    try it.tick()
+    var thisv = it.slot(top + 1)
+    if op == BC_CONSTRUCT {
+        let pv = try it.getProp(f, A_PROTOTYPE)
+        var proto = objectOf(pv)
+        if proto == NONE {
+            proto = it.object_proto
+        }
+        let thisObj = try it.newObject(proto)
+        thisv = objVal(thisObj)
+        it.setSlot(top + 1, thisv)
+    }
+    return VmEntry { code: code, this_reg: vf.this_reg, func: func, fobj: o, thisv: thisv }
+}
+
+// Copies the callee, `this` and the arguments of the call at pc from
+// the registers to the top of the stack; gives where they start.
+fn vmPushCall(it: *mut Interp, bytes: []u8, pc: usize, w: u8, fp: usize, op: u8) JsError!usize {
+    let r = (fp as i64 + vmImm(bytes, pc, w)) as usize
+    let argc = vmIdx(bytes, pc + w as usize, w) as usize
+    let top = it.stack.len()
+    let f = it.slot(r)
+    try it.push(f)
+    if op == BC_CALL_PROPERTY {
+        try it.push(it.slot(r + 1))
+    } else {
+        try it.push(Value.Undefined)
+    }
+    for k in 0..argc {
+        try it.push(it.slot(r + 2 + k))
+    }
+    return top
+}
+
+// The arguments object (`invoke`), or the array of the arguments from
+// `from` on (a rest parameter, `bindParams`).
+fn vmArguments(it: *mut Interp, argBase: usize, argc: usize, from: usize, rest: bool) JsError!Value {
+    var o = NONE
+    if rest {
+        o = try it.newArray(0)
+    } else {
+        o = try it.newObjectOf(Class.Arguments, it.object_proto, ObjData.None)
+    }
+    var i = from
+    while i < argc {
+        try it.heap.pushElem(o, it.slot(argBase + i))
+        i += 1
+    }
+    return objVal(o)
+}
+
+// The property name of Member node `id`.
+fn vmMemberName(it: *mut Interp, id: u32) u32 {
+    match it.ast.node(id) {
+        .Member { name, .. } => {
+            return name
+        }
+        _ => {}
+    }
+    unreachable
+}
+
+// A call (op CallProperty or CallUndefinedReceiver) or construction
+// (Construct) of the values at stack[top..] that does not stay in the
+// loop: the tree walker's `Call` or `New` after their operands are
+// evaluated.
+fn vmCallOp(it: *mut Interp, op: u8, top: usize, argc: usize, id: u32) JsError!Value {
+    let f = it.slot(top)
+    var callee: u32 = 0
+    match it.ast.node(id) {
+        .Call { callee: c, .. } => {
+            callee = c
+        }
+        .New { callee: c, .. } => {
+            callee = c
+        }
+        _ => unreachable
+    }
+    if !it.isCallable(f) {
+        it.truncate(top)
+        if op == BC_CONSTRUCT {
+            return it.typeErrorAbout("", it.ast.srcText(callee), " is not a constructor")
+        }
+        if perf.telemetryOn() && isUndef(f) {
+            noteMissingMethod(it, callee)
+        }
+        return it.typeErrorAbout("", it.ast.srcText(callee), " is not a function")
+    }
+    if op == BC_CONSTRUCT {
+        return it.constructAt(top, argc, objectOf(f))
+    }
+    return it.callAt(top, argc)
 }
 
 // The operator of a binary or Smi opcode, for the generic path.
@@ -296,12 +465,33 @@ fn vmConstOffset(consts: []BcConst, k: i64) usize {
     unreachable
 }
 
-/// The dispatch loop: runs `code` with its registers at stack[fp..].
-fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsError!Value {
-    let bytes = code.code
-    let consts = code.consts
+/// Runs `code` with its registers at stack[fp..]. A throw leaves the
+/// frames the loop pushed (the stack above them is the entry's to pop).
+fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize, argBase: usize, argc: usize) JsError!Value {
+    let depth = st.saved.len()
+    return vmLoop(it, st, code, fp, argBase, argc, depth) catch |e| {
+        while st.saved.len() > depth {
+            st.saved.pop()
+            vmPopFrame(it)
+        }
+        return e
+    }
+}
+
+/// The dispatch loop. A call to a compiled function pushes its frame
+/// and goes on in this loop (BYTECODE.md section 2, frame layout); its
+/// `Return` resumes the caller saved in `st.saved` above `depth`, and the
+/// entry frame's `Return` leaves the loop.
+fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, argBase0: usize, argc0: usize, depth: usize) JsError!Value {
+    var code = code0
+    var fp = fp0
+    // where the frame's arguments are (they stay below the parameters)
+    var argBase = argBase0
+    var nargs = argc0
+    var bytes = code.code
+    var consts = code.consts
     let count = st.stats
-    let base = fp as i64
+    var base = fp as i64
     var acc = Value.Undefined
     // reloaded after anything that may call JS (the stack may move)
     var regs = it.stack.items()
@@ -1172,8 +1362,26 @@ fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsE
                 }
             }
             72 => {
-                // Return
-                return acc
+                // Return: from the entry frame, or to the saved caller
+                if st.saved.len() == depth {
+                    return acc
+                }
+                let sv = st.saved.items()[st.saved.len() - 1]
+                st.saved.pop()
+                vmPopFrame(it)
+                if sv.construct && !isObject(acc) {
+                    acc = it.slot(sv.top + 1)
+                }
+                it.truncate(sv.top)
+                code = sv.code
+                bytes = code.code
+                consts = code.consts
+                fp = sv.fp
+                base = fp as i64
+                pc = sv.pc
+                argBase = sv.argBase
+                nargs = sv.argc
+                regs = it.stack.items()
             }
             73 => {
                 // ToNumber [s]
@@ -1186,6 +1394,120 @@ fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsE
                         regs = it.stack.items()
                     }
                 }
+            }
+            74 => {
+                // LdaGlobal [n]: the global `var` or `let` of Ident node n
+                let id = vmIdx(bytes, pc, w) as u32
+                pc += w as usize
+                regs[fp] = acc
+                match it.ast.node(id) {
+                    .Ident { name, depth: d, slot, .. } => {
+                        acc = try it.readIdent(id, name, d, slot)
+                    }
+                    _ => unreachable
+                }
+                regs = it.stack.items()
+            }
+            75 => {
+                // GetNamedProperty r, [n]: property of Member node n, with
+                // the tree walker's cache of that node
+                let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                let id = vmIdx(bytes, pc + w as usize, w) as u32
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try getCachedProp(it, id, o, vmMemberName(it, id))
+                regs = it.stack.items()
+            }
+            76 => {
+                // SetNamedProperty r, [n]: r.name = acc (Member node n)
+                let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                let id = vmIdx(bytes, pc + w as usize, w) as u32
+                pc += 2 * w as usize
+                regs[fp] = acc
+                try setCachedProp(it, id, o, vmMemberName(it, id), acc)
+                regs = it.stack.items()
+            }
+            77 => {
+                // CallProperty r, argc, [n]: r the callee, r+1 `this`, the
+                // arguments after it; n the Call node
+                let top = try vmPushCall(it, bytes, pc, w, fp, 77)
+                let argc = vmIdx(bytes, pc + w as usize, w) as usize
+                let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
+                pc += 3 * w as usize
+                if try vmInlineCallee(it, st, 77, top) |e| {
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, NONE)
+                    try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
+                    code = e.code
+                    bytes = code.code
+                    consts = code.consts
+                    fp = nfp
+                    base = fp as i64
+                    pc = 0
+                    argBase = top + 2
+                    nargs = argc
+                } else {
+                    acc = try vmCallOp(it, 77, top, argc, id)
+                }
+                regs = it.stack.items()
+            }
+            78 => {
+                // CallUndefinedReceiver r, argc, [n]: as CallProperty with
+                // `this` undefined
+                let top = try vmPushCall(it, bytes, pc, w, fp, 78)
+                let argc = vmIdx(bytes, pc + w as usize, w) as usize
+                let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
+                pc += 3 * w as usize
+                if try vmInlineCallee(it, st, 78, top) |e| {
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, NONE)
+                    try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
+                    code = e.code
+                    bytes = code.code
+                    consts = code.consts
+                    fp = nfp
+                    base = fp as i64
+                    pc = 0
+                    argBase = top + 2
+                    nargs = argc
+                } else {
+                    acc = try vmCallOp(it, 78, top, argc, id)
+                }
+                regs = it.stack.items()
+            }
+            79 => {
+                // Construct r, argc, [n]: `new r(args)`, n the New node
+                let top = try vmPushCall(it, bytes, pc, w, fp, 79)
+                let argc = vmIdx(bytes, pc + w as usize, w) as usize
+                let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
+                pc += 3 * w as usize
+                if try vmInlineCallee(it, st, 79, top) |e| {
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, e.fobj)
+                    try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: true, argBase: argBase, argc: nargs })
+                    code = e.code
+                    bytes = code.code
+                    consts = code.consts
+                    fp = nfp
+                    base = fp as i64
+                    pc = 0
+                    argBase = top + 2
+                    nargs = argc
+                } else {
+                    acc = try vmCallOp(it, 79, top, argc, id)
+                }
+                regs = it.stack.items()
+            }
+            80 => {
+                // CreateArguments: the unmapped arguments object
+                regs[fp] = acc
+                acc = try vmArguments(it, argBase, nargs, 0, false)
+                regs = it.stack.items()
+            }
+            81 => {
+                // CreateRestParameter k: the arguments from k on
+                let k = vmIdx(bytes, pc, w) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmArguments(it, argBase, nargs, k, true)
+                regs = it.stack.items()
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

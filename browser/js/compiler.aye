@@ -15,12 +15,15 @@
 // expression statements, `var`/`let`/`const` declarations, blocks
 // without functions, and `return`. Anything else makes the whole
 // function stay on the tree walker, with the reason kept for
-// DWELLER_JS_VM_STATS.
+// DWELLER_JS_VM_STATS. P4.64 added control flow; P4.65 calls, `new`,
+// `arguments`, rest and default parameters, and generic global reads
+// and named property loads and stores.
 //
 // Ported from V8 `src/interpreter/bytecode-generator.cc`
 // (`VisitBinaryOperation`, `VisitArithmeticExpression`,
 // `VisitCompareOperation`, `VisitAssignment`, `VisitCountOperation`,
-// `VisitUnaryOperation`) and `bytecode-register-allocator.h`. Copyright
+// `VisitUnaryOperation`, `VisitCall`, `VisitCallNew`,
+// `BuildCreateArguments`) and `bytecode-register-allocator.h`. Copyright
 // the V8 project authors, BSD-3; see `browser/js/LICENSE-V8`.
 
 import std.list.List
@@ -215,7 +218,7 @@ struct Compiler {
         var direct = false
         match self.ast.node(l) {
             .Ident { depth, slot: s, .. } => {
-                if !self.mayWrite(r) {
+                if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX {
                     lr = try self.readReg(depth, s)
                     direct = true
                 }
@@ -292,6 +295,27 @@ struct Compiler {
     }
 
     fn visitAssign(self: *mut Self, op: Op, target: u32, value: u32) CompileError!void {
+        match self.ast.node(target) {
+            .Member { obj, .. } => {
+                if op != Op.None {
+                    try self.fail("unsupported: compound assignment to a property")
+                }
+                // The object is evaluated first: a register the value
+                // may write is copied.
+                let mark = self.b.topReg
+                var r = try self.valueReg(obj)
+                if r < mark && self.mayWrite(value) {
+                    let t = self.b.newReg()
+                    try self.b.op2(BC_MOV, r as i64, t as i64)
+                    r = t
+                }
+                try self.visit(value)
+                try self.b.op2(BC_SET_NAMED_PROPERTY, r as i64, target as i64)
+                self.b.releaseRegs(mark)
+                return
+            }
+            _ => {}
+        }
         let r = try self.writeReg(target)
         if op == Op.None {
             try self.visit(value)
@@ -315,6 +339,68 @@ struct Compiler {
         self.b.releaseRegs(mark)
     }
 
+    // A register holding the value of `id`: a local's own register, else
+    // a new temporary (the caller releases it).
+    fn valueReg(self: *mut Self, id: u32) CompileError!i32 {
+        match self.ast.node(id) {
+            .Ident { depth, slot, .. } => {
+                if depth < DEPTH_GLOBAL_LEX {
+                    return self.readReg(depth, slot)
+                }
+            }
+            _ => {}
+        }
+        try self.visit(id)
+        let r = self.b.newReg()
+        try self.b.op1(BC_STAR, r as i64)
+        return r
+    }
+
+    // V8 `VisitCall`/`VisitCallNew`: the callee, `this` and the arguments
+    // in consecutive registers, then `CallProperty` (a method call
+    // `o.m(...)`), `CallUndefinedReceiver` or `Construct`.
+    fn visitCall(self: *mut Self, id: u32, callee: u32, list: u32, n: u32, isNew: bool) CompileError!void {
+        for k in 0..n {
+            match self.ast.node(self.ast.item(list, k)) {
+                .Spread { .. } => {
+                    try self.fail("unsupported: Spread")
+                }
+                _ => {}
+            }
+        }
+        let mark = self.b.topReg
+        let r = self.b.newRegs(2 + n as i32)
+        var op = BC_CALL_UNDEFINED_RECEIVER
+        if isNew {
+            op = BC_CONSTRUCT
+            try self.visit(callee)
+            try self.b.op1(BC_STAR, r as i64)
+        } else {
+            match self.ast.node(callee) {
+                .Member { obj, optional, .. } => {
+                    if optional {
+                        try self.fail("unsupported: OptChain")
+                    }
+                    op = BC_CALL_PROPERTY
+                    try self.visit(obj)
+                    try self.b.op1(BC_STAR, (r + 1) as i64)
+                    try self.b.op2(BC_GET_NAMED_PROPERTY, (r + 1) as i64, callee as i64)
+                    try self.b.op1(BC_STAR, r as i64)
+                }
+                _ => {
+                    try self.visit(callee)
+                    try self.b.op1(BC_STAR, r as i64)
+                }
+            }
+        }
+        for k in 0..n {
+            try self.visit(self.ast.item(list, k))
+            try self.b.op1(BC_STAR, (r + 2 + k as i32) as i64)
+        }
+        try self.b.emit(op, r as i64, n as i64, id as i64)
+        self.b.releaseRegs(mark)
+    }
+
     /// Visits expression `id` into the accumulator.
     fn visit(self: *mut Self, id: u32) CompileError!void {
         self.b.expressionPos(self.ast.spans.items()[id].start as i64)
@@ -335,8 +421,12 @@ struct Compiler {
                 try self.b.op0(BC_LDA_FALSE)
             }
             .Ident { depth, slot, .. } => {
-                let r = try self.readReg(depth, slot)
-                try self.b.op1(BC_LDAR, r as i64)
+                if depth >= DEPTH_GLOBAL_LEX {
+                    try self.b.op1(BC_LDA_GLOBAL, id as i64)
+                } else {
+                    let r = try self.readReg(depth, slot)
+                    try self.b.op1(BC_LDAR, r as i64)
+                }
             }
             .Unary { op, arg } => {
                 try self.visitUnary(op, arg)
@@ -367,6 +457,24 @@ struct Compiler {
                 for k in 0..n {
                     try self.visit(self.ast.item(list, k))
                 }
+            }
+            .Member { obj, optional, .. } => {
+                if optional {
+                    try self.fail("unsupported: OptChain")
+                }
+                let mark = self.b.topReg
+                let r = try self.valueReg(obj)
+                try self.b.op2(BC_GET_NAMED_PROPERTY, r as i64, id as i64)
+                self.b.releaseRegs(mark)
+            }
+            .Call { callee, list, n, optional } => {
+                if optional {
+                    try self.fail("unsupported: OptChain")
+                }
+                try self.visitCall(id, callee, list, n, false)
+            }
+            .New { callee, list, n } => {
+                try self.visitCall(id, callee, list, n, true)
             }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
@@ -862,6 +970,74 @@ struct Compiler {
         }
     }
 
+    // V8 `BuildCreateArguments` and the parameter initialization of
+    // `BuildFunctionBody`: the arguments object, then, with non-simple
+    // parameters (the resolver gives them registers), each parameter
+    // copied in order from its slot, its default, or the rest array. A
+    // parameter is in its dead zone until then, so a default reading
+    // its own or a later parameter falls back.
+    fn visitParams(self: *mut Self, fi: FuncInfo) CompileError!void {
+        if fi.args_slot != NONE {
+            let r = try self.identReg(0, fi.args_slot)
+            try self.b.op0(BC_CREATE_ARGUMENTS)
+            try self.b.op1(BC_STAR, r as i64)
+        }
+        if fi.simple {
+            return
+        }
+        for k in 0..fi.nparams {
+            let r = try self.paramReg(self.ast.item(fi.params, k))
+            if r < 0 {
+                try self.fail("unsupported: parameter pattern")
+            }
+            self.tdz.items()[r as usize] = true
+        }
+        for k in 0..fi.nparams {
+            let p = self.ast.item(fi.params, k)
+            let r = try self.paramReg(p)
+            match self.ast.node(p) {
+                .Default { init, .. } => {
+                    let dflt = try self.b.newLabel()
+                    let end = try self.b.newLabel()
+                    try self.b.op1(BC_LDAR, self.b.param(k) as i64)
+                    try self.b.jump(BC_JUMP_IF_UNDEFINED, dflt)
+                    try self.b.jump(BC_JUMP, end)
+                    try self.b.bind(dflt)
+                    try self.visit(init)
+                    try self.b.bind(end)
+                    try self.b.op1(BC_STAR, r as i64)
+                }
+                .Rest { .. } => {
+                    try self.b.op1(BC_CREATE_REST_PARAMETER, k as i64)
+                    try self.b.op1(BC_STAR, r as i64)
+                }
+                _ => {
+                    try self.b.op2(BC_MOV, self.b.param(k) as i64, r as i64)
+                }
+            }
+            self.tdz.items()[r as usize] = false
+        }
+    }
+
+    // The register of parameter node `p` (an identifier, with a default
+    // or rest).
+    fn paramReg(self: *mut Self, p: u32) CompileError!i32 {
+        var target = p
+        match self.ast.node(p) {
+            .Default { target: t, .. } => { target = t }
+            .Rest { target: t } => { target = t }
+            _ => {}
+        }
+        match self.ast.node(target) {
+            .Ident { depth, slot, .. } => {
+                return self.identReg(depth, slot)
+            }
+            _ => {}
+        }
+        try self.fail("unsupported: parameter pattern")
+        return 0
+    }
+
     fn visitFunction(self: *mut Self) CompileError!void {
         let fi = self.ast.func(self.func)
         if fi.generator || fi.is_async {
@@ -870,11 +1046,23 @@ struct Compiler {
         if fi.ctor || fi.default_ctor {
             try self.fail("unsupported: class constructor")
         }
-        if !fi.simple {
-            try self.fail("unsupported: parameter pattern or default")
-        }
-        if fi.args_slot != NONE {
-            try self.fail("unsupported: arguments")
+        for k in 0..fi.nparams {
+            match self.ast.node(self.ast.item(fi.params, k)) {
+                .Ident { .. } => {}
+                .Default { target, .. } => {
+                    if !(self.ast.node(target) is .Ident) {
+                        try self.fail("unsupported: parameter pattern")
+                    }
+                }
+                .Rest { target } => {
+                    if !(self.ast.node(target) is .Ident) {
+                        try self.fail("unsupported: parameter pattern")
+                    }
+                }
+                _ => {
+                    try self.fail("unsupported: parameter pattern")
+                }
+            }
         }
         if fi.self_slot != NONE {
             try self.fail("unsupported: named function expression")
@@ -911,6 +1099,7 @@ struct Compiler {
             try self.tdz.append(false)
         }
         try self.scopes.append(fi.scope)
+        try self.visitParams(fi)
         if fi.expr != 0 {
             try self.visit(fi.expr)
             try self.b.op0(BC_RETURN)

@@ -252,7 +252,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 |---|---|---|---|---|
 | F1 | P4.63 | VM core: frames, dispatch, straight-line code (`DWELLER_JS_VM=1`) | – | open |
 | F2 | P4.64 | control flow | F1 | open |
-| F3 | P4.65 | calls and `new` | F2 | open |
+| F3 | P4.65 | calls and `new` | F2 | done |
 | F4 | P4.66 | closures and contexts | F3 | open |
 | F5 | P4.67 | properties, literals, globals, the top level | F4 | open |
 | F6 | P4.68 | exceptions | F5 | open |
@@ -681,6 +681,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm js_command_line > target/p4.65.log 2>&1; echo $?` → 0; `calls`, `richards` checksums equal
 - estimate: `calls` 1.5–2× (property access still generic)
 - model: opus
+- status: done 2026-10-16. `compiler.aye` compiles calls (`f(...)`, `o.m(...)`) and `new F(...)` without spread or optional chaining (V8 `VisitCall`/`VisitCallNew`: callee, `this` and arguments in consecutive registers; `CallProperty`, `CallUndefinedReceiver`, `Construct` with the `Call`/`New` node as operand for the error text), and the generic loads and stores they need until P4.67: global reads (`LdaGlobal`), `o.x` reads (`GetNamedProperty`) and `o.x = v` (`SetNamedProperty`), on the tree walker's per-node property caches. `vm.aye`: a call or construction of a compiled plain function pushes its frame and stays in the dispatch loop (`vmPushFrame`, the caller in `VmState.saved`, `Return` pops; no C recursion); natives, bound functions, proxies, class constructors, generators and functions on the tree walker go through `callAt`/`constructAt`. `MAX_DEPTH` counts frames; a throw pops the frames the loop pushed. `arguments` (unmapped: strict or non-simple parameters; the mapped sloppy one is in the context, P4.66), rest and default parameters (`CreateArguments`, `CreateRestParameter`; non-simple parameters are registers copied in order at entry, each in its dead zone until then, so `function f(a = b, b)` falls back), missing and extra arguments, sloppy and strict `this`. New script `261_vm_calls.js`, also equal under `DWELLER_JS_GC=stress`; `js_conformance`, `js_conformance_vm`, `js_command_line` green. jsbench (fast build, median of 3, tree walker vs `DWELLER_JS_VM=1`): `richards` 1.70 s to 1.21 s (1.4×), `calls` 3.99 s to 4.14 s (1.0×: its loop is at the top level, on the tree walker until P4.67; the same loop inside a function 2.73 s to 2.33 s, 1.17×), checksums equal (2916400, 66000000). Suite: 478 functions compiled, 3014 on the tree walker (P4.63: 194). Also fixed: the tree walker's loop with two labels (`a: b: for (...) { continue a }`), now in `260_vm_control_flow.js`. Left: spread arguments, optional calls, `super` calls and class constructors, compound assignment to properties, keyed access (P4.67).
 
 #### P4.66: closures and contexts
 - goal: nested functions and captured variables: `CreateClosure`, the function context for captured bindings, block contexts, per-iteration copies of captured `let` loop variables, TDZ checks, named function expressions.
