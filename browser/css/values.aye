@@ -318,6 +318,9 @@ fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "inset") {
         first = INSET_TOP
         n = 4
+    } else if text.eql(name, "outline") {
+        first = OUTLINE_COLOR
+        n = 3
     } else if text.eql(name, "border") {
         for k in 0..12 {
             out[k] = BORDER_TOP_WIDTH + k
@@ -485,6 +488,9 @@ struct Declarer {
         }
         if text.eql(name, "border-radius") {
             return borderRadius(self, comps)
+        }
+        if text.eql(name, "outline") {
+            return outlineShorthand(self, comps)
         }
         if text.eql(name, "list-style") {
             return self.listStyle(comps)
@@ -1192,6 +1198,9 @@ fn single(p: Property, c: Comp) ?Value {
                 return Value.Number { v: n }
             }
             return null
+        }
+        .Offset => {
+            return lengthValue(c, false, false)
         }
         .Int => {
             if t.kind == Tok.Number && c.toks.len == 1 && t.flag {

@@ -681,6 +681,7 @@ struct Builder {
         if b.kind == BoxKind.Image {
             if visible {
                 try self.replaced(i, cx, cy, cw, ch)
+                try outline(self, b.style, b.ax, b.ay, b.w, b.h)
             }
             return
         }
@@ -725,6 +726,9 @@ struct Builder {
         }
         if clip {
             try self.endClip(i)
+        }
+        if visible {
+            try outline(self, b.style, b.ax, b.ay, b.w, b.h)
         }
     }
 
@@ -773,6 +777,7 @@ struct Builder {
                 let first = !self.hasFrag(f.box, self.t.lines.items()[l0].frag_start, fi)
                 let last = !self.hasFrag(f.box, fi + 1, self.t.lines.items()[l1 - 1].frag_end)
                 try decorate(self, f.box, x, y, f.w, f.h, b.border, b.padding, first, last)
+                try outline(self, b.style, x, y, f.w, f.h)
             }
             .Text => {
                 if !isVisible(b.style) || f.end <= f.start {
