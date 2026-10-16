@@ -218,7 +218,7 @@ exits 0, the weekly job runs.
 | C1 | P10.1 | WPT testharness runner: `wpt.py fetch/serve/run`, `dweller wpt URL` | – | done | `third_party/blink/tools/blinkpy/web_tests/` (the runner's shape: expectations, timeouts, parallel workers), `third_party/blink/web_tests/resources/testharnessreport.js` |
 | C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | done | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
 | C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
-| C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | open | – |
+| C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
 | C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
 
@@ -1497,6 +1497,7 @@ its area.
 - verify: `python3 browser/tools/conformance.py run -j 8 > target/conformance.log 2>&1 && python3 browser/tools/conformance.py table && python3 browser/tools/conformance.py check; echo $?` → 0; `docs/conformance.md` lists every area of the table above
 - depends on: P10.1, P10.2, P10.3
 - time box: 90 min; model: sonnet
+- status: done 2026-10-16. `browser/tools/conformance.py` (`run [-j N] [AREA...]`, `table`, `check`), `docs/conformance.md`, per-area baselines `browser/tools/conformance/<area>.json` (test → passed/total), `history.csv`, `planned.txt` (areas of the plan not yet measured), and `.github/workflows/conformance.yml` (weekly and `workflow_dispatch`, `ubuntu-24.04`, fetch cached by revision). Thresholds of `wpt_areas.json` filled from the plan table (cssom, webaudio have none). Baseline (WPT e58225ab, test262 d53ebc8b19): dom/nodes 47.2, dom/events 48.1, forms 36.1, css/cssom 54.0, fetch/api/basic 23.4, xhr 15.5, url 48.5, encoding 0.0 (280/742368: a few files with hundreds of thousands of subtests), webaudio 63.3, css/css-flexbox 37.8, test262 built-ins 64.2 (11792/18373, 5450 skipped), language 65.0 (15080/23210). A full run took about 17 min at -j 4. Left: the 17 plan areas in `planned.txt` (need their directories in `wpt_areas.json` and `fetch`), test262 annexB, the macOS job, `encoding` scored per file rather than per subtest.
 
 #### P10.5: fetch and XHR under `wpt serve`
 - goal: the fetch/XHR tests that need WPT's Python handlers and `.sub.` substitution run, using upstream `wpt serve` from the pinned checkout. Its hosts (`web-platform.test`, `www.web-platform.test`, ...) resolve to 127.0.0.1 through a new `DWELLER_RESOLVE` (libcurl `CURLOPT_RESOLVE`), so no `/etc/hosts` change is needed. Adds the "Fetch and XHR" area and un-excludes `*.sub.*` in the others.
