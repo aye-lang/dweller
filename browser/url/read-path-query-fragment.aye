@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem
+import std.mem.AllocError
+
+fn readPathQueryFragment(p: *mut Parts, segments: *mut List([]u8), s: []u8, special: bool, base_dir: []u8) AllocError!void {
+    let hash = mem.indexOf(s, '#') orelse s.len
+    let before_fragment = s[..hash]
+    let question = mem.indexOf(before_fragment, '?') orelse before_fragment.len
+    let path = before_fragment[..question]
+
+    if question < before_fragment.len {
+        p.query = before_fragment[question + 1..]
+    }
+    if hash < s.len {
+        p.fragment = s[hash + 1..]
+    }
+
+    if p.opaque_path != null {
+        p.opaque_path = path
+        return
+    }
+
+    try addSegments(segments, base_dir, special)
+    try addSegments(segments, path, special)
+}

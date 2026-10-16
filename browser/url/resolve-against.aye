@@ -1,0 +1,40 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn resolveAgainst(alloc: Allocator, base: *Url, p: *mut Parts, segments: *mut List([]u8), input: []u8) UrlError!Url {
+    let special = base.isSpecial()
+
+    if base.opaque && !text.startsWith(input, "#") {
+        return UrlError.Invalid
+    }
+
+    copySchemeAndAuthority(p, base)
+
+    if base.opaque {
+        p.opaque_path = base.path
+        p.query = queryOf(base)
+        p.fragment = input[1..]
+    } else if isSchemeRelative(input, special) {
+        p.username = ""
+        p.password = ""
+        p.port = ""
+        let rest = try readAuthority(p, input[2..], special)
+        try readPathQueryFragment(p, segments, rest, special, "")
+    } else if startsWithSlash(input, special) {
+        try readPathQueryFragment(p, segments, input, special, "")
+    } else if text.startsWith(input, "?") {
+        try readPathQueryFragment(p, segments, input, special, base.path)
+    } else if input.len == 0 || text.startsWith(input, "#") {
+        try readPathQueryFragment(p, segments, input, special, base.path)
+        p.query = queryOf(base)
+    } else {
+        try readPathQueryFragment(p, segments, input, special, directoryOf(base.path))
+    }
+
+    return serialize(alloc, p, segments.items())
+}
+
+fn isSchemeRelative(input: []u8, special: bool) bool {
+    return startsWithSlash(input, special) && startsWithSlash(input[1..], special)
+}

@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn appendPath(out: *mut text.Builder, p: *Parts, segments: [][]u8, special: bool) AllocError!void {
+    if p.opaque_path |path| {
+        try appendPercentEncoded(out, path, PercentEncodeSet.Control, special)
+        return
+    }
+
+    if segments.len == 0 && p.has_authority {
+        try out.appendByte('/')
+    }
+
+    for segment in segments {
+        try out.appendByte('/')
+        try appendPercentEncoded(out, segment, PercentEncodeSet.Path, special)
+    }
+}

@@ -1,0 +1,37 @@
+// spec: https://url.spec.whatwg.org/#concept-basic-url-parser
+
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn parseWith(alloc: Allocator, base: ?*Url, raw: []u8) UrlError!Url {
+    var cleaned = text.Builder.init(alloc)
+    defer cleaned.deinit()
+    var segments = List([]u8).init(alloc)
+    defer segments.deinit()
+    var p = Parts {}
+
+    try appendWithoutTabsAndNewlines(&mut cleaned, trimControlsAndSpaces(raw))
+    let s = cleaned.bytes()
+
+    if schemeLength(s) |scheme_len| {
+        p.scheme = s[..scheme_len]
+        let after_scheme = s[scheme_len + 1..]
+
+        if base |b| {
+            if isPathRelativeToSameSpecialScheme(b, p.scheme, after_scheme) {
+                return resolveAgainst(alloc, b, &mut p, &mut segments, after_scheme)
+            }
+        }
+
+        return parseAfterScheme(alloc, &mut p, &mut segments, after_scheme)
+    }
+
+    let b = base orelse return UrlError.Invalid
+
+    return resolveAgainst(alloc, b, &mut p, &mut segments, s)
+}
+
+fn isPathRelativeToSameSpecialScheme(base: *Url, scheme: []u8, after_scheme: []u8) bool {
+    return isSpecialScheme(scheme) && text.eqlIgnoreCase(base.scheme, scheme) && !startsWithSlash(after_scheme, true)
+}

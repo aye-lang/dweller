@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+fn appendAuthority(out: *mut text.Builder, p: *Parts) AllocError!AuthoritySpans {
+    var spans = AuthoritySpans.empty(out.len())
+    try out.append("//")
+
+    if p.username.len > 0 || p.password.len > 0 {
+        spans.username = try appendSpan(out, p.username)
+        if p.password.len > 0 {
+            try out.appendByte(':')
+            spans.password = try appendSpan(out, p.password)
+        }
+        try out.appendByte('@')
+    }
+
+    spans.host = try appendSpan(out, p.host)
+    spans.port = Span.empty(spans.host.hi)
+
+    if p.port.len > 0 && !isDefaultPort(p.scheme, p.port) {
+        try out.appendByte(':')
+        spans.port = try appendSpan(out, withoutLeadingZeros(p.port))
+    }
+
+    return spans
+}

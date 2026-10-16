@@ -1,0 +1,23 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn parseAfterScheme(alloc: Allocator, p: *mut Parts, segments: *mut List([]u8), after_scheme: []u8) UrlError!Url {
+    var rest = after_scheme
+    let special = isSpecialScheme(p.scheme)
+    let file = text.eqlIgnoreCase(p.scheme, "file")
+
+    if special && !file {
+        rest = try readAuthority(p, withoutLeadingSlashes(rest), true)
+    } else if text.startsWith(rest, "//") || (file && text.startsWith(rest, "\\\\")) {
+        rest = try readAuthority(p, rest[2..], special)
+    } else if file {
+        p.has_authority = true
+    } else if !text.startsWith(rest, "/") {
+        p.opaque_path = ""
+    }
+
+    try readPathQueryFragment(p, segments, rest, special, "")
+
+    return serialize(alloc, p, segments.items())
+}

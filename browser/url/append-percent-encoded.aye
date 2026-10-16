@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+let HEX_DIGITS = "0123456789ABCDEF"
+
+fn appendPercentEncoded(out: *mut text.Builder, s: []u8, set: PercentEncodeSet, special: bool) AllocError!void {
+    for c in s {
+        if set.contains(c, special) {
+            try out.appendByte('%')
+            try out.appendByte(HEX_DIGITS[(c >> 4) as usize])
+            try out.appendByte(HEX_DIGITS[(c & 15) as usize])
+        } else {
+            try out.appendByte(c)
+        }
+    }
+}

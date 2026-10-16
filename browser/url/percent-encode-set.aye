@@ -1,0 +1,21 @@
+// spec: https://url.spec.whatwg.org/#percent-encoded-bytes
+
+enum PercentEncodeSet {
+    Control
+    Fragment
+    Query
+    Path
+
+    fn contains(self: Self, c: u8, special: bool) bool {
+        if c < 0x20 || c > 0x7E {
+            return true
+        }
+
+        return match self {
+            .Control => false
+            .Fragment => c == ' ' || c == '"' || c == '<' || c == '>' || c == '`'
+            .Query => c == ' ' || c == '"' || c == '#' || c == '<' || c == '>' || (special && c == '\'')
+            .Path => c == ' ' || c == '"' || c == '#' || c == '<' || c == '>' || c == '?' || c == '^' || c == '`' || c == '{' || c == '}'
+        }
+    }
+}

@@ -1,0 +1,44 @@
+// spec: https://url.spec.whatwg.org/#path-state
+
+import std.list.List
+import std.mem.AllocError
+
+fn addSegments(segments: *mut List([]u8), path: []u8, special: bool) AllocError!void {
+    if path.len == 0 {
+        return
+    }
+
+    var start: usize = 0
+
+    if startsWithSlash(path, special) {
+        start = 1
+        segments.clear()
+    } else if segments.len() > 0 {
+        segments.pop()
+    }
+
+    while true {
+        let end = segmentEnd(path, start, special)
+        let segment = path[start..end]
+        let last = end >= path.len
+
+        if isDot(segment) {
+            if last {
+                try segments.append("")
+            }
+        } else if isDotDot(segment) {
+            segments.pop()
+            if last {
+                try segments.append("")
+            }
+        } else {
+            try segments.append(segment)
+        }
+
+        if last {
+            return
+        }
+
+        start = end + 1
+    }
+}

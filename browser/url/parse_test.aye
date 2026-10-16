@@ -1,0 +1,52 @@
+import std.mem.Allocator
+
+fn expectParse(a: Allocator, input: []u8, want: []u8) !void {
+    let u = try parse(a, input)
+    defer u.deinit(a)
+
+    @expectEqual(want, u.href)
+}
+
+fn rejects(a: Allocator, base_or_empty: []u8, input: []u8) !bool {
+    if base_or_empty.len == 0 {
+        let u = parse(a, input) catch |e| {
+            return true
+        }
+        u.deinit(a)
+
+        return false
+    }
+
+    let b = try parse(a, base_or_empty)
+    defer b.deinit(a)
+    let u = resolve(a, &b, input) catch |e| {
+        return true
+    }
+    u.deinit(a)
+
+    return false
+}
+
+test "absolute URLs" {
+    let a = @testAllocator()
+    try expectParse(a, "http://Example.COM", "http://example.com/")
+    try expectParse(a, "  https://example.com:443/a/./b/../c?x=1 y#frag ", "https://example.com/a/c?x=1%20y#frag")
+    try expectParse(a, "HTTP://user:pw@host:8080/p", "http://user:pw@host:8080/p")
+    try expectParse(a, "http:\\\\host\\a\\b", "http://host/a/b")
+    try expectParse(a, "http://host:0080/", "http://host/")
+    try expectParse(a, "file:///tmp/a b.html", "file:///tmp/a%20b.html")
+    try expectParse(a, "file://localhost/etc/hosts", "file:///etc/hosts")
+    try expectParse(a, "data:text/html,<p>Hi</p>", "data:text/html,<p>Hi</p>")
+    try expectParse(a, "mailto:someone@example.com", "mailto:someone@example.com")
+    try expectParse(a, "http://h/%2e%2E/a/%2e/b", "http://h/a/b")
+    try expectParse(a, "http://h/caf\xC3\xA9", "http://h/caf%C3%A9")
+}
+
+test "invalid URLs" {
+    let a = @testAllocator()
+    @expect(try rejects(a, "", "no scheme"))
+    @expect(try rejects(a, "", "http://"))
+    @expect(try rejects(a, "", "http://h:99999/"))
+    @expect(try rejects(a, "", "http://h:8x/"))
+    @expect(try rejects(a, "data:text/html,x", "y"))
+}
