@@ -1,0 +1,36 @@
+import css
+import std.text
+
+// blink: third_party/blink/renderer/core/layout/inline/inline_box_state.cc
+fn alignShift(t: *mut Tree, b: AlignBox, parent: usize) f64 {
+    let v = t.bx(b.box).style[css.VERTICAL_ALIGN]
+    let pm = textMetrics(t, t.bx(parent).style)
+    let word = keywordOf(v)
+
+    if text.eql(word, "sub") {
+        return pm.font.size / 5.0 + 1.0
+    }
+
+    if text.eql(word, "super") {
+        return -(pm.font.size / 3.0 + 1.0)
+    }
+
+    if text.eql(word, "text-top") {
+        return b.above - pm.ascent
+    }
+
+    if text.eql(word, "text-bottom") {
+        return pm.descent - b.below
+    }
+
+    if text.eql(word, "middle") {
+        return (b.above - b.below) / 2.0 - t.measure.metrics(pm.font).x_height / 2.0
+    }
+
+    return match v {
+        .Px { v: n } => -n
+        .Percent { v: n } => -n * textMetrics(t, t.bx(b.box).style).line_height / 100.0
+        .Calc { pct, px } => -(pct * textMetrics(t, t.bx(b.box).style).line_height / 100.0 + px)
+        _ => 0.0
+    }
+}

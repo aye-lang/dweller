@@ -7,7 +7,7 @@
 // SVG presentation attributes (`fill="red"`, `stroke-width="2"`, ...) are
 // hints of the same kind on SVG elements.
 //
-// Left out: `valign` (no `vertical-align` yet), `cellspacing` (no
+// Left out: `cellspacing` (no
 // `border-spacing`), `align=left|right` on tables and images (no floats
 // here), `background` images, `frame` and `rules`.
 
@@ -82,6 +82,9 @@ pub fn writeHints(doc: *Document, el: NodeId, out: *mut text.Builder) AllocError
                 try hintDecl(out, "margin-right", "0")
             }
         }
+    }
+    if isOneOf(name, "col thead tbody tfoot tr td th") {
+        try valignHint(doc, el, out)
     }
     if isOneOf(name, "table td th col colgroup hr iframe") {
         if doc.attr(el, "width") |v| {
