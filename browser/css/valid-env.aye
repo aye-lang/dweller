@@ -1,0 +1,19 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-env-1/#env-function
+fn validEnv(toks: []Token) bool {
+    for i, t in toks {
+        if t.kind != Tok.Function || !text.eqlIgnoreCase(t.text, "env") {
+            continue
+        }
+
+        let j = skipWhitespace(toks, i + 1)
+        let k = envFallbackStart(toks, j + 1)
+
+        if j >= toks.len || toks[j].kind != Tok.Ident || k >= toks.len || (toks[k].kind != Tok.Comma && toks[k].kind != Tok.RParen) {
+            return false
+        }
+    }
+
+    return true
+}

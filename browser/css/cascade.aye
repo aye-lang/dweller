@@ -1298,6 +1298,7 @@ struct Computer {
         let vw = self.media.width / 100.0
         let vh = self.media.height / 100.0
         setCalcContext(parent_font, self.root_font, vw, vh, parent_font)
+        useLineHeight(lineHeightPx(parent[LINE_HEIGHT], parent_font), is_root)
         var font = try self.specified(FONT_SIZE, parent)
         match font {
             .Keyword { k } => {
@@ -1317,7 +1318,8 @@ struct Computer {
         if is_root {
             self.root_font = font_px
         }
-        for p in 0..NPROPS {
+        for q in 0..NPROPS {
+            let p = lineHeightFirst(q)
             if p == FONT_SIZE {
                 continue
             }
@@ -1340,6 +1342,9 @@ struct Computer {
                 }
             }
             values[p] = self.absolute(v, font_px)
+            if p == LINE_HEIGHT {
+                useLineHeight(lineHeightPx(values[p], font_px), is_root)
+            }
         }
         fixBorderWidths(values)
         fixOverflow(values)
