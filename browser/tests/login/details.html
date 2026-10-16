@@ -1,0 +1,37 @@
+<!doctype html>
+<title>Sign-in details</title>
+<pre id="out"></pre>
+<form id="plain" action="/echo" method="get">
+<input id="u" name="u" autocomplete="username webauthn" required>
+<input id="p" type="password" name="p" autocomplete="current-password one-time-code" value="s3cret">
+</form>
+<form id="two" action="/echo" method="get">
+<input name="a"><button id="b1" name="b" value="one">One</button><button id="b2" name="b" value="two">Two</button>
+</form>
+<script>
+const out = document.getElementById('out');
+const say = (s) => { out.textContent += s + '\n'; };
+const plain = document.getElementById('plain');
+const two = document.getElementById('two');
+say('pkc ' + (typeof PublicKeyCredential) + ' ' + ('PublicKeyCredential' in window));
+say('autocomplete ' + document.getElementById("u").autocomplete + ' | ' + document.getElementById("p").autocomplete);
+let submits = [];
+plain.addEventListener('submit', (e) => { e.preventDefault(); submits.push('plain:' + (e.submitter && e.submitter.id)); });
+two.addEventListener('submit', (e) => { e.preventDefault(); submits.push('two:' + (e.submitter && e.submitter.id)); });
+plain.requestSubmit();
+say('invalid ' + submits.join(','));
+document.getElementById("u").value = 'alice';
+plain.requestSubmit();
+two.requestSubmit();
+two.requestSubmit(document.getElementById('b2'));
+try { two.requestSubmit(document.getElementById("u")); } catch (e) { say('badsubmitter ' + e.name); }
+try { plain.requestSubmit(document.getElementById('b2')); } catch (e) { say('foreign ' + e.name); }
+say('submits ' + submits.join(','));
+const xhr = new XMLHttpRequest();
+navigator.credentials.get({ password: true })
+  .then(() => say('credentials resolved'), (e) => say('credentials ' + e.name))
+  .then(() => fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'alice', password: 'wonderland' }) }))
+  .then((r) => { say('fetch ' + r.status + ' cookie ' + document.cookie); return new Promise((ok) => { xhr.open('POST', '/api/login'); xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); xhr.onload = ok; xhr.send('username=alice&password=wonderland'); }); })
+  .then(() => say('xhr ' + xhr.status + ' cookie ' + document.cookie))
+  .then(() => say('done'));
+</script>

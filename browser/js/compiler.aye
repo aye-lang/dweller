@@ -78,6 +78,8 @@ struct Compiler {
     ctxregs: List(i32)
     fins: List(*mut VmFinally)
     completion: i32 = -1
+    opt_nullish: u32 = NONE
+    gen_reg: i32 = -1
 
     fn fail(self: *mut Self, why: []u8) CompileError!void {
         self.reason = why
@@ -226,8 +228,8 @@ struct Compiler {
         var lr: i32 = 0
         var direct = false
         match self.ast.node(l) {
-            .Ident { depth, slot: s, .. } => {
-                if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX {
+            .Ident { depth, slot: s, name, .. } => {
+                if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
                     lr = try self.readReg(depth, s)
                     direct = lr != VM_CONTEXT
                 }
@@ -315,6 +317,9 @@ struct Compiler {
         if kind == VM_TARGET_PROPERTY {
             return vmAssignProperty(self, op, target, value)
         }
+        if kind == VM_TARGET_PATTERN {
+            return vmAssignPattern(self, target, value)
+        }
         let r = try self.writeReg(target)
         if r == VM_CONTEXT {
             return vmAssignContext(self, op, target, value)
@@ -345,8 +350,8 @@ struct Compiler {
     // a new temporary (the caller releases it).
     fn valueReg(self: *mut Self, id: u32) CompileError!i32 {
         match self.ast.node(id) {
-            .Ident { depth, slot, .. } => {
-                if depth < DEPTH_GLOBAL_LEX {
+            .Ident { depth, slot, name, .. } => {
+                if depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
                     let r = try self.readReg(depth, slot)
                     if r != VM_CONTEXT {
                         return r
@@ -364,13 +369,10 @@ struct Compiler {
     // V8 `VisitCall`/`VisitCallNew`: the callee, `this` and the arguments
     // in consecutive registers, then `CallProperty` (a method call
     // `o.m(...)`), `CallUndefinedReceiver` or `Construct`.
-    fn visitCall(self: *mut Self, id: u32, callee: u32, list: u32, n: u32, isNew: bool) CompileError!void {
+    fn visitCall(self: *mut Self, id: u32, callee: u32, list: u32, n: u32, isNew: bool, optional: bool) CompileError!void {
         for k in 0..n {
-            match self.ast.node(self.ast.item(list, k)) {
-                .Spread { .. } => {
-                    try self.fail("unsupported: Spread")
-                }
-                _ => {}
+            if self.ast.node(self.ast.item(list, k)) is .Spread {
+                return vmVisitSpreadCall(self, id, callee, list, n, isNew)
             }
         }
         let mark = self.b.topReg
@@ -381,29 +383,7 @@ struct Compiler {
             try self.visit(callee)
             try self.b.op1(BC_STAR, r as i64)
         } else {
-            match self.ast.node(callee) {
-                .Member { obj, optional, .. } => {
-                    if optional {
-                        try self.fail("unsupported: OptChain")
-                    }
-                    op = BC_CALL_PROPERTY
-                    try self.visit(obj)
-                    try self.b.op1(BC_STAR, (r + 1) as i64)
-                    try self.b.op2(BC_GET_NAMED_PROPERTY, (r + 1) as i64, callee as i64)
-                    try self.b.op1(BC_STAR, r as i64)
-                }
-                .Index { obj, key, optional } => {
-                    if optional {
-                        try self.fail("unsupported: OptChain")
-                    }
-                    op = BC_CALL_PROPERTY
-                    try vmIndexCallee(self, r, obj, key)
-                }
-                _ => {
-                    try self.visit(callee)
-                    try self.b.op1(BC_STAR, r as i64)
-                }
-            }
+            op = try vmLoadCallee(self, r, callee, optional)
         }
         for k in 0..n {
             try self.visit(self.ast.item(list, k))
@@ -442,6 +422,7 @@ struct Compiler {
                     } else {
                         try self.b.op1(BC_LDAR, r as i64)
                     }
+                    try vmThisHole(self, name)
                 }
             }
             .Unary { op, arg } => {
@@ -475,19 +456,17 @@ struct Compiler {
                 }
             }
             .Member { obj, optional, .. } => {
-                if optional {
-                    try self.fail("unsupported: OptChain")
-                }
                 let mark = self.b.topReg
                 let r = try self.valueReg(obj)
+                if optional {
+                    try self.b.op1(BC_LDAR, r as i64)
+                    try vmOptionalJump(self)
+                }
                 try self.b.op2(BC_GET_NAMED_PROPERTY, r as i64, id as i64)
                 self.b.releaseRegs(mark)
             }
             .Index { obj, key, optional } => {
-                if optional {
-                    try self.fail("unsupported: OptChain")
-                }
-                try vmVisitIndex(self, obj, key)
+                try vmVisitIndex(self, obj, key, optional)
             }
             .ObjectLit { list, n } => {
                 try vmVisitObjectLiteral(self, id, list, n)
@@ -499,13 +478,40 @@ struct Compiler {
                 try self.b.op1(BC_CREATE_CLOSURE, f as i64)
             }
             .Call { callee, list, n, optional } => {
-                if optional {
-                    try self.fail("unsupported: OptChain")
-                }
-                try self.visitCall(id, callee, list, n, false)
+                try self.visitCall(id, callee, list, n, false, optional)
             }
             .New { callee, list, n } => {
-                try self.visitCall(id, callee, list, n, true)
+                try self.visitCall(id, callee, list, n, true, false)
+            }
+            .OptChain { e } => {
+                try vmVisitOptChain(self, e)
+            }
+            .Template { n, .. } => {
+                try vmVisitTemplate(self, id, n)
+            }
+            .TaggedTemplate { tag, quasi, .. } => {
+                try vmVisitTaggedTemplate(self, id, tag, quasi)
+            }
+            .Regex { .. } => {
+                try self.b.op1(BC_CREATE_REGEXP_LITERAL, id as i64)
+            }
+            .NewTarget => {
+                try self.b.op0(BC_LDA_NEW_TARGET)
+            }
+            .Class { c } => {
+                try vmVisitClass(self, c)
+            }
+            .SuperCall { list, n, this_node } => {
+                try vmVisitSuperCall(self, list, n, this_node)
+            }
+            .SuperMember { this_node, .. } => {
+                try vmVisitSuperProperty(self, id, 0, this_node)
+            }
+            .SuperIndex { key, this_node } => {
+                try vmVisitSuperProperty(self, id, key, this_node)
+            }
+            .Yield { arg, delegate } => {
+                try vmVisitYield(self, id, arg, delegate)
             }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
@@ -826,22 +832,14 @@ struct Compiler {
                 for j in 0..dn {
                     match self.ast.node(self.ast.item(dl, j)) {
                         .Declarator { target, .. } => {
-                            match self.ast.node(target) {
-                                .Ident { depth, slot, .. } => {
-                                    if depth >= DEPTH_GLOBAL_LEX {
-                                        continue
-                                    }
-                                    let r = try self.identReg(depth, slot)
-                                    if r >= 0 {
-                                        self.tdz.items()[r as usize] = true
-                                    }
-                                }
-                                _ => {}
-                            }
+                            try vmMarkDeadTarget(self, target)
                         }
                         _ => {}
                     }
                 }
+            }
+            .ClassDecl { target, .. } => {
+                try vmMarkDeadTarget(self, target)
             }
             _ => {}
         }
@@ -865,7 +863,9 @@ struct Compiler {
                             slot = s
                         }
                         _ => {
-                            try self.fail("unsupported: destructuring")
+                            try self.visit(init)
+                            try vmBindPattern(self, target, kind)
+                            continue
                         }
                     }
                     if depth >= DEPTH_GLOBAL_LEX {
@@ -964,6 +964,16 @@ struct Compiler {
             .For { init, cond, update, body, scope } => {
                 try self.visitFor(init, cond, update, body, scope)
             }
+            .ForIn { left, right, body, scope, of, wait } => {
+                if wait {
+                    try self.fail("unsupported: for await")
+                }
+                if of {
+                    try vmVisitForOf(self, left, right, body, scope)
+                } else {
+                    try vmVisitForIn(self, left, right, body, scope)
+                }
+            }
             .Break { label } => {
                 try self.b.jump(BC_JUMP, try self.target(label, false))
             }
@@ -981,6 +991,7 @@ struct Compiler {
                     .For { .. } => { loop = true }
                     .While { .. } => { loop = true }
                     .DoWhile { .. } => { loop = true }
+                    .ForIn { .. } => { loop = true }
                     _ => {}
                 }
                 if loop {
@@ -1005,6 +1016,10 @@ struct Compiler {
                 try vmExitScope(self, scope)
             }
             .FuncDecl { .. } => {}
+            .ClassDecl { c, target } => {
+                try vmVisitClass(self, c)
+                try vmStoreIdent(self, target, DECL_LET)
+            }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
             }
@@ -1028,6 +1043,9 @@ struct Compiler {
         }
         for k in 0..fi.nparams {
             let r = try self.paramReg(self.ast.item(fi.params, k))
+            if r == VM_PATTERN {
+                continue
+            }
             if r < 0 {
                 try self.fail("unsupported: parameter pattern")
             }
@@ -1036,6 +1054,11 @@ struct Compiler {
         for k in 0..fi.nparams {
             let p = self.ast.item(fi.params, k)
             let r = try self.paramReg(p)
+            if r == VM_PATTERN {
+                try self.b.op1(BC_LDAR, self.b.param(k) as i64)
+                try vmBindPattern(self, p, DECL_LET)
+                continue
+            }
             match self.ast.node(p) {
                 .Default { init, .. } => {
                     let dflt = try self.b.newLabel()
@@ -1073,6 +1096,12 @@ struct Compiler {
             .Ident { depth, slot, .. } => {
                 return self.identReg(depth, slot)
             }
+            .ArrayPat { .. } => {
+                return VM_PATTERN
+            }
+            .ObjectPat { .. } => {
+                return VM_PATTERN
+            }
             _ => {}
         }
         try self.fail("unsupported: parameter pattern")
@@ -1081,20 +1110,15 @@ struct Compiler {
 
     fn visitFunction(self: *mut Self) CompileError!void {
         let fi = self.ast.func(self.func)
-        if fi.generator || fi.is_async {
-            try self.fail("unsupported: generator or async function")
-        }
-        if fi.ctor || fi.default_ctor {
-            try self.fail("unsupported: class constructor")
+        if fi.is_async {
+            try self.fail("unsupported: async function")
         }
         for k in 0..fi.nparams {
             match self.ast.node(self.ast.item(fi.params, k)) {
                 .Ident { .. } => {}
-                .Default { target, .. } => {
-                    if !(self.ast.node(target) is .Ident) {
-                        try self.fail("unsupported: parameter pattern")
-                    }
-                }
+                .ArrayPat { .. } => {}
+                .ObjectPat { .. } => {}
+                .Default { .. } => {}
                 .Rest { target } => {
                     if !(self.ast.node(target) is .Ident) {
                         try self.fail("unsupported: parameter pattern")
@@ -1130,14 +1154,26 @@ struct Compiler {
         if fi.this_slot != NONE {
             self.this_reg = self.b.newReg()
         }
+        if fi.generator {
+            self.gen_reg = self.b.newReg()
+        }
         for _ in 0..self.b.topReg {
             try self.tdz.append(false)
         }
         try self.scopes.append(fi.scope)
+        if fi.generator {
+            try self.b.op1(BC_SWITCH_ON_GENERATOR_STATE, self.gen_reg as i64)
+        }
         try vmFunctionContext(self, fi)
         try vmSelfBinding(self, fi)
         try self.visitParams(fi)
         try vmHoist(self, fi.scope)
+        if fi.generator {
+            try vmGeneratorPrologue(self)
+        }
+        if fi.default_ctor {
+            return vmDefaultConstructor(self, fi)
+        }
         if fi.expr != 0 {
             try self.visit(fi.expr)
             try self.b.op0(BC_RETURN)

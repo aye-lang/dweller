@@ -14,9 +14,13 @@ fn vmVisitArrayLiteral(c: *mut Compiler, list: u32, n: u32) CompileError!void {
             .Hole => {
                 try c.b.op0(BC_LDA_THE_HOLE)
             }
-            .Spread { .. } => {
-                try c.fail("unsupported: Spread")
+
+            .Spread { arg } => {
+                try c.visit(arg)
+                try c.b.op1(BC_SPREAD_INTO_ARRAY, r as i64)
+                continue
             }
+
             _ => {
                 try c.visit(el)
             }

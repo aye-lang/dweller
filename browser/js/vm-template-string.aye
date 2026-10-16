@@ -1,0 +1,18 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitTemplateLiteral)
+
+fn vmTemplateString(it: *mut Interp, at: usize, id: u32) JsError!Value {
+    let t = vmTemplateParts(&it.ast, id)
+    let b = try it.builder()
+
+    defer it.release(b)
+
+    for k in 0..t.n + 1 {
+        try appendJoined(b, it.heap.atoms.name(it.ast.item(t.list, k)))
+
+        if k < t.n {
+            try it.appendString(b, it.slot(at + k as usize))
+        }
+    }
+
+    return it.takeString(b)
+}

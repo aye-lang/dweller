@@ -6863,6 +6863,100 @@ fn window_login() {
     );
 }
 
+/// P10.23: what sign-in pages meet that Dweller lacks or handles in
+/// its own way: `autocomplete` read back, `navigator.credentials`
+/// refusing and no `PublicKeyCredential`, `Set-Cookie` on `fetch` and
+/// XHR reaching `document.cookie`, `requestSubmit` with and without a
+/// submitter (and its validation), Enter in a lone text field with no
+/// button, a `submit` handler with `preventDefault` plus a `fetch`
+/// login, and no password value in the agent tree or the profile.
+#[test]
+fn window_login_forms() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+        assert!(
+            want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+            "{what}: want {want:?}, not {not:?}, got:\n{got}"
+        );
+    };
+    let details = login_window(&format!("{base}/login/details.html"), "frame frame frame", None);
+    has(
+        &details,
+        &[
+            "pkc undefined false",
+            "autocomplete username webauthn | current-password one-time-code",
+            "invalid \n",
+            "badsubmitter TypeError",
+            "foreign NotFoundError",
+            "submits plain:null,two:null,two:b2",
+            "credentials NotSupportedError",
+            "fetch 200 cookie tab=1",
+            "xhr 200 cookie tab=1",
+            "done\n",
+        ],
+        &["cookie sid", "; sid=", "credentials resolved\n"],
+        "sign-in details",
+    );
+    let lone = login_window(
+        &format!("{base}/login/enter.html"),
+        "key:tab text:hello key:return frame frame",
+        None,
+    );
+    has(
+        &lone,
+        &[&format!("url {base}/echo?q=hello\n")],
+        &[],
+        "Enter in a lone text field",
+    );
+    let two = login_window(
+        &format!("{base}/login/enter-two.html"),
+        "key:tab text:x key:return frame frame",
+        None,
+    );
+    has(
+        &two,
+        &[&format!("url {base}/login/enter-two.html\n")],
+        &["echo"],
+        "Enter with two fields and no button",
+    );
+    let dir = profile("login-forms");
+    let fetched = login_window(
+        &format!("{base}/login/fetch-login.html"),
+        "key:tab text:alice key:tab text:wonderland key:return frame frame frame",
+        Some(&dir),
+    );
+    has(
+        &fetched,
+        &[
+            &format!("url {base}/account\n"),
+            "Signed in as Alice Liddell",
+            "tab cookie: yes",
+        ],
+        &[],
+        "a submit handler with fetch",
+    );
+    let tree = dweller_command()
+        .args(["dump", "--a11y", &format!("{base}/login/details.html")])
+        .output()
+        .unwrap();
+    has(&text(&tree.stdout), &["******"], &["s3cret"], "the agent tree");
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let bytes = std::fs::read(entry.unwrap().path()).unwrap_or_default();
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("wonderland"),
+            "the password is in the profile"
+        );
+    }
+}
+
 /// P4.50: signed in at `/login`, the window is killed (no clean exit);
 /// started again on the same profile it is still signed in, the
 /// session-only cookie restored too (a browser that restores its

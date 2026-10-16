@@ -211,7 +211,7 @@ fn clickFrame(ui: *mut Ui, fp: engine.FramePoint) AllocError!void {
             target.deinit(ui.alloc)
         }
         .Submit { form, submitter } => {
-            if try engine.dispatchEvent(fp.page, form, "submit", "") {
+            if try engine.dispatchSubmit(fp.page, form, submitter) {
                 return submitInFrame(ui, fp.page, form, submitter)
             }
         }
@@ -275,7 +275,7 @@ fn submit(ui: *mut Ui, form: NodeId, submitter: ?NodeId) AllocError!void {
         }
         return restyled(ui)
     }
-    if !(try engine.dispatchEvent(p, form, "submit", "")) {
+    if !(try engine.dispatchSubmit(p, form, submitter)) {
         return restyled(ui)
     }
     return submitNow(ui, form, submitter)
@@ -566,14 +566,11 @@ fn chooseOption(ui: *mut Ui, sel: NodeId, k: usize) AllocError!void {
 
 // ---- drawing
 
-/// Draws the focus ring, the caret and selection of the focused text
+/// Draws the caret and selection of the focused text
 /// field and the open dropdown, over the page drawn with the view `v`.
 fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
     let p = ui.tab.page orelse return
     if p.doc.controls.focus |f| {
-        if engine.boxRect(p, f) |r| {
-            ring(ui, paint.Rect { x: r.x - 2.0, y: r.y - 2.0, w: r.w + 4.0, h: r.h + 4.0 }, v)
-        }
         if dom.isTextField(&p.doc, f) {
             var rects = List(paint.Rect).init(ui.alloc)
             defer rects.deinit()
@@ -591,19 +588,6 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
     try drawValidation(ui, p, v)
     if ui.dropdown |dd| {
         try drawDropdown(ui, p, dd, v)
-    }
-}
-
-// A 2 px ring inside `r`.
-fn ring(ui: *mut Ui, r: paint.Rect, v: paint.View) {
-    let edges = [4]paint.Rect{
-        paint.Rect { x: r.x, y: r.y, w: r.w, h: 2.0 },
-        paint.Rect { x: r.x, y: r.y + r.h - 2.0, w: r.w, h: 2.0 },
-        paint.Rect { x: r.x, y: r.y + 2.0, w: 2.0, h: r.h - 4.0 },
-        paint.Rect { x: r.x + r.w - 2.0, y: r.y + 2.0, w: 2.0, h: r.h - 4.0 },
-    }
-    for e in edges {
-        ui.canvas.fillRect(paint.deviceRect(e, v), FOCUS_RING)
     }
 }
 

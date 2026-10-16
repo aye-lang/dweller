@@ -1,0 +1,57 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildClassLiteral)
+
+fn vmVisitClass(c: *mut Compiler, cls: u32) CompileError!void {
+    let ci = c.ast.classes.items()[cls]
+    let named = ci.scope != NONE && vmHasContext(c, ci.scope)
+    var name: i32 = VM_CONTEXT
+
+    if ci.scope != NONE {
+        try vmEnterScope(c, ci.scope)
+    }
+
+    if ci.scope != NONE && c.ast.scopes.items()[ci.scope].nslots > 0 {
+        name = try c.identReg(0, 0)
+    }
+
+    vmMarkDead(c, name, true)
+
+    let mark = c.b.topReg
+    let r = c.b.newRegs(1 + ci.n as i32)
+    var k = r + 1
+
+    if ci.heritage != 0 {
+        try c.visit(ci.heritage)
+        try c.b.op1(BC_STAR, r as i64)
+    }
+
+    for j in 0..ci.n {
+        match c.ast.node(c.ast.item(ci.members, j)) {
+            .ClassElem { kind, is_static, key, computed, .. } => {
+                if computed && kind == PROP_FIELD && !is_static {
+                    try c.fail("unsupported: computed field key")
+                }
+
+                if computed {
+                    try c.visit(key)
+                    try c.b.op1(BC_STAR, k as i64)
+                    k += 1
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    try c.b.emit(BC_CREATE_CLASS, cls as i64, r as i64, named as i64)
+    c.b.releaseRegs(mark)
+
+    if name >= 0 {
+        try c.b.op1(BC_STAR, name as i64)
+    }
+
+    vmMarkDead(c, name, false)
+
+    if ci.scope != NONE {
+        try vmExitScope(c, ci.scope)
+    }
+}

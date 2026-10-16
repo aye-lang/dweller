@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#transition-property-property
+fn transitionList(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Value {
+    var out = text.Builder.init(sheet.arena.allocator())
+    var want_item = true
+
+    for c in comps {
+        if want_item == isComma(c) {
+            return null
+        }
+
+        if isComma(c) {
+            try out.append(", ")
+        } else if !(try writeTransitionItem(prop, c, comps.len == 1, &mut out)) {
+            return null
+        }
+
+        want_item = !want_item
+    }
+
+    if want_item {
+        return null
+    }
+
+    return Value.Keyword { k: out.bytes() }
+}

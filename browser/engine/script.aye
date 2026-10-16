@@ -29,6 +29,7 @@
 // the agent (the event loop jumps to the next timer, and a task's steps
 // move it: STEPS_PER_MS) and real for the window.
 
+import animation
 import audio
 import dom
 import dom.Kind
@@ -253,6 +254,7 @@ pub struct Script {
     computed: ?*mut Styling
     // The root of the prelude's `hostEvent` (NONE before it ran).
     dispatcher: u32
+    transitions: animation.Transitions
     // The root of the prelude's hook for the document's mutation log
     // (components.aye).
     mutation_hook: u32
@@ -286,6 +288,7 @@ pub struct Script {
     nav_step: i64
     nav_form: ?NodeId
     nav_submitter: ?NodeId
+    submit_submitter: ?NodeId
     queued_forms: List(NodeId)
     // Counts changes to the document by scripts (styles and layout are
     // out of date when it moved).
@@ -564,6 +567,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         written: text.Builder.init(alloc),
         computed: null,
         dispatcher: js.NONE,
+        transitions: animation.Transitions.init(alloc),
         mutation_hook: js.NONE,
         timers: List(Timer).init(alloc),
         next_timer: 1,
@@ -577,6 +581,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         nav_step: 0,
         nav_form: null,
         nav_submitter: null,
+        submit_submitter: null,
         queued_forms: List(NodeId).init(alloc),
         version: 0,
         style_version: 0,
@@ -647,6 +652,7 @@ fn setUp(s: *mut Script) JsError!void {
     }
     try s.it.runScript(PRELUDE)
     try s.it.runScript(FORM_PRELUDE)
+    try s.it.runScript(SIGN_IN_PRELUDE)
     try s.it.runScript(WEBGL_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
     if try wasm.install(&mut s.it) {
@@ -695,6 +701,7 @@ pub fn destroyScript(s: *mut Script) {
     s.svg_tag_protos.deinit()
     s.written.deinit()
     dropComputed(s)
+    s.transitions.deinit()
     dropGeometry(s)
     s.restyle.deinit()
     s.restyle_seen.deinit()

@@ -1,0 +1,23 @@
+import std.list.List
+
+// spec: https://tc39.es/ecma262/#sec-enumerate-object-properties
+
+fn vmForInKeys(it: *mut Interp, o: u32, keys: *mut List(u32)) JsError!void {
+    var cur = o
+
+    while cur != NONE {
+        let own = try it.keyList()
+
+        defer it.releaseKeys(own)
+
+        try it.ownKeys(cur, own, false)
+
+        for key in own.items() {
+            if !vmHasKey(keys, key) {
+                try keys.append(key)
+            }
+        }
+
+        cur = it.heap.obj(cur).proto
+    }
+}

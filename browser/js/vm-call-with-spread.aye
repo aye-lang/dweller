@@ -1,0 +1,22 @@
+// v8: src/interpreter/interpreter-generator.cc (CallWithSpread)
+
+fn vmCallWithSpread(it: *mut Interp, at: usize, id: u32) JsError!Value {
+    let top = it.stack.len()
+    let args = objectOf(it.slot(at + 2))
+    let argc = it.heap.obj(args).nelems
+
+    try it.push(it.slot(at))
+    try it.push(it.slot(at + 1))
+
+    for i in 0..argc {
+        try it.push(it.heap.obj(args).elems[i])
+    }
+
+    var op = BC_CALL_PROPERTY
+
+    if it.ast.node(id) is .New {
+        op = BC_CONSTRUCT
+    }
+
+    return vmCallOp(it, op, top, argc as usize, id)
+}

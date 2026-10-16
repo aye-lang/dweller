@@ -4,7 +4,7 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/ and fonts/.
+      resources/, common/, fonts/ and css/support/.
   wpt.py serve [--port N] [--wpt-root DIR]
       A static server on 127.0.0.1 for the checkout (see Server below).
   wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR]

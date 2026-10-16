@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-easing-1/#easing-functions
+fn writeEasing(c: Comp, out: *mut text.Builder) AllocError!bool {
+    let t = c.toks[0]
+
+    if t.kind == Tok.Ident && c.toks.len == 1 {
+        return writeEasingKeyword(t.text, out)
+    }
+
+    if t.kind != Tok.Function {
+        return false
+    }
+
+    var args = [4]Token{t, t, t, t}
+    let n = functionArgs(c, args[..]) orelse return false
+
+    if text.eqlIgnoreCase(t.text, "cubic-bezier") {
+        return writeCubicBezier(args[..n], out)
+    }
+
+    if text.eqlIgnoreCase(t.text, "steps") {
+        return writeSteps(args[..n], out)
+    }
+
+    return false
+}

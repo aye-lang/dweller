@@ -1,0 +1,43 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#transition-shorthand-property
+fn addTransition(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let alloc = d.sheet.arena.allocator()
+    var outs = [5]text.Builder{text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc)}
+    var one_item = true
+    var start: usize = 0
+    let props = [5]usize{TRANSITION_PROPERTY, TRANSITION_DURATION, TRANSITION_TIMING_FUNCTION, TRANSITION_DELAY, TRANSITION_BEHAVIOR}
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    for c in comps {
+        if isComma(c) {
+            one_item = false
+        }
+    }
+
+    for i in 0..comps.len + 1 {
+        if i < comps.len && !isComma(comps[i]) {
+            continue
+        }
+
+        if start > 0 {
+            for k in 0..5 {
+                try outs[k].append(", ")
+            }
+        }
+
+        if !(try writeSingleTransition(comps[start..i], one_item, outs[..])) {
+            return
+        }
+
+        start = i + 1
+    }
+
+    for k in 0..5 {
+        try d.add(TRANSITION_PROPERTY + k, Value.Keyword { k: outs[k].bytes() })
+    }
+}

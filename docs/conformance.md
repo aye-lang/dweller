@@ -16,6 +16,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +99.9 |
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | new |
 | `css/css-flexbox` | 1422 | 469 | 640/1691 | 37.8 | 70 | below | new |
+| `css/css-transitions` | 143 | 59 | 335/3341 | 10.0 | - | baseline | new |
 | `test262/built-ins` | 18373 | 5450 | 11792/18373 | 64.2 | 80 | below | new |
 | `test262/language` | 23210 | 516 | 15080/23210 | 65.0 | 80 | below | new |
 

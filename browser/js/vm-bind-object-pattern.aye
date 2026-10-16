@@ -1,0 +1,37 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringObjectAssignment)
+
+fn vmBindObjectPattern(c: *mut Compiler, list: u32, n: u32, decl: u32) CompileError!void {
+    let mark = c.b.topReg
+    let o = c.b.newReg()
+    let keys = c.b.newRegs(n as i32)
+
+    try c.b.op1(BC_STAR, o as i64)
+    try vmRequireObjectCoercible(c, o)
+
+    for k in 0..n {
+        match c.ast.node(c.ast.item(list, k)) {
+            .PatProp { key, computed, value } => {
+                if computed {
+                    try c.visit(key)
+                } else {
+                    try c.b.op1(BC_LDA_CONSTANT, try c.b.constant(BcConst.Atom { id: key }) as i64)
+                }
+
+                try c.b.op1(BC_STAR, (keys + k as i32) as i64)
+                try c.b.op2(BC_GET_KEYED_PROPERTY, o as i64, c.b.newSlot() as i64)
+                try vmStoreTarget(c, value, decl)
+            }
+
+            .Rest { target } => {
+                try c.b.emit(BC_OBJECT_REST, o as i64, keys as i64, k as i64)
+                try vmStoreTarget(c, target, decl)
+            }
+
+            _ => {
+                try c.fail("unsupported: pattern")
+            }
+        }
+    }
+
+    c.b.releaseRegs(mark)
+}

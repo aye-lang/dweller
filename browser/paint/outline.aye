@@ -1,0 +1,31 @@
+import css
+import css.Value
+import layout
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-ui/#outline-props
+fn outline(b: *mut Builder, style: []Value, x: f64, y: f64, w: f64, h: f64) AllocError!void {
+    let kind = layout.keywordOf(style[css.OUTLINE_STYLE])
+    let width = layout.lengthOr0(style[css.OUTLINE_WIDTH], 0.0)
+    let box = Rect { x: x, y: y, w: w, h: h }
+    let radii = radiiOf(style, w, h)
+
+    if text.eql(kind, "auto") {
+        return focusRing(b, style, box, radii)
+    }
+
+    if text.eql(kind, "none") || width <= 0.0 {
+        return
+    }
+
+    var offset = layout.lengthOr0(style[css.OUTLINE_OFFSET], 0.0)
+
+    if layout.isKeyword(style[css.OUTLINE_OFFSET], "inset") {
+        offset = -width
+    }
+
+    let c = colorOf(style[css.OUTLINE_COLOR], colorOf(style[css.COLOR], BLACK))
+
+    try outlineRing(b, kind, box, radii, offset, offset + width, c)
+}

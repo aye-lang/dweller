@@ -1,0 +1,31 @@
+import std.math
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-2/#event-dispatch
+pub fn updateTransitions(t: *mut Transitions, now: f64) AllocError!void {
+    var i: usize = 0
+
+    while i < t.running.len() {
+        let r = &mut t.running.items()[i]
+        let start = r.begin_ms + r.delay_ms
+        let skipped = math.min(math.max(-r.delay_ms, 0.0), r.duration_ms) / 1000.0
+
+        if r.phase == Phase.Idle {
+            r.phase = Phase.Before
+            try t.events.append(TransitionEvent { el: r.el, kind: "transitionrun", prop: r.prop, elapsed: skipped })
+        }
+
+        if r.phase == Phase.Before && now >= start {
+            r.phase = Phase.Active
+            try t.events.append(TransitionEvent { el: r.el, kind: "transitionstart", prop: r.prop, elapsed: skipped })
+        }
+
+        if r.phase == Phase.Active && now >= start + r.duration_ms {
+            try t.events.append(TransitionEvent { el: r.el, kind: "transitionend", prop: r.prop, elapsed: r.duration_ms / 1000.0 })
+            t.running.orderedRemove(i)
+            continue
+        }
+
+        i += 1
+    }
+}

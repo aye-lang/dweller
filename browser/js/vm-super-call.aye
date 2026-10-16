@@ -1,0 +1,29 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitSuperCallReference)
+
+fn vmSuperCall(it: *mut Interp, at: usize, argc: usize, spread: bool) JsError!Value {
+    let fnObj = it.currentFunction()
+    let fr = vmConstructorFrame(it, fnObj)
+
+    if fr < 0 {
+        return it.typeError("'super' keyword unexpected here")
+    }
+
+    let frame = it.frames.items()[fr as usize]
+    let top = it.stack.len()
+    let parent = it.heap.obj(fnObj).proto
+
+    if parent == NONE {
+        try it.push(Value.Null)
+    } else {
+        try it.push(objVal(parent))
+    }
+
+    try it.push(objVal(frame.this_obj))
+
+    let n = try vmPushArgs(it, at, argc, spread)
+    let result = try it.superConstruct(fnObj, top, n, frame.new_target)
+
+    it.frames.items()[fr as usize].this_obj = result
+
+    return objVal(result)
+}

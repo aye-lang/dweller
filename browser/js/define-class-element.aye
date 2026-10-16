@@ -1,0 +1,59 @@
+// spec: https://tc39.es/ecma262/#sec-static-semantics-classelementevaluation
+
+fn defineClassElement(it: *mut Interp, elem: u32, ctor: u32, proto: u32, key: usize) JsError!usize {
+    match it.ast.node(elem) {
+        .ClassElem { kind, is_static, key: name, computed, value } => {
+            var target = proto
+            var atom = name
+            var next = key
+
+            if is_static {
+                target = ctor
+            }
+
+            if computed {
+                atom = try it.toKey(it.slot(key))
+                next = key + 1
+            }
+
+            if kind == PROP_FIELD && !is_static {
+                return next
+            }
+
+            if kind == PROP_FIELD {
+                let fv = try it.runField(value, it.env, objVal(ctor), ctor)
+
+                try it.defineOwn(ctor, atom, fv, it.fieldFlags(atom))
+
+                return next
+            }
+
+            if kind == PROP_STATIC_BLOCK {
+                try it.runField(value, it.env, objVal(ctor), ctor)
+
+                return next
+            }
+
+            let m = try it.eval(value)
+
+            it.setHome(objectOf(m), target)
+            try it.push(m)
+
+            if kind == PROP_GET {
+                try it.defineAccessor(target, atom, m, Value.Undefined, F_CONFIG)
+            } else if kind == PROP_SET {
+                try it.defineAccessor(target, atom, Value.Undefined, m, F_CONFIG)
+            } else {
+                try it.defineOwn(target, atom, m, F_HIDDEN)
+            }
+
+            it.pop()
+
+            return next
+        }
+
+        _ => {}
+    }
+
+    return key
+}

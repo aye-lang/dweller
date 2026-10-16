@@ -1,0 +1,23 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement)
+
+fn vmForEachBind(c: *mut Compiler, left: u32) CompileError!void {
+    match c.ast.node(left) {
+        .VarDecl { kind, list, .. } => {
+            match c.ast.node(c.ast.item(list, 0)) {
+                .Declarator { target, init } => {
+                    if init != 0 {
+                        return c.fail("unsupported: for-in initializer")
+                    }
+
+                    return vmStoreTarget(c, target, kind)
+                }
+
+                _ => {}
+            }
+        }
+
+        _ => {}
+    }
+
+    return vmStoreTarget(c, left, NONE)
+}
