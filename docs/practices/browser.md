@@ -483,6 +483,20 @@ example: two forms goldens changed only in the lines of `pre` text, and
 the commit says so.
 **Why:** a golden is only a test while someone reads what changed.
 
+### Never take the user's focus
+**Context:** a test or a check starts the browser's window while the
+user works on the same Mac.
+**Bad:** a real window during tests: it takes the keyboard focus, and
+the user's typing goes to the test.
+**Good:** the window runs on SDL's dummy video driver by default
+(`dweller_command()` in `tests/browser/dweller_command.rs`; the Python
+tools in `browser/tools/`). The rare measurement that needs a real
+window sets `DWELLER_BACKGROUND=1` (`DWELLER_TEST_REAL_WINDOW=1` for the
+tests, `--real-window` for `window_perf.py` and `game_check.py`): the
+window is a background app and is never raised.
+**Why:** a person's focus is not the tests' to take; the dummy driver
+runs the same loop and paint code without a screen.
+
 ### Pixel goldens use the fixed font
 **Context:** screenshot and layout tests.
 **Bad:** text drawn with the system's fonts differs between machines, so
