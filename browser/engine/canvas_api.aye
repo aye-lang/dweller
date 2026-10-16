@@ -1001,7 +1001,12 @@ fn canvasPaintTainted(it: *mut Interp, style: Value) JsError!bool {
     if (try canvasNum(it, style, "kind")) != 4.0 {
         return false
     }
-    let source = try canvasProp(it, style, "image")
+    return sourceTainted(it, try canvasProp(it, style, "image"))
+}
+
+// Whether the pixels of a canvas or img source are not origin-clean
+// (also WebGL's texImage2D refuses them).
+fn sourceTainted(it: *mut Interp, source: Value) JsError!bool {
     let h = handleOf(it, source, TAG_NODE) orelse return false
     let page = scriptOf(it).active
     if page.doc.isElement(h, "canvas") {

@@ -1,0 +1,400 @@
+<!doctype html>
+<title>WebGL 2 textures</title>
+<canvas id="c" width="4" height="4"></canvas>
+<pre id="out"></pre>
+<script>
+// P11.6 (docs/webgl.md §3): textures. A quad covers the 4x4 canvas and
+// samples a 2x2 texture with NEAREST, so each corner pixel is one texel
+// whatever the backend: bottom left, bottom right, top left, top right.
+// The sources are a PNG, a 2D canvas, an OffscreenCanvas, an ImageData,
+// ImageBitmaps and typed arrays, with and without UNPACK_FLIP_Y_WEBGL and
+// UNPACK_PREMULTIPLY_ALPHA_WEBGL; the errors of the object rules and the
+// SecurityError of an image of another origin.
+const lines = [];
+const log = (...a) => lines.push(a.map(String).join(' '));
+const gl = document.getElementById('c').getContext('webgl2', {antialias: false});
+function program() {
+  const make = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, make(gl.VERTEX_SHADER, `#version 300 es
+out vec2 uv;
+void main() {
+  vec2 p = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`));
+  gl.attachShader(p, make(gl.FRAGMENT_SHADER, `#version 300 es
+precision mediump float;
+uniform sampler2D tex;
+in vec2 uv;
+out vec4 frag;
+void main() {
+  frag = texture(tex, uv);
+}`));
+  gl.linkProgram(p);
+  gl.useProgram(p);
+  return p;
+}
+// A texture bound to unit 0 that samples the nearest texel.
+function texture() {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+// Draws the bound texture over the canvas and logs the corner pixels and
+// the error of everything since the last line.
+function sample(label) {
+  const error = gl.getError();
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  const px = new Uint8Array(4 * 4 * 4);
+  gl.readPixels(0, 0, 4, 4, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const at = (x, y) => Array.from(px.subarray((y * 4 + x) * 4, (y * 4 + x) * 4 + 4)).join(',');
+  log(label, 'BL', at(0, 0), 'BR', at(3, 0), 'TL', at(0, 3), 'TR', at(3, 3), 'error', error, gl.getError());
+}
+const err = what => log(what, gl.getError());
+const flags = (flip, premul) => {
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premul);
+};
+const RGBA = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 100, 100, 100, 128];
+async function run() {
+  program();
+  const img = new Image();
+  img.src = 'tex2x2.png';
+  await img.decode();
+
+  // The object rules.
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  err('texImage2D without a texture');
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  err('texParameteri without a texture');
+  gl.generateMipmap(gl.TEXTURE_2D);
+  err('generateMipmap without a texture');
+  gl.bindTexture(0x1234, null);
+  err('bindTexture bad target');
+  const t0 = gl.createTexture();
+  log('texture', t0 instanceof WebGLTexture, gl.isTexture(t0));
+  gl.bindTexture(gl.TEXTURE_2D, t0);
+  log('bound', gl.isTexture(t0), gl.getParameter(gl.TEXTURE_BINDING_2D) === t0, gl.getParameter(gl.TEXTURE_BINDING_CUBE_MAP));
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, t0);
+  err('bindTexture a 2D texture as a cube map');
+  gl.activeTexture(gl.TEXTURE1);
+  log('unit 1', gl.getParameter(gl.ACTIVE_TEXTURE) === gl.TEXTURE1, gl.getParameter(gl.TEXTURE_BINDING_2D));
+  gl.activeTexture(gl.TEXTURE0);
+  gl.activeTexture(gl.TEXTURE0 + 1000);
+  err('activeTexture out of range');
+  gl.texParameteri(0x1234, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  err('texParameteri bad target');
+  gl.texParameteri(gl.TEXTURE_2D, 0x1234, 1);
+  err('texParameteri bad pname');
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, 0x1234);
+  err('texParameteri bad value');
+  gl.texStorage2D(gl.TEXTURE_3D, 1, gl.RGBA8, 2, 2);
+  err('texStorage2D 3D target');
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  err('texStorage2D');
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  err('texStorage2D twice (immutable)');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(16));
+  err('texImage2D on an immutable texture');
+  const other = document.createElement('canvas').getContext('webgl2');
+  const foreign = other.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, foreign);
+  err('bind a texture of another context');
+  gl.deleteTexture(foreign);
+  err('delete a texture of another context');
+  gl.deleteTexture(t0);
+  log('deleted', gl.isTexture(t0), gl.getParameter(gl.TEXTURE_BINDING_2D));
+  gl.deleteTexture(t0);
+  err('delete twice');
+  gl.bindTexture(gl.TEXTURE_2D, t0);
+  err('bind a deleted texture');
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  log('pixelStore', gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL), gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL), gl.getParameter(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL) === gl.BROWSER_DEFAULT_WEBGL, gl.getParameter(gl.UNPACK_ALIGNMENT));
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 3);
+  err('UNPACK_ALIGNMENT 3');
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, 1);
+  err('UNPACK_COLORSPACE_CONVERSION_WEBGL 1');
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, -1);
+  err('UNPACK_ROW_LENGTH -1');
+  gl.pixelStorei(0x1234, 0);
+  err('pixelStorei bad name');
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 5);
+  log('FLIP_Y 5', gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL));
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+  // A PNG, every combination of the flags.
+  for (const [flip, premul] of [[false, false], [true, false], [false, true], [true, true]]) {
+    flags(flip, premul);
+    texture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    sample(`png flip=${flip} premultiply=${premul}`);
+  }
+  flags(false, false);
+  // Immutable storage and texSubImage2D, as three.js does for images.
+  texture();
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  sample('png texStorage2D + texSubImage2D');
+  texture();
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  sample('png texSubImage2D without a size');
+  texture();
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  sample('png corner 1x1 into texel 1,1');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  sample('png texImage2D with a size');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 3, 3, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  err('png larger than the image');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  err('png with a border');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, 0x1234, img);
+  err('png bad type');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, img);
+  err('png as depth');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, new Image());
+  err('an image that is not loaded');
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, {});
+  } catch (e) {
+    log('not a source', e.name);
+  }
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+  } catch (e) {
+    log('too few arguments', e.name);
+  }
+
+  // A 2D canvas and an OffscreenCanvas.
+  const paint = x => {
+    x.fillStyle = '#f00';
+    x.fillRect(0, 0, 1, 1);
+    x.fillStyle = '#0f0';
+    x.fillRect(1, 0, 1, 1);
+    x.fillStyle = '#00f';
+    x.fillRect(0, 1, 1, 1);
+    x.fillStyle = 'rgba(100, 100, 100, 0.5)';
+    x.fillRect(1, 1, 1, 1);
+  };
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 2;
+  paint(canvas.getContext('2d'));
+  const offscreen = new OffscreenCanvas(2, 2);
+  paint(offscreen.getContext('2d'));
+  for (const [name, source] of [['canvas', canvas], ['OffscreenCanvas', offscreen]]) {
+    for (const flip of [false, true]) {
+      flags(flip, false);
+      texture();
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      sample(`${name} flip=${flip}`);
+    }
+  }
+  flags(false, true);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  sample('canvas premultiply');
+  flags(false, false);
+  const drawn = document.createElement('canvas');
+  drawn.width = drawn.height = 2;
+  const g2 = drawn.getContext('webgl2', {preserveDrawingBuffer: true});
+  g2.clearColor(0, 0, 1, 1);
+  g2.clear(g2.COLOR_BUFFER_BIT);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, drawn);
+  sample('a WebGL canvas');
+
+  // An ImageData, also packed into other formats.
+  const data = new ImageData(new Uint8ClampedArray(RGBA), 2, 2);
+  for (const [flip, premul] of [[false, false], [true, false], [false, true], [true, true]]) {
+    flags(flip, premul);
+    texture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    sample(`ImageData flip=${flip} premultiply=${premul}`);
+  }
+  flags(false, false);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, data);
+  sample('ImageData RGB');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, data);
+  sample('ImageData LUMINANCE_ALPHA');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, gl.ALPHA, gl.UNSIGNED_BYTE, data);
+  sample('ImageData ALPHA');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, data);
+  sample('ImageData R8');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB565, gl.RGB, gl.UNSIGNED_SHORT_5_6_5, data);
+  sample('ImageData RGB565');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA4, gl.RGBA, gl.UNSIGNED_SHORT_4_4_4_4, data);
+  sample('ImageData RGBA4');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB5_A1, gl.RGBA, gl.UNSIGNED_SHORT_5_5_5_1, data);
+  sample('ImageData RGB5_A1');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, gl.RGBA, gl.FLOAT, data);
+  err('ImageData as FLOAT');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, new ImageData(1, 1));
+  err('ImageData 1x1');
+
+  // ImageBitmaps: the flags of the pixel store do not apply.
+  flags(true, true);
+  for (const options of [{imageOrientation: 'flipY', premultiplyAlpha: 'none'}, {premultiplyAlpha: 'premultiply'}, {imageOrientation: 'none', premultiplyAlpha: 'none'}, {}]) {
+    const bitmap = await createImageBitmap(img, options);
+    texture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+    sample(`ImageBitmap ${JSON.stringify(options)}`);
+  }
+  flags(false, false);
+  const fromCanvas = await createImageBitmap(canvas, {imageOrientation: 'flipY'});
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fromCanvas);
+  sample('ImageBitmap of a canvas flipY');
+  for (const options of [{imageOrientation: 'up'}, {premultiplyAlpha: 'yes'}]) {
+    await createImageBitmap(img, options).then(() => log('accepted', JSON.stringify(options)), e => log('rejected', JSON.stringify(options), e.name));
+  }
+
+  // ArrayBufferViews.
+  const view = new Uint8Array(RGBA);
+  for (const [flip, premul] of [[false, false], [true, false], [false, true], [true, true]]) {
+    flags(flip, premul);
+    texture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+    sample(`Uint8Array flip=${flip} premultiply=${premul}`);
+  }
+  flags(false, false);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8ClampedArray(RGBA));
+  sample('Uint8ClampedArray');
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([9, 9, 9, 9].concat(RGBA)), 4);
+  sample('srcOffset 4 elements');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view, 1);
+  err('srcOffset 1 leaves 15 bytes');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view, 17);
+  err('srcOffset past the end');
+  const rgb = new Uint8Array([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 2, 2, 0, gl.RGB, gl.UNSIGNED_BYTE, rgb);
+  err('RGB rows of 6 bytes padded to 8 need 14');
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 2, 2, 0, gl.RGB, gl.UNSIGNED_BYTE, rgb);
+  sample('RGB with UNPACK_ALIGNMENT 1');
+  flags(true, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 2, 2, 0, gl.RGB, gl.UNSIGNED_BYTE, rgb);
+  sample('RGB with UNPACK_ALIGNMENT 1, flipped');
+  flags(false, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  const wide = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 255, 255, 255, 255, 255, 255, 3, 3, 3, 3, 4, 4, 4, 4]);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 4);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, wide);
+  sample('UNPACK_ROW_LENGTH 4');
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 2);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, wide);
+  sample('UNPACK_ROW_LENGTH 4, UNPACK_SKIP_PIXELS 2');
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, wide);
+  err('UNPACK_SKIP_ROWS 1 leaves one row');
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  flags(true, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, wide);
+  sample('UNPACK_ROW_LENGTH 4, flipped');
+  flags(false, false);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  texture();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  sample('null data');
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  err('texSubImage2D null');
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 1, 0, 1, 2, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  sample('texSubImage2D 1x2 at 1,0 (rows of the first column)');
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 1, 1, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  err('texSubImage2D past the texture');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Float32Array(16));
+  err('Float32Array as UNSIGNED_BYTE');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 2, 2, 0, gl.RGBA, gl.FLOAT, new Uint8Array(64));
+  err('Uint8Array as FLOAT');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 2, 2, 0, gl.RGBA, gl.FLOAT, new Float32Array(16));
+  err('Float32Array as FLOAT');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(15));
+  err('15 bytes for 2x2 RGBA');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new DataView(new ArrayBuffer(16)));
+  err('a DataView');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, 0x1234, view);
+  err('bad type');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, 0x1234, gl.UNSIGNED_BYTE, view);
+  err('bad format');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  err('border 1');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, -1, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  err('width -1');
+  gl.texImage2D(0x1234, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  err('bad target');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+  err('a pixel unpack buffer offset');
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  err('generateMipmap');
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+  gl.texParameterf(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  err('texParameteri, texParameterf');
+  gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+  err('generateMipmap of a cube map without a texture');
+
+  // An image of another origin cannot be read into a texture.
+  const foreignImage = new Image();
+  foreignImage.src = location.origin.replace('127.0.0.1', 'localhost') + '/webgl/tex2x2.png';
+  await foreignImage.decode();
+  const refuse = (what, f) => {
+    try {
+      f();
+      log(what, 'no exception');
+    } catch (e) {
+      log(what, e.name, gl.getError());
+    }
+  };
+  texture();
+  refuse('cross-origin texImage2D', () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, foreignImage));
+  refuse('cross-origin texImage2D with a size', () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, foreignImage));
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 2);
+  refuse('cross-origin texSubImage2D', () => gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, foreignImage));
+  const tainted = document.createElement('canvas');
+  tainted.width = tainted.height = 2;
+  tainted.getContext('2d').drawImage(foreignImage, 0, 0);
+  refuse('canvas drawn from it', () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tainted));
+  const taintedBitmap = await createImageBitmap(foreignImage);
+  refuse('ImageBitmap of it', () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, taintedBitmap));
+  const clean = document.createElement('canvas');
+  clean.width = clean.height = 2;
+  clean.getContext('2d').drawImage(img, 0, 0);
+  refuse('canvas drawn from the page\'s own image', () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, clean));
+}
+if (!gl) {
+  log('webgl2 null');
+  document.getElementById('out').textContent = lines.join('\n');
+} else {
+  run().catch(e => log('exception', e && e.stack ? e.stack : e)).then(() => {
+    document.getElementById('out').textContent = lines.join('\n');
+  });
+}
+</script>
