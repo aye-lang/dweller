@@ -38,6 +38,9 @@ fn installWebGL(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "webglActive", 4, akWebglActive)
     try defMethod(it, o, "webglUniformv", 6, akWebglUniformv)
     try defMethod(it, o, "webglTex", 3, akWebglTex)
+    try defMethod(it, o, "webglQuery", 4, akWebglQuery)
+    try defMethod(it, o, "webglTex3D", 3, akWebglTex3D)
+    try defMethod(it, o, "webglReadFormat", 8, akWebglReadFormat)
 }
 
 fn webglOf(it: *mut Interp, v: Value) JsError!*mut gpu.Context {
@@ -140,6 +143,38 @@ let OP_GENERATE_MIPMAP: u32 = 38
 // texStorage2D: (target, levels, internalformat, width, height).
 let OP_TEX_STORAGE: u32 = 39
 let OP_PIXEL_STORE: u32 = 40
+// P11.8. Framebuffers: bind (target, name; 0 is the drawing buffer),
+// delete, renderbuffer bind/storage (samples, format, width, height),
+// attachments, draw buffers (n, then the enums), readBuffer, blit.
+let OP_BIND_FRAMEBUFFER: u32 = 41
+let OP_DELETE_FRAMEBUFFER: u32 = 42
+let OP_DELETE_RENDERBUFFER: u32 = 43
+let OP_BIND_RENDERBUFFER: u32 = 44
+let OP_RENDERBUFFER_STORAGE: u32 = 45
+let OP_FB_RENDERBUFFER: u32 = 46
+let OP_FB_TEXTURE2D: u32 = 47
+let OP_FB_TEXTURE_LAYER: u32 = 48
+let OP_DRAW_BUFFERS: u32 = 49
+let OP_READ_BUFFER: u32 = 50
+let OP_BLIT: u32 = 51
+// Instancing, VAOs, uniform buffers, samplers, 3D storage, clearBuffer.
+let OP_DRAW_ARRAYS_INSTANCED: u32 = 52
+let OP_DRAW_ELEMENTS_INSTANCED: u32 = 53
+let OP_DRAW_RANGE_ELEMENTS: u32 = 54
+let OP_ATTRIB_DIVISOR: u32 = 55
+let OP_BIND_VAO: u32 = 56
+let OP_DELETE_VAO: u32 = 57
+let OP_BIND_BUFFER_BASE: u32 = 58
+let OP_BIND_BUFFER_RANGE: u32 = 59
+let OP_UNIFORM_BLOCK_BINDING: u32 = 60
+let OP_BIND_SAMPLER: u32 = 61
+let OP_DELETE_SAMPLER: u32 = 62
+let OP_SAMPLER_PARAM_I: u32 = 63
+let OP_SAMPLER_PARAM_F: u32 = 64
+let OP_TEX_STORAGE_3D: u32 = 65
+let OP_CLEAR_BUFFER_F: u32 = 66
+let OP_CLEAR_BUFFER_I: u32 = 67
+let OP_CLEAR_BUFFER_UI: u32 = 68
 
 fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
@@ -149,8 +184,7 @@ fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
         gl.glClearColor(try argF32(it, a, 2), try argF32(it, a, 3), try argF32(it, a, 4), try argF32(it, a, 5))
     } else if op == OP_CLEAR {
         gl.glClear(try argU32(it, a, 2))
-        ctx.dirty = true
-        canvasChanged(it)
+        framebufferDrawn(it, ctx)
     } else if op == OP_VIEWPORT {
         gl.glViewport(try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5))
     } else if op == OP_SCISSOR {
@@ -199,12 +233,10 @@ fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
         gl.glVertexAttribI4ui(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argU32(it, a, 5), try argU32(it, a, 6))
     } else if op == OP_DRAW_ARRAYS {
         gl.glDrawArrays(try argU32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4))
-        ctx.dirty = true
-        canvasChanged(it)
+        framebufferDrawn(it, ctx)
     } else if op == OP_DRAW_ELEMENTS {
         gl.glDrawElements(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argOffset(it, a, 5))
-        ctx.dirty = true
-        canvasChanged(it)
+        framebufferDrawn(it, ctx)
     } else if op == OP_DELETE_BUFFER {
         let name = try argU32(it, a, 2)
         gl.glDeleteBuffers(1, &name)
@@ -247,6 +279,186 @@ fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
         gl.glTexStorage2D(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6))
     } else if op == OP_PIXEL_STORE {
         gl.glPixelStorei(try argU32(it, a, 2), try argI32(it, a, 3))
+    } else if op >= OP_BIND_FRAMEBUFFER {
+        try callMore(it, a, ctx, op)
+    }
+    return Value.Undefined
+}
+
+// A draw into a framebuffer of the page's own is not a frame of the canvas.
+fn framebufferDrawn(it: *mut Interp, ctx: *mut gpu.Context) {
+    var bound: i32 = 0
+    ctx.gl().glGetIntegerv(0x8ca6, &mut bound)
+    if bound as u32 == ctx.drawFbo() {
+        ctx.dirty = true
+        canvasChanged(it)
+    }
+}
+
+// The ops of P11.8 (webglCall).
+fn callMore(it: *mut Interp, a: Args, ctx: *mut gpu.Context, op: u32) JsError!void {
+    let gl = ctx.gl()
+    if op == OP_BIND_FRAMEBUFFER {
+        var name = try argU32(it, a, 3)
+        if name == 0 {
+            name = ctx.drawFbo()
+        }
+        gl.glBindFramebuffer(try argU32(it, a, 2), name)
+    } else if op == OP_DELETE_FRAMEBUFFER {
+        let name = try argU32(it, a, 2)
+        gl.glDeleteFramebuffers(1, &name)
+    } else if op == OP_DELETE_RENDERBUFFER {
+        let name = try argU32(it, a, 2)
+        gl.glDeleteRenderbuffers(1, &name)
+    } else if op == OP_BIND_RENDERBUFFER {
+        gl.glBindRenderbuffer(0x8d41, try argU32(it, a, 2))
+    } else if op == OP_RENDERBUFFER_STORAGE {
+        gl.glRenderbufferStorageMultisample(0x8d41, try argI32(it, a, 2), try argU32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5))
+    } else if op == OP_FB_RENDERBUFFER {
+        gl.glFramebufferRenderbuffer(try argU32(it, a, 2), try argU32(it, a, 3), 0x8d41, try argU32(it, a, 4))
+    } else if op == OP_FB_TEXTURE2D {
+        gl.glFramebufferTexture2D(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argU32(it, a, 5), try argI32(it, a, 6))
+    } else if op == OP_FB_TEXTURE_LAYER {
+        gl.glFramebufferTextureLayer(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6))
+    } else if op == OP_DRAW_BUFFERS {
+        var v = @zeroed([8]u32)
+        let n = math.minOf(u32, try argU32(it, a, 2), 8)
+        for i in 0..n as usize {
+            v[i] = try argU32(it, a, 3 + i)
+        }
+        gl.glDrawBuffers(n as i32, @ptrCast([*]u8, &v[0]))
+    } else if op == OP_READ_BUFFER {
+        gl.glReadBuffer(try argU32(it, a, 2))
+    } else if op == OP_BLIT {
+        gl.glBlitFramebuffer(try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7), try argI32(it, a, 8), try argI32(it, a, 9), try argU32(it, a, 10), try argU32(it, a, 11))
+        framebufferDrawn(it, ctx)
+    } else if op == OP_DRAW_ARRAYS_INSTANCED {
+        gl.glDrawArraysInstanced(try argU32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5))
+        framebufferDrawn(it, ctx)
+    } else if op == OP_DRAW_ELEMENTS_INSTANCED {
+        gl.glDrawElementsInstanced(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argOffset(it, a, 5), try argI32(it, a, 6))
+        framebufferDrawn(it, ctx)
+    } else if op == OP_DRAW_RANGE_ELEMENTS {
+        gl.glDrawRangeElements(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argU32(it, a, 6), try argOffset(it, a, 7))
+        framebufferDrawn(it, ctx)
+    } else if op == OP_ATTRIB_DIVISOR {
+        gl.glVertexAttribDivisor(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_BIND_VAO {
+        gl.glBindVertexArray(try argU32(it, a, 2))
+    } else if op == OP_DELETE_VAO {
+        let name = try argU32(it, a, 2)
+        gl.glDeleteVertexArrays(1, &name)
+    } else if op == OP_BIND_BUFFER_BASE {
+        gl.glBindBufferBase(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4))
+    } else if op == OP_BIND_BUFFER_RANGE {
+        gl.glBindBufferRange(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), (try argOffset(it, a, 5)) as i64, (try argOffset(it, a, 6)) as i64)
+    } else if op == OP_UNIFORM_BLOCK_BINDING {
+        gl.glUniformBlockBinding(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4))
+    } else if op == OP_BIND_SAMPLER {
+        gl.glBindSampler(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_DELETE_SAMPLER {
+        let name = try argU32(it, a, 2)
+        gl.glDeleteSamplers(1, &name)
+    } else if op == OP_SAMPLER_PARAM_I {
+        gl.glSamplerParameteri(try argU32(it, a, 2), try argU32(it, a, 3), try argI32(it, a, 4))
+    } else if op == OP_SAMPLER_PARAM_F {
+        gl.glSamplerParameterf(try argU32(it, a, 2), try argU32(it, a, 3), try argF32(it, a, 4))
+    } else if op == OP_TEX_STORAGE_3D {
+        gl.glTexStorage3D(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7))
+    } else {
+        // clearBuffer{fi,iv,uiv,fv}(buffer, drawbuffer, four values).
+        var f = @zeroed([4]f32)
+        var i = @zeroed([4]i32)
+        var u = @zeroed([4]u32)
+        for k in 0..4 {
+            if op == OP_CLEAR_BUFFER_F {
+                f[k] = try argF32(it, a, 4 + k)
+            } else if op == OP_CLEAR_BUFFER_I {
+                i[k] = try argI32(it, a, 4 + k)
+            } else {
+                u[k] = try argU32(it, a, 4 + k)
+            }
+        }
+        let buffer = try argU32(it, a, 2)
+        let index = try argI32(it, a, 3)
+        if op == OP_CLEAR_BUFFER_F {
+            gl.glClearBufferfv(buffer, index, @ptrCast([*]u8, &f[0]))
+        } else if op == OP_CLEAR_BUFFER_I {
+            gl.glClearBufferiv(buffer, index, @ptrCast([*]u8, &i[0]))
+        } else {
+            gl.glClearBufferuiv(buffer, index, @ptrCast([*]u8, &u[0]))
+        }
+        framebufferDrawn(it, ctx)
+    }
+}
+
+// webglQuery(canvas, op, a, b): op 0 checkFramebufferStatus(target); 1
+// getUniformBlockIndex(program, name); 2 enables the ANGLE extension `a`
+// (a name) and tells whether it is now enabled.
+fn akWebglQuery(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let op = try argU32(it, a, 1)
+    let gl = ctx.gl()
+    if op == 0 {
+        return js.numVal(gl.glCheckFramebufferStatus(try argU32(it, a, 2)) as f64)
+    }
+    let name = try cName(it, it.arg(a, 3))
+    defer it.alloc.free(name)
+    if op == 1 {
+        return js.numVal(gl.glGetUniformBlockIndex(try argU32(it, a, 2), name.ptr) as f64)
+    }
+    let want = name[0..name.len - 1]
+    gl.glRequestExtensionANGLE(name.ptr)
+    let all = gpu.cstr(gl.glGetString(0x1f03))
+    var i: usize = 0
+    while i + want.len <= all.len {
+        var same = true
+        for k in 0..want.len {
+            if all[i + k] != want[k] {
+                same = false
+            }
+        }
+        let end = i + want.len
+        if same && (end == all.len || all[end] == ' ') && (i == 0 || all[i - 1] == ' ') {
+            return js.boolVal(true)
+        }
+        i += 1
+    }
+    return js.boolVal(false)
+}
+
+// webglReadFormat(canvas, x, y, w, h, format, type, view): readPixels of
+// the bound framebuffer into the view (the prelude checked its size).
+fn akWebglReadFormat(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let o = js.objectOf(it.arg(a, 7))
+    if o == js.NONE {
+        return Value.Undefined
+    }
+    let bytes = js.viewBytes(it, o)
+    ctx.gl().glReadPixels(try argI32(it, a, 1), try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argU32(it, a, 5), try argU32(it, a, 6), bytes.ptr)
+    return Value.Undefined
+}
+
+// webglTex3D(canvas, spec, view): texImage3D / texSubImage3D from typed
+// array bytes (or no data): spec is [sub, target, level, internalformat,
+// xoffset, yoffset, zoffset, width, height, depth, format, type].
+fn akWebglTex3D(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    var s = @zeroed([12]i32)
+    for i in 0..12 {
+        s[i] = js.toInt32(try it.toNumber(try canvasIndex(it, it.arg(a, 1), i)))
+    }
+    var ptr: ?[*]u8 = null
+    let o = js.objectOf(it.arg(a, 2))
+    if o != js.NONE {
+        ptr = js.viewBytes(it, o).ptr
+    }
+    let gl = ctx.gl()
+    if s[0] != 0 {
+        gl.glTexSubImage3D(s[1] as u32, s[2], s[4], s[5], s[6], s[7], s[8], s[9], s[10] as u32, s[11] as u32, ptr)
+    } else {
+        gl.glTexImage3D(s[1] as u32, s[2], s[3], s[7], s[8], s[9], 0, s[10] as u32, s[11] as u32, ptr)
     }
     return Value.Undefined
 }
@@ -274,6 +486,14 @@ fn akWebglNew(it: *mut Interp, a: Args) JsError!Value {
         name = gl.glCreateShader(try argU32(it, a, 2))
     } else if kind == 3 {
         gl.glGenTextures(1, &mut name)
+    } else if kind == 4 {
+        gl.glGenFramebuffers(1, &mut name)
+    } else if kind == 5 {
+        gl.glGenRenderbuffers(1, &mut name)
+    } else if kind == 6 {
+        gl.glGenVertexArrays(1, &mut name)
+    } else if kind == 7 {
+        gl.glGenSamplers(1, &mut name)
     } else {
         name = gl.glCreateProgram()
     }

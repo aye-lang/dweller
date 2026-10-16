@@ -184,6 +184,34 @@ pub struct Api {
     glPixelStorei: fn(c.GLenum, c.GLint)
     glTexImage2D: fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8)
     glTexSubImage2D: fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8)
+    // P11.8: VAOs, instancing, MRT, framebuffer attachments, uniform buffers,
+    // samplers, 3D textures.
+    glGenVertexArrays: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteVertexArrays: fn(c.GLsizei, ?*c.GLuint)
+    glBindVertexArray: fn(c.GLuint)
+    glDrawArraysInstanced: fn(c.GLenum, c.GLint, c.GLsizei, c.GLsizei)
+    glDrawElementsInstanced: fn(c.GLenum, c.GLsizei, c.GLenum, usize, c.GLsizei)
+    glDrawRangeElements: fn(c.GLenum, c.GLuint, c.GLuint, c.GLsizei, c.GLenum, usize)
+    glVertexAttribDivisor: fn(c.GLuint, c.GLuint)
+    glFramebufferTextureLayer: fn(c.GLenum, c.GLenum, c.GLuint, c.GLint, c.GLint)
+    glDrawBuffers: fn(c.GLsizei, ?[*]u8)
+    glReadBuffer: fn(c.GLenum)
+    glClearBufferfv: fn(c.GLenum, c.GLint, ?[*]u8)
+    glClearBufferiv: fn(c.GLenum, c.GLint, ?[*]u8)
+    glClearBufferuiv: fn(c.GLenum, c.GLint, ?[*]u8)
+    glGetUniformBlockIndex: fn(c.GLuint, ?[*]u8) c.GLuint
+    glUniformBlockBinding: fn(c.GLuint, c.GLuint, c.GLuint)
+    glBindBufferBase: fn(c.GLenum, c.GLuint, c.GLuint)
+    glBindBufferRange: fn(c.GLenum, c.GLuint, c.GLuint, c.GLintptr, c.GLsizeiptr)
+    glGenSamplers: fn(c.GLsizei, ?*mut c.GLuint)
+    glDeleteSamplers: fn(c.GLsizei, ?*c.GLuint)
+    glBindSampler: fn(c.GLuint, c.GLuint)
+    glSamplerParameteri: fn(c.GLuint, c.GLenum, c.GLint)
+    glSamplerParameterf: fn(c.GLuint, c.GLenum, c.GLfloat)
+    glTexStorage3D: fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei, c.GLsizei)
+    glTexImage3D: fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8)
+    glTexSubImage3D: fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8)
+    glRequestExtensionANGLE: fn(?[*]u8)
 }
 
 /// The process's EGL display, initialized, on `backend`.
@@ -452,6 +480,32 @@ fn bind(egl: [*]u8) ?Api {
         glPixelStorei: @ptrCast(fn(c.GLenum, c.GLint), get("glPixelStorei".ptr) orelse return null),
         glTexImage2D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8), get("glTexImage2D".ptr) orelse return null),
         glTexSubImage2D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8), get("glTexSubImage2D".ptr) orelse return null),
+        glGenVertexArrays: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenVertexArrays".ptr) orelse return null),
+        glDeleteVertexArrays: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteVertexArrays".ptr) orelse return null),
+        glBindVertexArray: @ptrCast(fn(c.GLuint), get("glBindVertexArray".ptr) orelse return null),
+        glDrawArraysInstanced: @ptrCast(fn(c.GLenum, c.GLint, c.GLsizei, c.GLsizei), get("glDrawArraysInstanced".ptr) orelse return null),
+        glDrawElementsInstanced: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, usize, c.GLsizei), get("glDrawElementsInstanced".ptr) orelse return null),
+        glDrawRangeElements: @ptrCast(fn(c.GLenum, c.GLuint, c.GLuint, c.GLsizei, c.GLenum, usize), get("glDrawRangeElements".ptr) orelse return null),
+        glVertexAttribDivisor: @ptrCast(fn(c.GLuint, c.GLuint), get("glVertexAttribDivisor".ptr) orelse return null),
+        glFramebufferTextureLayer: @ptrCast(fn(c.GLenum, c.GLenum, c.GLuint, c.GLint, c.GLint), get("glFramebufferTextureLayer".ptr) orelse return null),
+        glDrawBuffers: @ptrCast(fn(c.GLsizei, ?[*]u8), get("glDrawBuffers".ptr) orelse return null),
+        glReadBuffer: @ptrCast(fn(c.GLenum), get("glReadBuffer".ptr) orelse return null),
+        glClearBufferfv: @ptrCast(fn(c.GLenum, c.GLint, ?[*]u8), get("glClearBufferfv".ptr) orelse return null),
+        glClearBufferiv: @ptrCast(fn(c.GLenum, c.GLint, ?[*]u8), get("glClearBufferiv".ptr) orelse return null),
+        glClearBufferuiv: @ptrCast(fn(c.GLenum, c.GLint, ?[*]u8), get("glClearBufferuiv".ptr) orelse return null),
+        glGetUniformBlockIndex: @ptrCast(fn(c.GLuint, ?[*]u8) c.GLuint, get("glGetUniformBlockIndex".ptr) orelse return null),
+        glUniformBlockBinding: @ptrCast(fn(c.GLuint, c.GLuint, c.GLuint), get("glUniformBlockBinding".ptr) orelse return null),
+        glBindBufferBase: @ptrCast(fn(c.GLenum, c.GLuint, c.GLuint), get("glBindBufferBase".ptr) orelse return null),
+        glBindBufferRange: @ptrCast(fn(c.GLenum, c.GLuint, c.GLuint, c.GLintptr, c.GLsizeiptr), get("glBindBufferRange".ptr) orelse return null),
+        glGenSamplers: @ptrCast(fn(c.GLsizei, ?*mut c.GLuint), get("glGenSamplers".ptr) orelse return null),
+        glDeleteSamplers: @ptrCast(fn(c.GLsizei, ?*c.GLuint), get("glDeleteSamplers".ptr) orelse return null),
+        glBindSampler: @ptrCast(fn(c.GLuint, c.GLuint), get("glBindSampler".ptr) orelse return null),
+        glSamplerParameteri: @ptrCast(fn(c.GLuint, c.GLenum, c.GLint), get("glSamplerParameteri".ptr) orelse return null),
+        glSamplerParameterf: @ptrCast(fn(c.GLuint, c.GLenum, c.GLfloat), get("glSamplerParameterf".ptr) orelse return null),
+        glTexStorage3D: @ptrCast(fn(c.GLenum, c.GLsizei, c.GLenum, c.GLsizei, c.GLsizei, c.GLsizei), get("glTexStorage3D".ptr) orelse return null),
+        glTexImage3D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8), get("glTexImage3D".ptr) orelse return null),
+        glTexSubImage3D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8), get("glTexSubImage3D".ptr) orelse return null),
+        glRequestExtensionANGLE: @ptrCast(fn(?[*]u8), get("glRequestExtensionANGLE".ptr) orelse return null),
     }
 }
 

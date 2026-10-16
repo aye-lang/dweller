@@ -91,6 +91,8 @@ pub let WEBGL_PRELUDE =
     \\    this._deleted = false;
     \\  }
     \\}
+    \\const EXTENSIONS = ['EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'OES_texture_float_linear'];
+    \\const TARGETS_3D = new Set([0x806f, 0x8c1a]);
     \\const kinds = ['WebGLBuffer', 'WebGLTexture', 'WebGLProgram', 'WebGLShader', 'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLVertexArrayObject', 'WebGLSampler', 'WebGLQuery', 'WebGLSync', 'WebGLTransformFeedback'];
     \\const classes = {};
     \\for (const k of kinds) classes[k] = {[k]: class extends WebGLObject {}}[k];
@@ -99,6 +101,8 @@ pub let WEBGL_PRELUDE =
     \\WebGLTexture.prototype._target = 0;
     \\// The first target a buffer was bound to (0: never bound).
     \\WebGLBuffer.prototype._target = 0;
+    \\for (const k of ['WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLVertexArrayObject', 'WebGLSampler']) classes[k].prototype._used = false;
+    \\classes.WebGLVertexArrayObject.prototype._elements = null;
     \\// A shader is freed by GL once deleted and attached to no program; a
     \\// program once deleted and not in use (then its shaders are detached).
     \\WebGLShader.prototype._programs = 0;
@@ -143,13 +147,20 @@ pub let WEBGL_PRELUDE =
     \\    this._canvas = canvas;
     \\    this._node = canvas._node || canvas;
     \\    this._attrs = attrs;
-    \\    this._unpack = {0x9240: false, 0x9241: false, 0x9243: 0x9244, 0x9247: 0, 0xcf5: 4, 0xcf2: 0, 0xcf3: 0, 0xcf4: 0};
+    \\    this._unpack = {0x9240: false, 0x9241: false, 0x9243: 0x9244, 0x9247: 0, 0xcf5: 4, 0xcf2: 0, 0xcf3: 0, 0xcf4: 0, 0x806e: 0};
     \\    // Texture bindings: per unit, target → WebGLTexture; the active unit.
     \\    this._units = [];
     \\    this._unit = 0;
     \\    // Buffer bindings (target → WebGLBuffer) and the current program.
     \\    this._bound = new Map();
     \\    this._program = null;
+    \\    this._vao = null;
+    \\    this._defaultElements = null;
+    \\    this._drawFb = null;
+    \\    this._readFb = null;
+    \\    this._rb = null;
+    \\    this._samplers = [];
+    \\    this._exts = new Map();
     \\  }
     \\  get canvas() {
     \\    return this._canvas;
@@ -185,10 +196,15 @@ pub let WEBGL_PRELUDE =
     \\    return ak.webglError(this._node);
     \\  }
     \\  getSupportedExtensions() {
-    \\    return this.isContextLost() ? null : [];
+    \\    return this.isContextLost() ? null : EXTENSIONS.filter(n => this.getExtension(n) !== null);
     \\  }
+    \\  // The extensions ANGLE can enable on this context (rendering to float
+    \\  // and half-float targets); one object per extension.
     \\  getExtension(name) {
-    \\    return null;
+    \\    name = String(name);
+    \\    if (this.isContextLost() || !EXTENSIONS.includes(name)) return null;
+    \\    if (!this._exts.has(name)) this._exts.set(name, ak.webglQuery(this._node, 2, 0, 'GL_' + name) ? {} : null);
+    \\    return this._exts.get(name);
     \\  }
     \\  clearColor(r, g, b, a) {
     \\    ak.webglCall(this._node, CLEAR_COLOR, r, g, b, a);
@@ -241,6 +257,11 @@ pub let WEBGL_PRELUDE =
     \\    const [kind, count, wrap] = p;
     \\    if (kind === 'n') {
     \\      if (pname === 0x8b8d) return this._program;
+    \\      if (pname === 0x8ca6) return this._drawFb;
+    \\      if (pname === 0x8caa) return this._readFb;
+    \\      if (pname === 0x8ca7) return this._rb;
+    \\      if (pname === 0x85b5) return this._vao;
+    \\      if (pname === 0x8919) return this._samplers[this._unit] || null;
     \\      const tt = TEXTURE_BINDINGS.get(pname);
     \\      if (tt !== undefined) return this._boundTexture(tt);
     \\      const t = BUFFER_BINDINGS.get(pname);
@@ -276,6 +297,24 @@ pub let WEBGL_PRELUDE =
     \\    height = height | 0;
     \\    if (width < 0 || height < 0) {
     \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    if (this._readFb) {
+    \\      // Any format/type pair of the framebuffer's attachment: the view must
+    \\      // match the type and hold the pixels; GL checks the pair.
+    \\      const arrays = {0x1401: Uint8Array, 0x1406: Float32Array, 0x1404: Int32Array, 0x1405: Uint32Array, 0x1403: Uint16Array, 0x140b: Uint16Array};
+    \\      const comps = {0x1908: 4, 0x8d99: 4, 0x1907: 3, 0x8d98: 3, 0x8227: 2, 0x8228: 2, 0x1903: 1, 0x8d94: 1};
+    \\      const A = arrays[type], c = comps[format];
+    \\      if (!A || !c) {
+    \\        ak.webglRaise(this._node, INVALID_ENUM);
+    \\        return;
+    \\      }
+    \\      offset = offset === undefined ? 0 : offset >>> 0;
+    \\      if (!(dst instanceof A) || offset > dst.length || dst.length - offset < width * height * c) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      ak.webglReadFormat(this._node, x, y, width, height, format, type, offset ? dst.subarray(offset) : dst);
     \\      return;
     \\    }
     \\    if (format !== RGBA || type !== UNSIGNED_BYTE) {
@@ -360,6 +399,10 @@ pub let WEBGL_PRELUDE =
     \\      buffer = null;
     \\    }
     \\    this._bound.set(target, buffer);
+    \\    if (target === ELEMENT_ARRAY_BUFFER) {
+    \\      if (this._vao) this._vao._elements = buffer;
+    \\      else this._defaultElements = buffer;
+    \\    }
     \\    ak.webglCall(this._node, BIND_BUFFER, target, buffer ? buffer._name : 0);
     \\  }
     \\  deleteBuffer(b) {
@@ -897,6 +940,363 @@ pub let WEBGL_PRELUDE =
     \\    } else {
     \\      ak.webglRaise(this._node, INVALID_ENUM);
     \\    }
+    \\  }
+    \\  // P11.8 (docs/webgl.md §3): VAOs, instancing, framebuffers, uniform
+    \\  // buffers, samplers, 3D and 2D-array textures.
+    \\  _new(cls, kind) {
+    \\    const n = ak.webglNew(this._node, kind);
+    \\    return n ? new cls(this, n) : null;
+    \\  }
+    \\  createVertexArray() {
+    \\    return this._new(classes.WebGLVertexArrayObject, 6);
+    \\  }
+    \\  isVertexArray(v) {
+    \\    return v instanceof classes.WebGLVertexArrayObject && v._ctx === this && !v._deleted && v._used;
+    \\  }
+    \\  deleteVertexArray(v) {
+    \\    if (!this._delete(v, classes.WebGLVertexArrayObject, 57)) return;
+    \\    if (this._vao === v) this.bindVertexArray(null);
+    \\  }
+    \\  bindVertexArray(v) {
+    \\    if (v !== null && v !== undefined) {
+    \\      if (!(v instanceof classes.WebGLVertexArrayObject)) throw new TypeError('parameter 1 is not a WebGLVertexArrayObject');
+    \\      if (!this._use(v)) return;
+    \\      v._used = true;
+    \\    } else {
+    \\      v = null;
+    \\    }
+    \\    this._vao = v;
+    \\    this._bound.set(ELEMENT_ARRAY_BUFFER, v ? v._elements : this._defaultElements);
+    \\    ak.webglCall(this._node, 56, v ? v._name : 0);
+    \\  }
+    \\  vertexAttribDivisor(index, divisor) {
+    \\    ak.webglCall(this._node, 55, index, divisor);
+    \\  }
+    \\  drawArraysInstanced(mode, first, count, instances) {
+    \\    ak.webglCall(this._node, 52, mode, first, count, instances);
+    \\  }
+    \\  drawElementsInstanced(mode, count, type, offset, instances) {
+    \\    if (offset < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, 53, mode, count, type, offset, instances);
+    \\  }
+    \\  drawRangeElements(mode, start, end, count, type, offset) {
+    \\    if (offset < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, 54, mode, start, end, count, type, offset);
+    \\  }
+    \\  // Framebuffers: null is the drawing buffer. Dweller's drawing buffer is a
+    \\  // framebuffer of GL's, so the front end keeps the default's rules.
+    \\  createFramebuffer() {
+    \\    return this._new(classes.WebGLFramebuffer, 4);
+    \\  }
+    \\  isFramebuffer(f) {
+    \\    return f instanceof classes.WebGLFramebuffer && f._ctx === this && !f._deleted && f._used;
+    \\  }
+    \\  deleteFramebuffer(f) {
+    \\    if (!this._delete(f, classes.WebGLFramebuffer, 42)) return;
+    \\    if (this._drawFb === f) this._drawFb = null;
+    \\    if (this._readFb === f) this._readFb = null;
+    \\  }
+    \\  bindFramebuffer(target, fb) {
+    \\    target = target >>> 0;
+    \\    if (target !== 0x8d40 && target !== 0x8ca8 && target !== 0x8ca9) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (fb !== null && fb !== undefined) {
+    \\      if (!(fb instanceof classes.WebGLFramebuffer)) throw new TypeError('parameter 2 is not a WebGLFramebuffer');
+    \\      if (!this._use(fb)) return;
+    \\      fb._used = true;
+    \\    } else {
+    \\      fb = null;
+    \\    }
+    \\    if (target !== 0x8ca8) this._drawFb = fb;
+    \\    if (target !== 0x8ca9) this._readFb = fb;
+    \\    ak.webglCall(this._node, 41, target, fb ? fb._name : 0);
+    \\  }
+    \\  // The framebuffer a target of the attachment calls works on.
+    \\  _fb(target) {
+    \\    const fb = target === 0x8ca8 ? this._readFb : target === 0x8d40 || target === 0x8ca9 ? this._drawFb : undefined;
+    \\    if (fb === undefined) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return false;
+    \\    }
+    \\    if (fb === null) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  checkFramebufferStatus(target) {
+    \\    target = target >>> 0;
+    \\    if (target !== 0x8d40 && target !== 0x8ca8 && target !== 0x8ca9) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return 0;
+    \\    }
+    \\    if (!(target === 0x8ca8 ? this._readFb : this._drawFb)) return 0x8cd5;
+    \\    return ak.webglQuery(this._node, 0, target);
+    \\  }
+    \\  createRenderbuffer() {
+    \\    return this._new(classes.WebGLRenderbuffer, 5);
+    \\  }
+    \\  isRenderbuffer(r) {
+    \\    return r instanceof classes.WebGLRenderbuffer && r._ctx === this && !r._deleted && r._used;
+    \\  }
+    \\  deleteRenderbuffer(r) {
+    \\    if (!this._delete(r, classes.WebGLRenderbuffer, 43)) return;
+    \\    if (this._rb === r) this._rb = null;
+    \\  }
+    \\  bindRenderbuffer(target, rb) {
+    \\    if ((target >>> 0) !== 0x8d41) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (rb !== null && rb !== undefined) {
+    \\      if (!(rb instanceof classes.WebGLRenderbuffer)) throw new TypeError('parameter 2 is not a WebGLRenderbuffer');
+    \\      if (!this._use(rb)) return;
+    \\      rb._used = true;
+    \\    } else {
+    \\      rb = null;
+    \\    }
+    \\    this._rb = rb;
+    \\    ak.webglCall(this._node, 44, rb ? rb._name : 0);
+    \\  }
+    \\  renderbufferStorage(target, internalformat, width, height) {
+    \\    this.renderbufferStorageMultisample(target, 0, internalformat, width, height);
+    \\  }
+    \\  renderbufferStorageMultisample(target, samples, internalformat, width, height) {
+    \\    if ((target >>> 0) !== 0x8d41) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (!this._rb) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, 45, samples, internalformat, width, height);
+    \\  }
+    \\  framebufferRenderbuffer(target, attachment, rbtarget, rb) {
+    \\    target = target >>> 0;
+    \\    if (!this._fb(target)) return;
+    \\    if ((rbtarget >>> 0) !== 0x8d41) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (rb !== null && rb !== undefined) {
+    \\      if (!(rb instanceof classes.WebGLRenderbuffer)) throw new TypeError('parameter 4 is not a WebGLRenderbuffer');
+    \\      if (!this._use(rb)) return;
+    \\    } else {
+    \\      rb = null;
+    \\    }
+    \\    ak.webglCall(this._node, 46, target, attachment, rb ? rb._name : 0);
+    \\  }
+    \\  framebufferTexture2D(target, attachment, textarget, tex, level) {
+    \\    target = target >>> 0;
+    \\    if (!this._fb(target)) return;
+    \\    if (tex !== null && tex !== undefined) {
+    \\      if (!(tex instanceof WebGLTexture)) throw new TypeError('parameter 4 is not a WebGLTexture');
+    \\      if (!this._use(tex)) return;
+    \\    } else {
+    \\      tex = null;
+    \\    }
+    \\    ak.webglCall(this._node, 47, target, attachment, textarget, tex ? tex._name : 0, level);
+    \\  }
+    \\  framebufferTextureLayer(target, attachment, tex, level, layer) {
+    \\    target = target >>> 0;
+    \\    if (!this._fb(target)) return;
+    \\    if (tex !== null && tex !== undefined) {
+    \\      if (!(tex instanceof WebGLTexture)) throw new TypeError('parameter 3 is not a WebGLTexture');
+    \\      if (!this._use(tex)) return;
+    \\    } else {
+    \\      tex = null;
+    \\    }
+    \\    ak.webglCall(this._node, 48, target, attachment, tex ? tex._name : 0, level, layer);
+    \\  }
+    \\  // drawBuffers / readBuffer: on the drawing buffer only BACK and NONE.
+    \\  drawBuffers(buffers) {
+    \\    if (buffers === null || typeof buffers !== 'object') throw new TypeError('parameter 1 is not a sequence');
+    \\    const list = Array.from(buffers, x => x >>> 0);
+    \\    if (!this._drawFb) {
+    \\      if (list.length !== 1 || (list[0] !== 0x405 && list[0] !== 0)) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      list[0] = list[0] === 0 ? 0 : 0x8ce0;
+    \\    }
+    \\    if (list.length > 8) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, 49, list.length, ...list);
+    \\  }
+    \\  readBuffer(src) {
+    \\    src = src >>> 0;
+    \\    if (!this._readFb) {
+    \\      if (src !== 0x405 && src !== 0) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      src = src === 0 ? 0 : 0x8ce0;
+    \\    }
+    \\    ak.webglCall(this._node, 50, src);
+    \\  }
+    \\  blitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter) {
+    \\    ak.webglCall(this._node, 51, sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+    \\  }
+    \\  _clearBuffer(op, Kind, buffer, drawbuffer, values, srcOffset) {
+    \\    if (values === null || typeof values !== 'object') throw new TypeError('parameter 3 is not a sequence');
+    \\    const off = srcOffset === undefined ? 0 : srcOffset >>> 0;
+    \\    const n = (buffer >>> 0) === 0x1801 ? 1 : 4;
+    \\    if (values.length - off < n) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    const v = [0, 0, 0, 0];
+    \\    for (let k = 0; k < n; k++) v[k] = values[off + k];
+    \\    ak.webglCall(this._node, op, buffer, drawbuffer, v[0], v[1], v[2], v[3]);
+    \\  }
+    \\  clearBufferfv(buffer, drawbuffer, values, srcOffset) {
+    \\    this._clearBuffer(66, Float32Array, buffer, drawbuffer, values, srcOffset);
+    \\  }
+    \\  clearBufferiv(buffer, drawbuffer, values, srcOffset) {
+    \\    this._clearBuffer(67, Int32Array, buffer, drawbuffer, values, srcOffset);
+    \\  }
+    \\  clearBufferuiv(buffer, drawbuffer, values, srcOffset) {
+    \\    this._clearBuffer(68, Uint32Array, buffer, drawbuffer, values, srcOffset);
+    \\  }
+    \\  // Uniform buffers.
+    \\  getUniformBlockIndex(program, name) {
+    \\    if (!(program instanceof WebGLProgram)) throw new TypeError('parameter 1 is not a WebGLProgram');
+    \\    if (!this._live(program, WebGLProgram)) return 0xffffffff;
+    \\    return ak.webglQuery(this._node, 1, program._name, String(name));
+    \\  }
+    \\  uniformBlockBinding(program, index, binding) {
+    \\    if (!(program instanceof WebGLProgram)) throw new TypeError('parameter 1 is not a WebGLProgram');
+    \\    if (!this._live(program, WebGLProgram)) return;
+    \\    ak.webglCall(this._node, 60, program._name, index, binding);
+    \\  }
+    \\  bindBufferBase(target, index, buffer) {
+    \\    this.bindBufferRange(target, index, buffer, 0, 0, true);
+    \\  }
+    \\  bindBufferRange(target, index, buffer, offset, size, whole) {
+    \\    target = target >>> 0;
+    \\    if (target !== 0x8a11 && target !== 0x8c8e) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (buffer !== null && buffer !== undefined) {
+    \\      if (!(buffer instanceof WebGLBuffer)) throw new TypeError('parameter 3 is not a WebGLBuffer');
+    \\      if (!this._use(buffer)) return;
+    \\      if (buffer._target === ELEMENT_ARRAY_BUFFER) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      if (buffer._target === 0) buffer._target = ARRAY_BUFFER;
+    \\    } else {
+    \\      buffer = null;
+    \\    }
+    \\    if (whole) ak.webglCall(this._node, 58, target, index, buffer ? buffer._name : 0);
+    \\    else ak.webglCall(this._node, 59, target, index, buffer ? buffer._name : 0, offset, size);
+    \\    this._bound.set(target, buffer);
+    \\  }
+    \\  // Samplers.
+    \\  createSampler() {
+    \\    return this._new(classes.WebGLSampler, 7);
+    \\  }
+    \\  isSampler(s) {
+    \\    return s instanceof classes.WebGLSampler && s._ctx === this && !s._deleted;
+    \\  }
+    \\  deleteSampler(s) {
+    \\    if (!this._delete(s, classes.WebGLSampler, 62)) return;
+    \\    for (let i = 0; i < this._samplers.length; i++) if (this._samplers[i] === s) this._samplers[i] = null;
+    \\  }
+    \\  bindSampler(unit, s) {
+    \\    unit = unit >>> 0;
+    \\    if (unit >= ak.webglGet(this._node, 0x8b4d, 0, 1)[0]) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    if (s !== null && s !== undefined) {
+    \\      if (!(s instanceof classes.WebGLSampler)) throw new TypeError('parameter 2 is not a WebGLSampler');
+    \\      if (!this._use(s)) return;
+    \\      s._used = true;
+    \\    } else {
+    \\      s = null;
+    \\    }
+    \\    this._samplers[unit] = s;
+    \\    ak.webglCall(this._node, 61, unit, s ? s._name : 0);
+    \\  }
+    \\  samplerParameteri(s, pname, param) {
+    \\    if (!(s instanceof classes.WebGLSampler)) throw new TypeError('parameter 1 is not a WebGLSampler');
+    \\    if (this._use(s)) ak.webglCall(this._node, 63, s._name, pname, param);
+    \\  }
+    \\  samplerParameterf(s, pname, param) {
+    \\    if (!(s instanceof classes.WebGLSampler)) throw new TypeError('parameter 1 is not a WebGLSampler');
+    \\    if (this._use(s)) ak.webglCall(this._node, 64, s._name, pname, param);
+    \\  }
+    \\  // 3D and 2D-array textures.
+    \\  texStorage3D(target, levels, internalformat, width, height, depth) {
+    \\    target = target >>> 0;
+    \\    if (this._textureBound(target, TARGETS_3D)) ak.webglCall(this._node, 65, target, levels, internalformat, width, height, depth);
+    \\  }
+    \\  texImage3D(target, level, internalformat, width, height, depth, border, format, type, source, srcOffset) {
+    \\    this._texImage3D(false, [target, level, internalformat, 0, 0, 0, width, height, depth, format, type, source, srcOffset], border);
+    \\  }
+    \\  texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, source, srcOffset) {
+    \\    this._texImage3D(true, [target, level, 0, xoffset, yoffset, zoffset, width, height, depth, format, type, source, srcOffset], 0);
+    \\  }
+    \\  _texImage3D(sub, a, border) {
+    \\    const [target, level, internalformat, xo, yo, zo, width, height, depth, format, type, source, srcOffset] = a;
+    \\    const t = target >>> 0;
+    \\    if (!TARGETS_3D.has(t)) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (!this._boundTexture(t) || this._bound.get(0x88ec)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return;
+    \\    }
+    \\    const bpc = TEXTURE_TYPES.get(type >>> 0), comps = TEXTURE_FORMATS.get(format >>> 0);
+    \\    if (!bpc || !comps) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    const w = width | 0, h = height | 0, d = depth | 0;
+    \\    if (w < 0 || h < 0 || d < 0 || (!sub && (border | 0) !== 0)) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    let bytes = null;
+    \\    if (source === null || source === undefined) {
+    \\      if (sub) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\    } else {
+    \\      if (!ArrayBuffer.isView(source) || !bpc[2].some(c => source instanceof globalThis[c])) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      const off = srcOffset === undefined ? 0 : (srcOffset >>> 0) * source.BYTES_PER_ELEMENT;
+    \\      if (off > source.byteLength) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\      const u = this._unpack, bpp = bpc[1] ? bpc[0] : bpc[0] * comps;
+    \\      const stride = Math.ceil((u[0xcf2] > 0 ? u[0xcf2] : w) * bpp / u[0xcf5]) * u[0xcf5];
+    \\      const rows = (u[0x806e] || h);
+    \\      if (w > 0 && h > 0 && d > 0 && ((d - 1) * rows + h - 1) * stride + w * bpp > source.byteLength - off) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      bytes = new Uint8Array(source.buffer, source.byteOffset + off, source.byteLength - off);
+    \\    }
+    \\    ak.webglTex3D(this._node, [sub ? 1 : 0, t, level | 0, internalformat | 0, xo | 0, yo | 0, zo | 0, w, h, d, format >>> 0, type >>> 0], bytes);
     \\  }
     \\  texImage2D(...args) {
     \\    this._texImage(false, args);

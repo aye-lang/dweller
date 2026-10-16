@@ -1,0 +1,371 @@
+<!doctype html>
+<title>WebGL 2 state objects</title>
+<canvas id="c" width="16" height="16"></canvas>
+<pre id="out"></pre>
+<script>
+// P11.8 (docs/webgl.md §3): VAOs, instancing, drawRangeElements,
+// vertexAttribIPointer, MRT, framebuffers and renderbuffers, uniform
+// buffers, samplers, 3D and 2D-array textures, float and integer formats.
+// Each feature draws, then reads its pixels back.
+const lines = [];
+const log = (...a) => lines.push(a.map(String).join(' '));
+const gl = document.getElementById('c').getContext('webgl2', {antialias: false});
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, '#version 300 es\n' + src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) log('compile', gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) log('link', gl.getProgramInfoLog(p));
+  return p;
+}
+function px(x, y) {
+  const a = new Uint8Array(4);
+  gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, a);
+  return Array.from(a).join(',');
+}
+const err = what => log(what, 'error', gl.getError());
+function buffer(target, data, usage = gl.STATIC_DRAW) {
+  const b = gl.createBuffer();
+  gl.bindBuffer(target, b);
+  gl.bufferData(target, data, usage);
+  return b;
+}
+function clear(r, g, b, a) {
+  gl.clearColor(r, g, b, a);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+// A full-screen triangle that needs no buffers.
+const FULL = `out vec2 uv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function run() {
+  gl.viewport(0, 0, 16, 16);
+  // VAOs, instancing, drawRangeElements: two 4x4 quads at x = -1 and 0.
+  const quad = program(`in vec2 pos;
+in vec2 offset;
+void main() { gl_Position = vec4(pos + offset, 0.0, 1.0); }`, `precision mediump float;
+out vec4 frag;
+void main() { frag = vec4(1.0, 0.0, 0.0, 1.0); }`);
+  const vao = gl.createVertexArray();
+  log('vao', vao instanceof WebGLVertexArrayObject, gl.isVertexArray(vao));
+  gl.bindVertexArray(vao);
+  log('vao bound', gl.isVertexArray(vao), gl.getParameter(gl.VERTEX_ARRAY_BINDING) === vao);
+  const pos = gl.getAttribLocation(quad, 'pos'), off = gl.getAttribLocation(quad, 'offset');
+  buffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 0.5, 0, 0, 0.5, 0.5, 0.5]));
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  buffer(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 0]));
+  gl.enableVertexAttribArray(off);
+  gl.vertexAttribPointer(off, 2, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(off, 1);
+  const idx = buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([0, 1, 2, 2, 1, 3]));
+  gl.bindVertexArray(null);
+  log('element binding of the default vao', gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING));
+  gl.bindVertexArray(vao);
+  log('element binding of the vao', gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) === idx);
+  gl.useProgram(quad);
+  clear(0, 0, 0, 1);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 2);
+  err('drawArraysInstanced');
+  log('instanced strip', px(2, 2), px(10, 10), px(6, 14), px(14, 2));
+  clear(0, 0, 0, 1);
+  gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, 0, 2);
+  err('drawElementsInstanced');
+  log('instanced elements', px(2, 2), px(10, 10), px(6, 14));
+  clear(0, 0, 0, 1);
+  gl.vertexAttribDivisor(off, 0);
+  gl.vertexAttrib2f(off, 0.25, 0.25);
+  gl.disableVertexAttribArray(off);
+  gl.drawRangeElements(gl.TRIANGLES, 0, 3, 6, gl.UNSIGNED_BYTE, 0);
+  err('drawRangeElements');
+  log('range elements', px(8, 8), px(12, 12), px(2, 2));
+  gl.drawRangeElements(gl.TRIANGLES, 0, 3, 6, gl.UNSIGNED_BYTE, -1);
+  err('drawRangeElements negative offset');
+  gl.deleteVertexArray(vao);
+  log('deleted vao', gl.isVertexArray(vao), gl.getParameter(gl.VERTEX_ARRAY_BINDING));
+  gl.bindVertexArray(vao);
+  err('bind a deleted vao');
+  // vertexAttribIPointer: integers reach the shader as integers.
+  const ints = program(`in ivec2 ids;
+flat out ivec2 v;
+void main() { v = ids; gl_Position = vec4(0.0, 0.0, 0.0, 1.0); gl_PointSize = 16.0; }`, `precision mediump float;
+flat in ivec2 v;
+out vec4 frag;
+void main() { frag = vec4(float(v.x) / 255.0, float(v.y) / 255.0, 0.0, 1.0); }`);
+  gl.useProgram(ints);
+  buffer(gl.ARRAY_BUFFER, new Int32Array([200, 100]));
+  const ids = gl.getAttribLocation(ints, 'ids');
+  gl.enableVertexAttribArray(ids);
+  gl.vertexAttribIPointer(ids, 2, gl.INT, 0, 0);
+  err('vertexAttribIPointer');
+  clear(0, 0, 0, 1);
+  gl.drawArrays(gl.POINTS, 0, 1);
+  log('integer attribute', px(8, 8));
+  gl.disableVertexAttribArray(ids);
+  // Float MRT: two RGBA32F targets, drawBuffers, readPixels as FLOAT, then
+  // sampled by the default framebuffer.
+  log('float extension', gl.getExtension('EXT_color_buffer_float') !== null);
+  const targets = [0, 1].map(() => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 4, 4, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return t;
+  });
+  const fbo = gl.createFramebuffer();
+  log('framebuffer', fbo instanceof WebGLFramebuffer, gl.isFramebuffer(fbo));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  log('framebuffer bound', gl.isFramebuffer(fbo), gl.getParameter(gl.FRAMEBUFFER_BINDING) === fbo);
+  log('status without attachments', gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targets[0], 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, targets[1], 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  err('drawBuffers');
+  log('status', gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  const mrt = program(FULL, `precision highp float;
+in vec2 uv;
+layout(location = 0) out vec4 a;
+layout(location = 1) out vec4 b;
+void main() { a = vec4(1.5, -2.0, 0.25, 8.0); b = vec4(uv.x, 0.5, 100.0, 1.0); }`);
+  gl.useProgram(mrt);
+  gl.viewport(0, 0, 4, 4);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  err('mrt draw');
+  const f = new Float32Array(4);
+  gl.readBuffer(gl.COLOR_ATTACHMENT0);
+  gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.FLOAT, f);
+  log('mrt attachment 0', Array.from(f).join(','));
+  gl.readBuffer(gl.COLOR_ATTACHMENT1);
+  gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.FLOAT, f);
+  log('mrt attachment 1', Array.from(f).map(x => x.toFixed(3)).join(','));
+  err('mrt readback');
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, 16, 16);
+  log('default framebuffer', gl.getParameter(gl.FRAMEBUFFER_BINDING), gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  const show = program(FULL, `precision highp float;
+uniform sampler2D t;
+in vec2 uv;
+out vec4 frag;
+void main() { vec4 v = texelFetch(t, ivec2(1, 1), 0); frag = vec4(v.x / 2.0, -v.y / 4.0, v.z * 2.0, 1.0); }`);
+  gl.useProgram(show);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, targets[0]);
+  gl.uniform1i(gl.getUniformLocation(show, 't'), 0);
+  clear(0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log('sampled float target', px(8, 8));
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+  err('drawBuffers on the default framebuffer');
+  gl.drawBuffers([gl.BACK]);
+  err('drawBuffers BACK');
+  // Renderbuffers: a 4-sample renderbuffer resolved by blitFramebuffer.
+  const rb = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+  log('renderbuffer', rb instanceof WebGLRenderbuffer, gl.isRenderbuffer(rb), gl.getParameter(gl.RENDERBUFFER_BINDING) === rb);
+  gl.renderbufferStorageMultisample(gl.RENDERBUFFER, 4, gl.RGBA8, 8, 8);
+  err('renderbufferStorageMultisample');
+  const ms = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, ms);
+  gl.framebufferRenderbuffer(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+  log('multisampled status', gl.checkFramebufferStatus(gl.DRAW_FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  gl.viewport(0, 0, 8, 8);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 1, 1]);
+  const plain = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, plain);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 8, 8);
+  const rs = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rs);
+  gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, plain, 0);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, ms);
+  gl.blitFramebuffer(0, 0, 8, 8, 0, 0, 8, 8, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  err('blitFramebuffer');
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rs);
+  log('blit result', px(3, 3));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  // A depth-stencil renderbuffer: depth testing against it.
+  const ds = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, ds);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, 8, 8);
+  const dfb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dfb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, plain, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, ds);
+  log('depth stencil status', gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  const depth = program(`uniform float z;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, z, 1.0);
+}`, `precision mediump float;
+uniform vec4 color;
+out vec4 frag;
+void main() { frag = color; }`);
+  gl.useProgram(depth);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearDepth(1);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.uniform1f(gl.getUniformLocation(depth, 'z'), -0.5);
+  gl.uniform4f(gl.getUniformLocation(depth, 'color'), 0, 1, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.uniform1f(gl.getUniformLocation(depth, 'z'), 0.5);
+  gl.uniform4f(gl.getUniformLocation(depth, 'color'), 1, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log('nearer wins', px(4, 4));
+  gl.disable(gl.DEPTH_TEST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, 16, 16);
+  // Uniform buffers.
+  const ubo = program(FULL, `precision mediump float;
+layout(std140) uniform Color { vec4 tint; float scale; };
+in vec2 uv;
+out vec4 frag;
+void main() { frag = vec4(tint.rgb * scale, 1.0); }`);
+  const block = gl.getUniformBlockIndex(ubo, 'Color');
+  log('block index', block, gl.getUniformBlockIndex(ubo, 'Missing') === gl.INVALID_INDEX);
+  gl.uniformBlockBinding(ubo, block, 3);
+  const ub = buffer(gl.UNIFORM_BUFFER, new Float32Array([0.5, 0.25, 1, 1, 0.5, 0, 0, 0]), gl.DYNAMIC_DRAW);
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, 3, ub);
+  err('bindBufferBase');
+  log('uniform buffer binding', gl.getParameter(gl.UNIFORM_BUFFER_BINDING) === ub);
+  gl.useProgram(ubo);
+  clear(0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log('ubo color', px(8, 8));
+  // The same block from a range of a larger buffer.
+  const align = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT);
+  const big = new Float32Array(2 * align / 4 + 8);
+  big.set([1, 1, 0, 1, 1], align / 4);
+  const bb = buffer(gl.UNIFORM_BUFFER, big);
+  gl.bindBufferRange(gl.UNIFORM_BUFFER, 3, bb, align, 32);
+  err('bindBufferRange');
+  clear(0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log('ubo range', px(8, 8));
+  gl.bindBufferBase(gl.ARRAY_BUFFER, 0, ub);
+  err('bindBufferBase with a bad target');
+  // 2D-array texture and samplers: layer 1 is green; NEAREST by a sampler.
+  const arr = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, arr);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, 2, 2, 3);
+  err('texStorage3D');
+  const layers = new Uint8Array(2 * 2 * 4);
+  for (let i = 0; i < 4; i++) layers.set([0, 255, 0, 255], i * 4);
+  gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, 1, 2, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, layers);
+  err('texSubImage3D');
+  for (let i = 0; i < 4; i++) layers.set([255, 0, 0, 255], i * 4);
+  gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, 0, 2, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, layers);
+  for (let i = 0; i < 4; i++) layers.set([0, 0, 255, 255], i * 4);
+  gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, 2, 2, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, layers);
+  log('2d array bound', gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY) === arr);
+  const sampler = gl.createSampler();
+  log('sampler', sampler instanceof WebGLSampler, gl.isSampler(sampler));
+  gl.samplerParameteri(sampler, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.samplerParameteri(sampler, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  err('samplerParameteri');
+  gl.bindSampler(0, sampler);
+  log('sampler bound', gl.getParameter(gl.SAMPLER_BINDING) === sampler);
+  const layer = program(FULL, `precision mediump float;
+uniform mediump sampler2DArray t;
+uniform float layer;
+in vec2 uv;
+out vec4 frag;
+void main() { frag = texture(t, vec3(0.5, 0.5, layer)); }`);
+  gl.useProgram(layer);
+  gl.uniform1i(gl.getUniformLocation(layer, 't'), 0);
+  for (const l of [0, 1, 2]) {
+    gl.uniform1f(gl.getUniformLocation(layer, 'layer'), l);
+    clear(0, 0, 0, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    log('array layer', l, px(8, 8));
+  }
+  // The layer as a framebuffer attachment.
+  const lf = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, lf);
+  gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, arr, 0, 1);
+  err('framebufferTextureLayer');
+  log('layer status', gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  log('layer readback', px(1, 1));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindSampler(0, null);
+  gl.deleteSampler(sampler);
+  log('deleted sampler', gl.isSampler(sampler));
+  // 3D texture, texImage3D with data, an integer format (R8UI) read with texelFetch.
+  const vol = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, vol);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8UI, 2, 2, 2, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+  err('texImage3D');
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const v3 = program(FULL, `precision highp float;
+uniform highp usampler3D t;
+in vec2 uv;
+out vec4 frag;
+void main() { frag = vec4(float(texelFetch(t, ivec3(1, 1, 1), 0).r), float(texelFetch(t, ivec3(0, 1, 0), 0).r), 0.0, 255.0) / 255.0; }`);
+  gl.useProgram(v3);
+  gl.uniform1i(gl.getUniformLocation(v3, 't'), 0);
+  clear(0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log('3d integer texel', px(8, 8));
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8UI, 2, 2, 2, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, new Uint8Array(3));
+  err('texImage3D with too few bytes');
+  gl.texImage3D(gl.TEXTURE_2D, 0, gl.R8UI, 2, 2, 2, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, null);
+  err('texImage3D with a 2D target');
+  // Half-float and integer renderbuffer-free formats: RGBA16F and R32UI targets.
+  log('half float extension', gl.getExtension('EXT_color_buffer_half_float') !== null);
+  const h = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, h);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 2, 2);
+  const u = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, u);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R32UI, 2, 2);
+  const hf = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hf);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, h, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, u, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  log('rgba16f + r32ui status', gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE);
+  const hu = program(FULL, `precision highp float;
+in vec2 uv;
+layout(location = 0) out vec4 a;
+layout(location = 1) out uvec4 b;
+void main() { a = vec4(0.5, 2.0, -1.0, 1.0); b = uvec4(4000000000u, 0u, 0u, 0u); }`);
+  gl.useProgram(hu);
+  gl.viewport(0, 0, 2, 2);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  err('rgba16f + r32ui draw');
+  gl.readBuffer(gl.COLOR_ATTACHMENT0);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, f);
+  log('rgba16f readback', Array.from(f).join(','));
+  const ui = new Uint32Array(4);
+  gl.readBuffer(gl.COLOR_ATTACHMENT1);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, ui);
+  log('r32ui readback', ui[0]);
+  err('readbacks');
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, new Float32Array(2));
+  err('readPixels into a short view');
+  // Deleting a bound framebuffer binds the drawing buffer again.
+  gl.deleteFramebuffer(hf);
+  log('deleted framebuffer', gl.getParameter(gl.FRAMEBUFFER_BINDING), gl.isFramebuffer(hf));
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, h, 0);
+  err('attach to the drawing buffer');
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  log('final', gl.getError());
+}
+if (gl) run();
+else log('webgl2 null');
+document.getElementById('out').textContent = lines.join('\n');
+</script>

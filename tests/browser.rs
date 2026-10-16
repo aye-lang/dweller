@@ -677,6 +677,47 @@ fn webgl_textures() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.8 (docs/webgl.md §3): `dump --text --js` of
+/// `browser/tests/webgl/webgl2_objects.html` on SwiftShader prints
+/// `webgl2_objects.txt`: VAOs, instanced draws, drawRangeElements,
+/// vertexAttribIPointer, a float MRT framebuffer sampled afterwards,
+/// renderbuffers with a multisample blit and a depth test, uniform
+/// buffers, samplers, 2D-array and 3D textures and float and integer
+/// formats, each drawn and read back.
+#[test]
+fn webgl2_objects() {
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            "browser/tests/webgl/webgl2_objects.html",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/webgl2_objects.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)

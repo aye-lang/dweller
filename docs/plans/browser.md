@@ -277,7 +277,7 @@ and their Blink, ANGLE and V8 files.
 |---|---|---|---|---|
 | G1 | P11.6 | textures | – | open |
 | G2 | P11.7 | WebGL canvases in the window by readback, screenshots, `toDataURL` | G1 | open |
-| G3 | P11.8 | WebGL 2 state objects (VAOs, instancing, MRT, UBOs, samplers, 3D textures) | G1 | open |
+| G3 | P11.8 | WebGL 2 state objects (VAOs, instancing, MRT, UBOs, samplers, 3D textures) | G1 | done |
 | G4 | P11.9 | three.js hello cube | G2, G3 | open |
 | G5 | P11.10 | rAF at vsync, frame timestamp, `performance.now()` precision (touches `ui/window.aye`: not beside A2, A7) | A2 | open |
 | G6 | P11.11 | key codes, pointer events, Pointer Lock, Fullscreen, `structuredClone` | – | open |
@@ -1071,6 +1071,18 @@ time as a P4 card on those files.
 - reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`
 - verify: `cargo test --release --test browser -- webgl2_objects > target/p11.8.log 2>&1; echo $?` → 0: instanced quads, rendering to a float MRT FBO then sampling it, a UBO-driven color, and a 2D-array texture layer, each read back
 - depends on: P11.5, P11.6; time box: 45 min (split UBO, samplers and 3D textures into P11.8b if larger); model: sonnet
+- status: done 2026-10-16. The whole goal list landed in one card (UBOs, samplers and 3D textures did not need P11.8b; P11.8b holds the getters). Natives: `webglCall` ops 41–68 (framebuffers, renderbuffers incl. multisample, attachments, `drawBuffers`, `readBuffer`, `blitFramebuffer`, instanced and range draws, `vertexAttribDivisor`, VAOs, `bindBufferBase/Range`, `uniformBlockBinding`, samplers, `texStorage3D`, `clearBuffer{f,i,ui}v`), `webglQuery` (`checkFramebufferStatus`, `getUniformBlockIndex`, enabling an ANGLE extension), `webglTex3D` (`texImage3D`/`texSubImage3D` from typed arrays), `webglReadFormat` (`readPixels` of any format/type from a framebuffer of the page's own); 27 new `gl.aye` entry points. Rules: the drawing buffer is a real GL framebuffer, so `bindFramebuffer(null)` binds it (`drawFbo`), `drawBuffers`/`readBuffer` on it accept only BACK/NONE (mapped to `COLOR_ATTACHMENT0`/NONE), and the attachment calls with it bound are INVALID_OPERATION; only draws, clears and blits that end in it mark the canvas dirty. The element array buffer binding is per VAO in the prelude. `getExtension` now enables `EXT_color_buffer_float`, `EXT_color_buffer_half_float` and `OES_texture_float_linear` with `glRequestExtensionANGLE` (`GL_`-prefixed names, checked in `GL_EXTENSIONS`), otherwise null; float and half-float targets need it, as in Blink. Test `webgl2_objects` (`webgl2_objects.html` = `.txt`, SwiftShader, 16x16): instanced strip and indexed quads, `drawRangeElements`, `vertexAttribIPointer`, a two-target RGBA32F MRT framebuffer read as FLOAT then sampled, RGBA16F + R32UI targets, a 4-sample renderbuffer blit-resolved, a DEPTH24_STENCIL8 depth test, a UBO by base and by range, a 2D-array texture by sampler object and as a `framebufferTextureLayer` attachment, a R8UI 3D texture with `texelFetch`, and the errors of each. `-- webgl gpu canvas` 9 passed. Left: P11.8b.
+
+#### P11.8b: getters and sources of the P11.8 objects
+- goal:
+  - `getSamplerParameter`, `getFramebufferAttachmentParameter`, `getRenderbufferParameter`, `getInternalformatParameter`, `getIndexedParameter`, `getVertexAttrib`, `getBufferParameter`.
+  - `getActiveUniformBlockParameter/Name`, `getUniformIndices`, `getActiveUniforms`, `getUniform`.
+  - `clearBufferfi`, `invalidateFramebuffer`, `invalidateSubFramebuffer`, `copyTexSubImage3D`, `compressedTexImage3D`.
+  - `texImage3D`/`texSubImage3D` from DOM sources and a `PIXEL_UNPACK_BUFFER`, and `texStorage2D`/`3D` argument validation as Blink's (levels, formats).
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `browser/tests/webgl/webgl2_getters.html`, `tests/browser.rs` (`webgl2_getters`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`
+- verify: `cargo test --release --test browser -- webgl2_getters > target/p11.8b.log 2>&1; echo $?` → 0
+- depends on: P11.8; time box: 45 min; model: sonnet
 
 #### P11.9: three.js hello cube
 - goal:
