@@ -3,9 +3,13 @@ import std.text
 
 // spec: https://drafts.csswg.org/css-color-4/#resolving-other-colors
 pub fn writeComputed(values: []Value, prop: usize, out: *mut text.Builder) AllocError!void {
-    let v = match values[prop] {
+    var v = match values[prop] {
         .CurrentColor => values[COLOR]
         _ => values[prop]
+    }
+
+    if autoIsCurrent(values, prop) {
+        v = values[COLOR]
     }
 
     try writeValue(v, out)
