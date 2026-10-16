@@ -199,6 +199,41 @@ The element loops are the interpreter's: an empty `for` over 1M global
 3.5 s. Element access was never the cost there; the loops need the
 interpreter work of "Next steps".
 
+## P4.63: bytecode VM core (straight-line functions)
+
+`DWELLER_JS_VM=1` compiles a function on its first call (`compiler.aye`)
+and runs it in the dispatch loop (`vm.aye`) when it is straight-line
+code: literals, parameters and uncaptured locals in registers, every
+unary, binary, comparison and update operator, assignments to
+registers, `var`/`let`/`const`, blocks without functions, `return`.
+Anything else (calls, properties, globals, control flow, closures) keeps
+the function on the tree walker; `DWELLER_JS_VM_STATS=1` prints the
+reasons at exit. The VM is tried after the tree walker's frameless
+one-expression path (`fast_expr.aye`), which is cheaper per call for the
+functions it handles (array callbacks: +0.1 s on `array` when the VM went
+first).
+
+Fast build, 4-core Xeon 2.1 GHz Linux, whole process, median of 2–3:
+
+| | VM off | VM on |
+|---|---:|---:|
+| 1M calls of a 10-statement arithmetic function (87 instructions per call), from a tree-walked loop | 1.53–1.70 s | 1.03–1.16 s |
+| the same loop with `return 0` as the body (call and loop cost) | 0.51–0.61 s | 0.54–0.56 s |
+| function body alone (difference) | about 1.0–1.1 s | about 0.5 s (2–2.5×) |
+
+About 6 ns per instruction. The jsbench suite (`jsbench.py`, one run
+each, VM off / on) is unchanged within the noise of single runs (±10%),
+every checksum equal: array 0.197/0.197, calls 4.03/4.31, closures
+2.90/2.91, crypto 3.53/3.37, dom 5.02/5.44, globals 2.57/2.71, json
+0.52/0.66, loop 1.99/2.00, methods 0.59/0.43, navier-stokes 14.5/16.1,
+raytrace 1.83/2.13, richards 1.63/1.68, splay 3.11/3.17, strings
+0.11/0.12, three 11.8/11.8 s. Their hot functions call, read properties
+or loop, so almost none compile yet (`calls`, `richards`, `raytrace`: 0
+functions; `crypto` and `navier-stokes`: 1 each). On the 261 scripts of
+`browser/tests/js/`: 194 functions compiled, 3355 on the tree walker
+(1008 context variable, 695 Call, 295 FuncDecl, 270 ForIn, 190 If, 128
+generator or async, 112 Member, 109 Cond, 103 class constructor, ...).
+
 ## Next steps
 
 The general interpreter is still the bottleneck. Small property tables

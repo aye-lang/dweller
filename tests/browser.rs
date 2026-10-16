@@ -3551,13 +3551,18 @@ fn agent_forms_http() {
 }
 
 /// One JS conformance script: None when it passes, else what went wrong.
-fn js_case(js: &Path, bless: bool) -> Option<String> {
+fn js_case(js: &Path, bless: bool, env: &[(&str, &str)]) -> Option<String> {
     let rel = js
         .strip_prefix(root())
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let out = run(&["js", &rel]);
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["js", &rel])
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
     let got = text(&out.stdout);
     let golden = js.with_extension("out");
     if bless {
@@ -3626,11 +3631,40 @@ fn jsbench_smoke() {
 
 #[test]
 fn js_conformance() {
+    js_conformance_with(&[], &[]);
+}
+
+/// The same scripts and goldens with the bytecode VM on
+/// (`DWELLER_JS_VM=1`, BYTECODE.md section 1), then with the VM under
+/// `DWELLER_JS_GC=stress` too (the rooting rules of its section 4). The
+/// stress pass leaves out the allocation and recursion workloads, which
+/// collect millions of times (minutes each).
+#[test]
+fn js_conformance_vm() {
+    js_conformance_with(&[("DWELLER_JS_VM", "1")], &[]);
+    js_conformance_with(
+        &[("DWELLER_JS_VM", "1"), ("DWELLER_JS_GC", "stress")],
+        &[
+            "_gc_",
+            "_perf_",
+            "recursion",
+            "many_shapes",
+            "map_set_hash",
+            "coroutine_stacks",
+        ],
+    );
+}
+
+fn js_conformance_with(env: &[(&str, &str)], skip: &[&str]) {
     let dir = root().join("browser").join("tests").join("js");
     let mut scripts: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "js"))
+        .filter(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            !skip.iter().any(|s| name.contains(s))
+        })
         .collect();
     scripts.sort();
     assert!(
@@ -3639,8 +3673,8 @@ fn js_conformance() {
         scripts.len()
     );
     dweller();
-    let bless = std::env::var_os("DWELLER_BLESS").is_some();
-    let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless))
+    let bless = env.is_empty() && std::env::var_os("DWELLER_BLESS").is_some();
+    let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless, env))
         .into_iter()
         .flatten()
         .collect();
@@ -5126,7 +5160,10 @@ fn window_paints_early() {
         return;
     };
     let page = format!("{}/net/early_paint.html", srv.base);
-    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    // The click waits for the first paint (`painted`), which comes
+    // 0.3 s into the 1.5 s the script is delayed, not for a number of
+    // frames (40 take longer than 1.5 s on a loaded runner).
+    let events = "painted click:14,54 frame wheel:-3 frame";
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
@@ -5142,7 +5179,7 @@ fn window_paints_early() {
             "--frames",
             "300",
             "--events",
-            events.as_str(),
+            events,
             "--text",
         ])
         .spawn_drained();
