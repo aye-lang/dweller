@@ -2,14 +2,17 @@
 """Where the window's time goes on a live page (browser/engine/PERF.md,
 "Window"). Standard library only.
 
-    window_perf.py scroll URL [--binary B] [--frames N] [--wheel D]
+    window_perf.py scroll URL [--binary B] [--frames N] [--wheel D] [--real-window]
         Headless window (--frames): the load, then N frames that each
         turn the wheel 3 notches (`wheel:-3 frame`; `--wheel -0.37` is a
         trackpad's 3.7 px a frame). Prints the first
         paint, the scroll frames' p50/p95 and the longest loop iteration.
-    window_perf.py idle URL [--binary B]
-        A real window, no input: the CPU% of the 10 s that start 5 s
+    window_perf.py idle URL [--binary B] [--real-window]
+        A window, no input: the CPU% of the 10 s that start 5 s
         after the first frame, and what the loop did meanwhile.
+
+Both use SDL's dummy video driver; --real-window opens a real window
+that does not take the focus (DWELLER_BACKGROUND=1).
 
 Both read the DWELLER_TIMING records (`ui_navigate`, `ui_first_paint`,
 `ui_relayout`, `ui_draw`, `ui_events`, `ui_timers`, `ui_loop`, and
@@ -23,6 +26,8 @@ import re
 import subprocess
 import sys
 import time
+
+from window_env import window_env
 
 RECORD = re.compile(r"DWELLER_TIMING\t([^\t]+)\t(\d+)\t([^\n]*)")
 
@@ -55,7 +60,7 @@ def total(it, phase):
 
 def scroll(a):
     events = " ".join(["frame"] * 3 + [f"wheel:{a.wheel} frame"] * a.frames)
-    env = dict(os.environ, DWELLER_TIMING="1")
+    env = window_env(a.real_window, DWELLER_TIMING="1")
     cmd = [a.binary, a.url, "--frames", str(a.frames + 10), "--events", events, "--state"]
     r = subprocess.run(cmd, capture_output=True, env=env, timeout=600)
     err = r.stderr.decode("utf-8", "replace")
@@ -84,7 +89,7 @@ def scroll(a):
 
 
 def idle(a):
-    env = dict(os.environ, DWELLER_TIMING="1")
+    env = window_env(a.real_window, DWELLER_TIMING="1")
     path = a.log
     if not path:
         import tempfile
@@ -148,6 +153,7 @@ def main():
     ap.add_argument("--binary", default="target/dweller")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
+    ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
     ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
     a = ap.parse_args()
     if not os.path.exists(a.binary):
