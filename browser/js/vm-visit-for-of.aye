@@ -2,12 +2,19 @@ import std.list.List
 
 // v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement, BuildFinalizeIteration)
 
-fn vmVisitForOf(c: *mut Compiler, left: u32, right: u32, body: u32, scope: u32) CompileError!void {
+fn vmVisitForOf(c: *mut Compiler, left: u32, right: u32, body: u32, scope: u32, wait: bool) CompileError!void {
     try c.visit(right)
 
-    let r = c.b.newRegs(3)
+    let r = c.b.newRegs(4)
 
-    try c.b.op1(BC_GET_ITERATOR, r as i64)
+    var mode: u8 = 1
+
+    if wait {
+        mode = 2
+        try c.b.op1(BC_GET_ASYNC_ITERATOR, r as i64)
+    } else {
+        try c.b.op1(BC_GET_ITERATOR, r as i64)
+    }
 
     var fin = VmFinally {
         label: try c.b.newLabel(),
@@ -27,7 +34,7 @@ fn vmVisitForOf(c: *mut Compiler, left: u32, right: u32, body: u32, scope: u32) 
     try c.b.op1(BC_SAVE_CONTEXT, ctx as i64)
     try c.fins.append(&mut fin)
     c.b.tryStart(h)
-    try vmForEachLoop(c, r, true, left, body, scope)
+    try vmForEachLoop(c, r, mode, left, body, scope)
     c.b.tryEnd(h)
     c.fins.pop()
     try vmSetToken(c, &mut fin, VM_TOKEN_FALLTHROUGH)

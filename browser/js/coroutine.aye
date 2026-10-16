@@ -562,7 +562,7 @@ fn engineKindOf(it: *mut Interp, a: Args) JsError!Value {
     if coroutineOf(it, it.arg(a, 0)) |co| {
         return numVal(co.kind as f64)
     }
-    return numVal(0.0)
+    return vmKindOf(it, it.arg(a, 0))
 }
 
 fn engineSetDrivers(it: *mut Interp, a: Args) JsError!Value {
@@ -626,6 +626,9 @@ fn callCoroutine(it: *mut Interp, func: u32, env: u32, fobj: u32, thisv: Value, 
     let fi = it.ast.func(func)
     if fi.generator && !fi.is_async && try vmCompiles(it, func) {
         return it.invoke(func, env, fobj, thisv, argBase, argc, NONE)
+    }
+    if try vmCompiles(it, func) {
+        return vmCallAsync(it, func, env, fobj, thisv, argBase, argc)
     }
     if fi.generator {
         var proto = it.gen_proto

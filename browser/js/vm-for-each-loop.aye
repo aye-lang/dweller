@@ -1,11 +1,13 @@
 // v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement, VisitForInStatement)
 
-fn vmForEachLoop(c: *mut Compiler, r: i32, isOf: bool, left: u32, body: u32, scope: u32) CompileError!void {
+fn vmForEachLoop(c: *mut Compiler, r: i32, mode: u8, left: u32, body: u32, scope: u32) CompileError!void {
     let lp = try c.pushLoop()
     let hdr = try c.b.loopHeader()
     let v = c.b.newReg()
 
-    if isOf {
+    if mode == 2 {
+        try vmForAwaitStep(c, r, v, lp.brk, left)
+    } else if mode == 1 {
         try c.b.op1(BC_ITERATOR_STEP, r as i64)
         try c.b.op1(BC_STAR, v as i64)
         try c.b.op1(BC_LDAR, (r + 2) as i64)
