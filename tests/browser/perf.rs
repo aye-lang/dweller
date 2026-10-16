@@ -1,11 +1,10 @@
 //! Opt-in page-load timing and immutable response archives.
-use super::{dweller, root, scratch, server, text};
-use std::process::Command;
+use super::{dweller_command, root, scratch, server, text};
 
 #[test]
 fn live_frame_index_follows_mutations() {
     let page = "data:text/html,<p id=out></p><script>let r=[window.length];let a=document.createElement('iframe');a.setAttribute('name','a');document.body.appendChild(a);r.push(window.length);let b=document.createElement('iframe');b.setAttribute('name','b');document.body.appendChild(b);r.push(window.length);document.body.insertBefore(b,a);r.push(window.frames[0]===b.contentWindow,window.frames[1]===a.contentWindow);b.remove();r.push(window.length);a.remove();r.push(window.length);document.getElementById('out').textContent=r.join(',');</script>";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .output()
@@ -21,7 +20,7 @@ fn live_frame_index_follows_mutations() {
 #[test]
 fn cached_sheets_follow_media_changes() {
     let page = "data:text/html,<style id=css>p{color:red}</style><p id=out></p><script>let p=document.getElementById('out');let css=document.getElementById('css');let r=[getComputedStyle(p).color];document.head.appendChild(document.createElement('style'));r.push(getComputedStyle(p).color);css.setAttribute('media','(max-width:1px)');r.push(getComputedStyle(p).color);p.textContent=r.join('|');</script>";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .output()
@@ -40,7 +39,7 @@ fn cached_sheets_follow_media_changes() {
 #[test]
 fn script_layout_is_reused_until_a_change() {
     let page = "data:text/html,<div id=d>x</div><p id=out></p><script>let d=document.getElementById('d');let r=[d.offsetWidth,d.offsetHeight,d.getBoundingClientRect().width,d.clientWidth];d.style.width='10px';r.push(d.offsetWidth,d.getBoundingClientRect().width);document.getElementById('out').textContent=r.join(',');</script>";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_TIMING", "1")
         .args(["dump", "--text", "--js", "--no-scroll", page])
@@ -63,7 +62,7 @@ fn script_layout_is_reused_until_a_change() {
 #[test]
 fn interleaved_writes_and_reads_restyle_partially() {
     let page = "data:text/html,<style>.on{height:5px}</style><div id=l></div><p id=out></p><script>let l=document.getElementById('l');for(let i=0;i<20;i++)l.append(document.createElement('div'));let loose=document.createElement('div'),sum=0;for(const c of l.children){c.className='on';loose.append(document.createElement('i'));sum+=l.offsetHeight;}document.getElementById('out').textContent=sum;</script>";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_TIMING", "1")
         .args(["dump", "--text", "--js", "--no-scroll", page])
@@ -97,12 +96,12 @@ fn timing_preserves_output() {
         "--no-scroll",
         "browser/tests/agent/noscript.html",
     ];
-    let plain = Command::new(dweller())
+    let plain = dweller_command()
         .current_dir(root())
         .args(args)
         .output()
         .unwrap();
-    let timed = Command::new(dweller())
+    let timed = dweller_command()
         .current_dir(root())
         .env("DWELLER_TIMING", "1")
         .args(args)
@@ -150,13 +149,13 @@ fn timing_preserves_paint() {
         "fixed",
         "-o",
     ];
-    let first = Command::new(dweller())
+    let first = dweller_command()
         .current_dir(root())
         .args(args)
         .arg(&plain)
         .output()
         .unwrap();
-    let second = Command::new(dweller())
+    let second = dweller_command()
         .current_dir(root())
         .env("DWELLER_TIMING", "1")
         .args(args)
@@ -191,7 +190,7 @@ fn response_archive_replays_without_server() {
     // serves /log/* with appropriate content types and counts requests.
     let page = "data:text/html,<link rel=stylesheet href='BASE/log/style.css'><script src='BASE/log/script.js'></script><p id=x>Archived</p><img src='BASE/log/image.png'><script>document.getElementById('x').textContent += fromScript</script>".replace("BASE", &srv.base);
     let args = ["dump", "--md", "--js", &page];
-    let recorded = Command::new(dweller())
+    let recorded = dweller_command()
         .current_dir(root())
         .env("DWELLER_RECORD", &dir)
         .args(args)
@@ -206,14 +205,14 @@ fn response_archive_replays_without_server() {
     // its own response.
     assert!(std::fs::read_dir(&dir).unwrap().count() >= 3);
     let failure_url = "http://127.0.0.1:1/unavailable";
-    let recorded_failure = Command::new(dweller())
+    let recorded_failure = dweller_command()
         .current_dir(root())
         .env("DWELLER_RECORD", &dir)
         .args(["dump", "--md", "--js", failure_url])
         .output()
         .unwrap();
     assert!(!recorded_failure.status.success());
-    let replayed_failure = Command::new(dweller())
+    let replayed_failure = dweller_command()
         .current_dir(root())
         .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", failure_url])
@@ -222,7 +221,7 @@ fn response_archive_replays_without_server() {
     assert_eq!(recorded_failure.stdout, replayed_failure.stdout);
     assert_eq!(recorded_failure.stderr, replayed_failure.stderr);
     let redirect = format!("{}/redirect", srv.base);
-    let recorded_redirect = Command::new(dweller())
+    let recorded_redirect = dweller_command()
         .current_dir(root())
         .env("DWELLER_RECORD", &dir)
         .args(["dump", "--md", "--js", &redirect])
@@ -235,7 +234,7 @@ fn response_archive_replays_without_server() {
     );
     // Replay must not reach the network, even with HTTP prefetch enabled.
     drop(srv);
-    let replayed = Command::new(dweller())
+    let replayed = dweller_command()
         .current_dir(root())
         .env("DWELLER_REPLAY", &dir)
         .args(args)
@@ -247,7 +246,7 @@ fn response_archive_replays_without_server() {
         text(&replayed.stderr)
     );
     assert_eq!(recorded.stdout, replayed.stdout);
-    let replayed_redirect = Command::new(dweller())
+    let replayed_redirect = dweller_command()
         .current_dir(root())
         .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", &redirect])
@@ -259,7 +258,7 @@ fn response_archive_replays_without_server() {
         text(&replayed_redirect.stderr)
     );
     assert_eq!(recorded_redirect.stdout, replayed_redirect.stdout);
-    let missing = Command::new(dweller())
+    let missing = dweller_command()
         .current_dir(root())
         .env("DWELLER_REPLAY", &dir)
         .args(["dump", "--md", "--js", "http://127.0.0.1:1/missing"])
@@ -294,7 +293,7 @@ fn archive_replays_unrecorded_post_bodies() {
         format!("data:text/html,{ps}<script>{posts}</script>").replace("BASE", &base)
     };
     let dump = |env: &str, page: &str| {
-        Command::new(dweller())
+        dweller_command()
             .current_dir(root())
             .env(env, &dir)
             .args(["dump", "--md", "--js", page])
