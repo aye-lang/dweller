@@ -1,0 +1,26 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitNamedSuperPropertyLoad)
+
+fn vmVisitSuperProperty(c: *mut Compiler, id: u32, key: u32, this_node: u32) CompileError!void {
+    if c.func == NONE {
+        try c.fail("unsupported: super in a script")
+    }
+
+    let mark = c.b.topReg
+    let r = c.b.newReg()
+
+    try c.visit(this_node)
+    try c.b.op1(BC_STAR, r as i64)
+
+    if key != 0 {
+        try c.visit(key)
+    }
+
+    try c.b.op2(BC_GET_SUPER_PROPERTY, r as i64, id as i64)
+    c.b.releaseRegs(mark)
+}
+
+fn vmSuperReceiver(c: *mut Compiler, r: i32, this_node: u32, callee: u32) CompileError!void {
+    try c.visit(this_node)
+    try c.b.op1(BC_STAR, (r + 1) as i64)
+    try c.visit(callee)
+}

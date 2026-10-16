@@ -227,8 +227,8 @@ struct Compiler {
         var lr: i32 = 0
         var direct = false
         match self.ast.node(l) {
-            .Ident { depth, slot: s, .. } => {
-                if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX {
+            .Ident { depth, slot: s, name, .. } => {
+                if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
                     lr = try self.readReg(depth, s)
                     direct = lr != VM_CONTEXT
                 }
@@ -349,8 +349,8 @@ struct Compiler {
     // a new temporary (the caller releases it).
     fn valueReg(self: *mut Self, id: u32) CompileError!i32 {
         match self.ast.node(id) {
-            .Ident { depth, slot, .. } => {
-                if depth < DEPTH_GLOBAL_LEX {
+            .Ident { depth, slot, name, .. } => {
+                if depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
                     let r = try self.readReg(depth, slot)
                     if r != VM_CONTEXT {
                         return r
@@ -421,6 +421,7 @@ struct Compiler {
                     } else {
                         try self.b.op1(BC_LDAR, r as i64)
                     }
+                    try vmThisHole(self, name)
                 }
             }
             .Unary { op, arg } => {
@@ -495,6 +496,18 @@ struct Compiler {
             }
             .NewTarget => {
                 try self.b.op0(BC_LDA_NEW_TARGET)
+            }
+            .Class { c } => {
+                try vmVisitClass(self, c)
+            }
+            .SuperCall { list, n, this_node } => {
+                try vmVisitSuperCall(self, list, n, this_node)
+            }
+            .SuperMember { this_node, .. } => {
+                try vmVisitSuperProperty(self, id, 0, this_node)
+            }
+            .SuperIndex { key, this_node } => {
+                try vmVisitSuperProperty(self, id, key, this_node)
             }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
@@ -815,22 +828,14 @@ struct Compiler {
                 for j in 0..dn {
                     match self.ast.node(self.ast.item(dl, j)) {
                         .Declarator { target, .. } => {
-                            match self.ast.node(target) {
-                                .Ident { depth, slot, .. } => {
-                                    if depth >= DEPTH_GLOBAL_LEX {
-                                        continue
-                                    }
-                                    let r = try self.identReg(depth, slot)
-                                    if r >= 0 {
-                                        self.tdz.items()[r as usize] = true
-                                    }
-                                }
-                                _ => {}
-                            }
+                            try vmMarkDeadTarget(self, target)
                         }
                         _ => {}
                     }
                 }
+            }
+            .ClassDecl { target, .. } => {
+                try vmMarkDeadTarget(self, target)
             }
             _ => {}
         }
@@ -1007,6 +1012,10 @@ struct Compiler {
                 try vmExitScope(self, scope)
             }
             .FuncDecl { .. } => {}
+            .ClassDecl { c, target } => {
+                try vmVisitClass(self, c)
+                try vmStoreIdent(self, target, DECL_LET)
+            }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
             }
@@ -1100,9 +1109,6 @@ struct Compiler {
         if fi.generator || fi.is_async {
             try self.fail("unsupported: generator or async function")
         }
-        if fi.ctor || fi.default_ctor {
-            try self.fail("unsupported: class constructor")
-        }
         for k in 0..fi.nparams {
             match self.ast.node(self.ast.item(fi.params, k)) {
                 .Ident { .. } => {}
@@ -1152,6 +1158,9 @@ struct Compiler {
         try vmSelfBinding(self, fi)
         try self.visitParams(fi)
         try vmHoist(self, fi.scope)
+        if fi.default_ctor {
+            return vmDefaultConstructor(self, fi)
+        }
         if fi.expr != 0 {
             try self.visit(fi.expr)
             try self.b.op0(BC_RETURN)

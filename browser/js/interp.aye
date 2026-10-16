@@ -2394,7 +2394,11 @@ pub struct Interp {
         if n == 0 {
             return NONE
         }
-        let f = self.frames.items()[n - 1].func
+        var i = n - 1
+        while i > 0 && self.frames.items()[i].func == NONE {
+            i -= 1
+        }
+        let f = self.frames.items()[i].func
         if f == NONE {
             return NONE
         }
@@ -2609,7 +2613,6 @@ pub struct Interp {
         let ci = self.ast.classes.items()[c]
         let base = self.stack.len()
         defer self.truncate(base)
-        // A named class expression sees its own name.
         let saved = self.env
         defer self.env = saved
         var inner = NONE
@@ -2617,81 +2620,22 @@ pub struct Interp {
             inner = try self.newEnv(self.ast.scopes.items()[ci.scope].nslots, saved)
             self.env = inner
         }
-        var protoParent = self.object_proto
-        var ctorParent = self.function_proto
+        var hv = Value.Undefined
         if ci.heritage != 0 {
-            let hv = try self.eval(ci.heritage)
-            try self.push(hv)
-            match hv {
-                .Null => {
-                    protoParent = NONE
-                }
-                _ => {
-                    if !self.isCallable(hv) {
-                        return self.typeErrorAbout("Class extends value ", self.ast.srcText(ci.heritage), " is not a constructor or null")
-                    }
-                    let pp = try self.getProp(hv, A_PROTOTYPE)
-                    protoParent = objectOf(pp)
-                    match pp {
-                        .Null => {}
-                        _ => {
-                            if protoParent == NONE {
-                                return self.typeError("Class extends value does not have valid prototype property")
-                            }
-                        }
-                    }
-                    ctorParent = objectOf(hv)
-                }
-            }
+            hv = try self.eval(ci.heritage)
         }
-        let proto = try self.newObject(protoParent)
-        try self.push(objVal(proto))
-        let ctor = try self.newObjectOf(Class.Function, ctorParent, ObjData.Closure { func: ci.ctor, env: self.env, home: proto, outer: NONE })
-        try self.push(objVal(ctor))
-        if inner != NONE {
-            self.heap.env(inner).slots[0] = objVal(ctor)
-        }
-        try self.heap.addProp(ctor, A_PROTOTYPE, objVal(proto), Value.Undefined, 0)
-        try self.heap.addProp(proto, A_CONSTRUCTOR, objVal(ctor), Value.Undefined, F_HIDDEN)
+        try self.push(hv)
         for k in 0..ci.n {
             match self.ast.node(self.ast.item(ci.members, k)) {
-                .ClassElem { kind, is_static, key, computed, value } => {
-                    var target = proto
-                    if is_static {
-                        target = ctor
-                    }
-                    var atom = key
+                .ClassElem { key, computed, .. } => {
                     if computed {
-                        let kv = try self.eval(key)
-                        atom = try self.toKey(kv)
+                        try self.push(try self.eval(key))
                     }
-                    if kind == PROP_FIELD {
-                        if is_static {
-                            let fv = try self.runField(value, self.env, objVal(ctor), ctor)
-                            try self.defineOwn(ctor, atom, fv, self.fieldFlags(atom))
-                        }
-                        continue
-                    }
-                    if kind == PROP_STATIC_BLOCK {
-                        try self.runField(value, self.env, objVal(ctor), ctor)
-                        continue
-                    }
-                    let m = try self.eval(value)
-                    self.setHome(objectOf(m), target)
-                    try self.push(m)
-                    if kind == PROP_GET {
-                        try self.defineAccessor(target, atom, m, Value.Undefined, F_CONFIG)
-                    } else if kind == PROP_SET {
-                        try self.defineAccessor(target, atom, Value.Undefined, m, F_CONFIG)
-                    } else {
-                        try self.defineOwn(target, atom, m, F_HIDDEN)
-                    }
-                    self.pop()
                 }
                 _ => {}
             }
         }
-        return objVal(ctor)
+        return defineClass(self, c, base, inner != NONE)
     }
 
     // ---- identifiers

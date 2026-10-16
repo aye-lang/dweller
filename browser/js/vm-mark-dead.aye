@@ -1,0 +1,17 @@
+fn vmMarkDead(c: *mut Compiler, r: i32, dead: bool) {
+    if r >= 0 {
+        c.tdz.items()[r as usize] = dead
+    }
+}
+
+fn vmMarkDeadTarget(c: *mut Compiler, target: u32) CompileError!void {
+    match c.ast.node(target) {
+        .Ident { depth, slot, .. } => {
+            if depth < DEPTH_GLOBAL_LEX {
+                vmMarkDead(c, try c.identReg(depth, slot), true)
+            }
+        }
+
+        _ => {}
+    }
+}
