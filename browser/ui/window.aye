@@ -424,6 +424,11 @@ pub struct Ui {
     ibeam_cursor: ?*mut SDL_Cursor
     // A shortcut was handled: ignore the text input of its key.
     swallow: bool
+    // Game input: the mouse buttons held (DOM `buttons` bits), whether
+    // the pointer is locked (relative mouse mode) and the window fullscreen.
+    buttons: u32
+    locked: bool
+    fullscreen: bool
     resized: bool
     // Something other than the page's pixels changed (the chrome, an
     // overlay): the next frame composes the window again.
@@ -501,6 +506,9 @@ pub struct Ui {
             hand_cursor: SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND),
             ibeam_cursor: SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM),
             swallow: false,
+            buttons: 0,
+            locked: false,
+            fullscreen: false,
             resized: false,
             dirty: true,
             quit: false,
@@ -1331,14 +1339,33 @@ pub struct Ui {
             } else if we.event == SDL_WINDOWEVENT_EXPOSED {
                 self.dirty = true
             } else if we.event == SDL_WINDOWEVENT_LEAVE {
+                try self.pointerEvent("pointerleave", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
                 self.mouse_in = false
                 hoverChips(self, -1.0, -1.0)
                 try self.clearHover(false)
+            } else if we.event == SDL_WINDOWEVENT_FOCUS_LOST {
+                if self.buttons != 0 {
+                    // The pointer's gesture is over (a held button is lost).
+                    self.buttons = 0
+                    try self.pointerEvent("pointercancel", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
+                }
+            } else if we.event == SDL_WINDOWEVENT_MINIMIZED || we.event == SDL_WINDOWEVENT_HIDDEN {
+                try self.hostState("hidden")
+            } else if we.event == SDL_WINDOWEVENT_RESTORED || we.event == SDL_WINDOWEVENT_SHOWN {
+                try self.hostState("visible")
             }
-        } else if kind == SDL_KEYDOWN {
-            perf.noteAction("key")
+        } else if kind == SDL_KEYDOWN || kind == SDL_KEYUP {
             let ke = &ev.key
-            try self.key(ke.keysym.sym, ke.keysym.mods)
+            var sc = ke.keysym.scancode
+            if sc == 0 {
+                sc = scancodeOfSym(ke.keysym.sym)
+            }
+            if kind == SDL_KEYUP {
+                try self.keyUp(ke.keysym.sym, ke.keysym.mods, sc)
+            } else {
+                perf.noteAction("key")
+                try self.key(ke.keysym.sym, ke.keysym.mods, sc, ke.repeat != 0)
+            }
         } else if kind == SDL_TEXTINPUT {
             let te = &ev.text
             var n: usize = 0
@@ -1349,15 +1376,58 @@ pub struct Ui {
             try self.typed(te.text[0..n])
         } else if kind == SDL_MOUSEMOTION {
             let me = &ev.motion
+            var mx = me.xrel as f64
+            var my = me.yrel as f64
+            if me.state == SCRIPT_MOVE {
+                // A scripted move without deltas: from the last position.
+                mx = 0.0
+                my = 0.0
+                if self.mouse_in {
+                    mx = me.x as f64 - self.mouse_x
+                    my = me.y as f64 - self.mouse_y
+                }
+            }
+            if self.locked {
+                // Relative mode: the position stays where the lock began.
+                try self.pointerEvent("pointermove", 0, self.mouse_x, self.mouse_y, mx, my)
+                return
+            }
             try self.mouseMoved(me.x as f64, me.y as f64)
+            try self.pointerEvent("pointermove", 0, me.x as f64, me.y as f64, mx, my)
         } else if kind == SDL_MOUSEBUTTONDOWN {
             let be = &ev.button
+            let bit = buttonBit(be.button)
+            self.buttons = self.buttons | bit
+            let x = be.x as f64
+            let y = be.y as f64
+            if !self.locked {
+                // The press is at this point (SDL moved the mouse there
+                // before; scripted events do not).
+                self.mouse_x = x
+                self.mouse_y = y
+                self.mouse_in = true
+            }
+            if self.locked {
+                try self.pointerEvent("pointerdown", buttonIndex(be.button), self.mouse_x, self.mouse_y, 0.0, 0.0)
+                if be.button == SDL_BUTTON_LEFT {
+                    try self.pointerEvent("click", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
+                }
+                return
+            }
+            try self.pointerEvent("pointerdown", buttonIndex(be.button), x, y, 0.0, 0.0)
             if be.button == SDL_BUTTON_LEFT {
                 perf.noteAction("click")
-                try self.click(be.x as f64, be.y as f64)
+                try self.click(x, y)
             }
         } else if kind == SDL_MOUSEBUTTONUP {
-            if ev.button.button == SDL_BUTTON_LEFT {
+            let be = &ev.button
+            self.buttons = self.buttons & ~buttonBit(be.button)
+            if self.locked {
+                try self.pointerEvent("pointerup", buttonIndex(be.button), self.mouse_x, self.mouse_y, 0.0, 0.0)
+                return
+            }
+            try self.pointerEvent("pointerup", buttonIndex(be.button), be.x as f64, be.y as f64, 0.0, 0.0)
+            if be.button == SDL_BUTTON_LEFT {
                 try releaseRange(self)
             }
         }
@@ -1417,11 +1487,25 @@ pub struct Ui {
         try self.afterScripts()
     }
 
-    fn key(self: *mut Self, sym: i32, mods: u16) AllocError!void {
+    fn key(self: *mut Self, sym: i32, mods: u16, sc: i32, repeat: bool) AllocError!void {
         if self.auth.open {
             return authKey(self, sym, mods)
         }
         self.swallow = false
+        if sym == SDLK_ESCAPE && (self.locked || self.fullscreen) {
+            // Escape leaves pointer lock and fullscreen, and goes no further.
+            self.swallow = true
+            try self.leaveHostModes()
+            return
+        }
+        if isModifierScancode(sc) {
+            // Shift, Control, Alt and Meta by themselves are keys of games.
+            if self.focus == Focus.Page && self.dropdown == null {
+                _ = try self.keyScripts("keydown", sym, mods, sc, repeat)
+                try self.afterScripts()
+            }
+            return
+        }
         if sym == SDLK_ESCAPE && closeSpaceMenu(self) {
             self.swallow = true
             return
@@ -1435,7 +1519,7 @@ pub struct Ui {
         if self.focus == Focus.Page && !cmd && self.dropdown == null {
             // keydown goes to the page's scripts first; canceling it
             // skips what the key would do (and its text).
-            if !(try self.keyScripts(sym, shift)) {
+            if !(try self.keyScripts("keydown", sym, mods, sc, repeat)) {
                 self.swallow = true
                 return self.afterScripts()
             }
@@ -1759,9 +1843,25 @@ pub struct Ui {
         return engine.dispatchWheel(p, el, self.mouse_x, self.mouse_y - self.top(), dx, dy)
     }
 
-    // Fires keydown at the element scripts focused (else the body); false
-    // when a listener canceled it.
-    fn keyScripts(self: *mut Self, sym: i32, shift: bool) AllocError!bool {
+    // A key goes up: `keyup` for the page's scripts, as for a game.
+    fn keyUp(self: *mut Self, sym: i32, mods: u16, sc: i32) AllocError!void {
+        if self.auth.open || self.focus != Focus.Page || self.dropdown != null {
+            return
+        }
+        let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
+        if cmd && !isModifierScancode(sc) {
+            return
+        }
+        _ = try self.keyScripts("keyup", sym, mods, sc, false)
+        try self.afterScripts()
+    }
+
+    // Fires keydown or keyup at the element scripts focused (else the
+    // body); false when a listener canceled it. The key's name, `code`,
+    // `repeat`, `location` and modifiers go along ("key\ncode\nrepeat\n
+    // location\nmods").
+    fn keyScripts(self: *mut Self, kind: []u8, sym: i32, mods: u16, sc: i32, repeat: bool) AllocError!bool {
+        let shift = (mods & KMOD_SHIFT) != 0
         let p = self.tab.page orelse return true
         if !engine.hasScripts(p) {
             return true
@@ -1780,7 +1880,11 @@ pub struct Ui {
         }
         let el = target orelse return true
         var name = [1]u8{0}
+        let code = domCode(sc)
         var key: []u8 = keyName(sym)
+        if key.len == 0 {
+            key = keyOfCode(code)
+        }
         if key.len == 0 && sym > 32 && sym < 127 {
             name[0] = sym as u8
             if shift && name[0] >= 'a' && name[0] <= 'z' {
@@ -1791,13 +1895,146 @@ pub struct Ui {
         if key.len == 0 {
             return true
         }
-        return engine.dispatchEvent(p, el, "keydown", key)
+        var b = text.Builder.init(self.alloc)
+        defer b.deinit()
+        try b.append(key)
+        try b.append("\n")
+        try b.append(code)
+        try b.append("\n")
+        if repeat {
+            try b.append("1")
+        } else {
+            try b.append("0")
+        }
+        try b.append("\n")
+        try b.appendInt(keyLocation(sc) as i64)
+        try b.append("\n")
+        try b.appendInt(modBits(mods) as i64)
+        return engine.dispatchEvent(p, el, kind, b.bytes())
+    }
+
+    // Fires a pointer event of the mouse (pointerId 1) at the element under
+    // (x, y) window points, and then the mouse event of the same name
+    // unless a listener canceled it, as the spec orders them. With the
+    // pointer locked, the events go to the locked element at the
+    // position where the lock began.
+    fn pointerEvent(self: *mut Self, kind: []u8, button: u32, x: f64, y: f64, mx: f64, my: f64) AllocError!void {
+        let p = self.tab.page orelse return
+        if !engine.hasScripts(p) || self.dropdown != null || self.auth.open {
+            return
+        }
+        let t = p.tree orelse return
+        let leaving = text.eql(kind, "pointerleave") || text.eql(kind, "pointercancel")
+        if !self.locked && !leaving && (y < self.top() || y >= self.top() + self.viewHeight()) {
+            return
+        }
+        var found = engine.nodeAt(t, x + self.tab.scroll_x, y - self.top() + self.tab.scroll)
+        if found == null {
+            found = p.doc.documentElement()
+        }
+        var el = found orelse return
+        if p.doc.node(el).kind != dom.Kind.Element {
+            el = p.doc.parent(el) orelse return
+        }
+        var b = text.Builder.init(self.alloc)
+        defer b.deinit()
+        try b.appendInt(button as i64)
+        try b.append("\n")
+        try b.appendInt(self.buttons as i64)
+        try b.append("\n")
+        try b.appendInt(modBits(SDL_GetModState()) as i64)
+        let cy = y - self.top()
+        let go_on = try engine.dispatchPointer(p, el, kind, b.bytes(), x, cy, mx, my)
+        if go_on && !text.eql(kind, "pointercancel") && !text.eql(kind, "click") {
+            // pointerdown -> mousedown, pointermove -> mousemove...
+            var mouse: []u8 = "mousemove"
+            if text.eql(kind, "pointerdown") {
+                mouse = "mousedown"
+            } else if text.eql(kind, "pointerup") {
+                mouse = "mouseup"
+            } else if text.eql(kind, "pointerleave") {
+                mouse = "mouseleave"
+            }
+            _ = try engine.dispatchPointer(p, el, mouse, b.bytes(), x, cy, mx, my)
+        }
+        try self.afterScripts()
+    }
+
+    // Tells the page what the window did (`hostState` of the prelude):
+    // "lock:1", "lock:0", "lockerror", "fs:1", "fs:0", "fserror", "hidden"
+    // or "visible".
+    fn hostState(self: *mut Self, what: []u8) AllocError!void {
+        let p = self.tab.page orelse return
+        let t = p.doc.documentElement() orelse return
+        _ = try engine.dispatchEvent(p, t, "__host", what)
+    }
+
+    // Does what scripts asked of the window: pointer lock
+    // (SDL_SetRelativeMouseMode) and fullscreen (SDL_SetWindowFullscreen),
+    // then answers the page.
+    fn hostRequests(self: *mut Self) AllocError!void {
+        var rounds: u32 = 0
+        while rounds < 8 {
+            rounds += 1
+            let p = self.tab.page orelse return
+            let r = engine.takeHostRequests(p)
+            if r.lock == 0 && r.fs == 0 {
+                return
+            }
+            if r.lock == 1 {
+                if SDL_SetRelativeMouseMode(1) == 0 {
+                    self.locked = true
+                    try self.hostState("lock:1")
+                } else {
+                    try self.hostState("lockerror")
+                }
+            } else if r.lock == 2 {
+                if self.locked {
+                    SDL_SetRelativeMouseMode(0)
+                    self.locked = false
+                }
+                try self.hostState("lock:0")
+            }
+            if r.fs == 1 {
+                if SDL_SetWindowFullscreen(self.window, SDL_WINDOW_FULLSCREEN_DESKTOP) == 0 {
+                    self.fullscreen = true
+                    self.resized = true
+                    try self.hostState("fs:1")
+                } else {
+                    try self.hostState("fserror")
+                }
+            } else if r.fs == 2 {
+                if self.fullscreen {
+                    SDL_SetWindowFullscreen(self.window, 0)
+                    self.fullscreen = false
+                    self.resized = true
+                }
+                try self.hostState("fs:0")
+            }
+        }
+    }
+
+    // Escape: leave pointer lock and fullscreen.
+    fn leaveHostModes(self: *mut Self) AllocError!void {
+        if self.locked {
+            SDL_SetRelativeMouseMode(0)
+            self.locked = false
+            try self.hostState("lock:0")
+        }
+        if self.fullscreen {
+            SDL_SetWindowFullscreen(self.window, 0)
+            self.fullscreen = false
+            self.resized = true
+            try self.hostState("fs:0")
+        }
+        try self.afterScripts()
     }
 
     // After the page's scripts ran: the navigation they asked for, or
     // the layout of what they changed.
     fn afterScripts(self: *mut Self) AllocError!void {
         let p = self.tab.page orelse return
+        try self.hostRequests()
         let nav = engine.takeNavigation(p)
         match nav.kind {
             .To => {
@@ -1927,6 +2164,32 @@ pub struct Ui {
     }
 }
 
+// DOM `button` of an SDL button (left 0, middle 1, right 2) and its bit in
+// `buttons`.
+fn buttonIndex(b: u8) u32 {
+    if b == SDL_BUTTON_MIDDLE {
+        return 1
+    }
+    if b == SDL_BUTTON_RIGHT {
+        return 2
+    }
+    return 0
+}
+
+fn buttonBit(b: u8) u32 {
+    if b == SDL_BUTTON_MIDDLE {
+        return 4
+    }
+    if b == SDL_BUTTON_RIGHT {
+        return 2
+    }
+    return 1
+}
+
+// A scripted `move:X,Y` has no deltas: the window takes them from the
+// last position (`SDL_MouseMotionEvent.state` is never this).
+let SCRIPT_MOVE: u32 = 0x80000000
+
 // The KeyboardEvent.key of a key that is not a character ("" for a
 // character or an unknown key).
 fn keyName(sym: i32) []u8 {
@@ -1939,6 +2202,9 @@ fn keyName(sym: i32) []u8 {
     }
     if sym == SDLK_KP_ENTER {
         return "Enter"
+    }
+    if sym == SDLK_TAB {
+        return "Tab"
     }
     return ""
 }

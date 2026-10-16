@@ -63,6 +63,7 @@ struct VmEntry {
     func: u32
     fobj: u32
     thisv: Value
+    env: u32
 }
 
 /// Turns the VM on when DWELLER_JS_VM=1 (once per engine).
@@ -185,16 +186,16 @@ pub fn vmLookup(it: *mut Interp, st: *mut VmState, func: u32) JsError!?VmFunc {
 }
 
 /// Runs compiled function `func` (`invoke`'s arguments).
-pub fn vmCall(it: *mut Interp, st: *mut VmState, vf: VmFunc, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
+pub fn vmCall(it: *mut Interp, st: *mut VmState, vf: VmFunc, func: u32, fobj: u32, penv: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
     if vf.code |code| {
-        return vmEnter(it, st, code, vf.this_reg, func, fobj, thisv, argBase, argc, newTarget)
+        return vmEnter(it, st, code, vf.this_reg, func, fobj, penv, thisv, argBase, argc, newTarget)
     }
     unreachable
 }
 
-fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
+fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, penv: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
     let mark = it.stack.len()
-    let fp = try vmPushFrame(it, st, code, this_reg, func, fobj, thisv, argBase, argc, newTarget)
+    let fp = try vmPushFrame(it, st, code, this_reg, func, fobj, penv, thisv, argBase, argc, newTarget)
     defer {
         vmPopFrame(it)
         it.truncate(mark)
@@ -204,7 +205,7 @@ fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg
 
 // Pushes the frame of `code` above the arguments at
 // stack[argBase..argBase + argc]; gives its fp.
-fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!usize {
+fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, penv: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!usize {
     st.ncalls += 1
     let mark = it.stack.len()
     let np = code.nparams as usize
@@ -236,11 +237,13 @@ fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this
     }
     try it.frames.append(Frame { func: fobj, env: it.env, this_obj: it.derived_this, new_target: newTarget })
     it.derived_this = NONE
+    it.env = penv
     return fp
 }
 
 fn vmPopFrame(it: *mut Interp) {
     it.ctor_this = it.frames.items()[it.frames.len() - 1].this_obj
+    it.env = it.frames.items()[it.frames.len() - 1].env
     it.frames.pop()
 }
 
@@ -256,9 +259,11 @@ fn vmInlineCallee(it: *mut Interp, st: *mut VmState, op: u8, top: usize) JsError
         return null
     }
     var func: u32 = 0
+    var penv: u32 = 0
     match it.heap.obj(o).data {
-        .Closure { func: fn_, .. } => {
+        .Closure { func: fn_, env, .. } => {
             func = fn_
+            penv = env
         }
         _ => {
             return null
@@ -288,7 +293,7 @@ fn vmInlineCallee(it: *mut Interp, st: *mut VmState, op: u8, top: usize) JsError
         thisv = objVal(thisObj)
         it.setSlot(top + 1, thisv)
     }
-    return VmEntry { code: code, this_reg: vf.this_reg, func: func, fobj: o, thisv: thisv }
+    return VmEntry { code: code, this_reg: vf.this_reg, func: func, fobj: o, thisv: thisv, env: penv }
 }
 
 // Copies the callee, `this` and the arguments of the call at pc from
@@ -1435,7 +1440,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
                 pc += 3 * w as usize
                 if try vmInlineCallee(it, st, 77, top) |e| {
-                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, NONE)
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.env, e.thisv, top + 2, argc, NONE)
                     try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
                     code = e.code
                     bytes = code.code
@@ -1458,7 +1463,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
                 pc += 3 * w as usize
                 if try vmInlineCallee(it, st, 78, top) |e| {
-                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, NONE)
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.env, e.thisv, top + 2, argc, NONE)
                     try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
                     code = e.code
                     bytes = code.code
@@ -1480,7 +1485,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
                 pc += 3 * w as usize
                 if try vmInlineCallee(it, st, 79, top) |e| {
-                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.thisv, top + 2, argc, e.fobj)
+                    let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.env, e.thisv, top + 2, argc, e.fobj)
                     try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: true, argBase: argBase, argc: nargs })
                     code = e.code
                     bytes = code.code
@@ -1508,6 +1513,62 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 regs[fp] = acc
                 acc = try vmArguments(it, argBase, nargs, k, true)
                 regs = it.stack.items()
+            }
+            82 => {
+                // v8: src/interpreter/interpreter-generator.cc (LdaContextSlot)
+                regs[fp] = acc
+                acc = try vmLdaContextSlot(it, vmIdx(bytes, pc, w), vmIdx(bytes, pc + w as usize, w))
+                pc += 2 * w as usize
+                regs = it.stack.items()
+            }
+            83 => {
+                // v8: src/interpreter/interpreter-generator.cc (StaContextSlot)
+                vmEnvAt(it, vmIdx(bytes, pc, w)).slots[vmIdx(bytes, pc + w as usize, w) as usize] = acc
+                pc += 2 * w as usize
+            }
+            84 => {
+                // v8: src/interpreter/interpreter-generator.cc (PushContext)
+                regs[fp] = acc
+                let saved = try vmPushContext(it, vmIdx(bytes, pc + w as usize, w))
+                regs = it.stack.items()
+                regs[(base + vmImm(bytes, pc, w)) as usize] = saved
+                pc += 2 * w as usize
+            }
+            85 => {
+                // v8: src/interpreter/interpreter-generator.cc (PopContext)
+                vmPopContext(it, regs[(base + vmImm(bytes, pc, w)) as usize])
+                pc += w as usize
+            }
+            86 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitIterationBody)
+                regs[fp] = acc
+                try vmNewIterationContext(it)
+                regs = it.stack.items()
+            }
+            87 => {
+                // v8: src/interpreter/interpreter-generator.cc (ThrowReferenceErrorIfHole)
+                if acc is .Empty {
+                    _ = try it.uninitialized(vmIdx(bytes, pc, w) as u32)
+                }
+                pc += w as usize
+            }
+            88 => {
+                // v8: src/interpreter/interpreter-generator.cc (CreateClosure)
+                regs[fp] = acc
+                acc = try it.makeClosure(vmIdx(bytes, pc, w) as u32)
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            89 => {
+                // v8: src/interpreter/interpreter-generator.cc (CreateFunctionContext)
+                regs[fp] = acc
+                try vmNewFunctionContext(it, vmIdx(bytes, pc, w))
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            90 => {
+                // v8: src/interpreter/bytecode-register.h (Register::function_closure)
+                acc = objVal(it.frames.items()[it.frames.len() - 1].func)
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

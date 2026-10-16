@@ -1,0 +1,29 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCountOperation)
+
+fn vmUpdateContext(c: *mut Compiler, inc: bool, prefix: bool, arg: u32) CompileError!void {
+    let id = vmIdent(c, arg)
+    let d = vmContextDepth(c, id.depth) as i64
+    var op = BC_INC
+
+    if !inc {
+        op = BC_DEC
+    }
+
+    try vmLoadContext(c, id.depth, id.slot, id.name)
+
+    if prefix {
+        try c.b.op1(op, c.b.newSlot() as i64)
+        try c.b.op2(BC_STA_CONTEXT_SLOT, d, id.slot as i64)
+        return
+    }
+
+    let mark = c.b.topReg
+    let old = c.b.newReg()
+
+    try c.b.op1(BC_TO_NUMERIC, c.b.newSlot() as i64)
+    try c.b.op1(BC_STAR, old as i64)
+    try c.b.op1(op, c.b.newSlot() as i64)
+    try c.b.op2(BC_STA_CONTEXT_SLOT, d, id.slot as i64)
+    try c.b.op1(BC_LDAR, old as i64)
+    c.b.releaseRegs(mark)
+}

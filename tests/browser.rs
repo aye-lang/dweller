@@ -830,6 +830,95 @@ fn webaudio_core() {
     );
 }
 
+/// `browser/tests/audio/effects.html` (P11.20, Web Audio effects):
+/// OfflineAudioContext renders through BiquadFilterNode (8 types, with the
+/// frequency responses), StereoPannerNode, DynamicsCompressorNode and
+/// ConvolverNode. Each `ref NAME v,v,..` line of its output must match
+/// `effects.ref` (the page's output in Chrome) within 1e-3; the other
+/// lines must be `effects.txt` (Chrome's too). No audio device is used.
+#[test]
+fn webaudio_effects() {
+    let page = "browser/tests/audio/effects.html";
+    let golden = root().join("browser/tests/audio/effects.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut refs = std::collections::HashMap::new();
+    let mut rest = String::new();
+    for l in got.lines() {
+        match l.strip_prefix("ref ") {
+            Some(r) => {
+                let (name, values) = r.split_once(' ').unwrap_or((r, ""));
+                refs.insert(name.to_string(), values.to_string());
+            }
+            None => rest.push_str(&format!("{l}\n")),
+        }
+    }
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &rest).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(rest, want, "differs from {}", golden.display());
+
+    let reference =
+        std::fs::read_to_string(root().join("browser/tests/audio/effects.ref")).unwrap();
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for l in reference.lines() {
+        let (name, values) = l.split_once(' ').unwrap();
+        checked += 1;
+        let Some(have) = refs.get(name) else {
+            failures.push(format!("{name}: missing"));
+            continue;
+        };
+        let want: Vec<f64> = values.split(',').map(|v| v.parse().unwrap()).collect();
+        let have: Vec<f64> = have
+            .split(',')
+            .map(|v| v.parse().unwrap_or(f64::INFINITY))
+            .collect();
+        if want.len() != have.len() {
+            failures.push(format!(
+                "{name}: {} samples, want {}",
+                have.len(),
+                want.len()
+            ));
+            continue;
+        }
+        // The worst difference (NaN must be NaN).
+        let mut worst = (0.0f64, 0usize);
+        for (i, (w, h)) in want.iter().zip(&have).enumerate() {
+            let d = if w.is_nan() && h.is_nan() {
+                0.0
+            } else if w.is_nan() || h.is_nan() {
+                f64::INFINITY
+            } else {
+                (w - h).abs()
+            };
+            if d > worst.0 {
+                worst = (d, i);
+            }
+        }
+        if worst.0 >= 1e-3 {
+            failures.push(format!(
+                "{name}: sample {} is {} (want {})",
+                worst.1, have[worst.1], want[worst.1]
+            ));
+        }
+    }
+    assert!(checked >= 60, "only {checked} reference lines");
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} differ:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 /// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
 /// checksum must be node's; the median time of 20M steps is printed (with
 /// node's when `node` is installed) for comparison, not checked.
@@ -954,7 +1043,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -3875,6 +3964,149 @@ fn js_command_line() {
     );
 }
 
+// ---- P10.1: WPT testharness.js pages (`dweller wpt`, browser/tests/wpt)
+
+/// `dweller wpt` on each fixture of browser/tests/wpt (file URLs: the
+/// pages load browser/tools/wpt/testharnessreport.js by a relative path)
+/// prints its one JSON line on stdout, with an empty stderr.
+#[test]
+fn wpt_runner() {
+    let ok = |name: &str| format!(r#"{{"name":"{name}","status":"PASS","message":null}}"#);
+    let line = |status: &str, message: &str, subtests: &[String]| {
+        format!(
+            r#"{{"status":"{status}","message":{message},"subtests":[{}]}}"#,
+            subtests.join(",")
+        ) + "\n"
+    };
+    let cases: &[(&[&str], String)] = &[
+        (
+            &["browser/tests/wpt/pass.html"],
+            line("OK", "null", &[ok("addition"), ok("a timer"), ok("a promise")]),
+        ),
+        (
+            &["browser/tests/wpt/fail.html"],
+            line(
+                "OK",
+                "null",
+                &[
+                    ok("passes"),
+                    r#"{"name":"fails","status":"FAIL","message":"assert_equals: one is two expected 2 but got 1"}"#.into(),
+                ],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/error.html"],
+            line(
+                "ERROR",
+                r#""Uncaught Error: outside any test""#,
+                &[ok("before the error")],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/timeout.html"],
+            line(
+                "TIMEOUT",
+                "null",
+                &[
+                    ok("finishes"),
+                    r#"{"name":"never finishes","status":"TIMEOUT","message":"Test timed out"}"#.into(),
+                ],
+            ),
+        ),
+        // 15 s of the page's (virtual) time: past the default 10 s.
+        (
+            &["browser/tests/wpt/slow.html"],
+            line(
+                "TIMEOUT",
+                "null",
+                &[r#"{"name":"after 15 s","status":"TIMEOUT","message":"Test timed out"}"#.into()],
+            ),
+        ),
+        (
+            &["browser/tests/wpt/slow.html", "--timeout", "60"],
+            line("OK", "null", &[ok("after 15 s")]),
+        ),
+        (
+            &["browser/tests/wpt/sum.any.html"],
+            line("OK", "null", &[ok("reduce sums"), ok("split")]),
+        ),
+    ];
+    for (args, stdout) in cases {
+        let mut all = vec!["wpt"];
+        all.extend_from_slice(args);
+        expect(&all, 0, stdout, "");
+    }
+    // A page that does not load: CRASH, exit 1.
+    let missing = root().join("browser/tests/wpt/missing.html");
+    expect(
+        &["wpt", "browser/tests/wpt/missing.html"],
+        1,
+        &format!(
+            "{{\"status\":\"CRASH\",\"message\":\"cannot fetch file://{}: not found\",\"subtests\":[]}}\n",
+            missing.display()
+        ),
+        "",
+    );
+    // A page without testharness.js never reports: TIMEOUT, no subtests.
+    expect(
+        &["wpt", "browser/tests/basic.html", "--timeout", "1"],
+        0,
+        "{\"status\":\"TIMEOUT\",\"message\":\"no result from testharnessreport.js\",\"subtests\":[]}\n",
+        "",
+    );
+    let usage = "error: usage: dweller wpt FILE|URL [--timeout S]\n";
+    expect(&["wpt"], 2, "", usage);
+    expect(
+        &["wpt", "browser/tests/wpt/pass.html", "--timeout", "0"],
+        2,
+        "",
+        usage,
+    );
+}
+
+/// `browser/tools/wpt.py run` over the fixture directory (its own static
+/// server, the generated wrapper of `sum.any.js`): the results file has
+/// the status and subtest counts of each fixture.
+#[test]
+fn wpt_py_serve() {
+    let out = root().join("target/wpt-py-serve");
+    let _ = std::fs::remove_dir_all(&out);
+    let run = Command::new("python3")
+        .current_dir(root())
+        .args(["browser/tools/wpt.py", "run", ".", "-j", "4"])
+        .args(["--wpt-root", "browser/tests/wpt", "--results-dir"])
+        .arg(&out)
+        .arg("--dweller")
+        .arg(dweller())
+        .output();
+    let Ok(run) = run else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "wpt.py run failed: {stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    for want in [
+        "error.html: 1/1 ERROR",
+        "fail.html: 1/2 OK",
+        "pass.html: 3/3 OK",
+        "slow.html: 1/1 OK",
+        "sum.any.js: 2/2 OK",
+        "timeout.html: 1/2 TIMEOUT",
+        ": 6 files (0 skipped), 9/11 subtests passed, score 81.8%",
+    ] {
+        assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
+    }
+    let json = std::fs::read_to_string(out.join("root.json")).expect("results file");
+    assert!(
+        json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
+        "{json}"
+    );
+}
+
 // P10.3: `dweller js --test262` and browser/tools/test262.py over the
 // fixtures in browser/tests/test262.
 #[test]
@@ -3989,6 +4221,155 @@ fn window_scripts() {
             "{args:?}: expected {want:?} in the text:\n{got}"
         );
     }
+}
+
+/// The page's log (`<pre id=log>`) after `events` ran in the window, as
+/// the lines of its text between the page's markup and its script.
+fn window_log(page: &str, events: &str) -> Vec<String> {
+    let out = run_window(&[
+        page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "1", "--text",
+        "--events", events,
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page} {events:?}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    got.lines()
+        .skip_while(|l| *l != "pad" && *l != "canvas")
+        .skip(1)
+        .take_while(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Trusted key and pointer events of the window
+/// (`browser/tests/ui/input_codes.html` logs them): `code` from the
+/// scancode, `repeat`, `location`, modifiers, keyup; pointer events
+/// before the mouse events with pointerId 1; other buttons; leave and
+/// cancel; `movementX/Y`; visibilitychange.
+#[test]
+fn window_input_codes() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = "browser/tests/ui/input_codes.html";
+    let keys = window_log(
+        page,
+        "key:a key:shift+a key:repeat+a keyup:a key:KeyW key:ShiftLeft key:ShiftRight \
+         key:left key:Numpad5 key:F5 key:alt+x key:Escape keyup:ShiftLeft key:tab",
+    );
+    assert_eq!(
+        keys,
+        [
+            "keydown a KeyA r0 l0  true",
+            "keydown A KeyA r0 l0 S true",
+            "keydown a KeyA r1 l0  true",
+            "keyup a KeyA r0 l0  true",
+            "keydown w KeyW r0 l0  true",
+            "keydown Shift ShiftLeft r0 l1  true",
+            "keydown Shift ShiftRight r0 l2  true",
+            "keydown ArrowLeft ArrowLeft r0 l0  true",
+            "keydown 5 Numpad5 r0 l3  true",
+            "keydown F5 F5 r0 l0  true",
+            "keydown x KeyX r0 l0 A true",
+            "keydown Escape Escape r0 l0  true",
+            "keyup Shift ShiftLeft r0 l1  true",
+            "keydown Tab Tab r0 l0  true",
+        ]
+    );
+    // The pad is the first 100 px under the 40 px toolbar.
+    let pointer = window_log(
+        page,
+        "move:20,60 move:25,70 click:25,70 release:25,70 click:30,70,right \
+         release:30,70,right move:40,80,3,-4 window:blur click:30,70 window:blur \
+         window:leave window:hidden window:shown",
+    );
+    assert_eq!(
+        pointer,
+        [
+            "pointermove 20,20 b-1/0 id1P mouse m0,0",
+            "mousemove 20,20 b0/0 m0,0",
+            "pointermove 25,30 b-1/0 id1P mouse m5,10",
+            "mousemove 25,30 b0/0 m5,10",
+            "pointerdown 25,30 b0/1 id1P mouse m0,0",
+            "mousedown 25,30 b0/1 m0,0",
+            "click 0,0 b0/0 m0,0",
+            "pointerup 25,30 b0/0 id1P mouse m0,0",
+            "mouseup 25,30 b0/0 m0,0",
+            "pointerdown 30,30 b2/2 id1P mouse m0,0",
+            "mousedown 30,30 b2/2 m0,0",
+            "pointerup 30,30 b2/0 id1P mouse m0,0",
+            "mouseup 30,30 b2/0 m0,0",
+            "pointermove 40,40 b-1/0 id1P mouse m3,-4",
+            "mousemove 40,40 b0/0 m3,-4",
+            "pointerdown 30,30 b0/1 id1P mouse m0,0",
+            "mousedown 30,30 b0/1 m0,0",
+            "click 0,0 b0/0 m0,0",
+            "pointercancel 30,30 b0/0 id1P mouse m0,0",
+            "pointerleave 30,30 b0/0 id1P mouse m0,0",
+            "vis hidden true",
+            "vis visible false",
+        ]
+    );
+}
+
+/// Pointer Lock and Fullscreen in the window
+/// (`browser/tests/ui/pointer_lock.html`): the requests are promises that
+/// need a user activation (rejected with `pointerlockerror` /
+/// `fullscreenerror` before one), `pointerLockElement` and
+/// `fullscreenElement`, the change events, relative motion as
+/// `movementX/Y` on the locked element, Escape and `exitPointerLock`.
+/// (Under SDL's dummy driver the DOM side is what is checked.)
+#[test]
+fn window_pointer_lock() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = "browser/tests/ui/pointer_lock.html";
+    let log = window_log(page, "click:50,70 move:70,90,13,-7 click:60,80");
+    assert_eq!(
+        log,
+        [
+            "start locked=true fs=true",
+            "promise true",
+            "pointerlockerror",
+            "lock rejected NotAllowedError",
+            "fullscreenerror",
+            "fs rejected TypeError",
+            "click active=true",
+            "pointerlockchange c",
+            "locked true",
+            "fullscreenchange c true",
+            "fullscreen true",
+            "pointermove m13,-7",
+            "mousemove 50,30 m13,-7",
+            "click active=true",
+            "locked true",
+            "fullscreen true",
+        ]
+    );
+    // Escape leaves both and is not a key of the page.
+    let esc = window_log(page, "click:50,70 key:escape key:x");
+    assert_eq!(
+        esc[esc.len() - 4..],
+        [
+            "pointerlockchange null",
+            "fullscreenchange null true",
+            "keydown x",
+            "exit asked",
+        ]
+    );
+    // exitPointerLock while locked.
+    let exit = window_log(page, "click:50,70 key:x");
+    assert_eq!(
+        exit[exit.len() - 3..],
+        ["keydown x", "exit asked", "pointerlockchange null"]
+    );
 }
 
 /// The History API in the window (`browser/tests/agent/site/spa.html`):
