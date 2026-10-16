@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+fn showEarly(ui: *mut Ui, began: u64) AllocError!void {
+    ui.paint_began = began
+    ui.promote.clear()
+    ui.anim.clear()
+    ui.dropdown = null
+    ui.range_drag = false
+    ui.slots[ui.active].?.shown += 1
+    ui.dropList()
+    ui.matches.clear()
+
+    try setAddress(ui)
+
+    if ui.focus == Focus.Address {
+        ui.focus = Focus.Page
+    }
+
+    ui.hover.clear()
+    try ui.setTitle()
+    ui.dirty = true
+
+    try ui.advanceLoad(true)
+    try askAuth(ui)
+}

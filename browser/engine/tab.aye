@@ -11,7 +11,7 @@ import std.text
 import url
 import url.Url
 
-/// What a move in the history did (`Tab.go`).
+/// What a move in the history did (`traverseEarly`).
 pub enum Moved {
     // There is no such entry.
     None
@@ -215,40 +215,6 @@ pub struct Tab {
         try self.setFragment(target.fragment)
         self.restore = null
         try self.show(page)
-    }
-
-    /// Goes one entry back.
-    pub fn back(self: *mut Self) AllocError!Moved {
-        return self.go(-1)
-    }
-
-    pub fn forward(self: *mut Self) AllocError!Moved {
-        return self.go(1)
-    }
-
-    /// Loads the current entry again, keeping the scroll offset.
-    pub fn reload(self: *mut Self) AllocError!Moved {
-        return self.go(0)
-    }
-
-    /// Goes to the entry `step` away from the current one: in the
-    /// document shown when it is one of its entries (`inDocument`), else
-    /// by loading its page.
-    pub fn go(self: *mut Self, step: i64) AllocError!Moved {
-        let at = self.history.indexAt(step) orelse return Moved.None
-        if step != 0 && try self.inDocument(step) {
-            return Moved.InDocument
-        }
-        perf.noteNavigation()
-        let target = url.parse(self.alloc, self.history.entries.items()[at].href) catch |e| {
-            return AllocError.OutOfMemory
-        }
-        defer target.deinit(self.alloc)
-        self.enter()
-        let p = try loadState(self.alloc, &target, self.history.entries.items()[at].state)
-        errdefer p.destroy()
-        try self.moveTo(step, p)
-        return Moved.Loaded
     }
 
     /// Moves `step` entries when that entry is of the document shown: the
