@@ -954,7 +954,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -3873,6 +3873,76 @@ fn js_command_line() {
             && out.contains("Constant pool (size = 1)\n"),
         "{out}"
     );
+}
+
+// P10.3: `dweller js --test262` and browser/tools/test262.py over the
+// fixtures in browser/tests/test262.
+#[test]
+fn test262_runner() {
+    let hooks = root().join("target").join("t262-hooks.js");
+    std::fs::create_dir_all(hooks.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hooks,
+        "print('p'); print($262.global === globalThis); \
+         print($262.evalScript('var q = 4; q + 1'));\n\
+         var ab = new ArrayBuffer(8); $262.detachArrayBuffer(ab); $262.gc(); print(ab.byteLength);\n",
+    )
+    .unwrap();
+    let hooks = hooks.to_str().unwrap().to_string();
+    expect(&["js", "--test262", &hooks], 0, "p\ntrue\n5\n0\n", "");
+    // without the flag there is no print or $262
+    let plain = run(&["js", &hooks]);
+    assert_eq!(plain.status.code(), Some(1));
+    assert!(
+        text(&plain.stderr).starts_with("Uncaught ReferenceError"),
+        "{}",
+        text(&plain.stderr)
+    );
+
+    let tool = root().join("browser").join("tools").join("test262.py");
+    let fixtures = root().join("browser").join("tests").join("test262");
+    let out = root().join("target").join("t262-fixtures");
+    let res = Command::new("python3")
+        .arg(&tool)
+        .args(["run", "test", "-j", "4", "--root"])
+        .arg(&fixtures)
+        .arg("--dweller")
+        .arg(dweller())
+        .arg("--out")
+        .arg(&out)
+        .output();
+    let Ok(res) = res else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    assert!(res.status.success(), "{}", text(&res.stderr));
+    let stdout = text(&res.stdout);
+    assert!(
+        stdout.contains("test262 test: 8/11 passed (72.7%), 1 skipped"),
+        "{stdout}"
+    );
+    let json = std::fs::read_to_string(out.join("test.json")).unwrap();
+    for (name, status) in [
+        ("test/pass/basic.js", "pass"),
+        ("test/pass/skipped.js", "skip"),
+        ("test/fail/wrong.js", "fail"),
+        ("test/negative/parse.js", "pass"),
+        ("test/negative/runtime.js", "pass"),
+        ("test/negative/missing.js", "fail"),
+        ("test/async/promise.js", "pass"),
+        ("test/async/never.js", "fail"),
+        ("test/strict/only.js", "pass"),
+        ("test/strict/both.js", "pass"),
+        ("test/strict/nostrict.js", "pass"),
+        ("test/module/basic.js", "pass"),
+    ] {
+        let at = json
+            .find(&format!("\"{name}\""))
+            .unwrap_or_else(|| panic!("{name}: {json}"));
+        let rest = &json[at..];
+        let line = &rest[..rest.find(']').unwrap()];
+        assert!(line.contains(&format!("\"{status}\"")), "{name}: {line}");
+    }
 }
 
 // ---- page scripts and the DOM bindings (browser/engine/script.aye)
