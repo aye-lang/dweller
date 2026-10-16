@@ -1,0 +1,16 @@
+import dom.NodeId
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn runBlobScript(it: *mut Interp, s: *mut Script, el: NodeId, a: Args) JsError!Value {
+    let code = try it.builder()
+    defer it.release(code)
+
+    try argText(it, a, 1, code)
+    try runCode(s, el, code.bytes(), false)
+
+    return js.boolVal(true)
+}
