@@ -2,6 +2,7 @@
 // code unit indices (see wtf8.aye); searching works on the WTF-8 bytes,
 // which line up with characters, and converts positions at the edges.
 
+import font
 import std.list.List
 import std.math
 import std.text
@@ -350,53 +351,6 @@ fn stringSubstr(it: *mut Interp, a: Args) JsError!Value {
     return substringOf(it, s, from, to)
 }
 
-/// Upper or lower case of a code point (ASCII, Latin-1, Latin
-/// Extended-A, the DŽ/LJ/NJ digraphs, Greek, Cyrillic). The result has
-/// the same UTF-8 length. Also used by layout for `text-transform`.
-pub fn caseMap(cp: u32, upper: bool) u32 {
-    if cp >= 0x1C4 && cp <= 0x1CC {
-        let base = 0x1C4 + ((cp - 0x1C4) / 3) * 3
-        if upper {
-            return base
-        }
-        return base + 2
-    }
-    if (cp >= 0x100 && cp <= 0x137) || (cp >= 0x14A && cp <= 0x177) {
-        if upper {
-            return cp & ~(1 as u32)
-        }
-        return cp | 1
-    }
-    if (cp >= 0x139 && cp <= 0x148) || (cp >= 0x179 && cp <= 0x17E) {
-        if upper && (cp & 1) == 0 {
-            return cp - 1
-        }
-        if !upper && (cp & 1) == 1 {
-            return cp + 1
-        }
-        return cp
-    }
-    if upper {
-        if (cp >= 'a' && cp <= 'z') || (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) || (cp >= 0x3B1 && cp <= 0x3C9 && cp != 0x3C2) || (cp >= 0x430 && cp <= 0x44F) {
-            return cp - 32
-        }
-        if cp >= 0x450 && cp <= 0x45F {
-            return cp - 80
-        }
-        if cp == 0xFF {
-            return 0x178
-        }
-        return cp
-    }
-    if (cp >= 'A' && cp <= 'Z') || (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) || (cp >= 0x391 && cp <= 0x3A9) || (cp >= 0x410 && cp <= 0x42F) {
-        return cp + 32
-    }
-    if cp >= 0x400 && cp <= 0x40F {
-        return cp + 80
-    }
-    return cp
-}
-
 fn changeCase(it: *mut Interp, a: Args, upper: bool) JsError!Value {
     let s = try thisStr(it, a)
     let b = try it.builder()
@@ -410,7 +364,7 @@ fn changeCase(it: *mut Interp, a: Args, upper: bool) JsError!Value {
         } else if !upper && d.cp == 0x130 {
             try b.append("i\xCC\x87")
         } else {
-            try appendWtf8(b, caseMap(d.cp, upper))
+            try appendWtf8(b, font.caseMap(d.cp, upper))
         }
         i += d.len
     }

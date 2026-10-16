@@ -53,6 +53,19 @@ browser/
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
+### Layers
+
+| Layer | Modules |
+|---|---|
+| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf` |
+| render core | `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `url`, `dom` |
+| front end | `html`, `js`, `wasm`, `engine`, `agent` |
+
+A render-core module (and a platform module other than `ui`, the window
+shell) imports no front-end module; nothing imports `ui` except the root
+files of `browser/`. `browser/tools/check_layers.py` checks it (CI runs
+it) and lists the exceptions with the card that removes each.
+
 ## Telemetry
 
 The person's window, its Spaces, and any run with `DWELLER_PROFILE`
