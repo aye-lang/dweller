@@ -651,6 +651,7 @@ fn setUp(s: *mut Script) JsError!void {
     }
     try installAudio(&mut s.it)
     try s.it.runScript(AUDIO_PRELUDE)
+    try installWorkers(&mut s.it)
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
@@ -661,6 +662,7 @@ fn setUp(s: *mut Script) JsError!void {
 
 /// Frees the script of a page (before its document).
 pub fn destroyScript(s: *mut Script) {
+    stopWorkers(s)
     s.it.host = null
     if s.wasm_on {
         wasm.release(&mut s.it)
@@ -1660,7 +1662,10 @@ fn nextTimer(p: *mut Page, limit: f64) ?NextTimer {
 /// When there is none, the due FinalizationRegistry callbacks run
 /// instead; false when there were none either.
 pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
-    let n = nextTimer(p, deadline - pageClock(p)) orelse return runCleanups(p)
+    if try waitWorkers(p, false) {
+        return true
+    }
+    let n = nextTimer(p, deadline - pageClock(p)) orelse return try runCleanups(p) || try waitWorkers(p, true)
     try runTimer(n.script, n.index)
     try afterTask(n.script)
     if !n.script.real {
@@ -1769,6 +1774,7 @@ pub fn msUntilNextTimer(p: *mut Page) ?f64 {
         }
     }
     if p.script |s| {
+        wait = workerWait(s, wait)
         // A playing AudioContext renders ahead of its device each turn.
         if s.audio_owner != 0 && audio.playing(s.audio_owner) {
             if wait |w| {

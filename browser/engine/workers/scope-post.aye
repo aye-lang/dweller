@@ -1,0 +1,36 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.time
+
+fn scopePost(it: *mut Interp, a: Args) JsError!Value {
+    let l = scopeOf(it).link
+    let kind = try it.toNumber(it.arg(a, 0))
+    let json = try it.toStringValue(it.arg(a, 1))
+    let m = try l.seal(false, kind as u8, it.heap.bytes(js.strOf(json)))
+
+    l.toPage(m) catch |e| {
+        l.release(m)
+        return JsError.OutOfMemory
+    }
+
+    return Value.Undefined
+}
+
+fn scopeStage(it: *mut Interp, a: Args) JsError!Value {
+    try scopeOf(it).link.stage(false, try bufferBytes(it, it.arg(a, 0)))
+
+    return Value.Undefined
+}
+
+fn scopeClose(it: *mut Interp, a: Args) JsError!Value {
+    scopeOf(it).closing = true
+
+    return Value.Undefined
+}
+
+fn scopeNow(it: *mut Interp, a: Args) JsError!Value {
+    return js.numVal((time.monotonicMs() - scopeOf(it).started_ms) as f64)
+}

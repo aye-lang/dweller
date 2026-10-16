@@ -217,7 +217,7 @@ exits 0, the weekly job runs.
 |---|---|---|---|---|---|
 | C1 | P10.1 | WPT testharness runner: `wpt.py fetch/serve/run`, `dweller wpt URL` | – | done | `third_party/blink/tools/blinkpy/web_tests/` (the runner's shape: expectations, timeouts, parallel workers), `third_party/blink/web_tests/resources/testharnessreport.js` |
 | C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | done | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
-| C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | open | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
+| C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
 | C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | open | – |
 | C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
@@ -283,7 +283,7 @@ and their Blink, ANGLE and V8 files.
 | G5 | P11.10 | rAF at vsync, frame timestamp, `performance.now()` precision (touches `ui/window.aye`: not beside A2, A7) | A2 | open |
 | G6 | P11.11 | key codes, pointer events, Pointer Lock, Fullscreen, `structuredClone` | – | done |
 | G7 | P11.17 rest | `wasm_sim_bench` and the wasm-bindgen glue check | G18's copy of the game | partial |
-| G8 | P11.18 | dedicated Workers | G6 | open |
+| G8 | P11.18 | dedicated Workers | G6 | done |
 | G9 | P11.19 | Web Audio core | – | done |
 | G10 | P11.20 | Web Audio effects | G9 | done |
 | G11 | P11.12 | the rest of WebGL 2 | G3 | open |
@@ -1263,6 +1263,15 @@ time as a P4 card on those files.
 - reference: `third_party/blink/renderer/core/workers/` (`dedicated_worker.cc`, `worker_global_scope.cc`; algorithm only); the HTML spec "Workers"; the WPT `workers/` tests
 - verify: `cargo test --release --test browser -- worker_ > target/p11.18.log 2>&1; echo $?` → 0, including a module worker that computes a 512x512 noise `Float32Array` and transfers it back (as the game's `cloudNoise.worker.ts` does)
 - depends on: P11.3, P11.11; time box: 45 min (split the blob registry into P11.18b if needed); model: opus (threads)
+- status: done 2026-10-16. The blob registry is in this card (no P11.18b).
+  - Audit of module-level state: no `var` of `browser/js/` or `browser/engine/` is thread-local (Aye has no thread-locals), and a worker reaches none that changes. `js/gc.aye` `trace_mode` is set once before any thread starts and only read after. The 15 of `engine/` (`webgl_api` `size_buf`, `next_frame`; `frames` `next_page_id`; `geometry` `check_read`, `check_on`; `script` `scripting_on`, `real_clock`, `echo_console`, `write_nesting`; `contexts` `bc_table`, `bc_tab_host`; `canvas_api` `canvas_fixed`; `storage` `local_store`, `session_store`, `store_users`, `storage_saved_ms`; `sheets` `import_depth`; `audio_api` `next_audio_owner`) and the 2 new ones (`worker-api.aye` `page_links`, `next_worker_id`) belong to the main thread: a worker's `Interp` runs only `js` builtins and the natives of `engine/workers/`, never engine code. Outside these two modules, a worker would also reach `net` (`session`, `auth`, `loader`, through `net.request`) and `wasm` (`state`, `error_factory_root`). So workers load through `net.fetchLocal` (`file:`, `data:`; `Interp.local_loads_only` sends module loads there and skips the prefetch) and get no `WebAssembly`. `perf/telemetry.aye` is the one shared writer left: the interpreter notes unknown globals there, but only while telemetry is on (`DWELLER_TELEMETRY`), never in tests.
+  - `browser/engine/workers/` (module `engine.workers`, one function per file): a `Link` per worker (a mutex, its own `General` allocator that is touched only under the mutex, an inbox and an outbox of `Message`s). `spawnWorker` starts a thread with a 1 GiB reserved stack. `runWorker` makes an `Interp`, installs the builtins, `__worker` natives, `wire.js` and `worker-scope.js`, runs the script (classic) or `runModuleScript` (module), then `serveWorker` turns its event loop: the inbox, then due timers, then microtasks and unhandled rejections, sleeping 1 ms when idle.
+  - Messages: `wire.js` encodes the structured clone graph (the types of P11.11's `structuredClone`, cycles, BigInt, -0 and NaN) as JSON. The bytes of each `ArrayBuffer` are copied into the message, and the buffers of `transfer` are detached in the sender with `transfer()`. Views come back on their own buffer. A function or a symbol throws `DataCloneError`.
+  - Page side (`engine/worker-api.aye`, `wk-*.aye`, `workers/worker-page.js`): `Worker` (an `EventTarget`; `postMessage` with an array or `{transfer}`, `terminate`, `message`, `messageerror`, and cancelable `error` events, an uncanceled one goes to `console.error`). `pumpWorkers` delivers in `runDueTimers` and `runNextTimer`. With no timer left, `dump` waits for busy workers (at most 60 s); in the window, `msUntilNextTimer` is at most 4 ms while a worker is busy. `destroyScript` stops and joins the page's workers.
+  - The worker global: `self`, `location`, `postMessage`, `onmessage`, `addEventListener`, `close`, `importScripts`, timers, `performance.now`, `fetch` (`file:` and `data:`), `TextDecoder`/`TextEncoder`, `console` (forwarded to the page's console).
+  - Blob registry: `URL.createObjectURL` keeps the blob under its URL, and `revokeObjectURL` drops it. `fetch` and `new Worker` resolve `blob:` URLs of the page; a revoked URL throws `SecurityError` from `new Worker`.
+  - Not done: `WebAssembly` and `OffscreenCanvas` in workers, `http(s)` loads from workers (all need `net` and `wasm` to be thread-safe or a main-thread proxy), `blob:` URLs made inside a worker, `MessagePort` in `transfer`, and `terminate` of a worker inside a long synchronous loop (the join waits for the loop).
+  - `tests/browser.rs` `worker_basic`, `worker_module`, `worker_transfer` (`browser/tests/workers/`): the module worker imports `noise.js`, computes 512x512 value noise in a `Float32Array` and transfers it back; the page checks samples against the same module (equal) and the length (262144 floats, 1 MiB).
 
 #### P11.19: Web Audio core
 - goal: §6 Web Audio.
@@ -1325,6 +1334,52 @@ time as a P4 card on those files.
 - reference: `docs/how_cc_works.md` (TextureLayer, scrolling on the compositor, idea only); `third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.cc` (buffer swap)
 - verify: `DWELLER_DAMAGE_CHECK=1 cargo test --release --test browser -- window_webgl window_transform_composite window_damage > target/p11.23.log 2>&1; echo $?` → 0; `webgl_readback` absent from the window's timing; `window_perf.py scroll` p95 on react.dev and github.com lower than after P11.22 (recorded)
 - depends on: P11.22; time box: 45 min; model: opus
+
+#### P11.24a: first run of the user's game (defects become cards)
+- goal: run the game now, before every P11 card is done, and turn what breaks into cards (P11.24b–P11.24f). No fixes here beyond one-line ones.
+  - Copy `~/Documents/f1/web` without `node_modules` (to `target/f1web`), `pnpm install --frozen-lockfile && pnpm build`.
+  - `browser/tools/game_check.py GAME`: serves `dist/` (`.wasm` as `application/wasm`), runs `dump --text --js` and `screenshot` (1280x720) on each of the six HTML entries, and runs `index.html` in a headless window at 1280x720 for 600 frames with key events (`DWELLER_CONSOLE=1`, `DWELLER_TIMING=1`). It groups the console errors by cause and prints the window and WebGL frame rates. Screenshots and logs go to `target/game/`.
+- files: `browser/tools/game_check.py` (new), `browser/ui/window.aye` (`DWELLER_CONSOLE=1` keeps the console on stderr in `--frames` runs), `docs/plans/browser.md`
+- reference: P11.24
+- verify: `python3 browser/tools/game_check.py <copy> > target/p11.24a.log 2>&1; echo $?` → 0 with the summary printed and a PNG per page in `target/game/`
+- depends on: none; time box: 45 min; model: opus
+- status: done 2026-10-16. The build runs (pnpm 10, `tsc && vite build`, 42 MB `dist/`). With libwasmtime fetched (`browser/wasm/fetch_wasmtime.sh`; without it `WebAssembly is not defined`), stock binary: `duel.html` 0 errors (0.6 s); `object-lab.html` 0 errors (3.6 s, the kerb scene renders); `garage.html` 0 errors but 30–40 s to load (the car renders in WebGL; `/api/livery` 404 is tolerated); `recorder.html` and `tunnel.html` 1 error each, `Uncaught ReferenceError: Worker is not defined` (P11.18, in flight); `index.html` 1 error, `Script terminated: it ran too long`: the startup task ends after 2 s and the page stays at "loading sim…" (window 600 frames at 85 fps of HUD only, 1 WebGL frame). With the task budget raised by hand (diagnosis only, not committed): the startup task takes 104 s, then the game draws at 5.6 WebGL fps (rAF `ui_timers` p50 139 ms, `paint` 27.5 ms, `ui_relayout` 9.9 ms), and one fetch fails with `Failed to fetch: timed out` after the blocked task; three warns that `KHR_parallel_shader_compile` is absent (harmless). Audio and Pointer Lock were not reached (the keys arrived during the startup task). New cards: P11.24b (task budget and fetch timeout in the window), P11.24c (HUD paint/relayout per frame), P11.24d (garage load time), P11.24e (startup JS in the tree walker); per-frame JS stays with P11.21, Workers with P11.18.
+
+#### P11.24b: the window does not end a long task of the page
+- goal: the game's startup is one task of about 100 s CPU today (P11.24a); the window ends it after `TASK_MS` (2 s), so `index.html` stays at "loading sim…".
+  - Chrome never ends a page's task; its hang monitor offers "wait or exit" after about 30 s and the task goes on.
+  - In the window (real clock), raise the task budget to that of Chrome's hang monitor and keep the 2 s budget only for `dump` and the agent (virtual clock), or make the window's budget a prompt later. A page that ends a task early must still log it.
+  - The fetch of a blocked page must not time out because the loop was blocked (with the budget raised by hand, the game logged `Uncaught (in promise) TypeError: Failed to fetch: timed out` after its 104 s task): count the request's timeout from the network side, or deliver a response that already arrived.
+- files: `browser/engine/script.aye` (`TASK_MS`, `startBudget`), the fetch timeout in `browser/net/`, `tests/browser.rs` (`window_long_task`)
+- reference: `content/browser/renderer_host/render_widget_host_impl.cc` (hang monitor timeout), `chrome/browser/ui/hung_renderer/`; `third_party/blink/renderer/core/fetch/fetch_manager.cc` (no fetch timeout in Blink)
+- verify: `cargo test --release --test browser -- window_long_task > target/p11.24b.log 2>&1; echo $?` → 0 (a page whose script runs 5 s of CPU after starting a fetch finishes the script and gets the fetch's body in the window), and `game_check.py` with the stock binary shows WebGL frames for `index.html`
+- depends on: none; time box: 45 min; model: opus
+
+#### P11.24c: the HUD's frame cost in the window
+- goal: with the game running (large budget), every window frame spends `paint` 27.5 ms and `ui_relayout` 9.9 ms (p50), so the window cannot reach 50 fps even with no JS. The HUD changes text every frame over a full-window WebGL canvas.
+  - Measure which boxes the HUD dirties per frame (`ui_damage_px`, `layout_dirty`) and make the frame paint and lay out only them: a text change in a fixed-size box must not relayout the document or repaint the canvas under it.
+  - Target: `paint` ≤ 4 ms and `ui_relayout` ≤ 2 ms p50 on the game page; GPU compositing (P11.22, P11.23) may own the rest.
+- files: `browser/ui/window.aye`, `browser/paint/`, `browser/layout/`, `browser/engine/PERF.md`
+- reference: `third_party/blink/renderer/core/paint/paint_invalidator.cc`, `third_party/blink/renderer/core/layout/layout_object.cc` (`SetNeedsLayout`, relayout boundaries), algorithm only
+- verify: `python3 browser/tools/game_check.py <copy> --binary <large-budget build>` and the `paint`/`ui_relayout` p50 of `target/game/index.window.log`; a reduced page `browser/tests/perf/hud.html` (a full-window canvas plus a HUD whose text changes every rAF) in `tests/browser.rs` (`window_hud_frame`)
+- depends on: P11.24b for the game run (the reduced page does not); time box: 45 min; model: opus
+
+#### P11.24d: the garage page's 33–40 s load
+- goal: `dump --js garage.html` takes 33–40 s before it prints (no error; the car renders). Find where the time goes (GLB parse in `GLTFLoader`, texture decode, shader compile, or JS) and fix the top item or write it as a card.
+- files: `browser/engine/PERF.md` (a "garage load" row), the fix's files
+- reference: `browser/js/PERF.md`; three's `GLTFLoader` in `node_modules/three/examples/jsm/loaders/` of the copy
+- verify: `DWELLER_TIMING=1 target/dweller dump --text --js <server>/garage.html` phase totals before and after, in the PR; the load under 10 s, or the follow-up card written
+- depends on: none; time box: 45 min; model: sonnet
+
+#### P11.24e: the game's startup JS (about 100 s CPU in the tree walker)
+- goal: `index.html`'s startup task (track, terrain with 287,263 grass clumps in 995 chunks, pit complex, 867 ad slots, then three's material precompile) takes about 100 s in the tree-walking interpreter (`Interp_eval`, `evalFastExpr`, `Heap_findProp` top a `sample` profile); V8 does it in a few seconds at most.
+  - Profile with `DWELLER_JS_VM=1` and `DWELLER_JS_VM_STATS=1`; record the fallback reasons and the hot functions of the game's bundle.
+  - Write the result into the Phase F cards (P4.63–P4.78) as the game's numbers, and pick targeted builtins if one dominates (typed-array fill, `Math`, array sort).
+  - Target: startup ≤ 10 s; the per-frame JS (rAF `ui_timers` p50 139 ms, 5.6 WebGL fps) belongs to P11.21.
+- files: `browser/js/PERF.md` (a "game startup" section), `docs/plans/browser.md`
+- reference: `browser/js/BYTECODE.md` section 7 (V8 files), `src/interpreter/` of V8
+- verify: `browser/js/PERF.md` has the table and the command to rerun it; the startup time with the VM on and off
+- depends on: P11.24b (to run the startup to its end); time box: 45 min; model: opus
 
 #### P11.24: acceptance: the user's game in Dweller
 - goal:
@@ -1471,6 +1526,7 @@ its area.
 - verify: `cargo test --release --test browser wpt_reftest > target/p10.2.log 2>&1; echo $?` → 0; `python3 browser/tools/wpt.py run css/css-flexbox -j 8 > target/wpt-flex.log 2>&1; tail -3 target/wpt-flex.log` prints the score
 - depends on: P10.1
 - time box: 90 min; model: sonnet
+- status: done 2026-10-16. `wpt.py run` now sorts each HTML page into `testharness`, `reftest` (`<link rel=match|mismatch>`) or `crashtest` (`crashtests/` dir or `*-crash.*`); `browser/tools/wpt_reftest.py` screenshots test and reference with `dweller screenshot` at 800×600 (system fonts, `DWELLER_FONT_DIRS=<root>/fonts`), follows a reference's own match/mismatch links one level, honours `<meta name=fuzzy>` (the upper bounds of `maxDifference` and `totalPixels`; a `ref.html:` prefix is ignored) and passes a crashtest when the screenshot exits 0 within 60 s. Identical PNG bytes short-circuit; otherwise `wpt_png.py` (zlib, no dependencies) decodes both and counts differing pixels. A reftest is one subtest (`reftest`); a crash, a timeout or a size mismatch fails it. `DWELLER_FONT_DIRS` (colon-separated; `font.addEnvFonts`, `browser/font/add-*.aye`) registers each `Name.ttf|otf` of those directories as the web face family `Name` (weights 100–900) for `screenshot`. `screenshot --wait-class NAME` only raises the page's virtual-time budget from 1 s to 5 s (timers run until idle, so a class removed by a timer is seen; a class removed by an event that never comes is not waited for). `css/css-flexbox` is an area of `wpt_areas.json` (so `fetch` gets it). Fixtures in `browser/tests/wpt-reftest/` (Ahem, mismatch, fuzzy pass and fail, reftest-wait, two crashtests, a failing match); `tests/browser.rs` `wpt_reftest`. Score at e58225ab: `css/css-flexbox` 640/1691 (37.8%; 1422 files, 469 skipped, 1198 OK, 180 TIMEOUT, 44 ERROR, no CRASH; 47 s at -j 8). Left: `-ref` pages that use `reftest-wait` on the reference only, `<link rel=match>` chains of more than two levels, `reftest-wait` events that need real time, print reftests, the `DWELLER_FONT_DIRS` weights (one face per family).
 
 #### P10.3: test262 runner
 - goal: test262 runs through the existing `dweller js` runner with the harness includes.

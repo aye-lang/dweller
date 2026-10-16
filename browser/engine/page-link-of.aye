@@ -1,0 +1,21 @@
+import engine.workers
+import js.Interp
+import js.JsError
+
+fn pageLinkOf(it: *mut Interp, id: u32) JsError!*mut workers.Link {
+    let l = page_links orelse return noWorker(it)
+
+    for pl in l.items() {
+        if pl.id == id && pl.owner == scriptOf(it) && !pl.dead {
+            return pl.link
+        }
+    }
+
+    return noWorker(it)
+}
+
+fn noWorker(it: *mut Interp) JsError!*mut workers.Link {
+    _ = try it.typeError("The worker has been terminated.")
+
+    return JsError.Thrown
+}

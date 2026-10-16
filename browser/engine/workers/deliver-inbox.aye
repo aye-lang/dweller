@@ -1,0 +1,18 @@
+import js.Interp
+
+fn deliverInbox(it: *mut Interp, scope: *mut Scope) bool {
+    let l = scope.link
+    var worked = false
+
+    while !scope.closing {
+        let m = l.takeInbox() orelse break
+        worked = true
+        l.worker_current = m
+        deliverMessage(it, m)
+        l.worker_current = null
+        l.release(m)
+        runJobs(it, l)
+    }
+
+    return worked
+}

@@ -1,0 +1,16 @@
+import js
+import js.Interp
+import std.text
+
+fn reportError(it: *mut Interp, l: *mut Link) {
+    var b = text.Builder.init(it.alloc)
+    defer b.deinit()
+
+    js.describeThrown(it, &mut b, "Uncaught ") catch |e| {}
+    it.exception = js.Value.Undefined
+
+    let m = l.seal(false, ERROR, b.bytes()) catch return
+    l.toPage(m) catch |e| {
+        l.release(m)
+    }
+}

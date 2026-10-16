@@ -1,0 +1,26 @@
+import engine.workers
+import js
+import std.mem.AllocError
+
+fn pumpWorkers(s: *mut Script) AllocError!bool {
+    let l = page_links orelse return false
+    freeDeadLinks(s)
+
+    var ran = false
+    var i: usize = 0
+
+    while i < l.len() {
+        let pl = l.items()[i]
+        i += 1
+
+        if pl.owner != s || pl.dead {
+            continue
+        }
+
+        let m = pl.link.takeOutbox() orelse continue
+        ran = true
+        try deliverToPage(s, pl, m)
+    }
+
+    return ran
+}
