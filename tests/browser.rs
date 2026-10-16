@@ -6115,6 +6115,63 @@ fn window_input_priority() {
     );
 }
 
+#[test]
+fn window_raf_vsync() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/raf_vsync.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "600",
+            "--text",
+        ])
+        .spawn_drained();
+    let start = Instant::now();
+    while window.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = window.kill();
+            panic!("the window did not draw 600 frames in 60 s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let out = window.wait_with_output().unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let period_ms = err
+        .lines()
+        .find_map(|l| l.split("DWELLER_TIMING\tui_display_period\t").nth(1))
+        .map(|r| r.split('\t').next().unwrap().parse::<f64>().unwrap() / 1e6)
+        .expect("no ui_display_period record");
+    let got = text(&out.stdout);
+    let line = got
+        .lines()
+        .find(|l| l.starts_with("frames "))
+        .unwrap_or_else(|| panic!("no result:\n{got}"));
+    assert!(
+        line.starts_with("frames 120 same true median ") && line.ends_with(" fractional true coarse true"),
+        "{line}"
+    );
+    let median: f64 = line.split(' ').nth(5).unwrap().parse().unwrap();
+    assert!(
+        (median - period_ms).abs() <= period_ms * 0.1,
+        "median rAF interval {median} ms, display period {period_ms} ms"
+    );
+    println!("rAF median interval {median:.2} ms, display period {period_ms:.2} ms");
+}
+
 /// The mouse moves over a link while the page's scripts run one per loop
 /// iteration (`browser/tests/net/hover_scripts.html`): the window keeps
 /// the layout from before them, whose boxes name the links the scripts
