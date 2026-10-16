@@ -291,6 +291,22 @@ As built (P4.67): `StaGlobal [n]`, `TypeOfGlobal [n]`,
 per-node `PropCache` (one node is one site); feedback-vector slots and
 the compiled top level are P4.67b. The DOM gates run with the VM on.
 
+As built (P4.67b): a classic script's top level is compiled as a
+function body with no parameters and no function object
+(`compileScript`, run by `runScript` in a frame whose `func` is NONE,
+so strictness comes from `script_strict`; the code is freed when the
+script ends). Top-level `var` and function declarations are global
+object properties (`StaGlobal`, or `StaGlobalInit [n]` for a hoisted
+function), top-level `let`/`const` initialize their `glex` slot with
+`StaGlobalInit [n]` (`assignIdent` with `init`), and every expression
+statement stores its value in a register the compiler reserves, which
+the script returns: `evalScript` takes it as the completion. A script
+the compiler cannot handle stays on the tree walker. Global loads and
+stores of `var`s check the global object's property at the cached
+slot by key (`vmGlobalSlot`), which holds in dictionary mode too (the
+global is one after any deletion). Named property sites still use the
+per-node `PropCache`; feedback-vector slots are left for a later card.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

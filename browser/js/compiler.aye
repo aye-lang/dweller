@@ -76,6 +76,7 @@ struct Compiler {
     // loop or statement they label.
     pending: List(u32)
     ctxregs: List(i32)
+    completion: i32 = -1
 
     fn fail(self: *mut Self, why: []u8) CompileError!void {
         self.reason = why
@@ -823,6 +824,9 @@ struct Compiler {
                         .Declarator { target, .. } => {
                             match self.ast.node(target) {
                                 .Ident { depth, slot, .. } => {
+                                    if depth >= DEPTH_GLOBAL_LEX {
+                                        continue
+                                    }
                                     let r = try self.identReg(depth, slot)
                                     if r >= 0 {
                                         self.tdz.items()[r as usize] = true
@@ -860,6 +864,10 @@ struct Compiler {
                             try self.fail("unsupported: destructuring")
                         }
                     }
+                    if depth >= DEPTH_GLOBAL_LEX {
+                        try vmGlobalDecl(self, kind, target, init)
+                        continue
+                    }
                     let r = try self.identReg(depth, slot)
                     if init == 0 {
                         if kind == DECL_VAR {
@@ -894,6 +902,9 @@ struct Compiler {
             .Empty => {}
             .ExprStmt { e } => {
                 try self.visit(e)
+                if self.completion >= 0 {
+                    try self.b.op1(BC_STAR, self.completion as i64)
+                }
             }
             .VarDecl { kind, list, n } => {
                 if kind != DECL_VAR && kind != DECL_LET && kind != DECL_CONST {

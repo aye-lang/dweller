@@ -255,7 +255,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F3 | P4.65 | calls and `new` | F2 | done |
 | F4 | P4.66 | closures and contexts | F3 | done |
 | F5 | P4.67 | properties, literals, globals, the top level | F4 | done |
-| F5b | P4.67b | the top level, `evalScript` and per-slot caches | F5 | open |
+| F5b | P4.67b | the top level, `evalScript` and per-slot caches | F5 | partly done |
 | F6 | P4.68 | exceptions | F5 | open |
 | F7 | P4.69 | the rest of the syntax | F6 | open |
 | F8 | P4.70 | classes | F7 | open |
@@ -746,6 +746,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.67b.log 2>&1; echo $?` → 0; `globals`, `calls`, `richards` checksums equal with `DWELLER_JS_VM=1`
 - estimate: `globals` 5–10×, `calls` 3–5×
 - model: opus
+- status: partly done 2026-10-16. The script top level and `evalScript` code run compiled (`vm-compile-script.aye`, `vm-visit-script.aye`, `vm-run-script.aye`; `runScript` wiring only): the Program block as a function body with no parameters and no function object (frame `func` NONE, so `isStrictCode` reads `script_strict`), its code freed when the script ends; top-level functions hoisted and `let`/`const` initialized with the new `StaGlobalInit [n]` (102, `assignIdent` with `init`, `vm-init-binding.aye`, `vm-global-decl.aye`), `var` stores `StaGlobal`; each expression statement stores into a reserved completion register that the script returns, and `vmRunScript` sets `Interp.completion` at the tree walker's depth rule, so `evalScript` is unchanged. Scripts the compiler cannot handle stay on the tree walker (`DWELLER_JS_VM_STATS=1` prints why). Global `var` loads and stores (`vm-lda-global.aye`, `vm-sta-global.aye`, `vm-global-slot.aye`) check the property at the cached slot by key, which also holds in dictionary mode: the `js` shell's global object is a dictionary, so the shape-keyed cache of P4.67 never hit and every global access took `findProp` plus `getFrom`. `vmIdx` decodes 2- and 4-byte operands inline and `vmImm` 2-byte ones (AST node operands are wide; `bcGet` was 11% of `calls`). `virtual_clock.tree` counts 999000 (its top-level busy loop now ticks per back edge). `js_conformance`, `js_conformance_vm`, `jsdom_fixtures`, `jsdom_gc_stress`, `errors` green; `check_layers.py` passes; `aye_unit_tests` not run (`BC_INFO` and `BC_COUNT` both grew by one). jsbench (fast build, median of 3, tree walker vs `DWELLER_JS_VM=1`, checksums equal): `globals` 2.13 s to 0.55 s (3.9×), `calls` 3.31 s to 1.86 s (1.8×), `richards` 1.38 s to 0.69 s (2.0×). Below the estimate: `calls` spends its time in the constructor's `this.x = x` adds (no store-transition cache: `setOn` walks the chain, `findProp`, `addProp`, the transition map) and in pushes of the call frames. Left (P4.67c): per-feedback-slot `PropCache` (`GetNamedProperty r, name, [s]` with the name in the constant pool, so operands stop being wide node ids), a store-transition cache for adds, computed keys and spread in literals, array spread.
 
 #### P4.68: exceptions
 - goal: `throw`, `try`/`catch`/`finally` in compiled code, with unwinding through VM frames, natives and the tree walker, and error traces and telemetry positions from the source-position table.
