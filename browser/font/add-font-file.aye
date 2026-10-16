@@ -1,0 +1,31 @@
+import std
+import std.mem.Allocator
+import std.text
+
+pub fn addFontFile(alloc: Allocator, sys: *mut System, dir: []u8, name: []u8) {
+    if !text.endsWith(name, ".ttf") && !text.endsWith(name, ".otf") {
+        return
+    }
+
+    var path = text.Builder.init(alloc)
+    defer path.deinit()
+    path.append(dir) catch |e| {
+        return
+    }
+    path.append("/") catch |e| {
+        return
+    }
+    path.append(name) catch |e| {
+        return
+    }
+
+    let file = std.fs.readFile(alloc, path.bytes()) catch |e| {
+        return
+    }
+    defer alloc.free(file)
+
+    let desc = FaceDesc { family: name[0..name.len - 4], weight_lo: 100.0, weight_hi: 900.0, italic: false, ranges: []u32{}, url: path.bytes() }
+    sys.addWebFont(desc, file) catch |e| {
+        return
+    }
+}

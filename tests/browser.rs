@@ -1930,7 +1930,7 @@ fn screenshot_viewport_lazy_image() {
 
 #[test]
 fn screenshot_errors() {
-    let usage = "error: usage: dweller screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full]\n";
+    let usage = "error: usage: dweller screenshot FILE|URL -o OUT.png [--width W] [--height H] [--font fixed|system] [--full] [--wait-class NAME]\n";
     expect(&["screenshot", "browser/tests/basic.html"], 2, "", usage);
     expect(&["screenshot", "-o", "x.png"], 2, "", usage);
     expect(
@@ -4146,6 +4146,41 @@ fn wpt_py_serve() {
         json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
         "{json}"
     );
+}
+
+// P10.2: `wpt.py run` over the reftest and crashtest fixtures in
+// browser/tests/wpt-reftest (the Ahem font through DWELLER_FONT_DIRS).
+#[test]
+fn wpt_reftest() {
+    let out = root().join("target/wpt-reftest");
+    let _ = std::fs::remove_dir_all(&out);
+    let run = Command::new("python3")
+        .current_dir(root())
+        .args(["browser/tools/wpt.py", "run", ".", "-j", "4"])
+        .args(["--wpt-root", "browser/tests/wpt-reftest", "--results-dir"])
+        .arg(&out)
+        .arg("--dweller")
+        .arg(dweller())
+        .output();
+    let Ok(run) = run else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    let stdout = text(&run.stdout);
+    assert!(run.status.success(), "wpt.py run failed: {stdout}{}", text(&run.stderr));
+    for want in [
+        "ahem.html: 1/1 OK",
+        "crashtests/broken.html: 1/1 OK",
+        "crashtests/ok.html: 1/1 OK",
+        "fail.html: 0/1 OK",
+        "fuzzy-fail.html: 0/1 OK",
+        "fuzzy.html: 1/1 OK",
+        "mismatch.html: 1/1 OK",
+        "wait.html: 1/1 OK",
+        ": 8 files (4 skipped), 6/8 subtests passed, score 75.0%",
+    ] {
+        assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
+    }
 }
 
 // P10.3: `dweller js --test262` and browser/tools/test262.py over the
