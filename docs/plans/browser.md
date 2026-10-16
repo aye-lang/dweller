@@ -1380,6 +1380,51 @@ time as a P4 card on those files.
 - verify: `browser/js/PERF.md` has the table and the command to rerun it; the startup time with the VM on and off
 - depends on: P11.24b (to run the startup to its end); time box: 45 min; model: opus
 
+#### P11.24f: which JavaScript the game runs, and why it stays on the tree walker
+- goal: measure `index.html` and `garage.html` of the user's game with `DWELLER_JS_VM=1 DWELLER_JS_VM_STATS=1` against the tree walker, and order the Phase F cards (P4.68–P4.73) by the game's numbers. No engine changes.
+- method: a local binary (not committed) with three changes: the task budget raised (`TASK_MS` 900 s, `TASK_STEPS` 1e11, `TASK_BACKSTOP_MS` 900 s; P11.24b is not done), and in `vm.aye`/`interp.aye` counters that `DWELLER_JS_VM_STATS` lacks today: tree-walker calls and ticks (statements plus calls), calls per fallback reason, and the 12 most called fallback functions with name and source offset (about 60 lines). `index.html` runs in the window (`--width 1280 --height 720 --frames 60`, `DWELLER_TIMING=1 DWELLER_CONSOLE=1`; `dump` cannot create the WebGL context of `index.html`), `garage.html` with `dump --text --js`. ANGLE (`browser/gpu/fetch_angle.sh`) and libwasmtime are needed. Apple M2 Pro; VM and tree-walker runs ran side by side, so absolute times carry host noise. `sample` of the VM run for the split by time.
+- result, `index.html` (whole run, startup plus 60 frames):
+  - Functions: 2,248 compiled, 856 on the tree walker (27%).
+  - Calls: 104.1 M in compiled code, 10.0 M on the tree walker (8.8%). Instructions: 12.25 G VM instructions against 419 M tree-walker ticks.
+  - Time (20 s `sample` inside the 62 s task): 58% in `vmLoop`, 37% in one tree-walked function (`execForIn` around three nested `for` loops over typed-array elements, not compiled because of the `for-in`), 4% other tree-walker code. Inside `vmLoop`, about 14% of the samples are element reads of typed arrays (`getIndex`, `typedGet`, `viewRead`).
+  - Startup (tasks of the page, CPU): VM 3.0 + 2.3 + 62.7 + 14.3 + 19.5 + 2.8 = 104.6 s (wall 108 s for 60 frames); tree walker 3.0 + 2.4 + 102.3 + 24.3 + 48.7 + 8.4 = 189 s (wall 191 s). Speedup per task 1.6×, 1.7×, 2.5×, 3.0×; the material precompile log line (`預編 111 組材質`) 10.6 s → 1.3–1.7 s.
+  - Per frame (rAF `ui_timers`, after the startup): tree walker 90–100 ms, VM 77–86 ms (p50 about 80 ms; 50 fps needs under 20 ms). From the 60- and 130-frame runs, one post-startup frame is about 51 K compiled calls, 3.3 M VM instructions, 6 K tree-walker calls and 237 K tree-walker ticks; at the rates measured in the startup (about 5 ns per VM instruction, about 100 ns per tick) that is about 17 ms of compiled code and 24 ms of tree walker per frame, so most of a frame's interpreted time is still the tree walker, and the rest of the 80 ms is native code (GL calls, typed-array natives).
+- result, `garage.html` (`dump`, load 28 s with the VM, 34 s without): 944 compiled, 428 on the tree walker; 30.5 M compiled calls, 4.1 M tree-walker calls (12%), 1.63 G instructions, 92 M ticks.
+- fallback reasons, `index.html` (functions / calls; the compiler reports the first construct it cannot compile):
+
+| reason | functions | calls | card |
+| --- | ---: | ---: | --- |
+| Throw | 102 | 6.55 M | P4.68 |
+| class constructor | 218 | 2.62 M | P4.70 |
+| parameter pattern | 42 | 0.32 M | P4.69 |
+| ForIn | 163 | 0.24 M | P4.69 |
+| destructuring | 48 | 0.21 M | P4.69 |
+| computed or spread property | 22 | 27 K | P4.69 |
+| Regex | 17 | 9 K | P4.69 |
+| OptChain | 37 | 7 K | P4.69 |
+| Try | 39 | 6 K | P4.68 |
+| Spread | 17 | 3 K | P4.69 |
+| Template | 95 | 2 K | P4.69 |
+| generator or async function | 31 | 58 | P4.71, P4.72 |
+| ClassDecl, Class, SuperMember, NewTarget, ImportCall, logical assignment, assignment to a pattern | 25 | 2.5 K | P4.70 (the rest P4.69) |
+
+  - Two functions of the browser's own typed-array prelude carry the Throw row: `liveBuffer` (3.75 M calls) and `TypedArray.prototype.set` (2.77 M), each with a `throw` on a cold path; then the WebGL glue (`_location`, `_uniformv`, `bindTexture`, `bindVertexArray`, `useProgram`, 0.04–0.56 M calls each in `garage.html`). They are also about 5 K of the 6 K tree-walker calls of each frame.
+  - Class constructors: three's math classes (`Vector3`, `Matrix4`, ... in `gltfModel`/`main`; 0.33–0.68 M calls each for the top five) and the prelude's `TypedArray`; few ticks each, almost none per frame (+7 K in 70 frames).
+  - `for-in`: the sites in the bundle are three's geometry and material copy, dispose and `mergeGeometries` paths; the hot one (37% of the startup time above) is probably the merge of the grass chunks, inferred from the stack (a `for-in` around three nested `for` loops over typed-array elements), not named by the counters.
+  - Generators, async functions and `for await` are 31 functions with 58 calls in the whole run; try/catch 39 functions with 6 K calls; the syntax of P4.69 other than `for-in` is about 0.6 M calls.
+- order of the next cards by the game's numbers:
+  1. P4.68 exceptions (for `throw`; `try` follows). It covers 63–66% of all tree-walker calls and most of each frame's tree-walker time. The two prelude functions can also be fixed at once without the engine by moving the `throw` into a helper function (a one-line change each; ask for a card if P4.68 waits).
+  2. P4.69, `for-in` and destructuring/parameter patterns first (the 37% loop and 0.5 M calls), then template literals, spread, optional chaining, regexp literals.
+  3. P4.70 classes (2.6 M calls at startup, all three math classes; no per-frame weight, so after 1 and 2).
+  4. P4.73 with the keyed element entry and P4.76 (typed arrays over real bytes): with the coverage above done, the startup is 12 G VM instructions at about 5 ns, and element access through `Value` arrays is the first cost inside `vmLoop`; the target of 10 s needs this and P4.77, not coverage alone.
+  5. P4.71 and P4.72 last: 31 functions, 58 calls. P4.75 (default on) waits for 1 to 3 on the game.
+- also found: `Uncaught TypeError: Failed to load a worker script` on `index.html` (one error in the console, from the page's worker use; P11.18 is on `main`, so check whether the worker URL form is not handled); `dump --js` of `index.html` cannot create a WebGL context (`THREE.WebGLRenderer: Error creating WebGL context`), so a startup measurement needs the window.
+- files: `docs/plans/browser.md`
+- reference: P11.24a, P11.24e; `browser/js/BYTECODE.md`
+- verify: rerun with the local binary as in "method"; the numbers above are from `target/g/` of the card's branch (not committed)
+- depends on: none; time box: 45 min; model: opus
+- status: done 2026-10-16.
+
 #### P11.24: acceptance: the user's game in Dweller
 - goal:
   - Copy `~/Documents/f1/web` to the scratchpad without `node_modules`, then `pnpm install --frozen-lockfile && pnpm build` (`tsc && vite build`; the six HTML entries of `vite.config.ts` go into `dist/`). Never modify the user's repo.
