@@ -741,21 +741,110 @@ pub let CANVAS_PRELUDE =
     \\    return image;
     \\  }
     \\}
+    \\// The node whose pixels a bitmap is made from: a canvas, an image, or a
+    \\// temporary canvas holding an ImageData or a decoded Blob.
     \\function sourceNode(source) {
-    \\  if (source instanceof OffscreenCanvas || source instanceof ImageBitmap) return source._node;
-    \\  if (source instanceof HTMLCanvasElement || source instanceof HTMLImageElement) return source;
-    \\  return null;
+    \\  let node = null;
+    \\  if (source instanceof OffscreenCanvas || source instanceof ImageBitmap) node = source._node;
+    \\  else if (source instanceof HTMLCanvasElement || source instanceof HTMLImageElement) node = source;
+    \\  else if (source instanceof ImageData) {
+    \\    node = document.createElement('canvas');
+    \\    node.width = source.width;
+    \\    node.height = source.height;
+    \\    ak.canvasPixels(node, 0, 0, source.width, source.height, source.data);
+    \\    return node;
+    \\  } else if (source instanceof Blob) {
+    \\    node = document.createElement('canvas');
+    \\    if (!ak.canvasDecode(node, source._bytes)) throw new DOMException('The source image could not be decoded', 'InvalidStateError');
+    \\    return node;
+    \\  }
+    \\  if (!node) throw new TypeError('Expected image source');
+    \\  if ((node.naturalWidth === undefined ? node.width : node.naturalWidth) === 0 || (node.naturalHeight === undefined ? node.height : node.naturalHeight) === 0) {
+    \\    throw new DOMException('The source image has no pixels', 'InvalidStateError');
+    \\  }
+    \\  return node;
+    \\}
+    \\function bitmapOption(o, key, values, fallback) {
+    \\  const v = o[key] === undefined ? fallback : String(o[key]);
+    \\  if (!values.includes(v)) throw new TypeError('Invalid ' + key + ': ' + v);
+    \\  return v;
     \\}
     \\class ImageBitmap {
-    \\  constructor(source) {
+    \\  // `crop` is [sx, sy, sw, sh] or undefined. The HTML spec's steps, after
+    \\  // Blink's ImageBitmap: crop (negative sizes move the origin; outside the
+    \\  // source is transparent black), resize, then flip.
+    \\  constructor(source, options, crop) {
+    \\    // The options of createImageBitmap: the orientation is applied now
+    \\    // ('from-image' is 'none': there are no EXIF rotations here); the
+    \\    // premultiplied state is the one WebGL's texImage2D reads ('default'
+    \\    // is premultiplied, as in Blink). colorSpaceConversion is validated
+    \\    // only: there are no color profiles.
+    \\    const o = options === undefined || options === null ? {} : options;
+    \\    const orientation = bitmapOption(o, 'imageOrientation', ['none', 'flipY', 'from-image'], 'from-image');
+    \\    const premultiply = bitmapOption(o, 'premultiplyAlpha', ['none', 'premultiply', 'default'], 'default');
+    \\    bitmapOption(o, 'colorSpaceConversion', ['none', 'default'], 'default');
+    \\    const quality = bitmapOption(o, 'resizeQuality', ['pixelated', 'low', 'medium', 'high'], 'low');
+    \\    const rw = o.resizeWidth === undefined ? undefined : o.resizeWidth >>> 0;
+    \\    const rh = o.resizeHeight === undefined ? undefined : o.resizeHeight >>> 0;
+    \\    if (crop && (crop[2] === 0 || crop[3] === 0)) throw new RangeError('The crop rectangle has no width or height');
+    \\    if (rw === 0 || rh === 0) throw new DOMException('The resize size is zero', 'InvalidStateError');
     \\    const node = sourceNode(source);
-    \\    if (!node) throw new TypeError('Expected image source');
+    \\    const nw = node.naturalWidth || node.width, nh = node.naturalHeight || node.height;
+    \\    let x = 0, y = 0, w = nw, h = nh;
+    \\    if (crop) {
+    \\      w = Math.abs(crop[2]);
+    \\      h = Math.abs(crop[3]);
+    \\      x = crop[2] < 0 ? crop[0] + crop[2] : crop[0];
+    \\      y = crop[3] < 0 ? crop[1] + crop[3] : crop[1];
+    \\    }
+    \\    let width = w, height = h;
+    \\    if (rw !== undefined && rh !== undefined) {
+    \\      width = rw;
+    \\      height = rh;
+    \\    } else if (rw !== undefined) {
+    \\      width = rw;
+    \\      height = Math.max(1, Math.ceil(rw*h/w));
+    \\    } else if (rh !== undefined) {
+    \\      height = rh;
+    \\      width = Math.max(1, Math.ceil(rh*w/h));
+    \\    }
+    \\    this._premultiplied = premultiply !== 'none';
     \\    this._node = document.createElement('canvas');
-    \\    this._node.width = node.naturalWidth || node.width;
-    \\    this._node.height = node.naturalHeight || node.height;
-    \\    this._node.getContext('2d').drawImage(node, 0, 0);
-    \\    this.width = this._node.width;
-    \\    this.height = this._node.height;
+    \\    this._node.width = width;
+    \\    this._node.height = height;
+    \\    const x0 = Math.max(x, 0), y0 = Math.max(y, 0), x1 = Math.min(x+w, nw), y1 = Math.min(y+h, nh);
+    \\    const flip = orientation === 'flipY';
+    \\    // A canvas copied at its own scale keeps its bytes (drawing would round
+    \\    // straight colors through premultiplied ones); an origin-unclean
+    \\    // canvas, an image or a resize is drawn.
+    \\    let copied = x1 <= x0 || y1 <= y0;
+    \\    if (!copied && width === w && height === h && node instanceof HTMLCanvasElement && !(contexts.get(node) instanceof webgl.Context)) {
+    \\      try {
+    \\        const iw = x1-x0, ih = y1-y0;
+    \\        const src = new Uint8ClampedArray(iw*ih*4), dst = new Uint8ClampedArray(width*height*4);
+    \\        ak.canvasPixels(node, x0, y0, iw, ih, null, src);
+    \\        for (let row = 0; row < ih; row++) {
+    \\          const to = flip ? height-1-(y0-y+row) : y0-y+row;
+    \\          dst.set(src.subarray(row*iw*4, (row+1)*iw*4), (to*width+x0-x)*4);
+    \\        }
+    \\        ak.canvasPixels(this._node, 0, 0, width, height, dst);
+    \\        copied = true;
+    \\      } catch (e) {
+    \\        if (!e || e.name !== 'SecurityError') throw e;
+    \\      }
+    \\    }
+    \\    if (!copied) {
+    \\      const context = this._node.getContext('2d');
+    \\      if (flip) {
+    \\        context.translate(0, height);
+    \\        context.scale(1, -1);
+    \\      }
+    \\      context.imageSmoothingEnabled = quality !== 'pixelated';
+    \\      const kx = width/w, ky = height/h;
+    \\      context.drawImage(node, x0, y0, x1-x0, y1-y0, (x0-x)*kx, (y0-y)*ky, (x1-x0)*kx, (y1-y0)*ky);
+    \\    }
+    \\    this.width = width;
+    \\    this.height = height;
     \\  }
     \\  close() {
     \\    this._node.width = 0;
@@ -764,7 +853,15 @@ pub let CANVAS_PRELUDE =
     \\  }
     \\}
     \\Object.assign(globalThis, {CanvasRenderingContext2D, CanvasGradient, CanvasPattern, Path2D, ImageData, OffscreenCanvas, ImageBitmap});
-    \\globalThis.createImageBitmap = function (source) {
-    \\  return Promise.resolve(new ImageBitmap(source));
+    \\// createImageBitmap(source[, options]) and (source, sx, sy, sw, sh[, options]).
+    \\globalThis.createImageBitmap = function (source, ...rest) {
+    \\  try {
+    \\    if (rest.length > 5 || rest.length === 2 || rest.length === 3) throw new TypeError('Failed to execute createImageBitmap: invalid number of arguments');
+    \\    const crop = rest.length >= 4 ? rest.slice(0, 4).map(v => v | 0) : undefined;
+    \\    const options = rest.length === 5 ? rest[4] : rest.length === 1 ? rest[0] : undefined;
+    \\    return Promise.resolve(new ImageBitmap(source, options, crop));
+    \\  } catch (e) {
+    \\    return Promise.reject(e);
+    \\  }
     \\};
     \\})();

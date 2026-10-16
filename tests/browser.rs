@@ -630,6 +630,98 @@ fn webgl_objects() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.6 (docs/webgl.md §3): `dump --text --js` of
+/// `browser/tests/webgl/textures.html` on SwiftShader, served over HTTP
+/// (the page loads an image from a second origin), prints
+/// `textures.txt`: a textured quad from a PNG, a 2D canvas, an
+/// OffscreenCanvas, an ImageData, ImageBitmaps and typed arrays read back
+/// with and without UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+/// the object and pixel store rules, and the SecurityError of a
+/// cross-origin image. It samples with NEAREST at texel centers, so the
+/// pixels do not depend on the backend.
+#[test]
+fn webgl_textures() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/textures.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/textures.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
+/// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
+/// on SwiftShader, served over HTTP (the page fetches a PNG), prints
+/// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
+/// canvas sources, the crop rectangle (negative sizes, outside the
+/// source, RangeError), imageOrientation, premultiplyAlpha, the resize
+/// options, close(), and a Blob bitmap uploaded with texImage2D and read
+/// back. The pixels of the bitmaps come through a 2D canvas.
+#[test]
+fn imagebitmap_sources() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/imagebitmap.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/imagebitmap.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
@@ -667,6 +759,75 @@ fn wasm_api() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// `browser/tests/audio/core.html` (P11.19, Web Audio core): an
+/// OfflineAudioContext renders a looped buffer through a gain with
+/// linear, exponential and setTarget automation. Its `samples` line must
+/// match the values computed here within 1e-4; the other lines must be
+/// `core.txt`, with an empty stderr. No audio device is used.
+#[test]
+fn webaudio_core() {
+    let page = "browser/tests/audio/core.html";
+    let golden = root().join("browser/tests/audio/core.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let samples = got
+        .lines()
+        .find_map(|l| l.strip_prefix("samples "))
+        .unwrap_or_else(|| panic!("no samples line:\n{got}"));
+    let rest: String = got
+        .lines()
+        .filter(|l| !l.starts_with("samples "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &rest).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(rest, want, "differs from {}", golden.display());
+
+    // 8000 Hz; the 10-frame buffer loops from frame 80 (0.01 s) and stops
+    // at 0.19 s; the gain is 0 -> 1 linear to 0.05 s, exponential to 0.25
+    // at 0.1 s, then setTarget(0, 0.1, 0.01).
+    let data: Vec<f32> = (0..10)
+        .map(|i| ((i + 1) as f64 / 10.0 - 0.5) as f32)
+        .collect();
+    let got: Vec<f64> = samples.split(',').map(|v| v.parse().unwrap()).collect();
+    assert_eq!(got.len(), 1600);
+    let mut worst = (0.0f64, 0usize);
+    for (f, &g) in got.iter().enumerate() {
+        let t = f as f64 / 8000.0;
+        let src = if (80..1520).contains(&f) {
+            data[(f - 80) % 10] as f64
+        } else {
+            0.0
+        };
+        let gain = if t < 0.05 {
+            t / 0.05
+        } else if t < 0.1 {
+            0.25f64.powf((t - 0.05) / 0.05)
+        } else {
+            0.25 * (-(t - 0.1) / 0.01).exp()
+        };
+        let err = (g - src * gain).abs();
+        if err > worst.0 {
+            worst = (err, f);
+        }
+    }
+    assert!(
+        worst.0 < 1e-4,
+        "frame {} is off by {} (got {})",
+        worst.1,
+        worst.0,
+        got[worst.1]
+    );
 }
 
 /// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
@@ -793,7 +954,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -3814,6 +3975,76 @@ fn wpt_runner() {
     );
 }
 
+// P10.3: `dweller js --test262` and browser/tools/test262.py over the
+// fixtures in browser/tests/test262.
+#[test]
+fn test262_runner() {
+    let hooks = root().join("target").join("t262-hooks.js");
+    std::fs::create_dir_all(hooks.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hooks,
+        "print('p'); print($262.global === globalThis); \
+         print($262.evalScript('var q = 4; q + 1'));\n\
+         var ab = new ArrayBuffer(8); $262.detachArrayBuffer(ab); $262.gc(); print(ab.byteLength);\n",
+    )
+    .unwrap();
+    let hooks = hooks.to_str().unwrap().to_string();
+    expect(&["js", "--test262", &hooks], 0, "p\ntrue\n5\n0\n", "");
+    // without the flag there is no print or $262
+    let plain = run(&["js", &hooks]);
+    assert_eq!(plain.status.code(), Some(1));
+    assert!(
+        text(&plain.stderr).starts_with("Uncaught ReferenceError"),
+        "{}",
+        text(&plain.stderr)
+    );
+
+    let tool = root().join("browser").join("tools").join("test262.py");
+    let fixtures = root().join("browser").join("tests").join("test262");
+    let out = root().join("target").join("t262-fixtures");
+    let res = Command::new("python3")
+        .arg(&tool)
+        .args(["run", "test", "-j", "4", "--root"])
+        .arg(&fixtures)
+        .arg("--dweller")
+        .arg(dweller())
+        .arg("--out")
+        .arg(&out)
+        .output();
+    let Ok(res) = res else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    assert!(res.status.success(), "{}", text(&res.stderr));
+    let stdout = text(&res.stdout);
+    assert!(
+        stdout.contains("test262 test: 8/11 passed (72.7%), 1 skipped"),
+        "{stdout}"
+    );
+    let json = std::fs::read_to_string(out.join("test.json")).unwrap();
+    for (name, status) in [
+        ("test/pass/basic.js", "pass"),
+        ("test/pass/skipped.js", "skip"),
+        ("test/fail/wrong.js", "fail"),
+        ("test/negative/parse.js", "pass"),
+        ("test/negative/runtime.js", "pass"),
+        ("test/negative/missing.js", "fail"),
+        ("test/async/promise.js", "pass"),
+        ("test/async/never.js", "fail"),
+        ("test/strict/only.js", "pass"),
+        ("test/strict/both.js", "pass"),
+        ("test/strict/nostrict.js", "pass"),
+        ("test/module/basic.js", "pass"),
+    ] {
+        let at = json
+            .find(&format!("\"{name}\""))
+            .unwrap_or_else(|| panic!("{name}: {json}"));
+        let rest = &json[at..];
+        let line = &rest[..rest.find(']').unwrap()];
+        assert!(line.contains(&format!("\"{status}\"")), "{name}: {line}");
+    }
+}
+
 // ---- page scripts and the DOM bindings (browser/engine/script.aye)
 
 /// The window, headless: a click and a key reach the page's listeners,
@@ -4057,6 +4288,84 @@ fn window_damage() {
         "no partial frame: {px:?}"
     );
     assert!(px.contains(&0), "no frame without damage: {px:?}");
+}
+
+/// P11.7 (docs/webgl.md §5): the window shows a WebGL canvas through its
+/// readback. `spin.html` turns a triangle on a 1280x720 canvas in 120
+/// animation frames; each frame is read back at its end and mapped into
+/// the canvas in the next, so the canvas changes in 120 frames (and the
+/// cleared one before them), each damaging the canvas alone (with the
+/// one-pixel margin below it the damage keeps for antialiasing), and
+/// `DWELLER_DAMAGE_CHECK` finds every frame drawn right. Prints the
+/// `webgl_readback` p50 and p95. Without ANGLE it is skipped.
+#[test]
+fn window_webgl() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_GL", "swiftshader")
+        .args([
+            "browser/tests/webgl/spin.html",
+            "--font",
+            "fixed",
+            "--width",
+            "1280",
+            "--height",
+            "800",
+            "--frames",
+            "300",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    let record = |phase: &str| -> Vec<(u64, String)> {
+        let key = format!("DWELLER_TIMING\t{phase}\t");
+        err.lines()
+            .filter_map(|l| l.split(key.as_str()).nth(1))
+            .map(|r| {
+                let mut f = r.split('\t');
+                let ns = f.next().unwrap().parse().unwrap();
+                (ns, f.next().unwrap_or("").to_string())
+            })
+            .collect()
+    };
+    let mut readback: Vec<u64> = record("webgl_readback")
+        .into_iter()
+        .map(|(ns, label)| {
+            assert_eq!(label, "1280x720");
+            ns
+        })
+        .collect();
+    assert!(readback.len() >= 120, "{} readbacks:\n{err}", readback.len());
+    // The page area is 1280x760 (the chrome takes 40 px).
+    let canvas = 1280 * 721;
+    let full = 1280 * 760;
+    let px: Vec<u64> = record("ui_damage_px")
+        .iter()
+        .map(|(_, label)| label.split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        px.iter().all(|&p| p == 0 || p == canvas || p == full),
+        "damage outside the canvas: {px:?}"
+    );
+    let updates = px.iter().filter(|&&p| p == canvas).count();
+    assert!(updates >= 120, "{updates} canvas updates: {px:?}");
+    assert!(px.iter().filter(|&&p| p == full).count() <= 2, "{px:?}");
+    readback.sort();
+    let ms = |q: f64| readback[((readback.len() as f64 * q) as usize).min(readback.len() - 1)] as f64 / 1e6;
+    println!("webgl_readback 1280x720: p50 {:.2} ms, p95 {:.2} ms", ms(0.5), ms(0.95));
 }
 
 /// A page shaped like GitHub's, with many container queries on nested
@@ -5135,7 +5444,10 @@ fn window_paints_early() {
         return;
     };
     let page = format!("{}/net/early_paint.html", srv.base);
-    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    // The click waits for the first paint (`painted`), which comes
+    // 0.3 s into the 1.5 s the script is delayed, not for a number of
+    // frames (40 take longer than 1.5 s on a loaded runner).
+    let events = "painted click:14,54 frame wheel:-3 frame";
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
@@ -5151,7 +5463,7 @@ fn window_paints_early() {
             "--frames",
             "300",
             "--events",
-            events.as_str(),
+            events,
             "--text",
         ])
         .spawn_drained();
