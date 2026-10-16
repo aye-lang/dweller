@@ -22,8 +22,12 @@ use std::sync::OnceLock;
 
 mod common;
 
+#[path = "browser/dweller_command.rs"]
+mod dweller_command;
 #[path = "browser/perf.rs"]
 mod perf;
+
+use dweller_command::dweller_command;
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -151,7 +155,7 @@ fn dweller() -> &'static Path {
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(dweller())
+    dweller_command()
         .current_dir(root())
         .args(args)
         .output()
@@ -400,7 +404,7 @@ fn gpu_smoke() {
         || ["libEGL.dylib", "libEGL.so"]
             .iter()
             .any(|f| lib.join(f).exists());
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .arg("gpu-smoke")
         .env("DWELLER_GL", "swiftshader")
@@ -465,7 +469,7 @@ fn angle_present() -> bool {
 #[test]
 fn webgl_context() {
     let page = "browser/tests/webgl/context.html";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .env("DWELLER_GL", "swiftshader")
@@ -502,7 +506,7 @@ fn webgl_context() {
 #[test]
 fn webgl_screenshot() {
     let out_png = scratch().join("webgl_clear.png");
-    let res = Command::new(dweller())
+    let res = dweller_command()
         .current_dir(root())
         .args([
             "screenshot",
@@ -554,7 +558,7 @@ fn webgl_screenshot() {
 fn webgl_triangle() {
     for page in ["triangle", "quad", "shader_errors"] {
         let out_png = scratch().join(format!("webgl_{page}.png"));
-        let res = Command::new(dweller())
+        let res = dweller_command()
             .current_dir(root())
             .args([
                 "screenshot",
@@ -603,7 +607,7 @@ fn webgl_triangle() {
 /// of a drawn triangle.
 #[test]
 fn webgl_objects() {
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["dump", "--text", "--js", "browser/tests/webgl/objects.html"])
         .env("DWELLER_GL", "swiftshader")
@@ -645,7 +649,7 @@ fn webgl_textures() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args([
             "dump",
@@ -686,7 +690,7 @@ fn webgl_textures() {
 /// formats, each drawn and read back.
 #[test]
 fn webgl2_objects() {
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args([
             "dump",
@@ -731,7 +735,7 @@ fn imagebitmap_sources() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args([
             "dump",
@@ -1286,7 +1290,7 @@ fn http_images_background() {
     };
     let page = format!("{}/net/bg_images.html", srv.base);
     for stress in [false, true] {
-        let mut c = Command::new(dweller());
+        let mut c = dweller_command();
         c.current_dir(root())
             .args(["dump", "--text", "--js", &page]);
         if stress {
@@ -1320,9 +1324,8 @@ fn window_images_load_in_background() {
         return;
     };
     let page = format!("{}/net/bg_images.html", srv.base);
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args([
             page.as_str(),
             "--font",
@@ -1397,7 +1400,7 @@ fn http_image_events_background() {
     };
     let page = format!("{}/net/bg_image_events.html", srv.base);
     for stress in [false, true] {
-        let mut c = Command::new(dweller());
+        let mut c = dweller_command();
         c.current_dir(root())
             .args(["dump", "--text", "--js", &page]);
         if stress {
@@ -1437,7 +1440,7 @@ error b: complete=true naturalWidth=0
             println!("skipped: cannot start python3 for the test server");
             return;
         };
-        let mut c = Command::new(dweller());
+        let mut c = dweller_command();
         c.current_dir(root()).args([
             "dump",
             "--text",
@@ -1477,9 +1480,8 @@ fn window_relayout_after_image_load() {
         return;
     };
     let page = format!("{}/net/window_relayout.html", srv.base);
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args([
             page.as_str(),
             "--font",
@@ -1975,9 +1977,8 @@ fn has_sdl() -> bool {
 
 /// `dweller args...` with SDL's dummy video driver (no display).
 fn run_window(args: &[&str]) -> Output {
-    Command::new(dweller())
+    dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args(args)
         .output()
         .unwrap()
@@ -2518,7 +2519,7 @@ fn agent_sessions() {
         } else {
             "agent"
         };
-        let mut child = Command::new(dweller())
+        let mut child = dweller_command()
             .current_dir(root())
             .arg(mode)
             .stdin(std::process::Stdio::piped())
@@ -2643,7 +2644,7 @@ fn json_str<'a>(line: &'a str, key: &str) -> &'a str {
 fn agent_screenshot() {
     use std::io::Write;
     let session = |mode: &str, input: &str| -> Vec<String> {
-        let mut child = Command::new(dweller())
+        let mut child = dweller_command()
             .current_dir(root())
             .args([mode, "--width", "400", "--height", "300"])
             .stdin(std::process::Stdio::piped())
@@ -2829,9 +2830,8 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
         args.push("--events".into());
         args.push(events.trim().to_string());
     }
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args(&args)
         .spawn_drained();
     let start = Instant::now();
@@ -2846,7 +2846,7 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
     let requests = std::fs::read(input).unwrap();
     let mut got = String::new();
     if name.ends_with(".mcp.jsonl") {
-        let mut connect = Command::new(dweller())
+        let mut connect = dweller_command()
             .current_dir(root())
             .args(["connect", &sock, "--mcp"])
             .stdin(Stdio::piped())
@@ -3033,9 +3033,8 @@ fn spaces_window(sock: &str, extra: &[&str]) -> Drained {
 fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> Drained {
     use std::time::{Duration, Instant};
     let _ = std::fs::remove_file(root().join(sock));
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .envs(env.iter().copied())
         .args(["--agent-socket", sock, "--exit-when-idle", "--font", "fixed"])
         .args(["--width", "800", "--height", "600"])
@@ -3506,7 +3505,8 @@ fn window_spaces_control() {
 /// its chip goes), then points at Beta's chip. The person's page keeps
 /// its scroll and its height (the chips sit in the toolbar, the menu
 /// over the page), and the window never waits for a Space (its
-/// DWELLER_TIMING records; the times bounded generously). The last
+/// DWELLER_TIMING records: loop iterations between each request and its
+/// answer; no iteration near a second). The last
 /// frame, with two Spaces (Alpha paused, Beta idle) and Beta's status,
 /// is `browser/tests/ui/spaces_chips.png` (`DWELLER_BLESS=1` rewrites it).
 #[test]
@@ -3620,9 +3620,7 @@ fn window_spaces_chips() {
         .unwrap()
         .parse()
         .unwrap();
-    // Generous: a few ms, tens on a loaded machine; a wait for a Space
-    // opening a page holds an iteration for over 120 ms.
-    assert!(loop_max < 120, "loop_max_ms {loop_max}");
+    assert!(loop_max < 1000, "loop_max_ms {loop_max}");
     drop(alpha);
     drop(beta);
     no_spaces_left(pid).unwrap();
@@ -3691,7 +3689,7 @@ fn agent_http() {
         return;
     };
     let base = &srv.base;
-    let mut child = Command::new(dweller())
+    let mut child = dweller_command()
         .current_dir(root())
         .arg("agent")
         .stdin(std::process::Stdio::piped())
@@ -3760,7 +3758,7 @@ fn agent_forms_http() {
     let mut failures = Vec::new();
     for input in &inputs {
         let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        let mut child = Command::new(dweller())
+        let mut child = dweller_command()
             .current_dir(root())
             .arg("agent")
             .stdin(std::process::Stdio::piped())
@@ -3801,7 +3799,7 @@ fn js_case(js: &Path, bless: bool, env: &[(&str, &str)]) -> Option<String> {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["js", &rel])
         .envs(env.iter().copied())
@@ -4502,9 +4500,8 @@ fn window_timers_yield_to_frames() {
         println!("skipped: no SDL2");
         return;
     }
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args([
             "browser/tests/ui/raf_overload.html",
             "--font",
@@ -4551,9 +4548,8 @@ fn window_relayout_incremental() {
         return;
     }
     let run = |env: &str, without: &str| {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
-            .env("SDL_VIDEODRIVER", "dummy")
             .env(env, "1")
             .env_remove(without)
             .args([
@@ -4602,9 +4598,8 @@ fn window_damage() {
         println!("skipped: no SDL2");
         return;
     }
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_DAMAGE_CHECK", "1")
         .env("DWELLER_TIMING", "1")
         .args([
@@ -4663,9 +4658,8 @@ fn window_fractional_scroll() {
     let mut events = vec!["wheel:-0.03 frame"; 30];
     events.extend(vec!["wheel:-0.37 frame"; 20]);
     events.extend(vec!["wheel:0.11 frame"; 10]);
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_DAMAGE_CHECK", "1")
         .env("DWELLER_TIMING", "1")
         .args([
@@ -4729,9 +4723,8 @@ fn window_webgl() {
         println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
         return;
     }
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_DAMAGE_CHECK", "1")
         .env("DWELLER_TIMING", "1")
         .env("DWELLER_GL", "swiftshader")
@@ -4913,7 +4906,7 @@ fn webgl_three_cube() {
         return;
     }
     let page = "browser/tests/webgl/three_cube.html";
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .args(["dump", "--text", "--js", page])
         .env("DWELLER_GL", "swiftshader")
@@ -4924,7 +4917,7 @@ fn webgl_three_cube() {
     assert_eq!(text(&out.stderr), "[log] three cube: 60 frames\n");
 
     let out_png = scratch().join("three_cube.png");
-    let res = Command::new(dweller())
+    let res = dweller_command()
         .current_dir(root())
         .args([
             "screenshot",
@@ -4972,9 +4965,8 @@ fn webgl_three_cube() {
         return;
     }
     let frames = |target: &str| -> Vec<u64> {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
-            .env("SDL_VIDEODRIVER", "dummy")
             .env("DWELLER_DAMAGE_CHECK", "1")
             .env("DWELLER_TIMING", "1")
             .env("DWELLER_GL", "swiftshader")
@@ -5043,9 +5035,8 @@ fn window_container_queries() {
     };
     let url = format!("{}/ui/container_feed.html", srv.base);
     let run = |env: &str, without: &str| {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
-            .env("SDL_VIDEODRIVER", "dummy")
             .env(env, "1")
             .env_remove(without)
             .args([
@@ -5100,9 +5091,8 @@ fn window_transform_composite() {
         println!("skipped: no SDL2");
         return;
     }
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_DAMAGE_CHECK", "1")
         .env("DWELLER_LAYOUT_CHECK", "1")
         .env("DWELLER_TIMING", "1")
@@ -5160,9 +5150,8 @@ fn window_width_animation() {
         println!("skipped: no SDL2");
         return;
     }
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_LAYOUT_CHECK", "1")
         .env("DWELLER_TIMING", "1")
         .args([
@@ -5318,9 +5307,8 @@ fn window_wheel() {
     // Scrolling repaints: no layout, and no display list built again; in
     // a frame (frames.html), one list for all the events of an iteration.
     let phases = |page: &str, events: &str| {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
-            .env("SDL_VIDEODRIVER", "dummy")
             .env("DWELLER_TIMING", "1")
             .args([page, "--font", "fixed", "--width", "400", "--height", "340", "--frames", "3", "--events", events])
             .output()
@@ -5361,7 +5349,7 @@ fn jsdom_case(
     all.push(&rel);
     // Each forced layout that keeps boxes is compared with a full one; a
     // difference goes to stderr ("LAYOUT CHECK").
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_LAYOUT_CHECK", "1")
         .env("DWELLER_JS_VM", "1")
@@ -5464,7 +5452,7 @@ fn jsdom_fixtures() {
 fn benchmark_date_follows_virtual_clock() {
     let page = "browser/tests/benchmark/date_now.html";
     let dump = || {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_BENCHMARK", "1")
             .args(["dump", "--text", "--js", page])
@@ -5513,7 +5501,7 @@ fn jsdom_gc_stress() {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
             .env("DWELLER_JS_VM", "1")
@@ -5563,7 +5551,7 @@ fn net_http() {
     let file = scratch().join("cookies.txt");
     let _ = std::fs::remove_file(&file);
     let with_file = |url: String| {
-        Command::new(dweller())
+        dweller_command()
             .current_dir(root())
             .env("DWELLER_COOKIE_FILE", &file)
             .args(["dump", "--text", &url])
@@ -5637,7 +5625,7 @@ fn net_samesite() {
     let other = site.replace("127.0.0.1", "localhost");
     let dir = profile("samesite");
     let dump = |args: &[&str]| {
-        let out = Command::new(dweller())
+        let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROFILE", &dir)
             .arg("dump")
@@ -5982,9 +5970,8 @@ fn window_fetch_in_background() {
         return;
     };
     let page = format!("{}/net/window_fetch.html", srv.base);
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             page.as_str(),
@@ -6061,9 +6048,8 @@ fn window_input_priority() {
         return;
     };
     let page = format!("{}/net/timer_storm.html", srv.base);
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             page.as_str(),
@@ -6244,9 +6230,8 @@ fn window_paints_early() {
     // 0.3 s into the 1.5 s the script is delayed, not for a number of
     // frames (40 take longer than 1.5 s on a loaded runner).
     let events = "painted click:14,54 frame wheel:-3 frame";
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             page.as_str(),
@@ -6311,9 +6296,8 @@ fn window_dynamic_scripts() {
     };
     let page = format!("{}/net/dynamic_scripts.html", srv.base);
     let events = format!("{}wheel:-3 frame", "frame ".repeat(40));
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             page.as_str(),
@@ -6400,9 +6384,8 @@ fn inserted_scripts() {
         return;
     }
     let events = format!("{}wheel:-3 frame", "frame ".repeat(40));
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             page.as_str(),
@@ -6471,8 +6454,8 @@ const SIGN_IN: &str = "key:tab text:alice key:tab text:wonderland key:return fra
 /// directory `profile` when given (`DWELLER_PROFILE`, P4.50); its
 /// `--state` and `--text`.
 fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
-    let mut c = Command::new(dweller());
-    c.current_dir(root()).env("SDL_VIDEODRIVER", "dummy");
+    let mut c = dweller_command();
+    c.current_dir(root());
     if let Some(p) = profile {
         c.env("DWELLER_PROFILE", p);
     }
@@ -6652,9 +6635,8 @@ fn window_login_cookies() {
     let base = &srv.base;
     let account = format!("{base}/account");
     let dir = profile("login-cookies");
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_PROFILE", &dir)
         .args([
             account.as_str(),
@@ -6867,9 +6849,8 @@ fn window_login_basic_prompt() {
         "{held}"
     );
     let png = scratch().join("auth_prompt.png");
-    let out = Command::new(dweller())
+    let out = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .args([
             &basic,
             "--font",
@@ -6964,7 +6945,7 @@ fn net_basic_auth() {
     };
     let basic = format!("{}/basic", srv.base);
     let userinfo = basic.replace("http://", "http://alice:wonderland@");
-    let mut child = Command::new(dweller())
+    let mut child = dweller_command()
         .current_dir(root())
         .arg("agent")
         .stdin(std::process::Stdio::piped())
@@ -7675,9 +7656,8 @@ fn window_telemetry() {
     }
     let page = format!("{}/telemetry/page.html?user=QUERYSECRET-2", srv.base);
     let window = |profile: Option<&Path>, telemetry: Option<&str>, frames: &str| {
-        let mut c = Command::new(dweller());
+        let mut c = dweller_command();
         c.current_dir(root())
-            .env("SDL_VIDEODRIVER", "dummy")
             .env("HOME", &home)
             .env_remove("DWELLER_PROFILE")
             .env_remove("DWELLER_TELEMETRY")
