@@ -215,6 +215,9 @@ pub fn pumpLoads() {
 /// bound it: 10 s to connect, 30 s in all per hop).
 pub fn waitLoad(id: u32) {
     let ld = loader orelse return
+    let began = perf.start()
+    defer perf.end("net_sync", began, "load")
+
     while true {
         let l = loadById(ld, id) orelse return
         if l.state != LoadState.Running {
