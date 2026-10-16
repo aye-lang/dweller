@@ -747,13 +747,28 @@ pub let CANVAS_PRELUDE =
     \\  return null;
     \\}
     \\class ImageBitmap {
-    \\  constructor(source) {
+    \\  constructor(source, options) {
     \\    const node = sourceNode(source);
     \\    if (!node) throw new TypeError('Expected image source');
+    \\    // The options of createImageBitmap: the orientation is applied now
+    \\    // ('from-image' is 'none': there are no EXIF rotations here); the
+    \\    // premultiplied state is the one WebGL's texImage2D reads ('default'
+    \\    // is premultiplied, as in Blink).
+    \\    const o = options === undefined || options === null ? {} : options;
+    \\    const orientation = o.imageOrientation === undefined ? 'from-image' : String(o.imageOrientation);
+    \\    const premultiply = o.premultiplyAlpha === undefined ? 'default' : String(o.premultiplyAlpha);
+    \\    if (!['none', 'flipY', 'from-image'].includes(orientation)) throw new TypeError('Invalid imageOrientation: ' + orientation);
+    \\    if (!['none', 'premultiply', 'default'].includes(premultiply)) throw new TypeError('Invalid premultiplyAlpha: ' + premultiply);
+    \\    this._premultiplied = premultiply !== 'none';
     \\    this._node = document.createElement('canvas');
     \\    this._node.width = node.naturalWidth || node.width;
     \\    this._node.height = node.naturalHeight || node.height;
-    \\    this._node.getContext('2d').drawImage(node, 0, 0);
+    \\    const context = this._node.getContext('2d');
+    \\    if (orientation === 'flipY') {
+    \\      context.translate(0, this._node.height);
+    \\      context.scale(1, -1);
+    \\    }
+    \\    context.drawImage(node, 0, 0);
     \\    this.width = this._node.width;
     \\    this.height = this._node.height;
     \\  }
@@ -764,7 +779,11 @@ pub let CANVAS_PRELUDE =
     \\  }
     \\}
     \\Object.assign(globalThis, {CanvasRenderingContext2D, CanvasGradient, CanvasPattern, Path2D, ImageData, OffscreenCanvas, ImageBitmap});
-    \\globalThis.createImageBitmap = function (source) {
-    \\  return Promise.resolve(new ImageBitmap(source));
+    \\globalThis.createImageBitmap = function (source, options) {
+    \\  try {
+    \\    return Promise.resolve(new ImageBitmap(source, options));
+    \\  } catch (e) {
+    \\    return Promise.reject(e);
+    \\  }
     \\};
     \\})();
