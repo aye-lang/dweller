@@ -1,0 +1,32 @@
+import css
+import css.Value
+import layout
+import std.math
+import std.mem.AllocError
+
+let FOCUS_RING_COLOR = Rgba { r: 16, g: 16, b: 16, a: 255 }
+let FOCUS_RING_OUTER = Rgba { r: 255, g: 255, b: 255, a: 255 }
+
+// blink: core/paint/outline_painter.cc
+fn focusRing(b: *mut Builder, style: []Value, box: Rect, radii: Radii) AllocError!void {
+    var offset = layout.lengthOr0(style[css.OUTLINE_OFFSET], 0.0)
+    var thinnest = layout.lengthOr0(style[css.BORDER_TOP_WIDTH], 0.0)
+    var round = radii
+
+    for side in 1..4 {
+        thinnest = math.min(thinnest, layout.lengthOr0(style[css.BORDER_TOP_WIDTH + side], 0.0))
+    }
+
+    if thinnest >= 1.0 {
+        offset -= 1.0
+    }
+
+    for k in 0..8 {
+        round.v[k] = math.max(round.v[k], 1.0)
+    }
+
+    let c = colorOf(style[css.OUTLINE_COLOR], FOCUS_RING_COLOR)
+
+    try outlineRing(b, "auto", box, round, offset + 2.0, offset + 3.0, FOCUS_RING_OUTER)
+    try outlineRing(b, "auto", box, round, offset, offset + 2.0, c)
+}
