@@ -1,0 +1,14 @@
+import engine
+import std.mem.AllocError
+
+let BACKGROUND_PERIOD_NS: u64 = 1000000000
+
+// blink: third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.cc
+fn runBackgroundTimers(slot: *mut TabSlot, p: *mut engine.Page, now: u64) AllocError!void {
+    if now < slot.next_run_ns || (slot.session.tab.stepping && !engine.scriptsRan(p)) {
+        return
+    }
+
+    slot.next_run_ns = now + BACKGROUND_PERIOD_NS
+    _ = try engine.runDueTimers(p)
+}

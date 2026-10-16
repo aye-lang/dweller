@@ -1,0 +1,15 @@
+// spec: https://html.spec.whatwg.org/multipage/interaction.html#page-visibility
+pub fn setHidden(p: *mut Page, hidden: bool) bool {
+    var flipped = false
+
+    if p.script |s| {
+        flipped = s.hidden != hidden
+        s.hidden = hidden
+    }
+
+    for f in p.frames.items() {
+        _ = setHidden(f.page, hidden)
+    }
+
+    return flipped
+}

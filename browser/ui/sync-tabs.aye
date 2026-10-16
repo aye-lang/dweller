@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn syncTabs(ui: *mut Ui) AllocError!void {
+    let now = aye_std_monotonic_ns()
+
+    for i in 0..ui.count {
+        let slot = ui.slots[i].?
+        let p = slot.session.tab.page orelse continue
+        let background = ui.hidden || i != ui.active
+
+        try tabHidden(p, background)
+
+        if background {
+            try runBackgroundTimers(slot, p, now)
+        }
+    }
+}
