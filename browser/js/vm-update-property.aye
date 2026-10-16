@@ -1,0 +1,30 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCountOperation)
+
+fn vmUpdateProperty(c: *mut Compiler, inc: bool, prefix: bool, arg: u32) CompileError!void {
+    let mark = c.b.topReg
+    let p = try vmPropertyReference(c, arg, false)
+    var op = BC_INC
+
+    if !inc {
+        op = BC_DEC
+    }
+
+    try vmLoadProperty(c, arg, p)
+
+    if prefix {
+        try c.b.op1(op, c.b.newSlot() as i64)
+        try vmStoreProperty(c, arg, p)
+        c.b.releaseRegs(mark)
+
+        return
+    }
+
+    let old = c.b.newReg()
+
+    try c.b.op1(BC_TO_NUMERIC, c.b.newSlot() as i64)
+    try c.b.op1(BC_STAR, old as i64)
+    try c.b.op1(op, c.b.newSlot() as i64)
+    try vmStoreProperty(c, arg, p)
+    try c.b.op1(BC_LDAR, old as i64)
+    c.b.releaseRegs(mark)
+}

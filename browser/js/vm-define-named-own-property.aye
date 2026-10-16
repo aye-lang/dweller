@@ -1,0 +1,42 @@
+// v8: src/interpreter/interpreter-generator.cc (DefineNamedOwnProperty)
+
+fn vmDefineNamedOwnProperty(it: *mut Interp, o: u32, prop: u32, k: u32, v: Value) JsError!void {
+    var kind: u32 = 0
+    var key: u32 = 0
+
+    match it.ast.node(prop) {
+        .Prop { kind: pk, key: pkey, .. } => {
+            kind = pk
+            key = pkey
+        }
+        _ => unreachable
+    }
+
+    let ob = it.heap.obj(o)
+
+    if kind == PROP_INIT && k < ob.nprops && ob.props[k].key == key {
+        ob.props[k].value = v
+
+        return
+    }
+
+    if kind != PROP_INIT {
+        it.setHome(objectOf(v), o)
+    }
+
+    if kind == PROP_GET {
+        return it.defineAccessor(o, key, v, Value.Undefined, F_ENUM | F_CONFIG)
+    }
+
+    if kind == PROP_SET {
+        return it.defineAccessor(o, key, Value.Undefined, v, F_ENUM | F_CONFIG)
+    }
+
+    if kind == PROP_INIT && key == A_PROTO {
+        vmSetLiteralProto(it, o, v)
+
+        return
+    }
+
+    return it.defineOwn(o, key, v, F_DEFAULT)
+}
