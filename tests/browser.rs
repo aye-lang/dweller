@@ -6126,6 +6126,50 @@ fn window_hover_during_scripts() {
     assert!(got.contains(&want), "expected {want:?} in:\n{got}");
 }
 
+/// P11.24b: the window does not end a task of the page. A script that
+/// runs 4 s of CPU (`browser/tests/ui/long_task.html`) finishes and sets
+/// its marker, and the window then handles the typed input. `dump` keeps
+/// the step budget: a script without end is terminated and the page goes
+/// on.
+#[test]
+fn window_long_task() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/long_task.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "4",
+        "--events",
+        "frame text:abc frame frame",
+        "--text",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("ran 4 s, typed abc"), "{got}");
+    let out = run(&["dump", "--text", "--js", "browser/tests/ui/long_task_forever.html"]);
+    let got = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(got.contains("before") && !got.contains("ran\n"), "{got}");
+    assert!(
+        got.contains("Script terminated: it ran too long")
+            || text(&out.stderr).contains("Script terminated: it ran too long"),
+        "{got}"
+    );
+}
+
 /// P4.33: the window paints a page once its document and its sheet are
 /// in (0.3 s), before its script and its image arrive (1.5 s), and the
 /// click and the wheel during the load are handled before the script
