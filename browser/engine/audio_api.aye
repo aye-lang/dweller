@@ -1,9 +1,10 @@
-// Web Audio (P11.19, docs/webgl.md §6 Web Audio): the natives of
-// `__audioHost` over the graph of audio/ (contexts, nodes, AudioParam
-// timelines, the WAV decoder), and AUDIO_PRELUDE, the JS classes on
-// them: BaseAudioContext, AudioContext, OfflineAudioContext,
+// Web Audio (P11.19 and P11.20, docs/webgl.md §6 Web Audio): the natives
+// of `__audioHost` over the graph of audio/ (contexts, nodes, AudioParam
+// timelines, the WAV decoder, the effects), and AUDIO_PRELUDE, the JS
+// classes on them: BaseAudioContext, AudioContext, OfflineAudioContext,
 // AudioBuffer, AudioParam, AudioNode, AudioDestinationNode, GainNode,
-// AudioScheduledSourceNode and AudioBufferSourceNode.
+// AudioScheduledSourceNode, AudioBufferSourceNode, BiquadFilterNode,
+// StereoPannerNode, DynamicsCompressorNode and ConvolverNode.
 //
 // Contexts and nodes are indices in audio/'s lists; a page's contexts
 // carry its `audio_owner` and go with it (destroyScript). A realtime
@@ -49,6 +50,10 @@ fn installAudio(it: *mut Interp) JsError!void {
     try defMethod(it, o, "auWav", 1, auWav)
     try defMethod(it, o, "auWavDecode", 4, auWavDecode)
     try defMethod(it, o, "auSetNotify", 1, auSetNotify)
+    try defMethod(it, o, "auBiquadType", 3, auBiquadType)
+    try defMethod(it, o, "auResponse", 5, auResponse)
+    try defMethod(it, o, "auReduction", 2, auReduction)
+    try defMethod(it, o, "auConvolver", 8, auConvolver)
 }
 
 /// Renders the running realtime contexts of the page (as far as its
@@ -167,11 +172,11 @@ fn auClose(it: *mut Interp, a: Args) JsError!Value {
     return Value.Undefined
 }
 
-// auNode(ctx, kind): a new node's index (audio.SOURCE, audio.GAIN).
+// auNode(ctx, kind): a new node's index (audio.SOURCE ... audio.CONVOLVER).
 fn auNode(it: *mut Interp, a: Args) JsError!Value {
     let cx = try ctxArg(it, a)
     let kind = try numArg(it, a, 1)
-    if kind != 1.0 && kind != 2.0 {
+    if !(kind >= 1.0 && kind <= audio.CONVOLVER as f64) {
         return it.typeError("unknown audio node")
     }
     let id = try audio.newNode(cx, kind as u8)
@@ -356,6 +361,61 @@ fn auWavDecode(it: *mut Interp, a: Args) JsError!Value {
     return Value.Undefined
 }
 
+// The node `i` of `cx`, which must be of `kind`.
+fn kindArg(it: *mut Interp, cx: *mut audio.Context, a: Args, i: usize, kind: u8) JsError!*mut audio.Node {
+    let n = try nodeArg(it, cx, a, i)
+    if n.kind != kind {
+        _ = try it.typeError("not the right audio node")
+        return JsError.Thrown
+    }
+    return n
+}
+
+// auBiquadType(ctx, node, type): 0 lowpass, 1 highpass, 2 bandpass, 3
+// lowshelf, 4 highshelf, 5 peaking, 6 notch, 7 allpass.
+fn auBiquadType(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try kindArg(it, cx, a, 1, audio.BIQUAD)
+    let t = try numArg(it, a, 2)
+    if !(t >= 0.0 && t <= 7.0) {
+        return it.typeError("unknown filter type")
+    }
+    audio.setBiquadType(n, t as u8)
+    return Value.Undefined
+}
+
+// auResponse(ctx, node, Hz, magnitude, phase): getFrequencyResponse.
+fn auResponse(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try kindArg(it, cx, a, 1, audio.BIQUAD)
+    audio.frequencyResponse(cx, n, floatsArg(it, a, 2), floatsArg(it, a, 3), floatsArg(it, a, 4))
+    return Value.Undefined
+}
+
+// auReduction(ctx, node): a compressor's gain reduction in dB.
+fn auReduction(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try kindArg(it, cx, a, 1, audio.COMPRESSOR)
+    return js.numVal(audio.reduction(n))
+}
+
+// auConvolver(ctx, node, sampleRate, normalize, channel 0 .. channel 3):
+// sets the impulse response (no channels clears it).
+fn auConvolver(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try kindArg(it, cx, a, 1, audio.CONVOLVER)
+    let rate = try numArg(it, a, 2)
+    let chans = [4][]f32{floatsArg(it, a, 4), floatsArg(it, a, 5), floatsArg(it, a, 6), floatsArg(it, a, 7)}
+    var count: usize = 0
+    for c in chans {
+        if c.len > 0 {
+            count += 1
+        }
+    }
+    try audio.setConvolver(cx, n, chans[0..count], rate, it.toBoolean(it.arg(a, 3)))
+    return Value.Undefined
+}
+
 // auSetNotify(f): pumpAudio calls f when realtime sources ended.
 fn auSetNotify(it: *mut Interp, a: Args) JsError!Value {
     scriptOf(it).audio_notify = try it.addRoot(it.arg(a, 0))
@@ -534,6 +594,118 @@ pub let AUDIO_PRELUDE =
     \\  }
     \\  get gain() { return this._gain; }
     \\}
+    \\// ---- effects (P11.20)
+    \\function param(node, index, dflt, min, max, rate) {
+    \\  return new AudioParam(TOKEN, node, index, dflt, min, max, rate);
+    \\}
+    \\function constructing(name, ctx) {
+    \\  if (!(ctx instanceof BaseAudioContext)) throw new TypeError("Failed to construct '" + name + "': parameter 1 is not of type 'BaseAudioContext'.");
+    \\}
+    \\const BIQUAD_TYPES = ['lowpass', 'highpass', 'bandpass', 'lowshelf', 'highshelf', 'peaking', 'notch', 'allpass'];
+    \\class BiquadFilterNode extends AudioNode {
+    \\  constructor(ctx, options) {
+    \\    constructing('BiquadFilterNode', ctx);
+    \\    if (options && options.type !== undefined && BIQUAD_TYPES.indexOf(options.type) < 0) {
+    \\      throw new TypeError("Failed to construct 'BiquadFilterNode': The provided value '" + options.type + "' is not a valid enum value of type BiquadFilterType.");
+    \\    }
+    \\    super(TOKEN, ctx, 3);
+    \\    hidden(this, '_type', 'lowpass');
+    \\    hidden(this, '_frequency', param(this, 0, 350, 0, ctx.sampleRate / 2, 'a-rate'));
+    \\    hidden(this, '_detune', param(this, 1, 0, -153600, 153600, 'a-rate'));
+    \\    hidden(this, '_Q', param(this, 2, 1, -FLT_MAX, FLT_MAX, 'a-rate'));
+    \\    hidden(this, '_gain', param(this, 3, 0, -FLT_MAX, 1541.273681640625, 'a-rate'));
+    \\    if (options) {
+    \\      if (options.type !== undefined) this.type = options.type;
+    \\      if (options.Q !== undefined) this._Q.value = options.Q;
+    \\      if (options.detune !== undefined) this._detune.value = options.detune;
+    \\      if (options.frequency !== undefined) this._frequency.value = options.frequency;
+    \\      if (options.gain !== undefined) this._gain.value = options.gain;
+    \\    }
+    \\  }
+    \\  get type() { return this._type; }
+    \\  set type(t) {
+    \\    const i = BIQUAD_TYPES.indexOf(t);
+    \\    if (i < 0) return;
+    \\    this._type = t;
+    \\    H.auBiquadType(this._ctx._id, this._id, i);
+    \\  }
+    \\  get frequency() { return this._frequency; }
+    \\  get detune() { return this._detune; }
+    \\  get Q() { return this._Q; }
+    \\  get gain() { return this._gain; }
+    \\  getFrequencyResponse(frequencyHz, magResponse, phaseResponse) {
+    \\    for (const a of [frequencyHz, magResponse, phaseResponse]) {
+    \\      if (!(a instanceof Float32Array)) throw new TypeError("Failed to execute 'getFrequencyResponse' on 'BiquadFilterNode': parameter is not of type 'Float32Array'.");
+    \\    }
+    \\    if (magResponse.length !== frequencyHz.length) throw new DOMException("Failed to execute 'getFrequencyResponse' on 'BiquadFilterNode': The magResponse array length (" + magResponse.length + ') must be the same as the frequencyHz array length (' + frequencyHz.length + ').', 'InvalidAccessError');
+    \\    if (phaseResponse.length !== frequencyHz.length) throw new DOMException("Failed to execute 'getFrequencyResponse' on 'BiquadFilterNode': The phaseResponse array length (" + phaseResponse.length + ') must be the same as the frequencyHz array length (' + frequencyHz.length + ').', 'InvalidAccessError');
+    \\    H.auResponse(this._ctx._id, this._id, frequencyHz, magResponse, phaseResponse);
+    \\  }
+    \\}
+    \\class StereoPannerNode extends AudioNode {
+    \\  constructor(ctx, options) {
+    \\    constructing('StereoPannerNode', ctx);
+    \\    super(TOKEN, ctx, 4);
+    \\    hidden(this, '_pan', param(this, 0, 0, -1, 1, 'a-rate'));
+    \\    if (options && options.pan !== undefined) this._pan.value = options.pan;
+    \\  }
+    \\  get channelCountMode() { return 'clamped-max'; }
+    \\  get pan() { return this._pan; }
+    \\}
+    \\class DynamicsCompressorNode extends AudioNode {
+    \\  constructor(ctx, options) {
+    \\    constructing('DynamicsCompressorNode', ctx);
+    \\    super(TOKEN, ctx, 5);
+    \\    hidden(this, '_threshold', param(this, 0, -24, -100, 0, 'k-rate'));
+    \\    hidden(this, '_knee', param(this, 1, 30, 0, 40, 'k-rate'));
+    \\    hidden(this, '_ratio', param(this, 2, 12, 1, 20, 'k-rate'));
+    \\    hidden(this, '_attack', param(this, 3, Math.fround(0.003), 0, 1, 'k-rate'));
+    \\    hidden(this, '_release', param(this, 4, 0.25, 0, 1, 'k-rate'));
+    \\    if (options) {
+    \\      if (options.attack !== undefined) this._attack.value = options.attack;
+    \\      if (options.knee !== undefined) this._knee.value = options.knee;
+    \\      if (options.ratio !== undefined) this._ratio.value = options.ratio;
+    \\      if (options.release !== undefined) this._release.value = options.release;
+    \\      if (options.threshold !== undefined) this._threshold.value = options.threshold;
+    \\    }
+    \\  }
+    \\  get channelCountMode() { return 'clamped-max'; }
+    \\  get threshold() { return this._threshold; }
+    \\  get knee() { return this._knee; }
+    \\  get ratio() { return this._ratio; }
+    \\  get attack() { return this._attack; }
+    \\  get release() { return this._release; }
+    \\  get reduction() { return Math.fround(H.auReduction(this._ctx._id, this._id)); }
+    \\}
+    \\class ConvolverNode extends AudioNode {
+    \\  constructor(ctx, options) {
+    \\    constructing('ConvolverNode', ctx);
+    \\    super(TOKEN, ctx, 6);
+    \\    hidden(this, '_buffer', null);
+    \\    hidden(this, '_normalize', true);
+    \\    if (options) {
+    \\      if (options.disableNormalization !== undefined) this._normalize = !options.disableNormalization;
+    \\      if (options.buffer !== undefined && options.buffer !== null) this.buffer = options.buffer;
+    \\    }
+    \\  }
+    \\  get channelCountMode() { return 'clamped-max'; }
+    \\  get buffer() { return this._buffer; }
+    \\  set buffer(b) {
+    \\    if (b !== null && !(b instanceof AudioBuffer)) throw new TypeError("Failed to set the 'buffer' property on 'ConvolverNode': The provided value is not of type 'AudioBuffer'.");
+    \\    if (b === null) {
+    \\      H.auConvolver(this._ctx._id, this._id, this._ctx._rate, this._normalize);
+    \\      this._buffer = null;
+    \\      return;
+    \\    }
+    \\    if (b._rate !== this._ctx._rate) throw notSupported('The buffer sample rate of ' + b._rate + ' does not match the context rate of ' + this._ctx._rate + ' Hz.');
+    \\    const n = b._data.length;
+    \\    if (n !== 1 && n !== 2 && n !== 4) throw notSupported('The buffer must have 1, 2, or 4 channels, not ' + n);
+    \\    H.auConvolver(this._ctx._id, this._id, b._rate, this._normalize, b._data[0], b._data[1], b._data[2], b._data[3]);
+    \\    this._buffer = b;
+    \\  }
+    \\  get normalize() { return this._normalize; }
+    \\  set normalize(v) { this._normalize = !!v; }
+    \\}
     \\class AudioScheduledSourceNode extends AudioNode {
     \\  constructor(tok, ctx, kind) {
     \\    super(tok, ctx, kind);
@@ -654,6 +826,10 @@ pub let AUDIO_PRELUDE =
     \\  }
     \\  createGain() { return new GainNode(this); }
     \\  createBufferSource() { return new AudioBufferSourceNode(this); }
+    \\  createBiquadFilter() { return new BiquadFilterNode(this); }
+    \\  createStereoPanner() { return new StereoPannerNode(this); }
+    \\  createDynamicsCompressor() { return new DynamicsCompressorNode(this); }
+    \\  createConvolver() { return new ConvolverNode(this); }
     \\  createBuffer(numberOfChannels, length, sampleRate) {
     \\    return new AudioBuffer({ numberOfChannels, length, sampleRate });
     \\  }
@@ -757,7 +933,7 @@ pub let AUDIO_PRELUDE =
     \\  }
     \\}
     \\for (const C of [AudioBuffer, AudioParam, AudioNode, AudioDestinationNode, GainNode, AudioScheduledSourceNode,
-    \\    AudioBufferSourceNode, BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent]) {
+    \\    AudioBufferSourceNode, BiquadFilterNode, StereoPannerNode, DynamicsCompressorNode, ConvolverNode, BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent]) {
     \\  hidden(G, C.name, C);
     \\}
     \\})();

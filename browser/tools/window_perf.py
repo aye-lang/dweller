@@ -2,9 +2,10 @@
 """Where the window's time goes on a live page (browser/engine/PERF.md,
 "Window"). Standard library only.
 
-    window_perf.py scroll URL [--binary B] [--frames N]
+    window_perf.py scroll URL [--binary B] [--frames N] [--wheel D]
         Headless window (--frames): the load, then N frames that each
-        turn the wheel 3 notches (`wheel:-3 frame`). Prints the first
+        turn the wheel 3 notches (`wheel:-3 frame`; `--wheel -0.37` is a
+        trackpad's 3.7 px a frame). Prints the first
         paint, the scroll frames' p50/p95 and the longest loop iteration.
     window_perf.py idle URL [--binary B]
         A real window, no input: the CPU% of the 10 s that start 5 s
@@ -53,7 +54,7 @@ def total(it, phase):
 
 
 def scroll(a):
-    events = " ".join(["frame"] * 3 + ["wheel:-3 frame"] * a.frames)
+    events = " ".join(["frame"] * 3 + [f"wheel:{a.wheel} frame"] * a.frames)
     env = dict(os.environ, DWELLER_TIMING="1")
     cmd = [a.binary, a.url, "--frames", str(a.frames + 10), "--events", events, "--state"]
     r = subprocess.run(cmd, capture_output=True, env=env, timeout=600)
@@ -146,6 +147,7 @@ def main():
     ap.add_argument("url")
     ap.add_argument("--binary", default="target/dweller")
     ap.add_argument("--frames", type=int, default=40)
+    ap.add_argument("--wheel", default="-3")
     ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
     a = ap.parse_args()
     if not os.path.exists(a.binary):

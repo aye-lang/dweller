@@ -57,6 +57,7 @@ let LINE_STEP: f64 = 40.0
 // While a page loads (its sheets, scripts or images), the loop looks at
 // the loads at least this often (ms).
 let LOAD_POLL_MS: i32 = 8
+let TASK_BUDGET_MS: u64 = 50
 // A WebGL frame read back at the end of a frame is mapped at most this
 // long after (ms): the next frame.
 let READBACK_MS: i32 = 16
@@ -632,6 +633,24 @@ pub struct Ui {
                 try resumeScript(self)
                 perf.end("ui_events", t_script, "script")
             }
+            // The page's timers wait until its scripts ran one per
+            // iteration (`advanceLoad`), as when one task ran them all;
+            // they run while its frames load.
+            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
+                let p = self.tab.page.?
+                let t_timers = perf.start()
+                // The WebGL frames read back at the end of the last frame.
+                let mapped = engine.takeCanvasFrames(p)
+                if (try engine.runDueTimersUntil(p, std.time.monotonicMs() + TASK_BUDGET_MS)) || mapped || engine.navigationPending(p) {
+                    // A navigation that a script asked for while the page
+                    // loaded is followed here too (one per iteration).
+                    self.from_timers = true
+                    defer self.from_timers = false
+                    try self.afterScripts()
+                    contextMayChange(self)
+                }
+                perf.end("ui_timers", t_timers, "")
+            }
             var ev = @zeroed(SDL_Event)
             var timeout: i32 = 1000
             if frames > 0 {
@@ -668,6 +687,9 @@ pub struct Ui {
                     timeout = 0
                 }
             }
+            if self.dirty || self.repaint {
+                timeout = 0
+            }
             let before = std.time.monotonicMs()
             let before_ns = perf.start()
             if isSpace(self) {
@@ -695,24 +717,6 @@ pub struct Ui {
             }
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
-            // The page's timers wait until its scripts ran one per
-            // iteration (`advanceLoad`), as when one task ran them all;
-            // they run while its frames load.
-            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
-                let p = self.tab.page.?
-                let t_timers = perf.start()
-                // The WebGL frames read back at the end of the last frame.
-                let mapped = engine.takeCanvasFrames(p)
-                if (try engine.runDueTimers(p)) || mapped || engine.navigationPending(p) {
-                    // A navigation that a script asked for while the page
-                    // loaded is followed here too (one per iteration).
-                    self.from_timers = true
-                    defer self.from_timers = false
-                    try self.afterScripts()
-                    contextMayChange(self)
-                }
-                perf.end("ui_timers", t_timers, "")
-            }
             try runSpaceTimers(self)
             try pollAgents(self)
             if engine.hasContextRequests() {
@@ -1224,7 +1228,8 @@ pub struct Ui {
                     // back to where `list` has them.
                     _ = layout.scrollTo(t, self.list_scroll)
                 }
-                if t.scroll_y != self.tab.scroll && layout.scrollTo(t, self.tab.scroll) {
+                let y = snappedScroll(self.tab.scroll, self.scale)
+                if t.scroll_y != y && layout.scrollTo(t, y) {
                     self.relist = true
                 }
                 // Else `list` is right at this offset too.
@@ -1981,7 +1986,7 @@ pub struct Ui {
                 return
             }
             if r.lock == 1 {
-                if SDL_SetRelativeMouseMode(1) == 0 {
+                if lockPointer() {
                     self.locked = true
                     try self.hostState("lock:1")
                 } else {
@@ -2108,7 +2113,7 @@ pub struct Ui {
         let top = self.top()
         let bottom = self.win_h as f64
         let content = paint.Rect { x: 0.0, y: top, w: self.win_w as f64, h: self.viewHeight() }
-        let v = paint.View { scale: s, dx: -self.tab.scroll_x * s, dy: (top - self.tab.scroll) * s }
+        let v = paint.View { scale: s, dx: -snappedScroll(self.tab.scroll_x, s) * s, dy: (top - snappedScroll(self.tab.scroll, s)) * s }
         let flat = paint.View { scale: s, dx: 0.0, dy: 0.0 }
         let area = paint.deviceRect(content, flat)
         // The page's pixels, then the window: all of it when something
