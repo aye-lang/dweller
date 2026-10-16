@@ -677,6 +677,47 @@ fn webgl_textures() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.8 (docs/webgl.md §3): `dump --text --js` of
+/// `browser/tests/webgl/webgl2_objects.html` on SwiftShader prints
+/// `webgl2_objects.txt`: VAOs, instanced draws, drawRangeElements,
+/// vertexAttribIPointer, a float MRT framebuffer sampled afterwards,
+/// renderbuffers with a multisample blit and a depth test, uniform
+/// buffers, samplers, 2D-array and 3D textures and float and integer
+/// formats, each drawn and read back.
+#[test]
+fn webgl2_objects() {
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            "browser/tests/webgl/webgl2_objects.html",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/webgl2_objects.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
 /// on SwiftShader, served over HTTP (the page fetches a PNG), prints
 /// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
@@ -4707,6 +4748,241 @@ fn window_webgl() {
     readback.sort();
     let ms = |q: f64| readback[((readback.len() as f64 * q) as usize).min(readback.len() - 1)] as f64 / 1e6;
     println!("webgl_readback 1280x720: p50 {:.2} ms, p95 {:.2} ms", ms(0.5), ms(0.95));
+}
+
+/// The pixels of a PNG as `dweller screenshot` writes it
+/// (`browser/paint/png.aye`: 8-bit RGBA, filter 0 on every row, a zlib
+/// stream of stored or fixed-Huffman blocks): width, height, RGBA.
+fn png_rgba(png: &[u8]) -> (usize, usize, Vec<u8>) {
+    let be = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap()) as usize;
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(&png[24..29], b"\x08\x06\x00\x00\x00", "not 8-bit RGBA");
+    let (w, h) = (be(16), be(20));
+    let mut z = Vec::new();
+    let mut i = 8;
+    while i + 8 <= png.len() {
+        let len = be(i);
+        if &png[i + 4..i + 8] == b"IDAT" {
+            z.extend_from_slice(&png[i + 8..i + 8 + len]);
+        }
+        i += 12 + len;
+    }
+    let raw = inflate(&z[2..]);
+    assert_eq!(raw.len(), h * (w * 4 + 1));
+    let mut px = Vec::with_capacity(w * h * 4);
+    for row in raw.chunks(w * 4 + 1) {
+        assert_eq!(row[0], 0, "a row filter other than none");
+        px.extend_from_slice(&row[1..]);
+    }
+    (w, h, px)
+}
+
+/// Raw deflate (RFC 1951) of stored and fixed-Huffman blocks only.
+fn inflate(d: &[u8]) -> Vec<u8> {
+    const LEN: [usize; 29] = [
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115,
+        131, 163, 195, 227, 258,
+    ];
+    const LEN_EXTRA: [usize; 29] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+    ];
+    const DIST: [usize; 30] = [
+        1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
+        2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+    ];
+    let mut pos = 0usize;
+    // `n` bits, least significant first.
+    let take = |n: usize, pos: &mut usize| -> usize {
+        let mut v = 0;
+        for k in 0..n {
+            v |= ((d[*pos / 8] >> (*pos % 8)) as usize & 1) << k;
+            *pos += 1;
+        }
+        v
+    };
+    let mut out = Vec::new();
+    loop {
+        let last = take(1, &mut pos);
+        let kind = take(2, &mut pos);
+        if kind == 0 {
+            pos = pos.div_ceil(8) * 8;
+            let n = take(16, &mut pos);
+            take(16, &mut pos);
+            out.extend_from_slice(&d[pos / 8..pos / 8 + n]);
+            pos += n * 8;
+        } else {
+            assert_eq!(kind, 1, "a dynamic-Huffman block");
+            loop {
+                // Huffman codes come most significant bit first.
+                let mut code = 0;
+                for _ in 0..7 {
+                    code = code << 1 | take(1, &mut pos);
+                }
+                let sym = if code <= 0x17 {
+                    256 + code
+                } else {
+                    code = code << 1 | take(1, &mut pos);
+                    if (0x30..=0xbf).contains(&code) {
+                        code - 0x30
+                    } else if (0xc0..=0xc7).contains(&code) {
+                        280 + code - 0xc0
+                    } else {
+                        (code << 1 | take(1, &mut pos)) - 0x190 + 144
+                    }
+                };
+                if sym < 256 {
+                    out.push(sym as u8);
+                    continue;
+                }
+                if sym == 256 {
+                    break;
+                }
+                let s = sym - 257;
+                let len = LEN[s] + take(LEN_EXTRA[s], &mut pos);
+                let mut dc = 0;
+                for _ in 0..5 {
+                    dc = dc << 1 | take(1, &mut pos);
+                }
+                let dist = DIST[dc] + take(dc.saturating_sub(2) / 2, &mut pos);
+                for _ in 0..len {
+                    out.push(out[out.len() - dist]);
+                }
+            }
+        }
+        if last == 1 {
+            return out;
+        }
+    }
+}
+
+/// P11.9: three.js r170 (`browser/tests/webgl/three/`) draws
+/// `three_cube.html` on SwiftShader: a MeshStandardMaterial cube with a
+/// PNG texture and one directional light, in a 60-frame
+/// `setAnimationLoop`. `dump --js` logs its message and no error; `dweller screenshot`
+/// (the last frame) is `three_cube.png` but for at most 1% of the pixels
+/// off by more than 8 in a channel (SwiftShader on another CPU may round
+/// otherwise); in the window, the 60 frames draw (60 `webgl_readback`
+/// records of 240x180). Prints the JS time of the drawing frames' timers
+/// (the rAF callback, three's render and the readback's start) p50/p95,
+/// and the same with `#finish` (the page calls gl.finish() after each
+/// render): their difference is the GPU's time. Without ANGLE it is
+/// skipped.
+#[test]
+fn webgl_three_cube() {
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let page = "browser/tests/webgl/three_cube.html";
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["dump", "--text", "--js", page])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    // The console (on stderr) has the page's one message and no error.
+    assert!(out.status.success(), "{}", out.status);
+    assert_eq!(text(&out.stderr), "[log] three cube: 60 frames\n");
+
+    let out_png = scratch().join("three_cube.png");
+    let res = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "screenshot",
+            page,
+            "-o",
+            out_png.to_str().unwrap(),
+            "--font",
+            "fixed",
+            "--width",
+            "240",
+            "--height",
+            "180",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        res.status.success() && res.stderr.is_empty(),
+        "{}\n{}",
+        res.status,
+        text(&res.stderr)
+    );
+    let got = std::fs::read(&out_png).unwrap();
+    let golden = root().join("browser/tests/webgl/three_cube.png");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+    }
+    let (w, h, a) = png_rgba(&got);
+    let (gw, gh, b) = png_rgba(&std::fs::read(&golden).unwrap());
+    assert_eq!((w, h), (gw, gh), "size differs from {}", golden.display());
+    let off = a
+        .chunks(4)
+        .zip(b.chunks(4))
+        .filter(|(p, q)| p.iter().zip(q.iter()).any(|(x, y)| x.abs_diff(*y) > 8))
+        .count();
+    assert!(
+        off * 100 <= w * h,
+        "{off} pixels differ from {} (new one: {})",
+        golden.display(),
+        out_png.display()
+    );
+
+    if !has_sdl() {
+        println!("skipped the window: no SDL2");
+        return;
+    }
+    let frames = |target: &str| -> Vec<u64> {
+        let out = Command::new(dweller())
+            .current_dir(root())
+            .env("SDL_VIDEODRIVER", "dummy")
+            .env("DWELLER_DAMAGE_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .env("DWELLER_GL", "swiftshader")
+            .args([
+                target, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "200",
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("DAMAGE CHECK"), "{err}");
+        // A frame that drew: its timer, then its readback.
+        let recs: Vec<(&str, u64, &str)> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| {
+                let f: Vec<&str> = r.splitn(3, '\t').collect();
+                (f[0], f[1].parse().unwrap(), f.get(2).copied().unwrap_or(""))
+            })
+            .filter(|r| r.0 == "timers" || r.0 == "webgl_readback")
+            .collect();
+        let readbacks = recs.iter().filter(|r| r.0 == "webgl_readback").count();
+        assert!(readbacks >= 60, "{readbacks} readbacks:\n{err}");
+        assert!(
+            recs.iter()
+                .all(|r| r.0 != "webgl_readback" || r.2 == "240x180"),
+            "{err}"
+        );
+        let mut js: Vec<u64> = recs
+            .windows(2)
+            .filter(|p| p[0].0 == "timers" && p[1].0 == "webgl_readback")
+            .map(|p| p[0].1)
+            .collect();
+        assert!(js.len() >= 60, "{} drawn frames:\n{err}", js.len());
+        js.sort();
+        js
+    };
+    let ms = |v: &[u64], q: f64| v[((v.len() as f64 * q) as usize).min(v.len() - 1)] as f64 / 1e6;
+    let js = frames(page);
+    let fin = frames(&format!("{page}#finish"));
+    println!(
+        "three cube frame JS: p50 {:.2} ms, p95 {:.2} ms; with gl.finish(): p50 {:.2} ms, p95 {:.2} ms",
+        ms(&js, 0.5),
+        ms(&js, 0.95),
+        ms(&fin, 0.5),
+        ms(&fin, 0.95)
+    );
 }
 
 /// A page shaped like GitHub's, with many container queries on nested

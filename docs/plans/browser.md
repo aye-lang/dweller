@@ -277,8 +277,8 @@ and their Blink, ANGLE and V8 files.
 |---|---|---|---|---|
 | G1 | P11.6 | textures | – | open |
 | G2 | P11.7 | WebGL canvases in the window by readback, screenshots, `toDataURL` | G1 | done |
-| G3 | P11.8 | WebGL 2 state objects (VAOs, instancing, MRT, UBOs, samplers, 3D textures) | G1 | open |
-| G4 | P11.9 | three.js hello cube | G2, G3 | open |
+| G3 | P11.8 | WebGL 2 state objects (VAOs, instancing, MRT, UBOs, samplers, 3D textures) | G1 | done |
+| G4 | P11.9 | three.js hello cube | G2, G3 | done |
 | G5 | P11.10 | rAF at vsync, frame timestamp, `performance.now()` precision (touches `ui/window.aye`: not beside A2, A7) | A2 | open |
 | G6 | P11.11 | key codes, pointer events, Pointer Lock, Fullscreen, `structuredClone` | – | done |
 | G7 | P11.17 rest | `wasm_sim_bench` and the wasm-bindgen glue check | G18's copy of the game | partial |
@@ -1096,6 +1096,18 @@ time as a P4 card on those files.
 - reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`
 - verify: `cargo test --release --test browser -- webgl2_objects > target/p11.8.log 2>&1; echo $?` → 0: instanced quads, rendering to a float MRT FBO then sampling it, a UBO-driven color, and a 2D-array texture layer, each read back
 - depends on: P11.5, P11.6; time box: 45 min (split UBO, samplers and 3D textures into P11.8b if larger); model: sonnet
+- status: done 2026-10-16. The whole goal list landed in one card (UBOs, samplers and 3D textures did not need P11.8b; P11.8b holds the getters). Natives: `webglCall` ops 41–68 (framebuffers, renderbuffers incl. multisample, attachments, `drawBuffers`, `readBuffer`, `blitFramebuffer`, instanced and range draws, `vertexAttribDivisor`, VAOs, `bindBufferBase/Range`, `uniformBlockBinding`, samplers, `texStorage3D`, `clearBuffer{f,i,ui}v`), `webglQuery` (`checkFramebufferStatus`, `getUniformBlockIndex`, enabling an ANGLE extension), `webglTex3D` (`texImage3D`/`texSubImage3D` from typed arrays), `webglReadFormat` (`readPixels` of any format/type from a framebuffer of the page's own); 27 new `gl.aye` entry points. Rules: the drawing buffer is a real GL framebuffer, so `bindFramebuffer(null)` binds it (`drawFbo`), `drawBuffers`/`readBuffer` on it accept only BACK/NONE (mapped to `COLOR_ATTACHMENT0`/NONE), and the attachment calls with it bound are INVALID_OPERATION; only draws, clears and blits that end in it mark the canvas dirty. The element array buffer binding is per VAO in the prelude. `getExtension` now enables `EXT_color_buffer_float`, `EXT_color_buffer_half_float` and `OES_texture_float_linear` with `glRequestExtensionANGLE` (`GL_`-prefixed names, checked in `GL_EXTENSIONS`), otherwise null; float and half-float targets need it, as in Blink. Test `webgl2_objects` (`webgl2_objects.html` = `.txt`, SwiftShader, 16x16): instanced strip and indexed quads, `drawRangeElements`, `vertexAttribIPointer`, a two-target RGBA32F MRT framebuffer read as FLOAT then sampled, RGBA16F + R32UI targets, a 4-sample renderbuffer blit-resolved, a DEPTH24_STENCIL8 depth test, a UBO by base and by range, a 2D-array texture by sampler object and as a `framebufferTextureLayer` attachment, a R8UI 3D texture with `texelFetch`, and the errors of each. `-- webgl gpu canvas` 9 passed. Left: P11.8b.
+
+#### P11.8b: getters and sources of the P11.8 objects
+- goal:
+  - `getSamplerParameter`, `getFramebufferAttachmentParameter`, `getRenderbufferParameter`, `getInternalformatParameter`, `getIndexedParameter`, `getVertexAttrib`, `getBufferParameter`.
+  - `getActiveUniformBlockParameter/Name`, `getUniformIndices`, `getActiveUniforms`, `getUniform`.
+  - `clearBufferfi`, `invalidateFramebuffer`, `invalidateSubFramebuffer`, `copyTexSubImage3D`, `compressedTexImage3D`.
+  - `texImage3D`/`texSubImage3D` from DOM sources and a `PIXEL_UNPACK_BUFFER`, and `texStorage2D`/`3D` argument validation as Blink's (levels, formats).
+- files: `browser/engine/webgl_api.aye`, `webgl_prelude.aye`, `browser/tests/webgl/webgl2_getters.html`, `tests/browser.rs` (`webgl2_getters`)
+- reference: `third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc`
+- verify: `cargo test --release --test browser -- webgl2_getters > target/p11.8b.log 2>&1; echo $?` → 0
+- depends on: P11.8; time box: 45 min; model: sonnet
 
 #### P11.9: three.js hello cube
 - goal:
@@ -1107,6 +1119,7 @@ time as a P4 card on those files.
 - reference: three's own `src/renderers/webgl/WebGLExtensions.js`, `WebGLCapabilities.js` (what it queries) in the vendored copy's source on npm; `third_party/blink/renderer/modules/webgl/` for the API calls it hits
 - verify: `cargo test --release --test browser -- webgl_three_cube > target/p11.9.log 2>&1; echo $?` → 0: no JS error, the screenshot golden (SwiftShader) matches, and `window_webgl`-style 60 frames draw in the window
 - depends on: P11.7, P11.8; time box: 45 min; model: opus (unknowns)
+- status: done 2026-10-16. three.js r170 (`browser/tests/webgl/three/three.module.min.js` + `LICENSE`, MIT) loads as an ES module import and draws with its defaults. The one gap was the fixed-function state, which no card had: `blendColor`, `blendEquation(Separate)`, `blendFunc(Separate)`, `cullFace`, `frontFace`, `depthFunc`, `depthRange`, `hint`, `lineWidth`, `polygonOffset`, `sampleCoverage`, `stencilFunc(Separate)`, `stencilOp(Separate)`, `finish`, `flush` (`webglCall` ops 69–83 in `webgl_api.aye`, 14 `gl.aye` entry points; ANGLE's WebGL validation checks the enums). `getExtension` already returned null for the extensions it does not have (three asks for `KHR_parallel_shader_compile`, `EXT_texture_filter_anisotropic`, `WEBGL_debug_renderer_info` ... and works without them). Page `three_cube.html`: a 240x180 `WebGLRenderer`, a `MeshStandardMaterial` cube with `crate16.png` (sRGB), one `DirectionalLight`, `setAnimationLoop` from the texture's load for 60 frames, rotation by frame count (so the last frame is the same on the virtual and the real clock); `#finish` adds `gl.finish()` after each render. Test `webgl_three_cube` (SwiftShader): `dump --js` logs only the page's message; `screenshot` = `three_cube.png` with at most 1% of pixels off by more than 8 in a channel (a stored/fixed-Huffman PNG decoder in the test, `png_rgba`); in the window (`DWELLER_DAMAGE_CHECK=1`) ≥ 60 `webgl_readback` records of 240x180 and ≥ 60 drawn frames; it prints the drawing frames' timer p50/p95, plain and with `#finish`. Per frame, test build, M2 Pro: SwiftShader JS (rAF callback with three's render and the readback start, the `timers` record) p50 1.6–1.9 ms, p95 1.9–3.6 ms; GPU (`#finish` minus plain) about 0.25 ms p50. Metal: JS p50 2.0 ms, p95 2.5 ms; GPU about 0.5 ms p50. First frame 125 ms on SwiftShader (shader compile; the readback waits 113 ms on it); the module's `scripts` records at load 87 + 225 ms. `cargo test --release --test browser -- webgl imagebitmap` 9 passed.
 
 #### P11.10: rAF at display vsync, frame timestamp, `performance.now()` precision
 - goal: §6 frame timing.
