@@ -264,6 +264,7 @@ pub struct Script {
     now: f64
     start_ms: u64
     real: bool
+    vsync: bool = false
     // `__wasmHost` was installed: the page holds the WebAssembly store
     // (wasm.release).
     wasm_on: bool = false
@@ -1442,7 +1443,7 @@ fn checkpointOver(s: *Script, cpu: u64, work: u64) bool {
 
 fn tick(s: *mut Script) {
     if s.real {
-        s.now = (time.monotonicMs() - s.start_ms) as f64
+        s.now = coarseMs(aye_std_monotonic_ns(), s.start_ms)
         return
     }
     var done = s.work
@@ -1472,7 +1473,7 @@ fn turnLimit(s: *Script, turn: u64) u64 {
 fn earliestBefore(s: *mut Script, limit: f64, seq: u64) ?usize {
     var best: ?usize = null
     for i, t in s.timers.items() {
-        if t.due > limit || t.seq >= seq || !runnable(s, t) {
+        if t.due > limit || t.seq >= seq || !runnable(s, t) || (t.raf && s.vsync) {
             continue
         }
         if best |b| {

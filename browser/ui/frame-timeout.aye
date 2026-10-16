@@ -1,0 +1,22 @@
+import engine
+
+fn frameTimeout(ui: *mut Ui, timeout: i32) i32 {
+    let p = ui.tab.page orelse return timeout
+    let now = aye_std_monotonic_ns()
+
+    if !engine.animationFrameRequested(p) {
+        return timeout
+    }
+
+    if now >= ui.next_frame_ns {
+        return 0
+    }
+
+    let ms = ((ui.next_frame_ns - now + 999999) / 1000000) as i32
+
+    if ms < timeout {
+        return ms
+    }
+
+    return timeout
+}
