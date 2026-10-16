@@ -112,7 +112,7 @@ the one place with more than one process.
   not shadow trees); paint keeps the page's pixels with damage tracking
   and a raster cache; transform and opacity changes composite; a scroll
   moves the page as a texture offset and fixed and sticky boxes as layers
-  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
+  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55b; backlog P4.54, P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
@@ -190,9 +190,9 @@ under 100 ms with a timer storm.
 | A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | done | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
 | A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | done 2026-10-16 | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | done | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
-| A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | open | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
+| A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | done | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
 | A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | open | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
-| A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | open | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
+| A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | done (P4.55b open) | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
 | A8 | P4.54 | macOS crash record exits with 128+sig | – | backlog | – |
 
 ### Phase B: paint and the gate (Layer 0, lane paint)
@@ -203,7 +203,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
-| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a done; P4.40b (CI job) open | – |
+| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a, P4.40b, P4.40c done | – |
 | B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
 | B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
@@ -400,6 +400,7 @@ them from coming back.
 - chromium: `third_party/blink/renderer/core/fileapi/public_url_manager.cc`, `blob.cc`. Take: a per-origin registry from the URL to the Blob, revoked explicitly or with the document; a fetch of a `blob:` URL answers from the registry with the Blob's type.
 - test: a jsdom fixture: a script inserted from a `blob:` URL runs and fires load; `fetch(blobUrl)` resolves with the Blob's text; after `revokeObjectURL` both fail.
 - verify: `cargo test --release --test browser -- jsdom_fixtures > target/p4.47.log 2>&1; echo $?` → 0
+- status: done 2026-10-16. `URL.createObjectURL` keeps the Blob in the document's store (`blobStore` in the prelude, gone with the document) until `revokeObjectURL`; `fetch` and XHR of a `blob:` URL answer from it with the Blob's type (GET only; any other method, a revoked or unknown URL fails), and a script inserted from one runs the Blob's text (`ak.scriptRun(el, source)`, `run-blob-script.aye`) and fires load, or error once revoked. The workers' own store is this one. Test: jsdom fixture `blob_urls`. WPT `FileAPI/url`: 44 → 64 of 94 subtests (fetch 8 → 12, xhr 9 → 12, sandboxed-iframe 23 → 32, url-in-tags 0 → 4). Not done: a fetch Request snapshots its blob at creation, blob URL fragments in `<img>`/`<iframe>`, a per-origin registry shared between same-origin frames.
 
 #### P4.48: what the newly running site scripts cost in dump
 - goal: since P4.45 the scripts sites insert run, and `dump` CPU grew: mistral 26 → 45 s (timers 24.7 → 46.8 s: forced layouts 6.2 → 26.4 s, cascade 3.0 → 17.9 s, after gtag and the axept.io consent SDK run), reddit's login wall 0.05 → 16 s, bbc 0.36 → 6.7 s (`PERF.md` "P4.45"). Find which timers force the layouts and cascades (`DWELLER_TIMING` per callback) and remove the work Chrome does not do (a layout per read that changed nothing, a cascade per class toggle).
@@ -461,6 +462,23 @@ them from coming back.
 - files: `.github/workflows/ci.yml`, `browser/tests/perf/budgets.json`
 - verify: the `perf` job green on the PR; a branch with the deliberate regression of P4.40a fails it
 - time box: 45 min; model: sonnet
+- status P4.40b: done 2026-10-16 (PR #108). The `perf` job (macos-latest, own copy of the browser job's setup, `aye build browser -o target/dweller`, then the gate) runs about 2.5 min. Budgets re-recorded from the runner: 5 gate runs in one job plus the first run, no `--update` (it never raises a budget; the gate's table prints on failure). Spread on the runner: `layout_full` feed 18–20, article 13–15, animated 55 (steady); `raster_px` animated 397995 or 422161 (budget the higher), the others steady; `net_sync` of feed 1–76 (image load tasks call `net.waitLoad` as far as the wall clock lets them run, 110 images): budget 110, and `net_sync` has no ratchet (`UNRATCHETED` in `perf_gate.py`). Slack unchanged. With a full restyle forced per relayout (throwaway commit, reverted) the job fails (`animated` `style_full` 159, `layout_full` 318, `feed` `style_full` 8); green again after the revert.
+
+#### P4.40c: net_sync counts only synchronous network waits
+- goal: `net_sync` is a deterministic count of the waits where the window thread blocks on the network (Phase A exit: none in a loop iteration), so it is back in the ratchet. P4.40b found it ranging 1–76 on `feed` because `net.waitLoad` was counted for every timer task of an image or async fetch completion, which the wall clock paces.
+- change: `waitLoad` (loader.aye) no longer records; `prefetch` (multi.aye), the one forced wait in the loader, records `net_sync` around each wait; the synchronous transfer in http.aye still does. Image and async completions keep their own `image_wait` record (script.aye `runTimer`), reported by `window_perf.py` and not in the budgets. `UNRATCHETED` is gone from `perf_gate.py`.
+- files: `browser/net/loader.aye`, `browser/net/multi.aye`, `browser/tools/perf_gate.py`, `browser/tests/perf/budgets.json`
+- verify: `gate` five times in a row: `net_sync` identical on every page
+- time box: 30 min; model: sonnet
+- status P4.40c: done 2026-10-16. `net_sync` is 1 on `feed`, `animated`, `paint_heavy` and `article` (the page's own document fetch), identical in 5 gate runs on Linux; budgets set to 1. The count is deterministic, so the macOS runner's values must match (1 each; any other value there is a regression, not noise). Left alone: on this Linux box `article` `layout_full` measures 26–28 (budget 15, from the macOS runner) and `feed` 13 (budget 20), on unmodified main too, so the gate as a whole exits 1 here for those two; `net_sync` rows are `ok`.
+
+#### P4.40d: layout_full counts deterministically
+- goal: `layout_full` is a deterministic count, so the ratchet (a metric under 0.8 × budget) may fail the gate again. It varies 10-20 between runs on CI because it depends on wall-clock pacing, as `net_sync` did before P4.40c: it counts full layouts per frame, and image arrivals and the ticker are paced by the clock. Count the relayouts caused by document changes (one per change of the document, not one per frame).
+- change: until then the ratchet is a hint: a metric under 0.8 × budget is printed `LOWER` plus one line naming how many could be lowered with `gate --update`, and only `OVER` and `new` fail the gate. When `layout_full` is deterministic, `LOWER` fails again.
+- files: `browser/layout/`, `browser/ui/`, `browser/tools/perf_gate.py`, `browser/tests/perf/budgets.json`
+- verify: `gate` five times in a row: `layout_full` identical on every page, on Linux and on the macOS runner
+- time box: 60 min; model: opus
+- status P4.40d: not started. The hint (`LOWER` no longer fatal) landed first as P4.40: LOWER is a hint, not a failure (PRs #112, #113, #114 failed at random on it).
 
 #### P4.35: raster cache
 - goal: gradient tiles, SVG images, blurred shadows and filter/opacity layers are rasterized once per display item at device size and reused while the item and its size are unchanged (cause 3). P4.5 (decode offscreen images at paint time) joins here.
@@ -512,6 +530,13 @@ them from coming back.
 - chromium: `third_party/blink/renderer/core/frame/local_frame_view.cc` (throttled frames), `third_party/blink/renderer/platform/scheduler/` (background timer throttling, 1 s alignment).
 - verify: `window_perf.py idle https://mistral.ai` with the window minimized after its first frame: idle CPU < 2% (98.6% shown); a test with two tabs: the background tab's 100 ms interval runs at most once a second and its rAF not at all, both resume when shown; `cargo test --release --test browser -- window_ > target/p4.55.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- status: done 2026-10-16, except the real-window measurement (P4.55b). A page is hidden while its window is minimized or hidden or its tab is in the background (`syncTabs`, ui/sync-tabs.aye, each loop iteration and before the timers): `engine.setHidden` marks it (and its frames) and fires `visibilitychange` once per change; a hidden page runs no animation frame (`animationFrameRequested` is false, its rAF timers never run, `msUntilNextTimer` is null). The timers of a hidden page run at most once a second (`runBackgroundTimers`: each tab's `next_run_ns`, the shown tab too while the window is hidden); the loop's 1 s wait wakes them. Not done: an offscreen iframe's rAF, a fully occluded window (SDL2 has no occlusion event), `visibilityState` of iframe documents. SDL's dummy driver sends HIDDEN events for a window its flags say is shown, so a real event counts only when the window's flags are hidden or minimized (`windowGone`; a scripted event has no window id and counts). The script words `window:hidden` and `window:shown` (SDL's minimized and restored) already existed and feed the same handler, so no `hide`/`show` words were added. Tests `window_hidden_raf` (no rAF between the two visibilitychange events, rAF back after) and `window_background_tab_throttled` (background interval ticks at least 1 s apart, its rAF not at all, both resume when shown).
+
+#### P4.55b: idle CPU of a minimized window
+- goal: measure P4.55 in a real window: `window_perf.py idle https://mistral.ai` with the window minimized after its first frame: idle CPU < 2% (98.6% shown).
+- how: local macOS check with `DWELLER_BACKGROUND=1` (the window is a background app that is never raised, X1); the Linux cloud box runs SDL's dummy driver, which cannot minimize.
+- verify: the idle CPU of the minimized window < 2%, shown ~ as before.
+- time box: 20 min; model: sonnet
 
 #### P4.36: scroll by moving the last frame
 - goal: a scroll moves the previous frame's pixels and draws only the band that scrolled in, then fixed and sticky boxes over it; a frame with no change draws nothing (cause 3).

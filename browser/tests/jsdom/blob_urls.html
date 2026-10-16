@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<title>Blob URLs</title>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.join(' ') + '\n'; }
+function insert(url) {
+  return new Promise(resolve => {
+    const s = document.createElement('script');
+    s.onload = () => { s.remove(); resolve('load'); };
+    s.onerror = () => { s.remove(); resolve('error'); };
+    s.src = url;
+    document.head.appendChild(s);
+  });
+}
+function xhr(url) {
+  return new Promise(resolve => {
+    const x = new XMLHttpRequest();
+    x.open('GET', url);
+    x.onload = () => resolve([x.status, x.getResponseHeader('content-type'), x.responseText].join(' '));
+    x.onerror = () => resolve('error');
+    x.send();
+  });
+}
+async function attempt(p) {
+  try { return await p; } catch (e) { return e.name; }
+}
+async function run() {
+  const script = new Blob(['window.ran = (window.ran || 0) + 1;'], { type: 'text/javascript' });
+  const url = URL.createObjectURL(script);
+  log('scheme', url.startsWith('blob:'), url === URL.createObjectURL(script));
+  log('insert', await insert(url), window.ran);
+  const r = await fetch(url);
+  log('fetch', r.status, r.headers.get('content-type'), await r.text());
+  log('xhr', await xhr(url));
+  URL.revokeObjectURL(url);
+  log('revoked', await insert(url), window.ran, await attempt(fetch(url)), await xhr(url));
+  log('bad', await attempt(Promise.resolve().then(() => URL.createObjectURL('x'))));
+}
+run();
+</script>

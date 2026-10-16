@@ -29,7 +29,7 @@ fn installInserted(it: *mut Interp, ak: u32) JsError!void {
     try defMethod(it, ak, "scriptsIn", 1, akScriptsIn)
     try defMethod(it, ak, "scriptPrepare", 1, akScriptPrepare)
     try defMethod(it, ak, "scriptFetch", 2, akScriptFetch)
-    try defMethod(it, ak, "scriptRun", 1, akScriptRun)
+    try defMethod(it, ak, "scriptRun", 2, akScriptRun)
     try defMethod(it, ak, "unstartScripts", 1, akUnstartScripts)
 }
 
@@ -249,7 +249,7 @@ fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
     return Value.Undefined
 }
 
-// scriptRun(script): fetches the external script (from the cache once
+// scriptRun(script, blob_source): fetches the external script (from the cache once
 // `scriptFetch`'s load ended) and runs it; false when the fetch failed
 // (no response, or a status that is not ok), for the error event. A
 // module's graph is fetched, linked and evaluated. document.write is
@@ -268,6 +268,9 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
     if isModuleScript(p, el) {
         try runModuleElement(s, el)
         return js.boolVal(true)
+    }
+    if js.isStr(it.arg(a, 1)) {
+        return runBlobScript(it, s, el, a)
     }
     let src = p.doc.attr(el, "src") orelse return js.boolVal(false)
     let target = p.resolve(s.alloc, src) catch |e| {
