@@ -2160,6 +2160,50 @@ fn window_events() {
     );
 }
 
+/// `pointer-events: none` (`browser/tests/ui/pointer_events.html`): the
+/// click and the hover go to the link beneath an overlay; a child with
+/// `auto` takes them back; `none` inherits to the children.
+#[test]
+fn window_pointer_events() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let ui = format!("file://{}/browser/tests/ui/", root().display());
+    let cases: &[(&str, &str, &str)] = &[
+        ("click:50,90", "url other.html\n", "status \n"),
+        ("click:250,90", "url result.html\n", "status \n"),
+        ("move:50,90", "url pointer_events.html\n", "status other.html\n"),
+        ("move:250,90", "url pointer_events.html\n", "status result.html\n"),
+        ("move:50,202", "url pointer_events.html\n", "status long.html\n"),
+        ("click:50,202", "url long.html\n", "status \n"),
+    ];
+    let mut failures = Vec::new();
+    for (events, url, status) in cases {
+        let out = run_window(&[
+            "browser/tests/ui/pointer_events.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "340",
+            "--frames",
+            "1",
+            "--state",
+            "--events",
+            events,
+        ]);
+        let got = text(&out.stdout).replace(&ui, "");
+        let ok = got.lines().any(|l| format!("{l}\n") == *url)
+            && got.lines().any(|l| format!("{l}\n") == *status);
+        if !out.status.success() || !out.stderr.is_empty() || !ok {
+            failures.push(format!("--events {events:?}: want {url}{status}got\n{got}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Forms in the window (`browser/tests/ui/form.html`, 400x340): clicks
 /// and Tab focus controls, typing edits a field, Enter submits (by GET
 /// to `result.html`), Space toggles a checkbox, a select opens a
