@@ -57,6 +57,7 @@ let LINE_STEP: f64 = 40.0
 // While a page loads (its sheets, scripts or images), the loop looks at
 // the loads at least this often (ms).
 let LOAD_POLL_MS: i32 = 8
+let TASK_BUDGET_MS: u64 = 50
 // A WebGL frame read back at the end of a frame is mapped at most this
 // long after (ms): the next frame.
 let READBACK_MS: i32 = 16
@@ -632,6 +633,24 @@ pub struct Ui {
                 try resumeScript(self)
                 perf.end("ui_events", t_script, "script")
             }
+            // The page's timers wait until its scripts ran one per
+            // iteration (`advanceLoad`), as when one task ran them all;
+            // they run while its frames load.
+            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
+                let p = self.tab.page.?
+                let t_timers = perf.start()
+                // The WebGL frames read back at the end of the last frame.
+                let mapped = engine.takeCanvasFrames(p)
+                if (try engine.runDueTimersUntil(p, std.time.monotonicMs() + TASK_BUDGET_MS)) || mapped || engine.navigationPending(p) {
+                    // A navigation that a script asked for while the page
+                    // loaded is followed here too (one per iteration).
+                    self.from_timers = true
+                    defer self.from_timers = false
+                    try self.afterScripts()
+                    contextMayChange(self)
+                }
+                perf.end("ui_timers", t_timers, "")
+            }
             var ev = @zeroed(SDL_Event)
             var timeout: i32 = 1000
             if frames > 0 {
@@ -668,6 +687,9 @@ pub struct Ui {
                     timeout = 0
                 }
             }
+            if self.dirty || self.repaint {
+                timeout = 0
+            }
             let before = std.time.monotonicMs()
             let before_ns = perf.start()
             if isSpace(self) {
@@ -695,24 +717,6 @@ pub struct Ui {
             }
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
-            // The page's timers wait until its scripts ran one per
-            // iteration (`advanceLoad`), as when one task ran them all;
-            // they run while its frames load.
-            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
-                let p = self.tab.page.?
-                let t_timers = perf.start()
-                // The WebGL frames read back at the end of the last frame.
-                let mapped = engine.takeCanvasFrames(p)
-                if (try engine.runDueTimers(p)) || mapped || engine.navigationPending(p) {
-                    // A navigation that a script asked for while the page
-                    // loaded is followed here too (one per iteration).
-                    self.from_timers = true
-                    defer self.from_timers = false
-                    try self.afterScripts()
-                    contextMayChange(self)
-                }
-                perf.end("ui_timers", t_timers, "")
-            }
             try runSpaceTimers(self)
             try pollAgents(self)
             if engine.hasContextRequests() {

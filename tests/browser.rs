@@ -5997,6 +5997,87 @@ fn window_fetch_in_background() {
     );
 }
 
+/// The window loop's budget for timers and network tasks (`Ui.loop`,
+/// TASK_BUDGET_MS): a task that began before it ran out still ends.
+const TASK_BUDGET_MS: u64 = 50;
+
+/// Input comes before the page's tasks (`browser/tests/net/timer_storm.html`):
+/// for 1.5 s the page queues hundreds of 3 ms tasks (setTimeout(0),
+/// chains of them, setInterval(1), 20 slow responses) and scripted input
+/// types into its field. Each iteration's tasks (its `timers` records)
+/// stop once the budget is spent (at most one task over it), so the
+/// window takes input at least once per budget; the input is handled
+/// while the storm still runs, and the storm's tasks all run afterwards.
+#[test]
+fn window_input_priority() {
+    use std::time::{Duration, Instant};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/net/timer_storm.html", srv.base);
+    let mut window = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page.as_str(),
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "300",
+            "--events",
+            "frame frame frame frame frame frame frame frame text:abc frame",
+            "--text",
+        ])
+        .spawn_drained();
+    let start = Instant::now();
+    while window.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = window.kill();
+            panic!("the window did not draw 300 frames in 60 s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let out = window.wait_with_output().unwrap();
+    let err = text(&out.stderr);
+    let loops = iterations(&err);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    for (i, it) in loops.iter().enumerate() {
+        let tasks = it.ms_in(&["timers"]);
+        let longest = it
+            .phases
+            .iter()
+            .filter(|p| p.name == "timers")
+            .map(|p| p.ms)
+            .max()
+            .unwrap_or(0);
+        assert!(
+            tasks <= TASK_BUDGET_MS + longest + 5,
+            "iteration {i} of {} ran tasks for {tasks} ms (longest {longest} ms): {it:#?}",
+            loops.len()
+        );
+    }
+    let got = text(&out.stdout);
+    let want = [
+        "input during the storm: true",
+        "storm done: 20 responses, tasks after the input: true",
+    ];
+    let at: Vec<Option<usize>> = want.iter().map(|w| got.find(w)).collect();
+    assert!(
+        at.iter().all(|a| a.is_some()) && at.windows(2).all(|w| w[0] < w[1]),
+        "{got}"
+    );
+}
+
 /// The mouse moves over a link while the page's scripts run one per loop
 /// iteration (`browser/tests/net/hover_scripts.html`): the window keeps
 /// the layout from before them, whose boxes name the links the scripts

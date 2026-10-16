@@ -186,7 +186,7 @@ under 100 ms with a timer storm.
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | done | – |
-| A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | open | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
+| A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | done | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
 | A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | open | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | open | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
 | A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | open | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
@@ -520,6 +520,7 @@ them from coming back.
 - chromium: `docs/threading_and_tasks.md`, `third_party/blink/renderer/platform/scheduler/TaskSchedulingInBlink.md`. Take: tasks on sequences, not threads; the input queue has the highest priority; only the main thread touches the DOM. Not taken: many task queues, frame scheduling heuristics.
 - verify: the perf gate's `feed.html` longest loop under budget with a timer storm added; `cargo test --release --test browser window_ > target/p4.42.log 2>&1; echo $?` → 0
 - time box: 60 min; model: opus
+- status: done 2026-10-16. `Ui.loop` handles input (SDL events, then the wheel), draws a due frame, then runs timers and networking tasks until 50 ms are spent (`engine.runDueTimersUntil(p, deadline)`, TASK_BUDGET_MS in ui/window.aye; `runDueTimers` keeps no deadline for `dump`, agents and Spaces); the rest waits for the next iteration, and the loop does not sleep while a frame is due. `docs/browser.md` "Threading model". The perf gate (P4.40) has not landed, so the storm is its own page: `browser/tests/net/timer_storm.html` (1.5 s of 3 ms tasks: 200 `setTimeout(0)`, 20 chains, 5 `setInterval(1)`, 20 slow `/sleep` responses), test `window_input_priority` (each iteration's `timers` ≤ budget + its longest task; input handled during the storm, tasks still run after it). Main / P4.42: longest iteration 700 → 54 ms, longest task phase 694 → 51 ms (`PERF.md` "P4.42"). `-- window_`: 43 of 44 pass; `window_pointer_lock` fails identically with main's binary on this machine (`SDL_SetRelativeMouseMode` fails under the dummy driver here: "locked failed UnknownError"), not this card.
 
 ### Login readiness and telemetry (before the user bundle)
 

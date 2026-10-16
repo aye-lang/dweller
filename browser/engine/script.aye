@@ -1622,46 +1622,7 @@ fn afterTask(s: *mut Script) AllocError!void {
 /// take longer than their interval (or schedule themselves again at 0 ms)
 /// still let the window draw a frame between turns.
 pub fn runDueTimers(p: *mut Page) AllocError!bool {
-    var ran = false
-    net.pumpLoads()
-    if p.script |s| {
-        tick(s)
-        try pumpAudio(s)
-        let turn = s.seq
-        var n: usize = 0
-        while earliestBefore(s, s.now, turnLimit(s, turn)) |i| {
-            try runTimer(s, i)
-            n += 1
-            if n >= MAX_TASKS {
-                break
-            }
-            tick(s)
-        }
-        try afterTask(s)
-        ran = n > 0
-        if try runCleanupsOf(s) {
-            ran = true
-        }
-    }
-    var k: usize = 0
-    while k < p.frames.len() {
-        if try runDueTimers(p.frames.items()[k].page) {
-            ran = true
-        }
-        k += 1
-    }
-    if p.script |s| {
-        if s.real {
-            let was = s.ready
-            try settleLoad(p)
-            if s.ready != was {
-                ran = true
-            }
-        }
-    }
-    // Without a window, popups the scripts opened load in memory.
-    try pumpContexts()
-    return ran
+    return runDueTimersUntil(p, null)
 }
 
 // The timer of the page `p` or of its frames that is due first, and in
