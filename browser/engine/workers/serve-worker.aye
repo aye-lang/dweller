@@ -1,0 +1,17 @@
+import js.Interp
+import std.time
+
+fn serveWorker(it: *mut Interp, scope: *mut Scope) {
+    let l = scope.link
+    runJobs(it, l)
+
+    while !scope.closing && !l.stopped() {
+        let worked = deliverInbox(it, scope)
+        let wait = runWorkerTimers(it, l)
+        l.settle(wait >= 0.0)
+
+        if !worked && (wait < 0.0 || wait >= 1.0) {
+            time.sleep(1)
+        }
+    }
+}

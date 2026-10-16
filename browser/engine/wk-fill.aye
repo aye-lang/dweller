@@ -1,0 +1,23 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.mem
+
+fn wkSize(it: *mut Interp, a: Args) JsError!Value {
+    let l = try pageLinkOf(it, try it.toNumber(it.arg(a, 0)) as u32)
+    let m = l.page_current orelse return js.numVal(0.0)
+
+    return js.numVal(m.buffers.items()[try it.toNumber(it.arg(a, 1)) as usize].len as f64)
+}
+
+fn wkFill(it: *mut Interp, a: Args) JsError!Value {
+    let l = try pageLinkOf(it, try it.toNumber(it.arg(a, 0)) as u32)
+    let m = l.page_current orelse return Value.Undefined
+
+    mem.copy(try workers.bufferBytes(it, it.arg(a, 2)), m.buffers.items()[try it.toNumber(it.arg(a, 1)) as usize])
+
+    return Value.Undefined
+}

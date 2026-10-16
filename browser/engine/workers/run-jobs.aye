@@ -1,0 +1,20 @@
+import js
+import js.Interp
+import js.Value
+
+fn runJobs(it: *mut Interp, l: *mut Link) {
+    while it.takeJob() |f| {
+        _ = callValue(it, f, []Value{}) catch |e| {
+            reportError(it, l)
+            continue
+        }
+    }
+
+    js.clearKeptObjects(it)
+
+    let rejected = it.takeUnhandled() catch return
+    if js.isObject(rejected) && it.heap.obj(js.objectOf(rejected)).nelems > 0 {
+        it.exception = it.heap.obj(js.objectOf(rejected)).elems[0]
+        reportError(it, l)
+    }
+}

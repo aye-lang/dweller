@@ -1,0 +1,32 @@
+import js
+import js.Interp
+import js.JsError
+
+pub let WIRE_JS = @embedFile("wire.js")
+let SCOPE_JS = @embedFile("worker-scope.js")
+
+fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
+    try js.installBuiltins(it)
+    try installScope(it)
+    _ = try it.runScript(WIRE_JS)
+    _ = try it.runScript(SCOPE_JS)
+    it.script_url = try it.intern(l.href)
+
+    if l.has_source {
+        try runWorkerSource(it, l, l.source)
+        return
+    }
+
+    let source = try loadBytes(it, l.href)
+    defer it.alloc.free(source)
+
+    try runWorkerSource(it, l, source)
+}
+
+fn runWorkerSource(it: *mut Interp, l: *mut Link, source: []u8) JsError!void {
+    if l.module {
+        _ = try js.runModuleScript(it, null, source, l.href)
+    } else {
+        _ = try it.runScript(source)
+    }
+}

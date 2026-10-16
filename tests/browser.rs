@@ -7123,3 +7123,55 @@ fn chrono_free_today() -> String {
     let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
     format!("{year:04}-{month:02}-{day:02}")
 }
+
+/// `browser/tests/workers/<name>.html` (P11.18, dedicated Workers) under
+/// `dump --text --js` must print `<name>.txt` with an empty stderr. With
+/// `sorted`, the lines are compared in sorted order: the replies of one
+/// worker to messages that arrive together may come in any order.
+fn check_worker_page(name: &str, sorted: bool) {
+    let page = format!("browser/tests/workers/{name}.html");
+    let golden = root().join(format!("browser/tests/workers/{name}.txt"));
+    let out = run(&["dump", "--text", "--js", &page]);
+    let got = text(&out.stdout);
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    let order = |s: &str| {
+        let mut l: Vec<String> = s.lines().map(str::to_string).collect();
+        if sorted {
+            l.sort();
+        }
+        l
+    };
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert_eq!(order(&got), order(&want), "{page} differs from {}:\n{got}", golden.display());
+}
+
+/// A classic worker: structured clone both ways, timers, importScripts,
+/// fetch, performance, terminate, an `error` event, and a worker made
+/// from a `blob:` URL of the blob registry (fetch, revokeObjectURL).
+#[test]
+fn worker_basic() {
+    check_worker_page("basic", true);
+}
+
+/// A module worker imports `noise.js`, computes a 512x512 value noise
+/// `Float32Array` and transfers it back; the page checks samples against
+/// the same module.
+#[test]
+fn worker_module() {
+    check_worker_page("module", false);
+}
+
+/// `transfer` detaches the sender's ArrayBuffer and views on it move
+/// with it; buffers not in the list are copied.
+#[test]
+fn worker_transfer() {
+    check_worker_page("transfer", false);
+}

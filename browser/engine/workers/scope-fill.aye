@@ -1,0 +1,22 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.mem
+
+fn scopeSize(it: *mut Interp, a: Args) JsError!Value {
+    let m = scopeOf(it).link.worker_current orelse return js.numVal(0.0)
+
+    return js.numVal(m.buffers.items()[try it.toNumber(it.arg(a, 0)) as usize].len as f64)
+}
+
+fn scopeFill(it: *mut Interp, a: Args) JsError!Value {
+    let m = scopeOf(it).link.worker_current orelse return Value.Undefined
+    let src = m.buffers.items()[try it.toNumber(it.arg(a, 0)) as usize]
+    let dst = try bufferBytes(it, it.arg(a, 1))
+
+    mem.copy(dst, src)
+
+    return Value.Undefined
+}

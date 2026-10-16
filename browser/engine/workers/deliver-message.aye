@@ -1,0 +1,15 @@
+import js
+import js.Interp
+import js.Value
+
+fn deliverMessage(it: *mut Interp, m: Message) {
+    let json = it.newString(m.json) catch return
+    let n = js.numVal(m.buffers.len() as f64)
+
+    let args = [2]Value{ json, n }
+
+    _ = callGlobal(it, "__wDeliver", args[..]) catch |e| {
+        reportError(it, scopeOf(it).link)
+        return
+    }
+}
