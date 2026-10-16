@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+fn submitIntoFrame(p: *mut Page) AllocError!bool {
+    let s = p.script orelse return false
+
+    if s.queued_forms.len() > 0 {
+        try submitFormIntoFrame(p, s.queued_forms.orderedRemove(0), null)
+
+        return true
+    }
+
+    let form = s.nav_form orelse return false
+
+    if s.nav_kind != NavKind.Submit || targetFrame(p, linkTarget(p, form)) == null {
+        return false
+    }
+
+    try submitFormIntoFrame(p, form, takeNavigation(p).submitter)
+
+    return true
+}

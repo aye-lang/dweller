@@ -320,6 +320,10 @@ pub fn toUtf8(alloc: Allocator, bytes: []u8, enc: Encoding) AllocError![]mut u8 
 /// code point that `enc` cannot write becomes `&#N;` (N in decimal), as
 /// browsers send it.
 pub fn fromUtf8(alloc: Allocator, s: []u8, enc: Encoding) AllocError![]mut u8 {
+    return fromUtf8With(alloc, s, enc, "&#", ";")
+}
+
+pub fn fromUtf8With(alloc: Allocator, s: []u8, enc: Encoding, open: []u8, close: []u8) AllocError![]mut u8 {
     var out = text.Builder.init(alloc)
     errdefer out.deinit()
     if enc == Encoding.Utf8 {
@@ -342,9 +346,9 @@ pub fn fromUtf8(alloc: Allocator, s: []u8, enc: Encoding) AllocError![]mut u8 {
             done = try encodeOne(&mut out, cp, enc)
         }
         if !done {
-            try out.append("&#")
+            try out.append(open)
             try out.appendUint(cp as u64)
-            try out.appendByte(';')
+            try out.append(close)
         }
     }
     try finishIso2022Jp(&mut out, &mut jp)

@@ -582,6 +582,7 @@ pub let PRELUDE =
     \\reflectBool('noValidate', 'novalidate');
     \\reflectBool('formNoValidate', 'formnovalidate');
     \\for (const n of ['min', 'max', 'step', 'pattern', 'enctype']) reflect(n, n);
+    \\reflect('acceptCharset', 'accept-charset', HTMLFormElement.prototype);
     \\for (const n of ['formAction', 'formMethod', 'formEnctype']) reflect(n, n.toLowerCase());
     \\for (const n of ['minLength', 'maxLength']) getter(HTMLP, n, function () { const a = this.getAttribute(n.toLowerCase()); return a === null ? -1 : Number(a); }, function (v) { this.setAttribute(n.toLowerCase(), String(v)); });
     \\reflectBool('defaultChecked', 'checked');
@@ -1531,7 +1532,7 @@ pub let PRELUDE =
     \\getter(WindowP, 'closed', function () { return ak.winClosed(this); });
     \\getter(WindowP, 'location', function () {
     \\  const w = this;
-    \\  return {
+    \\  const loc = {
     \\    get href() { return ak.winHref(w); },
     \\    set href(v) { ak.winNavigate(w, String(v)); },
     \\    assign(v) { ak.winNavigate(w, String(v)); },
@@ -1539,6 +1540,8 @@ pub let PRELUDE =
     \\    reload() { ak.winNavigate(w, ak.winHref(w)); },
     \\    toString() { return ak.winHref(w); },
     \\  };
+    \\  for (const part of urlParts) getter(loc, part, function () { return new URL(ak.winHref(w))[part]; });
+    \\  return loc;
     \\}, function (v) { ak.winNavigate(this, String(v)); });
     \\for (const k of ['focus', 'blur']) hidden(WindowP, k, function () {});
     \\hidden(WindowP, 'close', function close() { ak.winClose(this); });
@@ -5007,7 +5010,7 @@ pub let PRELUDE =
     \\  name: 'Anchor Button Embed FieldSet Form IFrame Image Input Map Meta Object Output Select Slot TextArea',
     \\  placeholder: 'Input TextArea', alt: 'Area Image Input', rel: 'Anchor Area Link Form',
     \\  target: 'Anchor Area Base Form', srcdoc: 'IFrame', htmlFor: 'Label Output',
-    \\  method: 'Form', enctype: 'Form', action: 'Form', noValidate: 'Form', submit: 'Form',
+    \\  method: 'Form', enctype: 'Form', acceptCharset: 'Form', action: 'Form', noValidate: 'Form', submit: 'Form',
     \\  requestSubmit: 'Form', reset: 'Form', _formEntries: 'Form',
     \\  defaultValue: 'Input Output TextArea',
     \\  disabled: 'Button FieldSet Input Link OptGroup Option Select Style TextArea',
