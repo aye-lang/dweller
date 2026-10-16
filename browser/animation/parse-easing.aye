@@ -1,0 +1,31 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-easing-1/#easing-functions
+fn parseEasing(t: []u8) Easing {
+    let open = text.indexOf(t, "(") orelse return keywordEasing(t)
+    var n = [4]f64{0.0, 0.0, 1.0, 1.0}
+    var jump = "end"
+    var args = text.split(t[open + 1..t.len - 1], ", ")
+    var k: usize = 0
+
+    while args.next() |a| {
+        if k < 4 {
+            n[k] = text.parseFloat(a) catch n[k]
+        }
+
+        if k == 1 {
+            jump = a
+        }
+
+        k += 1
+    }
+
+    if text.startsWith(t, "steps(") {
+        let start = text.eql(jump, "start") || text.eql(jump, "jump-start") || text.eql(jump, "jump-both")
+        let end = text.eql(jump, "end") || text.eql(jump, "jump-end") || text.eql(jump, "jump-both")
+
+        return Easing { x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0, steps: n[0], jump_start: start, jump_end: end }
+    }
+
+    return bezier(n[0], n[1], n[2], n[3])
+}

@@ -1,0 +1,28 @@
+import css
+import std.math
+
+fn valueOfParts(p: Parts) css.Value {
+    if p.kind == 1 {
+        return css.Value.Px { v: p.n[0] }
+    }
+
+    if p.kind == 2 {
+        return css.Value.Percent { v: p.n[0] }
+    }
+
+    if p.kind == 3 {
+        return css.Value.Number { v: p.n[0] }
+    }
+
+    let a = math.min(math.max(p.n[3], 0.0), 1.0)
+
+    if a == 0.0 {
+        return css.Value.Rgba { c: css.Color { r: 0, g: 0, b: 0, a: 0.0 } }
+    }
+
+    return css.Value.Rgba { c: css.Color { r: channel(p.n[0] / a), g: channel(p.n[1] / a), b: channel(p.n[2] / a), a: a } }
+}
+
+fn channel(x: f64) u8 {
+    return math.round(math.min(math.max(x, 0.0), 255.0)) as u8
+}

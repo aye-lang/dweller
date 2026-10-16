@@ -1,0 +1,27 @@
+import css
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#matching-transition-property-value
+fn matchingItem(after: []css.Value, p: usize) ?usize {
+    let names = keywordOf(after[css.TRANSITION_PROPERTY])
+    var items = text.split(names, ", ")
+    var found: ?usize = null
+    var i: usize = 0
+
+    while items.next() |name| {
+        if text.eql(name, "all") || text.eql(name, css.PROPERTIES[p].name) || inShorthand(name, p) {
+            found = i
+        }
+
+        i += 1
+    }
+
+    let m = found orelse return null
+
+    if math.max(listSeconds(after, css.TRANSITION_DURATION, m), 0.0) + listSeconds(after, css.TRANSITION_DELAY, m) <= 0.0 {
+        return null
+    }
+
+    return m
+}

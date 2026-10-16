@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-easing-1/#cubic-bezier-easing-functions
+fn writeCubicBezier(args: []Token, out: *mut text.Builder) AllocError!bool {
+    if args.len != 4 {
+        return false
+    }
+
+    for i, a in args {
+        if a.kind != Tok.Number || (i % 2 == 0 && (a.num < 0.0 || a.num > 1.0)) {
+            return false
+        }
+    }
+
+    try out.append("cubic-bezier(")
+
+    for i, a in args {
+        if i > 0 {
+            try out.append(", ")
+        }
+
+        try writeNumber(a.num, out)
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

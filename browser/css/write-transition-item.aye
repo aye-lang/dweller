@@ -1,0 +1,38 @@
+import std.mem.AllocError
+import std.text
+
+fn writeTransitionItem(prop: usize, c: Comp, one_item: bool, out: *mut text.Builder) AllocError!bool {
+    if prop == TRANSITION_TIMING_FUNCTION {
+        return writeEasing(c, out)
+    }
+
+    if prop == TRANSITION_PROPERTY {
+        return writeTransitionProperty(c, one_item, out)
+    }
+
+    if prop == TRANSITION_BEHAVIOR {
+        let k = identIn(c, "normal allow-discrete") orelse return false
+
+        try out.append(k)
+
+        return true
+    }
+
+    let t = timeSeconds(c) orelse return false
+
+    if t < 0.0 && prop == TRANSITION_DURATION {
+        return false
+    }
+
+    try writeSeconds(t, out)
+
+    return true
+}
+
+fn identIn(c: Comp, list: []u8) ?[]u8 {
+    if c.toks.len != 1 || c.toks[0].kind != Tok.Ident {
+        return null
+    }
+
+    return inList(c.toks[0].text, list)
+}

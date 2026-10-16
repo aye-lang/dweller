@@ -1,0 +1,30 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#one_item-transition
+fn writeSingleTransition(item: []Comp, one_item: bool, outs: []mut text.Builder) AllocError!bool {
+    let lens = [5]usize{outs[0].len(), outs[1].len(), outs[2].len(), outs[3].len(), outs[4].len()}
+    var times: usize = 0
+
+    for c in item {
+        let k = transitionSlot(c, times) orelse return false
+
+        if outs[k].len() > lens[k] || !(try writeTransitionItem(TRANSITION_PROPERTY + k, c, one_item, &mut outs[k])) {
+            return false
+        }
+
+        if timeSeconds(c) != null {
+            times += 1
+        }
+    }
+
+    let defaults = [5][]u8{"all", "0s", "ease", "0s", "normal"}
+
+    for k in 0..5 {
+        if outs[k].len() == lens[k] {
+            try outs[k].append(defaults[k])
+        }
+    }
+
+    return item.len > 0
+}

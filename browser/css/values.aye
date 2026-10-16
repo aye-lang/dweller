@@ -272,7 +272,7 @@ pub fn isProperty(name: []u8) bool {
 
 // The longhands of the shorthand `name` into `out`; how many (0 when
 // `name` is not a shorthand).
-fn shorthandLonghands(name: []u8, out: []mut usize) usize {
+pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     var first: usize = 0
     var n: usize = 0
     var step: usize = 1
@@ -321,6 +321,9 @@ fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "outline") {
         first = OUTLINE_COLOR
         n = 3
+    } else if text.eql(name, "transition") {
+        first = TRANSITION_PROPERTY
+        n = 5
     } else if text.eql(name, "border") {
         for k in 0..12 {
             out[k] = BORDER_TOP_WIDTH + k
@@ -450,6 +453,9 @@ struct Declarer {
     }
 
     fn shorthand(self: *mut Self, name: []u8, comps: []Comp) AllocError!void {
+        if text.eql(name, "transition") {
+            return addTransition(self, comps)
+        }
         if text.eql(name, "margin") {
             return self.sides(MARGIN_TOP, comps)
         }
@@ -1099,6 +1105,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
     if prop == TRANSLATE || prop == ROTATE || prop == SCALE {
         return individualTransformValue(sheet, prop, comps)
+    }
+    if prop >= TRANSITION_PROPERTY && prop <= TRANSITION_BEHAVIOR {
+        return transitionList(sheet, prop, comps)
     }
 
     if p.kind == PKind.Raw {

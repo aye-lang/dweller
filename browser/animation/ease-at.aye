@@ -1,0 +1,22 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-easing-1/#step-easing-algo
+fn easeAt(e: Easing, p: f64) f64 {
+    if e.steps == 0.0 {
+        return bezierAt(e, p)
+    }
+
+    var step = math.floor(p * e.steps)
+    var jumps = e.steps - 1.0
+
+    if e.jump_start {
+        step += 1.0
+        jumps += 1.0
+    }
+
+    if e.jump_end {
+        jumps += 1.0
+    }
+
+    return math.min(math.max(step, 0.0), jumps) / jumps
+}

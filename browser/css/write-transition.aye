@@ -1,0 +1,39 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#transition-shorthand-property
+pub fn writeTransition(values: []Value, out: *mut text.Builder) AllocError!void {
+    let n = listLength(keywordOf(values[TRANSITION_PROPERTY]))
+
+    for i in 0..n {
+        if i > 0 {
+            try out.append(", ")
+        }
+
+        let start = out.len()
+        let parts = [5][]u8{transitionPart(values, 0, i), transitionPart(values, 1, i), transitionPart(values, 2, i), transitionPart(values, 3, i), transitionPart(values, 4, i)}
+        let defaults = [5][]u8{"all", "0s", "ease", "0s", "normal"}
+
+        for k in 0..5 {
+            let wanted = !text.eql(parts[k], defaults[k]) || (k == 1 && !text.eql(parts[3], "0s"))
+
+            if wanted && out.len() > start {
+                try out.appendByte(' ')
+            }
+
+            if wanted {
+                try out.append(parts[k])
+            }
+        }
+
+        if out.len() == start {
+            try out.append("all")
+        }
+    }
+}
+
+fn transitionPart(values: []Value, k: usize, i: usize) []u8 {
+    let list = keywordOf(values[TRANSITION_PROPERTY + k])
+
+    return listItem(list, i % listLength(list))
+}
