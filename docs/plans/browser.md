@@ -187,7 +187,7 @@ under 100 ms with a timer storm.
 |---|---|---|---|---|---|
 | A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | done | – |
 | A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | done | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
-| A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | open | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
+| A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | done 2026-10-16 | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | open | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
 | A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | open | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
 | A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | open | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
@@ -532,6 +532,7 @@ them from coming back.
 - chromium: `net/socket/client_socket_pool_manager.cc` (6 sockets per group), `net/docs/life-of-a-url-request.md`. Take: one pool per process keyed by scheme, host and port, idle sockets kept for the next request. With libcurl: `CURLMOPT_MAX_HOST_CONNECTIONS` 6, `CURLMOPT_PIPELINING` multiplex, one connection cache.
 - verify: HN `DWELLER_TIMING` `sheets` < 350 ms live (now 753); `cargo test --release --test browser -- net_http http_ > target/p4.37.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- status: done 2026-10-16. Every request of the session, sync `net.fetch` ones included, now runs on the loader's one multi handle (`performShared`), which with the session's share handle (connections, DNS, TLS sessions) is the process's one pool; `net/pool-options.aye` sets 6 connections per host, 16 total and `CURLMOPT_PIPELINING` multiplex explicitly. Live HN (`dump --layout`, 9 runs, behind the sandbox proxy): one TCP connection for the whole load (strace), the sheet prefetch 109–199 ms (median 111; card said `sheets` 753, which `dump` does not emit, so the `prefetch` batch is the number), the images batch 108–179 ms; one run hit the 10 s connect timeout (proxy). `net_http http_ fetch errors`: 11 of 11 pass.
 
 #### P4.41: the W7 and W8 report
 - goal: W7 and W8 are checked by one command. `window_perf.py report --replay` runs `scroll` and `idle` for every non-excluded site of `sites.json` with `DWELLER_REPLAY=target/sites/<name>`; `report --live --chrome` measures Dweller's first paint and Chrome's first contentful paint (through `agent-browser`, as in `PERF.md`), 3 alternating runs each. Both print a row per site with pass/fail and exit 1 when a row fails; the results go into `PERF.md` ("Window", a dated table).
