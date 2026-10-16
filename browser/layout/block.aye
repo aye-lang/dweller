@@ -58,10 +58,10 @@ fn clampWidth(t: *Tree, i: usize, w: f64, cb_w: f64) f64 {
     let b = t.bx(i)
     let e = hEdges(b)
     var r = w
-    if sizeOf(b.style, b.style[css.MAX_WIDTH], cb_w, e) |mx| {
+    if widthOf(b, b.style[css.MAX_WIDTH], cb_w, e) |mx| {
         r = math.min(r, mx)
     }
-    if sizeOf(b.style, b.style[css.MIN_WIDTH], cb_w, e) |mn| {
+    if widthOf(b, b.style[css.MIN_WIDTH], cb_w, e) |mn| {
         r = math.max(r, mn)
     }
     return math.max(r, e)
@@ -84,7 +84,7 @@ fn clampHeight(t: *Tree, i: usize, h: f64, cb_h: f64) f64 {
 /// min/max; null for `auto`.
 fn specifiedWidth(t: *Tree, i: usize, cb_w: f64) ?f64 {
     let b = t.bx(i)
-    if sizeOf(b.style, b.style[css.WIDTH], cb_w, hEdges(b)) |w| {
+    if widthOf(b, b.style[css.WIDTH], cb_w, hEdges(b)) |w| {
         return clampWidth(t, i, w, cb_w)
     }
     return null
@@ -195,6 +195,7 @@ fn layoutBlockLevel(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) AllocError!voi
         let b = t.bx(i)
         b.margin[3] = lengthOr0(b.style[css.MARGIN_TOP + 3], cb_w)
         b.margin[1] = lengthOr0(b.style[css.MARGIN_TOP + 1], cb_w)
+        try primeIntrinsic(t, i)
         if specifiedWidth(t, i, cb_w) |w| {
             b.w = w
         } else {
@@ -243,6 +244,7 @@ fn layoutAtomic(t: *mut Tree, i: usize, avail: f64) AllocError!void {
 // Sets the width of box `i` (margins and edges resolved) to its
 // specified width, or else to its shrink-to-fit width in `avail` px.
 fn shrinkToFit(t: *mut Tree, i: usize, avail: f64) AllocError!void {
+    try primeIntrinsic(t, i)
     if specifiedWidth(t, i, avail) |w| {
         t.bx(i).w = w
         return

@@ -1,0 +1,24 @@
+import css
+import css.Value
+import std.mem.AllocError
+import std.text
+
+fn primeIntrinsic(t: *mut Tree, i: usize) AllocError!void {
+    let s = t.bx(i).style
+
+    for p in [4]usize{css.WIDTH, css.MIN_WIDTH, css.MAX_WIDTH, css.FLEX_BASIS} {
+        if isContentSize(s[p]) {
+            _ = try intrinsic(t, i)
+
+            return
+        }
+    }
+}
+
+fn isContentSize(v: Value) bool {
+    return match v {
+        .FitContent { .. } => true
+        .Keyword { k } => text.endsWith(k, "-content")
+        _ => false
+    }
+}

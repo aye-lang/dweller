@@ -1571,6 +1571,9 @@ pub fn writeValue(v: Value, out: *mut text.Builder) AllocError!void {
             }
             try out.append("px)")
         }
+        .FitContent { pct, px } => {
+            try writeFitContent(pct, px, out)
+        }
         .Rgba { c } => {
             if c.a >= 1.0 {
                 try out.append("rgb(")
@@ -1786,6 +1789,7 @@ pub fn sameValue(a: Value, b: Value) bool {
 fn calcPxOf(v: Value) f64 {
     return match v {
         .Calc { px, .. } => px
+        .FitContent { px, .. } => px
         _ => 0.0
     }
 }
@@ -1802,6 +1806,7 @@ fn tagOf(v: Value) u8 {
         .Number { .. } => 8
         .Rgba { .. } => 9
         .Calc { .. } => 14
+        .FitContent { .. } => 15
         .CurrentColor => 10
         .Inherit => 11
         .Initial => 12
@@ -1812,6 +1817,7 @@ fn tagOf(v: Value) u8 {
 fn numberOf(v: Value) f64 {
     return match v {
         .Calc { pct, .. } => pct
+        .FitContent { pct, .. } => pct
         .Px { v: n } => n
         .Em { v: n } => n
         .Rem { v: n } => n

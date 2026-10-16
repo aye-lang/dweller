@@ -1,0 +1,37 @@
+import css.Value
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-sizing-3/#sizing-values
+fn contentSizeOf(b: *Box, v: Value, base: f64, edges: f64) ?f64 {
+    if !b.has_intrinsic {
+        return null
+    }
+
+    let word = keywordOf(v)
+
+    if text.eql(word, "min-content") {
+        return b.min_w
+    }
+
+    if text.eql(word, "max-content") {
+        return b.max_w
+    }
+
+    if text.eql(word, "fit-content") {
+        return fitWithin(b, base - b.margin[1] - b.margin[3], base)
+    }
+
+    return match v {
+        .FitContent { pct, px } => fitContentLength(b, pct, px, base, edges)
+        _ => null
+    }
+}
+
+fn fitWithin(b: *Box, avail: f64, base: f64) ?f64 {
+    if base < 0.0 {
+        return null
+    }
+
+    return math.min(b.max_w, math.max(b.min_w, avail))
+}
