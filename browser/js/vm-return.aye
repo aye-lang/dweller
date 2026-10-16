@@ -1,0 +1,15 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildReturn, ControlScope::PerformCommand)
+
+fn vmReturn(c: *mut Compiler) CompileError!void {
+    if c.fins.len() == 0 {
+        return c.b.op0(BC_RETURN)
+    }
+
+    let fin = c.fins.items()[c.fins.len() - 1]
+
+    fin.returns = true
+    try c.b.op1(BC_STAR, fin.value as i64)
+    try vmUnwindContexts(c, fin.nctx)
+    try vmSetToken(c, fin, VM_TOKEN_RETURN)
+    try c.b.jump(BC_JUMP, fin.label)
+}

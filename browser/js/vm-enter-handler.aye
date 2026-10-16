@@ -1,0 +1,11 @@
+// v8: src/interpreter/interpreter-generator.cc (the handler entry of Ignition)
+
+fn vmEnterHandler(it: *mut Interp, f: *mut VmFault, h: BcHandler) {
+    vmPopContext(it, it.slot(f.fp + h.ctx as usize))
+    it.truncate(f.fp + f.code.nregs as usize)
+
+    f.pc = h.handler as usize
+    f.acc = it.exception
+    f.resume = true
+    it.exception = Value.Undefined
+}
