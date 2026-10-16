@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<title>class toggles beside a shadow host</title>
+<style>#box { width: 100px } #box.wide { width: 300px } #consent { color: navy }</style>
+<div id="consent"></div>
+<div id="box">box</div>
+<pre id="out"></pre>
+<script>
+const host = document.getElementById('consent');
+host.attachShadow({ mode: 'open' }).innerHTML = '<style>p { color: green }</style><p>consent</p>';
+const box = document.getElementById('box');
+const widths = [];
+let n = 0;
+const tick = setInterval(() => {
+  box.classList.toggle('wide');
+  widths.push(box.offsetWidth);
+  if (++n === 50) {
+    clearInterval(tick);
+    host.shadowRoot.querySelector('p').style.width = '10px';
+    document.getElementById('out').textContent = widths.slice(0, 4).join(' ') + ' ' + host.shadowRoot.firstElementChild.nextSibling.offsetWidth;
+  }
+}, 10);
+</script>

@@ -1,0 +1,38 @@
+import font
+import std.mem.AllocError
+
+// blink: third_party/blink/renderer/core/dom/document.cc (UpdateStyleAndLayout)
+fn keepCleanLayout(p: *mut Page, measure: dyn font.Measurer, width: f64, height: f64) AllocError!bool {
+    let st = p.styling orelse return false
+
+    if p.tree == null || p.tree_borrowed || st.media.width != width || st.media.height != height || st.version != domVersion(p) || p.sheet_key != sheetSourceKey(&p.doc) || !stylesCurrent(&p.doc, st.media, &st.styles) {
+        return false
+    }
+
+    if try loadWebFonts(p.alloc, &mut st.author, p.url.href, measure, p.heldLoads()) {
+        return false
+    }
+
+    try updateImages(p, st.media)
+
+    if !imagesKeepLayout(p.images.?, &st.styles) {
+        return false
+    }
+
+    p.measure = measure
+    setViewport(p, width, height)
+
+    if !p.scripts_pending {
+        try syncFrames(p)
+    }
+
+    if p.script |s| {
+        if p.doc.shadows.len() == 0 {
+            try adoptLayout(s, st, p.tree.?)
+        }
+    }
+
+    try layoutFrames(p, measure)
+
+    return true
+}
