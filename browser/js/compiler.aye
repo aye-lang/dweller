@@ -38,7 +38,22 @@ pub struct VmFunc {
     tried: bool = true
 }
 
+// One target of `break` (and `continue` when `cont` is not NONE).
+// `label` 0 is the unlabeled target of the innermost loop or switch.
+struct Ctl {
+    label: u32
+    brk: u32
+    cont: u32
+}
+
+struct LoopCtl {
+    n: u32
+    brk: u32
+    cont: u32
+}
+
 struct Compiler {
+    alloc: Allocator
     ast: *Ast
     b: BcBuilder
     func: u32
@@ -50,6 +65,12 @@ struct Compiler {
     // The register that holds `this` (-1: the function does not use it).
     this_reg: i32
     reason: []u8
+    // The enclosing loops, switches and labeled statements, innermost
+    // last (V8's `ControlScope` chain): where `break` and `continue` go.
+    ctl: List(Ctl)
+    // Labels (atoms) of the `a: b: stmt` being entered, taken by the
+    // loop or statement they label.
+    pending: List(u32)
 
     fn fail(self: *mut Self, why: []u8) CompileError!void {
         self.reason = why
@@ -329,39 +350,363 @@ struct Compiler {
             .Assign { op, target, value } => {
                 try self.visitAssign(op, target, value)
             }
+            .Logical { op, l, r } => {
+                try self.visitLogical(op, l, r)
+            }
+            .Cond { cond, cons, alt } => {
+                let other = try self.b.newLabel()
+                let end = try self.b.newLabel()
+                try self.jumpIfFalse(cond, other)
+                try self.visit(cons)
+                try self.b.jump(BC_JUMP, end)
+                try self.b.bind(other)
+                try self.visit(alt)
+                try self.b.bind(end)
+            }
+            .Seq { list, n } => {
+                for k in 0..n {
+                    try self.visit(self.ast.item(list, k))
+                }
+            }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
             }
         }
     }
 
-    // The let/const of a statement list start in their dead zone.
-    fn markDeadZone(self: *mut Self, list: u32, n: u32) CompileError!void {
+    // Enters a loop: its `break`/`continue` labels and the targets it
+    // gives itself and the labels in front of it.
+    fn pushLoop(self: *mut Self) CompileError!LoopCtl {
+        let brk = try self.b.newLabel()
+        let cont = try self.b.newLabel()
+        let np = self.pending.len() as u32
+        for p in self.pending.items() {
+            try self.ctl.append(Ctl { label: p, brk: brk, cont: cont })
+        }
+        self.pending.clear()
+        try self.ctl.append(Ctl { label: 0, brk: brk, cont: cont })
+        return LoopCtl { n: np + 1, brk: brk, cont: cont }
+    }
+
+    fn popLoop(self: *mut Self, lp: LoopCtl) {
+        for _ in 0..lp.n {
+            self.ctl.pop()
+        }
+    }
+
+    // The end of a `while` body: `continue` lands on the backward jump.
+    fn endLoop(self: *mut Self, lp: LoopCtl, hdr: u32) CompileError!void {
+        try self.b.bind(lp.cont)
+        try self.b.jumpLoop(hdr)
+        self.popLoop(lp)
+        try self.b.bind(lp.brk)
+    }
+
+    // The label that `break`/`continue` (with atom `label`, 0 if none)
+    // jumps to.
+    fn target(self: *mut Self, label: u32, isContinue: bool) CompileError!u32 {
+        var k = self.ctl.len()
+        while k > 0 {
+            k -= 1
+            let c = self.ctl.items()[k]
+            if c.label != label {
+                continue
+            }
+            if isContinue {
+                if c.cont == NONE {
+                    continue
+                }
+                return c.cont
+            }
+            return c.brk
+        }
+        try self.fail("unsupported: break or continue target")
+        return 0
+    }
+
+    fn visitFor(self: *mut Self, init: u32, cond: u32, update: u32, body: u32, scope: u32) CompileError!void {
+        let sc = self.ast.scopes.items()[scope]
+        if sc.nslots > 0 {
+            try self.scopes.append(scope)
+        }
+        if init != 0 {
+            match self.ast.node(init) {
+                .VarDecl { .. } => {
+                    try self.markDecl(init)
+                    try self.visitStatement(init)
+                }
+                _ => {
+                    try self.visit(init)
+                }
+            }
+        }
+        let lp = try self.pushLoop()
+        let hdr = try self.b.loopHeader()
+        if cond != 0 {
+            try self.jumpIfFalse(cond, lp.brk)
+        }
+        try self.visitStatement(body)
+        try self.b.bind(lp.cont)
+        if update != 0 {
+            try self.visit(update)
+        }
+        try self.b.jumpLoop(hdr)
+        self.popLoop(lp)
+        try self.b.bind(lp.brk)
+        if sc.nslots > 0 {
+            self.scopes.pop()
+        }
+    }
+
+    // A `case` of an integer literal (for `SwitchOnSmi`), else null.
+    fn caseInt(self: *Self, id: u32) ?i64 {
+        match self.ast.node(id) {
+            .Num { v } => {
+                if v >= -1000000.0 && v <= 1000000.0 && v == ((v as i64) as f64) {
+                    return v as i64
+                }
+            }
+            .Unary { op, arg } => {
+                if op == Op.Neg {
+                    if self.caseInt(arg) |x| {
+                        if x != 0 {
+                            return -x
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        return null
+    }
+
+    // V8 `VisitSwitchStatement`: the case tests in order (`TestEqualStrict`
+    // of the saved discriminant), or `SwitchOnSmi` for dense integer
+    // cases, then the bodies in order so that a case falls through.
+    fn visitSwitch(self: *mut Self, disc: u32, list: u32, n: u32, scope: u32) CompileError!void {
+        let sc = self.ast.scopes.items()[scope]
+        if sc.nfuncs > 0 {
+            try self.fail("unsupported: FuncDecl")
+        }
+        var lo: i64 = 0
+        var hi: i64 = 0
+        var ncases: i64 = 0
+        var smi = true
+        var dflt = n
+        var vals = List(i64).init(self.alloc)
+        defer vals.deinit()
         for k in 0..n {
             match self.ast.node(self.ast.item(list, k)) {
-                .VarDecl { kind, list: dl, n: dn } => {
-                    if kind == DECL_VAR {
-                        continue
-                    }
-                    for j in 0..dn {
-                        match self.ast.node(self.ast.item(dl, j)) {
-                            .Declarator { target, .. } => {
-                                match self.ast.node(target) {
-                                    .Ident { depth, slot, .. } => {
-                                        let r = try self.identReg(depth, slot)
-                                        if r >= 0 {
-                                            self.tdz.items()[r as usize] = true
-                                        }
-                                    }
-                                    _ => {}
+                .Case { cond, list: cl, n: cn } => {
+                    for j in 0..cn {
+                        match self.ast.node(self.ast.item(cl, j)) {
+                            .VarDecl { kind, .. } => {
+                                if kind != DECL_VAR {
+                                    try self.fail("unsupported: lexical declaration in switch")
                                 }
                             }
                             _ => {}
                         }
                     }
+                    if cond == 0 {
+                        dflt = k
+                    } else if self.caseInt(cond) |x| {
+                        if ncases == 0 || x < lo {
+                            lo = x
+                        }
+                        if ncases == 0 || x > hi {
+                            hi = x
+                        }
+                        ncases += 1
+                        try vals.append(x)
+                    } else {
+                        smi = false
+                    }
                 }
                 _ => {}
             }
+        }
+        if ncases < 3 || hi - lo + 1 > 2 * ncases + 8 {
+            smi = false
+        }
+        if sc.nslots > 0 {
+            try self.scopes.append(scope)
+        }
+        let mark = self.b.topReg
+        let brk = try self.b.newLabel()
+        let dfltLabel = try self.b.newLabel()
+        var labels = List(u32).init(self.alloc)
+        defer labels.deinit()
+        for _ in 0..n {
+            try labels.append(try self.b.newLabel())
+        }
+        var table: u32 = 0
+        if smi {
+            try self.visit(disc)
+            table = try self.b.newJumpTable((hi - lo + 1) as u32, lo as i32)
+            try self.b.switchOnSmi(table)
+        } else {
+            let d = self.b.newReg()
+            try self.visit(disc)
+            try self.b.op1(BC_STAR, d as i64)
+            for k in 0..n {
+                match self.ast.node(self.ast.item(list, k)) {
+                    .Case { cond, .. } => {
+                        if cond != 0 {
+                            try self.visit(cond)
+                            try self.b.op2(BC_TEST_EQUAL_STRICT, d as i64, self.b.newSlot() as i64)
+                            try self.b.jump(BC_JUMP_IF_TRUE, labels.items()[k])
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        try self.b.jump(BC_JUMP, dfltLabel)
+        try self.ctl.append(Ctl { label: 0, brk: brk, cont: NONE })
+        var seen = List(i64).init(self.alloc)
+        defer seen.deinit()
+        for k in 0..n {
+            try self.b.bind(labels.items()[k])
+            match self.ast.node(self.ast.item(list, k)) {
+                .Case { cond, list: cl, n: cn } => {
+                    if smi && cond != 0 {
+                        let x = self.caseInt(cond) orelse 0
+                        var dup = false
+                        for y in seen.items() {
+                            if y == x {
+                                dup = true
+                            }
+                        }
+                        if !dup {
+                            try seen.append(x)
+                            self.b.bindCase(table, x as i32)
+                        }
+                    }
+                    if k == dflt {
+                        try self.bindDefault(dfltLabel, smi, table, lo, hi, vals.items())
+                    }
+                    for j in 0..cn {
+                        try self.visitStatement(self.ast.item(cl, j))
+                    }
+                }
+                _ => {}
+            }
+        }
+        if dflt == n {
+            try self.bindDefault(dfltLabel, smi, table, lo, hi, vals.items())
+        }
+        self.ctl.pop()
+        try self.b.bind(brk)
+        self.b.releaseRegs(mark)
+        if sc.nslots > 0 {
+            self.scopes.pop()
+        }
+    }
+
+    // The default target: the label, and the table's values with no case.
+    fn bindDefault(self: *mut Self, label: u32, smi: bool, table: u32, lo: i64, hi: i64, vals: []i64) CompileError!void {
+        try self.b.bind(label)
+        if !smi {
+            return
+        }
+        var v = lo
+        while v <= hi {
+            var has = false
+            for y in vals {
+                if y == v {
+                    has = true
+                }
+            }
+            if !has {
+                self.b.bindCase(table, v as i32)
+            }
+            v += 1
+        }
+    }
+
+    // Is the value of `id` always a boolean (then `JumpIfFalse` will do)?
+    fn isBool(self: *Self, id: u32) bool {
+        return match self.ast.node(id) {
+            .True => true
+            .False => true
+            .Unary { op, .. } => op == Op.Not
+            .Binary { op, .. } => match op {
+                .Eq => true
+                .NotEq => true
+                .StrictEq => true
+                .StrictNotEq => true
+                .Lt => true
+                .Gt => true
+                .Le => true
+                .Ge => true
+                _ => false
+            }
+            _ => false
+        }
+    }
+
+    // Visits `id` and jumps to `label` when it is falsy (V8
+    // `VisitForTest` with the else branch as the target).
+    fn jumpIfFalse(self: *mut Self, id: u32, label: u32) CompileError!void {
+        try self.visit(id)
+        if self.isBool(id) {
+            try self.b.jump(BC_JUMP_IF_FALSE, label)
+        } else {
+            try self.b.jump(BC_JUMP_IF_TO_BOOLEAN_FALSE, label)
+        }
+    }
+
+    // `l && r`, `l || r`, `l ?? r` (V8 `VisitLogicalOrExpression`,
+    // `VisitNullishExpression`): the jump leaves l in the accumulator.
+    fn visitLogical(self: *mut Self, op: Op, l: u32, r: u32) CompileError!void {
+        let end = try self.b.newLabel()
+        try self.visit(l)
+        if op == Op.And {
+            try self.b.jump(BC_JUMP_IF_TO_BOOLEAN_FALSE, end)
+        } else if op == Op.Or {
+            try self.b.jump(BC_JUMP_IF_TO_BOOLEAN_TRUE, end)
+        } else {
+            let rhs = try self.b.newLabel()
+            try self.b.jump(BC_JUMP_IF_UNDEFINED_OR_NULL, rhs)
+            try self.b.jump(BC_JUMP, end)
+            try self.b.bind(rhs)
+        }
+        try self.visit(r)
+        try self.b.bind(end)
+    }
+
+    // The let/const declared by statement `id` start in their dead zone.
+    fn markDecl(self: *mut Self, id: u32) CompileError!void {
+        match self.ast.node(id) {
+            .VarDecl { kind, list: dl, n: dn } => {
+                if kind == DECL_VAR {
+                    return
+                }
+                for j in 0..dn {
+                    match self.ast.node(self.ast.item(dl, j)) {
+                        .Declarator { target, .. } => {
+                            match self.ast.node(target) {
+                                .Ident { depth, slot, .. } => {
+                                    let r = try self.identReg(depth, slot)
+                                    if r >= 0 {
+                                        self.tdz.items()[r as usize] = true
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn markDeadZone(self: *mut Self, list: u32, n: u32) CompileError!void {
+        for k in 0..n {
+            try self.markDecl(self.ast.item(list, k))
         }
     }
 
@@ -428,6 +773,75 @@ struct Compiler {
                     try self.visit(arg)
                 }
                 try self.b.op0(BC_RETURN)
+            }
+            .If { cond, cons, alt } => {
+                let other = try self.b.newLabel()
+                try self.jumpIfFalse(cond, other)
+                try self.visitStatement(cons)
+                if alt == 0 {
+                    try self.b.bind(other)
+                } else {
+                    let end = try self.b.newLabel()
+                    try self.b.jump(BC_JUMP, end)
+                    try self.b.bind(other)
+                    try self.visitStatement(alt)
+                    try self.b.bind(end)
+                }
+            }
+            .While { cond, body } => {
+                let lp = try self.pushLoop()
+                let hdr = try self.b.loopHeader()
+                try self.jumpIfFalse(cond, lp.brk)
+                try self.visitStatement(body)
+                try self.endLoop(lp, hdr)
+            }
+            .DoWhile { body, cond } => {
+                let lp = try self.pushLoop()
+                let hdr = try self.b.loopHeader()
+                try self.visitStatement(body)
+                try self.b.bind(lp.cont)
+                try self.jumpIfFalse(cond, lp.brk)
+                try self.b.jumpLoop(hdr)
+                self.popLoop(lp)
+                try self.b.bind(lp.brk)
+            }
+            .For { init, cond, update, body, scope } => {
+                try self.visitFor(init, cond, update, body, scope)
+            }
+            .Break { label } => {
+                try self.b.jump(BC_JUMP, try self.target(label, false))
+            }
+            .Continue { label } => {
+                try self.b.jump(BC_JUMP, try self.target(label, true))
+            }
+            .Switch { disc, list, n, scope } => {
+                try self.visitSwitch(disc, list, n, scope)
+            }
+            .Labeled { label, body } => {
+                try self.pending.append(label)
+                var loop = false
+                match self.ast.node(body) {
+                    .Labeled { .. } => { loop = true }
+                    .For { .. } => { loop = true }
+                    .While { .. } => { loop = true }
+                    .DoWhile { .. } => { loop = true }
+                    _ => {}
+                }
+                if loop {
+                    try self.visitStatement(body)
+                } else {
+                    let brk = try self.b.newLabel()
+                    for p in self.pending.items() {
+                        try self.ctl.append(Ctl { label: p, brk: brk, cont: NONE })
+                    }
+                    let np = self.pending.len()
+                    self.pending.clear()
+                    try self.visitStatement(body)
+                    for _ in 0..np {
+                        self.ctl.pop()
+                    }
+                    try self.b.bind(brk)
+                }
             }
             .Block { list, n, scope } => {
                 let sc = self.ast.scopes.items()[scope]
@@ -512,6 +926,7 @@ struct Compiler {
 pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc {
     let fi = ast.func(func)
     var c = Compiler {
+        alloc: alloc,
         ast: ast,
         b: BcBuilder.init(alloc, fi.nparams),
         func: func,
@@ -519,8 +934,12 @@ pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc
         tdz: List(bool).init(alloc),
         this_reg: -1,
         reason: "",
+        ctl: List(Ctl).init(alloc),
+        pending: List(u32).init(alloc),
     }
     defer {
+        c.ctl.deinit()
+        c.pending.deinit()
         c.b.deinit()
         c.scopes.deinit()
         c.tdz.deinit()
@@ -546,14 +965,11 @@ fn vmNodeReason(n: Node) []u8 {
         .ObjectLit { .. } => "unsupported: ObjectLit"
         .Func { .. } => "unsupported: Func"
         .Class { .. } => "unsupported: Class"
-        .Logical { .. } => "unsupported: Logical"
-        .Cond { .. } => "unsupported: Cond"
         .Call { .. } => "unsupported: Call"
         .New { .. } => "unsupported: New"
         .Member { .. } => "unsupported: Member"
         .Index { .. } => "unsupported: Index"
         .OptChain { .. } => "unsupported: OptChain"
-        .Seq { .. } => "unsupported: Seq"
         .Spread { .. } => "unsupported: Spread"
         .SuperCall { .. } => "unsupported: SuperCall"
         .SuperMember { .. } => "unsupported: SuperMember"
@@ -566,17 +982,9 @@ fn vmNodeReason(n: Node) []u8 {
         .ImportMeta { .. } => "unsupported: ImportMeta"
         .FuncDecl { .. } => "unsupported: FuncDecl"
         .ClassDecl { .. } => "unsupported: ClassDecl"
-        .If { .. } => "unsupported: If"
-        .For { .. } => "unsupported: For"
         .ForIn { .. } => "unsupported: ForIn"
-        .While { .. } => "unsupported: While"
-        .DoWhile { .. } => "unsupported: DoWhile"
-        .Break { .. } => "unsupported: Break"
-        .Continue { .. } => "unsupported: Continue"
         .Throw { .. } => "unsupported: Throw"
         .Try { .. } => "unsupported: Try"
-        .Switch { .. } => "unsupported: Switch"
-        .Labeled { .. } => "unsupported: Labeled"
         _ => "unsupported: other"
     }
 }

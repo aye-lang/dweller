@@ -231,6 +231,13 @@ before their declaration in the source (the dead zone) and the
 `js_conformance_vm` GC-stress pass leaving out the allocation and deep
 recursion scripts (minutes each under stress) are P4.63 limits.
 
+As built (P4.64): jumps are all forward except `JumpLoop`, one per
+loop (`continue` jumps forward to it). `JumpLoop` ticks the budget
+(`Interp.tick`), so a runaway compiled loop ends on the step limit or
+deadline like a tree-walked one. The VM reads a jump's offset from the
+opcode byte; `SwitchOnSmi` falls through for a value that is not an
+integer in range, to the `Jump` to the default that follows it.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

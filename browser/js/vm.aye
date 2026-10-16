@@ -284,6 +284,18 @@ fn vmIdx(bytes: []u8, at: usize, w: u8) i64 {
     return bcGet(bytes, at, w, false)
 }
 
+// The jump offset in constant-pool entry `k` (`Jump*Constant`, the
+// `SwitchOnSmi` table).
+fn vmConstOffset(consts: []BcConst, k: i64) usize {
+    match consts[k as usize] {
+        .Offset { v } => {
+            return v as usize
+        }
+        _ => {}
+    }
+    unreachable
+}
+
 /// The dispatch loop: runs `code` with its registers at stack[fp..].
 fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsError!Value {
     let bytes = code.code
@@ -980,6 +992,184 @@ fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsE
                 regs[fp] = acc
                 acc = try it.binary(vmBinaryOp(op), lhs, acc)
                 regs = it.stack.items()
+            }
+            54 => {
+                // Jump off
+                pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+            }
+            55 => {
+                // JumpIfTrue off
+                match acc {
+                    .Bool { b } => {
+                        if b {
+                            pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                            continue
+                        }
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            56 => {
+                // JumpIfFalse off
+                match acc {
+                    .Bool { b } => {
+                        if !b {
+                            pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                            continue
+                        }
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            57 => {
+                // JumpIfToBooleanTrue off
+                if it.toBoolean(acc) {
+                    pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                } else {
+                    pc += w as usize
+                }
+            }
+            58 => {
+                // JumpIfToBooleanFalse off
+                if !it.toBoolean(acc) {
+                    pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                } else {
+                    pc += w as usize
+                }
+            }
+            59 => {
+                // JumpIfNull off
+                match acc {
+                    .Null => {
+                        pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                        continue
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            60 => {
+                // JumpIfUndefined off
+                match acc {
+                    .Undefined => {
+                        pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                        continue
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            61 => {
+                // JumpIfUndefinedOrNull off
+                if isNullish(acc) {
+                    pc = pc - 1 + vmIdx(bytes, pc, w) as usize
+                } else {
+                    pc += w as usize
+                }
+            }
+            62 => {
+                // JumpConstant k
+                pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+            }
+            63 => {
+                // JumpIfTrueConstant k
+                match acc {
+                    .Bool { b } => {
+                        if b {
+                            pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                            continue
+                        }
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            64 => {
+                // JumpIfFalseConstant k
+                match acc {
+                    .Bool { b } => {
+                        if !b {
+                            pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                            continue
+                        }
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            65 => {
+                // JumpIfToBooleanTrueConstant k
+                if it.toBoolean(acc) {
+                    pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                } else {
+                    pc += w as usize
+                }
+            }
+            66 => {
+                // JumpIfToBooleanFalseConstant k
+                if !it.toBoolean(acc) {
+                    pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                } else {
+                    pc += w as usize
+                }
+            }
+            67 => {
+                // JumpIfNullConstant k
+                match acc {
+                    .Null => {
+                        pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                        continue
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            68 => {
+                // JumpIfUndefinedConstant k
+                match acc {
+                    .Undefined => {
+                        pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                        continue
+                    }
+                    _ => {}
+                }
+                pc += w as usize
+            }
+            69 => {
+                // JumpIfUndefinedOrNullConstant k
+                if isNullish(acc) {
+                    pc = pc - 1 + vmConstOffset(consts, vmIdx(bytes, pc, w))
+                } else {
+                    pc += w as usize
+                }
+            }
+            70 => {
+                // JumpLoop off: back to the loop header, with the budget
+                // tick and the termination check
+                pc = pc - 1 - vmIdx(bytes, pc, w) as usize
+                try it.tick()
+            }
+            71 => {
+                // SwitchOnSmi k, n, base: an integer in base..base+n
+                // jumps to pool entry k + v - base
+                let at = pc - 1
+                let k = vmIdx(bytes, pc, w)
+                let cnt = vmIdx(bytes, pc + w as usize, w)
+                let lo = vmImm(bytes, pc + 2 * w as usize, w)
+                pc += 3 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        if x >= -2147483648.0 && x <= 2147483647.0 {
+                            let i = x as i64
+                            if (i as f64) == x && i >= lo && i - lo < cnt {
+                                pc = at + vmConstOffset(consts, k + i - lo)
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
             72 => {
                 // Return
