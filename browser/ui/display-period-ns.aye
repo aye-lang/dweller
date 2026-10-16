@@ -1,0 +1,19 @@
+import perf
+
+pub fn displayPeriodNs(window: *mut SDL_Window) u64 {
+    var mode = @zeroed(SDL_DisplayMode)
+    var hz: u64 = 60
+
+    if SDL_GetWindowDisplayMode(window, &mut mode) == 0 && mode.refresh_rate > 0 {
+        hz = mode.refresh_rate as u64
+    }
+
+    let period = 1000000000 / hz
+    let began = perf.start()
+
+    if began != 0 {
+        perf.end("ui_display_period", began - period, "")
+    }
+
+    return period
+}

@@ -13,7 +13,7 @@ CEO 看 code 會崩潰的東西，一條一條記在這裡。每條：規則、�
 2. `rg` 找出全 repo 同類違規，按模組（`browser/<module>/`）分批。
 3. 每批一張 T 卡（`docs/plans/taste.md`），派一個 opus sub agent（並行要 `isolation: worktree`）。只排沒有進行中卡片碰的模組。prompt 必含：規則全文與壞 / 好例、檔案清單、「只改這條規則涵蓋的東西，行為不變」、驗證指令（該模組的 targeted tests + `python3 browser/tools/check_taste.py`）、交回 commit hash + 測試結果。
 4. 主 session 抽查 diff 與測試結果，不重讀全部。
-5. 能機械檢查的規則進 `browser/tools/check_taste.py`（CI 跑），不靠人記。舊檔用 baseline 棘輪：只准變好，不准變壞；新檔一律照規則。
+5. 能機械檢查的規則進 `browser/tools/check_taste.py`（CI 跑），不靠人記。舊檔（在 baseline 內）用棘輪只管 `comment_lines` 與 `long_functions`：只准變好，不准變壞；行數與空行違規不棘輪（功能卡可以在舊大檔加最少的接線行），只記在 summary；新檔（不在 baseline）一律照全部規則。
 
 ## 規則
 

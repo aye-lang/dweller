@@ -1,0 +1,38 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#run-the-animation-frame-callbacks
+pub fn runAnimationFrames(p: *mut Page, frame_ns: u64) AllocError!bool {
+    var ran = false
+
+    if p.script |s| {
+        s.vsync = true
+        let turn = s.seq
+        let at = coarseMs(frame_ns, s.start_ms)
+
+        for i in 0..s.timers.len() {
+            if s.timers.items()[i].raf {
+                s.timers.items()[i].due = 0.0
+            }
+        }
+
+        while frameCallback(s, turn) |i| {
+            s.now = at
+            try runTimer(s, i)
+            ran = true
+        }
+
+        tick(s)
+
+        if ran {
+            try afterTask(s)
+        }
+    }
+
+    for f in p.frames.items() {
+        if try runAnimationFrames(f.page, frame_ns) {
+            ran = true
+        }
+    }
+
+    return ran
+}
