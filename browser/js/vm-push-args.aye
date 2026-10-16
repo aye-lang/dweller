@@ -1,0 +1,18 @@
+fn vmPushArgs(it: *mut Interp, at: usize, argc: usize, spread: bool) JsError!usize {
+    if !spread {
+        for i in 0..argc {
+            try it.push(it.slot(at + i))
+        }
+
+        return argc
+    }
+
+    let args = objectOf(it.slot(at))
+    let n = it.heap.obj(args).nelems as usize
+
+    for i in 0..n {
+        try it.push(it.heap.obj(args).elems[i])
+    }
+
+    return n
+}

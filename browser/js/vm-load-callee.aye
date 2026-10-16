@@ -19,6 +19,14 @@ fn vmLoadCallee(c: *mut Compiler, r: i32, callee: u32, optional: bool) CompileEr
             try c.b.op2(BC_GET_KEYED_PROPERTY, (r + 1) as i64, c.b.newSlot() as i64)
         }
 
+        .SuperMember { this_node, .. } => {
+            try vmSuperReceiver(c, r, this_node, callee)
+        }
+
+        .SuperIndex { this_node, .. } => {
+            try vmSuperReceiver(c, r, this_node, callee)
+        }
+
         _ => {
             op = BC_CALL_UNDEFINED_RECEIVER
             try c.visit(callee)

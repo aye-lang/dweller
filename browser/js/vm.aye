@@ -1818,6 +1818,35 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 acc = try it.evalNewTarget()
                 regs = it.stack.items()
             }
+            120 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildClassLiteral)
+                let c = vmIdx(bytes, pc, w) as u32
+                let at = (base + vmImm(bytes, pc + w as usize, w)) as usize
+                let named = vmIdx(bytes, pc + 2 * w as usize, w) != 0
+                pc += 3 * w as usize
+                regs[fp] = acc
+                acc = try defineClass(it, c, at, named)
+                regs = it.stack.items()
+            }
+            121 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitSuperCallReference)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                let argc = vmIdx(bytes, pc + w as usize, w) as usize
+                let spread = vmIdx(bytes, pc + 2 * w as usize, w) != 0
+                pc += 3 * w as usize
+                regs[fp] = acc
+                acc = try vmSuperCall(it, at, argc, spread)
+                regs = it.stack.items()
+            }
+            122 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitNamedSuperPropertyLoad)
+                let thisv = regs[(base + vmImm(bytes, pc, w)) as usize]
+                let id = vmIdx(bytes, pc + w as usize, w) as u32
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmGetSuperProperty(it, thisv, acc, id)
+                regs = it.stack.items()
+            }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)
                 unreachable
