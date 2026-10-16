@@ -425,7 +425,7 @@ fn submitForm(s: *mut Session, tmp: Allocator, p: *mut Page, form: NodeId, submi
         return done(try concat(tmp, what, "; submission blocked: ", message))
     }
     try recordOn(s, tmp, p, "submit of", form)
-    if !(try fire(p, form, "submit", "")) {
+    if !(try engine.dispatchSubmit(p, form, submitter)) {
         try relayout(s)
         return done(try concat(tmp, what, "; a script canceled the submission", ""))
     }
@@ -618,7 +618,7 @@ fn typeInto(s: *mut Session, tmp: Allocator, ref: []u8, input: []u8, submit: boo
     try relayout(s)
     var msg = text.Builder.init(tmp)
     try msg.append("typed ")
-    try quoteText(&mut msg, input)
+    try quoteText(&mut msg, shownInput(p, el, input))
     try msg.append(" into ")
     try msg.append(who)
     if submit {
@@ -788,7 +788,7 @@ fn press(s: *mut Session, tmp: Allocator, key: []u8) AllocError!Outcome {
                 try dom.insertText(&mut p.doc, f, key)
                 try fire(p, f, "input", key)
                 try relayout(s)
-                return done(try concat(tmp, "typed ", key, try concat(tmp, " into ", who, "")))
+                return done(try concat(tmp, "typed ", shownInput(p, f, key), try concat(tmp, " into ", who, "")))
             }
         }
         if text.eql(key, "Enter") && !isCheckable(p, f) {
