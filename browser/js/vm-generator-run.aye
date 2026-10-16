@@ -1,0 +1,27 @@
+// v8: src/interpreter/interpreter-generator.cc (ResumeGenerator)
+
+fn vmGeneratorRun(it: *mut Interp, g: u32, f: VmGenFrame) JsError!Value {
+    let st = it.vm.?
+    let code = (try vmLookup(it, st, f.func)).?.code.?
+
+    if it.frames.len() >= it.max_depth || it.stackExhausted() {
+        return it.rangeError("Maximum call stack size exceeded")
+    }
+
+    let mark = it.stack.len()
+    let fp = try vmPushFrame(it, st, code, -1, f.func, f.fobj, f.ctx, Value.Undefined, mark, 0, NONE)
+
+    defer {
+        vmPopFrame(it)
+        it.truncate(mark)
+    }
+
+    let from = fp - code.nparams as usize
+    let ob = it.heap.obj(g)
+
+    for i in 0..ob.nelems as usize {
+        it.stack.items()[from + i] = ob.elems[i]
+    }
+
+    return vmRun(it, st, code, fp, mark, 0)
+}

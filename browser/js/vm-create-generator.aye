@@ -1,0 +1,20 @@
+// v8: src/runtime/runtime-generator.cc (Runtime_CreateJSGeneratorObject)
+
+fn vmCreateGenerator(it: *mut Interp) JsError!Value {
+    let fobj = it.frames.items()[it.frames.len() - 1].func
+    let pv = try it.getProp(objVal(fobj), A_PROTOTYPE)
+    var proto = it.gen_proto
+
+    if isObject(pv) {
+        proto = objectOf(pv)
+    }
+
+    let func = match it.heap.obj(fobj).data {
+        .Closure { func, .. } => func
+        _ => unreachable
+    }
+
+    let f = VmGenFrame { func: func, fobj: fobj, ctx: NONE, pc: 0, state: CO_SUSPENDED, mode: RESUME_NEXT, input: Value.Undefined }
+
+    return objVal(try it.newObjectOf(Class.Generator, proto, ObjData.GenFrame { f: f }))
+}
