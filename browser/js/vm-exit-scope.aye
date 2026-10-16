@@ -1,0 +1,24 @@
+fn vmExitScope(c: *mut Compiler, scope: u32) CompileError!void {
+    if vmHasContext(c, scope) {
+        let r = c.ctxregs.pop() orelse 0
+
+        try c.b.op1(BC_POP_CONTEXT, r as i64)
+        c.b.releaseRegs(r)
+    }
+
+    if c.ast.scopes.items()[scope].nslots > 0 {
+        c.scopes.pop()
+    }
+}
+
+fn vmCopyContext(c: *mut Compiler, scope: u32) CompileError!void {
+    if vmHasContext(c, scope) {
+        try c.b.op0(BC_COPY_CONTEXT)
+    }
+}
+
+fn vmUnwindContexts(c: *mut Compiler, n: u32) CompileError!void {
+    if c.ctxregs.len() > n as usize {
+        try c.b.op1(BC_POP_CONTEXT, c.ctxregs.items()[n] as i64)
+    }
+}

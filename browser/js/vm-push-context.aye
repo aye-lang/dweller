@@ -1,0 +1,18 @@
+// v8: src/interpreter/interpreter-generator.cc (PushContext)
+
+fn vmPushContext(it: *mut Interp, n: i64) JsError!Value {
+    let outer = it.env
+
+    it.env = try it.newEnv(n as u32, outer)
+
+    return Value.Num { n: outer as f64 }
+}
+
+fn vmPopContext(it: *mut Interp, saved: Value) {
+    match saved {
+        .Num { n } => {
+            it.env = n as u32
+        }
+        _ => unreachable
+    }
+}
