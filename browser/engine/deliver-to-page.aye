@@ -1,0 +1,23 @@
+import engine.workers
+import js
+import js.Value
+import std.mem.AllocError
+
+fn deliverToPage(s: *mut Script, pl: PageLink, m: workers.Message) AllocError!void {
+    pl.link.page_current = m
+    defer pl.link.page_current = null
+    defer pl.link.release(m)
+
+    let it = &mut s.it
+    let base = it.stack.len()
+    let f = it.getProp(js.objVal(it.global), it.intern("__workerDeliver") catch return AllocError.OutOfMemory) catch return
+
+    try jsPush(s, f)
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, js.numVal(pl.id as f64))
+    try jsPush(s, js.numVal(m.kind as f64))
+    try jsPush(s, try stringFor(s, m.json))
+    try jsPush(s, js.numVal(m.buffers.len() as f64))
+    _ = try callReported(s, base, 4)
+    try runMicrotasks(s)
+}

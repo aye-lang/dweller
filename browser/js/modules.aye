@@ -159,7 +159,7 @@ fn engineFetchModule(it: *mut Interp, a: Args) JsError!Value {
     }
     defer target.deinit(it.alloc)
     let json = (it.arg(a, 2) is .Str) && text.eql(it.heap.bytes(strOf(it.arg(a, 2))), "json")
-    let res = net.request(it.alloc, &target, net.Request { kind: net.Kind.Script, referrer: it.heap.bytes(strOf(it.arg(a, 1))) }) catch |e| {
+    let res = moduleResponse(it, &target, it.heap.bytes(strOf(it.arg(a, 1)))) catch |e| {
         if e == net.FetchError.OutOfMemory {
             return JsError.OutOfMemory
         }
@@ -213,7 +213,9 @@ fn enginePrefetchModules(it: *mut Interp, a: Args) JsError!Value {
     var referrer = text.Builder.init(it.alloc)
     defer referrer.deinit()
     try referrer.append(it.heap.bytes(strOf(it.arg(a, 1))))
-    net.prefetch(it.alloc, hrefs.bytes(), net.Kind.Script, referrer.bytes())
+    if !it.local_loads_only {
+        net.prefetch(it.alloc, hrefs.bytes(), net.Kind.Script, referrer.bytes())
+    }
     return Value.Undefined
 }
 

@@ -1,0 +1,33 @@
+import paint
+
+// chromium: docs/how_cc_works.md
+pub fn presentPage(ui: *mut Ui) {
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+    let page = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: h }
+
+    pd.stale = true
+
+    if ui.texture == null || pd.tex == null {
+        return
+    }
+
+    SDL_RenderClear(ui.renderer)
+    SDL_RenderCopy(ui.renderer, ui.texture.?, null, null)
+
+    for k in 0..2 {
+        let src = ringPart(page, pd.ring, h, k)
+        let s = SDL_Rect { x: 0, y: src.y0 as i32, w: page.x1 as i32, h: (src.y1 - src.y0) as i32 }
+        let d = SDL_Rect { x: pd.area.x0 as i32, y: (pd.area.y0 + src.y0 - ringOffset(pd.ring, h, k)) as i32, w: s.w, h: s.h }
+
+        if s.h > 0 {
+            SDL_RenderCopy(ui.renderer, pd.tex.?, &s, &d)
+        }
+    }
+
+    if pd.check {
+        checkPresent(ui)
+    }
+
+    SDL_RenderPresent(ui.renderer)
+}
