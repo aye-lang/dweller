@@ -1,0 +1,28 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCountOperation)
+
+fn vmUpdateGlobal(c: *mut Compiler, inc: bool, prefix: bool, arg: u32) CompileError!void {
+    var op = BC_INC
+
+    if !inc {
+        op = BC_DEC
+    }
+
+    try c.b.op1(BC_LDA_GLOBAL, arg as i64)
+
+    if prefix {
+        try c.b.op1(op, c.b.newSlot() as i64)
+        try c.b.op1(BC_STA_GLOBAL, arg as i64)
+
+        return
+    }
+
+    let mark = c.b.topReg
+    let old = c.b.newReg()
+
+    try c.b.op1(BC_TO_NUMERIC, c.b.newSlot() as i64)
+    try c.b.op1(BC_STAR, old as i64)
+    try c.b.op1(op, c.b.newSlot() as i64)
+    try c.b.op1(BC_STA_GLOBAL, arg as i64)
+    try c.b.op1(BC_LDAR, old as i64)
+    c.b.releaseRegs(mark)
+}

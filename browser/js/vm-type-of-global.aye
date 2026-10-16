@@ -1,0 +1,16 @@
+// v8: src/interpreter/interpreter-generator.cc (TypeOfGlobal)
+
+fn vmTypeOfGlobal(it: *mut Interp, id: u32) JsError!Value {
+    match it.ast.node(id) {
+        .Ident { name, depth, slot, .. } => {
+            if depth == DEPTH_GLOBAL && name != A_THIS && !it.hasProperty(it.global, name) {
+                return it.atomValue(A_UNDEFINED)
+            }
+
+            let v = try it.readIdent(id, name, depth, slot)
+
+            return it.atomValue(try it.intern(it.typeOf(v)))
+        }
+        _ => unreachable
+    }
+}
