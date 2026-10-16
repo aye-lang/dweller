@@ -53,6 +53,47 @@ browser/
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
+### Layers
+
+| Layer | Modules |
+|---|---|
+| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf` |
+| render core | `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `url`, `dom` |
+| front end | `html`, `js`, `wasm`, `engine`, `agent` |
+
+A render-core module (and a platform module other than `ui`, the window
+shell) imports no front-end module; nothing imports `ui` except the root
+files of `browser/`. `browser/tools/check_layers.py` checks it (CI runs
+it) and lists the exceptions with the card that removes each.
+
+## Threading model
+
+One window thread owns the DOM, the scripts, style, layout and paint.
+Chromium's rule is the same (`docs/threading_and_tasks.md`: tasks on
+sequences, not threads; only the main thread touches the DOM), and the
+engine's module-level state (B9) makes any other split a rewrite.
+
+- **Network** is libcurl's multi handle, polled by the loop
+  (`net.pumpLoads`); a response becomes a networking task on the page's
+  timer queue. No thread waits for a socket.
+- **The loop** (`Ui.loop`) runs, in order: input (all pending SDL
+  events, then the wheel once), a due frame (relayout and draw), then
+  timers and networking tasks until a 50 ms budget is spent
+  (`engine.runDueTimersUntil`, TASK_BUDGET_MS); what is still due
+  waits for the next iteration, in order. A task is never cut, so an
+  iteration's tasks run at most one task over the budget, and a busy page
+  delays input by about one budget instead of all its due tasks (the
+  timer storm of `window_input_priority`: 694 → 51 ms). The page's own
+  scripts run the same way while it loads (`stepPageScripts`). From
+  Blink's scheduler (`TaskSchedulingInBlink.md`) only the input queue's
+  top priority is taken; its many task queues and frame scheduling
+  heuristics are not, until a site shows the need.
+- **Image decode and raster** stay on the window thread. They move to
+  helper threads only when a measurement shows the need (raster draws
+  only the damage since P4.35).
+- **Spaces** are processes, not threads (B9: "Threading model: a process
+  per Space").
+
 ## Telemetry
 
 The person's window, its Spaces, and any run with `DWELLER_PROFILE`

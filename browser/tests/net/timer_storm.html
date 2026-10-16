@@ -1,0 +1,55 @@
+<!doctype html><title>Timer storm</title>
+<input id="f">
+<pre id="log"></pre>
+<div id="rows"></div>
+<script>
+// A storm of tasks for 1.5 s: 200 setTimeout(0) at once, 20 chains of
+// setTimeout(0), 5 setInterval(1) and 20 slow responses, each task
+// busy for 3 ms. Scripted input types into the field while it runs
+// (tests/browser.rs: window_input_priority): it is handled before the
+// tasks still waiting.
+const f = document.getElementById('f');
+const rows = document.getElementById('rows');
+const lines = [];
+const start = performance.now();
+let tasks = 0, responses = 0, typed = false, after = -1;
+function note(s) {
+  lines.push(s);
+  document.getElementById('log').textContent = lines.join('\n');
+}
+function storming() {
+  return performance.now() - start < 1500;
+}
+function task() {
+  const end = performance.now() + 3;
+  while (performance.now() < end) {}
+  tasks++;
+  if (tasks % 50 == 0) rows.textContent = 'tasks ' + tasks;
+}
+function chain() {
+  task();
+  if (storming()) setTimeout(chain, 0);
+}
+f.focus();
+f.addEventListener('input', () => {
+  if (typed) return;
+  typed = true;
+  after = tasks;
+  note('input during the storm: ' + storming());
+});
+for (let i = 0; i < 200; i++) setTimeout(task, 0);
+for (let i = 0; i < 20; i++) setTimeout(chain, 0);
+const intervals = [];
+for (let i = 0; i < 5; i++) intervals.push(setInterval(task, 1));
+for (let i = 0; i < 20; i++) {
+  fetch('/sleep?ms=' + (200 + 30 * i)).then(r => r.text()).then(() => {
+    task();
+    responses++;
+  });
+}
+setTimeout(function end() {
+  if (storming() || responses < 20) return setTimeout(end, 50);
+  intervals.forEach(clearInterval);
+  note('storm done: ' + responses + ' responses, tasks after the input: ' + (typed && tasks > after));
+}, 50);
+</script>

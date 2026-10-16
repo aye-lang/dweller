@@ -797,6 +797,30 @@ layouts per loop 1.01 / 0.02, loop 31.2 / 16.2 ms, `ui_relayout` 15.3 /
 loop now keeps up with the frame rate). Left per loop: `restyle` 4.6 ms,
 timers 3.3 ms, `ui_draw` 3.3 ms, `paint_build` 2.4 ms.
 
+### P4.42: input, frame, then tasks in a 50 ms budget (2026-10-16)
+
+`Ui.loop` handles input, draws a due frame, then runs timers and
+networking tasks until 50 ms are spent (`engine.runDueTimersUntil`); the
+rest waits for the next iteration. Before, one iteration ran every task
+due when it began, however long that took.
+
+Page `browser/tests/net/timer_storm.html` (test `window_input_priority`):
+for 1.5 s, 200 `setTimeout(0)`, 20 chains of `setTimeout(0)`, 5
+`setInterval(1)` and 20 responses of `/sleep` (200–770 ms), each task
+busy 3 ms; text typed after 8 frames. 300 frames, 400×300, dummy driver,
+M2 Pro, `DWELLER_TIMING=1`, main (fc66613) / P4.42:
+
+| | main | P4.42 |
+|---|---:|---:|
+| longest iteration (`ui_loop`) | 700 ms | 54 ms |
+| longest task phase (`timers` summed per iteration) | 694 ms | 51 ms |
+| longest single task | 4.1 ms | 4.4 ms |
+| iteration p50 / p95 | 1.0 / 18 ms | 1.0 / 51 ms |
+
+The p95 rises because the storm's tasks now spread over many iterations
+of about one budget each instead of a few long ones; the total work is
+the same. Input waits at most one budget plus a frame.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

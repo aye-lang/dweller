@@ -1,0 +1,53 @@
+<!doctype html>
+<title>three.js hello cube</title>
+<style>body { margin: 0; background: #fff; } canvas { display: block; }</style>
+<script type="module">
+// P11.9: three.js r170 (vendored in ./three, MIT) with its defaults: a
+// WebGLRenderer, a MeshStandardMaterial cube with a PNG texture, one
+// directional light and setAnimationLoop. The loop starts when the
+// texture has loaded and stops after 60 frames; the rotation follows the
+// frame count, so the last frame (the screenshot) is the same on any
+// clock. Errors go to the console and to the title. With `#finish` each
+// frame ends with gl.finish(), so the frame's timer also holds the GPU's
+// work (the test's measure of GPU time).
+import * as THREE from './three/three.module.min.js';
+
+const W = 240, H = 180;
+const FINISH = location.hash === '#finish';
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(W, H);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x203040);
+const camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 10);
+camera.position.z = 2;
+const light = new THREE.DirectionalLight(0xffffff, 3);
+light.position.set(1, 2, 3);
+scene.add(light);
+
+new THREE.TextureLoader().load('crate16.png', (texture) => {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const cube = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ map: texture }),
+  );
+  scene.add(cube);
+  let frame = 0;
+  renderer.setAnimationLoop(() => {
+    frame++;
+    cube.rotation.x = frame * 0.01;
+    cube.rotation.y = frame * 0.015;
+    renderer.render(scene, camera);
+    if (FINISH) renderer.getContext().finish();
+    if (frame === 60) {
+      renderer.setAnimationLoop(null);
+      document.title = 'three cube: 60 frames';
+      console.log('three cube: 60 frames');
+    }
+  });
+}, undefined, (e) => {
+  document.title = 'three cube: texture error';
+  console.error('texture error', e);
+});
+</script>

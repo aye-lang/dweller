@@ -1,0 +1,32 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmAssignContext(c: *mut Compiler, op: Op, target: u32, value: u32) CompileError!void {
+    let id = vmIdent(c, target)
+    let d = vmContextDepth(c, id.depth) as i64
+    let mark = c.b.topReg
+    let t = c.b.newReg()
+
+    if op == Op.None {
+        try c.visit(value)
+
+        if vmMayBeHole(c, id.depth) {
+            try c.b.op1(BC_STAR, t as i64)
+            try vmLoadContext(c, id.depth, id.slot, id.name)
+            try c.b.op1(BC_LDAR, t as i64)
+        }
+    } else {
+        let bc = Compiler.binaryOpcode(op)
+
+        if bc == 0 || bc >= BC_TEST_EQUAL {
+            try c.fail("unsupported: logical assignment")
+        }
+
+        try vmLoadContext(c, id.depth, id.slot, id.name)
+        try c.b.op1(BC_STAR, t as i64)
+        try c.visit(value)
+        try c.b.op2(bc, t as i64, c.b.newSlot() as i64)
+    }
+
+    try c.b.op2(BC_STA_CONTEXT_SLOT, d, id.slot as i64)
+    c.b.releaseRegs(mark)
+}

@@ -1,0 +1,36 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildNewLocalActivationContext)
+
+fn vmFunctionContext(c: *mut Compiler, fi: FuncInfo) CompileError!void {
+    let sc = c.ast.scopes.items()[fi.scope]
+
+    if !vmHasContext(c, fi.scope) {
+        return
+    }
+
+    try c.b.op1(BC_CREATE_FUNCTION_CONTEXT, sc.nslots as i64)
+
+    if fi.this_slot != NONE && (try c.identReg(0, fi.this_slot)) == VM_CONTEXT {
+        try c.b.op1(BC_LDAR, c.this_reg as i64)
+        try c.b.op2(BC_STA_CONTEXT_SLOT, 0, fi.this_slot as i64)
+    }
+
+    if !fi.simple {
+        return
+    }
+
+    for k in 0..fi.nparams {
+        let s = fi.first_param + k
+
+        if (try c.identReg(0, s)) == VM_CONTEXT {
+            try c.b.op1(BC_LDAR, c.b.param(k) as i64)
+            try c.b.op2(BC_STA_CONTEXT_SLOT, 0, s as i64)
+        }
+    }
+}
+
+fn vmSelfBinding(c: *mut Compiler, fi: FuncInfo) CompileError!void {
+    if fi.self_slot != NONE {
+        try c.b.op0(BC_LDA_CLOSURE)
+        try vmStoreBinding(c, try c.identReg(0, fi.self_slot), 0, fi.self_slot)
+    }
+}

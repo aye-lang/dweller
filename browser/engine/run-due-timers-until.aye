@@ -1,0 +1,66 @@
+import net
+import std.mem.AllocError
+import std.time
+
+// chromium: third_party/blink/renderer/platform/scheduler/TaskSchedulingInBlink.md
+pub fn runDueTimersUntil(p: *mut Page, deadline_ms: ?u64) AllocError!bool {
+    var ran = false
+    net.pumpLoads()
+
+    if p.script |s| {
+        tick(s)
+        try pumpAudio(s)
+        let turn = s.seq
+        var n: usize = 0
+
+        while earliestBefore(s, s.now, turnLimit(s, turn)) |i| {
+            try runTimer(s, i)
+            n += 1
+
+            if n >= MAX_TASKS || pastDeadline(deadline_ms) {
+                break
+            }
+
+            tick(s)
+        }
+
+        try afterTask(s)
+        let worked = try pumpWorkers(s)
+        ran = n > 0 || worked
+
+        if try runCleanupsOf(s) {
+            ran = true
+        }
+    }
+
+    var k: usize = 0
+
+    while k < p.frames.len() {
+        if try runDueTimersUntil(p.frames.items()[k].page, deadline_ms) {
+            ran = true
+        }
+
+        k += 1
+    }
+
+    if p.script |s| {
+        if s.real {
+            let was = s.ready
+            try settleLoad(p)
+
+            if s.ready != was {
+                ran = true
+            }
+        }
+    }
+
+    try pumpContexts()
+
+    return ran
+}
+
+fn pastDeadline(deadline_ms: ?u64) bool {
+    let d = deadline_ms orelse return false
+
+    return time.monotonicMs() >= d
+}

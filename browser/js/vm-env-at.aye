@@ -1,0 +1,17 @@
+// v8: src/interpreter/interpreter-generator.cc (LdaContextSlot)
+
+fn vmEnvAt(it: *Interp, depth: i64) *mut Env {
+    var e = it.env
+    var d = depth
+
+    while d > 0 {
+        e = it.heap.envs.items()[e].parent
+        d -= 1
+    }
+
+    return it.heap.env(e)
+}
+
+fn vmLdaContextSlot(it: *mut Interp, depth: i64, slot: i64) JsError!Value {
+    return readImport(it, vmEnvAt(it, depth).slots[slot as usize])
+}
