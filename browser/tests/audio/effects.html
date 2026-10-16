@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<title>Web Audio effects</title>
+<pre id="out"></pre>
+<script>
+// P11.20: Web Audio effects on OfflineAudioContext. The `ref NAME v,v,..`
+// lines are sample values: tests/browser.rs (webaudio_effects) compares
+// them with effects.ref within 1e-3. effects.ref is this page's output in
+// Chrome (see browser/tests/audio/README.md). The other lines are checked
+// against effects.txt.
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+function err(f) {
+  try {
+    f();
+    return 'no error';
+  } catch (e) {
+    return e.name;
+  }
+}
+const R = 44100;
+let seed = 1;
+// A deterministic noise in [-0.5, 0.5).
+function rnd() {
+  seed = (seed * 1664525 + 1013904223) % 4294967296;
+  return seed / 4294967296 - 0.5;
+}
+// `channels` channels of tones and noise; `env` shapes the amplitude by
+// frame.
+function signal(ctx, frames, channels, env) {
+  seed = 1;
+  const b = ctx.createBuffer(channels, frames, R);
+  for (let c = 0; c < channels; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < frames; i++) {
+      const t = i / R;
+      const v = 0.5 * Math.sin(2 * Math.PI * 440 * (c + 1) * t) + 0.3 * Math.sin(2 * Math.PI * 3000 * t) + 0.4 * rnd();
+      d[i] = v * (env ? env(i) : 1);
+    }
+  }
+  return b;
+}
+function source(ctx, buf) {
+  const s = ctx.createBufferSource();
+  s.buffer = buf;
+  s.start(0);
+  return s;
+}
+function nums(a, from, count, stride) {
+  const v = [];
+  for (let i = from; i < from + count * stride && i < a.length; i += stride) v.push(a[i].toFixed(4));
+  return v.join(',');
+}
+function put(name, buf, from, count, stride = 1) {
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    log('ref', buf.numberOfChannels > 1 ? name + '.' + c : name, nums(buf.getChannelData(c), from, count, stride));
+  }
+}
+async function render(channels, frames, build) {
+  const ctx = new OfflineAudioContext(channels, frames, R);
+  build(ctx);
+  return ctx.startRendering();
+}
+function show(p) {
+  return [p.value, p.defaultValue, p.minValue, p.maxValue, p.automationRate].join('/');
+}
+
+// Is `got` the normalized convolution of `x` with `h` (to 2e-4)?
+function direct(x, h, got) {
+  let sum = 0;
+  for (const v of h) sum += v * v;
+  let power = Math.sqrt(sum / h.length);
+  if (!(power >= 0.000125)) power = 0.000125;
+  const scale = (1 / power) * Math.pow(10, -58 * 0.05) * (44100 / R);
+  let worst = 0;
+  for (let n = 0; n < got.length; n++) {
+    let y = 0;
+    for (let k = 0; k < h.length; k++) if (n - k >= 0 && n - k < x.length) y += h[k] * x[n - k];
+    worst = Math.max(worst, Math.abs(y * scale - got[n]));
+  }
+  return worst < 2e-4;
+}
+
+async function main() {
+  const ctx = new OfflineAudioContext(2, 128, R);
+
+  // ---- BiquadFilterNode
+  const bq = ctx.createBiquadFilter();
+  log('biquad', bq.type, show(bq.frequency), show(bq.detune), show(bq.Q), show(bq.gain));
+  log('biquad io', bq.numberOfInputs, bq.numberOfOutputs, bq.channelCount, bq.channelCountMode, bq.context === ctx);
+  bq.type = 'nonsense';
+  log('biquad type kept', bq.type);
+  bq.type = 'highpass';
+  log('biquad type set', bq.type);
+  const made = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 1000, Q: 2, gain: 5, detune: 10 });
+  log('biquad options', made.type, made.frequency.value, made.Q.value, made.gain.value, made.detune.value);
+  log('biquad errors', err(() => new BiquadFilterNode({})), err(() => bq.getFrequencyResponse(new Float32Array(2), new Float32Array(3), new Float32Array(2))), err(() => new BiquadFilterNode(ctx, { type: 'bogus' })));
+
+  const types = [
+    ['lowpass', 2000, 6, 0, 0],
+    ['highpass', 2000, 6, 0, 0],
+    ['bandpass', 2000, 3, 0, 0],
+    ['lowshelf', 2000, 1, 6, 0],
+    ['highshelf', 2000, 1, -6, 100],
+    ['peaking', 2000, 3, 6, 0],
+    ['notch', 2000, 3, 0, -200],
+    ['allpass', 2000, 3, 0, 0],
+  ];
+  const probe = new Float32Array([0, 100, 1000, 2100, 5000, 10000, 22050, 30000, -1]);
+  for (const [type, f, q, g, d] of types) {
+    const buf = await render(1, 200, (c) => {
+      const n = c.createBiquadFilter();
+      n.type = type;
+      n.frequency.value = f;
+      n.Q.value = q;
+      n.gain.value = g;
+      n.detune.value = d;
+      source(c, signal(c, 200, 1)).connect(n).connect(c.destination);
+    });
+    put('biquad.' + type, buf, 0, 200);
+    const n = ctx.createBiquadFilter();
+    n.type = type;
+    n.frequency.value = f;
+    n.Q.value = q;
+    n.gain.value = g;
+    n.detune.value = d;
+    const mag = new Float32Array(probe.length);
+    const phase = new Float32Array(probe.length);
+    n.getFrequencyResponse(probe, mag, phase);
+    log('ref', 'response.' + type + '.mag', nums(mag, 0, mag.length, 1));
+    log('ref', 'response.' + type + '.phase', nums(phase, 0, phase.length, 1));
+  }
+  // Automated frequency: coefficients per frame.
+  put('biquad.sweep', await render(1, 256, (c) => {
+    const n = c.createBiquadFilter();
+    n.frequency.setValueAtTime(8000, 0);
+    n.frequency.linearRampToValueAtTime(500, 256 / R);
+    source(c, signal(c, 256, 1)).connect(n).connect(c.destination);
+  }), 0, 256);
+  // Stereo input: one filter state per channel.
+  put('biquad.stereo', await render(2, 100, (c) => {
+    const n = c.createBiquadFilter();
+    n.frequency.value = 1500;
+    source(c, signal(c, 100, 2)).connect(n).connect(c.destination);
+  }), 0, 100);
+
+  // ---- StereoPannerNode
+  const sp = ctx.createStereoPanner();
+  log('panner', show(sp.pan), sp.numberOfInputs, sp.numberOfOutputs, sp.channelCount, sp.channelCountMode, sp.channelInterpretation);
+  log('panner options', new StereoPannerNode(ctx, { pan: 0.25 }).pan.value, err(() => new StereoPannerNode({})));
+  for (const [name, channels, pan] of [['mono.left', 1, -0.5], ['mono.right', 1, 0.75], ['stereo.left', 2, -0.5], ['stereo.right', 2, 0.5], ['stereo.center', 2, 0], ['stereo.hard', 2, -1]]) {
+    put('pan.' + name, await render(2, 100, (c) => {
+      const n = c.createStereoPanner();
+      n.pan.value = pan;
+      source(c, signal(c, 100, channels)).connect(n).connect(c.destination);
+    }), 0, 100);
+  }
+  put('pan.ramp', await render(2, 100, (c) => {
+    const n = c.createStereoPanner();
+    n.pan.setValueAtTime(-1, 0);
+    n.pan.linearRampToValueAtTime(1, 100 / R);
+    source(c, signal(c, 100, 2)).connect(n).connect(c.destination);
+  }), 0, 100);
+
+  // ---- DynamicsCompressorNode
+  const dc = ctx.createDynamicsCompressor();
+  log('compressor', show(dc.threshold), show(dc.knee), show(dc.ratio), show(dc.attack), show(dc.release));
+  log('compressor io', dc.reduction, dc.numberOfInputs, dc.numberOfOutputs, dc.channelCount, dc.channelCountMode, err(() => new DynamicsCompressorNode({})));
+  log('compressor options', new DynamicsCompressorNode(ctx, { threshold: -50, ratio: 4 }).ratio.value);
+  const loud = (i) => (i < 400 ? 0.1 : i < 1000 ? 1.6 : 0.1);
+  let reduction = 0;
+  put('compressor.default', await render(2, 1600, (c) => {
+    const n = c.createDynamicsCompressor();
+    source(c, signal(c, 1600, 2, loud)).connect(n).connect(c.destination);
+  }), 0, 400, 4);
+  put('compressor.tuned', await render(2, 1600, (c) => {
+    const n = c.createDynamicsCompressor();
+    n.threshold.value = -40;
+    n.knee.value = 10;
+    n.ratio.value = 4;
+    n.attack.value = 0.001;
+    n.release.value = 0.1;
+    source(c, signal(c, 1600, 1, loud)).connect(n).connect(c.destination);
+  }), 0, 400, 4);
+  {
+    const c = new OfflineAudioContext(2, 1600, R);
+    const n = c.createDynamicsCompressor();
+    source(c, signal(c, 1600, 2, loud)).connect(n).connect(c.destination);
+    await c.startRendering();
+    reduction = n.reduction;
+  }
+  log('ref', 'compressor.reduction', reduction.toFixed(4));
+
+  // ---- ConvolverNode
+  const cv = ctx.createConvolver();
+  log('convolver', String(cv.buffer),cv.normalize, cv.numberOfInputs, cv.numberOfOutputs, cv.channelCount, cv.channelCountMode, cv.channelInterpretation);
+  cv.normalize = false;
+  log('convolver normalize', cv.normalize, new ConvolverNode(ctx, { disableNormalization: true }).normalize);
+  const ir = (c, len, channels) => {
+    seed = 7;
+    const b = c.createBuffer(channels, len, R);
+    for (let k = 0; k < channels; k++) {
+      const d = b.getChannelData(k);
+      for (let i = 0; i < len; i++) d[i] = rnd() * Math.exp(-i / (len / 5)) * (k + 1);
+    }
+    return b;
+  };
+  log('convolver errors',
+    err(() => { cv.buffer = ir(ctx, 10, 3); }),
+    err(() => { cv.buffer = new AudioBuffer({ length: 10, sampleRate: 22050 }); }),
+    err(() => { cv.buffer = {}; }));
+  const withIr = ir(ctx, 700, 1);
+  cv.buffer = withIr;
+  log('convolver buffer', cv.buffer === withIr);
+  cv.buffer = null;
+  log('convolver cleared', String(cv.buffer));
+  for (const [name, inCh, irCh, normalize] of [
+    ['mono.mono', 1, 1, true],
+    ['mono.mono.raw', 1, 1, false],
+    ['stereo.mono', 2, 1, true],
+    ['mono.stereo', 1, 2, true],
+    ['stereo.stereo', 2, 2, true],
+    ['mono.quad', 1, 4, true],
+    ['stereo.quad', 2, 4, true],
+  ]) {
+    const burst = signal(ctx, 300, inCh, (i) => (i < 40 ? 1 : 0));
+    const response = ir(ctx, 700, irCh);
+    const out = await render(2, 900, (c) => {
+      const n = c.createConvolver();
+      n.normalize = normalize;
+      n.buffer = response;
+      source(c, burst).connect(n).connect(c.destination);
+    });
+    if (name === 'stereo.mono') {
+      // Chrome's right channel is not the plain convolution here (it
+      // differs by up to 1.3e-3 between frames 384 and 630), so only the
+      // left channel is a reference; the right one is checked against
+      // the direct sum.
+      log('ref', 'convolver.stereo.mono.0', nums(out.getChannelData(0), 0, 450, 2));
+      log('convolver stereo.mono right is the direct convolution', direct(burst.getChannelData(1), response.getChannelData(0), out.getChannelData(1)));
+    } else {
+      put('convolver.' + name, out, 0, 450, 2);
+    }
+  }
+  // The dry signal does not leak, and an empty convolver is silent.
+  put('convolver.empty', await render(1, 100, (c) => {
+    const n = c.createConvolver();
+    source(c, signal(c, 100, 1)).connect(n).connect(c.destination);
+  }), 0, 20);
+}
+
+main().then(() => log('done'), (e) => log('FAILED', e && e.stack ? e.stack : e));
+</script>

@@ -4,10 +4,13 @@
 // RGB8 without alpha) and a depth/stencil renderbuffer as the attributes
 // ask. With antialias, the page draws into a multisampled framebuffer
 // that is resolved into the texture (glBlitFramebuffer) when the pixels
-// are read. `present` reads the frame and, without preserveDrawingBuffer,
-// clears the buffer after it, restoring the page's state.
+// are read. At a frame's end `startReadback` reads the frame into a
+// pixel-pack buffer with a fence and, without preserveDrawingBuffer,
+// clears the buffer after it, restoring the page's state; the next frame
+// maps the buffer (`finishReadback`, docs/webgl.md §5).
 
 import std
+import std.math
 import std.mem.Allocator
 
 /// The context attributes, as granted (`getContextAttributes`).
@@ -38,6 +41,17 @@ pub struct Context {
     msaa_depth_stencil: u32
     // Drawn into since it was last presented.
     dirty: bool
+    // The frame's readback: a pixel-pack buffer of `pbo_size` bytes, and
+    // while `pending`, the fence after the read of a `pending_w` x
+    // `pending_h` frame into it. `start_ns`: the time the read took to
+    // issue (DWELLER_TIMING `webgl_readback`).
+    pbo: u32
+    pbo_size: usize
+    fence: ?[*]u8
+    pending: bool
+    pending_w: i32
+    pending_h: i32
+    start_ns: u64
     // The first error the front end raised since getError (0: none).
     err: u32
     lost: bool
@@ -91,6 +105,8 @@ pub struct Context {
         gl.glGetIntegerv(c.GL_RENDERBUFFER_BINDING as c.GLenum, &mut rb)
         gl.glGetIntegerv(c.GL_DRAW_FRAMEBUFFER_BINDING as c.GLenum, &mut draw)
         gl.glGetIntegerv(c.GL_READ_FRAMEBUFFER_BINDING as c.GLenum, &mut read)
+        // A frame of the old size is not shown.
+        self.dropReadback()
         self.freeAttachments()
         self.width = w
         self.height = h
@@ -210,7 +226,10 @@ pub struct Context {
         if out.len < w * h * 4 {
             return
         }
+        self.makeCurrent()
+        let pack = packDefaults()
         self.readPixels(0, 0, self.width, self.height, out)
+        restorePack(pack)
         // GL's rows go up; the bitmap's go down.
         let row = w * 4
         for y in 0..h / 2 {
@@ -222,32 +241,123 @@ pub struct Context {
                 out[b + k] = t
             }
         }
-        for i in 0..w * h {
-            let p = i * 4
-            if !self.attrs.alpha {
-                out[p + 3] = 255
-            } else if self.attrs.premultiplied {
-                let a = out[p + 3] as u32
-                if a != 0 && a != 255 {
-                    for k in 0..3 {
-                        out[p + k] = std.math.minOf(u32, 255, (out[p + k] as u32 * 255 + a / 2) / a) as u8
-                    }
-                }
+        self.straighten(out, w * h)
+    }
+
+    // The canvas's pixels are straight RGBA: un-premultiplied when
+    // `alpha && premultipliedAlpha`. Without alpha the color buffer is
+    // RGB8, which GL reads with alpha 255.
+    fn straighten(self: *Self, out: []mut u8, n: usize) {
+        if !self.attrs.alpha || !self.attrs.premultiplied {
+            return
+        }
+        // Most pixels are opaque: two are tested at once, as a u64 (the
+        // test is most of the cost of a readback, DWELLER_TIMING
+        // `webgl_readback`).
+        let count = math.minOf(usize, n, out.len / 4)
+        let pairs = @ptrCast([*]u64, out.ptr)
+        let opaque: u64 = 0xff000000ff000000
+        for i in 0..count / 2 {
+            if pairs[i] & opaque != opaque {
+                unpremultiply(out, i * 2)
+                unpremultiply(out, i * 2 + 1)
             }
+        }
+        if count % 2 == 1 {
+            unpremultiply(out, count - 1)
         }
     }
 
-    /// The frame's end: reads the frame into `out` (as `snapshot`), and
-    /// without preserveDrawingBuffer clears the buffer to its spec
-    /// values (color 0, depth 1, stencil 0), as Blink's
-    /// DrawingBuffer::ClearFramebuffers does, leaving the page's state as
-    /// it was.
-    pub fn present(self: *mut Self, out: []mut u8) {
-        self.snapshot(out)
+    /// The frame's end: resolves the frame and reads it into the
+    /// pixel-pack buffer, sets a fence after the read, and without
+    /// preserveDrawingBuffer clears the buffer to its spec values (color
+    /// 0, depth 1, stencil 0), as Blink's DrawingBuffer::ClearFramebuffers
+    /// does, leaving the page's state as it was. `finishReadback` maps
+    /// the frame, by then read (docs/webgl.md §5).
+    pub fn startReadback(self: *mut Self) {
+        self.makeCurrent()
+        let gl = glApi()
+        self.dropReadback()
+        let pack_target = c.GL_PIXEL_PACK_BUFFER as c.GLenum
+        let size = self.width as usize * self.height as usize * 4
+        if self.pbo == 0 {
+            gl.glGenBuffers(1, &mut self.pbo)
+        }
+        var bound: c.GLint = 0
+        gl.glGetIntegerv(c.GL_PIXEL_PACK_BUFFER_BINDING as c.GLenum, &mut bound)
+        gl.glBindBuffer(pack_target, self.pbo)
+        if size != self.pbo_size {
+            gl.glBufferData(pack_target, size as c.GLsizeiptr, null, c.GL_STREAM_READ as c.GLenum)
+            self.pbo_size = size
+        }
+        let pack = packDefaults()
+        let read = self.bindForRead()
+        gl.glReadPixels(0, 0, self.width, self.height, c.GL_RGBA as c.GLenum, c.GL_UNSIGNED_BYTE as c.GLenum, null)
+        gl.glBindFramebuffer(c.GL_READ_FRAMEBUFFER as c.GLenum, read as c.GLuint)
+        restorePack(pack)
+        gl.glBindBuffer(pack_target, bound as c.GLuint)
+        self.fence = gl.glFenceSync(c.GL_SYNC_GPU_COMMANDS_COMPLETE as c.GLenum, 0)
+        // The read starts now, not at the next GL call of the page.
+        gl.glFlush()
+        self.pending = true
+        self.pending_w = self.width
+        self.pending_h = self.height
         self.dirty = false
         if !self.attrs.preserve {
             self.clearBuffer()
         }
+    }
+
+    /// The frame `startReadback` read, as `snapshot` gives it, into `out`
+    /// (pending_w * pending_h * 4 bytes); waits for the fence when the
+    /// read is not done yet. False when no frame was pending.
+    pub fn finishReadback(self: *mut Self, out: []mut u8) bool {
+        if !self.pending {
+            return false
+        }
+        self.makeCurrent()
+        let gl = glApi()
+        if self.fence != null {
+            // One second at most: a lost GPU does not hang the page.
+            _ = gl.glClientWaitSync(self.fence, c.GL_SYNC_FLUSH_COMMANDS_BIT as c.GLbitfield, 1000000000)
+            gl.glDeleteSync(self.fence)
+            self.fence = null
+        }
+        self.pending = false
+        let w = self.pending_w as usize
+        let h = self.pending_h as usize
+        let row = w * 4
+        if out.len < row * h || self.pbo_size < row * h {
+            return false
+        }
+        let pack_target = c.GL_PIXEL_PACK_BUFFER as c.GLenum
+        var bound: c.GLint = 0
+        gl.glGetIntegerv(c.GL_PIXEL_PACK_BUFFER_BINDING as c.GLenum, &mut bound)
+        gl.glBindBuffer(pack_target, self.pbo)
+        var ok = false
+        if gl.glMapBufferRange(pack_target, 0, (row * h) as c.GLsizeiptr, c.GL_MAP_READ_BIT as c.GLbitfield) |src| {
+            // GL's rows go up; the bitmap's go down.
+            for y in 0..h {
+                let from = (h - 1 - y) * row
+                memcpy(out[y * row..].ptr, src[from..from + row].ptr, row)
+            }
+            _ = gl.glUnmapBuffer(pack_target)
+            ok = true
+        }
+        gl.glBindBuffer(pack_target, bound as c.GLuint)
+        if ok {
+            self.straighten(out, w * h)
+        }
+        return ok
+    }
+
+    /// Forgets a pending readback (its fence too).
+    pub fn dropReadback(self: *mut Self) {
+        if self.fence != null {
+            glApi().glDeleteSync(self.fence)
+            self.fence = null
+        }
+        self.pending = false
     }
 
     fn clearBuffer(self: *Self) {
@@ -329,6 +439,43 @@ pub struct Context {
 
 var current: c.EGLContext = null
 
+// Pixel `i` of `out` from premultiplied to straight alpha.
+fn unpremultiply(out: []mut u8, i: usize) {
+    let p = i * 4
+    let a = out[p + 3] as u32
+    if a != 0 && a != 255 {
+        for k in 0..3 {
+            out[p + k] = math.minOf(u32, 255, (out[p + k] as u32 * 255 + a / 2) / a) as u8
+        }
+    }
+}
+
+extern fn memcpy(dst: [*]u8, src: [*]u8, n: usize) [*]u8
+
+// The page's pack state (alignment, row length, skipped rows and
+// pixels), which the frame's reads set to tight rows and restore.
+fn packDefaults() [4]c.GLint {
+    let gl = glApi()
+    let names = [4]u32{c.GL_PACK_ALIGNMENT as u32, c.GL_PACK_ROW_LENGTH as u32, c.GL_PACK_SKIP_ROWS as u32, c.GL_PACK_SKIP_PIXELS as u32}
+    var was = @zeroed([4]c.GLint)
+    for i in 0..4 {
+        gl.glGetIntegerv(names[i] as c.GLenum, &mut was[i])
+    }
+    gl.glPixelStorei(c.GL_PACK_ALIGNMENT as c.GLenum, 4)
+    gl.glPixelStorei(c.GL_PACK_ROW_LENGTH as c.GLenum, 0)
+    gl.glPixelStorei(c.GL_PACK_SKIP_ROWS as c.GLenum, 0)
+    gl.glPixelStorei(c.GL_PACK_SKIP_PIXELS as c.GLenum, 0)
+    return was
+}
+
+fn restorePack(was: [4]c.GLint) {
+    let gl = glApi()
+    gl.glPixelStorei(c.GL_PACK_ALIGNMENT as c.GLenum, was[0])
+    gl.glPixelStorei(c.GL_PACK_ROW_LENGTH as c.GLenum, was[1])
+    gl.glPixelStorei(c.GL_PACK_SKIP_ROWS as c.GLenum, was[2])
+    gl.glPixelStorei(c.GL_PACK_SKIP_PIXELS as c.GLenum, was[3])
+}
+
 /// A context with a `width` x `height` drawing buffer (limited to the
 /// device's sizes), or null when WebGL is unavailable or it cannot be
 /// made.
@@ -360,7 +507,7 @@ pub fn createWebGL(alloc: Allocator, attrs: Attrs, width: i32, height: i32) ?*mu
     if rb < max {
         max = rb
     }
-    let ctx = alloc.create(Context { egl: egl, attrs: granted, samples: n, width: 0, height: 0, max_size: max, fbo: 0, color: 0, depth_stencil: 0, msaa_fbo: 0, msaa_color: 0, msaa_depth_stencil: 0, dirty: false, err: 0, lost: false }) catch {
+    let ctx = alloc.create(Context { egl: egl, attrs: granted, samples: n, width: 0, height: 0, max_size: max, fbo: 0, color: 0, depth_stencil: 0, msaa_fbo: 0, msaa_color: 0, msaa_depth_stencil: 0, dirty: false, pbo: 0, pbo_size: 0, fence: null, pending: false, pending_w: 0, pending_h: 0, start_ns: 0, err: 0, lost: false }) catch {
         destroyContext(d, egl)
         current = null
         return null
@@ -379,8 +526,12 @@ pub fn createWebGL(alloc: Allocator, attrs: Attrs, width: i32, height: i32) ?*mu
 pub fn destroyWebGL(alloc: Allocator, ctx: *mut Context) {
     if display() |d| {
         ctx.makeCurrent()
+        ctx.dropReadback()
         ctx.freeAttachments()
         let gl = d.api
+        if ctx.pbo != 0 {
+            gl.glDeleteBuffers(1, &ctx.pbo)
+        }
         gl.glDeleteFramebuffers(1, &ctx.fbo)
         if ctx.msaa_fbo != 0 {
             gl.glDeleteFramebuffers(1, &ctx.msaa_fbo)

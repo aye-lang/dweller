@@ -29,6 +29,7 @@
 // the agent (the event loop jumps to the next timer, and a task's steps
 // move it: STEPS_PER_MS) and real for the window.
 
+import audio
 import dom
 import dom.Kind
 import dom.NodeId
@@ -266,9 +267,19 @@ pub struct Script {
     // `__wasmHost` was installed: the page holds the WebAssembly store
     // (wasm.release).
     wasm_on: bool = false
+    // The tag of the page's audio contexts (audio_api.aye; 0: none yet),
+    // the root of the prelude's function for `ended` events, and whether
+    // the page has had user activation (an AudioContext starts running).
+    audio_owner: usize = 0
+    audio_notify: u32 = 0xFFFFFFFF
+    activated: bool = false
     // Messages ("[log] text"), owned, until a front end takes them.
     console: List([]mut u8)
     nav_kind: NavKind
+    // Pointer lock and fullscreen requests of scripts (0 none, 1 enter, 2
+    // leave), until the window takes them (`takeHostRequests`).
+    host_lock: u8 = 0
+    host_fs: u8 = 0
     nav_href: []mut u8
     nav_step: i64
     nav_form: ?NodeId
@@ -638,6 +649,8 @@ fn setUp(s: *mut Script) JsError!void {
         s.wasm_on = true
         try s.it.runScript(WASM_PRELUDE)
     }
+    try installAudio(&mut s.it)
+    try s.it.runScript(AUDIO_PRELUDE)
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
@@ -651,6 +664,9 @@ pub fn destroyScript(s: *mut Script) {
     s.it.host = null
     if s.wasm_on {
         wasm.release(&mut s.it)
+    }
+    if s.audio_owner != 0 {
+        audio.release(s.audio_owner)
     }
     s.it.deinit()
     s.wrappers.deinit()
@@ -1550,7 +1566,7 @@ fn runTimer(s: *mut Script, i: usize) AllocError!void {
     try runMicrotasks(s)
     // The last animation frame callback of the frame ends it (WebGL).
     if t.raf && !rafDue(s) {
-        presentCanvases(s.page)
+        endCanvasFrame(s.page)
     }
 }
 
@@ -1610,6 +1626,7 @@ pub fn runDueTimers(p: *mut Page) AllocError!bool {
     net.pumpLoads()
     if p.script |s| {
         tick(s)
+        try pumpAudio(s)
         let turn = s.seq
         var n: usize = 0
         while earliestBefore(s, s.now, turnLimit(s, turn)) |i| {
@@ -1790,6 +1807,18 @@ pub fn msUntilNextTimer(p: *mut Page) ?f64 {
             wait = 0.0
         }
     }
+    if p.script |s| {
+        // A playing AudioContext renders ahead of its device each turn.
+        if s.audio_owner != 0 && audio.playing(s.audio_owner) {
+            if wait |w| {
+                if w > AUDIO_POLL_MS {
+                    wait = AUDIO_POLL_MS
+                }
+            } else {
+                wait = AUDIO_POLL_MS
+            }
+        }
+    }
     if waitingForLoads(p) {
         if wait |w| {
             if w > LOAD_POLL_MS {
@@ -1866,6 +1895,9 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
     }
+    if isActivation(kind) {
+        s.activated = true
+    }
     let it = &mut s.it
     let base = it.stack.len()
     try jsPush(s, it.roots.items()[s.dispatcher])
@@ -1884,6 +1916,52 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
         return s.it.toBoolean(v)
     }
     return true
+}
+
+/// Fires a pointer or mouse event of the user (`pointerdown`,
+/// `mousemove`...) at `target`: `detail` is "button\nbuttons\nmods", (`x`,
+/// `y`) the viewport point and (`mx`, `my`) `movementX/Y`. False when a
+/// listener canceled it.
+pub fn dispatchPointer(p: *mut Page, target: NodeId, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!bool {
+    let s = p.script orelse return true
+    if s.dispatcher == js.NONE || !p.doc.isLive(target) {
+        return true
+    }
+    let it = &mut s.it
+    let base = it.stack.len()
+    try jsPush(s, it.roots.items()[s.dispatcher])
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, try wrapFor(s, target))
+    try jsPush(s, try stringFor(s, kind))
+    try jsPush(s, try stringFor(s, detail))
+    try jsPush(s, js.numVal(x))
+    try jsPush(s, js.numVal(y))
+    try jsPush(s, js.numVal(mx))
+    try jsPush(s, js.numVal(my))
+    let r = try callReported(s, base, 7)
+    try runMicrotasks(s)
+    try afterTask(s)
+    if r |v| {
+        return s.it.toBoolean(v)
+    }
+    return true
+}
+
+/// What scripts asked of the window: `lock` and `fs` are 0 (nothing), 1
+/// (enter pointer lock, fullscreen) or 2 (leave it). Once.
+pub struct HostRequests {
+    lock: u8
+    fs: u8
+}
+
+pub fn takeHostRequests(p: *mut Page) HostRequests {
+    if p.script |s| {
+        let r = HostRequests { lock: s.host_lock, fs: s.host_fs }
+        s.host_lock = 0
+        s.host_fs = 0
+        return r
+    }
+    return HostRequests { lock: 0, fs: 0 }
 }
 
 /// Fires `wheel` at `target` for the user's wheel or trackpad: deltaMode

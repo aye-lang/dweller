@@ -184,6 +184,14 @@ pub struct Api {
     glPixelStorei: fn(c.GLenum, c.GLint)
     glTexImage2D: fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8)
     glTexSubImage2D: fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8)
+    // P11.7: the frame's readback into a pixel-pack buffer with a fence.
+    // A GLsync is an opaque pointer.
+    glFlush: fn()
+    glFenceSync: fn(c.GLenum, c.GLbitfield) ?[*]u8
+    glClientWaitSync: fn(?[*]u8, c.GLbitfield, u64) c.GLenum
+    glDeleteSync: fn(?[*]u8)
+    glMapBufferRange: fn(c.GLenum, c.GLintptr, c.GLsizeiptr, c.GLbitfield) ?[*]u8
+    glUnmapBuffer: fn(c.GLenum) c.GLboolean
 }
 
 /// The process's EGL display, initialized, on `backend`.
@@ -452,6 +460,12 @@ fn bind(egl: [*]u8) ?Api {
         glPixelStorei: @ptrCast(fn(c.GLenum, c.GLint), get("glPixelStorei".ptr) orelse return null),
         glTexImage2D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLint, c.GLenum, c.GLenum, ?[*]u8), get("glTexImage2D".ptr) orelse return null),
         glTexSubImage2D: @ptrCast(fn(c.GLenum, c.GLint, c.GLint, c.GLint, c.GLsizei, c.GLsizei, c.GLenum, c.GLenum, ?[*]u8), get("glTexSubImage2D".ptr) orelse return null),
+        glFlush: @ptrCast(fn(), get("glFlush".ptr) orelse return null),
+        glFenceSync: @ptrCast(fn(c.GLenum, c.GLbitfield) ?[*]u8, get("glFenceSync".ptr) orelse return null),
+        glClientWaitSync: @ptrCast(fn(?[*]u8, c.GLbitfield, u64) c.GLenum, get("glClientWaitSync".ptr) orelse return null),
+        glDeleteSync: @ptrCast(fn(?[*]u8), get("glDeleteSync".ptr) orelse return null),
+        glMapBufferRange: @ptrCast(fn(c.GLenum, c.GLintptr, c.GLsizeiptr, c.GLbitfield) ?[*]u8, get("glMapBufferRange".ptr) orelse return null),
+        glUnmapBuffer: @ptrCast(fn(c.GLenum) c.GLboolean, get("glUnmapBuffer".ptr) orelse return null),
     }
 }
 

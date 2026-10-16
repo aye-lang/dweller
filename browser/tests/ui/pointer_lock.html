@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<title>Pointer lock</title>
+<style>body { margin: 0 } #c { width: 300px; height: 100px; background: #ddd }</style>
+<div id="c">canvas</div>
+<pre id="log"></pre>
+<script>
+const log = s => { document.getElementById('log').textContent += s + '\n'; };
+const c = document.getElementById('c');
+log('start locked=' + (document.pointerLockElement === null) + ' fs=' + (document.fullscreenElement === null));
+// No user activation yet: rejected, with pointerlockerror.
+document.addEventListener('pointerlockerror', () => log('pointerlockerror'));
+document.addEventListener('pointerlockchange', () => log('pointerlockchange ' + (document.pointerLockElement === c ? 'c' : String(document.pointerLockElement))));
+document.addEventListener('fullscreenchange', e => log('fullscreenchange ' + (document.fullscreenElement === c ? 'c' : String(document.fullscreenElement)) + ' ' + (e.target === c)));
+document.addEventListener('fullscreenerror', () => log('fullscreenerror'));
+const p = c.requestPointerLock();
+log('promise ' + (p instanceof Promise));
+p.then(() => log('lock resolved'), e => log('lock rejected ' + e.name));
+c.requestFullscreen().then(() => log('fs resolved'), e => log('fs rejected ' + e.constructor.name));
+c.addEventListener('mousemove', e => log('mousemove ' + e.clientX + ',' + e.clientY + ' m' + e.movementX + ',' + e.movementY));
+c.addEventListener('pointermove', e => log('pointermove m' + e.movementX + ',' + e.movementY));
+document.addEventListener('keydown', e => log('keydown ' + e.key));
+// A gesture: the click asks.
+document.getElementById('log').addEventListener('click', () => {});
+document.body.addEventListener('click', async () => {
+  log('click active=' + navigator.userActivation.isActive);
+  try { await c.requestPointerLock(); log('locked ' + (document.pointerLockElement === c)); }
+  catch (e) { log('locked failed ' + e.name); }
+  try { await c.requestFullscreen(); log('fullscreen ' + (document.fullscreenElement === c)); }
+  catch (e) { log('fullscreen failed ' + e.constructor.name); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'x') { document.exitPointerLock(); log('exit asked'); }
+  if (e.key === 'f') { document.exitFullscreen().then(() => log('fs exit resolved')); }
+});
+</script>

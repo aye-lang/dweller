@@ -1,0 +1,18 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildNewLocalBlockContext)
+
+fn vmEnterScope(c: *mut Compiler, scope: u32) CompileError!void {
+    let sc = c.ast.scopes.items()[scope]
+
+    if sc.nslots > 0 {
+        try c.scopes.append(scope)
+    }
+
+    if vmHasContext(c, scope) {
+        let r = c.b.newReg()
+
+        try c.b.op2(BC_PUSH_CONTEXT, r as i64, sc.nslots as i64)
+        try c.ctxregs.append(r)
+    }
+
+    try vmHoist(c, scope)
+}
