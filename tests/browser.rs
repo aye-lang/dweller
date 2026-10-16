@@ -4646,7 +4646,9 @@ fn window_damage() {
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed
 /// header and the sticky heading (or nothing), never the whole page, and
-/// `DWELLER_DAMAGE_CHECK` finds each frame equal to a whole drawing.
+/// `DWELLER_DAMAGE_CHECK` finds each frame equal to a whole drawing. The
+/// fixed and sticky boxes are layers moved at draw time (P4.36a): no
+/// scroll frame builds the display list again.
 #[test]
 fn window_fractional_scroll() {
     if !has_sdl() {
@@ -4680,6 +4682,8 @@ fn window_fractional_scroll() {
     assert!(out.status.success(), "{}\n{err}", out.status);
     assert!(!err.contains("DAMAGE CHECK"), "{err}");
     assert!(text(&out.stdout).contains("\nscroll 72\n"), "{}", text(&out.stdout));
+    let builds = err.matches("DWELLER_TIMING\tpaint_build\t").count();
+    assert!(builds <= 2, "{builds} display lists built:\n{err}");
     let px: Vec<u64> = err
         .lines()
         .filter_map(|l| l.split("DWELLER_TIMING\tui_damage_px\t").nth(1))

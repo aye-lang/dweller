@@ -1,0 +1,20 @@
+import layout.Tree
+
+pub fn followPinned(list: *mut DisplayList, sigs: []mut Sig, t: *Tree) bool {
+    if list.unpinned {
+        return false
+    }
+
+    let n = list.layers.len()
+
+    for k in 0..n {
+        let l = list.layers.items()[k]
+        let dy = t.bx(l.box).scroll_dy
+
+        if isScrolled(t, l.box) && l.oy != dy && !patchLayer(list, sigs, l.box, 0.0, dy, endAlpha(list, sigs, l.at)) {
+            return false
+        }
+    }
+
+    return true
+}
