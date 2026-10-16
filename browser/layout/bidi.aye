@@ -316,7 +316,7 @@ struct BoxSpan {
 /// space): the pieces go in visual order, and an inline box's fragment
 /// spans its pieces on the line. False (nothing made) when the line is
 /// all left to right.
-fn bidiLine(lb: *mut LineBuilder, kp: []Piece, x0: f64, extra: f64, baseline: f64) AllocError!bool {
+fn bidiLine(lb: *mut LineBuilder, kp: []Piece, x0: f64, extra: f64, baseline: f64, al: *LineAlign) AllocError!bool {
     var order = List(usize).init(lb.t.backing)
     defer order.deinit()
     var xs = List(f64).init(lb.t.backing)
@@ -364,7 +364,7 @@ fn bidiLine(lb: *mut LineBuilder, kp: []Piece, x0: f64, extra: f64, baseline: f6
             lo = x0
             hi = x0
         }
-        let o = try lb.inlineFrag(sp.box, sp.depth, lo, baseline)
+        let o = try lb.inlineFrag(sp.box, sp.depth, lo, baseline + boxDy(al, sp.box))
         lb.t.frags.items()[o.frag].w = hi - lo
     }
     var prev_text = false
@@ -394,7 +394,7 @@ fn bidiLine(lb: *mut LineBuilder, kp: []Piece, x0: f64, extra: f64, baseline: f6
                         start: p.start,
                         end: p.end,
                         x: px + p.rel_x,
-                        y: baseline - m.ascent + p.rel_y,
+                        y: baseline + al.dy.items()[lb.open.len() + oj] - m.ascent + p.rel_y,
                         w: w,
                         h: m.ascent + m.descent,
                         rtl: rtl,
@@ -405,7 +405,7 @@ fn bidiLine(lb: *mut LineBuilder, kp: []Piece, x0: f64, extra: f64, baseline: f6
             .Atomic => {
                 let b = lb.t.bx(p.box)
                 b.x = px + b.margin[3] + p.rel_x
-                b.y = baseline - atomicAscent(lb.t, p.box) + b.margin[0] + p.rel_y
+                b.y = baseline + al.dy.items()[lb.open.len() + oj] - atomicAscent(lb.t, p.box) + b.margin[0] + p.rel_y
                 try lb.t.frags.append(Frag {
                     kind: FragKind.Atomic,
                     box: p.box,

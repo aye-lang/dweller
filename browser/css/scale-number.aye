@@ -1,0 +1,17 @@
+fn scaleNumber(c: Comp) ?f64 {
+    var v: Value = Value.Unset
+
+    if isMathFunction(c.toks[0]) {
+        v = calcValue(c.toks) orelse return null
+    } else if c.toks.len == 1 && c.toks[0].kind == Tok.Number {
+        v = Value.Number { v: c.toks[0].num }
+    } else if c.toks.len == 1 && c.toks[0].kind == Tok.Percentage {
+        v = Value.Percent { v: c.toks[0].num }
+    }
+
+    return match v {
+        .Number { v: n } => n
+        .Percent { v: n } => n / 100.0
+        _ => null
+    }
+}
