@@ -322,7 +322,7 @@ def run_harness_test(dweller, base_url, test):
                            errors="replace", stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return {"status": "TIMEOUT", "message": f"no result in {wall} s of wall time", "subtests": []}
-    for line in reversed(p.stdout.splitlines()):
+    for line in reversed(p.stdout.split("\n")):
         if line.startswith("{"):
             try:
                 return json.loads(line)

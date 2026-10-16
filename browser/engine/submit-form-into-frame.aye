@@ -1,0 +1,18 @@
+import dom.NodeId
+import net
+import std.mem.AllocError
+
+fn submitFormIntoFrame(p: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!void {
+    let slot = targetFrame(p, linkTarget(p, form)) orelse return
+    let sub = (try submitForm(p, form, submitter)) orelse return
+    defer sub.deinit(p.alloc)
+
+    var body = net.Body { content_type: sub.content_type, data: sub.body }
+    var post: ?*net.Body = null
+
+    if sub.post {
+        post = &body
+    }
+
+    try navigateFrame(slot, &sub.target, post)
+}

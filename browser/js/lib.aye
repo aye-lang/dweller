@@ -1690,41 +1690,6 @@ pub let LIB =
     \\  });
     \\});
     \\hidden(G, 'DataView', DataView);
-    \\// TextEncoder and TextDecoder: UTF-8 only, on the bytes (typed.aye).
-    \\class TextEncoder {
-    \\  get encoding() { return 'utf-8'; }
-    \\  encode(s) {
-    \\    s = String(s === undefined ? '' : s);
-    \\    const u = new Uint8Array(utf8Length(s));
-    \\    utf8Encode(u, s);
-    \\    return u;
-    \\  }
-    \\  encodeInto(s, dest) {
-    \\    const u = this.encode(s);
-    \\    let n = Math.min(u.length, dest.length);
-    \\    while (n < u.length && n > 0 && (u[n] & 0xC0) === 0x80) n--;
-    \\    dest.set(u.subarray(0, n));
-    \\    return { read: new TextDecoder().decode(u.subarray(0, n)).length, written: n };
-    \\  }
-    \\}
-    \\class TextDecoder {
-    \\  constructor(label) {
-    \\    const l = label === undefined ? 'utf-8' : String(label).trim().toLowerCase();
-    \\    if (l !== 'utf-8' && l !== 'utf8' && l !== 'unicode-1-1-utf-8') throw new RangeError("Failed to construct 'TextDecoder': The encoding label provided ('" + label + "') is invalid.");
-    \\  }
-    \\  get encoding() { return 'utf-8'; }
-    \\  decode(input) {
-    \\    if (input === undefined) return '';
-    \\    let b;
-    \\    if (input instanceof ArrayBuffer) b = new Uint8Array(input);
-    \\    else if (ArrayBuffer.isView(input)) b = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-    \\    else b = Uint8Array.from(input);
-    \\    if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) b = b.subarray(3);
-    \\    return utf8Decode(b);
-    \\  }
-    \\}
-    \\hidden(G, 'TextEncoder', TextEncoder);
-    \\hidden(G, 'TextDecoder', TextDecoder);
     \\
     \\// ---- Intl: English formats only
     \\

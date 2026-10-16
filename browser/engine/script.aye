@@ -285,6 +285,7 @@ pub struct Script {
     nav_step: i64
     nav_form: ?NodeId
     nav_submitter: ?NodeId
+    queued_forms: List(NodeId)
     // Counts changes to the document by scripts (styles and layout are
     // out of date when it moved).
     version: u64
@@ -575,6 +576,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         nav_step: 0,
         nav_form: null,
         nav_submitter: null,
+        queued_forms: List(NodeId).init(alloc),
         version: 0,
         style_version: 0,
         layout_version: 0,
@@ -710,6 +712,7 @@ pub fn destroyScript(s: *mut Script) {
         s.alloc.free(line)
     }
     s.console.deinit()
+    s.queued_forms.deinit()
     s.alloc.free(s.nav_href)
     releaseStorage()
     s.alloc.destroy(s)
@@ -1741,6 +1744,11 @@ pub fn runUntilConsole(p: *mut Page, max_ms: f64, prefix: []u8, out: *mut text.B
         if try findConsole(p, prefix, out) {
             return true
         }
+        if try submitIntoFrame(p) {
+            n += 1
+            continue
+        }
+        try syncFrames(p)
         if n >= MAX_TASKS || !try runNextTimer(p, end) {
             return false
         }

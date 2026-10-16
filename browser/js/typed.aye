@@ -36,7 +36,8 @@ fn installTyped(it: *mut Interp, e: u32) JsError!void {
     try it.defineNative(e, "typedSetFrom", 3, engineTypedSetFrom)
     try it.defineNative(e, "utf8Length", 1, engineUtf8Length)
     try it.defineNative(e, "utf8Encode", 2, engineUtf8Encode)
-    try it.defineNative(e, "utf8Decode", 1, engineUtf8Decode)
+    try it.defineNative(e, "utf8Decode", 2, engineUtf8Decode)
+    try installTextCodecNatives(it)
 }
 
 // The largest ArrayBuffer: offsets are u32.
@@ -601,6 +602,7 @@ fn engineUtf8Decode(it: *mut Interp, a: Args) JsError!Value {
     defer out.deinit()
     var i: usize = 0
     var run: usize = 0
+    var bad = false
     while i < m.len {
         let b = m[i]
         if b < 0x80 {
@@ -648,6 +650,10 @@ fn engineUtf8Decode(it: *mut Interp, a: Args) JsError!Value {
         try out.appendByte(0xBD)
         i += j
         run = i
+        bad = true
+    }
+    if bad && it.toBoolean(it.arg(a, 1)) {
+        return Value.Null
     }
     try out.append(m[run..m.len])
     return it.takeString(&mut out)
