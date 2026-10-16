@@ -114,7 +114,18 @@ pub let BC_SWITCH_ON_SMI: u8 = 71
 pub let BC_RETURN: u8 = 72
 // Unary `+`: ToNumber (a BigInt throws), unlike ToNumeric.
 pub let BC_TO_NUMBER: u8 = 73
-pub let BC_COUNT: u8 = 74
+// P4.65: calls, and the generic loads and stores they need until the
+// inline caches of P4.67. The `[n]` operand is the AST node (the tree
+// walker's property cache and the callee's text for errors).
+pub let BC_LDA_GLOBAL: u8 = 74
+pub let BC_GET_NAMED_PROPERTY: u8 = 75
+pub let BC_SET_NAMED_PROPERTY: u8 = 76
+pub let BC_CALL_PROPERTY: u8 = 77
+pub let BC_CALL_UNDEFINED_RECEIVER: u8 = 78
+pub let BC_CONSTRUCT: u8 = 79
+pub let BC_CREATE_ARGUMENTS: u8 = 80
+pub let BC_CREATE_REST_PARAMETER: u8 = 81
+pub let BC_COUNT: u8 = 82
 
 pub let BC_JUMP_CONST_DELTA: u8 = 8
 
@@ -229,6 +240,14 @@ pub let BC_INFO = [_]BcInfo{
     BcInfo { name: "SwitchOnSmi", ops: [3]BcOp{BcOp.Const, BcOp.UImm, BcOp.Imm}, nops: 3, flags: BC_F_SWITCH },
     BcInfo { name: "Return", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
     BcInfo { name: "ToNumber", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "LdaGlobal", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
+    BcInfo { name: "GetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "SetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "CallProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
+    BcInfo { name: "CallUndefinedReceiver", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
+    BcInfo { name: "Construct", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
+    BcInfo { name: "CreateArguments", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_F_ALLOC },
+    BcInfo { name: "CreateRestParameter", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_F_ALLOC },
 }
 
 pub fn bcIsForwardJump(op: u8) bool {
