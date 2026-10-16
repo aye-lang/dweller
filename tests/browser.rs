@@ -669,6 +669,75 @@ fn wasm_api() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// `browser/tests/audio/core.html` (P11.19, Web Audio core): an
+/// OfflineAudioContext renders a looped buffer through a gain with
+/// linear, exponential and setTarget automation. Its `samples` line must
+/// match the values computed here within 1e-4; the other lines must be
+/// `core.txt`, with an empty stderr. No audio device is used.
+#[test]
+fn webaudio_core() {
+    let page = "browser/tests/audio/core.html";
+    let golden = root().join("browser/tests/audio/core.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let samples = got
+        .lines()
+        .find_map(|l| l.strip_prefix("samples "))
+        .unwrap_or_else(|| panic!("no samples line:\n{got}"));
+    let rest: String = got
+        .lines()
+        .filter(|l| !l.starts_with("samples "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &rest).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(rest, want, "differs from {}", golden.display());
+
+    // 8000 Hz; the 10-frame buffer loops from frame 80 (0.01 s) and stops
+    // at 0.19 s; the gain is 0 -> 1 linear to 0.05 s, exponential to 0.25
+    // at 0.1 s, then setTarget(0, 0.1, 0.01).
+    let data: Vec<f32> = (0..10)
+        .map(|i| ((i + 1) as f64 / 10.0 - 0.5) as f32)
+        .collect();
+    let got: Vec<f64> = samples.split(',').map(|v| v.parse().unwrap()).collect();
+    assert_eq!(got.len(), 1600);
+    let mut worst = (0.0f64, 0usize);
+    for (f, &g) in got.iter().enumerate() {
+        let t = f as f64 / 8000.0;
+        let src = if (80..1520).contains(&f) {
+            data[(f - 80) % 10] as f64
+        } else {
+            0.0
+        };
+        let gain = if t < 0.05 {
+            t / 0.05
+        } else if t < 0.1 {
+            0.25f64.powf((t - 0.05) / 0.05)
+        } else {
+            0.25 * (-(t - 0.1) / 0.01).exp()
+        };
+        let err = (g - src * gain).abs();
+        if err > worst.0 {
+            worst = (err, f);
+        }
+    }
+    assert!(
+        worst.0 < 1e-4,
+        "frame {} is off by {} (got {})",
+        worst.1,
+        worst.0,
+        got[worst.1]
+    );
+}
+
 /// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
 /// checksum must be node's; the median time of 20M steps is printed (with
 /// node's when `node` is installed) for comparison, not checked.
