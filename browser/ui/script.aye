@@ -422,6 +422,9 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
 
 /// Writes the canvas as a PNG.
 fn saveCanvas(ui: *mut Ui, path: []u8) !void {
+    if ui.page.stale {
+        blitPage(ui)
+    }
     let png = try paint.encodePng(ui.alloc, ui.canvas.width, ui.canvas.height, ui.canvas.pixels)
     defer ui.alloc.free(png)
     let f = try std.fs.create(path)
