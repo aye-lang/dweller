@@ -677,6 +677,51 @@ fn webgl_textures() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
+/// on SwiftShader, served over HTTP (the page fetches a PNG), prints
+/// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
+/// canvas sources, the crop rectangle (negative sizes, outside the
+/// source, RangeError), imageOrientation, premultiplyAlpha, the resize
+/// options, close(), and a Blob bitmap uploaded with texImage2D and read
+/// back. The pixels of the bitmaps come through a 2D canvas.
+#[test]
+fn imagebitmap_sources() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/imagebitmap.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/imagebitmap.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
