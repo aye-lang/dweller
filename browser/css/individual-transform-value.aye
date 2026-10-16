@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#individual-transforms
+fn individualTransformValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Value {
+    if comps.len == 1 && isIdent(comps[0], "none") {
+        return Value.Keyword { k: "none" }
+    }
+
+    var out = text.Builder.init(sheet.arena.allocator())
+    var ok = false
+
+    if prop == TRANSLATE {
+        ok = try writeTranslate(comps, &mut out)
+    } else if prop == ROTATE {
+        ok = try writeRotate(comps, &mut out)
+    } else {
+        ok = try writeScale(comps, &mut out)
+    }
+
+    if !ok {
+        return null
+    }
+
+    return Value.Keyword { k: try out.toOwned() }
+}

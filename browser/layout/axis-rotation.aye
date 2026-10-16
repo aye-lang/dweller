@@ -1,0 +1,29 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-transforms-2/#Rotate3dDefined
+fn axisRotation(x: f64, y: f64, z: f64, r: f64) ?Affine {
+    let len = math.sqrt(x * x + y * y + z * z)
+
+    if len == 0.0 {
+        return null
+    }
+
+    if x == 0.0 && y == 0.0 {
+        return rotation(r * z / len)
+    }
+
+    let nx = x / len
+    let ny = y / len
+    let nz = z / len
+    let sc = math.sin(r / 2.0) * math.cos(r / 2.0)
+    let sq = math.sin(r / 2.0) * math.sin(r / 2.0)
+
+    return Affine {
+        a: 1.0 - 2.0 * (ny * ny + nz * nz) * sq,
+        b: 2.0 * (nx * ny * sq + nz * sc),
+        c: 2.0 * (nx * ny * sq - nz * sc),
+        d: 1.0 - 2.0 * (nx * nx + nz * nz) * sq,
+        e: 0.0,
+        f: 0.0,
+    }
+}
