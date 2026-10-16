@@ -1,0 +1,37 @@
+import perf
+import std.mem.AllocError
+import url
+
+// blink: core/loader/frame_loader.cc
+pub fn traverseEarly(tab: *mut Tab, step: i64, width: f64, height: f64) AllocError!Moved {
+    let at = tab.history.indexAt(step) orelse return Moved.None
+
+    if step != 0 && try tab.inDocument(step) {
+        return Moved.InDocument
+    }
+
+    perf.noteNavigation()
+
+    let e = tab.history.entries.items()[at]
+
+    let target = url.parse(tab.alloc, e.href) catch |err| {
+        return AllocError.OutOfMemory
+    }
+
+    defer target.deinit(tab.alloc)
+
+    tab.enter()
+    let p = try loadParsed(tab.alloc, &target)
+
+    errdefer p.destroy()
+
+    if e.state |st| {
+        try p.history.replace(p.url.href, st)
+    }
+
+    try tab.moveTo(step, p)
+    tab.early = true
+    try startEarly(p, width, height, &mut tab.sheet_loads, &mut tab.script_loads)
+
+    return Moved.Loaded
+}

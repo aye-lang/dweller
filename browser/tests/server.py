@@ -44,7 +44,8 @@
 #                    there is one (the query ignored), else a small body
 #                    of the type of NAME's extension (as /log/NAME)
 #   /delay/MS/NAME   after MS ms: as /slow/NAME (not counted in
-#                    /slow-peak)
+#                    /slow-peak); `Cache-Control: no-store` when NAME
+#                    has "nostore"
 #   /slow-peak       the most /slow/ requests that were in flight at
 #                    once, as text/plain
 #   /held/NAME       as /slow/NAME, but answered once a /held-now
@@ -153,7 +154,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
         else:
             ctype, data = BODIES.get(name[name.rfind("."):], ("text/plain", b"slow"))
-        self.reply(200, [("Content-Type", ctype)], data)
+        headers = [("Content-Type", ctype)]
+        if "nostore" in name:
+            headers.append(("Cache-Control", "no-store"))
+        self.reply(200, headers, data)
 
     def do_GET(self):
         path = self.path

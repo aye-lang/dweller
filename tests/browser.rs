@@ -6363,6 +6363,87 @@ fn window_paints_early() {
     );
 }
 
+/// P4.46: back, forward and reload load in steps
+/// (`browser/tests/history/`: a sheet delayed 0.3 s and a script delayed
+/// 0.6 s that makes the page tall, neither cached). The page is painted
+/// before its script runs, the address bar takes typing during the load,
+/// no loop iteration waits for the network, and the scroll offset each
+/// entry was left at comes back once the script made the page tall enough.
+#[test]
+fn window_history_steps() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let a = format!("{}/history/a.html", srv.base);
+    let b = format!("{}/history/b.html", srv.base);
+    let run = |page: &str, events: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TIMING", "1")
+            .args([
+                page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "600",
+                "--state", "--text", "--events", events,
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{events}: {}\n{err}", out.status);
+        let loops = iterations(&err);
+        assert_no_net_wait(&loops, page);
+        (text(&out.stdout), loops)
+    };
+    let scroll = |got: &str| -> String {
+        got.lines()
+            .find(|l| l.starts_with("scroll "))
+            .unwrap_or("")
+            .to_string()
+    };
+    let (got, _) = run(&a, "loaded wheel:-10 frame");
+    let at_a = scroll(&got);
+    let (got, _) = run(&b, "loaded wheel:-5 frame");
+    let at_b = scroll(&got);
+    assert!(at_a != "scroll 0" && at_b != "scroll 0" && at_a != at_b, "{at_a}, {at_b}");
+
+    let to_b = "loaded wheel:-10 frame click:20,60 painted loaded wheel:-5 frame";
+    let (got, loops) = run(&a, &format!("{to_b} key:cmd+[ key:cmd+l text:abc painted loaded"));
+    for want in [
+        format!("url {a}\n"),
+        format!("\n{at_a}\n"),
+        "\nfocus address\naddress abc\nhistory 1 of 2\n".into(),
+        "\nran /history/a.html\n".into(),
+    ] {
+        assert!(got.contains(&want), "back: expected {want:?} in:\n{got}");
+    }
+    let last = |name: &str, label: &str| {
+        loops
+            .iter()
+            .rposition(|it| it.has(name, label))
+            .unwrap_or_else(|| panic!("no {name} record of {label:?}"))
+    };
+    let back = last("ui_navigate", "");
+    let painted = last("ui_first_paint", &a);
+    let script = last("script", "/history/nostore.js");
+    assert!(
+        back < painted && painted < script,
+        "back in iteration {back}, painted in {painted}, the script ran in {script}"
+    );
+
+    let (got, _) = run(&a, &format!("{to_b} key:cmd+[ painted loaded key:cmd+] painted loaded"));
+    for want in [format!("url {b}\n"), format!("\n{at_b}\n"), "\nhistory 2 of 2\n".into()] {
+        assert!(got.contains(&want), "forward: expected {want:?} in:\n{got}");
+    }
+
+    let (got, _) = run(&a, "loaded wheel:-10 frame key:cmd+r painted loaded");
+    for want in [format!("url {a}\n"), format!("\n{at_a}\n"), "\nhistory 1 of 1\n".into()] {
+        assert!(got.contains(&want), "reload: expected {want:?} in:\n{got}");
+    }
+}
+
 /// P4.43: twenty import()s whose modules take 200-390 ms, a module whose
 /// twenty imports do the same, and a frame whose document takes 1 s load
 /// in the background: each import() settles with its module, the imports

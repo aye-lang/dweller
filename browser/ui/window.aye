@@ -985,26 +985,7 @@ pub struct Ui {
         if !loaded {
             return self.navigated(false)
         }
-        self.paint_began = t_go
-        self.promote.clear()
-        self.anim.clear()
-        self.dropdown = null
-        self.range_drag = false
-        // The agents' refs are of the old document.
-        self.slots[self.active].?.shown += 1
-        self.dropList()
-        self.matches.clear()
-        try setAddress(self)
-        if self.focus == Focus.Address {
-            self.focus = Focus.Page
-        }
-        self.hover.clear()
-        try self.setTitle()
-        self.dirty = true
-        // What is in already (file: and data: URLs, the cache) is shown
-        // at once, its scripts run.
-        try self.advanceLoad(true)
-        try askAuth(self)
+        try showEarly(self, t_go)
     }
 
     // The page shown early (tab.navigateEarly): laid out once its sheets
@@ -1020,7 +1001,7 @@ pub struct Ui {
             if !self.tab.painted {
                 self.tab.painted = true
                 try self.relayout()
-                self.settleScroll()
+                firstPaintScroll(self)
             }
             return
         }
@@ -1032,7 +1013,7 @@ pub struct Ui {
             perf.noteLoaded(p.url.href)
         }
         try self.relayout()
-        if !painted {
+        if !painted || self.tab.restore != null {
             self.settleScroll()
         } else if self.tab.page |p| {
             if engine.takeScriptScroll(p) |y| {
@@ -1178,16 +1159,19 @@ pub struct Ui {
     }
 
     // Moves `step` entries in the history (0: reload): in the document
-    // shown, its scripts got popstate; else a page was loaded.
+    // shown, its scripts got popstate; else its page loads in steps.
     fn goBy(self: *mut Self, step: i64) AllocError!void {
-        match try self.tab.go(step) {
+        let t_go = perf.start()
+        let moved = try engine.traverseEarly(self.tab, step, self.win_w as f64, self.layoutHeight())
+        perf.end("ui_navigate", t_go, "")
+        match moved {
             .None => {}
             .InDocument => {
                 try self.navigated(false)
                 try self.afterScripts()
             }
             .Loaded => {
-                try self.navigated(true)
+                try showEarly(self, t_go)
             }
         }
     }

@@ -242,7 +242,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") {
             return false
         }
     }
@@ -292,6 +292,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         }
         if text.eql(w, "painted") && ui.paint_began != 0 {
             // The page is not drawn yet (`Ui.loop` resumes the script).
+            return
+        }
+        if text.eql(w, "loaded") && ui.tab.early {
             return
         }
         // Drop the word before handling it (handling may resume again).
