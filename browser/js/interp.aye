@@ -282,6 +282,10 @@ pub struct Interp {
     source_url: u32 = 0
     chunk_starts: List(u32)
     chunk_urls: List(u32)
+    // The bytecode VM (vm.aye), when DWELLER_JS_VM=1; vmInit decides on
+    // the first call.
+    vm: ?*mut VmState = null
+    vm_checked: bool = false
 
     pub fn create(alloc: Allocator) JsError!Interp {
         var it = Interp {
@@ -398,6 +402,7 @@ pub struct Interp {
     }
 
     pub fn deinit(self: *mut Self) {
+        vmDeinit(self)
         self.import_meta.deinit()
         self.chunk_starts.deinit()
         self.chunk_urls.deinit()
@@ -2254,6 +2259,16 @@ pub struct Interp {
                         return v
                     }
                 }
+            }
+        }
+        // The bytecode VM (DWELLER_JS_VM=1) after the frameless path above,
+        // which is cheaper for the one-expression functions it handles.
+        if !self.vm_checked {
+            vmInit(self)
+        }
+        if self.vm |st| {
+            if try vmLookup(self, st, func) |vf| {
+                return vmCall(self, st, vf, func, fobj, thisv, argBase, argc, newTarget)
             }
         }
         let nslots = self.ast.scopes.items()[fi.scope].nslots
