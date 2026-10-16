@@ -203,7 +203,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
-| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | open | – |
+| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a done; P4.40b (CI job) open | – |
 | B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
 | B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
@@ -451,6 +451,14 @@ them from coming back.
 - files: `browser/tools/window_perf.py` (`gate`, `--server`), `browser/tests/perf/*.html`, `browser/tests/perf/budgets.json`, `browser/tests/server.py` (`/delay?ms=N&type=css|js|png|json`), `browser/ui/window.aye` and `browser/engine/` (the counter records), `.github/workflows/ci.yml`
 - verify: `python3 browser/tools/window_perf.py gate browser/tests/perf/budgets.json --binary target/dweller; echo $?` → 0 on this branch; with a deliberate regression (a full restyle forced per relayout, not committed) → 1; the `perf` job is green on the PR.
 - time box: 120 min; model: opus (budget design), sonnet for the pages
+- status P4.40a: done 2026-10-16 (split: the gate itself; CI is P4.40b). Pages `browser/tests/perf/{feed,animated,paint_heavy,article}.html` (+ their css/js), served from `browser/tests/` by `server.py`'s existing `/delay/MS/NAME` (no new route); feed has 110 delayed images, 4 sheets, 6 scripts and a ticker that `fetch()`es `/sleep?ms=600` every 500 ms into a fixed-height box. New DWELLER_TIMING records: `style_full` (css `computeStyles`), `net_sync` (each synchronous HTTP transfer in http.aye and each `net.waitLoad`), `raster_px` ("PIXELS RECTS" of a frame that drew, pagedraw.aye); `layout_full` counts the existing `layout_full` and `layout` records. `window_perf.py gate BUDGETS [--update]` (`browser/tools/perf_gate.py`): per page, 3 headless runs (`painted`, 60 frames, 30 frames of `wheel:-3`, 60 frames; 1024×768), median of each; `raster_px` is the mean over the 30 scroll frames (P4.42 and P4.36c: a wheel's frame draws in the next loop iteration, which the window is aligned on). Exit 1 when a counter is over budget (slack: `layout_full` ×1.2, `raster_px` ×1.02, since image arrivals and the ticker are paced by the wall clock, ±3 full layouts between runs here) or under 0.8 × budget (ratchet: lower it with `--update`, which never raises a budget). Times (first paint, longest loop, scroll p95) are printed, not gated. Run time ~30 s. On this Linux box: exit 0 three runs in a row; with `restyle` forced to fail in geometry.aye (a full restyle per relayout, not committed) exit 1 (`animated` `style_full` 1 → 160, `layout_full` 55 → 320). `cargo test --release --test browser -- window_` 45 passed.
+
+#### P4.40b: the CI `perf` job
+- goal: P4.40a's gate runs on every PR: a `perf` job in `.github/workflows/ci.yml` on `macos-latest`, after the build, with the cached `aye`: `python3 browser/tools/window_perf.py gate browser/tests/perf/budgets.json --binary target/dweller`.
+- budgets: recorded on Linux (P4.40a); run `gate --update` on the macOS runner once (a workflow_dispatch input or the job's printed table) and commit those values, after checking the spread of `layout_full` over a few runs there; widen its slack only if the runner needs it.
+- files: `.github/workflows/ci.yml`, `browser/tests/perf/budgets.json`
+- verify: the `perf` job green on the PR; a branch with the deliberate regression of P4.40a fails it
+- time box: 45 min; model: sonnet
 
 #### P4.35: raster cache
 - goal: gradient tiles, SVG images, blurred shadows and filter/opacity layers are rasterized once per display item at device size and reused while the item and its size are unchanged (cause 3). P4.5 (decode offscreen images at paint time) joins here.
