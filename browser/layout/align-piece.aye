@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn alignPiece(al: *mut LineAlign, p: Piece, e: usize) AllocError!void {
+    let b = al.t.bx(p.box)
+    let m = textMetrics(al.t, b.style)
+    let half = (m.line_height - m.ascent - m.descent) / 2.0
+
+    if p.kind == PieceKind.Open {
+        try al.push(p.box, e)
+    } else if p.kind == PieceKind.Close {
+        try closeOpen(al, e + 1)
+    } else if p.kind == PieceKind.Atomic {
+        let a = atomicAscent(al.t, p.box)
+
+        try alignClose(al, AlignBox { box: p.box, from: e, above: a, below: b.margin[0] + b.h + b.margin[2] - a }, e + 1)
+    } else if !isOutOfFlow(p) {
+        al.unite(m.ascent + half, m.descent + half)
+    }
+}

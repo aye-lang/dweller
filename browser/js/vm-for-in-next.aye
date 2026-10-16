@@ -1,0 +1,29 @@
+// v8: src/interpreter/interpreter-generator.cc (ForInNext, ForInStep)
+
+fn vmForInNext(it: *mut Interp, at: usize) JsError!Value {
+    let arr = objectOf(it.slot(at))
+
+    while true {
+        let i = match it.slot(at + 1) {
+            .Num { n } => n as u32
+            _ => 0
+        }
+
+        if i >= it.heap.obj(arr).nelems {
+            return Value.Undefined
+        }
+
+        it.setSlot(at + 1, Value.Num { n: (i + 1) as f64 })
+
+        let key = match it.heap.obj(arr).elems[i] {
+            .Num { n } => n as u32
+            _ => 0
+        }
+
+        if try it.hasPropertyJs(objectOf(it.slot(at + 2)), key) {
+            return it.atomValue(key)
+        }
+    }
+
+    return Value.Undefined
+}

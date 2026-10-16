@@ -1,0 +1,14 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
+
+fn vmBindDefault(c: *mut Compiler, target: u32, init: u32, decl: u32) CompileError!void {
+    let dflt = try c.b.newLabel()
+    let end = try c.b.newLabel()
+
+    try c.b.jump(BC_JUMP_IF_UNDEFINED, dflt)
+    try c.b.jump(BC_JUMP, end)
+    try c.b.bind(dflt)
+    try c.visit(init)
+    try c.b.bind(end)
+
+    return vmStoreTarget(c, target, decl)
+}

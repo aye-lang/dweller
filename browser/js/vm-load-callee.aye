@@ -1,0 +1,40 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCall)
+
+fn vmLoadCallee(c: *mut Compiler, r: i32, callee: u32, optional: bool) CompileError!u8 {
+    var op = BC_CALL_PROPERTY
+
+    match c.ast.node(callee) {
+        .Member { obj, optional: link, .. } => {
+            try c.visit(obj)
+            try c.b.op1(BC_STAR, (r + 1) as i64)
+            try vmOptionalLink(c, link)
+            try c.b.op2(BC_GET_NAMED_PROPERTY, (r + 1) as i64, callee as i64)
+        }
+
+        .Index { obj, key, optional: link } => {
+            try c.visit(obj)
+            try c.b.op1(BC_STAR, (r + 1) as i64)
+            try vmOptionalLink(c, link)
+            try c.visit(key)
+            try c.b.op2(BC_GET_KEYED_PROPERTY, (r + 1) as i64, c.b.newSlot() as i64)
+        }
+
+        .SuperMember { this_node, .. } => {
+            try vmSuperReceiver(c, r, this_node, callee)
+        }
+
+        .SuperIndex { this_node, .. } => {
+            try vmSuperReceiver(c, r, this_node, callee)
+        }
+
+        _ => {
+            op = BC_CALL_UNDEFINED_RECEIVER
+            try c.visit(callee)
+        }
+    }
+
+    try c.b.op1(BC_STAR, r as i64)
+    try vmOptionalLink(c, optional)
+
+    return op
+}

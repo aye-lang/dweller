@@ -1,0 +1,44 @@
+import std.list.List
+
+// v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement, BuildFinalizeIteration)
+
+fn vmVisitForOf(c: *mut Compiler, left: u32, right: u32, body: u32, scope: u32) CompileError!void {
+    try c.visit(right)
+
+    let r = c.b.newRegs(3)
+
+    try c.b.op1(BC_GET_ITERATOR, r as i64)
+
+    var fin = VmFinally {
+        label: try c.b.newLabel(),
+        token: c.b.newReg(),
+        value: c.b.newReg(),
+        nctl: c.ctl.len() as u32,
+        nctx: c.ctxregs.len() as u32,
+        returns: false,
+        jumps: List(u32).init(c.alloc),
+    }
+
+    defer fin.jumps.deinit()
+
+    let h = try c.b.newHandler()
+    let ctx = c.b.newReg()
+
+    try c.b.op1(BC_SAVE_CONTEXT, ctx as i64)
+    try c.fins.append(&mut fin)
+    c.b.tryStart(h)
+    try vmForEachLoop(c, r, true, left, body, scope)
+    c.b.tryEnd(h)
+    c.fins.pop()
+    try vmSetToken(c, &mut fin, VM_TOKEN_FALLTHROUGH)
+    try c.b.jump(BC_JUMP, fin.label)
+
+    c.b.handlerHere(h, ctx)
+    try c.b.op1(BC_STAR, fin.value as i64)
+    try vmSetToken(c, &mut fin, VM_TOKEN_THROW)
+
+    try c.b.bind(fin.label)
+    try c.b.op1(BC_ITERATOR_CLOSE, r as i64)
+    try vmFinallyDispatch(c, &mut fin)
+    c.b.releaseRegs(r)
+}

@@ -426,8 +426,10 @@ pub let PRELUDE =
     \\    // An uncaught exception (script.aye fireErrorEvent): key is the
     \\    // message, x the value thrown.
     \\    ev = new ErrorEvent(type, { cancelable: true, message: key, error: x });
+    \\  } else if (type === 'submit') {
+    \\    ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: ak.submitter() });
     \\  } else {
-    \\    ev = new Event(type, { bubbles: true, cancelable: type === 'submit' || type === 'reset' });
+    \\    ev = new Event(type, { bubbles: true, cancelable: type === 'reset' });
     \\  }
     \\  ev.isTrusted = true;
     \\  const page = (type === 'DOMContentLoaded' && target === document) || (type === 'load' && target === G);
@@ -1363,6 +1365,7 @@ pub let PRELUDE =
     \\  if (camel !== n) getter(ComputedStyle.prototype, camel, get);
     \\  if (n === 'float') getter(ComputedStyle.prototype, 'cssFloat', get);
     \\}
+    \\getter(ComputedStyle.prototype, 'outline', function () { return ak.computedStyle(this._el, 'outline'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
     \\Object.setPrototypeOf(ComputedStyle.prototype, CSSStyleDeclaration.prototype);
     \\hidden(G, 'getComputedStyle', function getComputedStyle(el, pseudo) {

@@ -1,0 +1,39 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildIteratorNext)
+
+fn vmIteratorStep(it: *mut Interp, at: usize) JsError!Value {
+    if vmIteratorDone(it, at) {
+        return Value.Undefined
+    }
+
+    it.setSlot(at + 2, Value.Bool { b: true })
+
+    match it.slot(at + 1) {
+        .Num { n } => {
+            let arr = it.heap.obj(objectOf(it.slot(at)))
+            let i = n as u32
+
+            if i >= arr.nelems {
+                return Value.Undefined
+            }
+
+            it.setSlot(at + 1, Value.Num { n: n + 1.0 })
+            it.setSlot(at + 2, Value.Bool { b: false })
+
+            return holeToUndef(arr.elems[i])
+        }
+
+        _ => {}
+    }
+
+    if !try it.stepIterator(at) {
+        return Value.Undefined
+    }
+
+    it.setSlot(at + 2, Value.Bool { b: false })
+
+    return it.pop()
+}
+
+fn vmIteratorDone(it: *mut Interp, at: usize) bool {
+    return it.toBoolean(it.slot(at + 2))
+}

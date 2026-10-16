@@ -39,6 +39,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "queueMicrotask", 1, akQueueMicrotask)
     try defMethod(it, o, "activate", 1, akActivate)
     try defMethod(it, o, "submit", 1, akSubmit)
+    try defMethod(it, o, "submitter", 0, akSubmitter)
     try defMethod(it, o, "focused", 0, akFocused)
     try defMethod(it, o, "setFocus", 1, akSetFocus)
     try defMethod(it, o, "resolve", 1, akResolve)
@@ -231,7 +232,7 @@ fn akActivate(it: *mut Interp, a: Args) JsError!Value {
             try setNavigation(s, target.href)
         }
         .Submit { form, submitter } => {
-            if (try validateSubmission(s.page, form, submitter)) && (try dispatchEvent(s.page, form, "submit", "")) {
+            if (try validateSubmission(s.page, form, submitter)) && (try dispatchSubmit(s.page, form, submitter)) {
                 s.nav_kind = NavKind.Submit
                 s.nav_form = form
                 s.nav_submitter = submitter
@@ -768,21 +769,34 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     defer it.release(b)
     if one {
         try argText(it, a, 1, b)
+
+        if text.eql(b.bytes(), "outline") {
+            b.clear()
+            try css.writeOutline(values, b)
+
+            return it.newString(b.bytes())
+        }
+
         if text.eql(b.bytes(), "transition") {
             b.clear()
             try css.writeTransition(values, b)
             return it.newString(b.bytes())
         }
+
         let i = css.propertyIndex(b.bytes()) orelse return none
         b.clear()
-        try css.writeValue(animation.currentValue(&s.transitions, h, i, s.now) orelse values[i], b)
+        if animation.currentValue(&s.transitions, h, i, s.now) |v| {
+            try css.writeValue(v, b)
+        } else {
+            try css.writeComputed(values, i, b)
+        }
         return it.newString(b.bytes())
     }
     let o = try it.newObject(it.object_proto)
     try it.push(js.objVal(o))
     for i, prop in css.PROPERTIES {
         b.clear()
-        try css.writeValue(values[i], b)
+        try css.writeComputed(values, i, b)
         try setField(it, o, prop.name, b.bytes())
     }
     return it.pop()

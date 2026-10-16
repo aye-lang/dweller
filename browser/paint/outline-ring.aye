@@ -1,0 +1,30 @@
+import std.math
+import std.mem.AllocError
+import std.text
+import svg
+
+fn outlineRing(b: *mut Builder, kind: []u8, box: Rect, radii: Radii, from: f64, to: f64, c: Rgba) AllocError!void {
+    let o = Rect { x: box.x - to, y: box.y - to, w: box.w + 2.0 * to, h: box.h + 2.0 * to }
+    let t = to - from
+
+    if o.w <= 0.0 || o.h <= 0.0 || t <= 0.0 || c.a == 0 {
+        return
+    }
+
+    if isRound(radii) || text.eql(kind, "auto") {
+        let pic = try svg.newPicture(b.t.alloc)
+
+        try svg.addRoundBox(pic, 0.0, 0.0, o.w, o.h, spreadRadii(radii, to).v, svg.Color { r: c.r, g: c.g, b: c.b, a: c.a }, true, t, t, math.max(0.0, o.w - 2.0 * t), math.max(0.0, o.h - 2.0 * t), spreadRadii(radii, from).v)
+
+        return b.add(Item.Svg { r: o, pic: pic })
+    }
+
+    let fixed = b.fixed
+
+    b.fixed = true
+    try b.side(kind, o.x, o.y, o.w, t, true, c)
+    try b.side(kind, o.x, o.y + o.h - t, o.w, t, true, c)
+    try b.side(kind, o.x, o.y + t, t, o.h - 2.0 * t, false, c)
+    try b.side(kind, o.x + o.w - t, o.y + t, t, o.h - 2.0 * t, false, c)
+    b.fixed = fixed
+}

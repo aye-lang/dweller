@@ -1,6 +1,7 @@
 let VM_TARGET_LOCAL: u8 = 0
 let VM_TARGET_GLOBAL: u8 = 1
 let VM_TARGET_PROPERTY: u8 = 2
+let VM_TARGET_PATTERN: u8 = 3
 
 fn vmTargetKind(c: *Compiler, id: u32) u8 {
     match c.ast.node(id) {
@@ -9,12 +10,27 @@ fn vmTargetKind(c: *Compiler, id: u32) u8 {
                 return VM_TARGET_GLOBAL
             }
         }
+
         .Member { .. } => {
             return VM_TARGET_PROPERTY
         }
+
         .Index { .. } => {
             return VM_TARGET_PROPERTY
         }
+
+        .ArrayPat { .. } => {
+            return VM_TARGET_PATTERN
+        }
+
+        .ObjectPat { .. } => {
+            return VM_TARGET_PATTERN
+        }
+
+        .Default { .. } => {
+            return VM_TARGET_PATTERN
+        }
+
         _ => {}
     }
 

@@ -1,0 +1,15 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitTemplateLiteral)
+
+fn vmVisitTemplate(c: *mut Compiler, id: u32, n: u32) CompileError!void {
+    let mark = c.b.topReg
+    let r = c.b.newRegs(n as i32)
+    let t = vmTemplateParts(c.ast, id)
+
+    for k in 0..n {
+        try c.visit(c.ast.item(t.list, n + 1 + k))
+        try c.b.op1(BC_STAR, (r + k as i32) as i64)
+    }
+
+    try c.b.op2(BC_TEMPLATE_STRING, r as i64, id as i64)
+    c.b.releaseRegs(mark)
+}

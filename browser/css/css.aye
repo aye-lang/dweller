@@ -82,6 +82,7 @@ pub enum PKind {
     Number
     // An integer (any sign), or one of `keywords`.
     Int
+    Offset
     // Any component values, or one of `keywords`: kept as their text
     // (a `Keyword`) for layout to read (the grid properties, transforms).
     Raw
@@ -106,7 +107,7 @@ pub struct Property {
     initial: Value
 }
 
-pub let NPROPS: usize = 122
+pub let NPROPS: usize = 130
 
 pub let DISPLAY: usize = 0
 pub let POSITION: usize = 1
@@ -226,11 +227,19 @@ pub let FILTER: usize = 114
 // `transform` or `opacity` a layer of its own (paint.aye, P4.56).
 pub let WILL_CHANGE: usize = 115
 pub let POINTER_EVENTS: usize = 116
-pub let TRANSITION_PROPERTY: usize = 117
-pub let TRANSITION_DURATION: usize = 118
-pub let TRANSITION_TIMING_FUNCTION: usize = 119
-pub let TRANSITION_DELAY: usize = 120
-pub let TRANSITION_BEHAVIOR: usize = 121
+pub let TRANSLATE: usize = 117
+pub let ROTATE: usize = 118
+pub let SCALE: usize = 119
+pub let VERTICAL_ALIGN: usize = 120
+pub let OUTLINE_COLOR: usize = 121
+pub let OUTLINE_STYLE: usize = 122
+pub let OUTLINE_WIDTH: usize = 123
+pub let OUTLINE_OFFSET: usize = 124
+pub let TRANSITION_PROPERTY: usize = 125
+pub let TRANSITION_DURATION: usize = 126
+pub let TRANSITION_TIMING_FUNCTION: usize = 127
+pub let TRANSITION_DELAY: usize = 128
+pub let TRANSITION_BEHAVIOR: usize = 129
 
 /// Does nothing in layout/ and engine/geometry.aye read the property
 /// (a box, line or script geometry cannot change with it)? Taken from
@@ -248,7 +257,7 @@ pub fn paintOnly(p: usize) bool {
     }
     // SVG paint and `opacity`; backgrounds, masks, corner radii,
     // shadows and dashes; `filter`.
-    return p == FILTER || p == WILL_CHANGE || (p >= FILL && p <= STOP_OPACITY) || (p >= BACKGROUND_IMAGE && p <= STROKE_DASHOFFSET)
+    return p == FILTER || p == WILL_CHANGE || (p >= OUTLINE_COLOR && p <= OUTLINE_OFFSET) || (p >= FILL && p <= STOP_OPACITY) || (p >= BACKGROUND_IMAGE && p <= STROKE_DASHOFFSET)
 }
 
 let DISPLAYS = "inline block list-item inline-block table inline-table table-row-group table-header-group table-footer-group table-row table-cell table-column-group table-column table-caption flex inline-flex grid inline-grid flow-root contents none -webkit-box -webkit-inline-box"
@@ -260,7 +269,7 @@ let ALIGNS = "normal stretch flex-start flex-end start end self-start self-end c
 let BLACK = Color { r: 0, g: 0, b: 0, a: 1.0 }
 let TRANSPARENT = Color { r: 0, g: 0, b: 0, a: 0.0 }
 
-pub let PROPERTIES = [122]Property{
+pub let PROPERTIES = [130]Property{
     Property { name: "display", inherited: false, kind: PKind.Keywords, keywords: DISPLAYS, initial: Value.Keyword { k: "inline" } },
     Property { name: "position", inherited: false, kind: PKind.Keywords, keywords: "static relative absolute fixed sticky", initial: Value.Keyword { k: "static" } },
     Property { name: "color", inherited: true, kind: PKind.Color, keywords: "", initial: Value.Rgba { c: BLACK } },
@@ -380,6 +389,14 @@ pub let PROPERTIES = [122]Property{
     Property { name: "filter", inherited: false, kind: PKind.Layers, keywords: "none", initial: Value.Keyword { k: "none" } },
     Property { name: "will-change", inherited: false, kind: PKind.Raw, keywords: "auto", initial: Value.Keyword { k: "auto" } },
     Property { name: "pointer-events", inherited: true, kind: PKind.Keywords, keywords: "auto none all visiblepainted visiblefill visiblestroke visible painted fill stroke", initial: Value.Keyword { k: "auto" } },
+    Property { name: "translate", inherited: false, kind: PKind.Raw, keywords: "none", initial: Value.Keyword { k: "none" } },
+    Property { name: "rotate", inherited: false, kind: PKind.Raw, keywords: "none", initial: Value.Keyword { k: "none" } },
+    Property { name: "scale", inherited: false, kind: PKind.Raw, keywords: "none", initial: Value.Keyword { k: "none" } },
+    Property { name: "vertical-align", inherited: false, kind: PKind.Length, keywords: "baseline sub super text-top text-bottom middle top bottom", initial: Value.Keyword { k: "baseline" } },
+    Property { name: "outline-color", inherited: false, kind: PKind.Color, keywords: "auto", initial: Value.Keyword { k: "auto" } },
+    Property { name: "outline-style", inherited: false, kind: PKind.Keywords, keywords: "auto none dotted dashed solid double groove ridge inset outset", initial: Value.Keyword { k: "none" } },
+    Property { name: "outline-width", inherited: false, kind: PKind.BorderWidth, keywords: "", initial: Value.Px { v: 3.0 } },
+    Property { name: "outline-offset", inherited: false, kind: PKind.Offset, keywords: "inset", initial: Value.Px { v: 0.0 } },
     Property { name: "transition-property", inherited: false, kind: PKind.Raw, keywords: "", initial: Value.Keyword { k: "all" } },
     Property { name: "transition-duration", inherited: false, kind: PKind.Raw, keywords: "", initial: Value.Keyword { k: "0s" } },
     Property { name: "transition-timing-function", inherited: false, kind: PKind.Raw, keywords: "", initial: Value.Keyword { k: "ease" } },

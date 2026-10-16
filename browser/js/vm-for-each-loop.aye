@@ -1,0 +1,29 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement, VisitForInStatement)
+
+fn vmForEachLoop(c: *mut Compiler, r: i32, isOf: bool, left: u32, body: u32, scope: u32) CompileError!void {
+    let lp = try c.pushLoop()
+    let hdr = try c.b.loopHeader()
+    let v = c.b.newReg()
+
+    if isOf {
+        try c.b.op1(BC_ITERATOR_STEP, r as i64)
+        try c.b.op1(BC_STAR, v as i64)
+        try c.b.op1(BC_LDAR, (r + 2) as i64)
+        try c.b.jump(BC_JUMP_IF_TRUE, lp.brk)
+    } else {
+        try c.b.op1(BC_FOR_IN_NEXT, r as i64)
+        try c.b.jump(BC_JUMP_IF_UNDEFINED, lp.brk)
+        try c.b.op1(BC_STAR, v as i64)
+    }
+
+    try vmEnterScope(c, scope)
+    try c.b.op1(BC_LDAR, v as i64)
+    try vmForEachBind(c, left)
+    try c.visitStatement(body)
+    try vmExitScope(c, scope)
+    try c.b.bind(lp.cont)
+    try c.b.jumpLoop(hdr)
+    c.popLoop(lp)
+    try c.b.bind(lp.brk)
+    c.b.releaseRegs(v)
+}

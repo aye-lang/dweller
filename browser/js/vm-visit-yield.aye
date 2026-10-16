@@ -1,0 +1,15 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYield)
+
+fn vmVisitYield(c: *mut Compiler, id: u32, arg: u32, delegate: bool) CompileError!void {
+    if delegate {
+        return vmVisitYieldStar(c, arg)
+    }
+
+    if arg == 0 {
+        try c.b.op0(BC_LDA_UNDEFINED)
+    } else {
+        try c.visit(arg)
+    }
+
+    return vmSuspend(c, id)
+}

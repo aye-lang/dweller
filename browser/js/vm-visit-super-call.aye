@@ -1,0 +1,34 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCallSuper)
+
+fn vmVisitSuperCall(c: *mut Compiler, list: u32, n: u32, this_node: u32) CompileError!void {
+    if c.func == NONE {
+        try c.fail("unsupported: super in a script")
+    }
+
+    let mark = c.b.topReg
+    var spread = false
+
+    for k in 0..n {
+        spread = spread || c.ast.node(c.ast.item(list, k)) is .Spread
+    }
+
+    if spread {
+        let r = c.b.newReg()
+
+        try vmVisitArrayLiteral(c, list, n)
+        try c.b.op1(BC_STAR, r as i64)
+        try c.b.emit(BC_SUPER_CALL, r as i64, 0, 1)
+    } else {
+        let r = c.b.newRegs(n as i32)
+
+        for k in 0..n {
+            try c.visit(c.ast.item(list, k))
+            try c.b.op1(BC_STAR, (r + k as i32) as i64)
+        }
+
+        try c.b.emit(BC_SUPER_CALL, r as i64, n as i64, 0)
+    }
+
+    c.b.releaseRegs(mark)
+    try vmInitBinding(c, this_node)
+}

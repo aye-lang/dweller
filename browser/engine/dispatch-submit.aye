@@ -1,0 +1,15 @@
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+pub fn dispatchSubmit(p: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!bool {
+    let s = p.script orelse return true
+
+    s.submit_submitter = submitter
+
+    let go = try dispatchEvent(p, form, "submit", "")
+
+    s.submit_submitter = null
+
+    return go
+}

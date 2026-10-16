@@ -318,6 +318,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "inset") {
         first = INSET_TOP
         n = 4
+    } else if text.eql(name, "outline") {
+        first = OUTLINE_COLOR
+        n = 3
     } else if text.eql(name, "transition") {
         first = TRANSITION_PROPERTY
         n = 5
@@ -491,6 +494,9 @@ struct Declarer {
         }
         if text.eql(name, "border-radius") {
             return borderRadius(self, comps)
+        }
+        if text.eql(name, "outline") {
+            return outlineShorthand(self, comps)
         }
         if text.eql(name, "list-style") {
             return self.listStyle(comps)
@@ -1097,9 +1103,13 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     if p.kind == PKind.TextDecoration {
         return decorationLines(sheet, comps)
     }
+    if prop == TRANSLATE || prop == ROTATE || prop == SCALE {
+        return individualTransformValue(sheet, prop, comps)
+    }
     if prop >= TRANSITION_PROPERTY && prop <= TRANSITION_BEHAVIOR {
         return transitionList(sheet, prop, comps)
     }
+
     if p.kind == PKind.Raw {
         if comps.len == 1 && comps[0].toks[0].kind == Tok.Ident && comps[0].toks.len == 1 {
             if inList(comps[0].toks[0].text, p.keywords) |k| {
@@ -1197,6 +1207,9 @@ fn single(p: Property, c: Comp) ?Value {
                 return Value.Number { v: n }
             }
             return null
+        }
+        .Offset => {
+            return lengthValue(c, false, false)
         }
         .Int => {
             if t.kind == Tok.Number && c.toks.len == 1 && t.flag {

@@ -1,0 +1,11 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitForInStatement)
+
+fn vmVisitForIn(c: *mut Compiler, left: u32, right: u32, body: u32, scope: u32) CompileError!void {
+    try c.visit(right)
+
+    let r = c.b.newRegs(3)
+
+    try c.b.op1(BC_FOR_IN_PREPARE, r as i64)
+    try vmForEachLoop(c, r, false, left, body, scope)
+    c.b.releaseRegs(r)
+}
