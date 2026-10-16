@@ -203,7 +203,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
-| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a, P4.40b done | – |
+| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a, P4.40b, P4.40c done | – |
 | B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
 | B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
@@ -462,6 +462,14 @@ them from coming back.
 - verify: the `perf` job green on the PR; a branch with the deliberate regression of P4.40a fails it
 - time box: 45 min; model: sonnet
 - status P4.40b: done 2026-10-16 (PR #108). The `perf` job (macos-latest, own copy of the browser job's setup, `aye build browser -o target/dweller`, then the gate) runs about 2.5 min. Budgets re-recorded from the runner: 5 gate runs in one job plus the first run, no `--update` (it never raises a budget; the gate's table prints on failure). Spread on the runner: `layout_full` feed 18–20, article 13–15, animated 55 (steady); `raster_px` animated 397995 or 422161 (budget the higher), the others steady; `net_sync` of feed 1–76 (image load tasks call `net.waitLoad` as far as the wall clock lets them run, 110 images): budget 110, and `net_sync` has no ratchet (`UNRATCHETED` in `perf_gate.py`). Slack unchanged. With a full restyle forced per relayout (throwaway commit, reverted) the job fails (`animated` `style_full` 159, `layout_full` 318, `feed` `style_full` 8); green again after the revert.
+
+#### P4.40c: net_sync counts only synchronous network waits
+- goal: `net_sync` is a deterministic count of the waits where the window thread blocks on the network (Phase A exit: none in a loop iteration), so it is back in the ratchet. P4.40b found it ranging 1–76 on `feed` because `net.waitLoad` was counted for every timer task of an image or async fetch completion, which the wall clock paces.
+- change: `waitLoad` (loader.aye) no longer records; `prefetch` (multi.aye), the one forced wait in the loader, records `net_sync` around each wait; the synchronous transfer in http.aye still does. Image and async completions keep their own `image_wait` record (script.aye `runTimer`), reported by `window_perf.py` and not in the budgets. `UNRATCHETED` is gone from `perf_gate.py`.
+- files: `browser/net/loader.aye`, `browser/net/multi.aye`, `browser/tools/perf_gate.py`, `browser/tests/perf/budgets.json`
+- verify: `gate` five times in a row: `net_sync` identical on every page
+- time box: 30 min; model: sonnet
+- status P4.40c: done 2026-10-16. `net_sync` is 1 on `feed`, `animated`, `paint_heavy` and `article` (the page's own document fetch), identical in 5 gate runs on Linux; budgets set to 1. The count is deterministic, so the macOS runner's values must match (1 each; any other value there is a regression, not noise). Left alone: on this Linux box `article` `layout_full` measures 26–28 (budget 15, from the macOS runner) and `feed` 13 (budget 20), on unmodified main too, so the gate as a whole exits 1 here for those two; `net_sync` rows are `ok`.
 
 #### P4.35: raster cache
 - goal: gradient tiles, SVG images, blurred shadows and filter/opacity layers are rasterized once per display item at device size and reused while the item and its size are unchanged (cause 3). P4.5 (decode offscreen images at paint time) joins here.
