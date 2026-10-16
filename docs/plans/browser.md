@@ -472,6 +472,14 @@ them from coming back.
 - time box: 30 min; model: sonnet
 - status P4.40c: done 2026-10-16. `net_sync` is 1 on `feed`, `animated`, `paint_heavy` and `article` (the page's own document fetch), identical in 5 gate runs on Linux; budgets set to 1. The count is deterministic, so the macOS runner's values must match (1 each; any other value there is a regression, not noise). Left alone: on this Linux box `article` `layout_full` measures 26–28 (budget 15, from the macOS runner) and `feed` 13 (budget 20), on unmodified main too, so the gate as a whole exits 1 here for those two; `net_sync` rows are `ok`.
 
+#### P4.40d: layout_full counts deterministically
+- goal: `layout_full` is a deterministic count, so the ratchet (a metric under 0.8 × budget) may fail the gate again. It varies 10-20 between runs on CI because it depends on wall-clock pacing, as `net_sync` did before P4.40c: it counts full layouts per frame, and image arrivals and the ticker are paced by the clock. Count the relayouts caused by document changes (one per change of the document, not one per frame).
+- change: until then the ratchet is a hint: a metric under 0.8 × budget is printed `LOWER` plus one line naming how many could be lowered with `gate --update`, and only `OVER` and `new` fail the gate. When `layout_full` is deterministic, `LOWER` fails again.
+- files: `browser/layout/`, `browser/ui/`, `browser/tools/perf_gate.py`, `browser/tests/perf/budgets.json`
+- verify: `gate` five times in a row: `layout_full` identical on every page, on Linux and on the macOS runner
+- time box: 60 min; model: opus
+- status P4.40d: not started. The hint (`LOWER` no longer fatal) landed first as P4.40: LOWER is a hint, not a failure (PRs #112, #113, #114 failed at random on it).
+
 #### P4.35: raster cache
 - goal: gradient tiles, SVG images, blurred shadows and filter/opacity layers are rasterized once per display item at device size and reused while the item and its size are unchanged (cause 3). P4.5 (decode offscreen images at paint time) joins here.
 - files: `browser/paint/raster.aye`, `browser/paint/background.aye`, `browser/paint/filter.aye`, `browser/paint/paint.aye`, `browser/svg/`
