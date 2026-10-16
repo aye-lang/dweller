@@ -46,6 +46,7 @@ fn installCanvas(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "canvasDraw", 10, akCanvasDraw)
     try defMethod(it, o, "canvasPixels", 6, akCanvasPixels)
     try defMethod(it, o, "canvasPng", 1, akCanvasPng)
+    try defMethod(it, o, "canvasDecode", 2, akCanvasDecode)
     try defMethod(it, o, "canvasColor", 1, akCanvasColor)
     try defMethod(it, o, "canvasHit", 4, akCanvasHit)
     try defMethod(it, o, "canvasText", 4, akCanvasText)
@@ -1272,6 +1273,81 @@ fn akCanvasPng(it: *mut Interp, a: Args) JsError!Value {
     let png = try paint.encodePng(it.alloc, c.bmp.width, c.bmp.height, c.bmp.pixels)
     defer it.alloc.free(png)
     return pngDataUrl(it, png)
+}
+
+// canvasDecode(canvas, bytes): decodes the image in `bytes` (a Blob's
+// string of code units 0..255; PNG, JPEG, GIF, WebP) into the canvas,
+// whose size becomes the image's. Gives [width, height], or null when the
+// bytes are not an image the decoders handle (or it is larger than a
+// canvas).
+fn akCanvasDecode(it: *mut Interp, a: Args) JsError!Value {
+    let b = try it.builder()
+    defer it.release(b)
+    try argText(it, a, 1, b)
+    let raw = try it.builder()
+    defer it.release(raw)
+    try binaryBytes(b.bytes(), raw)
+    let bmp = image.decode(it.alloc, raw.bytes()) catch |e| {
+        return Value.Null
+    }
+    defer bmp.deinit(it.alloc)
+    if bmp.width > CANVAS_SIDE || bmp.height > CANVAS_SIDE || bmp.width * bmp.height > CANVAS_PIXELS {
+        return Value.Null
+    }
+    let h = handleOf(it, it.arg(a, 0), TAG_NODE) orelse {
+        try it.typeError("Canvas source is not an element")
+        return JsError.Thrown
+    }
+    let p = scriptOf(it).active
+    let sizes = [2]usize{bmp.width, bmp.height}
+    for k in 0..2 {
+        let v = try it.builder()
+        defer it.release(v)
+        var digits = @zeroed([24]u8)
+        var n: usize = 0
+        var x = sizes[k]
+        while true {
+            digits[n] = '0' + (x % 10) as u8
+            n += 1
+            x = x / 10
+            if x == 0 {
+                break
+            }
+        }
+        while n > 0 {
+            n -= 1
+            try v.appendByte(digits[n])
+        }
+        var name: []u8 = "width"
+        if k == 1 {
+            name = "height"
+        }
+        try p.doc.setAttr(h, name, v.bytes())
+        try resetCanvas(p, h, name)
+    }
+    let c = try canvasBitmap(it, it.arg(a, 0))
+    if c.bmp.pixels.len != bmp.pixels.len {
+        return Value.Null
+    }
+    // A transparent pixel has no color, as in every canvas bitmap.
+    var i: usize = 0
+    while i < bmp.pixels.len {
+        if bmp.pixels[i + 3] == 0 {
+            bmp.pixels[i] = 0
+            bmp.pixels[i + 1] = 0
+            bmp.pixels[i + 2] = 0
+        }
+        i += 4
+    }
+    std.mem.copy(c.bmp.pixels, bmp.pixels)
+    c.bmp.version += 1
+    canvasChanged(it)
+    let arr = try it.newArray(0)
+    try it.push(js.objVal(arr))
+    defer it.pop()
+    try it.heap.pushElem(arr, js.numVal(sizes[0] as f64))
+    try it.heap.pushElem(arr, js.numVal(sizes[1] as f64))
+    return js.objVal(arr)
 }
 
 fn pngDataUrl(it: *mut Interp, png: []u8) JsError!Value {
