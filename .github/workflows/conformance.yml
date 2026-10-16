@@ -1,0 +1,36 @@
+name: conformance
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            target/wpt
+            target/test262
+          key: conformance-${{ hashFiles('browser/tools/wpt.rev', 'browser/tools/test262.rev', 'browser/tools/wpt_areas.json') }}
+      - run: sh scripts/setup-ubuntu.sh
+      - run: |
+          git clone https://github.com/aye-lang/aye ../aye
+          git -C ../aye checkout "$(cat AYE_REV)"
+          cargo build --release --manifest-path ../aye/Cargo.toml
+          echo "AYE=$PWD/../aye/target/release/aye" >> "$GITHUB_ENV"
+      - run: browser/build.sh
+      - run: python3 browser/tools/wpt.py fetch && python3 browser/tools/test262.py fetch
+      - run: python3 browser/tools/conformance.py run -j "$(nproc)"
+      - run: python3 browser/tools/conformance.py check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-results
+          path: |
+            target/wpt-results
+            target/test262-results
