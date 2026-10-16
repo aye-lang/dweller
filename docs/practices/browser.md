@@ -457,17 +457,17 @@ stale after the first script that touches it.
 
 ## Code style
 
-### Write blocks and comments like the surrounding code
-**Context:** any change in `browser/`, especially from another model or
-branch.
-**Bad:** the forms branch wrote one-line blocks
-(`if text.eql(t, "file") { return "" }`) and new struct fields without
-comments; `e64d41c` expanded them and added the comments.
-**Good:** one statement per line in a block, and a comment on each new
-field like its neighbours (`browser/dom/controls.aye:31`, `:58-61`).
-**Why:** `aye fmt` keeps line breaks as written, so style is the
-author's job, and the field comments are the only place ownership
-("owned", "null for none") is written down.
+### Follow `.claude/skills/code-taste`
+**Context:** any change in `browser/`.
+**Bad:** a 700-line file with a header comment, field comments for
+ownership and ten functions over five lines.
+**Good:** the rules of `.claude/skills/code-taste/SKILL.md`: no comments
+but one-line reference links, files of at most 300 lines, one function
+per file in a module directory, blank lines between kinds of statement.
+`browser/tools/check_taste.py` checks them with a baseline that only
+improves.
+**Why:** the CEO's code taste (2026-10-16), taken from anyknown-com;
+the old rule "comments like the surrounding code" is replaced.
 
 ## Tests
 
