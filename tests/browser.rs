@@ -830,6 +830,95 @@ fn webaudio_core() {
     );
 }
 
+/// `browser/tests/audio/effects.html` (P11.20, Web Audio effects):
+/// OfflineAudioContext renders through BiquadFilterNode (8 types, with the
+/// frequency responses), StereoPannerNode, DynamicsCompressorNode and
+/// ConvolverNode. Each `ref NAME v,v,..` line of its output must match
+/// `effects.ref` (the page's output in Chrome) within 1e-3; the other
+/// lines must be `effects.txt` (Chrome's too). No audio device is used.
+#[test]
+fn webaudio_effects() {
+    let page = "browser/tests/audio/effects.html";
+    let golden = root().join("browser/tests/audio/effects.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut refs = std::collections::HashMap::new();
+    let mut rest = String::new();
+    for l in got.lines() {
+        match l.strip_prefix("ref ") {
+            Some(r) => {
+                let (name, values) = r.split_once(' ').unwrap_or((r, ""));
+                refs.insert(name.to_string(), values.to_string());
+            }
+            None => rest.push_str(&format!("{l}\n")),
+        }
+    }
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &rest).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(rest, want, "differs from {}", golden.display());
+
+    let reference =
+        std::fs::read_to_string(root().join("browser/tests/audio/effects.ref")).unwrap();
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for l in reference.lines() {
+        let (name, values) = l.split_once(' ').unwrap();
+        checked += 1;
+        let Some(have) = refs.get(name) else {
+            failures.push(format!("{name}: missing"));
+            continue;
+        };
+        let want: Vec<f64> = values.split(',').map(|v| v.parse().unwrap()).collect();
+        let have: Vec<f64> = have
+            .split(',')
+            .map(|v| v.parse().unwrap_or(f64::INFINITY))
+            .collect();
+        if want.len() != have.len() {
+            failures.push(format!(
+                "{name}: {} samples, want {}",
+                have.len(),
+                want.len()
+            ));
+            continue;
+        }
+        // The worst difference (NaN must be NaN).
+        let mut worst = (0.0f64, 0usize);
+        for (i, (w, h)) in want.iter().zip(&have).enumerate() {
+            let d = if w.is_nan() && h.is_nan() {
+                0.0
+            } else if w.is_nan() || h.is_nan() {
+                f64::INFINITY
+            } else {
+                (w - h).abs()
+            };
+            if d > worst.0 {
+                worst = (d, i);
+            }
+        }
+        if worst.0 >= 1e-3 {
+            failures.push(format!(
+                "{name}: sample {} is {} (want {})",
+                worst.1, have[worst.1], want[worst.1]
+            ));
+        }
+    }
+    assert!(checked >= 60, "only {checked} reference lines");
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} differ:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 /// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
 /// checksum must be node's; the median time of 20M steps is printed (with
 /// node's when `node` is installed) for comparison, not checked.
