@@ -117,8 +117,7 @@ pub fn isTransformed(t: *Tree, i: usize) bool {
 }
 
 fn hasTransform(style: []css.Value) bool {
-    let k = keywordOf(style[css.TRANSFORM])
-    return k.len > 0 && !text.eql(k, "none")
+    return isSet(style[css.TRANSFORM]) || isSet(style[css.TRANSLATE]) || isSet(style[css.ROTATE]) || isSet(style[css.SCALE])
 }
 
 // Applies the transforms of the boxes in tree order (an ancestor's
@@ -157,7 +156,7 @@ pub fn translationOf(t: *Tree, i: usize) ?[2]f64 {
         return null
     }
     let b = t.bx(i)
-    let m = parseTransform(keywordOf(b.style[css.TRANSFORM]), b.w, b.h, unitsOf(t, i)) orelse return null
+    let m = boxTransform(b.style, b.w, b.h, unitsOf(t, i)) orelse return null
     return [2]f64{m.e, m.f}
 }
 
@@ -178,7 +177,7 @@ pub fn retransform(t: *mut Tree, i: usize) AllocError!bool {
     }
     let b = t.bx(i).*
     let u = unitsOf(t, i)
-    let m = parseTransform(keywordOf(b.style[css.TRANSFORM]), b.w, b.h, u) orelse return false
+    let m = boxTransform(b.style, b.w, b.h, u) orelse return false
     let o = parseOrigin(keywordOf(b.style[css.TRANSFORM_ORIGIN]), b.w, b.h, u)
     let linear = m.a != 1.0 || m.b != 0.0 || m.c != 0.0 || m.d != 1.0
     let aligned = (m.b == 0.0 && m.c == 0.0) || (m.a == 0.0 && m.d == 0.0)
@@ -320,7 +319,7 @@ fn replay(t: *mut Tree, k: usize, shifts: *mut List([2]f64), skip: ?[]usize) All
 fn applyTransform(t: *mut Tree, i: usize) AllocError!void {
     let b = t.bx(i).*
     let u = unitsOf(t, i)
-    let m = parseTransform(keywordOf(b.style[css.TRANSFORM]), b.w, b.h, u) orelse return
+    let m = boxTransform(b.style, b.w, b.h, u) orelse return
     let o = parseOrigin(keywordOf(b.style[css.TRANSFORM_ORIGIN]), b.w, b.h, u)
     shiftSubtree(t, i, m.e, m.f)
     let linear = m.a != 1.0 || m.b != 0.0 || m.c != 0.0 || m.d != 1.0

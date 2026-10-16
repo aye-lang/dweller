@@ -1,0 +1,49 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#ctm
+fn boxTransform(style: []css.Value, w: f64, h: f64, u: Units) ?Affine {
+    var nums = @zeroed([16]f64)
+    let parts = [3]?Affine{
+        individualPart("translate", style[css.TRANSLATE], w, h, u, nums[..]),
+        rotatePart(keywordOf(style[css.ROTATE]), u, nums[..]),
+        individualPart("scale3d", style[css.SCALE], w, h, u, nums[..]),
+    }
+
+    var m = Affine.identity()
+    var any = false
+
+    for p in parts {
+        if p |f| {
+            m = m.then(f)
+            any = true
+        }
+    }
+
+    if isSet(style[css.TRANSFORM]) {
+        if parseTransform(keywordOf(style[css.TRANSFORM]), w, h, u) |f| {
+            m = m.then(f)
+            any = true
+        }
+    }
+
+    if !any {
+        return null
+    }
+
+    return m
+}
+
+fn individualPart(name: []u8, v: css.Value, w: f64, h: f64, u: Units, nums: []mut f64) ?Affine {
+    if !isSet(v) {
+        return null
+    }
+
+    return transformFunction(name, keywordOf(v), w, h, u, nums)
+}
+
+fn isSet(v: css.Value) bool {
+    let k = keywordOf(v)
+
+    return k.len > 0 && !text.eql(k, "none")
+}
