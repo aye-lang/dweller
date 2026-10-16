@@ -1,0 +1,43 @@
+import css
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css2/#height-layout
+fn alignCells(t: *mut Tree, r: usize, h: f64) f64 {
+    var base = 0.0
+    var below = 0.0
+
+    for c in t.children(r) {
+        if alignsBaseline(t, c) {
+            base = math.max(base, t.bx(c).first_baseline)
+            below = math.max(below, t.bx(c).h - t.bx(c).first_baseline)
+        }
+    }
+
+    let row_h = math.max(h, base + below)
+
+    for c in t.children(r) {
+        let word = keywordOf(t.bx(c).style[css.VERTICAL_ALIGN])
+        let free = row_h - contentExtent(t, c)
+        var dy = 0.0
+
+        if alignsBaseline(t, c) {
+            dy = base - t.bx(c).first_baseline
+        } else if text.eql(word, "middle") {
+            dy = free / 2.0
+        } else if text.eql(word, "bottom") {
+            dy = free
+        }
+
+        shiftContents(t, c, dy)
+        t.bx(c).h = row_h
+    }
+
+    return row_h
+}
+
+fn alignsBaseline(t: *Tree, c: usize) bool {
+    let word = keywordOf(t.bx(c).style[css.VERTICAL_ALIGN])
+
+    return t.bx(c).first_baseline >= 0.0 && !text.eql(word, "top") && !text.eql(word, "middle") && !text.eql(word, "bottom")
+}

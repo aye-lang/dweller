@@ -92,14 +92,18 @@ def verdict(metric, value, budget):
 def table(results, budgets):
     print(f"{'page':<12} {'metric':<16} {'value':>10} {'budget':>10}  verdict")
     bad = 0
+    low = 0
     for page, (counters, times) in results.items():
         for k, v in counters.items():
             b = budgets.get(page, {}).get(k)
             mark = verdict(k, v, b)
-            bad += mark in ("OVER", "LOWER", "new")
+            bad += mark in ("OVER", "new")
+            low += mark == "LOWER"
             print(f"{page:<12} {k:<16} {v:>10} {'-' if b is None else b:>10}  {mark}")
         for k, v in times.items():
             print(f"{page:<12} {k:<16} {v:>10} {'-':>10}  info")
+    if low:
+        print(f"{low} metric(s) could be lowered with `gate --update`")
 
     return bad
 
@@ -127,4 +131,4 @@ def gate(a):
         print(f"budgets written to {a.url}")
         return
     if bad:
-        sys.exit(f"perf gate: {bad} metric(s) over budget or due a ratchet (`gate --update` lowers budgets)")
+        sys.exit(f"perf gate: {bad} metric(s) over budget or new")

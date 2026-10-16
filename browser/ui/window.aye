@@ -467,6 +467,7 @@ pub struct Ui {
     relayout_ms: u64 = 0
     frame_ns: u64 = 16666667
     next_frame_ns: u64 = 0
+    hidden: bool = false
     input_ns: u64 = 0
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
@@ -638,10 +639,11 @@ pub struct Ui {
                 try resumeScript(self)
                 perf.end("ui_events", t_script, "script")
             }
+            try syncTabs(self)
             // The page's timers wait until its scripts ran one per
             // iteration (`advanceLoad`), as when one task ran them all;
             // they run while its frames load.
-            if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
+            if self.tab.page != null && !self.hidden && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
                 let p = self.tab.page.?
                 let t_timers = perf.start()
                 // The WebGL frames read back at the end of the last frame.
@@ -1349,9 +1351,11 @@ pub struct Ui {
                     try self.pointerEvent("pointercancel", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
                 }
             } else if we.event == SDL_WINDOWEVENT_MINIMIZED || we.event == SDL_WINDOWEVENT_HIDDEN {
-                try self.hostState("hidden")
+                self.hidden = windowGone(self.window, we.window)
+                try syncTabs(self)
             } else if we.event == SDL_WINDOWEVENT_RESTORED || we.event == SDL_WINDOWEVENT_SHOWN {
-                try self.hostState("visible")
+                self.hidden = false
+                try syncTabs(self)
             }
         } else if kind == SDL_KEYDOWN || kind == SDL_KEYUP {
             let ke = &ev.key

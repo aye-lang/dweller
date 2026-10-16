@@ -1,0 +1,51 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#propdef-rotate
+fn writeRotate(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    if comps.len == 0 || comps.len > 4 {
+        return false
+    }
+
+    var deg = 0.0
+    var axis = comps[..comps.len - 1]
+
+    if comps.len > 1 && rotateAngle(comps[0]) != null {
+        deg = rotateAngle(comps[0]) orelse 0.0
+        axis = comps[1..]
+    } else {
+        deg = rotateAngle(comps[comps.len - 1]) orelse return false
+    }
+
+    var v = [3]f64{0.0, 0.0, 1.0}
+
+    if axis.len == 1 {
+        v = namedAxis(axis[0]) orelse return false
+    } else if axis.len == 3 {
+        for k, c in axis {
+            v[k] = plainNumber(c) orelse return false
+        }
+    } else if axis.len != 0 {
+        return false
+    }
+
+    try writeAxisAngle(v, deg, out)
+
+    return true
+}
+
+fn rotateAngle(c: Comp) ?f64 {
+    if c.toks.len != 1 || c.toks[0].kind != Tok.Dimension {
+        return null
+    }
+
+    return angleDegrees(c.toks[0])
+}
+
+fn plainNumber(c: Comp) ?f64 {
+    if c.toks.len != 1 || c.toks[0].kind != Tok.Number {
+        return null
+    }
+
+    return c.toks[0].num
+}

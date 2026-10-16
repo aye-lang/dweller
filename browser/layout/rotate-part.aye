@@ -1,0 +1,35 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#propdef-rotate
+fn rotatePart(s: []u8, u: Units, nums: []mut f64) ?Affine {
+    if s.len == 0 || text.eql(s, "none") {
+        return null
+    }
+
+    var parts = [4][]u8{"", "", "", ""}
+    let n = splitArgs(s, parts[..])
+
+    if n == 1 {
+        return transformFunction("rotate", s, 0.0, 0.0, u, nums)
+    }
+
+    let r = angleArg(parts[n - 1]) orelse return null
+
+    if n == 2 && text.eql(parts[0], "x") {
+        return axisRotation(1.0, 0.0, 0.0, r)
+    }
+
+    if n == 2 && text.eql(parts[0], "y") {
+        return axisRotation(0.0, 1.0, 0.0, r)
+    }
+
+    if n != 4 {
+        return null
+    }
+
+    for k in 0..3 {
+        nums[k] = numberArg(parts[k]) orelse return null
+    }
+
+    return axisRotation(nums[0], nums[1], nums[2], r)
+}
