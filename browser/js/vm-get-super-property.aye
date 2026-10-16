@@ -1,0 +1,13 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitKeyedSuperPropertyLoad)
+
+fn vmGetSuperProperty(it: *mut Interp, thisv: Value, key: Value, id: u32) JsError!Value {
+    match it.ast.node(id) {
+        .SuperMember { name, .. } => {
+            return it.superGet(name, thisv)
+        }
+
+        _ => {}
+    }
+
+    return it.superGet(try it.toKey(key), thisv)
+}

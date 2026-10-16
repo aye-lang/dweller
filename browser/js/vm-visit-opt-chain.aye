@@ -1,0 +1,14 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitOptionalChain)
+
+fn vmVisitOptChain(c: *mut Compiler, e: u32) CompileError!void {
+    let saved = c.opt_nullish
+    let end = try c.b.newLabel()
+
+    c.opt_nullish = try c.b.newLabel()
+    try c.visit(e)
+    try c.b.jump(BC_JUMP, end)
+    try c.b.bind(c.opt_nullish)
+    try c.b.op0(BC_LDA_UNDEFINED)
+    try c.b.bind(end)
+    c.opt_nullish = saved
+}

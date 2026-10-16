@@ -1,0 +1,53 @@
+// spec: https://tc39.es/ecma262/#sec-runtime-semantics-classdefinitionevaluation
+
+fn defineClass(it: *mut Interp, c: u32, base: usize, named: bool) JsError!Value {
+    let ci = it.ast.classes.items()[c]
+    let top = it.stack.len()
+    let hv = it.slot(base)
+
+    defer it.truncate(top)
+
+    var protoParent = it.object_proto
+    var ctorParent = it.function_proto
+
+    if ci.heritage != 0 && hv is .Null {
+        protoParent = NONE
+    } else if ci.heritage != 0 {
+        if !it.isCallable(hv) {
+            return it.typeErrorAbout("Class extends value ", it.ast.srcText(ci.heritage), " is not a constructor or null")
+        }
+
+        let pp = try it.getProp(hv, A_PROTOTYPE)
+
+        protoParent = objectOf(pp)
+
+        if protoParent == NONE && !(pp is .Null) {
+            return it.typeError("Class extends value does not have valid prototype property")
+        }
+
+        ctorParent = objectOf(hv)
+    }
+
+    let proto = try it.newObject(protoParent)
+
+    try it.push(objVal(proto))
+
+    let ctor = try it.newObjectOf(Class.Function, ctorParent, ObjData.Closure { func: ci.ctor, env: it.env, home: proto, outer: NONE })
+
+    try it.push(objVal(ctor))
+
+    if named {
+        it.heap.env(it.env).slots[0] = objVal(ctor)
+    }
+
+    try it.heap.addProp(ctor, A_PROTOTYPE, objVal(proto), Value.Undefined, 0)
+    try it.heap.addProp(proto, A_CONSTRUCTOR, objVal(ctor), Value.Undefined, F_HIDDEN)
+
+    var key = base + 1
+
+    for k in 0..ci.n {
+        key = try defineClassElement(it, it.ast.item(ci.members, k), ctor, proto, key)
+    }
+
+    return objVal(ctor)
+}

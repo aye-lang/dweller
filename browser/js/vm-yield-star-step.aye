@@ -1,0 +1,57 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+
+fn vmYieldStarStep(it: *mut Interp, at: usize) JsError!Value {
+    if it.slot(at + 1) is .Empty {
+        it.setSlot(at, try it.getIteratorObject(it.slot(at)))
+        it.setSlot(at + 1, try it.getProp(it.slot(at), A_NEXT))
+    }
+
+    let mode = vmYieldStarMode(it, at)
+    var method = it.slot(at + 1)
+
+    if mode == RESUME_THROW {
+        method = try it.getProp(it.slot(at), try it.intern("throw"))
+    } else if mode == RESUME_RETURN {
+        method = try it.getProp(it.slot(at), try it.intern("return"))
+    }
+
+    if isNullish(method) {
+        if mode == RESUME_RETURN {
+            return boolVal(true)
+        }
+
+        let close = try it.getProp(it.slot(at), try it.intern("return"))
+
+        if !isNullish(close) {
+            _ = try it.call0(close, it.slot(at))
+        }
+
+        try it.typeError("The iterator does not provide a 'throw' method")
+    }
+
+    let r = try it.call1(method, it.slot(at), it.slot(at + 3))
+
+    if !isObject(r) {
+        try it.notA(r, "an iterator result object")
+    }
+
+    try it.push(r)
+
+    let done = it.toBoolean(try it.getProp(r, A_DONE))
+
+    it.setSlot(at + 3, try it.getProp(r, A_VALUE))
+    it.pop()
+
+    if done && mode == RESUME_THROW {
+        it.setSlot(at + 2, numVal(0.0))
+    }
+
+    return boolVal(done)
+}
+
+fn vmYieldStarMode(it: *mut Interp, at: usize) u8 {
+    return match it.slot(at + 2) {
+        .Num { n } => n as u8
+        _ => RESUME_NEXT
+    }
+}

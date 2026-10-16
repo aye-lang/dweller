@@ -1,0 +1,19 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
+
+fn vmIteratorRest(it: *mut Interp, at: usize) JsError!Value {
+    let rest = try it.newArray(0)
+
+    try it.push(objVal(rest))
+
+    while true {
+        let v = try vmIteratorStep(it, at)
+
+        if vmIteratorDone(it, at) {
+            break
+        }
+
+        try it.heap.pushElem(rest, v)
+    }
+
+    return it.pop()
+}

@@ -1,0 +1,22 @@
+// v8: src/interpreter/interpreter-generator.cc (GetIterator)
+
+fn vmGetIterator(it: *mut Interp, at: usize, v: Value) JsError!void {
+    it.setSlot(at + 2, Value.Bool { b: false })
+
+    if it.nativeIterable(v) {
+        it.setSlot(at, objVal(try it.iterToArray(v)))
+        it.setSlot(at + 1, Value.Num { n: 0.0 })
+
+        return
+    }
+
+    let top = it.stack.len()
+
+    if isNullish(v) || !try it.openIterator(v) {
+        try it.notA(v, "iterable")
+    }
+
+    it.setSlot(at, it.slot(top))
+    it.setSlot(at + 1, it.slot(top + 1))
+    it.truncate(top)
+}

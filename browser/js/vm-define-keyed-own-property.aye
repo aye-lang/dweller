@@ -1,0 +1,23 @@
+// v8: src/interpreter/interpreter-generator.cc (DefineKeyedOwnPropertyInLiteral)
+
+fn vmDefineKeyedOwnProperty(it: *mut Interp, o: u32, prop: u32, k: Value, v: Value) JsError!void {
+    let key = try it.toKey(k)
+    let kind = match it.ast.node(prop) {
+        .Prop { kind: pk, .. } => pk
+        _ => PROP_INIT
+    }
+
+    if kind != PROP_INIT {
+        it.setHome(objectOf(v), o)
+    }
+
+    if kind == PROP_GET {
+        return it.defineAccessor(o, key, v, Value.Undefined, F_ENUM | F_CONFIG)
+    }
+
+    if kind == PROP_SET {
+        return it.defineAccessor(o, key, Value.Undefined, v, F_ENUM | F_CONFIG)
+    }
+
+    return it.defineOwn(o, key, v, F_DEFAULT)
+}

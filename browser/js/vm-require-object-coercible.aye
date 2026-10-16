@@ -1,0 +1,12 @@
+// spec: https://tc39.es/ecma262/#sec-requireobjectcoercible
+
+fn vmRequireObjectCoercible(c: *mut Compiler, o: i32) CompileError!void {
+    let bad = try c.b.newLabel()
+    let end = try c.b.newLabel()
+
+    try c.b.jump(BC_JUMP_IF_UNDEFINED_OR_NULL, bad)
+    try c.b.jump(BC_JUMP, end)
+    try c.b.bind(bad)
+    try c.b.op2(BC_GET_KEYED_PROPERTY, o as i64, c.b.newSlot() as i64)
+    try c.b.bind(end)
+}

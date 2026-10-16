@@ -1,0 +1,27 @@
+// v8: src/interpreter/interpreter-generator.cc (ForInPrepare)
+
+fn vmForInPrepare(it: *mut Interp, at: usize, v: Value) JsError!void {
+    let arr = try it.newArray(0)
+
+    it.setSlot(at, objVal(arr))
+    it.setSlot(at + 1, Value.Num { n: 0.0 })
+    it.setSlot(at + 2, Value.Undefined)
+
+    if isNullish(v) {
+        return
+    }
+
+    let o = try it.toObject(v)
+
+    it.setSlot(at + 2, objVal(o))
+
+    let keys = try it.keyList()
+
+    defer it.releaseKeys(keys)
+
+    try vmForInKeys(it, o, keys)
+
+    for key in keys.items() {
+        try it.heap.pushElem(arr, Value.Num { n: key as f64 })
+    }
+}

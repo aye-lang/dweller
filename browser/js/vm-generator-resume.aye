@@ -1,0 +1,32 @@
+// v8: src/builtins/builtins-generator-gen.cc (GeneratorBuiltinsAssembler::InnerResume)
+
+fn vmGeneratorResume(it: *mut Interp, g: u32, mode: u8, v: Value) JsError!Value {
+    var f = vmGenFrame(it, g)
+
+    if f.state == CO_RUNNING {
+        return it.typeError("Generator is already running")
+    }
+
+    if f.state == CO_DONE {
+        return vmGeneratorDone(it, mode, v)
+    }
+
+    f.state = CO_RUNNING
+    f.mode = mode
+    f.input = v
+    vmSetGenFrame(it, g, f)
+
+    let r = vmGeneratorRun(it, g, f) catch |e| {
+        vmGeneratorClose(it, g)
+
+        return e
+    }
+
+    if vmGenFrame(it, g).state == CO_RUNNING {
+        vmGeneratorClose(it, g)
+
+        return iterResult(it, r, true)
+    }
+
+    return iterResult(it, r, false)
+}

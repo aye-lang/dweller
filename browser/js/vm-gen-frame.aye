@@ -1,0 +1,22 @@
+// v8: src/objects/js-generator.h
+
+struct VmGenFrame {
+    func: u32
+    fobj: u32
+    ctx: u32
+    pc: u32
+    state: u8
+    mode: u8
+    input: Value
+}
+
+fn vmGenFrame(it: *mut Interp, g: u32) VmGenFrame {
+    return match it.heap.obj(g).data {
+        .GenFrame { f } => f
+        _ => unreachable
+    }
+}
+
+fn vmSetGenFrame(it: *mut Interp, g: u32, f: VmGenFrame) {
+    it.heap.obj(g).data = ObjData.GenFrame { f: f }
+}

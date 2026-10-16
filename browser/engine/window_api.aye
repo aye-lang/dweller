@@ -765,16 +765,24 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     defer it.release(b)
     if one {
         try argText(it, a, 1, b)
+
+        if text.eql(b.bytes(), "outline") {
+            b.clear()
+            try css.writeOutline(values, b)
+
+            return it.newString(b.bytes())
+        }
+
         let i = css.propertyIndex(b.bytes()) orelse return none
         b.clear()
-        try css.writeValue(values[i], b)
+        try css.writeComputed(values, i, b)
         return it.newString(b.bytes())
     }
     let o = try it.newObject(it.object_proto)
     try it.push(js.objVal(o))
     for i, prop in css.PROPERTIES {
         b.clear()
-        try css.writeValue(values[i], b)
+        try css.writeComputed(values, i, b)
         try setField(it, o, prop.name, b.bytes())
     }
     return it.pop()

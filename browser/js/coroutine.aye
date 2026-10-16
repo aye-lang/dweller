@@ -517,6 +517,9 @@ fn iterResult(it: *mut Interp, v: Value, done: bool) JsError!Value {
 }
 
 fn generatorResume(it: *mut Interp, a: Args, mode: u8) JsError!Value {
+    if vmGeneratorOf(it, a.this) |g| {
+        return vmGeneratorResume(it, g, mode, it.arg(a, 0))
+    }
     let co = try thisCoroutine(it, a)
     let v = it.arg(a, 0)
     if co.state == CO_DONE {
@@ -621,6 +624,9 @@ fn engineConstruct(it: *mut Interp, a: Args) JsError!Value {
 // its first next().
 fn callCoroutine(it: *mut Interp, func: u32, env: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize) JsError!Value {
     let fi = it.ast.func(func)
+    if fi.generator && !fi.is_async && try vmCompiles(it, func) {
+        return it.invoke(func, env, fobj, thisv, argBase, argc, NONE)
+    }
     if fi.generator {
         var proto = it.gen_proto
         let pv = try it.getProp(objVal(fobj), A_PROTOTYPE)

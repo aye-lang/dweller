@@ -1,0 +1,14 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildAssignment)
+
+fn vmStoreToProperty(c: *mut Compiler, target: u32) CompileError!void {
+    let mark = c.b.topReg
+    let t = c.b.newReg()
+
+    try c.b.op1(BC_STAR, t as i64)
+
+    let p = try vmPropertyReference(c, target, false)
+
+    try c.b.op1(BC_LDAR, t as i64)
+    try vmStoreProperty(c, target, p)
+    c.b.releaseRegs(mark)
+}
