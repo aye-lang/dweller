@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+fn withoutCdata(s: []u8, out: *mut text.Builder) AllocError!void {
+    var i: usize = 0
+
+    while i < s.len {
+        if text.startsWith(s[i..], "<![CDATA[") {
+            i += 9
+        } else if text.startsWith(s[i..], "]]>") {
+            i += 3
+        } else {
+            try out.appendByte(s[i])
+            i += 1
+        }
+    }
+}
