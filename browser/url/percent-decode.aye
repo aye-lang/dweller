@@ -1,0 +1,23 @@
+// spec: https://url.spec.whatwg.org/#percent-decode
+
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn percentDecode(alloc: Allocator, s: []u8) AllocError![]mut u8 {
+    var out = text.Builder.init(alloc)
+    errdefer out.deinit()
+    var i: usize = 0
+
+    while i < s.len {
+        if escapedByteAt(s, i) |b| {
+            try out.appendByte(b)
+            i += 3
+        } else {
+            try out.appendByte(s[i])
+            i += 1
+        }
+    }
+
+    return out.toOwned()
+}

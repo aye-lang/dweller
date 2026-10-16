@@ -1,0 +1,28 @@
+// spec: https://url.spec.whatwg.org/#scheme-state
+
+import std.mem
+
+fn schemeLength(s: []u8) ?usize {
+    let colon = mem.indexOf(s, ':') orelse return null
+    let scheme = s[..colon]
+
+    if scheme.len == 0 || !isAlpha(scheme[0]) {
+        return null
+    }
+
+    for c in scheme {
+        if !isSchemeByte(c) {
+            return null
+        }
+    }
+
+    return colon
+}
+
+fn isAlpha(c: u8) bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+fn isSchemeByte(c: u8) bool {
+    return isAlpha(c) || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'
+}

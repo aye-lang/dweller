@@ -1,0 +1,11 @@
+import std.mem.AllocError
+import std.text
+
+fn appendQueryOrFragment(out: *mut text.Builder, mark: u8, part: ?[]u8, set: PercentEncodeSet, special: bool) AllocError!Span {
+    let value = part orelse return Span.empty(out.len())
+    try out.appendByte(mark)
+    let lo = out.len()
+    try appendPercentEncoded(out, value, set, special)
+
+    return Span { lo: lo, hi: out.len() }
+}

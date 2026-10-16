@@ -1,0 +1,43 @@
+// spec: https://url.spec.whatwg.org/#concept-url-serializer
+
+import std.mem.Allocator
+import std.text
+
+fn serialize(alloc: Allocator, p: *Parts, segments: [][]u8) UrlError!Url {
+    let special = isSpecialScheme(p.scheme)
+    var out = text.Builder.init(alloc)
+    errdefer out.deinit()
+
+    try out.append(p.scheme)
+    let scheme_end = out.len()
+    try out.appendByte(':')
+    var authority = AuthoritySpans.empty(out.len())
+
+    if p.has_authority {
+        authority = try appendAuthority(&mut out, p)
+    }
+
+    let path_start = out.len()
+    try appendPath(&mut out, p, segments, special)
+    let path = Span { lo: path_start, hi: out.len() }
+    let query = try appendQueryOrFragment(&mut out, '?', p.query, PercentEncodeSet.Query, special)
+    let fragment = try appendQueryOrFragment(&mut out, '#', p.fragment, PercentEncodeSet.Fragment, special)
+    let href = try out.toOwned()
+    text.toLower(href[..scheme_end])
+    text.toLower(href[authority.host.lo..authority.host.hi])
+
+    return Url {
+        href: href,
+        scheme: href[..scheme_end],
+        username: authority.username.of(href),
+        password: authority.password.of(href),
+        host: authority.host.of(href),
+        port: authority.port.of(href),
+        path: path.of(href),
+        query: query.of(href),
+        fragment: fragment.of(href),
+        has_query: p.query != null,
+        has_fragment: p.fragment != null,
+        opaque: p.opaque_path != null,
+    }
+}

@@ -1,0 +1,38 @@
+// spec: https://url.spec.whatwg.org/#authority-state
+
+import std.mem
+import std.text
+
+fn readAuthority(p: *mut Parts, s: []u8, special: bool) UrlError![]u8 {
+    let end = authorityEnd(s, special)
+    let file = text.eqlIgnoreCase(p.scheme, "file")
+    var host_and_port = s[..end]
+    p.has_authority = true
+
+    if lastIndexOf(host_and_port, '@') |at| {
+        setUserInfo(p, host_and_port[..at])
+        host_and_port = host_and_port[at + 1..]
+    }
+
+    var host = host_and_port
+
+    if portColon(host_and_port) |colon| {
+        host = host_and_port[..colon]
+        p.port = try validPort(host_and_port[colon + 1..])
+    }
+
+    if special && !file && host.len == 0 {
+        return UrlError.Invalid
+    }
+    if mem.indexOf(host, ' ') != null {
+        return UrlError.Invalid
+    }
+
+    if file && text.eqlIgnoreCase(host, "localhost") {
+        host = ""
+    }
+
+    p.host = host
+
+    return s[end..]
+}
