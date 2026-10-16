@@ -1,0 +1,19 @@
+import paint
+
+pub fn uploadPage(pd: *mut PageDraw) {
+    let h = pd.canvas.height as i64
+    let all = [1]paint.IRect{paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: h }}
+    var rects: []paint.IRect = pd.damage.rects.items()
+
+    if pd.moved {
+        rects = all[..]
+    }
+
+    if pd.tex |t| {
+        for r in rects {
+            for k in 0..2 {
+                uploadRect(t, &pd.canvas, ringPart(r, pd.ring, h, k))
+            }
+        }
+    }
+}
