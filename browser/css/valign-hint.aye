@@ -1,0 +1,15 @@
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+fn valignHint(doc: *Document, el: NodeId, out: *mut text.Builder) AllocError!void {
+    if doc.attr(el, "valign") |v| {
+        let a = text.trim(v)
+
+        if text.eqlIgnoreCase(a, "top") || text.eqlIgnoreCase(a, "middle") || text.eqlIgnoreCase(a, "bottom") || text.eqlIgnoreCase(a, "baseline") {
+            try hintDecl(out, "vertical-align", a)
+        }
+    }
+}

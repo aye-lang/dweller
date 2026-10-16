@@ -802,6 +802,11 @@ fn escaped(b: *mut text.Builder, s: []u8) AllocError!void {
 /// The document of a response: HTML is parsed; plain text becomes the
 /// content of a `pre`.
 pub fn documentOf(alloc: Allocator, mime: []u8, src: []u8) AllocError!Document {
+    if text.eql(mime, "application/xhtml+xml") {
+        var xdoc = try html.parse(alloc, src)
+        try unwrapCdata(alloc, &mut xdoc)
+        return xdoc
+    }
     if !text.eql(mime, "text/plain") {
         return html.parse(alloc, src)
     }
