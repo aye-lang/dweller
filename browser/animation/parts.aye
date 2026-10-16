@@ -1,0 +1,16 @@
+import css
+
+pub struct Parts {
+    kind: u8
+    n: [4]f64
+}
+
+fn partsOf(v: css.Value) ?Parts {
+    return match v {
+        .Px { v: x } => Parts { kind: 1, n: [4]f64{x, 0.0, 0.0, 0.0} }
+        .Percent { v: x } => Parts { kind: 2, n: [4]f64{x, 0.0, 0.0, 0.0} }
+        .Number { v: x } => Parts { kind: 3, n: [4]f64{x, 0.0, 0.0, 0.0} }
+        .Rgba { c } => Parts { kind: 4, n: [4]f64{c.r as f64 * c.a, c.g as f64 * c.a, c.b as f64 * c.a, c.a} }
+        _ => null
+    }
+}

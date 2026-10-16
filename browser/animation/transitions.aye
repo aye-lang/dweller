@@ -1,0 +1,30 @@
+import std.list.List
+import std.map.IntMap
+import std.mem.Allocator
+
+pub struct Transitions {
+    alloc: Allocator
+    running: List(Transition)
+    before: IntMap(u32, Snapshot)
+    events: List(TransitionEvent)
+
+    pub fn init(alloc: Allocator) Transitions {
+        return Transitions { alloc: alloc, running: List(Transition).init(alloc), before: IntMap(u32, Snapshot).init(alloc), events: List(TransitionEvent).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        var entries = self.before.iterator()
+
+        while entries.next() |e| {
+            self.alloc.free(e.value.values)
+        }
+
+        self.before.deinit()
+        self.running.deinit()
+        self.events.deinit()
+    }
+
+    pub fn active(self: *Self) bool {
+        return self.running.len() > 0 || self.before.len() > 0
+    }
+}

@@ -1,0 +1,21 @@
+import css
+import std.math
+
+// spec: https://drafts.csswg.org/css-transitions-1/#application
+fn valueAt(r: Transition, now: f64) css.Value {
+    return interpolate(r.from, r.to, progressAt(r, now)) orelse r.to
+}
+
+fn progressAt(r: Transition, now: f64) f64 {
+    let local = now - r.begin_ms - r.delay_ms
+
+    if local <= 0.0 {
+        return 0.0
+    }
+
+    if r.duration_ms <= 0.0 {
+        return 1.0
+    }
+
+    return easeAt(r.easing, math.min(local / r.duration_ms, 1.0))
+}

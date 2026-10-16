@@ -29,6 +29,7 @@
 // the agent (the event loop jumps to the next timer, and a task's steps
 // move it: STEPS_PER_MS) and real for the window.
 
+import animation
 import audio
 import dom
 import dom.Kind
@@ -253,6 +254,7 @@ pub struct Script {
     computed: ?*mut Styling
     // The root of the prelude's `hostEvent` (NONE before it ran).
     dispatcher: u32
+    transitions: animation.Transitions
     // The root of the prelude's hook for the document's mutation log
     // (components.aye).
     mutation_hook: u32
@@ -563,6 +565,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         written: text.Builder.init(alloc),
         computed: null,
         dispatcher: js.NONE,
+        transitions: animation.Transitions.init(alloc),
         mutation_hook: js.NONE,
         timers: List(Timer).init(alloc),
         next_timer: 1,
@@ -694,6 +697,7 @@ pub fn destroyScript(s: *mut Script) {
     s.svg_tag_protos.deinit()
     s.written.deinit()
     dropComputed(s)
+    s.transitions.deinit()
     dropGeometry(s)
     s.restyle.deinit()
     s.restyle_seen.deinit()

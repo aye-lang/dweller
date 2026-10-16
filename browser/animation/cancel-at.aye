@@ -1,0 +1,11 @@
+import std.math
+import std.mem.AllocError
+
+fn cancelAt(t: *mut Transitions, k: usize, now: f64) AllocError!void {
+    let r = t.running.orderedRemove(k)
+    let active = now - r.begin_ms - r.delay_ms
+
+    if r.phase != Phase.Idle {
+        try t.events.append(TransitionEvent { el: r.el, kind: "transitioncancel", prop: r.prop, elapsed: math.min(math.max(active, 0.0), r.duration_ms) / 1000.0 })
+    }
+}

@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transitions-1/#one_item-transition-property
+fn writeTransitionProperty(c: Comp, one_item: bool, out: *mut text.Builder) AllocError!bool {
+    if c.toks.len != 1 || c.toks[0].kind != Tok.Ident {
+        return false
+    }
+
+    let name = c.toks[0].text
+
+    if inList(name, "initial inherit unset default revert revert-layer") != null || (!one_item && text.eqlIgnoreCase(name, "none")) {
+        return false
+    }
+
+    if inList(name, "all none") |k| {
+        try out.append(k)
+
+        return true
+    }
+
+    try out.append(name)
+
+    return true
+}

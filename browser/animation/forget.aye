@@ -1,0 +1,16 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+pub fn forget(t: *mut Transitions, el: NodeId, now: f64) AllocError!void {
+    while runningIndex(t, el, null) |k| {
+        try cancelAt(t, k, now)
+    }
+
+    if t.before.get(el.index) |snap| {
+        if dom.same(snap.el, el) {
+            t.alloc.free(snap.values)
+            t.before.remove(el.index)
+        }
+    }
+}

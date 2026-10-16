@@ -1342,18 +1342,28 @@ pub let PRELUDE =
     \\  get length() { return this._el.isConnected ? CSS_NAMES.length : 0; }
     \\  get cssText() { return ''; }
     \\  item(i) { return i >= 0 && i < this.length ? CSS_NAMES[i] : ''; }
-    \\  getPropertyValue(name) { return ak.computedStyle(this._el, String(name).toLowerCase()); }
+    \\  getPropertyValue(name) { return styleOf(this._el, String(name).toLowerCase()); }
     \\  getPropertyPriority() { return ''; }
     \\  setProperty() { throw new DOMException("Failed to execute 'setProperty' on 'CSSStyleDeclaration': These styles are computed, and therefore read-only.", 'NoModificationAllowedError'); }
     \\  removeProperty() { throw new DOMException("Failed to execute 'removeProperty' on 'CSSStyleDeclaration': These styles are computed, and therefore read-only.", 'NoModificationAllowedError'); }
     \\}
+    \\let transitionTimer = 0;
+    \\function transitionFrame() {
+    \\  transitionTimer = 0;
+    \\  const evs = ak.transitionFrame();
+    \\  for (let i = 0; i < evs.length; i += 4) dispatch(evs[i], new TransitionEvent(evs[i + 1], { bubbles: true, cancelable: evs[i + 1] === 'transitionend', propertyName: evs[i + 2], elapsedTime: evs[i + 3] }));
+    \\  watchTransitions();
+    \\}
+    \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
+    \\function styleOf(el, n) { const v = ak.computedStyle(el, n); watchTransitions(); return v; }
     \\for (const n of CSS_NAMES) {
-    \\  const get = function () { return ak.computedStyle(this._el, n); };
+    \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
     \\  const camel = n.replace(/-([a-z])/g, (m, c) => c.toUpperCase());
     \\  if (camel !== n) getter(ComputedStyle.prototype, camel, get);
     \\  if (n === 'float') getter(ComputedStyle.prototype, 'cssFloat', get);
     \\}
+    \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
     \\Object.setPrototypeOf(ComputedStyle.prototype, CSSStyleDeclaration.prototype);
     \\hidden(G, 'getComputedStyle', function getComputedStyle(el, pseudo) {
     \\  if (!(el instanceof Element)) throw new TypeError("Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.");

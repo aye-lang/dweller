@@ -1,0 +1,36 @@
+import animation
+import css
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://html.spec.whatwg.org/multipage/webappapis.html#update-animations-and-send-events
+fn akTransitionFrame(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+
+    try restyleTransitioning(s)
+    try animation.updateTransitions(&mut s.transitions, s.now)
+
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    for e in s.transitions.events.items() {
+        if s.page.doc.isLive(e.el) {
+            try it.heap.pushElem(arr, try wrapFor(s, e.el))
+            try it.heap.pushElem(arr, try it.newString(e.kind))
+            try it.heap.pushElem(arr, try it.newString(css.PROPERTIES[e.prop].name))
+            try it.heap.pushElem(arr, js.numVal(e.elapsed))
+        }
+    }
+
+    s.transitions.events.clear()
+
+    return it.pop()
+}
+
+fn akTransitionsActive(it: *mut Interp, a: Args) JsError!Value {
+    return js.boolVal(scriptOf(it).transitions.active())
+}

@@ -1,0 +1,31 @@
+fn functionArgs(c: Comp, out: []mut Token) ?usize {
+    if c.toks.len < 2 || c.toks[c.toks.len - 1].kind != Tok.RParen {
+        return null
+    }
+
+    var n: usize = 0
+    var want_value = true
+
+    for t in c.toks[1..c.toks.len - 1] {
+        if t.kind == Tok.Whitespace {
+            continue
+        }
+
+        if want_value == (t.kind == Tok.Comma) || (want_value && n == out.len) {
+            return null
+        }
+
+        if want_value {
+            out[n] = t
+            n += 1
+        }
+
+        want_value = !want_value
+    }
+
+    if want_value {
+        return null
+    }
+
+    return n
+}

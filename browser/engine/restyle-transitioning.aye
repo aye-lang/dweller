@@ -1,0 +1,26 @@
+import animation
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn restyleTransitioning(s: *mut Script) AllocError!void {
+    var els = List(NodeId).init(s.alloc)
+    defer els.deinit()
+
+    var entries = s.transitions.before.iterator()
+
+    while entries.next() |e| {
+        try els.append(e.value.el)
+    }
+
+    for el in els.items() {
+        if !s.page.doc.isLive(el) || !s.page.doc.isConnected(el) {
+            try animation.forget(&mut s.transitions, el, s.now)
+            continue
+        }
+
+        let values = try computedValues(s, el) orelse continue
+
+        try animation.styleChange(&mut s.transitions, el, values, s.now)
+    }
+}

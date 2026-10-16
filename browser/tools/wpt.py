@@ -4,7 +4,7 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/ and fonts/.
+      resources/, common/, fonts/ and css/support/.
   wpt.py serve [--port N] [--wpt-root DIR]
       A static server on 127.0.0.1 for the checkout (see Server below).
   wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR]
@@ -36,7 +36,7 @@ REPORT_JS = HERE / "wpt" / "testharnessreport.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts"]
+EXTRA_DIRS = ["resources", "common", "fonts", "css/support"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.

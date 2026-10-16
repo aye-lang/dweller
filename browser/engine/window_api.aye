@@ -3,6 +3,7 @@
 //
 // Web Storage (`localStorage`, `sessionStorage`) is in storage.aye.
 
+import animation
 import css
 import dom
 import dom.Document
@@ -59,6 +60,8 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
     try defMethod(it, o, "hostRequest", 2, akHostRequest)
     try defMethod(it, o, "computedStyle", 2, akComputedStyle)
+    try defMethod(it, o, "transitionFrame", 0, akTransitionFrame)
+    try defMethod(it, o, "transitionsActive", 0, akTransitionsActive)
     try defMethod(it, o, "cssNames", 0, akCssNames)
     try defMethod(it, o, "latin1Into", 2, js.hostLatin1Into)
     try defMethod(it, o, "latin1Of", 1, js.hostLatin1Of)
@@ -760,13 +763,19 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
         return none
     }
     let values = try computedValues(s, h) orelse return none
+    try animation.styleChange(&mut s.transitions, h, values, s.now)
     let b = try it.builder()
     defer it.release(b)
     if one {
         try argText(it, a, 1, b)
+        if text.eql(b.bytes(), "transition") {
+            b.clear()
+            try css.writeTransition(values, b)
+            return it.newString(b.bytes())
+        }
         let i = css.propertyIndex(b.bytes()) orelse return none
         b.clear()
-        try css.writeValue(values[i], b)
+        try css.writeValue(animation.currentValue(&s.transitions, h, i, s.now) orelse values[i], b)
         return it.newString(b.bytes())
     }
     let o = try it.newObject(it.object_proto)

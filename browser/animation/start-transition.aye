@@ -1,0 +1,17 @@
+import css
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#starting
+fn startTransition(t: *mut Transitions, el: NodeId, p: usize, from: css.Value, to: css.Value, reversing_start: css.Value, factor: f64, after: []css.Value, i: usize, now: f64) AllocError!void {
+    var delay = listSeconds(after, css.TRANSITION_DELAY, i) * 1000.0
+    let duration = listSeconds(after, css.TRANSITION_DURATION, i) * 1000.0 * factor
+    let list = keywordOf(after[css.TRANSITION_TIMING_FUNCTION])
+    let easing = parseEasing(css.listItem(list, i % css.listLength(list)))
+
+    if delay < 0.0 {
+        delay *= factor
+    }
+
+    try t.running.append(Transition { el: el, prop: p, from: from, to: to, reversing_start: reversing_start, shortening: factor, begin_ms: now, delay_ms: delay, duration_ms: duration, easing: easing, phase: Phase.Idle })
+}

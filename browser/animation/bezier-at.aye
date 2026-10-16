@@ -1,0 +1,28 @@
+// blink: ui/gfx/geometry/cubic_bezier.cc
+fn bezierAt(e: Easing, x: f64) f64 {
+    if x <= 0.0 || x >= 1.0 {
+        return x
+    }
+
+    var lo = 0.0
+    var hi = 1.0
+    var t = x
+
+    for i in 0..60 {
+        if curve(e.x1, e.x2, t) < x {
+            lo = t
+        } else {
+            hi = t
+        }
+
+        t = (lo + hi) / 2.0
+    }
+
+    return curve(e.y1, e.y2, t)
+}
+
+fn curve(a: f64, b: f64, t: f64) f64 {
+    let u = 1.0 - t
+
+    return 3.0 * u * u * t * a + 3.0 * u * t * t * b + t * t * t
+}

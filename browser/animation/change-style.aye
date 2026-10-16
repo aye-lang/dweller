@@ -1,0 +1,20 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn changeStyle(t: *mut Transitions, el: NodeId, old: *mut Snapshot, after: []css.Value, now: f64) AllocError!void {
+    if !dom.same(old.el, el) {
+        return forget(t, old.el, now)
+    }
+
+    if isDisplayNone(after) {
+        return forget(t, el, now)
+    }
+
+    for p in 0..css.NPROPS {
+        if p < css.TRANSITION_PROPERTY {
+            try changeProperty(t, el, p, old.values[p], after, now)
+        }
+    }
+}

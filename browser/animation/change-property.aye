@@ -1,0 +1,35 @@
+import css
+import dom.NodeId
+import std.math
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#starting
+fn changeProperty(t: *mut Transitions, el: NodeId, p: usize, before: css.Value, after: []css.Value, now: f64) AllocError!void {
+    let to = after[p]
+    let m = matchingItem(after, p)
+    let k = runningIndex(t, el, p) orelse return startFresh(t, el, p, before, after, m, now)
+    let r = t.running.items()[k]
+
+    if m != null && sameValue(r.to, to) {
+        return
+    }
+
+    let from = valueAt(r, now)
+    let progress = progressAt(r, now)
+
+    try cancelAt(t, k, now)
+
+    let i = m orelse return
+
+    if sameValue(from, to) || interpolate(from, to, 0.0) == null {
+        return
+    }
+
+    if sameValue(r.reversing_start, to) {
+        let factor = math.min(math.max(progress * r.shortening + 1.0 - r.shortening, 0.0), 1.0)
+
+        return startTransition(t, el, p, from, to, r.to, factor, after, i, now)
+    }
+
+    try startTransition(t, el, p, from, to, from, 1.0, after, i, now)
+}

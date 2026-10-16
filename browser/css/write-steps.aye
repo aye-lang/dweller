@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-easing-1/#step-easing-functions
+fn writeSteps(args: []Token, out: *mut text.Builder) AllocError!bool {
+    if args.len == 0 || args.len > 2 || args[0].kind != Tok.Number || !args[0].flag {
+        return false
+    }
+
+    var pos = "end"
+
+    if args.len == 2 && args[1].kind != Tok.Ident {
+        return false
+    }
+
+    if args.len == 2 {
+        pos = inList(args[1].text, "start end jump-start jump-end jump-none jump-both") orelse return false
+    }
+
+    if args[0].num < 1.0 || (args[0].num < 2.0 && text.eql(pos, "jump-none")) {
+        return false
+    }
+
+    try out.append("steps(")
+    try out.appendInt(args[0].num as i64)
+
+    if !text.eql(pos, "end") && !text.eql(pos, "jump-end") {
+        try out.append(", ")
+        try out.append(pos)
+    }
+
+    try out.appendByte(')')
+
+    return true
+}
