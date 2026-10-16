@@ -3972,6 +3972,84 @@ fn window_damage() {
     assert!(px.contains(&0), "no frame without damage: {px:?}");
 }
 
+/// P11.7 (docs/webgl.md §5): the window shows a WebGL canvas through its
+/// readback. `spin.html` turns a triangle on a 1280x720 canvas in 120
+/// animation frames; each frame is read back at its end and mapped into
+/// the canvas in the next, so the canvas changes in 120 frames (and the
+/// cleared one before them), each damaging the canvas alone (with the
+/// one-pixel margin below it the damage keeps for antialiasing), and
+/// `DWELLER_DAMAGE_CHECK` finds every frame drawn right. Prints the
+/// `webgl_readback` p50 and p95. Without ANGLE it is skipped.
+#[test]
+fn window_webgl() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_GL", "swiftshader")
+        .args([
+            "browser/tests/webgl/spin.html",
+            "--font",
+            "fixed",
+            "--width",
+            "1280",
+            "--height",
+            "800",
+            "--frames",
+            "300",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    let record = |phase: &str| -> Vec<(u64, String)> {
+        let key = format!("DWELLER_TIMING\t{phase}\t");
+        err.lines()
+            .filter_map(|l| l.split(key.as_str()).nth(1))
+            .map(|r| {
+                let mut f = r.split('\t');
+                let ns = f.next().unwrap().parse().unwrap();
+                (ns, f.next().unwrap_or("").to_string())
+            })
+            .collect()
+    };
+    let mut readback: Vec<u64> = record("webgl_readback")
+        .into_iter()
+        .map(|(ns, label)| {
+            assert_eq!(label, "1280x720");
+            ns
+        })
+        .collect();
+    assert!(readback.len() >= 120, "{} readbacks:\n{err}", readback.len());
+    // The page area is 1280x760 (the chrome takes 40 px).
+    let canvas = 1280 * 721;
+    let full = 1280 * 760;
+    let px: Vec<u64> = record("ui_damage_px")
+        .iter()
+        .map(|(_, label)| label.split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        px.iter().all(|&p| p == 0 || p == canvas || p == full),
+        "damage outside the canvas: {px:?}"
+    );
+    let updates = px.iter().filter(|&&p| p == canvas).count();
+    assert!(updates >= 120, "{updates} canvas updates: {px:?}");
+    assert!(px.iter().filter(|&&p| p == full).count() <= 2, "{px:?}");
+    readback.sort();
+    let ms = |q: f64| readback[((readback.len() as f64 * q) as usize).min(readback.len() - 1)] as f64 / 1e6;
+    println!("webgl_readback 1280x720: p50 {:.2} ms, p95 {:.2} ms", ms(0.5), ms(0.95));
+}
+
 /// A page shaped like GitHub's, with many container queries on nested
 /// query containers, served over HTTP: after the load, the frames that
 /// change a list (and the side column's width every 15th, which flips
