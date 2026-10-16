@@ -283,7 +283,7 @@ and their Blink, ANGLE and V8 files.
 | G6 | P11.11 | key codes, pointer events, Pointer Lock, Fullscreen, `structuredClone` | – | open |
 | G7 | P11.17 rest | `wasm_sim_bench` and the wasm-bindgen glue check | G18's copy of the game | partial |
 | G8 | P11.18 | dedicated Workers | G6 | open |
-| G9 | P11.19 | Web Audio core | – | open |
+| G9 | P11.19 | Web Audio core | – | done |
 | G10 | P11.20 | Web Audio effects | G9 | open |
 | G11 | P11.12 | the rest of WebGL 2 | G3 | open |
 | G12 | P11.13 | WebGL 2 extensions | G3 | open |
@@ -1221,6 +1221,12 @@ time as a P4 card on those files.
 - reference: `third_party/blink/renderer/modules/webaudio/` (`audio_buffer_source_handler.cc`, `audio_param_timeline.cc`; algorithm only); the WPT `webaudio/` tests
 - verify: `cargo test --release --test browser -- webaudio_core > target/p11.19.log 2>&1; echo $?` → 0. An `OfflineAudioContext` renders a looped buffer through a gain ramp; samples match the expected values within 1e-4.
 - depends on: P11.3; time box: 45 min (split AudioParam automation into P11.19b if needed); model: opus
+- done 2026-10-16: all of it, AudioParam automation included (no P11.19b).
+  - `browser/audio/` (module `audio`): `audio.aye` is the graph. Contexts and nodes are indices; a node renders once per 128-frame quantum, pulled from the destination. Buses have 1 or 2 channels and mix by the speakers rules. AudioParam timelines: setValue, linear and exponential ramps, setTarget, cancelScheduledValues; events that ended collapse into one SetValue, so long sessions stay small. `AudioBufferSourceNode`: sample-accurate `start`/`stop`, `offset`, `duration`, `loop` with `loopStart`/`loopEnd`, k-rate `playbackRate` and `detune`, linear interpolation, `ended`. `wav.aye`: PCM 8, 16, 24 and 32 bit, float32, WAVE_FORMAT_EXTENSIBLE. `out.aye`: the SDL device.
+  - Output: `SDL_OpenAudioDevice` (float32 stereo at the context's rate, 48 kHz by default) fed with `SDL_QueueAudio` from the window thread, 30 ms ahead. SDL's queue is the ring buffer, so no callback and no Aye code run on SDL's audio thread. The SDL audio externs are in `out.aye`, not `ui/sdl.aye`, because the engine cannot import `ui`. The device opens only on the window clock: `dump` and CI never open one, and a running context there renders by the page clock and drops the samples. While a context plays, `msUntilNextTimer` is at most 10 ms, so the window loop pumps it. No edit to `ui/window.aye`.
+  - `engine/audio_api.aye`: the `__audioHost` natives and `AUDIO_PRELUDE` (BaseAudioContext, AudioContext, OfflineAudioContext with `oncomplete`, AudioBuffer, AudioParam, AudioNode, AudioDestinationNode, GainNode, AudioScheduledSourceNode, AudioBufferSourceNode). Buffers are copied when a source starts, as the spec says ("acquire the content"). `decodeAudioData` resamples linearly to the context's rate. Autoplay: an `AudioContext` starts `running` only after user activation (`keydown`, `mousedown`, `pointerdown`, `pointerup`, `touchend`, `click` through `engine.dispatchEvent`). Otherwise it starts `suspended`. `resume()` is not gated on activation.
+  - Not done: connecting a node to an `AudioParam` (it is ignored), `setValueCurveAtTime` and `cancelAndHoldAtTime`, channel counts above 2 (extra channels render silent), and `channelCount`/`channelCountMode` (fixed to max/speakers).
+  - `tests/browser.rs` `webaudio_core` (`browser/tests/audio/core.html`, `core.txt`): the looped buffer through linear, exponential and setTarget gain automation matches the test's own formula within 1e-4 over 1600 frames. Also covered: loop points, rate and detune, interpolation, up-mix, disconnect, the errors, WAV decoding and resampling, and the realtime state changes. Checked by hand on the user's Mac: in the window, coreaudiod held an `audio-out BuiltInSpeakerDevice` assertion for the process, and `currentTime` kept pace with the wall clock.
 
 #### P11.20: Web Audio effects
 - goal: `BiquadFilterNode` (all 8 types, `getFrequencyResponse`), `StereoPannerNode`, `DynamicsCompressorNode` (`reduction`), `ConvolverNode` (`normalize`, partitioned FFT convolution), as the spec defines them. These are the nodes the game uses.

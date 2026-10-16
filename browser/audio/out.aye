@@ -1,0 +1,149 @@
+// The output of realtime contexts: an SDL audio device (float32 stereo
+// at the context's rate) fed with SDL_QueueAudio from the window thread,
+// about 30 ms ahead. SDL's queue is the ring buffer, so no JS and no
+// graph code runs on SDL's audio thread. Without a device (`dump`, or a
+// machine with no audio) a running context renders by the page clock and
+// drops the samples.
+
+import std
+import std.mem.AllocError
+
+@link("sdl2")
+
+extern struct SDL_AudioSpec {
+    freq: i32
+    format: u16
+    channels: u8
+    silence: u8
+    samples: u16
+    padding: u16
+    size: u32
+    callback: ?*mut u8
+    userdata: ?*mut u8
+}
+
+extern fn SDL_InitSubSystem(flags: u32) i32
+extern fn SDL_GetError() [*]u8
+extern fn SDL_OpenAudioDevice(device: ?[*]u8, iscapture: i32, desired: *SDL_AudioSpec, obtained: *mut SDL_AudioSpec, allowed_changes: i32) u32
+extern fn SDL_PauseAudioDevice(dev: u32, pause_on: i32)
+extern fn SDL_QueueAudio(dev: u32, data: [*]u8, len: u32) i32
+extern fn SDL_GetQueuedAudioSize(dev: u32) u32
+extern fn SDL_ClearQueuedAudio(dev: u32)
+extern fn SDL_CloseAudioDevice(dev: u32)
+extern fn strlen(s: [*]u8) usize
+
+let SDL_INIT_AUDIO: u32 = 0x10
+let AUDIO_F32LSB: u16 = 0x8120
+
+// How far ahead of the device the graph renders, in seconds.
+let AHEAD: f64 = 0.03
+
+fn openDevice(cx: *mut Context) {
+    if SDL_InitSubSystem(SDL_INIT_AUDIO) != 0 {
+        sdlError("SDL_InitSubSystem(audio)")
+        cx.no_device = true
+        return
+    }
+    let want = SDL_AudioSpec {
+        freq: cx.rate as i32,
+        format: AUDIO_F32LSB,
+        channels: 2,
+        silence: 0,
+        samples: 512,
+        padding: 0,
+        size: 0,
+        callback: null,
+        userdata: null,
+    }
+    var got = @zeroed(SDL_AudioSpec)
+    let dev = SDL_OpenAudioDevice(null, 0, &want, &mut got, 0)
+    if dev == 0 {
+        sdlError("SDL_OpenAudioDevice")
+        cx.no_device = true
+        return
+    }
+    cx.device = dev
+    SDL_PauseAudioDevice(dev, 0)
+}
+
+fn sdlError(what: []u8) {
+    let e = SDL_GetError()
+    std.log.err("audio: {}: {}", what, e[0..strlen(e)])
+}
+
+fn closeDevice(cx: *mut Context) {
+    if cx.device != 0 {
+        SDL_CloseAudioDevice(cx.device)
+        cx.device = 0
+    }
+}
+
+/// resume() and suspend() of a realtime context at page time `now_ms`.
+pub fn setRunning(cx: *mut Context, on: bool, now_ms: f64) {
+    if cx.closed || cx.running == on {
+        return
+    }
+    cx.running = on
+    if on {
+        cx.base_ms = now_ms - currentTime(cx) * 1000.0
+    }
+    if cx.device != 0 {
+        var pause: i32 = 1
+        if on {
+            pause = 0
+        }
+        SDL_PauseAudioDevice(cx.device, pause)
+    }
+}
+
+/// Renders a running realtime context up to AHEAD past what its device
+/// has played, or up to the page clock `now_ms` without a device. Only a
+/// window page (`device`) opens the SDL device.
+pub fn pump(cx: *mut Context, now_ms: f64, device: bool) AllocError!void {
+    if !cx.realtime || !cx.running || cx.closed {
+        return
+    }
+    if device && cx.device == 0 && !cx.no_device {
+        openDevice(cx)
+        cx.base_ms = now_ms - currentTime(cx) * 1000.0
+    }
+    if cx.device != 0 {
+        let ahead = (cx.rate * AHEAD) as u32
+        var queued = SDL_GetQueuedAudioSize(cx.device) / 8
+        while queued < ahead {
+            let d = try renderQuantum(cx)
+            for i in 0..QUANTUM {
+                let l = d.out[0][i]
+                var r = l
+                if d.channels > 1 {
+                    r = d.out[1][i]
+                }
+                cx.mix[2 * i] = l
+                cx.mix[2 * i + 1] = r
+            }
+            _ = SDL_QueueAudio(cx.device, @ptrCast([*]u8, cx.mix.ptr), (QUANTUM * 8) as u32)
+            queued += QUANTUM as u32
+        }
+        return
+    }
+    let target = (now_ms - cx.base_ms) / 1000.0 * cx.rate
+    var n: usize = 0
+    while (cx.frame + QUANTUM as u64) as f64 <= target && n < 2048 {
+        _ = try renderQuantum(cx)
+        n += 1
+    }
+}
+
+/// Does a context of `owner` feed a device (so its page must pump about
+/// every 10 ms, as timers do)?
+pub fn playing(owner: usize) bool {
+    let l = contexts orelse return false
+    for slot in l.items() {
+        if slot |cx| {
+            if cx.owner == owner && cx.running && cx.device != 0 {
+                return true
+            }
+        }
+    }
+    return false
+}
