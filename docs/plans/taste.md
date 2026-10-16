@@ -19,7 +19,7 @@ Rules of the lane:
 
 | Step | Card | What | Depends on | Status |
 |---|---|---|---|---|
-| T0 | T0 | `check_taste.py` with a baseline ratchet, in CI | – | open |
+| T0 | T0 | `check_taste.py` with a baseline ratchet, in CI | – | done |
 | T1 | T1 | pilot: `url/` by the rules, the template for the rest | – | open |
 | T2 | T2 | `engine/prelude.aye` JavaScript into `.js` files with `@embedFile` | T1 | open |
 | T3+ | T3… | one module per card, smallest first: `encoding`, `perf`, `image`, `webfont`, `font`, `net`, `html`, `dom`, `svg`, `css`, `layout`, `paint`, `gpu`, `audio`, `wasm`, `agent`, `ui`, `engine`, `js` | T1 | open |
@@ -29,6 +29,7 @@ Rules of the lane:
 - files: `browser/tools/check_taste.py`, `browser/tools/taste_baseline.json`, `.github/workflows/ci.yml` (one step on Ubuntu)
 - verify: `python3 browser/tools/check_taste.py; echo $?` → 0 on main; a new file with a header comment fails with file:line (by hand, not committed); adding a line to `js/interp.aye` fails
 - time box: 45 min; model: sonnet
+- status: done 2026-10-16. taste: 210 files, 12136 comment lines, 133 files over 300 lines. `--update` lowers the baseline; `--update --add-missing` seeds new files.
 
 #### T1: pilot on `url/`
 - goal: `browser/url/url.aye` (733 lines) rewritten by every rule of the skill: no comments but reference links, one function per file, names that carry what the comments said, blank lines. The result is the template for the other T cards, and the CEO reviews it before they start. Find out and write in the done note: whether Aye accepts `-` in file names, whether methods of one struct may live in several files of a module, and what `aye fmt` keeps.
