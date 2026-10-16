@@ -265,6 +265,7 @@ pub struct Script {
     real: bool
     task_began: u64 = 0
     vsync: bool = false
+    hidden: bool = false
     // `__wasmHost` was installed: the page holds the WebAssembly store
     // (wasm.release).
     wasm_on: bool = false
@@ -1480,7 +1481,7 @@ fn turnLimit(s: *Script, turn: u64) u64 {
 fn earliestBefore(s: *mut Script, limit: f64, seq: u64) ?usize {
     var best: ?usize = null
     for i, t in s.timers.items() {
-        if t.due > limit || t.seq >= seq || !runnable(s, t) || (t.raf && s.vsync) {
+        if t.due > limit || t.seq >= seq || !runnable(s, t) || (t.raf && (s.vsync || s.hidden)) {
             continue
         }
         if best |b| {
@@ -1777,6 +1778,11 @@ fn findConsole(p: *mut Page, prefix: []u8, out: *mut text.Builder) AllocError!bo
 /// window's clock), at most LOAD_POLL_MS: the loads progress when the
 /// event loop turns.
 pub fn msUntilNextTimer(p: *mut Page) ?f64 {
+    if p.script |s| {
+        if s.hidden {
+            return null
+        }
+    }
     var wait: ?f64 = null
     if nextTimer(p, 1.0e300) |n| {
         wait = std.math.ceil(n.wait)
