@@ -218,6 +218,19 @@ goes to that entry and the jump becomes its `Jump*Constant` twin. Jump
 offsets count from the opcode byte (after a prefix). `SwitchOnSmi k, n,
 base` reads its targets from pool entries `k` to `k + n - 1`.
 
+As built (P4.63): `compiler.aye` and `vm.aye`. The dispatch `match`
+has one arm per opcode (an arm with several patterns split it); clang
+`-O2` (fast build, x86-64) makes it two jump tables, opcodes 2–43 and
+44–72, the second reached through the first's bounds check (checked
+with `objdump -d` of `aye_f_0js_3a_3avmRun`). The frame record is the
+existing `Frame` without new fields: no instruction calls JS-to-JS yet,
+so `vmCall` runs one dispatch loop per call in C; the `code`/`pc`/`fp`
+fields come with calls (P4.65). Unary `+` got its own instruction,
+`ToNumber` (a BigInt throws, unlike `ToNumeric`). `let`/`const` read
+before their declaration in the source (the dead zone) and the
+`js_conformance_vm` GC-stress pass leaving out the allocation and deep
+recursion scripts (minutes each under stress) are P4.63 limits.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

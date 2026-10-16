@@ -23,6 +23,27 @@ pub let WEBGL_PRELUDE =
     \\// webglCall operations (webgl_api.aye).
     \\const CLEAR_COLOR = 0, CLEAR = 1, VIEWPORT = 2, SCISSOR = 3, ENABLE = 4, DISABLE = 5, COLOR_MASK = 6, DEPTH_MASK = 7, STENCIL_MASK = 8, CLEAR_DEPTH = 9, CLEAR_STENCIL = 10;
     \\const BIND_BUFFER = 11, USE_PROGRAM = 12, ATTACH_SHADER = 13, DETACH_SHADER = 14, LINK_PROGRAM = 15, COMPILE_SHADER = 16, VALIDATE_PROGRAM = 17, ENABLE_ATTRIB = 18, DISABLE_ATTRIB = 19, ATTRIB_POINTER = 20, ATTRIB_IPOINTER = 21, ATTRIB_4F = 22, ATTRIB_I4I = 23, ATTRIB_I4UI = 24, DRAW_ARRAYS = 25, DRAW_ELEMENTS = 26, DELETE_BUFFER = 27, DELETE_SHADER = 28, DELETE_PROGRAM = 29, UNIFORM_F = 30, UNIFORM_I = 31, UNIFORM_UI = 32;
+    \\const BIND_TEXTURE = 33, ACTIVE_TEXTURE = 34, DELETE_TEXTURE = 35, TEX_PARAM_I = 36, TEX_PARAM_F = 37, GENERATE_MIPMAP = 38, TEX_STORAGE = 39, PIXEL_STORE = 40;
+    \\const TEXTURE_2D = 0xde1, TEXTURE_CUBE_MAP = 0x8513, TEXTURE0 = 0x84c0;
+    \\// bindTexture's targets (2D, cube map, 3D, 2D array) and the getParameter
+    \\// binding of each.
+    \\const TEXTURE_TARGETS = new Set([0xde1, 0x8513, 0x806f, 0x8c1a]);
+    \\const TEXTURE_BINDINGS = new Map([[0x8069, 0xde1], [0x8514, 0x8513], [0x806a, 0x806f], [0x8c1d, 0x8c1a]]);
+    \\// pixelStorei's names that GL keeps besides the alignments: the row
+    \\// length and skips of unpacking (tracked here for the size of a view)
+    \\// and of packing.
+    \\const STORE_NAMES = new Set([0xcf2, 0xcf3, 0xcf4, 0xd02, 0xd03, 0xd04, 0x806d, 0x806e]);
+    \\// Pixel data: type → [bytes of an element, whether a pixel is one
+    \\// element, the typed arrays that may hold it]; format → components.
+    \\const TEXTURE_TYPES = new Map([
+    \\  [0x1401, [1, false, ['Uint8Array', 'Uint8ClampedArray']]], [0x1400, [1, false, ['Int8Array']]],
+    \\  [0x1403, [2, false, ['Uint16Array']]], [0x1402, [2, false, ['Int16Array']]], [0x140b, [2, false, ['Uint16Array']]],
+    \\  [0x1405, [4, false, ['Uint32Array']]], [0x1404, [4, false, ['Int32Array']]], [0x1406, [4, false, ['Float32Array']]],
+    \\  [0x8033, [2, true, ['Uint16Array']]], [0x8034, [2, true, ['Uint16Array']]], [0x8363, [2, true, ['Uint16Array']]],
+    \\  [0x8368, [4, true, ['Uint32Array']]], [0x8c3b, [4, true, ['Uint32Array']]], [0x8c3e, [4, true, ['Uint32Array']]], [0x84fa, [4, true, ['Uint32Array']]],
+    \\  [0x8dad, [8, true, []]],
+    \\]);
+    \\const TEXTURE_FORMATS = new Map([[0x1906, 1], [0x1907, 3], [0x1908, 4], [0x1909, 1], [0x190a, 2], [0x1903, 1], [0x8227, 2], [0x8d94, 1], [0x8228, 2], [0x8d98, 3], [0x8d99, 4], [0x1902, 1], [0x84f9, 2]]);
     \\const ARRAY_BUFFER = 0x8892, ELEMENT_ARRAY_BUFFER = 0x8893, VERTEX_SHADER = 0x8b31, FRAGMENT_SHADER = 0x8b30, SHADER_TYPE = 0x8b4f, DELETE_STATUS = 0x8b80, COMPILE_STATUS = 0x8b81, LINK_STATUS = 0x8b82, VALIDATE_STATUS = 0x8b83;
     \\// bindBuffer's targets, and the getParameter binding of each.
     \\const BUFFER_TARGETS = new Set([0x8892, 0x8893, 0x8f36, 0x8f37, 0x88eb, 0x88ec, 0x8c8e, 0x8a11]);
@@ -73,7 +94,9 @@ pub let WEBGL_PRELUDE =
     \\const kinds = ['WebGLBuffer', 'WebGLTexture', 'WebGLProgram', 'WebGLShader', 'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLVertexArrayObject', 'WebGLSampler', 'WebGLQuery', 'WebGLSync', 'WebGLTransformFeedback'];
     \\const classes = {};
     \\for (const k of kinds) classes[k] = {[k]: class extends WebGLObject {}}[k];
-    \\const {WebGLBuffer, WebGLShader, WebGLProgram} = classes;
+    \\const {WebGLBuffer, WebGLShader, WebGLProgram, WebGLTexture} = classes;
+    \\// The first target a texture was bound to (0: never bound).
+    \\WebGLTexture.prototype._target = 0;
     \\// The first target a buffer was bound to (0: never bound).
     \\WebGLBuffer.prototype._target = 0;
     \\// A shader is freed by GL once deleted and attached to no program; a
@@ -120,7 +143,10 @@ pub let WEBGL_PRELUDE =
     \\    this._canvas = canvas;
     \\    this._node = canvas._node || canvas;
     \\    this._attrs = attrs;
-    \\    this._unpack = {0x9240: false, 0x9241: false, 0x9243: 0x9244, 0x9247: 0};
+    \\    this._unpack = {0x9240: false, 0x9241: false, 0x9243: 0x9244, 0x9247: 0, 0xcf5: 4, 0xcf2: 0, 0xcf3: 0, 0xcf4: 0};
+    \\    // Texture bindings: per unit, target → WebGLTexture; the active unit.
+    \\    this._units = [];
+    \\    this._unit = 0;
     \\    // Buffer bindings (target → WebGLBuffer) and the current program.
     \\    this._bound = new Map();
     \\    this._program = null;
@@ -215,6 +241,8 @@ pub let WEBGL_PRELUDE =
     \\    const [kind, count, wrap] = p;
     \\    if (kind === 'n') {
     \\      if (pname === 0x8b8d) return this._program;
+    \\      const tt = TEXTURE_BINDINGS.get(pname);
+    \\      if (tt !== undefined) return this._boundTexture(tt);
     \\      const t = BUFFER_BINDINGS.get(pname);
     \\      return t === undefined ? null : this._bound.get(t) || null;
     \\    }
@@ -756,6 +784,233 @@ pub let WEBGL_PRELUDE =
     \\  }
     \\  uniformMatrix4x3fv(l, transpose, v, srcOffset, srcLength) {
     \\    this._uniformv(20, 12, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  // P11.6 (docs/webgl.md §3): textures. ANGLE checks the enums, levels,
+    \\  // sizes and format combinations; here are the object rules, the
+    \\  // bound texture of each call, the size of a view and the
+    \\  // conversion of DOM sources (webglTex, after Blink's TexImageHelper*).
+    \\  _boundTexture(target) {
+    \\    const u = this._units[this._unit];
+    \\    return (u && u.get(target)) || null;
+    \\  }
+    \\  // The texture a call on `target` works on; false (with the error) when
+    \\  // the target is none of `targets` or no texture is bound to it.
+    \\  _textureBound(target, targets) {
+    \\    if (!targets.has(target)) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return false;
+    \\    }
+    \\    if (!this._boundTexture(target)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  createTexture() {
+    \\    const n = ak.webglNew(this._node, 3);
+    \\    return n ? new WebGLTexture(this, n) : null;
+    \\  }
+    \\  isTexture(t) {
+    \\    return t instanceof WebGLTexture && t._ctx === this && !t._deleted && t._target !== 0;
+    \\  }
+    \\  deleteTexture(t) {
+    \\    if (!this._delete(t, WebGLTexture, DELETE_TEXTURE)) return;
+    \\    for (const u of this._units) {
+    \\      if (!u) continue;
+    \\      for (const k of Array.from(u.keys())) if (u.get(k) === t) u.delete(k);
+    \\    }
+    \\  }
+    \\  bindTexture(target, tex) {
+    \\    target = target >>> 0;
+    \\    if (!TEXTURE_TARGETS.has(target)) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (tex !== null && tex !== undefined) {
+    \\      if (!(tex instanceof WebGLTexture)) throw new TypeError('parameter 2 is not a WebGLTexture');
+    \\      if (!this._use(tex)) return;
+    \\      // A texture keeps the target it was first bound to.
+    \\      if (tex._target !== 0 && tex._target !== target) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      tex._target = target;
+    \\    } else {
+    \\      tex = null;
+    \\    }
+    \\    if (!this._units[this._unit]) this._units[this._unit] = new Map();
+    \\    this._units[this._unit].set(target, tex);
+    \\    ak.webglCall(this._node, BIND_TEXTURE, target, tex ? tex._name : 0);
+    \\  }
+    \\  activeTexture(texture) {
+    \\    texture = texture >>> 0;
+    \\    if (texture < TEXTURE0 || texture - TEXTURE0 >= ak.webglGet(this._node, 0x8b4d, 0, 1)[0]) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    this._unit = texture - TEXTURE0;
+    \\    ak.webglCall(this._node, ACTIVE_TEXTURE, texture);
+    \\  }
+    \\  texParameteri(target, pname, param) {
+    \\    target = target >>> 0;
+    \\    if (this._textureBound(target, TEXTURE_TARGETS)) ak.webglCall(this._node, TEX_PARAM_I, target, pname, param);
+    \\  }
+    \\  texParameterf(target, pname, param) {
+    \\    target = target >>> 0;
+    \\    if (this._textureBound(target, TEXTURE_TARGETS)) ak.webglCall(this._node, TEX_PARAM_F, target, pname, param);
+    \\  }
+    \\  generateMipmap(target) {
+    \\    target = target >>> 0;
+    \\    if (this._textureBound(target, TEXTURE_TARGETS)) ak.webglCall(this._node, GENERATE_MIPMAP, target);
+    \\  }
+    \\  texStorage2D(target, levels, internalformat, width, height) {
+    \\    target = target >>> 0;
+    \\    if (this._textureBound(target, new Set([TEXTURE_2D, TEXTURE_CUBE_MAP]))) ak.webglCall(this._node, TEX_STORAGE, target, levels, internalformat, width, height);
+    \\  }
+    \\  // UNPACK_FLIP_Y_WEBGL, UNPACK_PREMULTIPLY_ALPHA_WEBGL and
+    \\  // UNPACK_COLORSPACE_CONVERSION_WEBGL are the front end's (Dweller has no
+    \\  // color profiles: both conversions are the identity); the others go
+    \\  // to GL.
+    \\  pixelStorei(pname, param) {
+    \\    pname = pname >>> 0;
+    \\    const u = this._unpack;
+    \\    if (pname === 0x9240 || pname === 0x9241) {
+    \\      u[pname] = Number(param) !== 0;
+    \\    } else if (pname === 0x9243) {
+    \\      if (param !== 0x9244 && param !== 0) ak.webglRaise(this._node, INVALID_VALUE);
+    \\      else u[pname] = param;
+    \\    } else if (pname === 0xcf5 || pname === 0xd05) {
+    \\      if (![1, 2, 4, 8].includes(param)) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\      if (pname === 0xcf5) u[pname] = param;
+    \\      ak.webglCall(this._node, PIXEL_STORE, pname, param);
+    \\    } else if (STORE_NAMES.has(pname)) {
+    \\      param = param | 0;
+    \\      if (param < 0) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\      if (pname in u) u[pname] = param;
+    \\      ak.webglCall(this._node, PIXEL_STORE, pname, param);
+    \\    } else {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\    }
+    \\  }
+    \\  texImage2D(...args) {
+    \\    this._texImage(false, args);
+    \\  }
+    \\  texSubImage2D(...args) {
+    \\    this._texImage(true, args);
+    \\  }
+    \\  // texImage2D(target, level, internalformat, format, type, source),
+    \\  // (target, level, internalformat, width, height, border, format, type,
+    \\  // data | source [, srcOffset]) and texSubImage2D(target, level, xoffset,
+    \\  // yoffset, format, type, source), (target, level, xoffset, yoffset,
+    \\  // width, height, format, type, data | source [, srcOffset]).
+    \\  _texImage(sub, args) {
+    \\    const n = args.length;
+    \\    const explicit = n >= 9;
+    \\    let target, level, internalformat = 0, xoffset = 0, yoffset = 0, width = -1, height = -1, border = 0, format, type, source, srcOffset;
+    \\    if (!sub && n === 6) [target, level, internalformat, format, type, source] = args;
+    \\    else if (!sub && explicit && n <= 10) [target, level, internalformat, width, height, border, format, type, source, srcOffset] = args;
+    \\    else if (sub && n === 7) [target, level, xoffset, yoffset, format, type, source] = args;
+    \\    else if (sub && explicit && n <= 10) [target, level, xoffset, yoffset, width, height, format, type, source, srcOffset] = args;
+    \\    else throw new TypeError('Failed to execute ' + (sub ? 'texSubImage2D' : 'texImage2D') + ': invalid number of arguments');
+    \\    const isData = explicit && (source === null || source === undefined || ArrayBuffer.isView(source));
+    \\    let node = null, kind = 0, flip = this._unpack[0x9240], premul = this._unpack[0x9241], sw = 0, sh = 0;
+    \\    if (!isData && typeof source !== 'number') {
+    \\      // A DOM source: the pixels come from its canvas bitmap, straight.
+    \\      kind = 1;
+    \\      node = source;
+    \\      if (source instanceof ImageData) {
+    \\        kind = 2;
+    \\        node = source.data;
+    \\        sw = source.width;
+    \\        sh = source.height;
+    \\      } else if (source instanceof OffscreenCanvas) {
+    \\        node = source._node;
+    \\      } else if (source instanceof ImageBitmap) {
+    \\        // An ImageBitmap was flipped and premultiplied when it was made.
+    \\        node = source._node;
+    \\        flip = false;
+    \\        premul = source._premultiplied;
+    \\      } else if (!(source instanceof HTMLImageElement || source instanceof HTMLCanvasElement)) {
+    \\        throw new TypeError('The provided value is not a valid texture source');
+    \\      }
+    \\    }
+    \\    target = target >>> 0;
+    \\    level = level | 0;
+    \\    internalformat = internalformat | 0;
+    \\    xoffset = xoffset | 0;
+    \\    yoffset = yoffset | 0;
+    \\    format = format >>> 0;
+    \\    type = type >>> 0;
+    \\    const face = target >= 0x8515 && target <= 0x851a;
+    \\    if (target !== TEXTURE_2D && !face) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (!this._boundTexture(face ? TEXTURE_CUBE_MAP : TEXTURE_2D)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return;
+    \\    }
+    \\    // A pixel unpack buffer (a byte offset into it) comes with P11.8.
+    \\    if (typeof source === 'number' || this._bound.get(0x88ec)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return;
+    \\    }
+    \\    if (explicit) {
+    \\      width = width | 0;
+    \\      height = height | 0;
+    \\      if (width < 0 || height < 0 || (!sub && (border | 0) !== 0)) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\    }
+    \\    const bpc = TEXTURE_TYPES.get(type), comps = TEXTURE_FORMATS.get(format);
+    \\    if (!bpc || !comps) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    const u = this._unpack;
+    \\    let bytes = node, bpp = 0;
+    \\    if (kind === 0) {
+    \\      bytes = null;
+    \\      bpp = bpc[1] ? bpc[0] : bpc[0] * comps;
+    \\      if (source === null || source === undefined) {
+    \\        if (sub) {
+    \\          ak.webglRaise(this._node, INVALID_VALUE);
+    \\          return;
+    \\        }
+    \\      } else {
+    \\        if (!bpc[2].some(c => source instanceof globalThis[c])) {
+    \\          ak.webglRaise(this._node, INVALID_OPERATION);
+    \\          return;
+    \\        }
+    \\        const off = srcOffset === undefined ? 0 : (srcOffset >>> 0) * source.BYTES_PER_ELEMENT;
+    \\        if (off > source.byteLength) {
+    \\          ak.webglRaise(this._node, INVALID_VALUE);
+    \\          return;
+    \\        }
+    \\        const have = source.byteLength - off;
+    \\        if (width > 0 && height > 0) {
+    \\          // The bytes GL reads: whole rows padded to the alignment but the
+    \\          // last, after the skipped rows and pixels.
+    \\          const stride = Math.ceil((u[0xcf2] > 0 ? u[0xcf2] : width) * bpp / u[0xcf5]) * u[0xcf5];
+    \\          if ((u[0xcf3] + height - 1) * stride + (u[0xcf4] + width) * bpp > have) {
+    \\            ak.webglRaise(this._node, INVALID_OPERATION);
+    \\            return;
+    \\          }
+    \\        }
+    \\        bytes = new Uint8Array(source.buffer, source.byteOffset + off, have);
+    \\      }
+    \\      premul = premul ? (format === RGBA && type === UNSIGNED_BYTE ? 1 : format === 0x190a && type === UNSIGNED_BYTE ? 2 : 0) : 0;
+    \\    } else {
+    \\      premul = premul ? 1 : 0;
+    \\    }
+    \\    ak.webglTex(this._node, [sub ? 1 : 0, target, level, internalformat, xoffset, yoffset, width, height, format, type, flip ? 1 : 0, premul, kind, bpp, u[0xcf5], u[0xcf2], u[0xcf3], u[0xcf4], sw, sh], bytes);
     \\  }
     \\}
     \\let installed = false;

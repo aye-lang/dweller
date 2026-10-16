@@ -3,7 +3,9 @@
 // webgl_prelude.aye. A context belongs to its canvas's bitmap
 // (CanvasBitmap.gl), so every native takes the canvas element first.
 // The canvas bitmap holds the last presented frame: paint, screenshots and
-// drawImage read it as they read a 2D canvas (`presentCanvases`).
+// drawImage read it as they read a 2D canvas. A frame is read back into a
+// pixel-pack buffer at its end and mapped into the bitmap after it
+// (`endCanvasFrame`, `presentCanvases`, `takeCanvasFrames`).
 
 import gpu
 import image
@@ -13,6 +15,7 @@ import js.Interp
 import js.JsError
 import js.Value
 import paint
+import perf
 import std
 import std.math
 
@@ -37,6 +40,7 @@ fn installWebGL(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "webglBindAttrib", 4, akWebglBindAttrib)
     try defMethod(it, o, "webglActive", 4, akWebglActive)
     try defMethod(it, o, "webglUniformv", 6, akWebglUniformv)
+    try defMethod(it, o, "webglTex", 3, akWebglTex)
 }
 
 fn webglOf(it: *mut Interp, v: Value) JsError!*mut gpu.Context {
@@ -129,6 +133,16 @@ let OP_DELETE_PROGRAM: u32 = 29
 let OP_UNIFORM_F: u32 = 30
 let OP_UNIFORM_I: u32 = 31
 let OP_UNIFORM_UI: u32 = 32
+let OP_BIND_TEXTURE: u32 = 33
+let OP_ACTIVE_TEXTURE: u32 = 34
+let OP_DELETE_TEXTURE: u32 = 35
+// texParameteri / texParameterf: (target, pname, value).
+let OP_TEX_PARAM_I: u32 = 36
+let OP_TEX_PARAM_F: u32 = 37
+let OP_GENERATE_MIPMAP: u32 = 38
+// texStorage2D: (target, levels, internalformat, width, height).
+let OP_TEX_STORAGE: u32 = 39
+let OP_PIXEL_STORE: u32 = 40
 
 fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
@@ -219,6 +233,23 @@ fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
             v[i] = try argU32(it, a, 4 + i)
         }
         uniformv(gl, 8 + try argU32(it, a, 3) - 1, try argI32(it, a, 2), 1, @ptrCast([*]u8, &v[0]))
+    } else if op == OP_BIND_TEXTURE {
+        gl.glBindTexture(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_ACTIVE_TEXTURE {
+        gl.glActiveTexture(try argU32(it, a, 2))
+    } else if op == OP_DELETE_TEXTURE {
+        let name = try argU32(it, a, 2)
+        gl.glDeleteTextures(1, &name)
+    } else if op == OP_TEX_PARAM_I {
+        gl.glTexParameteri(try argU32(it, a, 2), try argU32(it, a, 3), try argI32(it, a, 4))
+    } else if op == OP_TEX_PARAM_F {
+        gl.glTexParameterf(try argU32(it, a, 2), try argU32(it, a, 3), try argF32(it, a, 4))
+    } else if op == OP_GENERATE_MIPMAP {
+        gl.glGenerateMipmap(try argU32(it, a, 2))
+    } else if op == OP_TEX_STORAGE {
+        gl.glTexStorage2D(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6))
+    } else if op == OP_PIXEL_STORE {
+        gl.glPixelStorei(try argU32(it, a, 2), try argI32(it, a, 3))
     }
     return Value.Undefined
 }
@@ -234,7 +265,7 @@ fn argOffset(it: *mut Interp, a: Args, i: usize) JsError!usize {
 }
 
 // webglNew(canvas, kind, type): a new GL name (0 when GL made none): kind
-// 0 a buffer, 1 a shader of `type`, 2 a program.
+// 0 a buffer, 1 a shader of `type`, 2 a program, 3 a texture.
 fn akWebglNew(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
     let kind = try argU32(it, a, 1)
@@ -244,6 +275,8 @@ fn akWebglNew(it: *mut Interp, a: Args) JsError!Value {
         gl.glGenBuffers(1, &mut name)
     } else if kind == 1 {
         name = gl.glCreateShader(try argU32(it, a, 2))
+    } else if kind == 3 {
+        gl.glGenTextures(1, &mut name)
     } else {
         name = gl.glCreateProgram()
     }
@@ -467,6 +500,260 @@ fn uniformv(gl: gpu.Api, form: u32, loc: i32, count: i32, p: [*]u8) {
     }
 }
 
+// The size in bytes of a pixel of `format` and `kind` (a GL type) that
+// a DOM source can be packed into (WebGLImageConversion's RGBA8 sources:
+// the byte formats and the three packed 16-bit ones); 0 for any other.
+fn domPixelSize(format: u32, kind: u32) usize {
+    if kind == 0x1401 {
+        if format == 0x1908 {
+            return 4
+        }
+        if format == 0x1907 {
+            return 3
+        }
+        if format == 0x190a || format == 0x8227 {
+            return 2
+        }
+        if format == 0x1909 || format == 0x1906 || format == 0x1903 {
+            return 1
+        }
+        return 0
+    }
+    if (kind == 0x8033 || kind == 0x8034) && format == 0x1908 {
+        return 2
+    }
+    if kind == 0x8363 && format == 0x1907 {
+        return 2
+    }
+    return 0
+}
+
+// Color times alpha, as WebGLImageConversion's premultiply: a float
+// scale, truncated.
+fn premultiplied(c: u8, a: u8) u8 {
+    return ((c as f32) * ((a as f32) / 255.0)) as u8
+}
+
+// Straight RGBA8 `src` (w x h, top row first) packed for `format` and
+// `kind` (domPixelSize is not 0), rows tight, flipped when `flip`, the
+// color multiplied by alpha when `premul`.
+fn packDom(alloc: std.mem.Allocator, src: []u8, w: usize, h: usize, format: u32, kind: u32, flip: bool, premul: bool) std.mem.AllocError![]mut u8 {
+    let size = domPixelSize(format, kind)
+    let out = try alloc.alloc(0 as u8, w * h * size)
+    for y in 0..h {
+        var sy = y
+        if flip {
+            sy = h - 1 - y
+        }
+        for x in 0..w {
+            let i = (sy * w + x) * 4
+            var r = src[i]
+            var g = src[i + 1]
+            var b = src[i + 2]
+            let a = src[i + 3]
+            if premul {
+                r = premultiplied(r, a)
+                g = premultiplied(g, a)
+                b = premultiplied(b, a)
+            }
+            let o = (y * w + x) * size
+            if kind == 0x1401 {
+                if format == 0x1908 {
+                    out[o] = r
+                    out[o + 1] = g
+                    out[o + 2] = b
+                    out[o + 3] = a
+                } else if format == 0x1907 {
+                    out[o] = r
+                    out[o + 1] = g
+                    out[o + 2] = b
+                } else if format == 0x190a {
+                    out[o] = r
+                    out[o + 1] = a
+                } else if format == 0x8227 {
+                    out[o] = r
+                    out[o + 1] = g
+                } else if format == 0x1906 {
+                    out[o] = a
+                } else {
+                    out[o] = r
+                }
+            } else {
+                var v: u32 = 0
+                if kind == 0x8033 {
+                    v = ((r as u32 >> 4) << 12) | ((g as u32 >> 4) << 8) | ((b as u32 >> 4) << 4) | (a as u32 >> 4)
+                } else if kind == 0x8034 {
+                    v = ((r as u32 >> 3) << 11) | ((g as u32 >> 3) << 6) | ((b as u32 >> 3) << 1) | (a as u32 >> 7)
+                } else {
+                    v = ((r as u32 >> 3) << 11) | ((g as u32 >> 2) << 5) | (b as u32 >> 3)
+                }
+                out[o] = (v & 255) as u8
+                out[o + 1] = (v >> 8) as u8
+            }
+        }
+    }
+    return out
+}
+
+// An ArrayBufferView's `w` x `h` pixels of `size` bytes, as the unpack
+// state (alignment, row length, skips) lays them out, copied as tight
+// rows, flipped when `flip`; `premul` 1 multiplies the color of RGBA
+// bytes by alpha, 2 the luminance of luminance-alpha bytes.
+fn repackView(alloc: std.mem.Allocator, src: []u8, w: usize, h: usize, size: usize, align: usize, row_length: usize, skip_rows: usize, skip_pixels: usize, flip: bool, premul: i32) std.mem.AllocError![]mut u8 {
+    var row = row_length
+    if row == 0 {
+        row = w
+    }
+    let stride = (row * size + align - 1) / align * align
+    let start = skip_rows * stride + skip_pixels * size
+    let out = try alloc.alloc(0 as u8, w * h * size)
+    for y in 0..h {
+        var sy = y
+        if flip {
+            sy = h - 1 - y
+        }
+        let from = start + sy * stride
+        for k in 0..w * size {
+            out[y * w * size + k] = src[from + k]
+        }
+        if premul != 0 {
+            for x in 0..w {
+                let o = (y * w + x) * size
+                if premul == 1 {
+                    for k in 0..3 {
+                        out[o + k] = premultiplied(out[o + k], out[o + 3])
+                    }
+                } else {
+                    out[o] = premultiplied(out[o], out[o + 1])
+                }
+            }
+        }
+    }
+    return out
+}
+
+// webglTex(canvas, spec, source): texImage2D / texSubImage2D after the
+// prelude's checks (Blink's TexImageHelper*). `spec` is [sub, target,
+// level, internalformat, xoffset, yoffset, width, height, format, type,
+// flipY, premultiply, kind, pixel size, unpack alignment, row length,
+// skip rows, skip pixels, source width, source height]. Kind 0: `source`
+// is a Uint8Array over the pixels (null: no data); flipY and premultiply
+// (1 RGBA bytes, 2 luminance-alpha bytes) repack them. Kind 1: an img or
+// canvas element; kind 2: the data of an ImageData; their straight RGBA8
+// pixels are flipped, premultiplied (premultiply 1) and packed for
+// format and type. A width or height of -1 is the whole source. A
+// source that is not origin-clean throws SecurityError.
+fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    var s = @zeroed([20]i32)
+    for i in 0..20 {
+        s[i] = js.toInt32(try it.toNumber(try canvasIndex(it, it.arg(a, 1), i)))
+    }
+    let sub = s[0] != 0
+    let target = s[1] as u32
+    let format = s[8] as u32
+    let kind = s[9] as u32
+    let flip = s[10] != 0
+    let source = it.arg(a, 2)
+    var w = s[6]
+    var h = s[7]
+    var data = []mut u8{}
+    // The repacked pixels, and the corner of a larger source.
+    var packed: ?[]mut u8 = null
+    var corner: ?[]mut u8 = null
+    defer if packed |bytes| {
+        it.alloc.free(bytes)
+    }
+    defer if corner |bytes| {
+        it.alloc.free(bytes)
+    }
+    if s[12] == 0 {
+        let o = js.objectOf(source)
+        if o != js.NONE {
+            data = js.viewBytes(it, o)
+            if (flip || s[11] != 0) && w > 0 && h > 0 {
+                packed = try repackView(it.alloc, data, w as usize, h as usize, s[13] as usize, s[14] as usize, s[15] as usize, s[16] as usize, s[17] as usize, flip, s[11])
+                data = packed.?
+            }
+        }
+    } else {
+        var rgba = []mut u8{}
+        var sw: i32 = s[18]
+        var sh: i32 = s[19]
+        if s[12] == 2 {
+            rgba = js.viewBytes(it, js.objectOf(source))
+        } else {
+            let src = (try canvasSource(it, source)) orelse {
+                ctx.raise(0x501)
+                return Value.Undefined
+            }
+            if try sourceTainted(it, source) {
+                return domError(it, "SecurityError", "The image element contains cross-origin data, and may not be loaded.")
+            }
+            // What a WebGL canvas drew since its last frame.
+            let node = handleOf(it, source, TAG_NODE) orelse return Value.Undefined
+            if scriptOf(it).active.doc.isElement(node, "canvas") {
+                try frameNow(it, try canvasBitmap(it, source))
+            }
+            rgba = src.bmp.pixels
+            sw = src.bmp.width as i32
+            sh = src.bmp.height as i32
+        }
+        if w < 0 {
+            w = sw
+        }
+        if h < 0 {
+            h = sh
+        }
+        if sw < 1 || sh < 1 || w > sw || h > sh || rgba.len != sw as usize * sh as usize * 4 {
+            ctx.raise(0x501)
+            return Value.Undefined
+        }
+        if domPixelSize(format, kind) == 0 {
+            ctx.raise(0x502)
+            return Value.Undefined
+        }
+        // An explicit size takes the top left corner of the source.
+        var part = rgba
+        if w != sw {
+            let bytes = try it.alloc.alloc(0 as u8, w as usize * h as usize * 4)
+            corner = bytes
+            for y in 0..h as usize {
+                for x in 0..w as usize * 4 {
+                    bytes[y * w as usize * 4 + x] = rgba[y * sw as usize * 4 + x]
+                }
+            }
+            part = bytes
+        }
+        packed = try packDom(it.alloc, part[0..w as usize * h as usize * 4], w as usize, h as usize, format, kind, flip, s[11] != 0)
+        data = packed.?
+    }
+    let gl = ctx.gl()
+    // Repacked rows are tight.
+    if packed != null {
+        gl.glPixelStorei(0xcf5, 1)
+        gl.glPixelStorei(0xcf2, 0)
+        gl.glPixelStorei(0xcf3, 0)
+        gl.glPixelStorei(0xcf4, 0)
+    }
+    var ptr: ?[*]u8 = null
+    if data.len > 0 {
+        ptr = data.ptr
+    }
+    if sub {
+        gl.glTexSubImage2D(target, s[2], s[4], s[5], w, h, format, kind, ptr)
+    } else {
+        gl.glTexImage2D(target, s[2], s[3], w, h, 0, format, kind, ptr)
+    }
+    if packed != null {
+        gl.glPixelStorei(0xcf5, s[14])
+        gl.glPixelStorei(0xcf2, s[15])
+        gl.glPixelStorei(0xcf3, s[16])
+        gl.glPixelStorei(0xcf4, s[17])
+    }
+    return Value.Undefined
+}
+
 fn akWebglIsEnabled(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
     let cap = try argU32(it, a, 1)
@@ -582,43 +869,47 @@ fn akWebglPng(it: *mut Interp, a: Args) JsError!Value {
     return pngDataUrl(it, png)
 }
 
-// Before drawImage of a WebGL canvas: what it drew since the last frame.
+// Before drawImage of a WebGL canvas: what it drew since the last frame,
+// or the last frame when its readback was not mapped yet.
 fn akWebglSnapshot(it: *mut Interp, a: Args) JsError!Value {
-    let c = try canvasBitmap(it, it.arg(a, 0))
-    if c.gl |ctx| {
-        if ctx.dirty {
-            try copyFrame(it.alloc, ctx, c.bmp, false)
-        }
-    }
+    try frameNow(it, try canvasBitmap(it, it.arg(a, 0)))
     return Value.Undefined
 }
 
-// The frame of `ctx` into the canvas bitmap (nearest pixels when the
-// drawing buffer was scaled down to the device's size); `present` also
-// ends the frame (clears the buffer without preserveDrawingBuffer).
-fn copyFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bitmap, present: bool) std.mem.AllocError!void {
-    let w = ctx.width as usize
-    let h = ctx.height as usize
-    if bmp.pixels.len == 0 {
-        if present {
-            ctx.present(bmp.pixels)
+// The canvas bitmap of a WebGL canvas as a read of it now sees it: its
+// last frame, mapped if it was not yet, or what it drew since.
+fn frameNow(it: *mut Interp, c: *mut CanvasBitmap) JsError!void {
+    if c.gl |ctx| {
+        if try takeFrame(it.alloc, ctx, c.bmp) {
+            canvasChanged(it)
         }
-        return
+        if ctx.dirty && c.bmp.pixels.len > 0 {
+            let w = ctx.width as usize
+            let h = ctx.height as usize
+            let px = try framePixels(it.alloc, c.bmp, w, h)
+            defer if px.ptr != c.bmp.pixels.ptr {
+                it.alloc.free(px)
+            }
+            ctx.snapshot(px)
+            fitFrame(px, w, h, c.bmp)
+        }
     }
-    var px = bmp.pixels
-    let same = bmp.width == w && bmp.height == h
-    if !same {
-        px = try alloc.alloc(0 as u8, w * h * 4)
+}
+
+// Where a `w` x `h` frame goes on its way to `bmp`: its pixels, or
+// scratch pixels when the drawing buffer was scaled down to the device's
+// size (`fitFrame` then scales them).
+fn framePixels(alloc: std.mem.Allocator, bmp: *mut image.Bitmap, w: usize, h: usize) std.mem.AllocError![]mut u8 {
+    if bmp.width == w && bmp.height == h {
+        return bmp.pixels
     }
-    defer if !same {
-        alloc.free(px)
-    }
-    if present {
-        ctx.present(px)
-    } else {
-        ctx.snapshot(px)
-    }
-    if !same {
+    return alloc.alloc(0 as u8, w * h * 4)
+}
+
+// The frame in `px` into the canvas bitmap (nearest pixels when they
+// differ in size), whose version moves.
+fn fitFrame(px: []mut u8, w: usize, h: usize, bmp: *mut image.Bitmap) {
+    if px.ptr != bmp.pixels.ptr {
         for y in 0..bmp.height {
             let sy = y * h / bmp.height
             for x in 0..bmp.width {
@@ -632,18 +923,99 @@ fn copyFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bi
     bmp.version += 1
 }
 
-/// The end of a frame (docs/webgl.md §2): every WebGL canvas of the page
-/// and its frames that drew since the last frame shows what it drew,
-/// and its drawing buffer is cleared unless preserveDrawingBuffer.
-/// Rendering (`Page.layoutPage`) and the end of the animation frame
-/// callbacks call it.
+// The end of a frame of `ctx`: its readback starts (and, without
+// preserveDrawingBuffer, its drawing buffer is cleared).
+fn startFrame(ctx: *mut gpu.Context) {
+    let t = perf.start()
+    ctx.startReadback()
+    if t != 0 {
+        ctx.start_ns = perf.start() - t
+    }
+}
+
+// The frame `startFrame` read, into the canvas bitmap (docs/webgl.md
+// §5); true when the bitmap changed. DWELLER_TIMING `webgl_readback`: the
+// time the readback took on the main thread, its start and this.
+fn takeFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bitmap) std.mem.AllocError!bool {
+    if !ctx.pending {
+        return false
+    }
+    if bmp.pixels.len == 0 {
+        ctx.dropReadback()
+        return false
+    }
+    let t = perf.start()
+    let w = ctx.pending_w as usize
+    let h = ctx.pending_h as usize
+    let px = try framePixels(alloc, bmp, w, h)
+    defer if px.ptr != bmp.pixels.ptr {
+        alloc.free(px)
+    }
+    if !ctx.finishReadback(px) {
+        return false
+    }
+    fitFrame(px, w, h, bmp)
+    if t != 0 {
+        perf.end("webgl_readback", t - ctx.start_ns, sizeLabel(w, h))
+    }
+    return true
+}
+
+var size_buf = @zeroed([48]u8)
+
+// "WxH" for DWELLER_TIMING.
+fn sizeLabel(w: usize, h: usize) []u8 {
+    var n = putDigits(&mut size_buf, 0, w)
+    size_buf[n] = 'x'
+    n = putDigits(&mut size_buf, n + 1, h)
+    return size_buf[0..n]
+}
+
+fn putDigits(buf: *mut [48]u8, at: usize, v: usize) usize {
+    var digits = @zeroed([20]u8)
+    var k: usize = 0
+    var x = v
+    while true {
+        digits[k] = '0' + (x % 10) as u8
+        k += 1
+        x = x / 10
+        if x == 0 {
+            break
+        }
+    }
+    var n = at
+    while k > 0 {
+        k -= 1
+        buf[n] = digits[k]
+        n += 1
+    }
+    return n
+}
+
+// The window maps a frame's readback in its next frame
+// (`readbackNextFrame`); elsewhere (dump, screenshot, the agent) it is
+// mapped when the page is rendered.
+var next_frame: bool = false
+
+/// The window shows each WebGL frame one frame late: its readback is
+/// mapped in the next frame (`takeCanvasFrames`) instead of waited for.
+pub fn readbackNextFrame(on: bool) {
+    next_frame = on
+}
+
+/// Before rendering (`Page.layoutPage`): every WebGL canvas of the page
+/// and its frames that drew since the last frame ends its frame; outside
+/// the window its frame is mapped at once, so the canvas shows it.
 pub fn presentCanvases(p: *mut Page) {
     if p.images |cache| {
         for i in 0..cache.canvases.len() {
             let c = &mut cache.canvases.items()[i]
             if c.gl |ctx| {
                 if ctx.dirty {
-                    copyFrame(p.alloc, ctx, c.bmp, true) catch {}
+                    startFrame(ctx)
+                }
+                if !next_frame {
+                    _ = takeFrame(p.alloc, ctx, c.bmp) catch false
                 }
             }
         }
@@ -651,6 +1023,75 @@ pub fn presentCanvases(p: *mut Page) {
     for f in p.frames.items() {
         presentCanvases(f.page)
     }
+}
+
+/// The end of the animation frame callbacks of a frame (docs/webgl.md
+/// §2): the frame before is mapped into its canvas if it was not yet,
+/// and every WebGL canvas that drew starts its readback.
+pub fn endCanvasFrame(p: *mut Page) {
+    if p.images |cache| {
+        for i in 0..cache.canvases.len() {
+            let c = &mut cache.canvases.items()[i]
+            if c.gl |ctx| {
+                _ = takeFrame(p.alloc, ctx, c.bmp) catch false
+                if ctx.dirty {
+                    startFrame(ctx)
+                }
+            }
+        }
+    }
+    for f in p.frames.items() {
+        endCanvasFrame(f.page)
+    }
+}
+
+/// The window's next frame: the readbacks of the page and its frames are
+/// mapped into their canvases; true when a canvas changed (the page is
+/// then laid out again, as after a 2D canvas draws).
+pub fn takeCanvasFrames(p: *mut Page) bool {
+    var took = false
+    if p.images |cache| {
+        for i in 0..cache.canvases.len() {
+            let c = &mut cache.canvases.items()[i]
+            if c.gl |ctx| {
+                if takeFrame(p.alloc, ctx, c.bmp) catch false {
+                    took = true
+                }
+            }
+        }
+    }
+    if took {
+        if p.script |s| {
+            s.version += 1
+        } else {
+            p.mutations += 1
+        }
+    }
+    for f in p.frames.items() {
+        if takeCanvasFrames(f.page) {
+            took = true
+        }
+    }
+    return took
+}
+
+/// Is a WebGL frame of the page or its frames waiting to be mapped?
+pub fn canvasFramesPending(p: *Page) bool {
+    if p.images |cache| {
+        for c in cache.canvases.items() {
+            if c.gl |ctx| {
+                if ctx.pending {
+                    return true
+                }
+            }
+        }
+    }
+    for f in p.frames.items() {
+        if canvasFramesPending(f.page) {
+            return true
+        }
+    }
+    return false
 }
 
 // A canvas's width or height changed: the drawing buffer follows.

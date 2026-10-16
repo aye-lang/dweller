@@ -1,0 +1,582 @@
+// js/compiler: the syntax tree of one function to bytecode (BYTECODE.md
+// section 2), compiled lazily on the function's first call (vm.aye).
+//
+// The shape of V8's `BytecodeGenerator`: an expression is visited into
+// the accumulator; a binary operator visits its left side into a
+// register (a local's own register when the right side cannot write it,
+// else a temporary) and its right side into the accumulator, then
+// emits `Op r`. Temporaries come from the builder's register stack
+// (V8's `BytecodeRegisterAllocator`), released when the expression is
+// done. Parameters and uncaptured locals are registers, as the resolver
+// decided (resolve.aye `allocate`).
+//
+// P4.63 compiles straight-line code: literals, registers, the unary,
+// binary, comparison and update operators, assignments to registers,
+// expression statements, `var`/`let`/`const` declarations, blocks
+// without functions, and `return`. Anything else makes the whole
+// function stay on the tree walker, with the reason kept for
+// DWELLER_JS_VM_STATS.
+//
+// Ported from V8 `src/interpreter/bytecode-generator.cc`
+// (`VisitBinaryOperation`, `VisitArithmeticExpression`,
+// `VisitCompareOperation`, `VisitAssignment`, `VisitCountOperation`,
+// `VisitUnaryOperation`) and `bytecode-register-allocator.h`. Copyright
+// the V8 project authors, BSD-3; see `browser/js/LICENSE-V8`.
+
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub error CompileError { Unsupported, OutOfMemory }
+
+/// A compiled function, or why it is not (`code` is null).
+pub struct VmFunc {
+    code: ?*mut BytecodeArray
+    this_reg: i32
+    reason: []u8
+    // false: not compiled yet (the first call compiles it)
+    tried: bool = true
+}
+
+struct Compiler {
+    ast: *Ast
+    b: BcBuilder
+    func: u32
+    // The scopes that make an environment in the tree walker, innermost
+    // last: an identifier's depth counts them.
+    scopes: List(u32)
+    // Per register: a `let`/`const` not yet initialized (its dead zone).
+    tdz: List(bool)
+    // The register that holds `this` (-1: the function does not use it).
+    this_reg: i32
+    reason: []u8
+
+    fn fail(self: *mut Self, why: []u8) CompileError!void {
+        self.reason = why
+        return CompileError.Unsupported
+    }
+
+    // The register of identifier `id` (a parameter, `this` or a local).
+    fn identReg(self: *mut Self, depth: u32, slot: u32) CompileError!i32 {
+        if depth >= DEPTH_GLOBAL_LEX {
+            try self.fail("unsupported: global variable")
+        }
+        let n = self.scopes.len() as u32
+        if depth >= n {
+            try self.fail("unsupported: outer variable")
+        }
+        let sc = self.ast.scopes.items()[self.scopes.items()[n - 1 - depth]]
+        let vs = self.ast.vars.items()
+        for k in sc.vars..sc.vars + sc.nvars {
+            let v = vs[k]
+            if v.slot != slot {
+                continue
+            }
+            if v.loc == LOC_REGISTER {
+                return v.index as i32
+            }
+            if v.loc == LOC_PARAM {
+                if v.index == NONE {
+                    return self.this_reg
+                }
+                return self.b.param(v.index)
+            }
+            try self.fail("unsupported: context variable")
+        }
+        try self.fail("unsupported: unknown binding")
+        return 0
+    }
+
+    fn readReg(self: *mut Self, depth: u32, slot: u32) CompileError!i32 {
+        let r = try self.identReg(depth, slot)
+        if r >= 0 && self.tdz.items()[r as usize] {
+            try self.fail("unsupported: read in the dead zone")
+        }
+        return r
+    }
+
+    // A plain (re)assignment target: not const, not in its dead zone.
+    fn writeReg(self: *mut Self, target: u32) CompileError!i32 {
+        match self.ast.node(target) {
+            .Ident { depth, slot, flags, .. } => {
+                if (flags & (IDENT_CONST | IDENT_IMPORT)) != 0 {
+                    try self.fail("unsupported: assignment to a constant")
+                }
+                return self.readReg(depth, slot)
+            }
+            _ => {
+                try self.fail("unsupported: assignment to a property or pattern")
+            }
+        }
+        return 0
+    }
+
+    // Can evaluating `id` write a register? (Then the left side of a
+    // binary operator cannot stay in its own register.)
+    fn mayWrite(self: *Self, id: u32) bool {
+        return match self.ast.node(id) {
+            .Num { .. } => false
+            .Str { .. } => false
+            .Null => false
+            .True => false
+            .False => false
+            .Ident { .. } => false
+            .Unary { arg, .. } => self.mayWrite(arg)
+            .Binary { l, r, .. } => self.mayWrite(l) || self.mayWrite(r)
+            _ => true
+        }
+    }
+
+    fn binaryOpcode(op: Op) u8 {
+        return match op {
+            .Add => BC_ADD
+            .Sub => BC_SUB
+            .Mul => BC_MUL
+            .Div => BC_DIV
+            .Mod => BC_MOD
+            .Exp => BC_EXP
+            .BitOr => BC_BITWISE_OR
+            .BitXor => BC_BITWISE_XOR
+            .BitAnd => BC_BITWISE_AND
+            .Shl => BC_SHIFT_LEFT
+            .Shr => BC_SHIFT_RIGHT
+            .UShr => BC_SHIFT_RIGHT_LOGICAL
+            .Eq => BC_TEST_EQUAL
+            .NotEq => BC_TEST_EQUAL
+            .StrictEq => BC_TEST_EQUAL_STRICT
+            .StrictNotEq => BC_TEST_EQUAL_STRICT
+            .Lt => BC_TEST_LESS_THAN
+            .Gt => BC_TEST_GREATER_THAN
+            .Le => BC_TEST_LESS_THAN_OR_EQUAL
+            .Ge => BC_TEST_GREATER_THAN_OR_EQUAL
+            _ => 0
+        }
+    }
+
+    // The `Smi` form of an arithmetic opcode (V8 `AddSmi` ...), or 0.
+    fn smiOpcode(op: u8) u8 {
+        if op >= BC_ADD && op <= BC_SHIFT_RIGHT_LOGICAL {
+            return op + (BC_ADD_SMI - BC_ADD)
+        }
+        return 0
+    }
+
+    // A small integer literal (V8's `IsSmiLiteral`), else null.
+    fn smiLiteral(self: *Self, id: u32) ?i64 {
+        match self.ast.node(id) {
+            .Num { v } => {
+                if v >= -128.0 && v <= 127.0 && v == ((v as i64) as f64) && !isNegZero(v) {
+                    return v as i64
+                }
+            }
+            _ => {}
+        }
+        return null
+    }
+
+    // `l op r` with l in a register and r in the accumulator.
+    fn visitBinary(self: *mut Self, op: Op, l: u32, r: u32) CompileError!void {
+        let bc = Compiler.binaryOpcode(op)
+        if bc == 0 {
+            try self.fail("unsupported: in/instanceof")
+        }
+        let slot = self.b.newSlot() as i64
+        let smi = Compiler.smiOpcode(bc)
+        if smi != 0 {
+            if self.smiLiteral(r) |imm| {
+                try self.visit(l)
+                try self.b.op2(smi, imm, slot)
+                return
+            }
+        }
+        let mark = self.b.topReg
+        var lr: i32 = 0
+        var direct = false
+        match self.ast.node(l) {
+            .Ident { depth, slot: s, .. } => {
+                if !self.mayWrite(r) {
+                    lr = try self.readReg(depth, s)
+                    direct = true
+                }
+            }
+            _ => {}
+        }
+        if !direct {
+            try self.visit(l)
+            lr = self.b.newReg()
+            try self.b.op1(BC_STAR, lr as i64)
+        }
+        try self.visit(r)
+        try self.b.op2(bc, lr as i64, slot)
+        if op == Op.NotEq || op == Op.StrictNotEq {
+            try self.b.op0(BC_LOGICAL_NOT)
+        }
+        self.b.releaseRegs(mark)
+    }
+
+    fn visitUnary(self: *mut Self, op: Op, arg: u32) CompileError!void {
+        if op == Op.Delete {
+            try self.fail("unsupported: delete")
+        }
+        if op == Op.Typeof {
+            match self.ast.node(arg) {
+                .Ident { depth, .. } => {
+                    if depth >= DEPTH_GLOBAL_LEX {
+                        try self.fail("unsupported: global variable")
+                    }
+                }
+                _ => {}
+            }
+        }
+        try self.visit(arg)
+        if op == Op.Void {
+            try self.b.op0(BC_LDA_UNDEFINED)
+        } else if op == Op.Not {
+            try self.b.op0(BC_TO_BOOLEAN_LOGICAL_NOT)
+        } else if op == Op.Typeof {
+            try self.b.op0(BC_TYPE_OF)
+        } else if op == Op.Neg {
+            try self.b.op1(BC_NEGATE, self.b.newSlot() as i64)
+        } else if op == Op.BitNot {
+            try self.b.op1(BC_BITWISE_NOT, self.b.newSlot() as i64)
+        } else if op == Op.Plus {
+            try self.b.op1(BC_TO_NUMBER, self.b.newSlot() as i64)
+        } else {
+            try self.fail("unsupported: unary operator")
+        }
+    }
+
+    // V8 `VisitCountOperation`: prefix `Ldar x; Inc; Star x`, postfix
+    // keeps the old value (ToNumeric) in a temporary.
+    fn visitUpdate(self: *mut Self, inc: bool, prefix: bool, arg: u32) CompileError!void {
+        let r = try self.writeReg(arg)
+        try self.b.op1(BC_LDAR, r as i64)
+        var op = BC_INC
+        if !inc {
+            op = BC_DEC
+        }
+        if prefix {
+            try self.b.op1(op, self.b.newSlot() as i64)
+            try self.b.op1(BC_STAR, r as i64)
+            return
+        }
+        let mark = self.b.topReg
+        let old = self.b.newReg()
+        try self.b.op1(BC_TO_NUMERIC, self.b.newSlot() as i64)
+        try self.b.op1(BC_STAR, old as i64)
+        try self.b.op1(op, self.b.newSlot() as i64)
+        try self.b.op1(BC_STAR, r as i64)
+        try self.b.op1(BC_LDAR, old as i64)
+        self.b.releaseRegs(mark)
+    }
+
+    fn visitAssign(self: *mut Self, op: Op, target: u32, value: u32) CompileError!void {
+        let r = try self.writeReg(target)
+        if op == Op.None {
+            try self.visit(value)
+            try self.b.op1(BC_STAR, r as i64)
+            return
+        }
+        let bc = Compiler.binaryOpcode(op)
+        if bc == 0 || bc >= BC_TEST_EQUAL {
+            try self.fail("unsupported: logical assignment")
+        }
+        // `x op= v` is `x = x op v` with x read first.
+        let mark = self.b.topReg
+        var lr = r
+        if self.mayWrite(value) {
+            lr = self.b.newReg()
+            try self.b.op2(BC_MOV, r as i64, lr as i64)
+        }
+        try self.visit(value)
+        try self.b.op2(bc, lr as i64, self.b.newSlot() as i64)
+        try self.b.op1(BC_STAR, r as i64)
+        self.b.releaseRegs(mark)
+    }
+
+    /// Visits expression `id` into the accumulator.
+    fn visit(self: *mut Self, id: u32) CompileError!void {
+        self.b.expressionPos(self.ast.spans.items()[id].start as i64)
+        match self.ast.node(id) {
+            .Num { v } => {
+                try self.b.loadNumber(v)
+            }
+            .Str { atom } => {
+                try self.b.op1(BC_LDA_CONSTANT, try self.b.constant(BcConst.Atom { id: atom }) as i64)
+            }
+            .Null => {
+                try self.b.op0(BC_LDA_NULL)
+            }
+            .True => {
+                try self.b.op0(BC_LDA_TRUE)
+            }
+            .False => {
+                try self.b.op0(BC_LDA_FALSE)
+            }
+            .Ident { depth, slot, .. } => {
+                let r = try self.readReg(depth, slot)
+                try self.b.op1(BC_LDAR, r as i64)
+            }
+            .Unary { op, arg } => {
+                try self.visitUnary(op, arg)
+            }
+            .Update { inc, prefix, arg } => {
+                try self.visitUpdate(inc, prefix, arg)
+            }
+            .Binary { op, l, r } => {
+                try self.visitBinary(op, l, r)
+            }
+            .Assign { op, target, value } => {
+                try self.visitAssign(op, target, value)
+            }
+            _ => {
+                try self.fail(vmNodeReason(self.ast.node(id)))
+            }
+        }
+    }
+
+    // The let/const of a statement list start in their dead zone.
+    fn markDeadZone(self: *mut Self, list: u32, n: u32) CompileError!void {
+        for k in 0..n {
+            match self.ast.node(self.ast.item(list, k)) {
+                .VarDecl { kind, list: dl, n: dn } => {
+                    if kind == DECL_VAR {
+                        continue
+                    }
+                    for j in 0..dn {
+                        match self.ast.node(self.ast.item(dl, j)) {
+                            .Declarator { target, .. } => {
+                                match self.ast.node(target) {
+                                    .Ident { depth, slot, .. } => {
+                                        let r = try self.identReg(depth, slot)
+                                        if r >= 0 {
+                                            self.tdz.items()[r as usize] = true
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn visitDecl(self: *mut Self, kind: u32, list: u32, n: u32) CompileError!void {
+        for j in 0..n {
+            match self.ast.node(self.ast.item(list, j)) {
+                .Declarator { target, init } => {
+                    var depth: u32 = 0
+                    var slot: u32 = 0
+                    match self.ast.node(target) {
+                        .Ident { depth: d, slot: s, .. } => {
+                            depth = d
+                            slot = s
+                        }
+                        _ => {
+                            try self.fail("unsupported: destructuring")
+                        }
+                    }
+                    let r = try self.identReg(depth, slot)
+                    if init == 0 {
+                        if kind == DECL_VAR {
+                            continue
+                        }
+                        try self.b.op0(BC_LDA_UNDEFINED)
+                    } else {
+                        try self.visit(init)
+                    }
+                    try self.b.op1(BC_STAR, r as i64)
+                    if r >= 0 {
+                        self.tdz.items()[r as usize] = false
+                    }
+                }
+                _ => {
+                    try self.fail("unsupported: declaration")
+                }
+            }
+        }
+    }
+
+    fn visitList(self: *mut Self, list: u32, n: u32) CompileError!void {
+        try self.markDeadZone(list, n)
+        for k in 0..n {
+            try self.visitStatement(self.ast.item(list, k))
+        }
+    }
+
+    fn visitStatement(self: *mut Self, id: u32) CompileError!void {
+        self.b.statementPos(self.ast.spans.items()[id].start as i64)
+        match self.ast.node(id) {
+            .Empty => {}
+            .ExprStmt { e } => {
+                try self.visit(e)
+            }
+            .VarDecl { kind, list, n } => {
+                if kind != DECL_VAR && kind != DECL_LET && kind != DECL_CONST {
+                    try self.fail("unsupported: import")
+                }
+                try self.visitDecl(kind, list, n)
+            }
+            .Return { arg } => {
+                if arg == 0 {
+                    try self.b.op0(BC_LDA_UNDEFINED)
+                } else {
+                    try self.visit(arg)
+                }
+                try self.b.op0(BC_RETURN)
+            }
+            .Block { list, n, scope } => {
+                let sc = self.ast.scopes.items()[scope]
+                if sc.nfuncs > 0 {
+                    try self.fail("unsupported: FuncDecl")
+                }
+                if sc.nslots > 0 {
+                    try self.scopes.append(scope)
+                }
+                try self.visitList(list, n)
+                if sc.nslots > 0 {
+                    self.scopes.pop()
+                }
+            }
+            _ => {
+                try self.fail(vmNodeReason(self.ast.node(id)))
+            }
+        }
+    }
+
+    fn visitFunction(self: *mut Self) CompileError!void {
+        let fi = self.ast.func(self.func)
+        if fi.generator || fi.is_async {
+            try self.fail("unsupported: generator or async function")
+        }
+        if fi.ctor || fi.default_ctor {
+            try self.fail("unsupported: class constructor")
+        }
+        if !fi.simple {
+            try self.fail("unsupported: parameter pattern or default")
+        }
+        if fi.args_slot != NONE {
+            try self.fail("unsupported: arguments")
+        }
+        if fi.self_slot != NONE {
+            try self.fail("unsupported: named function expression")
+        }
+        let sc = self.ast.scopes.items()[fi.scope]
+        if sc.nfuncs > 0 {
+            try self.fail("unsupported: FuncDecl")
+        }
+        if sc.nctx > 0 || sc.eval {
+            try self.fail("unsupported: context variable")
+        }
+        for k in 0..fi.nparams {
+            for j in 0..k {
+                match self.ast.node(self.ast.item(fi.params, k)) {
+                    .Ident { name: a, .. } => {
+                        match self.ast.node(self.ast.item(fi.params, j)) {
+                            .Ident { name: b, .. } => {
+                                if a == b {
+                                    try self.fail("unsupported: duplicate parameter")
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ = self.b.newRegs(sc.nregs as i32)
+        if fi.this_slot != NONE {
+            self.this_reg = self.b.newReg()
+        }
+        for _ in 0..self.b.topReg {
+            try self.tdz.append(false)
+        }
+        try self.scopes.append(fi.scope)
+        if fi.expr != 0 {
+            try self.visit(fi.expr)
+            try self.b.op0(BC_RETURN)
+            return
+        }
+        try self.visitList(fi.body, fi.nbody)
+        try self.b.op0(BC_LDA_UNDEFINED)
+        try self.b.op0(BC_RETURN)
+    }
+}
+
+/// Compiles function `func` of `ast`.
+pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc {
+    let fi = ast.func(func)
+    var c = Compiler {
+        ast: ast,
+        b: BcBuilder.init(alloc, fi.nparams),
+        func: func,
+        scopes: List(u32).init(alloc),
+        tdz: List(bool).init(alloc),
+        this_reg: -1,
+        reason: "",
+    }
+    defer {
+        c.b.deinit()
+        c.scopes.deinit()
+        c.tdz.deinit()
+    }
+    c.visitFunction() catch |e| {
+        // Every Unsupported sets a reason; else the builder ran out.
+        if c.reason.len == 0 {
+            return AllocError.OutOfMemory
+        }
+        return VmFunc { code: null, this_reg: -1, reason: c.reason }
+    }
+    let code = try alloc.create(try c.b.finish())
+    return VmFunc { code: code, this_reg: c.this_reg, reason: "" }
+}
+
+// The fallback reason for a node the compiler does not handle yet.
+fn vmNodeReason(n: Node) []u8 {
+    return match n {
+        .BigLit { .. } => "unsupported: BigLit"
+        .Template { .. } => "unsupported: Template"
+        .Regex { .. } => "unsupported: Regex"
+        .ArrayLit { .. } => "unsupported: ArrayLit"
+        .ObjectLit { .. } => "unsupported: ObjectLit"
+        .Func { .. } => "unsupported: Func"
+        .Class { .. } => "unsupported: Class"
+        .Logical { .. } => "unsupported: Logical"
+        .Cond { .. } => "unsupported: Cond"
+        .Call { .. } => "unsupported: Call"
+        .New { .. } => "unsupported: New"
+        .Member { .. } => "unsupported: Member"
+        .Index { .. } => "unsupported: Index"
+        .OptChain { .. } => "unsupported: OptChain"
+        .Seq { .. } => "unsupported: Seq"
+        .Spread { .. } => "unsupported: Spread"
+        .SuperCall { .. } => "unsupported: SuperCall"
+        .SuperMember { .. } => "unsupported: SuperMember"
+        .SuperIndex { .. } => "unsupported: SuperIndex"
+        .Yield { .. } => "unsupported: Yield"
+        .Await { .. } => "unsupported: Await"
+        .TaggedTemplate { .. } => "unsupported: TaggedTemplate"
+        .NewTarget => "unsupported: NewTarget"
+        .ImportCall { .. } => "unsupported: ImportCall"
+        .ImportMeta { .. } => "unsupported: ImportMeta"
+        .FuncDecl { .. } => "unsupported: FuncDecl"
+        .ClassDecl { .. } => "unsupported: ClassDecl"
+        .If { .. } => "unsupported: If"
+        .For { .. } => "unsupported: For"
+        .ForIn { .. } => "unsupported: ForIn"
+        .While { .. } => "unsupported: While"
+        .DoWhile { .. } => "unsupported: DoWhile"
+        .Break { .. } => "unsupported: Break"
+        .Continue { .. } => "unsupported: Continue"
+        .Throw { .. } => "unsupported: Throw"
+        .Try { .. } => "unsupported: Try"
+        .Switch { .. } => "unsupported: Switch"
+        .Labeled { .. } => "unsupported: Labeled"
+        _ => "unsupported: other"
+    }
+}

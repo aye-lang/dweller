@@ -630,6 +630,53 @@ fn webgl_objects() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.6 (docs/webgl.md §3): `dump --text --js` of
+/// `browser/tests/webgl/textures.html` on SwiftShader, served over HTTP
+/// (the page loads an image from a second origin), prints
+/// `textures.txt`: a textured quad from a PNG, a 2D canvas, an
+/// OffscreenCanvas, an ImageData, ImageBitmaps and typed arrays read back
+/// with and without UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+/// the object and pixel store rules, and the SecurityError of a
+/// cross-origin image. It samples with NEAREST at texel centers, so the
+/// pixels do not depend on the backend.
+#[test]
+fn webgl_textures() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/textures.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/textures.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
@@ -3573,13 +3620,18 @@ fn agent_forms_http() {
 }
 
 /// One JS conformance script: None when it passes, else what went wrong.
-fn js_case(js: &Path, bless: bool) -> Option<String> {
+fn js_case(js: &Path, bless: bool, env: &[(&str, &str)]) -> Option<String> {
     let rel = js
         .strip_prefix(root())
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let out = run(&["js", &rel]);
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["js", &rel])
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
     let got = text(&out.stdout);
     let golden = js.with_extension("out");
     if bless {
@@ -3648,11 +3700,40 @@ fn jsbench_smoke() {
 
 #[test]
 fn js_conformance() {
+    js_conformance_with(&[], &[]);
+}
+
+/// The same scripts and goldens with the bytecode VM on
+/// (`DWELLER_JS_VM=1`, BYTECODE.md section 1), then with the VM under
+/// `DWELLER_JS_GC=stress` too (the rooting rules of its section 4). The
+/// stress pass leaves out the allocation and recursion workloads, which
+/// collect millions of times (minutes each).
+#[test]
+fn js_conformance_vm() {
+    js_conformance_with(&[("DWELLER_JS_VM", "1")], &[]);
+    js_conformance_with(
+        &[("DWELLER_JS_VM", "1"), ("DWELLER_JS_GC", "stress")],
+        &[
+            "_gc_",
+            "_perf_",
+            "recursion",
+            "many_shapes",
+            "map_set_hash",
+            "coroutine_stacks",
+        ],
+    );
+}
+
+fn js_conformance_with(env: &[(&str, &str)], skip: &[&str]) {
     let dir = root().join("browser").join("tests").join("js");
     let mut scripts: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "js"))
+        .filter(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            !skip.iter().any(|s| name.contains(s))
+        })
         .collect();
     scripts.sort();
     assert!(
@@ -3661,8 +3742,8 @@ fn js_conformance() {
         scripts.len()
     );
     dweller();
-    let bless = std::env::var_os("DWELLER_BLESS").is_some();
-    let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless))
+    let bless = env.is_empty() && std::env::var_os("DWELLER_BLESS").is_some();
+    let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless, env))
         .into_iter()
         .flatten()
         .collect();
@@ -3992,6 +4073,84 @@ fn window_damage() {
         "no partial frame: {px:?}"
     );
     assert!(px.contains(&0), "no frame without damage: {px:?}");
+}
+
+/// P11.7 (docs/webgl.md §5): the window shows a WebGL canvas through its
+/// readback. `spin.html` turns a triangle on a 1280x720 canvas in 120
+/// animation frames; each frame is read back at its end and mapped into
+/// the canvas in the next, so the canvas changes in 120 frames (and the
+/// cleared one before them), each damaging the canvas alone (with the
+/// one-pixel margin below it the damage keeps for antialiasing), and
+/// `DWELLER_DAMAGE_CHECK` finds every frame drawn right. Prints the
+/// `webgl_readback` p50 and p95. Without ANGLE it is skipped.
+#[test]
+fn window_webgl() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_GL", "swiftshader")
+        .args([
+            "browser/tests/webgl/spin.html",
+            "--font",
+            "fixed",
+            "--width",
+            "1280",
+            "--height",
+            "800",
+            "--frames",
+            "300",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    let record = |phase: &str| -> Vec<(u64, String)> {
+        let key = format!("DWELLER_TIMING\t{phase}\t");
+        err.lines()
+            .filter_map(|l| l.split(key.as_str()).nth(1))
+            .map(|r| {
+                let mut f = r.split('\t');
+                let ns = f.next().unwrap().parse().unwrap();
+                (ns, f.next().unwrap_or("").to_string())
+            })
+            .collect()
+    };
+    let mut readback: Vec<u64> = record("webgl_readback")
+        .into_iter()
+        .map(|(ns, label)| {
+            assert_eq!(label, "1280x720");
+            ns
+        })
+        .collect();
+    assert!(readback.len() >= 120, "{} readbacks:\n{err}", readback.len());
+    // The page area is 1280x760 (the chrome takes 40 px).
+    let canvas = 1280 * 721;
+    let full = 1280 * 760;
+    let px: Vec<u64> = record("ui_damage_px")
+        .iter()
+        .map(|(_, label)| label.split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        px.iter().all(|&p| p == 0 || p == canvas || p == full),
+        "damage outside the canvas: {px:?}"
+    );
+    let updates = px.iter().filter(|&&p| p == canvas).count();
+    assert!(updates >= 120, "{updates} canvas updates: {px:?}");
+    assert!(px.iter().filter(|&&p| p == full).count() <= 2, "{px:?}");
+    readback.sort();
+    let ms = |q: f64| readback[((readback.len() as f64 * q) as usize).min(readback.len() - 1)] as f64 / 1e6;
+    println!("webgl_readback 1280x720: p50 {:.2} ms, p95 {:.2} ms", ms(0.5), ms(0.95));
 }
 
 /// A page shaped like GitHub's, with many container queries on nested
@@ -5070,7 +5229,10 @@ fn window_paints_early() {
         return;
     };
     let page = format!("{}/net/early_paint.html", srv.base);
-    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    // The click waits for the first paint (`painted`), which comes
+    // 0.3 s into the 1.5 s the script is delayed, not for a number of
+    // frames (40 take longer than 1.5 s on a loaded runner).
+    let events = "painted click:14,54 frame wheel:-3 frame";
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
@@ -5086,7 +5248,7 @@ fn window_paints_early() {
             "--frames",
             "300",
             "--events",
-            events.as_str(),
+            events,
             "--text",
         ])
         .spawn_drained();
