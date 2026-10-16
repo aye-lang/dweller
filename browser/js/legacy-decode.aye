@@ -1,0 +1,15 @@
+import encoding
+import std.mem.Allocator
+
+fn engineLegacyDecode(it: *mut Interp, a: Args) JsError!Value {
+    let enc = encoding.fromLabel(strArg(it, a, 0)) orelse return Value.Null
+    let bytes = viewArg(it, a, 1)
+
+    let utf8 = encoding.toUtf8(it.alloc, bytes, enc) catch |e| {
+        return it.rangeError("legacyDecode: out of memory")
+    }
+
+    defer it.alloc.free(utf8)
+
+    return it.newString(utf8)
+}

@@ -1,0 +1,16 @@
+import std.text
+
+let TEXT_CODEC = @embedFile("text-codec.js")
+let TEXT_CODEC_DATA = @embedFile("text-codec-data.js")
+
+fn installTextCodec(it: *mut Interp) JsError!void {
+    var source = text.Builder.init(it.alloc)
+    defer source.deinit()
+
+    try source.append("(")
+    try source.append(TEXT_CODEC)
+    try source.append(")(")
+    try source.append(TEXT_CODEC_DATA)
+    try source.append(")")
+    try it.runScript(source.bytes())
+}
