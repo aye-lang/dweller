@@ -396,6 +396,10 @@ one (`invoke` frees it at exit when no closure was created).
   and a value in two registers and jumps to the one copy of the finally
   block. The block ends with `SwitchOnSmi` on the token that
   continues the way out.
+- The loop keeps the frame's pc in a local; an `errdefer` copies it out
+  when an error leaves the loop, and the unwind step looks up `pc - 1`
+  (the pc is past the instruction's first byte and at most at its
+  end). `SaveContext r` at the try start keeps the context to restore.
 - `JsError.Terminated` (budget) and `OutOfMemory` skip all handlers.
   `ShortCircuit` (optional chaining) is not needed: the compiler emits
   `JumpIfUndefinedOrNull` to the end of the chain.

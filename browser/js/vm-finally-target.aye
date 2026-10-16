@@ -1,0 +1,24 @@
+// v8: src/interpreter/bytecode-generator.cc (ControlScope::PerformCommand)
+
+fn vmFinallyTarget(c: *mut Compiler, k: usize, label: u32, isContinue: bool) CompileError!?u32 {
+    if c.fins.len() == 0 {
+        return null
+    }
+
+    let fin = c.fins.items()[c.fins.len() - 1]
+
+    if fin.nctl as usize <= k {
+        return null
+    }
+
+    var cmd = label * 2
+
+    if isContinue {
+        cmd += 1
+    }
+
+    try vmUnwindContexts(c, fin.nctx)
+    try vmSetToken(c, fin, VM_TOKEN_JUMPS + try vmJumpIndex(fin, cmd))
+
+    return fin.label
+}
