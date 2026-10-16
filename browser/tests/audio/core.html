@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<title>Web Audio core</title>
+<pre id="out"></pre>
+<script>
+// P11.19: Web Audio core on OfflineAudioContext. The `samples` line is
+// checked against values tests/browser.rs computes (webaudio_core); the
+// other lines against core.txt.
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+function err(f) {
+  try {
+    f();
+    return 'no error';
+  } catch (e) {
+    return e.name;
+  }
+}
+function near(a, b) {
+  return Math.abs(a - b) < 1e-6;
+}
+function wav(bits, format, rate, frames) {
+  // frames: arrays of channel values, already in the file's integer or
+  // float form.
+  const channels = frames[0].length;
+  const size = bits / 8;
+  const data = frames.length * channels * size;
+  const b = new DataView(new ArrayBuffer(44 + data));
+  const tag = (at, s) => { for (let i = 0; i < 4; i++) b.setUint8(at + i, s.charCodeAt(i)); };
+  tag(0, 'RIFF'); b.setUint32(4, 36 + data, true); tag(8, 'WAVE');
+  tag(12, 'fmt '); b.setUint32(16, 16, true); b.setUint16(20, format, true);
+  b.setUint16(22, channels, true); b.setUint32(24, rate, true);
+  b.setUint32(28, rate * channels * size, true); b.setUint16(32, channels * size, true);
+  b.setUint16(34, bits, true);
+  tag(36, 'data'); b.setUint32(40, data, true);
+  let at = 44;
+  for (const f of frames) {
+    for (const v of f) {
+      if (format === 3) b.setFloat32(at, v, true);
+      else if (bits === 8) b.setUint8(at, v);
+      else if (bits === 16) b.setInt16(at, v, true);
+      else { b.setUint8(at, v & 255); b.setUint8(at + 1, (v >> 8) & 255); b.setUint8(at + 2, (v >> 16) & 255); }
+      at += size;
+    }
+  }
+  return b.buffer;
+}
+
+async function main() {
+  // The checked render: a 10-frame looped buffer from frame 80, through
+  // a gain: linear 0 -> 1 by 0.05 s, exponential to 0.25 by 0.1 s, then
+  // setTarget 0 with time constant 0.01.
+  const ctx = new OfflineAudioContext(1, 1600, 8000);
+  log('offline', ctx.state, ctx.sampleRate, ctx.length, ctx.currentTime, ctx.destination.maxChannelCount);
+  const buf = ctx.createBuffer(1, 10, 8000);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < 10; i++) d[i] = (i + 1) / 10 - 0.5;
+  log('buffer', buf.numberOfChannels, buf.length, buf.duration, buf.sampleRate);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const gain = ctx.createGain();
+  log('gain', gain.gain.value, gain.gain.defaultValue, gain.numberOfInputs, gain.numberOfOutputs);
+  gain.gain.setValueAtTime(0, 0);
+  gain.gain.linearRampToValueAtTime(1, 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.25, 0.1);
+  gain.gain.setTargetAtTime(0, 0.1, 0.01);
+  log('connect returns', src.connect(gain) === gain, gain.connect(ctx.destination) === ctx.destination);
+  let ended = 'no ended';
+  src.onended = () => { ended = 'ended'; };
+  src.start(0.01);
+  src.stop(0.19);
+  let completed = false;
+  ctx.oncomplete = (e) => { completed = e.renderedBuffer.length; };
+  const out = await ctx.startRendering();
+  log('rendered', ctx.state, out.length, out.numberOfChannels, ctx.currentTime, ended, completed);
+  log('samples', Array.from(out.getChannelData(0), (v) => v.toFixed(6)).join(','));
+
+  // Loop points, playbackRate and detune (k-rate), stereo up-mix,
+  // disconnect, offset and duration.
+  const c2 = new OfflineAudioContext({ numberOfChannels: 2, length: 16, sampleRate: 8000 });
+  const ramp = c2.createBuffer(1, 8, 8000);
+  ramp.copyToChannel(new Float32Array([0, 1, 2, 3, 4, 5, 6, 7]), 0);
+  const a = c2.createBufferSource();
+  a.buffer = ramp;
+  a.loop = true;
+  a.loopStart = 2 / 8000;
+  a.loopEnd = 5 / 8000;
+  a.connect(c2.destination);
+  a.start(0);
+  const b = new AudioBufferSourceNode(c2, { buffer: ramp, playbackRate: 2 });
+  b.connect(c2.destination);
+  b.disconnect();
+  b.start(0);
+  const r2 = await c2.startRendering();
+  const L = Array.from(r2.getChannelData(0)), R = Array.from(r2.getChannelData(1));
+  log('loop points', L.join(','), L.every((v, i) => v === R[i]));
+  const c3 = new OfflineAudioContext(1, 8, 8000);
+  const s3 = c3.createBufferSource();
+  s3.buffer = ramp;
+  s3.playbackRate.value = 0.5;
+  s3.detune.value = 1200;
+  s3.connect(c3.destination);
+  s3.start(0, 2 / 8000, 3 / 8000);
+  log('offset duration rate', Array.from((await c3.startRendering()).getChannelData(0)).join(','));
+  const c4 = new OfflineAudioContext(1, 8, 8000);
+  const s4 = c4.createBufferSource();
+  s4.buffer = ramp;
+  s4.playbackRate.value = 0.5;
+  s4.connect(c4.destination);
+  s4.start(0);
+  log('interpolated', Array.from((await c4.startRendering()).getChannelData(0)).join(','));
+
+  // AudioParam values and errors.
+  const c5 = new OfflineAudioContext(1, 128, 8000);
+  const g5 = c5.createGain();
+  g5.gain.value = 0.5;
+  log('param value', g5.gain.value, new GainNode(c5, { gain: 3 }).gain.value);
+  log('param errors', err(() => g5.gain.exponentialRampToValueAtTime(0, 1)), err(() => g5.gain.setValueAtTime(1, -1)),
+    err(() => g5.gain.setValueAtTime(NaN, 1)), err(() => g5.gain.setTargetAtTime(1, 0, -1)));
+  g5.gain.setValueAtTime(2, 0);
+  g5.gain.linearRampToValueAtTime(4, 1);
+  g5.gain.cancelScheduledValues(0.5);
+  g5.gain.cancelScheduledValues(0);
+  log('cancel', g5.gain.value);
+  const s5 = c5.createBufferSource();
+  log('source errors', err(() => s5.stop()), err(() => { s5.start(); s5.start(); }), err(() => { s5.buffer = ramp; s5.buffer = ramp; }));
+  log('constructors', err(() => new AudioNode()), err(() => new AudioParam()), err(() => new AudioBuffer({ length: 0, sampleRate: 8000 })),
+    err(() => new OfflineAudioContext(1, 0, 8000)), err(() => ramp.getChannelData(1)));
+  log('connect errors', err(() => g5.connect(new OfflineAudioContext(1, 1, 8000).destination)), err(() => g5.connect({})));
+
+  // decodeAudioData: PCM 8, 16, 24 bit and float32, and a resample.
+  const dc = new OfflineAudioContext(2, 128, 8000);
+  const show = (ab) => Array.from({ length: ab.numberOfChannels }, (_, c) => Array.from(ab.getChannelData(c)).join(',')).join(' | ');
+  log('wav 16', show(await dc.decodeAudioData(wav(16, 1, 8000, [[0, -32768], [16384, 32767]]))));
+  log('wav 8', show(await dc.decodeAudioData(wav(8, 1, 8000, [[128], [0], [192]]))));
+  log('wav 24', show(await dc.decodeAudioData(wav(24, 1, 8000, [[4194304], [-8388608 & 0xffffff]]))));
+  log('wav float', show(await dc.decodeAudioData(wav(32, 3, 8000, [[0.25, -0.5]]))));
+  const up = await dc.decodeAudioData(wav(16, 1, 16000, [[0], [8192], [16384], [24576]]));
+  log('wav resample', up.sampleRate, up.length, show(up));
+  let failed = 'none';
+  await dc.decodeAudioData(new ArrayBuffer(8), null, (e) => { failed = e.name; }).catch((e) => log('wav reject', e.name));
+  log('wav failure callback', failed);
+
+  // A realtime context needs no device here (dump has none): it starts
+  // suspended without user activation and resumes.
+  const rt = new AudioContext();
+  log('realtime', rt.state, rt.sampleRate, rt.destination.maxChannelCount, rt.baseLatency);
+  let changes = 0;
+  rt.onstatechange = () => { changes++; };
+  await rt.resume();
+  log('resumed', rt.state, changes);
+  await rt.close();
+  log('closed', rt.state, err(() => rt.createGain()) === 'no error');
+  log('globals', [AudioContext, OfflineAudioContext, BaseAudioContext, AudioBuffer, AudioParam, AudioNode,
+    GainNode, AudioBufferSourceNode, AudioScheduledSourceNode, AudioDestinationNode].map((C) => C.name).join(' '));
+}
+main().catch((e) => log('error', e && e.stack || e));
+</script>

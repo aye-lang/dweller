@@ -63,7 +63,7 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | gpu-smoke | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -92,6 +92,9 @@ fn run(alloc: Allocator) i32 {
         }
         if args.len == 4 && text.eql(args[2], "--print-scopes") {
             return js.printScopesFile(alloc, args[3])
+        }
+        if args.len == 4 && text.eql(args[2], "--test262") {
+            return js.runTest262File(alloc, args[3])
         }
         if args.len != 3 {
             std.log.err("usage: dweller js FILE")

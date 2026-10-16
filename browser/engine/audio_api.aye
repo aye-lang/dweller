@@ -1,0 +1,763 @@
+// Web Audio (P11.19, docs/webgl.md §6 Web Audio): the natives of
+// `__audioHost` over the graph of audio/ (contexts, nodes, AudioParam
+// timelines, the WAV decoder), and AUDIO_PRELUDE, the JS classes on
+// them: BaseAudioContext, AudioContext, OfflineAudioContext,
+// AudioBuffer, AudioParam, AudioNode, AudioDestinationNode, GainNode,
+// AudioScheduledSourceNode and AudioBufferSourceNode.
+//
+// Contexts and nodes are indices in audio/'s lists; a page's contexts
+// carry its `audio_owner` and go with it (destroyScript). A realtime
+// context renders when the page's timers run (pumpAudio): into the SDL
+// device on the window clock, by the page clock (samples dropped) in
+// `dump`. An OfflineAudioContext renders in one call.
+
+import audio
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.mem.AllocError
+import std.math
+import std.text
+
+var next_audio_owner: usize = 1
+
+// How often a page whose AudioContext plays renders ahead (the device
+// holds about 30 ms).
+let AUDIO_POLL_MS: f64 = 10.0
+
+fn installAudio(it: *mut Interp) JsError!void {
+    let o = try it.newObject(it.object_proto)
+    try it.defineValue(it.global, "__audioHost", js.objVal(o))
+    try defMethod(it, o, "auNew", 3, auNew)
+    try defMethod(it, o, "auTime", 1, auTime)
+    try defMethod(it, o, "auRunning", 2, auRunning)
+    try defMethod(it, o, "auActivated", 0, auActivated)
+    try defMethod(it, o, "auClose", 1, auClose)
+    try defMethod(it, o, "auNode", 2, auNode)
+    try defMethod(it, o, "auConnect", 3, auConnect)
+    try defMethod(it, o, "auDisconnect", 3, auDisconnect)
+    try defMethod(it, o, "auParam", 7, auParam)
+    try defMethod(it, o, "auParamValue", 3, auParamValue)
+    try defMethod(it, o, "auBuffer", 5, auBuffer)
+    try defMethod(it, o, "auLoop", 5, auLoop)
+    try defMethod(it, o, "auStart", 5, auStart)
+    try defMethod(it, o, "auStop", 3, auStop)
+    try defMethod(it, o, "auRender", 3, auRender)
+    try defMethod(it, o, "auEnded", 1, auEnded)
+    try defMethod(it, o, "auWav", 1, auWav)
+    try defMethod(it, o, "auWavDecode", 4, auWavDecode)
+    try defMethod(it, o, "auSetNotify", 1, auSetNotify)
+}
+
+/// Renders the running realtime contexts of the page (as far as its
+/// clock or device needs) and fires the `ended` events of sources that
+/// stopped.
+fn pumpAudio(s: *mut Script) AllocError!void {
+    if s.audio_owner == 0 {
+        return
+    }
+    var ended = false
+    let l = audio.contexts orelse return
+    for slot in l.items() {
+        if slot |cx| {
+            if cx.owner == s.audio_owner {
+                try audio.pump(cx, s.now, s.real)
+                ended = ended || cx.ended.len() > 0
+            }
+        }
+    }
+    if !ended || s.audio_notify == js.NONE {
+        return
+    }
+    let it = &mut s.it
+    let base = it.stack.len()
+    try jsPush(s, it.roots.items()[s.audio_notify])
+    try jsPush(s, Value.Undefined)
+    _ = try callReported(s, base, 0)
+    try runMicrotasks(s)
+}
+
+// The HTML spec's activation-triggering input events (and `click`,
+// which follows one).
+fn isActivation(kind: []u8) bool {
+    let kinds = [6][]u8{"keydown", "mousedown", "pointerdown", "pointerup", "touchend", "click"}
+    for k in kinds {
+        if text.eql(kind, k) {
+            return true
+        }
+    }
+    return false
+}
+
+fn ownerOf(it: *mut Interp) usize {
+    let s = scriptOf(it)
+    if s.audio_owner == 0 {
+        s.audio_owner = next_audio_owner
+        next_audio_owner += 1
+    }
+    return s.audio_owner
+}
+
+fn numArg(it: *mut Interp, a: Args, i: usize) JsError!f64 {
+    return it.toNumber(it.arg(a, i))
+}
+
+fn ctxArg(it: *mut Interp, a: Args) JsError!*mut audio.Context {
+    let id = try numArg(it, a, 0)
+    if audio.get(ownerOf(it), id) |cx| {
+        return cx
+    }
+    _ = try it.typeError("not an audio context")
+    return JsError.Thrown
+}
+
+fn nodeArg(it: *mut Interp, cx: *mut audio.Context, a: Args, i: usize) JsError!*mut audio.Node {
+    if audio.node(cx, try numArg(it, a, i)) |n| {
+        return n
+    }
+    _ = try it.typeError("not an audio node")
+    return JsError.Thrown
+}
+
+// The floats of Float32Array argument `i` (empty when it is not one).
+fn floatsArg(it: *mut Interp, a: Args, i: usize) []mut f32 {
+    let o = js.objectOf(it.arg(a, i))
+    if o == js.NONE {
+        return []mut f32{}
+    }
+    let b = js.viewBytes(it, o)
+    if b.len < 4 {
+        return []mut f32{}
+    }
+    return @ptrCast([*]f32, b.ptr)[0..b.len / 4]
+}
+
+// auNew(channels, sampleRate, realtime): a context's index.
+fn auNew(it: *mut Interp, a: Args) JsError!Value {
+    let ch = try numArg(it, a, 0)
+    let rate = try numArg(it, a, 1)
+    let id = try audio.newContext(it.alloc, ownerOf(it), ch as usize, rate, it.toBoolean(it.arg(a, 2)))
+    return js.numVal(id as f64)
+}
+
+fn auTime(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    return js.numVal(audio.currentTime(cx))
+}
+
+// auRunning(ctx, on): resume() or suspend().
+fn auRunning(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let s = scriptOf(it)
+    tick(s)
+    audio.setRunning(cx, it.toBoolean(it.arg(a, 1)), s.now)
+    return Value.Undefined
+}
+
+// Has the page had user activation (a click or key press)?
+fn auActivated(it: *mut Interp, a: Args) JsError!Value {
+    return js.boolVal(scriptOf(it).activated)
+}
+
+fn auClose(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    audio.close(cx)
+    return Value.Undefined
+}
+
+// auNode(ctx, kind): a new node's index (audio.SOURCE, audio.GAIN).
+fn auNode(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let kind = try numArg(it, a, 1)
+    if kind != 1.0 && kind != 2.0 {
+        return it.typeError("unknown audio node")
+    }
+    let id = try audio.newNode(cx, kind as u8)
+    return js.numVal(id as f64)
+}
+
+fn auConnect(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    _ = try nodeArg(it, cx, a, 1)
+    _ = try nodeArg(it, cx, a, 2)
+    try audio.connect(cx, try numArg(it, a, 1) as u32, try numArg(it, a, 2) as u32)
+    return Value.Undefined
+}
+
+// auDisconnect(ctx, from, to): `to` undefined disconnects from all.
+fn auDisconnect(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    _ = try nodeArg(it, cx, a, 1)
+    let from = try numArg(it, a, 1) as u32
+    if js.isUndef(it.arg(a, 2)) {
+        audio.disconnect(cx, from, null)
+    } else {
+        _ = try nodeArg(it, cx, a, 2)
+        audio.disconnect(cx, from, try numArg(it, a, 2) as u32)
+    }
+    return Value.Undefined
+}
+
+fn paramArg(it: *mut Interp, cx: *mut audio.Context, a: Args) JsError!*mut audio.Param {
+    let n = try nodeArg(it, cx, a, 1)
+    let i = try numArg(it, a, 2)
+    if !(i >= 0.0) || i >= n.params.len() as f64 {
+        _ = try it.typeError("not an AudioParam")
+        return JsError.Thrown
+    }
+    return &mut n.params.items()[i as usize]
+}
+
+// auParam(ctx, node, param, op, value, time, timeConstant): op 0 sets
+// `.value`; 1 setValueAtTime, 2 linearRamp, 3 exponentialRamp,
+// 4 setTargetAtTime; 5 cancelScheduledValues(value).
+fn auParam(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let p = try paramArg(it, cx, a)
+    let op = try numArg(it, a, 3)
+    let v = try numArg(it, a, 4)
+    if op == 0.0 {
+        try audio.setValue(cx, p, v)
+    } else if op == 5.0 {
+        audio.cancelEvents(p, v)
+    } else {
+        try audio.addEvent(cx, p, op as u8, v, try numArg(it, a, 5), try numArg(it, a, 6))
+    }
+    return Value.Undefined
+}
+
+fn auParamValue(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let p = try paramArg(it, cx, a)
+    return js.numVal(audio.paramValue(p))
+}
+
+// auBuffer(ctx, node, sampleRate, channel 0, channel 1 or undefined).
+fn auBuffer(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try nodeArg(it, cx, a, 1)
+    let rate = try numArg(it, a, 2)
+    let c0 = floatsArg(it, a, 3)
+    let c1 = floatsArg(it, a, 4)
+    let chans = [2][]f32{c0, c1}
+    if c1.len > 0 {
+        try audio.setBuffer(cx, n, rate, chans[0..2])
+    } else {
+        try audio.setBuffer(cx, n, rate, chans[0..1])
+    }
+    return Value.Undefined
+}
+
+// auLoop(ctx, node, loop, loopStart, loopEnd).
+fn auLoop(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try nodeArg(it, cx, a, 1)
+    n.looping = it.toBoolean(it.arg(a, 2))
+    n.loop_start = try numArg(it, a, 3)
+    n.loop_end = try numArg(it, a, 4)
+    return Value.Undefined
+}
+
+// auStart(ctx, node, when, offset, duration or -1).
+fn auStart(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try nodeArg(it, cx, a, 1)
+    audio.start(cx, n, try numArg(it, a, 2), try numArg(it, a, 3), try numArg(it, a, 4))
+    return Value.Undefined
+}
+
+fn auStop(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let n = try nodeArg(it, cx, a, 1)
+    audio.stop(cx, n, try numArg(it, a, 2))
+    return Value.Undefined
+}
+
+// auRender(ctx, channel 0, channel 1 or undefined): renders an offline
+// context into the rendered buffer's channels.
+fn auRender(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let c0 = floatsArg(it, a, 1)
+    let c1 = floatsArg(it, a, 2)
+    var outs = [2][]mut f32{c0, c1}
+    if c1.len > 0 {
+        try audio.render(cx, outs[0..2])
+    } else {
+        try audio.render(cx, outs[0..1])
+    }
+    return Value.Undefined
+}
+
+// auEnded(ctx): the sources that ended since the last call.
+fn auEnded(it: *mut Interp, a: Args) JsError!Value {
+    let cx = try ctxArg(it, a)
+    let arr = try it.newArray(0)
+    for id in cx.ended.items() {
+        try it.heap.pushElem(arr, js.numVal(id as f64))
+    }
+    cx.ended.clear()
+    return js.objVal(arr)
+}
+
+// auWav(u8): [sampleRate, channels, frames], or null when it is not a
+// WAV file the decoder reads.
+fn auWav(it: *mut Interp, a: Args) JsError!Value {
+    let o = js.objectOf(it.arg(a, 0))
+    if o == js.NONE {
+        return Value.Null
+    }
+    let w = audio.parseWav(js.viewBytes(it, o)) orelse return Value.Null
+    let arr = try it.newArray(0)
+    try it.heap.pushElem(arr, js.numVal(w.rate))
+    try it.heap.pushElem(arr, js.numVal(w.channels as f64))
+    try it.heap.pushElem(arr, js.numVal(w.frames as f64))
+    return js.objVal(arr)
+}
+
+// auWavDecode(u8, channel, Float32Array, sampleRate): decodes a channel,
+// resampled linearly to `sampleRate` (the array's length is
+// ceil(frames * sampleRate / the file's rate)).
+fn auWavDecode(it: *mut Interp, a: Args) JsError!Value {
+    let o = js.objectOf(it.arg(a, 0))
+    if o == js.NONE {
+        return Value.Undefined
+    }
+    var w = audio.parseWav(js.viewBytes(it, o)) orelse return Value.Undefined
+    let ch = try numArg(it, a, 1)
+    let out = floatsArg(it, a, 2)
+    let rate = try numArg(it, a, 3)
+    if !(ch >= 0.0) || ch >= w.channels as f64 {
+        return Value.Undefined
+    }
+    if rate == w.rate {
+        audio.decodeChannel(&mut w, ch as usize, out)
+        return Value.Undefined
+    }
+    let tmp = try it.alloc.alloc(0.0 as f32, w.frames)
+    defer it.alloc.free(tmp)
+    audio.decodeChannel(&mut w, ch as usize, tmp)
+    let ratio = w.rate / rate
+    for i in 0..out.len {
+        let pos = i as f64 * ratio
+        let i0 = pos as usize
+        if i0 >= tmp.len {
+            out[i] = 0.0
+            continue
+        }
+        var s1 = tmp[i0] as f64
+        if i0 + 1 < tmp.len {
+            s1 = tmp[i0 + 1] as f64
+        }
+        let f = pos - math.floor(pos)
+        out[i] = (tmp[i0] as f64 + (s1 - tmp[i0] as f64) * f) as f32
+    }
+    return Value.Undefined
+}
+
+// auSetNotify(f): pumpAudio calls f when realtime sources ended.
+fn auSetNotify(it: *mut Interp, a: Args) JsError!Value {
+    scriptOf(it).audio_notify = try it.addRoot(it.arg(a, 0))
+    return Value.Undefined
+}
+
+pub let AUDIO_PRELUDE =
+    \\(function () {
+    \\'use strict';
+    \\const H = globalThis.__audioHost;
+    \\delete globalThis.__audioHost;
+    \\const G = globalThis;
+    \\const TOKEN = Symbol('audio');
+    \\function hidden(o, k, v) {
+    \\  Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
+    \\}
+    \\function illegal(tok) {
+    \\  if (tok !== TOKEN) throw new TypeError('Illegal constructor');
+    \\}
+    \\function finite(v, what) {
+    \\  v = +v;
+    \\  if (!Number.isFinite(v)) throw new TypeError("Failed to execute '" + what + "' on 'AudioParam': The provided float value is non-finite.");
+    \\  return v;
+    \\}
+    \\function notSupported(m) { return new DOMException(m, 'NotSupportedError'); }
+    \\function invalidState(m) { return new DOMException(m, 'InvalidStateError'); }
+    \\
+    \\// ---- AudioBuffer
+    \\class AudioBuffer {
+    \\  constructor(options) {
+    \\    if (options === undefined || options === null || typeof options !== 'object') {
+    \\      throw new TypeError("Failed to construct 'AudioBuffer': 1 argument required, but only 0 present.");
+    \\    }
+    \\    const n = options.numberOfChannels === undefined ? 1 : options.numberOfChannels >>> 0;
+    \\    const length = options.length >>> 0;
+    \\    const rate = +options.sampleRate;
+    \\    if (n < 1 || n > 32) throw notSupported("Failed to construct 'AudioBuffer': The number of channels provided (" + n + ') is outside the range [1, 32].');
+    \\    if (length < 1) throw notSupported("Failed to construct 'AudioBuffer': The number of frames provided (" + length + ') is less than or equal to the minimum bound (0).');
+    \\    if (!(rate >= 3000 && rate <= 768000)) throw notSupported("Failed to construct 'AudioBuffer': The sample rate provided (" + rate + ') is outside the range [3000, 768000].');
+    \\    const data = [];
+    \\    for (let i = 0; i < n; i++) data.push(new Float32Array(length));
+    \\    hidden(this, '_data', data);
+    \\    hidden(this, '_rate', rate);
+    \\  }
+    \\  get sampleRate() { return this._rate; }
+    \\  get length() { return this._data[0].length; }
+    \\  get duration() { return this._data[0].length / this._rate; }
+    \\  get numberOfChannels() { return this._data.length; }
+    \\  getChannelData(c) {
+    \\    c = c >>> 0;
+    \\    if (c >= this._data.length) throw new DOMException("Failed to execute 'getChannelData' on 'AudioBuffer': channel index (" + c + ') exceeds number of channels (' + this._data.length + ')', 'IndexSizeError');
+    \\    return this._data[c];
+    \\  }
+    \\  copyFromChannel(dest, c, start = 0) {
+    \\    const src = this.getChannelData(c);
+    \\    start = start >>> 0;
+    \\    if (start < src.length) dest.set(src.subarray(start, start + Math.min(dest.length, src.length - start)));
+    \\  }
+    \\  copyToChannel(source, c, start = 0) {
+    \\    const dst = this.getChannelData(c);
+    \\    start = start >>> 0;
+    \\    if (start < dst.length) dst.set(source.subarray(0, Math.min(source.length, dst.length - start)), start);
+    \\  }
+    \\}
+    \\
+    \\// ---- AudioParam
+    \\class AudioParam {
+    \\  constructor(tok, node, index, dflt, min, max, rate) {
+    \\    illegal(tok);
+    \\    hidden(this, '_node', node);
+    \\    hidden(this, '_i', index);
+    \\    hidden(this, '_dflt', dflt);
+    \\    hidden(this, '_min', min);
+    \\    hidden(this, '_max', max);
+    \\    hidden(this, '_rate', rate);
+    \\  }
+    \\  _op(op, v, t, tc) {
+    \\    const n = this._node;
+    \\    H.auParam(n._ctx._id, n._id, this._i, op, v, t, tc);
+    \\  }
+    \\  _time(t, what) {
+    \\    t = finite(t, what);
+    \\    if (t < 0) throw new RangeError("Failed to execute '" + what + "' on 'AudioParam': Time must be a finite non-negative number: " + t);
+    \\    return Math.max(t, this._node._ctx.currentTime);
+    \\  }
+    \\  get defaultValue() { return this._dflt; }
+    \\  get minValue() { return this._min; }
+    \\  get maxValue() { return this._max; }
+    \\  get automationRate() { return this._rate; }
+    \\  set automationRate(r) { if (r === 'a-rate' || r === 'k-rate') this._rate = r; }
+    \\  get value() {
+    \\    const n = this._node;
+    \\    const v = H.auParamValue(n._ctx._id, n._id, this._i);
+    \\    return Math.fround(Math.min(Math.max(v, this._min), this._max));
+    \\  }
+    \\  set value(v) { this._op(0, finite(v, 'value'), 0, 0); }
+    \\  setValueAtTime(v, t) {
+    \\    v = finite(v, 'setValueAtTime');
+    \\    this._op(1, v, this._time(t, 'setValueAtTime'), 0);
+    \\    return this;
+    \\  }
+    \\  linearRampToValueAtTime(v, t) {
+    \\    v = finite(v, 'linearRampToValueAtTime');
+    \\    this._op(2, v, this._time(t, 'linearRampToValueAtTime'), 0);
+    \\    return this;
+    \\  }
+    \\  exponentialRampToValueAtTime(v, t) {
+    \\    v = finite(v, 'exponentialRampToValueAtTime');
+    \\    if (v === 0) throw new RangeError("Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The float target value provided (0) should not be in the range (-1.40130e-45, 1.40130e-45).");
+    \\    this._op(3, v, this._time(t, 'exponentialRampToValueAtTime'), 0);
+    \\    return this;
+    \\  }
+    \\  setTargetAtTime(v, t, tc) {
+    \\    v = finite(v, 'setTargetAtTime');
+    \\    t = this._time(t, 'setTargetAtTime');
+    \\    tc = finite(tc, 'setTargetAtTime');
+    \\    if (tc < 0) throw new RangeError("Failed to execute 'setTargetAtTime' on 'AudioParam': Time constant must be a finite non-negative number: " + tc);
+    \\    if (tc === 0) this._op(1, v, t, 0);
+    \\    else this._op(4, v, t, tc);
+    \\    return this;
+    \\  }
+    \\  cancelScheduledValues(t) {
+    \\    t = finite(t, 'cancelScheduledValues');
+    \\    if (t < 0) throw new RangeError("Failed to execute 'cancelScheduledValues' on 'AudioParam': Time must be a finite non-negative number: " + t);
+    \\    this._op(5, t, 0, 0);
+    \\    return this;
+    \\  }
+    \\}
+    \\const FLT_MAX = 3.4028234663852886e38;
+    \\
+    \\// ---- nodes
+    \\class AudioNode extends EventTarget {
+    \\  constructor(tok, ctx, kind) {
+    \\    illegal(tok);
+    \\    super();
+    \\    hidden(this, '_ctx', ctx);
+    \\    hidden(this, '_id', kind === 0 ? 0 : H.auNode(ctx._id, kind));
+    \\  }
+    \\  get context() { return this._ctx; }
+    \\  get numberOfInputs() { return 1; }
+    \\  get numberOfOutputs() { return 1; }
+    \\  get channelCount() { return 2; }
+    \\  set channelCount(n) {}
+    \\  get channelCountMode() { return 'max'; }
+    \\  set channelCountMode(m) {}
+    \\  get channelInterpretation() { return 'speakers'; }
+    \\  set channelInterpretation(m) {}
+    \\  connect(dest, output = 0, input = 0) {
+    \\    if (dest instanceof AudioParam) return undefined;
+    \\    if (!(dest instanceof AudioNode)) throw new TypeError("Failed to execute 'connect' on 'AudioNode': Overload resolution failed.");
+    \\    if (dest._ctx !== this._ctx) throw new DOMException("Failed to execute 'connect' on 'AudioNode': cannot connect to an AudioNode belonging to a different audio context.", 'InvalidAccessError');
+    \\    if (this.numberOfOutputs === 0) throw new DOMException("Failed to execute 'connect' on 'AudioNode': output index (" + output + ') exceeds number of outputs (0).', 'IndexSizeError');
+    \\    H.auConnect(this._ctx._id, this._id, dest._id);
+    \\    return dest;
+    \\  }
+    \\  disconnect(dest) {
+    \\    if (dest === undefined || typeof dest === 'number') H.auDisconnect(this._ctx._id, this._id, undefined);
+    \\    else if (dest instanceof AudioNode) H.auDisconnect(this._ctx._id, this._id, dest._id);
+    \\  }
+    \\}
+    \\class AudioDestinationNode extends AudioNode {
+    \\  constructor(tok, ctx, channels) {
+    \\    super(tok, ctx, 0);
+    \\    hidden(this, '_channels', channels);
+    \\  }
+    \\  get numberOfOutputs() { return 0; }
+    \\  get maxChannelCount() { return this._channels; }
+    \\  get channelCount() { return this._channels; }
+    \\}
+    \\class GainNode extends AudioNode {
+    \\  constructor(ctx, options) {
+    \\    if (!(ctx instanceof BaseAudioContext)) throw new TypeError("Failed to construct 'GainNode': parameter 1 is not of type 'BaseAudioContext'.");
+    \\    super(TOKEN, ctx, 2);
+    \\    hidden(this, '_gain', new AudioParam(TOKEN, this, 0, 1, -FLT_MAX, FLT_MAX, 'a-rate'));
+    \\    if (options && options.gain !== undefined) this._gain.value = options.gain;
+    \\  }
+    \\  get gain() { return this._gain; }
+    \\}
+    \\class AudioScheduledSourceNode extends AudioNode {
+    \\  constructor(tok, ctx, kind) {
+    \\    super(tok, ctx, kind);
+    \\    hidden(this, '_started', false);
+    \\    hidden(this, '_onended', null);
+    \\  }
+    \\  get numberOfInputs() { return 0; }
+    \\  get onended() { return this._onended; }
+    \\  set onended(f) { this._onended = typeof f === 'function' ? f : null; }
+    \\  start(when = 0) { this._start(when, 0, undefined); }
+    \\  stop(when = 0) {
+    \\    if (!this._started) throw invalidState("Failed to execute 'stop' on 'AudioScheduledSourceNode': cannot call stop without calling start first.");
+    \\    when = +when;
+    \\    if (!(when >= 0)) throw new RangeError("Failed to execute 'stop' on 'AudioScheduledSourceNode': The stop time provided (" + when + ') is less than the minimum bound (0).');
+    \\    H.auStop(this._ctx._id, this._id, when);
+    \\  }
+    \\  _start(when, offset, duration) {
+    \\    if (this._started) throw invalidState("Failed to execute 'start' on 'AudioScheduledSourceNode': cannot call start more than once.");
+    \\    when = +when;
+    \\    if (!(when >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioScheduledSourceNode': The start time provided (" + when + ') is less than the minimum bound (0).');
+    \\    this._started = true;
+    \\    this._acquire();
+    \\    this._ctx._sources.set(this._id, this);
+    \\    H.auStart(this._ctx._id, this._id, when, offset, duration === undefined ? -1 : duration);
+    \\  }
+    \\  _acquire() {}
+    \\  _fireEnded() {
+    \\    const e = new Event('ended');
+    \\    if (this._onended) this._onended.call(this, e);
+    \\    this.dispatchEvent(e);
+    \\  }
+    \\}
+    \\class AudioBufferSourceNode extends AudioScheduledSourceNode {
+    \\  constructor(ctx, options) {
+    \\    if (!(ctx instanceof BaseAudioContext)) throw new TypeError("Failed to construct 'AudioBufferSourceNode': parameter 1 is not of type 'BaseAudioContext'.");
+    \\    super(TOKEN, ctx, 1);
+    \\    hidden(this, '_buffer', null);
+    \\    hidden(this, '_loop', false);
+    \\    hidden(this, '_loopStart', 0);
+    \\    hidden(this, '_loopEnd', 0);
+    \\    hidden(this, '_playbackRate', new AudioParam(TOKEN, this, 0, 1, -FLT_MAX, FLT_MAX, 'k-rate'));
+    \\    hidden(this, '_detune', new AudioParam(TOKEN, this, 1, 0, -FLT_MAX, FLT_MAX, 'k-rate'));
+    \\    if (options) {
+    \\      if (options.buffer !== undefined) this.buffer = options.buffer;
+    \\      if (options.loop !== undefined) this.loop = options.loop;
+    \\      if (options.loopStart !== undefined) this.loopStart = options.loopStart;
+    \\      if (options.loopEnd !== undefined) this.loopEnd = options.loopEnd;
+    \\      if (options.playbackRate !== undefined) this._playbackRate.value = options.playbackRate;
+    \\      if (options.detune !== undefined) this._detune.value = options.detune;
+    \\    }
+    \\  }
+    \\  get playbackRate() { return this._playbackRate; }
+    \\  get detune() { return this._detune; }
+    \\  get buffer() { return this._buffer; }
+    \\  set buffer(b) {
+    \\    if (b !== null && !(b instanceof AudioBuffer)) throw new TypeError("Failed to set the 'buffer' property on 'AudioBufferSourceNode': The provided value is not of type 'AudioBuffer'.");
+    \\    if (b !== null && this._buffer !== null) throw invalidState("Failed to set the 'buffer' property on 'AudioBufferSourceNode': Cannot set buffer to non-null after it has been already been set to a non-null buffer");
+    \\    this._buffer = b;
+    \\    if (this._started) this._acquire();
+    \\  }
+    \\  _acquire() {
+    \\    const b = this._buffer;
+    \\    if (b === null) return;
+    \\    H.auBuffer(this._ctx._id, this._id, b._rate, b._data[0], b._data.length > 1 ? b._data[1] : undefined);
+    \\  }
+    \\  _sync() { H.auLoop(this._ctx._id, this._id, this._loop, this._loopStart, this._loopEnd); }
+    \\  get loop() { return this._loop; }
+    \\  set loop(v) { this._loop = !!v; this._sync(); }
+    \\  get loopStart() { return this._loopStart; }
+    \\  set loopStart(v) { this._loopStart = finite(v, 'loopStart'); this._sync(); }
+    \\  get loopEnd() { return this._loopEnd; }
+    \\  set loopEnd(v) { this._loopEnd = finite(v, 'loopEnd'); this._sync(); }
+    \\  start(when = 0, offset = 0, duration) {
+    \\    offset = +offset;
+    \\    if (!(offset >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioBufferSourceNode': The offset provided (" + offset + ') is less than the minimum bound (0).');
+    \\    if (duration !== undefined) {
+    \\      duration = +duration;
+    \\      if (!(duration >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioBufferSourceNode': The duration provided (" + duration + ') is less than the minimum bound (0).');
+    \\    }
+    \\    this._start(when, offset, duration);
+    \\  }
+    \\}
+    \\
+    \\// ---- contexts
+    \\function fireEnded(ctx) {
+    \\  for (const id of H.auEnded(ctx._id)) {
+    \\    const n = ctx._sources.get(id);
+    \\    if (n === undefined) continue;
+    \\    ctx._sources.delete(id);
+    \\    n._fireEnded();
+    \\  }
+    \\}
+    \\const realtime = new Set();
+    \\H.auSetNotify(() => { for (const c of realtime) fireEnded(c); });
+    \\class BaseAudioContext extends EventTarget {
+    \\  constructor(tok, channels, rate, isRealtime) {
+    \\    illegal(tok);
+    \\    super();
+    \\    hidden(this, '_id', H.auNew(channels, rate, isRealtime));
+    \\    hidden(this, '_rate', rate);
+    \\    hidden(this, '_state', 'suspended');
+    \\    hidden(this, '_sources', new Map());
+    \\    hidden(this, '_onstatechange', null);
+    \\    hidden(this, '_destination', new AudioDestinationNode(TOKEN, this, channels));
+    \\  }
+    \\  get sampleRate() { return this._rate; }
+    \\  get currentTime() { return H.auTime(this._id); }
+    \\  get state() { return this._state; }
+    \\  get destination() { return this._destination; }
+    \\  get onstatechange() { return this._onstatechange; }
+    \\  set onstatechange(f) { this._onstatechange = typeof f === 'function' ? f : null; }
+    \\  _setState(s) {
+    \\    if (this._state === s) return;
+    \\    this._state = s;
+    \\    const e = new Event('statechange');
+    \\    if (this._onstatechange) this._onstatechange.call(this, e);
+    \\    this.dispatchEvent(e);
+    \\  }
+    \\  createGain() { return new GainNode(this); }
+    \\  createBufferSource() { return new AudioBufferSourceNode(this); }
+    \\  createBuffer(numberOfChannels, length, sampleRate) {
+    \\    return new AudioBuffer({ numberOfChannels, length, sampleRate });
+    \\  }
+    \\  decodeAudioData(data, success, failure) {
+    \\    return new Promise((resolve, reject) => {
+    \\      if (!(data instanceof ArrayBuffer)) throw new TypeError("Failed to execute 'decodeAudioData' on 'BaseAudioContext': parameter 1 is not of type 'ArrayBuffer'.");
+    \\      const bytes = new Uint8Array(data);
+    \\      const info = H.auWav(bytes);
+    \\      if (info === null || info[2] === 0) {
+    \\        const e = new DOMException('Unable to decode audio data', 'EncodingError');
+    \\        if (typeof failure === 'function') failure(e);
+    \\        reject(e);
+    \\        return;
+    \\      }
+    \\      const length = Math.ceil(info[2] * this._rate / info[0]);
+    \\      const b = new AudioBuffer({ numberOfChannels: info[1], length, sampleRate: this._rate });
+    \\      for (let c = 0; c < info[1]; c++) H.auWavDecode(bytes, c, b._data[c], this._rate);
+    \\      if (typeof success === 'function') success(b);
+    \\      resolve(b);
+    \\    });
+    \\  }
+    \\}
+    \\class AudioContext extends BaseAudioContext {
+    \\  constructor(options) {
+    \\    const rate = options && options.sampleRate !== undefined ? +options.sampleRate : 48000;
+    \\    if (!(rate >= 3000 && rate <= 768000)) throw notSupported("Failed to construct 'AudioContext': The hardware sample rate provided (" + rate + ') is outside the range [3000, 768000].');
+    \\    super(TOKEN, 2, rate, true);
+    \\    realtime.add(this);
+    \\    // Autoplay: a context starts running only after user activation.
+    \\    if (H.auActivated()) {
+    \\      H.auRunning(this._id, true);
+    \\      this._state = 'running';
+    \\    }
+    \\  }
+    \\  get baseLatency() { return 128 / this._rate; }
+    \\  get outputLatency() { return 0.03; }
+    \\  resume() {
+    \\    if (this._state === 'closed') return Promise.reject(invalidState('Cannot resume a closed AudioContext.'));
+    \\    H.auRunning(this._id, true);
+    \\    this._setState('running');
+    \\    return Promise.resolve();
+    \\  }
+    \\  suspend() {
+    \\    if (this._state === 'closed') return Promise.reject(invalidState('Cannot suspend a closed AudioContext.'));
+    \\    H.auRunning(this._id, false);
+    \\    this._setState('suspended');
+    \\    return Promise.resolve();
+    \\  }
+    \\  close() {
+    \\    if (this._state === 'closed') return Promise.reject(invalidState('Cannot close a closed AudioContext.'));
+    \\    H.auClose(this._id);
+    \\    realtime.delete(this);
+    \\    this._setState('closed');
+    \\    return Promise.resolve();
+    \\  }
+    \\}
+    \\class OfflineAudioCompletionEvent extends Event {
+    \\  constructor(type, init) {
+    \\    super(type, init);
+    \\    hidden(this, '_buffer', init.renderedBuffer);
+    \\  }
+    \\  get renderedBuffer() { return this._buffer; }
+    \\}
+    \\class OfflineAudioContext extends BaseAudioContext {
+    \\  constructor(a, length, sampleRate) {
+    \\    let n = a;
+    \\    if (a !== null && typeof a === 'object') {
+    \\      n = a.numberOfChannels === undefined ? 1 : a.numberOfChannels;
+    \\      length = a.length;
+    \\      sampleRate = a.sampleRate;
+    \\    }
+    \\    n = n >>> 0;
+    \\    length = length >>> 0;
+    \\    sampleRate = +sampleRate;
+    \\    if (n < 1 || n > 32) throw notSupported("Failed to construct 'OfflineAudioContext': The number of channels provided (" + n + ') is outside the range [1, 32].');
+    \\    if (length < 1) throw notSupported("Failed to construct 'OfflineAudioContext': The number of frames provided (" + length + ') is less than the minimum bound (1).');
+    \\    if (!(sampleRate >= 3000 && sampleRate <= 768000)) throw notSupported("Failed to construct 'OfflineAudioContext': The sampleRate provided (" + sampleRate + ') is outside the range [3000, 768000].');
+    \\    super(TOKEN, n, sampleRate, false);
+    \\    hidden(this, '_channels', n);
+    \\    hidden(this, '_length', length);
+    \\    hidden(this, '_rendering', false);
+    \\    hidden(this, '_oncomplete', null);
+    \\  }
+    \\  get length() { return this._length; }
+    \\  get oncomplete() { return this._oncomplete; }
+    \\  set oncomplete(f) { this._oncomplete = typeof f === 'function' ? f : null; }
+    \\  startRendering() {
+    \\    if (this._rendering) return Promise.reject(invalidState("Failed to execute 'startRendering' on 'OfflineAudioContext': cannot call startRendering more than once"));
+    \\    this._rendering = true;
+    \\    this._setState('running');
+    \\    const b = new AudioBuffer({ numberOfChannels: this._channels, length: this._length, sampleRate: this._rate });
+    \\    H.auRender(this._id, b._data[0], b._data.length > 1 ? b._data[1] : undefined);
+    \\    return Promise.resolve().then(() => {
+    \\      fireEnded(this);
+    \\      this._setState('closed');
+    \\      const e = new OfflineAudioCompletionEvent('complete', { renderedBuffer: b });
+    \\      if (this._oncomplete) this._oncomplete.call(this, e);
+    \\      this.dispatchEvent(e);
+    \\      return b;
+    \\    });
+    \\  }
+    \\}
+    \\for (const C of [AudioBuffer, AudioParam, AudioNode, AudioDestinationNode, GainNode, AudioScheduledSourceNode,
+    \\    AudioBufferSourceNode, BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent]) {
+    \\  hidden(G, C.name, C);
+    \\}
+    \\})();
