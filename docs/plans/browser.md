@@ -104,14 +104,15 @@ the one place with more than one process.
   script ("checked before it: false"). It waits on wall time, which #42
   removed from the other timing tests. Fixed by P4.80 (2026-10-16): the
   click waits for the first paint (`--events` word `painted`).
-- **Layer 0 (P4).** Done: P4.31–P4.35, P4.38, P4.39, P4.43–P4.45,
+- **Layer 0 (P4).** Done: P4.31–P4.36, P4.38, P4.39, P4.43–P4.45,
   P4.50–P4.53, P4.56–P4.58, and the VM preparation P4.59–P4.62 (benchmark
   set, bytecode format, resolver). The window never waits on page
   fetch/XHR, scripts, `import()` or frames; the first paint comes after
   the head sheets; relayout is incremental (container queries included,
   not shadow trees); paint keeps the page's pixels with damage tracking
-  and a raster cache; transform and opacity changes composite. Open:
-  P4.36, P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
+  and a raster cache; transform and opacity changes composite; a scroll
+  moves the page as a texture offset and fixed and sticky boxes as layers
+  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
@@ -187,7 +188,7 @@ under 100 ms with a timer storm.
 |---|---|---|---|---|---|
 | A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | done | – |
 | A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | done | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
-| A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | open | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
+| A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | done 2026-10-16 | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
 | A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | open | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
 | A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | open | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
 | A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | open | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
@@ -201,7 +202,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | open | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
+| B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
 | B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | open | – |
 | B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
@@ -218,7 +219,7 @@ exits 0, the weekly job runs.
 | C1 | P10.1 | WPT testharness runner: `wpt.py fetch/serve/run`, `dweller wpt URL` | – | done | `third_party/blink/tools/blinkpy/web_tests/` (the runner's shape: expectations, timeouts, parallel workers), `third_party/blink/web_tests/resources/testharnessreport.js` |
 | C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | done | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
 | C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
-| C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | open | – |
+| C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
 | C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
 
@@ -255,7 +256,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F3 | P4.65 | calls and `new` | F2 | done |
 | F4 | P4.66 | closures and contexts | F3 | done |
 | F5 | P4.67 | properties, literals, globals, the top level | F4 | done |
-| F5b | P4.67b | the top level, `evalScript` and per-slot caches | F5 | open |
+| F5b | P4.67b | the top level, `evalScript` and per-slot caches | F5 | partly done |
 | F6 | P4.68 | exceptions | F5 | open |
 | F7 | P4.69 | the rest of the syntax | F6 | open |
 | F8 | P4.70 | classes | F7 | open |
@@ -310,7 +311,7 @@ stated gain and `conformance.py check` exiting 0. The per-area backlog
 
 | Step | Card | Area | What | Chromium |
 |---|---|---|---|---|
-| H1 | P10.34 | events | `pointer-events: none` in hit testing | `core/layout/hit_test_result.cc`, `core/paint/paint_layer.cc` (`HitTest`), `core/input/event_handler.cc` |
+| H1 (done) | P10.34 | events | `pointer-events: none` in hit testing | `core/layout/hit_test_result.cc`, `core/paint/paint_layer.cc` (`HitTest`), `core/input/event_handler.cc` |
 | H2 | P10.24 | box model and sizing | `max-content`, `min-content`, `fit-content` keywords (done 2026-10-16) | `core/layout/block_layout_algorithm.cc`, `core/layout/layout_box.cc` (intrinsic sizes), `core/layout/constraint_space.h` |
 | H3 | P10.27 | inline and text | `vertical-align` | `core/layout/inline/` (line boxes, `line_breaker.cc`), `core/layout/table/` (cell alignment) |
 | H4 | P10.28 | inline and text | `letter-spacing`, `word-spacing` | `platform/fonts/shaping/harfbuzz_shaper.cc` (spacing applied after shaping) |
@@ -525,6 +526,7 @@ them from coming back.
 - chromium: `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/property_tree.cc` (scroll and sticky position as property-tree offsets). Take: fixed and sticky items carry a scroll offset of their own, applied at draw. Not taken: property trees, a compositor thread.
 - verify: react.dev archive `window_perf.py scroll` `ui_relayout` p50 0 on frames without script changes; `cargo test --release --test browser -- window_wheel window_scroll window_sideways_scroll window_damage window_fractional_scroll > target/p4.36a.log 2>&1; echo $?` → 0 (`DWELLER_DAMAGE_CHECK=1` in `window_damage` and `window_fractional_scroll`)
 - time box: 60 min; model: opus
+- status: done 2026-10-16. In the window's build each fixed or sticky box (`Tree.scrolled`) is a promoted layer (P4.56) whose items are placed without the box's `scroll_dy` (`pinScroll`), with `scroll_dy` as the layer's translation; `followScroll` still moves the tree's boxes (hit tests, the scripts) and then moves those layers (`followPinned`, through `patchLayer`) instead of setting `relist`. It falls back to `relist` when a fixed or sticky box sits inside a promoted or transformed box (`DisplayList.unpinned`) or inside another layer. The layers come from the raster cache, so a scroll frame blends the sticky header instead of rasterizing it. react.dev archive, `window_perf.py scroll` (dummy driver; the page ends after 10 wheel frames): display lists built in the 39 scroll frames 16 → 6, all six inside a script relayout; on the frames without one, `paint_build` 3.4–3.9 ms → none, `ui_draw` 9.9–15.8 → 5.1–11.5 ms, `ui_loop` 15.1–20.9 → 10.6–16.8 ms. `fractional_scroll.html` (68 wheel frames): lists built 48 → 1. `DWELLER_DAMAGE_CHECK=1`: no difference there and on react.dev. Test `window_fractional_scroll` now asserts at most 2 lists built.
 
 #### P4.37: one connection pool
 - goal: connections, TLS sessions and DNS are reused across prefetch batches, page fetches and navigations: one curl multi handle (with a share handle) for the process, at most 6 connections per host, HTTP/2 multiplexed (cause 5).
@@ -532,6 +534,7 @@ them from coming back.
 - chromium: `net/socket/client_socket_pool_manager.cc` (6 sockets per group), `net/docs/life-of-a-url-request.md`. Take: one pool per process keyed by scheme, host and port, idle sockets kept for the next request. With libcurl: `CURLMOPT_MAX_HOST_CONNECTIONS` 6, `CURLMOPT_PIPELINING` multiplex, one connection cache.
 - verify: HN `DWELLER_TIMING` `sheets` < 350 ms live (now 753); `cargo test --release --test browser -- net_http http_ > target/p4.37.log 2>&1; echo $?` → 0
 - time box: 60 min; model: sonnet
+- status: done 2026-10-16. Every request of the session, sync `net.fetch` ones included, now runs on the loader's one multi handle (`performShared`), which with the session's share handle (connections, DNS, TLS sessions) is the process's one pool; `net/pool-options.aye` sets 6 connections per host, 16 total and `CURLMOPT_PIPELINING` multiplex explicitly. Live HN (`dump --layout`, 9 runs, behind the sandbox proxy): one TCP connection for the whole load (strace), the sheet prefetch 109–199 ms (median 111; card said `sheets` 753, which `dump` does not emit, so the `prefetch` batch is the number), the images batch 108–179 ms; one run hit the 10 s connect timeout (proxy). `net_http http_ fetch errors`: 11 of 11 pass.
 
 #### P4.41: the W7 and W8 report
 - goal: W7 and W8 are checked by one command. `window_perf.py report --replay` runs `scroll` and `idle` for every non-excluded site of `sites.json` with `DWELLER_REPLAY=target/sites/<name>`; `report --live --chrome` measures Dweller's first paint and Chrome's first contentful paint (through `agent-browser`, as in `PERF.md`), 3 alternating runs each. Both print a row per site with pass/fail and exit 1 when a row fails; the results go into `PERF.md` ("Window", a dated table).
@@ -745,6 +748,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.67b.log 2>&1; echo $?` → 0; `globals`, `calls`, `richards` checksums equal with `DWELLER_JS_VM=1`
 - estimate: `globals` 5–10×, `calls` 3–5×
 - model: opus
+- status: partly done 2026-10-16. The script top level and `evalScript` code run compiled (`vm-compile-script.aye`, `vm-visit-script.aye`, `vm-run-script.aye`; `runScript` wiring only): the Program block as a function body with no parameters and no function object (frame `func` NONE, so `isStrictCode` reads `script_strict`), its code freed when the script ends; top-level functions hoisted and `let`/`const` initialized with the new `StaGlobalInit [n]` (102, `assignIdent` with `init`, `vm-init-binding.aye`, `vm-global-decl.aye`), `var` stores `StaGlobal`; each expression statement stores into a reserved completion register that the script returns, and `vmRunScript` sets `Interp.completion` at the tree walker's depth rule, so `evalScript` is unchanged. Scripts the compiler cannot handle stay on the tree walker (`DWELLER_JS_VM_STATS=1` prints why). Global `var` loads and stores (`vm-lda-global.aye`, `vm-sta-global.aye`, `vm-global-slot.aye`) check the property at the cached slot by key, which also holds in dictionary mode: the `js` shell's global object is a dictionary, so the shape-keyed cache of P4.67 never hit and every global access took `findProp` plus `getFrom`. `vmIdx` decodes 2- and 4-byte operands inline and `vmImm` 2-byte ones (AST node operands are wide; `bcGet` was 11% of `calls`). `virtual_clock.tree` counts 999000 (its top-level busy loop now ticks per back edge). `js_conformance`, `js_conformance_vm`, `jsdom_fixtures`, `jsdom_gc_stress`, `errors` green; `check_layers.py` passes; `aye_unit_tests` not run (`BC_INFO` and `BC_COUNT` both grew by one). jsbench (fast build, median of 3, tree walker vs `DWELLER_JS_VM=1`, checksums equal): `globals` 2.13 s to 0.55 s (3.9×), `calls` 3.31 s to 1.86 s (1.8×), `richards` 1.38 s to 0.69 s (2.0×). Below the estimate: `calls` spends its time in the constructor's `this.x = x` adds (no store-transition cache: `setOn` walks the chain, `findProp`, `addProp`, the transition map) and in pushes of the call frames. Left (P4.67c): per-feedback-slot `PropCache` (`GetNamedProperty r, name, [s]` with the name in the constant pool, so operands stop being wide node ids), a store-transition cache for adds, computed keys and spread in literals, array spread.
 
 #### P4.68: exceptions
 - goal: `throw`, `try`/`catch`/`finally` in compiled code, with unwinding through VM frames, natives and the tree walker, and error traces and telemetry positions from the source-position table.
@@ -1369,6 +1373,7 @@ time as a P4 card on those files.
 - files: `browser/engine/script.aye` (`TASK_MS`, `startBudget`), the fetch timeout in `browser/net/`, `tests/browser.rs` (`window_long_task`)
 - reference: `content/browser/renderer_host/render_widget_host_impl.cc` (hang monitor timeout), `chrome/browser/ui/hung_renderer/`; `third_party/blink/renderer/core/fetch/fetch_manager.cc` (no fetch timeout in Blink)
 - verify: `cargo test --release --test browser -- window_long_task > target/p11.24b.log 2>&1; echo $?` → 0 (a page whose script runs 5 s of CPU after starting a fetch finishes the script and gets the fetch's body in the window), and `game_check.py` with the stock binary shows WebGL frames for `index.html`
+- status: done 2026-10-16. The window has no task budget (CTO decision: Chrome never ends a task; `enter` starts none when `Script.real`, microtask checkpoints are unbounded too); a task over 10 s shows "A page task ran for N s" on the status line when it ends (`engine.noteLongTask`/`takeLongTask`, `ui.showLongTask`). `dump`, `screenshot` and the agent keep their step budgets. The fetch: a loop pass that took over 5 s lengthens the connect and total timeouts of every running transfer by that time (`net.extendForStall`), so a response that came in during a blocked task is delivered, not timed out. `window_long_task` (4 s script finishes, typed input after it lands; `dump` of an endless script still terminates). Not run: `game_check.py` (f1 paused by the user); the stall extension has no test (a 30 s stall is too slow).
 - depends on: none; time box: 45 min; model: opus
 
 #### P11.24c: the HUD's frame cost in the window
@@ -1560,6 +1565,7 @@ its area.
 - verify: `python3 browser/tools/conformance.py run -j 8 > target/conformance.log 2>&1 && python3 browser/tools/conformance.py table && python3 browser/tools/conformance.py check; echo $?` → 0; `docs/conformance.md` lists every area of the table above
 - depends on: P10.1, P10.2, P10.3
 - time box: 90 min; model: sonnet
+- status: done 2026-10-16. `browser/tools/conformance.py` (`run [-j N] [AREA...]`, `table`, `check`), `docs/conformance.md`, per-area baselines `browser/tools/conformance/<area>.json` (test → passed/total), `history.csv`, `planned.txt` (areas of the plan not yet measured), and `.github/workflows/conformance.yml` (weekly and `workflow_dispatch`, `ubuntu-24.04`, fetch cached by revision). Thresholds of `wpt_areas.json` filled from the plan table (cssom, webaudio have none). Baseline (WPT e58225ab, test262 d53ebc8b19): dom/nodes 47.2, dom/events 48.1, forms 36.1, css/cssom 54.0, fetch/api/basic 23.4, xhr 15.5, url 48.5, encoding 0.0 (280/742368: a few files with hundreds of thousands of subtests), webaudio 63.3, css/css-flexbox 37.8, test262 built-ins 64.2 (11792/18373, 5450 skipped), language 65.0 (15080/23210). A full run took about 17 min at -j 4. Left: the 17 plan areas in `planned.txt` (need their directories in `wpt_areas.json` and `fetch`), test262 annexB, the macOS job, `encoding` scored per file rather than per subtest.
 
 #### P10.5: fetch and XHR under `wpt serve`
 - goal: the fetch/XHR tests that need WPT's Python handlers and `.sub.` substitution run, using upstream `wpt serve` from the pinned checkout. Its hosts (`web-platform.test`, `www.web-platform.test`, ...) resolve to 127.0.0.1 through a new `DWELLER_RESOLVE` (libcurl `CURLOPT_RESOLVE`), so no `/etc/hosts` change is needed. Adds the "Fetch and XHR" area and un-excludes `*.sub.*` in the others.
@@ -1603,7 +1609,7 @@ cards: `font-feature-settings`, `font-variation-settings`,
 
 - **HTML parsing:** P3.10 scripts run while parsing see an 800px viewport instead of `--width` (async images follow-up).
 - **DOM:** P4.38 `SVGAElement` (with `SVGElement` as its prototype): Mistral's Astro `ClientRouter` throws on every click that is not on an `<a>` (user log 2026-10-15); verify also: a fixture clicking a `<span>` with `t instanceof SVGAElement` in a listener, no Uncaught on mistral.ai. Done 2026-10-15 (branch `telemetry-unsupported-audit`): `SVGAElement`, `SVGGElement`, `SVGUseElement`, `SVGImageElement`, `SVGTextElement` under `SVGGraphicsElement`, and `SVGGeometryElement` with `SVGPathElement`, `SVGRectElement`, `SVGCircleElement`, `SVGEllipseElement`, `SVGLineElement`, `SVGPolylineElement`, `SVGPolygonElement` (`engine/dom_api.aye`, `Script.svg_tag_protos`); fixture `jsdom/svg_geometry.html` (an HTML `<a>` click is not an `SVGAElement`). P3.32 a frame's `history.length` counts only its own entries; 1 during initial load (P3.29). B8: moving nodes between documents; one joint session history for a tab and its frames.
-- **Events and timers:** P10.34 `pointer-events: none` in hit testing (the click, hover and agent `click` go to the box beneath; `auto` on a descendant re-enables it); overlays and decorative layers on many sites swallow clicks today. P3.9 dump virtual clock: an `onload` set inside `setTimeout(0)` after `src` misses the load event. B8: event listeners on another frame's nodes.
+- **Events and timers:** P10.34 `pointer-events: none` in hit testing (the click, hover and agent `click` go to the box beneath; `auto` on a descendant re-enables it); overlays and decorative layers on many sites swallow clicks today. P3.9 dump virtual clock: an `onload` set inside `setTimeout(0)` after `src` misses the load event. B8: event listeners on another frame's nodes. Status: done 2026-10-16. `pointer-events` (inherited; `auto`, `none` and the SVG keywords, which hit like `auto`) is a paint-only property; `engine/hit.aye` skips the box and the text fragments of a box whose value is `none` and keeps searching its children and the layers beneath (`pass-through.aye`), so click, hover, `linkAt` and `elementFromPoint` follow the box beneath and a descendant with `auto` takes them back. The agent's `click` on an element that computes `none` goes to what is at the middle of its box (`click-target.aye`). Tests: `window_pointer_events` (`browser/tests/ui/pointer_events.html`: click and hover through an overlay, an `auto` child, `none` inherited), agent session `pointer_events` (`sessions/pointer_events.jsonl`). `-- window_ agent_ errors`: 53 passed, `window_webgl` fails without ANGLE (not installed here; unrelated). No WPT area covers `css/css-ui` or `pointerevents` in `wpt_areas.json`, so no before/after.
 - **CSS box model and sizing:** P10.24 intrinsic size keywords: `width`/`height`/`min-*`/`max-*`/`flex-basis` take `max-content`, `min-content`, `fit-content` and `fit-content(<length>)` (layout already computes min/max-content for flex and grid items; today the declaration is dropped, so `width: fit-content` buttons and chips stretch to the full line; telemetry `width: max-content`, `width: fit-content` on anoma.ly); verify: `wpt.py run css/css-sizing` gains, a layout fixture of a `fit-content` block. Done 2026-10-16: the three keywords and `fit-content(<length-percentage>)` (`Value.FitContent`, absolute lengths, percentages and `calc()`; `em` inside is still dropped) on `width`, `min-width`, `max-width` and `flex-basis` of block, atomic inline, absolute, flex and grid items, from the cached min/max-content widths (`layout/content-size-of.aye`, `prime-intrinsic.aye`); on heights they act as `auto`/`none`. Fixture `layout/intrinsic_sizes.html`. `wpt.py run css/css-sizing` (area added to `wpt_areas.json`): 383/1882 (20.4%) before, 439/1882 (23.3%) after. P3.59 intrinsic sizing passes no container height (`browser/layout/intrinsic.aye`, `cb_h = -1`); BBC NEWS `<h1>` 300px instead of 100px (P3.47; still seen 2026-10-14: the NEWS wordmark 100 px left of centre).
 - **CSS floats and tables:** P10.26 `border-collapse` and `border-spacing` (collapsed borders are drawn twice as thick today; most data tables and CSS resets set `collapse`). P3.70 abehiroshi: the news column drawn below the photo instead of beside it, menu bullets above their links. P3.71 ZOL: 找产品 product names wrap and the rows misalign; the 新品首发/本月销量最高 tabs stack. P3.68 Python docs: the sidebar drawn right of the text (Chrome: left); diagnose to its area first.
 - **CSS values, units, color:** P10.25 the `lh` and `rlh` units (line-height of the element and of the root), `env()` (`safe-area-inset-*` as 0, else its fallback) and the stepped math functions `round()`, `mod()`, `rem()`, `abs()`, `sign()` in `calc()` (`css/calc.aye`); today any of them drops the whole declaration, so `right: max(0px, env(safe-area-inset-right))` or `min-height: 1lh` is lost (telemetry `min-height: lh`, `right: max()` on anoma.ly, which now report `lh`/`env()`); verify: `wpt.py run css/css-values` gains, a style fixture.

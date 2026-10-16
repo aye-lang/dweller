@@ -1,0 +1,20 @@
+import std
+
+let STALL_MS: u64 = 5000
+
+pub fn extendForStall(ld: *mut Loader) {
+    let at = std.time.monotonicMs()
+    let gap = at - ld.pumped
+
+    ld.pumped = at
+
+    if gap <= STALL_MS {
+        return
+    }
+
+    for l in ld.loads.items() {
+        if l.job |j| {
+            lengthenJob(j, gap)
+        }
+    }
+}

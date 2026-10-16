@@ -1,0 +1,21 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitVariableDeclaration)
+
+fn vmGlobalDecl(c: *mut Compiler, kind: u32, target: u32, init: u32) CompileError!void {
+    if init == 0 && kind == DECL_VAR {
+        return
+    }
+
+    if init == 0 {
+        try c.b.op0(BC_LDA_UNDEFINED)
+    } else {
+        try c.visit(init)
+    }
+
+    if kind == DECL_VAR {
+        try c.b.op1(BC_STA_GLOBAL, target as i64)
+
+        return
+    }
+
+    try c.b.op1(BC_STA_GLOBAL_INIT, target as i64)
+}
