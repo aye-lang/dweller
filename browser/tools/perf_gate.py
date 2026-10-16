@@ -10,6 +10,7 @@ TESTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests")
 RUNS = 3
 RATCHET = 0.8
 SLACK = {"raster_px": 1.02, "layout_full": 1.2}
+UNRATCHETED = {"net_sync"}
 SETTLE = 60
 SCROLLS = 30
 
@@ -83,7 +84,7 @@ def verdict(metric, value, budget):
         return "new"
     if value > budget * SLACK.get(metric, 1):
         return "OVER"
-    if value < budget * RATCHET:
+    if metric not in UNRATCHETED and value < budget * RATCHET:
         return "LOWER"
 
     return "ok"
