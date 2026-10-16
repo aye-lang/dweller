@@ -1,0 +1,20 @@
+// v8: src/interpreter/bytecode-generator.cc (PrepareAssignmentLhs)
+
+fn vmPropertyReference(c: *mut Compiler, target: u32, laterMayWrite: bool) CompileError!VmPropertyRef {
+    match c.ast.node(target) {
+        .Member { obj, .. } => {
+            return VmPropertyRef { obj: try vmProtectedReg(c, obj, laterMayWrite), key: 0, keyed: false }
+        }
+        .Index { obj, key, .. } => {
+            let r = try vmProtectedReg(c, obj, laterMayWrite || c.mayWrite(key))
+            let k = try vmProtectedReg(c, key, laterMayWrite)
+
+            return VmPropertyRef { obj: r, key: k, keyed: true }
+        }
+        _ => {
+            try c.fail("unsupported: assignment to a pattern")
+        }
+    }
+
+    return VmPropertyRef { obj: 0, key: 0, keyed: false }
+}

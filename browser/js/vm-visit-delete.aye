@@ -1,0 +1,37 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitDelete)
+
+fn vmVisitDelete(c: *mut Compiler, arg: u32) CompileError!void {
+    let mark = c.b.topReg
+
+    match c.ast.node(arg) {
+        .Member { obj, name, optional } => {
+            if optional {
+                try c.fail("unsupported: OptChain")
+            }
+
+            let r = try c.valueReg(obj)
+
+            try c.b.op1(BC_LDA_CONSTANT, try c.b.constant(BcConst.Atom { id: name }) as i64)
+            try c.b.op1(BC_DELETE_PROPERTY, r as i64)
+        }
+        .Index { obj, key, optional } => {
+            if optional {
+                try c.fail("unsupported: OptChain")
+            }
+
+            let r = try vmProtectedReg(c, obj, c.mayWrite(key))
+
+            try c.visit(key)
+            try c.b.op1(BC_DELETE_PROPERTY, r as i64)
+        }
+        .Ident { .. } => {
+            try c.b.op0(BC_LDA_FALSE)
+        }
+        _ => {
+            try c.visit(arg)
+            try c.b.op0(BC_LDA_TRUE)
+        }
+    }
+
+    c.b.releaseRegs(mark)
+}

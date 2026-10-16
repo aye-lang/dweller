@@ -281,6 +281,16 @@ function (a named function expression's own name).
 bindings; function-level contexts start undefined, as the tree
 walker's.
 
+As built (P4.67): `StaGlobal [n]`, `TypeOfGlobal [n]`,
+`GetKeyedProperty r, [s]`, `SetKeyedProperty r_obj, r_key, [s]`,
+`DeleteProperty r` (key in the accumulator), `TestIn`,
+`TestInstanceOf`, `CreateObjectLiteral [n]` (the `ObjectLit` node: a
+`literalShape` literal gets its final shape and slots at creation),
+`DefineNamedOwnProperty r, [p], k` and `CreateArrayLiteral`,
+`StaInArrayLiteral r`. Named loads and stores and globals keep the
+per-node `PropCache` (one node is one site); feedback-vector slots and
+the compiled top level are P4.67b. The DOM gates run with the VM on.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

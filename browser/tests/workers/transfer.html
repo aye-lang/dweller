@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<title>Workers: transfer</title>
+<pre id="out"></pre>
+<script>
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+const w = new Worker('transfer-worker.js');
+const buf = new ArrayBuffer(16);
+const u8 = new Uint8Array(buf);
+u8.set([1, 2, 3, 4]);
+const kept = new Uint16Array([9, 8]);
+w.onmessage = e => {
+  const d = e.data;
+  log('back', d.sum, d.view instanceof Uint8Array, d.view.byteOffset, d.view.length, d.view.buffer === d.buf, d.kept[1]);
+  log('sent copy untouched', kept[0]);
+  w.terminate();
+};
+w.postMessage({ buf, view: new Uint8Array(buf, 2, 4), kept }, [buf]);
+log('detached', buf.byteLength, u8.length, buf.detached);
+try { w.postMessage(null, [buf]); } catch (e) { log('detached again', e.name); }
+</script>

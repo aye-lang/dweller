@@ -1,0 +1,28 @@
+// v8: src/interpreter/interpreter-generator.cc (CreateObjectLiteral)
+
+fn vmCreateObjectLiteral(it: *mut Interp, id: u32) JsError!Value {
+    let lit = vmObjectLit(it, id)
+    let shape = try literalShape(it, id, lit.list, lit.n)
+    let o = try it.newObject(it.object_proto)
+
+    if shape == NONE || lit.n == 0 {
+        return objVal(o)
+    }
+
+    let props = try it.heap.prop_mem.get(lit.n as usize, Prop { key: 0, value: Value.Undefined, setter: Value.Undefined, flags: F_DEFAULT })
+
+    for k in 0..lit.n {
+        match it.ast.node(it.ast.item(lit.list, k)) {
+            .Prop { key, .. } => {
+                props[k].key = key
+            }
+            _ => {}
+        }
+    }
+
+    it.heap.obj(o).props = props
+    it.heap.obj(o).nprops = lit.n
+    it.heap.obj(o).shape = shape
+
+    return objVal(o)
+}

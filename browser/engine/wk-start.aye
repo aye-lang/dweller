@@ -1,0 +1,27 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn wkStart(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let href = try it.toStringValue(it.arg(a, 0))
+    var source: ?[]u8 = null
+
+    if !js.isUndef(it.arg(a, 2)) {
+        source = it.heap.bytes(js.strOf(try it.toStringValue(it.arg(a, 2))))
+    }
+
+    let l = try workers.newLink(s.alloc, it.heap.bytes(js.strOf(href)), source, it.toBoolean(it.arg(a, 1)))
+    let id = next_worker_id
+    next_worker_id += 1
+    try (try pageLinks(s.alloc)).append(PageLink { owner: s, id: id, link: l, dead: false })
+
+    if !workers.spawnWorker(l) {
+        l.finish()
+    }
+
+    return js.numVal(id as f64)
+}

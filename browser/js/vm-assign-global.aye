@@ -1,0 +1,21 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmAssignGlobal(c: *mut Compiler, op: Op, target: u32, value: u32) CompileError!void {
+    if op == Op.None {
+        try c.visit(value)
+        try c.b.op1(BC_STA_GLOBAL, target as i64)
+
+        return
+    }
+
+    let bc = try vmCompoundOpcode(c, op)
+    let mark = c.b.topReg
+    let old = c.b.newReg()
+
+    try c.b.op1(BC_LDA_GLOBAL, target as i64)
+    try c.b.op1(BC_STAR, old as i64)
+    try c.visit(value)
+    try c.b.op2(bc, old as i64, c.b.newSlot() as i64)
+    try c.b.op1(BC_STA_GLOBAL, target as i64)
+    c.b.releaseRegs(mark)
+}

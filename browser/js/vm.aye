@@ -399,6 +399,8 @@ fn vmBinaryOp(op: u8) Op {
         48 => Op.Gt
         49 => Op.Le
         50 => Op.Ge
+        96 => Op.In
+        97 => Op.Instanceof
         _ => Op.None
     }
 }
@@ -1569,6 +1571,89 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
             90 => {
                 // v8: src/interpreter/bytecode-register.h (Register::function_closure)
                 acc = objVal(it.frames.items()[it.frames.len() - 1].func)
+            }
+            91 => {
+                // v8: src/interpreter/interpreter-generator.cc (StaGlobal)
+                regs[fp] = acc
+                try vmStaGlobal(it, vmIdx(bytes, pc, w) as u32, acc)
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            92 => {
+                // v8: src/interpreter/interpreter-generator.cc (TypeOfGlobal)
+                acc = try vmTypeOfGlobal(it, vmIdx(bytes, pc, w) as u32)
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            93 => {
+                // v8: src/interpreter/interpreter-generator.cc (GetKeyedProperty)
+                let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try it.getIndex(o, acc)
+                regs = it.stack.items()
+            }
+            94 => {
+                // v8: src/interpreter/interpreter-generator.cc (SetKeyedProperty)
+                let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                let k = regs[(base + vmImm(bytes, pc + w as usize, w)) as usize]
+                pc += 3 * w as usize
+                regs[fp] = acc
+                try it.setIndex(o, k, acc)
+                regs = it.stack.items()
+            }
+            95 => {
+                // v8: src/interpreter/interpreter-generator.cc (DeletePropertySloppy)
+                let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmDeleteProperty(it, o, acc)
+                regs = it.stack.items()
+            }
+            96 => {
+                // v8: src/interpreter/interpreter-generator.cc (TestIn)
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            97 => {
+                // v8: src/interpreter/interpreter-generator.cc (TestInstanceOf)
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            98 => {
+                // v8: src/interpreter/interpreter-generator.cc (CreateObjectLiteral)
+                regs[fp] = acc
+                acc = try vmCreateObjectLiteral(it, vmIdx(bytes, pc, w) as u32)
+                pc += w as usize
+                regs = it.stack.items()
+            }
+            99 => {
+                // v8: src/interpreter/interpreter-generator.cc (DefineNamedOwnProperty)
+                let o = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                regs[fp] = acc
+                try vmDefineNamedOwnProperty(it, o, vmIdx(bytes, pc + w as usize, w) as u32, vmIdx(bytes, pc + 2 * w as usize, w) as u32, acc)
+                pc += 3 * w as usize
+                regs = it.stack.items()
+            }
+            100 => {
+                // v8: src/interpreter/interpreter-generator.cc (CreateArrayLiteral)
+                regs[fp] = acc
+                acc = objVal(try it.newArray(0))
+                regs = it.stack.items()
+            }
+            101 => {
+                // v8: src/interpreter/interpreter-generator.cc (StaInArrayLiteral)
+                let o = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                pc += w as usize
+                regs[fp] = acc
+                try it.heap.pushElem(o, acc)
+                regs = it.stack.items()
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

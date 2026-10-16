@@ -1,0 +1,14 @@
+import std
+import std.mem.Allocator
+import std.text
+
+pub fn addFontDir(alloc: Allocator, sys: *mut System, dir: []u8) {
+    let entries = std.fs.readDir(alloc, dir) catch |e| {
+        return
+    }
+    defer entries.deinit()
+
+    for entry in entries.items {
+        addFontFile(alloc, sys, dir, entry.name)
+    }
+}
