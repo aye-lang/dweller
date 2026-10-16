@@ -497,12 +497,13 @@ fn keepRequest(alloc: Allocator, l: *mut Load, job: *mut Job, status: i64) Fetch
     a.has_res = true
 }
 
-// The transfer of a request of the session (http.aye) on `curl`: on the
-// loads' multi handle while loads run, so that they progress while the
-// request waits; else curl_easy_perform. Its CURLcode.
+// The transfer of a request of the session (http.aye) on `curl`, on the
+// loader's multi handle (the one connection pool), so that running loads
+// progress while the request waits. Its CURLcode.
 fn performShared(curl: *mut Curl) i32 {
-    let ld = loader orelse return curl_easy_perform(curl)
-    if !anyRunning(ld) || ld.waiting != null {
+    let s = session orelse return curl_easy_perform(curl)
+    let ld = loaderOf(s) orelse return curl_easy_perform(curl)
+    if ld.waiting != null {
         return curl_easy_perform(curl)
     }
     if curl_multi_add_handle(ld.multi, curl) != 0 {
@@ -545,8 +546,7 @@ fn loaderOf(s: *mut Session) ?*mut Loader {
         return ld
     }
     let m = curl_multi_init() orelse return null
-    curl_multi_setopt(m, CURLMOPT_MAX_HOST_CONNECTIONS, 6 as i64)
-    curl_multi_setopt(m, CURLMOPT_MAX_TOTAL_CONNECTIONS, 16 as i64)
+    setPoolOptions(m)
     let ld = s.alloc.create(Loader {
         alloc: s.alloc,
         multi: m,
