@@ -1224,7 +1224,8 @@ pub struct Ui {
                     // back to where `list` has them.
                     _ = layout.scrollTo(t, self.list_scroll)
                 }
-                if t.scroll_y != self.tab.scroll && layout.scrollTo(t, self.tab.scroll) {
+                let y = snappedScroll(self.tab.scroll, self.scale)
+                if t.scroll_y != y && layout.scrollTo(t, y) {
                     self.relist = true
                 }
                 // Else `list` is right at this offset too.
@@ -2108,7 +2109,7 @@ pub struct Ui {
         let top = self.top()
         let bottom = self.win_h as f64
         let content = paint.Rect { x: 0.0, y: top, w: self.win_w as f64, h: self.viewHeight() }
-        let v = paint.View { scale: s, dx: -self.tab.scroll_x * s, dy: (top - self.tab.scroll) * s }
+        let v = paint.View { scale: s, dx: -snappedScroll(self.tab.scroll_x, s) * s, dy: (top - snappedScroll(self.tab.scroll, s)) * s }
         let flat = paint.View { scale: s, dx: 0.0, dy: 0.0 }
         let area = paint.deviceRect(content, flat)
         // The page's pixels, then the window: all of it when something

@@ -4528,6 +4528,66 @@ fn window_damage() {
     assert!(px.contains(&0), "no frame without damage: {px:?}");
 }
 
+/// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
+/// draws the page at its scroll offset snapped to device pixels, so such a
+/// frame moves the last frame's pixels and draws the band, the fixed
+/// header and the sticky heading (or nothing), never the whole page, and
+/// `DWELLER_DAMAGE_CHECK` finds each frame equal to a whole drawing.
+#[test]
+fn window_fractional_scroll() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = vec!["wheel:-0.03 frame"; 30];
+    events.extend(vec!["wheel:-0.37 frame"; 20]);
+    events.extend(vec!["wheel:0.11 frame"; 10]);
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .env("SDL_VIDEODRIVER", "dummy")
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/fractional_scroll.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "80",
+            "--state",
+            "--events",
+            &events.join(" "),
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    assert!(text(&out.stdout).contains("\nscroll 72\n"), "{}", text(&out.stdout));
+    let px: Vec<u64> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\tui_damage_px\t").nth(1))
+        .map(|r| {
+            r.split('\t')
+                .nth(1)
+                .unwrap()
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
+        })
+        .collect();
+    let full = 400 * 260;
+    let whole = px.iter().filter(|&&p| p >= full).count();
+    let partial = px.iter().filter(|&&p| p > 0 && p < full).count();
+    assert!(whole <= 2, "{whole} frames drawn whole: {px:?}");
+    assert!(partial >= 30, "{partial} partial frames: {px:?}");
+}
+
 /// P11.7 (docs/webgl.md §5): the window shows a WebGL canvas through its
 /// readback. `spin.html` turns a triangle on a 1280x720 canvas in 120
 /// animation frames; each frame is read back at its end and mapped into
