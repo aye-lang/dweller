@@ -630,6 +630,53 @@ fn webgl_objects() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.6 (docs/webgl.md §3): `dump --text --js` of
+/// `browser/tests/webgl/textures.html` on SwiftShader, served over HTTP
+/// (the page loads an image from a second origin), prints
+/// `textures.txt`: a textured quad from a PNG, a 2D canvas, an
+/// OffscreenCanvas, an ImageData, ImageBitmaps and typed arrays read back
+/// with and without UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+/// the object and pixel store rules, and the SecurityError of a
+/// cross-origin image. It samples with NEAREST at texel centers, so the
+/// pixels do not depend on the backend.
+#[test]
+fn webgl_textures() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/textures.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/textures.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
@@ -5135,7 +5182,10 @@ fn window_paints_early() {
         return;
     };
     let page = format!("{}/net/early_paint.html", srv.base);
-    let events = format!("{}click:14,54 frame wheel:-3 frame", "frame ".repeat(40));
+    // The click waits for the first paint (`painted`), which comes
+    // 0.3 s into the 1.5 s the script is delayed, not for a number of
+    // frames (40 take longer than 1.5 s on a loaded runner).
+    let events = "painted click:14,54 frame wheel:-3 frame";
     let mut window = Command::new(dweller())
         .current_dir(root())
         .env("SDL_VIDEODRIVER", "dummy")
@@ -5151,7 +5201,7 @@ fn window_paints_early() {
             "--frames",
             "300",
             "--events",
-            events.as_str(),
+            events,
             "--text",
         ])
         .spawn_drained();
