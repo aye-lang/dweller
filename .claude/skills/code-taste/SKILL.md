@@ -13,14 +13,14 @@ CEO 看 code 會崩潰的東西，一條一條記在這裡。每條：規則、�
 2. `rg` 找出全 repo 同類違規，按模組（`browser/<module>/`）分批。
 3. 每批一張 T 卡（`docs/plans/taste.md`），派一個 opus sub agent（並行要 `isolation: worktree`）。只排沒有進行中卡片碰的模組。prompt 必含：規則全文與壞 / 好例、檔案清單、「只改這條規則涵蓋的東西，行為不變」、驗證指令（該模組的 targeted tests + `python3 browser/tools/check_taste.py`）、交回 commit hash + 測試結果。
 4. 主 session 抽查 diff 與測試結果，不重讀全部。
-5. 能機械檢查的規則進 `browser/tools/check_taste.py`（CI 跑），不靠人記。舊檔用 baseline 棘輪：只准變好，不准變壞；新檔一律照規則。
+5. 能機械檢查的規則進 `browser/tools/check_taste.py`（CI 跑），不靠人記。舊檔（在 baseline 內）用棘輪只管 `comment_lines` 與 `long_functions`：只准變好，不准變壞；行數與空行違規不棘輪（功能卡可以在舊大檔加最少的接線行），只記在 summary；新檔（不在 baseline）一律照全部規則。
 
 ## 規則
 
 ### 1. 不寫註釋
 
 專注在易讀性與架構：命名、檔案切分、函數切分表達意思。想寫註釋 = 該抽函數、改名或拆檔。
-唯一例外：不得不連到外部資料，上限一行：spec 的 URL，或參考實作的路徑（`// v8: src/interpreter/bytecode-generator.cc`、`// blink: core/layout/...`，見 docs 的 reference 規則）。
+唯一例外：不得不連到外部資料，上限一行：spec 的 URL，或參考實作的路徑（`// v8: src/interpreter/bytecode-generator.cc`、`// blink: core/layout/...`、`// chromium: third_party/blink/...`，見 docs 的 reference 規則）。
 檔頭說明、`///` 敘述、段落分隔線、解釋「為什麼」的多行註釋全部是違規。
 所有權與「可能沒有」用型別和名字講：`?T` 表示可能沒有；擁有的切片叫 `owned_*` 或由 `deinit` 的那個 struct 持有，不靠欄位註釋。
 架構層級的「為什麼」寫進 `docs/*.md` 的設計文件，不寫在 code 裡。
