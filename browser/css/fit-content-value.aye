@@ -1,0 +1,29 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-sizing-3/#valdef-width-fit-content-length-percentage
+fn fitContentValue(p: Property, c: Comp) ?Value {
+    let f = c.toks[0]
+
+    if f.kind != Tok.Function || !text.eqlIgnoreCase(f.text, "fit-content") || inList("fit-content", p.keywords) == null {
+        return null
+    }
+
+    if c.toks[c.toks.len - 1].kind != Tok.RParen {
+        return null
+    }
+
+    let arg = Comp { toks: trimWhitespace(c.toks[1..c.toks.len - 1]) }
+
+    if arg.toks.len == 0 {
+        return null
+    }
+
+    let v = lengthValue(arg, true, true) orelse return null
+
+    return match v {
+        .Px { v: n } => Value.FitContent { pct: 0.0, px: n }
+        .Percent { v: n } => Value.FitContent { pct: n, px: 0.0 }
+        .Calc { pct, px } => Value.FitContent { pct: pct, px: px }
+        _ => null
+    }
+}
