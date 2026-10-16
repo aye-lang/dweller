@@ -1,0 +1,26 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn wkPost(it: *mut Interp, a: Args) JsError!Value {
+    let l = try pageLinkOf(it, try it.toNumber(it.arg(a, 0)) as u32)
+    let json = try it.toStringValue(it.arg(a, 1))
+    let m = try l.seal(true, workers.MESSAGE, it.heap.bytes(js.strOf(json)))
+
+    l.toWorker(m) catch |e| {
+        l.release(m)
+        return JsError.OutOfMemory
+    }
+
+    return Value.Undefined
+}
+
+fn wkStage(it: *mut Interp, a: Args) JsError!Value {
+    let l = try pageLinkOf(it, try it.toNumber(it.arg(a, 0)) as u32)
+    try l.stage(true, try workers.bufferBytes(it, it.arg(a, 1)))
+
+    return Value.Undefined
+}

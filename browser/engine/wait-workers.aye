@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.time
+
+let WORKER_WAIT_MS: u64 = 60000
+
+fn waitWorkers(p: *mut Page, block: bool) AllocError!bool {
+    let s = p.script orelse return false
+    let started = time.monotonicMs()
+
+    while block && workersBusy(s) && time.monotonicMs() - started < WORKER_WAIT_MS {
+        if try pumpWorkers(s) {
+            return true
+        }
+
+        time.sleep(1)
+    }
+
+    return pumpWorkers(s)
+}

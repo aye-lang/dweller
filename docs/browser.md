@@ -389,6 +389,7 @@ output as goldens.
   A value held across an allocation must be on the interpreter's stack
   (calls take `[f, this, args...]` from it). `DWELLER_JS_GC=stress`
   collects at every allocation to check that discipline.
+- *Console echo:* headless test windows keep the console off stderr; `DWELLER_CONSOLE=1` keeps it there too (used by `browser/tools/game_check.py`).
 - *Host interface:* native functions are a table of `fn(*mut Interp,
   Args) JsError!Value`; `Interp.newHostObject(proto, tag, index,
   generation)` makes a wrapper that holds a `Handle(Node)` as three

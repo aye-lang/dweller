@@ -264,6 +264,7 @@ pub struct Script {
     start_ms: u64
     real: bool
     task_began: u64 = 0
+    vsync: bool = false
     // `__wasmHost` was installed: the page holds the WebAssembly store
     // (wasm.release).
     wasm_on: bool = false
@@ -651,6 +652,7 @@ fn setUp(s: *mut Script) JsError!void {
     }
     try installAudio(&mut s.it)
     try s.it.runScript(AUDIO_PRELUDE)
+    try installWorkers(&mut s.it)
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
@@ -661,6 +663,7 @@ fn setUp(s: *mut Script) JsError!void {
 
 /// Frees the script of a page (before its document).
 pub fn destroyScript(s: *mut Script) {
+    stopWorkers(s)
     s.it.host = null
     if s.wasm_on {
         wasm.release(&mut s.it)
@@ -1221,12 +1224,16 @@ fn enter(s: *mut Script) {
     s.depth += 1
 }
 
+fn endTask(s: *mut Script) {
+    s.work += s.it.steps
+    s.it.clearBudget()
+    noteLongTask(s)
+}
+
 fn leave(s: *mut Script) {
     s.depth -= 1
     if s.depth == 0 {
-        s.work += s.it.steps
-        s.it.clearBudget()
-        noteLongTask(s)
+        endTask(s)
     }
 }
 
@@ -1440,7 +1447,7 @@ fn checkpointOver(s: *Script, work: u64) bool {
 
 fn tick(s: *mut Script) {
     if s.real {
-        s.now = (time.monotonicMs() - s.start_ms) as f64
+        s.now = coarseMs(aye_std_monotonic_ns(), s.start_ms)
         return
     }
     var done = s.work
@@ -1470,7 +1477,7 @@ fn turnLimit(s: *Script, turn: u64) u64 {
 fn earliestBefore(s: *mut Script, limit: f64, seq: u64) ?usize {
     var best: ?usize = null
     for i, t in s.timers.items() {
-        if t.due > limit || t.seq >= seq || !runnable(s, t) {
+        if t.due > limit || t.seq >= seq || !runnable(s, t) || (t.raf && s.vsync) {
             continue
         }
         if best |b| {
@@ -1658,7 +1665,10 @@ fn nextTimer(p: *mut Page, limit: f64) ?NextTimer {
 /// When there is none, the due FinalizationRegistry callbacks run
 /// instead; false when there were none either.
 pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
-    let n = nextTimer(p, deadline - pageClock(p)) orelse return runCleanups(p)
+    if try waitWorkers(p, false) {
+        return true
+    }
+    let n = nextTimer(p, deadline - pageClock(p)) orelse return try runCleanups(p) || try waitWorkers(p, true)
     try runTimer(n.script, n.index)
     try afterTask(n.script)
     if !n.script.real {
@@ -1761,12 +1771,13 @@ fn findConsole(p: *mut Page, prefix: []u8, out: *mut text.Builder) AllocError!bo
 pub fn msUntilNextTimer(p: *mut Page) ?f64 {
     var wait: ?f64 = null
     if nextTimer(p, 1.0e300) |n| {
-        wait = n.wait
+        wait = std.math.ceil(n.wait)
         if n.wait < 0.0 {
             wait = 0.0
         }
     }
     if p.script |s| {
+        wait = workerWait(s, wait)
         // A playing AudioContext renders ahead of its device each turn.
         if s.audio_owner != 0 && audio.playing(s.audio_owner) {
             if wait |w| {

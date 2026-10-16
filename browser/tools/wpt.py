@@ -10,7 +10,8 @@
   wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR]
       Runs `dweller wpt URL` for each testharness test of an area (a key
       of wpt_areas.json) or of a path (a directory or file under the
-      root), and writes target/wpt-results/<area>.json.
+      root), and writes target/wpt-results/<area>.json. Reftests and
+      crashtests (wpt_reftest.py) are screenshot comparisons and loads.
 """
 import argparse
 import concurrent.futures
@@ -25,6 +26,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+import wpt_reftest
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -155,10 +158,13 @@ def wrapper_source(path):
     return None
 
 
-def is_testharness_html(text):
-    if "testharness.js" not in text:
-        return False
-    return not re.search(r"""rel\s*=\s*["']?(match|mismatch)""", text)
+def html_kind(rel, text):
+    """"crashtest", "reftest", "testharness" or None for an HTML page."""
+    if wpt_reftest.is_crashtest(rel):
+        return "crashtest"
+    if wpt_reftest.has_reftest_link(text):
+        return "reftest"
+    return "testharness" if "testharness.js" in text else None
 
 
 def discover(root, rel, excludes):
@@ -186,7 +192,7 @@ def discover(root, rel, excludes):
                 skipped += 1
                 continue
             url = "/" + relp[:-3] + ".html"
-            tests.append({"path": relp, "url": url,
+            tests.append({"path": relp, "url": url, "kind": "testharness",
                           "timeout": TIMEOUT_LONG if meta["timeout"] == "long" else TIMEOUT_NORMAL})
         elif name.endswith(HTML_EXT):
             if SKIP_NAME.search(name):
@@ -196,10 +202,11 @@ def discover(root, rel, excludes):
             if m and p.with_name(m.group(1) + ".js").is_file():
                 continue  # the wrapper of an .any.js, listed above
             text = read_text(p)
-            if not is_testharness_html(text):
+            kind = html_kind(relp, text)
+            if kind is None:
                 continue
             long = re.search(r"""<meta\s+name\s*=\s*["']?timeout["']?\s+content\s*=\s*["']?long""", text)
-            tests.append({"path": relp, "url": "/" + relp,
+            tests.append({"path": relp, "url": "/" + relp, "kind": kind,
                           "timeout": TIMEOUT_LONG if long else TIMEOUT_NORMAL})
     return tests, skipped
 
@@ -298,7 +305,16 @@ def cmd_serve(args):
 
 # ---------------------------------------------------------------- run
 
-def run_test(dweller, base_url, test):
+def run_test(dweller, root, base_url, test):
+    kind = test["kind"]
+    if kind == "reftest":
+        return wpt_reftest.run_reftest(dweller, root, base_url, test)
+    if kind == "crashtest":
+        return wpt_reftest.run_crashtest(dweller, root, base_url, test)
+    return run_harness_test(dweller, base_url, test)
+
+
+def run_harness_test(dweller, base_url, test):
     cmd = [str(dweller), "wpt", base_url + test["url"], "--timeout", str(test["timeout"])]
     wall = test["timeout"] * 6 + 30
     try:
@@ -337,7 +353,7 @@ def run_area(name, spec, args, dweller, results_dir):
     base = f"http://127.0.0.1:{srv.port}"
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
-            outs = list(pool.map(lambda t: run_test(dweller, base, t), tests))
+            outs = list(pool.map(lambda t: run_test(dweller, root, base, t), tests))
     finally:
         srv.stop()
     files, passed, total = [], 0, 0

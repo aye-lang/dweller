@@ -256,13 +256,13 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     // A WebGL canvas shows its frame one frame late, mapped from its
     // readback instead of waited for (docs/webgl.md §5).
     engine.readbackNextFrame(true)
-    // The console goes to stderr, except in headless test runs
-    // (DWELLER_CONSOLE=1 keeps it there too, for browser/tools/game_check.py).
+    // The console goes to stderr, except in headless test runs.
     engine.setConsoleEcho((o.frames == 0 && !o.exit_when_idle) || std.os.getenv("DWELLER_CONSOLE") != null)
     // Telemetry (perf/telemetry.aye): the person's window, its Spaces, or
     // a run with DWELLER_PROFILE set.
     perf.telemetryStart(o.frames == 0 && !o.exit_when_idle && o.events.len == 0 && o.control < 0)
     defer perf.telemetryStop()
+    applyBackgroundHint()
     if SDL_Init(SDL_INIT_VIDEO) != 0 {
         sdlError("cannot start SDL")
         return 1
@@ -272,7 +272,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     let w = SDL_CreateWindow("Dweller".ptr, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, o.width, o.height, flags)
     if w |window| {
         defer SDL_DestroyWindow(window)
-        var r = SDL_CreateRenderer(window, -1, 0)
+        var r = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC)
         if r == null {
             r = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE)
         }
@@ -465,6 +465,9 @@ pub struct Ui {
     // how long the last relayout took.
     images_at: u64 = 0
     relayout_ms: u64 = 0
+    frame_ns: u64 = 16666667
+    next_frame_ns: u64 = 0
+    input_ns: u64 = 0
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
         var slots = @zeroed([16]?*mut TabSlot)
@@ -611,6 +614,7 @@ pub struct Ui {
             var waited_ns: u64 = 0
             try self.advanceLoad(false)
             try self.imagesIn()
+            try runAnimationFrame(self)
             if self.dirty || self.repaint || frames > 0 {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
@@ -664,6 +668,7 @@ pub struct Ui {
                 timeout = POLL_MS
             }
             timeout = spacesTimeout(self, timeout)
+            timeout = frameTimeout(self, timeout)
             if net.msUntilCookieSave() |ms| {
                 if ms < timeout as i64 {
                     timeout = ms as i32
@@ -779,6 +784,7 @@ pub struct Ui {
         self.px_w = pw
         self.px_h = ph
         self.scale = pw as f64 / w as f64
+        self.frame_ns = displayPeriodNs(self.window)
         self.canvas.deinit()
         self.canvas = try paint.Canvas.init(self.alloc, pw as usize, ph as usize)
         self.page.valid = false
@@ -1329,6 +1335,7 @@ pub struct Ui {
     // ---- events
 
     fn handle(self: *mut Self, ev: *SDL_Event) AllocError!void {
+        noteInput(self, ev)
         let kind = ev.kind
         if kind == SDL_MOUSEWHEEL {
             perf.noteAction("wheel")
@@ -2168,6 +2175,7 @@ pub struct Ui {
             SDL_RenderClear(self.renderer)
             SDL_RenderCopy(self.renderer, t, null, null)
             SDL_RenderPresent(self.renderer)
+            notePresent(self)
         }
     }
 }
