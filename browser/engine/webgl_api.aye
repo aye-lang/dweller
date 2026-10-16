@@ -178,6 +178,27 @@ let OP_TEX_STORAGE_3D: u32 = 65
 let OP_CLEAR_BUFFER_F: u32 = 66
 let OP_CLEAR_BUFFER_I: u32 = 67
 let OP_CLEAR_BUFFER_UI: u32 = 68
+// P11.9: the fixed-function state. blendColor (r, g, b, a),
+// blendEquationSeparate (rgb, alpha), blendFuncSeparate (srcRGB, dstRGB,
+// srcAlpha, dstAlpha), cullFace, frontFace, depthFunc, depthRange (near,
+// far), hint (target, mode), lineWidth, polygonOffset (factor, units),
+// sampleCoverage (value, invert), stencilFuncSeparate (face, func, ref,
+// mask), stencilOpSeparate (face, fail, zfail, zpass), finish, flush.
+let OP_BLEND_COLOR: u32 = 69
+let OP_BLEND_EQUATION: u32 = 70
+let OP_BLEND_FUNC: u32 = 71
+let OP_CULL_FACE: u32 = 72
+let OP_FRONT_FACE: u32 = 73
+let OP_DEPTH_FUNC: u32 = 74
+let OP_DEPTH_RANGE: u32 = 75
+let OP_HINT: u32 = 76
+let OP_LINE_WIDTH: u32 = 77
+let OP_POLYGON_OFFSET: u32 = 78
+let OP_SAMPLE_COVERAGE: u32 = 79
+let OP_STENCIL_FUNC: u32 = 80
+let OP_STENCIL_OP: u32 = 81
+let OP_FINISH: u32 = 82
+let OP_FLUSH: u32 = 83
 
 fn akWebglCall(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
@@ -368,6 +389,36 @@ fn callMore(it: *mut Interp, a: Args, ctx: *mut gpu.Context, op: u32) JsError!vo
         gl.glSamplerParameterf(try argU32(it, a, 2), try argU32(it, a, 3), try argF32(it, a, 4))
     } else if op == OP_TEX_STORAGE_3D {
         gl.glTexStorage3D(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7))
+    } else if op == OP_BLEND_COLOR {
+        gl.glBlendColor(try argF32(it, a, 2), try argF32(it, a, 3), try argF32(it, a, 4), try argF32(it, a, 5))
+    } else if op == OP_BLEND_EQUATION {
+        gl.glBlendEquationSeparate(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_BLEND_FUNC {
+        gl.glBlendFuncSeparate(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argU32(it, a, 5))
+    } else if op == OP_CULL_FACE {
+        gl.glCullFace(try argU32(it, a, 2))
+    } else if op == OP_FRONT_FACE {
+        gl.glFrontFace(try argU32(it, a, 2))
+    } else if op == OP_DEPTH_FUNC {
+        gl.glDepthFunc(try argU32(it, a, 2))
+    } else if op == OP_DEPTH_RANGE {
+        gl.glDepthRangef(try argF32(it, a, 2), try argF32(it, a, 3))
+    } else if op == OP_HINT {
+        gl.glHint(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == OP_LINE_WIDTH {
+        gl.glLineWidth(try argF32(it, a, 2))
+    } else if op == OP_POLYGON_OFFSET {
+        gl.glPolygonOffset(try argF32(it, a, 2), try argF32(it, a, 3))
+    } else if op == OP_SAMPLE_COVERAGE {
+        gl.glSampleCoverage(try argF32(it, a, 2), glBool(it, a, 3))
+    } else if op == OP_STENCIL_FUNC {
+        gl.glStencilFuncSeparate(try argU32(it, a, 2), try argU32(it, a, 3), try argI32(it, a, 4), try argU32(it, a, 5))
+    } else if op == OP_STENCIL_OP {
+        gl.glStencilOpSeparate(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), try argU32(it, a, 5))
+    } else if op == OP_FINISH {
+        gl.glFinish()
+    } else if op == OP_FLUSH {
+        gl.glFlush()
     } else {
         // clearBuffer{fi,iv,uiv,fv}(buffer, drawbuffer, four values).
         var f = @zeroed([4]f32)
