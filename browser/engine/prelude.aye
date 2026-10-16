@@ -2185,7 +2185,10 @@ pub let PRELUDE =
     \\      else {
     \\        const headers = new Headers();
     \\        if (r.type) headers.append('content-type', r.type);
-    \\        resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.body));
+    \\        // A body that decoding changed comes as its bytes (Response.text()
+    \\        // decodes UTF-8, arrayBuffer() keeps binary data).
+    \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
+    \\        resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body));
     \\      }
     \\    });
     \\    signal.addEventListener('abort', onAbort);

@@ -34,6 +34,12 @@ if [ -z "${AYE:-}" ]; then
         AYE=aye
     fi
 fi
+# libwasmtime, when browser/wasm/fetch_wasmtime.sh fetched it (P11.17).
+wasmtime_pc="target/wasmtime/$(sed -n 's/^version //p' browser/wasm/wasmtime.lock)/lib/pkgconfig"
+if [ -f "$wasmtime_pc/wasmtime.pc" ]; then
+    PKG_CONFIG_PATH="$PWD/$wasmtime_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_PATH
+fi
 mkdir -p "$(dirname "$out")"
 "$AYE" build browser -o "$out" --mode "$mode"
 echo "$out ($mode)"

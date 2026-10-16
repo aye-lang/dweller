@@ -654,6 +654,21 @@ fn responseFields(it: *mut Interp, r: u32, res: *net.Response, href: []u8) JsErr
     }
     try setField(it, r, "type", res.mime)
     try setField(it, r, "body", body)
+    // Bytes that decoding changed (binary data, another charset): also
+    // the bytes themselves, as code units 0..255, for arrayBuffer().
+    if !text.eql(body, res.body) {
+        var raw = text.Builder.init(it.alloc)
+        defer raw.deinit()
+        for b in res.body {
+            if b < 0x80 {
+                try raw.appendByte(b)
+            } else {
+                try raw.appendByte(0xC0 | (b >> 6))
+                try raw.appendByte(0x80 | (b & 0x3F))
+            }
+        }
+        try setField(it, r, "raw", raw.bytes())
+    }
 }
 
 // The end of fetchWith, its result object on the stack: the object

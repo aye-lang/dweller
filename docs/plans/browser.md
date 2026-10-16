@@ -94,108 +94,273 @@ the one place with more than one process.
   or above its threshold at the pinned WPT and test262 revisions, and
   `python3 browser/tools/conformance.py check` exits 0 (P10.4).
 
-## Current state (2026-10-15)
+## Current state (2026-10-15 evening, `main` e9bb877)
 
-- Window: the diagnosis of 2026-10-15 (PR #23, `browser/engine/PERF.md`
-  "Window") measured 10 live sites against Chrome. Longest loop up to
-  5440 ms (YouTube), scroll p95 up to 750 ms, idle CPU 101% on Mistral,
-  first paint 1.7–15.8 s against Chrome's 0.3–2.0 s. Five root causes;
-  cards P4.32–P4.37. P4.31 (macOS wheel and trackpad) and P4.32 (page
-  fetch/XHR in the background) are done; P4.43 moved `import()` and
-  frames to the background and runs the page's scripts as tasks; P4.45
-  runs the scripts that a script inserts (fetched in the background).
-- Sites: `page_load.py check` passes on the recorded archives; W3 is 8
-  of 20 (P3.65, P3.73b and P4.45 done). The open visual defects are re-filed
-  below under their Layer 1 area or Layer 2.
-- Archives live in each checkout's `target/sites/` (untracked), so steps
-  that replay sites or take screenshots run locally.
-- Conformance: not measured. The browser's own suites (530 files in
-  `browser/tests/js`, the HTML/CSS/layout/paint fixtures) stay as
-  regression tests; WPT and test262 are not run yet (P10).
-- P9: P9.1–P9.4 done (P9.4: #24); P9.5 next.
-- Aye repo: P3.48 is not merged there (the merge 34f6f93 failed the site
-  check: mdn FAIL, mistral 4 s → 40 s wall; P3.48b bisects it); P3.58 is
-  WIP 34c2234 (native `TypedArray`). Open compiler gaps: none.
+- **CI: red on `main`.** `window_paints_early` failed on `macos-latest`
+  in 2 of the last 7 pushes (runs 38701882826 at #57 and 38710550094 at
+  #60; Ubuntu green both times). The test clicks a checkbox after 40
+  `frame` words; on the slow runner those frames take longer than the
+  1500 ms the page's script is delayed, so the click lands after the
+  script ("checked before it: false"). It waits on wall time, which #42
+  removed from the other timing tests. Card P4.80, step A1 below; until
+  it lands, M1 does not hold.
+- **Layer 0 (P4).** Done: P4.31–P4.35, P4.38, P4.39, P4.43–P4.45,
+  P4.50–P4.53, P4.56–P4.58, and the VM preparation P4.59–P4.62 (benchmark
+  set, bytecode format, resolver). The window never waits on page
+  fetch/XHR, scripts, `import()` or frames; the first paint comes after
+  the head sheets; relayout is incremental (container queries included,
+  not shadow trees); paint keeps the page's pixels with damage tracking
+  and a raster cache; transform and opacity changes composite. Open:
+  P4.36, P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
+  slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
+  table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
+  25% (P4.57's note).
+- **Login readiness.** P10.20–P10.22 done; P10.23 and P9.7 open; then
+  the user bundle P3.80.
+- **Sites.** `page_load.py check` passes on the recorded archives; W3 is
+  8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
+- **Conformance (P10).** Not measured: `wpt.py`, `test262.py` and
+  `conformance.py` do not exist yet (P10.1–P10.4 not started).
+- **P9.** P9.1–P9.4 done; P9.5 next.
+- **P11.** P11.1–P11.5 and P11.16 done; P11.17's API done (its
+  `wasm_sim_bench` and the wasm-bindgen glue check wait for P11.24's
+  copy of the game); P11.6 next.
+- **JS VM (P4.30).** P4.59–P4.62 done; P4.63 (the dispatch loop) next,
+  behind `DWELLER_JS_VM=1`.
+- **Aye.** `AYE_REV` a067dfd. P3.48 is not merged in the Aye repo
+  (P3.48b bisects it); P3.58 is superseded by P11.3. Open compiler gap:
+  57 (`@ptrCast` to `?fn` / from `void *`), met by P11.2.
 
 ## Phases
 
-| Layer | Phase | Goal | Exit check | Status |
+| Layer | Phase | Goal | Exit check | Status (2026-10-15 evening) |
 |---|---|---|---|---|
 | – | P0, P1, PW | one clean `main`; "done" checked by a command; wrap-up | – | done |
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
-| – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing |
-| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | current: P4.32, P4.33, P4.34, P4.35, P4.43, P4.44 and P4.51 done |
-| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | parallel track; P9.1–P9.4 done, P9.5 next |
-| 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | parallel track; P11.1 next, P11.16 any time |
-| 1 | P10 | components measured by WPT and test262 | W9 | next: harness P10.1–P10.4, parallel with P4 |
-| 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | final check after P4 and P10 |
+| – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing; M1 broken by the P4.80 flake |
+| 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | 17 of 26 window cards done (list above); P4.80, P4.42, P4.37, P4.46 next; the VM cards P4.63–P4.78 run as their own lane |
+| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.4 done, P9.5 next |
+| 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | P11.1–P11.5, P11.16 done, P11.17 partial; P11.6 next |
+| 1 | P10 | components measured by WPT and test262 | W9 | harness P10.1–P10.4 not started; P10.20–P10.22 (login) done |
+| 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 8 of 20; P3.80 (the user bundle) is the acceptance |
 | 2 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | items re-filed under P10 areas |
 | 2 | P6 | release | W1–W9; manual checklist recorded; tag | last |
 
-## Order of work
+## Roadmap: phases and steps (2026-10-15 evening)
 
-Cards are PR-sized and run in this order. P9 cards run beside them
-(they touch `browser/ui/spaces.aye` and the agent code, not the
-pipeline). P10.1–P10.4 touch `browser/tools/` and add CLI modes, so they
-may run beside P4 cards; two cards never edit the same files at once.
+This replaces the flat "Order of work" of the morning. A **phase** is a
+goal with an exit check; a **step** is one card, one PR, in the order
+given. Cards keep their detail in the sections below; a step row says
+only what it is, what it waits on, its state, and the Chromium
+reference to read first (paths relative to
+`/Users/solemnis/Documents/chromium/src`; the module map at the end of
+this section says what each reference is for). "Lane" names the files a
+phase edits: phases in different lanes run at the same time, two steps
+in one lane never do.
 
-| # | Card | Layer | One line |
+| Lane | Files | Phases |
+|---|---|---|
+| loop | `ui/window.aye`, `ui/tabs.aye`, `engine/script.aye`, `engine/tab.aye`, `engine/history.aye`, `net/` | A |
+| paint | `paint/`, `ui/pagedraw.aye`, the draw part of `ui/window.aye`, `tools/window_perf.py` | B |
+| harness | `browser/tools/`, `main.aye` (CLI modes), `browser/tests/wpt/`, `browser/tests/test262/` | C |
+| login | `engine/prelude.aye` (forms), `ui/forms.aye`, `ui/spaces.aye` (P9.7) | D |
+| spaces | `ui/spaces.aye`, `ui/agents.aye`, `agent/` | E |
+| vm | `browser/js/`, `browser/tests/jsbench/` | F |
+| gpu | `browser/gpu/`, `engine/webgl_*.aye`, `browser/wasm/`, `browser/audio/`; P11.10, P11.22, P11.23 also `ui/` (not beside A or B) | G |
+| components | `css/`, `layout/`, `dom/`, `html/`, `engine/` by area | H |
+| sites | `tools/sites.json`, `docs/browser-sites.md`, the manual checklist | I |
+
+Running order: A1 first (green `main`), then A, B, C, E, F and G in
+parallel, one step at a time per lane; D after A and C4; H after C4,
+by area; I last. Common to every step: run only the tests its verify
+names, never two browser test runs at once, build and test output to a
+log under `target/` read with `tail`/`grep`; the same verify failing
+twice in a row stops the step with a report.
+
+### Phase A: green `main` and the rest of the loop (Layer 0, lane loop)
+
+Exit: `main` green on both OSes; no synchronous network wait on the
+window thread in any loop iteration; the perf-gate pages' longest loop
+under 100 ms with a timer storm.
+
+| Step | Card | What | After | State | Chromium |
+|---|---|---|---|---|---|
+| A1 | P4.80 | `window_paints_early` waits on the loop's records, not on 40 frames of wall time | – | open | – |
+| A2 | P4.42 | loop priorities (input, frame, then timers and network tasks in a 50 ms budget) and the threading-model note | A1 | open | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc` (queue priorities), `docs/threading_and_tasks.md` |
+| A3 | P4.37 | one connection pool: one multi handle and share handle per process, 6 per host, HTTP/2 multiplexed | – | open | `net/socket/client_socket_pool_manager.cc`, `net/docs/life-of-a-url-request.md` |
+| A4 | P4.46 | back, forward and reload through the incremental navigation, scroll restored | – | open | `core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md` |
+| A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | open | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
+| A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | open | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
+| A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | open | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
+| A8 | P4.54 | macOS crash record exits with 128+sig | – | backlog | – |
+
+### Phase B: paint and the gate (Layer 0, lane paint)
+
+Exit: the `perf` CI job green (P4.40); `window_perf.py report --replay`
+and `report --live --chrome` exit 0 (W7, W8).
+
+| Step | Card | What | After | State | Chromium |
+|---|---|---|---|---|---|
+| B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | open | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
+| B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | open | – |
+| B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
+| B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
+| B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
+
+### Phase C: the conformance harness (Layer 1, lane harness)
+
+Starts now, beside A and B. Exit: `docs/conformance.md` holds a baseline
+for every area of the table in "Layer 1: P10", `conformance.py check`
+exits 0, the weekly job runs.
+
+| Step | Card | What | After | State | Chromium |
+|---|---|---|---|---|---|
+| C1 | P10.1 | WPT testharness runner: `wpt.py fetch/serve/run`, `dweller wpt URL` | – | open | `third_party/blink/tools/blinkpy/web_tests/` (the runner's shape: expectations, timeouts, parallel workers), `third_party/blink/web_tests/resources/testharnessreport.js` |
+| C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | open | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
+| C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | open | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
+| C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | open | – |
+| C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
+| C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
+
+### Phase D: login readiness and the user bundle (lane login)
+
+Exit: P3.80 handed to the user with telemetry on.
+
+| Step | Card | What | After | State | Chromium |
+|---|---|---|---|---|---|
+| D1 | P10.23 | sign-in page details: `autocomplete`, `navigator.credentials` absent, `Set-Cookie` on fetch/XHR, Enter submits, `requestSubmit` | – | open | `core/html/forms/html_form_element.cc` (implicit submission, `requestSubmit`) |
+| D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | open | – (B9's own design) |
+| D3 | P3.80 | the user bundle: W1–W9 and D1, D2 hold; the user's daily sites; reports become cards matched to a Layer 1 area | A, B3, C4, D1, D2 | open | – |
+
+### Phase E: Spaces (lane spaces, parallel track)
+
+Exit: R1–R7 of B9; Spaces by default.
+
+| Step | Card | What | After | State | Chromium |
+|---|---|---|---|---|---|
+| E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | open | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
+| E2 | P9.6 | take over and hand back | E1 | open | – |
+| E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | open | – |
+| E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
+
+### Phase F: the JS bytecode VM (lane vm, parallel track)
+
+Exit: P4.75 on `main` with no fallback reason; then P4.77, P4.78. Each
+card names its V8 files (`browser/js/BYTECODE.md` section 7).
+
+| Step | Card | What | After | State |
+|---|---|---|---|---|
+| F1 | P4.63 | VM core: frames, dispatch, straight-line code (`DWELLER_JS_VM=1`) | – | open |
+| F2 | P4.64 | control flow | F1 | open |
+| F3 | P4.65 | calls and `new` | F2 | open |
+| F4 | P4.66 | closures and contexts | F3 | open |
+| F5 | P4.67 | properties, literals, globals, the top level | F4 | open |
+| F6 | P4.68 | exceptions | F5 | open |
+| F7 | P4.69 | the rest of the syntax | F6 | open |
+| F8 | P4.70 | classes | F7 | open |
+| F9 | P4.71 | generators on resumable frames | F8 | open |
+| F10 | P4.72 | async functions on resumable frames | F9 | open |
+| F11 | P4.73 | inline caches | F10 | open |
+| F12 | P4.74 | prototype shapes and the prototype epoch | F11 | open |
+| F13 | P4.75 | the VM on by default | F12 | open |
+| F14 | P4.77 | register optimizer and fused instructions | F13 | open |
+| F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
+
+P4.76 is covered by P11.3 (done); P4.79 is G19.
+
+### Phase G: WebGL, WebAssembly and the game (lane gpu, parallel track)
+
+Exit: P11.24, the user's game at ≥ 50 fps. The cards cite `docs/webgl.md`
+and their Blink, ANGLE and V8 files.
+
+| Step | Card | What | After | State |
+|---|---|---|---|---|
+| G1 | P11.6 | textures | – | open |
+| G2 | P11.7 | WebGL canvases in the window by readback, screenshots, `toDataURL` | G1 | open |
+| G3 | P11.8 | WebGL 2 state objects (VAOs, instancing, MRT, UBOs, samplers, 3D textures) | G1 | open |
+| G4 | P11.9 | three.js hello cube | G2, G3 | open |
+| G5 | P11.10 | rAF at vsync, frame timestamp, `performance.now()` precision (touches `ui/window.aye`: not beside A2, A7) | A2 | open |
+| G6 | P11.11 | key codes, pointer events, Pointer Lock, Fullscreen, `structuredClone` | – | open |
+| G7 | P11.17 rest | `wasm_sim_bench` and the wasm-bindgen glue check | G18's copy of the game | partial |
+| G8 | P11.18 | dedicated Workers | G6 | open |
+| G9 | P11.19 | Web Audio core | – | open |
+| G10 | P11.20 | Web Audio effects | G9 | open |
+| G11 | P11.12 | the rest of WebGL 2 | G3 | open |
+| G12 | P11.13 | WebGL 2 extensions | G3 | open |
+| G13 | P11.14 | WebGL conformance runner and baseline | G4, C1 (or `server.py`) | open |
+| G14 | P11.15 | context loss, many contexts, limits | G12 | open |
+| G15 | P11.21 | the game's frame budget | G4, G5, G7, G8, G9 | open |
+| G16 | P11.22 | GPU compositing 1: the window presents through ANGLE (lane paint too: not beside B) | G2, G5 | open |
+| G17 | P11.23 | GPU compositing 2: canvases, layers and scrolling on the GPU | G16 | open |
+| G18 | P11.24 | acceptance: the user's game | G4–G17 | open |
+| G19 | P4.79 | per-frame JS cost of the game | G18, F13 | open |
+| G20 | P11.29 | WebGL 1 (other sites) | G12 | open |
+
+P11.25–P11.28 only if the game comes to need them.
+
+### Phase H: components by area (Layer 1, lane components)
+
+Starts after C4 gives the baseline. Order: first the eleven items the
+telemetry ranked by what sites lose (pre-filed as P10.24–P10.34), then
+per area the largest cluster of failing WPT tests with one cause, until
+the area is at its threshold. Verify is the area's `wpt.py run` with the
+stated gain and `conformance.py check` exiting 0. The per-area backlog
+(the P3.x items) joins the card that covers its tests.
+
+| Step | Card | Area | What | Chromium |
+|---|---|---|---|---|
+| H1 | P10.34 | events | `pointer-events: none` in hit testing | `core/layout/hit_test_result.cc`, `core/paint/paint_layer.cc` (`HitTest`), `core/input/event_handler.cc` |
+| H2 | P10.24 | box model and sizing | `max-content`, `min-content`, `fit-content` keywords | `core/layout/block_layout_algorithm.cc`, `core/layout/layout_box.cc` (intrinsic sizes), `core/layout/constraint_space.h` |
+| H3 | P10.27 | inline and text | `vertical-align` | `core/layout/inline/` (line boxes, `line_breaker.cc`), `core/layout/table/` (cell alignment) |
+| H4 | P10.28 | inline and text | `letter-spacing`, `word-spacing` | `platform/fonts/shaping/harfbuzz_shaper.cc` (spacing applied after shaping) |
+| H5 | P10.33 | transitions | `transition*` events and computed values (no animation yet) | `core/animation/css/css_transition.cc`, `core/animation/css/css_animations.cc` |
+| H6 | P10.32 | transforms | `translate`, `rotate`, `scale` | `core/css/properties/`, `core/layout/layout_object.cc` (transform order) |
+| H7 | P10.31 | backgrounds and borders | `outline` and the focus ring | `core/paint/box_painter.cc`, `core/paint/outline_painter.cc` |
+| H8 | P10.29 | inline and text | `text-wrap`, `text-shadow` | `core/layout/inline/line_breaker.cc`, `core/paint/text_painter.cc` |
+| H9 | P10.26 | floats and tables | `border-collapse`, `border-spacing` | `core/layout/table/table_layout_algorithm.cc`, `table_borders.cc` |
+| H10 | P10.25 | values, units, color | `lh`, `rlh`, `env()`, `round()`/`mod()`/`rem()` | `core/css/css_math_expression_node.cc`, `core/css/parser/` |
+| H11 | P10.30 | inline and text | text decoration details | `core/paint/text_decoration_info.cc` |
+| H12+ | P10.35+ | per area | from the baseline's failure clusters; the per-area backlog of "Layer 1 component backlog" | the module map below |
+
+### Phase I: sites and release (Layer 2, lane sites)
+
+| Step | Card | What | After |
 |---|---|---|---|
-| 1 | P4.32 | 0 | page `fetch()`/XHR complete as tasks; the window thread never waits on them (done) |
-| 1b | P4.43 | 0 | `import()` and frames load in the background; the page's scripts run as tasks (done) |
-| 1c | P4.45 | 0 | scripts that a script inserts (`<script src>`, JSONP chunk loaders) run, loaded in the background (done) |
-| 1c2 | P4.47 | 0 | `blob:` URLs: scripts, fetch and XHR read the Blob that `URL.createObjectURL` named |
-| 1c3 | P4.48 | 0 | what the scripts sites insert cost `dump` since P4.45 (mistral +19 s, reddit +16 s) |
-| 1d | P4.46 | 0 | back, forward and reload in steps, as the other navigations |
-| 2 | P4.33 | 0 | first paint once the document and its head sheets are in; one prefetch batch for all subresources (done) |
-| 3 | P4.34 | 0 | the window's relayout uses the subtree restyle and incremental layout; one document lifecycle (done) |
-| 3b | P4.44 | 0 | incremental restyle and layout in documents with container queries (GitHub) (done) |
-| 4 | P4.40 | 0 | CI perf gate: synthetic heavy pages on the test server, budgets, a `perf` job |
-| 5 | P4.35 | 0 | raster cache for gradients, SVGs, blurred shadows and filter layers; damage tracking (done) |
-| 5b | P4.55 | 0 | `requestAnimationFrame` and timers throttled in hidden windows and background tabs (HTML spec) |
-| 5c | P4.56 | 0 | `transform` and `opacity` changes skip layout and re-raster: promoted layers composited at their translation and opacity (done) |
-| 5d | P4.57 | 0 | mistral.ai idle: its `.js-square` `width` animation and the unnoted layout bump that makes each frame a full layout (done) |
-| 5e | P4.58 | 0 | window tests read the window's pipes while it runs (a full stderr pipe blocks it) (done) |
-| 6 | P4.36 | 0 | scroll by moving the last frame and drawing only the new band |
-| 7 | P4.37 | 0 | one connection pool across batches and navigations |
-| 7b | P4.59, P4.60 | 0 ∥ JS | JS benchmark set (splay, crypto, raytrace, loops, three.js r170, DOM) and `baseline.json` |
-| 7c | P4.61–P4.64 | 0 ∥ JS | bytecode format (P4.61 done), resolver registers, VM core, control flow (behind `DWELLER_JS_VM=1`) |
-| 7d | P4.65–P4.70 | 0 ∥ JS | calls, closures, properties and globals, exceptions, the rest of the syntax, classes |
-| 7e | P4.71–P4.74 | 0 ∥ JS | generators and async on resumable frames; polymorphic ICs; prototype shapes |
-| 7f | P4.75 | 0 ∥ JS | the VM on by default (full gates) |
-| 7g | P4.76–P4.78 | 0 ∥ JS | typed arrays over bytes; register optimizer; remove the tree walker's paths |
-| 7h | P4.79 | 0 ∥ JS | f1 game per-frame JS cost (after WebGL and WebAssembly) |
-| 8 | P10.1 | 1 | WPT testharness runner: fetch at a pinned rev, static server, `dweller wpt` |
-| 9 | P10.2 | 1 | WPT reftest and crashtest runner (screenshots against the reference) |
-| 10 | P10.3 | 1 | test262 runner over `dweller js --test262` at a pinned rev |
-| 11 | P10.4 | 1 | conformance table generator, first baseline, weekly CI run |
-| 12 | P4.41 | 0 | W7/W8 report over the recorded archives and live against Chrome |
-| 13 | P4.42 | 0 | loop priorities (input and frames before timers and network tasks) and the threading model note |
-| 14 | P10.5 | 1 | fetch/XHR tests under upstream `wpt serve` (`DWELLER_RESOLVE`) |
-| 15 | P10.6 | 1 | `testdriver.js` subset: clicks and keys through `--events` |
-| 16 | P10.20 | 1 | login fixture on the test server and the `window_login` test (form login, redirects, CSRF, Basic, two hosts) (done) |
-| 17 | P4.50 | 0 | profile directory `~/.dweller`: cookies saved on change, session cookies kept across restart (done) |
-| 18 | P4.51 | 0 | `localStorage` saved per origin in the profile; `sessionStorage` per tab (done) |
-| 19 | P4.52 | 0 | `window.open`, `target=_blank` and `window.opener` with `postMessage` between tabs (OAuth/SSO popups) (done) |
-| 20 | P10.21 | 1 | cookies: SameSite (Lax default), third-party policy, `fetch`/XHR `credentials`, public suffix list (done) |
-| 21 | P10.22 | 1 | HTTP authentication: 401 Basic challenge, URL userinfo, per-realm cache (done) |
-| 22 | P10.23 | 1 | sign-in page needs: `autocomplete`, `navigator.credentials` absent without throwing, `Set-Cookie` on fetch/XHR |
-| 23 | P4.53 | 0 | local telemetry (JSONL under `~/.dweller/telemetry`) and `telemetry.py summary` (done) |
-| 24 | P9.7 | 0 ∥ | shared logins with Spaces (after P4.50 and P4.51) |
-| 25 | P3.80 | 2 | bundle for the user, once W1–W9 and the cards above hold |
-| 25b | P11.1–P11.3 | 0 ∥ | ANGLE binaries, EGL/GLES `@cimport` smoke test (done), `ArrayBuffer` on contiguous bytes |
-| 25c | P11.4–P11.9 | 0 ∥ | WebGL 2: context, triangle, textures, readback into the window, state objects, three.js cube |
-| 25d | P11.10–P11.11 | 0 ∥ | rAF at vsync and `performance.now()` precision; key codes, pointer events, Pointer Lock, Fullscreen |
-| 25e | P11.12–P11.15 | 0 ∥ | the rest of WebGL 2, extensions, conformance runner, context loss |
-| 25f | P11.16–P11.20 | 0 ∥ | WASM runtime choice (any time) and JS API, Workers, Web Audio |
-| 25g | P11.21–P11.24 | 0 ∥ | the game's frame budget, GPU compositing, the user's game accepted |
-| 26+ | P10.n | 1 | component cards per area from the baseline's failures (backlog below) |
-| last | P3, P6 | 2 | sites and release |
+| I1 | P3.7, P3.35, P3.61, P3.67, P3.72 | the open site items re-checked on `main` after B3 and the H cards; each matched to a Layer 1 area or kept as a site card | B3, H |
+| I2 | P4.1–P4.8 | W4 site load times, rechecked after A3 (they may be gone) | A3, B3 |
+| I3 | P5 | W6: every "What remains" item done or declared out of scope | H |
+| I4 | P6.1–P6.3 | manual checklist on macOS, the final `docs/browser-sites.md` run, docs pass and a tag | all |
 
-Common to all cards: run only the tests named in verify, never two
-browser test runs at once; the full suite runs once on `main` after the
-merge (CI). Build and test output goes to a log under `target/`, read
-with `tail`/`grep`.
+### Chromium module map: from utils to engine
+
+What to read in the local checkout for each Dweller module, and what
+Dweller takes. The rules of "Decisions" apply: Blink is an algorithm
+reference only (some files are LGPL); V8 and ANGLE (BSD) may be ported
+with attribution. Dweller keeps its design: one window thread, no
+compositor thread, no process per site.
+
+| Dweller | Chromium (under `src/`) | Take | Not taken |
+|---|---|---|---|
+| `url/` | `url/third_party/mozilla/url_parse.cc`, `url/url_canon_host.cc`, `url/url_canon_ip.cc` | host canonicalization, IPv6 parsing (P3.15, P3.19) | GURL's API |
+| `encoding/` | `third_party/blink/renderer/platform/wtf/text/text_codec_*.cc` | label tables, BOM sniffing, replacement rules | ICU |
+| `net/` (http, cache, cookies, auth) | `net/docs/life-of-a-url-request.md`, `net/socket/client_socket_pool_manager.cc`, `net/http/http_cache.cc`, `net/cookies/cookie_monster.cc`, `net/dns/host_resolver.h` | one pool per process keyed by scheme, host and port (A3); cache keys and validation; cookie eviction and SameSite rules | a network process; the socket layer (libcurl plays it) |
+| `net/loader.aye` (prefetch, priorities) | `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc`, `core/loader/preload_helper.cc` | preload discovery while parsing; request priorities by kind | a memory cache per renderer |
+| `html/` | `core/html/parser/html_tokenizer.cc`, `html_tree_builder.cc`, `html_document_parser.cc`, `core/script/script_runner.cc`, `html_parser_script_runner.cc` | parser yielding to the loop; async/defer and inserted-script ordering (P4.45 done) | the background tokenizer thread |
+| `dom/` | `core/dom/README.md`, `core/dom/node.cc`, `element.cc`, `dom/events/event_dispatcher.cc`, `event_path.cc`, `mutation_observer.cc`, `core/intersection_observer/` | event path building, capture/bubble/`composed`; observer delivery as microtasks (B5) | Oilpan |
+| `css/` parser, cascade, selectors | `core/css/parser/css_tokenizer.cc`, `css_parser_impl.cc`, `core/css/rule_set.cc`, `selector_checker.cc`, `element_rule_collector.cc`, `resolver/style_resolver.cc`, `resolver/cascade_map.h`, `container_query_evaluator.cc`, `media_query_evaluator.cc`, `core/css/properties/README.md` | bucketed rule index by id/class/tag/attribute; cascade priority encoding; per-property handlers | generated property classes |
+| style invalidation (`css/invalidation.aye`, `engine/`) | `core/css/style-invalidation.md`, `style-calculation.md`, `core/css/invalidation/` (`invalidation_set.h`, `rule_invalidation_data.h`, `style_invalidator.cc`), `core/css/style_engine.cc`, `core/style/stylerecalc.md`, `core/css/style_recalc_change.h` | descendant and sibling invalidation sets built from selectors; recalc flags per node (B4) | the full `StyleRecalcChange` lattice |
+| `layout/` | `core/layout/README.md`, `layout_ng.md`, `block_layout.md`, `constraint_space.h`, `block_layout_algorithm.cc`, `inline/` (`line_breaker.cc`), `flex/`, `grid/`, `table/`, `absolute_utils.cc`, `layout_box.cc`, `layout_object.cc` | constraint space and fragment results (immutable inputs make incremental layout safe); the algorithms per area (H) | fragmentation, multicol, writing modes (out of scope) |
+| `font/`, `webfont/` | `platform/fonts/README.md`, `platform/fonts/shaping/harfbuzz_shaper.cc` | shaping runs, fallback per script, spacing after shaping (H4) | font service |
+| `image/`, `svg/` | `platform/image-decoders/`, `core/svg/`, `platform/graphics/path.cc` | decoder contracts (progressive, incremental), path length and point-at-length (P4.39 done) | Skia |
+| `paint/` | `core/paint/README.md`, `platform/graphics/paint/README.md`, `platform/graphics/paint/paint_controller.cc`, `docs/website/site/blink/how-repaint-works/index.md`, `cc/trees/damage_tracker.cc`, `cc/tiles/picture_layer_tiling.cc` | display items reused between frames (B1); damage rectangles; tiles for the GPU window (G16) | layer trees, a compositor thread |
+| `engine/` lifecycle, timers, rAF | `core/dom/document_lifecycle.h`, `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`, throttling), `core/dom/scripted_animation_controller.cc`, `core/page/page_animator.cc`, `core/animation/document_animations.cc` | one lifecycle per frame: rAF, style, layout, paint, in that order (P4.34 done, G5) | – |
+| `ui/window.aye` loop | `platform/scheduler/TaskSchedulingInBlink.md`, `platform/scheduler/main_thread/main_thread_scheduler_impl.cc`, `frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/scheduler/` (`scheduler.postTask`), `docs/threading_and_tasks.md` | queue priorities and a time budget (A2); background throttling with 1 s alignment (A7) | many task queues, frame scheduling heuristics |
+| `ui/` input and scroll | `core/input/event_handler.cc`, `pointer_event_manager.cc`, `core/paint/paint_layer_scrollable_area.cc`, `docs/graphics/scrolling/scroll_jank_metric.md` | pointer before mouse events (G6); scroll as an offset; the jank metric's definition for W7 | impl-thread scrolling |
+| navigation, history | `core/loader/frame_loader.cc`, `document_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h`, `docs/navigation_concepts.md`, `docs/bfcache.md` | traversal in steps with scroll restoration (A4) | the browser-process navigation request |
+| `agent/`, `ui/spaces.aye` | `docs/process_model_and_site_isolation.md`, `base/memory/shared_memory_mapping.h` | why a process boundary; a mapped frame region (E1) | Mojo |
+| `js/` | `v8/` per `browser/js/BYTECODE.md` section 7 | Ignition's format, generator and ICs (F) | TurboFan, Maglev, Sparkplug |
+| `gpu/`, `wasm/`, `audio/` | per the P11 cards: `third_party/angle/`, `modules/webgl/`, `platform/graphics/gpu/drawing_buffer.cc`, `v8/src/wasm/wasm-js.cc`, `modules/webaudio/` | validation order and error codes; the JS API's shape | the GPU process |
+| `tools/` (WPT, test262) | `third_party/blink/tools/blinkpy/web_tests/`, `third_party/blink/web_tests/external/wpt/` (explore only; the pin is the source) | runner shape, expectations and fuzzy matching (C) | the expectations format |
 
 ## Layer 0: P4, the window and its pipeline
 
@@ -229,18 +394,21 @@ them from coming back.
 #### P4.47: blob: URLs
 - goal: `URL.createObjectURL(blob)` registers the Blob under its URL (until `revokeObjectURL`) and `<script src="blob:...">`, `fetch` and XHR of that URL read it; old.reddit.com's login page inserts a `blob:` script (P4.45 review: "Failed to load script: blob:https://old.reddit.com/...").
 - files: `browser/engine/prelude.aye` (createObjectURL, the Blob store), `browser/engine/inserted.aye`, `browser/engine/window_api.aye` (fetch)
+- chromium: `third_party/blink/renderer/core/fileapi/public_url_manager.cc`, `blob.cc`. Take: a per-origin registry from the URL to the Blob, revoked explicitly or with the document; a fetch of a `blob:` URL answers from the registry with the Blob's type.
 - test: a jsdom fixture: a script inserted from a `blob:` URL runs and fires load; `fetch(blobUrl)` resolves with the Blob's text; after `revokeObjectURL` both fail.
 - verify: `cargo test --release --test browser -- jsdom_fixtures > target/p4.47.log 2>&1; echo $?` → 0
 
 #### P4.48: what the newly running site scripts cost in dump
 - goal: since P4.45 the scripts sites insert run, and `dump` CPU grew: mistral 26 → 45 s (timers 24.7 → 46.8 s: forced layouts 6.2 → 26.4 s, cascade 3.0 → 17.9 s, after gtag and the axept.io consent SDK run), reddit's login wall 0.05 → 16 s, bbc 0.36 → 6.7 s (`PERF.md` "P4.45"). Find which timers force the layouts and cascades (`DWELLER_TIMING` per callback) and remove the work Chrome does not do (a layout per read that changed nothing, a cascade per class toggle).
 - files: `browser/engine/geometry.aye`, `browser/engine/script.aye` (timers)
+- chromium: `third_party/blink/renderer/core/dom/document.cc` (`UpdateStyleAndLayout`: a forced read recomputes only what is dirty), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`). Take: a forced read after a change that touched only inline style of one subtree stays a subtree job; count the full cascades and layouts per site as the perf gate does (`style_full`, `layout_full`).
 - test: a jsdom fixture reproducing the pattern found, with its forced layouts counted.
 - verify: `page_load.py run --site mistral,reddit,bbc` CPU within 20% of before P4.45 (26 s, 0.05 s, 0.36 s) or the remaining time explained as Chrome's own work; `page_load.py check` exit 0
 
 #### P4.46: back, forward and reload in steps
 - goal: the window's back, forward and reload (`Ui.goBy`, `Ui.reload`, the history traversals scripts ask for) go through the incremental navigation of P4.33/P4.43 (`navigateEarly`, `stepPageScripts`) instead of a synchronous load: the page is shown once its sheets are in, its scripts run as tasks, its frames load in the background; the scroll position restored after its scripts ran.
 - files: `browser/engine/tab.aye`, `browser/engine/history.aye`, `browser/ui/window.aye`
+- chromium: `third_party/blink/renderer/core/loader/frame_loader.cc`, `core/frame/history.cc`, `core/loader/history_item.h` (scroll restoration state), `docs/navigation_concepts.md`. Take: a traversal is a navigation like any other, with the history entry's scroll restored after the first layout that has the target. Not taken: the browser-process navigation request, bfcache.
 - test: a window test going back and forward between two local pages with a delayed sheet and script: the address and the old page answer input during the load, the scroll position comes back, longest loop < 100 ms outside script tasks.
 - verify: `cargo test --release --test browser window_ > target/p4.46.log 2>&1; echo $?` → 0
 
@@ -297,6 +465,13 @@ them from coming back.
 #### P4.58: window tests drain the window's output
 - goal: `window_paints_early` and `window_fetch_in_background` pipe the window's stdout and stderr and read them only after it exits; with DWELLER_TIMING their stderr is ~57 KB, so a few more records per frame fill the 64 KB pipe and the window blocks (found in P4.56: one more record per frame failed both on CI as "did not draw 300 frames in 60 s"). Read the pipes on threads while waiting.
 - status: done 2026-10-15. tests/browser.rs `Command::spawn_drained` (trait `SpawnDrained`) pipes stdout and stderr and reads each on a thread; the `Drained` it returns has `Child`'s `id`, `try_wait`, `kill`, `wait` and `wait_with_output` (which joins the readers). Every test that spawns the window and reads its output after it exits uses it: `window_images_load_in_background`, `window_relayout_after_image_load`, the agent session runner (`window_agent_session`), `spaces_window`/`spaces_window_env` (whose two DWELLER_TIMING tests drained stderr by hand), `window_timers_yield_to_frames`, `window_fetch_in_background`, `window_paints_early`. The tests that write stdin and then `wait_with_output` at once already read both pipes while waiting.
+
+#### P4.80: `window_paints_early` waits on records, not wall time
+- lane: browser (Layer 0, tests)
+- goal: the test clicks its checkbox after 40 `frame` words and expects the click before the page's script, which the server delays by 1500 ms; on the macOS CI runner 40 frames take longer than that, so the click lands after the script and "checked before it" is false (runs 38701882826, 38710550094; Ubuntu green). Make the ordering a property of the loop, as #42 did for the other timing tests: the events script waits for the first paint record (a `--events` word that waits for `ui_first_paint`, or a `frame` count derived from the records), and the delay is checked against the `script` record, not against frames. No change to the window.
+- files: `tests/browser.rs` (`window_paints_early`, the `--events` word if new), `browser/ui/script.aye` (the word)
+- verify: `cargo test --release --test browser -- window_paints_early window_fetch_in_background > target/p4.80.log 2>&1; echo $?` → 0, five runs in a row under `nice -n 19` with the machine busy (`yes > /dev/null &` ×4), and green on the PR's macOS job
+- time box: 45 min; model: sonnet
 
 #### P4.57: mistral.ai idle CPU
 - goal: mistral.ai idle under 25% CPU. Found in P4.56: its rAF animation changes the `width` of `.js-square` elements a pixel a frame (`moved` in the cascade every frame), and in ~70% of the frames `localChanges` fails on `version - g.version != layout_noted - g.noted` (a `layout_version` bump without a note: `image_api.aye` new bitmap, `dom_api.aye:106` or `engine.aye` web fonts / image changes), so the frame styles and lays out the whole document instead of `relayoutDirty`. Find the bump, keep such frames incremental, and measure what is left (the scripts' timers, `paint_build`).
@@ -802,7 +977,7 @@ time as a P4 card on those files.
 - reference: `third_party/angle/doc/DevSetup.md`, `third_party/angle/gni/angle.gni`, `third_party/angle/DEPS`
 - verify: `browser/gpu/build_angle.sh > target/angle-build.log 2>&1; echo $?` → 0 (run in the background, one blocking wait); `nm -gU target/angle/*/lib/libEGL.dylib | grep -c eglGetPlatformDisplay` → 1; the `angle` workflow green on both OSes, and the asset hash in `angle.lock`
 - time box: 45 min of agent work, plus the build wait; model: sonnet
-- status: partial 2026-10-15. Pinned `9bbe9ce189115e468aea2d06001b1eddbb772958`. `build_angle.sh [sync|gen|build|package|all]` (`ANGLE_SRC`, `ANGLE_DEST`, `ANGLE_JOBS`): instead of `fetch angle`, a depth-1 fetch of the pinned commit plus the `.gclient` that `fetch angle` writes, `gclient sync -D --no-history` with `checkout_angle_cl_deps` and `checkout_angle_dawn_deps` off (no LLVM or Dawn checkout: 7.4 GB); args of `docs/webgl.md` §1 plus `angle_build_tests = false`; targets `libEGL libGLESv2 swiftshader_libvulkan icd_file`. Package: macOS install names made `@rpath/libEGL.dylib`/`@rpath/libGLESv2.dylib` (ANGLE's are `./…`, relative to the working directory) and re-signed ad hoc; Linux adds `libvulkan.so.1` (`angle_shared_libvulkan`); a missing license file fails the build (LLVM 10 in SwiftShader has none in the checkout, so `licenses/llvm` is libc++'s copy of the same LLVM Project license). Local macOS arm64 (M2 Pro, `-j4`): sync 4 min, build 10 min, archive 8.1 MB (libGLESv2 9.0 MB, libvk_swiftshader 22.6 MB, libEGL 0.1 MB); `nm -gU libEGL.dylib | grep -c eglGetPlatformDisplay` → 2 (the core and `EXT` entry points). `scripts/angle-smoke.c` (pbuffer 16×16, ES 3.0, clear to red, read back): metal → 255,0,0,255 ("ANGLE Metal Renderer: Apple M2 Pro"), swiftshader → 255,0,0,255 (SwiftShader with LLVM 10 works on arm64, so the pixel goldens can run on macOS too), null → no error. `angle.yml` builds on a pushed `angle-<rev>` tag (uploads, never replaces an asset) or by hand (run artifacts), and runs the smoke test on SwiftShader. Left: push the tag `angle-9bbe9ce189115e468aea2d06001b1eddbb772958`, then copy the run summary's two hash lines into `angle.lock` (until then the `browser` job skips the fetch with a notice).
+- status: done 2026-10-15. Pinned `9bbe9ce189115e468aea2d06001b1eddbb772958`. `build_angle.sh [sync|gen|build|package|all]` (`ANGLE_SRC`, `ANGLE_DEST`, `ANGLE_JOBS`): instead of `fetch angle`, a depth-1 fetch of the pinned commit plus the `.gclient` that `fetch angle` writes, `gclient sync -D --no-history` with `checkout_angle_cl_deps` and `checkout_angle_dawn_deps` off (no LLVM or Dawn checkout: 7.4 GB); args of `docs/webgl.md` §1 plus `angle_build_tests = false`; targets `libEGL libGLESv2 swiftshader_libvulkan icd_file`. Package: macOS install names made `@rpath/libEGL.dylib`/`@rpath/libGLESv2.dylib` (ANGLE's are `./…`, relative to the working directory) and re-signed ad hoc; Linux adds `libvulkan.so.1` (`angle_shared_libvulkan`); a missing license file fails the build (LLVM 10 in SwiftShader has none in the checkout, so `licenses/llvm` is libc++'s copy of the same LLVM Project license). Local macOS arm64 (M2 Pro, `-j4`): sync 4 min, build 10 min, archive 8.1 MB (libGLESv2 9.0 MB, libvk_swiftshader 22.6 MB, libEGL 0.1 MB); `nm -gU libEGL.dylib | grep -c eglGetPlatformDisplay` → 2 (the core and `EXT` entry points). `scripts/angle-smoke.c` (pbuffer 16×16, ES 3.0, clear to red, read back): metal → 255,0,0,255 ("ANGLE Metal Renderer: Apple M2 Pro"), swiftshader → 255,0,0,255 (SwiftShader with LLVM 10 works on arm64, so the pixel goldens can run on macOS too), null → no error. `angle.yml` builds on a pushed `angle-<rev>` tag (uploads, never replaces an asset) or by hand (run artifacts), and runs the smoke test on SwiftShader. The tag is pushed and both assets are in release `angle-9bbe9ce189115e468aea2d06001b1eddbb772958`; their hashes are in `angle.lock` (the Linux asset is from the first run, whose rebuild hashes differently: the build is not byte-reproducible, and `angle.yml` never replaces an asset, so `angle.lock` holds the hash of the asset in the release, not of the latest run).
 
 #### P11.2: EGL/GLES `@cimport` smoke test
 - goal: `browser/gpu/gl.aye`:
@@ -858,6 +1033,7 @@ time as a P4 card on those files.
 - reference: as P11.4; `third_party/angle/src/libANGLE/Compiler.cpp` (`SelectShaderSpec`: WebGL spec applied by ANGLE)
 - verify: `cargo test --release --test browser -- webgl_triangle webgl_context > target/p11.5.log 2>&1; echo $?` → 0: `readPixels` at 3 points gives the triangle's color, the background and the edge; a bad shader gives `COMPILE_STATUS` false and a non-empty log; a buffer from another context gives `INVALID_OPERATION`
 - depends on: P11.4; time box: 45 min; model: sonnet
+- status: done 2026-10-15. Natives in `webgl_api.aye` (`webglNew`, `webglBufferData`, `webglShaderSource`, `webglParam`, `webglLog`, `webglLocation`, `webglBindAttrib`, `webglActive`, `webglUniformv`, and `webglCall` ops for binds, attach/detach, link/compile/validate, attribute pointers and values, draws, deletes, scalar uniforms); 55 new entry points in `gl.aye` in the hand-written signature style (gap 57 landed in aye main as O1.30 but `AYE_REV` still pins the compiler before it; byte offsets are `usize` parameters). The prelude has `createBuffer`/`bindBuffer` (all eight WebGL 2 targets; an element array buffer stays one, INVALID_OPERATION otherwise)/`bufferData` (size, ArrayBuffer or view with `srcOffset`/`length`)/`bufferSubData`/`deleteBuffer`/`isBuffer`; shaders and programs (`shaderSource` over 512 KB INVALID_VALUE, `getShaderSource`, `getAttachedShaders`, `detachShader`, one shader per type); `getAttribLocation`/`bindAttribLocation`/`getUniformLocation`, `uniform1..4f/i/ui(v)`, `uniformMatrix{2,3,4,2x3,3x2,2x4,4x2,3x4,4x3}fv` (typed arrays read in place, sequences converted; `srcOffset`/`srcLength`; length not a multiple INVALID_VALUE); `getActiveAttrib/Uniform`; `vertexAttrib(I)Pointer`, `enable/disableVertexAttribArray`, `vertexAttrib1..4f(v)`, `vertexAttribI4i/ui(v)`; `drawArrays`, `drawElements`; `getParameter` of the buffer bindings and `CURRENT_PROGRAM`. Object rules after Blink: another context's object INVALID_OPERATION everywhere; a deleted object INVALID_OPERATION when bound or used, INVALID_VALUE when a program or shader GL has freed is queried (a deleted program in use and a deleted shader still attached live on); delete of a deleted object or null does nothing; a location of a program not in use or from before a relink INVALID_OPERATION, a null location ignored. Shader text goes to ANGLE as given (§4); type mismatches, aligned offsets, reserved `webgl_` names, unlinked programs and index ranges are ANGLE's WebGL validation. Out-of-range draws: with robust access (SwiftShader/Vulkan) ANGLE draws with clamped reads and no error; Metal has no `EGL_EXT_create_context_robustness`, so ANGLE range-checks and gives INVALID_OPERATION (the two lines differ in `objects.txt` on metal; both are allowed by the spec). Tests: `webgl_triangle` (`triangle.html` per-vertex colors with MSAA, `quad.html` drawElements with a uniform color and mat4 plus bufferSubData of the indices, `shader_errors.html` compile and link info logs in the DOM; each = its `.png` on SwiftShader), `webgl_objects` (`objects.html` = `objects.txt`: every error code above, active info, readPixels inside, outside and on the edge of a drawn triangle). Metal on an M2 Pro gives the same pixels for `shader_errors`, 71 pixels off by 1 in the triangle's interpolated colors, and 3 non-antialiased edge pixels of the rotated quad decided the other way by the two rasterizers. `cargo test --release --test browser -- gpu webgl screenshot_` 9 passed with ANGLE; `-- gpu webgl canvas js_conformance jsdom` 10 passed without; `aye test browser` 155 passed. Left: `getBufferParameter`, `getVertexAttrib(Offset)`, `getUniform`, `copyBufferSubData`/`getBufferSubData`, instanced draws and `drawRangeElements`/`drawBuffers` (P11.12); a bound PIXEL_PACK_BUFFER would capture the drawing buffer readback (with P11.8).
 
 #### P11.6: textures
 - goal:
@@ -998,6 +1174,13 @@ time as a P4 card on those files.
 - reference: `v8/src/wasm/wasm-js.cc` (the JS API), `v8/src/wasm/wasm-objects.h`; the WPT `wasm/jsapi/` tests
 - verify: `cargo test --release --test browser -- wasm_api > target/p11.17.log 2>&1; echo $?` → 0; `wasm_sim_bench` loads a copy of `sim_wasm_bg.wasm` with its glue and prints the step time, within 1.5x of P11.16's standalone number (29 µs per step on the user's Mac)
 - depends on: P11.3, P11.16; time box: 45 min (split Memory/Table/Global into P11.17b if larger); model: opus
+- partial 2026-10-15: the API is done; `wasm_sim_bench` and the wasm-bindgen glue check remain (they need the game's `sim_wasm_bg.wasm` and `sim_wasm.js`, P11.24's copy).
+  - `browser/wasm/`: `wasmtime.lock` (49.0.3, both SHA-256), `fetch_wasmtime.sh` (into `target/wasmtime/<ver>/lib`, with a `wasmtime.pc` whose `Libs` carry the rpath per OS), the C headers vendored in `include/` so the browser builds without the library, and `wasm.aye`: `@linkOptional("wasmtime")` and `@cimport("wasmtime.h")`. libclang expands `wasm.h`'s `WASM_DECLARE_*` macros, so no declaration is written by hand (765 functions; only its inline helpers are skipped). Without the library, or with `--no-link wasmtime`, `WebAssembly` is undefined.
+  - `engine/wasm_prelude.aye`: `Module` (`imports`, `exports`; `customSections` gives `[]`), `Instance`, `Memory`, `Table`, `Global`, the three errors, `validate`, `compile`, `instantiate` (both overloads), `compileStreaming` and `instantiateStreaming` (`application/wasm`, which `file:` now gives `.wasm`). Values: i32, i64 as BigInt, f32, f64, externref, funcref; multi-value results are arrays. A trap is a `RuntimeError`; an exception thrown by a JS import comes back through wasm as itself.
+  - `Memory.buffer` is an `ArrayBuffer` whose store is external (`js.setExternalBytes`): it aliases the linear memory, the GC does not free it, `transfer()` throws. `grow`, and a `memory.grow` inside wasm (checked after each call), detach it.
+  - `fetch` gives `arrayBuffer()` the raw bytes when decoding the body changed them (binary bodies were decoded as text).
+  - `tests/browser.rs` `wasm_api` (`browser/tests/wasm/api.wat`: 46 checks) and `wasm_loop_bench` (`loop.rs`, built for `wasm32-unknown-unknown`): 20M steps take 31-34 ms in Dweller and 36-42 ms in node 22 on this Linux x64 machine. CI fetches wasmtime on both OSes (cached by the lock).
+  - One store serves all pages and is freed with the last; modules and externs stay until then.
 
 #### P11.18: dedicated Workers
 - goal:

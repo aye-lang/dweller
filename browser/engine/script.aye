@@ -49,6 +49,7 @@ import std.text
 import std.time
 import perf
 import url
+import wasm
 
 // A host object's tag is a kind (the low 12 bits) and, for a node of
 // another page's document (windows.aye), its slot in `Script.foreign`
@@ -262,6 +263,9 @@ pub struct Script {
     now: f64
     start_ms: u64
     real: bool
+    // `__wasmHost` was installed: the page holds the WebAssembly store
+    // (wasm.release).
+    wasm_on: bool = false
     // Messages ("[log] text"), owned, until a front end takes them.
     console: List([]mut u8)
     nav_kind: NavKind
@@ -630,6 +634,10 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(FORM_PRELUDE)
     try s.it.runScript(WEBGL_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
+    if try wasm.install(&mut s.it) {
+        s.wasm_on = true
+        try s.it.runScript(WASM_PRELUDE)
+    }
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
@@ -641,6 +649,9 @@ fn setUp(s: *mut Script) JsError!void {
 /// Frees the script of a page (before its document).
 pub fn destroyScript(s: *mut Script) {
     s.it.host = null
+    if s.wasm_on {
+        wasm.release(&mut s.it)
+    }
     s.it.deinit()
     s.wrappers.deinit()
     for f in s.foreign.items() {

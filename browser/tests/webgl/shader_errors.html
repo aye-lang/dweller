@@ -1,0 +1,41 @@
+<!doctype html>
+<title>WebGL 2 shader errors</title>
+<style>body { margin: 8px; background: #fff; font: 12px monospace; } pre { margin: 0 0 8px; white-space: pre-wrap; }</style>
+<pre id="compile"></pre>
+<pre id="link"></pre>
+<script>
+// P11.5: a shader that does not compile and a program that does not
+// link; their status and ANGLE's info logs, written into the page.
+const gl = document.createElement('canvas').getContext('webgl2');
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+const bad = shader(gl.FRAGMENT_SHADER, `#version 300 es
+precision mediump float;
+out vec4 frag;
+void main() {
+  frag = vec4(missing, 1.0);
+}`);
+document.getElementById('compile').textContent = 'COMPILE_STATUS ' + gl.getShaderParameter(bad, gl.COMPILE_STATUS) + '\n' + gl.getShaderInfoLog(bad).trim();
+// The vertex shader writes an `out float`; the fragment shader reads an
+// `in vec2` of the same name.
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, `#version 300 es
+out float v;
+void main() {
+  v = 1.0;
+  gl_Position = vec4(0.0);
+}`));
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, `#version 300 es
+precision mediump float;
+in vec2 v;
+out vec4 frag;
+void main() {
+  frag = vec4(v, 0.0, 1.0);
+}`));
+gl.linkProgram(prog);
+document.getElementById('link').textContent = 'LINK_STATUS ' + gl.getProgramParameter(prog, gl.LINK_STATUS) + '\n' + gl.getProgramInfoLog(prog).trim();
+</script>

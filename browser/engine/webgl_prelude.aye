@@ -22,6 +22,15 @@ pub let WEBGL_PRELUDE =
     \\const RGBA = 0x1908, UNSIGNED_BYTE = 0x1401, FRONT_AND_BACK = 0x408, IMPLEMENTATION_COLOR_READ_FORMAT = 0x8b9b, IMPLEMENTATION_COLOR_READ_TYPE = 0x8b9a;
     \\// webglCall operations (webgl_api.aye).
     \\const CLEAR_COLOR = 0, CLEAR = 1, VIEWPORT = 2, SCISSOR = 3, ENABLE = 4, DISABLE = 5, COLOR_MASK = 6, DEPTH_MASK = 7, STENCIL_MASK = 8, CLEAR_DEPTH = 9, CLEAR_STENCIL = 10;
+    \\const BIND_BUFFER = 11, USE_PROGRAM = 12, ATTACH_SHADER = 13, DETACH_SHADER = 14, LINK_PROGRAM = 15, COMPILE_SHADER = 16, VALIDATE_PROGRAM = 17, ENABLE_ATTRIB = 18, DISABLE_ATTRIB = 19, ATTRIB_POINTER = 20, ATTRIB_IPOINTER = 21, ATTRIB_4F = 22, ATTRIB_I4I = 23, ATTRIB_I4UI = 24, DRAW_ARRAYS = 25, DRAW_ELEMENTS = 26, DELETE_BUFFER = 27, DELETE_SHADER = 28, DELETE_PROGRAM = 29, UNIFORM_F = 30, UNIFORM_I = 31, UNIFORM_UI = 32;
+    \\const ARRAY_BUFFER = 0x8892, ELEMENT_ARRAY_BUFFER = 0x8893, VERTEX_SHADER = 0x8b31, FRAGMENT_SHADER = 0x8b30, SHADER_TYPE = 0x8b4f, DELETE_STATUS = 0x8b80, COMPILE_STATUS = 0x8b81, LINK_STATUS = 0x8b82, VALIDATE_STATUS = 0x8b83;
+    \\// bindBuffer's targets, and the getParameter binding of each.
+    \\const BUFFER_TARGETS = new Set([0x8892, 0x8893, 0x8f36, 0x8f37, 0x88eb, 0x88ec, 0x8c8e, 0x8a11]);
+    \\const BUFFER_BINDINGS = new Map([[0x8894, 0x8892], [0x8895, 0x8893], [0x8f36, 0x8f36], [0x8f37, 0x8f37], [0x88ed, 0x88eb], [0x88ef, 0x88ec], [0x8c8f, 0x8c8e], [0x8a28, 0x8a11]]);
+    \\// getProgramParameter's integers: ATTACHED_SHADERS, ACTIVE_ATTRIBUTES,
+    \\// ACTIVE_UNIFORMS, TRANSFORM_FEEDBACK_BUFFER_MODE and _VARYINGS,
+    \\// ACTIVE_UNIFORM_BLOCKS.
+    \\const PROGRAM_INTS = new Set([0x8b85, 0x8b89, 0x8b86, 0x8c7f, 0x8c83, 0x8a36]);
     \\// getParameter: pname → [kind, count, wrap]. kind i (integer), f (float),
     \\// b (boolean), s (string), n (an object binding: null until its card),
     \\// w (WebGL's own state); wrap 'I' Int32Array, 'F' Float32Array,
@@ -64,6 +73,27 @@ pub let WEBGL_PRELUDE =
     \\const kinds = ['WebGLBuffer', 'WebGLTexture', 'WebGLProgram', 'WebGLShader', 'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLVertexArrayObject', 'WebGLSampler', 'WebGLQuery', 'WebGLSync', 'WebGLTransformFeedback'];
     \\const classes = {};
     \\for (const k of kinds) classes[k] = {[k]: class extends WebGLObject {}}[k];
+    \\const {WebGLBuffer, WebGLShader, WebGLProgram} = classes;
+    \\// The first target a buffer was bound to (0: never bound).
+    \\WebGLBuffer.prototype._target = 0;
+    \\// A shader is freed by GL once deleted and attached to no program; a
+    \\// program once deleted and not in use (then its shaders are detached).
+    \\WebGLShader.prototype._programs = 0;
+    \\WebGLShader.prototype._type = 0;
+    \\WebGLShader.prototype._source = '';
+    \\WebGLShader.prototype._gone = function () {
+    \\  return this._deleted && this._programs === 0;
+    \\};
+    \\WebGLProgram.prototype._link = 0;
+    \\WebGLProgram.prototype._freed = false;
+    \\WebGLProgram.prototype._gone = function () {
+    \\  return this._freed;
+    \\};
+    \\WebGLProgram.prototype._free = function () {
+    \\  this._freed = true;
+    \\  for (const sh of this._shaders) sh._programs--;
+    \\  this._shaders = [];
+    \\};
     \\class WebGLUniformLocation {
     \\  constructor(program, location) {
     \\    this._program = program;
@@ -91,6 +121,9 @@ pub let WEBGL_PRELUDE =
     \\    this._node = canvas._node || canvas;
     \\    this._attrs = attrs;
     \\    this._unpack = {0x9240: false, 0x9241: false, 0x9243: 0x9244, 0x9247: 0};
+    \\    // Buffer bindings (target → WebGLBuffer) and the current program.
+    \\    this._bound = new Map();
+    \\    this._program = null;
     \\  }
     \\  get canvas() {
     \\    return this._canvas;
@@ -180,7 +213,11 @@ pub let WEBGL_PRELUDE =
     \\      return null;
     \\    }
     \\    const [kind, count, wrap] = p;
-    \\    if (kind === 'n') return null;
+    \\    if (kind === 'n') {
+    \\      if (pname === 0x8b8d) return this._program;
+    \\      const t = BUFFER_BINDINGS.get(pname);
+    \\      return t === undefined ? null : this._bound.get(t) || null;
+    \\    }
     \\    if (kind === 'w') return this._unpack[pname];
     \\    const v = ak.webglGet(this._node, pname, kind === 'i' ? 0 : kind === 'f' ? 1 : 2, count);
     \\    if (kind === 'b') {
@@ -229,6 +266,496 @@ pub let WEBGL_PRELUDE =
     \\      return;
     \\    }
     \\    ak.webglReadPixels(this._node, x, y, width, height, offset ? dst.subarray(offset) : dst);
+    \\  }
+    \\  // P11.5 (docs/webgl.md §3): buffers, shaders, programs, uniforms,
+    \\  // attributes and draws. The object rules are Blink's: an object of
+    \\  // another context gives INVALID_OPERATION; a deleted one gives
+    \\  // INVALID_OPERATION where it is used or bound, INVALID_VALUE where a
+    \\  // program or shader is queried once GL has freed it; delete of a
+    \\  // deleted object, and null where null is allowed, do nothing.
+    \\  _use(o) {
+    \\    if (o._ctx !== this || o._deleted) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  _live(o, cls) {
+    \\    if (!(o instanceof cls)) throw new TypeError('parameter is not a ' + cls.name);
+    \\    if (o._ctx !== this) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    if (o._gone()) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  _delete(o, cls, op) {
+    \\    if (o === null || o === undefined) return false;
+    \\    if (!(o instanceof cls)) throw new TypeError('parameter is not a ' + cls.name);
+    \\    if (o._ctx !== this) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    if (o._deleted) return false;
+    \\    o._deleted = true;
+    \\    ak.webglCall(this._node, op, o._name);
+    \\    return true;
+    \\  }
+    \\  createBuffer() {
+    \\    const n = ak.webglNew(this._node, 0);
+    \\    return n ? new WebGLBuffer(this, n) : null;
+    \\  }
+    \\  isBuffer(b) {
+    \\    return b instanceof WebGLBuffer && b._ctx === this && !b._deleted && b._target !== 0;
+    \\  }
+    \\  bindBuffer(target, buffer) {
+    \\    target = target >>> 0;
+    \\    if (!BUFFER_TARGETS.has(target)) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return;
+    \\    }
+    \\    if (buffer !== null && buffer !== undefined) {
+    \\      if (!(buffer instanceof WebGLBuffer)) throw new TypeError('parameter 2 is not a WebGLBuffer');
+    \\      if (!this._use(buffer)) return;
+    \\      // An element array buffer is never bound to another target, nor
+    \\      // the other way round (WebGL 2 §5.1).
+    \\      const element = target === ELEMENT_ARRAY_BUFFER;
+    \\      if (buffer._target !== 0 && (buffer._target === ELEMENT_ARRAY_BUFFER) !== element) {
+    \\        ak.webglRaise(this._node, INVALID_OPERATION);
+    \\        return;
+    \\      }
+    \\      if (buffer._target === 0) buffer._target = element ? ELEMENT_ARRAY_BUFFER : ARRAY_BUFFER;
+    \\    } else {
+    \\      buffer = null;
+    \\    }
+    \\    this._bound.set(target, buffer);
+    \\    ak.webglCall(this._node, BIND_BUFFER, target, buffer ? buffer._name : 0);
+    \\  }
+    \\  deleteBuffer(b) {
+    \\    if (!this._delete(b, WebGLBuffer, DELETE_BUFFER)) return;
+    \\    for (const [t, o] of this._bound) if (o === b) this._bound.set(t, null);
+    \\  }
+    \\  // bufferData(target, size, usage) or (target, srcData, usage, srcOffset,
+    \\  // length): the bytes go to GL in place.
+    \\  bufferData(target, data, usage, srcOffset, length) {
+    \\    target = target >>> 0;
+    \\    if (!this._target(target)) return;
+    \\    if (typeof data === 'number' || data === undefined) {
+    \\      const size = Number(data) || 0;
+    \\      if (size < 0) {
+    \\        ak.webglRaise(this._node, INVALID_VALUE);
+    \\        return;
+    \\      }
+    \\      ak.webglBufferData(this._node, false, target, usage, size);
+    \\      return;
+    \\    }
+    \\    const v = this._bytes(data, srcOffset, length);
+    \\    if (v) ak.webglBufferData(this._node, false, target, usage, v, v.byteLength);
+    \\  }
+    \\  bufferSubData(target, dstByteOffset, data, srcOffset, length) {
+    \\    target = target >>> 0;
+    \\    if (!this._target(target)) return;
+    \\    if (dstByteOffset < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    const v = this._bytes(data, srcOffset, length);
+    \\    if (v) ak.webglBufferData(this._node, true, target, dstByteOffset, v, v.byteLength);
+    \\  }
+    \\  _target(target) {
+    \\    if (!BUFFER_TARGETS.has(target)) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return false;
+    \\    }
+    \\    if (!this._bound.get(target)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  // The bytes of an ArrayBuffer or of elements [srcOffset, srcOffset +
+    \\  // length) of a view, as a Uint8Array over the same store; null (with
+    \\  // INVALID_VALUE) when the range is out of the view.
+    \\  _bytes(data, srcOffset, length) {
+    \\    if (data === null) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return null;
+    \\    }
+    \\    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    \\    if (!ArrayBuffer.isView(data)) throw new TypeError('parameter is not an ArrayBuffer or ArrayBufferView');
+    \\    const size = data.BYTES_PER_ELEMENT || 1;
+    \\    const count = data.byteLength / size;
+    \\    const off = srcOffset === undefined ? 0 : srcOffset >>> 0;
+    \\    let n = length === undefined ? 0 : length >>> 0;
+    \\    if (off > count || (n !== 0 && n > count - off)) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return null;
+    \\    }
+    \\    if (n === 0) n = count - off;
+    \\    return new Uint8Array(data.buffer, data.byteOffset + off * size, n * size);
+    \\  }
+    \\  createShader(type) {
+    \\    type = type >>> 0;
+    \\    if (type !== VERTEX_SHADER && type !== FRAGMENT_SHADER) {
+    \\      ak.webglRaise(this._node, INVALID_ENUM);
+    \\      return null;
+    \\    }
+    \\    const n = ak.webglNew(this._node, 1, type);
+    \\    if (!n) return null;
+    \\    const s = new WebGLShader(this, n);
+    \\    s._type = type;
+    \\    return s;
+    \\  }
+    \\  isShader(s) {
+    \\    return s instanceof WebGLShader && s._ctx === this && !s._deleted;
+    \\  }
+    \\  deleteShader(s) {
+    \\    this._delete(s, WebGLShader, DELETE_SHADER);
+    \\  }
+    \\  shaderSource(shader, source) {
+    \\    if (!this._live(shader, WebGLShader)) return;
+    \\    source = String(source);
+    \\    if (source.length > 512 * 1024) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    shader._source = source;
+    \\    ak.webglShaderSource(this._node, shader._name, source);
+    \\  }
+    \\  getShaderSource(shader) {
+    \\    if (!this._live(shader, WebGLShader)) return null;
+    \\    return shader._source;
+    \\  }
+    \\  compileShader(shader) {
+    \\    if (this._live(shader, WebGLShader)) ak.webglCall(this._node, COMPILE_SHADER, shader._name);
+    \\  }
+    \\  getShaderParameter(shader, pname) {
+    \\    if (!this._live(shader, WebGLShader)) return null;
+    \\    pname = pname >>> 0;
+    \\    if (pname === SHADER_TYPE) return shader._type;
+    \\    if (pname === DELETE_STATUS) return shader._deleted;
+    \\    if (pname === COMPILE_STATUS) return ak.webglParam(this._node, 0, shader._name, pname) !== 0;
+    \\    ak.webglRaise(this._node, INVALID_ENUM);
+    \\    return null;
+    \\  }
+    \\  getShaderInfoLog(shader) {
+    \\    if (!this._live(shader, WebGLShader)) return null;
+    \\    return ak.webglLog(this._node, 0, shader._name);
+    \\  }
+    \\  createProgram() {
+    \\    const n = ak.webglNew(this._node, 2);
+    \\    if (!n) return null;
+    \\    const p = new WebGLProgram(this, n);
+    \\    p._shaders = [];
+    \\    return p;
+    \\  }
+    \\  isProgram(p) {
+    \\    return p instanceof WebGLProgram && p._ctx === this && !p._deleted;
+    \\  }
+    \\  deleteProgram(p) {
+    \\    if (!this._delete(p, WebGLProgram, DELETE_PROGRAM)) return;
+    \\    // GL frees it now unless it is in use; its shaders are detached then.
+    \\    if (this._program !== p) p._free();
+    \\  }
+    \\  attachShader(program, shader) {
+    \\    if (!this._live(program, WebGLProgram) || !this._live(shader, WebGLShader)) return;
+    \\    // One shader of each type (GL checks the same shader twice).
+    \\    if (program._shaders.some(s => s._type === shader._type && s !== shader)) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, ATTACH_SHADER, program._name, shader._name);
+    \\    if (!program._shaders.includes(shader)) {
+    \\      program._shaders.push(shader);
+    \\      shader._programs++;
+    \\    }
+    \\  }
+    \\  detachShader(program, shader) {
+    \\    if (!this._live(program, WebGLProgram) || !this._live(shader, WebGLShader)) return;
+    \\    ak.webglCall(this._node, DETACH_SHADER, program._name, shader._name);
+    \\    const i = program._shaders.indexOf(shader);
+    \\    if (i >= 0) {
+    \\      program._shaders.splice(i, 1);
+    \\      shader._programs--;
+    \\    }
+    \\  }
+    \\  getAttachedShaders(program) {
+    \\    if (!this._live(program, WebGLProgram)) return null;
+    \\    return program._shaders.slice();
+    \\  }
+    \\  linkProgram(program) {
+    \\    if (!this._live(program, WebGLProgram)) return;
+    \\    ak.webglCall(this._node, LINK_PROGRAM, program._name);
+    \\    program._link++;
+    \\  }
+    \\  validateProgram(program) {
+    \\    if (this._live(program, WebGLProgram)) ak.webglCall(this._node, VALIDATE_PROGRAM, program._name);
+    \\  }
+    \\  getProgramParameter(program, pname) {
+    \\    if (!this._live(program, WebGLProgram)) return null;
+    \\    pname = pname >>> 0;
+    \\    if (pname === DELETE_STATUS) return program._deleted;
+    \\    if (pname === LINK_STATUS || pname === VALIDATE_STATUS) return ak.webglParam(this._node, 1, program._name, pname) !== 0;
+    \\    if (PROGRAM_INTS.has(pname)) return ak.webglParam(this._node, 1, program._name, pname);
+    \\    ak.webglRaise(this._node, INVALID_ENUM);
+    \\    return null;
+    \\  }
+    \\  getProgramInfoLog(program) {
+    \\    if (!this._live(program, WebGLProgram)) return null;
+    \\    return ak.webglLog(this._node, 1, program._name);
+    \\  }
+    \\  useProgram(program) {
+    \\    if (program !== null && program !== undefined) {
+    \\      if (!(program instanceof WebGLProgram)) throw new TypeError('parameter 1 is not a WebGLProgram');
+    \\      if (!this._use(program)) return;
+    \\    } else {
+    \\      program = null;
+    \\    }
+    \\    ak.webglCall(this._node, USE_PROGRAM, program ? program._name : 0);
+    \\    // GL refuses a program that did not link; the binding stays.
+    \\    if (program && ak.webglParam(this._node, 1, program._name, LINK_STATUS) === 0) return;
+    \\    const old = this._program;
+    \\    this._program = program;
+    \\    if (old && old !== program && old._deleted) old._free();
+    \\  }
+    \\  getAttribLocation(program, name) {
+    \\    if (!this._live(program, WebGLProgram)) return -1;
+    \\    return ak.webglLocation(this._node, 0, program._name, String(name));
+    \\  }
+    \\  bindAttribLocation(program, index, name) {
+    \\    if (this._live(program, WebGLProgram)) ak.webglBindAttrib(this._node, program._name, index, String(name));
+    \\  }
+    \\  getUniformLocation(program, name) {
+    \\    if (!this._live(program, WebGLProgram)) return null;
+    \\    const l = ak.webglLocation(this._node, 1, program._name, String(name));
+    \\    return l < 0 ? null : new WebGLUniformLocation(program, l);
+    \\  }
+    \\  _active(kind, program, index) {
+    \\    if (!this._live(program, WebGLProgram)) return null;
+    \\    const a = ak.webglActive(this._node, kind, program._name, index);
+    \\    return a ? new WebGLActiveInfo(a[0], a[1], a[2]) : null;
+    \\  }
+    \\  getActiveAttrib(program, index) {
+    \\    return this._active(0, program, index);
+    \\  }
+    \\  getActiveUniform(program, index) {
+    \\    return this._active(1, program, index);
+    \\  }
+    \\  // A location used with uniform*: null does nothing; it must be of this
+    \\  // context, of the current program and of its last link.
+    \\  _location(l) {
+    \\    if (l === null || l === undefined) return false;
+    \\    if (!(l instanceof WebGLUniformLocation)) throw new TypeError('parameter 1 is not a WebGLUniformLocation');
+    \\    const p = l._program;
+    \\    if (p._ctx !== this || p !== this._program || l._link !== p._link) {
+    \\      ak.webglRaise(this._node, INVALID_OPERATION);
+    \\      return false;
+    \\    }
+    \\    return true;
+    \\  }
+    \\  _uniform(op, l, n, x, y, z, w) {
+    \\    if (this._location(l)) ak.webglCall(this._node, op, l._location, n, x, y, z, w);
+    \\  }
+    \\  // uniform*v and uniformMatrix*fv: `form` as webglUniformv, `size`
+    \\  // components per element; elements [srcOffset, srcOffset + srcLength).
+    \\  _uniformv(form, size, Kind, l, v, srcOffset, srcLength, transpose) {
+    \\    if (!this._location(l)) return;
+    \\    if (!(v instanceof Kind)) {
+    \\      if (v === null || typeof v !== 'object') throw new TypeError('parameter 2 is not a sequence');
+    \\      v = new Kind(v);
+    \\    }
+    \\    const off = srcOffset === undefined ? 0 : srcOffset >>> 0;
+    \\    let n = srcLength === undefined ? 0 : srcLength >>> 0;
+    \\    if (off > v.length || (n !== 0 && n > v.length - off)) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    if (n === 0) n = v.length - off;
+    \\    if (n === 0 || n % size !== 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglUniformv(this._node, form, l._location, off ? v.subarray(off, off + n) : v, n / size, transpose);
+    \\  }
+    \\  vertexAttribPointer(index, size, type, normalized, stride, offset) {
+    \\    if (offset < 0 || stride < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, ATTRIB_POINTER, index, size, type, normalized, stride, offset);
+    \\  }
+    \\  vertexAttribIPointer(index, size, type, stride, offset) {
+    \\    if (offset < 0 || stride < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, ATTRIB_IPOINTER, index, size, type, stride, offset);
+    \\  }
+    \\  enableVertexAttribArray(index) {
+    \\    ak.webglCall(this._node, ENABLE_ATTRIB, index);
+    \\  }
+    \\  disableVertexAttribArray(index) {
+    \\    ak.webglCall(this._node, DISABLE_ATTRIB, index);
+    \\  }
+    \\  vertexAttrib1f(i, x) {
+    \\    ak.webglCall(this._node, ATTRIB_4F, i, x, 0, 0, 1);
+    \\  }
+    \\  vertexAttrib2f(i, x, y) {
+    \\    ak.webglCall(this._node, ATTRIB_4F, i, x, y, 0, 1);
+    \\  }
+    \\  vertexAttrib3f(i, x, y, z) {
+    \\    ak.webglCall(this._node, ATTRIB_4F, i, x, y, z, 1);
+    \\  }
+    \\  vertexAttrib4f(i, x, y, z, w) {
+    \\    ak.webglCall(this._node, ATTRIB_4F, i, x, y, z, w);
+    \\  }
+    \\  _attribv(op, i, v, n) {
+    \\    if (v === null || typeof v !== 'object') throw new TypeError('parameter 2 is not a sequence');
+    \\    if (v.length < n) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    const d = [0, 0, 0, 1];
+    \\    for (let k = 0; k < n; k++) d[k] = v[k];
+    \\    ak.webglCall(this._node, op, i, d[0], d[1], d[2], d[3]);
+    \\  }
+    \\  vertexAttrib1fv(i, v) {
+    \\    this._attribv(ATTRIB_4F, i, v, 1);
+    \\  }
+    \\  vertexAttrib2fv(i, v) {
+    \\    this._attribv(ATTRIB_4F, i, v, 2);
+    \\  }
+    \\  vertexAttrib3fv(i, v) {
+    \\    this._attribv(ATTRIB_4F, i, v, 3);
+    \\  }
+    \\  vertexAttrib4fv(i, v) {
+    \\    this._attribv(ATTRIB_4F, i, v, 4);
+    \\  }
+    \\  vertexAttribI4i(i, x, y, z, w) {
+    \\    ak.webglCall(this._node, ATTRIB_I4I, i, x, y, z, w);
+    \\  }
+    \\  vertexAttribI4ui(i, x, y, z, w) {
+    \\    ak.webglCall(this._node, ATTRIB_I4UI, i, x, y, z, w);
+    \\  }
+    \\  vertexAttribI4iv(i, v) {
+    \\    this._attribv(ATTRIB_I4I, i, v, 4);
+    \\  }
+    \\  vertexAttribI4uiv(i, v) {
+    \\    this._attribv(ATTRIB_I4UI, i, v, 4);
+    \\  }
+    \\  // Out-of-range vertices and indices are ANGLE's WebGL validation
+    \\  // (INVALID_OPERATION), as is a draw without a linked program.
+    \\  drawArrays(mode, first, count) {
+    \\    ak.webglCall(this._node, DRAW_ARRAYS, mode, first, count);
+    \\  }
+    \\  drawElements(mode, count, type, offset) {
+    \\    if (offset < 0) {
+    \\      ak.webglRaise(this._node, INVALID_VALUE);
+    \\      return;
+    \\    }
+    \\    ak.webglCall(this._node, DRAW_ELEMENTS, mode, count, type, offset);
+    \\  }
+    \\  uniform1f(l, x) {
+    \\    this._uniform(UNIFORM_F, l, 1, x, 0, 0, 0);
+    \\  }
+    \\  uniform1fv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(0, 1, Float32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform2f(l, x, y) {
+    \\    this._uniform(UNIFORM_F, l, 2, x, y, 0, 0);
+    \\  }
+    \\  uniform2fv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(1, 2, Float32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform3f(l, x, y, z) {
+    \\    this._uniform(UNIFORM_F, l, 3, x, y, z, 0);
+    \\  }
+    \\  uniform3fv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(2, 3, Float32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform4f(l, x, y, z, w) {
+    \\    this._uniform(UNIFORM_F, l, 4, x, y, z, w);
+    \\  }
+    \\  uniform4fv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(3, 4, Float32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform1i(l, x) {
+    \\    this._uniform(UNIFORM_I, l, 1, x, 0, 0, 0);
+    \\  }
+    \\  uniform1iv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(4, 1, Int32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform2i(l, x, y) {
+    \\    this._uniform(UNIFORM_I, l, 2, x, y, 0, 0);
+    \\  }
+    \\  uniform2iv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(5, 2, Int32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform3i(l, x, y, z) {
+    \\    this._uniform(UNIFORM_I, l, 3, x, y, z, 0);
+    \\  }
+    \\  uniform3iv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(6, 3, Int32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform4i(l, x, y, z, w) {
+    \\    this._uniform(UNIFORM_I, l, 4, x, y, z, w);
+    \\  }
+    \\  uniform4iv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(7, 4, Int32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform1ui(l, x) {
+    \\    this._uniform(UNIFORM_UI, l, 1, x, 0, 0, 0);
+    \\  }
+    \\  uniform1uiv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(8, 1, Uint32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform2ui(l, x, y) {
+    \\    this._uniform(UNIFORM_UI, l, 2, x, y, 0, 0);
+    \\  }
+    \\  uniform2uiv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(9, 2, Uint32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform3ui(l, x, y, z) {
+    \\    this._uniform(UNIFORM_UI, l, 3, x, y, z, 0);
+    \\  }
+    \\  uniform3uiv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(10, 3, Uint32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniform4ui(l, x, y, z, w) {
+    \\    this._uniform(UNIFORM_UI, l, 4, x, y, z, w);
+    \\  }
+    \\  uniform4uiv(l, v, srcOffset, srcLength) {
+    \\    this._uniformv(11, 4, Uint32Array, l, v, srcOffset, srcLength, false);
+    \\  }
+    \\  uniformMatrix2fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(12, 4, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix3fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(13, 9, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix4fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(14, 16, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix2x3fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(15, 6, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix3x2fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(16, 6, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix2x4fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(17, 8, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix4x2fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(18, 8, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix3x4fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(19, 12, Float32Array, l, v, srcOffset, srcLength, transpose);
+    \\  }
+    \\  uniformMatrix4x3fv(l, transpose, v, srcOffset, srcLength) {
+    \\    this._uniformv(20, 12, Float32Array, l, v, srcOffset, srcLength, transpose);
     \\  }
     \\}
     \\let installed = false;

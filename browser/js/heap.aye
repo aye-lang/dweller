@@ -90,7 +90,9 @@ pub enum ObjData {
     View { store: u32, off: u32, len: u32, kind: u32 }
     // An ArrayBuffer's byte store (typed.aye): one allocation outside the
     // GC-scanned lists, freed with the object; empty once detached.
-    Bytes { mem: []mut u8, detached: bool }
+    // `external` bytes belong to the host (a WebAssembly memory), which
+    // frees them: the buffer only aliases them.
+    Bytes { mem: []mut u8, detached: bool, external: bool }
 }
 
 // Prop.flags
@@ -311,8 +313,8 @@ pub struct Heap {
             self.alloc.destroy(ki)
         }
         match ob.data {
-            .Bytes { mem, .. } => {
-                if mem.len > 0 {
+            .Bytes { mem, external, .. } => {
+                if mem.len > 0 && !external {
                     self.alloc.free(mem)
                 }
             }

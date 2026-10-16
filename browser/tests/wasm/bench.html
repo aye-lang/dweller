@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<title>WebAssembly loop</title>
+<pre id="out"></pre>
+<script>
+// P11.17: loop.wasm (loop.rs) timed in Dweller (Date.now: `dump` runs
+// performance.now on its virtual clock); tests/browser.rs
+// `wasm_loop_bench` prints the time next to node's for the same module.
+async function main() {
+  const out = document.getElementById('out');
+  if (typeof WebAssembly === 'undefined') {
+    out.textContent = 'no WebAssembly';
+    return;
+  }
+  const { instance } = await WebAssembly.instantiateStreaming(fetch('loop.wasm'));
+  const n = 20000000;
+  instance.exports.run(1000);
+  const times = [];
+  let r;
+  for (let k = 0; k < 5; k++) {
+    const t0 = Date.now();
+    r = instance.exports.run(n);
+    times.push(Date.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  out.textContent = 'checksum ' + r + '\nmedian ms ' + times[2].toFixed(1);
+}
+main().catch((x) => { document.getElementById('out').textContent = 'FAILED ' + x; });
+</script>

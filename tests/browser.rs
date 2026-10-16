@@ -32,7 +32,29 @@ fn root() -> &'static Path {
 fn aye() -> Command {
     let mut c = Command::new(std::env::var_os("AYE").unwrap_or("aye".into()));
     c.current_dir(root());
+    // libwasmtime from browser/wasm/fetch_wasmtime.sh, when fetched: its
+    // pkg-config file links it with an rpath (P11.17).
+    if let Some(pc) = wasmtime_pkgconfig() {
+        let mut path = std::ffi::OsString::from(&pc);
+        if let Some(old) = std::env::var_os("PKG_CONFIG_PATH") {
+            path.push(":");
+            path.push(old);
+        }
+        c.env("PKG_CONFIG_PATH", path);
+    }
     c
+}
+
+/// target/wasmtime/<version>/lib/pkgconfig, the version of
+/// browser/wasm/wasmtime.lock, when browser/wasm/fetch_wasmtime.sh made it.
+fn wasmtime_pkgconfig() -> Option<PathBuf> {
+    let lock = std::fs::read_to_string(root().join("browser/wasm/wasmtime.lock")).ok()?;
+    let version = lock.lines().find_map(|l| l.strip_prefix("version "))?;
+    let dir = root()
+        .join("target/wasmtime")
+        .join(version.trim())
+        .join("lib/pkgconfig");
+    dir.join("wasmtime.pc").exists().then_some(dir)
 }
 
 /// A child whose stdout and stderr are read on threads while it runs
@@ -519,6 +541,171 @@ fn webgl_screenshot() {
         golden.display(),
         out_png.display()
     );
+}
+
+/// P11.5 (docs/webgl.md §3, §4): `dweller screenshot` on SwiftShader of
+/// the pages in `browser/tests/webgl` that draw: a triangle with
+/// per-vertex colors (`triangle.html`), an indexed quad with a uniform
+/// color and matrix (`quad.html`), and the info logs of a shader that
+/// does not compile and a program that does not link
+/// (`shader_errors.html`); each is its `.png`. Without ANGLE the canvases
+/// stay blank.
+#[test]
+fn webgl_triangle() {
+    for page in ["triangle", "quad", "shader_errors"] {
+        let out_png = scratch().join(format!("webgl_{page}.png"));
+        let res = Command::new(dweller())
+            .current_dir(root())
+            .args([
+                "screenshot",
+                &format!("browser/tests/webgl/{page}.html"),
+                "-o",
+                out_png.to_str().unwrap(),
+                "--font",
+                "fixed",
+                "--width",
+                "200",
+                "--height",
+                "160",
+            ])
+            .env("DWELLER_GL", "swiftshader")
+            .output()
+            .unwrap();
+        assert!(
+            res.status.success() && res.stderr.is_empty(),
+            "{page}: {}\n{}",
+            res.status,
+            text(&res.stderr)
+        );
+        if !angle_present() {
+            println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+            return;
+        }
+        let got = std::fs::read(&out_png).unwrap();
+        let golden = root().join(format!("browser/tests/webgl/{page}.png"));
+        if std::env::var_os("DWELLER_BLESS").is_some() {
+            std::fs::write(&golden, &got).unwrap();
+            continue;
+        }
+        assert!(
+            got == std::fs::read(&golden).unwrap(),
+            "the image differs from {} (new one: {})",
+            golden.display(),
+            out_png.display()
+        );
+    }
+}
+
+/// P11.5: `dump --text --js` of `browser/tests/webgl/objects.html` on
+/// SwiftShader prints `objects.txt`: the error of each WebGL object rule
+/// (another context, deleted objects, buffer targets, uniform locations
+/// after a relink, draws), active attributes and uniforms, and the pixels
+/// of a drawn triangle.
+#[test]
+fn webgl_objects() {
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args(["dump", "--text", "--js", "browser/tests/webgl/objects.html"])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/objects.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
+/// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
+/// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
+/// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
+/// `WebAssembly` is undefined and each page prints "no WebAssembly"; CI
+/// fetches it, so there it must be present.
+#[test]
+fn wasm_api() {
+    let present = wasmtime_pkgconfig().is_some();
+    assert!(
+        present || std::env::var_os("CI").is_none(),
+        "CI must run browser/wasm/fetch_wasmtime.sh"
+    );
+    let bless = std::env::var_os("DWELLER_BLESS").is_some();
+    let mut failures = Vec::new();
+    for name in ["api"] {
+        let page = format!("browser/tests/wasm/{name}.html");
+        let golden = root().join(format!("browser/tests/wasm/{name}.txt"));
+        let out = run(&["dump", "--text", "--js", &page]);
+        let got = text(&out.stdout);
+        if bless && present {
+            std::fs::write(&golden, &got).unwrap();
+            continue;
+        }
+        let want = if present {
+            std::fs::read_to_string(&golden).unwrap()
+        } else {
+            "no WebAssembly\n".to_string()
+        };
+        if !out.status.success() || got != want || !out.stderr.is_empty() {
+            failures.push(format!(
+                "{page}: {}\n--- expected\n{want}--- got\n{got}--- stderr\n{}",
+                out.status,
+                text(&out.stderr)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
+/// checksum must be node's; the median time of 20M steps is printed (with
+/// node's when `node` is installed) for comparison, not checked.
+#[test]
+fn wasm_loop_bench() {
+    if wasmtime_pkgconfig().is_none() {
+        println!("skipped: no libwasmtime (browser/wasm/fetch_wasmtime.sh)");
+        return;
+    }
+    let out = run(&["dump", "--text", "--js", "browser/tests/wasm/bench.html"]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{got}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.starts_with("checksum 486553404.1931757\n"), "{got}");
+    println!("dweller (wasmtime): {}", got.lines().nth(1).unwrap_or(""));
+    let script = r#"
+        const b = require('fs').readFileSync(process.argv[1]);
+        WebAssembly.instantiate(b).then(({ instance }) => {
+          instance.exports.run(1000);
+          const t = [];
+          let r;
+          for (let k = 0; k < 5; k++) { const t0 = Date.now(); r = instance.exports.run(20000000); t.push(Date.now() - t0); }
+          t.sort((a, b) => a - b);
+          console.log('checksum ' + r + ' median ms ' + t[2].toFixed(1));
+        });
+    "#;
+    if let Ok(node) = Command::new("node")
+        .current_dir(root())
+        .args(["-e", script, "browser/tests/wasm/loop.wasm"])
+        .output()
+    {
+        println!("node (V8): {}", text(&node.stdout).trim());
+    }
 }
 
 #[test]
