@@ -3116,7 +3116,7 @@ pub struct Interp {
         return coYield(self, v, 1)
     }
 
-    fn evalNewTarget(self: *mut Self) JsError!Value {
+    pub fn evalNewTarget(self: *mut Self) JsError!Value {
         let f = self.currentFunction()
         var fr = self.frames.len()
         while fr > 0 {
@@ -3146,28 +3146,7 @@ pub struct Interp {
             }
             _ => {}
         }
-        var strings = Value.Undefined
-        if self.tagged.get(id) |r| {
-            strings = self.roots.items()[r]
-        } else {
-            let arr = try self.newArray(0)
-            try self.push(objVal(arr))
-            let rawArr = try self.newArray(0)
-            try self.push(objVal(rawArr))
-            for k in 0..n + 1 {
-                let cooked = try self.atomValue(self.ast.item(list, k))
-                try self.heap.pushElem(arr, cooked)
-                let r = try self.atomValue(self.ast.item(raw, k))
-                try self.heap.pushElem(rawArr, r)
-            }
-            try self.defineOwn(arr, try self.intern("raw"), objVal(rawArr), 0)
-            self.heap.obj(rawArr).frozen = true
-            self.heap.obj(arr).frozen = true
-            self.pop()
-            self.pop()
-            strings = objVal(arr)
-            try self.tagged.put(id, try self.addRoot(strings))
-        }
+        let strings = try templateObject(self, id, raw)
         try self.push(strings)
         for k in 0..n {
             let v = try self.eval(self.ast.item(list, n + 1 + k))

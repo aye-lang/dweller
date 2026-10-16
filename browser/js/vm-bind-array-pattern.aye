@@ -1,0 +1,31 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
+
+fn vmBindArrayPattern(c: *mut Compiler, list: u32, n: u32, decl: u32) CompileError!void {
+    let mark = c.b.topReg
+    let r = c.b.newRegs(3)
+
+    try c.b.op1(BC_GET_ITERATOR, r as i64)
+
+    for k in 0..n {
+        let el = c.ast.item(list, k)
+
+        match c.ast.node(el) {
+            .Hole => {
+                try c.b.op1(BC_ITERATOR_STEP, r as i64)
+            }
+
+            .Rest { target } => {
+                try c.b.op1(BC_ITERATOR_REST, r as i64)
+                try vmStoreTarget(c, target, decl)
+            }
+
+            _ => {
+                try c.b.op1(BC_ITERATOR_STEP, r as i64)
+                try vmStoreTarget(c, el, decl)
+            }
+        }
+    }
+
+    try c.b.op1(BC_ITERATOR_CLOSE, r as i64)
+    c.b.releaseRegs(mark)
+}

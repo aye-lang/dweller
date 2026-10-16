@@ -1,0 +1,23 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitObjectLiteral)
+
+fn vmObjectLiteralProperty(c: *mut Compiler, r: i32, p: u32, k: u32, kind: u32, key: u32, computed: bool, value: u32) CompileError!void {
+    if kind == PROP_SPREAD {
+        try c.visit(value)
+
+        return c.b.op1(BC_COPY_DATA_PROPERTIES, r as i64)
+    }
+
+    if !computed {
+        try c.visit(value)
+
+        return c.b.emit(BC_DEFINE_NAMED_OWN_PROPERTY, r as i64, p as i64, k as i64)
+    }
+
+    let kr = c.b.newReg()
+
+    try c.visit(key)
+    try c.b.op1(BC_STAR, kr as i64)
+    try c.visit(value)
+    try c.b.emit(BC_DEFINE_KEYED_OWN_PROPERTY, r as i64, kr as i64, p as i64)
+    c.b.releaseRegs(kr)
+}

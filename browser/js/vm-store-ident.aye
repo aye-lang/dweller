@@ -1,0 +1,27 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmStoreIdent(c: *mut Compiler, target: u32, decl: u32) CompileError!void {
+    let id = vmIdent(c, target)
+
+    if id.depth >= DEPTH_GLOBAL_LEX {
+        return vmStoreGlobal(c, target, decl)
+    }
+
+    if decl == NONE {
+        let r = try c.writeReg(target)
+
+        if r == VM_CONTEXT {
+            return vmStoreContext(c, id)
+        }
+
+        return c.b.op1(BC_STAR, r as i64)
+    }
+
+    let r = try c.identReg(id.depth, id.slot)
+
+    try vmStoreBinding(c, r, id.depth, id.slot)
+
+    if r >= 0 {
+        c.tdz.items()[r as usize] = false
+    }
+}

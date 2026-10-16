@@ -1,0 +1,14 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmStoreContext(c: *mut Compiler, id: VmIdent) CompileError!void {
+    if vmMayBeHole(c, id.depth) {
+        let t = c.b.newReg()
+
+        try c.b.op1(BC_STAR, t as i64)
+        try vmLoadContext(c, id.depth, id.slot, id.name)
+        try c.b.op1(BC_LDAR, t as i64)
+        c.b.releaseRegs(t)
+    }
+
+    return c.b.op2(BC_STA_CONTEXT_SLOT, vmContextDepth(c, id.depth) as i64, id.slot as i64)
+}

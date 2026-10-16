@@ -1,0 +1,12 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitAssignment)
+
+fn vmAssignPattern(c: *mut Compiler, target: u32, value: u32) CompileError!void {
+    let mark = c.b.topReg
+    let t = c.b.newReg()
+
+    try c.visit(value)
+    try c.b.op1(BC_STAR, t as i64)
+    try vmBindPattern(c, target, NONE)
+    try c.b.op1(BC_LDAR, t as i64)
+    c.b.releaseRegs(mark)
+}

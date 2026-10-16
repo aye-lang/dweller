@@ -1,0 +1,30 @@
+// spec: https://tc39.es/ecma262/#sec-gettemplateobject
+
+fn templateObject(it: *mut Interp, id: u32, raw: u32) JsError!Value {
+    if it.tagged.get(id) |r| {
+        return it.roots.items()[r]
+    }
+
+    let t = vmTemplateParts(&it.ast, id)
+    let arr = try it.newArray(0)
+
+    try it.push(objVal(arr))
+
+    let rawArr = try it.newArray(0)
+
+    try it.push(objVal(rawArr))
+
+    for k in 0..t.n + 1 {
+        try it.heap.pushElem(arr, try it.atomValue(it.ast.item(t.list, k)))
+        try it.heap.pushElem(rawArr, try it.atomValue(it.ast.item(raw, k)))
+    }
+
+    try it.defineOwn(arr, try it.intern("raw"), objVal(rawArr), 0)
+    it.heap.obj(rawArr).frozen = true
+    it.heap.obj(arr).frozen = true
+    it.pop()
+    it.pop()
+    try it.tagged.put(id, try it.addRoot(objVal(arr)))
+
+    return objVal(arr)
+}

@@ -1,0 +1,24 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitCall, BuildCreateArrayLiteral)
+
+fn vmVisitSpreadCall(c: *mut Compiler, id: u32, callee: u32, list: u32, n: u32, isNew: bool) CompileError!void {
+    let mark = c.b.topReg
+    let r = c.b.newRegs(3)
+    var op = BC_CALL_UNDEFINED_RECEIVER
+
+    if isNew {
+        try c.visit(callee)
+        try c.b.op1(BC_STAR, r as i64)
+    } else {
+        op = try vmLoadCallee(c, r, callee, false)
+    }
+
+    if op != BC_CALL_PROPERTY {
+        try c.b.op0(BC_LDA_UNDEFINED)
+        try c.b.op1(BC_STAR, (r + 1) as i64)
+    }
+
+    try vmVisitArrayLiteral(c, list, n)
+    try c.b.op1(BC_STAR, (r + 2) as i64)
+    try c.b.op2(BC_CALL_WITH_SPREAD, r as i64, id as i64)
+    c.b.releaseRegs(mark)
+}
