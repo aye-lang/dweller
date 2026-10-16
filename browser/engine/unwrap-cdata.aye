@@ -1,0 +1,24 @@
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://www.w3.org/TR/xml/#sec-cdata-sect
+fn unwrapCdata(alloc: Allocator, doc: *mut Document) AllocError!void {
+    var styles = List(NodeId).init(alloc)
+    defer styles.deinit()
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try doc.getElementsByTagName("style", &mut styles)
+
+    for el in styles.items() {
+        if doc.firstChild(el) |c| {
+            b.clear()
+            try withoutCdata(doc.node(c).data, &mut b)
+            try doc.setData(c, b.bytes())
+        }
+    }
+}

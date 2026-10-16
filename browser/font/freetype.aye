@@ -125,11 +125,28 @@ extern struct FTOutline {
     flags: i32
 }
 
-// The start of `TT_OS2` (tttables.h), up to the weight class.
+// The start of `TT_OS2` (tttables.h), up to the x-height.
 extern struct TTOS2Start {
     version: u16
     x_avg_char_width: i16
     us_weight_class: u16
+    us_width_class: u16
+    fs_type: u16
+    y_sizes: [10]i16
+    s_family_class: i16
+    panose: [10]u8
+    ul_unicode_range: [4]c_ulong
+    ach_vend_id: [4]u8
+    fs_selection: u16
+    us_first_char_index: u16
+    us_last_char_index: u16
+    s_typo_ascender: i16
+    s_typo_descender: i16
+    s_typo_line_gap: i16
+    us_win_ascent: u16
+    us_win_descent: u16
+    ul_code_page_range: [2]c_ulong
+    sx_height: i16
 }
 
 // `FT_MM_Var` and `FT_Var_Axis` (ftmm.h): the axes of a variable face.
@@ -465,7 +482,7 @@ pub struct System {
         if gap < 0.0 {
             gap = 0.0
         }
-        return Metrics { ascent: ascent, descent: descent, line_gap: gap }
+        return Metrics { ascent: ascent, descent: descent, line_gap: gap, x_height: xHeightOf(face, ascent / scale) * scale }
     }
 
     pub fn width(self: *mut Self, f: Font, s: []u8) f64 {

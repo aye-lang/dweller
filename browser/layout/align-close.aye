@@ -1,0 +1,19 @@
+import css
+import std.mem.AllocError
+import std.text
+
+fn alignClose(al: *mut LineAlign, b: AlignBox, to: usize) AllocError!void {
+    let parent = al.stack.items()[al.stack.len() - 1].box
+    let top = text.eql(keywordOf(al.t.bx(b.box).style[css.VERTICAL_ALIGN]), "top")
+
+    if isTopOrBottom(al.t, b.box) {
+        try al.pending.append(PendingAlign { from: b.from, to: to, above: b.above, below: b.below, top: top, moved: 0.0, owner: topOwner(al) })
+
+        return
+    }
+
+    let s = alignShift(al.t, b, parent)
+
+    moveEntries(al, b.from, to, s)
+    al.unite(b.above - s, b.below + s)
+}
