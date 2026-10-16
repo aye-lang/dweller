@@ -1,0 +1,37 @@
+fn shiftContents(t: *mut Tree, i: usize, dy: f64) {
+    if dy == 0.0 {
+        return
+    }
+
+    let b = t.bx(i)
+
+    for k in b.line_start..b.line_end {
+        let line = &mut t.lines.items()[k]
+
+        line.y += dy
+
+        for f in line.frag_start..line.frag_end {
+            let fr = &mut t.frags.items()[f]
+
+            fr.y += dy
+
+            if fr.kind == FragKind.Atomic {
+                t.bx(fr.box).y += dy
+            }
+        }
+    }
+
+    for c in t.children(i) {
+        if !t.bx(c).inline_level {
+            t.bx(c).y += dy
+        }
+    }
+
+    if b.first_baseline >= 0.0 {
+        b.first_baseline += dy
+    }
+
+    if b.last_baseline >= 0.0 {
+        b.last_baseline += dy
+    }
+}

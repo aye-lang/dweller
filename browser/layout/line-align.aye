@@ -1,0 +1,65 @@
+import css
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.text
+
+struct AlignBox {
+    box: usize
+    from: usize
+    above: f64
+    below: f64
+}
+
+struct PendingAlign {
+    from: usize
+    to: usize
+    above: f64
+    below: f64
+    top: bool
+    moved: f64
+    owner: usize
+}
+
+// blink: third_party/blink/renderer/core/layout/inline/inline_box_state.cc
+struct LineAlign {
+    t: *mut Tree
+    dy: List(f64)
+    boxes: List(usize)
+    stack: List(AlignBox)
+    pending: List(PendingAlign)
+    above: f64
+    below: f64
+
+    fn deinit(self: *mut Self) {
+        self.dy.deinit()
+        self.boxes.deinit()
+        self.stack.deinit()
+        self.pending.deinit()
+    }
+
+    fn push(self: *mut Self, box: usize, from: usize) AllocError!void {
+        let m = textMetrics(self.t, self.t.bx(box).style)
+        let half = (m.line_height - m.ascent - m.descent) / 2.0
+
+        try self.stack.append(AlignBox { box: box, from: from, above: m.ascent + half, below: m.descent + half })
+    }
+
+    fn unite(self: *mut Self, above: f64, below: f64) {
+        let top = &mut self.stack.items()[self.stack.len() - 1]
+
+        top.above = math.max(top.above, above)
+        top.below = math.max(top.below, below)
+    }
+
+    fn entry(self: *mut Self, box: usize) AllocError!void {
+        try self.dy.append(0.0)
+        try self.boxes.append(box)
+    }
+}
+
+fn isTopOrBottom(t: *Tree, i: usize) bool {
+    let word = keywordOf(t.bx(i).style[css.VERTICAL_ALIGN])
+
+    return text.eql(word, "top") || text.eql(word, "bottom")
+}

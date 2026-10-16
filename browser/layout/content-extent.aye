@@ -1,0 +1,20 @@
+import std.math
+
+fn contentExtent(t: *Tree, i: usize) f64 {
+    let b = t.bx(i)
+    var bottom = 0.0
+
+    for k in b.line_start..b.line_end {
+        bottom = math.max(bottom, t.lines.items()[k].y + t.lines.items()[k].h)
+    }
+
+    for c in t.children(i) {
+        let cb = t.bx(c)
+
+        if !cb.inline_level && !cb.oof() {
+            bottom = math.max(bottom, cb.y + cb.h + cb.margin[2])
+        }
+    }
+
+    return bottom + b.border[0] + b.padding[0] + b.padding[2] + b.border[2]
+}

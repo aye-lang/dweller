@@ -1,0 +1,49 @@
+import std.list.List
+import std.math
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css2/#propdef-vertical-align
+fn alignLine(lb: *LineBuilder, kp: []Piece) AllocError!LineAlign {
+    let t = lb.t
+    let open = lb.open.items()
+
+    var al = LineAlign {
+        t: t,
+        dy: List(f64).init(t.backing),
+        boxes: List(usize).init(t.backing),
+        stack: List(AlignBox).init(t.backing),
+        pending: List(PendingAlign).init(t.backing),
+        above: 0.0,
+        below: 0.0,
+    }
+
+    try al.push(lb.container, 0)
+
+    for d, ib in open {
+        try al.entry(ib)
+        try al.push(ib, d)
+    }
+
+    for j, p in kp {
+        var box = lb.container
+
+        if p.kind == PieceKind.Open {
+            box = p.box
+        }
+
+        try al.entry(box)
+        try alignPiece(&mut al, p, open.len + j)
+    }
+
+    while al.stack.len() > 1 {
+        try closeOpen(&mut al, al.dy.len())
+    }
+
+    var root = al.stack.items()[0]
+
+    alignTopBottom(&mut al, &mut root, 0)
+    al.above = math.max(root.above, 0.0)
+    al.below = math.max(root.below, 0.0)
+
+    return al
+}
