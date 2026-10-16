@@ -4091,6 +4091,155 @@ fn window_scripts() {
     }
 }
 
+/// The page's log (`<pre id=log>`) after `events` ran in the window, as
+/// the lines of its text between the page's markup and its script.
+fn window_log(page: &str, events: &str) -> Vec<String> {
+    let out = run_window(&[
+        page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "1", "--text",
+        "--events", events,
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page} {events:?}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    got.lines()
+        .skip_while(|l| *l != "pad" && *l != "canvas")
+        .skip(1)
+        .take_while(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Trusted key and pointer events of the window
+/// (`browser/tests/ui/input_codes.html` logs them): `code` from the
+/// scancode, `repeat`, `location`, modifiers, keyup; pointer events
+/// before the mouse events with pointerId 1; other buttons; leave and
+/// cancel; `movementX/Y`; visibilitychange.
+#[test]
+fn window_input_codes() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = "browser/tests/ui/input_codes.html";
+    let keys = window_log(
+        page,
+        "key:a key:shift+a key:repeat+a keyup:a key:KeyW key:ShiftLeft key:ShiftRight \
+         key:left key:Numpad5 key:F5 key:alt+x key:Escape keyup:ShiftLeft key:tab",
+    );
+    assert_eq!(
+        keys,
+        [
+            "keydown a KeyA r0 l0  true",
+            "keydown A KeyA r0 l0 S true",
+            "keydown a KeyA r1 l0  true",
+            "keyup a KeyA r0 l0  true",
+            "keydown w KeyW r0 l0  true",
+            "keydown Shift ShiftLeft r0 l1  true",
+            "keydown Shift ShiftRight r0 l2  true",
+            "keydown ArrowLeft ArrowLeft r0 l0  true",
+            "keydown 5 Numpad5 r0 l3  true",
+            "keydown F5 F5 r0 l0  true",
+            "keydown x KeyX r0 l0 A true",
+            "keydown Escape Escape r0 l0  true",
+            "keyup Shift ShiftLeft r0 l1  true",
+            "keydown Tab Tab r0 l0  true",
+        ]
+    );
+    // The pad is the first 100 px under the 40 px toolbar.
+    let pointer = window_log(
+        page,
+        "move:20,60 move:25,70 click:25,70 release:25,70 click:30,70,right \
+         release:30,70,right move:40,80,3,-4 window:blur click:30,70 window:blur \
+         window:leave window:hidden window:shown",
+    );
+    assert_eq!(
+        pointer,
+        [
+            "pointermove 20,20 b-1/0 id1P mouse m0,0",
+            "mousemove 20,20 b0/0 m0,0",
+            "pointermove 25,30 b-1/0 id1P mouse m5,10",
+            "mousemove 25,30 b0/0 m5,10",
+            "pointerdown 25,30 b0/1 id1P mouse m0,0",
+            "mousedown 25,30 b0/1 m0,0",
+            "click 0,0 b0/0 m0,0",
+            "pointerup 25,30 b0/0 id1P mouse m0,0",
+            "mouseup 25,30 b0/0 m0,0",
+            "pointerdown 30,30 b2/2 id1P mouse m0,0",
+            "mousedown 30,30 b2/2 m0,0",
+            "pointerup 30,30 b2/0 id1P mouse m0,0",
+            "mouseup 30,30 b2/0 m0,0",
+            "pointermove 40,40 b-1/0 id1P mouse m3,-4",
+            "mousemove 40,40 b0/0 m3,-4",
+            "pointerdown 30,30 b0/1 id1P mouse m0,0",
+            "mousedown 30,30 b0/1 m0,0",
+            "click 0,0 b0/0 m0,0",
+            "pointercancel 30,30 b0/0 id1P mouse m0,0",
+            "pointerleave 30,30 b0/0 id1P mouse m0,0",
+            "vis hidden true",
+            "vis visible false",
+        ]
+    );
+}
+
+/// Pointer Lock and Fullscreen in the window
+/// (`browser/tests/ui/pointer_lock.html`): the requests are promises that
+/// need a user activation (rejected with `pointerlockerror` /
+/// `fullscreenerror` before one), `pointerLockElement` and
+/// `fullscreenElement`, the change events, relative motion as
+/// `movementX/Y` on the locked element, Escape and `exitPointerLock`.
+/// (Under SDL's dummy driver the DOM side is what is checked.)
+#[test]
+fn window_pointer_lock() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = "browser/tests/ui/pointer_lock.html";
+    let log = window_log(page, "click:50,70 move:70,90,13,-7 click:60,80");
+    assert_eq!(
+        log,
+        [
+            "start locked=true fs=true",
+            "promise true",
+            "pointerlockerror",
+            "lock rejected NotAllowedError",
+            "fullscreenerror",
+            "fs rejected TypeError",
+            "click active=true",
+            "pointerlockchange c",
+            "locked true",
+            "fullscreenchange c true",
+            "fullscreen true",
+            "pointermove m13,-7",
+            "mousemove 50,30 m13,-7",
+            "click active=true",
+            "locked true",
+            "fullscreen true",
+        ]
+    );
+    // Escape leaves both and is not a key of the page.
+    let esc = window_log(page, "click:50,70 key:escape key:x");
+    assert_eq!(
+        esc[esc.len() - 4..],
+        [
+            "pointerlockchange null",
+            "fullscreenchange null true",
+            "keydown x",
+            "exit asked",
+        ]
+    );
+    // exitPointerLock while locked.
+    let exit = window_log(page, "click:50,70 key:x");
+    assert_eq!(
+        exit[exit.len() - 3..],
+        ["keydown x", "exit asked", "pointerlockchange null"]
+    );
+}
+
 /// The History API in the window (`browser/tests/agent/site/spa.html`):
 /// buttons that call pushState change the address without loading, and
 /// back moves in the document (popstate shows item 2 again).
