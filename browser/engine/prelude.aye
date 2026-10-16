@@ -2268,6 +2268,15 @@ pub let PRELUDE =
     \\  else if (method === 'POST' || method === 'PUT') bytes = '';
     \\  return [url, method, lines, bytes, credentials];
     \\}
+    \\function blobResponse(url, method) {
+    \\  const blob = method === 'GET' ? blobStore.get(url.split('#')[0]) : undefined;
+    \\  if (!blob) return { error: 'blob URL not found' };
+    \\  return { status: 200, url, type: blob.type, body: new TextDecoder().decode(blob._array()), raw: blob._bytes };
+    \\}
+    \\function startFetch(url, method, headers, body, credentials, done) {
+    \\  if (url.startsWith('blob:')) return ak.imageTask(() => done(blobResponse(url, method)), 0);
+    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials), done);
+    \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
     \\function fetchTaken(x) {
@@ -2291,7 +2300,7 @@ pub let PRELUDE =
     \\      ak.clearTimer(task);
     \\      reject(signal.reason);
     \\    };
-    \\    const task = ak.fetchStart(...fetchArgs(req.url, req.method, req.headers, req._body, req.credentials), x => {
+    \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, x => {
     \\      const r = fetchTaken(x);
     \\      if (done) return;
     \\      done = true;
@@ -2899,16 +2908,19 @@ pub let PRELUDE =
     \\  if (how === 3) ak.imageTask(() => hostEvent(el, 'error'), 0);
     \\  if (how !== 2) return;
     \\  const entry = { el, ready: false };
+    \\  const blob = el.src.startsWith('blob:') ? blobStore.get(el.src.split('#')[0]) : undefined;
     \\  const ordered = !el.async;
     \\  if (ordered) scriptsInOrder.push(entry);
     \\  ak.scriptFetch(el, () => {
     \\    entry.ready = true;
-    \\    if (!ordered) runFetchedScript(el);
-    \\    else while (scriptsInOrder.length > 0 && scriptsInOrder[0].ready) runFetchedScript(scriptsInOrder.shift().el);
+    \\    entry.blob = blob;
+    \\    if (!ordered) runFetchedScript(entry);
+    \\    else while (scriptsInOrder.length > 0 && scriptsInOrder[0].ready) runFetchedScript(scriptsInOrder.shift());
     \\  });
     \\}
-    \\function runFetchedScript(el) {
-    \\  hostEvent(el, ak.scriptRun(el) ? 'load' : 'error');
+    \\function runFetchedScript({ el, blob }) {
+    \\  const gone = !blob && el.src.startsWith('blob:');
+    \\  hostEvent(el, !gone && ak.scriptRun(el, blob && new TextDecoder().decode(blob._array())) ? 'load' : 'error');
     \\}
     \\function resourceMutations(recs) {
     \\  for (let i = 0; i < recs.length; i += 7) {
@@ -3087,14 +3099,14 @@ pub let PRELUDE =
     \\      this._body = body;
     \\    }
     \\    this._sent = true;
-    \\    const args = fetchArgs(this._url, this._method, this._headers, this._body, this.withCredentials ? 'include' : 'same-origin');
+    \\    const credentials = this.withCredentials ? 'include' : 'same-origin';
     \\    if (!this._async) {
-    \\      this._load(ak.fetch(...args));
+    \\      this._load(this._url.startsWith('blob:') ? blobResponse(this._url, this._method) : ak.fetch(...fetchArgs(this._url, this._method, this._headers, this._body, credentials)));
     \\      return;
     \\    }
     \\    this._fire('loadstart');
     \\    if (!this._sent || this._task !== 0) return;
-    \\    this._task = ak.fetchStart(...args, x => {
+    \\    this._task = startFetch(this._url, this._method, this._headers, this._body, credentials, x => {
     \\      this._task = 0;
     \\      this._load(fetchTaken(x));
     \\    });
@@ -3270,8 +3282,15 @@ pub let PRELUDE =
     \\  abort() {}
     \\}
     \\hidden(G, 'FileReader', FileReader);
-    \\hidden(URL, 'createObjectURL', function (blob) { return 'blob:' + ak.urlPart('origin') + '/' + crypto.randomUUID(); });
-    \\hidden(URL, 'revokeObjectURL', function () {});
+    \\const blobStore = new Map();
+    \\hidden(URL, '_blobStore', blobStore);
+    \\hidden(URL, 'createObjectURL', function (blob) {
+    \\  if (!(blob instanceof Blob)) throw new TypeError("Failed to execute 'createObjectURL' on 'URL': Overload resolution failed.");
+    \\  const url = 'blob:' + ak.urlPart('origin') + '/' + crypto.randomUUID();
+    \\  blobStore.set(url, blob);
+    \\  return url;
+    \\});
+    \\hidden(URL, 'revokeObjectURL', function (url) { blobStore.delete(String(url).split('#')[0]); });
     \\
     \\// FormData: name/value pairs, from a form's successful controls (the
     \\// entries a submission sends, form_api.aye) when given one.

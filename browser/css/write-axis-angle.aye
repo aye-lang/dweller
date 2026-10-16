@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
+fn writeAxisAngle(v: [3]f64, deg: f64, out: *mut text.Builder) AllocError!void {
+    if v[0] != 0.0 && v[1] == 0.0 && v[2] == 0.0 {
+        try out.append("x ")
+
+        return writeDegrees(signed(deg, v[0]), out)
+    }
+
+    if v[0] == 0.0 && v[1] != 0.0 && v[2] == 0.0 {
+        try out.append("y ")
+
+        return writeDegrees(signed(deg, v[1]), out)
+    }
+
+    if v[0] == 0.0 && v[1] == 0.0 && v[2] != 0.0 {
+        return writeDegrees(signed(deg, v[2]), out)
+    }
+
+    for n in v {
+        try writeNumber(n, out)
+        try out.appendByte(' ')
+    }
+
+    try writeDegrees(deg, out)
+}
+
+fn signed(deg: f64, dir: f64) f64 {
+    if dir < 0.0 {
+        return -deg
+    }
+
+    return deg
+}
+
+fn writeDegrees(deg: f64, out: *mut text.Builder) AllocError!void {
+    try writeNumber(deg, out)
+    try out.append("deg")
+}

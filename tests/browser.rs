@@ -6363,6 +6363,84 @@ fn window_paints_early() {
     );
 }
 
+/// The console lines (`DWELLER_CONSOLE`) a window printed for a page in
+/// `browser/tests/ui/` driven by the script `events`.
+fn console_of(page: &str, events: &str, frames: &str) -> Vec<String> {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_CONSOLE", "1")
+        .args([
+            page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", frames,
+            "--events", events, "--text",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    text(&out.stderr)
+        .lines()
+        .filter_map(|l| l.strip_prefix("[log] "))
+        .map(String::from)
+        .collect()
+}
+
+fn position(lines: &[String], line: &str) -> usize {
+    lines
+        .iter()
+        .position(|l| l == line)
+        .unwrap_or_else(|| panic!("no {line:?} in {lines:?}"))
+}
+
+/// P4.55: a hidden window runs no animation frames (`window:hidden` is
+/// SDL's minimized event): none between the two `visibilitychange`
+/// events, and they run again once the window is shown.
+#[test]
+fn window_hidden_raf() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = "frame ".repeat(10);
+    let events = format!("painted {frames}window:hidden {frames}window:shown {frames}");
+    let lines = console_of("browser/tests/ui/hidden-raf.html", &events, "400");
+    let hidden = position(&lines, "vis hidden true");
+    let shown = position(&lines, "vis visible false");
+    assert!(hidden < shown, "{lines:?}");
+    assert!(lines[..hidden].iter().any(|l| l == "raf"), "{lines:?}");
+    assert!(!lines[hidden..shown].iter().any(|l| l == "raf"), "{lines:?}");
+    assert!(lines[shown..].iter().any(|l| l == "raf"), "{lines:?}");
+}
+
+/// P4.55: the tab in the background runs its 100 ms interval about once
+/// a second and no animation frame; both run as before when it is shown.
+#[test]
+fn window_background_tab_throttled() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = "frame ".repeat(300);
+    let events = format!(
+        "painted key:cmd+t text:browser/tests/ui/ text:hidden-tab-b.html key:return loaded {frames}key:cmd+1 {frames}"
+    );
+    let lines = console_of("browser/tests/ui/hidden-tab-a.html", &events, "1000");
+    let hidden = position(&lines, "a vis hidden");
+    let shown = position(&lines, "a vis visible");
+    let between = &lines[hidden..shown];
+    assert!(!between.iter().any(|l| l == "a raf"), "{lines:?}");
+    let ticks: Vec<u64> = between
+        .iter()
+        .filter_map(|l| l.strip_prefix("a tick ")?.parse().ok())
+        .collect();
+    assert!(ticks.len() >= 2, "the background tab's interval did not run: {lines:?}");
+    assert!(
+        ticks.windows(2).all(|w| w[1] - w[0] >= 900),
+        "ticks closer than a second: {ticks:?}"
+    );
+    let after = &lines[shown..];
+    assert!(after.iter().any(|l| l == "a raf"), "{lines:?}");
+    assert!(after.iter().filter(|l| l.starts_with("a tick ")).count() >= 5, "{lines:?}");
+}
+
 /// P4.46: back, forward and reload load in steps
 /// (`browser/tests/history/`: a sheet delayed 0.3 s and a script delayed
 /// 0.6 s that makes the page tall, neither cached). The page is painted

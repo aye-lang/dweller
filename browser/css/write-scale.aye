@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#propdef-scale
+fn writeScale(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    if comps.len == 0 || comps.len > 3 {
+        return false
+    }
+
+    var v = [3]f64{1.0, 1.0, 1.0}
+
+    for k, c in comps {
+        v[k] = scaleNumber(c) orelse return false
+    }
+
+    var n = comps.len
+
+    if n == 3 && v[2] == 1.0 {
+        n = 2
+    }
+
+    if n == 2 && v[1] == v[0] {
+        n = 1
+    }
+
+    for k in 0..n {
+        if k > 0 {
+            try out.appendByte(' ')
+        }
+
+        try writeNumber(v[k], out)
+    }
+
+    return true
+}

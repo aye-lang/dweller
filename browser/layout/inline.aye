@@ -762,26 +762,11 @@ struct LineBuilder {
                 extra = free / spaces as f64
             }
         }
-        // Vertical extent: the strut, then every piece's inline box.
-        let half = (self.strut.line_height - self.strut.ascent - self.strut.descent) / 2.0
-        var above = self.strut.ascent + half
-        var below = self.strut.descent + half
-        for p in kp {
-            if isOutOfFlow(p) {
-                continue
-            }
-            if p.kind == PieceKind.Atomic {
-                let b = self.t.bx(p.box)
-                let a = atomicAscent(self.t, p.box)
-                above = math.max(above, a)
-                below = math.max(below, b.margin[0] + b.h + b.margin[2] - a)
-            } else {
-                let m = textMetrics(self.t, self.t.bx(p.box).style)
-                let lh = (m.line_height - m.ascent - m.descent) / 2.0
-                above = math.max(above, m.ascent + lh)
-                below = math.max(below, m.descent + lh)
-            }
-        }
+        var al = try alignLine(self, kp)
+        defer al.deinit()
+        let above = al.above
+        let below = al.below
+        let shift = al.dy.items()[self.open.len()..]
         let baseline = self.y + above
         let line_index = self.t.lines.len()
         try self.t.lines.append(Line {
@@ -794,7 +779,7 @@ struct LineBuilder {
             frag_end: 0,
         })
         // A line with right-to-left text has its own order (bidi.aye).
-        if try bidiLine(self, kp, self.left + offset, extra, baseline) {
+        if try bidiLine(self, kp, self.left + offset, extra, baseline, &al) {
             self.t.lines.items()[line_index].frag_end = self.t.frags.len()
             try self.ellipsize(line_index, baseline, false)
             self.y += above + below
@@ -806,10 +791,10 @@ struct LineBuilder {
         defer stack.deinit()
         x = self.left + offset
         for d, ib in self.open.items() {
-            try stack.append(try self.inlineFrag(ib, d, x, baseline))
+            try stack.append(try self.inlineFrag(ib, d, x, baseline + al.dy.items()[d]))
         }
         var prev_text = false
-        for p in kp {
+        for j, p in kp {
             let px = x
             var w = p.w
             if p.kind == PieceKind.Space {
@@ -819,7 +804,7 @@ struct LineBuilder {
             match p.kind {
                 .Open => {
                     let fx = px + self.t.bx(p.box).margin[3]
-                    try stack.append(try self.inlineFrag(p.box, p.depth, fx, baseline))
+                    try stack.append(try self.inlineFrag(p.box, p.depth, fx, baseline + shift[j]))
                     try self.open.append(p.box)
                     prev_text = false
                 }
@@ -851,7 +836,7 @@ struct LineBuilder {
                             start: p.start,
                             end: p.end,
                             x: px + p.rel_x,
-                            y: baseline - m.ascent + p.rel_y,
+                            y: baseline + shift[j] - m.ascent + p.rel_y,
                             w: w,
                             h: m.ascent + m.descent,
                         })
@@ -861,7 +846,7 @@ struct LineBuilder {
                 .Atomic => {
                     let b = self.t.bx(p.box)
                     b.x = px + b.margin[3] + p.rel_x
-                    b.y = baseline - atomicAscent(self.t, p.box) + b.margin[0] + p.rel_y
+                    b.y = baseline + shift[j] - atomicAscent(self.t, p.box) + b.margin[0] + p.rel_y
                     try self.t.frags.append(Frag {
                         kind: FragKind.Atomic,
                         box: p.box,

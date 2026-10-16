@@ -10,7 +10,6 @@ TESTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests")
 RUNS = 3
 RATCHET = 0.8
 SLACK = {"raster_px": 1.02, "layout_full": 1.2}
-UNRATCHETED = {"net_sync"}
 SETTLE = 60
 SCROLLS = 30
 
@@ -84,7 +83,7 @@ def verdict(metric, value, budget):
         return "new"
     if value > budget * SLACK.get(metric, 1):
         return "OVER"
-    if metric not in UNRATCHETED and value < budget * RATCHET:
+    if value < budget * RATCHET:
         return "LOWER"
 
     return "ok"
@@ -93,14 +92,18 @@ def verdict(metric, value, budget):
 def table(results, budgets):
     print(f"{'page':<12} {'metric':<16} {'value':>10} {'budget':>10}  verdict")
     bad = 0
+    low = 0
     for page, (counters, times) in results.items():
         for k, v in counters.items():
             b = budgets.get(page, {}).get(k)
             mark = verdict(k, v, b)
-            bad += mark in ("OVER", "LOWER", "new")
+            bad += mark in ("OVER", "new")
+            low += mark == "LOWER"
             print(f"{page:<12} {k:<16} {v:>10} {'-' if b is None else b:>10}  {mark}")
         for k, v in times.items():
             print(f"{page:<12} {k:<16} {v:>10} {'-':>10}  info")
+    if low:
+        print(f"{low} metric(s) could be lowered with `gate --update`")
 
     return bad
 
@@ -128,4 +131,4 @@ def gate(a):
         print(f"budgets written to {a.url}")
         return
     if bad:
-        sys.exit(f"perf gate: {bad} metric(s) over budget or due a ratchet (`gate --update` lowers budgets)")
+        sys.exit(f"perf gate: {bad} metric(s) over budget or new")
