@@ -1,0 +1,1007 @@
+// js/vm: the bytecode interpreter (BYTECODE.md section 2), behind
+// DWELLER_JS_VM=1. `invoke` asks `vmLookup` for a function's bytecode,
+// compiling it on the first call (compiler.aye); a function the
+// compiler does not support stays on the tree walker for good.
+//
+// The frame sits on `Interp.stack` right above the caller's
+// `[fn, this, args...]`: parameter i is register i - nparams, so the
+// arguments need no copy when they fill the parameters exactly (missing
+// ones are padded with undefined; with extra ones the parameters are
+// copied up). r0 is the accumulator's home: before an instruction that
+// may allocate (the BC_F_ALLOC flag) or call JS (ToPrimitive), the
+// accumulator is written there, so the collector, which marks the
+// stack, sees it (section 4). The accumulator is a local of the loop.
+//
+// The dispatch loop is one `match` on the opcode byte, which clang turns
+// into a jump table. Handler semantics follow V8
+// `src/interpreter/interpreter-generator.cc` (`IGNITION_HANDLER`s of the
+// loads, binary and Smi operators, `Inc`/`Dec`, `Negate`, `BitwiseNot`,
+// `ToNumeric`, `TestEqual*`, `TestLessThan` and the others), with the
+// numeric fast path inline and the spec paths delegated to `Interp`
+// (`add`, `binary`, `looseEquals`, `lessThan`). Copyright the V8 project
+// authors, BSD-3; see `browser/js/LICENSE-V8`.
+
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub struct VmState {
+    // Per AST function: its bytecode or why there is none.
+    funcs: List(VmFunc)
+    stats: bool
+    ninsns: u64
+    ncalls: u64
+}
+
+/// Turns the VM on when DWELLER_JS_VM=1 (once per engine).
+pub fn vmInit(it: *mut Interp) {
+    it.vm_checked = true
+    var on = false
+    if getenv("DWELLER_JS_VM".ptr) |p| {
+        on = p[0] == '1'
+    }
+    if !on {
+        return
+    }
+    var stats = false
+    if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
+        stats = p[0] == '1'
+    }
+    let st = it.alloc.create(VmState { funcs: List(VmFunc).init(it.alloc), stats: stats, ninsns: 0, ncalls: 0 }) catch |e| {
+        return
+    }
+    it.vm = st
+}
+
+/// Prints the statistics (DWELLER_JS_VM_STATS=1) and frees the code.
+pub fn vmDeinit(it: *mut Interp) {
+    if it.vm |st| {
+        if st.stats {
+            vmPrintStats(st) catch |e| {}
+        }
+        for f in st.funcs.items() {
+            if f.code |c| {
+                c.deinit()
+                it.alloc.destroy(c)
+            }
+        }
+        st.funcs.deinit()
+        it.alloc.destroy(st)
+        it.vm = null
+    }
+}
+
+struct VmReasonCount {
+    reason: []u8
+    n: u32
+}
+
+fn vmPrintStats(st: *mut VmState) AllocError!void {
+    let alloc = st.funcs.alloc
+    var compiled: u32 = 0
+    var fallback: u32 = 0
+    var reasons = List(VmReasonCount).init(alloc)
+    defer reasons.deinit()
+    for f in st.funcs.items() {
+        if !f.tried {
+            continue
+        }
+        if f.code != null {
+            compiled += 1
+            continue
+        }
+        fallback += 1
+        var found = false
+        for k in 0..reasons.len() {
+            if text.eql(reasons.items()[k].reason, f.reason) {
+                reasons.items()[k].n += 1
+                found = true
+            }
+        }
+        if !found {
+            try reasons.append(VmReasonCount { reason: f.reason, n: 1 })
+        }
+    }
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append("vm: ")
+    try b.appendUint(compiled as u64)
+    try b.append(" functions compiled, ")
+    try b.appendUint(fallback as u64)
+    try b.append(" on the tree walker, ")
+    try b.appendUint(st.ncalls)
+    try b.append(" calls, ")
+    try b.appendUint(st.ninsns)
+    try b.append(" instructions\n")
+    // most frequent first
+    let rs = reasons.items()
+    for i in 0..rs.len {
+        for j in i + 1..rs.len {
+            if rs[j].n > rs[i].n {
+                let t = rs[i]
+                rs[i] = rs[j]
+                rs[j] = t
+            }
+        }
+    }
+    for r in rs {
+        try b.append("vm: ")
+        try b.appendUint(r.n as u64)
+        try b.append(" ")
+        try b.append(r.reason)
+        try b.appendByte('\n')
+    }
+    std.fs.stderr().write(b.bytes()) catch |e| {}
+}
+
+/// The bytecode of AST function `func`, compiled on its first call; null
+/// when the compiler does not support it.
+pub fn vmLookup(it: *mut Interp, st: *mut VmState, func: u32) JsError!?VmFunc {
+    while st.funcs.len() <= func as usize {
+        try st.funcs.append(VmFunc { code: null, this_reg: -1, reason: "", tried: false })
+    }
+    var f = st.funcs.items()[func]
+    if !f.tried {
+        f = try compileFunction(it.alloc, &it.ast, func)
+        st.funcs.items()[func] = f
+    }
+    if f.code == null {
+        return null
+    }
+    return f
+}
+
+/// Runs compiled function `func` (`invoke`'s arguments).
+pub fn vmCall(it: *mut Interp, st: *mut VmState, vf: VmFunc, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
+    if vf.code |code| {
+        return vmEnter(it, st, code, vf.this_reg, func, fobj, thisv, argBase, argc, newTarget)
+    }
+    unreachable
+}
+
+fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!Value {
+    st.ncalls += 1
+    let mark = it.stack.len()
+    let np = code.nparams as usize
+    if argBase + argc == mark && argc <= np {
+        for _ in argc..np {
+            try it.push(Value.Undefined)
+        }
+    } else {
+        for i in 0..np {
+            if i < argc {
+                try it.push(it.slot(argBase + i))
+            } else {
+                try it.push(Value.Undefined)
+            }
+        }
+    }
+    let fp = it.stack.len()
+    for _ in 0..code.nregs {
+        try it.push(Value.Undefined)
+    }
+    if this_reg >= 0 {
+        let fi = it.ast.func(func)
+        var t = thisv
+        // Sloppy mode: a call without `this` gets the global object.
+        if !fi.strict && !fi.arrow && isNullish(thisv) {
+            t = objVal(it.global)
+        }
+        it.stack.items()[fp + this_reg as usize] = t
+    }
+    try it.frames.append(Frame { func: fobj, env: it.env, this_obj: it.derived_this, new_target: newTarget })
+    it.derived_this = NONE
+    defer {
+        it.ctor_this = it.frames.items()[it.frames.len() - 1].this_obj
+        it.frames.pop()
+        it.truncate(mark)
+    }
+    return vmRun(it, st, code, fp)
+}
+
+// The operator of a binary or Smi opcode, for the generic path.
+fn vmBinaryOp(op: u8) Op {
+    var o = op
+    if o >= BC_ADD_SMI && o <= BC_SHIFT_RIGHT_LOGICAL_SMI {
+        o = o - (BC_ADD_SMI - BC_ADD)
+    }
+    return match o {
+        13 => Op.Add
+        14 => Op.Sub
+        15 => Op.Mul
+        16 => Op.Div
+        17 => Op.Mod
+        18 => Op.Exp
+        19 => Op.BitOr
+        20 => Op.BitXor
+        21 => Op.BitAnd
+        22 => Op.Shl
+        23 => Op.Shr
+        24 => Op.UShr
+        45 => Op.Eq
+        47 => Op.Lt
+        48 => Op.Gt
+        49 => Op.Le
+        50 => Op.Ge
+        _ => Op.None
+    }
+}
+
+// `lhs op rhs` off the numeric fast path; both are rooted (lhs in a
+// register or a constant, rhs written to r0 by the caller).
+fn vmSlowBinary(it: *mut Interp, op: u8, lhs: Value, rhs: Value) JsError!Value {
+    let o = vmBinaryOp(op)
+    if o == Op.Add {
+        return it.add(lhs, rhs)
+    }
+    return it.binary(o, lhs, rhs)
+}
+
+// Negate, BitwiseNot and ToNumber (unary `+`) of a rooted value: the
+// tree walker's `evalUnary`.
+fn vmSlowUnary(it: *mut Interp, fp: usize, op: Op, v: Value) JsError!Value {
+    let p = try it.toPrimitiveHint(v, 1)
+    it.stack.items()[fp] = p
+    if isBig(p) {
+        return bigUnary(it, op, p)
+    }
+    let x = try it.toNumber(p)
+    if op == Op.Neg {
+        return numVal(-x)
+    }
+    if op == Op.BitNot {
+        return numVal((~toInt32(x)) as f64)
+    }
+    return numVal(x)
+}
+
+fn vmSlowIncrement(it: *mut Interp, fp: usize, v: Value, inc: bool) JsError!Value {
+    let p = try numericValue(it, v)
+    it.stack.items()[fp] = p
+    return numericIncrement(it, p, inc)
+}
+
+// A signed operand of width w at bytes[at] (bcGet, with the one-byte
+// case first).
+fn vmImm(bytes: []u8, at: usize, w: u8) i64 {
+    if w == 1 {
+        let b = bytes[at] as i64
+        if b >= 128 {
+            return b - 256
+        }
+        return b
+    }
+    return bcGet(bytes, at, w, true)
+}
+
+// An unsigned operand (a constant-pool index).
+fn vmIdx(bytes: []u8, at: usize, w: u8) i64 {
+    if w == 1 {
+        return bytes[at] as i64
+    }
+    return bcGet(bytes, at, w, false)
+}
+
+/// The dispatch loop: runs `code` with its registers at stack[fp..].
+fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize) JsError!Value {
+    let bytes = code.code
+    let consts = code.consts
+    let count = st.stats
+    let base = fp as i64
+    var acc = Value.Undefined
+    // reloaded after anything that may call JS (the stack may move)
+    var regs = it.stack.items()
+    var pc: usize = 0
+    while true {
+        if count {
+            st.ninsns += 1
+        }
+        var op = bytes[pc]
+        var w: u8 = 1
+        if op <= 1 {
+            // Wide, ExtraWide
+            w = 2
+            if op == 1 {
+                w = 4
+            }
+            pc += 1
+            op = bytes[pc]
+        }
+        pc += 1
+        match op {
+            2 => {
+                // LdaZero
+                acc = Value.Num { n: 0.0 }
+            }
+            3 => {
+                // LdaSmi imm
+                acc = Value.Num { n: vmImm(bytes, pc, w) as f64 }
+                pc += w as usize
+            }
+            4 => {
+                // LdaUndefined
+                acc = Value.Undefined
+            }
+            5 => {
+                // LdaNull
+                acc = Value.Null
+            }
+            6 => {
+                // LdaTheHole
+                acc = Value.Empty
+            }
+            7 => {
+                // LdaTrue
+                acc = Value.Bool { b: true }
+            }
+            8 => {
+                // LdaFalse
+                acc = Value.Bool { b: false }
+            }
+            9 => {
+                // LdaConstant k
+                let k = vmIdx(bytes, pc, w) as usize
+                pc += w as usize
+                match consts[k] {
+                    .Num { v } => {
+                        acc = Value.Num { n: v }
+                    }
+                    .Atom { id } => {
+                        acc = try it.atomValue(id)
+                        regs = it.stack.items()
+                    }
+                    _ => unreachable
+                }
+            }
+            10 => {
+                // Ldar r
+                acc = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += w as usize
+            }
+            11 => {
+                // Star r
+                regs[(base + vmImm(bytes, pc, w)) as usize] = acc
+                pc += w as usize
+            }
+            12 => {
+                // Mov r_src, r_dst
+                let s = vmImm(bytes, pc, w)
+                let d = vmImm(bytes, pc + w as usize, w)
+                let sv = regs[(base + s) as usize]
+                regs[(base + d) as usize] = sv
+                pc += 2 * w as usize
+            }
+            13 => {
+                // Add r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: x + y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try it.add(lhs, acc)
+                regs = it.stack.items()
+            }
+            14 => {
+                // Sub r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: x - y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            15 => {
+                // Mul r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: x * y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            16 => {
+                // Div r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: x / y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            17 => {
+                // Mod r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: jsMod(x, y) }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            18 => {
+                // Exp r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: arith(Op.Exp, x, y) }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            19 => {
+                // BitwiseOr r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toInt32(x) | toInt32(y)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            20 => {
+                // BitwiseXor r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toInt32(x) ^ toInt32(y)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            21 => {
+                // BitwiseAnd r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toInt32(x) & toInt32(y)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            22 => {
+                // ShiftLeft r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toInt32(x) << ((toUint32(y) & 31) as i32)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            23 => {
+                // ShiftRight r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toInt32(x) >> ((toUint32(y) & 31) as i32)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            24 => {
+                // ShiftRightLogical r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Num { n: (toUint32(x) >> (toUint32(y) & 31)) as f64 }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try vmSlowBinary(it, op, lhs, acc)
+                regs = it.stack.items()
+            }
+            25 => {
+                // AddSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: x + y }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try it.add(acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            26 => {
+                // SubSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: x - y }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            27 => {
+                // MulSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: x * y }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            28 => {
+                // DivSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: x / y }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            29 => {
+                // ModSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: jsMod(x, y) }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            30 => {
+                // ExpSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: arith(Op.Exp, x, y) }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            31 => {
+                // BitwiseOrSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toInt32(x) | toInt32(y)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            32 => {
+                // BitwiseXorSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toInt32(x) ^ toInt32(y)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            33 => {
+                // BitwiseAndSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toInt32(x) & toInt32(y)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            34 => {
+                // ShiftLeftSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toInt32(x) << ((toUint32(y) & 31) as i32)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            35 => {
+                // ShiftRightSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toInt32(x) >> ((toUint32(y) & 31) as i32)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            36 => {
+                // ShiftRightLogicalSmi imm, [s]
+                let y = vmImm(bytes, pc, w) as f64
+                pc += 2 * w as usize
+                match acc {
+                    .Num { n: x } => {
+                        acc = Value.Num { n: (toUint32(x) >> (toUint32(y) & 31)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            37 => {
+                // Inc [s]
+                pc += w as usize
+                match acc {
+                    .Num { n } => {
+                        acc = Value.Num { n: n + 1.0 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowIncrement(it, fp, acc, true)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            38 => {
+                // Dec [s]
+                pc += w as usize
+                match acc {
+                    .Num { n } => {
+                        acc = Value.Num { n: n + -1.0 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowIncrement(it, fp, acc, false)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            39 => {
+                // Negate [s]
+                pc += w as usize
+                match acc {
+                    .Num { n } => {
+                        acc = Value.Num { n: -n }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowUnary(it, fp, Op.Neg, acc)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            40 => {
+                // BitwiseNot [s]
+                pc += w as usize
+                match acc {
+                    .Num { n } => {
+                        acc = Value.Num { n: (~toInt32(n)) as f64 }
+                    }
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowUnary(it, fp, Op.BitNot, acc)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            41 => {
+                // ToNumeric [s]
+                pc += w as usize
+                match acc {
+                    .Num { .. } => {}
+                    _ => {
+                        regs[fp] = acc
+                        acc = try numericValue(it, acc)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            42 => {
+                // LogicalNot (a boolean)
+                acc = Value.Bool { b: !it.toBoolean(acc) }
+            }
+            43 => {
+                // ToBooleanLogicalNot
+                acc = Value.Bool { b: !it.toBoolean(acc) }
+            }
+            44 => {
+                // TypeOf
+                regs[fp] = acc
+                acc = try it.atomValue(try it.intern(it.typeOf(acc)))
+                regs = it.stack.items()
+            }
+            45 => {
+                // TestEqual r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Bool { b: x == y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = Value.Bool { b: try it.looseEquals(lhs, acc) }
+                regs = it.stack.items()
+            }
+            46 => {
+                // TestEqualStrict r, [s]
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                acc = Value.Bool { b: it.strictEquals(lhs, acc) }
+            }
+            47 => {
+                // TestLessThan r, [s]: r op acc
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Bool { b: x < y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try it.binary(vmBinaryOp(op), lhs, acc)
+                regs = it.stack.items()
+            }
+            48 => {
+                // TestGreaterThan r, [s]: r op acc
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Bool { b: x > y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try it.binary(vmBinaryOp(op), lhs, acc)
+                regs = it.stack.items()
+            }
+            49 => {
+                // TestLessThanOrEqual r, [s]: r op acc
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Bool { b: x <= y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try it.binary(vmBinaryOp(op), lhs, acc)
+                regs = it.stack.items()
+            }
+            50 => {
+                // TestGreaterThanOrEqual r, [s]: r op acc
+                let lhs = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 2 * w as usize
+                match lhs {
+                    .Num { n: x } => {
+                        match acc {
+                            .Num { n: y } => {
+                                acc = Value.Bool { b: x >= y }
+                                continue
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                regs[fp] = acc
+                acc = try it.binary(vmBinaryOp(op), lhs, acc)
+                regs = it.stack.items()
+            }
+            72 => {
+                // Return
+                return acc
+            }
+            73 => {
+                // ToNumber [s]
+                pc += w as usize
+                match acc {
+                    .Num { .. } => {}
+                    _ => {
+                        regs[fp] = acc
+                        acc = try vmSlowUnary(it, fp, Op.Plus, acc)
+                        regs = it.stack.items()
+                    }
+                }
+            }
+            _ => {
+                // not emitted by the compiler yet (P4.64 and later)
+                unreachable
+            }
+        }
+    }
+    return acc
+}
