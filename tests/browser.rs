@@ -677,6 +677,51 @@ fn webgl_textures() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
+/// on SwiftShader, served over HTTP (the page fetches a PNG), prints
+/// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
+/// canvas sources, the crop rectangle (negative sizes, outside the
+/// source, RangeError), imageOrientation, premultiplyAlpha, the resize
+/// options, close(), and a Blob bitmap uploaded with texImage2D and read
+/// back. The pixels of the bitmaps come through a 2D canvas.
+#[test]
+fn imagebitmap_sources() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = Command::new(dweller())
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/webgl/imagebitmap.html", srv.base),
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/imagebitmap.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/wasm/X.html` (P11.17, the WebAssembly JS API on
 /// wasmtime): `dweller dump --text --js` must print `X.txt` with an empty
 /// stderr. Without libwasmtime (browser/wasm/fetch_wasmtime.sh not run)
@@ -714,6 +759,75 @@ fn wasm_api() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// `browser/tests/audio/core.html` (P11.19, Web Audio core): an
+/// OfflineAudioContext renders a looped buffer through a gain with
+/// linear, exponential and setTarget automation. Its `samples` line must
+/// match the values computed here within 1e-4; the other lines must be
+/// `core.txt`, with an empty stderr. No audio device is used.
+#[test]
+fn webaudio_core() {
+    let page = "browser/tests/audio/core.html";
+    let golden = root().join("browser/tests/audio/core.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let samples = got
+        .lines()
+        .find_map(|l| l.strip_prefix("samples "))
+        .unwrap_or_else(|| panic!("no samples line:\n{got}"));
+    let rest: String = got
+        .lines()
+        .filter(|l| !l.starts_with("samples "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &rest).unwrap();
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(rest, want, "differs from {}", golden.display());
+
+    // 8000 Hz; the 10-frame buffer loops from frame 80 (0.01 s) and stops
+    // at 0.19 s; the gain is 0 -> 1 linear to 0.05 s, exponential to 0.25
+    // at 0.1 s, then setTarget(0, 0.1, 0.01).
+    let data: Vec<f32> = (0..10)
+        .map(|i| ((i + 1) as f64 / 10.0 - 0.5) as f32)
+        .collect();
+    let got: Vec<f64> = samples.split(',').map(|v| v.parse().unwrap()).collect();
+    assert_eq!(got.len(), 1600);
+    let mut worst = (0.0f64, 0usize);
+    for (f, &g) in got.iter().enumerate() {
+        let t = f as f64 / 8000.0;
+        let src = if (80..1520).contains(&f) {
+            data[(f - 80) % 10] as f64
+        } else {
+            0.0
+        };
+        let gain = if t < 0.05 {
+            t / 0.05
+        } else if t < 0.1 {
+            0.25f64.powf((t - 0.05) / 0.05)
+        } else {
+            0.25 * (-(t - 0.1) / 0.01).exp()
+        };
+        let err = (g - src * gain).abs();
+        if err > worst.0 {
+            worst = (err, f);
+        }
+    }
+    assert!(
+        worst.0 < 1e-4,
+        "frame {} is off by {} (got {})",
+        worst.1,
+        worst.0,
+        got[worst.1]
+    );
 }
 
 /// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
@@ -840,7 +954,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | gpu-smoke | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -3759,6 +3873,76 @@ fn js_command_line() {
             && out.contains("Constant pool (size = 1)\n"),
         "{out}"
     );
+}
+
+// P10.3: `dweller js --test262` and browser/tools/test262.py over the
+// fixtures in browser/tests/test262.
+#[test]
+fn test262_runner() {
+    let hooks = root().join("target").join("t262-hooks.js");
+    std::fs::create_dir_all(hooks.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hooks,
+        "print('p'); print($262.global === globalThis); \
+         print($262.evalScript('var q = 4; q + 1'));\n\
+         var ab = new ArrayBuffer(8); $262.detachArrayBuffer(ab); $262.gc(); print(ab.byteLength);\n",
+    )
+    .unwrap();
+    let hooks = hooks.to_str().unwrap().to_string();
+    expect(&["js", "--test262", &hooks], 0, "p\ntrue\n5\n0\n", "");
+    // without the flag there is no print or $262
+    let plain = run(&["js", &hooks]);
+    assert_eq!(plain.status.code(), Some(1));
+    assert!(
+        text(&plain.stderr).starts_with("Uncaught ReferenceError"),
+        "{}",
+        text(&plain.stderr)
+    );
+
+    let tool = root().join("browser").join("tools").join("test262.py");
+    let fixtures = root().join("browser").join("tests").join("test262");
+    let out = root().join("target").join("t262-fixtures");
+    let res = Command::new("python3")
+        .arg(&tool)
+        .args(["run", "test", "-j", "4", "--root"])
+        .arg(&fixtures)
+        .arg("--dweller")
+        .arg(dweller())
+        .arg("--out")
+        .arg(&out)
+        .output();
+    let Ok(res) = res else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    assert!(res.status.success(), "{}", text(&res.stderr));
+    let stdout = text(&res.stdout);
+    assert!(
+        stdout.contains("test262 test: 8/11 passed (72.7%), 1 skipped"),
+        "{stdout}"
+    );
+    let json = std::fs::read_to_string(out.join("test.json")).unwrap();
+    for (name, status) in [
+        ("test/pass/basic.js", "pass"),
+        ("test/pass/skipped.js", "skip"),
+        ("test/fail/wrong.js", "fail"),
+        ("test/negative/parse.js", "pass"),
+        ("test/negative/runtime.js", "pass"),
+        ("test/negative/missing.js", "fail"),
+        ("test/async/promise.js", "pass"),
+        ("test/async/never.js", "fail"),
+        ("test/strict/only.js", "pass"),
+        ("test/strict/both.js", "pass"),
+        ("test/strict/nostrict.js", "pass"),
+        ("test/module/basic.js", "pass"),
+    ] {
+        let at = json
+            .find(&format!("\"{name}\""))
+            .unwrap_or_else(|| panic!("{name}: {json}"));
+        let rest = &json[at..];
+        let line = &rest[..rest.find(']').unwrap()];
+        assert!(line.contains(&format!("\"{status}\"")), "{name}: {line}");
+    }
 }
 
 // ---- page scripts and the DOM bindings (browser/engine/script.aye)
