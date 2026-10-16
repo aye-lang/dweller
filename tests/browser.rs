@@ -6108,9 +6108,8 @@ fn window_raf_vsync() {
         println!("skipped: no SDL2");
         return;
     }
-    let mut window = Command::new(dweller())
+    let mut window = dweller_command()
         .current_dir(root())
-        .env("SDL_VIDEODRIVER", "dummy")
         .env("DWELLER_TIMING", "1")
         .args([
             "browser/tests/ui/raf_vsync.html",
@@ -6202,6 +6201,50 @@ fn window_hover_during_scripts() {
     );
     let want = format!("\nstatus {}/net/link6.html", srv.base);
     assert!(got.contains(&want), "expected {want:?} in:\n{got}");
+}
+
+/// P11.24b: the window does not end a task of the page. A script that
+/// runs 4 s of CPU (`browser/tests/ui/long_task.html`) finishes and sets
+/// its marker, and the window then handles the typed input. `dump` keeps
+/// the step budget: a script without end is terminated and the page goes
+/// on.
+#[test]
+fn window_long_task() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/long_task.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "4",
+        "--events",
+        "frame text:abc frame frame",
+        "--text",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("ran 4 s, typed abc"), "{got}");
+    let out = run(&["dump", "--text", "--js", "browser/tests/ui/long_task_forever.html"]);
+    let got = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(got.contains("before") && !got.contains("ran\n"), "{got}");
+    assert!(
+        got.contains("Script terminated: it ran too long")
+            || text(&out.stderr).contains("Script terminated: it ran too long"),
+        "{got}"
+    );
 }
 
 /// P4.33: the window paints a page once its document and its sheet are

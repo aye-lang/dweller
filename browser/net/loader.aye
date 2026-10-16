@@ -89,6 +89,7 @@ struct Loader {
     // CURLcode once done (-1 before).
     waiting: ?*mut Curl
     waited: i32
+    pumped: u64
 }
 
 var loader: ?*mut Loader = null
@@ -200,6 +201,7 @@ pub fn loadsRunning() bool {
 /// read, finished loads are kept.
 pub fn pumpLoads() {
     let ld = loader orelse return
+    extendForStall(ld)
     if !anyRunning(ld) {
         return
     }
@@ -215,6 +217,7 @@ pub fn pumpLoads() {
 /// bound it: 10 s to connect, 30 s in all per hop).
 pub fn waitLoad(id: u32) {
     let ld = loader orelse return
+    extendForStall(ld)
     while true {
         let l = loadById(ld, id) orelse return
         if l.state != LoadState.Running {
@@ -554,6 +557,7 @@ fn loaderOf(s: *mut Session) ?*mut Loader {
         next_id: 1,
         waiting: null,
         waited: -1,
+        pumped: std.time.monotonicMs(),
     }) catch |e| {
         curl_multi_cleanup(m)
         return null
