@@ -2,7 +2,7 @@
 """A run of the user's game in Dweller (docs/plans/browser.md P11.24a).
 Standard library only.
 
-    game_check.py GAME [--binary B] [--out DIR] [--seconds S]
+    game_check.py GAME [--binary B] [--out DIR] [--seconds S] [--real-window]
 
 GAME is a built copy of the game (a directory with dist/, or dist/
 itself); it is never part of the repo. The tool serves dist/ on
@@ -14,6 +14,9 @@ window at 1280x720 for about S seconds of frames with key events
 (target/game). It prints, per page, the console errors grouped by cause
 and, for the window, the frame rate. Exit 0 means the tool ran, not that
 the game works.
+
+The window uses SDL's dummy video driver; --real-window opens a real one
+that does not take the focus (DWELLER_BACKGROUND=1).
 """
 import argparse
 import functools
@@ -24,6 +27,8 @@ import subprocess
 import sys
 import threading
 import time
+
+from window_env import window_env
 
 CAUSES = [
     ("worker", re.compile(r"Worker|postMessage|importScripts")),
@@ -119,7 +124,7 @@ def fps(times):
 
 def window_check(a, base):
     frames = int(a.seconds * 60)
-    env = dict(os.environ, DWELLER_TIMING="1", DWELLER_CONSOLE="1")
+    env = window_env(a.real_window, DWELLER_TIMING="1", DWELLER_CONSOLE="1")
     shot = os.path.join(a.out, "index.window.png")
     cmd = [a.binary, f"{base}/index.html", "--width", "1280", "--height", "720", "--frames", str(frames), "--events", events(frames), "--save", shot]
     log = os.path.join(a.out, "index.window.log")
@@ -164,6 +169,7 @@ def main():
     ap.add_argument("--binary", default="target/dweller")
     ap.add_argument("--out", default="target/game")
     ap.add_argument("--seconds", type=float, default=10)
+    ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
     a = ap.parse_args()
     if not os.path.exists(a.binary):
         sys.exit(f"no binary {a.binary} (browser/build.sh)")
