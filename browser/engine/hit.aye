@@ -126,7 +126,7 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
     }
     let b = t.bx(i).*
     if clips(t, i) && !inside(x, y, b.ax + b.border[3], b.ay + b.border[0], b.w - b.border[1] - b.border[3], b.h - b.border[0] - b.border[2]) {
-        if inside(x, y, b.ax, b.ay, b.w, b.h) {
+        if inside(x, y, b.ax, b.ay, b.w, b.h) && !passesThrough(t, i) {
             return b.node
         }
         return null
@@ -146,7 +146,7 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
                     if hitBox(t, f.box, x, y, layer) |n| {
                         return n
                     }
-                } else if inside(x, y, cx + f.x, cy + f.y, f.w, f.h) {
+                } else if inside(x, y, cx + f.x, cy + f.y, f.w, f.h) && !passesThrough(t, f.box) {
                     if nodeOf(t, f.box) |n| {
                         return n
                     }
@@ -166,7 +166,7 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
             }
         }
     }
-    if b.kind != BoxKind.Inline && b.kind != BoxKind.Text && inside(x, y, b.ax, b.ay, b.w, b.h) {
+    if b.kind != BoxKind.Inline && b.kind != BoxKind.Text && inside(x, y, b.ax, b.ay, b.w, b.h) && !passesThrough(t, i) {
         return nodeOf(t, i)
     }
     return null
