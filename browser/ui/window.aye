@@ -656,6 +656,9 @@ pub struct Ui {
                 }
                 perf.end("ui_timers", t_timers, "")
             }
+
+            try showLongTask(self)
+
             var ev = @zeroed(SDL_Event)
             var timeout: i32 = 1000
             if frames > 0 {
@@ -1236,7 +1239,7 @@ pub struct Ui {
                     _ = layout.scrollTo(t, self.list_scroll)
                 }
                 let y = snappedScroll(self.tab.scroll, self.scale)
-                if t.scroll_y != y && layout.scrollTo(t, y) {
+                if t.scroll_y != y && layout.scrollTo(t, y) && (self.list == null || !paint.followPinned(&mut self.list.?, self.page.sigs.items(), t)) {
                     self.relist = true
                 }
                 // Else `list` is right at this offset too.
