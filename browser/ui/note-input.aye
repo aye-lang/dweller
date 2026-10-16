@@ -1,0 +1,26 @@
+import perf
+
+fn noteInput(ui: *mut Ui, ev: *SDL_Event) {
+    let k = ev.kind
+    let pressed = k == SDL_KEYDOWN || k == SDL_TEXTINPUT || k == SDL_MOUSEBUTTONDOWN || k == SDL_MOUSEWHEEL
+
+    if ui.input_ns != 0 || !pressed {
+        return
+    }
+
+    let began = perf.start()
+    let at = ev.key.timestamp
+    let ticks = SDL_GetTicks()
+
+    if began == 0 {
+        return
+    }
+
+    var age: u64 = 0
+
+    if at != 0 && at <= ticks {
+        age = (ticks - at) as u64 * 1000000
+    }
+
+    ui.input_ns = began - age
+}

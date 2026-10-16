@@ -455,9 +455,9 @@ compositor thread.
 
 ## 6. Frame timing and the APIs games need
 
-**Frame timing (P11.10).**
+**Frame timing (P11.10, done 2026-10-16; status in `docs/plans/browser.md`).**
 
-- **Today:**
+- **Before P11.10:**
   - `requestAnimationFrame` is a 16 ms timer
     (`browser/engine/prelude.aye`), so it is not aligned to the
     display. Each callback gets its own time.

@@ -1,0 +1,32 @@
+<!doctype html><p id="result">running</p><script>
+const stamps = [];
+const nows = [];
+let same = true;
+function busy(ms) {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {}
+}
+function frame(t) {
+  const n = stamps.length;
+  stamps.push(t);
+  nows.push(performance.now());
+  busy(1);
+  if (stamps.length < 120) {
+    requestAnimationFrame(frame);
+    requestAnimationFrame((u) => { if (u !== stamps[n + 1]) same = false; });
+  } else {
+    report();
+  }
+}
+function report() {
+  const gaps = [];
+  for (let i = 1; i < stamps.length; i++) gaps.push(stamps[i] - stamps[i - 1]);
+  gaps.sort((a, b) => a - b);
+  const median = gaps[gaps.length >> 1];
+  const fractional = nows.some((v) => v !== Math.floor(v));
+  const coarse = nows.every((v) => Math.abs(v * 10 - Math.round(v * 10)) < 1e-6);
+  document.getElementById('result').textContent =
+    `frames ${stamps.length} same ${same} median ${median.toFixed(2)} fractional ${fractional} coarse ${coarse}`;
+}
+requestAnimationFrame(frame);
+</script>

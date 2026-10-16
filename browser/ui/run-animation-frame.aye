@@ -1,0 +1,37 @@
+import engine
+import perf
+import std.mem.AllocError
+
+extern fn aye_std_monotonic_ns() u64
+
+// spec: https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+fn runAnimationFrame(ui: *mut Ui) AllocError!void {
+    let p = ui.tab.page orelse return
+    let now = aye_std_monotonic_ns()
+
+    if ui.tab.stepping && !engine.scriptsRan(p) {
+        return
+    }
+
+    if now < ui.next_frame_ns || !engine.animationFrameRequested(p) {
+        return
+    }
+
+    var frame_ns = ui.next_frame_ns
+
+    if now - frame_ns >= ui.frame_ns {
+        frame_ns = now
+    }
+
+    ui.next_frame_ns = frame_ns + ui.frame_ns
+    let began = perf.start()
+
+    if try engine.runAnimationFrames(p, frame_ns) {
+        ui.from_timers = true
+        defer ui.from_timers = false
+        try ui.afterScripts()
+        contextMayChange(ui)
+    }
+
+    perf.end("ui_raf", began, "")
+}
