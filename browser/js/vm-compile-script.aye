@@ -1,0 +1,42 @@
+// v8: src/interpreter/bytecode-generator.cc (GenerateBytecode)
+
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn compileScript(alloc: Allocator, ast: *Ast, root: u32) AllocError!VmFunc {
+    var c = Compiler {
+        alloc: alloc,
+        ast: ast,
+        b: BcBuilder.init(alloc, 0),
+        func: NONE,
+        scopes: List(u32).init(alloc),
+        tdz: List(bool).init(alloc),
+        this_reg: -1,
+        reason: "",
+        ctl: List(Ctl).init(alloc),
+        pending: List(u32).init(alloc),
+        ctxregs: List(i32).init(alloc),
+    }
+
+    defer {
+        c.ctl.deinit()
+        c.pending.deinit()
+        c.ctxregs.deinit()
+        c.b.deinit()
+        c.scopes.deinit()
+        c.tdz.deinit()
+    }
+
+    vmVisitScript(&mut c, root) catch |e| {
+        if c.reason.len == 0 {
+            return AllocError.OutOfMemory
+        }
+
+        return VmFunc { code: null, this_reg: -1, reason: c.reason }
+    }
+
+    let code = try alloc.create(try c.b.finish())
+
+    return VmFunc { code: code, this_reg: -1, reason: "" }
+}

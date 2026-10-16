@@ -1,0 +1,14 @@
+import dom.NodeId
+
+// blink: core/input/event_handler.cc
+pub fn clickTarget(page: *Page, el: NodeId) NodeId {
+    let t = page.tree orelse return el
+    let r = boxRect(page, el) orelse return el
+    let box = boxOf(t, el) orelse return el
+
+    if !passesThrough(t, box) {
+        return el
+    }
+
+    return elementAt(page, nodeAt(t, r.x + r.w / 2.0, r.y + r.h / 2.0) orelse return el)
+}

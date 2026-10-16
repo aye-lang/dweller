@@ -1,0 +1,13 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmInitBinding(c: *mut Compiler, target: u32) CompileError!void {
+    let id = vmIdent(c, target)
+
+    if id.depth >= DEPTH_GLOBAL_LEX {
+        try c.b.op1(BC_STA_GLOBAL_INIT, target as i64)
+
+        return
+    }
+
+    try vmStoreBinding(c, try c.identReg(id.depth, id.slot), id.depth, id.slot)
+}

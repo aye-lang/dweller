@@ -449,6 +449,13 @@ fn vmImm(bytes: []u8, at: usize, w: u8) i64 {
         }
         return b
     }
+    if w == 2 {
+        let v = (bytes[at] as i64) | ((bytes[at + 1] as i64) << 8)
+        if v >= 0x8000 {
+            return v - 0x10000
+        }
+        return v
+    }
     return bcGet(bytes, at, w, true)
 }
 
@@ -1407,12 +1414,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 let id = vmIdx(bytes, pc, w) as u32
                 pc += w as usize
                 regs[fp] = acc
-                match it.ast.node(id) {
-                    .Ident { name, depth: d, slot, .. } => {
-                        acc = try it.readIdent(id, name, d, slot)
-                    }
-                    _ => unreachable
-                }
+                acc = try vmLdaGlobal(it, id)
                 regs = it.stack.items()
             }
             75 => {
@@ -1653,6 +1655,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, code0: *BytecodeArray, fp0: usize, 
                 pc += w as usize
                 regs[fp] = acc
                 try it.heap.pushElem(o, acc)
+                regs = it.stack.items()
+            }
+            102 => {
+                // v8: src/interpreter/interpreter-generator.cc (StaGlobal)
+                regs[fp] = acc
+                try it.assignIdent(vmIdx(bytes, pc, w) as u32, acc, true)
+                pc += w as usize
                 regs = it.stack.items()
             }
             _ => {

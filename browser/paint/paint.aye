@@ -117,6 +117,7 @@ pub struct DisplayList {
     height: f64
     // The window's promoted layers (`buildPromoted`).
     layers: List(Promoted)
+    unpinned: bool = false
 
     pub fn deinit(self: *mut Self) {
         self.items.deinit()
@@ -447,10 +448,12 @@ struct Builder {
             var k: usize = 0
             restorePlaces(self.t, i, saved.items(), &mut k)
         }
+        let pinned = pinScroll(self, i)
+        defer unpinScroll(self, i, pinned)
         let o = opacityOf(self.t.bx(i).style)
         var f = try filterOf(self.t, self.t.bx(i).style)
         var group: ?usize = null
-        if o < 1.0 || f != null || promoted {
+        if o < 1.0 || f != null || promoted || pinned != null {
             group = try self.beginGroup()
         }
         var ls = List(LayerRef).init(self.t.backing)
@@ -486,8 +489,8 @@ struct Builder {
         self.m = outer_m
         if group |g| {
             try self.endGroup(g, o, f)
-            if promoted && self.list.items.len() > g {
-                try self.list.layers.append(Promoted { box: i, at: g, ox: e[0], oy: e[1] })
+            if (promoted || pinned != null) && self.list.items.len() > g {
+                try self.list.layers.append(Promoted { box: i, at: g, ox: e[0], oy: e[1] + (pinned orelse 0.0) })
             }
         }
     }

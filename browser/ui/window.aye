@@ -256,6 +256,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     // A WebGL canvas shows its frame one frame late, mapped from its
     // readback instead of waited for (docs/webgl.md §5).
     engine.readbackNextFrame(true)
+    // The console goes to stderr, except in headless test runs.
     engine.setConsoleEcho((o.frames == 0 && !o.exit_when_idle) || std.os.getenv("DWELLER_CONSOLE") != null)
     // Telemetry (perf/telemetry.aye): the person's window, its Spaces, or
     // a run with DWELLER_PROFILE set.
@@ -655,6 +656,9 @@ pub struct Ui {
                 }
                 perf.end("ui_timers", t_timers, "")
             }
+
+            try showLongTask(self)
+
             var ev = @zeroed(SDL_Event)
             var timeout: i32 = 1000
             if frames > 0 {
@@ -1235,7 +1239,7 @@ pub struct Ui {
                     _ = layout.scrollTo(t, self.list_scroll)
                 }
                 let y = snappedScroll(self.tab.scroll, self.scale)
-                if t.scroll_y != y && layout.scrollTo(t, y) {
+                if t.scroll_y != y && layout.scrollTo(t, y) && (self.list == null || !paint.followPinned(&mut self.list.?, self.page.sigs.items(), t)) {
                     self.relist = true
                 }
                 // Else `list` is right at this offset too.

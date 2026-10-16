@@ -1,0 +1,30 @@
+// v8: src/execution/execution.cc (Invoke)
+
+fn vmRunScript(it: *mut Interp, root: u32) JsError!bool {
+    if !it.vm_checked {
+        vmInit(it)
+    }
+
+    if it.vm |st| {
+        let vf = try compileScript(it.alloc, &it.ast, root)
+
+        if vf.code |code| {
+            defer {
+                code.deinit()
+                it.alloc.destroy(code)
+            }
+
+            let v = try vmEnter(it, st, code, -1, NONE, NONE, it.env, Value.Undefined, it.stack.len(), 0, NONE)
+
+            if it.frames.len() == it.completion_base {
+                it.completion = v
+            }
+
+            return true
+        }
+
+        vmNoteScript(st, vf.reason)
+    }
+
+    return false
+}

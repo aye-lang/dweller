@@ -20,7 +20,7 @@ CEO 看 code 會崩潰的東西，一條一條記在這裡。每條：規則、�
 ### 1. 不寫註釋
 
 專注在易讀性與架構：命名、檔案切分、函數切分表達意思。想寫註釋 = 該抽函數、改名或拆檔。
-唯一例外：不得不連到外部資料，上限一行：spec 的 URL，或參考實作的路徑（`// v8: src/interpreter/bytecode-generator.cc`、`// blink: core/layout/...`，見 docs 的 reference 規則）。
+唯一例外：不得不連到外部資料，上限一行：spec 的 URL，或參考實作的路徑（`// v8: src/interpreter/bytecode-generator.cc`、`// blink: core/layout/...`、`// chromium: third_party/blink/...`，見 docs 的 reference 規則）。
 檔頭說明、`///` 敘述、段落分隔線、解釋「為什麼」的多行註釋全部是違規。
 所有權與「可能沒有」用型別和名字講：`?T` 表示可能沒有；擁有的切片叫 `owned_*` 或由 `deinit` 的那個 struct 持有，不靠欄位註釋。
 架構層級的「為什麼」寫進 `docs/*.md` 的設計文件，不寫在 code 裡。
