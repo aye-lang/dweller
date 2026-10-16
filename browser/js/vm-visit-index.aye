@@ -1,8 +1,13 @@
 // v8: src/interpreter/bytecode-generator.cc (VisitKeyedPropertyLoad)
 
-fn vmVisitIndex(c: *mut Compiler, obj: u32, key: u32) CompileError!void {
+fn vmVisitIndex(c: *mut Compiler, obj: u32, key: u32, optional: bool) CompileError!void {
     let mark = c.b.topReg
     let r = try vmProtectedReg(c, obj, c.mayWrite(key))
+
+    if optional {
+        try c.b.op1(BC_LDAR, r as i64)
+        try vmOptionalJump(c)
+    }
 
     try c.visit(key)
     try c.b.op2(BC_GET_KEYED_PROPERTY, r as i64, c.b.newSlot() as i64)

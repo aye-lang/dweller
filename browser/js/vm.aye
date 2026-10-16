@@ -361,6 +361,9 @@ fn vmCallOp(it: *mut Interp, op: u8, top: usize, argc: usize, id: u32) JsError!V
         .New { callee: c, .. } => {
             callee = c
         }
+        .TaggedTemplate { tag: c, .. } => {
+            callee = c
+        }
         _ => unreachable
     }
     if !it.isCallable(f) {
@@ -1690,6 +1693,130 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // v8: src/interpreter/control-flow-builders.cc (TryCatchBuilder::BeginTry)
                 regs[(base + vmImm(bytes, pc, w)) as usize] = Value.Num { n: it.env as f64 }
                 pc += w as usize
+            }
+            105 => {
+                // v8: src/interpreter/interpreter-generator.cc (GetIterator)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                try vmGetIterator(it, at, acc)
+                regs = it.stack.items()
+            }
+            106 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildIteratorNext)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmIteratorStep(it, at)
+                regs = it.stack.items()
+            }
+            107 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildIteratorClose)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                try vmIteratorClose(it, at)
+                regs = it.stack.items()
+            }
+            108 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmIteratorRest(it, at)
+                regs = it.stack.items()
+            }
+            109 => {
+                // v8: src/interpreter/interpreter-generator.cc (ForInPrepare)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                try vmForInPrepare(it, at, acc)
+                regs = it.stack.items()
+            }
+            110 => {
+                // v8: src/interpreter/interpreter-generator.cc (ForInNext)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmForInNext(it, at)
+                regs = it.stack.items()
+            }
+            111 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildFillArrayWithIterator)
+                let a = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                pc += w as usize
+                regs[fp] = acc
+                try vmSpreadIntoArray(it, a, acc)
+                regs = it.stack.items()
+            }
+            112 => {
+                // v8: src/interpreter/interpreter-generator.cc (CallWithSpread)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                let id = vmIdx(bytes, pc + w as usize, w) as u32
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmCallWithSpread(it, at, id)
+                regs = it.stack.items()
+            }
+            113 => {
+                // v8: src/interpreter/interpreter-generator.cc (CopyDataProperties)
+                let o = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                pc += w as usize
+                regs[fp] = acc
+                try it.copyDataProps(o, acc)
+                regs = it.stack.items()
+            }
+            114 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitTemplateLiteral)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                let id = vmIdx(bytes, pc + w as usize, w) as u32
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmTemplateString(it, at, id)
+                regs = it.stack.items()
+            }
+            115 => {
+                // v8: src/interpreter/interpreter-generator.cc (GetTemplateObject)
+                let id = vmIdx(bytes, pc, w) as u32
+                pc += w as usize
+                regs[fp] = acc
+                acc = try templateObject(it, id, vmTemplateRaw(&it.ast, id))
+                regs = it.stack.items()
+            }
+            116 => {
+                // v8: src/interpreter/interpreter-generator.cc (CreateRegExpLiteral)
+                let id = vmIdx(bytes, pc, w) as u32
+                pc += w as usize
+                regs[fp] = acc
+                acc = try it.eval(id)
+                regs = it.stack.items()
+            }
+            117 => {
+                // v8: src/interpreter/interpreter-generator.cc (DefineKeyedOwnPropertyInLiteral)
+                let o = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
+                let k = regs[(base + vmImm(bytes, pc + w as usize, w)) as usize]
+                let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
+                pc += 3 * w as usize
+                regs[fp] = acc
+                try vmDefineKeyedOwnProperty(it, o, id, k, acc)
+                regs = it.stack.items()
+            }
+            118 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildDestructuringObjectAssignment)
+                let at = (base + vmImm(bytes, pc + w as usize, w)) as usize
+                let n = vmIdx(bytes, pc + 2 * w as usize, w) as usize
+                let src = regs[(base + vmImm(bytes, pc, w)) as usize]
+                pc += 3 * w as usize
+                regs[fp] = acc
+                acc = try vmObjectRest(it, src, at, n)
+                regs = it.stack.items()
+            }
+            119 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitNewTargetExpression)
+                regs[fp] = acc
+                acc = try it.evalNewTarget()
+                regs = it.stack.items()
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

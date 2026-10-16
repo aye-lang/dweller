@@ -1,0 +1,26 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringObjectAssignment)
+
+fn vmObjectRest(it: *mut Interp, v: Value, at: usize, n: usize) JsError!Value {
+    let o = try it.newObject(it.object_proto)
+
+    try it.push(objVal(o))
+
+    let keys = try it.keyList()
+
+    defer it.releaseKeys(keys)
+
+    let src = try it.toObject(v)
+
+    try it.push(objVal(src))
+    try it.ownKeys(src, keys, false)
+
+    for key in keys.items() {
+        if !try vmExcludedKey(it, key, at, n) {
+            try it.defineOwn(o, key, try it.getProp(v, key), F_DEFAULT)
+        }
+    }
+
+    it.pop()
+
+    return it.pop()
+}
