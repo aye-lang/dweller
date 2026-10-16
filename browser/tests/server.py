@@ -315,6 +315,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.login_post(body)
         elif self.path == "/logout":
             self.logout()
+        elif self.path == "/api/login":
+            self.api_login(body)
         elif self.path == "/echo-redirect":
             self.reply(303, [("Location", "/echo?redirected=1")])
         elif self.path.startswith("/samesite/"):
@@ -429,6 +431,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 ("Set-Cookie", "sid=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d%s" % (sid, SESSION_AGE, secure)),
                 ("Set-Cookie", "tab=1; Path=/; SameSite=Lax"),
             ],
+        )
+
+    def api_login(self, body):
+        if "json" in self.headers.get("Content-Type", ""):
+            fields = json.loads(body or b"{}")
+        else:
+            fields = dict(form_fields(self.headers.get("Content-Type", ""), body))
+        user = USERS.get(fields.get("username", ""))
+        if user is None or user[0] != fields.get("password", ""):
+            self.reply(401, [("Content-Type", "application/json")], b'{"ok":false}')
+            return
+        sid = secrets.token_hex(16)
+        with LOGIN_LOCK:
+            SESSIONS[sid] = fields["username"]
+        self.reply(
+            200,
+            [
+                ("Content-Type", "application/json"),
+                ("Set-Cookie", "sid=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d" % (sid, SESSION_AGE)),
+                ("Set-Cookie", "tab=1; Path=/; SameSite=Lax"),
+            ],
+            b'{"ok":true}',
         )
 
     def account(self):

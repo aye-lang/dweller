@@ -1,0 +1,17 @@
+<!doctype html>
+<title>Fetch sign-in</title>
+<form id="f">
+<p><input name="username" autocomplete="username"></p>
+<p><input type="password" name="password" autocomplete="current-password"></p>
+<p><button type="submit">Sign in</button></p>
+</form>
+<p id="status">ready</p>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = JSON.stringify(Object.fromEntries(new FormData(e.target)));
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  document.getElementById('status').textContent = r.ok ? 'signed in' : 'refused ' + r.status;
+  if (r.ok) location.href = '/account';
+});
+</script>
