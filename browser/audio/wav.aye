@@ -1,0 +1,110 @@
+// decodeAudioData for WAV files: RIFF/WAVE with PCM 8, 16 and 24 bit
+// (and 32 bit), or IEEE float 32 bit, plain or WAVE_FORMAT_EXTENSIBLE.
+
+pub struct Wav {
+    rate: f64
+    channels: usize
+    frames: usize
+    // 1 PCM, 3 float.
+    format: u16
+    bits: usize
+    // The sample bytes (the data chunk).
+    data: []u8
+}
+
+fn le16(b: []u8, at: usize) u16 {
+    return b[at] as u16 | (b[at + 1] as u16 << 8)
+}
+
+fn le32(b: []u8, at: usize) u32 {
+    return b[at] as u32 | (b[at + 1] as u32 << 8) | (b[at + 2] as u32 << 16) | (b[at + 3] as u32 << 24)
+}
+
+fn tagIs(b: []u8, at: usize, t: []u8) bool {
+    for i in 0..4 {
+        if b[at + i] != t[i] {
+            return false
+        }
+    }
+    return true
+}
+
+/// The WAV file in `b`, or null when it is not one this decoder reads.
+pub fn parseWav(b: []u8) ?Wav {
+    if b.len < 12 || !tagIs(b, 0, "RIFF") || !tagIs(b, 8, "WAVE") {
+        return null
+    }
+    var w = Wav { rate: 0.0, channels: 0, frames: 0, format: 0, bits: 0, data: b[0..0] }
+    var have_fmt = false
+    var at: usize = 12
+    while at + 8 <= b.len {
+        let size = le32(b, at + 4) as usize
+        let body = at + 8
+        var end = body + size
+        if end > b.len {
+            end = b.len
+        }
+        if tagIs(b, at, "fmt ") && end - body >= 16 {
+            w.format = le16(b, body)
+            w.channels = le16(b, body + 2) as usize
+            w.rate = le32(b, body + 4) as f64
+            w.bits = le16(b, body + 14) as usize
+            if w.format == 0xFFFE && end - body >= 26 {
+                // WAVE_FORMAT_EXTENSIBLE: the subformat GUID starts with
+                // the format code.
+                w.format = le16(b, body + 24)
+            }
+            have_fmt = true
+        } else if tagIs(b, at, "data") {
+            w.data = b[body..end]
+        }
+        at = body + size + (size & 1)
+    }
+    if !have_fmt || w.channels == 0 || w.rate <= 0.0 {
+        return null
+    }
+    let ok = (w.format == 1 && (w.bits == 8 || w.bits == 16 || w.bits == 24 || w.bits == 32)) || (w.format == 3 && w.bits == 32)
+    if !ok {
+        return null
+    }
+    w.frames = w.data.len / (w.channels * w.bits / 8)
+    return w
+}
+
+// Two's complement: `u` of an integer with `range` values, signed.
+fn signed(u: f64, range: f64) f64 {
+    if u >= range / 2.0 {
+        return u - range
+    }
+    return u
+}
+
+/// Decodes channel `ch` of `w` into `out` (w.frames long), as floats in
+/// [-1, 1).
+pub fn decodeChannel(w: *Wav, ch: usize, out: []mut f32) {
+    let size = w.bits / 8
+    let stride = size * w.channels
+    let d = w.data
+    for i in 0..w.frames {
+        if i >= out.len {
+            return
+        }
+        let at = i * stride + ch * size
+        var v: f64 = 0.0
+        if w.format == 3 {
+            var x = le32(d, at)
+            let p = @ptrCast(*f32, &x)
+            v = p.* as f64
+        } else if size == 1 {
+            v = (d[at] as f64 - 128.0) / 128.0
+        } else if size == 2 {
+            v = signed(le16(d, at) as f64, 65536.0) / 32768.0
+        } else if size == 3 {
+            let u = d[at] as u32 | (d[at + 1] as u32 << 8) | (d[at + 2] as u32 << 16)
+            v = signed(u as f64, 16777216.0) / 8388608.0
+        } else {
+            v = signed(le32(d, at) as f64, 4294967296.0) / 2147483648.0
+        }
+        out[i] = v as f32
+    }
+}

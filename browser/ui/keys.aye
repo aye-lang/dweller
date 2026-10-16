@@ -1,0 +1,177 @@
+// Keyboard names for the page's KeyboardEvents: `code` from the SDL
+// scancode (USB HID usage ids, as Chromium's dom_code_data.inc lists
+// them), `key` of the keys that are not characters, `location` and the
+// modifier flags.
+
+import std.text
+
+// `KeyboardEvent.code` of the scancodes 4 to 115, in order.
+let CODES = "KeyA KeyB KeyC KeyD KeyE KeyF KeyG KeyH KeyI KeyJ KeyK KeyL KeyM KeyN KeyO KeyP KeyQ KeyR KeyS KeyT KeyU KeyV KeyW KeyX KeyY KeyZ Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Enter Escape Backspace Tab Space Minus Equal BracketLeft BracketRight Backslash IntlHash Semicolon Quote Backquote Comma Period Slash CapsLock F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 PrintScreen ScrollLock Pause Insert Home PageUp Delete End PageDown ArrowRight ArrowLeft ArrowDown ArrowUp NumLock NumpadDivide NumpadMultiply NumpadSubtract NumpadAdd NumpadEnter Numpad1 Numpad2 Numpad3 Numpad4 Numpad5 Numpad6 Numpad7 Numpad8 Numpad9 Numpad0 NumpadDecimal IntlBackslash ContextMenu Power NumpadEqual F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24"
+
+// The scancodes 224 to 231.
+let MOD_CODES = [8][]u8{"ControlLeft", "ShiftLeft", "AltLeft", "MetaLeft", "ControlRight", "ShiftRight", "AltRight", "MetaRight"}
+
+let SC_MIN: i32 = 4
+let SC_MAX: i32 = 115
+let SC_MOD0: i32 = 224
+let SC_MOD1: i32 = 231
+let SDL_SCANCODE_MASK: i32 = 0x40000000
+
+/// `KeyboardEvent.code` of an SDL scancode ("" when unknown).
+fn domCode(sc: i32) []u8 {
+    if sc >= SC_MOD0 && sc <= SC_MOD1 {
+        return MOD_CODES[(sc - SC_MOD0) as usize]
+    }
+    if sc < SC_MIN || sc > SC_MAX {
+        return ""
+    }
+    var words = text.split(CODES, " ")
+    var i = SC_MIN
+    while words.next() |w| {
+        if i == sc {
+            return w
+        }
+        i += 1
+    }
+    return ""
+}
+
+/// The scancode of a `code` ("KeyA", "ArrowLeft", "ShiftLeft"...).
+fn scancodeOfCode(name: []u8) ?i32 {
+    for i in 0..8 {
+        if text.eql(MOD_CODES[i], name) {
+            return SC_MOD0 + i as i32
+        }
+    }
+    var words = text.split(CODES, " ")
+    var i = SC_MIN
+    while words.next() |w| {
+        if text.eql(w, name) {
+            return i
+        }
+        i += 1
+    }
+    return null
+}
+
+/// The SDL keycode a scancode types on a US layout.
+fn symOfScancode(sc: i32) i32 {
+    if sc >= 4 && sc <= 29 {
+        return 'a' as i32 + sc - 4
+    }
+    if sc >= 30 && sc <= 38 {
+        return '1' as i32 + sc - 30
+    }
+    let plain = [18]i32{39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56, 76}
+    let syms = [18]i32{'0', SDLK_RETURN, SDLK_ESCAPE, SDLK_BACKSPACE, SDLK_TAB, SDLK_SPACE, '-', '=', '[', ']', '\\', ';', '\'', '`', ',', '.', '/', SDLK_DELETE}
+    for i, k in plain {
+        if k == sc {
+            return syms[i]
+        }
+    }
+    return sc | SDL_SCANCODE_MASK
+}
+
+/// The scancode of an SDL keycode.
+fn scancodeOfSym(sym: i32) i32 {
+    if (sym & SDL_SCANCODE_MASK) != 0 {
+        return sym & 0xFFFFFF
+    }
+    for sc in SC_MIN..58 {
+        if symOfScancode(sc) == sym {
+            return sc
+        }
+    }
+    if sym == SDLK_DELETE {
+        return 76
+    }
+    return 0
+}
+
+fn isModifierScancode(sc: i32) bool {
+    return sc >= SC_MOD0 && sc <= SC_MOD1
+}
+
+/// `KeyboardEvent.key` of a key that has no character, from its `code`
+/// ("" for the others).
+fn keyOfCode(code: []u8) []u8 {
+    if code.len >= 2 && code[0] == 'F' && code[1] >= '0' && code[1] <= '9' {
+        return code
+    }
+    if text.startsWith(code, "Shift") {
+        return code[0..5]
+    }
+    if text.startsWith(code, "Control") {
+        return code[0..7]
+    }
+    if text.startsWith(code, "Alt") {
+        return code[0..3]
+    }
+    if text.startsWith(code, "Meta") {
+        return code[0..4]
+    }
+    let same = [9][]u8{"CapsLock", "NumLock", "ScrollLock", "Insert", "PrintScreen", "Pause", "ContextMenu", "Power", "Tab"}
+    for n in same {
+        if text.eql(n, code) {
+            return n
+        }
+    }
+    if text.startsWith(code, "Numpad") {
+        let rest = code[6..]
+        if rest.len == 1 {
+            return rest
+        }
+        if text.eql(rest, "Divide") {
+            return "/"
+        }
+        if text.eql(rest, "Multiply") {
+            return "*"
+        }
+        if text.eql(rest, "Subtract") {
+            return "-"
+        }
+        if text.eql(rest, "Add") {
+            return "+"
+        }
+        if text.eql(rest, "Decimal") {
+            return "."
+        }
+        if text.eql(rest, "Equal") {
+            return "="
+        }
+    }
+    return ""
+}
+
+/// `KeyboardEvent.location`: 1 left, 2 right, 3 numpad.
+fn keyLocation(sc: i32) i32 {
+    if sc >= SC_MOD0 && sc <= SC_MOD1 {
+        if sc >= 228 {
+            return 2
+        }
+        return 1
+    }
+    if (sc >= 84 && sc <= 99) || sc == 103 {
+        return 3
+    }
+    return 0
+}
+
+/// The modifier flags of the page's events: 1 shift, 2 control, 4 alt, 8
+/// meta.
+fn modBits(mods: u16) i32 {
+    var b: i32 = 0
+    if (mods & KMOD_SHIFT) != 0 {
+        b = b | 1
+    }
+    if (mods & KMOD_CTRL) != 0 {
+        b = b | 2
+    }
+    if (mods & KMOD_ALT) != 0 {
+        b = b | 4
+    }
+    if (mods & KMOD_GUI) != 0 {
+        b = b | 8
+    }
+    return b
+}

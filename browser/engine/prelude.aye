@@ -103,6 +103,8 @@ pub let PRELUDE =
     \\    this.clientY = init.clientY || 0;
     \\    this.button = init.button || 0;
     \\    this.buttons = init.buttons || 0;
+    \\    this.movementX = init.movementX || 0;
+    \\    this.movementY = init.movementY || 0;
     \\    this.relatedTarget = init.relatedTarget || null;
     \\    modifiers(this, init);
     \\  }
@@ -114,6 +116,8 @@ pub let PRELUDE =
     \\    this.key = init.key === undefined ? '' : String(init.key);
     \\    this.code = init.code === undefined ? '' : String(init.code);
     \\    this.repeat = !!init.repeat;
+    \\    this.location = init.location || 0;
+    \\    this.isComposing = false;
     \\    modifiers(this, init);
     \\  }
     \\}
@@ -178,7 +182,7 @@ pub let PRELUDE =
     \\
     \\// Inline handlers: `onclick` properties, and `onclick` attributes compiled
     \\// when first needed (again when the attribute changes).
-    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup reset resize scroll select submit toggle wheel'.split(' ');
+    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pointercancel pointerdown pointerenter pointerleave pointermove pointerout pointerover pointerup pointerlockchange pointerlockerror fullscreenchange fullscreenerror visibilitychange reset resize scroll select submit toggle wheel'.split(' ');
     \\function handlerTable(t) {
     \\  let m = t.__handlers;
     \\  if (!m) {
@@ -340,8 +344,50 @@ pub let PRELUDE =
     \\  getter(G, 'on' + type, function () { return handlerOf(G, type); }, function (v) { setHandler(G, type, v); });
     \\}
     \\
+    \\// Game input state: pointer lock, fullscreen, visibility and the user
+    \\// activation that lets a page ask for the first two. The window answers
+    \\// a request with a `__host` event (`lock:1`, `lockerror`, `fs:0`...).
+    \\let lockEl = null, lockWait = null, fsEl = null, fsWait = null, actUntil = 0, visible = true;
+    \\const ACTIVATING = { keydown: 1, mousedown: 1, pointerdown: 1, pointerup: 1, mouseup: 1, click: 1 };
+    \\function hasActivation() { return ak.now() < actUntil; }
+    \\function inDoc(el) { return !!el && el.isConnected; }
+    \\function fireOn(t, type) { dispatch(t, new Event(type, { bubbles: true })); }
+    \\function hostState(what) {
+    \\  if (what === 'lock:1') {
+    \\    if (!lockWait) return;
+    \\    const w = lockWait; lockWait = null;
+    \\    if (!inDoc(w.el)) { fireOn(document, 'pointerlockerror'); w.reject(new DOMException('The element is no longer connected.', 'InUseAttributeError')); return; }
+    \\    lockEl = w.el;
+    \\    fireOn(document, 'pointerlockchange');
+    \\    w.resolve();
+    \\  } else if (what === 'lock:0') {
+    \\    if (lockEl) { lockEl = null; fireOn(document, 'pointerlockchange'); }
+    \\  } else if (what === 'lockerror') {
+    \\    const w = lockWait; lockWait = null;
+    \\    fireOn(document, 'pointerlockerror');
+    \\    if (w) w.reject(new DOMException('The user has exited the lock before this request was completed.', 'UnknownError'));
+    \\  } else if (what === 'fs:1') {
+    \\    if (!fsWait) return;
+    \\    const w = fsWait; fsWait = null;
+    \\    fsEl = w.el;
+    \\    dispatch(w.el, new Event('fullscreenchange', { bubbles: true, composed: true }));
+    \\    w.resolve();
+    \\  } else if (what === 'fs:0') {
+    \\    if (fsEl) { const e = fsEl; fsEl = null; dispatch(e, new Event('fullscreenchange', { bubbles: true, composed: true })); }
+    \\  } else if (what === 'fserror') {
+    \\    const w = fsWait; fsWait = null;
+    \\    if (w) { dispatch(w.el, new Event('fullscreenerror', { bubbles: true, composed: true })); w.reject(new TypeError('Failed to execute \'requestFullscreen\' on \'Element\': the window could not enter fullscreen.')); }
+    \\  } else if (what === 'visible' || what === 'hidden') {
+    \\    if (visible !== (what === 'visible')) { visible = what === 'visible'; fireOn(document, 'visibilitychange'); }
+    \\  }
+    \\}
+    \\const KEY_MODS = function (ev, m) { ev.shiftKey = !!(m & 1); ev.ctrlKey = !!(m & 2); ev.altKey = !!(m & 4); ev.metaKey = !!(m & 8); };
+    \\
     \\// An event the browser makes (a click, a key, the load of the page).
     \\function hostEvent(target, type, key, x, y, dx, dy) {
+    \\  if (type === '__host') { hostState(key); return true; }
+    \\  if (ACTIVATING[type] && !(type === 'keydown' && /^Escape\n/.test(key || ''))) actUntil = ak.now() + 5000;
+    \\  if (lockEl && /^((pointer|mouse)(move|down|up)|click)$/.test(type) && inDoc(lockEl)) target = lockEl;
     \\  // The user scrolled the window: `scroll` follows as a task, as for a
     \\  // script's scroll.
     \\  if (type === 'scroll') {
@@ -350,7 +396,16 @@ pub let PRELUDE =
     \\  }
     \\  let ev;
     \\  if (type === 'keydown' || type === 'keyup' || type === 'keypress') {
-    \\    ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, composed: true, key });
+    \\    const f = String(key).split('\n');
+    \\    ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, composed: true, key: f[0], code: f[1] || '', repeat: f[2] === '1', location: +f[3] || 0 });
+    \\    if (f.length > 4) KEY_MODS(ev, +f[4]);
+    \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || ((type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') && typeof key === 'string')) {
+    \\    const f = String(key).split('\n');
+    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: true, clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|mousedown|mouseup)$/.test(type) ? 1 : 0 };
+    \\    if (type[0] === 'p') { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
+    \\    else if (type === 'mousemove') init.button = 0;
+    \\    ev = type[0] === 'p' ? new PointerEvent(type, init) : new MouseEvent(type, init);
+    \\    if (f.length > 2) KEY_MODS(ev, +f[2]);
     \\  } else if (type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') {
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
     \\  } else if (type === 'wheel') {
@@ -365,6 +420,10 @@ pub let PRELUDE =
     \\    ev = new Event(type, { cancelable: true });
     \\  } else if (type === 'load') {
     \\    ev = new Event(type, {});
+    \\  } else if (type === 'error' && target === G) {
+    \\    // An uncaught exception (script.aye fireErrorEvent): key is the
+    \\    // message, x the value thrown.
+    \\    ev = new ErrorEvent(type, { cancelable: true, message: key, error: x });
     \\  } else {
     \\    ev = new Event(type, { bubbles: true, cancelable: type === 'submit' || type === 'reset' });
     \\  }
@@ -1060,8 +1119,56 @@ pub let PRELUDE =
     \\getter(Document.prototype, 'URL', function () { return ak.documentUrl(this); });
     \\getter(Document.prototype, 'documentURI', function () { return ak.documentUrl(this); });
     \\getter(Node.prototype, 'baseURI', function () { return ak.documentBase(this); });
-    \\getter(Document.prototype, 'visibilityState', function () { return 'visible'; });
-    \\getter(Document.prototype, 'hidden', function () { return false; });
+    \\getter(Document.prototype, 'visibilityState', function () { return visible ? 'visible' : 'hidden'; });
+    \\getter(Document.prototype, 'hidden', function () { return !visible; });
+    \\// Pointer Lock (the window's SDL_SetRelativeMouseMode) and Fullscreen
+    \\// (SDL_SetWindowFullscreen); the page's request waits for the window's
+    \\// answer (`hostState`).
+    \\getter(Document.prototype, 'pointerLockElement', function () { return inDoc(lockEl) ? lockEl : null; });
+    \\hidden(Element.prototype, 'requestPointerLock', function (options) {
+    \\  const el = this;
+    \\  if (!el.isConnected) return Promise.reject(new DOMException('The element is not connected.', 'WrongDocumentError'));
+    \\  if (lockEl === el) return Promise.resolve();
+    \\  if (!lockEl && !hasActivation()) {
+    \\    Promise.resolve().then(function () { fireOn(document, 'pointerlockerror'); });
+    \\    return Promise.reject(new DOMException('Failed to execute \'requestPointerLock\' on \'Element\': A user gesture is required to request Pointer Lock.', 'NotAllowedError'));
+    \\  }
+    \\  if (lockWait) lockWait.reject(new DOMException('Another request replaced this one.', 'AbortError'));
+    \\  return new Promise(function (resolve, reject) {
+    \\    lockWait = { el, resolve, reject };
+    \\    if (lockEl) { lockEl = el; lockWait = null; fireOn(document, 'pointerlockchange'); resolve(); return; }
+    \\    ak.hostRequest(0, 1);
+    \\  });
+    \\});
+    \\hidden(Document.prototype, 'exitPointerLock', function () {
+    \\  if (lockEl || lockWait) ak.hostRequest(0, 2);
+    \\  if (lockWait && !lockEl) { const w = lockWait; lockWait = null; w.reject(new DOMException('The lock was exited.', 'AbortError')); }
+    \\});
+    \\getter(Document.prototype, 'fullscreenEnabled', function () { return true; });
+    \\getter(Document.prototype, 'fullscreenElement', function () { return inDoc(fsEl) ? fsEl : null; });
+    \\hidden(Element.prototype, 'requestFullscreen', function (options) {
+    \\  const el = this;
+    \\  const bad = function (msg) {
+    \\    Promise.resolve().then(function () { dispatch(el, new Event('fullscreenerror', { bubbles: true, composed: true })); });
+    \\    return Promise.reject(new TypeError('Failed to execute \'requestFullscreen\' on \'Element\': ' + msg));
+    \\  };
+    \\  if (!el.isConnected) return bad('The element is not connected.');
+    \\  if (fsEl === el) return Promise.resolve();
+    \\  if (!hasActivation()) return bad('API can only be initiated by a user gesture.');
+    \\  actUntil = 0;
+    \\  return new Promise(function (resolve, reject) {
+    \\    fsWait = { el, resolve, reject };
+    \\    if (fsEl) { fsEl = el; fsWait = null; dispatch(el, new Event('fullscreenchange', { bubbles: true, composed: true })); resolve(); return; }
+    \\    ak.hostRequest(1, 1);
+    \\  });
+    \\});
+    \\hidden(Document.prototype, 'exitFullscreen', function () {
+    \\  if (!fsEl) return Promise.reject(new TypeError('Failed to execute \'exitFullscreen\' on \'Document\': Document not active'));
+    \\  return new Promise(function (resolve) {
+    \\    ak.hostRequest(1, 2);
+    \\    Promise.resolve().then(resolve);
+    \\  });
+    \\});
     \\getter(Document.prototype, 'cookie', function () { return ak.cookie(); }, function (v) { ak.setCookie(String(v)); });
     \\hidden(Document.prototype, 'hasFocus', function () { return true; });
     \\getter(Document.prototype, 'compatMode', function () { return 'CSS1Compat'; });
@@ -1211,6 +1318,7 @@ pub let PRELUDE =
     \\  vibrate() { return false; }
     \\}
     \\hidden(G, 'Navigator', Navigator);
+    \\getter(Navigator.prototype, 'userActivation', function () { return { hasBeenActive: actUntil > 0 || hasActivation(), isActive: hasActivation() }; });
     \\hidden(G, 'navigator', new Navigator());
     \\hidden(G, 'screen', { width: 1280, height: 800, availWidth: 1280, availHeight: 800, colorDepth: 24, pixelDepth: 24 });
     \\
