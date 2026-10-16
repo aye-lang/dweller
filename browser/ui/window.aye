@@ -57,6 +57,9 @@ let LINE_STEP: f64 = 40.0
 // While a page loads (its sheets, scripts or images), the loop looks at
 // the loads at least this often (ms).
 let LOAD_POLL_MS: i32 = 8
+// A WebGL frame read back at the end of a frame is mapped at most this
+// long after (ms): the next frame.
+let READBACK_MS: i32 = 16
 // The page's scripts run for at most this many ms an iteration while it
 // loads (one at least), so that input and frames come between them.
 let SCRIPTS_MS: u64 = 50
@@ -249,6 +252,9 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     engine.setRealClock(true)
     // window.open and `target=_blank` open tabs of the window.
     engine.setTabHost(true)
+    // A WebGL canvas shows its frame one frame late, mapped from its
+    // readback instead of waited for (docs/webgl.md §5).
+    engine.readbackNextFrame(true)
     // The console goes to stderr, except in headless test runs.
     engine.setConsoleEcho(o.frames == 0 && !o.exit_when_idle)
     // Telemetry (perf/telemetry.aye): the person's window, its Spaces, or
@@ -646,6 +652,9 @@ pub struct Ui {
                 if (self.tab.early || engine.imagesLoading(p)) && timeout > LOAD_POLL_MS {
                     timeout = LOAD_POLL_MS
                 }
+                if engine.canvasFramesPending(p) && timeout > READBACK_MS {
+                    timeout = READBACK_MS
+                }
                 // The next script runs at once (its frames: polled).
                 if self.tab.stepping && !engine.scriptsRan(p) {
                     timeout = 0
@@ -684,7 +693,9 @@ pub struct Ui {
             if self.tab.page != null && (!self.tab.stepping || engine.scriptsRan(self.tab.page.?)) {
                 let p = self.tab.page.?
                 let t_timers = perf.start()
-                if (try engine.runDueTimers(p)) || engine.navigationPending(p) {
+                // The WebGL frames read back at the end of the last frame.
+                let mapped = engine.takeCanvasFrames(p)
+                if (try engine.runDueTimers(p)) || mapped || engine.navigationPending(p) {
                     // A navigation that a script asked for while the page
                     // loaded is followed here too (one per iteration).
                     self.from_timers = true

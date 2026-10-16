@@ -3,7 +3,9 @@
 // webgl_prelude.aye. A context belongs to its canvas's bitmap
 // (CanvasBitmap.gl), so every native takes the canvas element first.
 // The canvas bitmap holds the last presented frame: paint, screenshots and
-// drawImage read it as they read a 2D canvas (`presentCanvases`).
+// drawImage read it as they read a 2D canvas. A frame is read back into a
+// pixel-pack buffer at its end and mapped into the bitmap after it
+// (`endCanvasFrame`, `presentCanvases`, `takeCanvasFrames`).
 
 import gpu
 import image
@@ -13,6 +15,7 @@ import js.Interp
 import js.JsError
 import js.Value
 import paint
+import perf
 import std
 import std.math
 
@@ -690,12 +693,7 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
             // What a WebGL canvas drew since its last frame.
             let node = handleOf(it, source, TAG_NODE) orelse return Value.Undefined
             if scriptOf(it).active.doc.isElement(node, "canvas") {
-                let from = try canvasBitmap(it, source)
-                if from.gl |g| {
-                    if g.dirty {
-                        try copyFrame(it.alloc, g, from.bmp, false)
-                    }
-                }
+                try frameNow(it, try canvasBitmap(it, source))
             }
             rgba = src.bmp.pixels
             sw = src.bmp.width as i32
@@ -871,43 +869,47 @@ fn akWebglPng(it: *mut Interp, a: Args) JsError!Value {
     return pngDataUrl(it, png)
 }
 
-// Before drawImage of a WebGL canvas: what it drew since the last frame.
+// Before drawImage of a WebGL canvas: what it drew since the last frame,
+// or the last frame when its readback was not mapped yet.
 fn akWebglSnapshot(it: *mut Interp, a: Args) JsError!Value {
-    let c = try canvasBitmap(it, it.arg(a, 0))
-    if c.gl |ctx| {
-        if ctx.dirty {
-            try copyFrame(it.alloc, ctx, c.bmp, false)
-        }
-    }
+    try frameNow(it, try canvasBitmap(it, it.arg(a, 0)))
     return Value.Undefined
 }
 
-// The frame of `ctx` into the canvas bitmap (nearest pixels when the
-// drawing buffer was scaled down to the device's size); `present` also
-// ends the frame (clears the buffer without preserveDrawingBuffer).
-fn copyFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bitmap, present: bool) std.mem.AllocError!void {
-    let w = ctx.width as usize
-    let h = ctx.height as usize
-    if bmp.pixels.len == 0 {
-        if present {
-            ctx.present(bmp.pixels)
+// The canvas bitmap of a WebGL canvas as a read of it now sees it: its
+// last frame, mapped if it was not yet, or what it drew since.
+fn frameNow(it: *mut Interp, c: *mut CanvasBitmap) JsError!void {
+    if c.gl |ctx| {
+        if try takeFrame(it.alloc, ctx, c.bmp) {
+            canvasChanged(it)
         }
-        return
+        if ctx.dirty && c.bmp.pixels.len > 0 {
+            let w = ctx.width as usize
+            let h = ctx.height as usize
+            let px = try framePixels(it.alloc, c.bmp, w, h)
+            defer if px.ptr != c.bmp.pixels.ptr {
+                it.alloc.free(px)
+            }
+            ctx.snapshot(px)
+            fitFrame(px, w, h, c.bmp)
+        }
     }
-    var px = bmp.pixels
-    let same = bmp.width == w && bmp.height == h
-    if !same {
-        px = try alloc.alloc(0 as u8, w * h * 4)
+}
+
+// Where a `w` x `h` frame goes on its way to `bmp`: its pixels, or
+// scratch pixels when the drawing buffer was scaled down to the device's
+// size (`fitFrame` then scales them).
+fn framePixels(alloc: std.mem.Allocator, bmp: *mut image.Bitmap, w: usize, h: usize) std.mem.AllocError![]mut u8 {
+    if bmp.width == w && bmp.height == h {
+        return bmp.pixels
     }
-    defer if !same {
-        alloc.free(px)
-    }
-    if present {
-        ctx.present(px)
-    } else {
-        ctx.snapshot(px)
-    }
-    if !same {
+    return alloc.alloc(0 as u8, w * h * 4)
+}
+
+// The frame in `px` into the canvas bitmap (nearest pixels when they
+// differ in size), whose version moves.
+fn fitFrame(px: []mut u8, w: usize, h: usize, bmp: *mut image.Bitmap) {
+    if px.ptr != bmp.pixels.ptr {
         for y in 0..bmp.height {
             let sy = y * h / bmp.height
             for x in 0..bmp.width {
@@ -921,18 +923,99 @@ fn copyFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bi
     bmp.version += 1
 }
 
-/// The end of a frame (docs/webgl.md §2): every WebGL canvas of the page
-/// and its frames that drew since the last frame shows what it drew,
-/// and its drawing buffer is cleared unless preserveDrawingBuffer.
-/// Rendering (`Page.layoutPage`) and the end of the animation frame
-/// callbacks call it.
+// The end of a frame of `ctx`: its readback starts (and, without
+// preserveDrawingBuffer, its drawing buffer is cleared).
+fn startFrame(ctx: *mut gpu.Context) {
+    let t = perf.start()
+    ctx.startReadback()
+    if t != 0 {
+        ctx.start_ns = perf.start() - t
+    }
+}
+
+// The frame `startFrame` read, into the canvas bitmap (docs/webgl.md
+// §5); true when the bitmap changed. DWELLER_TIMING `webgl_readback`: the
+// time the readback took on the main thread, its start and this.
+fn takeFrame(alloc: std.mem.Allocator, ctx: *mut gpu.Context, bmp: *mut image.Bitmap) std.mem.AllocError!bool {
+    if !ctx.pending {
+        return false
+    }
+    if bmp.pixels.len == 0 {
+        ctx.dropReadback()
+        return false
+    }
+    let t = perf.start()
+    let w = ctx.pending_w as usize
+    let h = ctx.pending_h as usize
+    let px = try framePixels(alloc, bmp, w, h)
+    defer if px.ptr != bmp.pixels.ptr {
+        alloc.free(px)
+    }
+    if !ctx.finishReadback(px) {
+        return false
+    }
+    fitFrame(px, w, h, bmp)
+    if t != 0 {
+        perf.end("webgl_readback", t - ctx.start_ns, sizeLabel(w, h))
+    }
+    return true
+}
+
+var size_buf = @zeroed([48]u8)
+
+// "WxH" for DWELLER_TIMING.
+fn sizeLabel(w: usize, h: usize) []u8 {
+    var n = putDigits(&mut size_buf, 0, w)
+    size_buf[n] = 'x'
+    n = putDigits(&mut size_buf, n + 1, h)
+    return size_buf[0..n]
+}
+
+fn putDigits(buf: *mut [48]u8, at: usize, v: usize) usize {
+    var digits = @zeroed([20]u8)
+    var k: usize = 0
+    var x = v
+    while true {
+        digits[k] = '0' + (x % 10) as u8
+        k += 1
+        x = x / 10
+        if x == 0 {
+            break
+        }
+    }
+    var n = at
+    while k > 0 {
+        k -= 1
+        buf[n] = digits[k]
+        n += 1
+    }
+    return n
+}
+
+// The window maps a frame's readback in its next frame
+// (`readbackNextFrame`); elsewhere (dump, screenshot, the agent) it is
+// mapped when the page is rendered.
+var next_frame: bool = false
+
+/// The window shows each WebGL frame one frame late: its readback is
+/// mapped in the next frame (`takeCanvasFrames`) instead of waited for.
+pub fn readbackNextFrame(on: bool) {
+    next_frame = on
+}
+
+/// Before rendering (`Page.layoutPage`): every WebGL canvas of the page
+/// and its frames that drew since the last frame ends its frame; outside
+/// the window its frame is mapped at once, so the canvas shows it.
 pub fn presentCanvases(p: *mut Page) {
     if p.images |cache| {
         for i in 0..cache.canvases.len() {
             let c = &mut cache.canvases.items()[i]
             if c.gl |ctx| {
                 if ctx.dirty {
-                    copyFrame(p.alloc, ctx, c.bmp, true) catch {}
+                    startFrame(ctx)
+                }
+                if !next_frame {
+                    _ = takeFrame(p.alloc, ctx, c.bmp) catch false
                 }
             }
         }
@@ -940,6 +1023,75 @@ pub fn presentCanvases(p: *mut Page) {
     for f in p.frames.items() {
         presentCanvases(f.page)
     }
+}
+
+/// The end of the animation frame callbacks of a frame (docs/webgl.md
+/// §2): the frame before is mapped into its canvas if it was not yet,
+/// and every WebGL canvas that drew starts its readback.
+pub fn endCanvasFrame(p: *mut Page) {
+    if p.images |cache| {
+        for i in 0..cache.canvases.len() {
+            let c = &mut cache.canvases.items()[i]
+            if c.gl |ctx| {
+                _ = takeFrame(p.alloc, ctx, c.bmp) catch false
+                if ctx.dirty {
+                    startFrame(ctx)
+                }
+            }
+        }
+    }
+    for f in p.frames.items() {
+        endCanvasFrame(f.page)
+    }
+}
+
+/// The window's next frame: the readbacks of the page and its frames are
+/// mapped into their canvases; true when a canvas changed (the page is
+/// then laid out again, as after a 2D canvas draws).
+pub fn takeCanvasFrames(p: *mut Page) bool {
+    var took = false
+    if p.images |cache| {
+        for i in 0..cache.canvases.len() {
+            let c = &mut cache.canvases.items()[i]
+            if c.gl |ctx| {
+                if takeFrame(p.alloc, ctx, c.bmp) catch false {
+                    took = true
+                }
+            }
+        }
+    }
+    if took {
+        if p.script |s| {
+            s.version += 1
+        } else {
+            p.mutations += 1
+        }
+    }
+    for f in p.frames.items() {
+        if takeCanvasFrames(f.page) {
+            took = true
+        }
+    }
+    return took
+}
+
+/// Is a WebGL frame of the page or its frames waiting to be mapped?
+pub fn canvasFramesPending(p: *Page) bool {
+    if p.images |cache| {
+        for c in cache.canvases.items() {
+            if c.gl |ctx| {
+                if ctx.pending {
+                    return true
+                }
+            }
+        }
+    }
+    for f in p.frames.items() {
+        if canvasFramesPending(f.page) {
+            return true
+        }
+    }
+    return false
 }
 
 // A canvas's width or height changed: the drawing buffer follows.
