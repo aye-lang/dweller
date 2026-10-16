@@ -1,0 +1,28 @@
+// v8: src/interpreter/bytecode-generator.cc (GenerateBytecodeBody)
+
+fn vmVisitScript(c: *mut Compiler, root: u32) CompileError!void {
+    match c.ast.node(root) {
+        .Block { list, n, scope } => {
+            let sc = c.ast.scopes.items()[scope]
+
+            if sc.eval || sc.nslots > 0 {
+                try c.fail("unsupported: context variable")
+            }
+
+            _ = c.b.newRegs(sc.nregs as i32)
+            c.completion = c.b.newReg()
+
+            for _ in 0..c.b.topReg {
+                try c.tdz.append(false)
+            }
+
+            try vmHoist(c, scope)
+            try c.visitList(list, n)
+            try c.b.op1(BC_LDAR, c.completion as i64)
+            try c.b.op0(BC_RETURN)
+        }
+        _ => {
+            try c.fail("unsupported: script")
+        }
+    }
+}

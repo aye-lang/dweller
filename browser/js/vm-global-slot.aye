@@ -1,0 +1,18 @@
+// v8: src/ic/accessor-assembler.cc (LoadGlobalIC_TryPropertyCellCase)
+
+fn vmGlobalSlot(it: *mut Interp, id: u32, name: u32) u32 {
+    let ob = it.heap.obj(it.global)
+    let slot = it.prop_caches.items()[id].slot
+
+    if slot < ob.nprops && ob.props[slot].key == name {
+        return slot
+    }
+
+    if it.heap.findProp(it.global, name) |i| {
+        it.prop_caches.items()[id].slot = i
+
+        return i
+    }
+
+    return NONE
+}
