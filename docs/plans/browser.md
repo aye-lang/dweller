@@ -116,7 +116,7 @@ the one place with more than one process.
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
-- **Login readiness.** P10.20–P10.22 done; P10.23 and P9.7 open; then
+- **Login readiness.** P10.20–P10.23 done; P9.7 open; then
   the user bundle P3.80.
 - **Sites.** `page_load.py check` passes on the recorded archives; W3 is
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
@@ -229,7 +229,7 @@ Exit: P3.80 handed to the user with telemetry on.
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| D1 | P10.23 | sign-in page details: `autocomplete`, `navigator.credentials` absent, `Set-Cookie` on fetch/XHR, Enter submits, `requestSubmit` | – | open | `core/html/forms/html_form_element.cc` (implicit submission, `requestSubmit`) |
+| D1 | P10.23 | sign-in page details: `autocomplete`, `navigator.credentials` absent, `Set-Cookie` on fetch/XHR, Enter submits, `requestSubmit` | – | done | `core/html/forms/html_form_element.cc` (implicit submission, `requestSubmit`) |
 | D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | open | – (B9's own design) |
 | D3 | P3.80 | the user bundle: W1–W9 and D1, D2 hold; the user's daily sites; reports become cards matched to a Layer 1 area | A, B3, C4, D1, D2 | open | – |
 
@@ -660,6 +660,7 @@ reports decide. The fixture of P10.20 serves the other login cards.
 - files: `browser/engine/prelude.aye`, `browser/ui/forms.aye`
 - verify: `cargo test --release --test browser window_login_forms > target/p10.23.log 2>&1; echo $?` → 0
 - depends on: P10.20; time box: 60 min; model: sonnet
+- status: done 2026-10-16. Already working, now covered: Enter in a field (implicit submission, no button with one text field, none with two), `requestSubmit()` validation and submitter errors, `Set-Cookie` on `fetch` and XHR reaching the jar and `document.cookie`, the agent tree masking passwords. Added: `autocomplete` reflected on form, input, select and textarea and `navigator.credentials` (`get`, `create`, `store` reject `NotSupportedError`; `PublicKeyCredential` stays absent) in `engine/sign-in.js`; the `submit` event is a `SubmitEvent` whose `submitter` is the button (`engine/dispatch-submit.aye`, `ak.submitter`); the agent's `typed` message shows `[password]`. Test server `/api/login` (JSON or form, sets cookies without a redirect); fixtures `login/details.html`, `enter.html`, `enter-two.html`, `fetch-login.html`; test `window_login_forms`. Not done: `form.elements` is missing (found while probing). WPT `html/semantics/forms/form-submission-0`: 30/362 (8.3%) before, 34/362 (9.4%) after.
 
 #### P4.53: local telemetry
 - lane: browser (Layer 0)
@@ -804,6 +805,7 @@ Common to these cards:
 - estimate: coverage; site `scripts` phase starts to drop (1.2–1.5×)
 - model: opus
 - status: done 2026-10-16. The VM compiles destructuring in declarations, assignments and parameters (`vmBindPattern`: array patterns over `GetIterator`/`IteratorStep`/`IteratorRest`/`IteratorClose` on a three-register record (iterator, `next`, done; a native iterable is walked by index like the tree walker), object patterns by `GetKeyedProperty` with a RequireObjectCoercible check and `ObjectRest` for `...rest`, defaults by `JumpIfUndefined`, leaves through `vmStoreTarget` to registers, contexts, globals and properties); spread in calls and `new` (`CallWithSpread` over an arguments array) and in array literals (`SpreadIntoArray`); object literals with spread (`CopyDataProperties`), computed keys and computed accessors (`DefineKeyedOwnProperty`); `for-of` (V8 `VisitForOfStatement`: the loop inside a try/finally on the P4.68 machinery, so `break`, labeled jumps, `return` and a throw close the iterator, a throwing `next()` does not) and `for-in` (`ForInPrepare` collects the keys like `execForIn`, `ForInNext` skips deleted ones; V8's `ForInStep` is folded into `ForInNext`), both with a fresh context per iteration for captured `let`/`const`; template literals (`TemplateString`), tagged templates (`GetTemplateObject`, the per-site object shared with `evalTagged` through `templateObject`, then an ordinary call); optional chaining (each `?.` link a `JumpIfUndefinedOrNull` to one nullish label per chain); regexp literals (`CreateRegExpLiteral`); `new.target` (`LdaNewTarget`); `**` already compiled. 15 opcodes (105–119). New script `265_vm_syntax.js`. test262 at d53ebc8b19 (-j 4), VM off → on: `statements/for-of` 583 → 604/751, `expressions/assignment` 324 → 332/485, `expressions/template-literal` 52 → 52/57, `expressions/optional-chaining` 36 → 36/38; total 995 → 1024/1331, no test that passes off fails on. `js_conformance`, `js_conformance_vm`, `jsdom_fixtures`, `aye_unit_tests` (opcode count), `errors` green; `check_layers.py` and `check_taste.py` pass. Left: rest parameters with a pattern (`...[a, b]`), the Annex B `for (var x = init in o)`, `for await` (P4.72), closing the iterator when a default or nested store throws inside an array pattern, ToPropertyKey of a computed key before its value is evaluated, the tree walker's message for destructuring null.
+- perf gate 2026-10-16: macOS `perf` feed `style_full` 4 > 2 is not this card's: main c5747e9 fails it too (3), the gate runs with the VM off and the branch changes only `browser/js/`; on a loaded CPU (`taskset -c 0` with busy loops) main and this branch both count 2/8/8/8, each ticker update restyling in full twice (the script's geometry and the window's `styleFor`); unloaded both count 2. No fix here, budget unchanged.
 
 #### P4.70: classes
 - goal: class declarations and expressions: methods, accessors, static members, fields and static blocks, private names, computed keys, `super.x` and `super(...)`, derived constructors (`this_obj`, `ctor_this`), default constructors.
