@@ -22,6 +22,7 @@ function labels(n) {
   return c;
 }
 function twoLabels(n) { var c = 0; a: for (var i = 0; i < n; i++) { for (;;) { if (i == 1) continue a; if (i == 4) break a; break; } c += i; } return c; }
+function doubleLabel(n) { var c = 0; a: b: for (var i = 0; i < n; i++) { for (;;) { if (i == 1) continue a; if (i == 2) continue b; if (i == 5) break b; if (i == 7) break a; break; } c += i; } return c + ":" + i; }
 function labeledBlock(x) { var r = 1; blk: { if (x) break blk; r = 2; } return r; }
 function labeledWhile(n) { var i = 0; w: while (true) { i++; do { if (i > n) break w; continue w; } while (false); } return i; }
 function sw(x) { var r = ""; switch (x) { case 1: r += "one"; case 2: r += "two"; break; case "3": r += "str"; break; default: r += "dflt"; case 9: r += "nine"; } return r; }
@@ -43,7 +44,7 @@ function strLoop(s) { var n = 0; for (var i = "a"; i != "aaaa"; i += "a") n++; r
 var out = [];
 for (var k = -1; k <= 1; k++) out.push(sign(k));
 out.push(sumTo(10), fact(5), forLoop(5), forEmpty(7), brk(4), cont(9), contDo(5), contWhile(4));
-out.push(labels(5), twoLabels(6), labeledBlock(0), labeledBlock(1), labeledWhile(3));
+out.push(labels(5), twoLabels(6), doubleLabel(4), doubleLabel(9), labeledBlock(0), labeledBlock(1), labeledWhile(3));
 for (var v of [1, 2, "3", 3, 9, 7]) out.push(sw(v));
 out.push(swNoDefault(0), swNoDefault(5), swNoDefault(6));
 for (var v of [0, 1, 2, 3, 4, 5, 6, 1.5, "1", -0, NaN, undefined]) out.push(dense(v));
