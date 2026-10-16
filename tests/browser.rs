@@ -4064,6 +4064,49 @@ fn wpt_runner() {
     );
 }
 
+/// `browser/tools/wpt.py run` over the fixture directory (its own static
+/// server, the generated wrapper of `sum.any.js`): the results file has
+/// the status and subtest counts of each fixture.
+#[test]
+fn wpt_py_serve() {
+    let out = root().join("target/wpt-py-serve");
+    let _ = std::fs::remove_dir_all(&out);
+    let run = Command::new("python3")
+        .current_dir(root())
+        .args(["browser/tools/wpt.py", "run", ".", "-j", "4"])
+        .args(["--wpt-root", "browser/tests/wpt", "--results-dir"])
+        .arg(&out)
+        .arg("--dweller")
+        .arg(dweller())
+        .output();
+    let Ok(run) = run else {
+        println!("skipped: cannot start python3");
+        return;
+    };
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "wpt.py run failed: {stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    for want in [
+        "error.html: 1/1 ERROR",
+        "fail.html: 1/2 OK",
+        "pass.html: 3/3 OK",
+        "slow.html: 1/1 OK",
+        "sum.any.js: 2/2 OK",
+        "timeout.html: 1/2 TIMEOUT",
+        ": 6 files (0 skipped), 9/11 subtests passed, score 81.8%",
+    ] {
+        assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
+    }
+    let json = std::fs::read_to_string(out.join("root.json")).expect("results file");
+    assert!(
+        json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
+        "{json}"
+    );
+}
+
 // P10.3: `dweller js --test262` and browser/tools/test262.py over the
 // fixtures in browser/tests/test262.
 #[test]
