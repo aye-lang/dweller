@@ -1,0 +1,18 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitIterationBody)
+
+fn vmNewIterationContext(it: *mut Interp) JsError!void {
+    let old = it.env
+    let n = it.heap.envs.items()[old].slots.len as u32
+    let e = try it.newEnv(n, it.heap.envs.items()[old].parent)
+
+    for i in 0..n as usize {
+        it.heap.envs.items()[e].slots[i] = it.heap.envs.items()[old].slots[i]
+    }
+
+    it.env = e
+}
+
+fn vmNewFunctionContext(it: *mut Interp, n: i64) JsError!void {
+    it.maybeGc()
+    it.env = try it.heap.newEnv(n as u32, it.env, Value.Undefined)
+}

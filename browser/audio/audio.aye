@@ -1,7 +1,7 @@
 // audio: the Web Audio graph (P11.19, docs/webgl.md §6 Web Audio). This
 // is the native half: contexts, nodes, AudioParam timelines, rendering
-// in 128-frame quanta, the WAV decoder (wav.aye) and the SDL output
-// (out.aye). The JS half (engine/audio_api.aye) builds the spec's
+// in 128-frame quanta, the WAV decoder (wav.aye), the effect nodes (P11.20,
+// fx.aye) and the SDL output (out.aye). The JS half (engine/audio_api.aye) builds the spec's
 // objects on it. Algorithms follow the Web Audio spec, with Blink's
 // modules/webaudio/ (audio_buffer_source_handler.cc,
 // audio_param_timeline.cc) as the reference.
@@ -23,6 +23,10 @@ pub let QUANTUM: usize = 128
 pub let DESTINATION: u8 = 0
 pub let SOURCE: u8 = 1
 pub let GAIN: u8 = 2
+pub let BIQUAD: u8 = 3
+pub let PANNER: u8 = 4
+pub let COMPRESSOR: u8 = 5
+pub let CONVOLVER: u8 = 6
 
 // AudioParam timeline events.
 pub let SET: u8 = 1
@@ -155,8 +159,14 @@ pub struct Node {
     channels: usize
     // The quantum rendered last (+1; 0 is none).
     stamp: u64
-    // gain: [gain]; source: [playbackRate, detune].
+    // gain: [gain]; source: [playbackRate, detune]; biquad: [frequency,
+    // detune, Q, gain]; panner: [pan]; compressor: [threshold, knee,
+    // ratio, attack, release].
     params: List(Param)
+    // BiquadFilterNode: the type (fx.LOWPASS ...).
+    btype: u8
+    // The state of a biquad, compressor or convolver (fx.aye).
+    fx: ?*mut Fx
     // AudioBufferSourceNode.
     data: List([]mut f32)
     buf_rate: f64
@@ -268,6 +278,8 @@ pub fn newNode(cx: *mut Context, kind: u8) AllocError!u32 {
         channels: 1,
         stamp: 0,
         params: List(Param).init(a),
+        btype: 0,
+        fx: null,
         data: List([]mut f32).init(a),
         buf_rate: cx.rate,
         buf_len: 0,
@@ -287,6 +299,23 @@ pub fn newNode(cx: *mut Context, kind: u8) AllocError!u32 {
     } else if kind == SOURCE {
         try n.params.append(try newParam(a, 1.0))
         try n.params.append(try newParam(a, 0.0))
+    } else if kind == BIQUAD {
+        try n.params.append(try newParam(a, 350.0))
+        try n.params.append(try newParam(a, 0.0))
+        try n.params.append(try newParam(a, 1.0))
+        try n.params.append(try newParam(a, 0.0))
+        n.fx = try newFx(a, kind, cx.rate)
+    } else if kind == PANNER {
+        try n.params.append(try newParam(a, 0.0))
+    } else if kind == COMPRESSOR {
+        try n.params.append(try newParam(a, -24.0))
+        try n.params.append(try newParam(a, 30.0))
+        try n.params.append(try newParam(a, 12.0))
+        try n.params.append(try newParam(a, 0.003))
+        try n.params.append(try newParam(a, 0.25))
+        n.fx = try newFx(a, kind, cx.rate)
+    } else if kind == CONVOLVER {
+        n.fx = try newFx(a, kind, cx.rate)
     }
     try cx.nodes.append(n)
     return (cx.nodes.len() - 1) as u32
@@ -370,6 +399,38 @@ pub fn paramValue(p: *Param) f64 {
         return p.dflt
     }
     return p.last
+}
+
+// ---- effect nodes
+
+/// BiquadFilterNode.type = t (fx.LOWPASS ...): the filter restarts.
+pub fn setBiquadType(n: *mut Node, t: u8) {
+    n.btype = t
+    if n.fx |fx| {
+        resetBiquad(fx)
+    }
+}
+
+/// BiquadFilterNode.getFrequencyResponse, for the parameters' values now.
+pub fn frequencyResponse(cx: *Context, n: *Node, hz: []f32, mag: []mut f32, phase: []mut f32) {
+    let ps = n.params.items()
+    biquadResponse(n.btype, cx.rate / 2.0, paramValue(&ps[0]), paramValue(&ps[1]), paramValue(&ps[2]), paramValue(&ps[3]), hz, mag, phase)
+}
+
+/// DynamicsCompressorNode.reduction: the gain reduction in dB.
+pub fn reduction(n: *Node) f64 {
+    if n.fx |fx| {
+        return fx.reduction
+    }
+    return 0.0
+}
+
+/// ConvolverNode.buffer: the impulse response (1, 2 or 4 channels; none
+/// clears it), normalized when `normalize`.
+pub fn setConvolver(cx: *mut Context, n: *mut Node, chans: [][]f32, rate: f64, normalize: bool) AllocError!void {
+    if n.fx |fx| {
+        try setResponse(cx.alloc, fx, chans, rate, normalize)
+    }
 }
 
 // ---- AudioBufferSourceNode
@@ -572,7 +633,62 @@ fn renderNode(cx: *mut Context, id: u32, q: u64) AllocError!void {
                 n.out[c][i] = (n.out[c][i] as f64 * p.values[i]) as f32
             }
         }
+    } else if n.kind == BIQUAD {
+        renderBiquad(cx, n, q0, ch)
+    } else if n.kind == PANNER {
+        n.params.items()[0].compute(q0, cx.rate)
+        if ch == 1 {
+            for i in 0..QUANTUM {
+                n.out[1][i] = 0.0
+            }
+        }
+        stereoPan(n.out, ch, n.params.items()[0].values)
+        n.channels = 2
+    } else if n.kind == COMPRESSOR {
+        renderCompressor(cx, n, q0, ch)
+    } else if n.kind == CONVOLVER {
+        if n.fx |fx| {
+            n.channels = convolve(fx, n.out, ch)
+        }
     }
+}
+
+fn renderBiquad(cx: *mut Context, n: *mut Node, q0: u64, ch: usize) {
+    var automated = false
+    for j in 0..4 {
+        n.params.items()[j].compute(q0, cx.rate)
+        if n.params.items()[j].events.len() > 0 {
+            automated = true
+        }
+    }
+    let ps = n.params.items()
+    let v = [4][]f64{ps[0].values, ps[1].values, ps[2].values, ps[3].values}
+    if n.fx |fx| {
+        biquad(fx, n.out, ch, n.btype, cx.rate / 2.0, v, automated)
+    }
+}
+
+fn renderCompressor(cx: *mut Context, n: *mut Node, q0: u64, ch: usize) {
+    for j in 0..5 {
+        n.params.items()[j].compute(q0, cx.rate)
+    }
+    // k-rate: each parameter's value at the start of the quantum, within
+    // its nominal range.
+    let ps = n.params.items()
+    let thr = math.clamp(ps[0].values[0], -100.0, 0.0)
+    let knee = math.clamp(ps[1].values[0], 0.0, 40.0)
+    let ratio = math.clamp(ps[2].values[0], 1.0, 20.0)
+    let attack = math.clamp(ps[3].values[0], 0.0, 1.0)
+    let release_time = math.clamp(ps[4].values[0], 0.0, 1.0)
+    if ch == 1 {
+        for i in 0..QUANTUM {
+            n.out[1][i] = n.out[0][i]
+        }
+    }
+    if n.fx |fx| {
+        compress(fx, n.out, ch, cx.rate, thr, knee, ratio, attack, release_time)
+    }
+    n.channels = 2
 }
 
 /// Renders one quantum; the destination's output holds it.
@@ -659,6 +775,10 @@ fn freeNodes(cx: *mut Context) {
             a.free(p.values)
         }
         n.params.deinit()
+        if n.fx |fx| {
+            freeFx(a, n.kind, fx)
+            n.fx = null
+        }
         for d in n.data.items() {
             a.free(d)
         }
