@@ -284,7 +284,7 @@ and their Blink, ANGLE and V8 files.
 | G7 | P11.17 rest | `wasm_sim_bench` and the wasm-bindgen glue check | G18's copy of the game | partial |
 | G8 | P11.18 | dedicated Workers | G6 | open |
 | G9 | P11.19 | Web Audio core | – | done |
-| G10 | P11.20 | Web Audio effects | G9 | open |
+| G10 | P11.20 | Web Audio effects | G9 | done |
 | G11 | P11.12 | the rest of WebGL 2 | G3 | open |
 | G12 | P11.13 | WebGL 2 extensions | G3 | open |
 | G13 | P11.14 | WebGL conformance runner and baseline | G4, C1 (or `server.py`) | open |
@@ -1222,6 +1222,10 @@ time as a P4 card on those files.
 - reference: the Web Audio spec (biquad coefficients from the Audio EQ Cookbook); `third_party/blink/renderer/platform/audio/biquad.cc`, `dynamics_compressor.cc`, `reverb_convolver.cc` (algorithm only)
 - verify: `cargo test --release --test browser -- webaudio_effects > target/p11.20.log 2>&1; echo $?` → 0: offline renders match reference sample files made with Chrome's `OfflineAudioContext`, within 1e-3
 - depends on: P11.19; time box: 45 min; model: sonnet
+- done 2026-10-16: all four nodes.
+  - `browser/audio/fx.aye` (new, module `audio`): `BiquadFilterNode` (the 8 types with Blink's `Biquad::Set*Params` edge cases; Q in dB for lowpass and highpass; a-rate: coefficients per frame when any of the four params has events, else once per quantum; `getFrequencyResponse`, NaN outside 0..Nyquist), `StereoPannerNode` (equal power, mono and stereo laws, a-rate), `DynamicsCompressorNode` (a port of `dynamics_compressor.cc`: 6 ms look-ahead pre-delay, detector, adaptive release polynomial, makeup gain, warp, metering; k-rate params clamped to their nominal ranges; `reduction`), `ConvolverNode` (uniformly partitioned overlap-save FFT, 128-frame partitions and a 256-point radix-2 FFT in f64, one convolver per output path as `reverb.cc`: 1, 2 or 4 channel responses, true stereo; Blink's normalization: RMS power, -58 dB calibration, 44100/rate, 0.5 for 4 channels; `normalize` is read when `buffer` is set). `audio.aye`: node kinds, the effect state (`Node.fx`), the post-mix step in `renderNode`. `engine/audio_api.aye`: the natives and the four JS classes, `createBiquadFilter`/`createStereoPanner`/`createDynamicsCompressor`/`createConvolver`.
+  - Test `webaudio_effects` (`browser/tests/audio/effects.html`): 60 reference lines (`effects.ref`, 8 biquad types plus their responses, a frequency sweep, stereo, 7 pan cases, 2 compressor settings and `reduction`, 7 convolver cases) were rendered by Chrome's `OfflineAudioContext` through `agent-browser` (the page's own output; `browser/tests/audio/README.md`); all match within 1e-3 (the compressor and filters within 1e-4). The non-numeric lines (defaults, ranges, automation rates, errors) are Chrome's too (`effects.txt`). One Chrome deviation: with stereo input and a mono response its right channel is off by up to 1.3e-3 from the plain convolution, so that channel is checked against the direct sum, not Chrome (README). Timing, debug build: 2 s rendered through a 2 s stereo response in 1.6 s.
+  - Not done: connecting a node to an `AudioParam` (still ignored), `channelCount`/`channelCountMode`/`channelInterpretation` setters (fixed to each node's default), a compressor's `automationRate` guard, silence skipping for nodes whose tail ended (they render on), 3-channel and larger inputs (extra channels render silent, as in P11.19).
 
 #### P11.21: the game's frame budget
 - goal: measure where a frame of the game goes before the acceptance run.
