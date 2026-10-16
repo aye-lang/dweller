@@ -104,14 +104,15 @@ the one place with more than one process.
   script ("checked before it: false"). It waits on wall time, which #42
   removed from the other timing tests. Fixed by P4.80 (2026-10-16): the
   click waits for the first paint (`--events` word `painted`).
-- **Layer 0 (P4).** Done: P4.31–P4.35, P4.38, P4.39, P4.43–P4.45,
+- **Layer 0 (P4).** Done: P4.31–P4.36, P4.38, P4.39, P4.43–P4.45,
   P4.50–P4.53, P4.56–P4.58, and the VM preparation P4.59–P4.62 (benchmark
   set, bytecode format, resolver). The window never waits on page
   fetch/XHR, scripts, `import()` or frames; the first paint comes after
   the head sheets; relayout is incremental (container queries included,
   not shadow trees); paint keeps the page's pixels with damage tracking
-  and a raster cache; transform and opacity changes composite. Open:
-  P4.36, P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
+  and a raster cache; transform and opacity changes composite; a scroll
+  moves the page as a texture offset and fixed and sticky boxes as layers
+  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55; backlog P4.54, P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
@@ -201,7 +202,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | open | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
+| B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
 | B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | open | – |
 | B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
@@ -509,6 +510,7 @@ them from coming back.
 - chromium: `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/property_tree.cc` (scroll and sticky position as property-tree offsets). Take: fixed and sticky items carry a scroll offset of their own, applied at draw. Not taken: property trees, a compositor thread.
 - verify: react.dev archive `window_perf.py scroll` `ui_relayout` p50 0 on frames without script changes; `cargo test --release --test browser -- window_wheel window_scroll window_sideways_scroll window_damage window_fractional_scroll > target/p4.36a.log 2>&1; echo $?` → 0 (`DWELLER_DAMAGE_CHECK=1` in `window_damage` and `window_fractional_scroll`)
 - time box: 60 min; model: opus
+- status: done 2026-10-16. In the window's build each fixed or sticky box (`Tree.scrolled`) is a promoted layer (P4.56) whose items are placed without the box's `scroll_dy` (`pinScroll`), with `scroll_dy` as the layer's translation; `followScroll` still moves the tree's boxes (hit tests, the scripts) and then moves those layers (`followPinned`, through `patchLayer`) instead of setting `relist`. It falls back to `relist` when a fixed or sticky box sits inside a promoted or transformed box (`DisplayList.unpinned`) or inside another layer. The layers come from the raster cache, so a scroll frame blends the sticky header instead of rasterizing it. react.dev archive, `window_perf.py scroll` (dummy driver; the page ends after 10 wheel frames): display lists built in the 39 scroll frames 16 → 6, all six inside a script relayout; on the frames without one, `paint_build` 3.4–3.9 ms → none, `ui_draw` 9.9–15.8 → 5.1–11.5 ms, `ui_loop` 15.1–20.9 → 10.6–16.8 ms. `fractional_scroll.html` (68 wheel frames): lists built 48 → 1. `DWELLER_DAMAGE_CHECK=1`: no difference there and on react.dev. Test `window_fractional_scroll` now asserts at most 2 lists built.
 
 #### P4.37: one connection pool
 - goal: connections, TLS sessions and DNS are reused across prefetch batches, page fetches and navigations: one curl multi handle (with a share handle) for the process, at most 6 connections per host, HTTP/2 multiplexed (cause 5).
