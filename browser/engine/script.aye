@@ -269,6 +269,10 @@ pub struct Script {
     // Messages ("[log] text"), owned, until a front end takes them.
     console: List([]mut u8)
     nav_kind: NavKind
+    // Pointer lock and fullscreen requests of scripts (0 none, 1 enter, 2
+    // leave), until the window takes them (`takeHostRequests`).
+    host_lock: u8 = 0
+    host_fs: u8 = 0
     nav_href: []mut u8
     nav_step: i64
     nav_form: ?NodeId
@@ -1821,6 +1825,52 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
         return s.it.toBoolean(v)
     }
     return true
+}
+
+/// Fires a pointer or mouse event of the user (`pointerdown`,
+/// `mousemove`...) at `target`: `detail` is "button\nbuttons\nmods", (`x`,
+/// `y`) the viewport point and (`mx`, `my`) `movementX/Y`. False when a
+/// listener canceled it.
+pub fn dispatchPointer(p: *mut Page, target: NodeId, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!bool {
+    let s = p.script orelse return true
+    if s.dispatcher == js.NONE || !p.doc.isLive(target) {
+        return true
+    }
+    let it = &mut s.it
+    let base = it.stack.len()
+    try jsPush(s, it.roots.items()[s.dispatcher])
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, try wrapFor(s, target))
+    try jsPush(s, try stringFor(s, kind))
+    try jsPush(s, try stringFor(s, detail))
+    try jsPush(s, js.numVal(x))
+    try jsPush(s, js.numVal(y))
+    try jsPush(s, js.numVal(mx))
+    try jsPush(s, js.numVal(my))
+    let r = try callReported(s, base, 7)
+    try runMicrotasks(s)
+    try afterTask(s)
+    if r |v| {
+        return s.it.toBoolean(v)
+    }
+    return true
+}
+
+/// What scripts asked of the window: `lock` and `fs` are 0 (nothing), 1
+/// (enter pointer lock, fullscreen) or 2 (leave it). Once.
+pub struct HostRequests {
+    lock: u8
+    fs: u8
+}
+
+pub fn takeHostRequests(p: *mut Page) HostRequests {
+    if p.script |s| {
+        let r = HostRequests { lock: s.host_lock, fs: s.host_fs }
+        s.host_lock = 0
+        s.host_fs = 0
+        return r
+    }
+    return HostRequests { lock: 0, fs: 0 }
 }
 
 /// Fires `wheel` at `target` for the user's wheel or trackpad: deltaMode
