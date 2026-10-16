@@ -1,0 +1,17 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableLoad)
+
+fn vmLoadContext(c: *mut Compiler, depth: u32, slot: u32, name: u32) CompileError!void {
+    try c.b.op2(BC_LDA_CONTEXT_SLOT, vmContextDepth(c, depth) as i64, slot as i64)
+
+    if vmMayBeHole(c, depth) {
+        try c.b.op1(BC_THROW_REFERENCE_ERROR_IF_HOLE, name as i64)
+    }
+}
+
+fn vmStoreBinding(c: *mut Compiler, r: i32, depth: u32, slot: u32) CompileError!void {
+    if r != VM_CONTEXT {
+        try c.b.op1(BC_STAR, r as i64)
+    } else {
+        try c.b.op2(BC_STA_CONTEXT_SLOT, vmContextDepth(c, depth) as i64, slot as i64)
+    }
+}

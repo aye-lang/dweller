@@ -1,0 +1,15 @@
+import std
+import std.mem.Allocator
+import std.text
+
+extern fn getenv(name: [*]u8) ?[*]u8
+extern fn strlen(s: [*]u8) usize
+
+pub fn addEnvFonts(alloc: Allocator, sys: *mut System) {
+    let value = getenv("DWELLER_FONT_DIRS".ptr) orelse return
+    var dirs = text.split(value[0..strlen(value)], ":")
+
+    while dirs.next() |dir| {
+        addFontDir(alloc, sys, dir)
+    }
+}

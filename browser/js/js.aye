@@ -22,6 +22,16 @@ let pthread = @cimport("pthread.h")
 /// uncaught exception prints `Uncaught <Name>: <message>` to stderr and
 /// gives status 1.
 pub fn runFile(alloc: Allocator, path: []u8) i32 {
+    return runFileWith(alloc, path, false)
+}
+
+/// `dweller js --test262 FILE`: runFile with the test262 host hooks
+/// (`print` and `$262`).
+pub fn runTest262File(alloc: Allocator, path: []u8) i32 {
+    return runFileWith(alloc, path, true)
+}
+
+fn runFileWith(alloc: Allocator, path: []u8, test262: bool) i32 {
     let src = std.fs.readFile(alloc, path) catch |e| {
         std.log.err("cannot read {}", path)
         return 1
@@ -44,7 +54,7 @@ pub fn runFile(alloc: Allocator, path: []u8) i32 {
     b.append(path) catch return 1
     let target = url.parse(alloc, b.bytes()) catch return 1
     defer target.deinit(alloc)
-    return runOnBigStackAt(alloc, src, target.href, text.endsWith(path, ".mjs"))
+    return runOnBigStackAt(alloc, src, target.href, text.endsWith(path, ".mjs"), test262)
 }
 
 /// `dweller js --print-scopes FILE`: writes the scope tree of the script
@@ -108,32 +118,33 @@ struct Job {
     status: i32
     href: []u8
     module: bool
+    test262: bool
 }
 
 fn jobMain(arg: ?[*]u8) ?[*]u8 {
     if arg |p| {
         let job = @ptrCast(*mut Job, p)
-        job.status = runSourceAt(job.alloc, job.src, job.href, job.module)
+        job.status = runSourceAt(job.alloc, job.src, job.href, job.module, job.test262)
     }
     return null
 }
 
 /// runSource on a thread with a 1 GB stack (reserved, not committed).
 pub fn runOnBigStack(alloc: Allocator, src: []u8) i32 {
-    return runOnBigStackAt(alloc, src, "", false)
+    return runOnBigStackAt(alloc, src, "", false, false)
 }
 
 extern fn getcwd(buf: [*]u8, size: usize) [*]u8
 
-fn runOnBigStackAt(alloc: Allocator, src: []u8, href: []u8, module: bool) i32 {
-    var job = Job { alloc: alloc, src: src, status: 1, href: href, module: module }
+fn runOnBigStackAt(alloc: Allocator, src: []u8, href: []u8, module: bool, test262: bool) i32 {
+    var job = Job { alloc: alloc, src: src, status: 1, href: href, module: module, test262: test262 }
     var attr = @zeroed(pthread.pthread_attr_t)
     var thread = @zeroed(pthread.pthread_t)
     if pthread.pthread_attr_init(&mut attr) != 0 || pthread.pthread_attr_setstacksize(&mut attr, STACK_BYTES) != 0 {
-        return runSourceAt(alloc, src, href, module)
+        return runSourceAt(alloc, src, href, module, test262)
     }
     if pthread.pthread_create(&mut thread, &attr, jobMain, @ptrCast([*]u8, &mut job)) != 0 {
-        return runSourceAt(alloc, src, href, module)
+        return runSourceAt(alloc, src, href, module, test262)
     }
     pthread.pthread_join(thread, null)
     return job.status
@@ -141,10 +152,10 @@ fn runOnBigStackAt(alloc: Allocator, src: []u8, href: []u8, module: bool) i32 {
 
 /// Runs a script's source in a new engine; returns the exit status.
 pub fn runSource(alloc: Allocator, src: []u8) i32 {
-    return runSourceAt(alloc, src, "", false)
+    return runSourceAt(alloc, src, "", false, false)
 }
 
-fn runSourceAt(alloc: Allocator, src: []u8, href: []u8, module: bool) i32 {
+fn runSourceAt(alloc: Allocator, src: []u8, href: []u8, module: bool, test262: bool) i32 {
     var it = Interp.create(alloc) catch |e| {
         std.log.err("out of memory")
         return 1
@@ -160,6 +171,11 @@ fn runSourceAt(alloc: Allocator, src: []u8, href: []u8, module: bool) i32 {
         it.heap.threshold = 1
     }
     it.markStackBase(RUNNER_ROOM)
+    if test262 {
+        installTest262(&mut it) catch |e| {
+            return uncaughtStatus(&mut it, e)
+        }
+    }
     it.script_url = it.intern(href) catch return 1
     if module {
         importModule(&mut it, href, it.script_url) catch |e| {
@@ -197,6 +213,52 @@ fn runSourceAt(alloc: Allocator, src: []u8, href: []u8, module: bool) i32 {
         }
     }
     return 0
+}
+
+// ---- the test262 host hooks (`dweller js --test262`)
+
+// `$262` is made in JS over four natives that live on a hidden global
+// until the prelude has taken them.
+let T262_PRELUDE = \\(function (G, h) {
+    \\  G.print = h.print;
+    \\  const $262 = {
+    \\    global: G,
+    \\    evalScript: h.evalScript,
+    \\    gc: h.gc,
+    \\    detachArrayBuffer: h.detach,
+    \\  };
+    \\  Object.defineProperty(G, '$262', { value: $262, writable: true, configurable: true });
+    \\  delete G.__t262;
+    \\})(globalThis, globalThis.__t262);
+
+fn installTest262(it: *mut Interp) JsError!void {
+    let h = try it.newObject(it.object_proto)
+    try it.defineValue(it.global, "__t262", objVal(h))
+    try it.defineNative(h, "print", 1, t262Print)
+    try it.defineNative(h, "evalScript", 1, t262EvalScript)
+    try it.defineNative(h, "gc", 0, t262Gc)
+    try it.defineNative(h, "detach", 1, engineBufDetach)
+    _ = try it.runScript(T262_PRELUDE)
+}
+
+fn t262Print(it: *mut Interp, a: Args) JsError!Value {
+    let s = try it.toStringValue(it.arg(a, 0))
+    let b = try it.builder()
+    defer it.release(b)
+    try b.append(it.heap.bytes(strOf(s)))
+    try b.appendByte('\n')
+    @print(b.bytes())
+    return Value.Undefined
+}
+
+fn t262EvalScript(it: *mut Interp, a: Args) JsError!Value {
+    let s = try it.toStringValue(it.arg(a, 0))
+    return it.evalScript(it.heap.bytes(strOf(s)))
+}
+
+fn t262Gc(it: *mut Interp, a: Args) JsError!Value {
+    collectGarbage(it)
+    return Value.Undefined
 }
 
 // Calls f (with argument `arg` when argc is 1): null, or the exit status

@@ -1,0 +1,17 @@
+import engine.workers
+
+fn freeDeadLinks(s: *mut Script) {
+    let l = page_links orelse return
+    var i: usize = 0
+
+    while i < l.len() {
+        let pl = l.items()[i]
+
+        if pl.owner == s && pl.dead {
+            _ = l.orderedRemove(i)
+            workers.freeLink(s.alloc, pl.link)
+        } else {
+            i += 1
+        }
+    }
+}

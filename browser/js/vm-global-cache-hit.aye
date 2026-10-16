@@ -1,0 +1,16 @@
+fn vmGlobalCacheHit(it: *mut Interp, id: u32, name: u32) bool {
+    let shape = it.heap.obj(it.global).shape
+    let c = it.prop_caches.items()[id]
+
+    if c.shape != NONE && c.proto_shape == NONE && c.shape == shape {
+        return true
+    }
+
+    if it.heap.findProp(it.global, name) |i| {
+        it.prop_caches.items()[id] = PropCache { shape: shape, proto_shape: NONE, slot: i }
+
+        return true
+    }
+
+    return false
+}

@@ -1,0 +1,25 @@
+import paint
+import std.mem.AllocError
+
+pub fn drawRinged(ui: *mut Ui, r: paint.IRect, v: paint.View, bg: paint.Rgba, reuse: *mut paint.Reuse) AllocError!void {
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+
+    for k in 0..2 {
+        let part = ringPart(r, pd.ring, h, k)
+        let ringed = paint.View { scale: v.scale, dx: v.dx, dy: v.dy + ringOffset(pd.ring, h, k) as f64 }
+
+        if part.y1 <= part.y0 {
+            continue
+        }
+
+        try pd.canvas.pushDamage(part)
+        defer pd.canvas.popClip()
+
+        pd.canvas.fillRect(part, bg)
+
+        if ui.list |l| {
+            try paint.renderWith(&l, &mut pd.canvas, ringed, &mut ui.painter, reuse)
+        }
+    }
+}

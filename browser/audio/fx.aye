@@ -1,0 +1,867 @@
+// fx: the effect nodes of the Web Audio graph (P11.20): BiquadFilterNode
+// (Audio EQ Cookbook coefficients, all 8 types, the frequency response),
+// StereoPannerNode (equal power), DynamicsCompressorNode (a port of
+// Blink's platform/audio/dynamics_compressor.cc: look-ahead pre-delay,
+// adaptive release, makeup gain, `reduction`) and ConvolverNode
+// (uniformly partitioned FFT convolution, with Blink's normalization,
+// platform/audio/reverb.cc). Each runs on the 128-frame bus of its node
+// (`audio.renderNode` calls it after mixing the inputs).
+
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+
+// BiquadFilterNode types.
+pub let LOWPASS: u8 = 0
+pub let HIGHPASS: u8 = 1
+pub let BANDPASS: u8 = 2
+pub let LOWSHELF: u8 = 3
+pub let HIGHSHELF: u8 = 4
+pub let PEAKING: u8 = 5
+pub let NOTCH: u8 = 6
+pub let ALLPASS: u8 = 7
+
+// The compressor's pre-delay buffer (frames; a power of 2) and the
+// delay before the first quantum, as in Blink.
+let MAX_PRE_DELAY: usize = 1024
+let DEFAULT_PRE_DELAY: usize = 256
+// kPreDelay = 0.006f, as a float.
+let PRE_DELAY_TIME: f64 = 0.006000000052154064
+// kPiOverTwoFloat.
+let HALF_PI_F: f64 = 1.5707963705062866
+let FFT_SIZE: usize = 256
+let BINS: usize = 129
+
+/// One input channel convolved with one channel of the impulse response.
+pub struct Conv {
+    // The impulse response in partitions of QUANTUM frames, as spectra of
+    // BINS bins each (scaled by the normalization and 1/FFT_SIZE).
+    hre: []mut f64
+    him: []mut f64
+    // The spectra of the last `parts` input blocks, as a ring.
+    xre: []mut f64
+    xim: []mut f64
+    parts: usize
+    head: usize
+    // The previous input block (overlap-save).
+    prev: []mut f32
+}
+
+pub struct Fx {
+    // Biquad: the filter's history per channel.
+    x1: [2]f64
+    x2: [2]f64
+    y1: [2]f64
+    y2: [2]f64
+    // Compressor: the pre-delay lines and the detector/envelope state.
+    pre: [2][]mut f32
+    pre_read: usize
+    pre_write: usize
+    pre_frames: usize
+    detector: f64
+    gain: f64
+    metering: f64
+    metering_k: f64
+    max_attack: f64
+    // The metering of the last quantum, in dB (`reduction`).
+    reduction: f64
+    // The static curve for the threshold, knee and ratio last used.
+    db_thr: f64
+    db_knee: f64
+    ratio: f64
+    slope: f64
+    lin_thr: f64
+    knee_thr: f64
+    db_knee_thr: f64
+    db_yknee_thr: f64
+    k: f64
+    // Convolver: the channels of the impulse response (0 for none), one
+    // `Conv` per output path, and scratch.
+    resp: usize
+    convs: List(Conv)
+    in0: []mut f32
+    in1: []mut f32
+    sum0: []mut f32
+    sum1: []mut f32
+    tre: []mut f64
+    tim: []mut f64
+    wc: []mut f64
+    ws: []mut f64
+    are: []mut f64
+    aim: []mut f64
+
+    fn kneeCurve(self: *Self, x: f64, k: f64) f64 {
+        if x < self.lin_thr {
+            return x
+        }
+        return self.lin_thr + (1.0 - math.exp(-k * (x - self.lin_thr))) / k
+    }
+
+    // The full compression curve: linear, the knee, then a constant ratio.
+    fn saturate(self: *Self, x: f64, k: f64) f64 {
+        if x < self.knee_thr {
+            return self.kneeCurve(x, k)
+        }
+        let db_x = toDb(x)
+        let db_y = self.db_yknee_thr + self.slope * (db_x - self.db_knee_thr)
+        return fromDb(db_y)
+    }
+
+    // The k of the knee curve whose slope at the knee's end is
+    // `desired_slope` (a bisection, as Blink does).
+    fn kAtSlope(self: *Self, desired_slope: f64) f64 {
+        let db_x = self.db_thr + self.db_knee
+        let x = fromDb(db_x)
+        var x2: f64 = 1.0
+        var db_x2: f64 = 0.0
+        if !(x < self.lin_thr) {
+            x2 = x * 1.001
+            db_x2 = toDb(x2)
+        }
+        var min_k: f64 = 0.1
+        var max_k: f64 = 10000.0
+        var k: f64 = 5.0
+        var slope: f64 = 1.0
+        for i in 0..15 {
+            if !(x < self.lin_thr) {
+                let db_y = toDb(self.kneeCurve(x, k))
+                let db_y2 = toDb(self.kneeCurve(x2, k))
+                slope = (db_y2 - db_y) / (db_x2 - db_x)
+            }
+            if slope < desired_slope {
+                max_k = k
+            } else {
+                min_k = k
+            }
+            k = math.sqrt(min_k * max_k)
+        }
+        return k
+    }
+
+    fn updateCurve(self: *mut Self, db_thr: f64, db_knee: f64, ratio: f64) f64 {
+        if db_thr != self.db_thr || db_knee != self.db_knee || ratio != self.ratio {
+            self.db_thr = db_thr
+            self.lin_thr = fromDb(db_thr)
+            self.db_knee = db_knee
+            self.ratio = ratio
+            self.slope = 1.0 / ratio
+            let k = self.kAtSlope(1.0 / ratio)
+            self.db_knee_thr = db_thr + db_knee
+            self.knee_thr = fromDb(self.db_knee_thr)
+            self.db_yknee_thr = toDb(self.kneeCurve(self.knee_thr, k))
+            self.k = k
+        }
+        return self.k
+    }
+}
+
+fn toDb(x: f64) f64 {
+    return 20.0 * math.log10(x)
+}
+
+fn fromDb(db: f64) f64 {
+    return math.pow(10.0, 0.05 * db)
+}
+
+// x when it is finite, else d.
+fn fin(x: f64, d: f64) f64 {
+    if math.isNan(x) || math.isInf(x) {
+        return d
+    }
+    return x
+}
+
+/// The state of a `kind` node (BIQUAD, COMPRESSOR or CONVOLVER).
+pub fn newFx(a: Allocator, kind: u8, rate: f64) AllocError!*mut Fx {
+    var pre = [2][]mut f32{[]mut f32{}, []mut f32{}}
+    var in0 = []mut f32{}
+    var in1 = []mut f32{}
+    var sum0 = []mut f32{}
+    var sum1 = []mut f32{}
+    var tre = []mut f64{}
+    var tim = []mut f64{}
+    var wc = []mut f64{}
+    var ws = []mut f64{}
+    var are = []mut f64{}
+    var aim = []mut f64{}
+    if kind == COMPRESSOR {
+        pre = [2][]mut f32{try a.alloc(0.0 as f32, MAX_PRE_DELAY), try a.alloc(0.0 as f32, MAX_PRE_DELAY)}
+    } else if kind == CONVOLVER {
+        in0 = try a.alloc(0.0 as f32, QUANTUM)
+        in1 = try a.alloc(0.0 as f32, QUANTUM)
+        sum0 = try a.alloc(0.0 as f32, QUANTUM)
+        sum1 = try a.alloc(0.0 as f32, QUANTUM)
+        tre = try a.alloc(0.0 as f64, FFT_SIZE)
+        tim = try a.alloc(0.0 as f64, FFT_SIZE)
+        wc = try a.alloc(0.0 as f64, FFT_SIZE / 2)
+        ws = try a.alloc(0.0 as f64, FFT_SIZE / 2)
+        are = try a.alloc(0.0 as f64, BINS)
+        aim = try a.alloc(0.0 as f64, BINS)
+        for i in 0..FFT_SIZE / 2 {
+            let w = 2.0 * math.pi * i as f64 / FFT_SIZE as f64
+            wc[i] = math.cos(w)
+            ws[i] = math.sin(w)
+        }
+    }
+    return try a.create(Fx {
+        x1: [2]f64{0.0, ..},
+        x2: [2]f64{0.0, ..},
+        y1: [2]f64{0.0, ..},
+        y2: [2]f64{0.0, ..},
+        pre: pre,
+        pre_read: 0,
+        pre_write: DEFAULT_PRE_DELAY,
+        pre_frames: DEFAULT_PRE_DELAY,
+        detector: 0.0,
+        gain: 1.0,
+        metering: 1.0,
+        metering_k: 1.0 - math.exp(-1.0 / (0.325 * rate)),
+        max_attack: -1.0,
+        reduction: 0.0,
+        db_thr: -1.0,
+        db_knee: -1.0,
+        ratio: -1.0,
+        slope: -1.0,
+        lin_thr: -1.0,
+        knee_thr: -1.0,
+        db_knee_thr: -1.0,
+        db_yknee_thr: -1.0,
+        k: -1.0,
+        resp: 0,
+        convs: List(Conv).init(a),
+        in0: in0,
+        in1: in1,
+        sum0: sum0,
+        sum1: sum1,
+        tre: tre,
+        tim: tim,
+        wc: wc,
+        ws: ws,
+        are: are,
+        aim: aim,
+    })
+}
+
+fn freeConvs(a: Allocator, fx: *mut Fx) {
+    for i in 0..fx.convs.len() {
+        let c = &mut fx.convs.items()[i]
+        a.free(c.hre)
+        a.free(c.him)
+        a.free(c.xre)
+        a.free(c.xim)
+        a.free(c.prev)
+    }
+    fx.convs.clear()
+}
+
+/// Frees the state of a `kind` node.
+pub fn freeFx(a: Allocator, kind: u8, fx: *mut Fx) {
+    freeConvs(a, fx)
+    fx.convs.deinit()
+    if kind == COMPRESSOR {
+        a.free(fx.pre[0])
+        a.free(fx.pre[1])
+    } else if kind == CONVOLVER {
+        a.free(fx.in0)
+        a.free(fx.in1)
+        a.free(fx.sum0)
+        a.free(fx.sum1)
+        a.free(fx.tre)
+        a.free(fx.tim)
+        a.free(fx.wc)
+        a.free(fx.ws)
+        a.free(fx.are)
+        a.free(fx.aim)
+    }
+    a.destroy(fx)
+}
+
+// ---- BiquadFilterNode
+
+// Normalizes the coefficients by a0: [b0, b1, b2, a1, a2].
+fn norm(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) [5]f64 {
+    let inv = 1.0 / a0
+    return [5]f64{b0 * inv, b1 * inv, b2 * inv, a1 * inv, a2 * inv}
+}
+
+/// Clears the history of the filter.
+pub fn resetBiquad(fx: *mut Fx) {
+    for k in 0..2 {
+        fx.x1[k] = 0.0
+        fx.x2[k] = 0.0
+        fx.y1[k] = 0.0
+        fx.y2[k] = 0.0
+    }
+}
+
+/// The coefficients [b0, b1, b2, a1, a2] of a filter of `kind` at the
+/// normalized frequency `f` (1 is Nyquist); Blink's Biquad::Set*Params.
+/// `q` is in dB for lowpass and highpass.
+pub fn biquadCoefficients(kind: u8, f: f64, q: f64, gain: f64) [5]f64 {
+    if kind == LOWPASS || kind == HIGHPASS {
+        let cutoff = math.clamp(f, 0.0, 1.0)
+        if cutoff == 1.0 {
+            if kind == LOWPASS {
+                return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+            }
+            return norm(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        }
+        if !(cutoff > 0.0) {
+            if kind == LOWPASS {
+                return norm(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+            }
+            return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        }
+        let res = math.pow(10.0, q / 20.0)
+        let theta = math.pi * cutoff
+        let alpha = math.sin(theta) / (2.0 * res)
+        let cosw = math.cos(theta)
+        if kind == LOWPASS {
+            let beta = (1.0 - cosw) / 2.0
+            return norm(beta, 2.0 * beta, beta, 1.0 + alpha, -2.0 * cosw, 1.0 - alpha)
+        }
+        let beta = (1.0 + cosw) / 2.0
+        return norm(beta, -2.0 * beta, beta, 1.0 + alpha, -2.0 * cosw, 1.0 - alpha)
+    }
+    if kind == LOWSHELF || kind == HIGHSHELF {
+        let freq = math.clamp(f, 0.0, 1.0)
+        let a = math.pow(10.0, gain / 40.0)
+        if freq == 1.0 {
+            if kind == LOWSHELF {
+                return norm(a * a, 0.0, 0.0, 1.0, 0.0, 0.0)
+            }
+            return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        }
+        if !(freq > 0.0) {
+            if kind == LOWSHELF {
+                return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+            }
+            return norm(a * a, 0.0, 0.0, 1.0, 0.0, 0.0)
+        }
+        let w0 = math.pi * freq
+        // The filter slope is 1 (its maximum): alpha = sin(w0) / 2 * sqrt(2).
+        let alpha = 0.5 * math.sin(w0) * math.sqrt(2.0)
+        let k = math.cos(w0)
+        let k2 = 2.0 * math.sqrt(a) * alpha
+        let ap = a + 1.0
+        let am = a - 1.0
+        if kind == LOWSHELF {
+            return norm(
+                a * (ap - am * k + k2),
+                2.0 * a * (am - ap * k),
+                a * (ap - am * k - k2),
+                ap + am * k + k2,
+                -2.0 * (am + ap * k),
+                ap + am * k - k2,
+            )
+        }
+        return norm(
+            a * (ap + am * k + k2),
+            -2.0 * a * (am + ap * k),
+            a * (ap + am * k - k2),
+            ap - am * k + k2,
+            2.0 * (am - ap * k),
+            ap - am * k - k2,
+        )
+    }
+    let qq = math.max(0.0, q)
+    if kind == BANDPASS {
+        let freq = math.max(0.0, f)
+        if freq > 0.0 && freq < 1.0 {
+            if qq > 0.0 {
+                let w0 = math.pi * freq
+                let alpha = math.sin(w0) / (2.0 * qq)
+                let k = math.cos(w0)
+                return norm(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * k, 1.0 - alpha)
+            }
+            return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        }
+        return norm(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    }
+    let freq = math.clamp(f, 0.0, 1.0)
+    if !(freq > 0.0 && freq < 1.0) {
+        return norm(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    }
+    let w0 = math.pi * freq
+    if kind == PEAKING {
+        let a = math.pow(10.0, gain / 40.0)
+        if qq > 0.0 {
+            let alpha = math.sin(w0) / (2.0 * qq)
+            let k = math.cos(w0)
+            return norm(1.0 + alpha * a, -2.0 * k, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * k, 1.0 - alpha / a)
+        }
+        return norm(a * a, 0.0, 0.0, 1.0, 0.0, 0.0)
+    }
+    if kind == ALLPASS {
+        if qq > 0.0 {
+            let alpha = math.sin(w0) / (2.0 * qq)
+            let k = math.cos(w0)
+            return norm(1.0 - alpha, -2.0 * k, 1.0 + alpha, 1.0 + alpha, -2.0 * k, 1.0 - alpha)
+        }
+        return norm(-1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    }
+    // NOTCH
+    if qq > 0.0 {
+        let alpha = math.sin(w0) / (2.0 * qq)
+        let k = math.cos(w0)
+        return norm(1.0, -2.0 * k, 1.0, 1.0 + alpha, -2.0 * k, 1.0 - alpha)
+    }
+    return norm(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+}
+
+// The normalized frequency of `freq` Hz detuned by `detune` cents.
+fn normalized(freq: f64, detune: f64, nyquist: f64) f64 {
+    let f = math.clamp(freq, 0.0, nyquist) / nyquist
+    if detune != 0.0 {
+        return f * math.pow(2.0, math.clamp(detune, -153600.0, 153600.0) / 1200.0)
+    }
+    return f
+}
+
+/// Filters the `ch` channels of `bus` in place. `p` holds the values of
+/// frequency, detune, Q and gain for each frame of the quantum; with
+/// `automated` the coefficients are computed for each frame, else once.
+pub fn biquad(fx: *mut Fx, bus: [2][]mut f32, ch: usize, kind: u8, nyquist: f64, p: [4][]f64, automated: bool) {
+    var c = biquadCoefficients(kind, normalized(p[0][0], p[1][0], nyquist), p[2][0], math.min(p[3][0], 1541.2736))
+    for i in 0..QUANTUM {
+        if automated && i > 0 {
+            c = biquadCoefficients(kind, normalized(p[0][i], p[1][i], nyquist), p[2][i], math.min(p[3][i], 1541.2736))
+        }
+        for k in 0..ch {
+            let x = bus[k][i] as f64
+            let y = (c[0] * x + c[1] * fx.x1[k] + c[2] * fx.x2[k] - c[3] * fx.y1[k] - c[4] * fx.y2[k]) as f32
+            bus[k][i] = y
+            fx.x2[k] = fx.x1[k]
+            fx.x1[k] = x
+            fx.y2[k] = fx.y1[k]
+            fx.y1[k] = y as f64
+        }
+    }
+}
+
+/// getFrequencyResponse: the magnitude and phase of the filter at each
+/// frequency of `hz` (NaN outside 0..Nyquist).
+pub fn biquadResponse(kind: u8, nyquist: f64, freq: f64, detune: f64, q: f64, gain: f64, hz: []f32, mag: []mut f32, phase: []mut f32) {
+    let c = biquadCoefficients(kind, normalized(freq, detune, nyquist), q, math.min(gain, 1541.2736))
+    let n = math.minOf(usize, hz.len, math.minOf(usize, mag.len, phase.len))
+    for k in 0..n {
+        let f = hz[k] as f64 / nyquist
+        if f < 0.0 || f > 1.0 {
+            mag[k] = math.nan() as f32
+            phase[k] = math.nan() as f32
+            continue
+        }
+        let w = -math.pi * f
+        let zr = math.cos(w)
+        let zi = math.sin(w)
+        let z2r = zr * zr - zi * zi
+        let z2i = 2.0 * zr * zi
+        let nr = c[0] + c[1] * zr + c[2] * z2r
+        let ni = c[1] * zi + c[2] * z2i
+        let dr = 1.0 + c[3] * zr + c[4] * z2r
+        let di = c[3] * zi + c[4] * z2i
+        let den = dr * dr + di * di
+        let rr = (nr * dr + ni * di) / den
+        let ri = (ni * dr - nr * di) / den
+        mag[k] = math.hypot(rr, ri) as f32
+        phase[k] = math.atan2(ri, rr) as f32
+    }
+}
+
+// ---- StereoPannerNode
+
+/// Pans the `ch` channels of `bus` (1 or 2) to 2 by the equal-power law;
+/// `pan` holds the value for each frame.
+pub fn stereoPan(bus: [2][]mut f32, ch: usize, pan: []f64) {
+    for i in 0..QUANTUM {
+        let p = math.clamp(pan[i], -1.0, 1.0)
+        let l = bus[0][i] as f64
+        if ch == 1 {
+            let rad = (p * 0.5 + 0.5) * math.pi / 2.0
+            bus[0][i] = (l * math.cos(rad)) as f32
+            bus[1][i] = (l * math.sin(rad)) as f32
+        } else {
+            let r = bus[1][i] as f64
+            var x = p
+            if p <= 0.0 {
+                x = p + 1.0
+            }
+            let rad = x * math.pi / 2.0
+            let gl = math.cos(rad)
+            let gr = math.sin(rad)
+            if p <= 0.0 {
+                bus[0][i] = (l + r * gl) as f32
+                bus[1][i] = (r * gr) as f32
+            } else {
+                bus[0][i] = (l * gl) as f32
+                bus[1][i] = (r + l * gr) as f32
+            }
+        }
+    }
+}
+
+// ---- DynamicsCompressorNode
+
+// Re-times the look-ahead delay (Blink's SetPreDelayTime).
+fn setPreDelay(fx: *mut Fx, rate: f64) {
+    var frames = (PRE_DELAY_TIME * rate) as usize
+    if frames > MAX_PRE_DELAY - 1 {
+        frames = MAX_PRE_DELAY - 1
+    }
+    if fx.pre_frames != frames {
+        fx.pre_frames = frames
+        for j in 0..2 {
+            for i in 0..MAX_PRE_DELAY {
+                fx.pre[j][i] = 0.0
+            }
+        }
+        fx.pre_read = 0
+        fx.pre_write = frames
+    }
+}
+
+/// Compresses the `ch` channels of `bus` (1 or 2) into 2. Blink's
+/// DynamicsCompressor::Process, in 32-frame divisions.
+pub fn compress(fx: *mut Fx, bus: [2][]mut f32, ch: usize, rate: f64, thr: f64, knee: f64, ratio: f64, attack: f64, release_time: f64) {
+    let k = fx.updateCurve(thr, knee, ratio)
+    // Makeup gain with empirical/perceptual tuning.
+    let post_gain = math.pow(1.0 / fx.saturate(1.0, k), 0.6)
+    let attack_frames = math.max(0.001, attack) * rate
+    let release_frames = rate * release_time
+    let sat_release_frames = 0.0025 * rate
+    // The adaptive release: a 4th order polynomial through the release
+    // zones (0.09, 0.16, 0.42, 0.98 of the release time).
+    let z1 = 0.09
+    let z2 = 0.16
+    let z3 = 0.42
+    let z4 = 0.98
+    let ca = release_frames * (0.9999999999999998 * z1 + 1.8432219684323923e-16 * z2 - 1.9373394351676423e-16 * z3 + 8.824516011816245e-18 * z4)
+    let cb = release_frames * (-1.5788320352845888 * z1 + 2.3305837032074286 * z2 - 0.9141194204840429 * z3 + 0.1623677525612032 * z4)
+    let cc = release_frames * (0.5334142869106424 * z1 - 1.272736789213631 * z2 + 0.9258856042207512 * z3 - 0.18656310191776226 * z4)
+    let cd = release_frames * (0.08783463138207234 * z1 - 0.1694162967925622 * z2 + 0.08588057951595272 * z3 - 0.00429891410546283 * z4)
+    let ce = release_frames * (-0.042416883008123074 * z1 + 0.1115693827987602 * z2 - 0.09764676325265872 * z3 + 0.028494263462021576 * z4)
+    setPreDelay(fx, rate)
+    var frame: usize = 0
+    for div in 0..4 {
+        fx.detector = fin(fx.detector, 1.0)
+        let scaled = math.asin(fx.detector) / HALF_PI_F
+        let releasing = scaled > fx.gain
+        var diff: f64 = 0.0
+        if scaled == 0.0 {
+            diff = 1.0
+            if releasing {
+                diff = -1.0
+            }
+        } else {
+            diff = toDb(fx.gain / scaled)
+        }
+        var env: f64 = 0.0
+        if releasing {
+            fx.max_attack = -1.0
+            diff = fin(diff, -1.0)
+            var x = math.clamp(diff, -12.0, 0.0)
+            x = 0.25 * (x + 12.0)
+            let x2 = x * x
+            let x3 = x2 * x
+            let x4 = x2 * x2
+            let calc = ca + cb * x + cc * x2 + cd * x3 + ce * x4
+            env = fromDb(5.0 / calc)
+        } else {
+            diff = fin(diff, 1.0)
+            if fx.max_attack == -1.0 || fx.max_attack < diff {
+                fx.max_attack = diff
+            }
+            let eff = math.max(0.5, fx.max_attack)
+            env = 1.0 - math.pow(0.25 / eff, 1.0 / attack_frames)
+        }
+        var rd = fx.pre_read
+        var wr = fx.pre_write
+        var det = fx.detector
+        var cg = fx.gain
+        for f in 0..32 {
+            var level: f64 = 0.0
+            for j in 0..2 {
+                var src: usize = 0
+                if ch > j {
+                    src = j
+                }
+                let u = bus[src][frame] as f64
+                fx.pre[j][wr] = u as f32
+                let au = math.abs(u)
+                if level < au {
+                    level = au
+                }
+            }
+            let shaped = fx.saturate(level, k)
+            var atten: f64 = 1.0
+            if level > 0.0001 {
+                atten = shaped / level
+            }
+            let db_atten = math.max(2.0, -toDb(atten))
+            let sat_rate = fromDb(db_atten / sat_release_frames) - 1.0
+            var rate_d: f64 = 1.0
+            if atten > det {
+                rate_d = sat_rate
+            }
+            det += (atten - det) * rate_d
+            det = math.min(1.0, det)
+            det = fin(det, 1.0)
+            if env < 1.0 {
+                cg += (scaled - cg) * env
+            } else {
+                cg *= env
+                cg = math.min(1.0, cg)
+            }
+            // Warp the gain to smooth the sharp exponential transitions.
+            let warped = math.sin(HALF_PI_F * cg)
+            let total = post_gain * warped
+            let db_real = toDb(warped)
+            if db_real < fx.metering {
+                fx.metering = db_real
+            } else {
+                fx.metering += (db_real - fx.metering) * fx.metering_k
+            }
+            for j in 0..2 {
+                bus[j][frame] = (fx.pre[j][rd] as f64 * total) as f32
+            }
+            frame += 1
+            rd = (rd + 1) & (MAX_PRE_DELAY - 1)
+            wr = (wr + 1) & (MAX_PRE_DELAY - 1)
+        }
+        fx.pre_read = rd
+        fx.pre_write = wr
+        fx.detector = det
+        fx.gain = cg
+    }
+    fx.reduction = fx.metering
+}
+
+// ---- ConvolverNode
+
+// An in-place radix-2 FFT of `re`/`im` (FFT_SIZE points); `inverse`
+// leaves the result unscaled.
+fn fft(re: []mut f64, im: []mut f64, wc: []f64, ws: []f64, inverse: bool) {
+    let n = FFT_SIZE
+    var j: usize = 0
+    for i in 1..n {
+        var bit = n >> 1
+        while (j & bit) != 0 {
+            j = j ^ bit
+            bit = bit >> 1
+        }
+        j = j ^ bit
+        if i < j {
+            let tr = re[i]
+            re[i] = re[j]
+            re[j] = tr
+            let ti = im[i]
+            im[i] = im[j]
+            im[j] = ti
+        }
+    }
+    var len: usize = 2
+    while len <= n {
+        let half = len / 2
+        let step = n / len
+        var s: usize = 0
+        while s < n {
+            for k in 0..half {
+                let wr = wc[k * step]
+                var wi = -ws[k * step]
+                if inverse {
+                    wi = ws[k * step]
+                }
+                let a = s + k
+                let b = a + half
+                let xr = re[b] * wr - im[b] * wi
+                let xi = re[b] * wi + im[b] * wr
+                re[b] = re[a] - xr
+                im[b] = im[a] - xi
+                re[a] = re[a] + xr
+                im[a] = im[a] + xi
+            }
+            s += len
+        }
+        len = len * 2
+    }
+}
+
+/// Blink's normalization scale of an impulse response (reverb.cc).
+fn normalization(chans: [][]f32, rate: f64) f64 {
+    var sum: f64 = 0.0
+    for ch in chans {
+        for x in ch {
+            sum += x as f64 * x as f64
+        }
+    }
+    var power = math.sqrt(sum / (chans.len * chans[0].len) as f64)
+    if math.isNan(power) || math.isInf(power) || power < 0.000125 {
+        power = 0.000125
+    }
+    var scale = 1.0 / power
+    scale *= math.pow(10.0, -58.0 * 0.05)
+    scale *= 44100.0 / rate
+    if chans.len == 4 {
+        scale *= 0.5
+    }
+    return scale
+}
+
+/// Sets the impulse response of a convolver from 1, 2 or 4 channels (none:
+/// no response, silence).
+pub fn setResponse(a: Allocator, fx: *mut Fx, chans: [][]f32, rate: f64, normalize: bool) AllocError!void {
+    freeConvs(a, fx)
+    fx.resp = 0
+    if chans.len == 0 || chans[0].len == 0 {
+        return
+    }
+    var scale = 1.0
+    if normalize {
+        scale = normalization(chans, rate)
+    }
+    scale = scale / FFT_SIZE as f64
+    let len = chans[0].len
+    let parts = (len + QUANTUM - 1) / QUANTUM
+    fx.resp = chans.len
+    var count = chans.len
+    if count < 2 {
+        count = 2
+    }
+    for i in 0..count {
+        var src = i
+        if src >= chans.len {
+            src = chans.len - 1
+        }
+        let h = chans[src]
+        let c = Conv {
+            hre: try a.alloc(0.0 as f64, parts * BINS),
+            him: try a.alloc(0.0 as f64, parts * BINS),
+            xre: try a.alloc(0.0 as f64, parts * BINS),
+            xim: try a.alloc(0.0 as f64, parts * BINS),
+            parts: parts,
+            head: 0,
+            prev: try a.alloc(0.0 as f32, QUANTUM),
+        }
+        try fx.convs.append(c)
+        let cv = &mut fx.convs.items()[i]
+        for p in 0..parts {
+            for t in 0..FFT_SIZE {
+                fx.tre[t] = 0.0
+                fx.tim[t] = 0.0
+            }
+            for t in 0..QUANTUM {
+                let at = p * QUANTUM + t
+                if at < len {
+                    fx.tre[t] = h[at] as f64 * scale
+                }
+            }
+            fft(fx.tre, fx.tim, fx.wc, fx.ws, false)
+            for b in 0..BINS {
+                cv.hre[p * BINS + b] = fx.tre[b]
+                cv.him[p * BINS + b] = fx.tim[b]
+            }
+        }
+    }
+}
+
+// Convolves one block: `src` through `c`, written (`add`: added) to `dst`.
+fn convolveBlock(fx: *mut Fx, c: *mut Conv, src: []f32, dst: []mut f32, add: bool) {
+    // The frame: the previous block, then this one.
+    for t in 0..QUANTUM {
+        fx.tre[t] = c.prev[t] as f64
+        fx.tre[QUANTUM + t] = src[t] as f64
+        c.prev[t] = src[t]
+    }
+    for t in 0..FFT_SIZE {
+        fx.tim[t] = 0.0
+    }
+    fft(fx.tre, fx.tim, fx.wc, fx.ws, false)
+    for b in 0..BINS {
+        c.xre[c.head * BINS + b] = fx.tre[b]
+        c.xim[c.head * BINS + b] = fx.tim[b]
+        fx.are[b] = 0.0
+        fx.aim[b] = 0.0
+    }
+    // The sum over the partitions of H[p] * X[head - p].
+    var slot = c.head
+    for p in 0..c.parts {
+        let h = p * BINS
+        let x = slot * BINS
+        for b in 0..BINS {
+            let hr = c.hre[h + b]
+            let hi = c.him[h + b]
+            let xr = c.xre[x + b]
+            let xi = c.xim[x + b]
+            fx.are[b] += hr * xr - hi * xi
+            fx.aim[b] += hr * xi + hi * xr
+        }
+        if slot == 0 {
+            slot = c.parts - 1
+        } else {
+            slot -= 1
+        }
+    }
+    // The full spectrum by symmetry, then back.
+    for b in 0..BINS {
+        fx.tre[b] = fx.are[b]
+        fx.tim[b] = fx.aim[b]
+    }
+    for b in 1..BINS - 1 {
+        fx.tre[FFT_SIZE - b] = fx.are[b]
+        fx.tim[FFT_SIZE - b] = -fx.aim[b]
+    }
+    fft(fx.tre, fx.tim, fx.wc, fx.ws, true)
+    for t in 0..QUANTUM {
+        let v = fx.tre[QUANTUM + t] as f32
+        if add {
+            dst[t] += v
+        } else {
+            dst[t] = v
+        }
+    }
+    c.head = (c.head + 1) % c.parts
+}
+
+/// Convolves the `ch` channels of `bus` (1 or 2) in place; the number of
+/// channels of the result (1 only for a mono input and mono response, 0 and
+/// silence without a response).
+pub fn convolve(fx: *mut Fx, bus: [2][]mut f32, ch: usize) usize {
+    if fx.resp == 0 {
+        for c in 0..2 {
+            for i in 0..QUANTUM {
+                bus[c][i] = 0.0
+            }
+        }
+        return 1
+    }
+    for i in 0..QUANTUM {
+        fx.in0[i] = bus[0][i]
+        fx.in1[i] = bus[0][i]
+        if ch == 2 {
+            fx.in1[i] = bus[1][i]
+        }
+    }
+    if fx.resp == 4 {
+        // "True" stereo: the left input through responses 0 and 1, the
+        // right through 2 and 3.
+        convolveBlock(fx, &mut fx.convs.items()[0], fx.in0, bus[0], false)
+        convolveBlock(fx, &mut fx.convs.items()[1], fx.in0, bus[1], false)
+        convolveBlock(fx, &mut fx.convs.items()[2], fx.in1, fx.sum0, false)
+        convolveBlock(fx, &mut fx.convs.items()[3], fx.in1, fx.sum1, false)
+        for i in 0..QUANTUM {
+            bus[0][i] += fx.sum0[i]
+            bus[1][i] += fx.sum1[i]
+        }
+        return 2
+    }
+    if ch == 1 && fx.resp == 1 {
+        convolveBlock(fx, &mut fx.convs.items()[0], fx.in0, bus[0], false)
+        return 1
+    }
+    // 2 -> 1 -> 2, 2 -> 2 -> 2 and 1 -> 2 -> 2: channel i of the input
+    // (the left one for a mono input) through response i.
+    convolveBlock(fx, &mut fx.convs.items()[0], fx.in0, bus[0], false)
+    convolveBlock(fx, &mut fx.convs.items()[1], fx.in1, bus[1], false)
+    return 2
+}

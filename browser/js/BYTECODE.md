@@ -231,6 +231,66 @@ before their declaration in the source (the dead zone) and the
 `js_conformance_vm` GC-stress pass leaving out the allocation and deep
 recursion scripts (minutes each under stress) are P4.63 limits.
 
+As built (P4.64): jumps are all forward except `JumpLoop`, one per
+loop (`continue` jumps forward to it). `JumpLoop` ticks the budget
+(`Interp.tick`), so a runaway compiled loop ends on the step limit or
+deadline like a tree-walked one. The VM reads a jump's offset from the
+opcode byte; `SwitchOnSmi` falls through for a value that is not an
+integer in range, to the `Jump` to the default that follows it.
+
+As built (P4.65): `CallProperty r, argc, [n]`, `CallUndefinedReceiver`
+and `Construct` take the callee, `this` and the arguments in
+consecutive registers from `r`; `[n]` is the AST `Call`/`New` node (the
+callee's text for the TypeError). The values are copied to the top of
+the stack, where `callAt`/`constructAt` expect them. A plain compiled
+function is entered in the same loop: `vmPushFrame` builds its frame
+above the copy, the caller's code, pc, fp and arguments go to
+`VmState.saved`, and its `Return` pops back (a construction keeps the
+new object unless an object is returned); everything else (natives,
+bound functions, proxies, class constructors, generators, functions on
+the tree walker) goes through `callAt`/`constructAt` and recurses in C.
+`MAX_DEPTH` counts the frames either way. A throw unwinds the frames
+the loop pushed. The saved callers live in `VmState.saved`, not in new
+`Frame` fields: `Frame` stays as it was. Until the inline caches of
+P4.67, `LdaGlobal [n]`, `GetNamedProperty r, [n]` and
+`SetNamedProperty r, [n]` are generic and use the tree walker's
+per-node property cache (`[n]` the `Ident` or `Member` node).
+`CreateArguments` (unmapped; a sloppy function with simple parameters
+has a mapped one in the context and falls back) and
+`CreateRestParameter k` read the arguments the frame keeps (`argBase`,
+`argc`). Non-simple parameters are registers (the resolver's choice, as
+V8): copied from their slot at entry, in order, with defaults and the
+rest array; each is in its dead zone until then.
+
+As built (P4.66): the current context is `Interp.env`, and a context
+is the tree walker's `Env` (a binding keeps its tree-walker slot), so
+closures move freely between the engines. `vmPushFrame` sets
+`Interp.env` to the callee's closure environment and `vmPopFrame`
+restores the caller's (the `Frame.env` it saved). A function makes its
+context at entry (`CreateFunctionContext n`) only when it creates
+closures or has context slots; a block or `for` scope with slots that
+creates closures uses `PushContext r, n` (it makes the block context
+itself; the outer one is saved in r as a number, an ancestor the
+collector reaches through the current context) and `PopContext r`,
+which `break`/`continue` also emit for each context they leave. Scopes
+without a context are skipped when counting `LdaContextSlot depth,
+slot`. `CopyContext` replaces the loop context with a copy (same
+parent) before the update expression. `LdaClosure` loads the running
+function (a named function expression's own name).
+`ThrowReferenceErrorIfHole name` follows reads of block-level and outer
+bindings; function-level contexts start undefined, as the tree
+walker's.
+
+As built (P4.67): `StaGlobal [n]`, `TypeOfGlobal [n]`,
+`GetKeyedProperty r, [s]`, `SetKeyedProperty r_obj, r_key, [s]`,
+`DeleteProperty r` (key in the accumulator), `TestIn`,
+`TestInstanceOf`, `CreateObjectLiteral [n]` (the `ObjectLit` node: a
+`literalShape` literal gets its final shape and slots at creation),
+`DefineNamedOwnProperty r, [p], k` and `CreateArrayLiteral`,
+`StaInArrayLiteral r`. Named loads and stores and globals keep the
+per-node `PropCache` (one node is one site); feedback-vector slots and
+the compiled top level are P4.67b. The DOM gates run with the VM on.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register

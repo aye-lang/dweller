@@ -6,10 +6,21 @@
 //                     delete, left, right, up, down, home, end, pageup,
 //                     pagedown, space, tab, [ or ]; prefixed by cmd+
 //                     and/or shift+ for modifiers ("key:cmd+f")
+//     keyup:NAME      a key goes up (the same names and prefixes)
+//                     NAME may also be a KeyboardEvent.code ("KeyW",
+//                     "ShiftLeft", "ArrowUp", "Numpad5", "F5"); the
+//                     prefixes also include alt+, ctrl+ and repeat+ (an
+//                     auto-repeated key down)
 //     text:STRING     typed text ("_" stands for a space)
 //     click:X,Y       a left click at a window point
-//     move:X,Y        the mouse moves there
+//     move:X,Y        the mouse moves there; move:X,Y,DX,DY gives the
+//                     relative motion (SDL's xrel and yrel, what
+//                     movementX/Y report; without it the motion from
+//                     the last position)
 //     release:X,Y     release the left button (after a slider drag)
+//                     click:X,Y,right (or middle) and release:X,Y,right
+//                     press and release another button
+//     window:NAME     a window event: hidden, shown, blur, leave
 //     wheel:Y         a wheel event of SDL's deltas (negative: down); a
 //                     whole Y is that many notches of a wheel, a
 //                     fractional one a trackpad's delta (10 px a unit)
@@ -38,13 +49,27 @@ import std.text
 /// Builds the SDL event of one script word; null when it is not one.
 fn scriptEvent(word: []u8) ?SDL_Event {
     var ev = @zeroed(SDL_Event)
-    if text.startsWith(word, "key:") {
+    if text.startsWith(word, "key:") || text.startsWith(word, "keyup:") {
+        let up = text.startsWith(word, "keyup:")
         var name = word[4..]
+        if up {
+            name = word[6..]
+        }
         var mods: u16 = 0
+        var repeat = false
         while true {
             if text.startsWith(name, "cmd+") {
                 mods = mods | KMOD_GUI
                 name = name[4..]
+            } else if text.startsWith(name, "ctrl+") {
+                mods = mods | KMOD_CTRL
+                name = name[5..]
+            } else if text.startsWith(name, "alt+") {
+                mods = mods | KMOD_ALT
+                name = name[4..]
+            } else if text.startsWith(name, "repeat+") {
+                repeat = true
+                name = name[7..]
             } else if text.startsWith(name, "shift+") {
                 mods = mods | KMOD_SHIFT
                 name = name[6..]
@@ -54,9 +79,16 @@ fn scriptEvent(word: []u8) ?SDL_Event {
         }
         let sym = keySym(name) orelse return null
         ev.kind = SDL_KEYDOWN
+        if up {
+            ev.kind = SDL_KEYUP
+        }
         let ke = &mut ev.key
         ke.keysym.sym = sym
+        ke.keysym.scancode = scancodeOfSym(sym)
         ke.keysym.mods = mods
+        if repeat {
+            ke.repeat = 1
+        }
         return ev
     }
     if text.startsWith(word, "text:") {
@@ -75,6 +107,23 @@ fn scriptEvent(word: []u8) ?SDL_Event {
         }
         return ev
     }
+    if text.startsWith(word, "window:") {
+        let name = word[7..]
+        ev.kind = SDL_WINDOWEVENT
+        let we = &mut ev.window
+        if text.eql(name, "hidden") {
+            we.event = SDL_WINDOWEVENT_MINIMIZED
+        } else if text.eql(name, "shown") {
+            we.event = SDL_WINDOWEVENT_RESTORED
+        } else if text.eql(name, "blur") {
+            we.event = SDL_WINDOWEVENT_FOCUS_LOST
+        } else if text.eql(name, "leave") {
+            we.event = SDL_WINDOWEVENT_LEAVE
+        } else {
+            return null
+        }
+        return ev
+    }
     if text.startsWith(word, "click:") || text.startsWith(word, "move:") || text.startsWith(word, "release:") {
         let colon = std.mem.indexOf(word, ':') orelse return null
         var parts = text.split(word[colon + 1..], ",")
@@ -86,13 +135,37 @@ fn scriptEvent(word: []u8) ?SDL_Event {
         let y = text.parseInt(ys) catch |e| {
             return null
         }
+        var button = SDL_BUTTON_LEFT
+        var rel = false
+        var dx: i64 = 0
+        var dy: i64 = 0
+        if text.startsWith(word, "move:") {
+            if parts.next() |dxs| {
+                let dys = parts.next() orelse return null
+                dx = text.parseInt(dxs) catch |e| {
+                    return null
+                }
+                dy = text.parseInt(dys) catch |e| {
+                    return null
+                }
+                rel = true
+            }
+        } else if parts.next() |b| {
+            if text.eql(b, "right") {
+                button = SDL_BUTTON_RIGHT
+            } else if text.eql(b, "middle") {
+                button = SDL_BUTTON_MIDDLE
+            } else if !text.eql(b, "left") {
+                return null
+            }
+        }
         if text.startsWith(word, "click:") || text.startsWith(word, "release:") {
             ev.kind = SDL_MOUSEBUTTONDOWN
             if text.startsWith(word, "release:") {
                 ev.kind = SDL_MOUSEBUTTONUP
             }
             let be = &mut ev.button
-            be.button = SDL_BUTTON_LEFT
+            be.button = button
             be.x = x as i32
             be.y = y as i32
         } else {
@@ -100,6 +173,12 @@ fn scriptEvent(word: []u8) ?SDL_Event {
             let me = &mut ev.motion
             me.x = x as i32
             me.y = y as i32
+            if rel {
+                me.xrel = dx as i32
+                me.yrel = dy as i32
+            } else {
+                me.state = SCRIPT_MOVE
+            }
         }
         return ev
     }
@@ -145,6 +224,9 @@ fn scriptEvent(word: []u8) ?SDL_Event {
 fn keySym(name: []u8) ?i32 {
     if name.len == 1 {
         return name[0] as i32
+    }
+    if scancodeOfCode(name) |sc| {
+        return symOfScancode(sc)
     }
     let names = [15][]u8{"return", "escape", "backspace", "delete", "left", "right", "up", "down", "home", "end", "pageup", "pagedown", "space", "enter", "tab"}
     let syms = [15]i32{SDLK_RETURN, SDLK_ESCAPE, SDLK_BACKSPACE, SDLK_DELETE, SDLK_LEFT, SDLK_RIGHT, SDLK_UP, SDLK_DOWN, SDLK_HOME, SDLK_END, SDLK_PAGEUP, SDLK_PAGEDOWN, SDLK_SPACE, SDLK_KP_ENTER, SDLK_TAB}
@@ -340,6 +422,9 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
 
 /// Writes the canvas as a PNG.
 fn saveCanvas(ui: *mut Ui, path: []u8) !void {
+    if ui.page.stale {
+        blitPage(ui)
+    }
     let png = try paint.encodePng(ui.alloc, ui.canvas.width, ui.canvas.height, ui.canvas.pixels)
     defer ui.alloc.free(png)
     let f = try std.fs.create(path)

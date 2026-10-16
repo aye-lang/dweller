@@ -1,0 +1,30 @@
+import engine.workers
+import js
+import js.Interp
+import js.JsError
+import std.list.List
+
+struct PageLink {
+    owner: *mut Script
+    id: u32
+    link: *mut workers.Link
+    dead: bool
+}
+
+var page_links: ?*mut List(PageLink) = null
+var next_worker_id: u32 = 1
+
+let WORKER_PAGE_JS = @embedFile("workers/worker-page.js")
+
+fn installWorkers(it: *mut Interp) JsError!void {
+    let o = try it.newObject(it.object_proto)
+    try it.defineValue(it.global, "__workerHost", js.objVal(o))
+    try defMethod(it, o, "start", 3, wkStart)
+    try defMethod(it, o, "stage", 2, wkStage)
+    try defMethod(it, o, "post", 2, wkPost)
+    try defMethod(it, o, "terminate", 1, wkTerminate)
+    try defMethod(it, o, "size", 2, wkSize)
+    try defMethod(it, o, "fill", 3, wkFill)
+    _ = try it.runScript(workers.WIRE_JS)
+    _ = try it.runScript(WORKER_PAGE_JS)
+}

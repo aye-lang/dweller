@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<title>Workers: a module worker</title>
+<pre id="out"></pre>
+<script type="module">
+import { valueNoise } from './noise.js';
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+const size = 512, scale = 32, seed = 7;
+const w = new Worker(new URL('./noise-worker.js', import.meta.url), { type: 'module' });
+w.onmessage = e => {
+  const { data } = e.data;
+  log('got', e.data.size, data instanceof Float32Array, data.length, data.buffer.byteLength);
+  let worst = 0, sum = 0;
+  for (const [x, y] of [[0, 0], [17, 300], [511, 511], [256, 3]]) {
+    const want = Math.fround(valueNoise(x / scale, y / scale, seed));
+    worst = Math.max(worst, Math.abs(data[y * size + x] - want));
+  }
+  for (let i = 0; i < data.length; i++) sum += data[i];
+  log('matches', worst === 0, 'mean in (0,1)', sum / data.length > 0 && sum / data.length < 1);
+  w.terminate();
+};
+w.postMessage({ size, scale, seed });
+</script>

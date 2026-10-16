@@ -1840,7 +1840,8 @@ pub let LIB =
     \\// wrapped primitives and typed arrays; cycles and shared parts are kept;
     \\// a class instance becomes a plain object
     \\const cloneErrors = { Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError };
-    \\hidden(G, 'structuredClone', function structuredClone(value) {
+    \\hidden(G, 'structuredClone', function structuredClone(value, options) {
+    \\  if (arguments.length === 0) throw new TypeError("Failed to execute 'structuredClone' on 'Window': 1 argument required, but only 0 present.");
     \\  const seen = new Map();
     \\  function fail(v) {
     \\    const msg = (typeof v === 'function' ? 'function' : String(v)) + ' could not be cloned.';
@@ -1869,6 +1870,13 @@ pub let LIB =
     \\    else if (v instanceof Set) for (const x of v) out.add(clone(x));
     \\    else if (Array.isArray(v) || tag === '[object Object]') for (const k of Object.keys(v)) out[k] = clone(v[k]);
     \\    return out;
+    \\  }
+    \\  // `transfer`: the buffers move (the source is detached) and the clone
+    \\  // holds them, views included.
+    \\  if (options !== undefined && options !== null && options.transfer !== undefined) {
+    \\    const list = Array.from(options.transfer);
+    \\    for (const b of list) if (!(b instanceof ArrayBuffer) || b.detached) fail(b);
+    \\    for (const b of list) if (!seen.has(b)) seen.set(b, b.transfer());
     \\  }
     \\  return clone(value);
     \\});

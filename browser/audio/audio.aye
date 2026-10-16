@@ -1,0 +1,788 @@
+// audio: the Web Audio graph (P11.19, docs/webgl.md §6 Web Audio). This
+// is the native half: contexts, nodes, AudioParam timelines, rendering
+// in 128-frame quanta, the WAV decoder (wav.aye), the effect nodes (P11.20,
+// fx.aye) and the SDL output (out.aye). The JS half (engine/audio_api.aye) builds the spec's
+// objects on it. Algorithms follow the Web Audio spec, with Blink's
+// modules/webaudio/ (audio_buffer_source_handler.cc,
+// audio_param_timeline.cc) as the reference.
+//
+// A context renders by pulling: each quantum the destination mixes its
+// inputs, each node renders once per quantum (`stamp`). Buses have one
+// or two channels; inputs mix by the "speakers" rules (mono to stereo
+// copies, stereo to mono averages). Realtime contexts render on the
+// window thread, about 30 ms ahead of the SDL device (out.aye); an
+// OfflineAudioContext renders all its frames in one call (`render`).
+
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub let QUANTUM: usize = 128
+
+pub let DESTINATION: u8 = 0
+pub let SOURCE: u8 = 1
+pub let GAIN: u8 = 2
+pub let BIQUAD: u8 = 3
+pub let PANNER: u8 = 4
+pub let COMPRESSOR: u8 = 5
+pub let CONVOLVER: u8 = 6
+
+// AudioParam timeline events.
+pub let SET: u8 = 1
+pub let LINEAR: u8 = 2
+pub let EXPONENTIAL: u8 = 3
+pub let TARGET: u8 = 4
+
+struct Event {
+    kind: u8
+    value: f64
+    // The event's time (a ramp's end time).
+    time: f64
+    // SetTarget's time constant.
+    tc: f64
+    // When the event was added (a ramp with no event before it starts
+    // there).
+    added: f64
+}
+
+pub struct Param {
+    // The intrinsic value without automation.
+    dflt: f64
+    events: List(Event)
+    // The value of the last frame rendered (`.value` while automated).
+    last: f64
+    // The values of the current quantum.
+    values: []mut f64
+
+    // The value at `t` from the first `n` events.
+    fn valueAt(self: *Self, n: usize, t: f64) f64 {
+        let ev = self.events.items()
+        var k: usize = 0
+        while k < n && ev[k].time <= t {
+            k += 1
+        }
+        if k < n && (ev[k].kind == LINEAR || ev[k].kind == EXPONENTIAL) {
+            let end = ev[k]
+            var t0 = end.added
+            var v0 = self.dflt
+            if k > 0 {
+                let prev = ev[k - 1]
+                t0 = prev.time
+                if prev.kind == TARGET {
+                    // The ramp replaces the SetTarget (spec: it starts
+                    // from the value before it).
+                    v0 = self.valueAt(k - 1, prev.time)
+                } else {
+                    v0 = prev.value
+                }
+            }
+            if t < t0 {
+                return v0
+            }
+            let span = end.time - t0
+            if span <= 0.0 {
+                return end.value
+            }
+            let f = (t - t0) / span
+            if end.kind == LINEAR {
+                return v0 + (end.value - v0) * f
+            }
+            if v0 == 0.0 || (v0 < 0.0) != (end.value < 0.0) {
+                return v0
+            }
+            return v0 * math.pow(end.value / v0, f)
+        }
+        if k == 0 {
+            return self.dflt
+        }
+        let e = ev[k - 1]
+        if e.kind == TARGET {
+            let v0 = self.valueAt(k - 1, e.time)
+            return e.value + (v0 - e.value) * math.exp(-(t - e.time) / e.tc)
+        }
+        return e.value
+    }
+
+    // Drops the events before the last one that has ended by `t` (it
+    // becomes a SetValue: nothing after it depends on what came before).
+    fn prune(self: *mut Self, t: f64) {
+        let ev = self.events.items()
+        var j: usize = 0
+        var found = false
+        for i, e in ev {
+            if e.time > t {
+                break
+            }
+            if e.kind != TARGET {
+                j = i
+                found = true
+            }
+        }
+        if !found || j == 0 {
+            return
+        }
+        var keep = ev[j]
+        keep.kind = SET
+        var i: usize = 0
+        while i < j {
+            _ = self.events.orderedRemove(0)
+            i += 1
+        }
+        self.events.items()[0] = keep
+    }
+
+    // Fills `values` for the quantum that starts at frame `q0`.
+    fn compute(self: *mut Self, q0: u64, rate: f64) {
+        if self.events.len() == 0 {
+            for i in 0..QUANTUM {
+                self.values[i] = self.dflt
+            }
+            self.last = self.dflt
+            return
+        }
+        self.prune(q0 as f64 / rate)
+        let n = self.events.len()
+        for i in 0..QUANTUM {
+            self.values[i] = self.valueAt(n, (q0 + i as u64) as f64 / rate)
+        }
+        self.last = self.values[QUANTUM - 1]
+    }
+}
+
+pub struct Node {
+    kind: u8
+    // The nodes connected to this one's input.
+    inputs: List(u32)
+    // The output: `channels` channels of QUANTUM frames.
+    out: [2][]mut f32
+    channels: usize
+    // The quantum rendered last (+1; 0 is none).
+    stamp: u64
+    // gain: [gain]; source: [playbackRate, detune]; biquad: [frequency,
+    // detune, Q, gain]; panner: [pan]; compressor: [threshold, knee,
+    // ratio, attack, release].
+    params: List(Param)
+    // BiquadFilterNode: the type (fx.LOWPASS ...).
+    btype: u8
+    // The state of a biquad, compressor or convolver (fx.aye).
+    fx: ?*mut Fx
+    // AudioBufferSourceNode.
+    data: List([]mut f32)
+    buf_rate: f64
+    buf_len: usize
+    looping: bool
+    loop_start: f64
+    loop_end: f64
+    // 0 unscheduled, 1 scheduled, 2 playing, 3 ended.
+    play: u8
+    start_frame: u64
+    stop_frame: u64
+    offset: f64
+    // Seconds of buffer time to play (< 0: no limit).
+    duration: f64
+    pos: f64
+    played: f64
+}
+
+pub struct Context {
+    alloc: Allocator
+    // The page's interpreter, as an opaque owner tag.
+    owner: usize
+    rate: f64
+    channels: usize
+    frame: u64
+    nodes: List(Node)
+    // Sources that ended since the JS half last asked.
+    ended: List(u32)
+    realtime: bool
+    running: bool
+    closed: bool
+    // Realtime without a device: frames follow the page clock from here.
+    base_ms: f64
+    device: u32
+    // Opening the device failed: frames follow the page clock.
+    no_device: bool
+    // Interleaved stereo for the device.
+    mix: []mut f32
+}
+
+pub var contexts: ?*mut List(?*mut Context) = null
+
+fn list(alloc: Allocator) AllocError!*mut List(?*mut Context) {
+    if contexts |l| {
+        return l
+    }
+    let l = try alloc.create(List(?*mut Context).init(alloc))
+    contexts = l
+    return l
+}
+
+/// A new context of `owner` (its index), with its destination as node 0.
+pub fn newContext(alloc: Allocator, owner: usize, channels: usize, rate: f64, realtime: bool) AllocError!u32 {
+    let l = try list(alloc)
+    var nch: usize = 2
+    if channels == 1 {
+        nch = 1
+    }
+    let cx = try alloc.create(Context {
+        alloc: alloc,
+        owner: owner,
+        rate: rate,
+        channels: nch,
+        frame: 0,
+        nodes: List(Node).init(alloc),
+        ended: List(u32).init(alloc),
+        realtime: realtime,
+        running: !realtime,
+        closed: false,
+        base_ms: 0.0,
+        device: 0,
+        no_device: false,
+        mix: try alloc.alloc(0.0 as f32, QUANTUM * 2),
+    })
+    _ = try newNode(cx, DESTINATION)
+    try l.append(cx)
+    return (l.len() - 1) as u32
+}
+
+/// The context with index `id`, if `owner` made it and it is open.
+pub fn get(owner: usize, id: f64) ?*mut Context {
+    let l = contexts orelse return null
+    if !(id >= 0.0) || id >= l.len() as f64 {
+        return null
+    }
+    let cx = l.items()[id as usize] orelse return null
+    if cx.owner != owner {
+        return null
+    }
+    return cx
+}
+
+fn newParam(alloc: Allocator, v: f64) AllocError!Param {
+    return Param {
+        dflt: v,
+        events: List(Event).init(alloc),
+        last: v,
+        values: try alloc.alloc(0.0 as f64, QUANTUM),
+    }
+}
+
+/// Adds a node of `kind`; its index.
+pub fn newNode(cx: *mut Context, kind: u8) AllocError!u32 {
+    let a = cx.alloc
+    var n = Node {
+        kind: kind,
+        inputs: List(u32).init(a),
+        out: [2][]mut f32{try a.alloc(0.0 as f32, QUANTUM), try a.alloc(0.0 as f32, QUANTUM)},
+        channels: 1,
+        stamp: 0,
+        params: List(Param).init(a),
+        btype: 0,
+        fx: null,
+        data: List([]mut f32).init(a),
+        buf_rate: cx.rate,
+        buf_len: 0,
+        looping: false,
+        loop_start: 0.0,
+        loop_end: 0.0,
+        play: 0,
+        start_frame: 0,
+        stop_frame: 0xFFFFFFFFFFFFFFFF,
+        offset: 0.0,
+        duration: -1.0,
+        pos: 0.0,
+        played: 0.0,
+    }
+    if kind == GAIN {
+        try n.params.append(try newParam(a, 1.0))
+    } else if kind == SOURCE {
+        try n.params.append(try newParam(a, 1.0))
+        try n.params.append(try newParam(a, 0.0))
+    } else if kind == BIQUAD {
+        try n.params.append(try newParam(a, 350.0))
+        try n.params.append(try newParam(a, 0.0))
+        try n.params.append(try newParam(a, 1.0))
+        try n.params.append(try newParam(a, 0.0))
+        n.fx = try newFx(a, kind, cx.rate)
+    } else if kind == PANNER {
+        try n.params.append(try newParam(a, 0.0))
+    } else if kind == COMPRESSOR {
+        try n.params.append(try newParam(a, -24.0))
+        try n.params.append(try newParam(a, 30.0))
+        try n.params.append(try newParam(a, 12.0))
+        try n.params.append(try newParam(a, 0.003))
+        try n.params.append(try newParam(a, 0.25))
+        n.fx = try newFx(a, kind, cx.rate)
+    } else if kind == CONVOLVER {
+        n.fx = try newFx(a, kind, cx.rate)
+    }
+    try cx.nodes.append(n)
+    return (cx.nodes.len() - 1) as u32
+}
+
+pub fn node(cx: *mut Context, id: f64) ?*mut Node {
+    if !(id >= 0.0) || id >= cx.nodes.len() as f64 {
+        return null
+    }
+    return &mut cx.nodes.items()[id as usize]
+}
+
+pub fn connect(cx: *mut Context, from: u32, to: u32) AllocError!void {
+    let n = &mut cx.nodes.items()[to as usize]
+    for i in n.inputs.items() {
+        if i == from {
+            return
+        }
+    }
+    try n.inputs.append(from)
+}
+
+/// Disconnects `from` from `to`, or from every node when `to` is null.
+pub fn disconnect(cx: *mut Context, from: u32, to: ?u32) {
+    for k in 0..cx.nodes.len() {
+        if to |t| {
+            if k != t as usize {
+                continue
+            }
+        }
+        let n = &mut cx.nodes.items()[k]
+        var i = n.inputs.len()
+        while i > 0 {
+            i -= 1
+            if n.inputs.items()[i] == from {
+                _ = n.inputs.orderedRemove(i)
+            }
+        }
+    }
+}
+
+/// The time of the next quantum to render, in seconds.
+pub fn currentTime(cx: *Context) f64 {
+    return cx.frame as f64 / cx.rate
+}
+
+// ---- AudioParam timelines
+
+/// Adds event `kind` (SET, LINEAR, EXPONENTIAL, TARGET) after the events
+/// at the same time.
+pub fn addEvent(cx: *mut Context, p: *mut Param, kind: u8, value: f64, time: f64, tc: f64) AllocError!void {
+    let e = Event { kind: kind, value: value, time: time, tc: tc, added: currentTime(cx) }
+    var i = p.events.len()
+    while i > 0 && p.events.items()[i - 1].time > time {
+        i -= 1
+    }
+    try p.events.insert(i, e)
+}
+
+/// cancelScheduledValues: drops the events at `time` or later.
+pub fn cancelEvents(p: *mut Param, time: f64) {
+    var i = p.events.len()
+    while i > 0 && p.events.items()[i - 1].time >= time {
+        i -= 1
+        _ = p.events.pop()
+    }
+}
+
+/// `.value = v`: the intrinsic value, and a SetValue now when automated.
+pub fn setValue(cx: *mut Context, p: *mut Param, v: f64) AllocError!void {
+    p.dflt = v
+    p.last = v
+    if p.events.len() > 0 {
+        try addEvent(cx, p, SET, v, currentTime(cx), 0.0)
+    }
+}
+
+/// `.value`: the last rendered value.
+pub fn paramValue(p: *Param) f64 {
+    if p.events.len() == 0 {
+        return p.dflt
+    }
+    return p.last
+}
+
+// ---- effect nodes
+
+/// BiquadFilterNode.type = t (fx.LOWPASS ...): the filter restarts.
+pub fn setBiquadType(n: *mut Node, t: u8) {
+    n.btype = t
+    if n.fx |fx| {
+        resetBiquad(fx)
+    }
+}
+
+/// BiquadFilterNode.getFrequencyResponse, for the parameters' values now.
+pub fn frequencyResponse(cx: *Context, n: *Node, hz: []f32, mag: []mut f32, phase: []mut f32) {
+    let ps = n.params.items()
+    biquadResponse(n.btype, cx.rate / 2.0, paramValue(&ps[0]), paramValue(&ps[1]), paramValue(&ps[2]), paramValue(&ps[3]), hz, mag, phase)
+}
+
+/// DynamicsCompressorNode.reduction: the gain reduction in dB.
+pub fn reduction(n: *Node) f64 {
+    if n.fx |fx| {
+        return fx.reduction
+    }
+    return 0.0
+}
+
+/// ConvolverNode.buffer: the impulse response (1, 2 or 4 channels; none
+/// clears it), normalized when `normalize`.
+pub fn setConvolver(cx: *mut Context, n: *mut Node, chans: [][]f32, rate: f64, normalize: bool) AllocError!void {
+    if n.fx |fx| {
+        try setResponse(cx.alloc, fx, chans, rate, normalize)
+    }
+}
+
+// ---- AudioBufferSourceNode
+
+/// The buffer a source plays (copied: the spec acquires the contents).
+pub fn setBuffer(cx: *mut Context, n: *mut Node, rate: f64, chans: [][]f32) AllocError!void {
+    for d in n.data.items() {
+        cx.alloc.free(d)
+    }
+    n.data.clear()
+    n.buf_len = 0
+    for ch in chans {
+        let d = try cx.alloc.alloc(0.0 as f32, ch.len)
+        for i, x in ch {
+            d[i] = x
+        }
+        try n.data.append(d)
+        n.buf_len = ch.len
+    }
+    n.buf_rate = rate
+}
+
+pub fn start(cx: *mut Context, n: *mut Node, when: f64, offset: f64, duration: f64) {
+    n.play = 1
+    n.start_frame = frameAt(cx, when)
+    n.offset = math.max(offset, 0.0)
+    n.duration = duration
+}
+
+pub fn stop(cx: *mut Context, n: *mut Node, when: f64) {
+    n.stop_frame = frameAt(cx, when)
+}
+
+fn frameAt(cx: *Context, t: f64) u64 {
+    let f = math.ceil(t * cx.rate - 1e-9)
+    if f <= cx.frame as f64 {
+        return cx.frame
+    }
+    return f as u64
+}
+
+// The loop's bounds in buffer frames (the spec's actualLoopStart and
+// actualLoopEnd).
+fn loopBounds(n: *Node) [2]f64 {
+    let dur = n.buf_len as f64 / n.buf_rate
+    var ls = 0.0
+    var le = dur
+    if n.loop_end > 0.0 && n.loop_end <= dur && n.loop_start >= 0.0 && n.loop_start < n.loop_end {
+        ls = n.loop_start
+        le = n.loop_end
+    }
+    return [2]f64{ls * n.buf_rate, le * n.buf_rate}
+}
+
+fn sampleAt(n: *Node, ch: usize, pos: f64, loop_start: f64, loop_end: f64) f32 {
+    let d = n.data.items()[ch]
+    let i0 = pos as usize
+    if i0 >= d.len {
+        return 0.0
+    }
+    let frac = pos - i0 as f64
+    if frac == 0.0 {
+        return d[i0]
+    }
+    var i1 = i0 + 1
+    if n.looping && i1 as f64 >= loop_end {
+        i1 = loop_start as usize
+    }
+    var s1 = 0.0
+    if i1 < d.len {
+        s1 = d[i1] as f64
+    }
+    return (d[i0] as f64 + (s1 - d[i0] as f64) * frac) as f32
+}
+
+fn renderSource(cx: *mut Context, id: u32, n: *mut Node, q0: u64) AllocError!void {
+    var nch: usize = 1
+    if n.data.len() >= 2 {
+        nch = 2
+    }
+    n.channels = nch
+    for c in 0..2 {
+        for i in 0..QUANTUM {
+            n.out[c][i] = 0.0
+        }
+    }
+    n.params.items()[0].compute(q0, cx.rate)
+    n.params.items()[1].compute(q0, cx.rate)
+    if n.play == 0 || n.play == 3 || n.buf_len == 0 {
+        if n.play == 1 && n.buf_len == 0 && q0 + QUANTUM as u64 > n.stop_frame {
+            n.play = 3
+            try cx.ended.append(id)
+        }
+        return
+    }
+    // k-rate: playbackRate and detune at the start of the quantum.
+    let speed = n.params.items()[0].values[0] * math.pow(2.0, n.params.items()[1].values[0] / 1200.0)
+    let step = speed * n.buf_rate / cx.rate
+    let lb = loopBounds(n)
+    for i in 0..QUANTUM {
+        let f = q0 + i as u64
+        if f < n.start_frame {
+            continue
+        }
+        if f >= n.stop_frame {
+            n.play = 3
+            break
+        }
+        if n.play == 1 {
+            n.play = 2
+            n.pos = n.offset * n.buf_rate
+            if n.looping && n.pos >= lb[1] {
+                n.pos = lb[0] + math.fmod(n.pos - lb[0], lb[1] - lb[0])
+            }
+        }
+        if n.looping {
+            if n.pos >= lb[1] && lb[1] > lb[0] {
+                n.pos = lb[0] + math.fmod(n.pos - lb[0], lb[1] - lb[0])
+            }
+        } else if n.pos >= n.buf_len as f64 || n.pos < 0.0 {
+            n.play = 3
+            break
+        }
+        if n.duration >= 0.0 && n.played >= n.duration * n.buf_rate {
+            n.play = 3
+            break
+        }
+        for c in 0..nch {
+            n.out[c][i] = sampleAt(n, c, n.pos, lb[0], lb[1])
+        }
+        n.pos += step
+        n.played += math.abs(step)
+    }
+    if n.play == 3 {
+        try cx.ended.append(id)
+    }
+}
+
+// ---- rendering
+
+// Adds `src` (src_ch channels) to `dst` (dst_ch channels), mixed by the
+// speakers rules.
+fn mixInto(dst: [2][]mut f32, dst_ch: usize, src: [2][]mut f32, src_ch: usize) {
+    if src_ch == dst_ch {
+        for c in 0..dst_ch {
+            for i in 0..QUANTUM {
+                dst[c][i] += src[c][i]
+            }
+        }
+    } else if src_ch == 1 {
+        for i in 0..QUANTUM {
+            dst[0][i] += src[0][i]
+            dst[1][i] += src[0][i]
+        }
+    } else {
+        for i in 0..QUANTUM {
+            dst[0][i] += 0.5 * (src[0][i] + src[1][i])
+        }
+    }
+}
+
+fn renderNode(cx: *mut Context, id: u32, q: u64) AllocError!void {
+    let n = &mut cx.nodes.items()[id as usize]
+    if n.stamp == q + 1 {
+        return
+    }
+    n.stamp = q + 1
+    let q0 = q * QUANTUM as u64
+    if n.kind == SOURCE {
+        return renderSource(cx, id, n, q0)
+    }
+    // Pull the inputs first: rendering may not move `nodes` (no node is
+    // added while rendering), so `n` stays valid.
+    var ch: usize = 1
+    if n.kind == DESTINATION {
+        ch = cx.channels
+    }
+    for i in n.inputs.items() {
+        try renderNode(cx, i, q)
+        let src = &cx.nodes.items()[i as usize]
+        if n.kind != DESTINATION && src.channels > ch {
+            ch = src.channels
+        }
+    }
+    n.channels = ch
+    for c in 0..2 {
+        for i in 0..QUANTUM {
+            n.out[c][i] = 0.0
+        }
+    }
+    for i in n.inputs.items() {
+        let src = &cx.nodes.items()[i as usize]
+        mixInto(n.out, ch, src.out, src.channels)
+    }
+    if n.kind == GAIN {
+        let p = &mut n.params.items()[0]
+        p.compute(q0, cx.rate)
+        for c in 0..ch {
+            for i in 0..QUANTUM {
+                n.out[c][i] = (n.out[c][i] as f64 * p.values[i]) as f32
+            }
+        }
+    } else if n.kind == BIQUAD {
+        renderBiquad(cx, n, q0, ch)
+    } else if n.kind == PANNER {
+        n.params.items()[0].compute(q0, cx.rate)
+        if ch == 1 {
+            for i in 0..QUANTUM {
+                n.out[1][i] = 0.0
+            }
+        }
+        stereoPan(n.out, ch, n.params.items()[0].values)
+        n.channels = 2
+    } else if n.kind == COMPRESSOR {
+        renderCompressor(cx, n, q0, ch)
+    } else if n.kind == CONVOLVER {
+        if n.fx |fx| {
+            n.channels = convolve(fx, n.out, ch)
+        }
+    }
+}
+
+fn renderBiquad(cx: *mut Context, n: *mut Node, q0: u64, ch: usize) {
+    var automated = false
+    for j in 0..4 {
+        n.params.items()[j].compute(q0, cx.rate)
+        if n.params.items()[j].events.len() > 0 {
+            automated = true
+        }
+    }
+    let ps = n.params.items()
+    let v = [4][]f64{ps[0].values, ps[1].values, ps[2].values, ps[3].values}
+    if n.fx |fx| {
+        biquad(fx, n.out, ch, n.btype, cx.rate / 2.0, v, automated)
+    }
+}
+
+fn renderCompressor(cx: *mut Context, n: *mut Node, q0: u64, ch: usize) {
+    for j in 0..5 {
+        n.params.items()[j].compute(q0, cx.rate)
+    }
+    // k-rate: each parameter's value at the start of the quantum, within
+    // its nominal range.
+    let ps = n.params.items()
+    let thr = math.clamp(ps[0].values[0], -100.0, 0.0)
+    let knee = math.clamp(ps[1].values[0], 0.0, 40.0)
+    let ratio = math.clamp(ps[2].values[0], 1.0, 20.0)
+    let attack = math.clamp(ps[3].values[0], 0.0, 1.0)
+    let release_time = math.clamp(ps[4].values[0], 0.0, 1.0)
+    if ch == 1 {
+        for i in 0..QUANTUM {
+            n.out[1][i] = n.out[0][i]
+        }
+    }
+    if n.fx |fx| {
+        compress(fx, n.out, ch, cx.rate, thr, knee, ratio, attack, release_time)
+    }
+    n.channels = 2
+}
+
+/// Renders one quantum; the destination's output holds it.
+pub fn renderQuantum(cx: *mut Context) AllocError!*Node {
+    let q = cx.frame / QUANTUM as u64
+    try renderNode(cx, 0, q)
+    cx.frame += QUANTUM as u64
+    return &cx.nodes.items()[0]
+}
+
+/// OfflineAudioContext.startRendering: renders `outs[0].len` frames into
+/// the channels of `outs`.
+pub fn render(cx: *mut Context, outs: [][]mut f32) AllocError!void {
+    if outs.len == 0 {
+        return
+    }
+    let total = outs[0].len
+    var at: usize = 0
+    while at < total {
+        let d = try renderQuantum(cx)
+        let k = math.minOf(usize, QUANTUM, total - at)
+        for c, o in outs {
+            var src = d.out[0]
+            if c < d.channels {
+                src = d.out[c]
+            }
+            for i in 0..k {
+                o[at + i] = src[i]
+            }
+        }
+        at += k
+    }
+}
+
+/// Frees the contexts of `owner` (its page goes).
+pub fn release(owner: usize) {
+    let l = contexts orelse return
+    var left = false
+    for i, slot in l.items() {
+        if slot |cx| {
+            if cx.owner != owner {
+                left = true
+                continue
+            }
+            close(cx)
+            freeNodes(cx)
+            cx.nodes.deinit()
+            cx.ended.deinit()
+            cx.alloc.free(cx.mix)
+            let a = cx.alloc
+            a.destroy(cx)
+            l.items()[i] = null
+        }
+    }
+    if !left {
+        let a = l.alloc
+        l.deinit()
+        a.destroy(l)
+        contexts = null
+    }
+}
+
+/// Closes a context: its device goes, its graph is freed.
+pub fn close(cx: *mut Context) {
+    if cx.closed {
+        return
+    }
+    cx.closed = true
+    cx.running = false
+    closeDevice(cx)
+    freeNodes(cx)
+}
+
+fn freeNodes(cx: *mut Context) {
+    let a = cx.alloc
+    for k in 0..cx.nodes.len() {
+        let n = &mut cx.nodes.items()[k]
+        n.inputs.deinit()
+        a.free(n.out[0])
+        a.free(n.out[1])
+        for j in 0..n.params.len() {
+            let p = &mut n.params.items()[j]
+            p.events.deinit()
+            a.free(p.values)
+        }
+        n.params.deinit()
+        if n.fx |fx| {
+            freeFx(a, n.kind, fx)
+            n.fx = null
+        }
+        for d in n.data.items() {
+            a.free(d)
+        }
+        n.data.deinit()
+    }
+    cx.nodes.clear()
+}

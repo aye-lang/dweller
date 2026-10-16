@@ -57,6 +57,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
+    try defMethod(it, o, "hostRequest", 2, akHostRequest)
     try defMethod(it, o, "computedStyle", 2, akComputedStyle)
     try defMethod(it, o, "cssNames", 0, akCssNames)
     try defMethod(it, o, "latin1Into", 2, js.hostLatin1Into)
@@ -481,6 +482,25 @@ fn akSetDispatch(it: *mut Interp, a: Args) JsError!Value {
         it.removeRoot(s.dispatcher)
     }
     s.dispatcher = try it.addRoot(f)
+    return Value.Undefined
+}
+
+// ak.hostRequest(kind, what): pointer lock (0) or fullscreen (1)
+// of the window, 1 to enter and 2 to leave (`takeHostRequests`).
+fn akHostRequest(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let what = try it.toNumber(it.arg(a, 1))
+    var v: u8 = 0
+    if what == 1.0 {
+        v = 1
+    } else if what == 2.0 {
+        v = 2
+    }
+    if (try it.toNumber(it.arg(a, 0))) == 0.0 {
+        s.host_lock = v
+    } else {
+        s.host_fs = v
+    }
     return Value.Undefined
 }
 

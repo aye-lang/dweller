@@ -1,0 +1,32 @@
+import std
+
+pub fn checkPresent(ui: *mut Ui) {
+    let pd = &mut ui.page
+    let w = pd.canvas.width
+    let h = pd.canvas.height
+    let n = w * 4
+    let rect = SDL_Rect { x: pd.area.x0 as i32, y: pd.area.y0 as i32, w: w as i32, h: h as i32 }
+    let back = ui.alloc.alloc(0 as u8, n * h) catch |e| {
+        return
+    }
+
+    defer ui.alloc.free(back)
+
+    if SDL_RenderReadPixels(ui.renderer, &rect, SDL_PIXELFORMAT_ABGR8888, back.ptr, n as i32) != 0 {
+        return
+    }
+
+    var rows: usize = 0
+
+    for y in 0..h {
+        let i = ((y + pd.ring as usize) % h) * n
+
+        if memcmp(pd.canvas.pixels[i..].ptr, back[y * n..].ptr, n) != 0 {
+            rows += 1
+        }
+    }
+
+    if rows > 0 {
+        std.log.err("DAMAGE CHECK: the window differs from the page in {} rows", rows)
+    }
+}

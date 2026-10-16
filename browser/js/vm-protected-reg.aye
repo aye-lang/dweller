@@ -1,0 +1,14 @@
+fn vmProtectedReg(c: *mut Compiler, id: u32, laterMayWrite: bool) CompileError!i32 {
+    let mark = c.b.topReg
+    let r = try c.valueReg(id)
+
+    if r >= mark || !laterMayWrite {
+        return r
+    }
+
+    let t = c.b.newReg()
+
+    try c.b.op2(BC_MOV, r as i64, t as i64)
+
+    return t
+}
