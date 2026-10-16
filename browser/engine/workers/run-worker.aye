@@ -1,0 +1,28 @@
+import js
+import js.Interp
+import std
+import std.time
+
+let WORKER_ROOM: u64 = 1 << 29
+
+fn runWorker(l: *mut Link) {
+    var gpa = std.heap.General.init()
+    var scope = Scope { link: l, closing: false, started_ms: time.monotonicMs() }
+    var it = Interp.create(gpa.allocator()) catch |e| {
+        l.finish()
+        return
+    }
+
+    it.host = &mut scope
+    it.local_loads_only = true
+    it.markStackBase(WORKER_ROOM)
+
+    setUpWorker(&mut it, l) catch |e| {
+        reportError(&mut it, l)
+    }
+    serveWorker(&mut it, &mut scope)
+
+    it.deinit()
+    gpa.deinit()
+    l.finish()
+}

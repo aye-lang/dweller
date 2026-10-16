@@ -1,0 +1,152 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.sync.Mutex
+import std.thread.Thread
+
+pub struct Link {
+    mutex: Mutex
+    gpa: std.heap.General
+    href: []mut u8
+    source: []mut u8
+    has_source: bool
+    module: bool
+    inbox: List(Message)
+    outbox: List(Message)
+    idle: bool
+    stopping: bool
+    done: bool
+    thread: ?Thread
+    page_outgoing: List([]mut u8)
+    page_current: ?Message
+    worker_outgoing: List([]mut u8)
+    worker_current: ?Message
+
+    pub fn alloc(self: *mut Self) Allocator {
+        return self.gpa.allocator()
+    }
+
+    pub fn stage(self: *mut Self, from_page: bool, b: []u8) AllocError!void {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        let a = self.gpa.allocator()
+        let out = try a.alloc(0 as u8, b.len)
+        std.mem.copy(out, b)
+
+        if from_page {
+            try self.page_outgoing.append(out)
+        } else {
+            try self.worker_outgoing.append(out)
+        }
+    }
+
+    pub fn seal(self: *mut Self, from_page: bool, kind: u8, json: []u8) AllocError!Message {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        let a = self.gpa.allocator()
+        let body = try a.alloc(0 as u8, json.len)
+        std.mem.copy(body, json)
+
+        var buffers = List([]mut u8).init(a)
+
+        if from_page {
+            buffers = self.page_outgoing
+            self.page_outgoing = List([]mut u8).init(a)
+        } else {
+            buffers = self.worker_outgoing
+            self.worker_outgoing = List([]mut u8).init(a)
+        }
+
+        return Message { kind: kind, json: body, buffers: buffers }
+    }
+
+    pub fn toWorker(self: *mut Self, m: Message) AllocError!void {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        self.idle = false
+        try self.inbox.append(m)
+    }
+
+    pub fn toPage(self: *mut Self, m: Message) AllocError!void {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        try self.outbox.append(m)
+    }
+
+    pub fn takeInbox(self: *mut Self) ?Message {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return takeFirst(&mut self.inbox)
+    }
+
+    pub fn takeOutbox(self: *mut Self) ?Message {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return takeFirst(&mut self.outbox)
+    }
+
+    pub fn release(self: *mut Self, m: Message) {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        freeMessage(self.gpa.allocator(), m)
+    }
+
+    pub fn settle(self: *mut Self, waiting: bool) {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        self.idle = !waiting && self.inbox.len() == 0
+    }
+
+    pub fn busy(self: *mut Self) bool {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return !self.done && (!self.idle || self.outbox.len() > 0)
+    }
+
+    pub fn pending(self: *mut Self) bool {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return self.outbox.len() > 0
+    }
+
+    pub fn stop(self: *mut Self) {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        self.stopping = true
+    }
+
+    pub fn stopped(self: *mut Self) bool {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return self.stopping
+    }
+
+    pub fn finish(self: *mut Self) {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        self.done = true
+        self.idle = true
+    }
+}
+
+fn takeFirst(l: *mut List(Message)) ?Message {
+    if l.len() == 0 {
+        return null
+    }
+
+    return l.orderedRemove(0)
+}

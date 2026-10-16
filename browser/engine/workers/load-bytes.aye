@@ -1,0 +1,25 @@
+import js.Interp
+import js.JsError
+import net
+import url
+
+fn loadBytes(it: *mut Interp, href: []u8) JsError![]mut u8 {
+    var base = url.parse(it.alloc, scopeOf(it).link.href) catch return failLoad(it)
+    defer base.deinit(it.alloc)
+
+    let target = url.resolve(it.alloc, &base, href) catch return failLoad(it)
+    defer target.deinit(it.alloc)
+
+    var res = net.fetchLocal(it.alloc, &target) catch return failLoad(it)
+    let body = res.body
+    res.body = []mut u8{}
+    res.deinit(it.alloc)
+
+    return body
+}
+
+fn failLoad(it: *mut Interp) JsError![]mut u8 {
+    _ = try it.typeError("Failed to load a worker script")
+
+    return JsError.Thrown
+}

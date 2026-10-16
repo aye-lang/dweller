@@ -1,0 +1,22 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn wkTerminate(it: *mut Interp, a: Args) JsError!Value {
+    let id = try it.toNumber(it.arg(a, 0)) as u32
+    let l = page_links orelse return Value.Undefined
+    let s = scriptOf(it)
+
+    for i, pl in l.items() {
+        if pl.id == id && pl.owner == s {
+            l.items()[i].dead = true
+            pl.link.stop()
+            break
+        }
+    }
+
+    return Value.Undefined
+}

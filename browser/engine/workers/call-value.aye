@@ -1,0 +1,23 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+
+fn callValue(it: *mut Interp, f: Value, args: []Value) JsError!Value {
+    let base = it.stack.len()
+
+    try it.push(f)
+    try it.push(Value.Undefined)
+
+    for v in args {
+        try it.push(v)
+    }
+
+    return it.callAt(base, args.len)
+}
+
+fn callGlobal(it: *mut Interp, name: []u8, args: []Value) JsError!Value {
+    let f = try it.getProp(js.objVal(it.global), try it.intern(name))
+
+    return callValue(it, f, args)
+}

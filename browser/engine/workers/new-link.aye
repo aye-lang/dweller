@@ -1,0 +1,42 @@
+import std
+import std.list.List
+import std.mem
+import std.mem.AllocError
+import std.mem.Allocator
+import std.sync.Mutex
+
+pub fn newLink(alloc: Allocator, href: []u8, source: ?[]u8, module: bool) AllocError!*mut Link {
+    let l = try alloc.create(Link {
+        mutex: Mutex.init(),
+        gpa: std.heap.General.init(),
+        href: []mut u8{},
+        source: []mut u8{},
+        has_source: source != null,
+        module: module,
+        inbox: List(Message).init(alloc),
+        outbox: List(Message).init(alloc),
+        idle: false,
+        stopping: false,
+        done: false,
+        thread: null,
+        page_outgoing: List([]mut u8).init(alloc),
+        page_current: null,
+        worker_outgoing: List([]mut u8).init(alloc),
+        worker_current: null,
+    })
+
+    let a = l.gpa.allocator()
+    l.inbox = List(Message).init(a)
+    l.outbox = List(Message).init(a)
+    l.page_outgoing = List([]mut u8).init(a)
+    l.worker_outgoing = List([]mut u8).init(a)
+    l.href = try a.alloc(0 as u8, href.len)
+    mem.copy(l.href, href)
+
+    if source |s| {
+        l.source = try a.alloc(0 as u8, s.len)
+        mem.copy(l.source, s)
+    }
+
+    return l
+}

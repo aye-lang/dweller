@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<title>Workers: basic</title>
+<pre id="out"></pre>
+<script>
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+const w = new Worker('basic-worker.js');
+let replies = 0;
+w.onmessage = e => {
+  const d = e.data;
+  if (d.kind === 'echo') {
+    log('echo', d.value.n, d.value.list.join(','), d.value.map.get('k'), d.value.when instanceof Date, d.value.nan !== d.value.nan, Object.is(d.value.nz, -0), typeof d.value.big, d.value.self === d.value);
+  } else {
+    log(d.kind, d.value);
+  }
+  if (++replies === 5) {
+    w.terminate();
+    w.postMessage({ kind: 'ignored' });
+    log('terminated');
+    errors();
+  }
+};
+const o = { n: 7, list: [1, 2, 3], map: new Map([['k', 'v']]), when: new Date(0), nan: NaN, nz: -0, big: 10n };
+o.self = o;
+w.postMessage({ kind: 'echo', value: o });
+w.postMessage({ kind: 'timer' });
+w.postMessage({ kind: 'import' });
+w.postMessage({ kind: 'fetch' });
+w.postMessage({ kind: 'perf' });
+try { w.postMessage(() => 1); } catch (e) { log('clone error', e.name); }
+function errors() {
+  const bad = new Worker('throws-worker.js');
+  bad.onerror = e => {
+    e.preventDefault();
+    log('error event', e.message);
+    bad.terminate();
+    blobs();
+  };
+}
+function blobs() {
+  const src = "self.onmessage = e => { postMessage(e.data * 2); close(); };";
+  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+  const b = new Worker(url);
+  b.onmessage = e => {
+    log('blob worker', e.data);
+    fetch(url).then(r => r.text()).then(t => {
+      log('blob fetch', t === src);
+      URL.revokeObjectURL(url);
+      try { new Worker(url); } catch (e) { log('revoked', e.name); }
+      log('done');
+    });
+  };
+  b.postMessage(21);
+}
+</script>

@@ -1,0 +1,18 @@
+import js
+import js.Interp
+import js.JsError
+
+fn installScope(it: *mut Interp) JsError!void {
+    let o = try it.newObject(it.object_proto)
+    try it.defineValue(it.global, "__worker", js.objVal(o))
+    try it.defineValue(o, "href", try it.newString(scopeOf(it).link.href))
+    _ = try it.defineNative(o, "post", 2, scopePost)
+    _ = try it.defineNative(o, "stage", 1, scopeStage)
+    _ = try it.defineNative(o, "size", 1, scopeSize)
+    _ = try it.defineNative(o, "fill", 2, scopeFill)
+    _ = try it.defineNative(o, "close", 0, scopeClose)
+    _ = try it.defineNative(o, "now", 0, scopeNow)
+    _ = try it.defineNative(o, "load", 1, scopeLoad)
+    _ = try it.defineNative(o, "latin1Into", 2, js.hostLatin1Into)
+    _ = try it.defineNative(o, "latin1Of", 1, js.hostLatin1Of)
+}
