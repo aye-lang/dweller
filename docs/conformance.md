@@ -1,15 +1,15 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 2704adb. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller 80be51a. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
 | Area | Files | Skipped | Passed | Score % | Threshold % | Status | Change |
 |---|---:|---:|---:|---:|---:|---|---:|
-| `dom/nodes` | 411 | 6 | 4441/9403 | 47.2 | 75 | below | +0.0 |
+| `dom/nodes` | 411 | 6 | 7213/9403 | 76.7 | 75 | done | +0.0 |
 | `dom/events` | 180 | 8 | 403/837 | 48.1 | 70 | below | +0.0 |
 | `uievents` | 69 | 6 | 25/178 | 14.0 | - | baseline | +0.0 |
-| `html/semantics/forms` | 685 | 173 | 2851/5398 | 52.8 | 60 | below | +1.8 |
+| `html/semantics/forms` | 685 | 173 | 2907/5398 | 53.9 | 60 | below | +1.0 |
 | `css/cssom` | 292 | 11 | 2025/3753 | 54.0 | - | baseline | +0.0 |
 | `fetch/api` | 178 | 13 | 1007/2415 | 41.7 | 50 | below | +0.0 |
 | `xhr` | 329 | 3 | 448/1233 | 36.3 | 50 | below | +0.0 |
