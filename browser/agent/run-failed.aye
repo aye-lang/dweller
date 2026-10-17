@@ -1,0 +1,13 @@
+import js
+import std.mem.Allocator
+import std.text
+
+fn runFailed(it: *mut js.Interp, tmp: Allocator, why: []u8) js.JsError![]u8 {
+    var src = text.Builder.init(tmp)
+
+    try src.append("__failed(")
+    try writeString(&mut src, why)
+    try src.append(")")
+
+    return realmString(it, tmp, try it.evalScript(src.bytes()))
+}

@@ -1,0 +1,14 @@
+import std
+
+fn runGoesOn(run: *mut Run) bool {
+    if run.s.host |h| {
+        if !h.agentGoesOn(run.s.conn) {
+            run.why_not = "stopped by user"
+            run.s.later = true
+
+            return false
+        }
+    }
+
+    return std.time.monotonicMs() < run.deadline_ms
+}

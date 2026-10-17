@@ -188,6 +188,7 @@ fn writesCookies(s: *Session) bool {
 pub fn stop() {
     let s = session orelse return
     session = null
+    dropStoredCookies(s.alloc)
     if writesCookies(s) && s.jar.changed {
         saveCookies(s) catch |e| {
         }
@@ -195,6 +196,7 @@ pub fn stop() {
     unlockProfile(s.lock)
     stopLoads()
     stopAuth()
+    freeResolveEntries()
     if s.curl |c| {
         curl_easy_cleanup(c)
     }
@@ -314,10 +316,10 @@ pub fn scriptCookies(page: *Url, top: *Url, out: *mut text.Builder) AllocError!v
 /// page at `top` (`document.cookie = line`); none in a third-party frame.
 pub fn setScriptCookie(page: *Url, top: *Url, line: []u8) AllocError!void {
     let s = session orelse return
-    if !storesIn(scriptContext(page, top)) {
-        return
+    if storesIn(scriptContext(page, top)) {
+        try s.jar.store(page, line, true, now())
+        try noteStored(page, line, true)
     }
-    return s.jar.store(page, line, true, now())
 }
 
 fn withoutHash(href: []u8) []u8 {

@@ -1,0 +1,33 @@
+import js
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let RUN_PRELUDE = @embedFile("run.js")
+let RUN_ROOM: u64 = 1 << 20
+let RUN_DEPTH: usize = 1000
+
+pub fn runCode(s: *mut Session, tmp: Allocator, code: []u8, ms: f64) AllocError![]u8 {
+    var it = js.newRealm(s.alloc) catch |e| {
+        return AllocError.OutOfMemory
+    }
+
+    defer it.deinit()
+
+    it.max_depth = RUN_DEPTH
+    it.markStackBase(RUN_ROOM)
+
+    var run = Run { s: s, deadline_ms: std.time.monotonicMs() + ms as u64, why_not: "the run took longer than its ms" }
+
+    running = &mut run
+    let report = runInRealm(&mut it, tmp, code, ms) catch |e| {
+        running = null
+
+        return runFailure(&mut it, tmp, e)
+    }
+
+    running = null
+
+    return report
+}

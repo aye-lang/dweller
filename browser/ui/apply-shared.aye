@@ -1,0 +1,28 @@
+import agent
+import engine
+import net
+import std.mem.AllocError
+import std.text
+
+fn applyShared(ui: *mut Ui, doc: *mut agent.Json, r: usize, ctl: []u8) AllocError!bool {
+    let a = doc.getStr(r, "url") orelse ""
+    let line = doc.getStr(r, "line") orelse ""
+    let origin = doc.getStr(r, "origin") orelse ""
+    let kind = doc.getStr(r, "kind") orelse ""
+    let key = doc.getStr(r, "key") orelse ""
+    let value = doc.getStr(r, "value") orelse ""
+
+    if text.eql(ctl, "cookie") {
+        try net.applyCookie(a, line, doc.getBool(r, "script") orelse false)
+
+        return true
+    }
+
+    if text.eql(ctl, "storage") {
+        try engine.applyLocalChange(ui.alloc, origin, kind, key, value)
+
+        return true
+    }
+
+    return false
+}

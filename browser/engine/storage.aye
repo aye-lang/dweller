@@ -7,7 +7,7 @@
 // touches them, and written back (whole, atomically, mode 0600) at most
 // once a second after a change (`saveStorageIfDue`, from the window's
 // loop), when the last page closes and at exit (`saveStorage`). Without
-// a profile (`dump`, tests, Spaces until P9.7) they live in memory for
+// a profile (`dump`, tests, isolated Spaces) they live in memory for
 // as long as a page is open. A file holds, for each item in order,
 // "<key bytes> <value bytes>\n", the key, the value and "\n".
 //
@@ -413,6 +413,7 @@ fn akStorage(it: *mut Interp, a: Args) JsError!Value {
         if cleared {
             if !session {
                 try markDirty(st, area.bytes())
+                try noteLocalChange(area.bytes(), null, null)
             }
             try storageChanged(s, ctx, session, null, null, null)
         }
@@ -453,6 +454,7 @@ fn akStorage(it: *mut Interp, a: Args) JsError!Value {
         removeStoreItem(st, i)
         if !session {
             try markDirty(st, area.bytes())
+            try noteLocalChange(area.bytes(), key.bytes(), null)
         }
         try storageChanged(s, ctx, session, key.bytes(), old.bytes(), null)
         return Value.Undefined
@@ -486,6 +488,7 @@ fn akStorage(it: *mut Interp, a: Args) JsError!Value {
     }
     if !session {
         try markDirty(st, area.bytes())
+        try noteLocalChange(area.bytes(), key.bytes(), v.bytes())
     }
     var was: ?[]u8 = null
     if found != null {

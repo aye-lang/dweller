@@ -1,0 +1,34 @@
+import agent
+import engine
+import net
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn shareWithSpace(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    var jar = text.Builder.init(arena.allocator())
+    var w = agent.Writer.init(&mut sp.ctl_out)
+    let items = engine.localStorageItems()
+
+    try net.jarText(&mut jar)
+    try w.beginObject()
+    try w.key("ctl")
+    try w.string("share")
+    try w.key("profile")
+    try w.string(net.profileDir())
+    try w.key("cookies")
+    try w.string(jar.bytes())
+    try w.endObject()
+    try sp.ctl_out.appendByte('\n')
+
+    for origin in engine.localStorageOrigins() {
+        try storageLine(&mut sp.ctl_out, origin, "clear", "", "")
+    }
+
+    for i in 0..items.len / 3 {
+        try storageLine(&mut sp.ctl_out, items[i * 3], "set", items[i * 3 + 1], items[i * 3 + 2])
+    }
+}

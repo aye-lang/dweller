@@ -1,0 +1,43 @@
+// v8: src/ic/handler-configuration.h (StoreHandler::Kind)
+
+fn vmIcStoreHit(it: *mut Interp, c: IcCase, v: Value, o: u32, key: u32, value: Value) JsError!bool {
+    let ob = it.heap.obj(o)
+
+    if ob.frozen {
+        return true
+    }
+
+    if c.other == NONE {
+        let p = ob.props[c.slot]
+
+        if (p.flags & F_ACCESSOR) == 0 {
+            if (p.flags & F_WRITE) != 0 {
+                ob.props[c.slot].value = value
+            }
+
+            return true
+        }
+
+        if !isNullish(p.setter) {
+            try it.call1(p.setter, v, value)
+        }
+
+        return true
+    }
+
+    if !ob.extensible || !vmIcProtoMatch(it, ob.proto, c.proto1, c.proto2) {
+        return false
+    }
+
+    if ob.nprops as usize == ob.props.len {
+        try it.heap.addProp(o, key, value, Value.Undefined, F_DEFAULT)
+
+        return true
+    }
+
+    ob.props[ob.nprops] = Prop { key: key, value: value, setter: Value.Undefined, flags: F_DEFAULT }
+    ob.nprops += 1
+    ob.shape = c.other
+
+    return true
+}

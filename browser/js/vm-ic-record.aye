@@ -1,0 +1,29 @@
+// v8: src/ic/ic.cc (IC::SetCache)
+
+fn vmIcRecord(st: *mut VmState, e: *mut IcEntry, key: u32, store: bool, c: IcCase) {
+    if e.state != IC_MEGA {
+        for i in 0..e.n as usize {
+            if e.cases[i].shape == c.shape {
+                e.cases[i] = c
+
+                return
+            }
+        }
+
+        if e.n < 4 {
+            e.cases[e.n as usize] = c
+            e.n += 1
+            e.state = IC_POLY
+
+            if e.n == 1 {
+                e.state = IC_MONO
+            }
+
+            return
+        }
+
+        e.state = IC_MEGA
+    }
+
+    st.stub[icStubIndex(c.shape, key, store)] = IcStub { atom: key, store: store, c: c }
+}
