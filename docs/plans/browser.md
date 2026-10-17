@@ -178,9 +178,12 @@ names, never two browser test runs at once, build and test output to a
 log under `target/` read with `tail`/`grep`; the same verify failing
 twice in a row stops the step with a report. On the user's Mac (10
 cores, 32 GB, shared with daily use and a self-hosted Actions runner)
-every build and test runs under `nice -n 10` with `AYE_TEST_JOBS=3`
-and `cargo ... -j 4`, at most one local agent builds or tests at a
-time, and heavy cards go to cloud sessions (2026-10-17).
+every build and test runs as `scripts/capped.sh CMD` (one capped job
+at a time on the machine, the others wait; a load gate; nice 10 and a
+QoS clamp; 4 cargo jobs, 3 test workers; the tree killed above 12 GB
+and stopped under thermal pressure; a hook blocks uncapped `cargo` and
+`aye` builds and tests under `~/Documents/ayelang`), and heavy cards go
+to cloud sessions (2026-10-17).
 
 ### Phase A: green `main` and the rest of the loop (Layer 0, lane loop)
 
