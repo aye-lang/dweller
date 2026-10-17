@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 8b874b6. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller 8069cf4. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -8,10 +8,11 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 |---|---:|---:|---:|---:|---:|---|---:|
 | `dom/nodes` | 411 | 6 | 4441/9403 | 47.2 | 75 | below | +0.0 |
 | `dom/events` | 180 | 8 | 403/837 | 48.1 | 70 | below | +0.0 |
-| `html/semantics/forms` | 685 | 173 | 1856/5139 | 36.1 | 60 | below | +0.0 |
+| `uievents` | 69 | 6 | 25/178 | 14.0 | - | baseline | new |
+| `html/semantics/forms` | 685 | 173 | 1912/5337 | 35.8 | 60 | below | -0.3 |
 | `css/cssom` | 292 | 11 | 2025/3753 | 54.0 | - | baseline | +0.0 |
-| `fetch/api` | 178 | 13 | 1007/2415 | 41.7 | 50 | below | new |
-| `xhr` | 329 | 3 | 448/1233 | 36.3 | 50 | below | +20.8 |
+| `fetch/api` | 178 | 13 | 1007/2415 | 41.7 | 50 | below | +0.0 |
+| `xhr` | 329 | 3 | 448/1233 | 36.3 | 50 | below | +0.0 |
 | `url` | 34 | 0 | 4850/9998 | 48.5 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | +0.0 |

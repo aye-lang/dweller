@@ -242,7 +242,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") {
             return false
         }
     }
@@ -309,6 +309,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         try ui.rest.append(rest)
         if try spaceWord(ui, w) {
             continue
+        }
+        if text.eql(w, "overflow") {
+            _ = overflowStack(0)
         }
         if text.eql(w, "frame") {
             // The rest waits for the next frame (`Ui.loop`).

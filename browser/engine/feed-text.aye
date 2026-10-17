@@ -1,0 +1,20 @@
+import dom
+import std.mem.AllocError
+import std.text
+
+pub fn feedText(p: *mut Page, word: []u8) AllocError!void {
+    var s = word
+
+    if text.eql(word, "_") {
+        s = " "
+    }
+
+    let field = p.doc.controls.focus orelse return
+
+    if !dom.isTextField(&p.doc, field) || p.doc.attr(field, "readonly") != null {
+        return
+    }
+
+    try dom.insertText(&mut p.doc, field, s)
+    _ = try dispatchEvent(p, field, "input", s)
+}

@@ -1,0 +1,46 @@
+<!doctype html>
+<title>testdriver click, send_keys and action_sequence</title>
+<script src="resources/testharness.js"></script>
+<script src="../../tools/wpt/testharnessreport.js"></script>
+<script src="resources/testdriver.js"></script>
+<script src="../../tools/wpt/testdriver-vendor.js"></script>
+<style>button, input { display: block; width: 100px; height: 30px; margin: 10px; }</style>
+<button id="b">press</button>
+<input id="c" type="checkbox">
+<input id="t">
+<div id="log"></div>
+<script>
+const [b, c, t] = ["b", "c", "t"].map(id => document.getElementById(id));
+promise_test(async function () {
+    const seen = [];
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+        b.addEventListener(type, e => seen.push(e.type + (e.isTrusted ? "" : "?")));
+    }
+    await test_driver.click(b);
+    assert_array_equals(seen, ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+    await test_driver.click(c);
+    assert_true(c.checked);
+}, "click");
+promise_test(async function () {
+    const keys = [];
+    t.addEventListener("keydown", e => keys.push(e.key));
+    await test_driver.send_keys(t, "hi yo");
+    assert_equals(t.value, "hi o");
+    assert_array_equals(keys, ["h", "i", " ", "y", "Backspace", "o"]);
+}, "send_keys");
+promise_test(async function () {
+    const seen = [];
+    for (const type of ["pointermove", "pointerdown", "pointerup", "click", "keydown"]) {
+        document.addEventListener(type, e => seen.push(e.type + ":" + (e.type === "keydown" ? e.key : e.target.id)));
+    }
+    await test_driver.action_sequence([
+        {type: "pointer", id: "mouse", actions: [
+            {type: "pointerMove", x: 0, y: 0, origin: b},
+            {type: "pointerDown", button: 0},
+            {type: "pointerUp", button: 0},
+        ]},
+        {type: "key", id: "kb", actions: [{type: "keyDown", value: "q"}, {type: "keyUp", value: "q"}]},
+    ]);
+    assert_array_equals(seen, ["pointermove:b", "pointerdown:b", "pointerup:b", "click:b", "keydown:q"]);
+}, "action_sequence");
+</script>

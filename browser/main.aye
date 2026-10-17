@@ -360,8 +360,6 @@ fn dumpScripted(alloc: Allocator, o: *Options, location: *Url) !i32 {
 // ---- `dweller wpt` (P10.1)
 
 let WPT_USAGE = "usage: dweller wpt FILE|URL [--timeout S]"
-// What browser/tools/wpt/testharnessreport.js logs before its JSON.
-let WPT_PREFIX = "DWELLER_WPT "
 
 fn wpt(alloc: Allocator, args: [][]u8) !i32 {
     var target: []u8 = ""
@@ -411,12 +409,12 @@ fn wpt(alloc: Allocator, args: [][]u8) !i32 {
         return 1
     }
     engine.setViewport(p, 800.0, 600.0)
-    if !try engine.runUntilConsole(p, timeout_s * 1000.0, WPT_PREFIX, &mut out) {
+    if !try engine.runUntilReport(p, timeout_s * 1000.0, &mut out) {
         // The harness reports the tests that did not finish as timed out.
         var ignored = text.Builder.init(alloc)
         defer ignored.deinit()
         _ = try engine.evalInPage(p, "typeof timeout === 'function' && timeout()", &mut ignored)
-        if !try engine.runUntilConsole(p, 1000.0, WPT_PREFIX, &mut out) {
+        if !try engine.runUntilReport(p, 1000.0, &mut out) {
             try wptLine(&mut out, "TIMEOUT", "no result from testharnessreport.js")
         }
     }
