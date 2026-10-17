@@ -1,0 +1,48 @@
+import agent
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn showSpace(ui: *mut Ui, id: u32) AllocError!void {
+    let a = ui.agents orelse return
+
+    if id == a.watch.id {
+        return
+    }
+
+    if spaceOf(a, a.watch.id) |old| {
+        try toSpace(ui, old, "{\"ctl\":\"watch\",\"on\":false}\n")
+    }
+
+    unmapFrame(&mut a.watch)
+    a.watch.id = 0
+    a.watch.seq = 0
+    ui.page.valid = false
+    ui.dirty = true
+
+    if spaceOf(a, id) |sp| {
+        var arena = Arena.init(ui.alloc)
+        defer arena.deinit()
+
+        var b = text.Builder.init(arena.allocator())
+        var w = agent.Writer.init(&mut b)
+
+        try w.beginObject()
+        try w.key("ctl")
+        try w.string("watch")
+        try w.key("on")
+        try w.boolean(true)
+        try w.key("width")
+        try w.int(ui.win_w as i64)
+        try w.key("height")
+        try w.int(ui.layoutHeight() as i64)
+        try w.key("scale")
+        try w.number(ui.scale)
+        try w.endObject()
+        try b.appendByte('\n')
+        a.watch.id = id
+        try toSpace(ui, sp, b.bytes())
+    }
+
+    try listsChanged(ui)
+}

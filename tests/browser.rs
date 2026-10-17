@@ -3776,6 +3776,93 @@ fn window_spaces_chips() {
     }
 }
 
+/// B9 R6 (P9.5): a click on a Space's chip shows the Space: the window
+/// sends `watch`, the Space writes its page to its frame file and sends
+/// `frame`, and the window draws the newest frame in its page area. The
+/// agent's page is green; after the click the centre of the window's
+/// page area is that green in `--save`'s PNG, and the window never waited
+/// on the Space (`loop_max_ms` under 50).
+#[test]
+fn window_spaces_watch() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let green = scratch().join("green.html");
+    std::fs::write(&green, "<body style=\"background:#00aa00\">green</body>").unwrap();
+    let sock = format!("target/spaces-watch-{}.sock", std::process::id());
+    let png = scratch().join("spaces_watch.png");
+    // With --font fixed in 800 px, Alpha's chip is 661-719 (y 9-31).
+    let window = spaces_window(
+        &sock,
+        &[
+            "--spaces",
+            "--state",
+            "--save",
+            png.to_str().unwrap(),
+            "--events",
+            "agents:1 click:690,20 key:escape agents:2 key:cmd+q",
+            "browser/tests/ui/long.html",
+        ],
+    );
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    a.send(r#"{"name":"Alpha"}"#);
+    let (got, _) = a.ask(&format!(
+        r#"{{"id":1,"cmd":"navigate","url":{}}}"#,
+        serde_like(green.to_str().unwrap())
+    ));
+    assert!(got.contains("\"ok\":true"), "{got}");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"spaces"}"#);
+    assert!(
+        got.contains("\"mine\":true") && got.contains("\"watched\":true"),
+        "{got}"
+    );
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let state = text(&out.stdout);
+    assert!(state.contains("\nviewport 800x532\n"), "{state}");
+    let loop_max: u64 = state
+        .lines()
+        .find_map(|l| l.strip_prefix("loop_max_ms "))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(loop_max < 50, "loop_max_ms {loop_max}");
+    drop(a);
+    no_spaces_left(pid).unwrap();
+    let script = r#"
+import struct, sys, zlib
+data = open(sys.argv[1], 'rb').read()
+w, h = struct.unpack('>II', data[16:24])
+chunks, offset = [], 8
+while offset < len(data):
+    n = int.from_bytes(data[offset:offset+4], 'big')
+    if data[offset+4:offset+8] == b'IDAT':
+        chunks.append(data[offset+8:offset+8+n])
+    offset += n + 12
+raw = zlib.decompress(b''.join(chunks))
+x, y = w // 2, 600 - 532 + 532 // 2
+i = y * (w * 4 + 1) + 1 + x * 4
+print(raw[i], raw[i + 1], raw[i + 2])
+"#;
+    let Ok(py) = Command::new("python3")
+        .args(["-c", script, png.to_str().unwrap()])
+        .output()
+    else {
+        println!("skipped: no python3");
+        return;
+    };
+    assert!(py.status.success(), "{}", text(&py.stderr));
+    assert_eq!(text(&py.stdout), "0 170 0\n", "the centre of the page area");
+}
+
 // `s` as a JSON string (quotes and backslashes escaped).
 fn serde_like(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
