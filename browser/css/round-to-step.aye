@@ -1,0 +1,35 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-values-4/#round-func
+fn roundToStep(kind: u8, a: f64, b: f64) f64 {
+    if b == 0.0 || (math.isInf(a) && math.isInf(b)) {
+        return math.nan()
+    }
+
+    if math.isInf(a) {
+        return a
+    }
+
+    if math.isInf(b) {
+        return infiniteStep(kind, a)
+    }
+
+    let step = math.abs(b)
+    let lower = math.floor(a / step) * step
+    let upper = lower + step
+    var r = upper
+
+    if lower == a {
+        return a
+    }
+
+    if kind == 'd' || (kind == 'z' && a > 0.0) || (kind == 'n' && a - lower < upper - a) {
+        r = lower
+    }
+
+    if r == 0.0 {
+        return a * 0.0
+    }
+
+    return r
+}
