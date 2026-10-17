@@ -291,8 +291,8 @@ pub let BC_INFO = [_]BcInfo{
     BcInfo { name: "Return", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: 0 },
     BcInfo { name: "ToNumber", ops: [3]BcOp{BcOp.Slot, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
     BcInfo { name: "LdaGlobal", ops: [3]BcOp{BcOp.UImm, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
-    BcInfo { name: "GetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.None}, nops: 2, flags: BC_AT },
-    BcInfo { name: "SetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "GetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.Slot}, nops: 3, flags: BC_AT },
+    BcInfo { name: "SetNamedProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.Slot}, nops: 3, flags: BC_AT },
     BcInfo { name: "CallProperty", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
     BcInfo { name: "CallUndefinedReceiver", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
     BcInfo { name: "Construct", ops: [3]BcOp{BcOp.Reg, BcOp.UImm, BcOp.UImm}, nops: 3, flags: BC_AT },
@@ -782,8 +782,10 @@ pub struct BytecodeArray {
     nparams: u32
     nregs: u32
     nslots: u32
+    feedback: []mut IcEntry
 
     pub fn deinit(self: *mut Self) {
+        self.alloc.free(self.feedback)
         self.alloc.free(self.code)
         self.alloc.free(self.consts)
         self.alloc.free(self.handlers)
@@ -1140,6 +1142,8 @@ pub struct BcBuilder {
         let handlers = try bcCopy(BcHandler, self.alloc, self.handlers.items(), BcHandler { start: 0, end: 0, handler: 0, ctx: 0 })
         errdefer self.alloc.free(handlers)
         let positions = try bcCopy(u8, self.alloc, self.positions.items(), 0)
+        errdefer self.alloc.free(positions)
+        let feedback = try self.alloc.alloc(emptyIcEntry(), self.nslots as usize)
         return BytecodeArray {
             alloc: self.alloc,
             code: code,
@@ -1149,6 +1153,7 @@ pub struct BcBuilder {
             nparams: self.nparams,
             nregs: self.maxReg as u32,
             nslots: self.nslots,
+            feedback: feedback,
         }
     }
 }

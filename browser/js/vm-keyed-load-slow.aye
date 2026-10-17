@@ -1,0 +1,25 @@
+// v8: src/ic/ic.cc (KeyedLoadIC::Load)
+
+fn vmKeyedLoadSlow(it: *mut Interp, e: *mut IcEntry, v: Value, k: Value) JsError!Value {
+    var kind = KIND_GENERIC
+
+    match v {
+        .Obj { o } => {
+            if it.heap.obj(o).class == Class.Arguments && k is .Num {
+                kind = KIND_ARGUMENTS
+            }
+        }
+
+        .Str { .. } => {
+            if k is .Num {
+                kind = KIND_STRING
+            }
+        }
+
+        _ => {}
+    }
+
+    vmIcNoteKind(e, kind)
+
+    return it.getIndex(v, k)
+}
