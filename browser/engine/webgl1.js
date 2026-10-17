@@ -20,6 +20,9 @@ const p2 = Context2.prototype;
 for (const k of ['canvas', 'drawingBufferWidth', 'drawingBufferHeight', 'drawingBufferColorSpace']) Object.defineProperty(p, k, Object.getOwnPropertyDescriptor(p2, k));
 for (const k of Object.getOwnPropertyNames(p2)) if (k.startsWith('_')) p[k] = p2[k];
 for (const k of METHODS) if (p2[k]) p[k] = p2[k];
+p.renderbufferStorage = function (target, internalformat, width, height) {
+  p2.renderbufferStorageMultisample.call(this, target, 0, internalformat, width, height);
+};
 const all = Object.keys(globalThis.WebGL2RenderingContext);
 for (const k of all.slice(0, all.indexOf('INVALID_FRAMEBUFFER_OPERATION') + 1).concat(EXTRA_CONSTANTS)) {
   Object.defineProperty(WebGLRenderingContext, k, {value: Context2[k], enumerable: true});
