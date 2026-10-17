@@ -1,0 +1,36 @@
+import agent
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn forwardInput(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
+    let a = ui.agents orelse return false
+    let sp = spaceOf(a, a.watch.id) orelse return false
+
+    if !inputForSpace(ui, ev) {
+        return false
+    }
+
+    if ev.kind == SDL_MOUSEBUTTONDOWN {
+        ui.focus = Focus.Page
+    }
+
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    let word = (try eventWord(arena.allocator(), ev)) orelse return true
+    var b = text.Builder.init(arena.allocator())
+    var w = agent.Writer.init(&mut b)
+
+    try w.beginObject()
+    try w.key("ctl")
+    try w.string("input")
+    try w.key("events")
+    try w.string(word)
+    try w.endObject()
+    try b.appendByte('\n')
+
+    try toSpace(ui, sp, b.bytes())
+
+    return true
+}
