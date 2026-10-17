@@ -112,7 +112,7 @@ the one place with more than one process.
   not shadow trees); paint keeps the page's pixels with damage tracking
   and a raster cache; transform and opacity changes composite; a scroll
   moves the page as a texture offset and fixed and sticky boxes as layers
-  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55b; backlog P4.54, P3.64
+  (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55b; backlog P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
@@ -200,7 +200,7 @@ under 100 ms with a timer storm.
 | A5 | P4.47 | `blob:` URLs for scripts, fetch and XHR | – | done | `core/fileapi/public_url_manager.cc`, `core/fileapi/blob.cc` |
 | A6 | P4.48 | the cost of the inserted site scripts in `dump` (mistral 26 → 45 s): forced layouts and cascades | A5 | partial (shadow-root cascades fixed; reddit, bbc JS left) | `core/dom/document.cc` (`UpdateStyleAndLayout`, what a forced read recomputes), `core/frame/local_frame_view.cc` (`UpdateLifecyclePhases`) |
 | A7 | P4.55 | rAF and timers throttled in hidden windows and background tabs | A2 | done (P4.55b open) | `platform/scheduler/main_thread/frame_scheduler_impl.cc`, `platform/scheduler/common/throttling/budget_pool.cc`, `core/frame/local_frame_view.cc` (throttled frames) |
-| A8 | P4.54 | macOS crash record exits with 128+sig | – | backlog | – |
+| A8 | P4.54 | macOS crash record exits with 128+sig | – | done 2026-10-17 | `base/debug/stack_trace_posix.cc` (`StackDumpSignalHandler`) |
 
 ### Phase B: paint and the gate (Layer 0, lane paint)
 
@@ -916,7 +916,7 @@ Common to these cards:
 Not yet cards. Before one becomes a card, main checks it is still needed
 after the cards above.
 
-- P4.54 macOS crash record: install the telemetry crash handler on macOS so it writes the record and the process exits with 128+sig; today the handler runs but the process stays alive (SDL/Cocoa signal handling suspected); verify: `window_telemetry` SIGSEGV step on macOS (P4.53).
+- P4.54 macOS crash record: install the telemetry crash handler on macOS so it writes the record and the process exits with 128+sig; today the handler runs but the process stays alive (SDL/Cocoa signal handling suspected); verify: `window_telemetry` SIGSEGV step on macOS (P4.53). Status: done 2026-10-17. Cause: not SDL or Cocoa. Two macOS differences in `perf/telemetry.aye`: the handler was installed with glibc's `struct sigaction` layout and Linux SA flags (on macOS the flags landed in the mask, so no SA_SIGINFO or SA_ONSTACK), and macOS fills si_code for a SIGSEGV from `kill` as for a fault (SEGV_ACCERR, no si_pid), so the handler took it for a fault, restored the old action and returned, and nothing came again. Changed: `perf/install-crash-action.aye` installs with the Darwin layout and flags (0x41) on macOS; on macOS every crash signal is taken as sent (SIG_DFL, record, raise), so the process ends with the signal; the macOS guard in `installCrashHandler` and in the test is gone, and the test now also checks the child ended on signal 11. Verify: `cargo test --release --test browser -- window_telemetry` passes on macOS (exit 0); a manual `kill -SEGV` on a headless window gives exit 139 and the crash record. Cost: on macOS with telemetry on, a stack overflow in a checked build ends on SIGSEGV with the crash record instead of Aye's "panic: stack overflow" line.
 - P3.64 slice 2: in a container-query document, restyle subtrees when no container's size changed; skip the whole-document `stylesCurrent` hash for attribute writes (details in `PERF.md`).
 - P4.11 partial restyle for DOM mutations incl. shadow roots and `:has()` (P4.10).
 - P4.14 event dispatch and MutationObserver from prelude JS into native Aye (~15% of JS samples) (P1.11).

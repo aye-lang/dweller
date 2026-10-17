@@ -8282,8 +8282,7 @@ fn window_telemetry() {
     assert!(!home.join(".dweller").exists());
 
     // A crash: the records so far and the crash, with the last actions.
-    // Not on macOS until card P4.54 installs the crash handler there.
-    if !cfg!(target_os = "macos") {
+    {
         let crashed = base.join("crashed");
         std::fs::create_dir_all(&crashed).unwrap();
         let mut child = window(Some(&crashed), None, "3000").spawn().unwrap();
@@ -8294,13 +8293,18 @@ fn window_telemetry() {
             .unwrap();
         assert!(killed.success());
         let start = Instant::now();
-        while child.try_wait().unwrap().is_none() {
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
             if start.elapsed() > Duration::from_secs(30) {
                 let _ = child.kill();
                 panic!("the window did not end on SIGSEGV");
             }
             std::thread::sleep(Duration::from_millis(20));
-        }
+        };
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(11), "{status:?}");
         let got = records(&crashed);
         let crash = got
             .lines()
