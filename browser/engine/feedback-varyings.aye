@@ -1,0 +1,26 @@
+import gpu
+import js.Interp
+import js.JsError
+
+fn feedbackVaryings(it: *mut Interp, gl: gpu.Api, program: u32, names: []mut u8, mode: u32) JsError!void {
+    var count: usize = 0
+
+    for b in names {
+        if b == 0 {
+            count += 1
+        }
+    }
+
+    let starts = try it.alloc.alloc(@ptrCast(?[*]u8, names.ptr), count + 1)
+    defer it.alloc.free(starts)
+    var n: usize = 1
+
+    for i in 0..names.len {
+        if names[i] == 0 && n < count {
+            starts[n] = @ptrCast(?[*]u8, &names[i + 1])
+            n += 1
+        }
+    }
+
+    gl.glTransformFeedbackVaryings(program, count as i32, @ptrCast([*]u8, starts.ptr), mode)
+}

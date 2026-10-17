@@ -1,0 +1,41 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akWebglRestView(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let op = try argU32(it, a, 1)
+    let o = js.objectOf(it.arg(a, 2))
+
+    if o == js.NONE {
+        return Value.Undefined
+    }
+
+    let bytes = js.viewBytes(it, o)
+    let gl = ctx.gl()
+    let target = try argU32(it, a, 3)
+
+    if op == 0 && bytes.len > 0 {
+        let src = gl.glMapBufferRange(target, (try argOffset(it, a, 4)) as i64, bytes.len as i64, 1) orelse return Value.Undefined
+
+        for i in 0..bytes.len {
+            bytes[i] = src[i]
+        }
+
+        gl.glUnmapBuffer(target)
+    } else if op == 1 {
+        gl.glInvalidateFramebuffer(target, (bytes.len / 4) as i32, bytes.ptr)
+    } else if op == 2 {
+        gl.glInvalidateSubFramebuffer(target, (bytes.len / 4) as i32, bytes.ptr, try argI32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7))
+    } else if op == 3 {
+        gl.glGetInternalformativ(0x8d41, target, 0x80a9, (bytes.len / 4) as i32, bytes.ptr)
+    } else if op == 4 {
+        try feedbackVaryings(it, gl, target, bytes, try argU32(it, a, 4))
+    } else if op == 5 {
+        gl.glGetVertexAttribfv(target, 0x8626, bytes.ptr)
+    }
+
+    return Value.Undefined
+}

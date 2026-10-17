@@ -722,6 +722,46 @@ fn webgl2_objects() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.12: `browser/tests/webgl/webgl2_rest.html` on SwiftShader prints
+/// `webgl2_rest.txt`: occlusion and transform feedback queries and fences
+/// (available only after the task), transform feedback, buffer copies and
+/// readback, readPixels into a pixel-pack buffer, copyTexSubImage2D/3D,
+/// clearBufferfi, invalidateFramebuffer and the indexed, internal format,
+/// buffer and vertex attribute getters, with the errors of each.
+#[test]
+fn webgl2_rest() {
+    let out = dweller_command()
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            "browser/tests/webgl/webgl2_rest.html",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/webgl2_rest.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
 /// on SwiftShader, served over HTTP (the page fetches a PNG), prints
 /// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
