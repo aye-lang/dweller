@@ -1,0 +1,20 @@
+// blink: core/frame/local_frame_view.cc (CanThrottleRendering)
+pub fn throttleFrames(p: *mut Page) {
+    let s = p.script orelse return
+
+    for k in 0..p.frames.len() {
+        let f = p.frames.items()[k]
+
+        if f.page.script |fs| {
+            fs.throttled = s.throttled || (!sameOrigin(rootPage(p), f.page) && offscreen(p, s, k))
+        }
+
+        throttleFrames(f.page)
+    }
+}
+
+fn offscreen(p: *mut Page, s: *Script, k: usize) bool {
+    let r = frameRect(p, k) orelse return false
+
+    return r.y + r.h <= s.scroll_y || r.y >= s.scroll_y + s.height || r.x + r.w <= s.scroll_x || r.x >= s.scroll_x + s.width
+}

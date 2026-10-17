@@ -1,0 +1,28 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+pub fn writeNumber(n: f64, out: *mut text.Builder) AllocError!void {
+    if !(math.abs(n) < 1e16) {
+        return out.appendFloat(n)
+    }
+
+    var hundredths = math.round(n * 100.0) as i64
+
+    if hundredths < 0 {
+        try out.appendByte('-')
+        hundredths = -hundredths
+    }
+
+    try out.appendInt(hundredths / 100)
+    let frac = hundredths % 100
+
+    if frac != 0 {
+        try out.appendByte('.')
+        try out.appendInt(frac / 10)
+
+        if frac % 10 != 0 {
+            try out.appendInt(frac % 10)
+        }
+    }
+}
