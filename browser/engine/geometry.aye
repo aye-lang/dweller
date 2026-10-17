@@ -257,6 +257,7 @@ fn noteLayoutChange(s: *mut Script, at: NodeId, change: css.StyleChange) AllocEr
         }
     }
     if s.restyle.len() >= MAX_RESTYLE {
+        noteFullLayout(s, "set:max_restyle")
         s.restyle_all = true
         clearChanges(s)
         return
@@ -311,6 +312,9 @@ fn noteImageChanges(s: *mut Script, images: *mut layout.Images) AllocError!void 
 /// A change to the document that may change the style of any element
 /// (style sheets, document.write, form state).
 fn noteLayoutChangeAnywhere(s: *mut Script) {
+    if s.geom != null && !s.restyle_all {
+        noteFullLayout(s, "set:anywhere")
+    }
     s.layout_version += 1
     s.restyle_all = true
 }
@@ -329,6 +333,9 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
     let began = perf.start()
     defer perf.end("script_layout", began, p.url.href)
     let st = try layoutStyling(s)
+    if s.geom == null {
+        noteFullLayout(s, "no_geometry")
+    }
     if s.geom |g| {
         // When only children and `style` and `class` attributes changed:
         // the elements whose boxes to build again (`relayoutDirty`).
@@ -383,11 +390,20 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
                 return e
             }
             perf.end("layout_dirty", dirty_began, p.url.href)
+            if !kept {
+                noteFullLayout(s, "relayout")
+            }
+        }
+        if fresh && !local {
+            noteFullLayout(s, "not_local")
         }
         if kept {
             kept = settleContainers(s, g, st) catch |e| {
                 dropGeometry(s)
                 return e
+            }
+            if !kept {
+                noteFullLayout(s, "containers")
             }
             if g.styles.queried {
                 // The containers may have styled and laid out more.
@@ -439,6 +455,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             }
         }
     }
+    noteFullLayout(s, "STYLE_FULL")
     dropGeometry(s)
     clearChanges(s)
     s.restyle_all = false
@@ -610,6 +627,7 @@ fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
                     }
                 }
             }
+            noteFullLayout(s, "shared_styling")
             dropGeometry(s)
         }
     }
@@ -668,22 +686,27 @@ fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Style
 // them, when it can: not when a change may change any element's style,
 // or for other sheets or another viewport, or when the styles depend on
 // what css/invalidation.aye does not follow (`:has()` of siblings,
-// shadow trees, container queries but in the page's layout, which
-// `settleContainers` follows; but see `onlyInlineStyle`), or after
+// shadow trees; but see `onlyInlineStyle`), or after
 // styling the document again
 // `RESTYLE_ROUNDS` times this way. Whether it did. `keep`: the old
 // values stay as they are, for the boxes of `g` to keep pointing at.
 fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocError!bool {
     let p = s.page
-    let ok = !s.restyle_all && g.width == s.width && g.height == s.height && g.styling == st && sameSheets(s, g) && g.mutations == p.mutations && (!g.deps.whole || onlyInlineStyle(s, g)) && (!g.styles.queried || g.shared) && g.restyled < RESTYLE_ROUNDS * g.styles.map.len()
-    if !ok {
+    let why = restyleRefusal(s, g, st)
+    if why.len > 0 {
+        noteFullLayout(s, why)
         return false
     }
     var roots = List(NodeId).init(s.alloc)
     defer roots.deinit()
     var shallow = List(bool).init(s.alloc)
     defer shallow.deinit()
-    if !(try restyleRoots(s, g, st, &mut roots, &mut shallow)) || !clearOfShadows(&p.doc, roots.items()) {
+    if !(try restyleRoots(s, g, st, &mut roots, &mut shallow)) {
+        noteFullLayout(s, "roots")
+        return false
+    }
+    if !clearOfShadows(&p.doc, roots.items()) {
+        noteFullLayout(s, "shadows")
         return false
     }
     g.restyled += try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), keep, g.styles)
@@ -700,6 +723,7 @@ fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocErro
 // bitmap, which only move `Script.layout_version`.
 fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(NodeId)) AllocError!bool {
     if s.restyle_all || s.page.mutations != g.mutations || version - g.version != s.layout_noted - g.noted {
+        noteFullLayout(s, "local:unnoted")
         return false
     }
     let doc = &s.page.doc
@@ -719,6 +743,7 @@ fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(Nod
                 try dirty.append(c.at)
             }
         } else {
+            noteFullLayout(s, "local:attr")
             return false
         }
     }
@@ -798,12 +823,13 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
                 cur = doc.parent(c)
             }
         }
-        let up = doc.parent(top) orelse return false
-        if doc.node(up).kind != dom.Kind.Element {
-            return false
-        }
         if dom.same(top, el) && !deps.isDeep(change.what) {
             try addRoot(out, shallow, &mut found, el, change.what.token || change.what.what != css.CHILDREN_CHANGED.what)
+            continue
+        }
+        let up = doc.parent(top) orelse return false
+        if doc.node(up).kind != dom.Kind.Element {
+            try addRoot(out, shallow, &mut found, top, false)
             continue
         }
         var first: ?NodeId = top
