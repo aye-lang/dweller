@@ -25,7 +25,7 @@ fn vmIcStoreHit(it: *mut Interp, c: IcCase, v: Value, o: u32, key: u32, value: V
         return true
     }
 
-    if !ob.extensible || !vmIcProtoMatch(it, ob.proto, c.proto1, c.proto2) {
+    if !ob.extensible || ob.proto != c.proto || c.epoch != it.heap.proto_epoch {
         return false
     }
 
@@ -34,6 +34,8 @@ fn vmIcStoreHit(it: *mut Interp, c: IcCase, v: Value, o: u32, key: u32, value: V
 
         return true
     }
+
+    heapProtoChanged(&mut it.heap, o)
 
     ob.props[ob.nprops] = Prop { key: key, value: value, setter: Value.Undefined, flags: F_DEFAULT }
     ob.nprops += 1

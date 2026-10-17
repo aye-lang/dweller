@@ -925,18 +925,10 @@ fn lessName(a: []u8, b: []u8) bool {
 // ---- crashes
 
 fn installCrashHandler() {
-    // Not on macOS (P4.54): the handler runs there but the process stays
-    // alive, so crashes behave as without it.
-    if @targetOs() is .macos {
-        return
-    }
     // backtrace loads its unwinder on the first call: not in the handler.
     _ = backtrace(trace[..].ptr, 1)
     for i, sig in CRASH_SIGNALS {
-        var sa = @zeroed(SigAction)
-        sa.action = onCrash
-        sa.flags = SA_FLAGS
-        _ = sigaction(sig, &sa, &mut old_actions[i])
+        installCrashAction(sig, &mut old_actions[i])
     }
 }
 
@@ -944,19 +936,24 @@ fn installCrashHandler() {
 // did before: a fault comes again when the handler returns; a signal that
 // was sent (kill, abort) is sent again.
 fn onCrash(sig: i32, info: ?[*]u8, ctx: ?[*]u8) {
+    if old_handler_sig != 0 {
+        endInOldHandler()
+        return
+    }
     var which: usize = 0
     for i, s in CRASH_SIGNALS {
         if s == sig {
             which = i
         }
     }
+    runOldFaultHandler(sig, which, info, ctx)
     // siginfo_t's si_code (after si_signo and si_errno): 0 or less when a
-    // process sent the signal. It ends the process as it would have
-    // without handlers; a fault goes to the handler there was before.
+    // process sent the signal (macOS does not tell: taken as sent). It ends
+    // the process as without handlers; a fault goes to the handler before.
     var sent = true
     if info |i| {
         let code = (i[8] as u32) | ((i[9] as u32) << 8) | ((i[10] as u32) << 16) | ((i[11] as u32) << 24)
-        sent = code == 0 || code >= 0x80000000
+        sent = code == 0 || code >= 0x80000000 || @targetOs() is .macos
     }
     var ignored = @zeroed(SigAction)
     if sent {

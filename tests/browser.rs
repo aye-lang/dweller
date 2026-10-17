@@ -4328,6 +4328,20 @@ fn wpt_runner() {
     );
 }
 
+// P10.6: `test_driver.click`, `send_keys` and `action_sequence` become
+// events that `dweller wpt` feeds to the page.
+#[test]
+fn wpt_testdriver() {
+    let pass = |name: &str| format!(r#"{{"name":"{name}","status":"PASS","message":null}}"#);
+    let subtests = [pass("click"), pass("send_keys"), pass("action_sequence")].join(",");
+    expect(
+        &["wpt", "browser/tests/wpt/testdriver.html"],
+        0,
+        &format!("{{\"status\":\"OK\",\"message\":null,\"subtests\":[{subtests}]}}\n"),
+        "",
+    );
+}
+
 /// `browser/tools/wpt.py run` over the fixture directory (its own static
 /// server, the generated wrapper of `sum.any.js`): the results file has
 /// the status and subtest counts of each fixture.
@@ -4359,14 +4373,15 @@ fn wpt_py_serve() {
         "pass.html: 3/3 OK",
         "slow.html: 1/1 OK",
         "sum.any.js: 2/2 OK",
+        "testdriver.html: 3/3 OK",
         "timeout.html: 1/2 TIMEOUT",
-        ": 6 files (0 skipped), 9/11 subtests passed, score 81.8%",
+        ": 7 files (0 skipped), 12/14 subtests passed, score 85.7%",
     ] {
         assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
     }
     let json = std::fs::read_to_string(out.join("root.json")).expect("results file");
     assert!(
-        json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
+        json.contains("\"passed\": 12") && json.contains("\"total\": 14"),
         "{json}"
     );
 }
@@ -8369,8 +8384,7 @@ fn window_telemetry() {
     assert!(!home.join(".dweller").exists());
 
     // A crash: the records so far and the crash, with the last actions.
-    // Not on macOS until card P4.54 installs the crash handler there.
-    if !cfg!(target_os = "macos") {
+    {
         let crashed = base.join("crashed");
         std::fs::create_dir_all(&crashed).unwrap();
         let mut child = window(Some(&crashed), None, "3000").spawn().unwrap();
@@ -8381,13 +8395,18 @@ fn window_telemetry() {
             .unwrap();
         assert!(killed.success());
         let start = Instant::now();
-        while child.try_wait().unwrap().is_none() {
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
             if start.elapsed() > Duration::from_secs(30) {
                 let _ = child.kill();
                 panic!("the window did not end on SIGSEGV");
             }
             std::thread::sleep(Duration::from_millis(20));
-        }
+        };
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(11), "{status:?}");
         let got = records(&crashed);
         let crash = got
             .lines()
@@ -8400,6 +8419,32 @@ fn window_telemetry() {
             "{crash}"
         );
         assert!(got.contains("\"ev\":\"js_error\""), "{got}");
+    }
+
+    // A stack overflow on macOS: Aye's panic line, then the crash record,
+    // and the window ends on SIGSEGV.
+    if cfg!(target_os = "macos") {
+        use std::os::unix::process::ExitStatusExt;
+        let overflowed = base.join("overflowed");
+        std::fs::create_dir_all(&overflowed).unwrap();
+        let out = dweller_command()
+            .current_dir(root())
+            .env("HOME", &home)
+            .env("DWELLER_PROFILE", &overflowed)
+            .env_remove("DWELLER_TELEMETRY")
+            .env_remove("DWELLER_TELEMETRY_DIR")
+            .args([page.as_str(), "--font", "fixed", "--frames", "300", "--events", "frame overflow"])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert_eq!(out.status.signal(), Some(11), "{err}");
+        assert!(err.contains("panic: stack overflow (deep recursion"), "{err}");
+        let got = records(&overflowed);
+        assert!(
+            got.lines()
+                .any(|l| l.contains("\"ev\":\"crash\"") && l.contains("\"signal\":\"SIGSEGV\"")),
+            "{got}"
+        );
     }
     let _ = std::fs::remove_dir_all(&base);
 }
