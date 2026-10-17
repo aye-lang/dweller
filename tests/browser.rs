@@ -5489,6 +5489,29 @@ fn jsdom_fixtures() {
     );
 }
 
+/// P4.48: a timer that toggles a class and reads `offsetWidth` 50 times,
+/// on a page with a shadow host elsewhere (mistral's consent SDK), styles
+/// again only the toggled element: not one cascade of the whole document
+/// per read (51 before).
+#[test]
+fn jsdom_fixtures_restyle_beside_shadow() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/shadow_class_toggle.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_TIMING\tstyle_full\t").count();
+    assert!(full <= 5, "{full} full cascades:\n{err}");
+}
+
 /// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
 /// clock, which a task's steps move: a loop that waits for `Date.now()`
 /// ends, after the same work on every run.
