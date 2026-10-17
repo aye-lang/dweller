@@ -8,7 +8,14 @@ let syncing = false;
 let timer = 0;
 
 function watch() {
-  if (!timer && Array.from(tracked).some(el => running.get(el).some(a => a.playState === 'running'))) timer = ak.setTimer(resync, 16, false, [], true);
+  if (!timer && Array.from(tracked).some(el => running.get(el).some(unsettled))) timer = ak.setTimer(resync, 16, false, [], true);
+}
+
+// Running, or finished by the clock while its end is still a pending
+// timer: one more frame applies the end, so no restyle follows the last
+// frame.
+function unsettled(a) {
+  return a.playState === 'running' || a._timer !== 0;
 }
 
 function resync() {
