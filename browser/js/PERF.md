@@ -246,6 +246,58 @@ globals 7.6×, closures 5.3×, splay 5.0×; navier-stokes 1.8×, loop
 1.9×). All checksums equal. The per-workload table is in `BYTECODE.md`
 section 6.
 
+P4.75b, the 22 archived sites (2026-10-18): `page_load.py check`
+gives the same 10 passes, 2 skips (excluded) and 10 misses with the VM on and with
+`DWELLER_JS_VM=0`, and the same Markdown on every site except mdn (a
+virtual-clock timestamp, 00.000Z against 00.001Z). The 10 misses are
+archive misses (wikipedia-en, bbc, go-docs, google, wikipedia, zol,
+youtube, youtube-search, react, mistral): the 2026-10-14 archives lack
+requests the engine makes now, such as `gtm.js` inserted by a script;
+the binary of 2026-10-16 misses them too. Site `scripts` phase, tree
+walker → VM: youtube 0.92×, github 1.08×, react 0.96×, mistral 1.00×;
+`timers` 1.19×, 0.91×, 1.05×, 1.09× (table in `BYTECODE.md` section
+1): within noise, so the site time is not in bytecode dispatch.
+
+## P4.75e: where the sites' script time goes
+
+`DWELLER_JS_NATIVES=1` prints, per interpreter at exit, the exclusive
+time and calls of every native called from JS
+(`info: DWELLER_JS_NATIVES\t<name>\t<ns>\t<calls>`) and a `(bytecode)`
+line for the time inside `vmRun`; `DWELLER_TIMING` now also has
+`js_parse`, `js_compile` and `js_gc`. 2026-10-18, M2 Pro, fast build,
+archives of P4.75d, one profiled run per site (milliseconds, % of the
+measured JS time; `scripts` and `timers` nest, so their sum is not the
+JS time):
+
+| ms (%) | youtube | github | react | mistral | bbc |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| bytecode | 951 (22.8) | 385 (10.8) | 176 (44.9) | 3866 (14.0) | 3920 (70.6) |
+| parse | 834 (20.0) | 185 (5.2) | 75 (19.1) | 247 (0.9) | 418 (7.5) |
+| bytecode generation | 204 (4.9) | 27 (0.8) | 17 (4.4) | 46 (0.2) | 79 (1.4) |
+| GC | 67 (1.6) | 36 (1.0) | 7 (1.8) | 137 (0.5) | 174 (3.1) |
+| forced style/layout | 601 (14.4) | 2691 (75.5) | 35 (8.9) | 8441 (30.7) | 224 (4.0) |
+| DOM/engine natives | 113 (2.7) | 141 (3.9) | 55 (14.0) | 1320 (4.8) | 103 (1.9) |
+| string/regexp builtins | 1247 (29.9) | 36 (1.0) | 8 (2.0) | 165 (0.6) | 246 (4.4) |
+| other builtins | 154 (3.7) | 63 (1.8) | 20 (5.0) | 592 (2.2) | 393 (7.1) |
+| canvas natives | – | – | – | 12713 (46.2) | – |
+| measured JS | 4170 | 3564 | 393 | 27526 | 5555 |
+
+Top natives over the five sites (exclusive ms, calls): `canvasDraw`
+12661 (13126), `metric` 7273 (24924), `rects` 2988 (13944),
+`charCodeAt` 1269 (2.35M; youtube 1206 ms in 415k calls, a UTF-8 scan
+from the start per call on a non-ASCII string), `offsetParent` 891
+(254), `imageLoad` 867 (443), `computedStyle` 429 (1992), `setScroll`
+411 (402), `contentDocument` 283 (13), `Function.prototype.call` 181
+(1.75M). The VM runs about 10–11.5 ns per instruction on the sites
+(youtube 83M instructions, bbc 358M, mistral 405M). Bytecode is the
+largest part only on bbc; the next cards (P4.75f–i, P4.77) are in
+`docs/plans/browser.md` under P4.75e.
+
+Reproduce: `DWELLER_JS_NATIVES=1 DWELLER_JS_VM_STATS=1 scripts/capped.sh
+python3 browser/tools/page_load.py run --site youtube --repeat 1
+--warmup 0`, then sum the `DWELLER_JS_NATIVES` and `js_*` lines of
+`target/page-load-out/youtube/last.stderr`.
+
 ## Next steps
 
 The general interpreter is still the bottleneck. Small property tables

@@ -1,0 +1,18 @@
+fn codeUnit(it: *mut Interp, s: u32, i: u32) u32 {
+    if it.heap.str(s).ascii {
+        return it.heap.bytes(s)[i] as u32
+    }
+
+    let at = seekUnit(&mut it.heap, s, i)
+    let cp = decodeAt(it.heap.bytes(s), at).cp
+
+    if cp < 0x10000 {
+        return cp
+    }
+
+    if i == it.heap.str(s).cursor_unit {
+        return 0xD800 + ((cp - 0x10000) >> 10)
+    }
+
+    return 0xDC00 + ((cp - 0x10000) & 0x3FF)
+}

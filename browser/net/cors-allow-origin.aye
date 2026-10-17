@@ -1,0 +1,11 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+fn corsAllowOrigin(alloc: Allocator, req: Request, to: *Url, out: *mut text.Builder) AllocError!void {
+    var origin = text.Builder.init(alloc)
+    defer origin.deinit()
+    try originHeader(alloc, req, to, &mut origin)
+    try allowOrigin(origin.bytes(), out)
+}
