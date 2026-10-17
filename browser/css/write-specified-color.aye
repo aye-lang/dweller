@@ -1,0 +1,49 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#serial-relative-color
+fn writeSpecifiedColor(toks: []Token, out: *mut text.Builder) AllocError!bool {
+    let first = toks[0]
+    let v = colorValue(Comp { toks: toks }) orelse return false
+
+    if first.kind == Tok.Ident {
+        for ch in first.text {
+            try out.appendByte(ch | 0x20)
+        }
+
+        return true
+    }
+
+    if first.kind == Tok.Function && text.eqlIgnoreCase(first.text, "color-mix") {
+        return writeSpecifiedMix(toks, out)
+    }
+
+    if first.kind == Tok.Function && isRelative(toks) {
+        let start = skipWhitespace(toks, skipWhitespace(toks, 1) + 1)
+        let end = skipComponent(toks, start)
+
+        for ch in first.text {
+            try out.appendByte(ch | 0x20)
+        }
+
+        try out.append("(from ")
+
+        if !(try writeSpecifiedColor(toks[start..end], out)) {
+            return false
+        }
+
+        try writeTokens(toks[end..], out)
+
+        return true
+    }
+
+    if first.kind == Tok.Function && text.eqlIgnoreCase(first.text, "light-dark") {
+        try writeTokens(toks, out)
+
+        return true
+    }
+
+    try writeValue(v, out)
+
+    return true
+}

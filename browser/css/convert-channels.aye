@@ -1,0 +1,45 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#interpolation-missing
+fn convertChannels(c: Color, space: u8) [4]f64 {
+    let same = c.space == space || (c.space <= 1 && space <= 1)
+    var src = c.ch
+
+    if c.space == 0 {
+        src = [3]f64{c.r as f64 / 255.0, c.g as f64 / 255.0, c.b as f64 / 255.0}
+    }
+
+    for i in 0..3 {
+        if c.none & (1 << i) as u8 != 0 {
+            src[i] = 0.0
+        }
+    }
+
+    var ch = src
+
+    if !same {
+        ch = fromXyz(space, toXyz(c.space, src))
+    }
+
+    if c.space <= 1 && space >= 13 {
+        ch = fromSrgb(space, src)
+    }
+
+    var out = [4]f64{ch[0], ch[1], ch[2], c.a}
+
+    for i in 0..3 {
+        if same && c.none & (1 << i) as u8 != 0 {
+            out[i] = math.nan()
+        }
+    }
+
+    if c.none & 8 != 0 {
+        out[3] = math.nan()
+    }
+
+    if !same && space != 14 && hueIndex(space) < 3 && math.abs(ch[1]) < channelRef(space)[1] * 0.000001 {
+        out[hueIndex(space)] = math.nan()
+    }
+
+    return out
+}

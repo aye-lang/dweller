@@ -3,6 +3,9 @@ import std
 import std.mem.AllocError
 import std.text
 
+var held_modifiers: i64 = 0
+
+// spec: https://w3c.github.io/uievents/#events-keyboard-event-order
 pub fn feedKey(p: *mut Page, word: []u8) AllocError!void {
     let up = text.startsWith(word, "keyup:")
     let colon = std.mem.indexOf(word, ':') orelse return
@@ -13,10 +16,23 @@ pub fn feedKey(p: *mut Page, word: []u8) AllocError!void {
 
     if up {
         kind = "keyup"
+        held_modifiers = held_modifiers & ~modifierBit(name)
+    } else {
+        held_modifiers = held_modifiers | modifierBit(name)
     }
 
-    if !try dispatchEvent(p, target, kind, domKey(name)) || up {
+    var detail = text.Builder.init(p.alloc)
+    defer detail.deinit()
+    try detail.append(domKey(name))
+    try detail.append("\n\n0\n0\n")
+    try detail.appendInt(held_modifiers)
+
+    if !try dispatchEvent(p, target, kind, detail.bytes()) || up {
         return
+    }
+
+    if (held_modifiers & SHORTCUT_MODIFIERS) == 0 && modifierBit(name) == 0 && (name.len == 1 || text.eql(name, "return")) {
+        _ = try dispatchEvent(p, target, "keypress", detail.bytes())
     }
 
     let field = p.doc.controls.focus orelse return

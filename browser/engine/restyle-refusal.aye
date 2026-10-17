@@ -1,0 +1,27 @@
+fn restyleRefusal(s: *mut Script, g: *mut Geometry, st: *Styling) []u8 {
+    if s.restyle_all {
+        return "restyle_all"
+    }
+
+    if g.width != s.width || g.height != s.height {
+        return "viewport"
+    }
+
+    if g.styling != st || !sameSheets(s, g) {
+        return "sheets"
+    }
+
+    if g.mutations != s.page.mutations {
+        return "mutations"
+    }
+
+    if g.deps.whole && !wholeUnseen(s, g) {
+        return "deps_whole"
+    }
+
+    if g.restyled >= RESTYLE_ROUNDS * g.styles.map.len() {
+        return "rounds"
+    }
+
+    return ""
+}

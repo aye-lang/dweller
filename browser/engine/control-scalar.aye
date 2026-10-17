@@ -1,0 +1,24 @@
+import dom
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn controlScalar(it: *mut Interp, a: Args) JsError!Value {
+    let doc = docOf(it)
+    let h = try thisElement(it, a)
+    let t = dom.inputType(doc, h)
+    let n = dom.scalar(t, dom.valueOf(doc, h)) orelse return js.numVal(0.0 / 0.0)
+
+    if text.eql(t, "date") || text.eql(t, "week") {
+        return js.numVal(n * 86400000.0)
+    }
+
+    if text.eql(t, "time") || text.eql(t, "datetime-local") {
+        return js.numVal(n * 1000.0)
+    }
+
+    return js.numVal(n)
+}

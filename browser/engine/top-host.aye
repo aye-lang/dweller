@@ -1,0 +1,26 @@
+import dom
+import dom.Kind
+import dom.NodeId
+
+fn topHost(doc: *dom.Document, el: NodeId) ?NodeId {
+    var top: ?NodeId = null
+    var at = el
+
+    while true {
+        if doc.parent(at) |p| {
+            if doc.node(p).kind == Kind.Element && doc.node(p).shadow != null {
+                top = p
+            }
+
+            at = p
+            continue
+        }
+
+        let host = dom.hostOf(doc, at) orelse break
+
+        top = host
+        at = host
+    }
+
+    return top
+}

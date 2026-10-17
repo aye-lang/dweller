@@ -1,0 +1,19 @@
+import dom.Document
+import dom.NodeId
+import std.text
+
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-nameditem
+fn isWindowNamed(doc: *Document, h: NodeId, name: []u8) bool {
+    if name.len == 0 {
+        return false
+    }
+
+    if text.eql(doc.attr(h, "id") orelse "", name) {
+        return true
+    }
+
+    let tag = doc.node(h).name
+    let by_name = text.eql(tag, "embed") || text.eql(tag, "form") || text.eql(tag, "img") || text.eql(tag, "object") || text.eql(tag, "iframe") || text.eql(tag, "frame")
+
+    return by_name && text.eql(doc.attr(h, "name") orelse "", name)
+}

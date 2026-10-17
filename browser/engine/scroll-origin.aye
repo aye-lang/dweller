@@ -1,0 +1,33 @@
+import css
+import layout
+
+// spec: https://drafts.csswg.org/css-overflow-3/#scroll-origin
+fn scrollOrigin(style: []css.Value) [2]bool {
+    var right = layout.isKeyword(style[css.DIRECTION], "rtl")
+    var bottom = false
+    let flex = layout.isKeyword(style[css.DISPLAY], "flex") || layout.isKeyword(style[css.DISPLAY], "inline-flex")
+
+    if !flex {
+        return [2]bool{right, bottom}
+    }
+
+    let fd = style[css.FLEX_DIRECTION]
+
+    if layout.isKeyword(fd, "row-reverse") {
+        right = !right
+    }
+
+    if layout.isKeyword(fd, "column-reverse") {
+        bottom = !bottom
+    }
+
+    if layout.isKeyword(style[css.FLEX_WRAP], "wrap-reverse") {
+        if layout.isKeyword(fd, "row") || layout.isKeyword(fd, "row-reverse") {
+            bottom = !bottom
+        } else {
+            right = !right
+        }
+    }
+
+    return [2]bool{right, bottom}
+}

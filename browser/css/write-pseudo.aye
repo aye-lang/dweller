@@ -1,0 +1,37 @@
+import std.mem.AllocError
+import std.text
+
+fn writePseudo(toks: []Token, at: usize, out: *mut text.Builder) AllocError!usize {
+    var i = at
+    let element = toks[i].kind == Tok.Colon
+
+    if element {
+        i += 1
+    }
+
+    if i >= toks.len {
+        return i
+    }
+
+    let t = toks[i]
+
+    try out.appendByte(':')
+
+    if element || (t.kind == Tok.Ident && isLegacyPseudoElement(t.text)) {
+        try out.appendByte(':')
+    }
+
+    try writeLowerIdent(t.text, out)
+
+    if t.kind != Tok.Function {
+        return i + 1
+    }
+
+    let close = blockEnd(toks, i)
+
+    try out.appendByte('(')
+    try writePseudoArgs(t.text, trimWhitespace(toks[i + 1..close]), out)
+    try out.appendByte(')')
+
+    return skipComponent(toks, i)
+}

@@ -1,0 +1,34 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-5/#relative-colors
+fn channelCalc(space: u8, n: usize, toks: []Token, origin: ?[4]f64) ?f64 {
+    var buf = [128]Token{token(Tok.Number), ..}
+
+    if toks.len > 128 {
+        return null
+    }
+
+    for i, t in toks {
+        buf[i] = t
+
+        if t.kind == Tok.Ident {
+            if channelKeyword(space, origin, t.text) |v| {
+                var x = v
+
+                if math.isNan(x) {
+                    x = 0.0
+                }
+
+                buf[i] = Token { kind: Tok.Number, text: "", num: x, delim: 0, flag: false }
+            }
+        }
+    }
+
+    let v = calcValue(buf[..toks.len]) orelse return null
+
+    return match v {
+        .Number { v: x } => x
+        .Percent { v: p } => scaledPercent(space, n, p)
+        _ => null
+    }
+}

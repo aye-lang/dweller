@@ -1,0 +1,13 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serializing-selectors
+pub fn selectorText(alloc: Allocator, src: []u8, out: *mut text.Builder) AllocError!void {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, src, &mut toks)
+    try writeSelectorList(toks.items(), out)
+}

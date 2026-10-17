@@ -1,0 +1,30 @@
+struct MixParts {
+    color: []Token
+    pct: f64
+    calc: []Token
+}
+
+fn mixParts(toks: []Token) ?MixParts {
+    var parts = MixParts { color: toks[0..0], pct: -1.0, calc: toks[0..0] }
+    var i = skipWhitespace(toks, 0)
+
+    while i < toks.len {
+        let j = skipComponent(toks, i)
+
+        if toks[i].kind == Tok.Percentage {
+            parts.pct = toks[i].num
+        } else if toks[i].kind == Tok.Function && isMathFunction(toks[i]) {
+            parts.calc = toks[i..j]
+        } else {
+            parts.color = toks[i..j]
+        }
+
+        i = skipWhitespace(toks, j)
+    }
+
+    if parts.color.len == 0 {
+        return null
+    }
+
+    return parts
+}

@@ -1,0 +1,33 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#color-conversion-code
+fn fromLinear(space: u8, v: f64) f64 {
+    let sign = math.sign(v)
+    let abs = math.abs(v)
+
+    if space == 2 {
+        return v
+    }
+
+    if space == 4 {
+        return sign * math.pow(abs, 256.0 / 563.0)
+    }
+
+    if space == 5 {
+        if abs >= 1.0 / 512.0 {
+            return sign * math.pow(abs, 1.0 / 1.8)
+        }
+
+        return 16.0 * v
+    }
+
+    if space == 6 {
+        return sign * math.pow(abs, 1.0 / 2.4)
+    }
+
+    if abs > 0.0031308 {
+        return sign * (1.055 * math.pow(abs, 1.0 / 2.4) - 0.055)
+    }
+
+    return 12.92 * v
+}

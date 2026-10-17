@@ -1,0 +1,42 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#rgb-to-hsl
+fn srgbToHsl(rgb: [3]f64) [3]f64 {
+    let hi = math.max(math.max(rgb[0], rgb[1]), rgb[2])
+    let lo = math.min(math.min(rgb[0], rgb[1]), rgb[2])
+    let d = hi - lo
+    let l = (lo + hi) / 2.0
+    var h = 0.0
+    var s = 0.0
+
+    if d != 0.0 {
+        if l != 0.0 && l != 1.0 {
+            s = (hi - l) / math.min(l, 1.0 - l)
+        }
+
+        if hi == rgb[0] {
+            h = (rgb[1] - rgb[2]) / d
+
+            if rgb[1] < rgb[2] {
+                h += 6.0
+            }
+        } else if hi == rgb[1] {
+            h = (rgb[2] - rgb[0]) / d + 2.0
+        } else {
+            h = (rgb[0] - rgb[1]) / d + 4.0
+        }
+
+        h = h * 60.0
+    }
+
+    if s < 0.0 {
+        h += 180.0
+        s = math.abs(s)
+    }
+
+    if h >= 360.0 {
+        h -= 360.0
+    }
+
+    return [3]f64{h, s * 100.0, l * 100.0}
+}

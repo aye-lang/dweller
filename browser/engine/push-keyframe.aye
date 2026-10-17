@@ -1,0 +1,33 @@
+import css
+import js
+import js.Interp
+import js.JsError
+
+fn pushKeyframe(it: *mut Interp, arr: u32, sheet: *css.Sheet, k: css.Keyframe) JsError!void {
+    let b = try it.builder()
+    defer it.release(b)
+
+    for d in sheet.decls.items()[k.decls.start..k.decls.end] {
+        if d.important || (d.prop != css.CUSTOM && d.name.len > 0) {
+            continue
+        }
+
+        var name = d.name
+
+        if d.prop != css.CUSTOM {
+            name = css.PROPERTIES[d.prop].name
+        }
+
+        b.clear()
+
+        if d.raw.len > 0 {
+            try css.writeTokens(d.raw, b)
+        } else {
+            try css.writeValue(d.value, b)
+        }
+
+        try it.heap.pushElem(arr, js.numVal(k.offset))
+        try it.heap.pushElem(arr, try it.newString(name))
+        try it.heap.pushElem(arr, try it.newString(b.bytes()))
+    }
+}

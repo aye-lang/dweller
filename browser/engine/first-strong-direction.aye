@@ -1,0 +1,23 @@
+import std.text
+
+// https://html.spec.whatwg.org/multipage/dom.html#text-node-directionality
+fn firstStrongDirection(s: []u8) []u8 {
+    var i: usize = 0
+
+    while i < s.len {
+        let d = text.decode(s[i..])
+        let c = d.code
+
+        if (c >= 0x0590 && c <= 0x08FF) || (c >= 0xFB1D && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFF) || (c >= 0x10800 && c <= 0x10FFF) || (c >= 0x1E800 && c <= 0x1EFFF) {
+            return "rtl"
+        }
+
+        if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= 0xC0 && c != 0xD7 && c != 0xF7 && (c < 0x2000 || c > 0x2BFF)) {
+            return "ltr"
+        }
+
+        i += d.len
+    }
+
+    return "ltr"
+}

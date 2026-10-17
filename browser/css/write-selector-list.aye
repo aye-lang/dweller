@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn writeSelectorList(toks: []Token, out: *mut text.Builder) AllocError!void {
+    var start: usize = 0
+    var i: usize = 0
+
+    while i < toks.len {
+        if toks[i].kind == Tok.Comma {
+            try writeComplex(trimWhitespace(toks[start..i]), out)
+            try out.append(", ")
+            start = i + 1
+            i += 1
+        } else {
+            i = skipComponent(toks, i)
+        }
+    }
+
+    try writeComplex(trimWhitespace(toks[start..]), out)
+}

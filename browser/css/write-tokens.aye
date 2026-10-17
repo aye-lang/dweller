@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+pub fn writeTokens(toks: []Token, out: *mut text.Builder) AllocError!void {
+    var space = false
+
+    for t in toks {
+        let slash = t.kind == Tok.Delim && t.delim == '/'
+
+        if t.kind == Tok.Whitespace {
+            space = true
+            continue
+        }
+
+        if (space || slash) && t.kind != Tok.RParen && t.kind != Tok.Comma && out.len() > 0 && out.bytes()[out.len() - 1] != '(' {
+            try out.appendByte(' ')
+        }
+
+        space = slash || t.kind == Tok.Comma
+        try writeColorToken(t, out)
+    }
+}

@@ -12,7 +12,7 @@
 // `@import` rules before the first style rule are recorded in
 // `Sheet.imports` (with their media and `supports()` checked) for the
 // loader to fetch. `@font-face` rules are read from the text
-// (fontface.aye). Other at-rules (`@keyframes`, `@page`,
+// (fontface.aye), `@keyframes` go to `Sheet.keyframes`. Others (`@page`,
 // `@starting-style`, ...) are skipped with their block.
 // A rule with an invalid selector is dropped whole; an invalid
 // declaration is dropped up to the next `;`. Blocks are matched by their
@@ -256,6 +256,8 @@ struct Parser {
                     self.cond = outer
                 } else if text.eqlIgnoreCase(name, "scope") && parent == null {
                     try self.scopeRule(prelude, j + 1, close)
+                } else if (text.eqlIgnoreCase(name, "keyframes") || text.eqlIgnoreCase(name, "-webkit-keyframes")) && parent == null {
+                    try keyframesRule(self, prelude, j + 1, close)
                 } else if text.eqlIgnoreCase(name, "property") && parent == null {
                     try self.propertyRule(prelude, j + 1, close)
                 }

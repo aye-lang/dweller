@@ -330,7 +330,7 @@ fn illegalConstructor(it: *mut Interp, a: Args) JsError!Value {
 
 // The interfaces of HTML elements, each with its tag names: "Interface
 // tag tag;...". Other HTML elements are HTMLElement.
-let HTML_INTERFACES = "HTMLAnchorElement a;HTMLAreaElement area;HTMLBaseElement base;HTMLBodyElement body;HTMLBRElement br;HTMLButtonElement button;HTMLCanvasElement canvas;HTMLDataElement data;HTMLDataListElement datalist;HTMLDetailsElement details;HTMLDialogElement dialog;HTMLDivElement div;HTMLDListElement dl;HTMLEmbedElement embed;HTMLFieldSetElement fieldset;HTMLFormElement form;HTMLFrameSetElement frameset;HTMLHeadingElement h1 h2 h3 h4 h5 h6;HTMLHeadElement head;HTMLHRElement hr;HTMLHtmlElement html;HTMLIFrameElement iframe;HTMLImageElement img;HTMLInputElement input;HTMLLabelElement label;HTMLLegendElement legend;HTMLLIElement li;HTMLLinkElement link;HTMLMapElement map;HTMLMenuElement menu;HTMLMetaElement meta;HTMLMeterElement meter;HTMLModElement ins del;HTMLObjectElement object;HTMLOListElement ol;HTMLOptGroupElement optgroup;HTMLOptionElement option;HTMLOutputElement output;HTMLParagraphElement p;HTMLPictureElement picture;HTMLPreElement pre listing xmp;HTMLProgressElement progress;HTMLQuoteElement q blockquote;HTMLScriptElement script;HTMLSelectElement select;HTMLSlotElement slot;HTMLSourceElement source;HTMLSpanElement span;HTMLStyleElement style;HTMLTableCaptionElement caption;HTMLTableCellElement td th;HTMLTableColElement col colgroup;HTMLTableElement table;HTMLTableRowElement tr;HTMLTableSectionElement thead tbody tfoot;HTMLTemplateElement template;HTMLTextAreaElement textarea;HTMLTimeElement time;HTMLTitleElement title;HTMLTrackElement track;HTMLUListElement ul;HTMLUnknownElement"
+let HTML_INTERFACES = "HTMLAnchorElement a;HTMLAreaElement area;HTMLBaseElement base;HTMLBodyElement body;HTMLBRElement br;HTMLButtonElement button;HTMLCanvasElement canvas;HTMLDataElement data;HTMLDataListElement datalist;HTMLDetailsElement details;HTMLDialogElement dialog;HTMLDivElement div;HTMLDListElement dl;HTMLEmbedElement embed;HTMLFieldSetElement fieldset;HTMLFormElement form;HTMLFrameSetElement frameset;HTMLHeadingElement h1 h2 h3 h4 h5 h6;HTMLHeadElement head;HTMLHRElement hr;HTMLHtmlElement html;HTMLIFrameElement iframe;HTMLImageElement img;HTMLInputElement input;HTMLLabelElement label;HTMLLegendElement legend;HTMLLIElement li;HTMLLinkElement link;HTMLMapElement map;HTMLMenuElement menu;HTMLMetaElement meta;HTMLMeterElement meter;HTMLModElement ins del;HTMLObjectElement object;HTMLOListElement ol;HTMLOptGroupElement optgroup;HTMLOptionElement option;HTMLOutputElement output;HTMLParagraphElement p;HTMLPictureElement picture;HTMLPreElement pre listing xmp;HTMLProgressElement progress;HTMLQuoteElement q blockquote;HTMLScriptElement script;HTMLSelectElement select;HTMLSlotElement slot;HTMLSourceElement source;HTMLSpanElement span;HTMLStyleElement style;HTMLTableCaptionElement caption;HTMLTableCellElement td th;HTMLTableColElement col colgroup;HTMLTableElement table;HTMLTableRowElement tr;HTMLTableSectionElement thead tbody tfoot;HTMLTemplateElement template;HTMLTextAreaElement textarea;HTMLTimeElement time;HTMLTitleElement title;HTMLTrackElement track;HTMLUListElement ul;HTMLMarqueeElement marquee;HTMLFrameElement frame;HTMLFontElement font;HTMLDirectoryElement dir;HTMLParamElement param;HTMLUnknownElement"
 // SVG elements with interfaces of their own, under SVGGraphicsElement;
 // the basic shapes and `path` under SVGGeometryElement. Other SVG
 // elements are SVGElement.
@@ -447,8 +447,10 @@ fn installDom(s: *mut Script) JsError!void {
     try interfaceObject(it, "CDATASection", try newProto(it, textp))
     try interfaceObject(it, "ProcessingInstruction", try newProto(it, chars))
     try interfaceObject(it, "XMLDocument", try newProto(it, docp))
-    try interfaceObject(it, "HTMLFormControlsCollection", try newProto(it, s.collection_proto))
-    try interfaceObject(it, "RadioNodeList", try newProto(it, s.nodelist_proto))
+    s.controls_proto = try newProto(it, s.collection_proto)
+    s.radio_proto = try newProto(it, s.nodelist_proto)
+    try interfaceObject(it, "HTMLFormControlsCollection", s.controls_proto)
+    try interfaceObject(it, "RadioNodeList", s.radio_proto)
     try installElementInterfaces(s, html, element)
     let consts = [6][]u8{"ELEMENT_NODE", "TEXT_NODE", "COMMENT_NODE", "DOCUMENT_NODE", "DOCUMENT_TYPE_NODE", "DOCUMENT_FRAGMENT_NODE"}
     let values = [6]f64{1.0, 3.0, 8.0, 9.0, 10.0, 11.0}
@@ -547,6 +549,9 @@ fn installDom(s: *mut Script) JsError!void {
     }
     if s.tag_protos.get("select") |sp| {
         try accessor(it, sp, "options", selectOptions, null)
+    }
+    if s.tag_protos.get("form") |fp| {
+        try accessor(it, fp, "elements", formElements, null)
     }
     if s.tag_protos.get("datalist") |dp| {
         try accessor(it, dp, "options", selectOptions, null)
@@ -1584,6 +1589,9 @@ fn namedGet(s: *mut Script, o: u32, key: u32) JsError!Value {
     if hostTag(it, o) == TAG_WINDOW {
         return windowNamed(s, o, key)
     }
+    if hostTag(it, o) == TAG_WINDOW_NAMED {
+        return Value.Empty
+    }
     let proto = it.heap.obj(o).proto
     if it.hasProperty(proto, key) {
         return Value.Empty
@@ -1615,7 +1623,7 @@ fn namedSet(s: *mut Script, o: u32, key: u32, value: Value) JsError!bool {
     if hostTag(it, o) == TAG_LIST {
         return listSet(s, o, key)
     }
-    if hostTag(it, o) == TAG_WINDOW {
+    if hostTag(it, o) == TAG_WINDOW || hostTag(it, o) == TAG_WINDOW_NAMED {
         return false
     }
     let proto = it.heap.obj(o).proto
@@ -1655,6 +1663,9 @@ fn namedHas(s: *mut Script, o: u32, key: u32) bool {
     let tag = hostTag(it, o)
     if tag == TAG_LIST {
         return listHas(s, o, key)
+    }
+    if tag == TAG_WINDOW_NAMED {
+        return windowNamedHas(s, o, key)
     }
     if (tag & TAG_KIND != TAG_DATASET && tag & TAG_KIND != TAG_STYLE) || it.hasProperty(it.heap.obj(o).proto, key) {
         return false
@@ -1701,7 +1712,13 @@ fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
 
 // Sets (or, for an empty value, removes) the declaration of `prop` in
 // the style attribute of `el`.
-fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!void {
+fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!void {
+    var canon = text.Builder.init(s.alloc)
+    defer canon.deinit()
+    if !(try css.specifiedValue(s.alloc, prop, raw, &mut canon)) {
+        return
+    }
+    let value = canon.bytes()
     let doc = &mut s.active.doc
     let old = doc.attr(el, "style") orelse ""
     var b = text.Builder.init(s.alloc)

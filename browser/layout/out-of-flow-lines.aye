@@ -1,0 +1,39 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-grid-2/#abspos-items
+fn outOfFlowLines(a: LineRef, b: LineRef, count: usize) [2]i64 {
+    var start: i64 = -1
+    var end: i64 = -1
+
+    if a.kind == 1 && b.kind == 1 {
+        start = math.minOf(i64, a.n, b.n)
+        end = math.maxOf(i64, math.maxOf(i64, a.n, b.n), start + 1)
+    } else if a.kind == 1 {
+        start = a.n
+        end = spanEnd(a.n, b)
+    } else if b.kind == 1 {
+        end = b.n
+
+        if a.kind == 2 {
+            start = math.maxOf(i64, 0, b.n - a.n)
+        }
+    }
+
+    return [2]i64{inGrid(start, count), inGrid(end, count)}
+}
+
+fn spanEnd(start: i64, b: LineRef) i64 {
+    if b.kind == 2 {
+        return start + b.n
+    }
+
+    return -1
+}
+
+fn inGrid(line: i64, count: usize) i64 {
+    if line < 0 || line > count as i64 {
+        return -1
+    }
+
+    return line
+}

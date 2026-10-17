@@ -21,7 +21,8 @@ DOC = REPO / "docs" / "conformance.md"
 WPT_RESULTS = REPO / "target" / "wpt-results"
 T262_RESULTS = REPO / "target" / "test262-results"
 WEBGL_RESULTS = REPO / "target" / "webgl-results"
-T262_AREAS = {"test262/built-ins": "test/built-ins", "test262/language": "test/language"}
+T262_AREAS = {"test262/built-ins": "test/built-ins", "test262/language": "test/language",
+              "test262/annexB": "test/annexB"}
 T262_THRESHOLD = 0.80
 TOLERANCE = 0.005
 
@@ -149,8 +150,9 @@ def render(measured, before, revs, today, commit):
             "", "| Area | Files | Skipped | Passed | Score % | Threshold % | Status | Change |",
             "|---|---:|---:|---:|---:|---:|---|---:|"]
     rows = [table_row(m, before) for m in measured]
-    notes = ["", "## Not yet measured", "", "| Area | Threshold % |", "|---|---:|"]
-    notes += [f"| {name} | {th} |" for name, th in planned_areas()]
+    planned = planned_areas()
+    notes = ["", "## Not yet measured", "", "| Area | Threshold % |", "|---|---:|"] if planned else []
+    notes += [f"| {name} | {th} |" for name, th in planned]
     return "\n".join(head + rows + notes) + "\n"
 
 

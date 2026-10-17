@@ -1,0 +1,11 @@
+// v8: src/interpreter/bytecode-generator.cc (GenerateBytecodeBody)
+
+fn vmVisitEvalBody(c: *mut Compiler, fi: FuncInfo) CompileError!void {
+    c.completion = c.b.newReg()
+    try c.tdz.append(false)
+    try c.b.op0(BC_LDA_UNDEFINED)
+    try c.b.op1(BC_STAR, c.completion as i64)
+    try c.visitList(fi.body, fi.nbody)
+    try c.b.op1(BC_LDAR, c.completion as i64)
+    try c.b.op0(BC_RETURN)
+}

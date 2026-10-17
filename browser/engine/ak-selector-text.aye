@@ -1,0 +1,26 @@
+import css
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstylerule-selectortext
+fn akSelectorText(it: *mut Interp, a: Args) JsError!Value {
+    let b = try it.builder()
+    defer it.release(b)
+
+    try argText(it, a, 0, b)
+
+    var sel = (try parseSelector(scriptOf(it).page, b.bytes())) orelse return Value.Null
+
+    sel.sheet.deinit()
+
+    var out = text.Builder.init(it.alloc)
+    defer out.deinit()
+
+    try css.selectorText(it.alloc, b.bytes(), &mut out)
+
+    return it.newString(out.bytes())
+}

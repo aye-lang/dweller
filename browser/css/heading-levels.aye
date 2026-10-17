@@ -1,0 +1,27 @@
+// spec: https://drafts.csswg.org/selectors-5/#headings
+fn headingLevels(args: []Token) ?i64 {
+    var mask: i64 = 0
+    var want_level = true
+
+    for t in args {
+        if t.kind == Tok.Whitespace {
+            continue
+        }
+
+        if want_level != (t.kind == Tok.Number) || (want_level && !t.flag) || (!want_level && t.kind != Tok.Comma) {
+            return null
+        }
+
+        if want_level && t.num >= 1.0 && t.num <= 6.0 {
+            mask |= 1 << (t.num as i64)
+        }
+
+        want_level = !want_level
+    }
+
+    if want_level {
+        return null
+    }
+
+    return mask
+}

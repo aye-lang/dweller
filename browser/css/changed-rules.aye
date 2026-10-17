@@ -1,0 +1,25 @@
+pub struct ChangedRules {
+    old_start: usize
+    old_end: usize
+    new_start: usize
+    new_end: usize
+}
+
+// blink: core/css/style_engine.cc (InvalidateForRuleSetChanges)
+fn changedRules(a: *Sheet, b: *Sheet) ChangedRules {
+    let x = a.rules.items()
+    let y = b.rules.items()
+    var same_first: usize = 0
+
+    while same_first < x.len && same_first < y.len && sameRule(a, x[same_first], b, y[same_first]) {
+        same_first += 1
+    }
+
+    var same_last: usize = 0
+
+    while same_last < x.len - same_first && same_last < y.len - same_first && sameRule(a, x[x.len - 1 - same_last], b, y[y.len - 1 - same_last]) {
+        same_last += 1
+    }
+
+    return ChangedRules { old_start: same_first, old_end: x.len - same_last, new_start: same_first, new_end: y.len - same_last }
+}

@@ -1,0 +1,36 @@
+import image
+import std.math
+import svg
+
+fn canvasRectCover(pic: *svg.Picture, bmp: *image.Bitmap) ?CanvasArea {
+    let v = pic.verbs.items()
+    let co = pic.coords.items()
+
+    if pic.shapes.len() != 1 || pic.shapes.items()[0].stroke.a != 0 || v.len != 5 || co.len != 8 {
+        return null
+    }
+
+    if v[0] != svg.MOVE || v[1] != svg.LINE || v[2] != svg.LINE || v[3] != svg.LINE || v[4] != svg.CLOSE {
+        return null
+    }
+
+    for c in co {
+        if !(math.abs(c) < 1000000000.0) || math.floor(c) != c {
+            return null
+        }
+    }
+
+    let across = co[1] == co[3] && co[2] == co[4] && co[5] == co[7] && co[6] == co[0]
+    let down = co[0] == co[2] && co[3] == co[5] && co[4] == co[6] && co[7] == co[1]
+
+    if !across && !down {
+        return null
+    }
+
+    let x0 = math.clamp(math.min(co[0], co[4]), 0.0, bmp.width as f64)
+    let y0 = math.clamp(math.min(co[1], co[5]), 0.0, bmp.height as f64)
+    let x1 = math.clamp(math.max(co[0], co[4]), 0.0, bmp.width as f64)
+    let y1 = math.clamp(math.max(co[1], co[5]), 0.0, bmp.height as f64)
+
+    return CanvasArea { x: x0 as i64, y: y0 as i64, w: (x1 - x0) as usize, h: (y1 - y0) as usize }
+}

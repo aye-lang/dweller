@@ -1,0 +1,70 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-5/#color-mix-result
+fn mixColors(space: u8, method: u8, first: MixItem, second: MixItem) ?Color {
+    var p1 = first.pct
+    var p2 = second.pct
+
+    if math.isNan(p1) && math.isNan(p2) {
+        p1 = 50.0
+        p2 = 50.0
+    } else if math.isNan(p1) {
+        p1 = 100.0 - p2
+    } else if math.isNan(p2) {
+        p2 = 100.0 - p1
+    }
+
+    let sum = p1 + p2
+
+    if sum == 0.0 {
+        return null
+    }
+
+    let w = p2 / sum
+    var a = convertChannels(first.color, space)
+    var b = convertChannels(second.color, space)
+    var none: u8 = 0
+
+    for k in 0..4 {
+        if math.isNan(a[k]) && math.isNan(b[k]) {
+            none |= (1 << k) as u8
+            a[k] = 0.0
+            b[k] = 0.0
+        } else if math.isNan(a[k]) {
+            a[k] = b[k]
+        } else if math.isNan(b[k]) {
+            b[k] = a[k]
+        }
+    }
+
+    let alpha = a[3] * (1.0 - w) + b[3] * w
+    let hue = hueIndex(space)
+    var out = [4]f64{0.0, 0.0, 0.0, alpha * math.min(sum, 100.0) / 100.0}
+
+    if hue < 3 {
+        let h = fixHues(method, a[hue], b[hue])
+
+        a[hue] = h[0]
+        b[hue] = h[1]
+    }
+
+    for k in 0..3 {
+        if k == hue {
+            let h = a[k] * (1.0 - w) + b[k] * w
+
+            out[k] = h - math.floor(h / 360.0) * 360.0
+        } else if alpha == 0.0 {
+            out[k] = a[k] * (1.0 - w) + b[k] * w
+        } else {
+            out[k] = (a[k] * a[3] * (1.0 - w) + b[k] * b[3] * w) / alpha
+        }
+    }
+
+    if space >= 13 {
+        let rgb = srgbOf(space, [3]f64{out[0], out[1], out[2]})
+
+        return paintColor(1, rgb, out[3], none & 8)
+    }
+
+    return paintColor(space, [3]f64{out[0], out[1], out[2]}, out[3], none)
+}

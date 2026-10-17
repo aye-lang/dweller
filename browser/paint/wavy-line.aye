@@ -1,0 +1,23 @@
+import std.math
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/paint/decoration_line_painter.cc
+fn wavyLine(b: *mut Builder, x: f64, y: f64, w: f64, t: f64, c: Rgba) AllocError!void {
+    let half = 0.5 + math.floor(2.0 * t + 1.0)
+    let mid = y + t / 2.0
+    let end = x + w
+    var dy = 0.29 * (0.5 + math.floor(3.0 * t + 1.0))
+    var x0 = x
+
+    b.extend(end, mid + dy + t)
+
+    while x0 < end {
+        let x1 = math.min(x0 + half, end)
+        let q = [8]f64{x0, mid - dy - t / 2.0, x1, mid + dy - t / 2.0, x1, mid + dy + t / 2.0, x0, mid - dy + t / 2.0}
+
+        try b.add(Item.Quad { p: q, c: c })
+
+        x0 = x1
+        dy = -dy
+    }
+}

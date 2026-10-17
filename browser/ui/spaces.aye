@@ -1,4 +1,4 @@
-// Spaces (docs/browser.md, B9): with `--spaces`, each agent connection
+// Spaces (docs/browser.md, B9): each agent connection
 // is served by a process of its own, so no agent request runs on the
 // window's thread. The window reads a connection's first line (the
 // hello, or a request), starts its Space or finds the done Space the
@@ -167,12 +167,12 @@ pub struct Inside {
 
 // ---- the window
 
-/// With `--spaces`: Spaces will serve the agents. In a Space: the
+/// In a window: Spaces serve the agents. In a Space: the
 /// control connection, and its first tab is its agent's. False (after a
 /// message) when that cannot be.
 fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
     let a = ui.agents orelse return true
-    if o.spaces {
+    if o.control < 0 {
         a.spaces = true
         a.space_font = o.face
         a.space_js = o.js
@@ -1673,7 +1673,7 @@ fn leaveSpace(ui: *mut Ui) {
 }
 
 /// `dweller space --control FD --agent-socket PATH ...` (internal): a
-/// Space, started by a window with `--spaces`. The exit status.
+/// Space, started by a window. The exit status.
 pub fn spaceMain(alloc: Allocator, args: [][]u8) i32 {
     var control: i64 = -1
     var rest = List([]u8).init(alloc)
@@ -1697,7 +1697,7 @@ pub fn spaceMain(alloc: Allocator, args: [][]u8) i32 {
         std.log.err(SPACE_USAGE)
         return 2
     }
-    if control < 0 || o.socket.len == 0 || o.target.len > 0 || o.spaces || o.frames > 0 {
+    if control < 0 || o.socket.len == 0 || o.target.len > 0 || o.frames > 0 {
         std.log.err(SPACE_USAGE)
         return 2
     }

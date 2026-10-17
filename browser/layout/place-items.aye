@@ -1,0 +1,105 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// spec: https://drafts.csswg.org/css-grid-2/#auto-placement-algo
+fn placeItems(alloc: Allocator, all: []mut GridItem, ncols: usize, dense: bool) AllocError![2]usize {
+    if all.len == 0 {
+        return [2]usize{0, ncols}
+    }
+
+    var cells = List(bool).init(alloc)
+    defer cells.deinit()
+    var ends = List(usize).init(alloc)
+    defer ends.deinit()
+    var occ = Occupancy { cells: &mut cells, cols: ncols }
+    let auto_pos: usize = 1 << 30
+
+    for k in 0..all.len {
+        if all[k].row == auto_pos {
+            continue
+        }
+
+        if all[k].cspan > ncols {
+            all[k].cspan = ncols
+        }
+
+        if all[k].col == auto_pos {
+            var c = rowCursor(ends.items(), all[k].row, dense)
+
+            while true {
+                if c + all[k].cspan > occ.cols {
+                    try widenOccupancy(&mut occ, c + all[k].cspan)
+                }
+
+                if occ.isFree(c, all[k].row, all[k].cspan, all[k].rspan) {
+                    break
+                }
+
+                c += 1
+            }
+
+            all[k].col = c
+            try ends.append(all[k].row)
+            try ends.append(c + all[k].cspan)
+        }
+
+        try occ.take(all[k].col, all[k].row, all[k].cspan, all[k].rspan)
+    }
+
+    var cur_row: usize = 0
+    var cur_col: usize = 0
+
+    for k in 0..all.len {
+        if all[k].row != auto_pos {
+            continue
+        }
+
+        if all[k].cspan > occ.cols {
+            all[k].cspan = occ.cols
+        }
+
+        if dense {
+            cur_row = 0
+            cur_col = 0
+        }
+
+        let cs = all[k].cspan
+        let rs = all[k].rspan
+
+        if all[k].col != auto_pos {
+            let col = all[k].col
+
+            if col < cur_col {
+                cur_row += 1
+            }
+
+            cur_col = col
+
+            while !occ.isFree(col, cur_row, cs, rs) {
+                cur_row += 1
+            }
+        } else {
+            while true {
+                if cur_col + cs > occ.cols {
+                    cur_col = 0
+                    cur_row += 1
+                    continue
+                }
+
+                if occ.isFree(cur_col, cur_row, cs, rs) {
+                    break
+                }
+
+                cur_col += 1
+            }
+        }
+
+        all[k].col = cur_col
+        all[k].row = cur_row
+        try occ.take(cur_col, cur_row, cs, rs)
+        cur_col += cs
+    }
+
+    return [2]usize{occ.rows(), occ.cols}
+}

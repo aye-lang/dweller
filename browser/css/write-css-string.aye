@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-string
+fn writeCssString(s: []u8, out: *mut text.Builder) AllocError!void {
+    try out.appendByte('"')
+
+    for c in s {
+        if c == 0 {
+            try out.appendChar(0xfffd)
+        } else if c < 0x20 || c == 0x7f {
+            try out.appendByte('\\')
+            try writeHex(c, out)
+            try out.appendByte(' ')
+        } else {
+            if c == '"' || c == '\\' {
+                try out.appendByte('\\')
+            }
+
+            try out.appendByte(c)
+        }
+    }
+
+    try out.appendByte('"')
+}

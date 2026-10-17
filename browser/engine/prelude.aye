@@ -95,6 +95,8 @@ pub let PRELUDE =
     \\  ev.shiftKey = !!init.shiftKey;
     \\  ev.altKey = !!init.altKey;
     \\  ev.metaKey = !!init.metaKey;
+    \\  hidden(ev, '_altGraph', !!init.modifierAltGraph);
+    \\  hidden(ev, '_capsLock', !!init.modifierCapsLock);
     \\}
     \\class MouseEvent extends UIEvent {
     \\  constructor(type, init) {
@@ -139,6 +141,7 @@ pub let PRELUDE =
     \\    init = init || {};
     \\    this.data = init.data === undefined ? null : init.data;
     \\    this.inputType = init.inputType === undefined ? '' : String(init.inputType);
+    \\    this.isComposing = !!init.isComposing;
     \\  }
     \\}
     \\for (const c of [Event, CustomEvent, UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent]) hidden(G, c.name, c);
@@ -424,6 +427,7 @@ pub let PRELUDE =
     \\// An event the browser makes (a click, a key, the load of the page).
     \\function hostEvent(target, type, key, x, y, dx, dy) {
     \\  if (type === '__host') { hostState(key); return true; }
+    \\  if (type === '__focus') { moveFocus(target.closest(CLICK_FOCUSABLE)); return true; }
     \\  if (ACTIVATING[type] && !(type === 'keydown' && /^Escape\n/.test(key || ''))) actUntil = ak.now() + 5000;
     \\  if (lockEl && /^((pointer|mouse)(move|down|up)|click)$/.test(type) && inDoc(lockEl)) target = lockEl;
     \\  // The user scrolled the window: `scroll` follows as a task, as for a
@@ -437,12 +441,13 @@ pub let PRELUDE =
     \\    const f = String(key).split('\n');
     \\    ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, composed: true, key: f[0], code: f[1] || '', repeat: f[2] === '1', location: +f[3] || 0 });
     \\    if (f.length > 4) KEY_MODS(ev, +f[4]);
-    \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || ((type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') && typeof key === 'string')) {
+    \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || (/^(click|auxclick|contextmenu|mousedown|mouseup|dblclick)$/.test(type) && typeof key === 'string')) {
     \\    const f = String(key).split('\n');
-    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: true, clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|mousedown|mouseup)$/.test(type) ? 1 : 0 };
-    \\    if (type[0] === 'p') { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
+    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: !/^(pointer|mouse)(leave|enter)$/.test(type), clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|auxclick|dblclick|mousedown|mouseup)$/.test(type) ? +f[3] || 1 : 0 };
+    \\    const pointer = type[0] === 'p' || /^(click|auxclick|contextmenu)$/.test(type);
+    \\    if (pointer) { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
     \\    else if (type === 'mousemove') init.button = 0;
-    \\    ev = type[0] === 'p' ? new PointerEvent(type, init) : new MouseEvent(type, init);
+    \\    ev = pointer ? new PointerEvent(type, init) : new MouseEvent(type, init);
     \\    if (f.length > 2) KEY_MODS(ev, +f[2]);
     \\  } else if (type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') {
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
@@ -550,26 +555,32 @@ pub let PRELUDE =
     \\}
     \\hidden(HTMLP, 'click', function () {
     \\  if (this.hasAttribute('disabled') && /^(button|input|select|textarea)$/.test(this.localName)) return;
-    \\  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 1 });
+    \\  const ev = new PointerEvent('click', { bubbles: true, cancelable: true, composed: true, pointerId: -1 });
     \\  const fragment = dispatch(this, ev) ? ak.activate(this) : undefined;
     \\  if (fragment) navigateTo(fragment, false);
     \\});
-    \\hidden(HTMLP, 'focus', function () {
+    \\function focusEvent(target, type, relatedTarget) {
+    \\  const ev = new FocusEvent(type, { bubbles: type === 'focusin' || type === 'focusout', composed: true, relatedTarget });
+    \\  ev.isTrusted = true;
+    \\  dispatch(target, ev);
+    \\}
+    \\function moveFocus(next) {
     \\  const prev = ak.focused();
-    \\  if (prev === this) return;
-    \\  ak.setFocus(this);
+    \\  if (prev === next) return;
+    \\  ak.setFocus(next);
     \\  if (prev) {
-    \\    hostEvent(prev, 'blur');
-    \\    hostEvent(prev, 'focusout');
+    \\    focusEvent(prev, 'blur', next);
+    \\    focusEvent(prev, 'focusout', next);
     \\  }
-    \\  hostEvent(this, 'focus');
-    \\  hostEvent(this, 'focusin');
-    \\});
+    \\  if (next && ak.focused() === next) {
+    \\    focusEvent(next, 'focus', prev);
+    \\    focusEvent(next, 'focusin', prev);
+    \\  }
+    \\}
+    \\const CLICK_FOCUSABLE = '[tabindex],a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[contenteditable]';
+    \\hidden(HTMLP, 'focus', function () { moveFocus(this); });
     \\hidden(HTMLP, 'blur', function () {
-    \\  if (ak.focused() !== this) return;
-    \\  ak.setFocus(null);
-    \\  hostEvent(this, 'blur');
-    \\  hostEvent(this, 'focusout');
+    \\  if (ak.focused() === this) moveFocus(null);
     \\});
     \\
     \\// Attributes reflected as properties.
@@ -591,7 +602,7 @@ pub let PRELUDE =
     \\    return v === null ? '' : ak.resolve(v);
     \\  }, function (v) { this.setAttribute(name, String(v)); });
     \\}
-    \\for (const n of ['title', 'lang', 'dir', 'name', 'placeholder', 'alt', 'rel', 'target', 'role', 'method', 'accessKey', 'srcdoc']) reflect(n, n.toLowerCase());
+    \\for (const n of ['title', 'lang', 'name', 'placeholder', 'alt', 'rel', 'target', 'role', 'method', 'accessKey', 'srcdoc']) reflect(n, n.toLowerCase());
     \\// Shared reflection tables for resource elements.
     \\for (const P of [HTMLStyleElement.prototype, HTMLLinkElement.prototype]) reflect('media', 'media', P);
     \\function reflectCrossOrigin(proto) {
@@ -1398,7 +1409,7 @@ pub let PRELUDE =
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
-    \\function styleOf(el, n) { const v = ak.computedStyle(el, n); watchTransitions(); return v; }
+    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return v; }
     \\for (const n of CSS_NAMES) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
@@ -1409,6 +1420,10 @@ pub let PRELUDE =
     \\getter(ComputedStyle.prototype, 'outline', function () { return ak.computedStyle(this._el, 'outline'); });
     \\for (const n of ['border-spacing', 'borderSpacing']) getter(ComputedStyle.prototype, n, function () { return ak.computedStyle(this._el, 'border-spacing'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
+    \\getter(ComputedStyle.prototype, 'animation', function () { return styleOf(this._el, 'animation'); });
+    \\for (const n of ['text-decoration', 'textDecoration']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'text-decoration'); });
+    \\getter(ComputedStyle.prototype, 'overflow', function () { return styleOf(this._el, 'overflow'); });
+    \\for (const n of ['flex', 'flex-flow', 'flexFlow']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('F', '-f')); });
     \\Object.setPrototypeOf(ComputedStyle.prototype, CSSStyleDeclaration.prototype);
     \\hidden(G, 'getComputedStyle', function getComputedStyle(el, pseudo) {
     \\  if (!(el instanceof Element)) throw new TypeError("Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.");
@@ -3828,9 +3843,13 @@ pub let PRELUDE =
     \\    if (r.type === 7) r.name = text.slice(m[0].length, text.indexOf('{')).trim();
     \\  } else {
     \\    r.type = 1;
-    \\    r.selectorText = text.slice(0, text.indexOf('{')).trim();
+    \\    const sel = text.slice(0, text.indexOf('{')).trim();
+    \\    r.selectorText = ak.selectorText(sel) ?? sel;
     \\  }
     \\  return r;
+    \\}
+    \\function validRule(text) {
+    \\  return /^@/.test(text) || ak.selectorText(text.slice(0, text.indexOf('{'))) !== null;
     \\}
     \\let sheetIds = 0;
     \\class CSSStyleSheet {
@@ -3848,7 +3867,7 @@ pub let PRELUDE =
     \\    this.media = { mediaText: options && options.media ? String(options.media) : '', length: 0 };
     \\  }
     \\  get _rules() {
-    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source) : [];
+    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
     \\    return this._list;
     \\  }
     \\  // The sheet of an element: the browser takes its rules over from the
@@ -3866,7 +3885,15 @@ pub let PRELUDE =
     \\    this._text = text;
     \\    for (const owner of this._adopters) pushAdopted(owner);
     \\  }
-    \\  get cssRules() { return this._rules.map(t => ruleObject(this, t)); }
+    \\  get cssRules() {
+    \\    if (!this._ruleList) hidden(this, '_ruleList', []);
+    \\    return this._syncRules();
+    \\  }
+    \\  _syncRules() {
+    \\    const list = this._ruleList;
+    \\    if (list) list.splice(0, list.length, ...this._rules.map(t => ruleObject(this, t)));
+    \\    return list;
+    \\  }
     \\  get rules() { return this.cssRules; }
     \\  get ownerNode() { return this._owner; }
     \\  get href() { return this._owner && this._owner.localName === 'link' ? this._owner.href : null; }
@@ -3887,15 +3914,17 @@ pub let PRELUDE =
     \\    index = index === undefined ? 0 : index >>> 0;
     \\    if (index > rules.length) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': The index provided (" + index + ") is larger than the maximum index (" + rules.length + ").", 'IndexSizeError');
     \\    rule = String(rule).trim();
-    \\    if (!/[{;]/.test(rule) && !/^@/.test(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
+    \\    if (rule.indexOf('{') < 0 && !/^@/.test(rule) || !validRule(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 0, rule);
     \\      this._changed(null);
+    \\      this._syncRules();
     \\      return index;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 0, rule);
     \\    ak.sheetInsert(this._id, index, rule);
+    \\    this._syncRules();
     \\    return index;
     \\  }
     \\  deleteRule(index) {
@@ -3905,11 +3934,13 @@ pub let PRELUDE =
     \\    if (!this._owner) {
     \\      rules.splice(index, 1);
     \\      this._changed(null);
+    \\      this._syncRules();
     \\      return;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 1);
     \\    ak.sheetDelete(this._id, index);
+    \\    this._syncRules();
     \\  }
     \\  addRule(sel, style, index) { this.insertRule(sel + ' { ' + style + ' }', index === undefined ? this._rules.length : index); return -1; }
     \\  removeRule(index) { this.deleteRule(index === undefined ? 0 : index); }
@@ -4555,9 +4586,9 @@ pub let PRELUDE =
     \\// active interval, a fill (`forwards`, `backwards`, `both`) applies the
     \\// keyframe the effect stops on, written into the element's inline style;
     \\// cancelling restores the inline values from before (a value a script
-    \\// set meanwhile on the same property is lost then). CSS animations and
-    \\// transitions make no Animation objects, so getAnimations() lists only
-    \\// those of scripts.
+    \\// set meanwhile on the same property is lost then). Transitions make no
+    \\// Animation objects, so getAnimations() lists only those of scripts and
+    \\// CSS animations (css-animations.js).
     \\const EPS = 1e-6;
     \\const animationsAll = [];
     \\let animationSeq = 0;
@@ -4987,7 +5018,7 @@ pub let PRELUDE =
     \\    let values = null;
     \\    if (e && stylable(e.target) && this._replace !== 'removed' && this.playState !== 'idle') {
     \\      const p = e._progress(this.currentTime, this._rate);
-    \\      if (p && p.phase !== 'active' && p.progress !== null) values = e._valuesAt(p.progress);
+    \\      if (p && p.progress !== null) values = e._valuesAt(p.progress);
     \\    }
     \\    const f = this._filled;
     \\    if (f && values && f.el === e.target && sameValues(f.values, values)) return;
@@ -5079,12 +5110,19 @@ pub let PRELUDE =
     \\});
     \\hidden(ElementP, 'getAnimations', function getAnimations(options) {
     \\  const subtree = !!(options && options.subtree);
+    \\  for (const el of [this].concat(subtree ? Array.from(this.querySelectorAll('*')) : [])) cssAnimations.sync(el);
     \\  return animationsWhere(t => t === this || (subtree && t instanceof Node && this.contains(t)));
     \\});
     \\hidden(Document.prototype, 'getAnimations', function getAnimations() {
+    \\  for (const el of this.querySelectorAll('*')) cssAnimations.sync(el);
     \\  return animationsWhere(t => t instanceof Node && t.isConnected && t.ownerDocument === this);
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
+    \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\const cssAnimations = G.__cssAnimations(ak, Animation, KeyframeEffect, documentTimeline, hidden);
+    \\delete G.__cssAnimations;
+    \\hidden(G, 'CSSAnimation', cssAnimations.CSSAnimation);
+    \\delete G.__animationValues;
     \\
     \\// The members of some kinds of elements, defined on HTMLElement above,
     \\// move to their interfaces: a div has no `value` or `href`, and scripts

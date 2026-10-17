@@ -39,28 +39,15 @@ fn layoutAbsolutes(t: *mut Tree) AllocError!void {
 }
 
 // The containing block of the absolutely positioned box `i`: absolute
-// coordinates of a padding box.
-fn containingArea(t: *Tree, i: usize) Area {
-    let icb = Area { x: 0.0, y: 0.0, w: t.viewport_w, h: t.viewport_h }
-    let fixed = t.bx(i).abs == 2
-    var cur = t.bx(i).parent
-    while cur |c| {
-        let b = t.bx(c)
-        if isTransformed(t, c) || (!fixed && b.kind != BoxKind.Inline && b.kind != BoxKind.Text && (b.abs != 0 || isPositioned(b.style))) {
-            return Area {
-                x: b.ax + b.border[3],
-                y: b.ay + b.border[0],
-                w: math.max(0.0, b.w - b.border[1] - b.border[3]),
-                h: math.max(0.0, b.h - b.border[0] - b.border[2]),
-            }
-        }
-        cur = b.parent
-    }
-    return icb
+// coordinates of a padding box, or of a grid area.
+fn containingArea(t: *Tree, i: usize) AllocError!Area {
+    let c = containingBox(t, i) orelse return Area { x: 0.0, y: 0.0, w: t.viewport_w, h: t.viewport_h }
+
+    return gridAreaOf(t, i, c, paddingArea(t.bx(c)))
 }
 
 fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
-    let cb = containingArea(t, i)
+    let cb = try containingArea(t, i)
     let b0 = t.bx(i)
     // The static position, and the origin of `x`, `y`.
     let sx = b0.ax
@@ -120,13 +107,13 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
             r.margin[0] += free
         }
     }
-    var ax = sx + r.margin[3]
+    var ax = sx + r.margin[3] + flexStaticShift(t, i, true) + gridStaticShift(t, i, cb, sx, true)
     if left |l| {
         ax = cb.x + l + r.margin[3]
     } else if right |rr| {
         ax = cb.x + cb.w - rr - r.margin[1] - r.w
     }
-    var ay = sy + r.margin[0]
+    var ay = sy + r.margin[0] + flexStaticShift(t, i, false) + gridStaticShift(t, i, cb, sy, false)
     if top |tp| {
         ay = cb.y + tp + r.margin[0]
     } else if bottom |bt| {

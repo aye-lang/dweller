@@ -1,0 +1,22 @@
+import css
+import std.mem.AllocError
+import std.text
+
+fn parsedValue(sheet: *mut css.Sheet, prop: usize, name: []u8, value: []u8, b: *mut text.Builder) AllocError!?css.Value {
+    b.clear()
+    try b.append(name)
+    try b.append(": ")
+    try b.append(value)
+
+    let r = try css.parseInline(sheet, b.bytes())
+
+    for i in r.start..r.end {
+        let d = sheet.decls.items()[i]
+
+        if d.prop == prop && d.raw.len == 0 {
+            return d.value
+        }
+    }
+
+    return null
+}

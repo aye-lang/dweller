@@ -1,0 +1,17 @@
+import dom
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn controlSelection(it: *mut Interp, a: Args) JsError!Value {
+    let r = dom.selectionUtf16(docOf(it), try thisElement(it, a))
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, js.numVal(r.lo as f64))
+    try it.heap.pushElem(arr, js.numVal(r.hi as f64))
+
+    return it.pop()
+}
