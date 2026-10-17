@@ -1,0 +1,19 @@
+fn sheetShapeChange(a: *Sheet, b: *Sheet) []u8 {
+    if !sameFontFaces(a.font_faces.items(), b.font_faces.items()) { return "sheet:font_face" }
+
+    if !sameLayers(a.layers.items(), b.layers.items()) { return "sheet:layer" }
+
+    if !sameConditions(a.conditions.items(), b.conditions.items()) { return "sheet:container" }
+
+    if a.registered.len() != b.registered.len() { return "sheet:property" }
+
+    var it = a.registered.iterator()
+
+    while it.next() |e| {
+        let other = b.registered.get(e.key) orelse return "sheet:property"
+
+        if !sameTokens(e.value.*, other) { return "sheet:property" }
+    }
+
+    return ""
+}
