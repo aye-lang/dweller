@@ -91,8 +91,9 @@ painted without them.
 ### Archive semantics
 
 - `DWELLER_RECORD=DIR` saves the first response for each URL/POST body:
-  status, MIME, charset, redirect destination, raw decompressed body, or
-  fetch failure. Original URLs, HTML, CSS and JS are **not rewritten**.
+  status, MIME, charset, redirect destination, the response headers
+  (`net.Response.headers_raw`), raw decompressed body, or fetch failure.
+  Original URLs, HTML, CSS and JS are **not rewritten**.
 - `DWELLER_REPLAY=DIR` serves these files and disables HTTP prefetch.
   A miss fails locally, is printed, and **never falls through to HTTP**.
   With `DWELLER_RECORD` set as well (capture's screenshot), a miss is
@@ -104,8 +105,18 @@ painted without them.
   The runner rejects misses, changed resource hashes, capture/replay
   Markdown differences, and before/after output differences.
 - The manifest lists every requested resource, body size and SHA-256.
-  Each `.response` has six newline-delimited metadata fields, then body
-  bytes. Filenames are stable 64-bit FNV hashes of URL and optional POST
+  Each `.response` has six newline-delimited metadata fields (the status
+  field is `STATUS HEADER_LENGTH`), then the header block, then body
+  bytes. Replay returns the recorded headers, so the fetch API's CORS
+  check (P10.40), content type and the rest behave as recorded; the
+  cookie jar is still not replayed. An entry without a header length
+  (every archive recorded before P10.40) replays permissive CORS headers
+  for a script's request (`Kind.Other`): `Access-Control-Allow-Origin`
+  is the request's origin with `Access-Control-Allow-Credentials: true`,
+  or `*` when it has none, and an `OPTIONS` preflight gets the allowed
+  methods and headers it asks for. The browser's own CORS check is
+  unchanged; without this a replayed cross-origin fetch of an old
+  archive could never pass it, as headers were not replayed. Filenames are stable 64-bit FNV hashes of URL and optional POST
   content type/body; reading also verifies the original URL.
 - The runner sets `DWELLER_BENCHMARK=1`: a benchmark-only engine prelude
   freezes JS Date at 2026-10-07 00:00 UTC and seeds Math.random with 1.

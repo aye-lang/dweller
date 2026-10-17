@@ -82,6 +82,7 @@ struct Sink {
     too_large: bool
     // The values of the `Set-Cookie` headers, one per line.
     cookies: text.Builder
+    headers_raw: text.Builder
     // `Cache-Control: no-store`.
     no_store: bool
     // A `WWW-Authenticate` challenge of the Basic scheme, and its realm.
@@ -118,6 +119,7 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
     if text.startsWith(line, "HTTP/") {
         // A new response (after a 100 Continue): forget the last one's.
         sink.cookies.clear()
+        sink.headers_raw.clear()
         sink.no_store = false
         sink.challenged = false
         return total
@@ -125,6 +127,12 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
     let colon = std.mem.indexOf(line, ':') orelse return total
     let name = text.trim(line[..colon])
     let value = text.trim(line[colon + 1..])
+
+    keepHeader(&mut sink.headers_raw, name, value) catch |e| {
+        sink.out_of_memory = true
+        return 0
+    }
+
     if text.eqlIgnoreCase(name, "set-cookie") {
         sink.cookies.append(value) catch |e| {
             sink.out_of_memory = true
@@ -201,6 +209,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         out_of_memory: false,
         too_large: false,
         cookies: text.Builder.init(alloc),
+        headers_raw: text.Builder.init(alloc),
         no_store: false,
         challenged: false,
         realm: text.Builder.init(alloc),
@@ -208,6 +217,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
     }
     defer sink.body.deinit()
     defer sink.cookies.deinit()
+    defer sink.headers_raw.deinit()
     defer sink.realm.deinit()
     // The URL of the request; libcurl wants it NUL-terminated, without
     // the fragment.
@@ -323,6 +333,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
     let body = try sink.body.toOwned()
     var res = try respond(alloc, ct, body)
     res.status = status
+    res.headers_raw = try sink.headers_raw.toOwned()
     if !text.eql(final_url, target.withoutFragment()) {
         res.url = copyBytes(alloc, final_url) catch |e| {
             res.deinit(alloc)
@@ -414,6 +425,10 @@ fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*m
         list = try addHeader(list, &mut h)
     }
     h.clear()
+    try originHeader(alloc, req, at, &mut h)
+    if h.len() > 0 {
+        list = try addHeader(list, &mut h)
+    }
     if s != null && !hasHeader(req.headers, "authorization") && try authHeader(at, &mut h) {
         list = try addHeader(list, &mut h)
     }

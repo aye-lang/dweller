@@ -2131,6 +2131,7 @@ pub let PRELUDE =
     \\  res.statusText = statusText;
     \\  res.url = url;
     \\  res.headers = headers;
+    \\  headers._guard = 'response';
     \\  hidden(res, '_body', body);
     \\  hidden(res, '_bodyUsed', false);
     \\  hidden(res, '_stream', body instanceof ReadableStream ? body : null);
@@ -2368,7 +2369,9 @@ pub let PRELUDE =
     \\        // A body that decoding changed comes as its bytes (Response.text()
     \\        // decodes UTF-8, arrayBuffer() keeps binary data).
     \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
-    \\        resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body));
+    \\        const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body);
+    \\        hidden(res, '_fetched', r);
+    \\        resolve(res);
     \\      }
     \\    });
     \\    signal.addEventListener('abort', onAbort);
@@ -3199,6 +3202,7 @@ pub let PRELUDE =
     \\    this.statusText = r.status >= 200 && r.status < 300 ? 'OK' : '';
     \\    this.responseURL = r.url;
     \\    this._type = r.type;
+    \\    hidden(this, '_fetched', r);
     \\    this._state(2);
     \\    this.responseText = r.body;
     \\    this._state(3);
@@ -4981,7 +4985,7 @@ pub let PRELUDE =
     \\    let values = null;
     \\    if (e && stylable(e.target) && this._replace !== 'removed' && this.playState !== 'idle') {
     \\      const p = e._progress(this.currentTime, this._rate);
-    \\      if (p && p.phase !== 'active' && p.progress !== null) values = e._valuesAt(p.progress);
+    \\      if (p && p.progress !== null) values = e._valuesAt(p.progress);
     \\    }
     \\    const f = this._filled;
     \\    if (f && values && f.el === e.target && sameValues(f.values, values)) return;
@@ -5079,6 +5083,8 @@ pub let PRELUDE =
     \\  return animationsWhere(t => t instanceof Node && t.isConnected && t.ownerDocument === this);
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
+    \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\delete G.__animationValues;
     \\
     \\// The members of some kinds of elements, defined on HTMLElement above,
     \\// move to their interfaces: a div has no `value` or `href`, and scripts

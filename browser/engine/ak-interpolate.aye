@@ -1,0 +1,29 @@
+import animation
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akInterpolate(it: *mut Interp, a: Args) JsError!Value {
+    let name = try it.builder()
+    defer it.release(name)
+    let from = try it.builder()
+    defer it.release(from)
+    let to = try it.builder()
+    defer it.release(to)
+    let out = try it.builder()
+    defer it.release(out)
+
+    try argText(it, a, 0, name)
+    try argText(it, a, 1, from)
+    try argText(it, a, 2, to)
+
+    let p = try it.toNumber(it.arg(a, 3))
+
+    if !try animation.interpolateText(it.alloc, name.bytes(), from.bytes(), to.bytes(), p, out) {
+        return Value.Null
+    }
+
+    return it.newString(out.bytes())
+}
