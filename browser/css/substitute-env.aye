@@ -1,0 +1,39 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// spec: https://drafts.csswg.org/css-env-1/#env-function
+fn substituteEnv(alloc: Allocator, toks: []Token, i: usize, level: ?*mut CustomLevel, depth: usize, out: *mut List(Token)) AllocError!?usize {
+    let close = blockEnd(toks, i)
+    var args = toks[i + 1..]
+
+    if close < toks.len {
+        args = toks[i + 1..close]
+    }
+
+    let j = skipWhitespace(args, 0)
+
+    if j >= args.len || args[j].kind != Tok.Ident {
+        return null
+    }
+
+    let k = envFallbackStart(args, j + 1)
+
+    if isSafeAreaInset(args[j].text) {
+        try out.append(Token { kind: Tok.Dimension, text: "px", num: 0.0, delim: 0, flag: true })
+
+        return close + 1
+    }
+
+    if k >= args.len || args[k].kind != Tok.Comma {
+        return null
+    }
+
+    let fallback = (try substituteVars(alloc, args[k + 1..], level, depth + 1)) orelse return null
+
+    for x in fallback {
+        try out.append(x)
+    }
+
+    return close + 1
+}
