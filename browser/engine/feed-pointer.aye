@@ -1,28 +1,41 @@
 import std.mem.AllocError
 import std.text
 
-var pressed: bool = false
+var pressed: i64 = 0
 
 // spec: https://w3c.github.io/uievents/#events-mouseevent-event-order
 pub fn feedPointer(p: *mut Page, word: []u8, x: f64, y: f64) AllocError!void {
     let el = try elementAtPoint(p, x, y) orelse return
     let down = text.startsWith(word, "click:")
     let up = text.startsWith(word, "release:")
+    var parts = text.split(word, ",")
 
-    pressed = (pressed || down) && !up
+    _ = parts.next()
+    _ = parts.next()
+    let button = pointerButton(parts.next() orelse "left")
 
-    var detail: []u8 = "0\n0\n0"
     var kind: []u8 = "move"
-
-    if pressed {
-        detail = "0\n1\n0"
-    }
+    var count: i64 = 0
 
     if down {
         kind = "down"
+        pressed = pressed | BUTTON_BITS[button as usize]
+        count = nextClickCount(p, button)
     } else if up {
         kind = "up"
+        pressed = pressed & ~BUTTON_BITS[button as usize]
+        count = click_count
     }
+
+    var detail = text.Builder.init(p.alloc)
+    defer detail.deinit()
+    try detail.appendInt(button)
+    try detail.append("\n")
+    try detail.appendInt(pressed)
+    try detail.append("\n")
+    try detail.appendInt(held_modifiers)
+    try detail.append("\n")
+    try detail.appendInt(count)
 
     var pointer = text.Builder.init(p.alloc)
     defer pointer.deinit()
@@ -34,11 +47,21 @@ pub fn feedPointer(p: *mut Page, word: []u8, x: f64, y: f64) AllocError!void {
     try mouse.append("mouse")
     try mouse.append(kind)
 
-    if try dispatchPointer(p, el, pointer.bytes(), detail, x, y, 0.0, 0.0) {
-        _ = try dispatchPointer(p, el, mouse.bytes(), detail, x, y, 0.0, 0.0)
+    var go_on = try dispatchPointer(p, el, pointer.bytes(), detail.bytes(), x, y, 0.0, 0.0)
+
+    if go_on {
+        go_on = try dispatchPointer(p, el, mouse.bytes(), detail.bytes(), x, y, 0.0, 0.0)
     }
 
-    if up && try dispatchPointer(p, el, "click", detail, x, y, 0.0, 0.0) {
-        try runActivation(p, try activate(p, el))
+    if down && go_on {
+        _ = try dispatchEvent(p, el, "__focus", "")
+    }
+
+    if down && button == 2 {
+        _ = try dispatchPointer(p, el, "contextmenu", detail.bytes(), x, y, 0.0, 0.0)
+    }
+
+    if up {
+        try feedClick(p, el, button, detail.bytes(), x, y)
     }
 }

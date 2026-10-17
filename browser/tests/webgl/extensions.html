@@ -1,0 +1,112 @@
+<!doctype html>
+<title>WebGL 2 extensions</title>
+<canvas id="c" width="4" height="4"></canvas>
+<pre id="out"></pre>
+<script>
+// P11.13 (docs/plans/cards/P11.13.md)
+const lines = [];
+const log = (...a) => lines.push(a.map(String).join(' '));
+const gl = document.getElementById('c').getContext('webgl2', {antialias: false});
+const err = what => log(what, 'error', gl.getError());
+function program(fs) {
+  const p = gl.createProgram();
+  const vs = `void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, '#version 300 es\nprecision highp float;\n' + src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) log('compile', gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) log('link', gl.getProgramInfoLog(p));
+  gl.useProgram(p);
+  return p;
+}
+function px() {
+  const a = new Uint8Array(4);
+  gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, a);
+  return Array.from(a).join(',');
+}
+function lookup() {
+  log('supported', gl.getSupportedExtensions().join(' '));
+  const ext = gl.getExtension('EXT_color_buffer_float');
+  log('same object', ext !== null && ext === gl.getExtension('EXT_color_buffer_float'));
+  log('NOPE', gl.getExtension('NOPE'));
+  const three = ['EXT_color_buffer_float', 'WEBGL_clip_cull_distance', 'OES_texture_float_linear', 'EXT_color_buffer_half_float', 'WEBGL_multisampled_render_to_texture', 'WEBGL_render_shared_exponent', 'EXT_texture_filter_anisotropic', 'MOZ_EXT_texture_filter_anisotropic', 'WEBKIT_EXT_texture_filter_anisotropic', 'EXT_clip_control', 'WEBGL_depth_texture', 'EXT_float_blend', 'KHR_parallel_shader_compile', 'WEBGL_compressed_texture_pvrtc'];
+  for (const n of three) log('three', n, gl.getExtension(n) === null ? 'null' : typeof gl.getExtension(n));
+  const half = gl.getExtension('EXT_color_buffer_half_float');
+  log('half constants', half.RGBA16F_EXT.toString(16), half.UNSIGNED_NORMALIZED_EXT.toString(16));
+  const debug = gl.getExtension('WEBGL_debug_renderer_info');
+  log('renderer', gl.getParameter(debug.UNMASKED_VENDOR_WEBGL), '/', gl.getParameter(debug.UNMASKED_RENDERER_WEBGL));
+  log('compressed formats', gl.getParameter(gl.COMPRESSED_TEXTURE_FORMATS).length > 0);
+  const astc = gl.getExtension('WEBGL_compressed_texture_astc');
+  if (astc) log('astc profiles', astc.getSupportedProfiles().join(' '));
+  err('lookup');
+}
+function halfFloat() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 4, 4);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  log('RGBA16F status', gl.checkFramebufferStatus(gl.FRAMEBUFFER).toString(16));
+  program('out vec4 o;\nvoid main() { o = vec4(0.25, 2.5, -1.0, 1.0); }');
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const f = new Float32Array(4);
+  gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.FLOAT, f);
+  log('RGBA16F pixel', Array.from(f).join(','));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  err('half float');
+}
+function anisotropy() {
+  const ext = gl.getExtension('EXT_texture_filter_anisotropic');
+  log('max anisotropy', gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) >= 1);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  log('anisotropy default', gl.getTexParameter(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT));
+  gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 2);
+  log('anisotropy', gl.getTexParameter(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT));
+  log('min filter', gl.getTexParameter(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER).toString(16));
+  gl.getTexParameter(gl.TEXTURE_2D, 0x1234);
+  err('bad pname');
+}
+function compressed() {
+  const s3tc = gl.getExtension('WEBGL_compressed_texture_s3tc');
+  const etc = gl.getExtension('WEBGL_compressed_texture_etc');
+  const [name, format, block] = s3tc
+    ? ['s3tc', s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT, [0x00, 0xf8, 0x1f, 0x00, 0, 0, 0, 0]]
+    : ['etc', etc.COMPRESSED_RGB8_ETC2, [0xff, 0x00, 0x00, 0x00, 0, 0, 0, 0]];
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.compressedTexImage2D(gl.TEXTURE_2D, 0, format, 4, 4, 0, new Uint8Array(7));
+  err(name + ' short');
+  gl.compressedTexImage2D(gl.TEXTURE_2D, 0, 0x1234, 4, 4, 0, new Uint8Array(8));
+  err(name + ' bad format');
+  gl.compressedTexImage2D(gl.TEXTURE_2D, 0, format, 4, 4, 0, new Uint8Array([9, 9, ...block]), 2, 8);
+  err(name + ' upload');
+  gl.compressedTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, 4, format, new Uint8Array(block));
+  err(name + ' sub');
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const p = program('uniform sampler2D t;\nout vec4 o;\nvoid main() { o = texture(t, vec2(0.5)); }');
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  log(name + ' sampled', px());
+  const parallel = gl.getExtension('KHR_parallel_shader_compile');
+  if (parallel) log('completion', gl.getProgramParameter(p, parallel.COMPLETION_STATUS_KHR));
+  err(name + ' draw');
+}
+if (gl) {
+  lookup();
+  halfFloat();
+  anisotropy();
+  compressed();
+} else {
+  log('webgl2 null');
+}
+document.getElementById('out').textContent = lines.join('\n');
+</script>

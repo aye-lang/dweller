@@ -331,6 +331,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "transition") {
         first = TRANSITION_PROPERTY
         n = 5
+    } else if text.eql(name, "animation") {
+        first = ANIMATION_NAME
+        n = 8
     } else if text.eql(name, "border") {
         for k in 0..12 {
             out[k] = BORDER_TOP_WIDTH + k
@@ -357,7 +360,7 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "flex-flow") {
         first = FLEX_DIRECTION
         n = 2
-    } else if text.eql(name, "grid-template") {
+    } else if text.eql(name, "grid-template") || text.eql(name, "grid") {
         first = GRID_TEMPLATE_COLUMNS
         n = 3
     } else if text.eql(name, "flex") {
@@ -470,6 +473,9 @@ struct Declarer {
         if text.eql(name, "transition") {
             return addTransition(self, comps)
         }
+        if text.eql(name, "animation") {
+            return addAnimation(self, comps)
+        }
         if text.eql(name, "margin") {
             return self.sides(MARGIN_TOP, comps)
         }
@@ -557,7 +563,7 @@ struct Declarer {
         if text.eql(name, "grid-area") {
             return self.gridLines(comps, GRID_COLUMN_START + 2, GRID_COLUMN_START, GRID_COLUMN_START + 3, GRID_COLUMN_START + 1)
         }
-        if text.eql(name, "grid-template") {
+        if text.eql(name, "grid-template") || text.eql(name, "grid") {
             return self.gridTemplate(comps)
         }
         if text.eql(name, "grid-gap") {
@@ -1084,7 +1090,7 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     if prop == TRANSLATE || prop == ROTATE || prop == SCALE {
         return individualTransformValue(sheet, prop, comps)
     }
-    if prop >= TRANSITION_PROPERTY && prop <= TRANSITION_BEHAVIOR {
+    if (prop >= TRANSITION_PROPERTY && prop <= TRANSITION_BEHAVIOR) || (prop >= ANIMATION_NAME && prop <= ANIMATION_COMPOSITION) {
         return transitionList(sheet, prop, comps)
     }
 

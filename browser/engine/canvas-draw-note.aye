@@ -1,0 +1,34 @@
+import image
+import perf
+import std
+import std.text
+import svg
+
+fn canvasDrawNote(alloc: std.mem.Allocator, began: u64, bmp: *image.Bitmap, area: CanvasArea, kind: []u8, pic: ?*mut svg.Picture, mode: []u8) {
+    if began == 0 || aye_std_monotonic_ns() - began < 1000000 {
+        return
+    }
+
+    var verbs: usize = 0
+
+    if pic |p| {
+        verbs = p.verbs.len()
+    }
+
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    b.append(kind) catch |e| {}
+    b.append(" canvas ") catch |e| {}
+    b.appendUint(bmp.width as u64) catch |e| {}
+    b.append("x") catch |e| {}
+    b.appendUint(bmp.height as u64) catch |e| {}
+    b.append(" area ") catch |e| {}
+    b.appendUint(area.w as u64) catch |e| {}
+    b.append("x") catch |e| {}
+    b.appendUint(area.h as u64) catch |e| {}
+    b.append(" verbs ") catch |e| {}
+    b.appendUint(verbs as u64) catch |e| {}
+    b.append(" ") catch |e| {}
+    b.append(mode) catch |e| {}
+    perf.end("canvas_draw", began, b.bytes())
+}

@@ -1,0 +1,16 @@
+import std.text
+
+fn sameCompound(a: *Sheet, x: Compound, b: *Sheet, y: Compound) bool {
+    if x.combinator != y.combinator || x.end - x.start != y.end - y.start { return false }
+
+    for si in 0..x.end - x.start {
+        let p = a.simples.items()[x.start + si]
+        let q = b.simples.items()[y.start + si]
+
+        if p.kind != q.kind || p.op != q.op || p.ci != q.ci || p.a != q.a || p.b != q.b || !text.eql(p.name, q.name) || !text.eql(p.value, q.value) { return false }
+
+        if !sameComplexes(a, p.sub_start, p.sub_end, b, q.sub_start, q.sub_end) { return false }
+    }
+
+    return true
+}

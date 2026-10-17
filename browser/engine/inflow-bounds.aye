@@ -1,0 +1,39 @@
+import layout
+import std.math
+
+// blink: core/layout/scrollable_overflow_calculator.cc (inflow bounds)
+fn inflowBounds(t: *layout.Tree, i: usize) ?[4]f64 {
+    let b = t.bx(i)
+    var r = [4]f64{1.0e30, 1.0e30, -1.0e30, -1.0e30}
+    let cx = b.ax + b.border[3] + b.padding[3]
+    let cy = b.ay + b.border[0] + b.padding[0]
+
+    for li in b.line_start..b.line_end {
+        let line = t.lines.items()[li]
+
+        for fi in line.frag_start..line.frag_end {
+            let f = t.frags.items()[fi]
+
+            unite(&mut r, cx + f.x, cy + f.y, cx + f.x + f.w, cy + f.y + f.h)
+        }
+    }
+
+    for c in t.children(i) {
+        let cb = t.bx(c)
+
+        if cb.abs != 0 || cb.kind == layout.BoxKind.Inline || cb.kind == layout.BoxKind.Text || cb.kind == layout.BoxKind.LineBreak {
+            continue
+        }
+
+        let x = cb.ax - cb.rel_x
+        let y = cb.ay - cb.rel_y
+
+        unite(&mut r, x - cb.margin[3], y - cb.margin[0], x + cb.w + cb.margin[1], y + cb.h + cb.margin[2])
+    }
+
+    if r[0] > r[2] {
+        return null
+    }
+
+    return r
+}

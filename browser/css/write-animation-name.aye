@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-animations-1/#typedef-keyframes-name
+fn writeAnimationName(c: Comp, out: *mut text.Builder) AllocError!bool {
+    let t = c.toks[0]
+
+    if c.toks.len != 1 || (t.kind != Tok.Ident && t.kind != Tok.String) || (t.kind == Tok.Ident && inList(t.text, "initial inherit unset default revert revert-layer") != null) {
+        return false
+    }
+
+    if t.kind == Tok.String {
+        try out.appendByte('"')
+        try out.append(t.text)
+        try out.appendByte('"')
+
+        return true
+    }
+
+    try out.append(inList(t.text, "none") orelse t.text)
+
+    return true
+}

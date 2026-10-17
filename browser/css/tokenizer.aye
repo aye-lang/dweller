@@ -385,7 +385,8 @@ struct Tokenizer {
     // A number, percentage or dimension.
     fn numeric(self: *mut Self) AllocError!Token {
         var negative = false
-        if self.src[self.pos] == '+' || self.src[self.pos] == '-' {
+        let plus = self.src[self.pos] == '+'
+        if plus || self.src[self.pos] == '-' {
             negative = self.src[self.pos] == '-'
             self.pos += 1
         }
@@ -446,6 +447,9 @@ struct Tokenizer {
         var t = token(Tok.Number)
         t.num = v
         t.flag = integer
+        if plus {
+            t.text = "+"
+        }
         return t
     }
 }

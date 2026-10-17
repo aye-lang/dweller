@@ -1,0 +1,49 @@
+import css
+import std.math
+import std.mem.AllocError
+import std.text
+
+fn mixNumbers(a: []u8, b: []u8, p: f64, integer: bool, nonneg: bool, out: *mut text.Builder) AllocError!bool {
+    var i: usize = 0
+    var j: usize = 0
+    var mixed = false
+
+    while i < a.len && j < b.len {
+        let ea = numberEnd(a, i)
+        let eb = numberEnd(b, j)
+
+        if (ea > i) != (eb > j) {
+            return false
+        }
+
+        if ea == i {
+            if a[i] != b[j] {
+                return false
+            }
+
+            try out.appendByte(a[i])
+            i += 1
+            j += 1
+            continue
+        }
+
+        let x = text.parseFloat(a[i..ea]) catch return false
+        let y = text.parseFloat(b[j..eb]) catch return false
+        var v = x + (y - x) * p
+
+        if integer {
+            v = math.round(v)
+        }
+
+        if nonneg {
+            v = math.max(v, 0.0)
+        }
+
+        try css.writeNumber(v, out)
+        mixed = true
+        i = ea
+        j = eb
+    }
+
+    return mixed && i == a.len && j == b.len
+}

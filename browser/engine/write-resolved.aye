@@ -1,0 +1,42 @@
+import css
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#resolved-track-list
+fn writeResolved(s: *mut Script, h: NodeId, values: []css.Value, i: usize, out: *mut text.Builder) AllocError!void {
+    try css.writeComputed(values, i, out)
+
+    if i != css.GRID_TEMPLATE_COLUMNS && i != css.GRID_TEMPLATE_ROWS {
+        return
+    }
+
+    if text.eql(out.bytes(), "none") || text.indexOf(out.bytes(), "[") != null {
+        return
+    }
+
+    let g = try geometry(s)
+    let k = firstBox(g, h) orelse return
+    let lines = g.tree.bx(k).grid_lines orelse return
+    var starts = lines.starts_x.items()
+    var ends = lines.ends_x.items()
+
+    if i == css.GRID_TEMPLATE_ROWS {
+        starts = lines.starts_y.items()
+        ends = lines.ends_y.items()
+    }
+
+    if starts.len == 0 {
+        return
+    }
+
+    out.clear()
+
+    for n in 0..starts.len {
+        if n > 0 {
+            try out.appendByte(' ')
+        }
+
+        try css.writeValue(css.Value.Px { v: ends[n] - starts[n] }, out)
+    }
+}

@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+fn widenOccupancy(occ: *mut Occupancy, n: usize) AllocError!void {
+    let rows = occ.rows()
+    let old = occ.cols
+
+    for x in 0..(n - old) * rows {
+        try occ.cells.append(false)
+    }
+
+    let c = occ.cells.items()
+    var r = rows
+
+    while r > 0 {
+        r -= 1
+        var k = n
+
+        while k > 0 {
+            k -= 1
+            c[r * n + k] = k < old && c[r * old + k]
+        }
+    }
+
+    occ.cols = n
+}

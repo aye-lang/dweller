@@ -1,0 +1,38 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.math
+
+fn akWebglFeedbackVarying(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let program = try argU32(it, a, 1)
+    let gl = ctx.gl()
+    var max: i32 = 0
+
+    gl.glGetProgramiv(program, 0x8c76, &mut max)
+
+    let buf = try it.alloc.alloc(0 as u8, math.maxOf(i32, max, 1) as usize)
+    defer it.alloc.free(buf)
+
+    var n: i32 = 0
+    var size: i32 = 0
+    var kind: u32 = 0
+
+    gl.glGetTransformFeedbackVarying(program, try argU32(it, a, 2), buf.len as i32, &mut n, &mut size, &mut kind, buf.ptr)
+
+    if kind == 0 {
+        return Value.Null
+    }
+
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, try it.newString(buf[0..math.minOf(usize, n as usize, buf.len)]))
+    try it.heap.pushElem(arr, js.numVal(size as f64))
+    try it.heap.pushElem(arr, js.numVal(kind as f64))
+    it.pop()
+
+    return js.objVal(arr)
+}

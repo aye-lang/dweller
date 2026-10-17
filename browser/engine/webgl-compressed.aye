@@ -1,0 +1,41 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akWebglCompressed(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let o = js.objectOf(it.arg(a, 1))
+    var data = pointerOf((try argOffset(it, a, 2)) as f64)
+    var size = try argI32(it, a, 3)
+
+    if o != js.NONE {
+        let bytes = js.viewBytes(it, o)
+
+        data = bytes.ptr
+        size = bytes.len as i32
+    }
+
+    let gl = ctx.gl()
+    let op = try argU32(it, a, 4)
+    let target = try argU32(it, a, 5)
+    let level = try argI32(it, a, 6)
+    var n = @zeroed([7]i32)
+
+    for i in 0..7 {
+        n[i] = try argI32(it, a, 7 + i)
+    }
+
+    if op == 0 {
+        gl.glCompressedTexImage2D(target, level, n[0] as u32, n[1], n[2], 0, size, data)
+    } else if op == 1 {
+        gl.glCompressedTexImage3D(target, level, n[0] as u32, n[1], n[2], n[3], 0, size, data)
+    } else if op == 2 {
+        gl.glCompressedTexSubImage2D(target, level, n[0], n[1], n[2], n[3], n[4] as u32, size, data)
+    } else {
+        gl.glCompressedTexSubImage3D(target, level, n[0], n[1], n[2], n[3], n[4], n[5], n[6] as u32, size, data)
+    }
+
+    return Value.Undefined
+}

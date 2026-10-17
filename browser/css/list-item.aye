@@ -1,15 +1,31 @@
-import std.text
-
 pub fn listItem(list: []u8, i: usize) []u8 {
-    var parts = text.split(list, ", ")
+    var depth: usize = 0
+    var start: usize = 0
     var k: usize = 0
 
-    while parts.next() |p| {
-        if k == i {
-            return p
+    for j in 0..list.len {
+        let c = list[j]
+
+        if c == '(' {
+            depth += 1
         }
 
-        k += 1
+        if c == ')' && depth > 0 {
+            depth -= 1
+        }
+
+        if c == ',' && depth == 0 {
+            if k == i {
+                return list[start..j]
+            }
+
+            k += 1
+            start = j + 2
+        }
+    }
+
+    if k == i && start <= list.len {
+        return list[start..list.len]
     }
 
     return ""

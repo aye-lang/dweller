@@ -1,0 +1,31 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn scopedHosts(doc: *Document, a: *Sheet, b: *Sheet, out: *mut List(NodeId)) AllocError![]u8 {
+    for sc in b.scoped.items() {
+        if scopedOf(a, sc.root) |old| {
+            if sameSheet(old, sc.sheet) { continue }
+        }
+
+        if sc.sheet.font_faces.len() > 0 || sc.sheet.registered.len() > 0 { return "sheet:scoped_font_face" }
+
+        try appendHost(doc, sc.root, out)
+    }
+
+    for sc in a.scoped.items() {
+        if scopedOf(b, sc.root) == null {
+            try appendHost(doc, sc.root, out)
+        }
+    }
+
+    return ""
+}
+
+fn appendHost(doc: *Document, root: NodeId, out: *mut List(NodeId)) AllocError!void {
+    if doc.isLive(root) && doc.isConnected(root) {
+        if dom.hostOf(doc, root) |h| { try out.append(h) }
+    }
+}

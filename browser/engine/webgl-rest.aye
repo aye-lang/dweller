@@ -1,0 +1,97 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn pointerBits(p: ?[*]u8) f64 {
+    var slot = p
+
+    return @ptrCast(*u64, &slot).* as f64
+}
+
+fn pointerOf(bits: f64) ?[*]u8 {
+    var raw = bits as u64
+
+    return @ptrCast(*?[*]u8, &raw).*
+}
+
+fn akWebglRest(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let op = try argU32(it, a, 1)
+    let gl = ctx.gl()
+    var name: u32 = 0
+    var i64s = @zeroed([1]i64)
+    var ints = @zeroed([1]i32)
+
+    if op == 0 {
+        gl.glGenQueries(1, &mut name)
+    } else if op == 1 {
+        name = try argU32(it, a, 2)
+        gl.glDeleteQueries(1, &name)
+    } else if op == 2 {
+        gl.glBeginQuery(try argU32(it, a, 2), try argU32(it, a, 3))
+    } else if op == 3 {
+        gl.glEndQuery(try argU32(it, a, 2))
+    } else if op == 4 {
+        gl.glGetQueryObjectuiv(try argU32(it, a, 2), 0x8867, &mut name)
+    } else if op == 5 {
+        gl.glGetQueryObjectuiv(try argU32(it, a, 2), 0x8866, &mut name)
+    } else if op == 6 {
+        gl.glGenTransformFeedbacks(1, &mut name)
+    } else if op == 7 {
+        name = try argU32(it, a, 2)
+        gl.glDeleteTransformFeedbacks(1, &name)
+    } else if op == 8 {
+        gl.glBindTransformFeedback(0x8e22, try argU32(it, a, 2))
+    } else if op == 9 {
+        gl.glBeginTransformFeedback(try argU32(it, a, 2))
+    } else if op == 10 {
+        gl.glEndTransformFeedback()
+    } else if op == 11 {
+        gl.glPauseTransformFeedback()
+    } else if op == 12 {
+        gl.glResumeTransformFeedback()
+    } else if op == 13 {
+        gl.glCopyBufferSubData(try argU32(it, a, 2), try argU32(it, a, 3), (try argOffset(it, a, 4)) as i64, (try argOffset(it, a, 5)) as i64, (try argOffset(it, a, 6)) as i64)
+    } else if op == 14 {
+        gl.glCopyTexSubImage2D(try argU32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7), try argI32(it, a, 8), try argI32(it, a, 9))
+    } else if op == 15 {
+        gl.glCopyTexSubImage3D(try argU32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7), try argI32(it, a, 8), try argI32(it, a, 9), try argI32(it, a, 10))
+    } else if op == 16 {
+        gl.glClearBufferfi(try argU32(it, a, 2), try argI32(it, a, 3), try argF32(it, a, 4), try argI32(it, a, 5))
+        framebufferDrawn(it, ctx)
+    } else if op == 17 {
+        gl.glReadPixels(try argI32(it, a, 2), try argI32(it, a, 3), try argI32(it, a, 4), try argI32(it, a, 5), try argU32(it, a, 6), try argU32(it, a, 7), pointerOf((try argOffset(it, a, 8)) as f64))
+    } else if op == 18 {
+        gl.glGetInteger64i_v(try argU32(it, a, 2), try argU32(it, a, 3), &mut i64s[0])
+
+        return js.numVal(i64s[0] as f64)
+    } else if op == 19 {
+        gl.glGetBufferParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), &mut ints[0])
+    } else if op == 20 {
+        gl.glGetVertexAttribiv(try argU32(it, a, 2), try argU32(it, a, 3), &mut ints[0])
+    } else if op == 21 {
+        var offset: usize = 0
+
+        gl.glGetVertexAttribPointerv(try argU32(it, a, 2), 0x8645, &mut offset)
+
+        return js.numVal(offset as f64)
+    } else if op == 22 {
+        return js.numVal(pointerBits(gl.glFenceSync(0x9117, 0)))
+    } else if op == 23 {
+        let status = gl.glClientWaitSync(pointerOf(try it.toNumber(it.arg(a, 2))), 0, 0)
+
+        return js.boolVal(status == 0x911a || status == 0x911c)
+    } else if op == 24 {
+        gl.glDeleteSync(pointerOf(try it.toNumber(it.arg(a, 2))))
+    } else if op == 25 {
+        gl.glGetInternalformativ(0x8d41, try argU32(it, a, 2), 0x9380, 1, @ptrCast([*]u8, &mut ints[0]))
+    }
+
+    if op == 19 || op == 20 || op == 25 {
+        return js.numVal(ints[0] as f64)
+    }
+
+    return js.numVal(name as f64)
+}

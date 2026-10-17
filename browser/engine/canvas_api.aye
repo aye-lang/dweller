@@ -15,6 +15,7 @@ import js.Interp
 import js.JsError
 import js.Value
 import paint
+import perf
 import std
 import std.math
 import std.mem.AllocError
@@ -757,7 +758,12 @@ fn canvasComposite(dst: []mut u8, dst_width: usize, area: CanvasArea, src: []u8,
         var i = y * area.w * 4
         var j = ((area.y as usize + y) * dst_width + area.x as usize) * 4
         for x in 0..area.w {
-            if bounded && src[i] == 0 && src[i + 1] == 0 && src[i + 2] == 0 && src[i + 3] == 0 {
+            if src[i] == 0 && src[i + 1] == 0 && src[i + 2] == 0 && src[i + 3] == 0 && (bounded || clip == null) {
+                if !bounded {
+                    for k in 0..4 {
+                        dst[j + k] = 0
+                    }
+                }
                 i += 4
                 j += 4
                 continue
@@ -867,15 +873,7 @@ fn canvasPaint(it: *mut Interp, style: Value, area: CanvasArea, px: []mut u8) Js
         for k in 0..4 {
             color[k] = canvasByte(try it.toNumber(try canvasIndex(it, cv, k))) as f64
         }
-        var i: usize = 0
-        while i < px.len {
-            let a = px[i + 3] as f64 * color[3] / 255.0
-            for k in 0..3 {
-                px[i + k] = math.floor(color[k] * a / 255.0 + 0.5) as u8
-            }
-            px[i + 3] = math.floor(a + 0.5) as u8
-            i += 4
-        }
+        paintColor(px, color)
         return
     }
     let matrix = try canvasMatrix(it, try canvasProp(it, style, "matrix"))
@@ -1028,6 +1026,8 @@ fn sourceTainted(it: *mut Interp, source: Value) JsError!bool {
 }
 
 fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
+    let began = perf.start()
+    var kind = "text"
     let c = try canvasBitmap(it, it.arg(a, 0))
     let bmp = c.bmp
     let page = scriptOf(it).active
@@ -1060,6 +1060,10 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
         let dy = try it.toNumber(it.arg(a, 9))
         let made = try canvasPathPicture(it, it.arg(a, 1), stroke, evenodd, dx, dy)
         pic = made
+        kind = "fill"
+        if stroke != null {
+            kind = "stroke"
+        }
         grow = pictureBounds(made, &mut bounds)
     }
     let blur = try canvasNum(it, it.arg(a, 2), "blur")
@@ -1087,9 +1091,27 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
         }
         area = clipArea(made, area, reach, &size)
     }
+    var rect: ?CanvasArea = null
+    if pic |p| {
+        rect = canvasRectCover(p, &size)
+    }
+    if rect != null && clip_pic == null && !blurred && text.eql(it.heap.bytes(js.strOf(mode)), "clear") && (try it.toNumber(it.arg(a, 3))) == 1.0 {
+        for current in page.images.?.canvases.items() {
+            if current.bmp == bmp && current.epoch != epoch {
+                return Value.Undefined
+            }
+        }
+        clearCanvasRect(bmp, rect.?)
+        bmp.version += 1
+        scriptOf(it).active = page
+        canvasChanged(it)
+        return Value.Undefined
+    }
     let px = try it.alloc.alloc(0 as u8, area.w * area.h * 4)
     defer it.alloc.free(px)
-    if pic |p| {
+    if rect |r| {
+        coverRect(px, area, r)
+    } else if pic |p| {
         try svg.render(it.alloc, p, area.target(px), 0.0, 0.0, size.width as f64, size.height as f64, 1.0)
     } else {
         drawTextMask(&text_mask, area, px)
@@ -1136,6 +1158,7 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
         scriptOf(it).active = page
         canvasChanged(it)
     }
+    canvasDrawNote(it.alloc, began, bmp, area, kind, pic, it.heap.bytes(js.strOf(mode)))
     return Value.Undefined
 }
 

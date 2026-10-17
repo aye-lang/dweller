@@ -153,7 +153,7 @@ hidden(HTMLElement.prototype, 'click', function () {
   if (this.hasAttribute('disabled') && /^(button|input|select|textarea)$/.test(this.localName)) return;
   if (!checkableTarget(this, true)) return click.call(this);
 
-  this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 1 }));
+  this.dispatchEvent(new PointerEvent('click', { bubbles: true, cancelable: true, composed: true, pointerId: -1 }));
 });
 hidden(G, 'dispatchEvent', dispatchWith(G.dispatchEvent));
 
