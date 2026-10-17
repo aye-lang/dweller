@@ -1,0 +1,39 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-overflow-3/#scrollable
+fn scrollableOverflow(g: *Geometry, i: usize) Area {
+    let b = g.tree.bx(i)
+    let px = b.ax + b.border[3]
+    let py = b.ay + b.border[0]
+    let pw = b.w - b.border[1] - b.border[3]
+    let ph = b.h - b.border[0] - b.border[2]
+    var r = [4]f64{px, py, px + pw, py + ph}
+
+    addOverflow(g, i, &mut r)
+
+    if inflowBounds(g.tree, i) |f| {
+        unite(&mut r, f[0] - b.padding[3], f[1] - b.padding[0], f[2] + b.padding[1], f[3] + b.padding[2])
+    }
+
+    let origin = scrollOrigin(b.style)
+
+    var w = r[2] - px
+    var h = r[3] - py
+
+    if origin[0] {
+        w = math.max(w, px + pw - r[0])
+    }
+
+    if origin[1] {
+        h = math.max(h, py + ph - r[1])
+    }
+
+    return Area { x: px, y: py, w: w, h: h }
+}
+
+fn unite(r: *mut [4]f64, x0: f64, y0: f64, x1: f64, y1: f64) {
+    r[0] = math.min(r[0], x0)
+    r[1] = math.min(r[1], y0)
+    r[2] = math.max(r[2], x1)
+    r[3] = math.max(r[3], y1)
+}

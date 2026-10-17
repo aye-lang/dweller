@@ -1,0 +1,53 @@
+import layout
+import std.math
+
+// blink: core/layout/scrollable_overflow_calculator.cc
+fn addOverflow(g: *Geometry, i: usize, r: *mut [4]f64) {
+    let t = g.tree
+    let b = t.bx(i)
+
+    if layout.hasInlineContent(t, i) {
+        let cx = b.ax + b.border[3] + b.padding[3]
+        let cy = b.ay + b.border[0] + b.padding[0]
+
+        for li in b.line_start..b.line_end {
+            let line = t.lines.items()[li]
+
+            for fi in line.frag_start..line.frag_end {
+                let f = t.frags.items()[fi]
+
+                unite(r, cx + f.x, cy + f.y, cx + f.x + f.w, cy + f.y + f.h)
+            }
+        }
+    }
+
+    for c in t.children(i) {
+        let cb = t.bx(c)
+
+        if cb.kind == layout.BoxKind.Inline || cb.kind == layout.BoxKind.Text || cb.kind == layout.BoxKind.LineBreak {
+            addOverflow(g, c, r)
+            continue
+        }
+
+        if cb.abs == 2 {
+            continue
+        }
+
+        let m = layout.xformOf(t, c)
+        let xs = [2]f64{cb.ax, cb.ax + cb.w}
+        let ys = [2]f64{cb.ay, cb.ay + cb.h}
+
+        for x in xs {
+            for y in ys {
+                let tx = m.a * x + m.c * y + m.e
+                let ty = m.b * x + m.d * y + m.f
+
+                unite(r, tx, ty, tx, ty)
+            }
+        }
+
+        if !clipsOverflow(g, c) {
+            addOverflow(g, c, r)
+        }
+    }
+}
