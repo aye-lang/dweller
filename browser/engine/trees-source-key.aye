@@ -1,0 +1,23 @@
+import dom.Document
+import dom.SheetKeyCache
+
+// blink: core/css/style_engine.cc
+fn treesSourceKey(doc: *Document) u64 {
+    let c = doc.sheet_key_cache
+
+    if c.valid && c.version == doc.sheet_version && c.shadows == doc.shadows.len() { return c.key }
+
+    var key = treeSourceKey(doc, doc.root, 1469598103934665603)
+
+    for root in doc.shadows.items() {
+        if doc.isLive(root) && doc.isConnected(root) {
+            key = sheetMix(key, 4)
+            key = sheetMix(key, root.index as u64)
+            key = treeSourceKey(doc, root, key)
+        }
+    }
+
+    c.* = SheetKeyCache { version: doc.sheet_version, shadows: doc.shadows.len(), key: key, valid: true }
+
+    return key
+}

@@ -1,0 +1,75 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+let MATCHED_SLOTS: usize = 256
+
+struct MatchedEntry {
+    used: bool
+    hash: u64
+    n: usize
+    words: [96]u64
+    context: [4]f64
+    owned_parent: []mut Value
+    inherited: ?*mut CustomLevel
+    level: ?*mut CustomLevel
+    values_hash: u64
+    values: []Value
+}
+
+// blink: core/css/resolver/matched_properties_cache.cc
+pub struct MatchedCache {
+    alloc: Allocator
+    slots: []mut MatchedEntry
+    words: [96]u64
+    n: usize
+    ok: bool
+    hit: ?*mut MatchedEntry
+    filling: ?*mut MatchedEntry
+    hits: u64
+    misses: u64
+
+    pub fn init(alloc: Allocator) MatchedCache {
+        return MatchedCache { alloc: alloc, slots: []mut MatchedEntry{}, words: @zeroed([96]u64), n: 0, ok: false, hit: null, filling: null, hits: 0, misses: 0 }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for e in self.slots {
+            if e.owned_parent.len > 0 { self.alloc.free(e.owned_parent) }
+        }
+
+        if self.slots.len > 0 { self.alloc.free(self.slots) }
+    }
+
+    pub fn clear(self: *mut Self) {
+        for i in 0..self.slots.len {
+            self.slots[i].used = false
+        }
+    }
+
+    fn start(self: *mut Self) {
+        self.n = 0
+        self.ok = true
+        self.hit = null
+        self.filling = null
+    }
+
+    fn add(self: *mut Self, a: u64, b: u64) {
+        if self.n + 2 > self.words.len {
+            self.ok = false
+
+            return
+        }
+
+        self.words[self.n] = a
+        self.words[self.n + 1] = b
+        self.n += 2
+    }
+
+    fn table(self: *mut Self) AllocError![]mut MatchedEntry {
+        if self.slots.len == 0 {
+            self.slots = try self.alloc.alloc(MatchedEntry { used: false, hash: 0, n: 0, words: @zeroed([96]u64), context: @zeroed([4]f64), owned_parent: []mut Value{}, inherited: null, level: null, values_hash: 0, values: []Value{} }, MATCHED_SLOTS)
+        }
+
+        return self.slots
+    }
+}

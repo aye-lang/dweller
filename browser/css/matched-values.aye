@@ -1,0 +1,47 @@
+import std.mem.AllocError
+
+// blink: core/css/resolver/style_resolver.cc
+fn matchedValues(c: *mut Computer, parent: []Value, inherited: ?*mut CustomLevel, is_root: bool) AllocError![]mut Value {
+    let m = &mut c.out.matched
+
+    if is_root || !m.ok {
+        m.ok = false
+        try c.customLevel(inherited)
+
+        return try c.computeValues(parent, is_root)
+    }
+
+    let context = [4]f64 { c.root_font, rlh_px, c.media.width, c.media.height }
+    var h: u64 = @hash(inherited) ^ @hash(context[0]) ^ (@hash(context[1]) << 1) ^ (@hash(context[2]) << 2) ^ (@hash(context[3]) << 3)
+
+    for i in 0..m.n {
+        h = (h ^ m.words[i]) *% 0x9E3779B97F4A7C15
+        h ^= h >> 29
+    }
+
+    let slots = try m.table()
+    let e = &mut slots[(h % slots.len as u64) as usize]
+
+    if e.used && e.hash == h && e.inherited == inherited && sameContext(e.context, context) && sameWords(e, m) && sameInherited(e.owned_parent, parent) {
+        m.hits += 1
+        m.hit = e
+        c.level = e.level
+        let values = c.out.scratch
+
+        for i in 0..NPROPS {
+            values[i] = e.values[i]
+        }
+
+        return values
+    }
+
+    m.misses += 1
+    try c.customLevel(inherited)
+    try fillMatched(c, e, h, context, parent, inherited)
+
+    return try c.computeValues(parent, false)
+}
+
+fn sameContext(a: [4]f64, b: [4]f64) bool {
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3]
+}

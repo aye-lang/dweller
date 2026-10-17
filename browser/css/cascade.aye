@@ -118,6 +118,7 @@ pub struct Styles {
     // take the new ones (geometry.aye, P4.56). Beyond `MAX_MOVED`, they
     // count as moved.
     restyled: List(Restyled)
+    matched: MatchedCache
 
     pub fn init(alloc: Allocator) AllocError!Styles {
         let arena = try alloc.create(Arena.init(alloc))
@@ -173,6 +174,7 @@ pub struct Styles {
             class_infos: List(*ClassInfo).init(alloc),
             moved_els: List(NodeId).init(alloc),
             restyled: List(Restyled).init(alloc),
+            matched: MatchedCache.init(alloc),
         }
     }
 
@@ -207,6 +209,7 @@ pub struct Styles {
     pub fn deinit(self: *mut Self) {
         self.moved_els.deinit()
         self.restyled.deinit()
+        self.matched.deinit()
         self.class_infos.deinit()
         self.sizes.deinit()
         self.map.deinit()
@@ -259,7 +262,10 @@ pub struct Styles {
     // values when no element holds it any more. A count that misses a
     // release only keeps an array longer.
     fn intern(self: *mut Self, values: []Value, old: ?[]Value) AllocError![]Value {
-        let h = hashValues(values)
+        return self.internWith(values, hashValues(values), old)
+    }
+
+    fn internWith(self: *mut Self, values: []Value, h: u64, old: ?[]Value) AllocError![]Value {
         if self.shared.getPtr(h) |e| {
             if sameBits(e.values, values) {
                 let found: []Value = e.values
@@ -293,7 +299,10 @@ pub struct Styles {
     // them any more, they go to `free`.
     fn release(self: *mut Self, old: ?[]Value) AllocError!void {
         let o = old orelse return
-        let h = hashValues(o)
+        return self.releaseWith(o, hashValues(o))
+    }
+
+    fn releaseWith(self: *mut Self, o: []Value, h: u64) AllocError!void {
         let e = self.shared.getPtr(h) orelse return
         let mine: []Value = e.values
         if mine.ptr != o.ptr || e.refs == 0 {
@@ -794,6 +803,7 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
         c.wins[i].set = false
     }
     c.clearCustoms()
+    c.out.matched.start()
     c.el = h
     let root = treeOf(doc, h)
     if c.filters |f| {
@@ -816,6 +826,7 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     hints.clear()
     try writeHints(doc, h, hints)
     if hints.len() > 0 {
+        out.matched.ok = false
         let range = try parseInline(&mut out.inline, hints.bytes())
         for k in range.start..range.end {
             try c.offer(out.inline.decls.items()[k], L_AUTHOR, 0)
@@ -830,6 +841,7 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
         setShadowHost(null)
     }
     if doc.attr(h, "style") |src| {
+        out.matched.ok = false
         let range = try parseInline(&mut out.inline, src)
         for k in range.start..range.end {
             let d = out.inline.decls.items()[k]
@@ -1187,10 +1199,14 @@ struct Computer {
     fn pending(self: *mut Self, p: usize, d: Decl) AllocError!Value {
         var toks = d.raw
         if usesContainerUnits(toks) {
+            self.out.matched.ok = false
             self.setContainerContext()
         }
         if hasVar(toks) {
             toks = (try substituteVars(self.out.arena.allocator(), toks, self.level, 0)) orelse return Value.Unset
+            if usesContainerUnits(toks) {
+                self.out.matched.ok = false
+            }
         }
         let sheet = &mut self.out.inline
         let comps = try components(sheet, toks)
@@ -1215,7 +1231,7 @@ struct Computer {
             }
             inherited = self.out.customs.get(p.index)
         }
-        try self.customLevel(inherited)
+        let values = try matchedValues(self, parent, inherited, is_root)
         if self.level |l| {
             try self.out.customs.put(el.index, l)
         }
@@ -1223,7 +1239,6 @@ struct Computer {
         if self.track {
             old = self.out.map.get(el.index)
         }
-        let values = try self.computeValues(parent, is_root)
         try self.alignCenter(el, values)
         var note = false
         var shift = false
@@ -1245,7 +1260,7 @@ struct Computer {
         if self.reuse {
             release = old
         }
-        try self.out.map.put(el.index, try self.out.intern(values, release))
+        try self.out.map.put(el.index, try keptValues(self.out, values, release))
         if note {
             try self.out.restyled.append(Restyled { el: el, old: old.?, shift: shift })
         }
@@ -1350,6 +1365,9 @@ struct Computer {
         if styleParent(self.doc, el) |p| {
             parent_centers = self.centered.contains(p.index)
         }
+        if parent_centers {
+            self.out.matched.ok = false
+        }
         let display = keywordText(values[DISPLAY])
         if parent_centers && (text.eql(display, "block") || text.eql(display, "table")) && text.eql(keywordText(values[FLOAT]), "none") && !text.eql(keywordText(values[POSITION]), "absolute") && !text.eql(keywordText(values[POSITION]), "fixed") && isZeroPx(values[MARGIN_TOP + 1]) && isZeroPx(values[MARGIN_TOP + 3]) {
             values[MARGIN_TOP + 1] = Value.Keyword { k: "auto" }
@@ -1373,6 +1391,9 @@ struct Computer {
             }
         }
         let inherited = PROPERTIES[p].inherited
+        if !inherited && isInherit(v) {
+            self.out.matched.ok = false
+        }
         return match v {
             .Inherit => parent[p]
             .Initial => PROPERTIES[p].initial

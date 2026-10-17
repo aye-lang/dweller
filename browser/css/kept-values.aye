@@ -1,0 +1,27 @@
+import std.mem.AllocError
+
+fn keptValues(out: *mut Styles, values: []Value, old: ?[]Value) AllocError![]Value {
+    let m = &mut out.matched
+
+    if m.ok {
+        if m.hit |e| { return holdShared(out, e.values_hash, e.values, old) }
+    }
+
+    let h = hashValues(values)
+    let kept = try out.internWith(values, h, old)
+    let e = m.filling orelse return kept
+
+    if !m.ok { return kept }
+
+    let s = out.shared.getPtr(h) orelse return kept
+    let mine: []Value = s.values
+
+    if mine.ptr != kept.ptr { return kept }
+
+    s.refs += 1
+    e.values_hash = h
+    e.values = kept
+    e.used = true
+
+    return kept
+}
