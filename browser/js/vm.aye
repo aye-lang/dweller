@@ -96,7 +96,7 @@ pub fn vmInit(it: *mut Interp) {
 pub fn vmDeinit(it: *mut Interp) {
     if it.vm |st| {
         if st.stats {
-            vmPrintStats(st) catch |e| {}
+            vmPrintStats(it, st) catch |e| {}
         }
         for f in st.funcs.items() {
             if f.code |c| {
@@ -117,7 +117,7 @@ struct VmReasonCount {
     n: u32
 }
 
-fn vmPrintStats(st: *mut VmState) AllocError!void {
+fn vmPrintStats(it: *Interp, st: *mut VmState) AllocError!void {
     let alloc = st.funcs.alloc
     var compiled: u32 = 0
     var fallback: u32 = 0
@@ -174,7 +174,7 @@ fn vmPrintStats(st: *mut VmState) AllocError!void {
         try b.append(r.reason)
         try b.appendByte('\n')
     }
-    try vmPrintIcStats(st, &mut b)
+    try vmPrintIcStats(it, st, &mut b)
     std.fs.stderr().write(b.bytes()) catch |e| {}
 }
 
