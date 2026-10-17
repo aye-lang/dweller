@@ -124,7 +124,7 @@ struct Compiler {
     fn readReg(self: *mut Self, depth: u32, slot: u32, name: u32) CompileError!i32 {
         let r = try self.identReg(depth, slot)
         if r >= 0 && self.tdz.items()[r as usize] {
-            try vmDeadRead(self, name)
+            try vmDeadRead(self, r, name)
         }
         return r
     }
@@ -293,15 +293,13 @@ struct Compiler {
         if r == VM_CONTEXT {
             return vmUpdateContext(self, inc, prefix, arg)
         }
+        if prefix {
+            return vmUpdateReg(self, inc, r)
+        }
         try self.b.op1(BC_LDAR, r as i64)
         var op = BC_INC
         if !inc {
             op = BC_DEC
-        }
-        if prefix {
-            try self.b.op1(op, self.b.newSlot() as i64)
-            try self.b.op1(BC_STAR, r as i64)
-            return
         }
         let mark = self.b.topReg
         let old = self.b.newReg()
@@ -396,8 +394,7 @@ struct Compiler {
             op = try vmLoadCallee(self, r, callee, optional)
         }
         for k in 0..n {
-            try self.visit(self.ast.item(list, k))
-            try self.b.op1(BC_STAR, (r + 2 + k as i32) as i64)
+            try vmVisitToReg(self, self.ast.item(list, k), r + 2 + k as i32)
         }
         try self.b.emit(op, r as i64, n as i64, id as i64)
         self.b.releaseRegs(mark)
@@ -621,7 +618,7 @@ struct Compiler {
         try self.b.bind(lp.cont)
         try vmCopyContext(self, scope)
         if update != 0 {
-            try self.visit(update)
+            try vmVisitEffect(self, update)
         }
         try self.b.jumpLoop(hdr)
         self.popLoop(lp)
@@ -700,6 +697,7 @@ struct Compiler {
             try self.visit(disc)
             try vmEnterScope(self, scope)
             try vmMarkSwitchDead(self, list, n)
+            try vmHoleSwitchLexicals(self)
             table = try self.b.newJumpTable((hi - lo + 1) as u32, lo as i32)
             try self.b.switchOnSmi(table)
         } else {
@@ -708,6 +706,7 @@ struct Compiler {
             try self.b.op1(BC_STAR, d as i64)
             try vmEnterScope(self, scope)
             try vmMarkSwitchDead(self, list, n)
+            try vmHoleSwitchLexicals(self)
             for k in 0..n {
                 match self.ast.node(self.ast.item(list, k)) {
                     .Case { cond, .. } => {
@@ -917,6 +916,9 @@ struct Compiler {
         match self.ast.node(id) {
             .Empty => {}
             .ExprStmt { e } => {
+                if self.completion < 0 {
+                    return vmVisitEffect(self, e)
+                }
                 try self.visit(e)
                 if self.completion >= 0 {
                     try self.b.op1(BC_STAR, self.completion as i64)
@@ -1122,23 +1124,6 @@ struct Compiler {
             }
         }
         let sc = self.ast.scopes.items()[fi.scope]
-        for k in 0..fi.nparams {
-            for j in 0..k {
-                match self.ast.node(self.ast.item(fi.params, k)) {
-                    .Ident { name: a, .. } => {
-                        match self.ast.node(self.ast.item(fi.params, j)) {
-                            .Ident { name: b, .. } => {
-                                if a == b {
-                                    try self.fail("unsupported: duplicate parameter")
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
         _ = self.b.newRegs(sc.nregs as i32)
         if fi.this_slot != NONE {
             self.this_reg = self.b.newReg()
@@ -1167,6 +1152,9 @@ struct Compiler {
             try self.visit(fi.expr)
             try self.b.op0(BC_RETURN)
             return
+        }
+        if fi.eval_code {
+            return vmVisitEvalBody(self, fi)
         }
         try self.visitList(fi.body, fi.nbody)
         try self.b.op0(BC_LDA_UNDEFINED)

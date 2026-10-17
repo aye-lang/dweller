@@ -1,0 +1,46 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+
+fn coAsyncYieldStar(it: *mut Interp, iterable: Value) JsError!Value {
+    let at = it.stack.len()
+    defer it.truncate(at)
+
+    for _ in 0..6 {
+        try it.push(Value.Undefined)
+    }
+
+    try vmGetAsyncIterator(it, at, iterable)
+    it.setSlot(at + 4, numVal(RESUME_NEXT as f64))
+
+    while true {
+        let async = it.toBoolean(it.slot(at + 3))
+
+        it.setSlot(at + 5, try vmAsyncYieldStarCall(it, at))
+
+        if async {
+            it.setSlot(at + 5, try coYield(it, it.slot(at + 5), 1))
+        }
+
+        it.setSlot(at + 5, try vmIteratorValue(it, at, it.slot(at + 5)))
+
+        if !async {
+            it.setSlot(at + 5, try coYield(it, it.slot(at + 5), 1))
+        }
+
+        if it.toBoolean(it.slot(at + 2)) {
+            break
+        }
+
+        try coAsyncYieldStarResume(it, at)
+    }
+
+    if vmYieldStarMode(it, at + 2) == RESUME_RETURN {
+        let co = it.current_co orelse unreachable
+
+        co.ret_value = it.slot(at + 5)
+        it.exception = objVal(it.gen_return)
+
+        return JsError.Thrown
+    }
+
+    return it.slot(at + 5)
+}

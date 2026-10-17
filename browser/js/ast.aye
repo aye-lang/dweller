@@ -6,6 +6,7 @@
 // created by one script may run long after it.
 
 import std.list.List
+import std.map.IntMap
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -201,6 +202,7 @@ pub struct FuncInfo {
     length: u32
     start: u32
     end: u32
+    eval_code: bool = false
 }
 
 pub struct ScopeInfo {
@@ -299,6 +301,7 @@ pub struct Ast {
     scopes: List(ScopeInfo)
     classes: List(ClassInfo)
     vars: List(VarInfo)
+    eval_sites: IntMap(u32, u32)
     // The text of every script, one after the other (spans index it).
     source: text.Builder
 
@@ -311,6 +314,7 @@ pub struct Ast {
             scopes: List(ScopeInfo).init(alloc),
             classes: List(ClassInfo).init(alloc),
             vars: List(VarInfo).init(alloc),
+            eval_sites: IntMap(u32, u32).init(alloc),
             source: text.Builder.init(alloc),
         }
         try a.nodes.append(Node.Empty)
@@ -325,6 +329,7 @@ pub struct Ast {
         self.funcs.deinit()
         self.scopes.deinit()
         self.vars.deinit()
+        self.eval_sites.deinit()
         self.classes.deinit()
         self.source.deinit()
     }

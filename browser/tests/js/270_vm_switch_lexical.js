@@ -51,3 +51,9 @@ function k(x) {
   return 'none'
 }
 console.log(k(0), k(1))
+function a(x) { switch (x) { case 0: let y = 1; case 1: try { y = 2; return y } catch (e) { return e.constructor.name } } }
+function b(x) { switch (x) { case 0: return z; case 1: let z = 3; return z } }
+function c(x) { let o = 5; switch (x) { case 1: o += 1; let q = o; case 2: return [o, typeof q === 'number' ? q : 'x'] } }
+console.log(a(0), a(1), (()=>{try{return b(0)}catch(e){return e.name}})(), b(1))
+try { console.log(c(1)) } catch (e) { console.log('c1', e.name) }
+try { console.log(c(2)) } catch (e) { console.log('c2', e.name) }
