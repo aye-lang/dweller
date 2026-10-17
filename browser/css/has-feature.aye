@@ -1,0 +1,27 @@
+import dom.Document
+import dom.NodeId
+import std.text
+
+pub fn hasFeature(doc: *Document, el: NodeId, f: u64) bool {
+    let n = doc.node(el)
+
+    if f == 0 || featureKey(1, n.name) == f {
+        return true
+    }
+
+    for a in n.attrs {
+        if featureKey(2, a.name) == f {
+            return true
+        }
+
+        if text.eqlIgnoreCase(a.name, "id") && featureKey(4, a.value) == f {
+            return true
+        }
+
+        if text.eqlIgnoreCase(a.name, "class") && hasClassKey(a.value, f) {
+            return true
+        }
+    }
+
+    return false
+}

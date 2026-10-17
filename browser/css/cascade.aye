@@ -675,18 +675,13 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         let same_parent = last_parent != null && dom.isSame(parent, last_parent.?)
         last_parent = parent
         if !same_parent {
-            chain.clear()
-            var up = parent
-            while up |h| {
-                try chain.append(h)
-                up = styleParent(doc, h)
-            }
-            var i = chain.len()
+            let shared = try rebuildChain(doc, &mut chain, parent)
+            var i = chain.len() - shared
             while i > 0 {
                 i -= 1
                 try styleElement(&mut c, ua, author, &mut hints, chain.items()[i])
             }
-            styled += chain.len()
+            styled += chain.len() - shared
         }
         if shallow[ri] {
             // Down from the root while what the elements inherit changes.

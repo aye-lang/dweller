@@ -1,0 +1,28 @@
+import css
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn stateRoots(doc: *Document, deps: *css.RestyleDeps, el: NodeId, change: css.StyleChange, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!bool {
+    for u in deps.states.items() {
+        if u.around && css.seesUse(u, change) {
+            return false
+        }
+    }
+
+    for u in deps.states.items() {
+        if !css.seesUse(u, change) || !css.hasFeature(doc, el, u.own) {
+            continue
+        }
+
+        if u.target |t| {
+            try addMatchingDescendants(doc, el, t, out, shallow, found)
+        } else {
+            try addRoot(out, shallow, found, el, true)
+        }
+    }
+
+    return true
+}
