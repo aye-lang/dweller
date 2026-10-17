@@ -4154,7 +4154,7 @@ fn jsbench_smoke() {
 
 #[test]
 fn js_conformance() {
-    js_conformance_with(&[], &[]);
+    js_conformance_with(&[("DWELLER_JS_VM", "0")], &[]);
 }
 
 /// The same scripts and goldens with the bytecode VM on
@@ -4196,7 +4196,7 @@ fn js_conformance_with(env: &[(&str, &str)], skip: &[&str]) {
         scripts.len()
     );
     dweller();
-    let bless = env.is_empty() && std::env::var_os("DWELLER_BLESS").is_some();
+    let bless = env == [("DWELLER_JS_VM", "0")] && std::env::var_os("DWELLER_BLESS").is_some();
     let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless, env))
         .into_iter()
         .flatten()
@@ -5788,7 +5788,7 @@ fn benchmark_date_follows_virtual_clock() {
     let got = dump();
     assert_eq!(
         got,
-        "date loop of 5 ms: n=1666664\nepoch: true\nnew Date: true\ntimer 100 ms later: true\n"
+        "date loop of 5 ms: n=2499999\nepoch: true\nnew Date: true\ntimer 100 ms later: true\n"
     );
     assert_eq!(dump(), got);
 }

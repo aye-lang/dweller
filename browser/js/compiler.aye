@@ -120,10 +120,10 @@ struct Compiler {
         return 0
     }
 
-    fn readReg(self: *mut Self, depth: u32, slot: u32) CompileError!i32 {
+    fn readReg(self: *mut Self, depth: u32, slot: u32, name: u32) CompileError!i32 {
         let r = try self.identReg(depth, slot)
         if r >= 0 && self.tdz.items()[r as usize] {
-            try self.fail("unsupported: read in the dead zone")
+            try vmThrowHole(self, name)
         }
         return r
     }
@@ -131,11 +131,11 @@ struct Compiler {
     // A plain (re)assignment target: not const, not in its dead zone.
     fn writeReg(self: *mut Self, target: u32) CompileError!i32 {
         match self.ast.node(target) {
-            .Ident { depth, slot, flags, .. } => {
+            .Ident { depth, slot, flags, name } => {
                 if (flags & (IDENT_CONST | IDENT_IMPORT)) != 0 {
                     try self.fail("unsupported: assignment to a constant")
                 }
-                return self.readReg(depth, slot)
+                return self.readReg(depth, slot, name)
             }
             _ => {
                 try self.fail("unsupported: assignment to a property or pattern")
@@ -230,7 +230,7 @@ struct Compiler {
         match self.ast.node(l) {
             .Ident { depth, slot: s, name, .. } => {
                 if !self.mayWrite(r) && depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
-                    lr = try self.readReg(depth, s)
+                    lr = try self.readReg(depth, s, name)
                     direct = lr != VM_CONTEXT
                 }
             }
@@ -285,6 +285,9 @@ struct Compiler {
         if kind == VM_TARGET_PROPERTY {
             return vmUpdateProperty(self, inc, prefix, arg)
         }
+        if try vmAssignThrows(self, arg) {
+            return vmUpdateConst(self, arg)
+        }
         let r = try self.writeReg(arg)
         if r == VM_CONTEXT {
             return vmUpdateContext(self, inc, prefix, arg)
@@ -320,6 +323,9 @@ struct Compiler {
         if kind == VM_TARGET_PATTERN {
             return vmAssignPattern(self, target, value)
         }
+        if try vmAssignThrows(self, target) {
+            return vmAssignConst(self, op, target, value)
+        }
         let r = try self.writeReg(target)
         if r == VM_CONTEXT {
             return vmAssignContext(self, op, target, value)
@@ -328,6 +334,9 @@ struct Compiler {
             try self.visit(value)
             try self.b.op1(BC_STAR, r as i64)
             return
+        }
+        if vmIsLogicalAssign(op) {
+            return vmAssignLogicalReg(self, op, r, value)
         }
         let bc = Compiler.binaryOpcode(op)
         if bc == 0 || bc >= BC_TEST_EQUAL {
@@ -352,7 +361,7 @@ struct Compiler {
         match self.ast.node(id) {
             .Ident { depth, slot, name, .. } => {
                 if depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(self, name) {
-                    let r = try self.readReg(depth, slot)
+                    let r = try self.readReg(depth, slot, name)
                     if r != VM_CONTEXT {
                         return r
                     }
@@ -403,6 +412,9 @@ struct Compiler {
             .Str { atom } => {
                 try self.b.op1(BC_LDA_CONSTANT, try self.b.constant(BcConst.Atom { id: atom }) as i64)
             }
+            .BigLit { atom } => {
+                try self.b.op1(BC_LDA_CONSTANT, try self.b.constant(BcConst.Big { atom: atom }) as i64)
+            }
             .Null => {
                 try self.b.op0(BC_LDA_NULL)
             }
@@ -416,7 +428,7 @@ struct Compiler {
                 if depth >= DEPTH_GLOBAL_LEX {
                     try self.b.op1(BC_LDA_GLOBAL, id as i64)
                 } else {
-                    let r = try self.readReg(depth, slot)
+                    let r = try self.readReg(depth, slot, name)
                     if r == VM_CONTEXT {
                         try vmLoadContext(self, depth, slot, name)
                     } else {
@@ -643,9 +655,6 @@ struct Compiler {
     // cases, then the bodies in order so that a case falls through.
     fn visitSwitch(self: *mut Self, disc: u32, list: u32, n: u32, scope: u32) CompileError!void {
         let sc = self.ast.scopes.items()[scope]
-        if sc.nfuncs > 0 {
-            try self.fail("unsupported: FuncDecl")
-        }
         var lo: i64 = 0
         var hi: i64 = 0
         var ncases: i64 = 0
@@ -688,7 +697,7 @@ struct Compiler {
             smi = false
         }
         if sc.nslots > 0 {
-            try self.scopes.append(scope)
+            smi = false
         }
         let mark = self.b.topReg
         let brk = try self.b.newLabel()
@@ -707,6 +716,7 @@ struct Compiler {
             let d = self.b.newReg()
             try self.visit(disc)
             try self.b.op1(BC_STAR, d as i64)
+            try vmEnterScope(self, scope)
             for k in 0..n {
                 match self.ast.node(self.ast.item(list, k)) {
                     .Case { cond, .. } => {
@@ -756,10 +766,8 @@ struct Compiler {
         }
         self.ctl.pop()
         try self.b.bind(brk)
+        try vmExitScope(self, scope)
         self.b.releaseRegs(mark)
-        if sc.nslots > 0 {
-            self.scopes.pop()
-        }
     }
 
     // The default target: the label, and the table's values with no case.
@@ -1036,8 +1044,8 @@ struct Compiler {
     // `BuildFunctionBody`: the arguments object, then, with non-simple
     // parameters (the resolver gives them registers), each parameter
     // copied in order from its slot, its default, or the rest array. A
-    // parameter is in its dead zone until then, so a default reading
-    // its own or a later parameter falls back.
+    // default reading its own or a later parameter reads undefined, as
+    // in the tree walker.
     fn visitParams(self: *mut Self, fi: FuncInfo) CompileError!void {
         if fi.args_slot != NONE {
             let r = try self.identReg(0, fi.args_slot)
@@ -1048,21 +1056,10 @@ struct Compiler {
             return
         }
         for k in 0..fi.nparams {
-            let r = try self.paramReg(self.ast.item(fi.params, k))
-            if r == VM_PATTERN {
-                continue
-            }
-            if r < 0 {
-                try self.fail("unsupported: parameter pattern")
-            }
-            self.tdz.items()[r as usize] = true
-        }
-        for k in 0..fi.nparams {
             let p = self.ast.item(fi.params, k)
             let r = try self.paramReg(p)
             if r == VM_PATTERN {
-                try self.b.op1(BC_LDAR, self.b.param(k) as i64)
-                try vmBindPattern(self, p, DECL_LET)
+                try vmBindParamPattern(self, p, k)
                 continue
             }
             match self.ast.node(p) {
@@ -1075,17 +1072,21 @@ struct Compiler {
                     try self.b.bind(dflt)
                     try self.visit(init)
                     try self.b.bind(end)
-                    try self.b.op1(BC_STAR, r as i64)
+                    try vmStoreParam(self, p, r)
                 }
                 .Rest { .. } => {
                     try self.b.op1(BC_CREATE_REST_PARAMETER, k as i64)
-                    try self.b.op1(BC_STAR, r as i64)
+                    try vmStoreParam(self, p, r)
                 }
                 _ => {
-                    try self.b.op2(BC_MOV, self.b.param(k) as i64, r as i64)
+                    if r == VM_CONTEXT {
+                        try self.b.op1(BC_LDAR, self.b.param(k) as i64)
+                        try vmStoreParam(self, p, r)
+                    } else {
+                        try self.b.op2(BC_MOV, self.b.param(k) as i64, r as i64)
+                    }
                 }
             }
-            self.tdz.items()[r as usize] = false
         }
     }
 
@@ -1122,20 +1123,13 @@ struct Compiler {
                 .ArrayPat { .. } => {}
                 .ObjectPat { .. } => {}
                 .Default { .. } => {}
-                .Rest { target } => {
-                    if !(self.ast.node(target) is .Ident) {
-                        try self.fail("unsupported: parameter pattern")
-                    }
-                }
+                .Rest { .. } => {}
                 _ => {
                     try self.fail("unsupported: parameter pattern")
                 }
             }
         }
         let sc = self.ast.scopes.items()[fi.scope]
-        if sc.eval {
-            try self.fail("unsupported: context variable")
-        }
         for k in 0..fi.nparams {
             for j in 0..k {
                 match self.ast.node(self.ast.item(fi.params, k)) {
@@ -1228,7 +1222,6 @@ pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc
 // The fallback reason for a node the compiler does not handle yet.
 fn vmNodeReason(n: Node) []u8 {
     return match n {
-        .BigLit { .. } => "unsupported: BigLit"
         .Template { .. } => "unsupported: Template"
         .Regex { .. } => "unsupported: Regex"
         .ArrayLit { .. } => "unsupported: ArrayLit"

@@ -1,0 +1,25 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitLogicalAssignment)
+
+fn vmIsLogicalAssign(op: Op) bool {
+    return op == Op.And || op == Op.Or || op == Op.Nullish
+}
+
+fn vmLogicalAssignJump(c: *mut Compiler, op: Op, end: u32) CompileError!void {
+    if op == Op.And {
+        try c.b.jump(BC_JUMP_IF_TO_BOOLEAN_FALSE, end)
+
+        return
+    }
+
+    if op == Op.Or {
+        try c.b.jump(BC_JUMP_IF_TO_BOOLEAN_TRUE, end)
+
+        return
+    }
+
+    let rhs = try c.b.newLabel()
+
+    try c.b.jump(BC_JUMP_IF_UNDEFINED_OR_NULL, rhs)
+    try c.b.jump(BC_JUMP, end)
+    try c.b.bind(rhs)
+}

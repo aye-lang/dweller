@@ -1,0 +1,17 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmThrowAssign(c: *mut Compiler, target: u32) CompileError!void {
+    match c.ast.node(target) {
+        .Ident { flags, name, .. } => {
+            if (flags & IDENT_CONST) != 0 {
+                return c.b.op0(BC_THROW_CONST_ASSIGNMENT_ERROR)
+            }
+
+            return vmThrowHole(c, name)
+        }
+
+        _ => {}
+    }
+
+    unreachable
+}

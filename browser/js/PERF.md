@@ -234,6 +234,18 @@ functions; `crypto` and `navier-stokes`: 1 each). On the 261 scripts of
 (1008 context variable, 695 Call, 295 FuncDecl, 270 ForIn, 190 If, 128
 generator or async, 112 Member, 109 Cond, 103 class constructor, ...).
 
+## P4.75: the VM on by default
+
+`DWELLER_JS_VM` defaults to 1 (`DWELLER_JS_VM=0` runs the tree
+walker). jsbench, fast build, median of 3 against
+`browser/tests/jsbench/baseline.json` (f888c35, same machine type):
+geomean 2.45× faster than the baseline (navier-stokes 6.12×, loop
+4.19×, globals 4.14×, richards 3.72×, crypto 3.59×; dom 1.10×, array
+1.26×, json 1.30×), 3.28× slower than `node --jitless` (calls 7.4×,
+globals 7.6×, closures 5.3×, splay 5.0×; navier-stokes 1.8×, loop
+1.9×). All checksums equal. The per-workload table is in `BYTECODE.md`
+section 6.
+
 ## Next steps
 
 The general interpreter is still the bottleneck. Small property tables
