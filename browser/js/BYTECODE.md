@@ -301,6 +301,11 @@ function (a named function expression's own name).
 `ThrowReferenceErrorIfHole name` follows reads of block-level and outer
 bindings; function-level contexts start undefined, as the tree
 walker's.
+A read of a block-level register binding in its dead zone, known at
+compile time, is `LdaTheHole; ThrowReferenceErrorIfHole name`; an
+assignment to a `const` evaluates what the tree walker evaluates, then
+`ThrowConstAssignmentError` (P4.75c). A computed object-literal key is
+followed by `ToName` (ToPropertyKey before the value).
 
 As built (P4.67): `StaGlobal [n]`, `TypeOfGlobal [n]`,
 `GetKeyedProperty r, [s]`, `SetKeyedProperty r_obj, r_key, [s]`,

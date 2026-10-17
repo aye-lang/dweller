@@ -7,7 +7,7 @@ fn vmMarkDead(c: *mut Compiler, r: i32, dead: bool) {
 fn vmMarkDeadTarget(c: *mut Compiler, target: u32) CompileError!void {
     match c.ast.node(target) {
         .Ident { depth, slot, .. } => {
-            if depth < DEPTH_GLOBAL_LEX {
+            if depth < DEPTH_GLOBAL_LEX && vmMayBeHole(c, depth) {
                 vmMarkDead(c, try c.identReg(depth, slot), true)
             }
         }
