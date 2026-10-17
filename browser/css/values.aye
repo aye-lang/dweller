@@ -524,31 +524,14 @@ struct Declarer {
         if pairLonghands(name) |pl| {
             return self.pair(pl[0], pl[1], comps)
         }
-        if text.eql(name, "place-items") || text.eql(name, "place-self") {
-            // `align [justify]` (justify as align when alone).
-            var prop = ALIGN_ITEMS
-            var across = JUSTIFY_ITEMS
-            if text.eql(name, "place-self") {
-                prop = ALIGN_SELF
-                across = JUSTIFY_SELF
-            }
-            if comps.len == 1 || comps.len == 2 {
-                let first = [1]Comp{comps[0]}
-                let last = [1]Comp{comps[comps.len - 1]}
-                if try parseValue(self.sheet, prop, first[..]) |v| {
-                    if try parseValue(self.sheet, across, last[..]) |w| {
-                        try self.add(prop, v)
-                        try self.add(across, w)
-                    }
-                }
-            }
-            return
+        if text.eql(name, "place-items") {
+            return placePair(self, ALIGN_ITEMS, JUSTIFY_ITEMS, comps)
+        }
+        if text.eql(name, "place-self") {
+            return placePair(self, ALIGN_SELF, JUSTIFY_SELF, comps)
         }
         if text.eql(name, "place-content") {
-            if comps.len == 1 || comps.len == 2 {
-                try placeContent(self, comps)
-            }
-            return
+            return placePair(self, ALIGN_CONTENT, JUSTIFY_CONTENT, comps)
         }
         if text.eql(name, "flex") {
             return self.flex(comps)
@@ -1132,6 +1115,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
         if t.kind == Tok.Url || (t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "url")) {
             return rawValue(sheet, comps)
         }
+    }
+    if comps.len == 2 {
+        return alignPair(sheet, prop, comps)
     }
     if comps.len != 1 {
         return null

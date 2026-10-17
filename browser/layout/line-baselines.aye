@@ -1,0 +1,35 @@
+import std.math
+import std.text
+
+struct LineBaselines {
+    first: f64
+    last: f64
+    cross: f64
+}
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-cross-line
+fn lineBaselines(t: *Tree, line: []Item) LineBaselines {
+    var lb = LineBaselines { first: 0.0, last: 0.0, cross: 0.0 }
+    var below = 0.0
+    var above = 0.0
+
+    for it in line {
+        let b = t.bx(it.box)
+        let align = alignOf(t, it.box)
+        let outer = b.h + b.margin[0] + b.margin[2]
+        let top = b.margin[0] + firstBaseline(b)
+        let bottom = b.h + b.margin[2] - lastBaseline(b)
+
+        if text.eql(align, "baseline") {
+            lb.first = math.max(lb.first, top)
+            below = math.max(below, outer - top)
+        } else if text.eql(align, "last baseline") {
+            lb.last = math.max(lb.last, bottom)
+            above = math.max(above, outer - bottom)
+        }
+    }
+
+    lb.cross = math.max(lb.first + below, lb.last + above)
+
+    return lb
+}

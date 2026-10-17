@@ -20,7 +20,7 @@ fn alignLines(t: *mut Tree, i: usize, all: []Item, lines: []usize, crosses: []f6
         total = math.max(cw, used)
     }
 
-    var word = keywordOf(s[css.ALIGN_CONTENT])
+    var word = alignWord(keywordOf(s[css.ALIGN_CONTENT]), total - used)
 
     if reverse && text.eql(word, "start") {
         word = "flex-end"
@@ -35,8 +35,10 @@ fn alignLines(t: *mut Tree, i: usize, all: []Item, lines: []usize, crosses: []f6
     for li, end in lines {
         let cross = crosses[li] + sp.extra
 
+        let base = lineBaselines(t, all[start..end])
+
         for it in all[start..end] {
-            let at = try alignCross(t, it.box, row, cross, cw, ch)
+            let at = try alignCross(t, it.box, row, cross, base, cw, ch)
 
             placeAcross(t.bx(it.box), row, pos + at, total, reverse)
         }

@@ -156,6 +156,10 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
                 line_cross = math.max(line_cross, cb.w + cb.margin[1] + cb.margin[3])
             }
         }
+        let base = lineBaselines(t, line)
+        if row {
+            line_cross = math.max(line_cross, base.cross)
+        }
         if lines.len == 1 && !wrap {
             if row && ch >= 0.0 {
                 line_cross = ch
@@ -182,19 +186,19 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         var auto_share = 0.0
         if autos > 0 && free > 0.0 {
             auto_share = free / autos as f64
-        } else if free > 0.0 {
-            let jc = keywordOf(style[css.JUSTIFY_CONTENT])
+        } else {
+            let jc = alignWord(keywordOf(style[css.JUSTIFY_CONTENT]), free)
             let m = line.len as f64
             if text.eql(jc, "flex-end") || text.eql(jc, "end") || (text.eql(jc, "right") && row) {
                 lead = free
             } else if text.eql(jc, "center") {
                 lead = free / 2.0
-            } else if text.eql(jc, "space-between") && line.len > 1 {
+            } else if text.eql(jc, "space-between") && line.len > 1 && free > 0.0 {
                 between += free / (m - 1.0)
-            } else if text.eql(jc, "space-around") {
+            } else if text.eql(jc, "space-around") && free > 0.0 {
                 lead = free / m / 2.0
                 between += free / m
-            } else if text.eql(jc, "space-evenly") {
+            } else if text.eql(jc, "space-evenly") && free > 0.0 {
                 lead = free / (m + 1.0)
                 between += free / (m + 1.0)
             }
@@ -217,7 +221,7 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             if reverse {
                 main_at = line_main - pos - it.target
             }
-            let cross_at = try alignCross(t, it.box, row, line_cross, cw, ch)
+            let cross_at = try alignCross(t, it.box, row, line_cross, base, cw, ch)
             let b = t.bx(it.box)
             if row {
                 b.x = main_at
@@ -372,8 +376,7 @@ fn alignOf(t: *Tree, c: usize) []u8 {
 
 // Aligns item `c` in a line `line_cross` px across: stretches it when it
 // should; returns the offset of its border box.
-fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f64) AllocError!f64 {
-    let align = alignOf(t, c)
+fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, base: LineBaselines, cw: f64, ch: f64) AllocError!f64 {
     let b = t.bx(c)
     var before = b.margin[3]
     var size = b.w + b.margin[1] + b.margin[3]
@@ -381,6 +384,7 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f
         before = b.margin[0]
         size = b.h + b.margin[0] + b.margin[2]
     }
+    let align = alignWord(alignOf(t, c), line_cross - size)
     if row && (text.eql(align, "stretch") || text.eql(align, "normal")) && isKeyword(b.style[css.HEIGHT], "auto") {
         let h = clampHeight(t, c, line_cross - b.margin[0] - b.margin[2], ch)
         let content_h = b.h
@@ -391,7 +395,13 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f
     if !row && try stretchAcross(t, c, align, line_cross, cw, ch) {
         return before
     }
-    if text.eql(align, "flex-end") || text.eql(align, "end") || text.eql(align, "self-end") {
+    if row && text.eql(align, "baseline") {
+        return base.first - firstBaseline(b)
+    }
+    if row && text.eql(align, "last baseline") {
+        return line_cross - base.last - lastBaseline(b)
+    }
+    if text.eql(align, "flex-end") || text.eql(align, "end") || text.eql(align, "self-end") || text.eql(align, "last baseline") {
         return line_cross - size + before
     }
     if text.eql(align, "center") {
