@@ -1,15 +1,15 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller c1d5d99. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller c091216. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
 | Area | Files | Skipped | Passed | Score % | Threshold % | Status | Change |
 |---|---:|---:|---:|---:|---:|---|---:|
 | `dom/nodes` | 411 | 6 | 7213/9403 | 76.7 | 75 | done | +0.0 |
-| `dom/events` | 180 | 8 | 403/837 | 48.1 | 70 | below | +0.0 |
+| `dom/events` | 180 | 8 | 611/855 | 71.5 | 70 | done | +0.4 |
 | `uievents` | 69 | 6 | 25/178 | 14.0 | - | baseline | +0.0 |
-| `html/semantics/forms` | 685 | 173 | 1912/5337 | 35.8 | 60 | below | +0.0 |
+| `html/semantics/forms` | 685 | 173 | 1927/5337 | 36.1 | 60 | below | +0.3 |
 | `css/cssom` | 292 | 11 | 2025/3753 | 54.0 | - | baseline | +0.0 |
 | `fetch/api` | 178 | 13 | 1007/2415 | 41.7 | 50 | below | +0.0 |
 | `xhr` | 329 | 3 | 448/1233 | 36.3 | 50 | below | +0.0 |
@@ -18,7 +18,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | +0.0 |
 | `css/css-flexbox` | 1422 | 469 | 640/1691 | 37.8 | 70 | below | +0.0 |
 | `css/css-transitions` | 143 | 59 | 335/3341 | 10.0 | - | baseline | +0.0 |
-| `test262/built-ins` | 18373 | 5450 | 12825/18373 | 69.8 | 80 | below | +5.6 |
+| `test262/built-ins` | 18373 | 5450 | 11792/18373 | 64.2 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 15080/23210 | 65.0 | 80 | below | +0.0 |
 
 ## Not yet measured

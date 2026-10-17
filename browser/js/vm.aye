@@ -1,5 +1,5 @@
-// js/vm: the bytecode interpreter (BYTECODE.md section 2), behind
-// DWELLER_JS_VM=1. `invoke` asks `vmLookup` for a function's bytecode,
+// js/vm: the bytecode interpreter (BYTECODE.md section 2), on unless
+// DWELLER_JS_VM=0. `invoke` asks `vmLookup` for a function's bytecode,
 // compiling it on the first call (compiler.aye); a function the
 // compiler does not support stays on the tree walker for good.
 //
@@ -68,12 +68,12 @@ struct VmEntry {
     env: u32
 }
 
-/// Turns the VM on when DWELLER_JS_VM=1 (once per engine).
+/// Turns the VM on unless DWELLER_JS_VM=0 (once per engine).
 pub fn vmInit(it: *mut Interp) {
     it.vm_checked = true
-    var on = false
+    var on = true
     if getenv("DWELLER_JS_VM".ptr) |p| {
-        on = p[0] == '1'
+        on = p[0] != '0'
     }
     if !on {
         return
@@ -586,6 +586,10 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     }
                     .Atom { id } => {
                         acc = try it.atomValue(id)
+                        regs = it.stack.items()
+                    }
+                    .Big { atom } => {
+                        acc = try bigLiteral(it, it.heap.atoms.name(atom))
                         regs = it.stack.items()
                     }
                     _ => unreachable
@@ -1948,6 +1952,16 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmModuleRuntime(it, id, at)
+                regs = it.stack.items()
+            }
+            132 => {
+                // v8: src/interpreter/bytecode-generator.cc (ThrowConstAssignError)
+                _ = try it.typeError("Assignment to constant variable.")
+            }
+            133 => {
+                // v8: src/interpreter/interpreter-generator.cc (ToName)
+                regs[fp] = acc
+                acc = try vmToName(it, acc)
                 regs = it.stack.items()
             }
             _ => {

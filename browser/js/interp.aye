@@ -253,6 +253,7 @@ pub struct Interp {
     jobs_head: usize
     // Tagged template call sites (node) to the root of their strings.
     tagged: IntMap(u32, u32)
+    field_keys: IntMap(u64, u32)
     // The arrays being joined (Array.prototype.join of a cycle).
     joining: List(u32)
     // Weak collections (weak.aye): their prototypes, the entries of
@@ -284,7 +285,7 @@ pub struct Interp {
     source_url: u32 = 0
     chunk_starts: List(u32)
     chunk_urls: List(u32)
-    // The bytecode VM (vm.aye), when DWELLER_JS_VM=1; vmInit decides on
+    // The bytecode VM (vm.aye), unless DWELLER_JS_VM=0; vmInit decides on
     // the first call.
     vm: ?*mut VmState = null
     vm_checked: bool = false
@@ -392,6 +393,7 @@ pub struct Interp {
             jobs: List(Value).init(alloc),
             jobs_head: 0,
             tagged: IntMap(u32, u32).init(alloc),
+            field_keys: IntMap(u64, u32).init(alloc),
             joining: List(u32).init(alloc),
             weakmap_proto: NONE,
             weakset_proto: NONE,
@@ -415,6 +417,7 @@ pub struct Interp {
         self.co_saved.deinit()
         self.jobs.deinit()
         self.tagged.deinit()
+        self.field_keys.deinit()
         self.joining.deinit()
         self.weak_entries.deinit()
         self.weak_refs.deinit()
@@ -2280,7 +2283,7 @@ pub struct Interp {
                 }
             }
         }
-        // The bytecode VM (DWELLER_JS_VM=1) after the frameless path above,
+        // The bytecode VM (unless DWELLER_JS_VM=0) after the frameless path above,
         // which is cheaper for the one-expression functions it handles.
         if !self.vm_checked {
             vmInit(self)
@@ -2521,19 +2524,13 @@ pub struct Interp {
         }
         let ci = self.ast.classes.items()[fi.class_id]
         for k in 0..ci.n {
-            match self.ast.node(self.ast.item(ci.members, k)) {
+            let elem = self.ast.item(ci.members, k)
+            match self.ast.node(elem) {
                 .ClassElem { kind, is_static, key, computed, value } => {
                     if kind == PROP_FIELD && !is_static {
                         var atom = key
                         if computed {
-                            let saved = self.env
-                            self.env = env
-                            let kv = self.eval(key) catch |e| {
-                                self.env = saved
-                                return e
-                            }
-                            self.env = saved
-                            atom = try self.toKey(kv)
+                            atom = self.field_keys.get(classFieldSlot(ctor, elem)) orelse key
                         }
                         let v = try self.runField(value, env, objVal(thisObj), self.homeOf(ctor))
                         try self.defineOwn(thisObj, atom, v, self.fieldFlags(atom))
