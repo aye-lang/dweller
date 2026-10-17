@@ -1,0 +1,13 @@
+fn failSet(it: *mut Interp, key: u32) JsError!void {
+    if !it.isStrictCode() {
+        return
+    }
+
+    it.msg.clear()
+    try it.msg.append("Cannot assign to read only property '")
+    try it.msg.append(it.heap.atoms.name(key))
+    try it.msg.append("' of object")
+    let e = try it.makeError(it.type_error_proto, it.msg.bytes())
+
+    try it.throwValue(e)
+}

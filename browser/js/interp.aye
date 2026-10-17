@@ -1320,20 +1320,22 @@ pub struct Interp {
             }
         }
         if self.heap.obj(o).frozen {
-            return
+            return failSet(self, key)
         }
         try ownFunctionKeys(self, o)
         if self.heap.findProp(o, key) |i| {
             let p = self.heap.obj(o).props[i]
             if (p.flags & F_ACCESSOR) != 0 {
-                if !isNullish(p.setter) {
-                    try self.call1(p.setter, receiver, value)
+                if isNullish(p.setter) {
+                    return failSet(self, key)
                 }
+                try self.call1(p.setter, receiver, value)
                 return
             }
-            if (p.flags & F_WRITE) != 0 {
-                self.heap.obj(o).props[i].value = value
+            if (p.flags & F_WRITE) == 0 {
+                return failSet(self, key)
             }
+            self.heap.obj(o).props[i].value = value
             return
         }
         // A setter or a read-only property up the chain?
@@ -1350,20 +1352,21 @@ pub struct Interp {
             if self.heap.findProp(cur, key) |i| {
                 let p = self.heap.obj(cur).props[i]
                 if (p.flags & F_ACCESSOR) != 0 {
-                    if !isNullish(p.setter) {
-                        try self.call1(p.setter, receiver, value)
+                    if isNullish(p.setter) {
+                        return failSet(self, key)
                     }
+                    try self.call1(p.setter, receiver, value)
                     return
                 }
                 if (p.flags & F_WRITE) == 0 {
-                    return
+                    return failSet(self, key)
                 }
                 break
             }
             cur = self.heap.obj(cur).proto
         }
         if !self.heap.obj(o).extensible {
-            return
+            return failSet(self, key)
         }
         return self.heap.addProp(o, key, value, Value.Undefined, F_DEFAULT)
     }

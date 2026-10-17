@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller e3d02cd. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller 6858ebb. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
