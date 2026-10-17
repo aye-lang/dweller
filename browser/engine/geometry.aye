@@ -1514,30 +1514,20 @@ fn contentEdges(g: *Geometry, i: usize, edges: *mut Area) {
     }
 }
 
-// The scrolling area of box `i` (not inline): its padding box and what
-// overflows it, with the end padding after the content, from the
-// padding box's top left corner.
-fn scrollArea(g: *Geometry, i: usize) Area {
-    let b = g.tree.bx(i)
-    let px = b.ax + b.border[3]
-    let py = b.ay + b.border[0]
-    let pw = b.w - b.border[1] - b.border[3]
-    let ph = b.h - b.border[0] - b.border[2]
-    var edges = Area { x: 0.0, y: 0.0, w: px + pw, h: py + ph }
-    var inner = Area { x: 0.0, y: 0.0, w: px, h: py }
-    contentEdges(g, i, &mut inner)
-    edges.w = math.max(edges.w, inner.w + b.padding[1])
-    edges.h = math.max(edges.h, inner.h + b.padding[2])
-    return Area { x: px, y: py, w: edges.w - px, h: edges.h - py }
-}
-
 // How far a script can scroll box `i` (`w`, `h` unused).
 fn maxScroll(g: *Geometry, i: usize) Area {
     let b = g.tree.bx(i)
-    let area = scrollArea(g, i)
+    let area = scrollableOverflow(g, i)
     let cw = b.w - b.border[1] - b.border[3]
     let ch = b.h - b.border[0] - b.border[2]
-    return Area { x: math.max(0.0, area.w - cw), y: math.max(0.0, area.h - ch), w: 0.0, h: 0.0 }
+    var max = Area { x: math.max(0.0, area.w - cw), y: math.max(0.0, area.h - ch), w: 0.0, h: 0.0 }
+    if layout.isKeyword(b.style[css.OVERFLOW_X], "clip") {
+        max.x = 0.0
+    }
+    if layout.isKeyword(b.style[css.OVERFLOW_Y], "clip") {
+        max.y = 0.0
+    }
+    return max
 }
 
 // The size of the document's scrolling area: the viewport and what the
@@ -1685,7 +1675,7 @@ fn metric(s: *mut Script, el: NodeId, k: i64) AllocError!f64 {
         return math.clamp(o.x, 0.0, max.x)
     }
     if k == 10 || k == 11 {
-        let area = scrollArea(g, i)
+        let area = scrollableOverflow(g, i)
         if k == 10 {
             return math.round(area.w)
         }
