@@ -85,30 +85,12 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
         return Activation.Follow { target: target }
     }
     if doc.isElement(el, "label") {
-        if labelControl(doc, el) |control| {
-            if dom.isDisabled(doc, control) {
-                return Activation.Nothing
-            }
-            // The label's own focus went to the control.
-            if dom.isTextField(doc, control) || doc.isElement(control, "select") {
-                setFocus(page, control)
-                return Activation.Changed
-            }
-            return activate(page, control)
-        }
-        return Activation.Nothing
+        return activateLabel(page, el, node)
     }
     if doc.isElement(el, "summary") {
         if doc.parent(el) |d| {
             if doc.isElement(d, "details") {
-                if doc.attr(d, "open") != null {
-                    removeAttr(doc, d, "open")
-                } else {
-                    try doc.setAttr(d, "open", "")
-                }
-                // Not a script's change (geometry.aye notes none).
-                page.mutations += 1
-                return Activation.Changed
+                return toggleDetails(page, d)
             }
         }
         return changedIf(moved)
