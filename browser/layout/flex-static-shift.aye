@@ -1,0 +1,29 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#abspos-items
+fn flexStaticShift(t: *Tree, i: usize, horizontal: bool) f64 {
+    let b = t.bx(i)
+    let p = b.parent orelse return 0.0
+    let pb = t.bx(p)
+
+    if pb.kind != BoxKind.Flex {
+        return 0.0
+    }
+
+    let s = pb.style
+    let rtl = horizontal && isKeyword(s[css.DIRECTION], "rtl")
+    var room = pb.w - hEdges(pb) - b.w - b.margin[1] - b.margin[3]
+
+    if !horizontal {
+        room = pb.h - vEdges(pb) - b.h - b.margin[0] - b.margin[2]
+    }
+
+    if isRow(t, p) == horizontal {
+        let reverse = text.endsWith(keywordOf(s[css.FLEX_DIRECTION]), "reverse")
+
+        return room * staticAlignFactor(alignWord(keywordOf(s[css.JUSTIFY_CONTENT]), room), reverse, rtl, horizontal)
+    }
+
+    return room * staticAlignFactor(alignWord(alignOf(t, i), room), isKeyword(s[css.FLEX_WRAP], "wrap-reverse"), rtl, horizontal)
+}

@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-align-3/#place-content
+fn placePair(d: *mut Declarer, align: usize, justify: usize, comps: []Comp) AllocError!void {
+    for n in 1..comps.len + 1 {
+        let a = try parseValue(d.sheet, align, comps[..n]) orelse continue
+        var j = Value.Keyword { k: "start" }
+
+        if n < comps.len {
+            j = try parseValue(d.sheet, justify, comps[n..]) orelse continue
+        } else if try parseValue(d.sheet, justify, comps) |v| {
+            j = v
+        }
+
+        try d.add(align, a)
+        try d.add(justify, j)
+
+        return
+    }
+}

@@ -1,0 +1,32 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#align-content-property
+struct LineSpacing {
+    lead: f64
+    between: f64
+    extra: f64
+
+    fn of(word: []u8, free: f64, n: f64) LineSpacing {
+        var s = LineSpacing { lead: 0.0, between: 0.0, extra: 0.0 }
+
+        if text.eql(word, "flex-end") || text.eql(word, "end") {
+            s.lead = free
+        } else if text.eql(word, "center") {
+            s.lead = free / 2.0
+        } else if free <= 0.0 {
+            return s
+        } else if text.eql(word, "space-between") && n > 1.0 {
+            s.between = free / (n - 1.0)
+        } else if text.eql(word, "space-around") {
+            s.lead = free / n / 2.0
+            s.between = free / n
+        } else if text.eql(word, "space-evenly") {
+            s.lead = free / (n + 1.0)
+            s.between = s.lead
+        } else if text.eql(word, "stretch") || text.eql(word, "normal") {
+            s.extra = free / n
+        }
+
+        return s
+    }
+}

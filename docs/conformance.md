@@ -10,13 +10,13 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `dom/events` | 180 | 8 | 403/837 | 48.1 | 70 | below | +0.0 |
 | `uievents` | 69 | 6 | 25/178 | 14.0 | 70 | below | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 1912/5337 | 35.8 | 60 | below | +0.0 |
-| `css/cssom` | 292 | 11 | 2025/3753 | 54.0 | - | baseline | +0.0 |
+| `css/cssom` | 292 | 11 | 2034/3753 | 54.2 | - | baseline | +0.0 |
 | `fetch/api` | 178 | 13 | 1007/2415 | 41.7 | 50 | below | +0.0 |
 | `xhr` | 329 | 3 | 448/1233 | 36.3 | 50 | below | +0.0 |
 | `url` | 34 | 0 | 4850/9998 | 48.5 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | +0.0 |
-| `css/css-flexbox` | 1422 | 469 | 640/1691 | 37.8 | 70 | below | +0.0 |
+| `css/css-flexbox` | 1422 | 469 | 2830/5816 | 48.7 | 70 | below | +0.0 |
 | `css/css-transforms` | 711 | 156 | 748/5196 | 14.4 | 50 | below | new |
 | `css/css-transitions` | 143 | 59 | 335/3341 | 10.0 | - | baseline | +0.0 |
 | `html/syntax` | 98 | 0 | 727/2732 | 26.6 | 90 | below | new |

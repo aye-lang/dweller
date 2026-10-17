@@ -1,5 +1,5 @@
 // Flexbox (CSS Flexbox 1, simplified): row and column directions (and
-// their reverses), `flex-wrap` for rows, `gap`, flex-grow/shrink/basis
+// their reverses), `flex-wrap`, `order`, `gap`, flex-grow/shrink/basis
 // with min/max clamping (9.7), `justify-content`, `align-items` and
 // `align-self` (stretch, start, end, center; baseline as start), and
 // auto margins on the main axis. The automatic minimum width of an item
@@ -27,6 +27,7 @@ struct Item {
     after: f64
     auto_before: bool
     auto_after: bool
+    order: f64
 }
 
 let INFINITE: f64 = 1.0e30
@@ -77,8 +78,8 @@ fn flexIntrinsic(t: *mut Tree, i: usize) AllocError!MinMax {
 fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     let style = t.bx(i).style
     let row = isRow(t, i)
-    let reverse = text.endsWith(keywordOf(style[css.FLEX_DIRECTION]), "reverse")
-    let wrap = row && !isKeyword(style[css.FLEX_WRAP], "nowrap")
+    let reverse = text.endsWith(keywordOf(style[css.FLEX_DIRECTION]), "reverse") != (row && isKeyword(style[css.DIRECTION], "rtl"))
+    let wrap = !isKeyword(style[css.FLEX_WRAP], "nowrap")
     var main_gap = gapOf(style[css.ROW_GAP], ch)
     var cross_gap = gapOf(style[css.COLUMN_GAP], cw)
     if row {
@@ -99,13 +100,14 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         try items.append(try flexItem(t, c, row, cw, ch))
     }
     let all = items.items()
+    sortByOrder(all)
     // Lines: ranges of `all`.
     var breaks = List(usize).init(t.backing)
     defer breaks.deinit()
     var used = 0.0
     for k, it in all {
         let outer = it.hyp + it.before + it.after
-        if wrap && k > 0 && used + main_gap + outer > cw {
+        if wrap && k > 0 && used + main_gap + outer > breakLimit(row, cw, ch) {
             try breaks.append(k)
             used = outer
         } else if k > 0 {
@@ -120,6 +122,8 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     if !row {
         avail_main = ch
     }
+    var crosses = List(f64).init(t.backing)
+    defer crosses.deinit()
     var cross_pos = 0.0
     var main_extent = 0.0
     var start: usize = 0
@@ -152,13 +156,18 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
                 line_cross = math.max(line_cross, cb.w + cb.margin[1] + cb.margin[3])
             }
         }
-        if lines.len == 1 {
+        let base = lineBaselines(t, line)
+        if row {
+            line_cross = math.max(line_cross, base.cross)
+        }
+        if lines.len == 1 && !wrap {
             if row && ch >= 0.0 {
                 line_cross = ch
             } else if !row {
                 line_cross = cw
             }
         }
+        try crosses.append(line_cross)
         // Main axis: auto margins, then justify-content.
         var free = line_main
         var autos: usize = 0
@@ -177,19 +186,19 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         var auto_share = 0.0
         if autos > 0 && free > 0.0 {
             auto_share = free / autos as f64
-        } else if free > 0.0 {
-            let jc = keywordOf(style[css.JUSTIFY_CONTENT])
+        } else {
+            let jc = alignWord(keywordOf(style[css.JUSTIFY_CONTENT]), free)
             let m = line.len as f64
             if text.eql(jc, "flex-end") || text.eql(jc, "end") || (text.eql(jc, "right") && row) {
                 lead = free
             } else if text.eql(jc, "center") {
                 lead = free / 2.0
-            } else if text.eql(jc, "space-between") && line.len > 1 {
+            } else if text.eql(jc, "space-between") && line.len > 1 && free > 0.0 {
                 between += free / (m - 1.0)
-            } else if text.eql(jc, "space-around") {
+            } else if text.eql(jc, "space-around") && free > 0.0 {
                 lead = free / m / 2.0
                 between += free / m
-            } else if text.eql(jc, "space-evenly") {
+            } else if text.eql(jc, "space-evenly") && free > 0.0 {
                 lead = free / (m + 1.0)
                 between += free / (m + 1.0)
             }
@@ -212,7 +221,7 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             if reverse {
                 main_at = line_main - pos - it.target
             }
-            let cross_at = try alignCross(t, it.box, row, line_cross, cw, ch)
+            let cross_at = try alignCross(t, it.box, row, line_cross, base, cw, ch)
             let b = t.bx(it.box)
             if row {
                 b.x = main_at
@@ -229,6 +238,9 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             cross_pos += cross_gap
         }
         start = end
+    }
+    if wrap {
+        try alignLines(t, i, all, lines, crosses.items(), row, cross_gap, cw, ch)
     }
     if ch >= 0.0 {
         return ch
@@ -259,6 +271,7 @@ fn flexItem(t: *mut Tree, c: usize, row: bool, cw: f64, ch: f64) AllocError!Item
         after: 0.0,
         auto_before: false,
         auto_after: false,
+        order: numberOf(s[css.ORDER], 0.0),
     }
     let b = t.bx(c)
     b.margin[1] = lengthOr0(s[css.MARGIN_TOP + 1], cw)
@@ -303,7 +316,8 @@ fn flexItem(t: *mut Tree, c: usize, row: bool, cw: f64, ch: f64) AllocError!Item
         it.auto_after = isKeyword(s[css.MARGIN_TOP + 2], "auto")
         // The cross size first: stretched, or shrink-to-fit.
         let align = alignOf(t, c)
-        let stretch = (text.eql(align, "stretch") || text.eql(align, "normal")) && isKeyword(s[css.WIDTH], "auto")
+        let single = isKeyword(t.bx(t.bx(c).parent.?).style[css.FLEX_WRAP], "nowrap")
+        let stretch = single && (text.eql(align, "stretch") || text.eql(align, "normal")) && isKeyword(s[css.WIDTH], "auto")
         if stretch {
             b.w = clampWidth(t, c, cw - b.margin[1] - b.margin[3], cw)
         } else {
@@ -362,8 +376,7 @@ fn alignOf(t: *Tree, c: usize) []u8 {
 
 // Aligns item `c` in a line `line_cross` px across: stretches it when it
 // should; returns the offset of its border box.
-fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f64) AllocError!f64 {
-    let align = alignOf(t, c)
+fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, base: LineBaselines, cw: f64, ch: f64) AllocError!f64 {
     let b = t.bx(c)
     var before = b.margin[3]
     var size = b.w + b.margin[1] + b.margin[3]
@@ -371,6 +384,7 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f
         before = b.margin[0]
         size = b.h + b.margin[0] + b.margin[2]
     }
+    let align = alignWord(alignOf(t, c), line_cross - size)
     if row && (text.eql(align, "stretch") || text.eql(align, "normal")) && isKeyword(b.style[css.HEIGHT], "auto") {
         let h = clampHeight(t, c, line_cross - b.margin[0] - b.margin[2], ch)
         let content_h = b.h
@@ -378,7 +392,16 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, cw: f64, ch: f
         try relayoutAt(t, c, content_h, cw, ch)
         return before
     }
-    if text.eql(align, "flex-end") || text.eql(align, "end") || text.eql(align, "self-end") {
+    if !row && try stretchAcross(t, c, align, line_cross, cw, ch) {
+        return before
+    }
+    if row && text.eql(align, "baseline") {
+        return base.first - firstBaseline(b)
+    }
+    if row && text.eql(align, "last baseline") {
+        return line_cross - base.last - lastBaseline(b)
+    }
+    if text.eql(align, "flex-end") || text.eql(align, "end") || text.eql(align, "self-end") || text.eql(align, "last baseline") {
         return line_cross - size + before
     }
     if text.eql(align, "center") {
@@ -442,6 +465,7 @@ fn resolveFlexible(line: []mut Item, avail: f64) {
         line[k].target = it.hyp
         line[k].frozen = (growing && it.grow == 0.0) || (!growing && it.shrink == 0.0) || (growing && it.basis > it.hyp) || (!growing && it.basis < it.hyp)
     }
+    var initial = 0.0
     for round in 0..line.len + 1 {
         var used = 0.0
         var factors = 0.0
@@ -463,7 +487,10 @@ fn resolveFlexible(line: []mut Item, avail: f64) {
         if unfrozen == 0 {
             return
         }
-        let free = avail - used
+        if round == 0 {
+            initial = avail - used
+        }
+        let free = fractionalFree(line, avail - used, initial, growing)
         var violation = 0.0
         for k in 0..line.len {
             let it = line[k]
