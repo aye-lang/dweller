@@ -176,7 +176,11 @@ parallel, one step at a time per lane; D after A and C4; H after C4,
 by area; I last. Common to every step: run only the tests its verify
 names, never two browser test runs at once, build and test output to a
 log under `target/` read with `tail`/`grep`; the same verify failing
-twice in a row stops the step with a report.
+twice in a row stops the step with a report. On the user's Mac (10
+cores, 32 GB, shared with daily use and a self-hosted Actions runner)
+every build and test runs under `nice -n 10` with `AYE_TEST_JOBS=3`
+and `cargo ... -j 4`, at most one local agent builds or tests at a
+time, and heavy cards go to cloud sessions (2026-10-17).
 
 ### Phase A: green `main` and the rest of the loop (Layer 0, lane loop)
 
