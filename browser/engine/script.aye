@@ -293,6 +293,8 @@ pub struct Script {
     nav_submitter: ?NodeId
     submit_submitter: ?NodeId
     queued_forms: List(NodeId)
+    hover_path: List(NodeId)
+    press_target: ?NodeId
     // Counts changes to the document by scripts (styles and layout are
     // out of date when it moved).
     version: u64
@@ -588,6 +590,8 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         nav_submitter: null,
         submit_submitter: null,
         queued_forms: List(NodeId).init(alloc),
+        hover_path: List(NodeId).init(alloc),
+        press_target: null,
         version: 0,
         style_version: 0,
         layout_version: 0,
@@ -662,6 +666,7 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
+    try s.it.runScript(UI_EVENTS_PRELUDE)
     try s.it.runScript(FETCH_API_PRELUDE)
     try s.it.runScript(FORM_PRELUDE)
     try s.it.runScript(SIGN_IN_PRELUDE)
@@ -741,6 +746,7 @@ pub fn destroyScript(s: *mut Script) {
     }
     s.console.deinit()
     s.queued_forms.deinit()
+    s.hover_path.deinit()
     s.alloc.free(s.nav_href)
     releaseStorage()
     s.alloc.destroy(s)
@@ -1939,11 +1945,18 @@ pub fn dispatchPointer(p: *mut Page, target: NodeId, kind: []u8, detail: []u8, x
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
     }
+    if text.eql(kind, "pointermove") || text.eql(kind, "pointerdown") || text.eql(kind, "pointerup") {
+        try crossBoundary(p, target, detail, x, y)
+    }
+    if text.eql(kind, "pointerdown") {
+        s.press_target = target
+    }
+    let at = try pressReleaseTarget(p, target, kind)
     let it = &mut s.it
     let base = it.stack.len()
     try jsPush(s, it.roots.items()[s.dispatcher])
     try jsPush(s, Value.Undefined)
-    try jsPush(s, try wrapFor(s, target))
+    try jsPush(s, try wrapFor(s, at))
     try jsPush(s, try stringFor(s, kind))
     try jsPush(s, try stringFor(s, detail))
     try jsPush(s, js.numVal(x))

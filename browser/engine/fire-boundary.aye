@@ -1,0 +1,31 @@
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/uievents/#event-type-mouseover
+pub fn fireBoundary(p: *mut Page, old: []NodeId, now: []NodeId, kinds: [4][]u8, detail: []u8, x: f64, y: f64) AllocError!void {
+    if old.len > 0 && p.doc.isLive(old[0]) && p.doc.isConnected(old[0]) {
+        _ = try dispatchPointer(p, old[0], kinds[0], detail, x, y, 0.0, 0.0)
+    }
+
+    for n in old {
+        if !onPath(now, n) && p.doc.isLive(n) && p.doc.isConnected(n) {
+            _ = try dispatchPointer(p, n, kinds[1], detail, x, y, 0.0, 0.0)
+        }
+    }
+
+    if now.len == 0 {
+        return
+    }
+
+    _ = try dispatchPointer(p, now[0], kinds[2], detail, x, y, 0.0, 0.0)
+
+    var i = now.len
+
+    while i > 0 {
+        i -= 1
+
+        if !onPath(old, now[i]) {
+            _ = try dispatchPointer(p, now[i], kinds[3], detail, x, y, 0.0, 0.0)
+        }
+    }
+}
