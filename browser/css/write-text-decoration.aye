@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/css/properties/shorthands/shorthands_custom.cc
+pub fn writeTextDecoration(values: []Value, out: *mut text.Builder) AllocError!void {
+    let parts = [4]?Value{
+        unlessKeyword(values[TEXT_DECORATION_LINE], "none"),
+        unlessKeyword(values[TEXT_DECORATION_THICKNESS], "auto"),
+        unlessKeyword(values[TEXT_DECORATION_STYLE], "solid"),
+        unlessCurrent(values, TEXT_DECORATION_COLOR),
+    }
+
+    for part in parts {
+        if part |v| {
+            if out.len() > 0 {
+                try out.append(" ")
+            }
+
+            try writeValue(v, out)
+        }
+    }
+
+    if out.len() == 0 {
+        try out.append("none")
+    }
+}
+
+fn unlessKeyword(v: Value, k: []u8) ?Value {
+    if isKeywordValue(v, k) {
+        return null
+    }
+
+    return v
+}
+
+fn unlessCurrent(values: []Value, prop: usize) ?Value {
+    return match values[prop] {
+        .CurrentColor => null
+        _ => values[prop]
+    }
+}

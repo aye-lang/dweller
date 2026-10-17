@@ -1,0 +1,13 @@
+import layout
+import layout.FragKind
+
+// chromium: third_party/blink/renderer/core/paint/text_decoration_info.cc
+fn decoratingBaseline(b: *mut Builder, k: usize, line: layout.Line, cy: f64) f64 {
+    for f in b.t.frags.items()[line.frag_start..line.frag_end] {
+        if f.kind == FragKind.Inline && f.box == k {
+            return cy + f.y + layout.textMetrics(b.t, b.t.bx(k).style).ascent
+        }
+    }
+
+    return cy + line.y + line.baseline
+}

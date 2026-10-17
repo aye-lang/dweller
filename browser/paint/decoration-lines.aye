@@ -1,0 +1,27 @@
+import css
+import css.Value
+import layout
+import std.math
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/paint/text_decoration_info.cc
+fn decorationLines(b: *mut Builder, style: []Value, x: f64, base: f64, w: f64, m: layout.TextMetrics, through: bool) AllocError!void {
+    let lines = layout.keywordOf(style[css.TEXT_DECORATION_LINE])
+    let kind = layout.keywordOf(style[css.TEXT_DECORATION_STYLE])
+    let c = colorOf(style[css.TEXT_DECORATION_COLOR], colorOf(style[css.COLOR], BLACK))
+    let auto = math.max(1.0, math.floor(m.font.size / 16.0 + 0.5))
+    let size = layout.lengthOf(style[css.FONT_SIZE], m.font.size) orelse m.font.size
+    let t = decorationThickness(style[css.TEXT_DECORATION_THICKNESS], size, auto)
+
+    if !through && hasWord(lines, "underline") {
+        try decorationLine(b, kind, x, underlineTop(style, size, base, m, t), w, t, c, 1.0)
+    }
+
+    if !through && hasWord(lines, "overline") {
+        try decorationLine(b, kind, x, base - m.ascent + auto - t, w, t, c, -1.0)
+    }
+
+    if through && hasWord(lines, "line-through") {
+        try decorationLine(b, kind, x, math.floor(base - math.floor(m.ascent * 0.35 + 0.5) + (auto - t) / 2.0 + 0.5), w, t, c, 1.0)
+    }
+}

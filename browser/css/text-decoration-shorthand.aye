@@ -1,0 +1,54 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-text-decor-4/#text-decoration-property
+fn textDecorationShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let props = [4]usize{TEXT_DECORATION_LINE, TEXT_DECORATION_STYLE, TEXT_DECORATION_COLOR, TEXT_DECORATION_THICKNESS}
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    var vals = [4]Value{Value.Initial, Value.Initial, Value.Initial, Value.Initial}
+    var seen = [4]bool{false, false, false, false}
+    var k: usize = 0
+
+    while k < comps.len {
+        let end = lineRunEnd(comps, k)
+        var found = false
+
+        if end > k && !seen[0] {
+            vals[0] = try decorationLines(d.sheet, comps[k..end]) orelse return
+            seen[0] = true
+            found = true
+            k = end - 1
+        }
+
+        for p in 1..4 {
+            if !found && !seen[p] && cssWide(comps[k]) == null {
+                if try parseValue(d.sheet, props[p], comps[k..k + 1]) |v| {
+                    vals[p] = v
+                    seen[p] = true
+                    found = true
+                }
+            }
+        }
+
+        if !found {
+            return
+        }
+
+        k += 1
+    }
+
+    for p in 0..4 {
+        try d.add(props[p], vals[p])
+    }
+}
+
+fn lineRunEnd(comps: []Comp, k: usize) usize {
+    if k < comps.len && identIn(comps[k], "none underline overline line-through blink") != null {
+        return lineRunEnd(comps, k + 1)
+    }
+
+    return k
+}

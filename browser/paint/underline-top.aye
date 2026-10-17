@@ -1,0 +1,20 @@
+import css
+import css.Value
+import layout
+import std.math
+
+// chromium: third_party/blink/renderer/core/layout/text_decoration_offset.cc
+fn underlineTop(style: []Value, size: f64, base: f64, m: layout.TextMetrics, t: f64) f64 {
+    let offset = layout.lengthOf(style[css.TEXT_UNDERLINE_OFFSET], size)
+    let px = math.floor((offset orelse 0.0) + 0.5)
+
+    if hasWord(layout.keywordOf(style[css.TEXT_UNDERLINE_POSITION]), "under") {
+        return math.floor(base + m.descent + 0.5) + px + 1.0
+    }
+
+    if offset == null {
+        return base + math.max(math.floor(m.descent * 0.4 + 0.5), math.max(1.0, math.ceil(t / 2.0)))
+    }
+
+    return base + px
+}
