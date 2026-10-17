@@ -6714,6 +6714,25 @@ fn window_hidden_raf() {
     assert!(lines[shown..].iter().any(|l| l == "raf"), "{lines:?}");
 }
 
+/// P4.75o: a cross-origin frame below the viewport runs no animation
+/// frames (Blink throttles its rendering); they run once it is scrolled
+/// into view.
+#[test]
+fn window_offscreen_frame_raf() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = "frame ".repeat(20);
+    let events = format!("painted {frames}key:end {frames}");
+    let lines = console_of("browser/tests/ui/offscreen-frame-raf.html", &events, "400");
+    let scrolled = position(&lines, "scrolled");
+    let before = lines[..scrolled].iter().filter(|l| *l == "frame raf").count();
+    let after = lines[scrolled..].iter().filter(|l| *l == "frame raf").count();
+    assert!(before <= 2, "{lines:?}");
+    assert!(after >= 5, "{lines:?}");
+}
+
 /// P4.55: the tab in the background runs its 100 ms interval about once
 /// a second and no animation frame; both run as before when it is shown.
 #[test]
