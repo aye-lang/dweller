@@ -942,7 +942,9 @@ on (`--no-js` turns it off), `dump` with `--js`.
     the `--screens` screenshot fetches (web fonts, images); on replay a
     non-GET request without a record of its body gets the latest
     response recorded for its URL ("archive fallback:"), so moved
-    beacons do not fail a replay; `--screens` paints a contact sheet
+    beacons do not fail a replay; the archive keeps each response's
+    headers (an older entry without them replays permissive CORS
+    headers for a script's request); `--screens` paints a contact sheet
     (`target/screens/index.html`), `run --live` loads from the network,
     `rebless --site X` stores today's replay as the archive's reference
     after an intended dump change, and `capture` refuses a page that

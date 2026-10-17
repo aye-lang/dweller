@@ -2,7 +2,7 @@
 // preserves original URLs (no HTML/CSS/JS rewriting); replay never falls
 // through to HTTP. The runner creates the directory and keeps it private:
 // responses may contain personalized content. This is a benchmark tool,
-// not an HTTP cache (no expiry, validation, or cookie/header replay).
+// not an HTTP cache (no expiry, validation, or cookie replay); response headers replay.
 // `data:` URLs hold their response: they are neither recorded nor
 // looked up. With both DWELLER_REPLAY and DWELLER_RECORD set, recorded
 // responses are served and only misses are fetched and recorded.
@@ -57,8 +57,8 @@ fn archivePath(alloc: Allocator, dir: []u8, target: *Url, req: Request) AllocErr
     return path.toOwned()
 }
 
-// Header: original URL, status (0 for error), MIME, charset, final URL,
-// error description, each on one line, then the unmodified body.
+// Header: original URL, status (0 for error) and the header block's length (older entries: none,
+// they replay permissive CORS headers), MIME, charset, final URL, error, one per line; headers; body.
 pub fn archiveRead(alloc: Allocator, target: *Url, req: Request) FetchError!?Response {
     let dir = archiveDir("DWELLER_REPLAY") orelse return null
     if text.eql(target.scheme, "data") {
@@ -80,7 +80,7 @@ pub fn archiveRead(alloc: Allocator, target: *Url, req: Request) FetchError!?Res
         return FetchError.NotFound
     }
     defer alloc.free(bytes)
-    return try parseArchived(alloc, target, bytes)
+    return try parseArchived(alloc, target, req, bytes)
 }
 
 // A non-GET request (a beacon such as YouTube's POST log_event) whose body
@@ -130,7 +130,7 @@ fn fallback(alloc: Allocator, dir: []u8, target: *Url, req: Request) FetchError!
     }
     let bytes = std.fs.readFile(alloc, best.bytes()) catch |e| { return FetchError.ReadFailed }
     defer alloc.free(bytes)
-    return try parseArchived(alloc, target, bytes)
+    return try parseArchived(alloc, target, req, bytes)
 }
 
 // Whether `a` sorts after `b`, byte by byte.
@@ -160,7 +160,7 @@ fn recordsUrl(alloc: Allocator, path: []u8, url: []u8) AllocError!bool {
     return text.eql(buf[0..url.len], url) && buf[url.len] == '\n'
 }
 
-fn parseArchived(alloc: Allocator, target: *Url, bytes: []u8) FetchError!Response {
+fn parseArchived(alloc: Allocator, target: *Url, req: Request, bytes: []u8) FetchError!Response {
     var fields = [6][]u8{"", "", "", "", "", ""}
     var at: usize = 0
     for i in 0..fields.len {
@@ -171,7 +171,7 @@ fn parseArchived(alloc: Allocator, target: *Url, bytes: []u8) FetchError!Respons
     if !text.eql(fields[0], target.withoutFragment()) {
         return FetchError.ReadFailed
     }
-    let status = text.parseInt(fields[1]) catch |e| { return FetchError.ReadFailed }
+    let status = text.parseInt(archivedStatus(fields[1])) catch |e| { return FetchError.ReadFailed }
     if status == 0 {
         return archivedError(fields[5])
     }
@@ -181,8 +181,19 @@ fn parseArchived(alloc: Allocator, target: *Url, bytes: []u8) FetchError!Respons
     errdefer release(alloc, charset)
     let moved = try dup(alloc, fields[4])
     errdefer release(alloc, moved)
+    var headers = []mut u8{}
+    if archivedHeaderLength(fields[1]) |n| {
+        if n > bytes.len - at {
+            return FetchError.ReadFailed
+        }
+        headers = try dup(alloc, bytes[at..at + n])
+        at += n
+    } else {
+        headers = try permissiveCors(alloc, req, target)
+    }
+    errdefer release(alloc, headers)
     let body = try dup(alloc, bytes[at..])
-    return Response { mime: mime, charset: charset, body: body, status: status, url: moved, headers_raw: []mut u8{} }
+    return Response { mime: mime, charset: charset, body: body, status: status, url: moved, headers_raw: headers }
 }
 
 fn archivedError(why: []u8) FetchError {
@@ -221,14 +232,18 @@ fn saveArchive(alloc: Allocator, dir: []u8, target: *Url, req: Request, res: ?*R
     var charset: []u8 = ""
     var moved: []u8 = ""
     var body: []u8 = ""
+    var headers: []u8 = ""
     if res |r| {
         status = r.status
         mime = r.mime
         charset = r.charset
         moved = r.url
         body = r.body
+        headers = r.headers_raw
     }
     try header.appendInt(status)
+    try header.appendByte(' ')
+    try header.appendInt(headers.len as i64)
     try header.appendByte('\n')
     try header.append(mime)
     try header.appendByte('\n')
@@ -241,5 +256,6 @@ fn saveArchive(alloc: Allocator, dir: []u8, target: *Url, req: Request, res: ?*R
     let file = try std.fs.create(path)
     defer file.close()
     try file.write(header.bytes())
+    try file.write(headers)
     try file.write(body)
 }
