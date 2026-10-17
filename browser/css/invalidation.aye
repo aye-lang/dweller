@@ -47,6 +47,8 @@ let ALWAYS_DEEP = "lang dir disabled checked selected value type name form requi
 
 pub let CHILDREN_CHANGED = StyleChange { what: 0, token: false }
 pub let STATE_CHANGED = StyleChange { what: 1, token: false }
+pub let HOVER_CHANGED = StyleChange { what: 2, token: false }
+pub let ACTIVE_CHANGED = StyleChange { what: 3, token: false }
 
 /// A change to the attribute `name`.
 pub fn attrChange(name: []u8) StyleChange {
@@ -67,8 +69,8 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
     for b in name {
         h = (h ^ (b as u64)) *% 1099511628211
     }
-    if h < 2 {
-        h += 2
+    if h < 4 {
+        h += 4
     }
     return h
 }
@@ -80,9 +82,15 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
 // "class" and "[class]" (for the change of any class).
 fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
     match s.kind {
-        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Hover, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
+        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
         .Empty => {
             try out.append(CHILDREN_CHANGED.what)
+        }
+        .Hover => {
+            try out.append(HOVER_CHANGED.what)
+        }
+        .Active => {
+            try out.append(ACTIVE_CHANGED.what)
         }
         .Id => {
             try out.append(nameKey("", "id"))
@@ -193,9 +201,11 @@ pub struct RestyleDeps {
     // A selector looks at the `style` attribute: a change to it is not
     // one that only the element's own declarations see.
     style_attr: bool
+    hover: bool
+    active: bool
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, style_attr: false }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, style_attr: false, hover: false, active: false }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -230,6 +240,8 @@ pub struct RestyleDeps {
             try self.addDeep(q)
         }
         self.style_attr = looksAtStyle(author) || looksAtStyle(ua)
+        self.hover = looksAtKind(author, SelKind.Hover) || looksAtKind(ua, SelKind.Hover)
+        self.active = looksAtKind(author, SelKind.Active) || looksAtKind(ua, SelKind.Active)
         if quirks |q| {
             self.style_attr = self.style_attr || looksAtStyle(q)
         }
@@ -249,6 +261,10 @@ pub struct RestyleDeps {
             return true
         }
         return change.token && self.deep.contains(nameKey("", "[class]"))
+    }
+
+    pub fn reachesSiblings(self: *Self, change: StyleChange) bool {
+        return change.what < 2 || change.token || self.deep_any || (self.deep.get(change.what) orelse true)
     }
 
     fn addDeep(self: *mut Self, sheet: *Sheet) AllocError!void {
@@ -279,8 +295,9 @@ pub struct RestyleDeps {
                     if !(try simpleKeys(s, &mut keys)) {
                         self.deep_any = true
                     }
+                    let sibling = nesting > 0 || siblingAfter(sheet, cx, ci)
                     for key in keys.items() {
-                        try self.deep.put(key, true)
+                        try self.deep.put(key, sibling || (self.deep.get(key) orelse false))
                     }
                 }
                 if s.sub_end <= s.sub_start || s.kind == SelKind.Has {

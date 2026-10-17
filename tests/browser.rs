@@ -8720,3 +8720,69 @@ fn worker_module() {
 fn worker_transfer() {
     check_worker_page("transfer", false);
 }
+
+/// A pointer moving over 50 cards (P10.51e): `:hover` and `:active`
+/// restyle only the elements entering or leaving the chains, with the
+/// boxes kept; a page without `:hover` rules restyles nothing.
+#[test]
+fn window_hover_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for row in 0..5 {
+        for k in 0..10 {
+            events += &format!(" move:{},{} frame", 15 + k * 80, 22 + row * 46);
+        }
+    }
+    events += " click:15,22 frame release:15,22 frame";
+    for page in ["hover_local", "hover_none"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_LAYOUT_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .args([
+                &format!("browser/tests/ui/{page}.html"),
+                "--font",
+                "fixed",
+                "--width",
+                "800",
+                "--height",
+                "600",
+                "--frames",
+                "150",
+                "--events",
+                &events,
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("CHECK"), "{err}");
+        let recs: Vec<(&str, &str)> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| {
+                let f: Vec<&str> = r.split('\t').collect();
+                (f[0], *f.get(2).unwrap_or(&""))
+            })
+            .collect();
+        let restyled: Vec<usize> = recs
+            .iter()
+            .filter(|r| r.0 == "restyled_elements")
+            .map(|r| r.1.parse().unwrap())
+            .collect();
+        let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+        assert!(full <= 1, "{page}: {full} full layouts:\n{err}");
+        if page == "hover_none" {
+            assert!(restyled.is_empty(), "{page}: restyled {restyled:?}");
+            continue;
+        }
+        assert!(restyled.len() >= 30, "{page}: restyled {restyled:?}");
+        assert!(
+            restyled.iter().all(|&n| n <= 8),
+            "{page}: restyled {restyled:?}"
+        );
+    }
+}

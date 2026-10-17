@@ -1,0 +1,17 @@
+import perf
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn noteRestyled(alloc: Allocator, n: usize) AllocError!void {
+    let began = perf.start()
+
+    if began == 0 {
+        return
+    }
+
+    var label = text.Builder.init(alloc)
+    defer label.deinit()
+    try label.appendUint(n as u64)
+    perf.end("restyled_elements", began, label.bytes())
+}

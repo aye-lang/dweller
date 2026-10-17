@@ -63,6 +63,7 @@ pub enum SelKind {
     Scope
     Empty
     Hover
+    Active
     Link
     Checked
     Disabled
@@ -953,6 +954,9 @@ fn pseudoClass(name: []u8) ?SelKind {
     if text.eqlIgnoreCase(name, "hover") {
         return SelKind.Hover
     }
+    if text.eqlIgnoreCase(name, "active") {
+        return SelKind.Active
+    }
     if text.eqlIgnoreCase(name, "link") || text.eqlIgnoreCase(name, "any-link") {
         return SelKind.Link
     }
@@ -1006,7 +1010,7 @@ fn pseudoClass(name: []u8) ?SelKind {
     }
     // States the browser does not have yet, and the pseudo-elements of
     // CSS 2 written with one colon.
-    if text.eqlIgnoreCase(name, "visited") || text.eqlIgnoreCase(name, "active") || text.eqlIgnoreCase(name, "target") || isLegacyPseudoElement(name) {
+    if text.eqlIgnoreCase(name, "visited") || text.eqlIgnoreCase(name, "target") || isLegacyPseudoElement(name) {
         return SelKind.Never
     }
     if inWords(name, "target-within user-invalid user-valid indeterminate autofill -webkit-autofill modal popover-open fullscreen picture-in-picture playing paused open closed out-of-range local-link current past future blank -moz-focusring -moz-ui-invalid") {
@@ -1375,6 +1379,9 @@ fn matchSimple(sheet: *Sheet, doc: *Document, s: Simple, el: NodeId) bool {
         }
         .Hover => {
             return dom.isHovered(doc, el)
+        }
+        .Active => {
+            return dom.inChain(doc, doc.controls.active, el)
         }
         .Link => {
             return (text.eql(n.name, "a") || text.eql(n.name, "area")) && doc.attr(el, "href") != null

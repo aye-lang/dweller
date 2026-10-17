@@ -1,35 +1,14 @@
-import dom
 import dom.NodeId
 import std.mem.AllocError
 
 // spec: https://drafts.csswg.org/selectors-4/#the-hover-pseudo
 pub fn hoverAt(p: *mut Page, x: f64, y: f64) AllocError!void {
-    let s = p.script orelse return
-    let t = p.tree orelse return
-    let doc = &mut p.doc
-    var el = nodeAt(t, x, y)
+    var el: ?NodeId = null
 
-    if el |n| {
-        if doc.node(n).kind != dom.Kind.Element {
-            el = doc.parent(n)
-        }
+    if p.tree |t| {
+        el = pointedElement(&p.doc, t, x, y)
     }
 
-    let old = doc.controls.hover
-
-    if sameHover(old, el) {
-        return
-    }
-
-    doc.controls.hover = el
-    s.version += 1
-    s.style_version += 1
-    try noteHoverChange(s, topChanged(doc, old, el))
-    try noteHoverChange(s, topChanged(doc, el, old))
-}
-
-fn sameHover(a: ?NodeId, b: ?NodeId) bool {
-    let x = a orelse return b == null
-
-    return dom.isSame(b, x)
+    try hoverElement(p, el)
+    try hoverFrames(p, x, y)
 }

@@ -693,7 +693,9 @@ fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocErro
     if !(try restyleRoots(s, g, st, &mut roots, &mut shallow)) || !clearOfShadows(&p.doc, roots.items()) {
         return false
     }
-    g.restyled += try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), keep, g.styles)
+    let n = try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), keep, g.styles)
+    g.restyled += n
+    try noteRestyled(s.alloc, n)
     clearChanges(s)
     return true
 }
@@ -725,7 +727,7 @@ fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(Nod
             if showsAttr(g, c.at, 1) || showsAttr(g, c.at, 2) {
                 try dirty.append(c.at)
             }
-        } else {
+        } else if !css.isPointerState(c.what) {
             return false
         }
     }
@@ -811,6 +813,10 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
         }
         if dom.same(top, el) && !deps.isDeep(change.what) {
             try addRoot(out, shallow, &mut found, el, change.what.token || change.what.what != css.CHILDREN_CHANGED.what)
+            continue
+        }
+        if dom.same(top, el) && !deps.of_selector && !deps.reachesSiblings(change.what) {
+            try addRoot(out, shallow, &mut found, el, false)
             continue
         }
         var first: ?NodeId = top

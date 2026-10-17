@@ -1,0 +1,21 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteLeftChain(s: *mut Script, from: ?NodeId, to: ?NodeId, change: css.StyleChange) AllocError!void {
+    let doc = &s.page.doc
+    var cur = from
+
+    while cur |h| {
+        if dom.inChain(doc, to, h) {
+            return
+        }
+
+        if doc.node(h).kind == dom.Kind.Element {
+            try noteLayoutChange(s, h, change)
+        }
+
+        cur = doc.parent(h)
+    }
+}
