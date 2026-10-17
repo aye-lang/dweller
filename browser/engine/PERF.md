@@ -821,6 +821,82 @@ The p95 rises because the storm's tasks now spread over many iterations
 of about one budget each instead of a few long ones; the total work is
 the same. Input waits at most one budget plus a frame.
 
+### P4.41: the W7 and W8 report (2026-10-17)
+
+`window_perf.py report --replay` runs `scroll` (40 frames of 3 wheel
+notches) and `idle` (10 s from 5 s after the first frame) for every
+non-excluded site of `sites.json`, replayed from `target/sites/<name>`
+(`--archives DIR`) in a headless window (dummy driver), one site after the
+other. A row fails when the longest loop iteration is 100 ms or more, the
+scroll frame p95 is 33 ms or more, or the idle CPU is 5% or more (W7).
+`report --live --chrome` runs `scroll` live (first paint) and
+`agent-browser`'s paint entry of Chrome (`first-contentful-paint`;
+`first-paint` when the page has none) alternately 3 times; a row fails
+when the medians differ by more than 1000 ms (W8). Exit 1 when a row
+fails. Fast build of main (8069cf4), M2 Pro, 1024×768.
+
+W7 (replay), 2026-10-17:
+
+| Site | Longest loop ms | Scroll frame p50 / p95 ms | Idle CPU | W7 |
+|---|---:|---:|---:|---|
+| example | 5 | 0.0 / 0.0 | 0.6% | ok |
+| wikipedia-en | 255 | 6.2 / 16.6 | 0.7% | FAIL loop |
+| hn | 29 | 0.0 / 1.8 | 0.5% | ok |
+| github | 2395 | 2.4 / 1646.7 | 46.2% | FAIL loop, scroll, idle |
+| mdn | 150 | 3.2 / 7.8 | 1.0% | FAIL loop |
+| python-docs | 14 | 4.0 / 7.6 | 1.2% | ok |
+| rustdoc | 253 | 7.1 / 18.1 | 0.9% | FAIL loop |
+| bbc | 426 | 2.7 / 210.8 | 0.8% | FAIL loop, scroll |
+| cnn-lite | 4 | 1.3 / 1.6 | 0.9% | ok |
+| lobsters | 41 | 0.0 / 1.9 | 0.9% | ok |
+| go-docs | 99 | 3.3 / 10.0 | 0.9% | ok |
+| duckduckgo | 10 | 0.0 / 1.8 | 0.9% | ok |
+| google | 12 | 0.0 / 0.0 | 0.9% | ok |
+| wikipedia (ja) | 105 | 2.2 / 8.2 | 0.9% | FAIL loop |
+| abehiroshi | 7 | 0.0 / 0.0 | 0.8% | ok |
+| zol | 6918 | 409.7 / 6799.0 | 18.2% | FAIL loop, scroll, idle |
+| youtube | 346 | 0.1 / 259.4 | 5.3% | FAIL loop, scroll, idle |
+| youtube-search | 802 | 177.4 / 556.8 | 41.8% | FAIL loop, scroll, idle |
+| react | 102 | 0.0 / 19.2 | 0.9% | FAIL loop |
+| mistral | 2098 | 86.2 / 243.2 | 97.7% | FAIL loop, scroll, idle |
+
+9 of 20 pass. The other 11 fail on the loop (all 11), the scroll p95 (6:
+github, bbc, zol, youtube, youtube-search, mistral) or the idle CPU (5:
+github, zol, youtube, youtube-search, mistral). Not profiled here; the
+2026-10-15 table of this section named the cause of github (cascades and
+layout after each DOM change), mistral (an animation restyles the whole
+document every tick), bbc and youtube (long relayouts, synchronous
+requests). wikipedia-en, mdn, rustdoc, wikipedia (ja) and react miss only
+the loop limit (102–255 ms); their scroll p95 is under 33 ms.
+
+W8 (live, Dweller first paint against Chrome's first contentful paint,
+median of 3 alternating runs), 2026-10-17:
+
+| Site | Dweller ms | Chrome ms | Gap ms | W8 |
+|---|---:|---:|---:|---|
+| example | 200 | 356 | -156 | ok |
+| wikipedia-en | 724 | 720 | 4 | ok |
+| hn | 712 | 1104 | -392 | ok |
+| github | 462 | 1020 | -558 | ok |
+| mdn | 510 | 648 | -138 | ok |
+| python-docs | 621 | 952 | -331 | ok |
+| rustdoc | 1162 | 1120 | 42 | ok |
+| bbc | 465 | 416 | 49 | ok |
+| cnn-lite | 402 | 436 | -34 | ok |
+| lobsters | 923 | 1636 | -713 | ok |
+| go-docs | 536 | 832 | -296 | ok |
+| duckduckgo | 1169 | 924 | 245 | ok |
+| google | 408 | 476 | -68 | ok |
+| wikipedia (ja) | 1745 | 1592 | 153 | ok |
+| abehiroshi | 215 | 228 | -13 | ok (Chrome has no contentful paint on this page: its first-paint) |
+| zol | 3013 | 3032 | -19 | ok |
+| youtube | 491 | 660 | -169 | ok |
+| youtube-search | 857 | 964 | -107 | ok |
+| react | 656 | 764 | -108 | ok |
+| mistral | 662 | 576 | 86 | ok |
+
+20 of 20 pass.
+
 ## Validation
 
 - Release compiler build, `browser/build.sh` (fast) and

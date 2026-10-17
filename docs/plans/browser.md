@@ -115,14 +115,14 @@ the one place with more than one process.
   (P4.36a–c). Open: P4.37, P4.40–P4.42, P4.46–P4.48, P4.55b; backlog P4.54, P3.64
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
-  25% (P4.57's note).
+  25% (P4.57b's note).
 - **Login readiness.** P10.20–P10.23 and P9.7 done; then
   the user bundle P3.80.
 - **Sites.** `page_load.py check` passes on the recorded archives; W3 is
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
 - **Conformance (P10).** Not measured: `wpt.py`, `test262.py` and
   `conformance.py` do not exist yet (P10.1–P10.4 not started).
-- **P9.** P9.1–P9.4 done; P9.5 next.
+- **P9.** P9.1–P9.5, P9.7, P9.8 done; P9.6 next.
 - **P11.** P11.1–P11.5 and P11.16 done; P11.17's API done (its
   `wasm_sim_bench` and the wasm-bindgen glue check wait for P11.24's
   copy of the game); P11.6 next.
@@ -140,7 +140,7 @@ the one place with more than one process.
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing; M1 broken by the P4.80 flake |
 | 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | 17 of 26 window cards done (list above); P4.80, P4.42, P4.37, P4.46 next; the VM cards P4.63–P4.78 run as their own lane |
-| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.4 done, P9.5 next |
+| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.5, P9.7, P9.8 done, P9.6 next |
 | 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | P11.1–P11.5, P11.16 done, P11.17 partial; P11.6 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | harness P10.1–P10.4 not started; P10.20–P10.22 (login) done |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 8 of 20; P3.80 (the user bundle) is the acceptance |
@@ -178,9 +178,12 @@ names, never two browser test runs at once, build and test output to a
 log under `target/` read with `tail`/`grep`; the same verify failing
 twice in a row stops the step with a report. On the user's Mac (10
 cores, 32 GB, shared with daily use and a self-hosted Actions runner)
-every build and test runs under `nice -n 10` with `AYE_TEST_JOBS=3`
-and `cargo ... -j 4`, at most one local agent builds or tests at a
-time, and heavy cards go to cloud sessions (2026-10-17).
+every build and test runs as `scripts/capped.sh CMD` (one capped job
+at a time on the machine, the others wait; a load gate; nice 10 and a
+QoS clamp; 4 cargo jobs, 3 test workers; the tree killed above 12 GB
+and stopped under thermal pressure; a hook blocks uncapped `cargo` and
+`aye` builds and tests under `~/Documents/ayelang`), and heavy cards go
+to cloud sessions (2026-10-17).
 
 ### Phase A: green `main` and the rest of the loop (Layer 0, lane loop)
 
@@ -208,7 +211,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 |---|---|---|---|---|---|
 | B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
 | B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a, P4.40b, P4.40c, P4.40d done | – |
-| B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
+| B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | done | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
 | B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
 
@@ -243,7 +246,7 @@ Exit: R1–R7 of B9; Spaces by default.
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | open | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
+| E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | done 2026-10-17 | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
 | E2 | P9.6 | take over and hand back | E1 | open | – |
 | E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | done | – |
 | E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
@@ -531,6 +534,12 @@ them from coming back.
 - goal: mistral.ai idle under 25% CPU. Found in P4.56: its rAF animation changes the `width` of `.js-square` elements a pixel a frame (`moved` in the cascade every frame), and in ~70% of the frames `localChanges` fails on `version - g.version != layout_noted - g.noted` (a `layout_version` bump without a note: `image_api.aye` new bitmap, `dom_api.aye:106` or `engine.aye` web fonts / image changes), so the frame styles and lays out the whole document instead of `relayoutDirty`. Find the bump, keep such frames incremental, and measure what is left (the scripts' timers, `paint_build`).
 - status: done 2026-10-15 (the full layouts; idle CPU is not under 25% yet). The bump: `images.loadElementImage` dropped an element's mapping (`Images.map.remove`) before putting it again, so `Images.noteChange` saw every image as new, and each relayout of a page with images moved `Images.changes`; `engine.aye` then bumped `layout_version` unnoted ("new bitmaps") and the frame laid the whole document out again (on mistral.ai after the incremental one). Now `Images.drop`/`settle` count a change only when the element's image is not the one before, and the elements whose image did change are recorded (`Images.changed`, or `any_changed` for a style sheet's image or more than 256) and noted as changes to them (`geometry.noteImageChanges`, from the window's relayout and from `imageLoad`), as is an image attribute (`src`, `alt`, ...: `dom_api.changedAttr`); the only unnoted bumps left lay everything out on purpose (web fonts, sheet images). Then the squares climbed to `body` to be built again (a flex item or a grid item is not in block flow), and the boxes built again outgrew the `relayoutDirty` bound every few frames: `layout/incremental.aye` now builds and lays out again a block-level flex or grid container in block flow (`rebuildKind`, `blockLevelKind`), its items with it. `relayoutDirty` points the kept tree at the page's images (made after the first layout, a background image). New DWELLER_TIMING records `layout_full` and `layout_dirty` (script layouts of the whole document, of the changed boxes); `window_perf.py idle` counts them (`full_layouts`, `dirty_layouts`) and reads Linux `ps` times. Test `window_width_animation` (`browser/tests/ui/squares.html`: 6 `.js-square` divs in the flex cells of a grid, images, 500 paragraphs; 60 rAF frames, DWELLER_LAYOUT_CHECK): 0 full layouts after the first frame, one dirty relayout a frame (main: 60 full and 60 dirty); `DWELLER_LAYOUT_CHECK=1` on all window and layout fixture tests: no difference. mistral.ai `window_perf.py idle` (Xvfb, 4-CPU cloud box) main / this: full layouts per loop 1.01 / 0.02, loop 31.2 / 16.2 ms, `ui_relayout` 15.3 / 5.5 ms per loop, iterations in 10 s 417 / 700, idle CPU ~110 / 100% (the loop now runs at the frame rate). Left: per loop `restyle` 4.6 ms, the scripts' timers 3.3 ms, `ui_draw` 3.3 ms, `paint_build` 2.4 ms; a whole-document restyle every ~40 frames (`RESTYLE_ROUNDS`, which frees what restyles allocate).
 
+#### P4.57b: mistral.ai idle CPU, the rest
+- goal: mistral.ai shown and idle under 25% CPU (93.4% on the user's Mac after P4.57, P4.55b's measurement); Chrome's cost there is the reference (`window_perf.py` has no `--chrome`: not measured). Profile one idle second per phase and remove the largest cost Chrome does not pay, then the next.
+- blink: `third_party/blink/renderer/core/layout/layout_object.cc` (relayout boundaries), `core/frame/local_frame_view.cc`, `core/paint/paint_invalidator.cc`
+- verify: `window_perf.py idle https://mistral.ai` before/after with the per-phase split; `window_perf.py gate browser/tests/perf/budgets.json --binary target/dweller` exit 0; `cargo test --release --test browser -- window_ layout dump_fixtures screenshot_fixtures errors > target/p4.57b.log 2>&1; echo $?` → 0 with `DWELLER_DAMAGE_CHECK=1`
+- status: partly done 2026-10-16 (idle CPU is not under 25% yet). The largest cost: mistral.ai has shadow trees, and a document with shadow trees never shared its layout with the scripts' (`adoptLayout` was skipped), so every frame's `layoutPage` styled the whole document again (`restyleWithSizes`, 66 ms) and laid it out in full. Now the page's layout is shared with shadow trees too: a change whose restyle roots are clear of shadow trees (`clearOfShadows`, as `geometry.restyle` already required) styles only those subtrees, and `relayoutDirty` builds boxes again when the elements it rebuilds are clear of them (else the full layout as before). Linux, dummy driver, `window_perf.py idle` main / this: idle CPU 99.9 / 89.9% (ratio 0.90; the loop now runs 4.9x the frames: 71 / 346 iterations in 10 s), per loop 134 / 32 ms; per loop ms: `style_full` 65.8 / 2.4, `ui_relayout` 79.1 / 7.4, `paint_build` 6.2 / 2.6, `restyle` 6.2 / 5.0, `script_layout` 15.5 / 6.9, `ui_raf` (scripts) 92.0 / 20.6, `timers` 37.4 / 17.9, `ui_draw` 16.7 / 4.9; full layouts 95 / 22. `DWELLER_LAYOUT_CHECK=1 DWELLER_DAMAGE_CHECK=1` on live mistral.ai: no difference. Left: the page's own scripts (rAF and timers, ~38 ms a loop: the interpreter), the display list built whole after each dirty relayout (`paint_whole`, ~6 ms; Blink repaints only the invalidated boxes), the full restyle every `RESTYLE_ROUNDS` (13 in 10 s, 61 ms each); `window_webgl` not run here (ANGLE's archive did not download).
+
 #### P4.55: rAF and timers throttled when not seen
 - goal: as the HTML spec lets browsers do, a page nobody sees runs no animation frames: `requestAnimationFrame` callbacks wait while the window is minimized or hidden (`SDL_WINDOWEVENT_HIDDEN`/`MINIMIZED`, back on `SHOWN`/`RESTORED`) and in background tabs; timers of background tabs run, clamped to at least 1 s (today they do not run at all: the loop runs the shown tab's timers only); an offscreen iframe's rAF may wait too. A fully occluded window needs SDL3's `SDL_EVENT_WINDOW_OCCLUDED` or a Cocoa `occlusionState` query; note it if neither fits. Visible pages keep their frame rate (decision for P4.35).
 - files: `browser/engine/script.aye` (rAF timers flagged, held while the page is hidden), `browser/engine/prelude.aye` (`requestAnimationFrame`), `browser/ui/window.aye` (window events, the timers of other tabs), `browser/ui/tabs.aye`, `browser/ui/sdl.aye`
@@ -583,6 +592,7 @@ them from coming back.
 - goal: W7 and W8 are checked by one command. `window_perf.py report --replay` runs `scroll` and `idle` for every non-excluded site of `sites.json` with `DWELLER_REPLAY=target/sites/<name>`; `report --live --chrome` measures Dweller's first paint and Chrome's first contentful paint (through `agent-browser`, as in `PERF.md`), 3 alternating runs each. Both print a row per site with pass/fail and exit 1 when a row fails; the results go into `PERF.md` ("Window", a dated table).
 - files: `browser/tools/window_perf.py`, `browser/engine/PERF.md`
 - verify: `python3 browser/tools/window_perf.py report --replay > target/w7.log; tail -25 target/w7.log` prints 20 rows; the run is local (archives are untracked)
+- status: done 2026-10-17. `window_perf.py report --replay` (browser/tools/window_report.py; `--archives DIR`, default `target/sites`; `--site NAME` limits it) runs `scroll` and `idle` per non-excluded site and prints a row (longest loop, scroll p50/p95, idle CPU, W7 verdict); `report --live --chrome` prints Dweller's first paint, Chrome's paint entry (`agent-browser`; `first-paint` when a page has no contentful paint, as abehiroshi) and the gap, medians of 3 alternating runs, W8's 1.0 s. Both exit 1 on a failing row. Table in `PERF.md` "P4.41": W8 20 of 20 pass; W7 9 of 20 pass. Fail W7: wikipedia-en 255, mdn 150, rustdoc 253, wikipedia 105, react 102 ms (loop only); bbc (426 ms, scroll p95 211); github (2395 ms, p95 1647, idle 46%); zol (6918 ms, p95 6799, idle 18%); youtube (346 ms, p95 259, idle 5.3%); youtube-search (802 ms, p95 557, idle 42%); mistral (2098 ms, p95 243, idle 98%). Causes not profiled in this card (B4/B5 and the P4.x backlog).
 - time box: 60 min; model: sonnet
 
 #### P4.42: loop priorities and the threading model
@@ -1008,6 +1018,7 @@ in order.
 - test: an agent navigates its Space to a page whose body is `#00aa00`; the events click its chip; `--save` writes the window's frame, and the pixel at the centre of the page area is that green; `loop_max_ms` stays under 50.
 - verify: `cargo test --release --test browser window_spaces_watch > target/p9.5.log 2>&1; echo $?` → 0
 - time box: 90 min; model: opus (shared memory between processes)
+- status: done 2026-10-17. Choices recorded in `docs/agent-protocol.md` (Spaces: Watching, the control table and the frame file). A click on a chip shows its Space and still opens its menu (so `window_spaces_chips` and its golden are unchanged: Gamma, shown when stopped, goes back to "You" when it ends); Cmd+Shift+N shows the Nth chip from the left. The shown chip takes the grey "You" had (`ui/chip-bg.aye`). The frame is the Space's page area only (`ui.page`'s canvas, un-ringed), not its chrome, and the Space's page area takes the window's page area size (`SDL_SetWindowSize` with its own toolbar and tab strip added; equal from the start, so the test does not exercise a resize). The file is `DIR/frame` beside the Space's socket with two slots (`seq % 2`), grown and never shrunk by the Space (no SIGBUS for a window still mapped at the old size), mapped read-only by the window on each `frame` of the shown Space (`ui/map-frame-file.aye`; a failed `mmap` is detected through `memcpy` of the pointer, since Aye has no int-to-pointer cast); the window copies the slot into its canvas when it draws (`ui/draw-watched.aye`), and a shown Space makes every draw a whole one (`pageOverlays`). The Space writes after a draw, at most every 33 ms; a draw within that time leaves the frame due and the Space's wait shortened to it (`ui/send-frame.aye`, `spacesTimeout`). `spaces` now reports `watched`. Clicks in the page area of a shown Space do nothing. Test `window_spaces_watch` (centre pixel `0 170 0`, `loop_max_ms` under 50, `spaces` says `watched`). Left: the toolbar, address bar and tab strip still show the person's tab while a Space is shown; `scale` is sent but a headless Space draws at scale 1 (a HiDPI window shows the frame at half size, top left); keys and the wheel still go to the person's page while a Space is shown (P9.6 sends them to the Space); the Pause button and Cmd+Shift+P still pause every Space, not only the shown one; a crashed shown Space keeps its last frame until the person shows another.
 
 #### P9.6: take over and hand back
 - lane: browser
