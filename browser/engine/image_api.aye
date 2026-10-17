@@ -15,7 +15,7 @@ import std.math
 
 fn installImages(it: *mut Interp, ak: u32) JsError!void {
     try defMethod(it, ak, "imageLoad", 2, akImageLoad)
-    try defMethod(it, ak, "imageTask", 2, akImageTask)
+    try defMethod(it, ak, "imageTask", 3, akImageTask)
     try defMethod(it, ak, "imageReveal", 1, akImageReveal)
 }
 
@@ -46,9 +46,6 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
         return Value.Null
     }
     let cache = try scriptImages(p)
-    if lazyDeferred(cache, &p.doc, h) {
-        return js.boolVal(false)
-    }
     let base = try documentBase(cache.alloc, &p.doc, &p.url)
     defer base.deinit(cache.alloc)
     var waited: u32 = 0
@@ -61,6 +58,11 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
     if p != s.page {
         if p.styling |st| {
             media = st.media
+        }
+    }
+    if lazyDeferred(cache, &p.doc, h) {
+        if try deferredImage(it, cache, &p.doc, h, &base, media) |src| {
+            return src
         }
     }
     let loaded = try loadElementImage(cache, &p.doc, h, &base, media, ImageFetch.Background, waited)
@@ -103,10 +105,10 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
     return it.pop()
 }
 
-// imageTask(callback, load): queues the task of an image request, a task
-// that delays the document's load event. With a load (an id from
-// imageLoad), it runs once the load ended; the timer holds the load
-// until it runs or is cleared. The timer's id.
+// imageTask(callback, load, resumed): queues the task of an image request,
+// delaying the document's load event unless it resumed a lazy one. With a
+// load (an id from imageLoad), it runs once the load ended; the timer holds
+// the load until it runs or is cleared. The timer's id.
 fn akImageTask(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
     let cb = try js.callableArg(it, a, 0)
@@ -123,7 +125,7 @@ fn akImageTask(it: *mut Interp, a: Args) JsError!Value {
     tick(s)
     let id = s.next_timer
     s.next_timer += 1
-    try s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, delays_load: true })
+    try s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, delays_load: !it.toBoolean(it.arg(a, 2)) })
     s.seq += 1
     return js.numVal(id as f64)
 }

@@ -1576,6 +1576,39 @@ fn window_lazy_images() {
     }
 }
 
+/// A horizontal scroller of 30 lazy 200px images in a 400px window:
+/// the 9 within 1250px of its visible part load, and 9 more once a
+/// script scrolls it 2000px to the right.
+#[test]
+fn window_lazy_images_in_scroller() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = " frame".repeat(20);
+    let scroll = format!("loaded{frames} key:pagedown{frames}");
+    for (events, want) in [("loaded", 9), (scroll.as_str(), 18)] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/lazy_scroller.html", srv.base);
+        let out = run_window(&[
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+        ]);
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        let images: Vec<&str> = log.lines().filter(|l| l.contains(".png")).collect();
+        let once: std::collections::BTreeSet<&&str> = images.iter().collect();
+        assert_eq!((images.len(), once.len()), (want, want), "{events}\n{log}");
+    }
+}
+
 /// In the window the page lays out again when an image arrives: an
 /// observer sees the paragraph below it visible first and pushed out of
 /// the viewport after the image's load event.

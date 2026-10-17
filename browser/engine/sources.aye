@@ -115,9 +115,10 @@ fn fromSrcset(alloc: Allocator, doc: *Document, el: NodeId, media: css.Media) Al
         }
         let choice = ImageChoice { url: cand.url, density: density }
         if best |b| {
-            // The smallest density >= 1, else the largest.
-            let better = (density >= 1.0 && (b.density < 1.0 || density < b.density)) ||
-                (density < 1.0 && b.density < 1.0 && density > b.density)
+            // The smallest density >= the device pixel ratio, else the largest.
+            let dpr = css.devicePixelRatio()
+            let better = (density >= dpr && (b.density < dpr || density < b.density)) ||
+                (density < dpr && b.density < dpr && density > b.density)
             if better {
                 best = choice
             }
