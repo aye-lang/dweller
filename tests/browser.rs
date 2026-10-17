@@ -4241,6 +4241,20 @@ fn wpt_runner() {
     );
 }
 
+// P10.6: `test_driver.click`, `send_keys` and `action_sequence` become
+// events that `dweller wpt` feeds to the page.
+#[test]
+fn wpt_testdriver() {
+    let pass = |name: &str| format!(r#"{{"name":"{name}","status":"PASS","message":null}}"#);
+    let subtests = [pass("click"), pass("send_keys"), pass("action_sequence")].join(",");
+    expect(
+        &["wpt", "browser/tests/wpt/testdriver.html"],
+        0,
+        &format!("{{\"status\":\"OK\",\"message\":null,\"subtests\":[{subtests}]}}\n"),
+        "",
+    );
+}
+
 /// `browser/tools/wpt.py run` over the fixture directory (its own static
 /// server, the generated wrapper of `sum.any.js`): the results file has
 /// the status and subtest counts of each fixture.
@@ -4272,14 +4286,15 @@ fn wpt_py_serve() {
         "pass.html: 3/3 OK",
         "slow.html: 1/1 OK",
         "sum.any.js: 2/2 OK",
+        "testdriver.html: 3/3 OK",
         "timeout.html: 1/2 TIMEOUT",
-        ": 6 files (0 skipped), 9/11 subtests passed, score 81.8%",
+        ": 7 files (0 skipped), 12/14 subtests passed, score 85.7%",
     ] {
         assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
     }
     let json = std::fs::read_to_string(out.join("root.json")).expect("results file");
     assert!(
-        json.contains("\"passed\": 9") && json.contains("\"total\": 11"),
+        json.contains("\"passed\": 12") && json.contains("\"total\": 14"),
         "{json}"
     );
 }
