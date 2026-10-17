@@ -1,0 +1,57 @@
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-images-4/#gradients
+fn writeGradient(alloc: Allocator, c: Comp, computed: bool, out: *mut text.Builder) AllocError!bool {
+    var arena = Arena.init(alloc)
+    defer arena.deinit()
+
+    let g = (try readGradient(arena.allocator(), c)) orelse return false
+    var args = List(Comp).init(arena.allocator())
+
+    try splitComps(argsOf(c.toks), &mut args)
+
+    let all = args.items()
+    var stops: usize = 0
+    var split = InterpSplit { line: all[0..0], method: all[0..0] }
+
+    if colorValue(all[0]) == null && !isIdent(all[0], "currentcolor") {
+        while !isComma(all[stops]) {
+            stops += 1
+        }
+
+        split = splitInterpolation(all[0..stops]) orelse return false
+        stops += 1
+    }
+
+    try out.append(c.toks[0].text)
+    try out.appendByte('(')
+
+    let mark = out.len()
+
+    try writeGradientLine(g, split.line, computed, out)
+    try writeInterpolation(split.method, legacyStops(all[stops..]), out)
+
+    if out.len() > mark {
+        try out.append(", ")
+    }
+
+    for k, s in all[stops..] {
+        if isComma(s) {
+            try out.append(", ")
+        } else {
+            if k > 0 && !isComma(all[stops + k - 1]) {
+                try out.appendByte(' ')
+            }
+
+            try writeStopPart(s, computed, out)
+        }
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

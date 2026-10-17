@@ -1,0 +1,28 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn writeComputedGradient(c: Comp, out: *mut text.Builder) AllocError!bool {
+    var resolved = text.Builder.init(out.alloc)
+    defer resolved.deinit()
+
+    var args = List(Comp).init(out.alloc)
+    defer args.deinit()
+
+    try splitComps(argsOf(c.toks), &mut args)
+    try resolved.append(c.toks[0].text)
+    try resolved.appendByte('(')
+
+    if !(try writeComps(args.items(), &mut resolved)) {
+        return false
+    }
+
+    try resolved.appendByte(')')
+
+    var toks = List(Token).init(out.alloc)
+    defer toks.deinit()
+
+    try tokenize(out.alloc, resolved.bytes(), &mut toks)
+
+    return writeGradient(out.alloc, Comp { toks: toks.items() }, true, out)
+}

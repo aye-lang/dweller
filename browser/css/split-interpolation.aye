@@ -1,0 +1,38 @@
+// spec: https://drafts.csswg.org/css-color-4/#color-interpolation-method
+fn splitInterpolation(group: []Comp) ?InterpSplit {
+    var at = group.len
+
+    for k, c in group {
+        if isIdent(c, "in") {
+            at = k
+        }
+    }
+
+    if at == group.len {
+        return InterpSplit { line: group, method: group[0..0] }
+    }
+
+    var end = at + 2
+
+    if end > group.len || group[at + 1].toks[0].kind != Tok.Ident || inList(group[at + 1].toks[0].text, "srgb srgb-linear display-p3 a98-rgb prophoto-rgb rec2020 lab oklab xyz xyz-d50 xyz-d65 hsl hwb lch oklch") == null {
+        return null
+    }
+
+    if end + 1 < group.len && isIdent(group[end + 1], "hue") {
+        if inList(group[at + 1].toks[0].text, "hsl hwb lch oklch") == null || inList(group[end].toks[0].text, "shorter longer increasing decreasing") == null {
+            return null
+        }
+
+        end += 2
+    }
+
+    if at == 0 {
+        return InterpSplit { line: group[end..], method: group[at + 1..end] }
+    }
+
+    if end != group.len {
+        return null
+    }
+
+    return InterpSplit { line: group[..at], method: group[at + 1..end] }
+}

@@ -1,0 +1,34 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-4/#color-interpolation-method
+fn writeInterpolation(method: []Comp, legacy: bool, out: *mut text.Builder) AllocError!void {
+    if method.len == 0 {
+        return
+    }
+
+    var space = method[0].toks[0].text
+
+    if text.eqlIgnoreCase(space, "xyz") {
+        space = "xyz-d65"
+    }
+
+    let hue = method.len == 3 && !isIdent(method[1], "shorter")
+
+    if !hue && ((legacy && text.eqlIgnoreCase(space, "srgb")) || (!legacy && text.eqlIgnoreCase(space, "oklab"))) {
+        return
+    }
+
+    if out.bytes()[out.len() - 1] != '(' {
+        try out.appendByte(' ')
+    }
+
+    try out.append("in ")
+    try writeLowerIdent(space, out)
+
+    if hue {
+        try out.appendByte(' ')
+        try writeLowerIdent(method[1].toks[0].text, out)
+        try out.append(" hue")
+    }
+}
