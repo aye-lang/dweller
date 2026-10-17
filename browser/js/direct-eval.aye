@@ -13,44 +13,5 @@ fn directEval(it: *mut Interp, site: u32, top: usize, argc: usize) JsError!Value
         return v
     }
 
-    let b = try it.builder()
-    defer it.release(b)
-    try b.append(it.heap.bytes(strOf(v)))
-
-    let strict = it.script_strict
-    defer it.script_strict = strict
-    it.eval_site = it.ast.eval_sites.get(site) orelse NONE
-
-    let f = it.parseCode(b.bytes(), false, it.script_url, null) catch |e| {
-        it.eval_site = NONE
-
-        return e
-    }
-
-    it.eval_site = NONE
-
-    try it.push(it.completion)
-    let mark = it.stack.len() - 1
-    let savedBase = it.completion_base
-    defer it.completion_base = savedBase
-    it.completion = Value.Undefined
-    it.completion_base = it.frames.len() + 1
-    try it.push(try it.makeClosure(f))
-    try it.push(Value.Undefined)
-
-    var r = it.callAt(mark + 1, 0) catch |e| {
-        it.completion = it.stack.items()[mark]
-        it.truncate(mark)
-
-        return e
-    }
-
-    if !try vmCompiles(it, f) {
-        r = it.completion
-    }
-
-    it.completion = it.stack.items()[mark]
-    it.truncate(mark)
-
-    return r
+    return runEval(it, v, it.ast.eval_sites.get(site) orelse NONE)
 }
