@@ -1,0 +1,14 @@
+// v8: src/interpreter/bytecode-register-optimizer.cc (a Ldar/Star pair becomes a Mov)
+fn vmVisitToReg(c: *mut Compiler, id: u32, r: i32) CompileError!void {
+    let src = try vmLocalReg(c, id)
+
+    if src == VM_CONTEXT {
+        try c.visit(id)
+
+        return c.b.op1(BC_STAR, r as i64)
+    }
+
+    c.b.expressionPos(c.ast.spans.items()[id].start as i64)
+
+    return c.b.op2(BC_MOV, src as i64, r as i64)
+}

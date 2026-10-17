@@ -39,6 +39,8 @@ pub struct VmState {
     ninsns: u64
     ncalls: u64
     nwalked: u64 = 0
+    pairs: ?[]mut u64 = null
+    lastOp: u8 = 0
     // The callers of the frames pushed by the dispatch loop itself
     // (JS-to-JS calls without C recursion), innermost last.
     saved: List(VmSaved)
@@ -80,7 +82,7 @@ pub fn vmInit(it: *mut Interp) {
     }
     var stats = false
     if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
-        stats = p[0] == '1'
+        stats = p[0] == '1' || p[0] == 'p'
     }
     let stub = it.alloc.alloc(IcStub { atom: NONE, store: false, c: emptyIcEntry().cases[0] }, IC_STUB_SIZE) catch |e| {
         return
@@ -90,6 +92,7 @@ pub fn vmInit(it: *mut Interp) {
         return
     }
     it.vm = st
+    vmInitPairs(it, st)
 }
 
 /// Prints the statistics (DWELLER_JS_VM_STATS=1) and frees the code.
@@ -107,6 +110,11 @@ pub fn vmDeinit(it: *mut Interp) {
         st.funcs.deinit()
         st.saved.deinit()
         it.alloc.free(st.stub)
+
+        if st.pairs |ps| {
+            it.alloc.free(ps)
+        }
+
         it.alloc.destroy(st)
         it.vm = null
     }
@@ -175,6 +183,7 @@ fn vmPrintStats(it: *Interp, st: *mut VmState) AllocError!void {
         try b.appendByte('\n')
     }
     try vmPrintIcStats(it, st, &mut b)
+    try vmPrintPairs(st, &mut b)
     std.fs.stderr().write(b.bytes()) catch |e| {}
 }
 
@@ -531,9 +540,6 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
     }
 
     while true {
-        if count {
-            st.ninsns += 1
-        }
         var op = bytes[pc]
         var w: u8 = 1
         if op <= 1 {
@@ -546,6 +552,12 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             op = bytes[pc]
         }
         pc += 1
+
+        if count {
+            st.ninsns += 1
+            vmCountPair(st, op)
+        }
+
         match op {
             2 => {
                 // LdaZero
@@ -1963,6 +1975,34 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 regs[fp] = acc
                 acc = try vmToName(it, acc)
                 regs = it.stack.items()
+            }
+            134 => {
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += 2 * w as usize
+                match regs[at] {
+                    .Num { n } => {
+                        acc = Value.Num { n: n + 1.0 }
+                    }
+                    _ => {
+                        acc = try vmSlowIncrement(it, fp, regs[at], true)
+                        regs = it.stack.items()
+                    }
+                }
+                regs[at] = acc
+            }
+            135 => {
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += 2 * w as usize
+                match regs[at] {
+                    .Num { n } => {
+                        acc = Value.Num { n: n - 1.0 }
+                    }
+                    _ => {
+                        acc = try vmSlowIncrement(it, fp, regs[at], false)
+                        regs = it.stack.items()
+                    }
+                }
+                regs[at] = acc
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)

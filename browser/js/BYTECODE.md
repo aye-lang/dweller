@@ -312,6 +312,20 @@ slot by key (`vmGlobalSlot`), which holds in dictionary mode too (the
 global is one after any deletion). Named property sites still use the
 per-node `PropCache`; feedback-vector slots are left for a later card.
 
+As built (P4.77): `DWELLER_JS_VM_STATS=pairs` counts executed
+instruction pairs. The builder keeps which register the accumulator
+equals and drops a `Ldar r` or `Star r` that would not change it; the
+knowledge ends at every jump target, case and handler (V8
+`bytecode-register-optimizer.cc`, its equivalence part only; deferred
+register writes are not ported). A postfix count in an effect context
+compiles as prefix, a local call argument or receiver is a `Mov`, and
+`IncReg r, [s]` / `DecReg r, [s]` fuse `Ldar r; Inc; Star r`. Tried and
+dropped: a second stats branch in the dispatch loop and an `IncReg` whose
+number path returned through a `JsError!Value` call (both slower with
+fewer instructions). Left: deferred `Star` (needs per-opcode accumulator
+and register-list reads in `BC_INFO`), compare-and-jump, `GetNamedProperty`
+from the accumulator, three-address operators, the 22-site pairs.
+
 A compiled function (`BytecodeArray`, kept beside the AST's `FuncInfo`,
 not on the JS heap) has: the code bytes, a constant pool (numbers,
 atoms, function ids, literal templates; no heap values), the register
