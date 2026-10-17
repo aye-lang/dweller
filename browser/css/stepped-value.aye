@@ -1,0 +1,34 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#round-func
+fn steppedValue(name: []u8, kind: u8, args: []Quantity) ?Quantity {
+    let one_arg = text.eqlIgnoreCase(name, "abs") || text.eqlIgnoreCase(name, "sign")
+    let step_optional = text.eqlIgnoreCase(name, "round") && args.len == 1 && args[0].number
+
+    if args.len == 0 || args.len > 2 || (one_arg != (args.len == 1) && !step_optional) {
+        return null
+    }
+
+    var b = args[args.len - 1]
+
+    if step_optional {
+        b = numberQ(1.0)
+    }
+
+    let s = scalarsOf(args[0], b) orelse return null
+
+    if text.eqlIgnoreCase(name, "sign") {
+        return numberQ(math.sign(s.a))
+    }
+
+    if text.eqlIgnoreCase(name, "abs") {
+        return quantityOf(s.unit, math.abs(s.a) + 0.0)
+    }
+
+    if text.eqlIgnoreCase(name, "round") {
+        return quantityOf(s.unit, roundToStep(kind, s.a, s.b))
+    }
+
+    return quantityOf(s.unit, modulo(s.a, s.b, text.eqlIgnoreCase(name, "mod")))
+}
