@@ -4,6 +4,7 @@ import statistics
 import subprocess
 import sys
 
+import fast_build
 from window_perf import iterations, pct, records, total
 
 TESTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests")
@@ -89,7 +90,7 @@ def verdict(metric, value, budget):
     return "ok"
 
 
-def table(results, budgets):
+def table(results, budgets, timed):
     print(f"{'page':<12} {'metric':<16} {'value':>10} {'budget':>10}  verdict")
     bad = 0
     low = 0
@@ -100,7 +101,7 @@ def table(results, budgets):
             bad += mark in ("OVER", "new")
             low += mark == "LOWER"
             print(f"{page:<12} {k:<16} {v:>10} {'-' if b is None else b:>10}  {mark}")
-        for k, v in times.items():
+        for k, v in times.items() if timed else ():
             print(f"{page:<12} {k:<16} {v:>10} {'-':>10}  info")
     if low:
         print(f"{low} metric(s) could be lowered with `gate --update`")
@@ -124,7 +125,7 @@ def gate(a):
         results = {page: median_of(page, a.binary, port) for page in budgets}
     finally:
         server.terminate()
-    bad = table(results, budgets)
+    bad = table(results, budgets, fast_build.is_fast(a.binary) or a.allow_debug)
     if a.update:
         json.dump(lowered(results, budgets), open(a.url, "w"), indent=2)
         open(a.url, "a").write("\n")

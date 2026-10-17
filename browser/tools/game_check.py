@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 
+import fast_build
 from window_env import window_env
 
 CAUSES = [
@@ -167,12 +168,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("game")
     ap.add_argument("--binary", default="target/dweller")
+    ap.add_argument("--allow-debug", action="store_true", help="time a binary that browser/build.sh did not build")
     ap.add_argument("--out", default="target/game")
     ap.add_argument("--seconds", type=float, default=10)
     ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
     a = ap.parse_args()
     if not os.path.exists(a.binary):
         sys.exit(f"no binary {a.binary} (browser/build.sh)")
+    fast_build.require(a.binary, a.allow_debug)
     root = dist_dir(a.game)
     os.makedirs(a.out, exist_ok=True)
     srv, base = serve(root)

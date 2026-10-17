@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn mouseWord(tmp: Allocator, ev: *SDL_Event) AllocError![]u8 {
+    let be = &ev.button
+    var b = text.Builder.init(tmp)
+
+    try b.append("click:")
+    try b.appendInt(be.x as i64)
+    try b.appendByte(',')
+    try b.appendInt(be.y as i64)
+
+    if be.button == SDL_BUTTON_RIGHT {
+        try b.append(",right")
+    } else if be.button == SDL_BUTTON_MIDDLE {
+        try b.append(",middle")
+    }
+
+    return b.bytes()
+}

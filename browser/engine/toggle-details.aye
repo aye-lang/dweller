@@ -1,0 +1,18 @@
+import dom
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/interactive-elements.html#details-notification-task-steps
+pub fn toggleDetails(page: *mut Page, details: dom.NodeId) AllocError!Activation {
+    let doc = &mut page.doc
+
+    if doc.attr(details, "open") != null {
+        removeAttr(doc, details, "open")
+    } else {
+        try doc.setAttr(details, "open", "")
+    }
+
+    page.mutations += 1
+    try dispatchEvent(page, details, "toggle", "")
+
+    return Activation.Changed
+}

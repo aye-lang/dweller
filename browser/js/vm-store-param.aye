@@ -1,4 +1,4 @@
-// v8: src/interpreter/bytecode-generator.cc (BuildParameterInitialization)
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
 
 fn vmStoreParam(c: *mut Compiler, p: u32, r: i32) CompileError!void {
     var target = p
@@ -9,13 +9,7 @@ fn vmStoreParam(c: *mut Compiler, p: u32, r: i32) CompileError!void {
         _ => {}
     }
 
-    match c.ast.node(target) {
-        .Ident { slot, .. } => {
-            return vmStoreBinding(c, r, 0, slot)
-        }
+    let id = vmIdent(c, target)
 
-        _ => {}
-    }
-
-    return c.fail("unsupported: parameter pattern")
+    try vmStoreBinding(c, r, id.depth, id.slot)
 }

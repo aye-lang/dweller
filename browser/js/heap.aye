@@ -140,6 +140,7 @@ pub struct Obj {
     // loosely equal to null and undefined.
     htmldda: bool
     used_as_proto: bool
+    own_keys_made: bool
 }
 
 /// The hash index of a Map's or Set's keys. A slot is 0 (empty),
@@ -165,6 +166,8 @@ pub struct StrCell {
     rope_len: usize
     len16: u32
     ascii: bool
+    cursor_unit: u32
+    cursor_byte: usize
     // The atom with these bytes, once interned (NONE before).
     atom: u32
     // `bytes` belong to the cell (freed with it).
@@ -295,6 +298,7 @@ pub struct Heap {
             live: true,
             htmldda: false,
             used_as_proto: false,
+            own_keys_made: false,
         }
         if self.free_objs.pop() |i| {
             self.objs.items()[i] = o
@@ -489,6 +493,8 @@ pub struct Heap {
             rope_len: self.byteLen(a) + self.byteLen(b),
             len16: ca.len16 + cb.len16,
             ascii: ca.ascii && cb.ascii,
+            cursor_unit: 0,
+            cursor_byte: 0,
             atom: NONE,
             owned: false,
             perm: false,
@@ -576,6 +582,8 @@ pub struct Heap {
             rope_len: 0,
             len16: units,
             ascii: ascii,
+            cursor_unit: 0,
+            cursor_byte: 0,
             atom: NONE,
             owned: owned,
             perm: perm,

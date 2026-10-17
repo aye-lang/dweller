@@ -253,6 +253,7 @@ pub struct Interp {
     jobs_head: usize
     // Tagged template call sites (node) to the root of their strings.
     tagged: IntMap(u32, u32)
+    field_keys: IntMap(u64, u32)
     // The arrays being joined (Array.prototype.join of a cycle).
     joining: List(u32)
     // Weak collections (weak.aye): their prototypes, the entries of
@@ -394,6 +395,7 @@ pub struct Interp {
             jobs: List(Value).init(alloc),
             jobs_head: 0,
             tagged: IntMap(u32, u32).init(alloc),
+            field_keys: IntMap(u64, u32).init(alloc),
             joining: List(u32).init(alloc),
             weakmap_proto: NONE,
             weakset_proto: NONE,
@@ -418,6 +420,7 @@ pub struct Interp {
         self.co_saved.deinit()
         self.jobs.deinit()
         self.tagged.deinit()
+        self.field_keys.deinit()
         self.joining.deinit()
         self.weak_entries.deinit()
         self.weak_refs.deinit()
@@ -990,7 +993,7 @@ pub struct Interp {
             let a = try self.intern(b)
             return self.atomValue(a)
         }
-        let u = unitAt(bytes, idx)
+        let u = codeUnit(self, s, idx)
         let b = try self.builder()
         defer self.release(b)
         try appendWtf8(b, u)
@@ -1076,7 +1079,7 @@ pub struct Interp {
                 }
                 return p.value
             }
-            if cls == Class.Function && (key == A_NAME || key == A_LENGTH) {
+            if cls == Class.Function && (key == A_NAME || key == A_LENGTH) && !self.heap.obj(cur).own_keys_made {
                 return self.functionNameOrLength(cur, key)
             }
             cur = self.heap.obj(cur).proto
@@ -1320,19 +1323,22 @@ pub struct Interp {
             }
         }
         if self.heap.obj(o).frozen {
-            return
+            return failSet(self, key)
         }
+        try ownFunctionKeys(self, o)
         if self.heap.findProp(o, key) |i| {
             let p = self.heap.obj(o).props[i]
             if (p.flags & F_ACCESSOR) != 0 {
-                if !isNullish(p.setter) {
-                    try self.call1(p.setter, receiver, value)
+                if isNullish(p.setter) {
+                    return failSet(self, key)
                 }
+                try self.call1(p.setter, receiver, value)
                 return
             }
-            if (p.flags & F_WRITE) != 0 {
-                self.heap.obj(o).props[i].value = value
+            if (p.flags & F_WRITE) == 0 {
+                return failSet(self, key)
             }
+            self.heap.obj(o).props[i].value = value
             return
         }
         // A setter or a read-only property up the chain?
@@ -1349,20 +1355,21 @@ pub struct Interp {
             if self.heap.findProp(cur, key) |i| {
                 let p = self.heap.obj(cur).props[i]
                 if (p.flags & F_ACCESSOR) != 0 {
-                    if !isNullish(p.setter) {
-                        try self.call1(p.setter, receiver, value)
+                    if isNullish(p.setter) {
+                        return failSet(self, key)
                     }
+                    try self.call1(p.setter, receiver, value)
                     return
                 }
                 if (p.flags & F_WRITE) == 0 {
-                    return
+                    return failSet(self, key)
                 }
                 break
             }
             cur = self.heap.obj(cur).proto
         }
         if !self.heap.obj(o).extensible {
-            return
+            return failSet(self, key)
         }
         return self.heap.addProp(o, key, value, Value.Undefined, F_DEFAULT)
     }
@@ -1412,6 +1419,9 @@ pub struct Interp {
             let t = proxyTarget(self, o)
             return t != NONE && self.hasOwn(t, key)
         }
+        if self.heap.obj(o).class == Class.Function && !self.heap.obj(o).own_keys_made && (key == A_NAME || key == A_LENGTH) {
+            return true
+        }
         if self.heap.obj(o).class == Class.Host && self.namedHost(o) && self.host.?.hasNamed(self, o, key) {
             return true
         }
@@ -1456,6 +1466,7 @@ pub struct Interp {
 
     /// delete v[key]; false when the property cannot be deleted.
     pub fn deleteProp(self: *mut Self, o: u32, key: u32) JsError!bool {
+        try ownFunctionKeys(self, o)
         let ob = self.heap.obj(o)
         if ob.class == Class.Proxy {
             return proxyDelete(self, o, key)
@@ -1498,6 +1509,7 @@ pub struct Interp {
         if cls == Class.Proxy {
             return proxyOwnKeys(self, o, out, all, false)
         }
+        try ownFunctionKeys(self, o)
         if cls == Class.TypedArray {
             let n = typedLen(self, o)
             for i in 0..n {
@@ -2513,19 +2525,13 @@ pub struct Interp {
         }
         let ci = self.ast.classes.items()[fi.class_id]
         for k in 0..ci.n {
-            match self.ast.node(self.ast.item(ci.members, k)) {
+            let elem = self.ast.item(ci.members, k)
+            match self.ast.node(elem) {
                 .ClassElem { kind, is_static, key, computed, value } => {
                     if kind == PROP_FIELD && !is_static {
                         var atom = key
                         if computed {
-                            let saved = self.env
-                            self.env = env
-                            let kv = self.eval(key) catch |e| {
-                                self.env = saved
-                                return e
-                            }
-                            self.env = saved
-                            atom = try self.toKey(kv)
+                            atom = self.field_keys.get(classFieldSlot(ctor, elem)) orelse key
                         }
                         let v = try self.runField(value, env, objVal(thisObj), self.homeOf(ctor))
                         try self.defineOwn(thisObj, atom, v, self.fieldFlags(atom))

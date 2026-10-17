@@ -594,6 +594,10 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                         acc = try it.atomValue(id)
                         regs = it.stack.items()
                     }
+                    .Big { atom } => {
+                        acc = try bigLiteral(it, it.heap.atoms.name(atom))
+                        regs = it.stack.items()
+                    }
                     _ => unreachable
                 }
             }
@@ -1954,6 +1958,16 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmModuleRuntime(it, id, at)
+                regs = it.stack.items()
+            }
+            132 => {
+                // v8: src/interpreter/bytecode-generator.cc (ThrowConstAssignError)
+                _ = try it.typeError("Assignment to constant variable.")
+            }
+            133 => {
+                // v8: src/interpreter/interpreter-generator.cc (ToName)
+                regs[fp] = acc
+                acc = try vmToName(it, acc)
                 regs = it.stack.items()
             }
             _ => {
