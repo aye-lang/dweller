@@ -762,6 +762,44 @@ fn webgl2_rest() {
     assert_eq!(got, want, "differs from {}", golden.display());
 }
 
+/// P11.13: `browser/tests/webgl/extensions.html` on SwiftShader prints
+/// `extensions.txt`: the supported list, the objects three.js probes,
+/// rendering to an RGBA16F framebuffer, anisotropy set and read back, a
+/// compressed texture uploaded and sampled, and `getExtension('NOPE')`.
+#[test]
+fn webgl_extensions() {
+    let out = dweller_command()
+        .current_dir(root())
+        .args([
+            "dump",
+            "--text",
+            "--js",
+            "browser/tests/webgl/extensions.html",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let got = text(&out.stdout);
+    if !angle_present() {
+        assert!(got.contains("webgl2 null"), "{got}");
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let golden = root().join("browser/tests/webgl/extensions.txt");
+    if std::env::var_os("DWELLER_BLESS").is_some() {
+        std::fs::write(&golden, &got).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(got, want, "differs from {}", golden.display());
+}
+
 /// P11.6b: `dump --text --js` of `browser/tests/webgl/imagebitmap.html`
 /// on SwiftShader, served over HTTP (the page fetches a PNG), prints
 /// `imagebitmap.txt`: createImageBitmap from a Blob, an ImageData and the
