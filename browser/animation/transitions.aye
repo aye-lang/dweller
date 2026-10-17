@@ -16,10 +16,15 @@ pub struct Transitions {
         var entries = self.before.iterator()
 
         while entries.next() |e| {
-            self.alloc.free(e.value.values)
+            freeValues(self.alloc, e.value.values)
         }
 
         self.before.deinit()
+
+        while self.running.len() > 0 {
+            dropAt(self, 0)
+        }
+
         self.running.deinit()
         self.events.deinit()
     }

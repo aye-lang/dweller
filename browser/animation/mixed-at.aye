@@ -1,0 +1,14 @@
+import css
+import std.mem.AllocError
+import std.text
+
+fn mixedAt(t: *Transitions, r: Transition, now: f64) AllocError!css.Value {
+    var out = text.Builder.init(t.alloc)
+    defer out.deinit()
+
+    if try mixValues(r.prop, r.from, r.to, progressAt(r, now), &mut out) {
+        return ownValue(t.alloc, css.Value.Keyword { k: out.bytes() })
+    }
+
+    return ownValue(t.alloc, valueAt(r, now))
+}

@@ -23,16 +23,11 @@ pub fn styleChange(t: *mut Transitions, el: NodeId, after: []css.Value, now: f64
     snap.wanted = transitionsWanted(after)
 
     for p in 0..css.NPROPS {
-        snap.values[p] = interpolable(after[p])
+        freeValue(t.alloc, snap.values[p])
+        snap.values[p] = try interpolable(t.alloc, p, after[p])
     }
 }
 
 fn isDisplayNone(after: []css.Value) bool {
     return text.eql(keywordOf(after[css.DISPLAY]), "none")
-}
-
-fn interpolable(v: css.Value) css.Value {
-    let parts = partsOf(v) orelse return css.Value.Initial
-
-    return valueOfParts(parts)
 }

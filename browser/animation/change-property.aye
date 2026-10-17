@@ -14,21 +14,28 @@ fn changeProperty(t: *mut Transitions, el: NodeId, p: usize, before: css.Value, 
         return
     }
 
-    let from = valueAt(r, now)
+    let from = try mixedAt(t, r, now)
+    defer freeValue(t.alloc, from)
+
+    let old_to = try ownValue(t.alloc, r.to)
+    defer freeValue(t.alloc, old_to)
+
+    let reversing = sameValue(r.reversing_start, to)
     let progress = progressAt(r, now)
+    let shortening = r.shortening
 
     try cancelAt(t, k, now)
 
     let i = m orelse return
 
-    if sameValue(from, to) || interpolate(from, to, 0.0) == null {
+    if sameValue(from, to) || !try canInterpolate(t, p, from, to) {
         return
     }
 
-    if sameValue(r.reversing_start, to) {
-        let factor = math.min(math.max(progress * r.shortening + 1.0 - r.shortening, 0.0), 1.0)
+    if reversing {
+        let factor = math.min(math.max(progress * shortening + 1.0 - shortening, 0.0), 1.0)
 
-        return startTransition(t, el, p, from, to, r.to, factor, after, i, now)
+        return startTransition(t, el, p, from, to, old_to, factor, after, i, now)
     }
 
     try startTransition(t, el, p, from, to, from, 1.0, after, i, now)

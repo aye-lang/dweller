@@ -1,0 +1,19 @@
+import css
+import std.mem
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn ownValue(alloc: Allocator, v: css.Value) AllocError!css.Value {
+    return match v {
+        .Keyword { k } => css.Value.Keyword { k: try ownText(alloc, k) }
+        _ => v
+    }
+}
+
+fn ownText(alloc: Allocator, s: []u8) AllocError![]u8 {
+    let out = try alloc.alloc(0 as u8, s.len)
+
+    mem.copy(out, s)
+
+    return out
+}

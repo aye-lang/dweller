@@ -1,0 +1,34 @@
+import css
+import std.text
+
+fn identityArg(p: usize, name: []u8, arg: usize, angle: bool) ?[]u8 {
+    if p == css.SCALE || text.startsWith(name, "scale") {
+        return "1"
+    }
+
+    if p == css.ROTATE || text.eql(name, "rotate3d") {
+        if angle {
+            return "0"
+        }
+
+        return null
+    }
+
+    if text.eql(name, "matrix") {
+        return unitAt(arg == 0 || arg == 3)
+    }
+
+    if text.eql(name, "matrix3d") {
+        return unitAt(arg % 5 == 0)
+    }
+
+    return "0"
+}
+
+fn unitAt(one: bool) []u8 {
+    if one {
+        return "1"
+    }
+
+    return "0"
+}
