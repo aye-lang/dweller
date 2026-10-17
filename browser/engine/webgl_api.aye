@@ -44,6 +44,11 @@ fn installWebGL(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "webglQuery", 4, akWebglQuery)
     try defMethod(it, o, "webglTex3D", 3, akWebglTex3D)
     try defMethod(it, o, "webglReadFormat", 8, akWebglReadFormat)
+    try defMethod(it, o, "webglRest", 11, akWebglRest)
+    try defMethod(it, o, "webglRestView", 8, akWebglRestView)
+    try defMethod(it, o, "webglFeedbackVarying", 3, akWebglFeedbackVarying)
+    try defMethod(it, o, "webglTexParameter", 3, akWebglTexParameter)
+    try defMethod(it, o, "webglCompressed", 14, akWebglCompressed)
 }
 
 fn webglOf(it: *mut Interp, v: Value) JsError!*mut gpu.Context {
@@ -461,24 +466,7 @@ fn akWebglQuery(it: *mut Interp, a: Args) JsError!Value {
     if op == 1 {
         return js.numVal(gl.glGetUniformBlockIndex(try argU32(it, a, 2), name.ptr) as f64)
     }
-    let want = name[0..name.len - 1]
-    gl.glRequestExtensionANGLE(name.ptr)
-    let all = gpu.cstr(gl.glGetString(0x1f03))
-    var i: usize = 0
-    while i + want.len <= all.len {
-        var same = true
-        for k in 0..want.len {
-            if all[i + k] != want[k] {
-                same = false
-            }
-        }
-        let end = i + want.len
-        if same && (end == all.len || all[end] == ' ') && (i == 0 || all[i - 1] == ' ') {
-            return js.boolVal(true)
-        }
-        i += 1
-    }
-    return js.boolVal(false)
+    return js.boolVal(enableExtension(gl, name))
 }
 
 // webglReadFormat(canvas, x, y, w, h, format, type, view): readPixels of
