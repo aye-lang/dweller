@@ -1,0 +1,28 @@
+import std
+
+var taken_buf = @zeroed([80]u8)
+
+fn takenMessage(tab: u32) []u8 {
+    let head = "the user took over tab "
+    let tail = " (wait for handed_back)"
+
+    var digits = @zeroed([10]u8)
+    var n: usize = 0
+    var rest = tab
+
+    while rest > 0 || n == 0 {
+        digits[n] = '0' + (rest % 10) as u8
+        rest = rest / 10
+        n += 1
+    }
+
+    std.mem.copy(taken_buf[0..head.len], head)
+
+    for i in 0..n {
+        taken_buf[head.len + i] = digits[n - 1 - i]
+    }
+
+    std.mem.copy(taken_buf[head.len + n..head.len + n + tail.len], tail)
+
+    return taken_buf[0..head.len + n + tail.len]
+}

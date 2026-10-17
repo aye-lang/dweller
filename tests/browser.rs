@@ -3050,14 +3050,18 @@ fn window_spaces() {
     );
 }
 
-// `waited 512 ms` as `waited N ms`: a `wait` in real time takes a
-// little longer each run.
+// `waited 512 ms` as `waited N ms` (and `timed out after 512 ms`): a
+// `wait` in real time takes a little longer each run.
 fn waited_n(s: &str) -> String {
+    numbered(&numbered(s, "waited "), "timed out after ")
+}
+
+fn numbered(s: &str, marker: &str) -> String {
     let mut out = String::new();
     let mut rest = s;
-    while let Some(at) = rest.find("waited ") {
-        out.push_str(&rest[..at + 7]);
-        rest = &rest[at + 7..];
+    while let Some(at) = rest.find(marker) {
+        out.push_str(&rest[..at + marker.len()]);
+        rest = &rest[at + marker.len()..];
         let digits = rest.bytes().take_while(|b| b.is_ascii_digit()).count();
         if digits > 0 && rest[digits..].starts_with(" ms") {
             out.push('N');
@@ -3774,6 +3778,58 @@ fn window_spaces_chips() {
             png.display()
         );
     }
+}
+
+/// P9.6: the person shows Alpha (its chip) and clicks in its page: its
+/// tab is taken over (`taken_over`; its acting commands fail), Beta goes
+/// on; handing back (`handback:1`) sends `handed_back` and Alpha acts again.
+#[test]
+fn window_spaces_takeover() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let sock = format!("target/spaces-takeover-{}.sock", std::process::id());
+    let window = spaces_window(
+        &sock,
+        &[
+            "--spaces",
+            "--events",
+            "agents:2 click:690,20 key:escape click:700,500 agents:5 handback:1",
+        ],
+    );
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    a.send(r#"{"name":"Alpha"}"#);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":9,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    assert_eq!(a.line(), "{\"event\":\"taken_over\",\"space\":1,\"tab\":1}\n");
+    let mut b = AgentConn::open(&sock);
+    b.send(r#"{"name":"Beta"}"#);
+    let (got, _) = b.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"click","ref":"e4"}"#);
+    assert_eq!(
+        got,
+        "{\"id\":2,\"ok\":false,\"error\":\"the user took over tab 1 (wait for handed_back)\"}\n"
+    );
+    let (got, _) = b.ask(r#"{"id":2,"cmd":"click","ref":"e6"}"#);
+    assert!(got.contains("\"result\":\"clicked button"), "{got}");
+    assert_eq!(a.line(), "{\"event\":\"handed_back\",\"space\":1,\"tab\":1}\n");
+    let (got, _) = a.ask(r#"{"id":3,"cmd":"click","ref":"e4"}"#);
+    assert!(got.contains("\"result\":\"checked checkbox"), "{got}");
+    drop(a);
+    drop(b);
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    no_spaces_left(pid).unwrap();
 }
 
 /// B9 R6 (P9.5): a click on a Space's chip shows the Space: the window
