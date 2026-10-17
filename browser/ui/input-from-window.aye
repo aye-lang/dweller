@@ -1,0 +1,13 @@
+import agent
+import std.mem.AllocError
+
+fn inputFromWindow(ui: *mut Ui, doc: *mut agent.Json, r: usize) AllocError!void {
+    let word = doc.getStr(r, "events") orelse return
+    let ev = scriptEvent(word) orelse return
+    let slot = ui.slots[ui.active].?
+
+    try takeOver(ui, slot)
+    try ui.handle(&ev)
+    try ui.flushWheel()
+    contextMayChange(ui)
+}

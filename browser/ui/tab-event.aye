@@ -1,0 +1,17 @@
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn tabEvent(ui: *mut Ui, name: []u8, tab: u32) AllocError!void {
+    let me = ui.agents.?.inside orelse return
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    var b = text.Builder.init(arena.allocator())
+
+    try b.append(try spaceField(arena.allocator(), me.id))
+    try b.append(",\"tab\":")
+    try b.appendUint(tab as u64)
+
+    try toConns(ui, arena.allocator(), name, b.bytes())
+}
