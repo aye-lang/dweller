@@ -292,8 +292,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         return 2
     }
     if text.eql(name, "place-content") {
-        out[0] = JUSTIFY_CONTENT
-        return 1
+        out[0] = ALIGN_CONTENT
+        out[1] = JUSTIFY_CONTENT
+        return 2
     }
     if text.eql(name, "container") {
         out[0] = CONTAINER_NAME
@@ -544,13 +545,8 @@ struct Declarer {
             return
         }
         if text.eql(name, "place-content") {
-            // The `justify-content` half (the second value, or the
-            // only one).
             if comps.len == 1 || comps.len == 2 {
-                let last = [1]Comp{comps[comps.len - 1]}
-                if try parseValue(self.sheet, JUSTIFY_CONTENT, last[..]) |v| {
-                    try self.add(JUSTIFY_CONTENT, v)
-                }
+                try placeContent(self, comps)
             }
             return
         }

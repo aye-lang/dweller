@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-align-3/#place-content
+fn placeContent(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let first = [1]Comp{comps[0]}
+    let last = [1]Comp{comps[comps.len - 1]}
+    let align = try parseValue(d.sheet, ALIGN_CONTENT, first[..]) orelse return
+    let justify = try parseValue(d.sheet, JUSTIFY_CONTENT, last[..]) orelse return
+
+    try d.add(ALIGN_CONTENT, align)
+    try d.add(JUSTIFY_CONTENT, justify)
+}
