@@ -1,0 +1,18 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#color-conversion-code
+fn xyzToLab(xyz: [3]f64) [3]f64 {
+    let kappa = 24389.0 / 27.0
+    let epsilon = 216.0 / 24389.0
+    var f = [3]f64{xyz[0] / D50_WHITE[0], xyz[1], xyz[2] / D50_WHITE[2]}
+
+    for i in 0..3 {
+        if f[i] > epsilon {
+            f[i] = math.pow(f[i], 1.0 / 3.0)
+        } else {
+            f[i] = (kappa * f[i] + 16.0) / 116.0
+        }
+    }
+
+    return [3]f64{116.0 * f[1] - 16.0, 500.0 * (f[0] - f[1]), 200.0 * (f[1] - f[2])}
+}

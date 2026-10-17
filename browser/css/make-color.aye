@@ -1,0 +1,52 @@
+import std.math
+
+fn makeColor(space: u8, vals: [4]f64, none: u8, relative: bool) Color {
+    var ch = [3]f64{vals[0], vals[1], vals[2]}
+    var out = space
+    var flags = none
+
+    if space == 0 {
+        ch = [3]f64{vals[0] / 255.0, vals[1] / 255.0, vals[2] / 255.0}
+    }
+
+    if space == 9 || space == 10 {
+        ch[0] = math.clamp(ch[0], 0.0, 100.0)
+    }
+
+    if space == 11 || space == 12 {
+        ch[0] = math.clamp(ch[0], 0.0, 1.0)
+    }
+
+    if space == 10 || space == 12 || space == 13 {
+        ch[1] = math.max(ch[1], 0.0)
+    }
+
+    if space == 13 {
+        ch[2] = math.clamp(ch[2], 0.0, 100.0)
+    }
+
+    if hueIndex(space) < 3 {
+        let h = hueIndex(space)
+
+        ch[h] = ch[h] - math.floor(ch[h] / 360.0) * 360.0
+    }
+
+    if space >= 13 && none != 0 {
+        return paintColor(space, ch, math.clamp(vals[3], 0.0, 1.0), none)
+    }
+
+    if space == 0 || space >= 13 {
+        ch = srgbOf(space, ch)
+        out = 1
+
+        if none == 0 && !relative {
+            out = 0
+        }
+
+        if space != 0 {
+            flags = none & 8
+        }
+    }
+
+    return paintColor(out, ch, math.clamp(vals[3], 0.0, 1.0), flags)
+}

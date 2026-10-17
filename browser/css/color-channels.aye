@@ -1,0 +1,60 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#color-syntax
+fn colorChannels(space: u8, toks: []Token, origin: ?Color) ?Color {
+    var from: ?[4]f64 = null
+    var vals = [4]f64{0.0, 0.0, 0.0, 1.0}
+    var none: u8 = 0
+    var n: usize = 0
+    var slash = false
+    var i = skipWhitespace(toks, 0)
+
+    if origin |o| {
+        from = originChannels(o, space)
+    }
+
+    while i < toks.len {
+        if toks[i].kind == Tok.Delim && toks[i].delim == '/' {
+            if n != 3 || slash {
+                return null
+            }
+
+            slash = true
+            i = skipWhitespace(toks, i + 1)
+            continue
+        }
+
+        if n >= 4 || (n == 3 && !slash) {
+            return null
+        }
+
+        let j = skipComponent(toks, i)
+        var v = channelValue(space, n, toks[i..j], from) orelse return null
+
+        if math.isNan(v) {
+            none |= (1 << n) as u8
+            v = 0.0
+        }
+
+        vals[n] = v
+        n += 1
+        i = skipWhitespace(toks, j)
+    }
+
+    if n < 3 || (slash && n < 4) {
+        return null
+    }
+
+    if n == 3 {
+        if from |o| {
+            vals[3] = o[3]
+
+            if math.isNan(o[3]) {
+                none |= 8
+                vals[3] = 0.0
+            }
+        }
+    }
+
+    return makeColor(space, vals, none, origin != null)
+}

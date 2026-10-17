@@ -1,0 +1,33 @@
+import std.mem.AllocError
+import std.text
+
+fn writeColorToken(t: Token, out: *mut text.Builder) AllocError!void {
+    match t.kind {
+        .Number => try writeChannel(t.num, out)
+        .Percentage => {
+            try writeChannel(t.num, out)
+            try out.appendByte('%')
+        }
+
+        .Dimension => {
+            try writeChannel(t.num, out)
+            try out.append(t.text)
+        }
+
+        .Function => {
+            try out.append(t.text)
+            try out.appendByte('(')
+        }
+
+        .Hash => {
+            try out.appendByte('#')
+            try out.append(t.text)
+        }
+
+        .Delim => try out.appendByte(t.delim as u8)
+        .Comma => try out.appendByte(',')
+        .LParen => try out.appendByte('(')
+        .RParen => try out.appendByte(')')
+        _ => try out.append(t.text)
+    }
+}

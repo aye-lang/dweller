@@ -1,0 +1,24 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#hue-interpolation
+fn fixHues(method: u8, h1: f64, h2: f64) [2]f64 {
+    var a = h1 - math.floor(h1 / 360.0) * 360.0
+    var b = h2 - math.floor(h2 / 360.0) * 360.0
+    let d = b - a
+
+    if method == 's' && d > 180.0 {
+        a += 360.0
+    } else if method == 's' && d < -180.0 {
+        b += 360.0
+    } else if method == 'l' && d > 0.0 && d < 180.0 {
+        a += 360.0
+    } else if method == 'l' && d > -180.0 && d <= 0.0 {
+        b += 360.0
+    } else if method == 'i' && d < 0.0 {
+        b += 360.0
+    } else if method == 'd' && d > 0.0 {
+        a += 360.0
+    }
+
+    return [2]f64{a, b}
+}

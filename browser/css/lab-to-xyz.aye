@@ -1,0 +1,25 @@
+// spec: https://drafts.csswg.org/css-color-4/#color-conversion-code
+fn labToXyz(lab: [3]f64) [3]f64 {
+    let kappa = 24389.0 / 27.0
+    let epsilon = 216.0 / 24389.0
+    let fy = (lab[0] + 16.0) / 116.0
+    let fx = lab[1] / 500.0 + fy
+    let fz = fy - lab[2] / 200.0
+    var x = (116.0 * fx - 16.0) / kappa
+    var y = lab[0] / kappa
+    var z = (116.0 * fz - 16.0) / kappa
+
+    if fx * fx * fx > epsilon {
+        x = fx * fx * fx
+    }
+
+    if lab[0] > kappa * epsilon {
+        y = fy * fy * fy
+    }
+
+    if fz * fz * fz > epsilon {
+        z = fz * fz * fz
+    }
+
+    return [3]f64{x * D50_WHITE[0], y, z * D50_WHITE[2]}
+}

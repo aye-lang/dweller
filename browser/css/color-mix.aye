@@ -1,0 +1,52 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#color-mix
+fn colorMix(args: []Token) ?Color {
+    var i = skipWhitespace(args, 0)
+    var space: u8 = 11
+    var method: u8 = 's'
+    var start = i
+
+    if i < args.len && args[i].kind == Tok.Ident && text.eqlIgnoreCase(args[i].text, "in") {
+        i = skipWhitespace(args, i + 1)
+
+        if i >= args.len || args[i].kind != Tok.Ident {
+            return null
+        }
+
+        space = colorSpaceOf(args[i].text) orelse return null
+        i = skipWhitespace(args, i + 1)
+
+        if i + 2 < args.len && args[i].kind == Tok.Ident && hueIndex(space) < 3 {
+            method = hueMethod(args[i].text) orelse return null
+            i = skipWhitespace(args, i + 1)
+
+            if args[i].kind != Tok.Ident || !text.eqlIgnoreCase(args[i].text, "hue") {
+                return null
+            }
+
+            i = skipWhitespace(args, i + 1)
+        }
+
+        if i >= args.len || args[i].kind != Tok.Comma {
+            return null
+        }
+
+        start = i + 1
+    }
+
+    let first = mixItem(args, start) orelse return null
+    let second = mixItem(args, first.end) orelse return null
+
+    if second.end < args.len {
+        return null
+    }
+
+    return mixColors(space, method, first, second)
+}
+
+fn hueMethod(name: []u8) ?u8 {
+    let m = inList(name, "shorter longer increasing decreasing") orelse return null
+
+    return m[0]
+}

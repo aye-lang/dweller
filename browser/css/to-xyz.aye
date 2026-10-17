@@ -1,0 +1,39 @@
+// spec: https://drafts.csswg.org/css-color-4/#color-conversion-code
+fn toXyz(space: u8, c: [3]f64) [3]f64 {
+    if space == 0 || space == 13 || space == 14 {
+        return toXyz(1, srgbOf(space, c))
+    }
+
+    if space <= 6 {
+        let lin = [3]f64{toLinear(space, c[0]), toLinear(space, c[1]), toLinear(space, c[2])}
+        let xyz = mat3(RGB_TO_XYZ[space - 1], lin)
+
+        if space == 5 {
+            return mat3(D50_TO_D65, xyz)
+        }
+
+        return xyz
+    }
+
+    if space == 7 {
+        return mat3(D50_TO_D65, c)
+    }
+
+    if space == 9 {
+        return mat3(D50_TO_D65, labToXyz(c))
+    }
+
+    if space == 10 {
+        return toXyz(9, polarToLab(c))
+    }
+
+    if space == 11 {
+        return oklabToXyz(c)
+    }
+
+    if space == 12 {
+        return toXyz(11, polarToLab(c))
+    }
+
+    return c
+}

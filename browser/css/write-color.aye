@@ -1,0 +1,42 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-4/#serializing-color-values
+fn writeColor(c: Color, out: *mut text.Builder) AllocError!void {
+    if c.space <= 8 {
+        try out.append("color(")
+    }
+
+    try out.append(COLOR_SPACES[c.space])
+
+    if c.space <= 8 {
+        try out.appendByte(' ')
+    } else {
+        try out.appendByte('(')
+    }
+
+    for i in 0..3 {
+        if i > 0 {
+            try out.appendByte(' ')
+        }
+
+        if c.none & (1 << i) as u8 != 0 {
+            try out.append("none")
+        } else {
+            try writeChannel(c.ch[i], out)
+        }
+
+        if c.space >= 13 && i > 0 && c.none & (1 << i) as u8 == 0 {
+            try out.appendByte('%')
+        }
+    }
+
+    if c.none & 8 != 0 {
+        try out.append(" / none")
+    } else if c.a < 1.0 {
+        try out.append(" / ")
+        try writeChannel(c.a, out)
+    }
+
+    try out.appendByte(')')
+}

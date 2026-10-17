@@ -1701,7 +1701,13 @@ fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
 
 // Sets (or, for an empty value, removes) the declaration of `prop` in
 // the style attribute of `el`.
-fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!void {
+fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!void {
+    var canon = text.Builder.init(s.alloc)
+    defer canon.deinit()
+    if !(try css.specifiedValue(s.alloc, prop, raw, &mut canon)) {
+        return
+    }
+    let value = canon.bytes()
     let doc = &mut s.active.doc
     let old = doc.attr(el, "style") orelse ""
     var b = text.Builder.init(s.alloc)
