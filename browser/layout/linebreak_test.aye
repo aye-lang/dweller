@@ -1,0 +1,17 @@
+test "line breaks between East Asian characters" {
+    let normal = BreakRules { strictness: "normal", word_break: "normal", chinese_or_japanese: false }
+    let strict = BreakRules { strictness: "strict", word_break: "normal", chinese_or_japanese: false }
+
+    @expect(breaksBetween(0x65E5, 0x672C, normal))
+    @expect(breaksBetween('a' as u32, 0x65E5, normal))
+    @expect(breaksBetween(0x65E5, 'a' as u32, normal))
+    @expect(!breaksBetween('a' as u32, 'b' as u32, normal))
+    @expect(!breaksBetween(0x65E5, 0x3002, normal))
+    @expect(!breaksBetween(0x65E5, 0x3001, normal))
+    @expect(!breaksBetween(0x65E5, 0x300D, normal))
+    @expect(!breaksBetween(0x300C, 0x65E5, normal))
+    @expect(!breaksBetween(0x65E5, ',', normal))
+    @expect(breaksBetween(0x3002, 0x65E5, normal))
+    @expect(breaksBetween(0x30C6, 0x30A3, normal))
+    @expect(!breaksBetween(0x30C6, 0x30A3, strict))
+}
