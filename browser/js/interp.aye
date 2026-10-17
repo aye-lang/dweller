@@ -125,19 +125,6 @@ pub struct Interp {
     heap: Heap
     ast: Ast
     prop_caches: List(PropCache)
-    fast_exprs: List(FastExpr)
-    expr_code: List(ExprInst)
-    // Non-reentrant numeric recipe scratch (not GC values/roots).
-    expr_nums: [32]f64
-    expr_kinds: [32]u8
-    expr_call: bool
-    expr_parent: u32
-    expr_argbase: usize
-    expr_argc: usize
-    expr_first: u32
-    expr_nparams: u32
-    expr_this_slot: u32
-    expr_this: Value
     globals: GlobalNames
     natives: List(NativeEntry)
     stack: List(Value)
@@ -299,18 +286,6 @@ pub struct Interp {
             heap: try Heap.init(alloc),
             ast: try Ast.init(alloc),
             prop_caches: List(PropCache).init(alloc),
-            fast_exprs: List(FastExpr).init(alloc),
-            expr_code: List(ExprInst).init(alloc),
-            expr_nums: @zeroed([32]f64),
-            expr_kinds: @zeroed([32]u8),
-            expr_call: false,
-            expr_parent: NONE,
-            expr_argbase: 0,
-            expr_argc: 0,
-            expr_first: 0,
-            expr_nparams: 0,
-            expr_this_slot: NONE,
-            expr_this: Value.Undefined,
             import_meta: IntMap(u32, u32).init(alloc),
             chunk_starts: List(u32).init(alloc),
             chunk_urls: List(u32).init(alloc),
@@ -430,8 +405,6 @@ pub struct Interp {
         self.heap.deinit()
         self.ast.deinit()
         self.prop_caches.deinit()
-        self.fast_exprs.deinit()
-        self.expr_code.deinit()
         self.globals.deinit()
         self.natives.deinit()
         self.stack.deinit()
@@ -2248,45 +2221,6 @@ pub struct Interp {
             return self.rangeError("Maximum call stack size exceeded")
         }
         try self.tick()
-        // A guarded, side-effect-free return needs neither a frame nor
-        // an environment. Failed guards run the ordinary call once.
-        if fi.simple && fi.args_slot == NONE && fi.self_slot == NONE && !fi.ctor && !fi.generator && !fi.is_async {
-            var expr = fi.expr
-            if expr == 0 && fi.nbody == 1 {
-                match self.ast.node(self.ast.item(fi.body, 0)) {
-                    .Return { arg } => {
-                        expr = arg
-                    }
-                    _ => {}
-                }
-            }
-            if expr != 0 && self.fast_exprs.items()[expr].n > 0 {
-                self.expr_call = true
-                self.expr_parent = penv
-                self.expr_argbase = argBase
-                self.expr_argc = argc
-                self.expr_first = fi.first_param
-                self.expr_nparams = fi.nparams
-                self.expr_this_slot = fi.this_slot
-                self.expr_this = thisv
-                if !fi.strict && !fi.arrow && isNullish(thisv) {
-                    self.expr_this = objVal(self.global)
-                }
-                let v = evalFastExpr(self, self.fast_exprs.items()[expr])
-                self.expr_call = false
-                match v {
-                    .Empty => {}
-                    _ => {
-                        if fi.expr == 0 {
-                            try self.tick()
-                        }
-                        return v
-                    }
-                }
-            }
-        }
-        // The bytecode VM (unless DWELLER_JS_VM=0) after the frameless path above,
-        // which is cheaper for the one-expression functions it handles.
         if !self.vm_checked {
             vmInit(self)
         }
@@ -2796,18 +2730,6 @@ pub struct Interp {
             }
             .False => {
                 return boolVal(false)
-            }
-            .Binary { .. } => {
-                let p = self.fast_exprs.items()[id]
-                if p.n > 0 {
-                    let v = evalFastExpr(self, p)
-                    match v {
-                        .Empty => {}
-                        _ => {
-                            return v
-                        }
-                    }
-                }
             }
             _ => {}
         }
@@ -4583,7 +4505,6 @@ pub struct Interp {
         while self.prop_caches.len() < self.ast.nodes.len() {
             try self.prop_caches.append(emptyPropCache())
         }
-        try compileFastExprs(self)
         try self.heap.growEnv(self.glex, self.globals.count)
         for name in r.top_vars.items() {
             if !self.hasOwn(self.global, name) {

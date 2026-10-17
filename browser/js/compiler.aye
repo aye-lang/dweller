@@ -124,7 +124,7 @@ struct Compiler {
     fn readReg(self: *mut Self, depth: u32, slot: u32, name: u32) CompileError!i32 {
         let r = try self.identReg(depth, slot)
         if r >= 0 && self.tdz.items()[r as usize] {
-            try vmDeadRead(self, name)
+            try vmDeadRead(self, r, name)
         }
         return r
     }
@@ -697,6 +697,7 @@ struct Compiler {
             try self.visit(disc)
             try vmEnterScope(self, scope)
             try vmMarkSwitchDead(self, list, n)
+            try vmHoleSwitchLexicals(self)
             table = try self.b.newJumpTable((hi - lo + 1) as u32, lo as i32)
             try self.b.switchOnSmi(table)
         } else {
@@ -705,6 +706,7 @@ struct Compiler {
             try self.b.op1(BC_STAR, d as i64)
             try vmEnterScope(self, scope)
             try vmMarkSwitchDead(self, list, n)
+            try vmHoleSwitchLexicals(self)
             for k in 0..n {
                 match self.ast.node(self.ast.item(list, k)) {
                     .Case { cond, .. } => {
