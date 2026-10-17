@@ -1,0 +1,21 @@
+fn currentFontUnits() FontUnits {
+    if units_cached |u| {
+        return u
+    }
+
+    let s = units_source orelse return FontUnits { ch: calc_ctx.em * 0.5, ex: calc_ctx.em * 0.5 }
+    let u = fontUnitsOf(s.own, s.parent, s.size)
+
+    if !isInitialValue(s.own[FONT_FAMILY]) {
+        units_cached = u
+    }
+
+    return u
+}
+
+fn isInitialValue(v: Value) bool {
+    return match v {
+        .Initial => true
+        _ => false
+    }
+}
