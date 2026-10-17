@@ -272,7 +272,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F11 | P4.73 | inline caches | F10 | done |
 | F11b | P4.73b | the inline caches pay for themselves | F11 | done |
 | F12 | P4.74 | prototype shapes and the prototype epoch | F11 | done |
-| F13 | P4.75 | the VM on by default | F12 | done except P4.75b |
+| F13 | P4.75 | the VM on by default | F12 | done except P4.75d (recapture of 10 archives) |
 | F14 | P4.77 | register optimizer and fused instructions | F13 | open |
 | F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
 
@@ -900,10 +900,18 @@ Common to these cards:
 - files: `browser/js/BYTECODE.md`, `browser/js/PERF.md`
 - verify: `python3 browser/tools/page_load.py check` exit 0
 - model: opus
+- status: done 2026-10-18 except the verify (exit 1, P4.75d). `page_load.py check` on the 22 archives of 2026-10-14 (`target/sites` of the main checkout): VM on and `DWELLER_JS_VM=0` give the same result, 10 pass (example, hn, github, mdn, python-docs, rustdoc, cnn-lite, lobsters, duckduckgo, abehiroshi), 2 are skipped as excluded (reddit, stackoverflow) and 10 fail on archive misses (wikipedia-en 3, bbc 20, go-docs 2, google 3, wikipedia 3, zol 10, youtube 9, youtube-search 4, react 7, mistral 1 missed URLs, the same counts with the VM off); the binary of 2026-10-16 fails them the same, so no failure is a VM regression: the archives lack requests the engine makes now (go-docs and mistral: `gtm.js` inserted by a script). The Markdown is byte-equal VM on and off on all 22 sites except mdn (a virtual-clock timestamp). `DWELLER_JS_VM_STATS=1` reasons per site, before → after this card: every page had 3 functions of the window prelude on the tree walker ("parameter pattern": a parameter in a context with a non-simple parameter list, `function (a, b = 1) { return () => a }`), github 47 (44 of those, 3 "lexical declaration in switch"), bbc 20, mdn 10, react 8, mistral 6. Fixed here: captured parameters with defaults, rest or patterns are stored to their context slot (`vm-store-param.aye`; V8 `BuildParameterInitialization`), and `let`/`const`/`class` in a `switch` get the switch's block scope and context, with a dead zone per case (`vm-mark-switch-dead.aye`; a read of an earlier case's binding still falls back); tests 269 and 270. Left after: bbc 3 functions and 2 scripts, zol 1 script, all "context variable" from direct `eval` (bbc: optimizely `eval(str)`; zol: `eval(ad + ...)`) — in P4.75c; the other 20 sites print no reason. `scripts`/`timers` phases, tree walker → VM (median of 3 after a warm-up): youtube 0.92×/1.19×, github 1.08×/0.91×, react 0.96×/1.05×, mistral 1.00×/1.09× — within noise, not the estimated 1.5–2.5× (table in `BYTECODE.md` section 1 and `PERF.md`). `js_conformance`, `js_conformance_vm`, `jsdom_fixtures` green; `check_taste.py`, `check_layers.py` pass.
+
+#### P4.75d: recapture the 10 stale site archives (local)
+- goal: `python3 browser/tools/page_load.py check` exit 0 with the VM on, the exit condition of F13.
+- design: `page_load.py capture` (live, on the Mac) for wikipedia-en, bbc, go-docs, google, wikipedia, zol, youtube, youtube-search, react, mistral, whose 2026-10-14 archives miss requests the current engine makes on both engines (`archive miss:` lines in `target/page-load-out/<site>/last.stderr`); then `check` with the VM on and with `DWELLER_JS_VM=0`, and any site that fails only with the VM on fixed or a card. bbc failed before P4.74 too: look at its misses first.
+- files: none tracked (the archives are local); `browser/tools/sites.json` if an expectation moved
+- verify: `python3 browser/tools/page_load.py check` exit 0
+- model: sonnet
 
 #### P4.75c: the last fallback reasons on the js suite
 - goal: `DWELLER_JS_VM_STATS=1` prints no reason on `browser/tests/js/` (the exit condition of P4.78).
-- design: BigInt literals (a constant-pool BigInt, V8 `LdaConstant`); assignment to a constant and a read in the dead zone known at compile time become runtime throws with the tree walker's messages (V8 `ThrowConstAssignmentError`, `ThrowReferenceErrorIfHole` after `LdaTheHole`); the bindings that give "context variable" today; rest parameters with a pattern; computed class field keys (evaluated once at class definition); Annex B block-level function declarations in sloppy code; ToPropertyKey of a computed key before its value (V8 `ToName`).
+- design: BigInt literals (a constant-pool BigInt, V8 `LdaConstant`); assignment to a constant and a read in the dead zone known at compile time become runtime throws with the tree walker's messages (V8 `ThrowConstAssignmentError`, `ThrowReferenceErrorIfHole` after `LdaTheHole`); the bindings that give "context variable" today, including direct `eval` in functions and scripts (P4.75b: bbc's optimizely `eval(str)`, zol); rest parameters with a pattern; computed class field keys (evaluated once at class definition); Annex B block-level function declarations in sloppy code; ToPropertyKey of a computed key before its value (V8 `ToName`).
 - files: `browser/js/compiler.aye`, `browser/js/bytecode.aye`, `browser/js/vm.aye`, new `browser/js/vm-*.aye`
 - v8: `src/interpreter/bytecode-generator.cc`
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm aye_unit_tests > target/p4.75c.log 2>&1; echo $?` → 0; `DWELLER_JS_VM_STATS=1` on every script of `browser/tests/js/` prints no `unsupported`

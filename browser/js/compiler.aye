@@ -658,17 +658,7 @@ struct Compiler {
         defer vals.deinit()
         for k in 0..n {
             match self.ast.node(self.ast.item(list, k)) {
-                .Case { cond, list: cl, n: cn } => {
-                    for j in 0..cn {
-                        match self.ast.node(self.ast.item(cl, j)) {
-                            .VarDecl { kind, .. } => {
-                                if kind != DECL_VAR {
-                                    try self.fail("unsupported: lexical declaration in switch")
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                .Case { cond, .. } => {
                     if cond == 0 {
                         dflt = k
                     } else if self.caseInt(cond) |x| {
@@ -690,9 +680,6 @@ struct Compiler {
         if ncases < 3 || hi - lo + 1 > 2 * ncases + 8 {
             smi = false
         }
-        if sc.nslots > 0 {
-            try self.scopes.append(scope)
-        }
         let mark = self.b.topReg
         let brk = try self.b.newLabel()
         let dfltLabel = try self.b.newLabel()
@@ -704,12 +691,16 @@ struct Compiler {
         var table: u32 = 0
         if smi {
             try self.visit(disc)
+            try vmEnterScope(self, scope)
+            try vmMarkSwitchDead(self, list, n)
             table = try self.b.newJumpTable((hi - lo + 1) as u32, lo as i32)
             try self.b.switchOnSmi(table)
         } else {
             let d = self.b.newReg()
             try self.visit(disc)
             try self.b.op1(BC_STAR, d as i64)
+            try vmEnterScope(self, scope)
+            try vmMarkSwitchDead(self, list, n)
             for k in 0..n {
                 match self.ast.node(self.ast.item(list, k)) {
                     .Case { cond, .. } => {
@@ -747,6 +738,7 @@ struct Compiler {
                     if k == dflt {
                         try self.bindDefault(dfltLabel, smi, table, lo, hi, vals.items())
                     }
+                    try vmMarkSwitchDead(self, list, n)
                     for j in 0..cn {
                         try self.visitStatement(self.ast.item(cl, j))
                     }
@@ -759,10 +751,8 @@ struct Compiler {
         }
         self.ctl.pop()
         try self.b.bind(brk)
+        try vmExitScope(self, scope)
         self.b.releaseRegs(mark)
-        if sc.nslots > 0 {
-            self.scopes.pop()
-        }
     }
 
     // The default target: the label, and the table's values with no case.
@@ -1052,7 +1042,7 @@ struct Compiler {
         }
         for k in 0..fi.nparams {
             let r = try self.paramReg(self.ast.item(fi.params, k))
-            if r == VM_PATTERN {
+            if r == VM_PATTERN || r == VM_CONTEXT {
                 continue
             }
             if r < 0 {
@@ -1078,17 +1068,24 @@ struct Compiler {
                     try self.b.bind(dflt)
                     try self.visit(init)
                     try self.b.bind(end)
-                    try self.b.op1(BC_STAR, r as i64)
+                    try vmStoreParam(self, p, r)
                 }
                 .Rest { .. } => {
                     try self.b.op1(BC_CREATE_REST_PARAMETER, k as i64)
-                    try self.b.op1(BC_STAR, r as i64)
+                    try vmStoreParam(self, p, r)
                 }
                 _ => {
-                    try self.b.op2(BC_MOV, self.b.param(k) as i64, r as i64)
+                    if r == VM_CONTEXT {
+                        try self.b.op1(BC_LDAR, self.b.param(k) as i64)
+                        try vmStoreParam(self, p, r)
+                    } else {
+                        try self.b.op2(BC_MOV, self.b.param(k) as i64, r as i64)
+                    }
                 }
             }
-            self.tdz.items()[r as usize] = false
+            if r >= 0 {
+                self.tdz.items()[r as usize] = false
+            }
         }
     }
 

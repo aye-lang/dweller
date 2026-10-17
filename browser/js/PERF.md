@@ -246,6 +246,18 @@ globals 7.6×, closures 5.3×, splay 5.0×; navier-stokes 1.8×, loop
 1.9×). All checksums equal. The per-workload table is in `BYTECODE.md`
 section 6.
 
+P4.75b, the 22 archived sites (2026-10-18): `page_load.py check`
+gives the same 10 passes, 2 skips (excluded) and 10 misses with the VM on and with
+`DWELLER_JS_VM=0`, and the same Markdown on every site except mdn (a
+virtual-clock timestamp, 00.000Z against 00.001Z). The 10 misses are
+archive misses (wikipedia-en, bbc, go-docs, google, wikipedia, zol,
+youtube, youtube-search, react, mistral): the 2026-10-14 archives lack
+requests the engine makes now, such as `gtm.js` inserted by a script;
+the binary of 2026-10-16 misses them too. Site `scripts` phase, tree
+walker → VM: youtube 0.92×, github 1.08×, react 0.96×, mistral 1.00×;
+`timers` 1.19×, 0.91×, 1.05×, 1.09× (table in `BYTECODE.md` section
+1): within noise, so the site time is not in bytecode dispatch.
+
 ## Next steps
 
 The general interpreter is still the bottleneck. Small property tables
