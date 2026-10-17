@@ -208,7 +208,7 @@ and `report --live --chrome` exit 0 (W7, W8).
 |---|---|---|---|---|---|
 | B1 | P4.36 | scroll: fixed and sticky items kept apart so a scroll frame rebuilds no list; fractional trackpad scrolls draw the band only | – | done | `platform/graphics/paint/paint_controller.cc` (display items reused between frames), `cc/trees/damage_tracker.cc`, `docs/how_cc_works.md` (scrolling as an offset) |
 | B2 | P4.40 | CI perf gate: four synthetic pages, counters (`style_full`, `layout_full`, `net_sync`, `raster_px`), budgets with a ratchet | A2, B1 | P4.40a, P4.40b, P4.40c, P4.40d done | – |
-| B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | open | – |
+| B3 | P4.41 | the W7 and W8 report over the archives and live against Chrome; a dated table in `PERF.md` | B2 | done | – |
 | B4 | P3.64 slice 2, P4.11 | restyle subtrees when no container's size changed; partial restyle for DOM mutations with shadow roots and `:has()` | B3 shows the need | backlog | `core/css/style-invalidation.md`, `core/css/invalidation/` (invalidation sets), `core/css/style_engine.cc`, `core/style/stylerecalc.md` |
 | B5 | P4.14 | event dispatch and `MutationObserver` from prelude JS into Aye | B3 shows the need | backlog | `core/dom/events/event_dispatcher.cc`, `event_path.cc`, `core/dom/mutation_observer.cc` |
 
@@ -582,6 +582,7 @@ them from coming back.
 - goal: W7 and W8 are checked by one command. `window_perf.py report --replay` runs `scroll` and `idle` for every non-excluded site of `sites.json` with `DWELLER_REPLAY=target/sites/<name>`; `report --live --chrome` measures Dweller's first paint and Chrome's first contentful paint (through `agent-browser`, as in `PERF.md`), 3 alternating runs each. Both print a row per site with pass/fail and exit 1 when a row fails; the results go into `PERF.md` ("Window", a dated table).
 - files: `browser/tools/window_perf.py`, `browser/engine/PERF.md`
 - verify: `python3 browser/tools/window_perf.py report --replay > target/w7.log; tail -25 target/w7.log` prints 20 rows; the run is local (archives are untracked)
+- status: done 2026-10-17. `window_perf.py report --replay` (browser/tools/window_report.py; `--archives DIR`, default `target/sites`; `--site NAME` limits it) runs `scroll` and `idle` per non-excluded site and prints a row (longest loop, scroll p50/p95, idle CPU, W7 verdict); `report --live --chrome` prints Dweller's first paint, Chrome's paint entry (`agent-browser`; `first-paint` when a page has no contentful paint, as abehiroshi) and the gap, medians of 3 alternating runs, W8's 1.0 s. Both exit 1 on a failing row. Table in `PERF.md` "P4.41": W8 20 of 20 pass; W7 9 of 20 pass. Fail W7: wikipedia-en 255, mdn 150, rustdoc 253, wikipedia 105, react 102 ms (loop only); bbc (426 ms, scroll p95 211); github (2395 ms, p95 1647, idle 46%); zol (6918 ms, p95 6799, idle 18%); youtube (346 ms, p95 259, idle 5.3%); youtube-search (802 ms, p95 557, idle 42%); mistral (2098 ms, p95 243, idle 98%). Causes not profiled in this card (B4/B5 and the P4.x backlog).
 - time box: 60 min; model: sonnet
 
 #### P4.42: loop priorities and the threading model
