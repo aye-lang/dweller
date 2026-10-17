@@ -1,0 +1,36 @@
+fn seekUnit(heap: *mut Heap, s: u32, ui: u32) usize {
+    let bytes = heap.bytes(s)
+    let c = heap.str(s)
+
+    if ui >= c.len16 {
+        return bytes.len
+    }
+
+    if ui < c.cursor_unit / 2 {
+        c.cursor_unit = 0
+        c.cursor_byte = 0
+    }
+
+    while c.cursor_unit > ui {
+        c.cursor_byte -= 1
+
+        while (bytes[c.cursor_byte] & 0xC0) == 0x80 {
+            c.cursor_byte -= 1
+        }
+
+        c.cursor_unit -= charUnits(decodeAt(bytes, c.cursor_byte).cp)
+    }
+
+    while true {
+        let d = decodeAt(bytes, c.cursor_byte)
+
+        if c.cursor_unit + charUnits(d.cp) > ui {
+            break
+        }
+
+        c.cursor_unit += charUnits(d.cp)
+        c.cursor_byte += d.len
+    }
+
+    return c.cursor_byte
+}

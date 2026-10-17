@@ -1,0 +1,32 @@
+fn seekByte(heap: *mut Heap, s: u32, bi: usize) u32 {
+    let bytes = heap.bytes(s)
+    let c = heap.str(s)
+
+    if bi >= bytes.len {
+        return c.len16
+    }
+
+    if bi < c.cursor_byte / 2 {
+        c.cursor_unit = 0
+        c.cursor_byte = 0
+    }
+
+    while c.cursor_byte > bi {
+        c.cursor_byte -= 1
+
+        while (bytes[c.cursor_byte] & 0xC0) == 0x80 {
+            c.cursor_byte -= 1
+        }
+
+        c.cursor_unit -= charUnits(decodeAt(bytes, c.cursor_byte).cp)
+    }
+
+    while c.cursor_byte < bi {
+        let d = decodeAt(bytes, c.cursor_byte)
+
+        c.cursor_unit += charUnits(d.cp)
+        c.cursor_byte += d.len
+    }
+
+    return c.cursor_unit
+}
