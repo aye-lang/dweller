@@ -336,6 +336,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
         defer dirty.deinit()
         let local = try localChanges(s, g, version, &mut dirty)
         var fresh = sameStyles(s, g, st)
+        let rounds = g.restyled
         var restyled = false
         if fresh {
             // Nothing the styles depend on changed (a class no rule
@@ -370,6 +371,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
                 dropGeometry(s)
                 return e
             }
+            try releaseRestyled(g, rounds)
         }
         var kept = fresh && local && dirty.len() == 0
         if kept && !composite {
