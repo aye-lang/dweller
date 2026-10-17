@@ -20,10 +20,18 @@ const p2 = Context2.prototype;
 for (const k of ['canvas', 'drawingBufferWidth', 'drawingBufferHeight', 'drawingBufferColorSpace']) Object.defineProperty(p, k, Object.getOwnPropertyDescriptor(p2, k));
 for (const k of Object.getOwnPropertyNames(p2)) if (k.startsWith('_')) p[k] = p2[k];
 for (const k of METHODS) if (p2[k]) p[k] = p2[k];
-const all = Object.keys(globalThis.WebGL2RenderingContext);
-for (const k of all.slice(0, all.indexOf('INVALID_FRAMEBUFFER_OPERATION') + 1).concat(EXTRA_CONSTANTS)) {
-  Object.defineProperty(WebGLRenderingContext, k, {value: Context2[k], enumerable: true});
-  Object.defineProperty(p, k, {value: Context2[k], enumerable: true});
+// The constants are installed at first use, as WebGL 2's are: every page
+// runs this prelude.
+let installed = false;
+function install() {
+  if (installed) return;
+  installed = true;
+  webgl.install();
+  const all = Object.keys(Context2);
+  for (const k of all.slice(0, all.indexOf('INVALID_FRAMEBUFFER_OPERATION') + 1).concat(EXTRA_CONSTANTS)) {
+    Object.defineProperty(WebGLRenderingContext, k, {value: Context2[k], enumerable: true});
+    Object.defineProperty(p, k, {value: Context2[k], enumerable: true});
+  }
 }
 p.getParameter = function (pname) {
   return STRINGS.has(pname >>> 0) ? STRINGS.get(pname >>> 0) : p2.getParameter.call(this, pname);
@@ -55,9 +63,20 @@ p.texSubImage2D = function (...args) {
   }
   p2.texSubImage2D.apply(this, args);
 };
-Object.defineProperty(globalThis, 'WebGLRenderingContext', {value: WebGLRenderingContext, writable: true, configurable: true});
+Object.defineProperty(globalThis, 'WebGLRenderingContext', {
+  configurable: true,
+  get() {
+    install();
+    Object.defineProperty(globalThis, 'WebGLRenderingContext', {value: WebGLRenderingContext, writable: true, configurable: true});
+    return WebGLRenderingContext;
+  },
+  set(v) {
+    Object.defineProperty(globalThis, 'WebGLRenderingContext', {value: v, writable: true, configurable: true});
+  },
+});
 webgl.create1 = (canvas, node, options) => {
   const ctx = webgl.create(canvas, node, options);
+  install();
   return ctx && Object.setPrototypeOf(ctx, p);
 };
 webgl.Context1 = WebGLRenderingContext;
