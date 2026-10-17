@@ -3152,6 +3152,10 @@ pub let PRELUDE =
     \\    return this.readyState >= 2 && this._type !== '' ? 'content-type: ' + this._type + '\r\n' : '';
     \\  }
     \\  get response() {
+    \\    if ((this.responseType === 'blob' || this.responseType === 'arraybuffer') && this.readyState === 4) {
+    \\      const r = this._fetched, u = r.raw !== undefined ? byteArray(r.raw) : new TextEncoder().encode(r.body);
+    \\      return this.responseType === 'blob' ? new Blob([u], {type: this._type}) : u.buffer;
+    \\    }
     \\    if (this.responseType !== 'json') return this.responseText;
     \\    try {
     \\      return JSON.parse(this.responseText);

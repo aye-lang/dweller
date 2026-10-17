@@ -1458,9 +1458,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // LdaGlobal [n]: the global `var` or `let` of Ident node n
                 let id = vmIdx(bytes, pc, w) as u32
                 pc += w as usize
-                regs[fp] = acc
-                acc = try vmLdaGlobal(it, id)
-                regs = it.stack.items()
+                if vmGlobalCell(it, id) |x| {
+                    acc = x.*
+                } else {
+                    regs[fp] = acc
+                    acc = try vmLdaGlobal(it, id)
+                    regs = it.stack.items()
+                }
             }
             75 => {
                 // GetNamedProperty r, [n]: property of Member node n, with
@@ -1577,10 +1581,17 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             }
             82 => {
                 // v8: src/interpreter/interpreter-generator.cc (LdaContextSlot)
-                regs[fp] = acc
-                acc = try vmLdaContextSlot(it, vmIdx(bytes, pc, w), vmIdx(bytes, pc + w as usize, w))
+                let up = vmIdx(bytes, pc, w)
+                let slot = vmIdx(bytes, pc + w as usize, w)
                 pc += 2 * w as usize
-                regs = it.stack.items()
+
+                if vmContextCell(it, up, slot) |x| {
+                    acc = x.*
+                } else {
+                    regs[fp] = acc
+                    acc = try vmLdaContextSlot(it, up, slot)
+                    regs = it.stack.items()
+                }
             }
             83 => {
                 // v8: src/interpreter/interpreter-generator.cc (StaContextSlot)
@@ -1652,6 +1663,8 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
 
                 if vmKeyedDenseElem(it, e, o, acc, false) |x| {
                     acc = x.*
+                } else if vmKeyedTypedLoad(it, e, o, acc) |x| {
+                    acc = x
                 } else {
                     regs[fp] = acc
                     acc = try vmKeyedLoadSlow(it, e, o, acc)
@@ -1667,7 +1680,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
 
                 if vmKeyedDenseElem(it, e, o, k, true) |x| {
                     x.* = acc
-                } else {
+                } else if !vmKeyedTypedStore(it, e, o, k, acc) {
                     regs[fp] = acc
                     try vmKeyedStoreSlow(it, e, o, k, acc)
                     regs = it.stack.items()

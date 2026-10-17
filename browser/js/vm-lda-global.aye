@@ -1,16 +1,12 @@
 // v8: src/interpreter/interpreter-generator.cc (LdaGlobal)
 
 fn vmLdaGlobal(it: *mut Interp, id: u32) JsError!Value {
+    if vmGlobalCell(it, id) |x| {
+        return x.*
+    }
+
     match it.ast.node(id) {
         .Ident { name, depth, slot, .. } => {
-            if depth == DEPTH_GLOBAL {
-                let i = vmGlobalSlot(it, id, name)
-
-                if i != NONE && (it.heap.obj(it.global).props[i].flags & F_ACCESSOR) == 0 {
-                    return it.heap.obj(it.global).props[i].value
-                }
-            }
-
             return it.readIdent(id, name, depth, slot)
         }
 

@@ -44,9 +44,12 @@ const EXTENSIONS = new Map([
   ['EXT_texture_compression_rgtc', [['EXT_texture_compression_rgtc'], {}, RGTC]],
 ]);
 const fail = (ctx, code) => (ak.webglRaise(ctx._node, code), null);
+function supported(ctx, name) {
+  return EXTENSIONS.get(name)[0].every(n => ak.webglQuery(ctx._node, 2, 0, 'GL_' + n));
+}
 function makeExtension(ctx, name) {
-  const [gl, members, compressed = {}] = EXTENSIONS.get(name);
-  if (!gl.every(n => ak.webglQuery(ctx._node, 2, 0, 'GL_' + n))) return null;
+  const [, members, compressed = {}] = EXTENSIONS.get(name);
+  if (!supported(ctx, name)) return null;
   const ext = Object.assign({}, members);
   for (const k in compressed) {
     ext[k] = compressed[k][0];
@@ -58,7 +61,7 @@ function enabled(ctx, name) {
   return !!ctx._exts.get(name);
 }
 p.getSupportedExtensions = function () {
-  return this.isContextLost() ? null : [...EXTENSIONS.keys()].filter(n => this.getExtension(n) !== null);
+  return this.isContextLost() ? null : [...EXTENSIONS.keys()].filter(n => supported(this, n));
 };
 p.getExtension = function (name) {
   name = String(name);
