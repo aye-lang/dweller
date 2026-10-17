@@ -139,6 +139,7 @@ pub struct Obj {
     // [[IsHTMLDDA]] (`document.all`): typeof "undefined", falsy, and
     // loosely equal to null and undefined.
     htmldda: bool
+    used_as_proto: bool
 }
 
 /// The hash index of a Map's or Set's keys. A slot is 0 (empty),
@@ -201,6 +202,8 @@ pub struct Heap {
     // the next one.
     since_gc: usize
     threshold: usize
+    proto_epoch: u32
+    load_epoch: u32
 
     pub fn init(alloc: Allocator) AllocError!Heap {
         var h = Heap {
@@ -221,6 +224,8 @@ pub struct Heap {
             rope_stack: List(u32).init(alloc),
             since_gc: 0,
             threshold: 20000,
+            proto_epoch: 0,
+            load_epoch: 0,
         }
         try h.shapes.append(Shape { parent: NONE, key: NONE, slot: 0, index: null })
         try h.atoms.predefine()
@@ -289,6 +294,7 @@ pub struct Heap {
             mark: false,
             live: true,
             htmldda: false,
+            used_as_proto: false,
         }
         if self.free_objs.pop() |i| {
             self.objs.items()[i] = o
@@ -300,6 +306,7 @@ pub struct Heap {
     }
 
     pub fn freeObj(self: *mut Self, o: u32) {
+        heapProtoChanged(self, o)
         let ob = self.obj(o)
         self.prop_mem.put(ob.props)
         self.val_mem.put(ob.elems)
@@ -353,6 +360,7 @@ pub struct Heap {
 
     /// Adds a property that the object does not have yet.
     pub fn addProp(self: *mut Self, o: u32, key: u32, value: Value, setter: Value, flags: u8) AllocError!void {
+        heapProtoChanged(self, o)
         let ob = self.obj(o)
         let n = ob.nprops
         if n as usize == ob.props.len {
@@ -400,6 +408,7 @@ pub struct Heap {
 
     /// Removes own property number `i` (keeps the order of the others).
     pub fn removeProp(self: *mut Self, o: u32, i: u32) AllocError!void {
+        heapProtoChanged(self, o)
         let ob = self.obj(o)
         ob.shape = NONE
         var j = i
