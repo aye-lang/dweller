@@ -1,0 +1,68 @@
+import paint
+import std
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+let FRAME_MS: u64 = 33
+
+fn sendFrame(ui: *mut Ui, drew: bool) AllocError!void {
+    let a = ui.agents orelse return
+    let pd = &mut ui.page
+    let w = pd.canvas.width
+    let h = pd.canvas.height
+    let size = w * h * 4
+    let now = std.time.monotonicMs()
+
+    if a.control < 0 || !a.watch.on {
+        return
+    }
+
+    if drew {
+        a.watch.due = true
+    }
+
+    if !a.watch.due || now - a.watch.at < FRAME_MS {
+        return
+    }
+
+    var path = frameFilePath(a.path)
+
+    if !mapFrameFile(&mut a.watch, path[..].ptr, 2 * size, true) {
+        return
+    }
+
+    a.watch.seq += 1
+    a.watch.at = now
+    a.watch.due = false
+
+    let map = a.watch.map.?
+    let slot = (a.watch.seq % 2) as usize * size
+    let page = paint.IRect { x0: 0, y0: 0, x1: w as i64, y1: h as i64 }
+
+    for k in 0..2 {
+        let part = ringPart(page, pd.ring, h as i64, k)
+
+        if part.y1 > part.y0 {
+            let from = part.y0 as usize * w * 4
+            let to = slot + (part.y0 - ringOffset(pd.ring, h as i64, k)) as usize * w * 4
+            let n = (part.y1 - part.y0) as usize * w * 4
+
+            std.mem.copy(map[to..to + n], pd.canvas.pixels[from..from + n])
+        }
+    }
+
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    var b = text.Builder.init(arena.allocator())
+
+    try b.append("{\"ctl\":\"frame\",\"seq\":")
+    try b.appendUint(a.watch.seq)
+    try b.append(",\"width\":")
+    try b.appendUint(w as u64)
+    try b.append(",\"height\":")
+    try b.appendUint(h as u64)
+    try b.append("}\n")
+    sendAll(a.control, b.bytes())
+}
