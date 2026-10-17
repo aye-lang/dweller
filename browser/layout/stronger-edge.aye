@@ -1,0 +1,30 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css2/#border-conflict-resolution
+fn strongerEdge(a: Edge, b: Edge) Edge {
+    if text.eql(a.kind, "hidden") || text.eql(b.kind, "none") {
+        return a
+    }
+
+    if text.eql(b.kind, "hidden") || text.eql(a.kind, "none") {
+        return b
+    }
+
+    if a.width != b.width {
+        return wider(a, b, a.width > b.width)
+    }
+
+    if styleRank(a.kind) != styleRank(b.kind) {
+        return wider(a, b, styleRank(a.kind) > styleRank(b.kind))
+    }
+
+    return wider(a, b, a.prio >= b.prio)
+}
+
+fn wider(a: Edge, b: Edge, first: bool) Edge {
+    if first {
+        return a
+    }
+
+    return b
+}

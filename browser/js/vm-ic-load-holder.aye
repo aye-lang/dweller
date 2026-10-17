@@ -5,15 +5,11 @@ fn vmIcLoadHolder(it: *mut Interp, c: IcCase, o: u32, key: u32) u32 {
         return o
     }
 
-    if it.heap.obj(o).class == Class.Function && (key == A_NAME || key == A_LENGTH) {
+    let ob = it.heap.obj(o)
+
+    if ob.proto != c.proto || c.epoch != it.heap.proto_epoch || (ob.class == Class.Function && (key == A_NAME || key == A_LENGTH)) {
         return NONE
     }
 
-    let p = it.heap.obj(o).proto
-
-    if p != NONE && it.heap.obj(p).shape == c.other && cacheable(it, p, key) {
-        return p
-    }
-
-    return NONE
+    return c.other
 }

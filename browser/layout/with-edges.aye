@@ -1,0 +1,19 @@
+import css
+import css.Value
+import std.mem.AllocError
+
+fn withEdges(t: *mut Tree, style: []Value, edges: [4]Edge, shares: [4]f64) AllocError![]mut Value {
+    let copy = try t.alloc.alloc(Value.Initial, style.len)
+
+    for k, v in style {
+        copy[k] = v
+    }
+
+    for side in 0..4 {
+        copy[css.BORDER_TOP_STYLE + side] = Value.Keyword { k: edges[side].kind }
+        copy[css.BORDER_TOP_COLOR + side] = edges[side].color
+        copy[css.BORDER_TOP_WIDTH + side] = Value.Px { v: shares[side] }
+    }
+
+    return copy
+}
