@@ -123,18 +123,15 @@ pub struct WhiteSpace {
 }
 
 pub fn whiteSpaceOf(style: []Value) WhiteSpace {
-    let ws = keywordOf(style[css.WHITE_SPACE])
+    let ws = keywordOf(style[css.WHITE_SPACE_COLLAPSE])
     let wrap = !text.eql(keywordOf(style[css.TEXT_WRAP_MODE]), "nowrap")
-    if text.eql(ws, "pre") {
+    if text.eql(ws, "preserve") || text.eql(ws, "break-spaces") {
         return WhiteSpace { collapse: false, newlines: true, wrap: wrap }
     }
-    if text.eql(ws, "nowrap") {
-        return WhiteSpace { collapse: true, newlines: false, wrap: wrap }
+    if text.eql(ws, "preserve-spaces") {
+        return WhiteSpace { collapse: false, newlines: false, wrap: wrap }
     }
-    if text.eql(ws, "pre-wrap") || text.eql(ws, "break-spaces") {
-        return WhiteSpace { collapse: false, newlines: true, wrap: wrap }
-    }
-    if text.eql(ws, "pre-line") {
+    if text.eql(ws, "preserve-breaks") {
         return WhiteSpace { collapse: true, newlines: true, wrap: wrap }
     }
     return WhiteSpace { collapse: true, newlines: false, wrap: wrap }

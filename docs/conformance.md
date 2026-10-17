@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 20f49d7. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller 2e3276a. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -10,7 +10,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `dom/events` | 180 | 8 | 619/877 | 70.6 | 70 | done | +0.0 |
 | `uievents` | 69 | 6 | 141/194 | 72.7 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2907/5398 | 53.9 | 60 | below | +0.0 |
-| `css/cssom` | 292 | 11 | 2034/3753 | 54.2 | - | baseline | +0.0 |
+| `css/cssom` | 292 | 11 | 2123/3817 | 55.6 | - | baseline | +1.4 |
 | `fetch/api` | 178 | 13 | 1576/2415 | 65.3 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 686/1233 | 55.6 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 4850/9998 | 48.5 | 80 | below | +0.0 |
@@ -28,7 +28,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/values-color` | 865 | 237 | 13105/23211 | 56.5 | 70 | below | +0.0 |
 | `css/box-sizing` | 1591 | 259 | 4036/8548 | 47.2 | 70 | below | +0.0 |
 | `css/floats-tables` | 709 | 251 | 759/1586 | 47.9 | 65 | below | +0.0 |
-| `css/inline-text` | 2343 | 407 | 4580/8083 | 56.7 | 60 | below | +8.2 |
+| `css/inline-text` | 2343 | 407 | 4658/8083 | 57.6 | 60 | below | +1.0 |
 | `css/overflow` | 939 | 189 | 670/1907 | 35.1 | 60 | below | +0.0 |
 | `css/css-grid` | 2508 | 1085 | 4857/17475 | 27.8 | 60 | below | +0.0 |
 | `css/positioning` | 915 | 239 | 1356/2310 | 58.7 | 70 | below | +0.0 |

@@ -1,0 +1,34 @@
+import std.list.List
+import std.mem.AllocError
+
+// blink: core/layout/inline/line_breaker.cc (HandleOverflow, break anywhere)
+fn splitWord(t: *Tree, pieces: *mut List(Piece), j: usize, room: f64) AllocError!bool {
+    let p = pieces.items()[j]
+    let s = t.bx(p.box).text
+    var cut = nextGrapheme(s, p.start)
+
+    if cut >= p.end {
+        return false
+    }
+
+    while cut < p.end {
+        let next = nextGrapheme(s, cut)
+
+        if next >= p.end || textWidth(t, p, p.start, next) > room + 0.001 {
+            break
+        }
+
+        cut = next
+    }
+
+    var rest = p
+
+    rest.start = cut
+    rest.w = textWidth(t, p, cut, p.end)
+    pieces.items()[j].end = cut
+    pieces.items()[j].w = textWidth(t, p, p.start, cut)
+    pieces.items()[j].soft = true
+    try pieces.insert(j + 1, rest)
+
+    return true
+}

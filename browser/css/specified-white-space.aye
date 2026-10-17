@@ -1,0 +1,32 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn specifiedWhiteSpace(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    try addDeclaration(&mut sheet, "white-space", toks.items(), false)
+
+    let decls = sheet.decls.items()
+
+    if decls.len != 2 {
+        return false
+    }
+
+    var collapse = keywordText(decls[0].value)
+
+    if collapse.len == 0 {
+        collapse = "collapse"
+    }
+
+    try writeWhiteSpacePair(collapse, keywordText(decls[1].value), out)
+
+    return true
+}
