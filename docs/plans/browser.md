@@ -116,7 +116,7 @@ the one place with more than one process.
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
-- **Login readiness.** P10.20–P10.23 done; P9.7 open; then
+- **Login readiness.** P10.20–P10.23 and P9.7 done; then
   the user bundle P3.80.
 - **Sites.** `page_load.py check` passes on the recorded archives; W3 is
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
@@ -234,7 +234,7 @@ Exit: P3.80 handed to the user with telemetry on.
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | D1 | P10.23 | sign-in page details: `autocomplete`, `navigator.credentials` absent, `Set-Cookie` on fetch/XHR, Enter submits, `requestSubmit` | – | done | `core/html/forms/html_form_element.cc` (implicit submission, `requestSubmit`) |
-| D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | open | – (B9's own design) |
+| D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | done 2026-10-17 | – (B9's own design) |
 | D3 | P3.80 | the user bundle: W1–W9 and D1, D2 hold; the user's daily sites; reports become cards matched to a Layer 1 area | A, B3, C4, D1, D2 | open | – |
 
 ### Phase E: Spaces (lane spaces, parallel track)
@@ -608,7 +608,7 @@ read from code, for logged-in browsing in the human window:
 | CSRF tokens, 2FA code pages | yes | Plain forms and scripts; nothing special once cookies and forms work. |
 | WebAuthn / passkeys | no; out of scope for now | No `navigator.credentials` anywhere. The user can log in with password and a 2FA code. Unknown whether any of their sites force passkeys; if one does, their report makes it a card. |
 | fetch/XHR `credentials` | yes (P10.21) | `omit`, `same-origin` (default) and `include`, XHR `withCredentials`, passed to `ak.fetch`/`ak.fetchStart`; `omit` sends and stores nothing. No CORS enforcement (a compatibility gain, not a login blocker), so no `Access-Control-Allow-Credentials` check. |
-| P9.7 shared logins with Spaces | planned, not started | R5 is "partial" (`docs/browser.md:754`): one jar and one `localStorage` per process, so a Space (its own process) does not see the person's logins; `"profile":"isolated"` is rejected until P9.7 (`docs/plans/browser.md:310`). Space profiles are therefore not separate by design but not shared yet either; P9.7 builds on P4.50/P4.51. |
+| P9.7 shared logins with Spaces | done 2026-10-17 (`window_spaces_logins`) | Before it, R5 was "partial" (`docs/browser.md:754`): one jar and one `localStorage` per process, so a Space (its own process) does not see the person's logins; `"profile":"isolated"` is rejected until P9.7 (`docs/plans/browser.md:310`). Space profiles are therefore not separate by design but not shared yet either; P9.7 builds on P4.50/P4.51. |
 
 IndexedDB is not filed: no daily-login blocker is known; the user's
 reports decide. The fixture of P10.20 serves the other login cards.
@@ -1015,6 +1015,7 @@ in order.
 - test: over the test server, the person's tab opens `/net/start` (sets cookies); a Space navigates `/headers` and its Markdown shows those cookies; the Space sets a cookie with `eval` (`document.cookie`) and a `localStorage` item, and the person's next `/headers` and a script on the person's page see them; an `isolated` Space sees none.
 - verify: `cargo test --release --test browser window_spaces_logins > target/p9.7.log 2>&1; echo $?` → 0
 - time box: 90 min; model: opus (consistency between processes)
+- status: done 2026-10-17. Choices recorded in `docs/agent-protocol.md` (Spaces, Logins, the control table) and `docs/browser.md` (R5). The hook after `store` sits where the jar's `store` is called (`net/http.aye`'s response cookies, `setScriptCookie` in `net/session.aye`), not in `Jar.store` itself, so applying the other side's cookie (`applyCookie`, `Jar.store` directly) never echoes; a change is sent as the stored line and its URL (`cookie`: `url`, `line`, `script`) and replayed with `Jar.store`, so expiry and deletion (`Max-Age=0`) need nothing else. The start is a `share` message (the jar from `Jar.save` with session cookies, and the window's profile directory) then `storage` `clear`/`set` lines for the origins the window has read; the Space reads other origins' `localStorage` files from that profile read-only (`net.shareProfile`, the profile without its lock). Changes queue in `net/note-stored.aye` and `engine/note-local-change.aye` (only while sharing: the window with `--spaces`, a shared Space after `share`) and are sent each loop round (`ui/send-shared.aye`; a Space also before each status, so before its answer); the window applies a Space's and passes it to its other shared Spaces (`ui/forward-shared.aye`) through `ctl_out`, so it never waits. `isolated`: no `share`, no queue, nothing sent or applied; `spaces` and the window's `spaces` message carry each Space's `profile`; a hello with another `profile` value is refused (`window_spaces_control`). Test `window_spaces_logins` reads `/headers` as Markdown in the Space (`a`, `h` (HttpOnly) and `p`; `b` has the path `/net`), sets the Space's cookie and item on `login/read.html` (`/headers` is plain text: no scripts), and the person's page is the new `browser/tests/login/shared.html` (shows `localStorage` and `document.cookie`, sets its own, fetches `/headers`); it also checks that the person's cookie and item reach the shared Space and not the isolated one. Not done: `storage` events for changes from another process; `dweller connect --isolated` (B9 names it; the hello works without it); an attached Space keeps the profile it was started with whatever the new hello says; a jar bigger than the control socket's buffer may still be arriving when the first request is served.
 
 #### P9.8: code mode (`run`)
 - lane: browser

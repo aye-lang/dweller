@@ -1,0 +1,19 @@
+import std.list.List
+import std.mem.AllocError
+import url.Url
+
+var stored_cookies: ?*mut List([]mut u8) = null
+
+fn noteStored(at: *Url, line: []u8, script: bool) AllocError!void {
+    let l = stored_cookies orelse return
+    let s = session orelse return
+    var scripted = "0"
+
+    if script {
+        scripted = "1"
+    }
+
+    try l.append(try dup(s.alloc, at.href))
+    try l.append(try dup(s.alloc, line))
+    try l.append(try dup(s.alloc, scripted))
+}

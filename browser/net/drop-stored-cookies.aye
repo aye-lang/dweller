@@ -1,0 +1,14 @@
+import std.mem.Allocator
+
+fn dropStoredCookies(alloc: Allocator) {
+    let l = stored_cookies orelse return
+
+    stored_cookies = null
+
+    for c in l.items() {
+        release(alloc, c)
+    }
+
+    l.deinit()
+    alloc.destroy(l)
+}
