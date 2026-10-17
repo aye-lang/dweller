@@ -777,6 +777,7 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     }
     let values = try computedValues(s, h) orelse return none
     try animation.styleChange(&mut s.transitions, h, values, s.now)
+    animation.markRead(&mut s.transitions, h)
     let b = try it.builder()
     defer it.release(b)
     if one {
@@ -839,7 +840,7 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
 
         let i = css.propertyIndex(b.bytes()) orelse return none
         b.clear()
-        if try animation.currentValue(&s.transitions, h, i, s.now) |v| {
+        if try animation.currentValue(&mut s.transitions, h, i, s.now) |v| {
             try css.writeValue(v, b)
         } else {
             try writeResolved(s, h, values, i, b)

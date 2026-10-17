@@ -6,10 +6,14 @@ pub struct Transitions {
     alloc: Allocator
     running: List(Transition)
     before: IntMap(u32, Snapshot)
+    shown: IntMap(u32, Shown)
     events: List(TransitionEvent)
+    started: u64
+    kept: List([]mut u8)
+    frames: List([]mut u8)
 
     pub fn init(alloc: Allocator) Transitions {
-        return Transitions { alloc: alloc, running: List(Transition).init(alloc), before: IntMap(u32, Snapshot).init(alloc), events: List(TransitionEvent).init(alloc) }
+        return Transitions { alloc: alloc, running: List(Transition).init(alloc), before: IntMap(u32, Snapshot).init(alloc), shown: IntMap(u32, Shown).init(alloc), events: List(TransitionEvent).init(alloc), started: 0, kept: List([]mut u8).init(alloc), frames: List([]mut u8).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -20,8 +24,25 @@ pub struct Transitions {
         }
 
         self.before.deinit()
+        self.shown.deinit()
         self.running.deinit()
         self.events.deinit()
+        self.dropFrames()
+        self.frames.deinit()
+
+        for k in self.kept.items() {
+            self.alloc.free(k)
+        }
+
+        self.kept.deinit()
+    }
+
+    pub fn dropFrames(self: *mut Self) {
+        for k in self.frames.items() {
+            self.alloc.free(k)
+        }
+
+        self.frames.clear()
     }
 
     pub fn active(self: *Self) bool {

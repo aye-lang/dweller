@@ -6,6 +6,10 @@ import std.text
 
 // spec: https://drafts.csswg.org/css-transitions-1/#starting
 pub fn styleChange(t: *mut Transitions, el: NodeId, after: []css.Value, now: f64) AllocError!void {
+    if try isShown(t, el, after) {
+        return
+    }
+
     if t.before.getPtr(el.index) |old| {
         try changeStyle(t, el, old, after, now)
     }
@@ -15,7 +19,7 @@ pub fn styleChange(t: *mut Transitions, el: NodeId, after: []css.Value, now: f64
     }
 
     if t.before.get(el.index) == null {
-        try t.before.put(el.index, Snapshot { el: el, values: try t.alloc.alloc(css.Value.Initial, css.NPROPS), wanted: false })
+        try t.before.put(el.index, Snapshot { el: el, values: try t.alloc.alloc(css.Value.Initial, css.NPROPS), wanted: false, read: false })
     }
 
     let snap = t.before.getPtr(el.index) orelse return
@@ -23,16 +27,10 @@ pub fn styleChange(t: *mut Transitions, el: NodeId, after: []css.Value, now: f64
     snap.wanted = transitionsWanted(after)
 
     for p in 0..css.NPROPS {
-        snap.values[p] = interpolable(after[p])
+        snap.values[p] = try snapshotValue(t, p, snap.values[p], after[p])
     }
 }
 
 fn isDisplayNone(after: []css.Value) bool {
     return text.eql(keywordOf(after[css.DISPLAY]), "none")
-}
-
-fn interpolable(v: css.Value) css.Value {
-    let parts = partsOf(v) orelse return css.Value.Initial
-
-    return valueOfParts(parts)
 }

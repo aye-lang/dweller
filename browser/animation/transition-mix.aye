@@ -1,0 +1,23 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#interpolation-of-transforms
+fn transitionMix(t: *mut Transitions, p: usize, a: css.Value, b: css.Value, progress: f64) AllocError!?css.Value {
+    if interpolate(a, b, progress) |v| {
+        return v
+    }
+
+    if !css.isTransformPart(p) || keywordOf(a).len == 0 || keywordOf(b).len == 0 {
+        return null
+    }
+
+    var out = text.Builder.init(t.alloc)
+    defer out.deinit()
+
+    if !(try interpolateText(t.alloc, css.PROPERTIES[p].name, keywordOf(a), keywordOf(b), progress, &mut out)) {
+        return null
+    }
+
+    return try ownedValue(t.alloc, &mut t.frames, css.Value.Keyword { k: out.bytes() })
+}

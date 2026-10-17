@@ -1,0 +1,16 @@
+import css
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#application
+fn noteRunning(s: *mut Script) AllocError!void {
+    if s.transitions.running.len() == 0 {
+        return
+    }
+
+    s.version += 1
+    s.page.doc.controls.transition_frame += 1
+
+    for r in s.transitions.running.items() {
+        try noteLayoutChange(s, r.el, css.attrChange("style"))
+    }
+}
