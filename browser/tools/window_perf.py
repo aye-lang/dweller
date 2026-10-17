@@ -7,9 +7,12 @@
         turn the wheel 3 notches (`wheel:-3 frame`; `--wheel -0.37` is a
         trackpad's 3.7 px a frame). Prints the first
         paint, the scroll frames' p50/p95 and the longest loop iteration.
-    window_perf.py idle URL [--binary B] [--real-window]
+    window_perf.py idle URL [--binary B] [--real-window] [--minimize] [--settle S]
         A window, no input: the CPU% of the 10 s that start 5 s
-        after the first frame, and what the loop did meanwhile.
+        after the first frame (--settle S: S s), and what the loop did
+        meanwhile.
+        --minimize feeds the window's minimized event (`window:hidden`,
+        P4.55) after the first frame; the window itself is not touched.
     window_perf.py gate BUDGETS.json [--binary B] [--update]
         The CI perf gate (P4.40, perf_gate.py): the synthetic pages of
         browser/tests/perf/ over browser/tests/server.py, the median of
@@ -104,7 +107,10 @@ def idle(a):
         os.close(fd)
     f = open(path, "w")
     t0 = time.monotonic()
-    p = subprocess.Popen([a.binary, a.url], stdout=subprocess.DEVNULL, stderr=f, env=env)
+    cmd = [a.binary, a.url]
+    if a.minimize:
+        cmd += ["--frames", "16000", "--events", "painted window:hidden"]
+    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=f, env=env)
 
     def cpu():
         s = subprocess.run(["ps", "-o", "time=", "-p", str(p.pid)], capture_output=True, text=True).stdout.strip()
@@ -122,7 +128,7 @@ def idle(a):
                 drawn = time.monotonic() - t0
                 break
             time.sleep(0.1)
-        time.sleep(5)
+        time.sleep(a.settle)
         start = os.path.getsize(path)
         c0, w0 = cpu(), time.monotonic()
         time.sleep(10)
@@ -161,6 +167,8 @@ def main():
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
     ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
+    ap.add_argument("--minimize", action="store_true", help="idle: the window is minimized after its first frame")
+    ap.add_argument("--settle", type=int, default=5, help="idle: seconds between the first frame and the measure")
     ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
     ap.add_argument("--update", action="store_true", help="gate: lower the budgets to the values measured")
     a = ap.parse_args()

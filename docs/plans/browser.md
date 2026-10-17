@@ -539,6 +539,7 @@ them from coming back.
 - how: local macOS check with `DWELLER_BACKGROUND=1` (the window is a background app that is never raised, X1); the Linux cloud box runs SDL's dummy driver, which cannot minimize.
 - verify: the idle CPU of the minimized window < 2%, shown ~ as before.
 - time box: 20 min; model: sonnet
+- status: measured 2026-10-16 on this Mac (`DWELLER_BACKGROUND=1`, mistral.ai, build of main). Shown: 93.4% (98.6% before). Minimized: `window_perf.py idle URL --real-window --minimize --settle 20` feeds `window:hidden` after the first paint (the window itself is not touched: SDL has no minimize call that is sure not to move the focus, and the real loop only reads scripted words under `--frames`, whose loop wakes every 10 ms and draws every iteration): 3.3%, of which the page's timers are 69 ms in 10 s (0.7%, no rAF, no relayout, no damage) and the rest is that test loop (a static page measures 1.5% the same way). With the default 5 s settle the page's late scripts were still loading: 6.4%. The real loop (1 s wait, no draw while hidden) is under the 3.3%, so < 2% holds by that sum but is not measured directly; a direct measure needs a real minimize or a script feed in the real loop.
 
 #### P4.36: scroll by moving the last frame
 - goal: a scroll moves the previous frame's pixels and draws only the band that scrolled in, then fixed and sticky boxes over it; a frame with no change draws nothing (cause 3).
