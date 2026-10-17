@@ -1,0 +1,28 @@
+fn sourceSize(toks: []Token, m: Media) ?f64 {
+    var end = toks.len
+
+    while end > 0 && toks[end - 1].kind == Tok.Whitespace {
+        end -= 1
+    }
+
+    var last: usize = 0
+    var i: usize = 0
+
+    while i < end {
+        last = i
+        i = skipComponent(toks, i)
+    }
+
+    if end == 0 {
+        return null
+    }
+
+    let px = sourceSizeValue(toks[last..end]) orelse return null
+    let condition = toks[..last]
+
+    if skipWhitespace(condition, 0) >= condition.len || mediaConditionMatches(condition, m) {
+        return px
+    }
+
+    return null
+}

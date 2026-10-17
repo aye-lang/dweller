@@ -2913,7 +2913,7 @@ pub let PRELUDE =
     \\// A new request cancels the old task.
     \\const ImageP = HTMLImageElement.prototype;
     \\function imageEncodingError() { return new DOMException('The source image cannot be decoded.', 'EncodingError'); }
-    \\function imageUpdate(el) {
+    \\function imageUpdate(el, now) {
     \\  if (ak.inTemplate(el)) return;
     \\  const old = el.__imageRequest;
     \\  if (old) {
@@ -2926,9 +2926,10 @@ pub let PRELUDE =
     \\  const parent = el.parentNode;
     \\  const state = { complete: empty, width: 0, height: 0, currentSrc: '', status: 'pending', waiters: [], picture: !!parent && parent.localName === 'picture', task: 0 };
     \\  hidden(el, '__imageRequest', state);
-    \\  ak.queueMicrotask(() => {
+    \\  const load = () => {
     \\    if (el.__imageRequest === state) imageResult(el, state, ak.imageLoad(el, 0), src, srcset);
-    \\  });
+    \\  };
+    \\  if (now) load(); else ak.queueMicrotask(load);
     \\}
     \\function imageResult(el, state, result, src, srcset, inTask) {
     \\  if (typeof result === 'number') {
@@ -2962,6 +2963,7 @@ pub let PRELUDE =
     \\  }, 0);
     \\}
     \\function imageState(el) {
+    \\  if (!el.__imageRequest && el.ownerDocument !== document) imageUpdate(el, true);
     \\  if (!el.__imageRequest) imageUpdate(el);
     \\  return el.__imageRequest || { complete: true, width: 0, height: 0, currentSrc: '', status: 'broken' };
     \\}

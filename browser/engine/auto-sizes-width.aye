@@ -1,0 +1,16 @@
+import css
+import dom.Document
+import dom.NodeId
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/images.html#allows-auto-sizes
+fn autoSizesWidth(doc: *Document, el: NodeId, media: css.Media) f64 {
+    let lazy = text.eqlIgnoreCase(doc.attr(el, "loading") orelse "", "lazy")
+    let sizes = text.trim(doc.attr(el, "sizes") orelse "")
+
+    if !lazy || sizes.len < 4 || !text.eqlIgnoreCase(sizes[..4], "auto") {
+        return media.width
+    }
+
+    return text.parseFloat(text.trim(doc.attr(el, "width") orelse "")) catch 300.0
+}
