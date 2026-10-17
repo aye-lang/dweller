@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-an-identifier
+fn writeIdent(name: []u8, out: *mut text.Builder) AllocError!void {
+    for i, c in name {
+        let digit = c >= '0' && c <= '9'
+
+        if c == 0 {
+            try out.appendChar(0xfffd)
+        } else if c < 0x20 || c == 0x7f || (digit && (i == 0 || (i == 1 && name[0] == '-'))) {
+            try out.appendByte('\\')
+            try writeHex(c, out)
+            try out.appendByte(' ')
+        } else if c == '-' && name.len == 1 {
+            try out.append("\\-")
+        } else if c >= 0x80 || c == '-' || c == '_' || digit || (c | 0x20 >= 'a' && c | 0x20 <= 'z') {
+            try out.appendByte(c)
+        } else {
+            try out.appendByte('\\')
+            try out.appendByte(c)
+        }
+    }
+}

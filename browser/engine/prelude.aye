@@ -3822,9 +3822,13 @@ pub let PRELUDE =
     \\    if (r.type === 7) r.name = text.slice(m[0].length, text.indexOf('{')).trim();
     \\  } else {
     \\    r.type = 1;
-    \\    r.selectorText = text.slice(0, text.indexOf('{')).trim();
+    \\    const sel = text.slice(0, text.indexOf('{')).trim();
+    \\    r.selectorText = ak.selectorText(sel) ?? sel;
     \\  }
     \\  return r;
+    \\}
+    \\function validRule(text) {
+    \\  return /^@/.test(text) || ak.selectorText(text.slice(0, text.indexOf('{'))) !== null;
     \\}
     \\let sheetIds = 0;
     \\class CSSStyleSheet {
@@ -3842,7 +3846,7 @@ pub let PRELUDE =
     \\    this.media = { mediaText: options && options.media ? String(options.media) : '', length: 0 };
     \\  }
     \\  get _rules() {
-    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source) : [];
+    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
     \\    return this._list;
     \\  }
     \\  // The sheet of an element: the browser takes its rules over from the
@@ -3860,7 +3864,15 @@ pub let PRELUDE =
     \\    this._text = text;
     \\    for (const owner of this._adopters) pushAdopted(owner);
     \\  }
-    \\  get cssRules() { return this._rules.map(t => ruleObject(this, t)); }
+    \\  get cssRules() {
+    \\    if (!this._ruleList) hidden(this, '_ruleList', []);
+    \\    return this._syncRules();
+    \\  }
+    \\  _syncRules() {
+    \\    const list = this._ruleList;
+    \\    if (list) list.splice(0, list.length, ...this._rules.map(t => ruleObject(this, t)));
+    \\    return list;
+    \\  }
     \\  get rules() { return this.cssRules; }
     \\  get ownerNode() { return this._owner; }
     \\  get href() { return this._owner && this._owner.localName === 'link' ? this._owner.href : null; }
@@ -3881,15 +3893,17 @@ pub let PRELUDE =
     \\    index = index === undefined ? 0 : index >>> 0;
     \\    if (index > rules.length) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': The index provided (" + index + ") is larger than the maximum index (" + rules.length + ").", 'IndexSizeError');
     \\    rule = String(rule).trim();
-    \\    if (!/[{;]/.test(rule) && !/^@/.test(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
+    \\    if (rule.indexOf('{') < 0 && !/^@/.test(rule) || !validRule(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 0, rule);
     \\      this._changed(null);
+    \\      this._syncRules();
     \\      return index;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 0, rule);
     \\    ak.sheetInsert(this._id, index, rule);
+    \\    this._syncRules();
     \\    return index;
     \\  }
     \\  deleteRule(index) {
@@ -3899,11 +3913,13 @@ pub let PRELUDE =
     \\    if (!this._owner) {
     \\      rules.splice(index, 1);
     \\      this._changed(null);
+    \\      this._syncRules();
     \\      return;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 1);
     \\    ak.sheetDelete(this._id, index);
+    \\    this._syncRules();
     \\  }
     \\  addRule(sel, style, index) { this.insertRule(sel + ' { ' + style + ' }', index === undefined ? this._rules.length : index); return -1; }
     \\  removeRule(index) { this.deleteRule(index === undefined ? 0 : index); }
