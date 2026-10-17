@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 790afcb. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller c1d5d99. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -18,7 +18,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | +0.0 |
 | `css/css-flexbox` | 1422 | 469 | 640/1691 | 37.8 | 70 | below | +0.0 |
 | `css/css-transitions` | 143 | 59 | 335/3341 | 10.0 | - | baseline | +0.0 |
-| `test262/built-ins` | 18373 | 5450 | 11792/18373 | 64.2 | 80 | below | +0.0 |
+| `test262/built-ins` | 18373 | 5450 | 12825/18373 | 69.8 | 80 | below | +5.6 |
 | `test262/language` | 23210 | 516 | 15080/23210 | 65.0 | 80 | below | +0.0 |
 
 ## Not yet measured

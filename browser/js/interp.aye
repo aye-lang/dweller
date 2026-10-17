@@ -1073,7 +1073,7 @@ pub struct Interp {
                 }
                 return p.value
             }
-            if cls == Class.Function && (key == A_NAME || key == A_LENGTH) {
+            if cls == Class.Function && (key == A_NAME || key == A_LENGTH) && !self.heap.obj(cur).own_keys_made {
                 return self.functionNameOrLength(cur, key)
             }
             cur = self.heap.obj(cur).proto
@@ -1319,6 +1319,7 @@ pub struct Interp {
         if self.heap.obj(o).frozen {
             return
         }
+        try ownFunctionKeys(self, o)
         if self.heap.findProp(o, key) |i| {
             let p = self.heap.obj(o).props[i]
             if (p.flags & F_ACCESSOR) != 0 {
@@ -1409,6 +1410,9 @@ pub struct Interp {
             let t = proxyTarget(self, o)
             return t != NONE && self.hasOwn(t, key)
         }
+        if self.heap.obj(o).class == Class.Function && !self.heap.obj(o).own_keys_made && (key == A_NAME || key == A_LENGTH) {
+            return true
+        }
         if self.heap.obj(o).class == Class.Host && self.namedHost(o) && self.host.?.hasNamed(self, o, key) {
             return true
         }
@@ -1453,6 +1457,7 @@ pub struct Interp {
 
     /// delete v[key]; false when the property cannot be deleted.
     pub fn deleteProp(self: *mut Self, o: u32, key: u32) JsError!bool {
+        try ownFunctionKeys(self, o)
         let ob = self.heap.obj(o)
         if ob.class == Class.Proxy {
             return proxyDelete(self, o, key)
@@ -1495,6 +1500,7 @@ pub struct Interp {
         if cls == Class.Proxy {
             return proxyOwnKeys(self, o, out, all, false)
         }
+        try ownFunctionKeys(self, o)
         if cls == Class.TypedArray {
             let n = typedLen(self, o)
             for i in 0..n {
