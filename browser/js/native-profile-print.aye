@@ -1,0 +1,27 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn nativeProfilePrint(p: *NativeProfile, it: *Interp) AllocError!void {
+    var b = text.Builder.init(it.alloc)
+    defer b.deinit()
+    try b.append("info: DWELLER_JS_NATIVES\t(bytecode)\t")
+    try b.appendUint(p.js_ns)
+    try b.append("\t0\n")
+
+    for id in 0..p.calls.len() {
+        if p.calls.items()[id] == 0 {
+            continue
+        }
+
+        try b.append("info: DWELLER_JS_NATIVES\t")
+        try b.append(it.heap.atoms.name(it.natives.items()[id].name))
+        try b.append("\t")
+        try b.appendUint(p.ns.items()[id])
+        try b.append("\t")
+        try b.appendUint(p.calls.items()[id])
+        try b.appendByte('\n')
+    }
+
+    std.fs.stderr().write(b.bytes()) catch |e| {}
+}

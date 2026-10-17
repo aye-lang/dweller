@@ -66,6 +66,7 @@ struct Compiler {
     scopes: List(u32)
     // Per register: a `let`/`const` not yet initialized (its dead zone).
     tdz: List(bool)
+    switch_depth: u32
     // The register that holds `this` (-1: the function does not use it).
     this_reg: i32
     reason: []u8
@@ -123,7 +124,7 @@ struct Compiler {
     fn readReg(self: *mut Self, depth: u32, slot: u32, name: u32) CompileError!i32 {
         let r = try self.identReg(depth, slot)
         if r >= 0 && self.tdz.items()[r as usize] {
-            try vmThrowHole(self, name)
+            try vmDeadRead(self, name)
         }
         return r
     }
@@ -664,17 +665,7 @@ struct Compiler {
         defer vals.deinit()
         for k in 0..n {
             match self.ast.node(self.ast.item(list, k)) {
-                .Case { cond, list: cl, n: cn } => {
-                    for j in 0..cn {
-                        match self.ast.node(self.ast.item(cl, j)) {
-                            .VarDecl { kind, .. } => {
-                                if kind != DECL_VAR {
-                                    try self.fail("unsupported: lexical declaration in switch")
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                .Case { cond, .. } => {
                     if cond == 0 {
                         dflt = k
                     } else if self.caseInt(cond) |x| {
@@ -696,9 +687,6 @@ struct Compiler {
         if ncases < 3 || hi - lo + 1 > 2 * ncases + 8 {
             smi = false
         }
-        if sc.nslots > 0 {
-            smi = false
-        }
         let mark = self.b.topReg
         let brk = try self.b.newLabel()
         let dfltLabel = try self.b.newLabel()
@@ -710,6 +698,8 @@ struct Compiler {
         var table: u32 = 0
         if smi {
             try self.visit(disc)
+            try vmEnterScope(self, scope)
+            try vmMarkSwitchDead(self, list, n)
             table = try self.b.newJumpTable((hi - lo + 1) as u32, lo as i32)
             try self.b.switchOnSmi(table)
         } else {
@@ -717,6 +707,7 @@ struct Compiler {
             try self.visit(disc)
             try self.b.op1(BC_STAR, d as i64)
             try vmEnterScope(self, scope)
+            try vmMarkSwitchDead(self, list, n)
             for k in 0..n {
                 match self.ast.node(self.ast.item(list, k)) {
                     .Case { cond, .. } => {
@@ -754,6 +745,7 @@ struct Compiler {
                     if k == dflt {
                         try self.bindDefault(dfltLabel, smi, table, lo, hi, vals.items())
                     }
+                    try vmMarkSwitchDead(self, list, n)
                     for j in 0..cn {
                         try self.visitStatement(self.ast.item(cl, j))
                     }
@@ -995,7 +987,7 @@ struct Compiler {
                 try self.b.jump(BC_JUMP, try self.target(label, true))
             }
             .Switch { disc, list, n, scope } => {
-                try self.visitSwitch(disc, list, n, scope)
+                try vmSwitch(self, disc, list, n, scope)
             }
             .Labeled { label, body } => {
                 try self.pending.append(label)
@@ -1192,6 +1184,7 @@ pub fn compileFunction(alloc: Allocator, ast: *Ast, func: u32) AllocError!VmFunc
         func: func,
         scopes: List(u32).init(alloc),
         tdz: List(bool).init(alloc),
+        switch_depth: 0,
         this_reg: -1,
         reason: "",
         ctl: List(Ctl).init(alloc),

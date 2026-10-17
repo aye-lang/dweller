@@ -113,8 +113,7 @@ fn substringOf(it: *mut Interp, s: u32, from: u32, to: u32) JsError!Value {
     }
     let b = try it.builder()
     defer it.release(b)
-    let bytes = it.heap.bytes(s)
-    try appendSlice(&mut it.units, b, bytes, it.heap.str(s).ascii, from, to)
+    try appendUnitRange(it, b, s, from, to)
     return it.takeString(b)
 }
 
@@ -157,14 +156,6 @@ fn stringCharAt(it: *mut Interp, a: Args) JsError!Value {
         return it.atomValue(A_EMPTY)
     }
     return it.charAtIndex(s, k as u32)
-}
-
-fn codeUnit(it: *mut Interp, s: u32, i: u32) u32 {
-    let c = it.heap.str(s)
-    if c.ascii {
-        return it.heap.bytes(s)[i] as u32
-    }
-    return unitAt(it.heap.bytes(s), i)
 }
 
 fn stringCharCodeAt(it: *mut Interp, a: Args) JsError!Value {
@@ -234,23 +225,6 @@ fn rfindBytes(hay: []u8, needle: []u8, from: usize) ?usize {
         i -= 1
     }
     return null
-}
-
-// Byte offset of unit index u in s.
-fn byteAt(it: *mut Interp, s: u32, u: u32) usize {
-    let c = it.heap.str(s)
-    if c.ascii {
-        return u as usize
-    }
-    return byteOffset(it.heap.bytes(s), u)
-}
-
-fn unitOf(it: *mut Interp, s: u32, b: usize) u32 {
-    let c = it.heap.str(s)
-    if c.ascii {
-        return b as u32
-    }
-    return unitOffset(it.heap.bytes(s), b)
 }
 
 // The search string (argument 0) of indexOf and friends.

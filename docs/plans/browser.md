@@ -273,7 +273,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F11 | P4.73 | inline caches | F10 | done |
 | F11b | P4.73b | the inline caches pay for themselves | F11 | done |
 | F12 | P4.74 | prototype shapes and the prototype epoch | F11 | done |
-| F13 | P4.75 | the VM on by default | F12 | done except P4.75b |
+| F13 | P4.75 | the VM on by default | F12 | done 2026-10-18 (P4.75d) |
 | F14 | P4.77 | register optimizer and fused instructions | F13 | open |
 | F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
 
@@ -905,10 +905,102 @@ Common to these cards:
 - files: `browser/js/BYTECODE.md`, `browser/js/PERF.md`
 - verify: `python3 browser/tools/page_load.py check` exit 0
 - model: opus
+- status: done 2026-10-18 except the verify (exit 1, P4.75d). `page_load.py check` on the 22 archives of 2026-10-14 (`target/sites` of the main checkout): VM on and `DWELLER_JS_VM=0` give the same result, 10 pass (example, hn, github, mdn, python-docs, rustdoc, cnn-lite, lobsters, duckduckgo, abehiroshi), 2 are skipped as excluded (reddit, stackoverflow) and 10 fail on archive misses (wikipedia-en 3, bbc 20, go-docs 2, google 3, wikipedia 3, zol 10, youtube 9, youtube-search 4, react 7, mistral 1 missed URLs, the same counts with the VM off); the binary of 2026-10-16 fails them the same, so no failure is a VM regression: the archives lack requests the engine makes now (go-docs and mistral: `gtm.js` inserted by a script). The Markdown is byte-equal VM on and off on all 22 sites except mdn (a virtual-clock timestamp). `DWELLER_JS_VM_STATS=1` reasons per site, before → after this card: every page had 3 functions of the window prelude on the tree walker ("parameter pattern": a parameter in a context with a non-simple parameter list, `function (a, b = 1) { return () => a }`), github 47 (44 of those, 3 "lexical declaration in switch"), bbc 20, mdn 10, react 8, mistral 6. Fixed here: captured parameters with defaults, rest or patterns are stored to their context slot (`vm-store-param.aye`; V8 `BuildParameterInitialization`), and `let`/`const`/`class` in a `switch` get the switch's block scope and context, with a dead zone per case (`vm-mark-switch-dead.aye`; a read of an earlier case's binding still falls back); tests 269 and 270. Left after: bbc 3 functions and 2 scripts, zol 1 script, all "context variable" from direct `eval` (bbc: optimizely `eval(str)`; zol: `eval(ad + ...)`) — in P4.75c; the other 20 sites print no reason. `scripts`/`timers` phases, tree walker → VM (median of 3 after a warm-up): youtube 0.92×/1.19×, github 1.08×/0.91×, react 0.96×/1.05×, mistral 1.00×/1.09× — within noise, not the estimated 1.5–2.5× (table in `BYTECODE.md` section 1 and `PERF.md`). `js_conformance`, `js_conformance_vm`, `jsdom_fixtures` green; `check_taste.py`, `check_layers.py` pass.
+
+#### P4.75d: recapture the 10 stale site archives (local)
+- goal: `python3 browser/tools/page_load.py check` exit 0 with the VM on, the exit condition of F13.
+- design: `page_load.py capture` (live, on the Mac) for wikipedia-en, bbc, go-docs, google, wikipedia, zol, youtube, youtube-search, react, mistral, whose 2026-10-14 archives miss requests the current engine makes on both engines (`archive miss:` lines in `target/page-load-out/<site>/last.stderr`); then `check` with the VM on and with `DWELLER_JS_VM=0`, and any site that fails only with the VM on fixed or a card. bbc failed before P4.74 too: look at its misses first.
+- files: none tracked (the archives are local); `browser/tools/sites.json` if an expectation moved
+- verify: `python3 browser/tools/page_load.py check` exit 0
+- model: sonnet
+- status: done 2026-10-18. All 10 recaptured live (`capture --site`, one at a time, headless; old archives kept in `target/sites-old-20261017/<site>` of the main checkout): wikipedia-en, bbc, go-docs, google, wikipedia, zol, youtube, youtube-search, react, mistral. No capture crashed. `check` exit 0 and `check --agent` exit 0 with the VM on (22 sites; reddit and stackoverflow stay excluded). Two fixes. (1) bbc missed `securepubads.g.doubleclick.net/gampad/ads?pvsid=...` on every replay: gpt.js takes `pvsid` from `crypto.getRandomValues` (`ak.randomFill`), which the benchmark prelude did not seed, so the URL differed between capture and replay; `benchmark.aye` now fills it from its own LCG (a separate seed, so Math.random's sequence and the other archives are unchanged); bbc was captured again with that binary. (2) zol's live page now has `<base target="_blank"/>`, so the click on 新闻 opens another tab and the page stays on `https://www.zol.com.cn/`; `agent_tasks/zol.jsonl` expects `it opens in another tab: https://news.zol.com.cn/` and that url. bbc's capture logs one `DataCloneError: [object Object] could not be cloned` (a promise in an ad script, not found yet; the same with the VM off): `sites.json` `max_errors` 0 to 1. `DWELLER_JS_VM=0 check`: bbc (about 20 analytics beacons: scorecardresearch, chartbeat, dotmetrics, cxense, `a1.api.bbc.com/event`) and react (2 google-analytics `g/collect`) miss because the tree walker's virtual-clock ticks differ from the VM's, so those requests are timed differently; the other 20 pass. The tree walker is to be deleted (P4.78), so no archive is captured with it. `check_taste.py`, `check_layers.py` pass.
+
+#### P4.75e: where the sites' script time goes (local)
+- goal: P4.75 made jsbench 2.45× faster, but P4.75b found the `scripts`/`timers` phases of youtube, github, react and mistral unchanged; find where that time goes.
+- design: split the JS time of a site load into bytecode, compile (parse, bytecode generation), GC, and the natives called from JS by name. `DWELLER_JS_NATIVES=1` (new, `browser/js/native-profile*.aye`, `switch-native.aye`, `resume-native.aye`, `call-native.aye`) times every native call (`callAt`, `constructAt`, the super call) exclusive of nested natives and of the JS they call back, plus a `(bytecode)` bucket for time inside `vmRun` (`vmEnter`, generator resume); parse, compile and GC pause it and get `DWELLER_TIMING` phases of their own (`js_parse` in `parseCode`, `js_compile` in `vmLookup` and `vmRunScript`, `js_gc` in `collectGarbage`). Printed at `Interp.deinit` as `info: DWELLER_JS_NATIVES\t<name>\t<ns>\t<calls>`. Off, it costs a bool test per native call and per JS frame.
+- files: `browser/js/native-profile.aye`, `native-profile-of.aye`, `native-profile-charge.aye`, `native-profile-switch.aye`, `native-profile-print.aye`, `switch-native.aye`, `resume-native.aye`, `call-native.aye`, `free-native-profile.aye`; wiring in `interp.aye`, `vm.aye`, `vm-run-script.aye`, `vm-generator-run.aye`, `gc.aye`; `browser/js/PERF.md`
+- verify: `page_load.py check` exit 0 (22 sites, this binary); `js_conformance_vm`, `jsdom_fixtures` green; `check_taste.py`, `check_layers.py` pass
+- model: opus
+- status: done 2026-10-18. M2 Pro, fast build, archives of P4.75d; per site one `page_load.py run --repeat 3 --warmup 1` (phases, wall) and one run with `DWELLER_JS_NATIVES=1 DWELLER_JS_VM_STATS=1` (the split; its `scripts`/`timers` within 1–7% of the plain run). `scripts` and `timers` nest (youtube: 2.93 s + 2.53 s in a 4.28 s wall), so the tables split the measured JS time, the sum of the exclusive buckets; it is about the wall time on youtube, mistral and bbc. "Forced style/layout" is the natives that read geometry or computed style (`rects` = getBoundingClientRect/getClientRects, `metric` = offset*/client*/scroll*, `computedStyle`, `offsetParent`, `setScroll`); nearly all their time is `script_layout`/`style_full`. Engine glue outside JS (event dispatch, the job loop, replayed fetches) is not in the tables.
+
+  The answer: the VM sped up the part that was already small. Bytecode is 11–45% of the JS time on youtube, github, react and mistral; the rest is natives (forced layout, `charCodeAt`, the 2D canvas) and parsing, which P4.75 did not touch. Only bbc is bytecode-bound (71%). The VM runs about 10–11.5 ns per instruction on the sites (youtube 83M instructions in 951 ms, bbc 358M in 3.92 s, mistral 405M in 3.87 s); Ignition is a few ns.
+
+  | ms (%) | youtube | github | react | mistral | bbc |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | bytecode | 951 (22.8) | 385 (10.8) | 176 (44.9) | 3866 (14.0) | 3920 (70.6) |
+  | compile: parse | 834 (20.0) | 185 (5.2) | 75 (19.1) | 247 (0.9) | 418 (7.5) |
+  | compile: bytecode generation | 204 (4.9) | 27 (0.8) | 17 (4.4) | 46 (0.2) | 79 (1.4) |
+  | GC | 67 (1.6) | 36 (1.0) | 7 (1.8) | 137 (0.5) | 174 (3.1) |
+  | forced style/layout | 601 (14.4) | 2691 (75.5) | 35 (8.9) | 8441 (30.7) | 224 (4.0) |
+  | DOM/engine natives | 113 (2.7) | 141 (3.9) | 55 (14.0) | 1320 (4.8) | 103 (1.9) |
+  | string/regexp builtins | 1247 (29.9) | 36 (1.0) | 8 (2.0) | 165 (0.6) | 246 (4.4) |
+  | other builtins | 154 (3.7) | 63 (1.8) | 20 (5.0) | 592 (2.2) | 393 (7.1) |
+  | canvas natives | – | – | – | 12713 (46.2) | – |
+  | measured JS | 4170 | 3564 | 393 | 27526 | 5555 |
+  | `scripts` / `timers` phases | 2928 / 2525 | 293 / 3244 | 205 / 292 | 1142 / 28491 | 425 / 4928 |
+
+  The timer natives (`setTimer`, `clearTimer`) take at most 5 ms a site (mistral), inside "DOM/engine natives". reddit (excluded, its archive fails replay) runs 23 ms of JS, 54% of it parse.
+
+  Top natives by exclusive time over the five sites:
+
+  | native | ms | calls | µs/call | what |
+  | --- | ---: | ---: | ---: | --- |
+  | `canvasDraw` | 12661 | 13126 | 965 | 2D canvas fill/stroke/text (mistral) |
+  | `metric` | 7273 | 24924 | 292 | offset*/client*/scroll*: forced layout (mistral 6898, youtube 281) |
+  | `rects` | 2988 | 13944 | 214 | getBoundingClientRect: forced layout (github 2293 in 151 calls) |
+  | `charCodeAt` | 1269 | 2348544 | 0.5 | youtube 1206 ms in 415k calls, 2.9 µs each |
+  | `offsetParent` | 891 | 254 | 3506 | forced layout (mistral) |
+  | `imageLoad` | 867 | 443 | 1957 | image decode on `img.src` (mistral 796) |
+  | `computedStyle` | 429 | 1992 | 215 | getComputedStyle: forced style (youtube 260 in 69 calls) |
+  | `setScroll` | 411 | 402 | 1022 | scrollTo/scrollTop=: forced layout (github 396 in 1 call) |
+  | `contentDocument` | 283 | 13 | 21800 | iframe document creation (mistral) |
+  | `call` | 181 | 1753414 | 0.1 | Function.prototype.call |
+
+  Why: `charCodeAt` on a non-ASCII string calls `wtf8.unitAt`, which decodes the UTF-8 from the start, so a loop over a long string is quadratic (youtube decodes a large non-ASCII string one unit at a time). github's 7 forced layouts cost 384 ms each and its 13 restyles 307 ms each: every geometry read after a DOM change takes the full `style_full` path. mistral relayouts 8123 times (1.0 ms each) and restyles fully 1969 times for 24924 `metric` reads.
+
+  Next cards, ranked by milliseconds saved per unit of work:
+  1. P4.75f, O(1) code units of non-ASCII strings: youtube −1.1 s (27% of its JS); a few lines.
+  2. P4.75g, incremental style and layout for script reads: github −2 s, mistral −5 s, youtube −0.4 s.
+  3. P4.77 (exists), then dispatch work: bbc, mistral and youtube spend 0.95–3.9 s at ~11 ns per instruction; 2× faster dispatch saves bbc −2 s, mistral −1.9 s, youtube −0.5 s. P4.77's register optimizer is the first step; its jsbench gate stays.
+  4. P4.75h, 2D canvas rasterization: mistral −8 s or more (canvasDraw 965 µs a call).
+  5. P4.75i, lazy function parsing: youtube −0.5 s, bbc −0.25 s, react −0.04 s.
+
+#### P4.75f: O(1) code units of non-ASCII strings
+- goal: `charCodeAt`, `charAt`, `codePointAt` and `str[i]` on a non-ASCII string cost the same as on an ASCII one; youtube's 1206 ms of `charCodeAt` (P4.75e) under 50 ms.
+- design: `codeUnit` (`builtins_string.aye`) on a non-ASCII string calls `wtf8.unitAt`, a scan from byte 0. Keep a per-string cursor (last unit index → byte offset, as V8 keeps a two-byte representation) in the heap string record and walk from it, or give non-ASCII strings a UTF-16 copy on first indexed access. Check the other users of `unitAt` (substring, `slice`, `indexOf` with a position) for the same scan.
+- files: `browser/js/wtf8.aye`, `browser/js/builtins_string.aye`, `browser/js/heap.aye`
+- v8: `src/objects/string.h` (SeqTwoByteString), `src/objects/string-inl.h` (`String::Get`)
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.75f.log 2>&1; echo $?` → 0; youtube `DWELLER_JS_NATIVES=1` run: `charCodeAt` under 50 ms; `page_load.py check --site youtube` exit 0
+- model: sonnet
+- status: done 2026-10-18 except the youtube check (needs the archives on the Mac: `DWELLER_JS_NATIVES=1` run, `charCodeAt` under 50 ms; `page_load.py check --site youtube`). Design: a cursor in the heap string record (`cursor_unit`, `cursor_byte`: the start of the last character reached), walked forward or backward by `seekUnit` (unit index → byte offset) and `seekByte` (byte offset → unit index), restarting from byte 0 when the target is in the first half before the cursor. Chosen over a UTF-16 copy: no allocation or memory per string, nothing for the GC to keep (the cursor is plain indices into the cell's own bytes; a new or flattened cell starts at 0, a freed cell is overwritten whole), and a forward or a backward loop and any nearby access cost O(1) per step. `codeUnit` (`charCodeAt`, `codePointAt`, `str[i]`, `charAt`), `byteAt`/`unitOf` (`indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`, the RegExp `lastIndex`, `index` and match offsets, sticky and global starts) and `appendUnitRange` (`slice`, `substring`, `substr`; it no longer decodes the whole string to UTF-16 per call, a cut inside a pair writes the lone surrogate) all go through it; `unitAt`, `byteOffset` and `unitOffset` of `wtf8.aye` are gone. The RegExp engine and the String iterator read bytes, so they had no scan. Microbenchmark `browser/tests/jsbench/unicode-units.js` (200k-unit string of ASCII, é, €, and an astral char; forward and backward `charCodeAt`, `codePointAt`, `s[i]`, `slice`, `indexOf`, `lastIndexOf`; fast build, checksum equal to Node): 173.7 s before, 0.23 s after; with `DWELLER_JS_NATIVES=1` `charCodeAt` 400k calls 30.5 ms (76 ns each, was ~2.9 µs at youtube's string size). Test 271 (`271_string_units_nonascii.js`, Node golden: surrogates, lone surrogates, astral, out of range, jumps, slices at every cut, regexp) equal on the VM, the tree walker (`DWELLER_JS_VM=0`) and under `DWELLER_JS_GC=stress`; `js_conformance`, `js_conformance_vm`, `jsdom_fixtures` green; `check_layers.py`, `check_taste.py` pass. Left: `indexOf`/`lastIndexOf`/`includes` with a lone surrogate needle never match inside an astral character, and a `fromIndex` in the middle of a pair searches from the pair's start (both older than this card, not in the goldens); building a 40000-piece string with `s += x` and then indexing it spent 10 s in the kernel (sys time) before the first index, an older cost of flattening a deep rope, worth its own look.
+
+#### P4.75g: incremental style and layout for script reads
+- goal: a geometry or computed-style read after a small DOM change restyles and relays out only what changed: github's `rects` (2293 ms in 151 calls) and mistral's `metric`/`offsetParent` (7789 ms) at least halved.
+- design: first find why github's forced layouts take the full path (`geometry` in `geometry.aye`: `localChanges`/`sameStyles` fail and `restyle_all` is set; log the reason per `script_layout`), then restyle only the invalidated elements (Blink invalidation sets) and lay out from the dirty roots. Reads that need only one element's style (`computedStyle`) should not lay out.
+- files: `browser/engine/geometry.aye`, `browser/css/cascade.aye`, `browser/engine/window_api.aye`
+- blink: `third_party/blink/renderer/core/dom/document.cc` (`UpdateStyleAndLayoutForNode`), `core/css/style_engine.cc`, `core/css/invalidation/style_invalidator.cc`
+- verify: `cargo test --release --test browser -- jsdom_ window_ > target/p4.75g.log 2>&1; echo $?` → 0; `page_load.py check` exit 0; github and mistral `script_layout` + `style_full` phases at least halved
+- model: opus
+
+#### P4.75h: 2D canvas rasterization speed
+- goal: mistral's `canvasDraw` (12661 ms in 13126 calls, 965 µs each) at least 4× faster.
+- design: first measure which draws cost (canvas size, fill or stroke or text, path size; one stderr line per slow draw under `DWELLER_TIMING`); then skip work that cannot show (a draw fully outside the canvas or the clip, a canvas that is never painted) and port Skia's coverage scan conversion for the paths.
+- files: `browser/engine/canvas_api.aye`, `browser/svg/raster.aye`
+- blink/skia: `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc`, `third_party/skia/src/core/SkScan_AntiPath.cpp`
+- verify: `cargo test --release --test browser -- canvas > target/p4.75h.log 2>&1; echo $?` → 0; mistral `canvasDraw` total at least 4× lower; `page_load.py check --site mistral` exit 0
+- model: opus
+
+#### P4.75i: lazy function parsing
+- goal: youtube's 834 ms and bbc's 418 ms of `js_parse` (P4.75e) at least halved.
+- design: preparse inner function bodies (check early errors, record the scope facts the compiler needs, skip the AST) and parse them fully on first call, as V8's PreParser does; measure the lexer alone first (tokenize-only time per MB) to see whether tokenizing or AST building dominates.
+- files: `browser/js/parser.aye`, `browser/js/lexer.aye`, `browser/js/interp.aye` (`parseCode`), `browser/js/ast.aye`
+- v8: `src/parsing/preparser.h`, `src/parsing/parser-base.h`, `src/parsing/preparse-data.h`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm > target/p4.75i.log 2>&1; echo $?` → 0; test262 `language/` pass count not lower; youtube `js_parse` at least halved
+- model: opus
 
 #### P4.75c: the last fallback reasons on the js suite
 - goal: `DWELLER_JS_VM_STATS=1` prints no reason on `browser/tests/js/` (the exit condition of P4.78).
-- design: BigInt literals (a constant-pool BigInt, V8 `LdaConstant`); assignment to a constant and a read in the dead zone known at compile time become runtime throws with the tree walker's messages (V8 `ThrowConstAssignmentError`, `ThrowReferenceErrorIfHole` after `LdaTheHole`); the bindings that give "context variable" today; rest parameters with a pattern; computed class field keys (evaluated once at class definition); Annex B block-level function declarations in sloppy code; ToPropertyKey of a computed key before its value (V8 `ToName`).
+- design: BigInt literals (a constant-pool BigInt, V8 `LdaConstant`); assignment to a constant and a read in the dead zone known at compile time become runtime throws with the tree walker's messages (V8 `ThrowConstAssignmentError`, `ThrowReferenceErrorIfHole` after `LdaTheHole`); the bindings that give "context variable" today, including direct `eval` in functions and scripts (P4.75b: bbc's optimizely `eval(str)`, zol); rest parameters with a pattern; computed class field keys (evaluated once at class definition); Annex B block-level function declarations in sloppy code; ToPropertyKey of a computed key before its value (V8 `ToName`).
 - files: `browser/js/compiler.aye`, `browser/js/bytecode.aye`, `browser/js/vm.aye`, new `browser/js/vm-*.aye`
 - v8: `src/interpreter/bytecode-generator.cc`
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm aye_unit_tests > target/p4.75c.log 2>&1; echo $?` → 0; `DWELLER_JS_VM_STATS=1` on every script of `browser/tests/js/` prints no `unsupported`
