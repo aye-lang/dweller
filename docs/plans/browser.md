@@ -272,7 +272,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F11 | P4.73 | inline caches | F10 | done |
 | F11b | P4.73b | the inline caches pay for themselves | F11 | done |
 | F12 | P4.74 | prototype shapes and the prototype epoch | F11 | done |
-| F13 | P4.75 | the VM on by default | F12 | open |
+| F13 | P4.75 | the VM on by default | F12 | done except P4.75b |
 | F14 | P4.77 | register optimizer and fused instructions | F13 | open |
 | F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
 
@@ -891,6 +891,22 @@ Common to these cards:
 - v8: none
 - verify: `cargo test --release --test browser > target/p4.75.log 2>&1; echo $?` → 0 (the one full run of this plan, on the branch before the merge; then CI); `python3 browser/tools/page_load.py check` exit 0
 - estimate: suite geomean 3–4× against the baseline; site `scripts` phase 1.5–2.5×
+- model: opus
+- status: done 2026-10-17 except P4.75b (the 22 sites). `vmInit` turns the VM on unless `DWELLER_JS_VM=0` (the tree walker). `js_conformance` pins the tree walker with `DWELLER_JS_VM=0` (it stays the reference that blesses the goldens); `js_conformance_vm` keeps `DWELLER_JS_VM=1` with its GC stress pass. Logical assignment (`||=`, `&&=`, `??=`) now compiles for registers, contexts, globals and properties (`vm-assign-logical-*.aye`, `vm-logical-assign-jump.aye`; V8 `VisitLogicalAssignment`). `benchmark_date_follows_virtual_clock` expects n=2499999 instead of 1666664: the virtual clock counts the engine's ticks, and the VM ticks per loop back-edge and call where the tree walker ticks per statement (deterministic on both; `DWELLER_JS_VM=0` still gives 1666664). Fallback reasons left on the js suite (`DWELLER_JS_VM_STATS=1`, 557 scripts: 4343 functions compiled, 44 on the tree walker, 18 scripts with a reason), all in card P4.75c: BigLit (246–248, 253, 259, 260), assignment to a constant (024, 226, 236, 262), read in the dead zone (025, 226, 261), context variable (214, 220, 248), parameter pattern (035, 161: `...[a, b]`), computed field key (070), FuncDecl (222: Annex B block functions). Verify, every test of the browser binary once in slices (`js_`, `window_`, the rest): green (`target/p4.75-js.log`, `-window.log`, `-rest.log`, `-gpu.log`; the WebGL tests needed `zstd` for `fetch_angle.sh` here). test262 at d53ebc8b19 (-j 4), VM off → on: `language/statements` 5993 → 6564/9346, `language/expressions` 7014 → 7692/10697; one test passes off and fails on, `expressions/object/computed-property-name-topropertykey-before-value-evaluation.js` (P4.69's left item, ToPropertyKey before the value; P4.75c). jsbench (fast, median of 3, against `baseline.json`, all checksums equal): geomean 2.45× (navier-stokes 6.12×, loop 4.19×, globals 4.14×, richards 3.72×, dom 1.10×), 3.28× slower than `node --jitless`; table in `BYTECODE.md` section 6 and `PERF.md`. `check_layers.py`, `check_taste.py` pass. Left for P4.75b (local, on the Mac with the archives): `page_load.py check` on the 22 sites with the VM on, their `DWELLER_JS_VM_STATS=1` reasons, and the site `scripts`/`timers` phases in `BYTECODE.md` and `PERF.md`.
+
+#### P4.75b: the VM on by default on the 22 sites (local)
+- goal: the site gates of P4.75, which need the archives on the Mac.
+- design: with the P4.75 binary (VM on by default): `page_load.py check` on the 22 archives; `DWELLER_JS_VM_STATS=1` reasons per site (each one fixed or a card); the `scripts`/`timers` phases against the table in `BYTECODE.md` section 1, recorded there and in `PERF.md`.
+- files: `browser/js/BYTECODE.md`, `browser/js/PERF.md`
+- verify: `python3 browser/tools/page_load.py check` exit 0
+- model: opus
+
+#### P4.75c: the last fallback reasons on the js suite
+- goal: `DWELLER_JS_VM_STATS=1` prints no reason on `browser/tests/js/` (the exit condition of P4.78).
+- design: BigInt literals (a constant-pool BigInt, V8 `LdaConstant`); assignment to a constant and a read in the dead zone known at compile time become runtime throws with the tree walker's messages (V8 `ThrowConstAssignmentError`, `ThrowReferenceErrorIfHole` after `LdaTheHole`); the bindings that give "context variable" today; rest parameters with a pattern; computed class field keys (evaluated once at class definition); Annex B block-level function declarations in sloppy code; ToPropertyKey of a computed key before its value (V8 `ToName`).
+- files: `browser/js/compiler.aye`, `browser/js/bytecode.aye`, `browser/js/vm.aye`, new `browser/js/vm-*.aye`
+- v8: `src/interpreter/bytecode-generator.cc`
+- verify: `cargo test --release --test browser -- js_conformance js_conformance_vm aye_unit_tests > target/p4.75c.log 2>&1; echo $?` → 0; `DWELLER_JS_VM_STATS=1` on every script of `browser/tests/js/` prints no `unsupported`
 - model: opus
 
 #### P4.76: typed arrays over real bytes (covered by P11.3)
