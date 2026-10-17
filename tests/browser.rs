@@ -4152,21 +4152,15 @@ fn jsbench_smoke() {
     );
 }
 
+/// The scripts and goldens, then the same under `DWELLER_JS_GC=stress`
+/// (the rooting rules of BYTECODE.md section 4). The stress pass leaves
+/// out the allocation and recursion workloads, which collect millions of
+/// times (minutes each).
 #[test]
 fn js_conformance() {
-    js_conformance_with(&[("DWELLER_JS_VM", "0")], &[]);
-}
-
-/// The same scripts and goldens with the bytecode VM on
-/// (`DWELLER_JS_VM=1`, BYTECODE.md section 1), then with the VM under
-/// `DWELLER_JS_GC=stress` too (the rooting rules of its section 4). The
-/// stress pass leaves out the allocation and recursion workloads, which
-/// collect millions of times (minutes each).
-#[test]
-fn js_conformance_vm() {
-    js_conformance_with(&[("DWELLER_JS_VM", "1")], &[]);
+    js_conformance_with(&[], &[]);
     js_conformance_with(
-        &[("DWELLER_JS_VM", "1"), ("DWELLER_JS_GC", "stress")],
+        &[("DWELLER_JS_GC", "stress")],
         &[
             "_gc_",
             "_perf_",
@@ -4196,7 +4190,7 @@ fn js_conformance_with(env: &[(&str, &str)], skip: &[&str]) {
         scripts.len()
     );
     dweller();
-    let bless = env == [("DWELLER_JS_VM", "0")] && std::env::var_os("DWELLER_BLESS").is_some();
+    let bless = env.is_empty() && std::env::var_os("DWELLER_BLESS").is_some();
     let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless, env))
         .into_iter()
         .flatten()
@@ -5648,7 +5642,6 @@ fn jsdom_case(
     let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_LAYOUT_CHECK", "1")
-        .env("DWELLER_JS_VM", "1")
         .args(&all)
         .output()
         .unwrap();
@@ -5823,7 +5816,6 @@ fn jsdom_gc_stress() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
-            .env("DWELLER_JS_VM", "1")
             .args(["dump", "--tree", "--js", &rel])
             .output()
             .unwrap();
@@ -5848,7 +5840,6 @@ fn jsdom_gc_stress() {
     let mut child = dweller_command()
         .current_dir(root())
         .env("DWELLER_JS_GC", "stress")
-        .env("DWELLER_JS_VM", "1")
         .arg("agent")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

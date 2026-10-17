@@ -1,0 +1,32 @@
+// v8: src/parsing/parser-base.h (ParseForEachStatementWithDeclarations)
+
+fn parseForInInitializer(p: *mut Parser, kind: u32, list: u32, isOf: bool) SyntaxErr!void {
+    match p.ast.node(p.ast.item(list, 0)) {
+        .Declarator { target, init } => {
+            if init == 0 {
+                return
+            }
+
+            var annexB = kind == DECL_VAR && !isOf && !p.strict
+
+            match p.ast.node(target) {
+                .Ident { .. } => {}
+                _ => {
+                    annexB = false
+                }
+            }
+
+            if annexB {
+                return
+            }
+
+            if isOf {
+                _ = try p.fail("for-of loop variable declaration may not have an initializer.")
+            }
+
+            _ = try p.fail("for-in loop variable declaration may not have an initializer.")
+        }
+
+        _ => {}
+    }
+}

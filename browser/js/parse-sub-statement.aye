@@ -1,0 +1,25 @@
+// v8: src/parsing/parser-base.h (ParseExpressionOrLabelledStatement, Token::LET)
+
+fn parseSubStatement(p: *mut Parser) SyntaxErr!u32 {
+    if !p.at(Tok.KwLet) {
+        return p.statement()
+    }
+
+    let next = p.kindAt(1)
+    let declares = next == Tok.LBrace || next == Tok.Ident
+
+    if p.strict || next == Tok.LBracket || (declares && !p.tokAt(1).nl) {
+        return p.fail("Lexical declaration cannot appear in a single-statement context")
+    }
+
+    let start = p.pos
+    let name = try p.intern("let")
+
+    p.pos += 1
+
+    let e = try p.ident(name, start)
+
+    try p.semi()
+
+    return p.mk(Node.ExprStmt { e: e }, start)
+}

@@ -3,7 +3,7 @@
 
     test262.py fetch [--root DIR]
     test262.py run [PATH...] [-j N] [--root DIR] [--dweller BIN] [--timeout S]
-                   [--skip FILE] [--out DIR] [--vm]
+                   [--skip FILE] [--out DIR]
 
 `fetch` checks out the revision in `test262.rev` into `target/test262`.
 `run` runs every test under each PATH (a file or a directory, relative to
@@ -144,15 +144,13 @@ def load_skips(path):
 # ---- running one test
 
 class Runner:
-    def __init__(self, root, dweller, timeout, features, prefixes, vm):
+    def __init__(self, root, dweller, timeout, features, prefixes):
         self.root = root
         self.dweller = dweller
         self.timeout = timeout
         self.features = features
         self.prefixes = prefixes
         self.env = dict(os.environ)
-        if vm:
-            self.env["DWELLER_JS_VM"] = "1"
         self.harness = {}
 
     def harness_file(self, name):
@@ -296,7 +294,7 @@ def run(args):
                         dweller], check=True)
     features, prefixes = load_skips(args.skip)
     runner = Runner(root, os.path.abspath(dweller), args.timeout, features,
-                    prefixes, args.vm)
+                    prefixes)
     paths = args.paths or ["test"]
     os.makedirs(args.out, exist_ok=True)
     summary = []
@@ -348,8 +346,6 @@ def main():
     r.add_argument("--timeout", type=float, default=10.0)
     r.add_argument("--skip", default=SKIP_FILE)
     r.add_argument("--out", default=DEFAULT_OUT)
-    r.add_argument("--vm", action="store_true",
-                   help="run with DWELLER_JS_VM=1")
     args = ap.parse_args()
     if args.cmd == "fetch":
         return fetch(args.root)

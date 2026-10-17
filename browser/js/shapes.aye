@@ -206,33 +206,3 @@ fn getCachedProp(it: *mut Interp, id: u32, v: Value, key: u32) JsError!Value {
     }
     return it.getProp(v, key)
 }
-
-fn setCachedProp(it: *mut Interp, id: u32, v: Value, key: u32, value: Value) JsError!void {
-    let o = objectOf(v)
-    if o != NONE && cacheable(it, o, key) {
-        var holder = cacheHolder(it, o, it.prop_caches.items()[id], key)
-        if holder == NONE {
-            fillPropCache(it, id, o, key)
-            holder = cacheHolder(it, o, it.prop_caches.items()[id], key)
-        }
-        if holder == o {
-            let ob = it.heap.obj(o)
-            let slot = it.prop_caches.items()[id].slot
-            let p = ob.props[slot]
-            if ob.frozen {
-                return
-            }
-            if (p.flags & F_ACCESSOR) == 0 {
-                if (p.flags & F_WRITE) != 0 {
-                    ob.props[slot].value = value
-                }
-                return
-            }
-            if !isNullish(p.setter) {
-                try it.call1(p.setter, v, value)
-            }
-            return
-        }
-    }
-    return it.setProp(v, key, value)
-}
