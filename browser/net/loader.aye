@@ -321,7 +321,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         post: req.body != null,
         began: 0,
         has_res: false,
-        res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{} },
+        res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{}, headers_raw: []mut u8{} },
         failure: "",
     })
     let l = ld.alloc.create(Load {
@@ -490,6 +490,7 @@ fn keepRequest(alloc: Allocator, l: *mut Load, job: *mut Job, status: i64) Fetch
     let body = try job.sink.body.toOwned()
     var res = try respond(alloc, ct, body)
     res.status = status
+    res.headers_raw = try job.sink.headers_raw.toOwned()
     if !text.eql(job.at.href, l.href) {
         res.url = dup(alloc, job.at.href) catch |e| {
             res.deinit(alloc)

@@ -521,6 +521,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         query = dict(urllib.parse.parse_qsl(parts.query))
         cookie = self.headers.get("Cookie", "")
         text_plain = [("Content-Type", "text/plain"), ("Cache-Control", "no-store")]
+        if "Origin" in self.headers:
+            text_plain += [("Access-Control-Allow-Origin", self.headers["Origin"]), ("Access-Control-Allow-Credentials", "true")]
         if parts.path == "/samesite/set":
             self.reply(200, [
                 ("Content-Type", "text/html"),

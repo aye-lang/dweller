@@ -2128,6 +2128,7 @@ pub let PRELUDE =
     \\  res.statusText = statusText;
     \\  res.url = url;
     \\  res.headers = headers;
+    \\  headers._guard = 'response';
     \\  hidden(res, '_body', body);
     \\  hidden(res, '_bodyUsed', false);
     \\  hidden(res, '_stream', body instanceof ReadableStream ? body : null);
@@ -2365,7 +2366,9 @@ pub let PRELUDE =
     \\        // A body that decoding changed comes as its bytes (Response.text()
     \\        // decodes UTF-8, arrayBuffer() keeps binary data).
     \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
-    \\        resolve(responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body));
+    \\        const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body);
+    \\        hidden(res, '_fetched', r);
+    \\        resolve(res);
     \\      }
     \\    });
     \\    signal.addEventListener('abort', onAbort);
@@ -3196,6 +3199,7 @@ pub let PRELUDE =
     \\    this.statusText = r.status >= 200 && r.status < 300 ? 'OK' : '';
     \\    this.responseURL = r.url;
     \\    this._type = r.type;
+    \\    hidden(this, '_fetched', r);
     \\    this._state(2);
     \\    this.responseText = r.body;
     \\    this._state(3);
