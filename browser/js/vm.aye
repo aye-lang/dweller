@@ -1444,9 +1444,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 let id = vmIdx(bytes, pc + w as usize, w) as u32
                 let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
                 pc += 3 * w as usize
-                regs[fp] = acc
-                acc = try vmLoadNamed(it, st, e, o, vmMemberName(it, id))
-                regs = it.stack.items()
+
+                if vmIcHitProp(it, e, o) |p| {
+                    acc = p.value
+                } else {
+                    regs[fp] = acc
+                    acc = try vmLoadNamed(it, st, e, o, vmMemberName(it, id))
+                    regs = it.stack.items()
+                }
             }
             76 => {
                 // SetNamedProperty r, [n]: r.name = acc (Member node n)
@@ -1454,9 +1459,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 let id = vmIdx(bytes, pc + w as usize, w) as u32
                 let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
                 pc += 3 * w as usize
-                regs[fp] = acc
-                try vmStoreNamed(it, st, e, o, vmMemberName(it, id), acc)
-                regs = it.stack.items()
+
+                if vmIcHitStoreProp(it, e, o) |p| {
+                    p.value = acc
+                } else {
+                    regs[fp] = acc
+                    try vmStoreNamed(it, st, e, o, vmMemberName(it, id), acc)
+                    regs = it.stack.items()
+                }
             }
             77 => {
                 // CallProperty r, argc, [n]: r the callee, r+1 `this`, the
@@ -1614,9 +1624,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 let o = regs[(base + vmImm(bytes, pc, w)) as usize]
                 let e = &mut code.feedback[vmIdx(bytes, pc + w as usize, w) as usize]
                 pc += 2 * w as usize
-                regs[fp] = acc
-                acc = try vmKeyedLoad(it, e, o, acc)
-                regs = it.stack.items()
+
+                if vmKeyedDenseElem(it, e, o, acc, false) |x| {
+                    acc = x.*
+                } else {
+                    regs[fp] = acc
+                    acc = try vmKeyedLoadSlow(it, e, o, acc)
+                    regs = it.stack.items()
+                }
             }
             94 => {
                 // v8: src/interpreter/interpreter-generator.cc (SetKeyedProperty)
@@ -1624,9 +1639,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 let k = regs[(base + vmImm(bytes, pc + w as usize, w)) as usize]
                 let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
                 pc += 3 * w as usize
-                regs[fp] = acc
-                try vmKeyedStore(it, e, o, k, acc)
-                regs = it.stack.items()
+
+                if vmKeyedDenseElem(it, e, o, k, true) |x| {
+                    x.* = acc
+                } else {
+                    regs[fp] = acc
+                    try vmKeyedStoreSlow(it, e, o, k, acc)
+                    regs = it.stack.items()
+                }
             }
             95 => {
                 // v8: src/interpreter/interpreter-generator.cc (DeletePropertySloppy)
