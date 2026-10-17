@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn applyLocalChange(alloc: Allocator, origin: []u8, kind: []u8, key: []u8, value: []u8) AllocError!void {
+    let st = try storeOf(alloc, false)
+    let all = text.eql(kind, "clear")
+
+    try loadOrigin(st, origin)
+    try markDirty(st, origin)
+
+    var i: usize = 0
+
+    while i * 3 < st.items.len() {
+        let items = st.items.items()
+
+        if text.eql(items[i * 3], origin) && (all || text.eql(items[i * 3 + 1], key)) {
+            removeStoreItem(st, i)
+        } else {
+            i += 1
+        }
+    }
+
+    if text.eql(kind, "set") {
+        try appendItem(st, origin, key, value)
+    }
+}

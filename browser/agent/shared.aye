@@ -126,6 +126,7 @@ pub struct Hello {
     name: []u8
     space: u32
     why: []u8
+    isolated: bool
 }
 
 /// The hello of `line`, or null when `line` is not one.
@@ -144,7 +145,7 @@ pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
         return null
     }
     std.mem.copy(copy, name)
-    var h = Hello { mcp: doc.getBool(r, "mcp") orelse false, name: copy, space: 0, why: "" }
+    var h = Hello { mcp: doc.getBool(r, "mcp") orelse false, name: copy, space: 0, why: "", isolated: false }
     if doc.get(r, "space") != null {
         let n = doc.getNum(r, "space") orelse -1.0
         let new = doc.getStr(r, "space") orelse ""
@@ -156,7 +157,7 @@ pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
     }
     if doc.getStr(r, "profile") |profile| {
         if text.eql(profile, "isolated") {
-            h.why = "the profile \"isolated\" is not available yet: only \"shared\""
+            h.isolated = true
         } else if !text.eql(profile, "shared") {
             h.why = "\"profile\" is \"shared\" or \"isolated\""
         }

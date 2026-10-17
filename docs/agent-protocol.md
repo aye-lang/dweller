@@ -500,13 +500,14 @@ person's input or the window's frames.
   `mcp` (default false): the connection speaks MCP. `name`: the
   Space's name (default `"Agent N"`, N its id). `space`: `"new"` (the
   default) or the id of a `done` Space to attach to (then `name`, if
-  given, renames it). `profile`: only `"shared"` until P9.7. A hello
+  given, renames it). `profile`: `"shared"` (the default) or
+  `"isolated"` (below; an attached Space keeps its own). A hello
   that cannot be honored gets `{"id":null,"ok":false,"error":...}`
   (MCP: a `notifications/message` of level `error` with
   `{"error":...}`) and the connection is closed: `"no Space 9: see
   \"spaces\""`, `"Space 3 has an agent: only a done Space can be
-  attached to"`, `"Space 3 crashed"`, `"the profile \"isolated\" is not
-  available yet: only \"shared\""`, `"\"space\" is \"new\" or the id
+  attached to"`, `"Space 3 crashed"`, `"\"profile\" is \"shared\" or
+  \"isolated\""`, `"\"space\" is \"new\" or the id
   of a done Space (a number)"`, `"too many Spaces (8)"`.
 - **Spaces stay.** A Space whose agent leaves stays, `done`, with its
   tabs, until an agent attaches to it, the person stops it, or the
@@ -569,6 +570,20 @@ person's input or the window's frames.
   nor the menu take the focus or touch the person's page. A stopped
   Space's chip goes when its process ends. Watching a Space from its
   chip comes in P9.5.
+- **Logins.** A `shared` Space starts with the window's cookies
+  (session cookies too) and `localStorage`, and reads an origin's
+  `localStorage` the window has not touched yet from the window's
+  profile (it never writes the profile). From then on each side sends
+  the other every cookie it stores (from a response or
+  `document.cookie`) and every `localStorage` write; the window passes a
+  Space's on to the other shared Spaces. So a login in the person's tab
+  is sent by the agent's next request, and a cookie or item an agent's
+  page sets is seen by the person's next request or script (the request
+  that runs while it changes does not see it). Two writes of one cookie
+  or item settle by arrival order; a change from another process fires
+  no `storage` event. `sessionStorage` is not shared. An `isolated`
+  Space starts with no cookies and no `localStorage` and shares
+  nothing; `spaces` shows each Space's `profile`.
 - **Activity.** A Space's new last action shows in the window's status
   line after its name (`Alpha: click button "Sign in" [e3]`), and what
   the person did to a Space after it (`Alpha paused`). The outline of an
@@ -594,6 +609,9 @@ sent once the rest went):
 | window | `context` | the members of `user_context`, and `detail` (its text for MCP) | the person's context, when it changed |
 | window | `pointed` | the members of the `user_pointed` event | Cmd+Shift+K (after the new `context`) |
 | window | `pause`, `resume`, `stop` | | the person paused, resumed or stopped this Space |
+| window | `share` | `cookies` (the jar in the cookie file format, session cookies with expiry 0), `profile` (the window's profile directory, or empty) | first, to a `shared` Space only; then a `storage` `clear` per origin the window has read and a `set` per item |
+| both | `cookie` | `url`, `line` (the `Set-Cookie` value or the `document.cookie` assignment), `script` (bool: from a script, which cannot set HttpOnly) | the sender stored a cookie; the other side stores it again (the window also passes it to its other shared Spaces) |
+| both | `storage` | `origin`, `kind` (`set`, `remove` or `clear`), `key`, `value` | the sender changed `localStorage`; the other side does the same (and the window passes it on) |
 | Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
 | Space | `close` | | its agent sent `space_close` (then it exits) |
 
