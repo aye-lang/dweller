@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import fast_build
+
 REPO = Path(__file__).resolve().parents[2]
 TOOLS = REPO / "browser" / "tools"
 BASELINES = TOOLS / "conformance"
@@ -60,6 +62,7 @@ def run_command(area, jobs):
 
 
 def cmd_run(args):
+    fast_build.require(REPO / "target" / "dweller", args.allow_debug)
     for area in args.areas or list(wpt_areas()) + list(T262_AREAS):
         print(f"== {area}", flush=True)
         subprocess.run(run_command(area, args.j), check=True)
@@ -203,6 +206,7 @@ def main():
     r = sub.add_parser("run")
     r.add_argument("areas", nargs="*")
     r.add_argument("-j", type=int, default=4)
+    r.add_argument("--allow-debug", action="store_true", help="run a binary that browser/build.sh did not build")
     sub.add_parser("table")
     sub.add_parser("check")
     args = ap.parse_args()

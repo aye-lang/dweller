@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import conformance
+import fast_build
 from wpt import Server
 
 HERE = Path(__file__).resolve().parent
@@ -141,6 +142,7 @@ def write_group(area, rows, skipped):
 
 def cmd_run(args):
     dweller = REPO / "target" / "dweller"
+    fast_build.require(dweller, args.allow_debug)
     found, skipped = targets(args.dirs)
     srv = Server(ROOT)
     srv.start()
@@ -173,6 +175,7 @@ def main():
     r = sub.add_parser("run")
     r.add_argument("dirs", nargs="*", default=["conformance2"])
     r.add_argument("-j", type=int, default=4)
+    r.add_argument("--allow-debug", action="store_true", help="run a binary that browser/build.sh did not build")
     sub.add_parser("check")
     args = ap.parse_args()
     return {"fetch": cmd_fetch, "run": cmd_run, "check": cmd_check}[args.cmd](args) or 0

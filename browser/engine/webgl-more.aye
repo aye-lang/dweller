@@ -41,6 +41,22 @@ fn akWebglMore(it: *mut Interp, a: Args) JsError!Value {
         let index = try argU32(it, a, 3)
 
         gl.glGetActiveUniformsiv(try argU32(it, a, 2), 1, &index, try argU32(it, a, 4), out)
+    } else if op == 6 {
+        gl.glGetRenderbufferParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut i32, &mut words[0]))
+    } else if op == 7 {
+        gl.glGetSamplerParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut i32, &mut words[0]))
+    } else if op == 8 {
+        gl.glGetSamplerParameterfv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut f32, &mut words[0]))
+    } else if op == 9 {
+        let name = try cName(it, it.arg(a, 3))
+        defer it.alloc.free(name)
+
+        words[0] = gl.glGetFragDataLocation(try argU32(it, a, 2), name.ptr) as u32
+    } else if op == 10 {
+        var length: i32 = 0
+
+        gl.glGetActiveUniformBlockName(try argU32(it, a, 2), try argU32(it, a, 3), 4096, &mut length, out)
+        n = (length as u32 + 3) / 4
     } else {
         let name = try cName(it, it.arg(a, 3))
         defer it.alloc.free(name)
