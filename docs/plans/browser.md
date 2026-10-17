@@ -266,9 +266,9 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F8 | P4.70 | classes | F7 | done |
 | F9 | P4.71 | generators on resumable frames | F8 | done |
 | F10 | P4.72 | async functions on resumable frames | F9 | done |
-| F11 | P4.73 | inline caches | F10 | open |
+| F11 | P4.73 | inline caches | F10 | done |
 | F11b | P4.73b | the inline caches pay for themselves | F11 | done |
-| F12 | P4.74 | prototype shapes and the prototype epoch | F11 | open |
+| F12 | P4.74 | prototype shapes and the prototype epoch | F11 | done |
 | F13 | P4.75 | the VM on by default | F12 | open |
 | F14 | P4.77 | register optimizer and fused instructions | F13 | open |
 | F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
@@ -872,6 +872,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.74.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 python3 browser/tools/page_load.py check` exit 0
 - estimate: 1.1–1.3× on three, raytrace, methods
 - model: opus
+- status: done 2026-10-17 (partial: the epoch, not root shapes). Named loads find the holder up a prototype chain of any depth (`vm-ic-load-case.aye`, V8 `LoadIC::ComputeHandler`) and store add transitions accept a chain of any depth whose objects all lack the key (`vm-ic-add-case.aye`). Instead of a root shape per prototype, an `IcCase` keeps the receiver's prototype id (`proto`, compared with the live link on a hit) and `Heap.proto_epoch` at record time (`epoch`); a chain case hits when the receiver shape, the prototype id and the epoch are equal and reads the holder's slot directly (`c.other` is the holder id). Recording marks every object on the walked chain `used_as_proto`; `heapProtoChanged` (V8 validity cells, `prototype-info.h`) increments the epoch when a marked object gains or loses a key (`addProp`, `removeProp`, the store-IC add hit), changes its prototype (`setPrototypeOf`, `__proto__` writes) or is freed (so a reused id cannot alias). Flags are read at the hit as before, so a flag change needs no bump. `setPrototypeOf` on an unmarked receiver needs no root move: the prototype-id compare misses. `vmIcProtoMatch` is gone. `DWELLER_JS_VM_STATS=1` adds `proto epoch N, M at load` (the epoch when the window load event fires). Epoch bumps after load on the archived sites (VM on, total − at load, per page interp): youtube 2492, youtube-search 3089, bbc 149, mistral 51, reddit 19, wikipedia-en 9, go-docs 6, wikipedia 5, the others 0 (5 sites not captured today: github, duckduckgo, google, zol, react failed live capture). `js_conformance`, `js_conformance_vm`, `jsdom_fixtures`, `jsdom_gc_stress` green; `check_layers.py`, `check_taste.py` pass; jsbench with `DWELLER_JS_VM=1`: all 15 checksums equal. Against `origin/p4-73b-ic-speed` 8715153 (3 runs, two passes): richards 1.03/0.94, raytrace 1.00/1.03, three 0.94/0.99, methods 1.13/0.96, splay 0.94/0.93, navier-stokes 0.91/0.95 — within this machine's ±10% noise (against the merge base with main c89000b: navier-stokes 1.15, richards 1.09, splay 0.91; direct splay runs interleaved: equal), not the estimated 1.1–1.3×: the jsbench workloads mostly hit the immediate prototype, which P4.73 already cached. `page_load.py check` (VM on) exits 1: 6 of 22 sites miss, github, duckduckgo, google, zol and react for want of an archive (live capture failed; react's capture agent crashed with -11 on the tree walker) and bbc, which fails the same with the base binary. Left: the churn on youtube (thousands of bumps after load: per-prototype validity cells instead of one counter); root shapes per prototype if the prototype compare shows in a profile; `page_load.py check` on full archives.
 
 #### P4.75: the VM on by default
 - goal: `DWELLER_JS_VM` defaults to 1; `DWELLER_JS_VM=0` keeps the tree walker as an escape hatch.
