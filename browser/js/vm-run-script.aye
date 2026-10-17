@@ -1,12 +1,19 @@
 // v8: src/execution/execution.cc (Invoke)
 
+import perf
+
 fn vmRunScript(it: *mut Interp, root: u32) JsError!bool {
     if !it.vm_checked {
         vmInit(it)
     }
 
     if it.vm |st| {
+        let paused = switchNative(it, NONE)
+        defer resumeNative(it, paused)
+        let compile_began = perf.start()
         let vf = try compileScript(it.alloc, &it.ast, root)
+
+        perf.end("js_compile", compile_began, "")
 
         if vf.code |code| {
             defer {
