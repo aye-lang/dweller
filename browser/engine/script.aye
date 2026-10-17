@@ -271,6 +271,7 @@ pub struct Script {
     task_began: u64 = 0
     vsync: bool = false
     hidden: bool = false
+    throttled: bool = false
     // `__wasmHost` was installed: the page holds the WebAssembly store
     // (wasm.release).
     wasm_on: bool = false
@@ -366,6 +367,8 @@ pub struct Script {
     // geometry changed since the last call (`hook_stamp`).
     layout_hook: u32
     hook_stamp: u64
+    animation_hook: u32 = js.NONE
+    animation_stamp: u64 = 0
     // The page listens for the window's scroll or observes intersections
     // (`ak.watchScroll`): a dump's scroll through it may load more.
     watches_scroll: bool = false
@@ -679,7 +682,14 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(WEBGL_PRELUDE)
     try s.it.runScript(WEBGL2_REST_PRELUDE)
     try s.it.runScript(WEBGL2_EXT_PRELUDE)
+    try s.it.runScript(WEBGL1_PRELUDE)
+    try s.it.runScript(WEBGL_TEX_DOM_3D_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
+
+    if std.os.getenv("DWELLER_WEBGL_HARNESS") != null {
+        try s.it.runScript(WEBGL_HARNESS_PRELUDE)
+    }
+
     if try wasm.install(&mut s.it) {
         s.wasm_on = true
         try s.it.runScript(WASM_PRELUDE)
@@ -1648,6 +1658,7 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
+    try runAnimationHook(s)
     if s.title_version == s.version {
         return
     }

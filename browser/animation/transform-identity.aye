@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#interpolation-of-transforms
+fn transformIdentity(name: []u8, v: []u8, other: []u8, out: *mut text.Builder) AllocError![]u8 {
+    if !text.eql(name, "transform") || !text.eql(v, "none") || text.eql(other, "none") {
+        return v
+    }
+
+    var i: usize = 0
+    var start: usize = 0
+    var one = false
+
+    while i < other.len {
+        let end = numberEnd(other, i)
+
+        if end > i {
+            if one {
+                try out.appendByte('1')
+            } else {
+                try out.appendByte('0')
+            }
+
+            i = end
+            continue
+        }
+
+        if isLetter(other[i]) && (i == 0 || !isLetter(other[i - 1])) {
+            start = i
+        }
+
+        if other[i] == '(' {
+            one = text.startsWith(other[start..], "scale")
+        }
+
+        try out.appendByte(other[i])
+        i += 1
+    }
+
+    return out.bytes()
+}

@@ -1,0 +1,20 @@
+// https://tc39.es/ecma262/#sec-functiondeclarationinstantiation
+
+fn resolveDeclareParam(r: *mut Resolver, f: u32, k: u32) SyntaxErr!void {
+    let fi = r.ast.func(f)
+    let p = r.ast.item(fi.params, k)
+
+    match r.ast.node(p) {
+        .Ident { name, .. } => {
+            if fi.simple && r.paramIndex(f, name) != k {
+                _ = try r.declareIn(r.current(), NONE - 1 - k, 0, false)
+
+                return
+            }
+        }
+
+        _ => {}
+    }
+
+    try r.declarePattern(r.current(), p, 0, false)
+}

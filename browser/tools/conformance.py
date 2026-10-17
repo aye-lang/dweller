@@ -20,6 +20,7 @@ HISTORY = BASELINES / "history.csv"
 DOC = REPO / "docs" / "conformance.md"
 WPT_RESULTS = REPO / "target" / "wpt-results"
 T262_RESULTS = REPO / "target" / "test262-results"
+WEBGL_RESULTS = REPO / "target" / "webgl-results"
 T262_AREAS = {"test262/built-ins": "test/built-ins", "test262/language": "test/language",
               "test262/annexB": "test/annexB"}
 T262_THRESHOLD = 0.80
@@ -35,12 +36,21 @@ def planned_areas():
     return [line.split("\t") for line in lines if line]
 
 
+def webgl_areas():
+    files = [*BASELINES.glob("webgl*.json"), *WEBGL_RESULTS.glob("webgl*.json")]
+    return sorted({json.loads(f.read_text())["area"] for f in files})
+
+
+def is_webgl(area):
+    return area.startswith("WebGL ")
+
+
 def all_areas():
-    return list(wpt_areas()) + list(T262_AREAS)
+    return list(wpt_areas()) + list(T262_AREAS) + webgl_areas()
 
 
 def file_key(area):
-    return area.replace("/", "_")
+    return area.replace("WebGL ", "webgl").replace(": ", "_").replace("/", "_")
 
 
 def run_command(area, jobs):
@@ -50,15 +60,16 @@ def run_command(area, jobs):
 
 
 def cmd_run(args):
-    for area in args.areas or all_areas():
+    for area in args.areas or list(wpt_areas()) + list(T262_AREAS):
         print(f"== {area}", flush=True)
         subprocess.run(run_command(area, args.j), check=True)
 
 
 def wpt_measure(area):
-    data = json.loads((WPT_RESULTS / f"{file_key(area)}.json").read_text())
+    data = json.loads(results_path(area).read_text())
     tests = {f["path"]: [f["passed"], f["total"]] for f in data["files"]}
-    return data["rev"], tests, data["skipped"], wpt_areas()[area]["threshold"]
+    threshold = data["threshold"] if is_webgl(area) else wpt_areas()[area]["threshold"]
+    return data["rev"], tests, data["skipped"], threshold
 
 
 def t262_measure(area):
@@ -77,10 +88,14 @@ def measure(area):
             "score": passed / total if total else 0.0, "tests": dict(sorted(tests.items()))}
 
 
+def results_path(area):
+    if area in T262_AREAS:
+        return T262_RESULTS / f"{T262_AREAS[area].replace('/', '-')}.json"
+    return (WEBGL_RESULTS if is_webgl(area) else WPT_RESULTS) / f"{file_key(area)}.json"
+
+
 def available(area):
-    results = T262_RESULTS if area in T262_AREAS else WPT_RESULTS
-    name = T262_AREAS.get(area, area).replace("/", "-" if area in T262_AREAS else "_")
-    return (results / f"{name}.json").exists()
+    return results_path(area).exists()
 
 
 def read_baseline(area):
@@ -129,8 +144,8 @@ def table_row(m, before):
 
 def render(measured, before, revs, today, commit):
     head = ["# Conformance", "",
-            f"Measured {today} at Dweller {commit}. WPT `{revs['wpt']}`, test262 `{revs['t262']}`.",
-            "Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.",
+            f"Measured {today} at Dweller {commit}. WPT `{revs['wpt']}`, test262 `{revs['t262']}`, WebGL `{revs['webgl']}`.",
+            "Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.",
             "Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.",
             "", "| Area | Files | Skipped | Passed | Score % | Threshold % | Status | Change |",
             "|---|---:|---:|---:|---:|---:|---|---:|"]
@@ -150,7 +165,8 @@ def cmd_table(args):
     kept = [m for m in map(read_baseline, all_areas()) if m and m["area"] not in {f["area"] for f in fresh}]
     measured = sorted(fresh + kept, key=lambda m: all_areas().index(m["area"]))
     before = last_scores()
-    revs = {"wpt": revision(TOOLS / "wpt.rev"), "t262": revision(TOOLS / "test262.rev")}
+    revs = {"wpt": revision(TOOLS / "wpt.rev"), "t262": revision(TOOLS / "test262.rev"),
+            "webgl": revision(TOOLS / "webgl_cts.rev")}
     today = datetime.date.today().isoformat()
     DOC.write_text(render(measured, before, revs, today, head_commit()))
     for m in fresh:

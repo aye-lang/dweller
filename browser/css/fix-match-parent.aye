@@ -1,0 +1,27 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-text-3/#valdef-text-align-match-parent
+fn fixMatchParent(values: []mut Value, parent: []Value, is_root: bool) {
+    if !text.eql(keywordText(values[TEXT_ALIGN]), "match-parent") {
+        return
+    }
+
+    if is_root {
+        values[TEXT_ALIGN] = Value.Keyword { k: "start" }
+
+        return
+    }
+
+    let k = keywordText(parent[TEXT_ALIGN])
+    let rtl = text.eql(keywordText(parent[DIRECTION]), "rtl")
+
+    values[TEXT_ALIGN] = parent[TEXT_ALIGN]
+
+    if text.eql(k, "start") || text.eql(k, "end") {
+        values[TEXT_ALIGN] = Value.Keyword { k: "right" }
+    }
+
+    if text.eql(k, "start") != rtl && text.eql(k, "end") == rtl {
+        values[TEXT_ALIGN] = Value.Keyword { k: "left" }
+    }
+}

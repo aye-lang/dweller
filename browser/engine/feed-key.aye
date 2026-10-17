@@ -4,6 +4,7 @@ import std.mem.AllocError
 import std.text
 
 var held_modifiers: i64 = 0
+var key_canceled: bool = false
 
 // spec: https://w3c.github.io/uievents/#events-keyboard-event-order
 pub fn feedKey(p: *mut Page, word: []u8) AllocError!void {
@@ -27,22 +28,46 @@ pub fn feedKey(p: *mut Page, word: []u8) AllocError!void {
     try detail.append("\n\n0\n0\n")
     try detail.appendInt(held_modifiers)
 
-    if !try dispatchEvent(p, target, kind, detail.bytes()) || up {
+    key_canceled = !try dispatchEvent(p, target, kind, detail.bytes())
+
+    if key_canceled {
         return
     }
 
+    if up {
+        if text.eql(name, "space") && dom.isSame(space_pressed, target) && spaceClicks(&p.doc, target) {
+            try runActivation(p, try keyClick(p, target))
+        }
+
+        return
+    }
+
+    if text.eql(name, "space") {
+        space_pressed = target
+    }
+
     if (held_modifiers & SHORTCUT_MODIFIERS) == 0 && modifierBit(name) == 0 && (name.len == 1 || text.eql(name, "return")) {
-        _ = try dispatchEvent(p, target, "keypress", detail.bytes())
+        key_canceled = !try dispatchEvent(p, target, "keypress", detail.bytes())
+    }
+
+    if (held_modifiers & 5) == 5 || (held_modifiers & 6) == 6 {
+        if accessKeyTarget(&p.doc, name) |el| {
+            return runActivation(p, try keyClick(p, el))
+        }
+    }
+
+    if text.eql(name, "tab") {
+        return keyFocus(p, try nextFocus(p, (held_modifiers & 1) == 0))
     }
 
     let field = p.doc.controls.focus orelse return
 
-    if text.eql(name, "tab") {
-        setFocus(p, try nextFocus(p, true))
-    } else if text.eql(name, "backspace") && dom.isTextField(&p.doc, field) {
+    if text.eql(name, "backspace") && dom.isTextField(&p.doc, field) {
         try dom.deleteBackward(&mut p.doc, field)
         _ = try dispatchEvent(p, field, "input", "")
     } else if text.eql(name, "return") && dom.isTextField(&p.doc, field) {
         try runActivation(p, try implicitSubmit(p, field))
+    } else if text.eql(name, "return") && enterClicks(&p.doc, field) {
+        try runActivation(p, try keyClick(p, field))
     }
 }

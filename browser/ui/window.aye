@@ -422,6 +422,7 @@ pub struct Ui {
     ibeam_cursor: ?*mut SDL_Cursor
     // A shortcut was handled: ignore the text input of its key.
     swallow: bool
+    pointer_on: bool
     // Game input: the mouse buttons held (DOM `buttons` bits), whether
     // the pointer is locked (relative mouse mode) and the window fullscreen.
     buttons: u32
@@ -509,6 +510,7 @@ pub struct Ui {
             hand_cursor: SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND),
             ibeam_cursor: SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM),
             swallow: false,
+            pointer_on: true,
             buttons: 0,
             clicks: 0,
             locked: false,
@@ -885,6 +887,7 @@ pub struct Ui {
                 }
             }
             engine.markPainted(p)
+            try engine.afterLayout(p)
         } else {
             self.dropList()
         }
@@ -1399,6 +1402,9 @@ pub struct Ui {
                 return
             }
             try self.mouseMoved(me.x as f64, me.y as f64)
+            if self.tab.page |p| {
+                try engine.hoverAt(p, me.x as f64 + self.tab.scroll_x, me.y as f64 - self.top() + self.tab.scroll)
+            }
             try self.pointerEvent("pointermove", 0, me.x as f64, me.y as f64, mx, my)
         } else if kind == SDL_MOUSEBUTTONDOWN {
             let be = &ev.button
@@ -1437,6 +1443,7 @@ pub struct Ui {
                 return
             }
             try self.pointerEvent("pointerup", buttonIndex(be.button), be.x as f64, be.y as f64, 0.0, 0.0)
+            let history_on = self.pointer_on
             if be.button != SDL_BUTTON_LEFT {
                 try self.pointerEvent("auxclick", buttonIndex(be.button), be.x as f64, be.y as f64, 0.0, 0.0)
             } else if be.clicks == 2 {
@@ -1444,6 +1451,11 @@ pub struct Ui {
             }
             if be.button == SDL_BUTTON_LEFT {
                 try releaseRange(self)
+            }
+            if history_on && be.button == SDL_BUTTON_X1 {
+                try self.back()
+            } else if history_on && be.button == SDL_BUTTON_X2 {
+                try self.forward()
             }
         }
     }
@@ -1871,7 +1883,9 @@ pub struct Ui {
         if cmd && !isModifierScancode(sc) {
             return
         }
-        _ = try self.keyScripts("keyup", sym, mods, sc, false)
+        if try self.keyScripts("keyup", sym, mods, sc, false) && sym == SDLK_SPACE {
+            try spaceUp(self)
+        }
         try self.afterScripts()
     }
 
@@ -1938,6 +1952,7 @@ pub struct Ui {
     // pointer locked, the events go to the locked element at the
     // position where the lock began.
     fn pointerEvent(self: *mut Self, kind: []u8, button: u32, x: f64, y: f64, mx: f64, my: f64) AllocError!void {
+        self.pointer_on = true
         let p = self.tab.page orelse return
         if !engine.hasScripts(p) || self.dropdown != null || self.auth.open {
             return
@@ -1966,6 +1981,7 @@ pub struct Ui {
         try b.appendInt(self.clicks as i64)
         let cy = y - self.top()
         let go_on = try engine.dispatchPointer(p, el, kind, b.bytes(), x, cy, mx, my)
+        self.pointer_on = go_on
         if go_on && text.startsWith(kind, "pointer") && !text.eql(kind, "pointercancel") {
             // pointerdown -> mousedown, pointermove -> mousemove...
             var mouse: []u8 = "mousemove"
@@ -1977,6 +1993,7 @@ pub struct Ui {
                 mouse = "mouseleave"
             }
             let mouse_on = try engine.dispatchPointer(p, el, mouse, b.bytes(), x, cy, mx, my)
+            self.pointer_on = mouse_on
             if mouse_on && text.eql(kind, "pointerdown") {
                 _ = try engine.dispatchEvent(p, el, "__focus", "")
             }

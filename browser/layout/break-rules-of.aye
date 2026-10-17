@@ -1,0 +1,20 @@
+import css
+import std.text
+
+fn breakRulesOf(t: *Tree, i: usize) BreakRules {
+    let style = t.bx(i).style
+
+    return BreakRules {
+        strictness: keywordOf(style[css.LINE_BREAK]),
+        word_break: keywordOf(style[css.WORD_BREAK]),
+        chinese_or_japanese: isChineseOrJapanese(contentLang(t, t.bx(i).node)),
+    }
+}
+
+fn isChineseOrJapanese(lang: []u8) bool {
+    if lang.len < 2 || (lang.len > 2 && lang[2] != '-') {
+        return false
+    }
+
+    return text.eqlIgnoreCase(lang[0..2], "zh") || text.eqlIgnoreCase(lang[0..2], "ja")
+}

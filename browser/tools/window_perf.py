@@ -43,6 +43,7 @@ import subprocess
 import sys
 import time
 
+import fast_build
 from window_env import window_env
 
 RECORD = re.compile(r"DWELLER_TIMING\t([^\t]+)\t(\d+)\t([^\n]*)")
@@ -170,6 +171,7 @@ def main():
     ap.add_argument("mode", choices=["scroll", "idle", "gate", "report"])
     ap.add_argument("url", nargs="?", help="the page, or the budgets of `gate`")
     ap.add_argument("--binary", default="target/dweller")
+    ap.add_argument("--allow-debug", action="store_true", help="time a binary that browser/build.sh did not build")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
     ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
@@ -185,6 +187,8 @@ def main():
     a = ap.parse_args()
     if not os.path.exists(a.binary):
         sys.exit(f"no binary {a.binary} (browser/build.sh)")
+    if a.mode != "gate":
+        fast_build.require(a.binary, a.allow_debug)
     if a.mode == "gate":
         import perf_gate
         perf_gate.gate(a)

@@ -13,6 +13,9 @@
 # target/release/aye. Anywhere else (the Dweller repository) it uses the
 # `aye` named by $AYE, or `aye` on the PATH.
 #
+# A fast build also writes `OUT.fast` (the binary's sha256): the timing
+# tools (browser/tools/fast_build.py) refuse a binary without it.
+#
 # `--mode safe` keeps the bounds and overflow checks (a panic names the
 # line) at about the speed of `fast`; use it to look into a crash on a
 # real site.
@@ -41,5 +44,9 @@ if [ -f "$wasmtime_pc/wasmtime.pc" ]; then
     export PKG_CONFIG_PATH
 fi
 mkdir -p "$(dirname "$out")"
+rm -f "$out.fast"
 "$AYE" build browser -o "$out" --mode "$mode"
+if [ "$mode" = fast ]; then
+    shasum -a 256 "$out" | cut -d' ' -f1 > "$out.fast"
+fi
 echo "$out ($mode)"

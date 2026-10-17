@@ -1,0 +1,20 @@
+import css
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn ownedValue(alloc: Allocator, texts: *mut List([]mut u8), v: css.Value) AllocError!css.Value {
+    let k = keywordOf(v)
+
+    if k.len == 0 {
+        return v
+    }
+
+    let owned = try alloc.alloc(0 as u8, k.len)
+
+    std.mem.copy(owned, k)
+    try texts.append(owned)
+
+    return css.Value.Keyword { k: owned }
+}

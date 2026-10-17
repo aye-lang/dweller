@@ -13,5 +13,14 @@ fn startTransition(t: *mut Transitions, el: NodeId, p: usize, from: css.Value, t
         delay *= factor
     }
 
-    try t.running.append(Transition { el: el, prop: p, from: from, to: to, reversing_start: reversing_start, shortening: factor, begin_ms: now, delay_ms: delay, duration_ms: duration, easing: easing, phase: Phase.Idle })
+    let a = try ownedValue(t.alloc, &mut t.kept, from)
+    let b = try ownedValue(t.alloc, &mut t.kept, to)
+    let c = try ownedValue(t.alloc, &mut t.kept, reversing_start)
+
+    if t.running.len() == 0 && t.shown.len() == 0 {
+        t.dropFrames()
+    }
+
+    t.started += 1
+    try t.running.append(Transition { el: el, prop: p, from: a, to: b, reversing_start: c, shortening: factor, begin_ms: now, delay_ms: delay, duration_ms: duration, easing: easing, phase: Phase.Idle })
 }

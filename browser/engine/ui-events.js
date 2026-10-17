@@ -40,8 +40,8 @@ const MOUSE_COORDINATES = {
   pageY() { return this.clientY + G.scrollY; },
   x() { return this.clientX; },
   y() { return this.clientY; },
-  offsetX() { return this.target ? this.clientX - paddingEdge(this.target).left : this.pageX; },
-  offsetY() { return this.target ? this.clientY - paddingEdge(this.target).top : this.pageY; },
+  offsetX() { return this.pointerId === -1 ? 0 : this.target ? this.clientX - paddingEdge(this.target).left : this.pageX; },
+  offsetY() { return this.pointerId === -1 ? 0 : this.target ? this.clientY - paddingEdge(this.target).top : this.pageY; },
   layerX() { return this.pageX; },
   layerY() { return this.pageY; },
 };

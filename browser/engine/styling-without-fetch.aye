@@ -1,0 +1,26 @@
+import css
+import std.mem.AllocError
+import std.text
+
+fn stylingWithoutFetch(s: *mut Script) AllocError!?*mut Styling {
+    let p = s.page
+
+    if p.styling |st| {
+        return st
+    }
+
+    var base = try documentBase(p.alloc, &p.doc, &p.url)
+    defer base.deinit(p.alloc)
+    var hrefs = text.Builder.init(p.alloc)
+    defer hrefs.deinit()
+    var queries = try css.Sheet.init(p.alloc)
+    defer queries.deinit()
+
+    try sheetHrefs(p.alloc, &p.doc, &base, css.Media { width: s.width, height: s.height }, &mut queries, &mut hrefs)
+
+    if hrefs.len() > 0 {
+        return null
+    }
+
+    return try computedStyling(s)
+}

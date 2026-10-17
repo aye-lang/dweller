@@ -1,0 +1,32 @@
+import std
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-declaration-block
+fn overflowOfDecls(decls: []u8, out: *mut text.Builder) AllocError!void {
+    var x: []u8 = ""
+    var y: []u8 = ""
+    var parts = text.split(decls, ";")
+
+    while parts.next() |d| {
+        let colon = std.mem.indexOf(d, ':') orelse continue
+        let name = text.trim(d[..colon])
+
+        if text.eqlIgnoreCase(name, "overflow-x") {
+            x = text.trim(d[colon + 1..])
+        } else if text.eqlIgnoreCase(name, "overflow-y") {
+            y = text.trim(d[colon + 1..])
+        }
+    }
+
+    if x.len == 0 || y.len == 0 {
+        return
+    }
+
+    try out.append(x)
+
+    if !text.eql(x, y) {
+        try out.append(" ")
+        try out.append(y)
+    }
+}

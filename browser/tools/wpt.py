@@ -41,7 +41,7 @@ VENDOR_JS = HERE / "wpt" / "testdriver-vendor.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "css/support", "tools", "docs"]
+EXTRA_DIRS = ["resources", "common", "fonts", "css/support", "css/reference", "tools", "docs"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.

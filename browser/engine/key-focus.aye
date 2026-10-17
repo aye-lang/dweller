@@ -1,0 +1,13 @@
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/uievents/#events-focusevent-event-order
+pub fn keyFocus(p: *mut Page, next: ?NodeId) AllocError!void {
+    let el = next orelse return
+
+    if !hasScripts(p) {
+        return setFocus(p, el)
+    }
+
+    _ = try dispatchEvent(p, el, "__focus", "key")
+}

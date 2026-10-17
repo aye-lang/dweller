@@ -1,0 +1,53 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+
+fn vmVisitAsyncYieldStar(c: *mut Compiler, id: u32, arg: u32) CompileError!void {
+    let mark = c.b.topReg
+    let r = c.b.newRegs(6) as i64
+    let g = c.gen_reg as i64
+    let awaited = try c.b.newLabel()
+    let unwrapped = try c.b.newLabel()
+    let done = try c.b.newLabel()
+    let end = try c.b.newLabel()
+
+    try c.visit(arg)
+    try c.b.op1(BC_GET_ASYNC_ITERATOR, r)
+    try c.b.op0(BC_LDA_ZERO)
+    try c.b.op1(BC_STAR, r + 4)
+    try c.b.op0(BC_LDA_UNDEFINED)
+    try c.b.op1(BC_STAR, r + 5)
+
+    let loop = try c.b.loopHeader()
+
+    try c.b.op1(BC_ASYNC_YIELD_STAR_CALL, r)
+    try c.b.op1(BC_STAR, r + 5)
+    try c.b.op1(BC_LDAR, r + 3)
+    try c.b.jump(BC_JUMP_IF_FALSE, awaited)
+    try c.b.op1(BC_LDAR, r + 5)
+    try vmSuspend(c, id, 1)
+    try c.b.op1(BC_STAR, r + 5)
+    try c.b.bind(awaited)
+    try c.b.op1(BC_LDAR, r + 5)
+    try c.b.op1(BC_ITERATOR_VALUE, r)
+    try c.b.op1(BC_STAR, r + 5)
+    try c.b.op1(BC_LDAR, r + 3)
+    try c.b.jump(BC_JUMP_IF_TRUE, unwrapped)
+    try c.b.op1(BC_LDAR, r + 5)
+    try vmSuspend(c, id, 1)
+    try c.b.op1(BC_STAR, r + 5)
+    try c.b.bind(unwrapped)
+    try c.b.op1(BC_LDAR, r + 2)
+    try c.b.jump(BC_JUMP_IF_TRUE, done)
+    try c.b.op1(BC_LDAR, r + 5)
+    try c.b.op2(BC_SUSPEND_GENERATOR, g, 2)
+    try c.b.op2(BC_RESUME_GENERATOR, g, r + 5)
+    try c.b.op1(BC_STAR, r + 4)
+    try c.b.jumpLoop(loop)
+    try c.b.bind(done)
+    try c.b.op1(BC_LDAR, r + 4)
+    try c.b.jump(BC_JUMP_IF_TO_BOOLEAN_FALSE, end)
+    try c.b.op1(BC_LDAR, r + 5)
+    try vmReturn(c)
+    try c.b.bind(end)
+    try c.b.op1(BC_LDAR, r + 5)
+    c.b.releaseRegs(mark)
+}
