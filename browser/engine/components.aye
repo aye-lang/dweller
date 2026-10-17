@@ -180,7 +180,7 @@ fn elementAttachShadow(it: *mut Interp, a: Args) JsError!Value {
     }
     let root = try dom.attachShadow(doc, h, closed)
     doc.recording = true
-    try changed(it)
+    try changedAt(it, h, "")
     return wrap(it, root)
 }
 
@@ -414,6 +414,10 @@ fn akSetAdopted(it: *mut Interp, a: Args) JsError!Value {
     if !found {
         try doc.adopted.append(dom.Adopted { root: root, css: css })
         doc.node(root).js_refs += 1
+    }
+    if !doc.isConnected(root) {
+        try changedAt(it, root, "")
+        return Value.Undefined
     }
     try changed(it)
     return Value.Undefined

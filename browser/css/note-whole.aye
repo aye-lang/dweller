@@ -1,0 +1,23 @@
+import std.mem.AllocError
+
+fn noteWhole(deps: *mut RestyleDeps, sheet: *Sheet, has: Simple, kind: []u8) AllocError!void {
+    deps.whole = true
+    deps.whole_kind = kind
+    deps.whole_name = hasArgumentName(sheet, has)
+    let start = deps.names.len()
+    var any_attr = false
+
+    for k in has.sub_start..has.sub_end {
+        try deps.addNames(sheet, k, &mut any_attr, 0)
+    }
+
+    for key in deps.names.items()[start..] {
+        try deps.whole_names.append(key)
+    }
+
+    while deps.names.len() > start {
+        _ = deps.names.pop()
+    }
+
+    deps.whole_any = deps.whole_any || any_attr
+}

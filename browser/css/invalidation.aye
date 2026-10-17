@@ -190,12 +190,16 @@ pub struct RestyleDeps {
     deep_any: bool
     of_selector: bool
     whole: bool
+    whole_names: List(u64)
+    whole_any: bool
+    whole_kind: []u8
+    whole_name: []u8
     // A selector looks at the `style` attribute: a change to it is not
     // one that only the element's own declarations see.
     style_attr: bool
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, style_attr: false }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_names: List(u64).init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -203,6 +207,7 @@ pub struct RestyleDeps {
         self.names.deinit()
         self.uses.deinit()
         self.deep.deinit()
+        self.whole_names.deinit()
     }
 
     /// Reads the selectors of the author sheet `author` (its `:has()`,
@@ -306,6 +311,8 @@ pub struct RestyleDeps {
         if nesting >= 16 {
             // Deeper than this is not looked at: style the whole document.
             self.whole = true
+            self.whole_any = true
+            self.whole_kind = "nesting"
             return
         }
         let cx = sheet.complexes.items()[k]
@@ -379,8 +386,7 @@ pub struct RestyleDeps {
             }
             let lead = compounds[cx.start + 1].combinator
             if lead == '+' || lead == '~' {
-                self.whole = true
-                return
+                return noteWhole(self, sheet, s, "has_sibling")
             }
             var children_only = lead == '>'
             for c in cx.start + 2..cx.end {
@@ -396,8 +402,7 @@ pub struct RestyleDeps {
         }
         if keys.len == 0 && depth == ANY_DEPTH {
             // Any element may be its element.
-            self.whole = true
-            return
+            return noteWhole(self, sheet, s, "has_keyless")
         }
         let start = self.keys.len()
         for key in keys {

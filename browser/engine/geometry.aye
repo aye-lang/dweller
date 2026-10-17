@@ -441,6 +441,9 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             g.version = version
             g.noted = s.layout_noted
             s.geom = g
+            if restyled {
+                try checkLayout(s, g)
+            }
             let settled = settleContainers(s, g, st) catch |e| {
                 dropGeometry(s)
                 return e
@@ -686,7 +689,7 @@ fn takeGeometryStyles(s: *mut Script, st: *Styling, media: css.Media) ?css.Style
 // them, when it can: not when a change may change any element's style,
 // or for other sheets or another viewport, or when the styles depend on
 // what css/invalidation.aye does not follow (`:has()` of siblings,
-// shadow trees; but see `onlyInlineStyle`), or after
+// shadow trees; but see `wholeUnseen`), or after
 // styling the document again
 // `RESTYLE_ROUNDS` times this way. Whether it did. `keep`: the old
 // values stay as they are, for the boxes of `g` to keep pointing at.
@@ -705,10 +708,11 @@ fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocErro
         noteFullLayout(s, "roots")
         return false
     }
-    if !clearOfShadows(&p.doc, roots.items()) {
+    if !liftOutOfShadows(&p.doc, &mut roots, &mut shallow) {
         noteFullLayout(s, "shadows")
         return false
     }
+    try dom.assignSlots(&mut p.doc)
     g.restyled += try css.restyleSubtrees(&p.doc, &st.ua, &st.author, st.media, roots.items(), shallow.items(), keep, g.styles)
     clearChanges(s)
     return true
@@ -753,17 +757,6 @@ fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(Nod
 fn showsAttr(g: *Geometry, el: NodeId, pseudo: u8) bool {
     let v = g.styles.pseudo(el, pseudo) orelse return false
     return text.indexOf(layout.keywordOf(v[css.CONTENT]), "attr(") != null
-}
-
-// Are the changes noted since `g` all to `style` attributes that no
-// selector looks at (an animation's frames)?
-fn onlyInlineStyle(s: *Script, g: *Geometry) bool {
-    for c in s.restyle.items() {
-        if !g.deps.onlyOwnStyle(c.what) {
-            return false
-        }
-    }
-    return true
 }
 
 // The elements whose subtrees have every element whose style a change
