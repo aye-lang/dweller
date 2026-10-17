@@ -10,10 +10,14 @@ pub fn specifiedValue(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
         return specifiedOverflow(value, 2, out)
     }
 
-    let index = propertyIndex(prop) orelse return writeRaw(value, out)
+    let index = propertyIndex(logicalAlias(prop)) orelse return writeRaw(value, out)
 
     if (index == OVERFLOW_X || index == OVERFLOW_Y) && !keepsRaw(value) {
         return specifiedOverflow(value, 1, out)
+    }
+
+    if validatesInline(index) && !keepsRaw(value) {
+        return specifiedLonghand(alloc, index, value, out)
     }
 
     let trimmed = text.trim(value)

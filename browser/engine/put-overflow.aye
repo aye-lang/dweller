@@ -1,0 +1,17 @@
+import dom.NodeId
+import std
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-overflow-3/#propdef-overflow
+fn putOverflow(s: *mut Script, el: NodeId, value: []u8) AllocError!void {
+    let space = std.mem.indexOf(value, ' ') orelse value.len
+    var y = value[..space]
+
+    if space < value.len {
+        y = value[space + 1..]
+    }
+
+    try putStyleDecl(s, el, "overflow", "")
+    try putStyleDecl(s, el, "overflow-x", value[..space])
+    try putStyleDecl(s, el, "overflow-y", y)
+}

@@ -515,7 +515,8 @@ fn layoutInline(t: *mut Tree, i: usize, avail: f64) AllocError!f64 {
         strut: textMetrics(t, t.bx(i).style),
         align: keywordOf(t.bx(i).style[css.TEXT_ALIGN]),
         rtl: rtl,
-        ellipsis: !isKeyword(t.bx(i).style[css.OVERFLOW_X], "visible") && isKeyword(t.bx(i).style[css.TEXT_OVERFLOW], "ellipsis"),
+        ellipsis: !isKeyword(t.bx(i).style[css.OVERFLOW_X], "visible") && !text.eql(textOverflowEnd(t.bx(i).style), "clip"),
+        marker: textOverflowEnd(t.bx(i).style),
         y: 0.0,
         open: &mut open,
     }
@@ -692,6 +693,7 @@ struct LineBuilder {
     rtl: bool
     // `text-overflow: ellipsis` on a container that clips its overflow.
     ellipsis: bool
+    marker: []u8
     // The top of the next line.
     y: f64
     open: *mut List(usize)
@@ -907,7 +909,12 @@ struct LineBuilder {
             return
         }
         let m = textMetrics(self.t, self.t.bx(self.container).style)
-        let es = ellipsisText(self.t, m.font)
+        var es = ellipsisText(self.t, m.font)
+
+        if !clamped {
+            es = markerText(self.t, m.font, self.marker)
+        }
+
         let ew = self.t.measure.width(m.font, es)
         let limit = right - ew
         // The end of the content that stays.
