@@ -447,8 +447,10 @@ fn installDom(s: *mut Script) JsError!void {
     try interfaceObject(it, "CDATASection", try newProto(it, textp))
     try interfaceObject(it, "ProcessingInstruction", try newProto(it, chars))
     try interfaceObject(it, "XMLDocument", try newProto(it, docp))
-    try interfaceObject(it, "HTMLFormControlsCollection", try newProto(it, s.collection_proto))
-    try interfaceObject(it, "RadioNodeList", try newProto(it, s.nodelist_proto))
+    s.controls_proto = try newProto(it, s.collection_proto)
+    s.radio_proto = try newProto(it, s.nodelist_proto)
+    try interfaceObject(it, "HTMLFormControlsCollection", s.controls_proto)
+    try interfaceObject(it, "RadioNodeList", s.radio_proto)
     try installElementInterfaces(s, html, element)
     let consts = [6][]u8{"ELEMENT_NODE", "TEXT_NODE", "COMMENT_NODE", "DOCUMENT_NODE", "DOCUMENT_TYPE_NODE", "DOCUMENT_FRAGMENT_NODE"}
     let values = [6]f64{1.0, 3.0, 8.0, 9.0, 10.0, 11.0}
@@ -547,6 +549,9 @@ fn installDom(s: *mut Script) JsError!void {
     }
     if s.tag_protos.get("select") |sp| {
         try accessor(it, sp, "options", selectOptions, null)
+    }
+    if s.tag_protos.get("form") |fp| {
+        try accessor(it, fp, "elements", formElements, null)
     }
     if s.tag_protos.get("datalist") |dp| {
         try accessor(it, dp, "options", selectOptions, null)
@@ -1584,6 +1589,9 @@ fn namedGet(s: *mut Script, o: u32, key: u32) JsError!Value {
     if hostTag(it, o) == TAG_WINDOW {
         return windowNamed(s, o, key)
     }
+    if hostTag(it, o) == TAG_WINDOW_NAMED {
+        return Value.Empty
+    }
     let proto = it.heap.obj(o).proto
     if it.hasProperty(proto, key) {
         return Value.Empty
@@ -1615,7 +1623,7 @@ fn namedSet(s: *mut Script, o: u32, key: u32, value: Value) JsError!bool {
     if hostTag(it, o) == TAG_LIST {
         return listSet(s, o, key)
     }
-    if hostTag(it, o) == TAG_WINDOW {
+    if hostTag(it, o) == TAG_WINDOW || hostTag(it, o) == TAG_WINDOW_NAMED {
         return false
     }
     let proto = it.heap.obj(o).proto
@@ -1655,6 +1663,9 @@ fn namedHas(s: *mut Script, o: u32, key: u32) bool {
     let tag = hostTag(it, o)
     if tag == TAG_LIST {
         return listHas(s, o, key)
+    }
+    if tag == TAG_WINDOW_NAMED {
+        return windowNamedHas(s, o, key)
     }
     if (tag & TAG_KIND != TAG_DATASET && tag & TAG_KIND != TAG_STYLE) || it.hasProperty(it.heap.obj(o).proto, key) {
         return false

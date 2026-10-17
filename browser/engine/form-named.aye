@@ -1,0 +1,31 @@
+import dom
+import js
+import js.JsError
+import js.Value
+import std.list.List
+
+// https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#dom-htmlformcontrolscollection-nameditem
+fn formNamed(s: *mut Script, slot: u32, key: u32) JsError!Value {
+    let it = &mut s.it
+    let name = it.heap.atoms.name(key)
+
+    if name.len == 0 {
+        return Value.Empty
+    }
+
+    let form = s.lists.items()[slot].root
+    var found = List(dom.NodeId).init(s.alloc)
+    defer found.deinit()
+
+    try formListNodes(&s.active.doc, form, true, name, &mut found)
+
+    if found.len() == 0 {
+        return Value.Empty
+    }
+
+    if found.len() == 1 {
+        return wrap(it, found.items()[0])
+    }
+
+    return newList(it, LIST_RADIO, form, name)
+}

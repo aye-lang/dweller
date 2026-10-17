@@ -26,6 +26,8 @@ let LIST_TAG: u8 = 2
 let LIST_CLASS: u8 = 3
 let LIST_NAME: u8 = 4
 let LIST_OPTIONS: u8 = 5
+let LIST_FORM: u8 = 6
+let LIST_RADIO: u8 = 7
 
 /// A new live list of `kind` under `root`, about `arg`.
 fn newList(it: *mut Interp, kind: u8, root: NodeId, arg: []u8) JsError!Value {
@@ -67,6 +69,10 @@ fn newList(it: *mut Interp, kind: u8, root: NodeId, arg: []u8) JsError!Value {
         proto = s.nodelist_proto
     } else if kind == LIST_OPTIONS {
         proto = s.options_proto
+    } else if kind == LIST_FORM {
+        proto = s.controls_proto
+    } else if kind == LIST_RADIO {
+        proto = s.radio_proto
     }
     let o = it.newHostObject(proto, TAG_LIST, slot, generation) catch |e| {
         if releaseList(s, slot, generation) |r| {
@@ -155,6 +161,10 @@ fn listNodes(s: *mut Script, slot: u32) AllocError![]NodeId {
         try dom.options(doc, root, &mut l.items)
         return l.items.items()
     }
+    if l.kind == LIST_FORM || l.kind == LIST_RADIO {
+        try formListNodes(doc, root, l.kind == LIST_RADIO, l.arg, &mut l.items)
+        return l.items.items()
+    }
     let all = text.eql(l.arg, "*")
     let classes = l.kind == LIST_CLASS && text.trim(l.arg).len > 0
     var cur = doc.following(root, root)
@@ -241,8 +251,11 @@ fn listGet(s: *mut Script, o: u32, key: u32) JsError!Value {
         return Value.Undefined
     }
     let kind = s.lists.items()[slot].kind
-    if kind == LIST_CHILD_NODES || kind == LIST_NAME || it.hasProperty(it.heap.obj(o).proto, key) || it.heap.findProp(o, key) != null {
+    if kind == LIST_CHILD_NODES || kind == LIST_NAME || kind == LIST_RADIO || it.hasProperty(it.heap.obj(o).proto, key) || it.heap.findProp(o, key) != null {
         return Value.Empty
+    }
+    if kind == LIST_FORM {
+        return formNamed(s, slot, key)
     }
     let name = it.heap.atoms.name(key)
     let nodes = try listNodes(s, slot)
