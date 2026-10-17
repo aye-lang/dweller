@@ -4,37 +4,5 @@ import std.mem.AllocError
 fn outlineShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
     let props = [3]usize{OUTLINE_WIDTH, OUTLINE_STYLE, OUTLINE_COLOR}
 
-    if try d.wide(comps, props[..]) {
-        return
-    }
-
-    if comps.len == 0 || comps.len > 3 {
-        return
-    }
-
-    var vals = [3]Value{Value.Initial, Value.Initial, Value.Initial}
-    var seen = [3]bool{false, false, false}
-
-    for c in comps {
-        let one = [1]Comp{c}
-        var found = cssWide(c) != null
-
-        for k in 0..3 {
-            if !found && !seen[k] {
-                if try parseValue(d.sheet, props[k], one[..]) |v| {
-                    vals[k] = v
-                    seen[k] = true
-                    found = true
-                }
-            }
-        }
-
-        if !found || cssWide(c) != null {
-            return
-        }
-    }
-
-    for k in 0..3 {
-        try d.add(props[k], vals[k])
-    }
+    return anyOrder(d, comps, props[..])
 }

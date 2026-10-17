@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-text-4/#text-wrap
+pub fn writeTextWrap(values: []Value, out: *mut text.Builder) AllocError!void {
+    let plain = text.eql(keywordText(values[TEXT_WRAP_STYLE]), "auto")
+
+    if plain || !text.eql(keywordText(values[TEXT_WRAP_MODE]), "wrap") {
+        try writeValue(values[TEXT_WRAP_MODE], out)
+    }
+
+    if plain {
+        return
+    }
+
+    if !text.eql(keywordText(values[TEXT_WRAP_MODE]), "wrap") {
+        try out.append(" ")
+    }
+
+    try writeValue(values[TEXT_WRAP_STYLE], out)
+}
