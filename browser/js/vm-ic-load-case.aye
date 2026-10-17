@@ -1,0 +1,25 @@
+// v8: src/ic/ic.cc (LoadIC::ComputeHandler)
+
+fn vmIcLoadCase(it: *mut Interp, o: u32, key: u32) ?IcCase {
+    let shape = it.heap.obj(o).shape
+
+    if it.heap.findProp(o, key) |slot| {
+        return IcCase { shape: shape, other: NONE, slot: slot, proto1: NONE, proto2: NONE }
+    }
+
+    if it.heap.obj(o).class == Class.Function && (key == A_NAME || key == A_LENGTH) {
+        return null
+    }
+
+    let p = it.heap.obj(o).proto
+
+    if p == NONE || it.heap.obj(p).shape == NONE || !cacheable(it, p, key) {
+        return null
+    }
+
+    if it.heap.findProp(p, key) |slot| {
+        return IcCase { shape: shape, other: it.heap.obj(p).shape, slot: slot, proto1: NONE, proto2: NONE }
+    }
+
+    return null
+}

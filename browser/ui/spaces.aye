@@ -48,6 +48,7 @@
 
 import agent
 import engine
+import net
 import perf
 import std
 import std.heap.Arena
@@ -132,6 +133,7 @@ pub struct Space {
     closing: bool
     // It ended unasked.
     crashed: bool
+    shared: bool
 }
 
 /// A Space's own side: what the window told it, and what it told the
@@ -159,6 +161,7 @@ pub struct Inside {
     closing: bool
     // The tab its last agent acted on: an agent that attaches acts on it.
     last_tab: u32
+    shared: bool
 }
 
 // ---- the window
@@ -172,6 +175,8 @@ fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
         a.spaces = true
         a.space_font = o.face
         a.space_js = o.js
+        try net.shareCookies()
+        try engine.shareLocalStorage(ui.alloc)
     }
     if o.control >= 0 {
         a.control = o.control
@@ -192,6 +197,7 @@ fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
             serving: false,
             closing: false,
             last_tab: ui.slots[0].?.id,
+            shared: false,
         })
     }
     return true
@@ -219,6 +225,7 @@ fn openSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
     var mcp = agent.looksLikeRpc(tmp, t)
     var name: []u8 = ""
     var attach: u32 = 0
+    var shared = true
     if agent.helloOf(tmp, t) |h| {
         mcp = h.mcp
         if h.why.len > 0 {
@@ -226,15 +233,16 @@ fn openSpace(ui: *mut Ui, c: *mut Conn) AllocError!void {
         }
         name = h.name
         attach = h.space
+        shared = !h.isolated
     }
     if attach > 0 {
         return attachSpace(ui, c, tmp, attach, name, mcp)
     }
-    return startSpace(ui, c, name, mcp)
+    return startSpace(ui, c, name, mcp, shared)
 }
 
 // Starts a new Space for connection `c`.
-fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool) AllocError!void {
+fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool, shared: bool) AllocError!void {
     let a = ui.agents.?
     let k = spaceSlot(ui) orelse {
         return failConn(ui.alloc, c, mcp, "too many Spaces (8)")
@@ -317,6 +325,7 @@ fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool) AllocError!void 
         stop_at: 0,
         closing: false,
         crashed: false,
+        shared: shared,
     })
     if name.len > 0 {
         try sp.name.append(name)
@@ -327,6 +336,9 @@ fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool) AllocError!void 
     try sp.state.append("idle")
     a.space_list[k] = sp
     c.space = sp
+    if shared {
+        try shareWithSpace(ui, sp)
+    }
     // Its id and the others, and the person's context as it is now,
     // before anything of its agent's.
     try pushContext(ui, false)
@@ -798,6 +810,10 @@ fn fromSpace(ui: *mut Ui, sp: *mut Space, tmp: Allocator, line: []u8) AllocError
     }
     let r = doc.root()
     let ctl = doc.getStr(r, "ctl") orelse return false
+    if sp.shared && try applyShared(ui, &mut doc, r, ctl) {
+        try forwardShared(ui, sp, line)
+        return false
+    }
     if text.eql(ctl, "close") {
         sp.closing = true
         return false
@@ -931,7 +947,7 @@ fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!
     try w.key("name")
     try w.string(sp.name.bytes())
     try w.key("profile")
-    try w.string("shared")
+    try w.string(profileName(sp.shared))
     try w.key("others")
     try w.beginArray()
     for s in spacesById(a) {
@@ -939,7 +955,7 @@ fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!
         if o == sp {
             continue
         }
-        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
+        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs, o.shared)
         try spaceLine(&mut detail, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
     }
     try w.endArray()
@@ -950,7 +966,7 @@ fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!
 }
 
 // A Space in `spaces`.
-fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32) AllocError!void {
+fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32, shared: bool) AllocError!void {
     try w.beginObject()
     try w.key("id")
     try w.int(id as i64)
@@ -965,7 +981,7 @@ fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8
     try w.key("tabs")
     try w.int(tabs as i64)
     try w.key("profile")
-    try w.string("shared")
+    try w.string(profileName(shared))
     try w.key("watched")
     try w.boolean(false)
     try w.endObject()
@@ -1354,8 +1370,15 @@ fn fromWindow(ui: *mut Ui, tmp: Allocator, line: []u8) AllocError!void {
     }
     let r = doc.root()
     let ctl = doc.getStr(r, "ctl") orelse return
+    if text.eql(ctl, "share") {
+        return startSharing(ui, &mut doc, r)
+    }
+    if try applyShared(ui, &mut doc, r, ctl) {
+        return
+    }
     if text.eql(ctl, "spaces") {
         me.id = (doc.getNum(r, "id") orelse 0.0) as u32
+        me.shared = text.eql(doc.getStr(r, "profile") orelse "", "shared")
         me.name.clear()
         try me.name.append(doc.getStr(r, "name") orelse "")
         me.others.clear()
@@ -1455,6 +1478,7 @@ fn toConns(ui: *mut Ui, tmp: Allocator, name: []u8, fields: []u8) AllocError!voi
 fn spaceStatus(ui: *mut Ui) AllocError!void {
     let a = ui.agents orelse return
     let me = a.inside orelse return
+    try sendShared(ui)
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -1540,7 +1564,7 @@ fn spacesReply(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply) AllocError!
         if a.paused {
             state = "paused"
         }
-        try spaceEntry(&mut w, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32)
+        try spaceEntry(&mut w, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32, me.shared)
         try spaceLine(&mut detail, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32)
         n = 1 + me.others_n
         if me.others.len() > 0 {

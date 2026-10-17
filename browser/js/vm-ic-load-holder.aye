@@ -1,0 +1,19 @@
+// v8: src/ic/ic.cc (LoadIC::Load)
+
+fn vmIcLoadHolder(it: *mut Interp, c: IcCase, o: u32, key: u32) u32 {
+    if c.other == NONE {
+        return o
+    }
+
+    if it.heap.obj(o).class == Class.Function && (key == A_NAME || key == A_LENGTH) {
+        return NONE
+    }
+
+    let p = it.heap.obj(o).proto
+
+    if p != NONE && it.heap.obj(p).shape == c.other && cacheable(it, p, key) {
+        return p
+    }
+
+    return NONE
+}

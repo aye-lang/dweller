@@ -116,7 +116,7 @@ the one place with more than one process.
   slice 2, P4.11, P4.14. W7 and W8 are not re-measured since the P4.32
   table in `PERF.md` (P4.41 does that); mistral idle CPU is still over
   25% (P4.57's note).
-- **Login readiness.** P10.20–P10.23 done; P9.7 open; then
+- **Login readiness.** P10.20–P10.23 and P9.7 done; then
   the user bundle P3.80.
 - **Sites.** `page_load.py check` passes on the recorded archives; W3 is
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
@@ -224,7 +224,7 @@ exits 0, the weekly job runs.
 | C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | done | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
 | C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
 | C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
-| C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
+| C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | done | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
 
 ### Phase D: login readiness and the user bundle (lane login)
@@ -234,7 +234,7 @@ Exit: P3.80 handed to the user with telemetry on.
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
 | D1 | P10.23 | sign-in page details: `autocomplete`, `navigator.credentials` absent, `Set-Cookie` on fetch/XHR, Enter submits, `requestSubmit` | – | done | `core/html/forms/html_form_element.cc` (implicit submission, `requestSubmit`) |
-| D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | open | – (B9's own design) |
+| D2 | P9.7 | shared logins with Spaces: jar and `localStorage` copied both ways; `"profile":"isolated"` | E1 not needed; after P4.50/P4.51 (done) | done 2026-10-17 | – (B9's own design) |
 | D3 | P3.80 | the user bundle: W1–W9 and D1, D2 hold; the user's daily sites; reports become cards matched to a Layer 1 area | A, B3, C4, D1, D2 | open | – |
 
 ### Phase E: Spaces (lane spaces, parallel track)
@@ -245,7 +245,7 @@ Exit: R1–R7 of B9; Spaces by default.
 |---|---|---|---|---|---|
 | E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | open | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
 | E2 | P9.6 | take over and hand back | E1 | open | – |
-| E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | open | – |
+| E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | done | – |
 | E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
 
 ### Phase F: the JS bytecode VM (lane vm, parallel track)
@@ -608,7 +608,7 @@ read from code, for logged-in browsing in the human window:
 | CSRF tokens, 2FA code pages | yes | Plain forms and scripts; nothing special once cookies and forms work. |
 | WebAuthn / passkeys | no; out of scope for now | No `navigator.credentials` anywhere. The user can log in with password and a 2FA code. Unknown whether any of their sites force passkeys; if one does, their report makes it a card. |
 | fetch/XHR `credentials` | yes (P10.21) | `omit`, `same-origin` (default) and `include`, XHR `withCredentials`, passed to `ak.fetch`/`ak.fetchStart`; `omit` sends and stores nothing. No CORS enforcement (a compatibility gain, not a login blocker), so no `Access-Control-Allow-Credentials` check. |
-| P9.7 shared logins with Spaces | planned, not started | R5 is "partial" (`docs/browser.md:754`): one jar and one `localStorage` per process, so a Space (its own process) does not see the person's logins; `"profile":"isolated"` is rejected until P9.7 (`docs/plans/browser.md:310`). Space profiles are therefore not separate by design but not shared yet either; P9.7 builds on P4.50/P4.51. |
+| P9.7 shared logins with Spaces | done 2026-10-17 (`window_spaces_logins`) | Before it, R5 was "partial" (`docs/browser.md:754`): one jar and one `localStorage` per process, so a Space (its own process) does not see the person's logins; `"profile":"isolated"` is rejected until P9.7 (`docs/plans/browser.md:310`). Space profiles are therefore not separate by design but not shared yet either; P9.7 builds on P4.50/P4.51. |
 
 IndexedDB is not filed: no daily-login blocker is known; the user's
 reports decide. The fixture of P10.20 serves the other login cards.
@@ -852,6 +852,7 @@ Common to these cards:
 - verify: `cargo test --release --test browser -- js_conformance js_conformance_vm jsdom_fixtures jsdom_gc_stress > target/p4.73.log 2>&1; echo $?` → 0; `DWELLER_JS_VM=1 browser/tests/jsbench/run.sh` all checksums equal
 - estimate: 1.2–1.4× on richards, splay, raytrace, three
 - model: opus
+- status: done 2026-10-17 (partial: correct, not yet faster). A feedback vector per compiled function (`BytecodeArray.feedback`, one `IcEntry` per `[s]` slot; `GetNamedProperty` and `SetNamedProperty` take a slot as a third operand, allocated by the compiler). Named loads and stores (`vm-load-named.aye`, `vm-store-named.aye`) go uninitialized → monomorphic → polymorphic (up to 4 `(shape, other, slot)` cases) → megamorphic, a global 4096-entry stub cache keyed by `(shape, atom, load/store)` in `VmState.stub` (V8 `stub-cache.h`). Load cases are an own slot or a slot in the immediate prototype (shape checked on the live link); store cases are an existing own slot (flags read at the hit) or an add transition `(old shape, new shape, slot)` that records the shapes of up to two prototypes (none may have the key; a deeper chain misses until P4.74); when `props` is full the hit goes through `heap.addProp` instead of recording a grow flag. Keyed loads and stores (`vm-keyed-load.aye`, `vm-keyed-store.aye`) have a dense-array fast path and note the element kind (dense array, string, arguments, generic). `DWELLER_JS_VM_STATS=1` prints `vm: ic N monomorphic, N polymorphic, N megamorphic; keyed N dense array, N string, N arguments, N generic`. `js_conformance`, `js_conformance_vm`, `jsdom_fixtures`, `jsdom_gc_stress` green; `check_layers.py`, `check_taste.py` pass; jsbench with `DWELLER_JS_VM=1`: all 15 checksums equal. Measured against main 8b874b6 (VM on, 3 runs): richards 0.89×, splay 0.99×, raytrace 0.98×, three 0.89×, navier-stokes 0.93×, methods 0.83× — slower, not the estimated 1.2–1.4×. Left: find the slowdown (likely the layered calls and `IcCase` copies on the hit path versus the old per-node `PropCache`, and `vmMemberName` per access: put the atom in the entry and inline the monomorphic hit); call entries that skip the callee checks (the call instructions have no free operand for a slot); a named-load entry for constant keys in keyed sites; the global and `instanceof` rows.
 
 #### P4.74: prototype shapes and the prototype epoch
 - goal: loads that find the property up a prototype chain of any depth hit the IC (class hierarchies, three.js methods).
@@ -1014,6 +1015,7 @@ in order.
 - test: over the test server, the person's tab opens `/net/start` (sets cookies); a Space navigates `/headers` and its Markdown shows those cookies; the Space sets a cookie with `eval` (`document.cookie`) and a `localStorage` item, and the person's next `/headers` and a script on the person's page see them; an `isolated` Space sees none.
 - verify: `cargo test --release --test browser window_spaces_logins > target/p9.7.log 2>&1; echo $?` → 0
 - time box: 90 min; model: opus (consistency between processes)
+- status: done 2026-10-17. Choices recorded in `docs/agent-protocol.md` (Spaces, Logins, the control table) and `docs/browser.md` (R5). The hook after `store` sits where the jar's `store` is called (`net/http.aye`'s response cookies, `setScriptCookie` in `net/session.aye`), not in `Jar.store` itself, so applying the other side's cookie (`applyCookie`, `Jar.store` directly) never echoes; a change is sent as the stored line and its URL (`cookie`: `url`, `line`, `script`) and replayed with `Jar.store`, so expiry and deletion (`Max-Age=0`) need nothing else. The start is a `share` message (the jar from `Jar.save` with session cookies, and the window's profile directory) then `storage` `clear`/`set` lines for the origins the window has read; the Space reads other origins' `localStorage` files from that profile read-only (`net.shareProfile`, the profile without its lock). Changes queue in `net/note-stored.aye` and `engine/note-local-change.aye` (only while sharing: the window with `--spaces`, a shared Space after `share`) and are sent each loop round (`ui/send-shared.aye`; a Space also before each status, so before its answer); the window applies a Space's and passes it to its other shared Spaces (`ui/forward-shared.aye`) through `ctl_out`, so it never waits. `isolated`: no `share`, no queue, nothing sent or applied; `spaces` and the window's `spaces` message carry each Space's `profile`; a hello with another `profile` value is refused (`window_spaces_control`). Test `window_spaces_logins` reads `/headers` as Markdown in the Space (`a`, `h` (HttpOnly) and `p`; `b` has the path `/net`), sets the Space's cookie and item on `login/read.html` (`/headers` is plain text: no scripts), and the person's page is the new `browser/tests/login/shared.html` (shows `localStorage` and `document.cookie`, sets its own, fetches `/headers`); it also checks that the person's cookie and item reach the shared Space and not the isolated one. Not done: `storage` events for changes from another process; `dweller connect --isolated` (B9 names it; the hello works without it); an attached Space keeps the profile it was started with whatever the new hello says; a jar bigger than the control socket's buffer may still be arriving when the first request is served.
 
 #### P9.8: code mode (`run`)
 - lane: browser
@@ -1023,6 +1025,7 @@ in order.
 - first: a unit test that a second realm calls into a page's realm and back (a click whose handler runs page script) under GC stress; if it fails, stop and report (B9 risks).
 - verify: `cargo test --release --test browser -- agent_sessions window_spaces > target/p9.8.log 2>&1; echo $?` → 0
 - time box: 120 min; model: opus
+- status: done 2026-10-17. Realm: a separate `js.Interp` per run (`js.newRealm`: builtins, GC stress honoured; 1 MB of C stack and depth 1000 below the run's caller), so the page's realm and the run's share no heap and no state (the engine's only module-level variable is `gc.trace_mode`). The functions are JS (`agent/run.js`) over one native, `__request(cmd, line)`, which feeds a JSON-lines request to `agentRequest` on the session, so each call is the command itself (refusals, announce, window commands); `wait` runs with the host set aside (the session's page-clock wait, never answered later). Between calls `Host.agentGoesOn` reads a Space's control connection (pause refuses the next acting call; stop ends the run and leaves it unanswered, as the connection closes after `stopped`); `ms` is checked between calls (wall clock) and by the realm's budget (processor time). First test: `run.jsonl` under `DWELLER_JS_GC=stress DWELLER_JS_VM=1` (clicks whose handlers run page script, navigations under the realm) gives `run.out` byte for byte, now part of `jsdom_gc_stress`. Tests: `sessions/run.jsonl`, `run.mcp.jsonl` (`browser_run`), `spaces/run.*` (a run in a Space; pause and stop mid-run). Left: `$262.createRealm` for test262 can use `js.newRealm`; a paused run fails its next acting call instead of waiting for resume; `tabs()`/`tabNew()` exist only in a window or Space; the result says "ran N calls" without its time, to keep goldens stable.
 
 #### P9.9: Spaces by default
 - lane: browser
@@ -1622,6 +1625,7 @@ its area.
 - verify: `python3 browser/tools/wpt.py run fetch/api xhr --upstream -j 8 > target/wpt-fetch.log 2>&1; tail -3 target/wpt-fetch.log` prints both scores; `python3 browser/tools/conformance.py check; echo $?` → 0
 - depends on: P10.4
 - time box: 90 min; model: sonnet
+- status: done 2026-10-17. `DWELLER_RESOLVE` (comma separated `host:port:address`, `net/resolve-*.aye`; one libcurl `CURLOPT_RESOLVE` list built on first request and set in `prepare`, freed in `session.stop`). `wpt.py fetch` also checks out `tools/` and `docs/` (what `wpt serve` needs; `checkout -f`, since `serve --upstream` overwrites `resources/testharnessreport.js` with ours). `wpt.py serve --upstream` and `run --upstream` (`wpt_upstream.py`) start the checkout's `python3 wpt serve --no-h2` with a generated config (`server_host` 127.0.0.1, `check_subdomains` off, http ports 8000 and 8001) and set `DWELLER_RESOLVE` for the seven hosts on both ports; pages are `http://web-platform.test:8000/...`. Under `--upstream` (or `"upstream": true` in the area) `.sub.` tests are run. `wpt_areas.json`: `fetch/api` (replaces `fetch/api/basic`) and `xhr`, both `"upstream": true`. `conformance.py table` keeps the committed rows of areas it has no fresh results for. Scores at e58225ab: `fetch/api` 1007/2415 (41.7%, was 23.4% for `fetch/api/basic`; 178 files, 13 skipped, 10 TIMEOUT, 5.5 min at -j 4), `xhr` 448/1233 (36.3%, was 15.5%; 329 files, 3 skipped, 22 TIMEOUT, 51 s at -j 4); no CRASH. Left: `.sub.` tests of the other areas run only with `--upstream` (their areas are not switched, so their baselines stay), no https (`.https.` skipped), no workers, no websockets.
 
 #### P10.6: `testdriver.js` subset
 - goal: tests that call `test_driver.click`, `send_keys` and simple `action_sequence` pointer/key actions run: our `resources/testdriver-vendor.js` turns them into `--events` words that `dweller wpt` feeds to the page (element centre for clicks). Un-excludes those tests in "Events and timers" and "Forms".

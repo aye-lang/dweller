@@ -215,6 +215,7 @@ session goes on after an error.
 | `eval` | `expression`: a script; its last expression statement is the result | `result`: a string as it is, anything else as `console.log` shows it; an uncaught exception is the error |
 | `tabs`, `tab_new`, `tab_select`, `tab_close`, `user_context` | | only in a window ([A shared window](#a-shared-window)) |
 | `screenshot` | `ref` (the element's border box), or `full` (bool: the whole document, at most 16384 px tall); neither: the viewport as scrolled | `result` (what it shows and its size), `url`, `title`, `width`, `height`, `png` (the PNG file in base64) |
+| `run` | `code`: a function body ([Code mode](#code-mode-run)); `ms`: the longest the run may take (default 30000) | `result` ("ran N calls"), `value` (what the code returned, as JSON; `null` for `undefined`), `log`, `calls`, `url`, `title`; a failure is the error, with `log` and `calls` |
 
 Scripts in a session (`todo.jsonl` in `browser/tests/agent/sessions/`):
 
@@ -308,6 +309,44 @@ character-set operations are not implemented. Calendar inputs have no
 picker popup, color inputs are swatches, and datalist suggestions are
 ignored.
 
+### Code mode (`run`)
+
+`run` executes `code` as the body of a function in a JavaScript realm of
+its own (not the page's: the page cannot see it, and a navigation does
+not end it). The realm has the standard built-ins and these functions.
+Each one sends the command of that name, waits for it and returns its
+response object without `id` and `ok`; a failure throws an `Error` whose
+message is the command's error:
+
+`navigate(url)`, `back()`, `forward()`, `reload()`, `snapshot(opts)`,
+`read(opts)`, `find(text)`, `click(ref)`, `type(ref, text, opts)` (alias
+`fill`; `opts`: `{submit}`), `select(ref, option)`, `press(key)`,
+`scroll(ref)` or `scroll(dy)`, `wait(opts)` (`{selector, ms}`, or a
+number of ms), `evaluate(expression)` (`eval` in the page; returns its
+`result`, a string), `screenshot(opts)`, `tabs()`, `tabNew(url)`,
+`tabSelect(id)`, `tabClose(id)` (the tab commands only in a window), and
+`log(...values)` (strings as they are, other values as JSON, joined by a
+space, one entry of `log` per call).
+
+The code's return value goes through `JSON.stringify` into `value`. An
+uncaught exception fails the run: `"error"` names the call that threw
+(`"click (call 2): unknown ref e98: ..."`), or is `"Uncaught Name:
+message"` for an exception of the code itself (a syntax error too).
+`calls` counts the calls made. The run ends with `"the run took longer
+than its ms"` once `ms` has passed (checked between calls, and in the
+realm's own code by processor time). In a window or a Space the calls
+are refused like the commands they send (`"paused by user"` while the
+person pauses the Space, the person's tab), and between calls a Space
+reads its control connection, so a pause takes effect at the next call;
+after `stop` the run ends at the next call and is not answered (the
+connection closes after `stopped`). `wait` inside a run waits on the
+tab's page clock, as in `dweller agent`, also in a window.
+
+```
+{"id":1,"cmd":"run","code":"navigate('browser/tests/agent/site/form.html'); fill('e2', 'Ada'); click('e4'); wait({ms: 100}); return {checked: snapshot().snapshot.includes('[checked]'), name: evaluate('document.getElementById(\"name\").value')}"}
+{"id":1,"ok":true,"result":"ran 6 calls","value":{"checked":true,"name":"Ada"},"log":[],"calls":6,"url":"file:///.../form.html","title":"Sign up"}
+```
+
 ## MCP
 
 `dweller mcp` is an MCP server over stdio: JSON-RPC 2.0 messages, one
@@ -346,6 +385,7 @@ per line. It supports protocol versions `2025-11-25`, `2025-06-18`,
 | `browser_wait` | `selector`, `ms` | as `wait` |
 | `browser_eval` | `expression` | the value, as `eval` |
 | `browser_screenshot` | `ref`, `full` | the image, then what it shows, `URL:`, `Title:` |
+| `browser_run` | `code`, `ms` | "ran N calls", `Value:` (JSON) and `Log:`, or the error |
 
 A session:
 
@@ -500,13 +540,14 @@ person's input or the window's frames.
   `mcp` (default false): the connection speaks MCP. `name`: the
   Space's name (default `"Agent N"`, N its id). `space`: `"new"` (the
   default) or the id of a `done` Space to attach to (then `name`, if
-  given, renames it). `profile`: only `"shared"` until P9.7. A hello
+  given, renames it). `profile`: `"shared"` (the default) or
+  `"isolated"` (below; an attached Space keeps its own). A hello
   that cannot be honored gets `{"id":null,"ok":false,"error":...}`
   (MCP: a `notifications/message` of level `error` with
   `{"error":...}`) and the connection is closed: `"no Space 9: see
   \"spaces\""`, `"Space 3 has an agent: only a done Space can be
-  attached to"`, `"Space 3 crashed"`, `"the profile \"isolated\" is not
-  available yet: only \"shared\""`, `"\"space\" is \"new\" or the id
+  attached to"`, `"Space 3 crashed"`, `"\"profile\" is \"shared\" or
+  \"isolated\""`, `"\"space\" is \"new\" or the id
   of a done Space (a number)"`, `"too many Spaces (8)"`.
 - **Spaces stay.** A Space whose agent leaves stays, `done`, with its
   tabs, until an agent attaches to it, the person stops it, or the
@@ -569,6 +610,20 @@ person's input or the window's frames.
   nor the menu take the focus or touch the person's page. A stopped
   Space's chip goes when its process ends. Watching a Space from its
   chip comes in P9.5.
+- **Logins.** A `shared` Space starts with the window's cookies
+  (session cookies too) and `localStorage`, and reads an origin's
+  `localStorage` the window has not touched yet from the window's
+  profile (it never writes the profile). From then on each side sends
+  the other every cookie it stores (from a response or
+  `document.cookie`) and every `localStorage` write; the window passes a
+  Space's on to the other shared Spaces. So a login in the person's tab
+  is sent by the agent's next request, and a cookie or item an agent's
+  page sets is seen by the person's next request or script (the request
+  that runs while it changes does not see it). Two writes of one cookie
+  or item settle by arrival order; a change from another process fires
+  no `storage` event. `sessionStorage` is not shared. An `isolated`
+  Space starts with no cookies and no `localStorage` and shares
+  nothing; `spaces` shows each Space's `profile`.
 - **Activity.** A Space's new last action shows in the window's status
   line after its name (`Alpha: click button "Sign in" [e3]`), and what
   the person did to a Space after it (`Alpha paused`). The outline of an
@@ -594,6 +649,9 @@ sent once the rest went):
 | window | `context` | the members of `user_context`, and `detail` (its text for MCP) | the person's context, when it changed |
 | window | `pointed` | the members of the `user_pointed` event | Cmd+Shift+K (after the new `context`) |
 | window | `pause`, `resume`, `stop` | | the person paused, resumed or stopped this Space |
+| window | `share` | `cookies` (the jar in the cookie file format, session cookies with expiry 0), `profile` (the window's profile directory, or empty) | first, to a `shared` Space only; then a `storage` `clear` per origin the window has read and a `set` per item |
+| both | `cookie` | `url`, `line` (the `Set-Cookie` value or the `document.cookie` assignment), `script` (bool: from a script, which cannot set HttpOnly) | the sender stored a cookie; the other side stores it again (the window also passes it to its other shared Spaces) |
+| both | `storage` | `origin`, `kind` (`set`, `remove` or `clear`), `key`, `value` | the sender changed `localStorage`; the other side does the same (and the window passes it on) |
 | Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
 | Space | `close` | | its agent sent `space_close` (then it exits) |
 

@@ -1,0 +1,27 @@
+import js
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn runFailure(it: *mut js.Interp, tmp: Allocator, e: js.JsError) AllocError![]u8 {
+    var why = text.Builder.init(tmp)
+
+    if e == js.JsError.Thrown {
+        js.describeException(it, &mut why) catch |err| {}
+    } else {
+        try why.append("the run's realm failed")
+    }
+
+    var out = text.Builder.init(tmp)
+    var w = Writer.init(&mut out)
+
+    try w.beginObject()
+    try failField(&mut w, tmp, why.bytes())
+    try w.key("log")
+    try w.raw("[]")
+    try w.key("calls")
+    try w.int(0)
+    try w.endObject()
+
+    return out.bytes()
+}

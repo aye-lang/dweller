@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import url
+
+pub fn applyCookie(href: []u8, line: []u8, script: bool) AllocError!void {
+    let s = session orelse return
+    let at = url.parse(s.alloc, href) catch |e| {
+        return
+    }
+
+    defer at.deinit(s.alloc)
+
+    return s.jar.store(&at, line, script, now())
+}

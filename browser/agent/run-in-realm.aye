@@ -1,0 +1,29 @@
+import js
+import std.mem.Allocator
+import std.text
+
+fn runInRealm(it: *mut js.Interp, tmp: Allocator, code: []u8, ms: f64) js.JsError![]u8 {
+    _ = try it.defineNative(it.global, "__request", 2, runRequest)
+    _ = try it.runScript(RUN_PRELUDE)
+
+    var src = text.Builder.init(tmp)
+
+    try src.append("__finish(")
+    try writeString(&mut src, code)
+    try src.append(")")
+    it.startBudget(ms as u64, 0)
+
+    let v = it.evalScript(src.bytes()) catch |e| {
+        it.clearBudget()
+
+        if e != js.JsError.Terminated {
+            return e
+        }
+
+        return runFailed(it, tmp, running.?.why_not)
+    }
+
+    it.clearBudget()
+
+    return realmString(it, tmp, v)
+}

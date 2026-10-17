@@ -1,0 +1,47 @@
+import std.mem.Allocator
+import std.text
+
+fn runTool(s: *mut Session, tmp: Allocator, doc: *mut Json, args: ?usize, out: *mut text.Builder) !bool {
+    var why = text.Builder.init(tmp)
+    let code = argStr(doc, args, "code", &mut why) orelse {
+        try out.append(why.bytes())
+
+        return false
+    }
+
+    var ms = RUN_MS
+
+    if args |o| {
+        ms = doc.getNum(o, "ms") orelse RUN_MS
+    }
+
+    let report = try runCode(s, tmp, code, ms)
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var r = try Json.parse(tmp, report, &mut failure)
+    let root = r.root()
+    let ok = r.getBool(root, "ok") orelse false
+
+    if ok {
+        try out.append(try runResult(tmp, r.getNum(root, "calls") orelse 0.0))
+        try out.append("\n\nValue: ")
+        try out.append(try member(&mut r, tmp, root, "value"))
+    } else {
+        try out.append(r.getStr(root, "error") orelse "")
+    }
+
+    if r.get(root, "log") |l| {
+        var cur = r.first(l)
+
+        if cur != null {
+            try out.append("\n\nLog:")
+        }
+
+        while cur |k| {
+            try out.appendByte('\n')
+            try out.append(r.node(k).str)
+            cur = r.next(k)
+        }
+    }
+
+    return ok
+}

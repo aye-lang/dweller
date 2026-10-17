@@ -3500,11 +3500,11 @@ fn window_spaces_control() {
         "{got}"
     );
     assert!(got.contains("{\"id\":1,\"name\":\"Alpha\",\"mine\":false"), "{got}");
-    // Only a done Space can be attached to; the profile is shared.
+    // Only a done Space can be attached to; a profile is shared or isolated.
     for (hello, why) in [
         (r#"{"space":3}"#, "Space 3 has an agent: only a done Space can be attached to"),
         (r#"{"space":9}"#, "no Space 9: see \"spaces\""),
-        (r#"{"profile":"isolated"}"#, "the profile \"isolated\" is not available yet: only \"shared\""),
+        (r#"{"profile":"other"}"#, "\"profile\" is \"shared\" or \"isolated\""),
     ] {
         let mut e = AgentConn::open(&sock);
         e.send(hello);
@@ -3537,6 +3537,100 @@ fn window_spaces_control() {
             || state.contains("\nspace 1 \"Alpha\" done: click checkbox"),
         "{state}"
     );
+    no_spaces_left(pid).unwrap();
+}
+
+/// B9 R5 (P9.7): a `shared` Space starts with the window's cookies
+/// (session and persistent) and `localStorage`, and each side gets the
+/// other's changes over the control connection; an `isolated` Space
+/// starts empty and shares nothing. The person's tab got the cookies of
+/// `/net/start`; Alpha's `/headers` sends them, Alpha sets a cookie and a
+/// `localStorage` item by script, Iso (isolated) sets its own; then the
+/// person's page (`login/shared.html`) sees Alpha's and not Iso's, and
+/// what it sets reaches Alpha and not Iso.
+#[test]
+fn window_spaces_logins() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let sock = format!("target/spaces-logins-{}.sock", std::process::id());
+    let events = format!(
+        "agents:8 key:cmd+l {} key:return",
+        typed(&format!("{base}/login/shared.html"))
+    );
+    let start = format!("{base}/net/start");
+    let window = spaces_window(
+        &sock,
+        &["--spaces", "--state", "--text", "--events", &events, &start],
+    );
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    a.send(r#"{"name":"Alpha"}"#);
+    let headers = format!(r#"{{"id":1,"cmd":"navigate","url":"{base}/headers"}}"#);
+    let page = format!(r#"{{"id":3,"cmd":"navigate","url":"{base}/login/read.html"}}"#);
+    let (got, _) = a.ask(&headers);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"read"}"#);
+    assert!(got.contains("Cookie: "), "{got}");
+    for c in ["a=1", "h=7", "p=5"] {
+        assert!(got.contains(c), "Alpha's /headers lacks {c}: {got}");
+    }
+    let (got, _) = a.ask(&page);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":4,"cmd":"eval","expression":"document.cookie = 'space=9; Path=/'; localStorage.setItem('token', 'from-space'); document.cookie"}"#);
+    assert!(got.contains("space=9"), "{got}");
+    let mut b = AgentConn::open(&sock);
+    b.send(r#"{"name":"Iso","profile":"isolated"}"#);
+    let (got, _) = b.ask(&headers);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = b.ask(r#"{"id":2,"cmd":"read"}"#);
+    assert!(!got.contains("a=1") && !got.contains("space=9"), "Iso sees cookies: {got}");
+    let (got, _) = b.ask(&page);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = b.ask(r#"{"id":4,"cmd":"eval","expression":"document.cookie = 'iso=1; Path=/'; localStorage.setItem('iso', '1'); localStorage.getItem('token') + '|' + document.cookie"}"#);
+    assert!(got.contains("null|iso=1\""), "{got}");
+    let begun = std::time::Instant::now();
+    loop {
+        let (got, _) = a.ask(r#"{"id":5,"cmd":"user_context"}"#);
+        if got.contains("\"title\":\"Shared done\"") {
+            break;
+        }
+        assert!(begun.elapsed().as_secs() < 20, "the person's page did not finish: {got}");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let (got, _) = a.ask(r#"{"id":6,"cmd":"eval","expression":"document.cookie + '|' + localStorage.getItem('from')"}"#);
+    assert!(got.contains("person=1") && got.contains("|person\""), "{got}");
+    let (got, _) = b.ask(r#"{"id":5,"cmd":"eval","expression":"document.cookie + '|' + localStorage.getItem('from')"}"#);
+    assert!(got.contains("\"iso=1|null\""), "{got}");
+    let (got, _) = b.ask(r#"{"id":6,"cmd":"spaces"}"#);
+    assert!(got.contains("\"name\":\"Iso\",\"mine\":true") && got.contains("\"profile\":\"isolated\""), "{got}");
+    assert!(got.contains("\"name\":\"Alpha\",\"mine\":false,\"state\":\"idle\""), "{got}");
+    assert!(got.contains("\"profile\":\"shared\""), "{got}");
+    for c in [&mut a, &mut b] {
+        c.stream.shutdown(std::net::Shutdown::Write).unwrap();
+        assert_eq!(c.line(), "");
+    }
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let page = text(&out.stdout);
+    assert!(page.contains("token: from-space; cookie: "), "{page}");
+    assert!(page.contains("space=9") && page.contains("a=1"), "{page}");
+    assert!(!page.contains("iso"), "the person sees Iso's: {page}");
+    let sent = page.lines().find(|l| l.starts_with("Cookie: ")).unwrap_or("");
+    for c in ["a=1", "h=7", "space=9", "person=1"] {
+        assert!(sent.contains(c), "the person's /headers lacks {c}: {page}");
+    }
     no_spaces_left(pid).unwrap();
 }
 
@@ -5590,6 +5684,35 @@ fn jsdom_gc_stress() {
         "{} DOM fixtures failed under GC stress:\n\n{}",
         failures.len(),
         failures.join("\n\n")
+    );
+    // P9.8: code mode's realm calls into the page's realm and back.
+    let run = root().join("browser/tests/agent/sessions/run.jsonl");
+    let mut child = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_JS_GC", "stress")
+        .env("DWELLER_JS_VM", "1")
+        .arg("agent")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(
+        &mut child.stdin.take().unwrap(),
+        &std::fs::read(&run).unwrap(),
+    )
+    .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "run.jsonl under GC stress: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(run.with_extension("out")).unwrap(),
+        rooted(&text(&out.stdout)),
+        "run.jsonl under GC stress"
     );
 }
 

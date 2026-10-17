@@ -1,0 +1,31 @@
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn sendShared(ui: *mut Ui) AllocError!void {
+    let a = ui.agents orelse return
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    var lines = text.Builder.init(arena.allocator())
+
+    try sharedLines(&mut lines)
+
+    if lines.len() == 0 {
+        return
+    }
+
+    if a.control >= 0 {
+        sendAll(a.control, lines.bytes())
+
+        return
+    }
+
+    for s in a.space_list {
+        if s |sp| {
+            if sp.shared {
+                try toSpace(ui, sp, lines.bytes())
+            }
+        }
+    }
+}
