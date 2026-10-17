@@ -1,0 +1,43 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#comb-any
+fn keywordSet(sheet: *mut Sheet, comps: []Comp, alone: []u8, first: []u8, second: []u8) AllocError!?Value {
+    if comps.len == 1 {
+        if identIn(comps[0], alone) |k| {
+            return Value.Keyword { k: k }
+        }
+    }
+
+    var picked = [2]?[]u8{null, null}
+    let groups = [2][]u8{first, second}
+
+    for c in comps {
+        var found = false
+
+        for g in 0..2 {
+            if !found && picked[g] == null {
+                picked[g] = identIn(c, groups[g])
+                found = picked[g] != null
+            }
+        }
+
+        if !found {
+            return null
+        }
+    }
+
+    var b = text.Builder.init(sheet.arena.allocator())
+
+    for k in picked {
+        if k |w| {
+            if b.len() > 0 {
+                try b.appendByte(' ')
+            }
+
+            try b.append(w)
+        }
+    }
+
+    return Value.Keyword { k: try b.toOwned() }
+}

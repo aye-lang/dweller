@@ -1,0 +1,24 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#resolve-flexible-lengths
+fn fractionalFree(line: []Item, free: f64, initial: f64, growing: bool) f64 {
+    var sum = 0.0
+
+    for it in line {
+        if it.frozen {
+            continue
+        }
+
+        if growing {
+            sum += it.grow
+        } else {
+            sum += it.shrink
+        }
+    }
+
+    if sum >= 1.0 || math.abs(initial * sum) >= math.abs(free) {
+        return free
+    }
+
+    return initial * sum
+}

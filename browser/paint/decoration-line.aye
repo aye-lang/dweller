@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/paint/decoration_line_painter.cc
+fn decorationLine(b: *mut Builder, kind: []u8, x: f64, y: f64, w: f64, t: f64, c: Rgba, outward: f64) AllocError!void {
+    if text.eql(kind, "double") {
+        try b.fill(x, y, w, t, c)
+
+        return b.fill(x, y + outward * (t + 1.0), w, t, c)
+    }
+
+    if text.eql(kind, "wavy") {
+        return wavyLine(b, x, y, w, t, c)
+    }
+
+    return b.side(kind, x, y, w, t, true, c)
+}

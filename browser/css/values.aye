@@ -295,8 +295,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         return 2
     }
     if text.eql(name, "place-content") {
-        out[0] = JUSTIFY_CONTENT
-        return 1
+        out[0] = ALIGN_CONTENT
+        out[1] = JUSTIFY_CONTENT
+        return 2
     }
     if text.eql(name, "container") {
         out[0] = CONTAINER_NAME
@@ -378,8 +379,11 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         first = LIST_STYLE_TYPE
         n = 1
     } else if text.eql(name, "text-decoration") {
-        first = TEXT_DECORATION_LINE
-        n = 1
+        out[0] = TEXT_DECORATION_LINE
+        out[1] = TEXT_DECORATION_STYLE
+        out[2] = TEXT_DECORATION_COLOR
+        out[3] = TEXT_DECORATION_THICKNESS
+        return 4
     } else if text.eql(name, "grid-column") || text.eql(name, "grid-row") || text.eql(name, "grid-area") {
         first = GRID_COLUMN_START
         n = 4
@@ -515,7 +519,7 @@ struct Declarer {
             return self.listStyle(comps)
         }
         if text.eql(name, "text-decoration") {
-            return self.textDecoration(comps)
+            return textDecorationShorthand(self, comps)
         }
         if text.eql(name, "inset") {
             return self.sides(INSET_TOP, comps)
@@ -526,36 +530,14 @@ struct Declarer {
         if pairLonghands(name) |pl| {
             return self.pair(pl[0], pl[1], comps)
         }
-        if text.eql(name, "place-items") || text.eql(name, "place-self") {
-            // `align [justify]` (justify as align when alone).
-            var prop = ALIGN_ITEMS
-            var across = JUSTIFY_ITEMS
-            if text.eql(name, "place-self") {
-                prop = ALIGN_SELF
-                across = JUSTIFY_SELF
-            }
-            if comps.len == 1 || comps.len == 2 {
-                let first = [1]Comp{comps[0]}
-                let last = [1]Comp{comps[comps.len - 1]}
-                if try parseValue(self.sheet, prop, first[..]) |v| {
-                    if try parseValue(self.sheet, across, last[..]) |w| {
-                        try self.add(prop, v)
-                        try self.add(across, w)
-                    }
-                }
-            }
-            return
+        if text.eql(name, "place-items") {
+            return placePair(self, ALIGN_ITEMS, JUSTIFY_ITEMS, comps)
+        }
+        if text.eql(name, "place-self") {
+            return placePair(self, ALIGN_SELF, JUSTIFY_SELF, comps)
         }
         if text.eql(name, "place-content") {
-            // The `justify-content` half (the second value, or the
-            // only one).
-            if comps.len == 1 || comps.len == 2 {
-                let last = [1]Comp{comps[comps.len - 1]}
-                if try parseValue(self.sheet, JUSTIFY_CONTENT, last[..]) |v| {
-                    try self.add(JUSTIFY_CONTENT, v)
-                }
-            }
-            return
+            return placePair(self, ALIGN_CONTENT, JUSTIFY_CONTENT, comps)
         }
         if text.eql(name, "flex") {
             return self.flex(comps)
@@ -1028,29 +1010,6 @@ struct Declarer {
         }
         try self.add(LIST_STYLE_TYPE, kind)
     }
-
-    // `text-decoration`: the line keywords are kept; a style or color is
-    // accepted and ignored.
-    fn textDecoration(self: *mut Self, comps: []Comp) AllocError!void {
-        let props = [1]usize{TEXT_DECORATION_LINE}
-        if try self.wide(comps, props[..]) {
-            return
-        }
-        var lines = List(Comp).init(self.sheet.arena.allocator())
-        for c in comps {
-            if isIdent(c, "solid") || isIdent(c, "double") || isIdent(c, "dotted") || isIdent(c, "dashed") || isIdent(c, "wavy") || colorValue(c) != null {
-                continue
-            }
-            try lines.append(c)
-        }
-        if lines.len() == 0 {
-            try self.add(TEXT_DECORATION_LINE, Value.Initial)
-            return
-        }
-        if try decorationLines(self.sheet, lines.items()) |v| {
-            try self.add(TEXT_DECORATION_LINE, v)
-        }
-    }
 }
 
 fn isIdent(c: Comp, word: []u8) bool {
@@ -1116,6 +1075,12 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     if p.kind == PKind.TextDecoration {
         return decorationLines(sheet, comps)
     }
+    if prop == TEXT_UNDERLINE_POSITION {
+        return keywordSet(sheet, comps, "auto", "from-font under", "left right")
+    }
+    if prop == TEXT_DECORATION_SKIP_SPACES {
+        return keywordSet(sheet, comps, "none all", "start", "end")
+    }
     if prop == TRANSLATE || prop == ROTATE || prop == SCALE {
         return individualTransformValue(sheet, prop, comps)
     }
@@ -1139,6 +1104,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
         if t.kind == Tok.Url || (t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "url")) {
             return rawValue(sheet, comps)
         }
+    }
+    if comps.len == 2 {
+        return alignPair(sheet, prop, comps)
     }
     if comps.len != 1 {
         return null
