@@ -1,0 +1,23 @@
+import std.list.List
+
+extern fn aye_std_monotonic_ns() u64
+
+pub let NATIVE_JS: u32 = 0xFFFFFFFE
+
+struct NativeProfile {
+    ns: List(u64)
+    calls: List(u64)
+    js_ns: u64
+    open: u32
+    mark: u64
+
+    fn restore(self: *mut Self, outer: u32) {
+        nativeProfileCharge(self, aye_std_monotonic_ns())
+        self.open = outer
+    }
+
+    fn deinit(self: *mut Self) {
+        self.ns.deinit()
+        self.calls.deinit()
+    }
+}

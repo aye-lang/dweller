@@ -29,7 +29,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/floats-tables` | 709 | 251 | 759/1586 | 47.9 | 65 | below | +0.0 |
 | `css/inline-text` | 2343 | 407 | 2251/8075 | 27.9 | 60 | below | +0.0 |
 | `css/overflow` | 939 | 189 | 482/1888 | 25.5 | 60 | below | +0.0 |
-| `css/css-grid` | 2508 | 1085 | 3313/17475 | 19.0 | 60 | below | +0.0 |
+| `css/css-grid` | 2508 | 1085 | 4857/17475 | 27.8 | 60 | below | +4.0 |
 | `css/positioning` | 915 | 239 | 953/2265 | 42.1 | 70 | below | +0.0 |
 | `css/backgrounds-borders` | 1041 | 295 | 1671/8473 | 19.7 | 65 | below | +0.0 |
 | `css/css-fonts` | 560 | 325 | 2584/8226 | 31.4 | 50 | below | +0.0 |

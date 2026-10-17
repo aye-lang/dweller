@@ -289,6 +289,8 @@ pub struct Interp {
     // the first call.
     vm: ?*mut VmState = null
     vm_checked: bool = false
+    native_profile: ?*mut NativeProfile = null
+    native_profile_checked: bool = false
 
     pub fn create(alloc: Allocator) JsError!Interp {
         var it = Interp {
@@ -409,6 +411,7 @@ pub struct Interp {
 
     pub fn deinit(self: *mut Self) {
         vmDeinit(self)
+        freeNativeProfile(self)
         self.import_meta.deinit()
         self.chunk_starts.deinit()
         self.chunk_urls.deinit()
@@ -990,7 +993,7 @@ pub struct Interp {
             let a = try self.intern(b)
             return self.atomValue(a)
         }
-        let u = unitAt(bytes, idx)
+        let u = codeUnit(self, s, idx)
         let b = try self.builder()
         defer self.release(b)
         try appendWtf8(b, u)
@@ -2131,9 +2134,8 @@ pub struct Interp {
                 if self.stackExhausted() {
                     return self.rangeError("Maximum call stack size exceeded")
                 }
-                let ne = self.natives.items()[id]
                 let a = Args { this: self.slot(base + 1), base: base + 2, argc: argc, callee: o, new_target: NONE }
-                return ne.f(self, a)
+                return callNative(self, id, a)
             }
             .Bound { .. } => {
                 if self.stackExhausted() {
@@ -2190,9 +2192,8 @@ pub struct Interp {
                 return self.slot(base + 1)
             }
             .Native { id } => {
-                let ne = self.natives.items()[id]
                 let a = Args { this: Value.Undefined, base: base + 2, argc: argc, callee: o, new_target: newTarget }
-                return ne.f(self, a)
+                return callNative(self, id, a)
             }
             .Bound { target, .. } => {
                 var nt = newTarget
@@ -2609,9 +2610,8 @@ pub struct Interp {
                 }
             }
             .Native { id } => {
-                let ne = self.natives.items()[id]
                 let a = Args { this: thisv, base: base + 2, argc: argc, callee: p, new_target: p }
-                try ne.f(self, a)
+                try callNative(self, id, a)
             }
             _ => {
                 try self.typeError("Super constructor is not a constructor")
@@ -4490,6 +4490,10 @@ pub struct Interp {
 
     /// Parses and runs a script. A syntax error throws a SyntaxError.
     fn parseCode(self: *mut Self, src: []u8, module: bool, referrer: u32, info: ?*mut ModuleInfo) JsError!u32 {
+        let parse_began = perf.start()
+        defer perf.end("js_parse", parse_began, "")
+        let parse_paused = switchNative(self, NONE)
+        defer resumeNative(self, parse_paused)
         var lx = Lexed.init(self.alloc)
         defer lx.deinit()
         let base = self.ast.source.len() as u32

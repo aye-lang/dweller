@@ -1185,14 +1185,14 @@ fn execRaw(it: *mut Interp, o: u32, s: u32, caps: []mut i64) JsError!bool {
             return false
         }
         if x > 0.0 {
-            from = byteOffset(it.heap.bytes(s), x as u32)
+            from = byteAt(it, s, x as u32)
         }
     }
     let found = try search(it, prog, it.heap.bytes(s), from, caps)
     if useLast {
         var li = 0.0
         if found {
-            li = unitOffset(it.heap.bytes(s), caps[1] as usize) as f64
+            li = unitOf(it, s, caps[1] as usize) as f64
         }
         try it.setProp(objVal(o), A_LASTINDEX, numVal(li))
     }
@@ -1215,7 +1215,7 @@ fn matchArray(it: *mut Interp, o: u32, s: u32, caps: []i64) JsError!Value {
             try it.heap.pushElem(arr, Value.Undefined)
         }
     }
-    try it.defineOwn(arr, try it.intern("index"), numVal(unitOffset(bytes, caps[0] as usize) as f64), F_DEFAULT)
+    try it.defineOwn(arr, try it.intern("index"), numVal(unitOf(it, s, caps[0] as usize) as f64), F_DEFAULT)
     try it.defineOwn(arr, try it.intern("input"), strVal(s), F_DEFAULT)
     var groups = Value.Undefined
     var named = false
@@ -1347,7 +1347,7 @@ pub fn regexpSearch(it: *mut Interp, s: u32, rv: Value) JsError!Value {
     if !found {
         return numVal(-1.0)
     }
-    return numVal(unitOffset(it.heap.bytes(s), caps[0] as usize) as f64)
+    return numVal(unitOf(it, s, caps[0] as usize) as f64)
 }
 
 // The groups object of a match (name to group value from `groups`, the
@@ -1397,7 +1397,7 @@ pub fn regexpReplace(it: *mut Interp, s: u32, re: Value, repl: Value, all: bool)
     if !global {
         if prog.sticky {
             let li = try it.toNumber(try it.getProp(re, A_LASTINDEX))
-            from = byteOffset(it.heap.bytes(s), li as u32)
+            from = byteAt(it, s, li as u32)
         }
     } else {
         try it.setProp(re, A_LASTINDEX, numVal(0.0))
@@ -1430,7 +1430,7 @@ pub fn regexpReplace(it: *mut Interp, s: u32, re: Value, repl: Value, all: bool)
             for g in 0..prog.ngroups + 1 {
                 try it.push(it.heap.obj(groups).elems[g])
             }
-            try it.push(numVal(unitOffset(it.heap.bytes(s), ms) as f64))
+            try it.push(numVal(unitOf(it, s, ms) as f64))
             try it.push(strVal(s))
             var argc = prog.ngroups as usize + 3
             if !isUndef(named) {

@@ -60,6 +60,27 @@ timer and rAF callbacks, including the layout they force:
 Command (the archives are local and untracked):
 `python3 browser/tools/page_load.py run --archive target/sites --binary target/dweller --site youtube,react,github,mistral --repeat 3 --json target/js-sites.json`
 
+With the VM on by default (P4.75b, 2026-10-18, M2 Pro, fast build,
+archives of 2026-10-14, median of 3 runs after a warm-up, seconds; the same binary
+with `DWELLER_JS_VM=0` for the tree walker):
+
+| site | scripts, tree walker | scripts, VM | ratio | timers, tree walker | timers, VM | ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| youtube | 1.420 | 1.548 | 0.92× | 1.218 | 1.023 | 1.19× |
+| github | 0.307 | 0.285 | 1.08× | 3.073 | 3.392 | 0.91× |
+| react | 0.148 | 0.155 | 0.96× | 0.132 | 0.126 | 1.05× |
+| mistral | 1.118 | 1.122 | 1.00× | 25.13 | 23.15 | 1.09× |
+
+No change beyond this machine's ±10% noise, not the 1.5–2.5× of the
+P4.75 estimate: the site phases are DOM calls, layout and parsing more
+than bytecode (`DWELLER_JS_VM_STATS=1`: youtube runs 57M instructions
+in its whole load, mistral 236M, youtube-search 490M).
+Every function on the 22 sites compiles except 3 on bbc and 3 scripts
+(bbc, zol), all direct `eval` (P4.75c). Youtube, react and mistral
+miss archive entries (equally with `DWELLER_JS_VM=0`), so these runs
+replay the archive with the misses and do not go through
+`page_load.py run`, which stops on a miss.
+
 ### The benchmark set (P4.59, P4.60)
 
 All workloads run with `dweller js FILE` (DOM: `dweller dump --js`),

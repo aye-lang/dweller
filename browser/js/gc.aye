@@ -6,6 +6,7 @@
 // `js_refs`. The next collection starts after twice as many allocations
 // as there are live values (at least 20000).
 
+import perf
 import std.os
 
 extern fn getenv(name: [*]u8) ?[*]u8
@@ -132,6 +133,10 @@ fn traceEnv(it: *mut Interp, e: u32) {
 /// Collects the garbage of the engine's heap.
 pub fn collectGarbage(it: *mut Interp) {
     it.gc_count += 1
+    let gc_began = perf.start()
+    defer perf.end("js_gc", gc_began, "")
+    let gc_paused = switchNative(it, NONE)
+    defer resumeNative(it, gc_paused)
     // Roots.
     markObj(it, it.global)
     let protos = [20]u32{

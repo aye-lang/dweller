@@ -221,6 +221,14 @@ are in `browser/COMPILER_GAPS.md`.
   margin/padding/border (widths, colors, styles), width/height/min/max,
   text-align, text-decoration, white-space, list-style-type, visibility,
   overflow; units px, em, rem, %, vw/vh, named and hex/rgb() colors.
+- Adding a longhand: append one `Property { ... }` line to the end of
+  `PROPERTIES` (`browser/css/css.aye`), then run
+  `python3 browser/tools/gen_property_ids.py`. Its id is its position, its
+  constant its name in upper case (`border-collapse` is
+  `css.BORDER_COLLAPSE`), both in the generated `css/property-ids.aye`. Two
+  branches that each add one conflict only on that last line of the table
+  (keep both) and in the generated file (regenerate). CI runs it with
+  `--check`.
 - **Acceptance:** `dweller dump --style` golden tests.
 
 ### B3: Layout
