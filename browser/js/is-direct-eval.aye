@@ -1,0 +1,16 @@
+// https://tc39.es/ecma262/#sec-function-calls-runtime-semantics-evaluation
+
+import std.text
+
+fn isDirectEval(it: *mut Interp, site: u32, f: Value) bool {
+    let o = objectOf(f)
+
+    if o == NONE || !it.ast.eval_sites.contains(site) {
+        return false
+    }
+
+    return match it.heap.obj(o).data {
+        .Native { id } => text.eql(it.heap.atoms.name(it.natives.items()[id].name), "eval")
+        _ => false
+    }
+}

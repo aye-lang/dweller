@@ -1,0 +1,22 @@
+var last_button: i64 = -1
+var last_ms: f64 = 0.0
+var click_count: i64 = 0
+
+// chromium: third_party/blink/renderer/core/input/mouse_event_manager.cc
+pub fn nextClickCount(p: *mut Page, button: i64) i64 {
+    let s = p.script orelse return 1
+
+    tick(s)
+    let now = s.now
+
+    if button == last_button && now - last_ms < 500.0 {
+        click_count += 1
+    } else {
+        click_count = 1
+    }
+
+    last_button = button
+    last_ms = now
+
+    return click_count
+}

@@ -1,0 +1,37 @@
+import std.math
+
+fn paintColor(px: []mut u8, color: [4]f64) {
+    var full = [4]u8{0, 0, 0, 0}
+    let full_a = color[3]
+
+    for k in 0..3 {
+        full[k] = math.floor(color[k] * full_a / 255.0 + 0.5) as u8
+    }
+
+    full[3] = math.floor(full_a + 0.5) as u8
+    var i: usize = 0
+
+    while i < px.len {
+        let cover = px[i + 3]
+
+        if cover == 255 {
+            for k in 0..4 {
+                px[i + k] = full[k]
+            }
+        } else if cover == 0 {
+            for k in 0..4 {
+                px[i + k] = 0
+            }
+        } else {
+            let a = cover as f64 * color[3] / 255.0
+
+            for k in 0..3 {
+                px[i + k] = math.floor(color[k] * a / 255.0 + 0.5) as u8
+            }
+
+            px[i + 3] = math.floor(a + 0.5) as u8
+        }
+
+        i += 4
+    }
+}

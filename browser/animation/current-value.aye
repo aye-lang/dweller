@@ -1,11 +1,12 @@
 import css
 import dom
 import dom.NodeId
+import std.mem.AllocError
 
-pub fn currentValue(t: *Transitions, el: NodeId, p: usize, now: f64) ?css.Value {
+pub fn currentValue(t: *Transitions, el: NodeId, p: usize, now: f64) AllocError!?css.Value {
     for r in t.running.items() {
         if r.prop == p && dom.same(r.el, el) {
-            return valueAt(r, now)
+            return clampToRange(p, valueAt(r, now), try nonNegative(t.alloc, p))
         }
     }
 

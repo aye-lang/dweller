@@ -1,0 +1,54 @@
+import css
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+let MAX_KEPT_SHEETS: usize = 8
+
+// blink: core/css/style_engine.cc (ScheduleInvalidationsForRuleSets)
+fn swapSheets(s: *mut Script, g: *mut Geometry, st: *mut Styling) AllocError!bool {
+    let p = s.page
+
+    if p.kept_sheets.len() >= MAX_KEPT_SHEETS {
+        noteFullLayout(s, "sheet:kept")
+
+        return false
+    }
+
+    var author = try css.Sheet.init(p.alloc)
+    var targets = List(NodeId).init(s.alloc)
+    defer targets.deinit()
+    let why = sheetChangeReason(s, st, &mut author, &mut targets) catch |e| {
+        author.deinit()
+
+        return e
+    }
+
+    if why.len > 0 {
+        noteFullLayout(s, why)
+        author.deinit()
+
+        return false
+    }
+
+    p.kept_sheets.append(st.author) catch |e| {
+        author.deinit()
+
+        return e
+    }
+
+    st.author = author
+    g.deps.deinit()
+    g.deps = css.RestyleDeps.init(s.alloc)
+    var quirks: ?*css.Sheet = null
+
+    if p.doc.quirks { quirks = &g.styles.quirks }
+
+    try g.deps.build(&st.author, &st.ua, quirks)
+
+    for el in targets.items() {
+        try noteLayoutChange(s, el, css.RULES_CHANGED)
+    }
+
+    return true
+}

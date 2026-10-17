@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.text
+
+let ANIMATION_KEYWORDS = [5][]u8{"infinite", "normal reverse alternate alternate-reverse", "none forwards backwards both", "running paused", "replace add accumulate"}
+
+// spec: https://drafts.csswg.org/css-animations-1/#animation-name
+fn writeAnimationItem(prop: usize, c: Comp, out: *mut text.Builder) AllocError!bool {
+    let t = c.toks[0]
+
+    if prop == ANIMATION_TIMING_FUNCTION {
+        return writeEasing(c, out)
+    }
+
+    if prop == ANIMATION_NAME {
+        return writeAnimationName(c, out)
+    }
+
+    if prop == ANIMATION_DURATION || prop == ANIMATION_DELAY {
+        let s = timeSeconds(c) orelse return false
+
+        if s < 0.0 && prop == ANIMATION_DURATION {
+            return false
+        }
+
+        try writeSeconds(s, out)
+
+        return true
+    }
+
+    if prop == ANIMATION_ITERATION_COUNT && c.toks.len == 1 && t.kind == Tok.Number && t.num >= 0.0 {
+        try writeNumber(t.num, out)
+
+        return true
+    }
+
+    let k = identIn(c, ANIMATION_KEYWORDS[prop - ANIMATION_ITERATION_COUNT]) orelse return false
+
+    try out.append(k)
+
+    return true
+}

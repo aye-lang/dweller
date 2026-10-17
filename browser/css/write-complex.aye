@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+fn writeComplex(toks: []Token, out: *mut text.Builder) AllocError!void {
+    var i: usize = 0
+    var space = false
+
+    while i < toks.len {
+        let t = toks[i]
+
+        if t.kind == Tok.Whitespace {
+            space = true
+            i += 1
+        } else if isCombinatorTok(t) {
+            if i > 0 {
+                try out.appendByte(' ')
+            }
+
+            try out.appendByte(t.delim as u8)
+            try out.appendByte(' ')
+            space = false
+            i = skipWhitespace(toks, i + 1)
+        } else {
+            if space {
+                try out.appendByte(' ')
+            }
+
+            let end = compoundEnd(toks, i)
+
+            try writeCompound(toks[i..end], out)
+            space = false
+            i = end
+        }
+    }
+}

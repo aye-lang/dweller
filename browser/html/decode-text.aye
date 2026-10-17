@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://html.spec.whatwg.org/multipage/parsing.html#rcdata-state
+pub fn decodeText(alloc: Allocator, src: []u8) AllocError![]mut u8 {
+    let input = try normalize(alloc, src)
+    defer alloc.free(input)
+    var t = Tokenizer.init(alloc, input)
+    defer t.deinit()
+
+    while t.pos < t.src.len {
+        if t.src[t.pos] == '&' {
+            try t.charRef(false)
+        } else {
+            try t.buf.appendByte(t.src[t.pos])
+            t.pos += 1
+        }
+    }
+
+    return t.buf.toOwned()
+}

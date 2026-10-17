@@ -1,0 +1,20 @@
+import dom
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+pub fn hoverPath(doc: *dom.Document, el: NodeId, path: *mut List(NodeId)) AllocError!void {
+    var cur: ?NodeId = el
+
+    while cur |c| {
+        if doc.node(c).kind == dom.Kind.Element {
+            try path.append(c)
+        }
+
+        cur = doc.parent(c)
+
+        if cur == null && doc.node(c).kind == dom.Kind.Document {
+            cur = doc.node(c).shadow
+        }
+    }
+}
