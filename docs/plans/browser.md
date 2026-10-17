@@ -224,7 +224,7 @@ exits 0, the weekly job runs.
 | C2 | P10.3 | test262 runner over `dweller js --test262` | – (beside C1) | done | – (`v8/test/test262/` is empty in the checkout; the harness files come from the pin) |
 | C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
 | C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
-| C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | open | – |
+| C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | done | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
 
 ### Phase D: login readiness and the user bundle (lane login)
@@ -1624,6 +1624,7 @@ its area.
 - verify: `python3 browser/tools/wpt.py run fetch/api xhr --upstream -j 8 > target/wpt-fetch.log 2>&1; tail -3 target/wpt-fetch.log` prints both scores; `python3 browser/tools/conformance.py check; echo $?` → 0
 - depends on: P10.4
 - time box: 90 min; model: sonnet
+- status: done 2026-10-17. `DWELLER_RESOLVE` (comma separated `host:port:address`, `net/resolve-*.aye`; one libcurl `CURLOPT_RESOLVE` list built on first request and set in `prepare`, freed in `session.stop`). `wpt.py fetch` also checks out `tools/` and `docs/` (what `wpt serve` needs; `checkout -f`, since `serve --upstream` overwrites `resources/testharnessreport.js` with ours). `wpt.py serve --upstream` and `run --upstream` (`wpt_upstream.py`) start the checkout's `python3 wpt serve --no-h2` with a generated config (`server_host` 127.0.0.1, `check_subdomains` off, http ports 8000 and 8001) and set `DWELLER_RESOLVE` for the seven hosts on both ports; pages are `http://web-platform.test:8000/...`. Under `--upstream` (or `"upstream": true` in the area) `.sub.` tests are run. `wpt_areas.json`: `fetch/api` (replaces `fetch/api/basic`) and `xhr`, both `"upstream": true`. `conformance.py table` keeps the committed rows of areas it has no fresh results for. Scores at e58225ab: `fetch/api` 1007/2415 (41.7%, was 23.4% for `fetch/api/basic`; 178 files, 13 skipped, 10 TIMEOUT, 5.5 min at -j 4), `xhr` 448/1233 (36.3%, was 15.5%; 329 files, 3 skipped, 22 TIMEOUT, 51 s at -j 4); no CRASH. Left: `.sub.` tests of the other areas run only with `--upstream` (their areas are not switched, so their baselines stay), no https (`.https.` skipped), no workers, no websockets.
 
 #### P10.6: `testdriver.js` subset
 - goal: tests that call `test_driver.click`, `send_keys` and simple `action_sequence` pointer/key actions run: our `resources/testdriver-vendor.js` turns them into `--events` words that `dweller wpt` feeds to the page (element centre for clicks). Un-excludes those tests in "Events and timers" and "Forms".

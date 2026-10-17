@@ -1,0 +1,18 @@
+// https://curl.se/libcurl/c/CURLOPT_RESOLVE.html
+import std.mem.Allocator
+
+let CURLOPT_RESOLVE: i32 = 10203
+
+var resolve_entries: ?*mut CurlList = null
+var resolve_read: bool = false
+
+pub fn applyResolve(alloc: Allocator, curl: *mut Curl) {
+    if !resolve_read {
+        resolve_read = true
+        resolve_entries = resolveEntries(alloc, resolveSetting())
+    }
+
+    if resolve_entries |entries| {
+        curl_easy_setopt(curl, CURLOPT_RESOLVE, entries)
+    }
+}

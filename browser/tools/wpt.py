@@ -4,10 +4,12 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/, fonts/ and css/support/.
-  wpt.py serve [--port N] [--wpt-root DIR]
-      A static server on 127.0.0.1 for the checkout (see Server below).
-  wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR]
+      resources/, common/, fonts/, css/support/, tools/ and docs/ (upstream
+      `wpt serve` needs the last two).
+  wpt.py serve [--port N] [--wpt-root DIR] [--upstream]
+      A static server on 127.0.0.1 for the checkout (see Server below), or
+      with --upstream the checkout's own `wpt serve` (wpt_upstream.py).
+  wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR] [--upstream]
       Runs `dweller wpt URL` for each testharness test of an area (a key
       of wpt_areas.json) or of a path (a directory or file under the
       root), and writes target/wpt-results/<area>.json. Reftests and
@@ -28,6 +30,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import wpt_reftest
+import wpt_upstream
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -36,14 +39,15 @@ REPORT_JS = HERE / "wpt" / "testharnessreport.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "css/support"]
+EXTRA_DIRS = ["resources", "common", "fonts", "css/support", "tools", "docs"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
 SKIP_NAME = re.compile(
     r"\.(https|serviceworker|sharedworker|worker|window-module|any\.worker)\.(html|js)$"
-    r"|-manual\.|-ref\.|-notref\.|\.sub\.(html|js)$"
+    r"|-manual\.|-ref\.|-notref\."
 )
+SKIP_SUB = re.compile(r"\.sub\.(html|js)$")
 HTML_EXT = (".html", ".htm", ".xhtml", ".xht")
 DEFAULT_GLOBALS = {"window", "dedicatedworker"}
 
@@ -86,7 +90,7 @@ def cmd_fetch(args):
         git(root, "remote", "add", "origin", WPT_URL)
     git(root, "sparse-checkout", "set", "--cone", *sorted(dirs))
     git(root, "fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", rev)
-    git(root, "checkout", "-q", "--detach", "FETCH_HEAD")
+    git(root, "checkout", "-q", "-f", "--detach", "FETCH_HEAD")
     print(f"wpt {rev} in {root}: {', '.join(sorted(dirs))}")
 
 
@@ -167,7 +171,11 @@ def html_kind(rel, text):
     return "testharness" if "testharness.js" in text else None
 
 
-def discover(root, rel, excludes):
+def skipped_name(name, upstream):
+    return SKIP_NAME.search(name) or (not upstream and SKIP_SUB.search(name))
+
+
+def discover(root, rel, excludes, upstream=False):
     """Testharness tests under root/rel: [{"path", "url", "timeout"}]."""
     base = root / rel
     files = [base] if base.is_file() else sorted(
@@ -184,7 +192,7 @@ def discover(root, rel, excludes):
         name = p.name
         if name.endswith((".any.js", ".window.js")):
             kind = "any" if name.endswith(".any.js") else "window"
-            if SKIP_NAME.search(name):
+            if skipped_name(name, upstream):
                 skipped += 1
                 continue
             meta = parse_meta(read_text(p))
@@ -195,7 +203,7 @@ def discover(root, rel, excludes):
             tests.append({"path": relp, "url": url, "kind": "testharness",
                           "timeout": TIMEOUT_LONG if meta["timeout"] == "long" else TIMEOUT_NORMAL})
         elif name.endswith(HTML_EXT):
-            if SKIP_NAME.search(name):
+            if skipped_name(name, upstream):
                 skipped += 1
                 continue
             m = re.match(r"(.*\.(?:any|window))\.html$", name)
@@ -285,6 +293,7 @@ class Server:
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
+        self.base = f"http://127.0.0.1:{self.port}"
 
     def start(self):
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -295,6 +304,11 @@ class Server:
 
 
 def cmd_serve(args):
+    if args.upstream:
+        srv = wpt_upstream.Upstream(args.wpt_root, REPORT_JS)
+        srv.start()
+        print(f"serving {args.wpt_root} on {srv.base}/", flush=True)
+        return srv.proc.wait()
     srv = Server(args.wpt_root, args.port)
     print(f"serving {args.wpt_root} on http://127.0.0.1:{srv.port}/", flush=True)
     try:
@@ -341,16 +355,17 @@ def counts(result):
 
 def run_area(name, spec, args, dweller, results_dir):
     root = Path(args.wpt_root)
+    upstream = args.upstream or spec.get("upstream", False)
     tests, skipped = [], 0
     for d in spec["dirs"]:
         if not (root / d).exists():
             sys.exit(f"{d} is not in {root} (run `wpt.py fetch`)")
-        t, s = discover(root, d, spec.get("exclude", []))
+        t, s = discover(root, d, spec.get("exclude", []), upstream)
         tests += t
         skipped += s
-    srv = Server(root)
+    srv = wpt_upstream.Upstream(root, REPORT_JS) if upstream else Server(root)
     srv.start()
-    base = f"http://127.0.0.1:{srv.port}"
+    base = srv.base
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
             outs = list(pool.map(lambda t: run_test(dweller, root, base, t), tests))
@@ -404,12 +419,14 @@ def main():
     s = sub.add_parser("serve")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--wpt-root", default=default_root)
+    s.add_argument("--upstream", action="store_true")
     r = sub.add_parser("run")
     r.add_argument("targets", nargs="+", metavar="AREA|PATH")
     r.add_argument("-j", type=int, default=4)
     r.add_argument("--wpt-root", default=default_root)
     r.add_argument("--results-dir", default=str(REPO / "target" / "wpt-results"))
     r.add_argument("--dweller")
+    r.add_argument("--upstream", action="store_true")
     args = ap.parse_args()
     {"fetch": cmd_fetch, "serve": cmd_serve, "run": cmd_run}[args.cmd](args)
 

@@ -1,0 +1,15 @@
+import std
+import std.mem.Allocator
+
+fn resolveEntries(alloc: Allocator, rest: []u8) ?*mut CurlList {
+    if rest.len == 0 {
+        return null
+    }
+
+    let end = std.mem.indexOf(rest, ',') orelse rest.len
+    let tail = resolveEntries(alloc, rest[std.math.minOf(usize, end + 1, rest.len)..])
+
+    return appendResolve(alloc, tail, rest[0..end]) catch |e| {
+        return tail
+    }
+}
