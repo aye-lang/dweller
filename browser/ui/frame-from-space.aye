@@ -1,0 +1,21 @@
+import agent
+
+fn frameFromSpace(ui: *mut Ui, sp: *mut Space, doc: *mut agent.Json, r: usize) {
+    let a = ui.agents.?
+    let w = (doc.getNum(r, "width") orelse 0.0) as u32
+    let h = (doc.getNum(r, "height") orelse 0.0) as u32
+    var path = frameFilePath(sp.path.bytes())
+
+    if sp.id != a.watch.id {
+        return
+    }
+
+    if !mapFrameFile(&mut a.watch, path[..].ptr, 2 * w as usize * h as usize * 4, false) {
+        return
+    }
+
+    a.watch.width = w
+    a.watch.height = h
+    a.watch.seq = (doc.getNum(r, "seq") orelse 0.0) as u64
+    ui.dirty = true
+}

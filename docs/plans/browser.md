@@ -122,7 +122,7 @@ the one place with more than one process.
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
 - **Conformance (P10).** Not measured: `wpt.py`, `test262.py` and
   `conformance.py` do not exist yet (P10.1–P10.4 not started).
-- **P9.** P9.1–P9.4 done; P9.5 next.
+- **P9.** P9.1–P9.5, P9.7, P9.8 done; P9.6 next.
 - **P11.** P11.1–P11.5 and P11.16 done; P11.17's API done (its
   `wasm_sim_bench` and the wasm-bindgen glue check wait for P11.24's
   copy of the game); P11.6 next.
@@ -140,7 +140,7 @@ the one place with more than one process.
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing; M1 broken by the P4.80 flake |
 | 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | 17 of 26 window cards done (list above); P4.80, P4.42, P4.37, P4.46 next; the VM cards P4.63–P4.78 run as their own lane |
-| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.4 done, P9.5 next |
+| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.5, P9.7, P9.8 done, P9.6 next |
 | 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | P11.1–P11.5, P11.16 done, P11.17 partial; P11.6 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | harness P10.1–P10.4 not started; P10.20–P10.22 (login) done |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 8 of 20; P3.80 (the user bundle) is the acceptance |
@@ -246,7 +246,7 @@ Exit: R1–R7 of B9; Spaces by default.
 
 | Step | Card | What | After | State | Chromium |
 |---|---|---|---|---|---|
-| E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | open | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
+| E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | done 2026-10-17 | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
 | E2 | P9.6 | take over and hand back | E1 | open | – |
 | E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | done | – |
 | E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
@@ -1017,6 +1017,7 @@ in order.
 - test: an agent navigates its Space to a page whose body is `#00aa00`; the events click its chip; `--save` writes the window's frame, and the pixel at the centre of the page area is that green; `loop_max_ms` stays under 50.
 - verify: `cargo test --release --test browser window_spaces_watch > target/p9.5.log 2>&1; echo $?` → 0
 - time box: 90 min; model: opus (shared memory between processes)
+- status: done 2026-10-17. Choices recorded in `docs/agent-protocol.md` (Spaces: Watching, the control table and the frame file). A click on a chip shows its Space and still opens its menu (so `window_spaces_chips` and its golden are unchanged: Gamma, shown when stopped, goes back to "You" when it ends); Cmd+Shift+N shows the Nth chip from the left. The shown chip takes the grey "You" had (`ui/chip-bg.aye`). The frame is the Space's page area only (`ui.page`'s canvas, un-ringed), not its chrome, and the Space's page area takes the window's page area size (`SDL_SetWindowSize` with its own toolbar and tab strip added; equal from the start, so the test does not exercise a resize). The file is `DIR/frame` beside the Space's socket with two slots (`seq % 2`), grown and never shrunk by the Space (no SIGBUS for a window still mapped at the old size), mapped read-only by the window on each `frame` of the shown Space (`ui/map-frame-file.aye`; a failed `mmap` is detected through `memcpy` of the pointer, since Aye has no int-to-pointer cast); the window copies the slot into its canvas when it draws (`ui/draw-watched.aye`), and a shown Space makes every draw a whole one (`pageOverlays`). The Space writes after a draw, at most every 33 ms; a draw within that time leaves the frame due and the Space's wait shortened to it (`ui/send-frame.aye`, `spacesTimeout`). `spaces` now reports `watched`. Clicks in the page area of a shown Space do nothing. Test `window_spaces_watch` (centre pixel `0 170 0`, `loop_max_ms` under 50, `spaces` says `watched`). Left: the toolbar, address bar and tab strip still show the person's tab while a Space is shown; `scale` is sent but a headless Space draws at scale 1 (a HiDPI window shows the frame at half size, top left); keys and the wheel still go to the person's page while a Space is shown (P9.6 sends them to the Space); the Pause button and Cmd+Shift+P still pause every Space, not only the shown one; a crashed shown Space keeps its last frame until the person shows another.
 
 #### P9.6: take over and hand back
 - lane: browser
