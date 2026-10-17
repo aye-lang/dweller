@@ -1,0 +1,13 @@
+import js
+import std
+import std.mem.Allocator
+
+fn realmString(it: *mut js.Interp, tmp: Allocator, v: js.Value) js.JsError![]u8 {
+    let s = try it.toStringValue(v)
+    let bytes = it.heap.bytes(js.strOf(s))
+    let copy = try tmp.alloc(0 as u8, bytes.len)
+
+    std.mem.copy(copy, bytes)
+
+    return copy
+}

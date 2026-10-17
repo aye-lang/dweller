@@ -1,0 +1,17 @@
+import std.mem.Allocator
+
+pub fn newRealm(alloc: Allocator) JsError!Interp {
+    var it = try Interp.create(alloc)
+
+    installBuiltins(&mut it) catch |e| {
+        it.deinit()
+
+        return e
+    }
+
+    if gcStressRequested() {
+        it.heap.threshold = 1
+    }
+
+    return it
+}

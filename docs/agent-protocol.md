@@ -215,6 +215,7 @@ session goes on after an error.
 | `eval` | `expression`: a script; its last expression statement is the result | `result`: a string as it is, anything else as `console.log` shows it; an uncaught exception is the error |
 | `tabs`, `tab_new`, `tab_select`, `tab_close`, `user_context` | | only in a window ([A shared window](#a-shared-window)) |
 | `screenshot` | `ref` (the element's border box), or `full` (bool: the whole document, at most 16384 px tall); neither: the viewport as scrolled | `result` (what it shows and its size), `url`, `title`, `width`, `height`, `png` (the PNG file in base64) |
+| `run` | `code`: a function body ([Code mode](#code-mode-run)); `ms`: the longest the run may take (default 30000) | `result` ("ran N calls"), `value` (what the code returned, as JSON; `null` for `undefined`), `log`, `calls`, `url`, `title`; a failure is the error, with `log` and `calls` |
 
 Scripts in a session (`todo.jsonl` in `browser/tests/agent/sessions/`):
 
@@ -308,6 +309,44 @@ character-set operations are not implemented. Calendar inputs have no
 picker popup, color inputs are swatches, and datalist suggestions are
 ignored.
 
+### Code mode (`run`)
+
+`run` executes `code` as the body of a function in a JavaScript realm of
+its own (not the page's: the page cannot see it, and a navigation does
+not end it). The realm has the standard built-ins and these functions.
+Each one sends the command of that name, waits for it and returns its
+response object without `id` and `ok`; a failure throws an `Error` whose
+message is the command's error:
+
+`navigate(url)`, `back()`, `forward()`, `reload()`, `snapshot(opts)`,
+`read(opts)`, `find(text)`, `click(ref)`, `type(ref, text, opts)` (alias
+`fill`; `opts`: `{submit}`), `select(ref, option)`, `press(key)`,
+`scroll(ref)` or `scroll(dy)`, `wait(opts)` (`{selector, ms}`, or a
+number of ms), `evaluate(expression)` (`eval` in the page; returns its
+`result`, a string), `screenshot(opts)`, `tabs()`, `tabNew(url)`,
+`tabSelect(id)`, `tabClose(id)` (the tab commands only in a window), and
+`log(...values)` (strings as they are, other values as JSON, joined by a
+space, one entry of `log` per call).
+
+The code's return value goes through `JSON.stringify` into `value`. An
+uncaught exception fails the run: `"error"` names the call that threw
+(`"click (call 2): unknown ref e98: ..."`), or is `"Uncaught Name:
+message"` for an exception of the code itself (a syntax error too).
+`calls` counts the calls made. The run ends with `"the run took longer
+than its ms"` once `ms` has passed (checked between calls, and in the
+realm's own code by processor time). In a window or a Space the calls
+are refused like the commands they send (`"paused by user"` while the
+person pauses the Space, the person's tab), and between calls a Space
+reads its control connection, so a pause takes effect at the next call;
+after `stop` the run ends at the next call and is not answered (the
+connection closes after `stopped`). `wait` inside a run waits on the
+tab's page clock, as in `dweller agent`, also in a window.
+
+```
+{"id":1,"cmd":"run","code":"navigate('browser/tests/agent/site/form.html'); fill('e2', 'Ada'); click('e4'); wait({ms: 100}); return {checked: snapshot().snapshot.includes('[checked]'), name: evaluate('document.getElementById(\"name\").value')}"}
+{"id":1,"ok":true,"result":"ran 6 calls","value":{"checked":true,"name":"Ada"},"log":[],"calls":6,"url":"file:///.../form.html","title":"Sign up"}
+```
+
 ## MCP
 
 `dweller mcp` is an MCP server over stdio: JSON-RPC 2.0 messages, one
@@ -346,6 +385,7 @@ per line. It supports protocol versions `2025-11-25`, `2025-06-18`,
 | `browser_wait` | `selector`, `ms` | as `wait` |
 | `browser_eval` | `expression` | the value, as `eval` |
 | `browser_screenshot` | `ref`, `full` | the image, then what it shows, `URL:`, `Title:` |
+| `browser_run` | `code`, `ms` | "ran N calls", `Value:` (JSON) and `Log:`, or the error |
 
 A session:
 
