@@ -1,0 +1,28 @@
+// v8: src/runtime/runtime-scopes.cc (DeclareEvalVar)
+
+import std.mem.AllocError
+
+fn evalHoistVars(r: *mut Resolver) AllocError!void {
+    let s = r.current()
+    var i = r.scopes.len() - 1
+    var top = false
+
+    while i > 0 {
+        i -= 1
+        let o = r.scopes.items()[i]
+
+        if o.is_func || o.top {
+            top = o.top
+            break
+        }
+    }
+
+    if top {
+        for b in s.bindings.items() {
+            try r.top_vars.append(b.name)
+        }
+    }
+
+    s.bindings.clear()
+    s.nslots = 0
+}

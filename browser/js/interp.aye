@@ -289,6 +289,7 @@ pub struct Interp {
     // the first call.
     vm: ?*mut VmState = null
     vm_checked: bool = false
+    eval_site: u32 = NONE
 
     pub fn create(alloc: Allocator) JsError!Interp {
         var it = Interp {
@@ -2918,6 +2919,9 @@ pub struct Interp {
                     self.truncate(base)
                     return self.typeErrorAbout("", self.ast.srcText(callee), " is not a function")
                 }
+                if isDirectEval(self, id, self.slot(base)) {
+                    return directEval(self, id, base, argc)
+                }
                 return self.callAt(base, argc)
             }
             .New { callee, list, n } => {
@@ -4480,7 +4484,7 @@ pub struct Interp {
     // ---- scripts
 
     /// Parses and runs a script. A syntax error throws a SyntaxError.
-    fn parseCode(self: *mut Self, src: []u8, module: bool, referrer: u32, info: ?*mut ModuleInfo) JsError!u32 {
+    pub fn parseCode(self: *mut Self, src: []u8, module: bool, referrer: u32, info: ?*mut ModuleInfo) JsError!u32 {
         var lx = Lexed.init(self.alloc)
         defer lx.deinit()
         let base = self.ast.source.len() as u32
@@ -4517,6 +4521,7 @@ pub struct Interp {
             info: info,
         }
         defer p.tmp.deinit()
+        p.strict = self.eval_site != NONE && self.eval_site % 2 == 1
         var root: u32 = 0
         if module {
             root = p.moduleProgram() catch |e| {
@@ -4548,6 +4553,11 @@ pub struct Interp {
         if module {
             r.module_fn = root
             r.function(root) catch |e| {
+                try self.syntaxError(message.bytes())
+                return JsError.Thrown
+            }
+        } else if self.eval_site != NONE {
+            root = evalResolve(&mut r, root, self.eval_site / 2) catch |e| {
                 try self.syntaxError(message.bytes())
                 return JsError.Thrown
             }
