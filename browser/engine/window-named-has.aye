@@ -1,0 +1,23 @@
+import dom.Kind
+
+fn windowNamedHas(s: *mut Script, o: u32, key: u32) bool {
+    let it = &mut s.it
+
+    if it.hasProperty(it.heap.obj(o).proto, key) {
+        return false
+    }
+
+    let name = it.heap.atoms.name(key)
+    let doc = &s.page.doc
+    var cur = doc.following(doc.root, doc.root)
+
+    while cur |h| {
+        if doc.node(h).kind == Kind.Element && isWindowNamed(doc, h, name) {
+            return true
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+
+    return false
+}

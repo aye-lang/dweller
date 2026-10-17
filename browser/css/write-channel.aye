@@ -1,0 +1,40 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+fn writeChannel(n: f64, out: *mut text.Builder) AllocError!void {
+    var millionths = math.round(n * 1000000.0) as i64
+
+    if millionths < 0 {
+        try out.appendByte('-')
+        millionths = -millionths
+    }
+
+    try out.appendInt(millionths / 1000000)
+
+    var frac = millionths % 1000000
+    var digits: usize = 6
+
+    if frac == 0 {
+        return
+    }
+
+    while frac % 10 == 0 {
+        frac /= 10
+        digits -= 1
+    }
+
+    try out.appendByte('.')
+
+    var scale: i64 = 1
+
+    while digits > 1 {
+        scale *= 10
+        digits -= 1
+    }
+
+    while scale > 0 {
+        try out.appendInt(frac / scale % 10)
+        scale /= 10
+    }
+}

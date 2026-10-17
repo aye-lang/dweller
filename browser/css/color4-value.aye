@@ -1,0 +1,42 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#relative-colors
+fn color4Value(name: []u8, args: []Token) ?Color {
+    if text.eqlIgnoreCase(name, "color-mix") {
+        return colorMix(args)
+    }
+
+    var space = functionSpace(name) orelse return null
+    var origin: ?Color = null
+    var i = skipWhitespace(args, 0)
+
+    if i < args.len && args[i].kind == Tok.Ident && text.eqlIgnoreCase(args[i].text, "from") {
+        let start = skipWhitespace(args, i + 1)
+        let end = skipComponent(args, start)
+
+        if start >= args.len {
+            return null
+        }
+
+        origin = compColor(Comp { toks: args[start..end] }) orelse return null
+        i = skipWhitespace(args, end)
+    } else if hasComma(args) {
+        return null
+    }
+
+    if space == 15 {
+        if i >= args.len || args[i].kind != Tok.Ident {
+            return null
+        }
+
+        space = colorSpaceOf(args[i].text) orelse return null
+
+        if space > 8 {
+            return null
+        }
+
+        i += 1
+    }
+
+    return colorChannels(space, args[i..], origin)
+}

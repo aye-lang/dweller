@@ -1,0 +1,16 @@
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
+fn addDirname(alloc: Allocator, doc: *Document, el: NodeId, out: *mut List(FormEntry)) AllocError!void {
+    let name = doc.attr(el, "dirname") orelse return
+
+    if name.len == 0 || !isAutoDirectional(doc, el) {
+        return
+    }
+
+    try addEntry(alloc, out, name, controlDirection(doc, el), false)
+}

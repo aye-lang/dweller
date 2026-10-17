@@ -1,0 +1,39 @@
+import std.mem.AllocError
+import std.text
+
+let NOT_POSITIONS = "normal stretch baseline auto legacy space-between space-around space-evenly"
+
+// spec: https://drafts.csswg.org/css-align-3/#typedef-overflow-position
+fn alignPair(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Value {
+    if prop != ALIGN_ITEMS && prop != ALIGN_SELF && prop != ALIGN_CONTENT && prop != JUSTIFY_CONTENT && prop != JUSTIFY_ITEMS && prop != JUSTIFY_SELF {
+        return null
+    }
+
+    let p = PROPERTIES[prop]
+
+    if baselinePair(p, comps) |v| {
+        return v
+    }
+
+    var overflow = "safe "
+
+    if isIdent(comps[0], "unsafe") {
+        overflow = "unsafe "
+    } else if !isIdent(comps[0], "safe") {
+        return null
+    }
+
+    let pos = single(p, comps[1]) orelse return null
+    let word = keywordOf(pos)
+
+    if inList(word, NOT_POSITIONS) != null {
+        return null
+    }
+
+    var out = text.Builder.init(sheet.arena.allocator())
+
+    try out.append(overflow)
+    try out.append(word)
+
+    return Value.Keyword { k: try out.toOwned() }
+}

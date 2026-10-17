@@ -1,0 +1,17 @@
+import layout
+import layout.BoxKind
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-text-decor-3/#painting-order
+fn decorateFrom(b: *mut Builder, f: layout.Frag, line: layout.Line, cur: ?usize, cx: f64, cy: f64, through: bool) AllocError!void {
+    let k = cur orelse return
+    let bx = b.t.bx(k)
+
+    if bx.kind != BoxKind.InlineBlock && (!bx.inline_level || bx.kind == BoxKind.Inline) {
+        try decorateFrom(b, f, line, bx.parent, cx, cy, through)
+    }
+
+    let base = decoratingBaseline(b, k, line, cy)
+
+    try decorationLines(b, bx.style, cx + f.x, base, f.w, layout.textMetrics(b.t, bx.style), through)
+}

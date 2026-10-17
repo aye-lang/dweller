@@ -1,0 +1,25 @@
+import std.math
+
+fn paintColor(space: u8, ch: [3]f64, alpha: f64, none: u8) Color {
+    var src = ch
+
+    for i in 0..3 {
+        if none & (1 << i) as u8 != 0 {
+            src[i] = 0.0
+        }
+    }
+
+    var rgb = src
+
+    if space > 1 {
+        rgb = gamutMap(space, src)
+    }
+
+    var a = alpha
+
+    if none & 8 != 0 {
+        a = 0.0
+    }
+
+    return Color { r: channel(rgb[0] * 255.0), g: channel(rgb[1] * 255.0), b: channel(rgb[2] * 255.0), a: a, space: space, ch: ch, none: none }
+}

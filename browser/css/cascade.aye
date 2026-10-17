@@ -1583,6 +1583,10 @@ pub fn writeValue(v: Value, out: *mut text.Builder) AllocError!void {
             try writeFitContent(pct, px, out)
         }
         .Rgba { c } => {
+            if c.space != 0 {
+                try writeColor(c, out)
+                return
+            }
             if c.a >= 1.0 {
                 try out.append("rgb(")
             } else {
@@ -1761,7 +1765,7 @@ fn sameBits(a: []Value, b: []Value) bool {
         }
         let cx = colorOf(x)
         let cy = colorOf(y)
-        if cx.r != cy.r || cx.g != cy.g || cx.b != cy.b || !sameNumber(cx.a, cy.a) {
+        if !sameColor(cx, cy) || !sameNumber(cx.a, cy.a) {
             return false
         }
     }
@@ -1852,5 +1856,5 @@ fn colorOf(v: Value) Color {
 }
 
 fn sameColor(a: Color, b: Color) bool {
-    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a && a.space == b.space && a.none == b.none && a.ch[0] == b.ch[0] && a.ch[1] == b.ch[1] && a.ch[2] == b.ch[2]
 }

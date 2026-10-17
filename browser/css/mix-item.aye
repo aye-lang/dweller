@@ -1,0 +1,39 @@
+import std.math
+
+struct MixItem {
+    color: Color
+    pct: f64
+    end: usize
+}
+
+fn mixItem(args: []Token, start: usize) ?MixItem {
+    var i = skipWhitespace(args, start)
+    var pct = math.nan()
+    var color: ?Color = null
+
+    while i < args.len && args[i].kind != Tok.Comma {
+        let j = skipComponent(args, i)
+
+        if mixPercent(args[i..j]) |p| {
+            if !math.isNan(pct) || p < 0.0 || p > 100.0 {
+                return null
+            }
+
+            pct = p
+        } else if color == null {
+            color = compColor(Comp { toks: args[i..j] }) orelse return null
+        } else {
+            return null
+        }
+
+        i = skipWhitespace(args, j)
+    }
+
+    if i < args.len {
+        i += 1
+    }
+
+    let c = color orelse return null
+
+    return MixItem { color: c, pct: pct, end: i }
+}

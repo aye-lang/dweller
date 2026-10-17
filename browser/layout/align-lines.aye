@@ -1,0 +1,49 @@
+import css
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-line-align
+fn alignLines(t: *mut Tree, i: usize, all: []Item, lines: []usize, crosses: []f64, row: bool, gap: f64, cw: f64, ch: f64) AllocError!void {
+    let s = t.bx(i).style
+    let reverse = isKeyword(s[css.FLEX_WRAP], "wrap-reverse")
+    let n = lines.len as f64
+    var used = gap * (n - 1.0)
+
+    for c in crosses {
+        used += c
+    }
+
+    var total = math.max(ch, used)
+
+    if !row {
+        total = math.max(cw, used)
+    }
+
+    var word = alignWord(keywordOf(s[css.ALIGN_CONTENT]), total - used)
+
+    if reverse && text.eql(word, "start") {
+        word = "flex-end"
+    } else if reverse && text.eql(word, "end") {
+        word = "flex-start"
+    }
+
+    let sp = LineSpacing.of(word, total - used, n)
+    var pos = sp.lead
+    var start: usize = 0
+
+    for li, end in lines {
+        let cross = crosses[li] + sp.extra
+
+        let base = lineBaselines(t, all[start..end])
+
+        for it in all[start..end] {
+            let at = try alignCross(t, it.box, row, cross, base, cw, ch)
+
+            placeAcross(t.bx(it.box), row, pos + at, total, reverse)
+        }
+
+        pos += cross + gap + sp.between
+        start = end
+    }
+}

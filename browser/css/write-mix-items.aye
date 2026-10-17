@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.text
+
+fn writeMixItems(first: MixParts, second: MixParts, bare: bool, out: *mut text.Builder) AllocError!bool {
+    let items = [2]MixParts{first, second}
+
+    for k, item in items {
+        if k > 0 {
+            try out.append(", ")
+        }
+
+        if !(try writeSpecifiedColor(item.color, out)) {
+            return false
+        }
+
+        if item.calc.len > 0 {
+            try out.appendByte(' ')
+            try writeTokens(item.calc, out)
+        } else if !bare && item.pct >= 0.0 {
+            try out.appendByte(' ')
+            try writeChannel(item.pct, out)
+            try out.appendByte('%')
+        }
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

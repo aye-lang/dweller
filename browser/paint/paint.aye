@@ -791,8 +791,9 @@ struct Builder {
                 var face = m.font
                 face.rtl = f.rtl
                 try textShadows(self, b.style, x, base, b.text[f.start..f.end], face, color)
+                try textDecorations(self, fi, l0, cx, cy, false)
                 try self.add(Item.Text { x: x, y: base, s: b.text[f.start..f.end], face: face, c: color })
-                try self.decorations(f.box, x, base, f.w, m, color)
+                try textDecorations(self, fi, l0, cx, cy, true)
             }
         }
     }
@@ -806,43 +807,6 @@ struct Builder {
             }
         }
         return false
-    }
-
-    // Underline, overline and line-through of the text box `i` (from
-    // its ancestors up to the nearest atomic inline or the root).
-    fn decorations(self: *mut Self, i: usize, x: f64, base: f64, w: f64, m: layout.TextMetrics, c: Rgba) AllocError!void {
-        var under = false
-        var over_line = false
-        var through = false
-        var cur: ?usize = i
-        while cur |k| {
-            let b = self.t.bx(k)
-            let lines = layout.keywordOf(b.style[css.TEXT_DECORATION_LINE])
-            under = under || hasWord(lines, "underline")
-            over_line = over_line || hasWord(lines, "overline")
-            through = through || hasWord(lines, "line-through")
-            if k != i && (b.kind == BoxKind.InlineBlock || (b.inline_level && b.kind != BoxKind.Inline && b.kind != BoxKind.Text)) {
-                break
-            }
-            cur = b.parent
-        }
-        var thick = math.floor(m.font.size / 16.0 + 0.5)
-        if thick < 1.0 {
-            thick = 1.0
-        }
-        if under {
-            var gap = math.floor(m.descent * 0.4 + 0.5)
-            if gap < 1.0 {
-                gap = 1.0
-            }
-            try self.fill(x, base + gap, w, thick, c)
-        }
-        if over_line {
-            try self.fill(x, base - m.ascent, w, thick, c)
-        }
-        if through {
-            try self.fill(x, base - math.floor(m.ascent * 0.35 + 0.5), w, thick, c)
-        }
     }
 
     // The borders of a border box at (`x`, `y`), `w` x `h`, with used
