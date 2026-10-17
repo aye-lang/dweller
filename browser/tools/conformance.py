@@ -117,7 +117,7 @@ def status_of(m):
 def change_cell(m, before):
     if m["area"] not in before:
         return "new"
-    return f"{(m['score'] - before[m['area']]) * 100:+.1f}"
+    return f"{(round(m['score'], 4) - before[m['area']]) * 100 + 0.0:+.1f}"
 
 
 def table_row(m, before):
@@ -144,14 +144,16 @@ def revision(path):
 
 
 def cmd_table(args):
-    measured = [measure(a) for a in all_areas() if available(a)]
+    fresh = [measure(a) for a in all_areas() if available(a)]
+    kept = [m for m in map(read_baseline, all_areas()) if m and m["area"] not in {f["area"] for f in fresh}]
+    measured = sorted(fresh + kept, key=lambda m: all_areas().index(m["area"]))
     before = last_scores()
     revs = {"wpt": revision(TOOLS / "wpt.rev"), "t262": revision(TOOLS / "test262.rev")}
     today = datetime.date.today().isoformat()
     DOC.write_text(render(measured, before, revs, today, head_commit()))
-    for m in measured:
+    for m in fresh:
         (BASELINES / f"{file_key(m['area'])}.json").write_text(json.dumps(m, indent=0) + "\n")
-    append_history([[today, head_commit(), m["area"], m["passed"], m["total"], f"{m['score']:.4f}"] for m in measured])
+    append_history([[today, head_commit(), m["area"], m["passed"], m["total"], f"{m['score']:.4f}"] for m in fresh])
     print(f"wrote {DOC} for {len(measured)} areas")
 
 

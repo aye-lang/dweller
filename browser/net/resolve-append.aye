@@ -1,0 +1,12 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn appendResolve(alloc: Allocator, list: ?*mut CurlList, entry: []u8) AllocError!?*mut CurlList {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    try b.append(entry)
+    try b.appendByte(0)
+
+    return curl_slist_append(list, b.bytes().ptr)
+}

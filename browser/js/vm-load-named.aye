@@ -1,0 +1,29 @@
+// v8: src/ic/ic.cc (LoadIC::Load)
+
+fn vmLoadNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, key: u32) JsError!Value {
+    let o = objectOf(v)
+
+    if o == NONE || it.heap.obj(o).shape == NONE || !cacheable(it, o, key) {
+        return it.getProp(v, key)
+    }
+
+    if vmIcFind(st, e, it.heap.obj(o).shape, key, false) |c| {
+        let holder = vmIcLoadHolder(it, c, o, key)
+
+        if holder != NONE {
+            return vmIcRead(it, v, holder, c.slot, key)
+        }
+    }
+
+    if vmIcLoadCase(it, o, key) |c| {
+        vmIcRecord(st, e, key, false, c)
+
+        let holder = vmIcLoadHolder(it, c, o, key)
+
+        if holder != NONE {
+            return vmIcRead(it, v, holder, c.slot, key)
+        }
+    }
+
+    return it.getProp(v, key)
+}

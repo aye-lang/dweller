@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn member(doc: *mut Json, tmp: Allocator, obj: usize, key: []u8) AllocError![]u8 {
+    var b = text.Builder.init(tmp)
+
+    if doc.get(obj, key) |v| {
+        try doc.write(v, &mut b)
+    } else {
+        try b.append("null")
+    }
+
+    return b.bytes()
+}

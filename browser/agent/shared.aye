@@ -34,6 +34,7 @@ pub interface Host {
     /// An agent is about to act (`what`, e.g. `click button "OK" [e3]`)
     /// on `node` of the page of `s` (null for none).
     fn agentActs(self: *mut Self, conn: usize, s: *mut Session, tmp: Allocator, what: []u8, node: ?RefNode) AllocError!void
+    fn agentGoesOn(self: *mut Self, conn: usize) bool
 }
 
 /// The answer to a command of the window.
@@ -64,7 +65,7 @@ let ACTING = "navigate back forward reload click type select press scroll eval t
 let ON_PAGE = "navigate back forward reload click type select press scroll eval"
 // The commands that need a page: a connection without a tab of its own
 // gets one for them.
-let PAGE_COMMANDS = "navigate back forward reload snapshot read find click type select press scroll eval screenshot wait"
+let PAGE_COMMANDS = "run navigate back forward reload snapshot read find click type select press scroll eval screenshot wait"
 
 /// Does `cmd` change the page of the tab it acts on?
 pub fn actsOnPage(cmd: []u8) bool {
@@ -126,6 +127,7 @@ pub struct Hello {
     name: []u8
     space: u32
     why: []u8
+    isolated: bool
 }
 
 /// The hello of `line`, or null when `line` is not one.
@@ -144,7 +146,7 @@ pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
         return null
     }
     std.mem.copy(copy, name)
-    var h = Hello { mcp: doc.getBool(r, "mcp") orelse false, name: copy, space: 0, why: "" }
+    var h = Hello { mcp: doc.getBool(r, "mcp") orelse false, name: copy, space: 0, why: "", isolated: false }
     if doc.get(r, "space") != null {
         let n = doc.getNum(r, "space") orelse -1.0
         let new = doc.getStr(r, "space") orelse ""
@@ -156,7 +158,7 @@ pub fn helloOf(tmp: Allocator, line: []u8) ?Hello {
     }
     if doc.getStr(r, "profile") |profile| {
         if text.eql(profile, "isolated") {
-            h.why = "the profile \"isolated\" is not available yet: only \"shared\""
+            h.isolated = true
         } else if !text.eql(profile, "shared") {
             h.why = "\"profile\" is \"shared\" or \"isolated\""
         }

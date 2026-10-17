@@ -52,6 +52,9 @@ pub fn setContainerUnits(cqw: f64, cqh: f64) {
 /// keep: `vmin`, `vmax`, `vi`, `vb`, the small, large and dynamic
 /// viewport units, the container units?
 pub fn isContextUnit(unit: []u8) bool {
+    if lineHeightUnitPx(1.0, unit) != null {
+        return true
+    }
     var u = unit
     if u.len > 2 && (u[0] == 's' || u[0] == 'l' || u[0] == 'd' || u[0] == 'S' || u[0] == 'L' || u[0] == 'D') && (u[1] == 'v' || u[1] == 'V') {
         u = u[1..]
@@ -80,7 +83,7 @@ pub fn isMathFunction(t: Token) bool {
     if t.kind != Tok.Function {
         return false
     }
-    return text.eqlIgnoreCase(t.text, "calc") || text.eqlIgnoreCase(t.text, "min") || text.eqlIgnoreCase(t.text, "max") || text.eqlIgnoreCase(t.text, "clamp")
+    return text.eqlIgnoreCase(t.text, "calc") || text.eqlIgnoreCase(t.text, "min") || text.eqlIgnoreCase(t.text, "max") || text.eqlIgnoreCase(t.text, "clamp") || isSteppedFunction(t.text)
 }
 
 // A value during the evaluation: a number, or a length of `px` pixels
@@ -105,7 +108,7 @@ fn lengthQ(px: f64, pct: f64) Quantity {
 /// when it is invalid.
 pub fn calcValue(toks: []Token) ?Value {
     var p = CalcParser { toks: toks, i: 0 }
-    let q = p.term() orelse return null
+    let q = finiteQuantity(p.term() orelse return null)
     if skipWhitespace(toks, p.i) < toks.len {
         return null
     }
@@ -178,7 +181,7 @@ struct CalcParser {
                     return null
                 }
             } else {
-                if !b.number || b.num == 0.0 {
+                if !b.number {
                     return null
                 }
                 a = scaled(a, 1.0 / b.num)
@@ -225,6 +228,9 @@ struct CalcParser {
             if text.eqlIgnoreCase(t.text, "e") {
                 return numberQ(2.718281828459045)
             }
+            if mathConstant(t.text) |v| {
+                return numberQ(v)
+            }
             return null
         }
         if t.kind == Tok.LParen {
@@ -240,6 +246,8 @@ struct CalcParser {
         let close = blockEnd(self.toks, self.i)
         let name = t.text
         self.i += 1
+        let mode = roundMode(self.toks[..close], self.i, name)
+        self.i = mode.next
         var args = [3]Quantity{numberQ(0.0), numberQ(0.0), numberQ(0.0)}
         var n: usize = 0
         var picked = numberQ(0.0)
@@ -254,7 +262,7 @@ struct CalcParser {
             if text.eqlIgnoreCase(name, "calc") {
                 picked = q
                 have = true
-            } else if text.eqlIgnoreCase(name, "clamp") {
+            } else if text.eqlIgnoreCase(name, "clamp") || isSteppedFunction(name) {
                 if n >= 3 {
                     return null
                 }
@@ -280,6 +288,9 @@ struct CalcParser {
         self.i = close + 1
         if text.eqlIgnoreCase(name, "calc") && n != 1 {
             return null
+        }
+        if isSteppedFunction(name) {
+            return steppedValue(name, mode.kind, args[..n])
         }
         if text.eqlIgnoreCase(name, "clamp") {
             if n != 3 || args[0].number != args[1].number || args[1].number != args[2].number {
@@ -319,6 +330,9 @@ fn less(a: Quantity, b: Quantity) bool {
 /// `n` of the length unit `unit` (`isContextUnit`) in px, in the
 /// current context.
 pub fn contextPx(n: f64, unit: []u8) f64 {
+    if lineHeightUnitPx(n, unit) |px| {
+        return px
+    }
     var u = unit
     if u.len > 2 && (u[1] == 'v' || u[1] == 'V') {
         // svh, lvw, dvmin, ...: the viewport does not change size.
@@ -373,6 +387,9 @@ fn unitPx(n: f64, unit: []u8) ?f64 {
     }
     if axis == '>' {
         return n * math.max(calc_ctx.vw, calc_ctx.vh)
+    }
+    if lineHeightUnitPx(n, unit) |px| {
+        return px
     }
     if isContextUnit(unit) {
         return contextPx(n, unit)
