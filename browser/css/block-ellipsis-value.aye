@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-overflow-4/#block-ellipsis
+fn blockEllipsisValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    if comps.len != 1 || comps[0].toks.len != 1 {
+        return null
+    }
+
+    if identIn(comps[0], "no-ellipsis ellipsis") |k| {
+        return Value.Keyword { k: k }
+    }
+
+    if comps[0].toks[0].kind != Tok.String {
+        return null
+    }
+
+    return rawValue(sheet, comps)
+}

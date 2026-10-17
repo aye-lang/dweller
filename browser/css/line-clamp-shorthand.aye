@@ -1,0 +1,24 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-overflow-4/#line-clamp
+fn lineClampShorthand(d: *mut Declarer, comps: []Comp, webkit: bool) AllocError!void {
+    let props = [3]usize{MAX_LINES, BLOCK_ELLIPSIS, CONTINUE}
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    var parsed: ?[3]Value = null
+
+    if webkit {
+        parsed = try webkitLineClampLonghands(d.sheet, comps)
+    } else {
+        parsed = try lineClampLonghands(d.sheet, comps)
+    }
+
+    let vals = parsed orelse return
+
+    for k in 0..3 {
+        try d.add(props[k], vals[k])
+    }
+}

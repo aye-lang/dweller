@@ -526,9 +526,11 @@ fn layoutContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
     // A line clamp counts the lines of its block flow, not those of the
     // formatting contexts inside it.
     let save_clamp = t.clamp_left
+    let save_collapse = t.clamp_collapse
     let clamp = lineClamp(t, i)
     if clamp > 0 || root {
         t.clamp_left = clamp
+        t.clamp_collapse = isKeyword(b.style[css.CONTINUE], "collapse")
     }
     // The origin of the content box for floats: a new formatting
     // context, or the parent's origin and this box's offset in it.
@@ -602,6 +604,7 @@ fn layoutContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
     }
     if clamp > 0 || root {
         t.clamp_left = save_clamp
+        t.clamp_collapse = save_collapse
     }
     t.fx = save_fx
     t.fy = save_fy
