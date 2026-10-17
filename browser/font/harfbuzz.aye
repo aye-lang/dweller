@@ -43,7 +43,7 @@ extern fn hb_buffer_clear_contents(buf: *mut HbBuffer)
 extern fn hb_buffer_add_utf8(buf: *mut HbBuffer, text: [*]u8, len: i32, offset: u32, item_len: i32)
 extern fn hb_buffer_set_direction(buf: *mut HbBuffer, dir: i32)
 extern fn hb_buffer_guess_segment_properties(buf: *mut HbBuffer)
-extern fn hb_shape(font: *mut HbFont, buf: *mut HbBuffer, features: ?[*]u8, n: u32)
+extern fn hb_shape(font: *mut HbFont, buf: *mut HbBuffer, features: ?[*]HbFeature, n: u32)
 extern fn hb_buffer_get_glyph_infos(buf: *mut HbBuffer, n: *mut u32) ?[*]HbGlyphInfo
 extern fn hb_buffer_get_glyph_positions(buf: *mut HbBuffer, n: *mut u32) ?[*]HbGlyphPosition
 
@@ -95,7 +95,7 @@ fn hbBufferFree(buf: *mut HbBuffer) {
 
 // Shapes `s[start..end]` (the rest of `s` is context) with `font` in the
 // direction `rtl`, leaving the glyphs in `buf`; returns their number.
-fn hbShape(font: *mut HbFont, buf: *mut HbBuffer, s: []u8, start: usize, end: usize, rtl: bool) usize {
+fn hbShape(font: *mut HbFont, buf: *mut HbBuffer, s: []u8, start: usize, end: usize, rtl: bool, ligatures: bool) usize {
     hb_buffer_clear_contents(buf)
     hb_buffer_add_utf8(buf, s.ptr, s.len as i32, start as u32, (end - start) as i32)
     if rtl {
@@ -104,7 +104,12 @@ fn hbShape(font: *mut HbFont, buf: *mut HbBuffer, s: []u8, start: usize, end: us
         hb_buffer_set_direction(buf, HB_DIRECTION_LTR)
     }
     hb_buffer_guess_segment_properties(buf)
-    hb_shape(font, buf, null, 0)
+    if ligatures {
+        hb_shape(font, buf, null, 0)
+    } else {
+        hb_shape(font, buf, NO_LIGATURES[..].ptr, 2)
+    }
+
     var n: u32 = 0
     hb_buffer_get_glyph_infos(buf, &mut n)
     return n as usize
