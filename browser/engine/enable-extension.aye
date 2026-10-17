@@ -1,0 +1,17 @@
+import gpu
+
+fn enableExtension(gl: gpu.Api, name: []u8) bool {
+    let want = name[0..name.len - 1]
+
+    if extensionListed(gpu.cstr(gl.glGetString(0x1f03)), want) {
+        return true
+    }
+
+    if !extensionListed(gpu.cstr(gl.glGetString(0x93a8)), want) {
+        return false
+    }
+
+    gl.glRequestExtensionANGLE(name.ptr)
+
+    return extensionListed(gpu.cstr(gl.glGetString(0x1f03)), want)
+}

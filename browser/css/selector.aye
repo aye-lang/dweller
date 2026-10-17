@@ -109,6 +109,7 @@ pub enum SelKind {
     Slotted
     Part
     Defined
+    Heading
 }
 
 pub struct Simple {
@@ -365,7 +366,12 @@ fn parseComplex(sheet: *mut Sheet, all: []Token, mode: u8) AllocError!?Complex {
         let first = simples.len()
         while i < hi {
             let t = toks[i]
-            if t.kind == Tok.Ident && simples.len() == first {
+            if simples.len() == first && i + 2 < hi && isDelimTok(toks[i + 1], '|') && isDelimTok(t, '*') {
+                i += 2
+            } else if simples.len() == first && i + 1 < hi && isDelimTok(t, '|') {
+                try simples.append(simple(SelKind.Never, ""))
+                i += 2
+            } else if t.kind == Tok.Ident && simples.len() == first {
                 try simples.append(simple(SelKind.Type, try lowered(sheet, t.text)))
                 spec.types += 1
                 i += 1
@@ -741,6 +747,17 @@ fn functionalPseudo(sheet: *mut Sheet, name: []u8, args: []Token) AllocError!?Si
         }
         s.sub_end = sheet.complexes.len()
         return s
+    } else if text.eqlIgnoreCase(name, "state") {
+        let k = skipWhitespace(args, 0)
+        if k >= args.len || args[k].kind != Tok.Ident || skipWhitespace(args, k + 1) < args.len {
+            return null
+        }
+        return simple(SelKind.Never, "")
+    } else if text.eqlIgnoreCase(name, "heading") {
+        var s = simple(SelKind.Heading, "")
+        s.a = headingLevels(args) orelse return null
+        s.b = 1
+        return s
     } else if text.eqlIgnoreCase(name, "lang") || text.eqlIgnoreCase(name, "dir") {
         let k = skipWhitespace(args, 0)
         if k >= args.len || (args[k].kind != Tok.Ident && args[k].kind != Tok.String) || skipWhitespace(args, k + 1) < args.len {
@@ -750,7 +767,7 @@ fn functionalPseudo(sheet: *mut Sheet, name: []u8, args: []Token) AllocError!?Si
             return simple(SelKind.Lang, args[k].text)
         }
         return simple(SelKind.Dir, args[k].text)
-    } else if text.eqlIgnoreCase(name, "host") || text.eqlIgnoreCase(name, "host-context") || text.eqlIgnoreCase(name, "state") || text.eqlIgnoreCase(name, "active-view-transition-type") {
+    } else if text.eqlIgnoreCase(name, "host") || text.eqlIgnoreCase(name, "host-context") || text.eqlIgnoreCase(name, "active-view-transition-type") {
         return simple(SelKind.Never, "")
     } else {
         return null
@@ -809,15 +826,20 @@ fn parseAnPlusB(toks: []Token, s: *mut Simple) bool {
                 piece[len] = '-'
                 len += 1
                 v = -v
-            } else if t.kind == Tok.Number && !after_sign && n > 0 {
+            } else if t.kind == Tok.Number && t.text.len > 0 {
                 piece[len] = '+'
                 len += 1
+            } else if t.kind == Tok.Number && !after_sign && n > 0 {
+                return false
             }
             if v > 1000000000.0 {
                 return false
             }
             len = writeDigits(v as u64, &mut piece, len)
             for c in t.text {
+                if t.kind == Tok.Number {
+                    break
+                }
                 piece[len] = c
                 len += 1
             }
@@ -834,7 +856,7 @@ fn parseAnPlusB(toks: []Token, s: *mut Simple) bool {
             buf[n + k] = piece[k]
         }
         n += len
-        after_sign = t.kind == Tok.Delim
+        after_sign = t.kind == Tok.Delim || ((t.kind == Tok.Ident || t.kind == Tok.Dimension) && t.text[t.text.len - 1] == '-')
     }
     let str = buf[..n]
     if text.eqlIgnoreCase(str, "odd") {
@@ -944,6 +966,9 @@ fn pseudoClass(name: []u8) ?SelKind {
     if text.eqlIgnoreCase(name, "root") {
         return SelKind.Root
     }
+    if text.eqlIgnoreCase(name, "heading") {
+        return SelKind.Heading
+    }
     if text.eqlIgnoreCase(name, "scope") {
         return SelKind.Scope
     }
@@ -1033,6 +1058,11 @@ fn isLegacyPseudoElement(name: []u8) bool {
 // The inside of `[...]`; null when invalid.
 fn attribute(sheet: *mut Sheet, toks: []Token) AllocError!?Simple {
     var i = skipWhitespace(toks, 0)
+    if i + 1 < toks.len && isDelimTok(toks[i + 1], '|') && isDelimTok(toks[i], '*') {
+        i += 2
+    } else if i < toks.len && isDelimTok(toks[i], '|') {
+        i += 1
+    }
     if i >= toks.len || toks[i].kind != Tok.Ident {
         return null
     }
@@ -1520,6 +1550,9 @@ fn matchSimple(sheet: *Sheet, doc: *Document, s: Simple, el: NodeId) bool {
         }
         .Defined => {
             return text.indexOf(n.name, "-") == null || n.ce == dom.CE_CUSTOM
+        }
+        .Heading => {
+            return headingMatches(n.name, s)
         }
     }
 }

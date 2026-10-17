@@ -1,0 +1,14 @@
+// spec: https://drafts.csswg.org/css-align-3/#distribution-grid
+fn trackSpacing(word: []u8, avail: f64, sizes: []f64, gap: f64) LineSpacing {
+    var free = avail - gap * (sizes.len as f64 - 1.0)
+
+    for s in sizes {
+        free -= s
+    }
+
+    if avail < 0.0 || sizes.len == 0 || stretchesTracks(word) {
+        return LineSpacing { lead: 0.0, between: 0.0, extra: 0.0 }
+    }
+
+    return LineSpacing.of(alignWord(word, free), free, sizes.len as f64)
+}

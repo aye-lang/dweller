@@ -1,0 +1,27 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://drafts.csswg.org/css-animations-1/#keyframes
+fn akKeyframes(it: *mut Interp, a: Args) JsError!Value {
+    let name = try it.builder()
+    defer it.release(name)
+
+    try argText(it, a, 0, name)
+
+    let st = try computedStyling(scriptOf(it))
+    let rule = lastKeyframesRule(&st.author, name.bytes()) orelse return Value.Null
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    for k in st.author.keyframes.items() {
+        if k.rule == rule {
+            try pushKeyframe(it, arr, &st.author, k)
+        }
+    }
+
+    return it.pop()
+}

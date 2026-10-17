@@ -5,8 +5,7 @@ fn vmLoadCallee(c: *mut Compiler, r: i32, callee: u32, optional: bool) CompileEr
 
     match c.ast.node(callee) {
         .Member { obj, optional: link, .. } => {
-            try c.visit(obj)
-            try c.b.op1(BC_STAR, (r + 1) as i64)
+            try vmVisitObjectReg(c, obj, r + 1, link)
             try vmOptionalLink(c, link)
             try c.b.emit(BC_GET_NAMED_PROPERTY, (r + 1) as i64, callee as i64, c.b.newSlot() as i64)
         }

@@ -1,0 +1,19 @@
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/uievents/#event-type-auxclick
+pub fn feedClick(p: *mut Page, el: NodeId, button: i64, detail: []u8, x: f64, y: f64) AllocError!void {
+    if button != 0 {
+        _ = try dispatchPointer(p, el, "auxclick", detail, x, y, 0.0, 0.0)
+
+        return
+    }
+
+    if try dispatchPointer(p, el, "click", detail, x, y, 0.0, 0.0) {
+        try runActivation(p, try activate(p, el))
+    }
+
+    if click_count == 2 {
+        _ = try dispatchPointer(p, el, "dblclick", detail, x, y, 0.0, 0.0)
+    }
+}

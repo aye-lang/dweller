@@ -1,0 +1,16 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn nonNegative(alloc: Allocator, prop: usize) AllocError!bool {
+    var sheet = try css.Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    let name = css.PROPERTIES[prop].name
+
+    return try parsedValue(&mut sheet, prop, name, "-1px", &mut b) == null && try parsedValue(&mut sheet, prop, name, "-1", &mut b) == null
+}

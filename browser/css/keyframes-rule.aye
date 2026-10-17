@@ -1,0 +1,31 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-animations-1/#keyframes
+fn keyframesRule(p: *mut Parser, prelude: []Token, lo: usize, hi: usize) AllocError!void {
+    let name = keyframesName(prelude) orelse return
+    let within = p.toks[..hi]
+    let rule = p.sheet.keyframe_rules
+    var i = lo
+
+    p.sheet.keyframe_rules += 1
+    try p.sheet.keyframes.append(Keyframe { name: name, rule: rule, offset: 0.0, decls: DeclRange { start: 0, end: 0 } })
+
+    while i < hi {
+        var open = i
+
+        while open < hi && p.toks[open].kind != Tok.LBrace {
+            open = skipComponent(within, open)
+        }
+
+        if open >= hi {
+            return
+        }
+
+        let close = blockEnd(within, open)
+        let start = p.sheet.decls.len()
+
+        try p.declarations(open + 1, close)
+        try addKeyframes(p.sheet, name, rule, p.toks[i..open], DeclRange { start: start, end: p.sheet.decls.len() })
+        i = close + 1
+    }
+}

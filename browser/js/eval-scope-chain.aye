@@ -1,0 +1,24 @@
+// v8: src/ast/scopes.cc (Scope::DeserializeScopeChain)
+
+import std.mem.AllocError
+
+fn evalScopeChain(r: *mut Resolver, scope: u32) AllocError!void {
+    if scope == NONE {
+        return
+    }
+
+    let info = r.ast.scopes.items()[scope]
+    let k = info.kind
+    let isFunc = k == SCOPE_FUNCTION || k == SCOPE_ARROW || k == SCOPE_MODULE
+
+    try evalScopeChain(r, info.parent)
+    try r.pushScope(k, isFunc, k == SCOPE_ARROW, k == SCOPE_SCRIPT, info.func, scope)
+
+    let s = r.current()
+
+    s.nslots = info.nslots
+
+    for v in r.ast.vars.items()[info.vars..info.vars + info.nvars] {
+        try s.bindings.append(Binding { name: v.name, slot: v.slot, flags: 0, lexical: false })
+    }
+}

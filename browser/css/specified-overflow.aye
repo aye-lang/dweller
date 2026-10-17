@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-3/#propdef-overflow
+fn specifiedOverflow(value: []u8, most: usize, out: *mut text.Builder) AllocError!bool {
+    var words = text.split(text.trim(value), " ")
+    var first: []u8 = ""
+    var n: usize = 0
+
+    while words.next() |w| {
+        if w.len == 0 {
+            continue
+        }
+
+        if n == most || inList(w, OVERFLOWS) == null {
+            return false
+        }
+
+        if n == 0 {
+            first = w
+            try out.append(w)
+        } else if !text.eql(w, first) {
+            try out.append(" ")
+            try out.append(w)
+        }
+
+        n += 1
+    }
+
+    return n > 0
+}

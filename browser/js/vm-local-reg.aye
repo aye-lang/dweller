@@ -1,0 +1,13 @@
+fn vmLocalReg(c: *mut Compiler, id: u32) CompileError!i32 {
+    match c.ast.node(id) {
+        .Ident { depth, slot, name, .. } => {
+            if depth < DEPTH_GLOBAL_LEX && !vmDerivedThis(c, name) {
+                return c.readReg(depth, slot, name)
+            }
+        }
+
+        _ => {}
+    }
+
+    return VM_CONTEXT
+}

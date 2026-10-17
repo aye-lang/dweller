@@ -1,0 +1,16 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildHoleCheckForVariableAssignment)
+
+fn vmHoleSwitchLexicals(c: *mut Compiler) CompileError!void {
+    let saved = c.b.newReg()
+
+    try c.b.op1(BC_STAR, saved as i64)
+
+    for r in 0..c.tdz.len() {
+        if c.tdz.items()[r] {
+            try c.b.op0(BC_LDA_THE_HOLE)
+            try c.b.op1(BC_STAR, r as i64)
+        }
+    }
+
+    try c.b.op1(BC_LDAR, saved as i64)
+}

@@ -63,12 +63,16 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "computedStyle", 2, akComputedStyle)
     try defMethod(it, o, "transitionFrame", 0, akTransitionFrame)
     try defMethod(it, o, "transitionsActive", 0, akTransitionsActive)
+    try defMethod(it, o, "interpolate", 4, akInterpolate)
+    try defMethod(it, o, "keyframes", 1, akKeyframes)
+    try defMethod(it, o, "ease", 2, akEase)
     try defMethod(it, o, "cssNames", 0, akCssNames)
     try defMethod(it, o, "latin1Into", 2, js.hostLatin1Into)
     try defMethod(it, o, "latin1Of", 1, js.hostLatin1Of)
     try defMethod(it, o, "randomFill", 1, js.hostRandomFill)
     try defMethod(it, o, "supports", 1, akSupports)
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
+    try defMethod(it, o, "selectorText", 1, akSelectorText)
     try installFrames(s, o)
     try installHistory(s, o)
     try installGeometry(s, o)
@@ -805,6 +809,13 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
             return it.newString(b.bytes())
         }
 
+        if text.eql(b.bytes(), "overflow") {
+            b.clear()
+            try css.writeOverflow(values, b)
+
+            return it.newString(b.bytes())
+        }
+
         if text.eql(b.bytes(), "flex") {
             b.clear()
             try css.writeFlex(values, b)
@@ -825,12 +836,19 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
             return it.newString(b.bytes())
         }
 
+        if text.eql(b.bytes(), "animation") {
+            b.clear()
+            try css.writeAnimation(values, b)
+
+            return it.newString(b.bytes())
+        }
+
         let i = css.propertyIndex(b.bytes()) orelse return none
         b.clear()
-        if animation.currentValue(&s.transitions, h, i, s.now) |v| {
+        if try animation.currentValue(&s.transitions, h, i, s.now) |v| {
             try css.writeValue(v, b)
         } else {
-            try css.writeComputed(values, i, b)
+            try writeResolved(s, h, values, i, b)
         }
         return it.newString(b.bytes())
     }
@@ -896,6 +914,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
             return st
         }
     }
+    try takeSheetChanges(s)
     if s.computed |c| {
         if c.media.width == s.width && c.media.height == s.height {
             if c.version == s.style_version {

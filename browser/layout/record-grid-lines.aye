@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.AllocError
+
+fn recordGridLines(t: *mut Tree, i: usize, g: *Grid, xs: []f64, ws: []f64, ys: []f64, hs: []f64) AllocError!void {
+    var lines = GridLines {
+        starts_x: List(f64).init(t.alloc),
+        ends_x: List(f64).init(t.alloc),
+        starts_y: List(f64).init(t.alloc),
+        ends_y: List(f64).init(t.alloc),
+        explicit_cols: g.explicit_cols,
+        explicit_rows: g.explicit_rows,
+    }
+
+    for k in 0..ws.len {
+        try lines.starts_x.append(xs[k])
+        try lines.ends_x.append(xs[k] + ws[k])
+    }
+
+    for k in 0..hs.len {
+        try lines.starts_y.append(ys[k])
+        try lines.ends_y.append(ys[k] + hs[k])
+    }
+
+    t.bx(i).grid_lines = lines
+}

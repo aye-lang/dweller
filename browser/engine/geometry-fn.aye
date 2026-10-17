@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#starting
+fn geometry(s: *mut Script) AllocError!*mut Geometry {
+    var old: u64 = 0
+
+    if s.geom |g| {
+        old = g.version
+    }
+
+    let g = try layoutGeometry(s)
+
+    if g.version != old && s.transitions.before.len() > 0 {
+        try restyleTransitioning(s)
+    }
+
+    return g
+}

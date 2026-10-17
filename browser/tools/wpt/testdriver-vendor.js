@@ -25,6 +25,7 @@
 
   const NAMED = {
     '': 'backspace', '': 'tab', '': 'return', '': 'return',
+    '': 'shift', '': 'control', '': 'alt', '': 'meta',
     '': 'escape', '': 'space', '': 'end', '': 'home',
     '': 'left', '': 'up', '': 'right', '': 'down', '': 'delete',
   };
@@ -37,11 +38,20 @@
     return ['key:' + name, 'text:' + (key === ' ' ? '_' : key)];
   }
 
+  const MODIFIER = /^(shift|control|alt|meta)$/;
+
   function typed(keys) {
     let words = [];
-    for (const key of keys) words = words.concat(keyWords(key, true), keyWords(key, false));
+    const held = [];
+    for (const key of keys) {
+      if (MODIFIER.test(NAMED[key])) held.unshift(key);
+      words = words.concat(keyWords(key, true), MODIFIER.test(NAMED[key]) ? [] : keyWords(key, false));
+    }
+    for (const key of held) words = words.concat(keyWords(key, false));
     return words;
   }
+
+  const BUTTONS = ['left', 'middle', 'right', 'back', 'forward'];
 
   function pointerWords(source, state) {
     const words = [];
@@ -60,9 +70,9 @@
         state.y = y;
         words.push('move:' + point(x, y));
       } else if (a.type === 'pointerDown') {
-        words.push('click:' + point(state.x, state.y));
+        words.push('click:' + point(state.x, state.y) + ',' + BUTTONS[a.button || 0]);
       } else if (a.type === 'pointerUp') {
-        words.push('release:' + point(state.x, state.y));
+        words.push('release:' + point(state.x, state.y) + ',' + BUTTONS[a.button || 0]);
       }
     }
     return words;
