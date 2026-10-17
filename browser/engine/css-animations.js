@@ -1,6 +1,8 @@
 globalThis.__cssAnimations = function (ak, Animation, KeyframeEffect, timeline, hidden) {
 // spec: https://drafts.csswg.org/css-animations-1/
+const NAMES = ['animation-name', 'animation-duration', 'animation-delay', 'animation-iteration-count', 'animation-direction', 'animation-fill-mode', 'animation-timing-function', 'animation-play-state', 'display'];
 const running = new WeakMap();
+const seen = new WeakMap();
 const tracked = new Set();
 let syncing = false;
 let timer = 0;
@@ -194,7 +196,7 @@ function sync(el) {
   try {
     const style = {};
 
-    for (const n of ['animation-name', 'animation-duration', 'animation-delay', 'animation-iteration-count', 'animation-direction', 'animation-fill-mode', 'animation-timing-function', 'animation-play-state', 'display']) style[n] = ak.computedStyle(el, n);
+    for (const n of NAMES) style[n] = ak.computedStyle(el, n);
 
     const old = running.get(el) || [];
     const names = style.display === 'none' ? [] : items(style['animation-name']).map(unquoted);
@@ -241,5 +243,14 @@ function sync(el) {
 
 Object.defineProperty(CSSAnimation.prototype, Symbol.toStringTag, { value: 'CSSAnimation', configurable: true });
 
-return { sync, CSSAnimation };
+function discover() {
+  for (const el of new Set([...ak.animatedElements(), ...tracked])) {
+    const key = NAMES.map(n => ak.computedStyle(el, n)).join(';');
+
+    if (seen.get(el) !== key) sync(el);
+    seen.set(el, key);
+  }
+}
+
+return { sync, discover, CSSAnimation };
 };

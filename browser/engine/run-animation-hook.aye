@@ -1,0 +1,22 @@
+import js
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-animations-1/#animations
+fn runAnimationHook(s: *mut Script) AllocError!void {
+    let stamp = layoutVersion(s.page) + s.geometry_changes + 1
+
+    if s.animation_hook == js.NONE || s.ready < 2 || stamp == s.animation_stamp {
+        return
+    }
+
+    s.animation_stamp = stamp
+
+    let it = &mut s.it
+    let base = it.stack.len()
+
+    try jsPush(s, it.roots.items()[s.animation_hook])
+    try jsPush(s, js.objVal(it.global))
+    _ = try callReported(s, base, 0)
+    it.truncate(base)
+    try runMicrotasks(s)
+}
