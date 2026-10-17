@@ -16,6 +16,8 @@ import tempfile
 import threading
 import time
 
+import fast_build
+
 # The sites of docs/browser-sites.md, in its order. --site all loads every one.
 SITES = {
     "example": "https://example.com/",
@@ -240,6 +242,7 @@ def main():
                         "rebless: store today's replay as the archive's reference (after an intended dump change)")
     parser.add_argument("--archive", type=Path, default=Path("target/sites"), help="one directory per site")
     parser.add_argument("--binary", type=Path, default=Path("target/dweller"))
+    parser.add_argument("--allow-debug", action="store_true", help="measure a binary that browser/build.sh did not build")
     parser.add_argument("--compare", type=Path, help="baseline binary; alternate before/after to reduce machine-load bias")
     parser.add_argument("--site", action="append",
                         help=f"repeatable or comma-separated, or all; default {', '.join(DEFAULT_SITES)} (check: all)")
@@ -262,6 +265,10 @@ def main():
         parser.error("capture always records Markdown; compare, screenshot and sample are replay options")
     if args.live and args.mode != "run":
         parser.error("--live is a run option")
+    if args.mode in ("run", "check"):
+        for binary in (args.binary, args.compare):
+            if binary:
+                fast_build.require(binary, args.allow_debug)
     names = [name for value in args.site or () for name in value.split(",") if name]
     for name in names:
         if name != "all" and name not in SITES:

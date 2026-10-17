@@ -26,7 +26,7 @@ def archive_url(a, name):
 
 
 def measure(a, mode, url, *extra, **env):
-    cmd = [sys.executable, str(TOOLS / "window_perf.py"), mode, url, "--binary", a.binary, *extra]
+    cmd = [sys.executable, str(TOOLS / "window_perf.py"), mode, url, "--binary", a.binary, "--allow-debug", *extra]
     r = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, **env), timeout=900)
 
     return json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
