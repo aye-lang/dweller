@@ -22,7 +22,9 @@
 #   /echo-redirect   (POST) 303 to /echo?redirected=1
 #   /fetch-echo      (any method) the request as JSON: its method, path,
 #                    headers (names in lower case), body (as UTF-8 and in
-#                    hex) and form fields (as /echo); HEAD gets no body
+#                    hex) and form fields (as /echo); HEAD gets no body;
+#                    answers Access-Control-Allow-Origin: * and a CORS
+#                    preflight (OPTIONS with Access-Control-Request-Method)
 #   /fetch-redirect/STATUS  (any method) STATUS to /fetch-echo?redirected
 #   /net/start       302 to /net/page.html, setting the cookies of COOKIES
 #   /headers         the request's Accept, Accept-Language, Referer and
@@ -328,6 +330,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
+    def do_OPTIONS(self):
+        if not self.path.startswith("/fetch-") or "Access-Control-Request-Method" not in self.headers:
+            self.fetch_route()
+            return
+        headers = [
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", self.headers["Access-Control-Request-Method"]),
+        ]
+        if self.headers.get("Access-Control-Request-Headers"):
+            headers.append(("Access-Control-Allow-Headers", self.headers["Access-Control-Request-Headers"]))
+        self.reply(204, headers)
+
     def do_HEAD(self):
         if self.path.startswith("/fetch-"):
             self.fetch_route()
@@ -346,7 +360,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(length)
         path = urllib.parse.urlsplit(self.path).path
         if path.startswith("/fetch-redirect/"):
-            self.reply(int(path[len("/fetch-redirect/"):]), [("Location", "/fetch-echo?redirected")])
+            self.reply(int(path[len("/fetch-redirect/"):]), [("Location", "/fetch-echo?redirected"), ("Access-Control-Allow-Origin", "*")])
             return
         if path != "/fetch-echo":
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
@@ -362,6 +376,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         data = json.dumps(echo).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if self.command != "HEAD":
@@ -521,6 +536,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         query = dict(urllib.parse.parse_qsl(parts.query))
         cookie = self.headers.get("Cookie", "")
         text_plain = [("Content-Type", "text/plain"), ("Cache-Control", "no-store")]
+        if "Origin" in self.headers:
+            text_plain += [("Access-Control-Allow-Origin", self.headers["Origin"]), ("Access-Control-Allow-Credentials", "true")]
         if parts.path == "/samesite/set":
             self.reply(200, [
                 ("Content-Type", "text/html"),

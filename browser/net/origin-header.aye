@@ -1,0 +1,33 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+// https://fetch.spec.whatwg.org/#append-a-request-origin-header
+fn originHeader(alloc: Allocator, req: Request, to: *Url, out: *mut text.Builder) AllocError!void {
+    if req.kind != Kind.Other || req.referrer.len == 0 {
+        return
+    }
+
+    let from = url.parse(alloc, req.referrer) catch |e| {
+        return
+    }
+
+    defer from.deinit(alloc)
+    let read = req.method.len == 0 || text.eql(req.method, "GET") || text.eql(req.method, "HEAD")
+
+    if (read && sameOrigin(&from, to)) || (!text.eql(from.scheme, "http") && !text.eql(from.scheme, "https")) {
+        return
+    }
+
+    try out.append("Origin: ")
+    try out.append(from.scheme)
+    try out.append("://")
+    try out.append(from.host)
+
+    if from.port.len > 0 {
+        try out.appendByte(':')
+        try out.append(from.port)
+    }
+}
