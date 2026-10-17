@@ -1,0 +1,33 @@
+// blink: core/css/selector_filter.cc (CollectDescendantCompoundSelectorIdentifierHashes)
+pub let ANCESTOR_KEYS: usize = 4
+
+pub fn ancestorKeys(sheet: *Sheet, cx: Complex) [4]u64 {
+    var keys = [4]u64{0, 0, 0, 0}
+
+    if cx.pseudo == PSEUDO_SLOTTED || cx.pseudo == PSEUDO_PART || cx.end <= cx.start + 1 { return keys }
+
+    let compounds = sheet.compounds.items()
+    var n: usize = 0
+    var i = cx.end - 1
+
+    while i > cx.start && n < ANCESTOR_KEYS {
+        let comb = compounds[i].combinator
+
+        i -= 1
+
+        if comb != ' ' && comb != '>' { continue }
+
+        let comp = compounds[i]
+
+        for si in comp.start..comp.end {
+            let kind = ancestorKind(sheet.simples.items()[si].kind)
+
+            if n < ANCESTOR_KEYS && kind != 0 {
+                keys[n] = filterKey(kind, sheet.simples.items()[si].name)
+                n += 1
+            }
+        }
+    }
+
+    return keys
+}

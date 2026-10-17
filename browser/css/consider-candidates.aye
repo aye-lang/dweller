@@ -1,0 +1,26 @@
+// blink: core/css/element_rule_collector.cc (SortAndTransferMatchedRules)
+import dom.NodeId
+import std.mem.AllocError
+import std.sort
+
+fn considerCandidates(c: *mut Computer, sheet: *Sheet, el: NodeId, level: u8) AllocError!void {
+    let candidates = try sheet.index.candidates(sheet, c.doc, el)
+
+    c.matched.clear()
+
+    for ri in candidates {
+        if ruleSpec(c, sheet, ri, el, MATCH_ELEMENT) |spec| {
+            try c.matched.append(MatchedRule { rule: ri, spec: spec })
+        }
+    }
+
+    sort.sort(MatchedRule, c.matched.items(), matchedBefore)
+    var previous: ?usize = null
+
+    for m in c.matched.items() {
+        if previous != m.rule {
+            previous = m.rule
+            try offerRule(c, sheet, m.rule, level, m.spec)
+        }
+    }
+}

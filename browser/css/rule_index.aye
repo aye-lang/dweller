@@ -7,8 +7,8 @@
 // before a type when as many have them. :is()/:where() alternatives are
 // indexed recursively; attribute-only, negative and universal selectors
 // stay in the fallback bucket. Selector lists index
-// every alternative; candidates are deduplicated and restored to source
-// order before the existing cascade (including maximum specificity).
+// every alternative; `candidates` come in any order with repeats (the
+// cascade sorts the rules that match), `pseudoCandidates` in source order.
 // The `::before`/`::after` selectors are indexed a second time on their
 // own (`pseudoCandidates`), so that an element no such rule can select
 // costs a few lookups in small maps, not its whole candidate list again.
@@ -60,8 +60,7 @@ pub struct RuleIndex {
     pseudo: Buckets
     links: List(RuleLink)
     selected: List(usize)
-    // Complex index to its `ancestorKey`.
-    ancestors: List(u64)
+    ancestors: List([4]u64)
     rules: usize
     ready: bool
 
@@ -72,7 +71,7 @@ pub struct RuleIndex {
             pseudo: Buckets.init(alloc),
             links: List(RuleLink).init(alloc),
             selected: List(usize).init(alloc),
-            ancestors: List(u64).init(alloc),
+            ancestors: List([4]u64).init(alloc),
             rules: 0,
             ready: false,
         }
@@ -135,7 +134,7 @@ pub struct RuleIndex {
             }
         }
         for cx in sheet.complexes.items() {
-            try self.ancestors.append(ancestorKey(sheet, cx))
+            try self.ancestors.append(ancestorKeys(sheet, cx))
         }
         self.rules = sheet.rules.len()
         self.ready = true
@@ -215,7 +214,9 @@ pub struct RuleIndex {
     // in `candidates`.
     pub fn pseudoCandidates(self: *mut Self, sheet: *Sheet, doc: *Document, el: NodeId) AllocError![]usize {
         try self.build(sheet)
-        return try self.collect(&self.pseudo, doc, el)
+        let found = try self.collect(&self.pseudo, doc, el)
+        sort.sort(usize, self.selected.items(), ruleBefore)
+        return found
     }
 
     fn collect(self: *mut Self, from: *Buckets, doc: *Document, el: NodeId) AllocError![]usize {
@@ -251,7 +252,6 @@ pub struct RuleIndex {
             }
         }
         if from.tags.len() == 0 {
-            sort.sort(usize, self.selected.items(), ruleBefore)
             return self.selected.items()
         }
         let tag = doc.node(el).name
@@ -273,7 +273,6 @@ pub struct RuleIndex {
         } else {
             try self.bucket(from.tags.get(tag))
         }
-        sort.sort(usize, self.selected.items(), ruleBefore)
         return self.selected.items()
     }
 }
