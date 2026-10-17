@@ -339,6 +339,8 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             return g
         }
     }
+    holdSheetKey(s, true)
+    defer holdSheetKey(s, false)
     try takeSheetChanges(s)
     version = layoutVersion(p)
     let began = perf.start()
@@ -635,7 +637,7 @@ fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
                     if g.sheets_seen == s.style_version {
                         return st
                     }
-                    if p.sheet_key == sheetSourceKey(&p.doc) {
+                    if p.sheet_key == scriptSheetKey(s) {
                         g.sheets_seen = s.style_version
                         return st
                     }
@@ -963,6 +965,13 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     let doc = &s.page.doc
     let t = g.tree
     if g.floats || (g.styles.queried && !g.shared) || t.boxes.len() > 2 * g.built + 1024 {
+        if g.floats {
+            noteFullLayout(s, "relayout:floats")
+        } else if g.styles.queried && !g.shared {
+            noteFullLayout(s, "relayout:queried")
+        } else {
+            noteFullLayout(s, "relayout:dropped")
+        }
         return false
     }
     // The page's images, made since the tree was laid out (a bitmap that
@@ -982,6 +991,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
         var found: ?usize = null
         while cur |c| {
             if doc.node(c).kind != dom.Kind.Element {
+                noteFullLayout(s, "relayout:not_element")
                 return false
             }
             // Its box when it has one (not several) that can be built
@@ -997,6 +1007,9 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
             }
             cur = doc.parent(c)
         }
+        if found == null {
+            noteFullLayout(s, "relayout:no_box")
+        }
         let b = found orelse return false
         var known = false
         for r in roots.items() {
@@ -1010,6 +1023,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
         }
     }
     if !clearOfShadows(doc, root_nodes.items()) {
+        noteFullLayout(s, "relayout:shadows")
         return false
     }
     // Only the outermost: the others are built again with them.
@@ -1035,6 +1049,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     let built = t.boxes.len()
     for r in outer.items() {
         if !(try layout.rebuild(t, r, &mut forgotten)) {
+            noteFullLayout(s, "relayout:rebuild")
             return false
         }
     }
@@ -1063,6 +1078,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     }
     for r in outer.items() {
         if !(try layout.relayout(t, r)) {
+            noteFullLayout(s, "relayout:relayout")
             return false
         }
     }
