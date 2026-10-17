@@ -272,7 +272,7 @@ card names its V8 files (`browser/js/BYTECODE.md` section 7).
 | F11 | P4.73 | inline caches | F10 | done |
 | F11b | P4.73b | the inline caches pay for themselves | F11 | done |
 | F12 | P4.74 | prototype shapes and the prototype epoch | F11 | done |
-| F13 | P4.75 | the VM on by default | F12 | done except P4.75d (recapture of 10 archives) |
+| F13 | P4.75 | the VM on by default | F12 | done 2026-10-18 (P4.75d) |
 | F14 | P4.77 | register optimizer and fused instructions | F13 | open |
 | F15 | P4.78 | remove the tree walker's execution paths | F13 on `main` with no fallback | open |
 
@@ -908,6 +908,7 @@ Common to these cards:
 - files: none tracked (the archives are local); `browser/tools/sites.json` if an expectation moved
 - verify: `python3 browser/tools/page_load.py check` exit 0
 - model: sonnet
+- status: done 2026-10-18. All 10 recaptured live (`capture --site`, one at a time, headless; old archives kept in `target/sites-old-20261017/<site>` of the main checkout): wikipedia-en, bbc, go-docs, google, wikipedia, zol, youtube, youtube-search, react, mistral. No capture crashed. `check` exit 0 and `check --agent` exit 0 with the VM on (22 sites; reddit and stackoverflow stay excluded). Two fixes. (1) bbc missed `securepubads.g.doubleclick.net/gampad/ads?pvsid=...` on every replay: gpt.js takes `pvsid` from `crypto.getRandomValues` (`ak.randomFill`), which the benchmark prelude did not seed, so the URL differed between capture and replay; `benchmark.aye` now fills it from its own LCG (a separate seed, so Math.random's sequence and the other archives are unchanged); bbc was captured again with that binary. (2) zol's live page now has `<base target="_blank"/>`, so the click on 新闻 opens another tab and the page stays on `https://www.zol.com.cn/`; `agent_tasks/zol.jsonl` expects `it opens in another tab: https://news.zol.com.cn/` and that url. bbc's capture logs one `DataCloneError: [object Object] could not be cloned` (a promise in an ad script, not found yet; the same with the VM off): `sites.json` `max_errors` 0 to 1. `DWELLER_JS_VM=0 check`: bbc (about 20 analytics beacons: scorecardresearch, chartbeat, dotmetrics, cxense, `a1.api.bbc.com/event`) and react (2 google-analytics `g/collect`) miss because the tree walker's virtual-clock ticks differ from the VM's, so those requests are timed differently; the other 20 pass. The tree walker is to be deleted (P4.78), so no archive is captured with it. `check_taste.py`, `check_layers.py` pass.
 
 #### P4.75c: the last fallback reasons on the js suite
 - goal: `DWELLER_JS_VM_STATS=1` prints no reason on `browser/tests/js/` (the exit condition of P4.78).
