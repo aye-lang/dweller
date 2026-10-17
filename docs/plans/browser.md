@@ -122,7 +122,7 @@ the one place with more than one process.
   8 of 20. Archives stay in each checkout's `target/sites/` (untracked).
 - **Conformance (P10).** Not measured: `wpt.py`, `test262.py` and
   `conformance.py` do not exist yet (P10.1–P10.4 not started).
-- **P9.** P9.1–P9.8 done; P9.9 next.
+- **P9.** P9.1–P9.9 done.
 - **P11.** P11.1–P11.5 and P11.16 done; P11.17's API done (its
   `wasm_sim_bench` and the wasm-bindgen glue check wait for P11.24's
   copy of the game); P11.6 next.
@@ -140,7 +140,7 @@ the one place with more than one process.
 | – | P8 | Dweller in its own repo | CI green on macOS and Ubuntu | P8.2 done 2026-10-15; P8.3 (removal from the Aye repo, downstream check) is the Aye repo's card |
 | – | P7 | tests green while the language changes | M1, M3 after every `AYE_REV` bump | ongoing; M1 broken by the P4.80 flake |
 | 0 | P4 | the window responds and paints early | W7, W8, the CI perf gate (P4.40) green | 17 of 26 window cards done (list above); P4.80, P4.42, P4.37, P4.46 next; the VM cards P4.63–P4.78 run as their own lane |
-| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_agents`, `window_spaces*`, `agent_sessions` | P9.1–P9.8 done, P9.9 next |
+| 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_spaces*`, `agent_sessions` | P9.1–P9.9 done |
 | 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | P11.1–P11.5, P11.16 done, P11.17 partial; P11.6 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | harness P10.1–P10.4 not started; P10.20–P10.22 (login) done |
 | 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 8 of 20; P3.80 (the user bundle) is the acceptance |
@@ -249,7 +249,7 @@ Exit: R1–R7 of B9; Spaces by default.
 | E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | done 2026-10-17 | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
 | E2 | P9.6 | take over and hand back | E1 | done 2026-10-17 | – |
 | E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | done | – |
-| E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
+| E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | done 2026-10-17 | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
 
 ### Phase F: the JS bytecode VM (lane vm, parallel track)
 
@@ -1182,6 +1182,7 @@ in order.
 - files: `browser/ui/agents.aye`, `browser/ui/window.aye`, `docs/agent-protocol.md`, `docs/browser.md` (B7, B9 status), `tests/browser.rs`
 - verify: `cargo test --release --test browser window_ > target/p9.9.log 2>&1; echo $?` → 0
 - time box: 90 min; model: sonnet
+- status: done 2026-10-17. `--spaces` is kept as a flag that does nothing (`window.aye` parses it; tests and scripts that pass it still work); a window with a socket sets up Spaces unless it is a Space itself (`setUpSpaces`, `spaces.aye`), so the window never serves an agent request; the "runs without --spaces" refusal of `space_close` went. At most 8 Spaces (a ninth connection gets "too many agents are connected"). The Space runs the same request code on its own tabs, so `serveLines` stays; what went is the window serving it. MCP instructions (`SHARED_INSTRUCTIONS`) and `docs/agent-protocol.md` describe Spaces. Fixtures: `tests/agent/window/` is gone; `frames`, `handshake.mcp`, `isolation` and `pause` had copies in `spaces/`, so the window ones were deleted with `shared` (the person and the agent in one tab list, only the removed path) and `window_agents`; `popup` moved to `spaces/` (its tab ids are the Space's 2 and 3). `window_spaces_responsive` no longer measures the window without Spaces. New `window_spaces_parallel`.
 
 
 ## Parallel track: P11 WebGL and the APIs games need
