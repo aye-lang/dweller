@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+let ANIMATION_DEFAULTS = [8][]u8{"none", "0s", "ease", "0s", "1", "normal", "none", "running"}
+
+// spec: https://drafts.csswg.org/css-animations-1/#animation
+fn addAnimation(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let alloc = d.sheet.arena.allocator()
+    var outs = [8]text.Builder{text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc), text.Builder.init(alloc)}
+    let props = [8]usize{ANIMATION_NAME, ANIMATION_DURATION, ANIMATION_TIMING_FUNCTION, ANIMATION_DELAY, ANIMATION_ITERATION_COUNT, ANIMATION_DIRECTION, ANIMATION_FILL_MODE, ANIMATION_PLAY_STATE}
+    var start: usize = 0
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    for i in 0..comps.len + 1 {
+        if i < comps.len && !isComma(comps[i]) {
+            continue
+        }
+
+        if !(try writeSingleAnimation(comps[start..i], start > 0, outs[..])) {
+            return
+        }
+
+        start = i + 1
+    }
+
+    for k in 0..8 {
+        try d.add(ANIMATION_NAME + k, Value.Keyword { k: outs[k].bytes() })
+    }
+}

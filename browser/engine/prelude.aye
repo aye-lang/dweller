@@ -1398,7 +1398,7 @@ pub let PRELUDE =
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
-    \\function styleOf(el, n) { const v = ak.computedStyle(el, n); watchTransitions(); return v; }
+    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return v; }
     \\for (const n of CSS_NAMES) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
@@ -1409,6 +1409,7 @@ pub let PRELUDE =
     \\getter(ComputedStyle.prototype, 'outline', function () { return ak.computedStyle(this._el, 'outline'); });
     \\for (const n of ['border-spacing', 'borderSpacing']) getter(ComputedStyle.prototype, n, function () { return ak.computedStyle(this._el, 'border-spacing'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
+    \\getter(ComputedStyle.prototype, 'animation', function () { return styleOf(this._el, 'animation'); });
     \\for (const n of ['text-decoration', 'textDecoration']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'text-decoration'); });
     \\for (const n of ['flex', 'flex-flow', 'flexFlow']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('F', '-f')); });
     \\Object.setPrototypeOf(ComputedStyle.prototype, CSSStyleDeclaration.prototype);
@@ -4553,9 +4554,9 @@ pub let PRELUDE =
     \\// active interval, a fill (`forwards`, `backwards`, `both`) applies the
     \\// keyframe the effect stops on, written into the element's inline style;
     \\// cancelling restores the inline values from before (a value a script
-    \\// set meanwhile on the same property is lost then). CSS animations and
-    \\// transitions make no Animation objects, so getAnimations() lists only
-    \\// those of scripts.
+    \\// set meanwhile on the same property is lost then). Transitions make no
+    \\// Animation objects, so getAnimations() lists only those of scripts and
+    \\// CSS animations (css-animations.js).
     \\const EPS = 1e-6;
     \\const animationsAll = [];
     \\let animationSeq = 0;
@@ -5077,13 +5078,18 @@ pub let PRELUDE =
     \\});
     \\hidden(ElementP, 'getAnimations', function getAnimations(options) {
     \\  const subtree = !!(options && options.subtree);
+    \\  for (const el of [this].concat(subtree ? Array.from(this.querySelectorAll('*')) : [])) cssAnimations.sync(el);
     \\  return animationsWhere(t => t === this || (subtree && t instanceof Node && this.contains(t)));
     \\});
     \\hidden(Document.prototype, 'getAnimations', function getAnimations() {
+    \\  for (const el of this.querySelectorAll('*')) cssAnimations.sync(el);
     \\  return animationsWhere(t => t instanceof Node && t.isConnected && t.ownerDocument === this);
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
     \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\const cssAnimations = G.__cssAnimations(ak, Animation, KeyframeEffect, documentTimeline, hidden);
+    \\delete G.__cssAnimations;
+    \\hidden(G, 'CSSAnimation', cssAnimations.CSSAnimation);
     \\delete G.__animationValues;
     \\
     \\// The members of some kinds of elements, defined on HTMLElement above,

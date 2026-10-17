@@ -28,9 +28,9 @@ function underlying(el, name) {
 }
 
 // spec: https://drafts.csswg.org/web-animations-1/#the-effect-value-of-a-keyframe-animation-effect
-function valueAt(el, name, frames, progress) {
-  if (frames[0].offset !== 0) frames.unshift({ offset: 0, easing: 'linear', value: null });
-  if (frames[frames.length - 1].offset !== 1) frames.push({ offset: 1, easing: 'linear', value: null });
+function valueAt(el, name, frames, progress, easing) {
+  if (frames[0].offset !== 0) frames.unshift({ offset: 0, easing, value: null });
+  if (frames[frames.length - 1].offset !== 1) frames.push({ offset: 1, easing, value: null });
 
   let i = 0;
 
@@ -71,7 +71,7 @@ hidden(KeyframeEffect.prototype, '_valuesAt', function (progress) {
 
   const out = {};
 
-  for (const [name, frames] of byName) out[name] = valueAt(el, name, frames, progress);
+  for (const [name, frames] of byName) out[name] = valueAt(el, name, frames, progress, this._implicitEasing || 'linear');
 
   return out;
 });

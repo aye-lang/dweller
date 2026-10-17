@@ -1,0 +1,40 @@
+import std.mem.AllocError
+import std.text
+
+let ANIMATION_ORDER = [8]usize{1, 2, 3, 4, 5, 6, 7, 0}
+
+// spec: https://drafts.csswg.org/css-animations-1/#animation
+pub fn writeAnimation(values: []Value, out: *mut text.Builder) AllocError!void {
+    let n = listLength(keywordOf(values[ANIMATION_NAME]))
+
+    for i in 0..n {
+        if i > 0 {
+            try out.append(", ")
+        }
+
+        let start = out.len()
+
+        for k in ANIMATION_ORDER {
+            let part = animationPart(values, k, i)
+            let wanted = !text.eql(part, ANIMATION_DEFAULTS[k]) || (k == 1 && !text.eql(animationPart(values, 3, i), "0s"))
+
+            if wanted && out.len() > start {
+                try out.appendByte(' ')
+            }
+
+            if wanted {
+                try out.append(part)
+            }
+        }
+
+        if out.len() == start {
+            try out.append("none")
+        }
+    }
+}
+
+fn animationPart(values: []Value, k: usize, i: usize) []u8 {
+    let list = keywordOf(values[ANIMATION_NAME + k])
+
+    return listItem(list, i % listLength(list))
+}
