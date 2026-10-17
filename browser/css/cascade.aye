@@ -603,7 +603,8 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
 /// has the styles of the whole document from before the changes under
 /// them: the ancestors of each root first (what it inherits, the root
 /// element's font size), as `computeStylesOf` does, unless the root
-/// before had the same parent. For a document without shadow trees.
+/// before had the same parent or no ancestor is a root (`inheritChain`
+/// reads their values). For a document without shadow trees.
 /// `keep`: the old values stay as they are (a layout still points at
 /// them), else they are written over when no element holds them any
 /// more. Sets `Styles.moved`. Returns how many elements it styled.
@@ -666,6 +667,11 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     var last_parent: ?NodeId = null
     var pending = List(Pending).init(out.alloc)
     defer pending.deinit()
+    var root_set = IntMap(u32, bool).init(out.alloc)
+    defer root_set.deinit()
+    for r in roots {
+        try root_set.put(r.index, true)
+    }
     for ri, r in roots {
         let parent = styleParent(doc, r)
         // The custom properties the root inherited (styling the parent
@@ -683,12 +689,14 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 try chain.append(h)
                 up = styleParent(doc, h)
             }
-            var i = chain.len()
-            while i > 0 {
-                i -= 1
-                try styleElement(&mut c, ua, author, &mut hints, chain.items()[i])
+            if !(try inheritChain(&mut c, chain.items(), &root_set)) {
+                var i = chain.len()
+                while i > 0 {
+                    i -= 1
+                    try styleElement(&mut c, ua, author, &mut hints, chain.items()[i])
+                }
+                styled += chain.len()
             }
-            styled += chain.len()
         }
         if shallow[ri] {
             // Down from the root while what the elements inherit changes.
@@ -1347,19 +1355,7 @@ struct Computer {
             values[MARGIN_TOP + 1] = Value.Keyword { k: "auto" }
             values[MARGIN_TOP + 3] = Value.Keyword { k: "auto" }
         }
-        let name = self.doc.node(el).name
-        var centers = false
-        if !text.eql(keywordText(values[TEXT_ALIGN]), "center") {
-            centers = false
-        } else if text.eql(name, "center") {
-            centers = true
-        } else if self.doc.attr(el, "align") |a| {
-            let v = text.trim(a)
-            centers = text.eqlIgnoreCase(v, "center") || text.eqlIgnoreCase(v, "middle")
-        } else {
-            centers = parent_centers
-        }
-        if centers {
+        if centers(self.doc, el, values, parent_centers) {
             try self.centered.put(el.index, true)
         }
     }
