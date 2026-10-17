@@ -26,11 +26,7 @@ fn vmVisitClass(c: *mut Compiler, cls: u32) CompileError!void {
 
     for j in 0..ci.n {
         match c.ast.node(c.ast.item(ci.members, j)) {
-            .ClassElem { kind, is_static, key, computed, .. } => {
-                if computed && kind == PROP_FIELD && !is_static {
-                    try c.fail("unsupported: computed field key")
-                }
-
+            .ClassElem { key, computed, .. } => {
                 if computed {
                     try c.visit(key)
                     try c.b.op1(BC_STAR, k as i64)
