@@ -1,0 +1,19 @@
+import css
+import std.mem.AllocError
+
+// blink: core/paint/text_painter.cc
+fn shadowText(b: *mut Builder, sh: css.Shadow, item: Item) AllocError!void {
+    if sh.blur == 0.0 {
+        return b.add(item)
+    }
+
+    var op = identityOp()
+
+    op.kind = 1
+    op.sigma = sh.blur / 2.0
+
+    let g = try b.beginGroup()
+
+    try b.add(item)
+    try b.endGroup(g, 1.0, try b.t.alloc.alloc(op, 1))
+}

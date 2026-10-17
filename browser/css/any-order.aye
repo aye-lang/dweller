@@ -1,0 +1,38 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-values-4/#component-combinators
+fn anyOrder(d: *mut Declarer, comps: []Comp, props: []usize) AllocError!void {
+    if try d.wide(comps, props) {
+        return
+    }
+
+    if comps.len == 0 || comps.len > props.len {
+        return
+    }
+
+    var vals = [3]Value{Value.Initial, Value.Initial, Value.Initial}
+    var seen = [3]bool{false, false, false}
+
+    for c in comps {
+        let one = [1]Comp{c}
+        var found = cssWide(c) != null
+
+        for k in 0..props.len {
+            if !found && !seen[k] {
+                if try parseValue(d.sheet, props[k], one[..]) |v| {
+                    vals[k] = v
+                    seen[k] = true
+                    found = true
+                }
+            }
+        }
+
+        if !found || cssWide(c) != null {
+            return
+        }
+    }
+
+    for k in 0..props.len {
+        try d.add(props[k], vals[k])
+    }
+}

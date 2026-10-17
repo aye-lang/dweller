@@ -321,6 +321,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "outline") {
         first = OUTLINE_COLOR
         n = 3
+    } else if text.eql(name, "text-wrap") {
+        first = TEXT_WRAP_MODE
+        n = 2
     } else if text.eql(name, "transition") {
         first = TRANSITION_PROPERTY
         n = 5
@@ -445,6 +448,10 @@ struct Declarer {
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
         try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
+
+        if prop == WHITE_SPACE {
+            try self.add(TEXT_WRAP_MODE, wrapOfWhiteSpace(v))
+        }
     }
 
     // A declaration parsed at computed-value time (or a custom property).
@@ -497,6 +504,9 @@ struct Declarer {
         }
         if text.eql(name, "outline") {
             return outlineShorthand(self, comps)
+        }
+        if text.eql(name, "text-wrap") {
+            return textWrapShorthand(self, comps)
         }
         if text.eql(name, "list-style") {
             return self.listStyle(comps)
