@@ -1864,9 +1864,10 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             125 => {
                 // v8: src/interpreter/interpreter-generator.cc (SuspendGenerator)
                 let g = objectOf(regs[(base + vmImm(bytes, pc, w)) as usize])
-                pc += w as usize
+                let kind = vmImm(bytes, pc + w as usize, w) as u8
+                pc += 2 * w as usize
                 regs[fp] = acc
-                try vmSuspendGenerator(it, g, fp - code.nparams as usize, (code.nparams + code.nregs) as usize, pc)
+                try vmSuspendGenerator(it, g, fp - code.nparams as usize, (code.nparams + code.nregs) as usize, pc, kind)
                 return acc
             }
             126 => {
@@ -1882,6 +1883,40 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmYieldStarStep(it, at)
+                regs = it.stack.items()
+            }
+            128 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildGetIterator)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                try vmGetAsyncIterator(it, at, acc)
+                regs = it.stack.items()
+            }
+            129 => {
+                // v8: src/interpreter/bytecode-generator.cc (BuildIteratorNext)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                it.setSlot(at + 2, Value.Bool { b: true })
+                acc = try it.call0(it.slot(at + 1), it.slot(at))
+                regs = it.stack.items()
+            }
+            130 => {
+                // v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement)
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmIteratorResult(it, at, acc)
+                regs = it.stack.items()
+            }
+            131 => {
+                // v8: src/interpreter/interpreter-generator.cc (CallRuntime)
+                let id = vmIdx(bytes, pc, w) as u32
+                let at = (base + vmImm(bytes, pc + w as usize, w)) as usize
+                pc += 2 * w as usize
+                regs[fp] = acc
+                acc = try vmModuleRuntime(it, id, at)
                 regs = it.stack.items()
             }
             _ => {

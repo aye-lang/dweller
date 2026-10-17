@@ -1,0 +1,26 @@
+// v8: src/builtins/builtins-async-function-gen.cc (AsyncFunctionEnter)
+
+fn vmCallAsync(it: *mut Interp, func: u32, env: u32, fobj: u32, thisv: Value, argBase: usize, argc: usize) JsError!Value {
+    let fi = it.ast.func(func)
+    var driver = it.roots.items()[it.async_driver]
+
+    if fi.generator {
+        driver = it.roots.items()[it.async_gen_driver]
+    }
+
+    let g = it.invoke(func, env, fobj, thisv, argBase, argc, NONE) catch |e| {
+        if e != JsError.Thrown || fi.generator {
+            return e
+        }
+
+        return vmAsyncRejected(it)
+    }
+
+    try it.push(g)
+
+    let r = try it.call1(driver, Value.Undefined, g)
+
+    it.pop()
+
+    return r
+}

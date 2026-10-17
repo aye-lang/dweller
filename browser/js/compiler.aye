@@ -111,7 +111,7 @@ struct Compiler {
                 }
                 return self.b.param(v.index)
             }
-            if v.loc == LOC_CONTEXT {
+            if v.loc == LOC_CONTEXT || v.loc == LOC_MODULE {
                 return VM_CONTEXT
             }
             try self.fail("unsupported: context variable")
@@ -513,6 +513,18 @@ struct Compiler {
             .Yield { arg, delegate } => {
                 try vmVisitYield(self, id, arg, delegate)
             }
+            .Await { arg } => {
+                try vmVisitAwait(self, id, arg)
+            }
+            .ModuleLocals { .. } => {
+                try vmVisitModuleRuntime(self, id, 0, 0)
+            }
+            .ImportMeta { .. } => {
+                try vmVisitModuleRuntime(self, id, 0, 0)
+            }
+            .ImportCall { arg, options, .. } => {
+                try vmVisitModuleRuntime(self, id, arg, options)
+            }
             _ => {
                 try self.fail(vmNodeReason(self.ast.node(id)))
             }
@@ -911,9 +923,6 @@ struct Compiler {
                 }
             }
             .VarDecl { kind, list, n } => {
-                if kind != DECL_VAR && kind != DECL_LET && kind != DECL_CONST {
-                    try self.fail("unsupported: import")
-                }
                 try self.visitDecl(kind, list, n)
             }
             .Return { arg } => {
@@ -965,11 +974,8 @@ struct Compiler {
                 try self.visitFor(init, cond, update, body, scope)
             }
             .ForIn { left, right, body, scope, of, wait } => {
-                if wait {
-                    try self.fail("unsupported: for await")
-                }
                 if of {
-                    try vmVisitForOf(self, left, right, body, scope)
+                    try vmVisitForOf(self, left, right, body, scope, wait)
                 } else {
                     try vmVisitForIn(self, left, right, body, scope)
                 }
@@ -1110,9 +1116,6 @@ struct Compiler {
 
     fn visitFunction(self: *mut Self) CompileError!void {
         let fi = self.ast.func(self.func)
-        if fi.is_async {
-            try self.fail("unsupported: async function")
-        }
         for k in 0..fi.nparams {
             match self.ast.node(self.ast.item(fi.params, k)) {
                 .Ident { .. } => {}
@@ -1154,21 +1157,21 @@ struct Compiler {
         if fi.this_slot != NONE {
             self.this_reg = self.b.newReg()
         }
-        if fi.generator {
+        if fi.generator || fi.is_async {
             self.gen_reg = self.b.newReg()
         }
         for _ in 0..self.b.topReg {
             try self.tdz.append(false)
         }
         try self.scopes.append(fi.scope)
-        if fi.generator {
+        if fi.generator || fi.is_async {
             try self.b.op1(BC_SWITCH_ON_GENERATOR_STATE, self.gen_reg as i64)
         }
         try vmFunctionContext(self, fi)
         try vmSelfBinding(self, fi)
         try self.visitParams(fi)
         try vmHoist(self, fi.scope)
-        if fi.generator {
+        if fi.generator || fi.is_async {
             try vmGeneratorPrologue(self)
         }
         if fi.default_ctor {

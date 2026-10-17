@@ -1,0 +1,37 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-text-3/#spacing
+pub fn spacingOf(f: Font, s: []u8) f64 {
+    if f.letter_spacing == 0.0 && f.word_spacing == 0.0 {
+        return 0.0
+    }
+
+    var total = 0.0
+    var prev: u32 = 0
+    var i: usize = 0
+
+    while i < s.len {
+        let d = text.decode(s[i..])
+
+        if columns(d.code) > 0 && !ignorable(d.code) && !isCursive(d.code) && !joinsCluster(prev, d.code) {
+            total += f.letter_spacing
+        }
+
+        if isWordSeparator(d.code) {
+            total += f.word_spacing
+        }
+
+        prev = d.code
+        i += d.len
+    }
+
+    return total
+}
+
+fn isWordSeparator(c: u32) bool {
+    return c == 0x20 || c == 0xA0 || c == 0x1361 || c == 0x10100 || c == 0x10101 || c == 0x1039F || c == 0x1091F
+}
+
+fn isCursive(c: u32) bool {
+    return (c >= 0x600 && c <= 0x8FF) || (c >= 0x1800 && c <= 0x18AF) || (c >= 0xFB50 && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFC)
+}

@@ -640,6 +640,11 @@ pub struct System {
         if cur != NO_FACE {
             try self.runs.append(Run { start: start, end: s.len, face: cur })
         }
+        var first: usize = 0
+        if out |list| {
+            first = list.len()
+        }
+
         var pen = 0.0
         let n = self.runs.len()
         for k in 0..n {
@@ -649,7 +654,12 @@ pub struct System {
             }
             pen = try self.shapeRun(f, s, r, pen, out)
         }
-        return pen
+
+        if out |list| {
+            spaceGlyphs(f, s, list.items()[first..])
+        }
+
+        return pen + spacingOf(f, s)
     }
 
     // Shapes the run `r` of `s` starting at `pen` px; returns the pen
@@ -666,7 +676,7 @@ pub struct System {
             if self.hb_buffer |buf| {
                 if self.faces.items()[fi].data.len > 0 || needsShaping(s[r.start..r.end]) {
                     if self.hbFontAt(fi) |font| {
-                        let n = hbShape(font, buf, s, r.start, r.end, f.rtl)
+                        let n = hbShape(font, buf, s, r.start, r.end, f.rtl, f.letter_spacing == 0.0)
                         for k in 0..n {
                             let g = hbGlyphAt(buf, k)
                             if out |list| {
@@ -703,7 +713,7 @@ pub struct System {
             let glyph = FT_Get_Char_Index(ft, code as u64)
             var units: i64 = 0
             var adv: i64 = 0
-            if FT_Get_Advance(ft, glyph, FT_LOAD_NO_SCALE, &mut adv) == 0 {
+            if FT_Get_Advance(ft, glyph, FT_LOAD_NO_SCALE, &mut adv) == 0 && !ignorable(code) {
                 units = adv
             }
             var kern: i64 = 0
@@ -779,7 +789,7 @@ pub struct System {
     // `span` with a glyph for it, else the system face `slot`, else the
     // first fallback face with one, else `slot` (its missing glyph).
     fn pick(self: *mut Self, span: Span, slot: u32, code: u32) AllocError!u32 {
-        if code < 0x21 {
+        if code < 0x20 {
             return slot
         }
         for k in 0..span.len {
