@@ -1,0 +1,26 @@
+import css
+import css.Value
+import std.text
+
+struct Edge {
+    kind: []u8
+    width: f64
+    color: Value
+    prio: u8
+}
+
+fn edgeOf(style: []Value, side: usize, prio: u8) Edge {
+    let color = match style[css.BORDER_TOP_COLOR + side] {
+        .CurrentColor => style[css.COLOR]
+        _ => style[css.BORDER_TOP_COLOR + side]
+    }
+
+    let kind = keywordOf(style[css.BORDER_TOP_STYLE + side])
+    var width = lengthOr0(style[css.BORDER_TOP_WIDTH + side], -1.0)
+
+    if text.eql(kind, "none") || text.eql(kind, "hidden") {
+        width = 0.0
+    }
+
+    return Edge { kind: kind, width: width, color: color, prio: prio }
+}

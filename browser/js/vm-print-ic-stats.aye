@@ -1,7 +1,7 @@
 import std.mem.AllocError
 import std.text
 
-fn vmPrintIcStats(st: *mut VmState, b: *mut text.Builder) AllocError!void {
+fn vmPrintIcStats(it: *Interp, st: *mut VmState, b: *mut text.Builder) AllocError!void {
     var states = [4]u64{0, 0, 0, 0}
     var kinds = [5]u64{0, 0, 0, 0, 0}
 
@@ -28,5 +28,9 @@ fn vmPrintIcStats(st: *mut VmState, b: *mut text.Builder) AllocError!void {
     try b.appendUint(kinds[KIND_ARGUMENTS as usize])
     try b.append(" arguments, ")
     try b.appendUint(kinds[KIND_GENERIC as usize])
-    try b.append(" generic\n")
+    try b.append(" generic; proto epoch ")
+    try b.appendUint(it.heap.proto_epoch as u64)
+    try b.append(", ")
+    try b.appendUint(it.heap.load_epoch as u64)
+    try b.append(" at load\n")
 }

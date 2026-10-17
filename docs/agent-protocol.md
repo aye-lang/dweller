@@ -336,10 +336,11 @@ message"` for an exception of the code itself (a syntax error too).
 than its ms"` once `ms` has passed (checked between calls, and in the
 realm's own code by processor time). In a window or a Space the calls
 are refused like the commands they send (`"paused by user"` while the
-person pauses the Space, the person's tab), and between calls a Space
-reads its control connection, so a pause takes effect at the next call;
-after `stop` the run ends at the next call and is not answered (the
-connection closes after `stopped`). `wait` inside a run waits on the
+person pauses the Space, the person's tab), and between calls and
+while the run's own code runs a Space reads its control connection, so
+a pause takes effect at the next call; after `stop` the run ends at
+once and is not answered (the connection closes after `stopped`, also
+when the code was busy longer than a stopped Space may live). `wait` inside a run waits on the
 tab's page clock, as in `dweller agent`, also in a window.
 
 ```
