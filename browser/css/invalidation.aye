@@ -47,6 +47,7 @@ let ALWAYS_DEEP = "lang dir disabled checked selected value type name form requi
 
 pub let CHILDREN_CHANGED = StyleChange { what: 0, token: false }
 pub let STATE_CHANGED = StyleChange { what: 1, token: false }
+pub let RULES_CHANGED = StyleChange { what: 2, token: false }
 
 /// A change to the attribute `name`.
 pub fn attrChange(name: []u8) StyleChange {
@@ -244,7 +245,7 @@ pub struct RestyleDeps {
     /// at? It changes only the styles of its element and of what inherits
     /// from it, even when `whole` is set.
     pub fn onlyOwnStyle(self: *Self, change: StyleChange) bool {
-        return !self.style_attr && !change.token && change.what == attrChange("style").what
+        return change.what == RULES_CHANGED.what || (!self.style_attr && !change.token && change.what == attrChange("style").what)
     }
 
     /// Can `change` at an element change the styles of elements other

@@ -1,0 +1,38 @@
+import css
+import std.mem.AllocError
+
+fn takeSheetChanges(s: *mut Script) AllocError!void {
+    let g = s.geom orelse return
+    let p = s.page
+
+    if s.restyle_all || g.width != s.width || g.height != s.height || (g.deps.whole && !wholeUnseen(s, g)) { return }
+
+    if g.shared {
+        let st = p.styling orelse return
+
+        if g.styling != st || g.sheets_seen == s.style_version || st.media.width != s.width || st.media.height != s.height { return }
+
+        let key = sheetSourceKey(&p.doc)
+
+        if key != p.sheet_key && !(try swapSheets(s, g, st)) { return }
+
+        p.sheet_key = key
+        g.sheets_seen = s.style_version
+
+        return
+    }
+
+    let c = s.computed orelse return
+
+    if g.styling != c || c.version == s.style_version { return }
+
+    let key = sheetSourceKey(&p.doc)
+
+    if key == s.computed_sheets || !(try swapSheets(s, g, c)) { return }
+
+    s.computed_sheets = key
+    g.sheets = key
+    c.styles.deinit()
+    c.styles = try css.Styles.init(s.alloc)
+    c.version = s.style_version
+}

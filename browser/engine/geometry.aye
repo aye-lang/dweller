@@ -323,13 +323,15 @@ fn noteLayoutChangeAnywhere(s: *mut Script) {
 // offset: the last one when nothing changed since, else a new one.
 fn geometry(s: *mut Script) AllocError!*mut Geometry {
     let p = s.page
-    let version = layoutVersion(p)
+    var version = layoutVersion(p)
     if s.geom |g| {
         if g.version == version && g.width == s.width && g.height == s.height {
             followScroll(s, g)
             return g
         }
     }
+    try takeSheetChanges(s)
+    version = layoutVersion(p)
     let began = perf.start()
     defer perf.end("script_layout", began, p.url.href)
     let st = try layoutStyling(s)
@@ -742,7 +744,7 @@ fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(Nod
                 el = doc.parent(el) orelse return false
             }
             try dirty.append(el)
-        } else if c.what.token || c.what.what == style {
+        } else if c.what.token || c.what.what == style || c.what.what == css.RULES_CHANGED.what {
             if showsAttr(g, c.at, 1) || showsAttr(g, c.at, 2) {
                 try dirty.append(c.at)
             }
