@@ -1,0 +1,15 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+pub fn elementAtPoint(p: *mut Page, x: f64, y: f64) AllocError!?NodeId {
+    let s = p.script orelse return null
+    let g = try geometry(s)
+    let hit = nodeAt(g.tree, x + s.scroll_x, y + s.scroll_y) orelse p.doc.documentElement() orelse return null
+
+    if p.doc.node(hit).kind != dom.Kind.Element {
+        return p.doc.parent(hit)
+    }
+
+    return hit
+}

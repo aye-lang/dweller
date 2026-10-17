@@ -228,7 +228,7 @@ exits 0, the weekly job runs.
 | C3 | P10.2 | reftest and crashtest runner, Ahem font, fuzzy matching | C1 | done | `third_party/blink/tools/blinkpy/web_tests/port/` (reftest pixel comparison, `fuzzy`) |
 | C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
 | C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | done | – |
-| C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | open | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
+| C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | done | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
 
 ### Phase D: login readiness and the user bundle (lane login)
 
@@ -1654,6 +1654,7 @@ its area.
 - verify: `python3 browser/tools/wpt.py run uievents html/semantics/forms -j 8 > target/wpt-input.log 2>&1; tail -3 target/wpt-input.log`; `python3 browser/tools/conformance.py check; echo $?` → 0
 - depends on: P10.4
 - time box: 90 min; model: opus
+- status: done 2026-10-17. `browser/tools/wpt/testdriver-vendor.js` (served for `resources/testdriver-vendor.js` and `tools/wpt/testdriver-vendor.js`) sets `in_automation` and implements `click` (`click:X,Y release:X,Y` at the element centre), `send_keys` (focus, then `key:` / `text:` / `keyup:` per character; WebDriver keys Backspace, Tab, Enter, Escape, arrows, Home, End, Delete) and `action_sequence` (pointer sources: `pointerMove` with viewport, element or pointer origin → `move:`, `pointerDown` → `click:`, `pointerUp` → `release:`; key sources: `keyDown`/`keyUp`). It logs `DWELLER_EVENTS <words>` and returns a promise; `dweller wpt` (`engine.runUntilReport`, replacing `runUntilConsole` in `main.aye`) drops that console line, feeds the words (`engine/feed-words.aye`: pointer events at the hit element, `click` and its default action through `engine.activate`, submit events; keydown/keyup at the focus, Tab moves the focus, Backspace and text edit a text field, Enter submits implicitly) and calls `__dwellerEventsDone()`. The words are the `--events` vocabulary of `ui/script.aye`, applied by the engine without a window (no SDL), so `ui/script.aye` is unchanged. There were no excludes to lift: `uievents` is a new area of `wpt_areas.json` (threshold 0 until it has a target); forms had none. Fixture `browser/tests/wpt/testdriver.html` (with WPT `resources/testdriver.js` at e58225ab), test `wpt_testdriver`; `wpt_py_serve` counts it. Scores (`wpt.py run uievents html/semantics/forms -j 4`): uievents 12/166 (7.2%) → 25/178 (14.0%), html/semantics/forms 1888/5335 (35.4%) → 1912/5337 (35.8%); no file lost a subtest. `conformance.py check` → 0; `cargo test --release --test browser -- wpt_` → 0 (4 passed). Left: `test_driver.Actions` pauses and wheel/touch/pen sources, modifier state across keys, the press target of a click (click goes to the release element), `pointerover`/`enter` and `mouseover`, `dblclick`, real form submission and navigation after an activation, `.sub.`/`--upstream` testdriver tests (upstream's served vendor file is the empty stub).
 
 #### P10.35: encoding
 
