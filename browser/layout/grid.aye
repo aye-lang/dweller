@@ -344,11 +344,7 @@ fn lineRef(v: Value, areas: []GridArea, count: usize, column: bool, end: bool) L
             return LineRef { kind: 1, n: math.min((n - 1) as f64, 1000.0) as i64 }
         }
         if n < 0 {
-            let idx = count as i64 + 1 + n
-            if idx < 0 {
-                return LineRef { kind: 1, n: 0 }
-            }
-            return LineRef { kind: 1, n: idx }
+            return LineRef { kind: 1, n: count as i64 + 1 + n }
         }
         return none
     } else |e| {}
@@ -380,7 +376,9 @@ fn lineRef(v: Value, areas: []GridArea, count: usize, column: bool, end: bool) L
 
 // From the start and end of a placement: the start line (or -1 for
 // auto) and the span.
-fn resolveLines(a: LineRef, b: LineRef) [2]i64 {
+fn resolveLines(start_ref: LineRef, end_ref: LineRef) [2]i64 {
+    let a = inImplicitGrid(start_ref)
+    let b = inImplicitGrid(end_ref)
     if a.kind == 1 {
         if b.kind == 1 {
             if b.n > a.n {
@@ -461,6 +459,7 @@ struct Grid {
     rows: List(Track)
     items: List(GridItem)
     nrows: usize
+    explicit_cols: usize = 0
 
     fn deinit(self: *mut Self) {
         self.cols.deinit()
@@ -511,6 +510,7 @@ fn buildGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!Grid {
     }
     // Placement.
     var ncols = g.cols.len()
+    g.explicit_cols = ncols
     let nrows_explicit = g.rows.len()
     var placed = List(bool).init(t.backing)
     defer placed.deinit()
@@ -977,6 +977,8 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         let pb = t.bx(it.box)
         pb.y = ys.items()[it.row] + pb.margin[0] + dy
     }
+    try recordGridLines(t, i, &g, xs.items(), ws, ys.items(), hs.items())
+
     // Absolutely positioned children: their static position.
     for c in t.children(i) {
         if t.bx(c).abs != 0 {
