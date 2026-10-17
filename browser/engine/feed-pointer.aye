@@ -1,0 +1,44 @@
+import std.mem.AllocError
+import std.text
+
+var pressed: bool = false
+
+// spec: https://w3c.github.io/uievents/#events-mouseevent-event-order
+pub fn feedPointer(p: *mut Page, word: []u8, x: f64, y: f64) AllocError!void {
+    let el = try elementAtPoint(p, x, y) orelse return
+    let down = text.startsWith(word, "click:")
+    let up = text.startsWith(word, "release:")
+
+    pressed = (pressed || down) && !up
+
+    var detail: []u8 = "0\n0\n0"
+    var kind: []u8 = "move"
+
+    if pressed {
+        detail = "0\n1\n0"
+    }
+
+    if down {
+        kind = "down"
+    } else if up {
+        kind = "up"
+    }
+
+    var pointer = text.Builder.init(p.alloc)
+    defer pointer.deinit()
+    try pointer.append("pointer")
+    try pointer.append(kind)
+
+    var mouse = text.Builder.init(p.alloc)
+    defer mouse.deinit()
+    try mouse.append("mouse")
+    try mouse.append(kind)
+
+    if try dispatchPointer(p, el, pointer.bytes(), detail, x, y, 0.0, 0.0) {
+        _ = try dispatchPointer(p, el, mouse.bytes(), detail, x, y, 0.0, 0.0)
+    }
+
+    if up && try dispatchPointer(p, el, "click", detail, x, y, 0.0, 0.0) {
+        try runActivation(p, try activate(p, el))
+    }
+}

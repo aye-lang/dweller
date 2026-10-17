@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+let REPORT_PREFIX = "WPT "
+let EVENTS_PREFIX = "EVENTS "
+
+pub fn runUntilReport(p: *mut Page, max_ms: f64, out: *mut text.Builder) AllocError!bool {
+    var line = text.Builder.init(p.alloc)
+    defer line.deinit()
+
+    while try runUntilConsole(p, max_ms, "DWELLER_", &mut line) {
+        if !text.startsWith(line.bytes(), EVENTS_PREFIX) {
+            try out.append(line.bytes()[REPORT_PREFIX.len..])
+
+            return true
+        }
+
+        dropConsole(p, "DWELLER_EVENTS ")
+        try feedWords(p, line.bytes()[EVENTS_PREFIX.len..])
+        line.clear()
+        _ = try evalInPage(p, "__dwellerEventsDone()", &mut line)
+        line.clear()
+    }
+
+    return false
+}
