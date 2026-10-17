@@ -229,6 +229,11 @@ fn akActivate(it: *mut Interp, a: Args) JsError!Value {
     match act {
         .Follow { target } => {
             defer target.deinit(s.alloc)
+
+            if isFragmentOf(s.page, &target) {
+                return it.newString(target.href)
+            }
+
             try setNavigation(s, target.href)
         }
         .Submit { form, submitter } => {

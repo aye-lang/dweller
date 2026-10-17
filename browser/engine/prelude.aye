@@ -85,7 +85,8 @@ pub let PRELUDE =
     \\class UIEvent extends Event {
     \\  constructor(type, init) {
     \\    super(type, init);
-    \\    this.view = null;
+    \\    if (init && init.view != null && init.view !== G) throw new TypeError("Failed to construct 'UIEvent': member view is not of type Window.");
+    \\    this.view = (init && init.view) || null;
     \\    this.detail = (init && init.detail) || 0;
     \\  }
     \\}
@@ -99,6 +100,8 @@ pub let PRELUDE =
     \\  constructor(type, init) {
     \\    super(type, init);
     \\    init = init || {};
+    \\    this.screenX = init.screenX || 0;
+    \\    this.screenY = init.screenY || 0;
     \\    this.clientX = init.clientX || 0;
     \\    this.clientY = init.clientY || 0;
     \\    this.button = init.button || 0;
@@ -117,7 +120,10 @@ pub let PRELUDE =
     \\    this.code = init.code === undefined ? '' : String(init.code);
     \\    this.repeat = !!init.repeat;
     \\    this.location = init.location || 0;
-    \\    this.isComposing = false;
+    \\    this.isComposing = !!init.isComposing;
+    \\    this.charCode = init.charCode || 0;
+    \\    this.keyCode = init.keyCode || 0;
+    \\    this.which = init.which || 0;
     \\    modifiers(this, init);
     \\  }
     \\}
@@ -146,7 +152,7 @@ pub let PRELUDE =
     \\  return l;
     \\}
     \\function captureOf(o) {
-    \\  return typeof o === 'boolean' ? o : !!(o && o.capture);
+    \\  return o !== null && typeof o === 'object' ? !!o.capture : !!o;
     \\}
     \\function addListener(t, type, fn, opts) {
     \\  if (fn === null || fn === undefined) return;
@@ -182,7 +188,7 @@ pub let PRELUDE =
     \\
     \\// Inline handlers: `onclick` properties, and `onclick` attributes compiled
     \\// when first needed (again when the attribute changes).
-    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pointercancel pointerdown pointerenter pointerleave pointermove pointerout pointerover pointerup pointerlockchange pointerlockerror fullscreenchange fullscreenerror visibilitychange reset resize scroll select submit toggle wheel'.split(' ');
+    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pointercancel pointerdown pointerenter pointerleave pointermove pointerout pointerover pointerup pointerlockchange pointerlockerror fullscreenchange fullscreenerror visibilitychange reset resize scroll select submit toggle wheel animationstart animationiteration animationend animationcancel transitionrun transitionstart transitionend transitioncancel webkitAnimationStart webkitAnimationIteration webkitAnimationEnd webkitTransitionEnd'.split(' ');
     \\function handlerTable(t) {
     \\  let m = t.__handlers;
     \\  if (!m) {
@@ -225,35 +231,64 @@ pub let PRELUDE =
     \\  handlerTable(t)[type] = { fn: typeof v === 'function' ? v : null, src: attributeOf(t, type), prop: true };
     \\}
     \\
+    \\let currentEvent;
+    \\getter(G, 'event', () => currentEvent, v => hidden(G, 'event', v));
     \\function callListener(fn, t, ev, inline) {
+    \\  const outer = currentEvent;
+    \\  currentEvent = rootOf(t) instanceof ShadowRoot ? undefined : ev;
     \\  try {
-    \\    let r;
-    \\    if (typeof fn === 'function') r = fn.call(t, ev);
-    \\    else if (fn && typeof fn.handleEvent === 'function') r = fn.handleEvent(ev);
-    \\    if (inline && r === false) ev.preventDefault();
+    \\    callOrHandle(fn, t, ev, inline);
     \\  } catch (e) {
     \\    report(e);
     \\  }
+    \\  currentEvent = outer;
+    \\}
+    \\function callOrHandle(fn, t, ev, inline) {
+    \\  if (inline && t === G && ev.type === 'error' && ev instanceof G.ErrorEvent) {
+    \\    if (fn.call(t, ev.message, ev.filename, ev.lineno, ev.colno, ev.error) === true) ev.preventDefault();
+    \\    return;
+    \\  }
+    \\  if (typeof fn === 'function') {
+    \\    if (fn.call(t, ev) === false && inline) ev.preventDefault();
+    \\    return;
+    \\  }
+    \\  const h = fn.handleEvent;
+    \\  if (typeof h !== 'function') throw new TypeError("The provided event listener has no callable 'handleEvent' property.");
+    \\  h.call(fn, ev);
     \\}
     \\// Calls the capturing (or the other) listeners of `t`; the inline
     \\// handler counts as a bubbling listener.
+    \\const LEGACY_TYPES = { animationend: 'webkitAnimationEnd', animationiteration: 'webkitAnimationIteration', animationstart: 'webkitAnimationStart', transitionend: 'webkitTransitionEnd' };
     \\function invoke(t, ev, capture) {
+    \\  const type = ev.type;
+    \\  if (invokeType(t, ev, capture) || !ev.isTrusted || !LEGACY_TYPES[type]) return;
+    \\  ev.type = LEGACY_TYPES[type];
+    \\  invokeType(t, ev, capture);
+    \\  ev.type = type;
+    \\}
+    \\function invokeType(t, ev, capture) {
+    \\  let found = false;
     \\  ev.currentTarget = t;
     \\  if (!capture) {
     \\    const h = handlerOf(t, ev.type);
-    \\    if (h) callListener(h, t, ev, true);
-    \\    if (ev._stopNow) return;
+    \\    if (h) {
+    \\      found = true;
+    \\      callListener(h, t, ev, true);
+    \\    }
+    \\    if (ev._stopNow) return found;
     \\  }
     \\  const ls = t.__listeners;
-    \\  if (!ls || ls.length === 0) return;
+    \\  if (!ls || ls.length === 0) return found;
     \\  for (const l of ls.slice()) {
     \\    if (l.removed || l.type !== ev.type || l.capture !== capture) continue;
+    \\    found = true;
     \\    if (l.once) removeListener(t, l.type, l.fn, l.capture);
     \\    ev._passive = l.passive;
     \\    callListener(l.fn, t, ev, false);
     \\    ev._passive = false;
-    \\    if (ev._stopNow) return;
+    \\    if (ev._stopNow) return found;
     \\  }
+    \\  return found;
     \\}
     \\// Shadow trees: an event's path goes from a slotted node to its slot and
     \\// from a shadow root to its host (unless the event is not composed and
@@ -299,8 +334,7 @@ pub let PRELUDE =
     \\function dispatch(target, ev) {
     \\  ev.target = target;
     \\  ev.defaultPrevented = false;
-    \\  ev._stop = false;
-    \\  ev._stopNow = false;
+    \\  hidden(ev, '_dispatching', true);
     \\  const path = [];
     \\  let seen = null;
     \\  if (ak.shadowCount() > 0) {
@@ -328,6 +362,8 @@ pub let PRELUDE =
     \\  ev.target = seen ? seen[seen.length - 1] : target;
     \\  ev.eventPhase = 0;
     \\  ev.currentTarget = null;
+    \\  ev._stop = ev._stopNow = ev._dispatching = false;
+    \\  ev._path = null;
     \\  return !ev.defaultPrevented;
     \\}
     \\function dispatchChecked(t, ev) {
@@ -342,8 +378,8 @@ pub let PRELUDE =
     \\hidden(G, 'removeEventListener', function (type, fn, opts) { removeListener(G, type, fn, opts); });
     \\hidden(G, 'dispatchEvent', function (ev) { return dispatchChecked(G, ev); });
     \\for (const type of HANDLERS) {
-    \\  getter(ETP, 'on' + type, function () { return handlerOf(this, type); }, function (v) { setHandler(this, type, v); });
-    \\  getter(G, 'on' + type, function () { return handlerOf(G, type); }, function (v) { setHandler(G, type, v); });
+    \\  Object.defineProperty(ETP, 'on' + type.toLowerCase(), { get() { return handlerOf(this, type); }, set(v) { setHandler(this, type, v); }, configurable: true, enumerable: true });
+    \\  Object.defineProperty(G, 'on' + type.toLowerCase(), { get() { return handlerOf(G, type); }, set(v) { setHandler(G, type, v); }, configurable: true, enumerable: true });
     \\}
     \\
     \\// Game input state: pointer lock, fullscreen, visibility and the user
@@ -429,7 +465,7 @@ pub let PRELUDE =
     \\  } else if (type === 'submit') {
     \\    ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: ak.submitter() });
     \\  } else {
-    \\    ev = new Event(type, { bubbles: true, cancelable: type === 'reset' });
+    \\    ev = new Event(type, { bubbles: type !== 'toggle', cancelable: type === 'reset' });
     \\  }
     \\  ev.isTrusted = true;
     \\  const page = (type === 'DOMContentLoaded' && target === document) || (type === 'load' && target === G);
@@ -515,7 +551,8 @@ pub let PRELUDE =
     \\hidden(HTMLP, 'click', function () {
     \\  if (this.hasAttribute('disabled') && /^(button|input|select|textarea)$/.test(this.localName)) return;
     \\  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 1 });
-    \\  if (dispatch(this, ev)) ak.activate(this);
+    \\  const fragment = dispatch(this, ev) ? ak.activate(this) : undefined;
+    \\  if (fragment) navigateTo(fragment, false);
     \\});
     \\hidden(HTMLP, 'focus', function () {
     \\  const prev = ak.focused();
@@ -1353,7 +1390,11 @@ pub let PRELUDE =
     \\function transitionFrame() {
     \\  transitionTimer = 0;
     \\  const evs = ak.transitionFrame();
-    \\  for (let i = 0; i < evs.length; i += 4) dispatch(evs[i], new TransitionEvent(evs[i + 1], { bubbles: true, cancelable: evs[i + 1] === 'transitionend', propertyName: evs[i + 2], elapsedTime: evs[i + 3] }));
+    \\  for (let i = 0; i < evs.length; i += 4) {
+    \\    const ev = new TransitionEvent(evs[i + 1], { bubbles: true, cancelable: evs[i + 1] === 'transitionend', propertyName: evs[i + 2], elapsedTime: evs[i + 3] });
+    \\    ev.isTrusted = true;
+    \\    dispatch(evs[i], ev);
+    \\  }
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
