@@ -41,7 +41,7 @@ let MAX_VAR_DEPTH: usize = 32
 /// Does `toks` use `var()`?
 pub fn hasVar(toks: []Token) bool {
     for t in toks {
-        if t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "var") {
+        if t.kind == Tok.Function && (text.eqlIgnoreCase(t.text, "var") || text.eqlIgnoreCase(t.text, "env")) {
             return true
         }
     }
@@ -108,6 +108,10 @@ pub fn substituteVars(alloc: Allocator, toks: []Token, level: ?*mut CustomLevel,
     var i: usize = 0
     while i < toks.len {
         let t = toks[i]
+        if t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "env") {
+            i = (try substituteEnv(alloc, toks, i, level, depth, &mut out)) orelse return null
+            continue
+        }
         if t.kind != Tok.Function || !text.eqlIgnoreCase(t.text, "var") {
             try out.append(t)
             i += 1
