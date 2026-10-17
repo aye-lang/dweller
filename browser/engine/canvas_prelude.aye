@@ -728,10 +728,17 @@ pub let CANVAS_PRELUDE =
     \\  set height(v) {
     \\    this._node.height = v;
     \\  }
-    \\  getContext(kind) {
-    \\    if (String(kind) !== '2d') return null;
+    \\  getContext(kind, options) {
+    \\    kind = String(kind);
+    \\    const v1 = kind === 'webgl';
+    \\    if (!this._ctx && (v1 || kind === 'webgl2')) {
+    \\      this._ctx = v1 ? webgl.create1(this, this._node, options) : webgl.create(this, this._node, options);
+    \\      if (this._ctx) contexts.set(this._node, this._ctx);
+    \\    }
+    \\    if (v1 || kind === 'webgl2') return (v1 ? this._ctx instanceof webgl.Context1 : this._ctx instanceof webgl.Context) ? this._ctx : null;
+    \\    if (kind !== '2d') return null;
     \\    if (!this._ctx) this._ctx = new CanvasRenderingContext2D(this, this._node);
-    \\    return this._ctx;
+    \\    return this._ctx instanceof CanvasRenderingContext2D ? this._ctx : null;
     \\  }
     \\  convertToBlob() {
     \\    return new Promise(resolve => this._node.toBlob(resolve));

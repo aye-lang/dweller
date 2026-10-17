@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller ee9d90d. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-10-17 at Dweller 69187ee. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -20,45 +20,45 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/css-transitions` | 143 | 59 | 335/3341 | 10.0 | - | baseline | +0.0 |
 | `test262/built-ins` | 18373 | 5450 | 12825/18373 | 69.8 | 80 | below | +5.6 |
 | `test262/language` | 23210 | 516 | 15080/23210 | 65.0 | 80 | below | +0.0 |
-| `WebGL 1: attribs` | 15 | 1 | 5694/5701 | 99.9 | - | baseline | +99.9 |
-| `WebGL 1: buffers` | 13 | 0 | 283/285 | 99.3 | - | baseline | +99.3 |
-| `WebGL 1: canvas` | 18 | 0 | 842/844 | 99.8 | - | baseline | +99.8 |
-| `WebGL 1: context` | 18 | 3 | 733/953 | 76.9 | - | baseline | +76.9 |
-| `WebGL 1: extensions` | 24 | 28 | 2678/2711 | 98.8 | - | baseline | +98.8 |
-| `WebGL 1: glsl` | 310 | 6 | 7474/7482 | 99.9 | - | baseline | +98.0 |
-| `WebGL 1: limits` | 5 | 0 | 31/31 | 100.0 | - | baseline | +100.0 |
-| `WebGL 1: misc` | 16 | 1 | 1620/1728 | 93.8 | - | baseline | +93.8 |
-| `WebGL 1: offscreencanvas` | 12 | 0 | 2/14 | 14.3 | - | baseline | +6.6 |
-| `WebGL 1: ogles` | 141 | 0 | 1900/1900 | 100.0 | - | baseline | +100.0 |
-| `WebGL 1: programs` | 12 | 0 | 270/270 | 100.0 | - | baseline | +100.0 |
-| `WebGL 1: reading` | 3 | 0 | 169/170 | 99.4 | - | baseline | +99.4 |
-| `WebGL 1: renderbuffers` | 5 | 2 | 31/34 | 91.2 | - | baseline | +91.2 |
-| `WebGL 1: rendering` | 43 | 1 | 967/1047 | 92.4 | - | baseline | +92.4 |
-| `WebGL 1: state` | 6 | 3 | 688/688 | 100.0 | - | baseline | +100.0 |
-| `WebGL 1: textures` | 157 | 7 | 31995/34380 | 93.1 | - | baseline | +88.7 |
+| `WebGL 1: attribs` | 15 | 1 | 5694/5701 | 99.9 | - | baseline | +0.0 |
+| `WebGL 1: buffers` | 13 | 0 | 283/285 | 99.3 | - | baseline | +0.0 |
+| `WebGL 1: canvas` | 18 | 0 | 842/844 | 99.8 | - | baseline | +0.0 |
+| `WebGL 1: context` | 18 | 3 | 733/953 | 76.9 | - | baseline | +0.0 |
+| `WebGL 1: extensions` | 24 | 28 | 2678/2711 | 98.8 | - | baseline | +0.0 |
+| `WebGL 1: glsl` | 310 | 6 | 7716/7722 | 99.9 | - | baseline | +0.0 |
+| `WebGL 1: limits` | 5 | 0 | 31/31 | 100.0 | - | baseline | +0.0 |
+| `WebGL 1: misc` | 16 | 1 | 1620/1728 | 93.8 | - | baseline | +0.0 |
+| `WebGL 1: offscreencanvas` | 12 | 0 | 7/49 | 14.3 | - | baseline | +0.0 |
+| `WebGL 1: ogles` | 141 | 0 | 1900/1900 | 100.0 | - | baseline | +0.0 |
+| `WebGL 1: programs` | 12 | 0 | 270/270 | 100.0 | - | baseline | +0.0 |
+| `WebGL 1: reading` | 3 | 0 | 368/368 | 100.0 | - | baseline | +0.0 |
+| `WebGL 1: renderbuffers` | 5 | 2 | 31/34 | 91.2 | - | baseline | +0.0 |
+| `WebGL 1: rendering` | 43 | 1 | 967/1047 | 92.4 | - | baseline | +0.0 |
+| `WebGL 1: state` | 6 | 3 | 688/688 | 100.0 | - | baseline | +0.0 |
+| `WebGL 1: textures` | 157 | 7 | 41876/44243 | 94.7 | - | baseline | +0.0 |
 | `WebGL 1: typedarrays` | 7 | 0 | 1273/1294 | 98.4 | - | baseline | +0.0 |
-| `WebGL 1: uniforms` | 30 | 0 | 461/502 | 91.8 | - | baseline | +91.8 |
-| `WebGL 2: attribs` | 8 | 0 | 3104/3618 | 85.8 | - | baseline | +73.3 |
-| `WebGL 2: buffers` | 13 | 0 | 1824/1836 | 99.3 | - | baseline | +99.4 |
-| `WebGL 2: canvas` | 2 | 0 | 7/8 | 87.5 | - | baseline | +87.5 |
-| `WebGL 2: context` | 9 | 0 | 138/172 | 80.2 | - | baseline | +9.9 |
-| `WebGL 2: extensions` | 30 | 0 | 417/428 | 97.4 | - | baseline | +97.4 |
-| `WebGL 2: glsl3` | 60 | 0 | 961/963 | 99.8 | - | baseline | +99.8 |
-| `WebGL 2: misc` | 8 | 0 | 825/847 | 97.4 | - | baseline | +97.4 |
-| `WebGL 2: offscreencanvas` | 8 | 0 | 2/10 | 20.0 | - | baseline | +0.0 |
-| `WebGL 2: programs` | 4 | 0 | 16/25 | 64.0 | - | baseline | +64.0 |
-| `WebGL 2: query` | 3 | 0 | 60/61 | 98.4 | - | baseline | +98.4 |
-| `WebGL 2: reading` | 5 | 0 | 519/588 | 88.3 | - | baseline | +88.3 |
-| `WebGL 2: renderbuffers` | 10 | 0 | 445/601 | 74.0 | - | baseline | +74.0 |
-| `WebGL 2: rendering` | 50 | 0 | 4519/4536 | 99.6 | - | baseline | +99.6 |
-| `WebGL 2: samplers` | 3 | 0 | 121/169 | 71.6 | - | baseline | +71.6 |
-| `WebGL 2: state` | 4 | 0 | 121/165 | 73.3 | - | baseline | +73.3 |
-| `WebGL 2: sync` | 1 | 0 | 13/14 | 92.9 | - | baseline | +92.9 |
-| `WebGL 2: textures` | 926 | 0 | 77753/222688 | 34.9 | - | baseline | +34.8 |
-| `WebGL 2: transform_feedback` | 10 | 0 | 476/481 | 99.0 | - | baseline | +99.0 |
-| `WebGL 2: uniforms` | 9 | 0 | 5522/5527 | 99.9 | - | baseline | +99.9 |
-| `WebGL 2: vertex_arrays` | 2 | 0 | 41/49 | 83.7 | - | baseline | +83.7 |
-| `WebGL 2: wasm` | 19 | 0 | 32/38 | 84.2 | - | baseline | +84.2 |
+| `WebGL 1: uniforms` | 30 | 0 | 461/502 | 91.8 | - | baseline | +0.0 |
+| `WebGL 2: attribs` | 8 | 0 | 3104/3618 | 85.8 | - | baseline | +0.0 |
+| `WebGL 2: buffers` | 13 | 0 | 1824/1836 | 99.3 | - | baseline | +0.0 |
+| `WebGL 2: canvas` | 2 | 0 | 7/8 | 87.5 | - | baseline | +0.0 |
+| `WebGL 2: context` | 9 | 0 | 138/172 | 80.2 | - | baseline | +0.0 |
+| `WebGL 2: extensions` | 30 | 0 | 417/428 | 97.4 | - | baseline | +0.0 |
+| `WebGL 2: glsl3` | 60 | 0 | 961/963 | 99.8 | - | baseline | +0.0 |
+| `WebGL 2: misc` | 8 | 0 | 825/847 | 97.4 | - | baseline | +0.0 |
+| `WebGL 2: offscreencanvas` | 8 | 0 | 3/42 | 7.1 | - | baseline | +0.0 |
+| `WebGL 2: programs` | 4 | 0 | 16/25 | 64.0 | - | baseline | +0.0 |
+| `WebGL 2: query` | 3 | 0 | 60/61 | 98.4 | - | baseline | -1.6 |
+| `WebGL 2: reading` | 5 | 0 | 519/588 | 88.3 | - | baseline | +0.0 |
+| `WebGL 2: renderbuffers` | 10 | 0 | 445/601 | 74.0 | - | baseline | +0.0 |
+| `WebGL 2: rendering` | 50 | 0 | 4531/4547 | 99.6 | - | baseline | +0.0 |
+| `WebGL 2: samplers` | 3 | 0 | 121/169 | 71.6 | - | baseline | +0.0 |
+| `WebGL 2: state` | 4 | 0 | 121/165 | 73.3 | - | baseline | +0.0 |
+| `WebGL 2: sync` | 1 | 0 | 13/14 | 92.9 | - | baseline | +0.0 |
+| `WebGL 2: textures` | 926 | 0 | 242721/255873 | 94.9 | - | baseline | +2.3 |
+| `WebGL 2: transform_feedback` | 10 | 0 | 476/481 | 99.0 | - | baseline | +0.0 |
+| `WebGL 2: uniforms` | 9 | 0 | 5522/5527 | 99.9 | - | baseline | +0.0 |
+| `WebGL 2: vertex_arrays` | 2 | 0 | 41/49 | 83.7 | - | baseline | +0.0 |
+| `WebGL 2: wasm` | 19 | 0 | 32/38 | 84.2 | - | baseline | +0.0 |
 
 ## Not yet measured
 
