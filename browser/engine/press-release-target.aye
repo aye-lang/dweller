@@ -1,0 +1,32 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/uievents/#events-mouseevent-event-order
+pub fn pressReleaseTarget(p: *mut Page, target: NodeId, kind: []u8) AllocError!NodeId {
+    let s = p.script orelse return target
+    let press = s.press_target orelse return target
+
+    if !text.eql(kind, "click") || !p.doc.isLive(press) || !p.doc.isConnected(press) {
+        return target
+    }
+
+    var from_press = List(NodeId).init(p.alloc)
+    defer from_press.deinit()
+    var from_release = List(NodeId).init(p.alloc)
+    defer from_release.deinit()
+
+    try hoverPath(&p.doc, press, &mut from_press)
+    try hoverPath(&p.doc, target, &mut from_release)
+
+    for n in from_release.items() {
+        for m in from_press.items() {
+            if m == n {
+                return n
+            }
+        }
+    }
+
+    return target
+}

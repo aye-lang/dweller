@@ -2699,7 +2699,7 @@ pub struct Interp {
             self.prop_caches.items()[id] = PropCache { shape: self.heap.obj(self.global).shape, proto_shape: NONE, slot: i }
             return getCachedProp(self, id, objVal(self.global), name)
         }
-        if !self.hasProperty(self.global, name) {
+        if !(try self.hasPropertyJs(self.global, name)) {
             return self.typeErrorRef(name)
         }
         return self.getFrom(self.global, name, objVal(self.global))
@@ -3519,7 +3519,7 @@ pub struct Interp {
         if op == Op.Typeof {
             match self.ast.node(arg) {
                 .Ident { name, depth, .. } => {
-                    if depth == DEPTH_GLOBAL && name != A_THIS && !self.hasProperty(self.global, name) {
+                    if depth == DEPTH_GLOBAL && name != A_THIS && !(try self.hasPropertyJs(self.global, name)) {
                         return self.atomValue(A_UNDEFINED)
                     }
                 }

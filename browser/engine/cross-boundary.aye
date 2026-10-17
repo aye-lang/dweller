@@ -1,0 +1,24 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+let POINTER_BOUNDARY = [4][]u8{"pointerout", "pointerleave", "pointerover", "pointerenter"}
+let MOUSE_BOUNDARY = [4][]u8{"mouseout", "mouseleave", "mouseover", "mouseenter"}
+
+// spec: https://w3c.github.io/uievents/#events-mouseevent-event-order
+pub fn crossBoundary(p: *mut Page, el: NodeId, detail: []u8, x: f64, y: f64) AllocError!void {
+    let s = p.script orelse return
+
+    if s.hover_path.len() > 0 && s.hover_path.items()[0] == el {
+        return
+    }
+
+    var old = s.hover_path
+    defer old.deinit()
+
+    s.hover_path = List(NodeId).init(p.alloc)
+    try hoverPath(&p.doc, el, &mut s.hover_path)
+
+    try fireBoundary(p, old.items(), s.hover_path.items(), POINTER_BOUNDARY, detail, x, y)
+    try fireBoundary(p, old.items(), s.hover_path.items(), MOUSE_BOUNDARY, detail, x, y)
+}

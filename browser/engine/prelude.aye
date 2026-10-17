@@ -95,6 +95,8 @@ pub let PRELUDE =
     \\  ev.shiftKey = !!init.shiftKey;
     \\  ev.altKey = !!init.altKey;
     \\  ev.metaKey = !!init.metaKey;
+    \\  hidden(ev, '_altGraph', !!init.modifierAltGraph);
+    \\  hidden(ev, '_capsLock', !!init.modifierCapsLock);
     \\}
     \\class MouseEvent extends UIEvent {
     \\  constructor(type, init) {
@@ -139,6 +141,7 @@ pub let PRELUDE =
     \\    init = init || {};
     \\    this.data = init.data === undefined ? null : init.data;
     \\    this.inputType = init.inputType === undefined ? '' : String(init.inputType);
+    \\    this.isComposing = !!init.isComposing;
     \\  }
     \\}
     \\for (const c of [Event, CustomEvent, UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent]) hidden(G, c.name, c);
@@ -439,7 +442,7 @@ pub let PRELUDE =
     \\    if (f.length > 4) KEY_MODS(ev, +f[4]);
     \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || ((type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') && typeof key === 'string')) {
     \\    const f = String(key).split('\n');
-    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: true, clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|mousedown|mouseup)$/.test(type) ? 1 : 0 };
+    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: !/^(pointer|mouse)(leave|enter)$/.test(type), clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|mousedown|mouseup)$/.test(type) ? 1 : 0 };
     \\    if (type[0] === 'p') { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
     \\    else if (type === 'mousemove') init.button = 0;
     \\    ev = type[0] === 'p' ? new PointerEvent(type, init) : new MouseEvent(type, init);
