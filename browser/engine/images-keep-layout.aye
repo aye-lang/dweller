@@ -1,0 +1,20 @@
+import css
+import layout
+
+fn imagesKeepLayout(imgs: *mut ImageCache, styles: *css.Styles) bool {
+    if imgs.nodes.any_changed {
+        return false
+    }
+
+    for el in imgs.nodes.changed.items() {
+        let style = styles.get(el) orelse return false
+
+        if !layout.sizedByStyle(style) {
+            return false
+        }
+    }
+
+    imgs.nodes.takeChanged().clear()
+
+    return true
+}

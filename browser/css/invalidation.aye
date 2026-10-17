@@ -80,7 +80,10 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
 // "class" and "[class]" (for the change of any class).
 fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
     match s.kind {
-        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Empty, .Hover, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
+        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Hover, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
+        .Empty => {
+            try out.append(CHILDREN_CHANGED.what)
+        }
         .Id => {
             try out.append(nameKey("", "id"))
         }
@@ -242,7 +245,7 @@ pub struct RestyleDeps {
     /// Can `change` at an element change the styles of elements other
     /// than it and those that inherit from it?
     pub fn isDeep(self: *Self, change: StyleChange) bool {
-        if change.what < 2 || self.deep_any || self.deep.contains(change.what) {
+        if change.what == STATE_CHANGED.what || self.deep_any || self.deep.contains(change.what) {
             return true
         }
         return change.token && self.deep.contains(nameKey("", "[class]"))

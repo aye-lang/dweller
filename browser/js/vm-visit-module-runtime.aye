@@ -1,0 +1,21 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitImportCallExpression, VisitImportMeta)
+
+fn vmVisitModuleRuntime(c: *mut Compiler, id: u32, arg: u32, options: u32) CompileError!void {
+    let r = c.b.newRegs(2)
+
+    try c.b.op0(BC_LDA_UNDEFINED)
+    try c.b.op1(BC_STAR, (r + 1) as i64)
+
+    if arg != 0 {
+        try c.visit(arg)
+        try c.b.op1(BC_STAR, r as i64)
+    }
+
+    if options != 0 {
+        try c.visit(options)
+        try c.b.op1(BC_STAR, (r + 1) as i64)
+    }
+
+    try c.b.op2(BC_CALL_MODULE_RUNTIME, id as i64, r as i64)
+    c.b.releaseRegs(r)
+}

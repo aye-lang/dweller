@@ -49,7 +49,7 @@ pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: b
     if needsComputing(toks) || layersNeedComputing(prop, toks) {
         // Without `var()`, an invalid math function drops the declaration
         // now (its validity does not depend on the element).
-        let checked = hasVar(toks) || (try validNow(sheet, prop, toks))
+        let checked = (hasVar(toks) && validEnv(toks)) || (try validNow(sheet, prop, toks))
         if !checked {
             return
         }
@@ -190,7 +190,7 @@ fn dupText(sheet: *mut Sheet, s: []u8) AllocError![]u8 {
 /// can only be parsed at computed-value time?
 pub fn needsComputing(toks: []Token) bool {
     for t in toks {
-        if t.kind == Tok.Function && (text.eqlIgnoreCase(t.text, "var") || isMathFunction(t)) {
+        if t.kind == Tok.Function && (text.eqlIgnoreCase(t.text, "var") || text.eqlIgnoreCase(t.text, "env") || isMathFunction(t)) {
             return true
         }
         if t.kind == Tok.Dimension {
@@ -1218,6 +1218,9 @@ fn single(p: Property, c: Comp) ?Value {
             return lengthValue(c, false, true)
         }
         .Int => {
+            if mathNumber(c) |n| {
+                return Value.Number { v: math.round(n) }
+            }
             if t.kind == Tok.Number && c.toks.len == 1 && t.flag {
                 return Value.Number { v: t.num }
             }

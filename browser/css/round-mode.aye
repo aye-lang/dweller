@@ -1,0 +1,27 @@
+import std.text
+
+struct RoundMode {
+    kind: u8
+    next: usize
+}
+
+// spec: https://drafts.csswg.org/css-values-4/#round-func
+fn roundMode(toks: []Token, i: usize, name: []u8) RoundMode {
+    let j = skipWhitespace(toks, i)
+
+    if !text.eqlIgnoreCase(name, "round") || j >= toks.len || toks[j].kind != Tok.Ident {
+        return RoundMode { kind: 'n', next: i }
+    }
+
+    let k = skipWhitespace(toks, j + 1)
+    let names = [4][]u8{"nearest", "up", "down", "to-zero"}
+    let kinds = [4]u8{'n', 'u', 'd', 'z'}
+
+    for w in 0..4 {
+        if text.eqlIgnoreCase(toks[j].text, names[w]) && k < toks.len && toks[k].kind == Tok.Comma {
+            return RoundMode { kind: kinds[w], next: k + 1 }
+        }
+    }
+
+    return RoundMode { kind: 'n', next: i }
+}
