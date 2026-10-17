@@ -2013,6 +2013,20 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[at] = acc
             }
+            136 => {
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmAsyncYieldStarCall(it, at)
+                regs = it.stack.items()
+            }
+            137 => {
+                let at = (base + vmImm(bytes, pc, w)) as usize
+                pc += w as usize
+                regs[fp] = acc
+                acc = try vmIteratorValue(it, at, acc)
+                regs = it.stack.items()
+            }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)
                 unreachable

@@ -42,10 +42,9 @@ fn globalEval(it: *mut Interp, a: Args) JsError!Value {
     if !isStr(v) {
         return v
     }
-    let b = try it.builder()
-    defer it.release(b)
-    try b.append(it.heap.bytes(strOf(v)))
-    return it.evalScript(b.bytes())
+    let scope = it.ast.scopes.len() as u32
+    try it.ast.scopes.append(ScopeInfo { nslots: 0, closures: false, funcs: 0, nfuncs: 0, kind: SCOPE_SCRIPT })
+    return runEval(it, v, scope * 2)
 }
 
 // ---- URI

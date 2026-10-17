@@ -1,0 +1,28 @@
+// v8: src/parsing/parser-base.h (ParseBreakStatement, ParseContinueStatement)
+
+fn resolveCheckJump(r: *mut Resolver, label: u32, isContinue: bool) SyntaxErr!void {
+    var k = r.jumps.len()
+
+    while k > 0 {
+        k -= 1
+        let j = r.jumps.items()[k]
+
+        if j >= NONE - 2 {
+            break
+        }
+
+        if j >> 1 == label && (!isContinue || (j & 1) == 1) {
+            return
+        }
+    }
+
+    if label != 0 {
+        return r.fail("Undefined label or not an iteration statement", NONE)
+    }
+
+    if isContinue {
+        return r.fail("Illegal continue statement", NONE)
+    }
+
+    return r.fail("Illegal break statement", NONE)
+}

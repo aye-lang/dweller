@@ -14,6 +14,10 @@ fn evalScopeChain(r: *mut Resolver, scope: u32) AllocError!void {
     try evalScopeChain(r, info.parent)
     try r.pushScope(k, isFunc, k == SCOPE_ARROW, k == SCOPE_SCRIPT, info.func, scope)
 
+    if isFunc && info.func != NONE {
+        try r.jumps.append(resolveFunctionJump(r.ast.func(info.func)))
+    }
+
     let s = r.current()
 
     s.nslots = info.nslots
