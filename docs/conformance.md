@@ -7,9 +7,9 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | Area | Files | Skipped | Passed | Score % | Threshold % | Status | Change |
 |---|---:|---:|---:|---:|---:|---|---:|
 | `dom/nodes` | 411 | 6 | 7213/9403 | 76.7 | 75 | done | +0.0 |
-| `dom/events` | 180 | 8 | 611/855 | 71.5 | 70 | done | +0.0 |
+| `dom/events` | 180 | 8 | 611/855 | 71.5 | 70 | done | +0.4 |
 | `uievents` | 69 | 6 | 25/178 | 14.0 | - | baseline | +0.0 |
-| `html/semantics/forms` | 685 | 173 | 1927/5337 | 36.1 | 60 | below | +0.0 |
+| `html/semantics/forms` | 685 | 173 | 1927/5337 | 36.1 | 60 | below | +0.3 |
 | `css/cssom` | 292 | 11 | 2025/3753 | 54.0 | - | baseline | +0.0 |
 | `fetch/api` | 178 | 13 | 1576/2415 | 65.3 | 50 | done | +23.6 |
 | `xhr` | 329 | 3 | 686/1233 | 55.6 | 50 | done | +19.3 |

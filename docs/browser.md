@@ -370,7 +370,10 @@ output as goldens.
 
 - *Pipeline:* tokens (all up front) → AST in one `List(Node)` per engine
   → a resolver that gives every variable an environment slot (`depth`,
-  `slot`) → a tree-walking interpreter. Exceptions are the Aye error
+  `slot`) → the bytecode compiler and VM (`js/compiler.aye`, `js/vm.aye`,
+  `js/BYTECODE.md`; on by default since P4.75), with the tree-walking
+  interpreter for what the compiler does not handle and for
+  `DWELLER_JS_VM=0`. Exceptions are the Aye error
   `JsError.Thrown` (the value in `Interp.exception`), so they pass through
   native functions with `try`.
 - *Strings:* WTF-8 bytes (UTF-8 that can hold lone surrogates) with the
