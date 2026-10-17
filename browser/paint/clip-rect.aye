@@ -1,0 +1,31 @@
+import css
+import layout
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#overflow-clip-margin
+fn clipRect(cb: layout.Box) Rect {
+    let margin = layout.keywordOf(cb.style[css.OVERFLOW_CLIP_MARGIN])
+    var edge = [4]f64{0.0, 0.0, 0.0, 0.0}
+    var px: f64 = 0.0
+    var words = text.split(margin, " ")
+
+    while words.next() |w| {
+        if text.eql(w, "content-box") {
+            edge = [4]f64{-cb.padding[0], -cb.padding[1], -cb.padding[2], -cb.padding[3]}
+        } else if text.eql(w, "border-box") {
+            edge = cb.border
+        } else if text.endsWith(w, "px") {
+            px = math.max(text.parseFloat(w[..w.len - 2]) catch 0.0, 0.0)
+        }
+    }
+
+    for k in 0..4 {
+        edge[k] += px
+    }
+
+    let x = clippedAxis(cb.style[css.OVERFLOW_X], cb.ax + cb.border[3], cb.ax + cb.w - cb.border[1], edge[3], edge[1])
+    let y = clippedAxis(cb.style[css.OVERFLOW_Y], cb.ay + cb.border[0], cb.ay + cb.h - cb.border[2], edge[0], edge[2])
+
+    return Rect { x: x[0], y: y[0], w: x[1] - x[0], h: y[1] - y[0] }
+}

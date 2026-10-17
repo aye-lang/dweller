@@ -1,0 +1,23 @@
+import std.mem
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#webkit-line-clamp
+pub fn writeWebkitLineClamp(vals: []Value, out: *mut text.Builder) AllocError!bool {
+    let max = keywordText(vals[0])
+    let cont = keywordText(vals[2])
+
+    if text.eql(cont, "normal") && text.eql(max, "auto") {
+        try out.append("none")
+
+        return true
+    }
+
+    if !text.eql(cont, "-webkit-legacy") || !text.eql(keywordText(vals[1]), "ellipsis") || text.eql(max, "auto") || mem.indexOf(max, ' ') != null {
+        return false
+    }
+
+    try out.append(max)
+
+    return true
+}

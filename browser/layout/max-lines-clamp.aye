@@ -1,0 +1,20 @@
+import css
+import css.Value
+import std.mem
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#line-clamp-container
+fn maxLinesClamp(style: []Value) usize {
+    if isKeyword(style[css.CONTINUE], "normal") || isKeyword(style[css.CONTINUE], "discard") {
+        return 0
+    }
+
+    let max = keywordOf(style[css.MAX_LINES])
+    let space = mem.indexOf(max, ' ') orelse max.len
+
+    let n = text.parseInt(max[..space]) catch |e| {
+        return 0
+    }
+
+    return n as usize
+}

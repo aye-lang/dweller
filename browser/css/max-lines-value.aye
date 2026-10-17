@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#max-lines
+fn maxLinesValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    if comps.len == 0 || comps.len > 2 {
+        return null
+    }
+
+    var n: ?f64 = null
+    var auto = false
+
+    for c in comps {
+        if identIn(c, "auto") != null && !auto {
+            auto = true
+        } else if n == null && isClampCount(c) {
+            n = c.toks[0].num
+        } else {
+            return null
+        }
+    }
+
+    return try maxLinesText(sheet, n, auto)
+}

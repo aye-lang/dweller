@@ -1708,6 +1708,9 @@ fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
             try out.append(text.trim(d[colon + 1..]))
         }
     }
+    if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {
+        try overflowOfDecls(decls, out)
+    }
 }
 
 // Sets (or, for an empty value, removes) the declaration of `prop` in
@@ -1718,29 +1721,13 @@ fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!vo
     if !(try css.specifiedValue(s.alloc, prop, raw, &mut canon)) {
         return
     }
-    let value = canon.bytes()
-    let doc = &mut s.active.doc
-    let old = doc.attr(el, "style") orelse ""
-    var b = text.Builder.init(s.alloc)
-    defer b.deinit()
-    var done = false
-    var parts = text.split(old, ";")
-    while parts.next() |d| {
-        let colon = std.mem.indexOf(d, ':') orelse continue
-        let name = text.trim(d[..colon])
-        if text.eqlIgnoreCase(name, prop) {
-            if !done && text.trim(value).len > 0 {
-                try appendDecl(&mut b, prop, value)
-            }
-            done = true
-            continue
-        }
-        try appendDecl(&mut b, name, text.trim(d[colon + 1..]))
+    if text.eql(prop, "overflow") {
+        return putOverflow(s, el, canon.bytes())
     }
-    if !done && text.trim(value).len > 0 {
-        try appendDecl(&mut b, prop, value)
+    if text.eql(prop, "line-clamp") || text.eql(prop, "-webkit-line-clamp") {
+        return putLineClamp(s, el, prop, canon.bytes())
     }
-    try doc.setAttr(el, "style", b.bytes())
+    try putStyleDecl(s, el, prop, canon.bytes())
 }
 
 fn appendDecl(b: *mut text.Builder, name: []u8, value: []u8) AllocError!void {

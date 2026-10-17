@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 5db9ae2. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-10-17 at Dweller 8a41cd0. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -10,13 +10,13 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `dom/events` | 180 | 8 | 619/877 | 70.6 | 70 | done | +0.0 |
 | `uievents` | 69 | 6 | 141/194 | 72.7 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2907/5398 | 53.9 | 60 | below | +0.0 |
-| `css/cssom` | 292 | 11 | 2034/3753 | 54.2 | - | baseline | +0.0 |
+| `css/cssom` | 292 | 11 | 2129/3818 | 55.8 | - | baseline | +0.0 |
 | `fetch/api` | 178 | 13 | 1576/2415 | 65.3 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 686/1233 | 55.6 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 4850/9998 | 48.5 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1509/2385 | 63.3 | - | baseline | +0.0 |
-| `css/css-flexbox` | 1422 | 469 | 2830/5816 | 48.7 | 70 | below | +0.0 |
+| `css/css-flexbox` | 1422 | 469 | 3064/5816 | 52.7 | 70 | below | +0.0 |
 | `css/css-transforms` | 711 | 156 | 748/5196 | 14.4 | 50 | below | +0.0 |
 | `css/css-transitions` | 143 | 59 | 1471/3348 | 43.9 | - | baseline | +0.0 |
 | `css/css-animations` | 206 | 91 | 694/1398 | 49.6 | 60 | below | +0.0 |
@@ -29,7 +29,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/box-sizing` | 1591 | 259 | 4036/8548 | 47.2 | 70 | below | +0.0 |
 | `css/floats-tables` | 709 | 251 | 759/1586 | 47.9 | 65 | below | +0.0 |
 | `css/inline-text` | 2343 | 407 | 4580/8083 | 56.7 | 60 | below | +0.0 |
-| `css/overflow` | 939 | 189 | 670/1907 | 35.1 | 60 | below | +0.0 |
+| `css/overflow` | 939 | 189 | 1002/1921 | 52.2 | 60 | below | +0.0 |
 | `css/css-grid` | 2508 | 1085 | 4857/17475 | 27.8 | 60 | below | +0.0 |
 | `css/positioning` | 915 | 239 | 1356/2310 | 58.7 | 70 | below | +0.0 |
 | `css/backgrounds-borders` | 1041 | 295 | 2509/8473 | 29.6 | 65 | below | +0.0 |

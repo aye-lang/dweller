@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-overflow-4/#webkit-line-clamp
+fn webkitLineClampLonghands(sheet: *mut Sheet, comps: []Comp) AllocError!?[3]Value {
+    if comps.len != 1 {
+        return null
+    }
+
+    if identIn(comps[0], "none") != null {
+        return [3]Value{Value.Keyword { k: "auto" }, Value.Keyword { k: "ellipsis" }, Value.Keyword { k: "normal" }}
+    }
+
+    if !isClampCount(comps[0]) {
+        return null
+    }
+
+    let max = try maxLinesText(sheet, comps[0].toks[0].num, false) orelse return null
+
+    return [3]Value{max, Value.Keyword { k: "ellipsis" }, Value.Keyword { k: "-webkit-legacy" }}
+}

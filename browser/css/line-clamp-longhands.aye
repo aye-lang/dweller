@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#line-clamp
+fn lineClampLonghands(sheet: *mut Sheet, comps: []Comp) AllocError!?[3]Value {
+    if comps.len == 1 && identIn(comps[0], "none") != null {
+        return [3]Value{Value.Keyword { k: "auto" }, Value.Keyword { k: "no-ellipsis" }, Value.Keyword { k: "normal" }}
+    }
+
+    var rest = comps
+    var cont = "collapse"
+
+    if rest.len > 1 && identIn(rest[rest.len - 1], "-webkit-legacy") != null {
+        cont = "-webkit-legacy"
+        rest = rest[..rest.len - 1]
+    }
+
+    if rest.len == 0 || rest.len > 3 {
+        return null
+    }
+
+    var n: ?f64 = null
+    var auto = false
+    var ellipsis: ?Value = null
+
+    for k, c in rest {
+        if identIn(c, "auto") != null && !auto {
+            auto = true
+        } else if n == null && isClampCount(c) {
+            n = c.toks[0].num
+        } else if ellipsis == null {
+            ellipsis = try blockEllipsisValue(sheet, rest[k..k + 1]) orelse return null
+        } else {
+            return null
+        }
+    }
+
+    let max = try maxLinesText(sheet, n, auto) orelse return null
+
+    return [3]Value{max, ellipsis orelse Value.Keyword { k: "ellipsis" }, Value.Keyword { k: cont }}
+}

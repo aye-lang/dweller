@@ -1,0 +1,26 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serializing-css-values
+fn specifiedLonghand(alloc: Allocator, index: usize, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let comps = try components(&mut sheet, toks.items())
+    let v = try parseValue(&mut sheet, index, comps) orelse return false
+
+    try writeValue(v, out)
+
+    return true
+}
+
+fn validatesInline(index: usize) bool {
+    return index == OVERFLOW_CLIP_MARGIN || index == SCROLLBAR_GUTTER || index == SCROLL_AXIS_LOCK || index == TEXT_OVERFLOW || index == MAX_LINES || index == BLOCK_ELLIPSIS || index == CONTINUE
+}

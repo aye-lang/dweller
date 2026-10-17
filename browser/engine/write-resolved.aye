@@ -7,6 +7,13 @@ import std.text
 fn writeResolved(s: *mut Script, h: NodeId, values: []css.Value, i: usize, out: *mut text.Builder) AllocError!void {
     try css.writeComputed(values, i, out)
 
+    if i == css.DISPLAY {
+        if css.webkitBoxDisplay(values) |display| {
+            out.clear()
+            try out.append(display)
+        }
+    }
+
     if i != css.GRID_TEMPLATE_COLUMNS && i != css.GRID_TEMPLATE_ROWS {
         return
     }
