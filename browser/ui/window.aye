@@ -40,7 +40,7 @@ import std.mem.Allocator
 import std.text
 import url
 
-let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--spaces] [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
+let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
 /// The toolbar height, in CSS px.
 pub let TOOLBAR: f64 = 40.0
@@ -122,16 +122,13 @@ struct UiOptions {
     // `--frames`.
     socket: []u8
     exit_when_idle: bool
-    // Each agent connection is served by a Space, a process of its own
-    // (spaces.aye).
-    spaces: bool
     // This is a Space (`dweller space`): the control connection to its
     // window; -1 for a window.
     control: i32
 }
 
 fn uiOptions(args: [][]u8) ?UiOptions {
-    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, spaces: false, control: -1 }
+    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, control: -1 }
     var i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -163,7 +160,6 @@ fn uiOptions(args: [][]u8) ?UiOptions {
         } else if text.eql(a, "--exit-when-idle") {
             o.exit_when_idle = true
         } else if text.eql(a, "--spaces") {
-            o.spaces = true
         } else if text.eql(a, "--save") && more {
             o.save = args[i + 1]
             i += 1
@@ -184,7 +180,7 @@ fn uiOptions(args: [][]u8) ?UiOptions {
     if (o.target.len == 0 && o.socket.len == 0) || (!headless && (o.events.len > 0 || o.state || o.show_text || o.save.len > 0)) {
         return null
     }
-    if (o.exit_when_idle || o.spaces) && (o.socket.len == 0 || o.frames > 0) {
+    if o.exit_when_idle && (o.socket.len == 0 || o.frames > 0) {
         return null
     }
     return o
@@ -193,7 +189,7 @@ fn uiOptions(args: [][]u8) ?UiOptions {
 /// `dweller [open] FILE|URL ...`: opens a window on the page; returns
 /// the exit status.
 pub fn run(alloc: Allocator, args: [][]u8) i32 {
-    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, spaces: false, control: -1 }
+    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, control: -1 }
     if uiOptions(args) |parsed| {
         o = parsed
     } else {

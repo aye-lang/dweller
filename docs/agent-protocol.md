@@ -407,36 +407,34 @@ on a Unix domain socket at `PATH` (a stale socket file there is
 replaced; the file is removed when the window closes). Agents connect
 to it while a person uses the window: each one works in tabs of its
 own, in the background, and can look at the person's tabs but not act
-on them; the person sees what the agents do. With `--spaces` each
-agent works in a Space, a process of its own ([Spaces](#spaces)).
-(Planned: Spaces by default; see `docs/browser.md`, B9.)
+on them; the person sees what the agents do. Each agent works in a
+Space, a process of its own ([Spaces](#spaces)); the window itself
+never runs an agent's request. `--spaces` is still accepted and does
+nothing: Spaces are the default (P9.9).
 
 - Each connection speaks JSON lines, as `dweller agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC
   message: then it speaks MCP, as `dweller mcp`. At most 8 agents
   connect at once. The hello is any object without `cmd` and without
   `jsonrpc` as the first line; its `name`, `space` and `profile` are for
-  [Spaces](#spaces) and are ignored without `--spaces`.
-- The window serves requests between its own events, on its thread: a
-  request never runs while the page handles the person's input.
-- **Own tab.** A connection acts on the tab it opened (`tab_new`) or
-  selected (`tab_select`). A connection without one gets a new tab, in
-  the background, on its first command that needs a page (`navigate`,
-  `back`, `forward`, `reload`, `snapshot`, `read`, `find`, `click`,
-  `type`, `select`, `press`, `scroll`, `eval`, `screenshot`, `wait`);
-  until then `tabs`, `tab_*` and `user_context` need no tab. Agents
-  never change which tab the person sees: `show` is refused (`"the
-  user chooses what they see"` for `"show":true`; `"show":false` is
-  allowed and does nothing).
-- **The person's tabs are look-only.** The tabs the person opened (the
-  first one, Cmd+T) are the person's; a tab an agent opened is an
-  agent's, and any connection may act on it (also while the person
-  looks at it). After `tab_select` of a person's tab, `snapshot`,
-  `read`, `find`, `screenshot` and `wait` work; `navigate`, `back`,
-  `forward`, `reload`, `click`, `type`, `select`, `press`, `scroll`,
-  `eval` and `tab_close` of it fail with `"this is the user's tab: open
-  your own with tab_new"`. So an agent never changes the person's
-  page, scroll offset, focus or selection.
+  [Spaces](#spaces).
+- The window only copies bytes between a connection and its Space: a
+  request never runs on the window's thread, so it never runs while the
+  page handles the person's input.
+- **Own tabs.** A connection acts in the tabs of its Space: tab 1
+  exists from the start, `tab_new` opens more (`navigate`, `back`,
+  `forward`, `reload`, `snapshot`, `read`, `find`, `click`, `type`,
+  `select`, `press`, `scroll`, `eval`, `screenshot` and `wait` act on
+  the tab the connection selected). Agents never change which tab the
+  person sees: `show` is refused (`"the user chooses what they see"` for
+  `"show":true`; `"show":false` is allowed and does nothing). The
+  Spaces' tabs are not in the person's tab strip.
+- **The person's tabs are look-only.** An agent reads the person's
+  page through `user_context` (relayed to every Space), and never acts
+  on it: the person's page, scroll offset, focus and selection stay as
+  they were. There is no path by which a request runs in the window's
+  process: the in-process acting path (one shared tab list, `"this is
+  the user's tab"`) was removed in P9.9.
 - The agent sees the window's layout: its fonts and its viewport (the
   window's size under the toolbar). After the person navigates, the
   next request gives the new document new refs.
@@ -486,36 +484,18 @@ The commands only a window has (MCP: `browser_` and the name):
 | --- | --- | --- |
 | `tabs` | | `result` ("2 tabs"), `tabs`: `[{"id":1,"url":..,"title":..,"shown":true,"agent":false},...]` (`shown`: the person sees it; `agent`: this connection acts on it) |
 | `tab_new` | | `result` ("opened tab 2"), `tab`: its id; a tab of the agents', in the background; the connection acts on it from now on |
-| `tab_select` | `tab` (an id) | `result` ("acting on tab 2", or for a person's tab "looking at tab 1 (the user's tab: you can only look)"), `tab` |
-| `tab_close` | `tab` (default: the one the connection acts on) | `result`; only agents' tabs; connections on it get a new tab on their next command that needs a page |
+| `tab_select` | `tab` (an id) | `result` ("acting on tab 2"), `tab` |
+| `tab_close` | `tab` (default: the one the connection acts on) | `result`; the last tab cannot be closed |
 | `user_context` | | `tab`, `url`, `title` and `scroll` (px) of the shown tab; `selection` (the selected text of the focused text field, else the find bar's query while it has matches; never a password); `hovered` and `focused`: `{"ref","element","text"}` or `null`; `pointed`: the last `user_pointed` event's members, or `null` |
-| `spaces` | | `result` ("2 spaces"), `spaces`: the Spaces ([Spaces](#spaces)); without `--spaces` "0 spaces" and `[]` |
-| `space_close` | | `result` ("closing Space 3"); closes this connection's Space, then the connection; without `--spaces` it fails: `"no Space to close: the window runs without --spaces"` |
+| `spaces` | | `result` ("2 spaces"), `spaces`: the Spaces ([Spaces](#spaces)) |
+| `space_close` | | `result` ("closing Space 3"); closes this connection's Space, then the connection |
 
-Tab ids are numbers that are never reused. The argument is `tab`, not
-`id`, which is the request's own. A session (from
-`browser/tests/agent/window/shared.jsonl`; the person had opened
-`form.html` in tab 1, the agent's first `snapshot` opened tab 2, and
-the window ran the scripted events `agents:5 move:100,118
-key:cmd+shift+k`):
-
-```
-{"id":5,"cmd":"snapshot"}
-{"id":5,"ok":true,...,"snapshot":"...","focused":"e4"}
-{"event":"user_pointed","tab":1,"url":"file:///.../form.html","ref":"e1","text":"Sign up","element":"heading \"Sign up\" [e1]"}
-{"id":6,"cmd":"user_context"}
-{"id":6,"ok":true,"result":"the user's context","tab":1,"url":"file:///.../form.html","title":"Sign up","scroll":0,"selection":"","hovered":{"ref":"e1","element":"heading \"Sign up\" [e1]","text":"Sign up"},"focused":null,"pointed":{...}}
-{"id":8,"cmd":"tab_new"}
-{"id":8,"ok":true,"result":"opened tab 3","tab":3}
-{"id":12,"cmd":"tab_select","tab":1}
-{"id":12,"ok":true,"result":"looking at tab 1 (the user's tab: you can only look)","tab":1}
-{"id":13,"cmd":"click","ref":"e6"}
-{"id":13,"ok":false,"error":"this is the user's tab: open your own with tab_new"}
-```
+Tab ids are numbers that are never reused, in a Space. The argument is
+`tab`, not `id`, which is the request's own.
 
 ### Spaces
 
-`dweller --agent-socket PATH --spaces [FILE|URL]`: each connection is
+`dweller --agent-socket PATH [FILE|URL]`: each connection is
 served by a Space, a process of its own, so no agent request runs on
 the window's thread; a slow load or a long `eval` never holds up the
 person's input or the window's frames.
@@ -733,12 +713,12 @@ wait until the agents made N requests (the MCP hello does not count);
 line, one line `space ID "NAME" STATE: LAST` per Space (`: LAST`
 only when it did something), and `loop_max_ms N`: the longest
 iteration of the window's loop while an agent was connected, without
-its wait for events. With `--spaces`, `agents:N` waits for N lines from
+its wait for events. `agents:N` waits for N lines from
 the Spaces (answers and events), and the words `pause:N`, `resume:N`
 and `stop:N` pause, resume or stop Space N. `cargo test
---test browser window_agents` runs `browser/tests/agent/window/X.jsonl`
+--test browser window_spaces` runs `browser/tests/agent/spaces/X.jsonl`
 with the events of `X.events`, over the socket from the test or through
 `dweller connect --mcp` for `X.mcp.jsonl`, against `X.out` (without
-the `loop_max_ms` line); `window_spaces` does the same with `--spaces`
-for `browser/tests/agent/spaces/`, where `waited N ms` stands for the
-time a `wait` took.
+the `loop_max_ms` line), where `waited N ms` stands for the time a
+`wait` took. `window_spaces_parallel` runs three agents in three
+Spaces at once.

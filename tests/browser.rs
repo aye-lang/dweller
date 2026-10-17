@@ -1966,7 +1966,7 @@ fn screenshot_errors() {
     );
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--spaces] [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -2797,67 +2797,15 @@ fn agent_screenshot() {
     );
 }
 
-/// A window shared by its user and agents (`--agent-socket`,
-/// ui/agents.aye): `browser/tests/agent/window/X.jsonl` is sent over the
-/// window's Unix socket (from this test, or through `dweller connect
-/// --mcp` for `X.mcp.jsonl`) while the window runs headless with the
-/// scripted events of `X.events` (`agents:N` waits for N requests); the
-/// responses, then the window's `--state`, must be `X.out`.
-#[test]
-fn window_agents() {
-    if !has_sdl() {
-        println!("skipped: no SDL2");
-        return;
-    }
-    let dir = root()
-        .join("browser")
-        .join("tests")
-        .join("agent")
-        .join("window");
-    let mut inputs: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .collect();
-    inputs.sort();
-    assert!(
-        inputs.len() >= 5,
-        "expected at least 5 window agent sessions, found {}",
-        inputs.len()
-    );
-    let mut failures = Vec::new();
-    for (i, input) in inputs.iter().enumerate() {
-        let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        match window_agent_session(input, i, false) {
-            Ok(got) => check_golden(
-                &input.with_extension("out"),
-                &rooted(&got),
-                &name,
-                &mut failures,
-            ),
-            Err(e) => failures.push(format!("{name}: {e}")),
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} of {} window agent sessions failed:\n\n{}",
-        failures.len(),
-        inputs.len(),
-        failures.join("\n")
-    );
-}
-
-// Runs one session of `window_agents` (or with `--spaces`, of
-// `window_spaces`): what the agent got, then `--- window` and the
+// Runs one session of `window_spaces`: what the agent got, then `--- window` and the
 // window's state without `loop_max_ms` (it varies).
-fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, String> {
+fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     use std::io::{Read, Write};
     use std::process::Stdio;
     use std::time::{Duration, Instant};
     let name = input.file_name().unwrap().to_string_lossy().into_owned();
     // A short relative path: sockets' paths are limited to ~100 bytes.
-    let kind = if spaces { "spaces" } else { "window" };
-    let sock = format!("target/agent-{kind}-{}-{n}.sock", std::process::id());
+    let sock = format!("target/agent-spaces-{}-{n}.sock", std::process::id());
     let _ = std::fs::remove_file(root().join(&sock));
     let mut args = vec![
         "--agent-socket".to_string(),
@@ -2866,9 +2814,6 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
         "--font".into(),
         "fixed".into(),
     ];
-    if spaces {
-        args.push("--spaces".into());
-    }
     args.extend(["--width", "800", "--height", "600", "--state"].map(String::from));
     if let Ok(events) = std::fs::read_to_string(input.with_extension("events")) {
         args.push("--events".into());
@@ -2939,15 +2884,13 @@ fn window_agent_session(input: &Path, n: usize, spaces: bool) -> Result<String, 
     if root().join(&sock).exists() {
         return Err("the window left its socket file".into());
     }
-    if spaces {
-        no_spaces_left(window_pid)?;
-    }
+    no_spaces_left(window_pid)?;
     got.push_str("--- window\n");
     for line in text(&out.stdout).lines() {
         // With Spaces the status line shows the person's acts and the
         // Spaces' last actions in the order they reached the window,
         // which varies; the `space` lines have each Space's last action.
-        if !line.starts_with("loop_max_ms ") && !(spaces && line.starts_with("activity ")) {
+        if !line.starts_with("loop_max_ms ") && !line.starts_with("activity ") {
             got.push_str(line);
             got.push('\n');
         }
@@ -2996,16 +2939,19 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// The window with `--spaces` (B9 R2, ui/spaces.aye): each connection
-/// is served by a Space, a process of its own, and the window copies
-/// the bytes. `browser/tests/agent/spaces/X.jsonl` runs as in
-/// `window_agents` (copies of `isolation` and `frames`): the agent's
-/// own work answers as in the window, the user's tab stays as it was,
-/// and no Space is left after the window exits. P9.3: `pause` (Cmd+Shift+P
-/// pauses the Space, `paused` and `resumed`, `stop:1` ends it with
-/// `stopped`), `pointing` (the person's context and Cmd+Shift+K reach
-/// the Space, named by the hello), `attach` (a hello that names no done
-/// Space). `waited N ms` stands for the time a `wait` took.
+/// The window (B9 R2, ui/spaces.aye): each connection is served by a
+/// Space, a process of its own, and the window copies the bytes.
+/// `browser/tests/agent/spaces/X.jsonl` is sent over the window's socket
+/// (through `dweller connect --mcp` for `X.mcp.jsonl`) while the window
+/// runs headless with the scripted events of `X.events` (`agents:N`
+/// waits for N requests); the responses, then the window's `--state`,
+/// must be `X.out`. The agent's own work answers in its Space, the
+/// user's tab stays as it was, and no Space is left after the window
+/// exits. `pause` (Cmd+Shift+P pauses the Space, `paused` and `resumed`,
+/// `stop:1` ends it with `stopped`), `pointing` (the person's context
+/// and Cmd+Shift+K reach the Space, named by the hello), `attach` (a
+/// hello that names no done Space). `waited N ms` stands for the time a
+/// `wait` took.
 #[test]
 fn window_spaces() {
     if !has_sdl() {
@@ -3031,7 +2977,7 @@ fn window_spaces() {
     let mut failures = Vec::new();
     for (i, input) in inputs.iter().enumerate() {
         let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        match window_agent_session(input, i, true) {
+        match window_agent_session(input, i) {
             Ok(got) => check_golden(
                 &input.with_extension("out"),
                 &waited_n(&rooted(&got)),
@@ -3192,17 +3138,14 @@ fn space_records(err: &str) -> (Vec<Record>, String) {
 // Agent A runs a 1500 ms `eval` loop and B loads a page whose server
 // waits 1500 ms; while both run, C asks for `tabs` and the user clicks
 // into a text field and types (`agents:4`: after C's answer).
-fn responsive_session(base: &str, spaces: bool) -> Responsive {
-    let sock = format!("target/spaces-resp-{}-{spaces}.sock", std::process::id());
-    let mut extra = vec![
+fn responsive_session(base: &str) -> Responsive {
+    let sock = format!("target/spaces-resp-{}.sock", std::process::id());
+    let extra = vec![
         "--state",
         "--events",
         "agents:4 click:60,100 text:hello",
         "browser/tests/agent/site/notes.html",
     ];
-    if spaces {
-        extra.push("--spaces");
-    }
     let window = spaces_window_env(&sock, &extra, &[("DWELLER_TIMING", "1")]);
     let window_pid = window.id();
     // The records are read as they come (`spaces_window`).
@@ -3242,9 +3185,7 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
         .find_map(|l| l.strip_prefix("loop_max_ms "))
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no loop_max_ms in the state:\n{state}"));
-    if spaces {
-        no_spaces_left(window_pid).unwrap();
-    }
+    no_spaces_left(window_pid).unwrap();
     Responsive {
         loop_max_ms,
         c_ms,
@@ -3256,16 +3197,14 @@ fn responsive_session(base: &str, spaces: bool) -> Responsive {
 }
 
 /// B9 R2: while agent A runs a 1500 ms `eval` loop and agent B loads a
-/// page whose server waits 1500 ms, the window with `--spaces` never
+/// page whose server waits 1500 ms, the window never
 /// waits for their Spaces: in the DWELLER_TIMING records, the window
 /// relays A's `eval` to its Space and the answer back in different loop
 /// iterations, with others between them, in which it also relays a third
 /// agent's request and answer; it handles the user's click and typing.
 /// What does not depend on the machine's load is asserted; the times are
 /// bounded generously (a loaded machine stalls a loop iteration for tens
-/// of ms, a wait for A's Space stalls one for over a second). Without
-/// `--spaces` the same load holds the loop up for over a second (the
-/// measure measures).
+/// of ms, a wait for A's Space stalls one for over a second).
 #[test]
 fn window_spaces_responsive() {
     if !has_sdl() {
@@ -3276,7 +3215,7 @@ fn window_spaces_responsive() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let r = responsive_session(&srv.base, true);
+    let r = responsive_session(&srv.base);
     assert!(
         r.a.0.contains("\"result\":\"spun\"") && r.a.1 >= 1400,
         "A: {} ms: {}",
@@ -3340,16 +3279,9 @@ fn window_spaces_responsive() {
     );
     assert!(r.c_ms < 1000, "C waited {} ms", r.c_ms);
     assert!(r.state.contains("\nvalue hello\n"), "{}", r.state);
-    let old = responsive_session(&srv.base, false);
-    assert!(
-        old.loop_max_ms >= 1000,
-        "without --spaces: loop_max_ms {}\n{}",
-        old.loop_max_ms,
-        old.state
-    );
     println!(
-        "loop_max_ms {} with --spaces (C {} ms, {} loop iterations during A's eval), {} without (C {} ms)",
-        r.loop_max_ms, r.c_ms, loops_between, old.loop_max_ms, old.c_ms
+        "loop_max_ms {} (C {} ms, {} loop iterations during A's eval)",
+        r.loop_max_ms, r.c_ms, loops_between
     );
 }
 
@@ -3541,6 +3473,102 @@ fn window_spaces_control() {
             || state.contains("\nspace 1 \"Alpha\" done: click checkbox"),
         "{state}"
     );
+    no_spaces_left(pid).unwrap();
+}
+
+const PARALLEL_SCRIPTS: [(&str, &[&str]); 3] = [
+    (
+        "Alpha",
+        &[
+            r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#,
+            r#"{"id":2,"cmd":"type","ref":"e2","text":"Ada"}"#,
+            r#"{"id":3,"cmd":"click","ref":"e4"}"#,
+            r#"{"id":4,"cmd":"read"}"#,
+        ],
+    ),
+    (
+        "Beta",
+        &[
+            r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#,
+            r#"{"id":2,"cmd":"click","ref":"e6"}"#,
+        ],
+    ),
+    (
+        "Gamma",
+        &[
+            r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/docs.html"}"#,
+            r#"{"id":2,"cmd":"snapshot"}"#,
+            r#"{"id":3,"cmd":"read"}"#,
+        ],
+    ),
+];
+
+// A connection that said hello as `name`.
+fn named_conn(sock: &str, name: &str) -> AgentConn {
+    let mut conn = AgentConn::open(sock);
+    conn.send(&format!("{{\"name\":\"{name}\"}}"));
+    conn
+}
+
+// Sends `script` one request at a time; the answers.
+fn answers(conn: &mut AgentConn, script: &[&str]) -> Vec<String> {
+    script.iter().map(|l| conn.ask(l).0).collect()
+}
+
+/// B9 R3 (P9.9): three agents in three Spaces navigate, type and read
+/// at once, and each one's answers equal its answers alone. The person
+/// pauses Beta (`pause:2`): Beta is refused while Alpha and Gamma go on,
+/// and the person's tab strip still shows one tab.
+#[test]
+fn window_spaces_parallel() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let alone: Vec<Vec<String>> = PARALLEL_SCRIPTS
+        .iter()
+        .enumerate()
+        .map(|(i, (name, script))| {
+            let sock = format!("target/spaces-alone{i}-{}.sock", std::process::id());
+            let window = spaces_window(&sock, &[]);
+            let got = answers(&mut named_conn(&sock, name), script);
+            let out = window.wait_with_output().unwrap();
+            assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
+            assert!(got.iter().all(|l| l.contains("\"ok\":true")), "{name}: {got:?}");
+            got
+        })
+        .collect();
+    let sock = format!("target/spaces-parallel-{}.sock", std::process::id());
+    let window = spaces_window(&sock, &["--state", "--events", "agents:9 pause:2"]);
+    let pid = window.id();
+    let mut conns: Vec<AgentConn> = PARALLEL_SCRIPTS
+        .iter()
+        .map(|(name, _)| named_conn(&sock, name))
+        .collect();
+    let together: Vec<Vec<String>> = std::thread::scope(|scope| {
+        let runs: Vec<_> = conns
+            .iter_mut()
+            .zip(PARALLEL_SCRIPTS.iter())
+            .map(|(conn, (_, script))| scope.spawn(move || answers(conn, script)))
+            .collect();
+        runs.into_iter().map(|r| r.join().unwrap()).collect()
+    });
+    assert_eq!(together, alone);
+    assert_eq!(spaces_of(pid).len(), 3);
+    assert_eq!(conns[1].line(), "{\"event\":\"paused\",\"space\":2}\n");
+    let (got, _) = conns[1].ask(r#"{"id":3,"cmd":"click","ref":"e6"}"#);
+    assert_eq!(got, "{\"id\":3,\"ok\":false,\"error\":\"paused by user\"}\n");
+    let (got, _) = conns[0].ask(r#"{"id":5,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = conns[2].ask(r#"{"id":4,"cmd":"read"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    for conn in &conns {
+        conn.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    }
+    let out = window.wait_with_output().unwrap();
+    assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
+    let state = text(&out.stdout);
+    assert!(state.contains("\ntabs 1, showing 1\n"), "{state}");
     no_spaces_left(pid).unwrap();
 }
 
