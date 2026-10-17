@@ -1,0 +1,18 @@
+// v8: src/builtins/x64/builtins-x64.cc (Generate_CallFunction)
+
+fn vmNativeCallee(it: *mut Interp, f: Value, op: u8, site: u32) ?u32 {
+    let o = objectOf(f)
+
+    if o == NONE || it.heap.obj(o).class != Class.Function {
+        return null
+    }
+
+    if op == BC_CALL_UNDEFINED_RECEIVER && isDirectEval(it, site, f) {
+        return null
+    }
+
+    return match it.heap.obj(o).data {
+        .Native { id } => id
+        _ => null
+    }
+}
