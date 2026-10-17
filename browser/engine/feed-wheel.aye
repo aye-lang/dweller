@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/uievents/#events-wheelevents
+pub fn feedWheel(p: *mut Page, word: []u8) AllocError!void {
+    var parts = text.split(word[6..], ",")
+    var at = [4]f64{0.0, 0.0, 0.0, 0.0}
+
+    for i in 0..4 {
+        at[i] = text.parseFloat(parts.next() orelse return) catch 0.0
+    }
+
+    let el = try elementAtPoint(p, at[0], at[1]) orelse return
+
+    if !try dispatchWheel(p, el, at[0], at[1], at[2], at[3]) {
+        return
+    }
+
+    var delta = text.Builder.init(p.alloc)
+    defer delta.deinit()
+    try delta.appendFloat(at[2])
+    try delta.append("\n")
+    try delta.appendFloat(at[3])
+    _ = try dispatchEvent(p, el, "__wheel", delta.bytes())
+}

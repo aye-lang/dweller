@@ -1,0 +1,13 @@
+import dom
+import engine
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/interaction.html#activation-triggering-input-event
+fn spaceUp(ui: *mut Ui) AllocError!void {
+    let p = ui.tab.page orelse return
+    let f = p.doc.controls.focus orelse return
+
+    if dom.isSame(engine.space_pressed, f) && engine.spaceClicks(&p.doc, f) {
+        try runActivation(ui, try engine.keyClick(p, f))
+    }
+}

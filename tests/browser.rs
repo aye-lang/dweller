@@ -2327,11 +2327,11 @@ fn window_forms() {
             state("form.html", "element input name=q\nvalue yo\n"),
         ),
         (
-            "key:tab key:tab key:tab key:space key:tab key:down key:down key:tab text:a key:return text:b",
+            "key:tab key:tab key:tab key:space keyup:space key:tab key:down key:down key:tab text:a key:return text:b",
             state("form.html", "element textarea name=note\nvalue a\nb\n"),
         ),
         (
-            "key:tab key:tab key:tab key:space key:tab key:down key:down key:tab text:a key:return text:b click:170,60",
+            "key:tab key:tab key:tab key:space keyup:space key:tab key:down key:down key:tab text:a key:return text:b click:170,60",
             state(
                 "result.html?q=hi&go=1&all=yes&lang=ja&note=a%0D%0Ab&tags=b",
                 "",

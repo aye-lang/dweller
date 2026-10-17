@@ -160,7 +160,7 @@ pub let PRELUDE =
     \\function addListener(t, type, fn, opts) {
     \\  if (fn === null || fn === undefined) return;
     \\  type = String(type);
-    \\  if (type === 'scroll') watchScroll(t);
+    \\  if (type === 'scroll' || type === 'scrollend') watchScroll(t);
     \\  const capture = captureOf(opts);
     \\  const once = !!(opts && typeof opts === 'object' && opts.once);
     \\  const passive = opts && typeof opts === 'object' && opts.passive !== undefined ? !!opts.passive : defaultPassive(t, type);
@@ -173,6 +173,12 @@ pub let PRELUDE =
     \\function defaultPassive(t, type) {
     \\  if (type !== 'wheel' && type !== 'mousewheel' && type !== 'touchstart' && type !== 'touchmove') return false;
     \\  return t === G || t === document || t === document.documentElement || t === document.body;
+    \\}
+    \\function wheelCancelable(t) {
+    \\  for (let n = t; n; n = n === document ? G : n.parentNode || n.host) {
+    \\    if ((n.__listeners || []).some(l => l.type === 'wheel' && !l.passive) || (handlerOf(n, 'wheel') && !defaultPassive(n, 'wheel'))) return true;
+    \\  }
+    \\  return false;
     \\}
     \\function removeListener(t, type, fn, opts) {
     \\  const ls = t.__listeners;
@@ -191,7 +197,7 @@ pub let PRELUDE =
     \\
     \\// Inline handlers: `onclick` properties, and `onclick` attributes compiled
     \\// when first needed (again when the attribute changes).
-    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pointercancel pointerdown pointerenter pointerleave pointermove pointerout pointerover pointerup pointerlockchange pointerlockerror fullscreenchange fullscreenerror visibilitychange reset resize scroll select submit toggle wheel animationstart animationiteration animationend animationcancel transitionrun transitionstart transitionend transitioncancel webkitAnimationStart webkitAnimationIteration webkitAnimationEnd webkitTransitionEnd'.split(' ');
+    \\const HANDLERS = 'abort blur change click close contextmenu dblclick error focus input invalid keydown keypress keyup load message mousedown mouseenter mouseleave mousemove mouseout mouseover mouseup pointercancel pointerdown pointerenter pointerleave pointermove pointerout pointerover pointerup pointerlockchange pointerlockerror fullscreenchange fullscreenerror visibilitychange reset resize scroll scrollend select submit toggle wheel animationstart animationiteration animationend animationcancel transitionrun transitionstart transitionend transitioncancel webkitAnimationStart webkitAnimationIteration webkitAnimationEnd webkitTransitionEnd'.split(' ');
     \\function handlerTable(t) {
     \\  let m = t.__handlers;
     \\  if (!m) {
@@ -230,7 +236,7 @@ pub let PRELUDE =
     \\  if (t === G || t === document) ak.watchScroll();
     \\}
     \\function setHandler(t, type, v) {
-    \\  if (type === 'scroll' && typeof v === 'function') watchScroll(t);
+    \\  if ((type === 'scroll' || type === 'scrollend') && typeof v === 'function') watchScroll(t);
     \\  handlerTable(t)[type] = { fn: typeof v === 'function' ? v : null, src: attributeOf(t, type), prop: true };
     \\}
     \\
@@ -427,7 +433,9 @@ pub let PRELUDE =
     \\// An event the browser makes (a click, a key, the load of the page).
     \\function hostEvent(target, type, key, x, y, dx, dy) {
     \\  if (type === '__host') { hostState(key); return true; }
-    \\  if (type === '__focus') { moveFocus(target.closest(CLICK_FOCUSABLE)); return true; }
+    \\  if (type === '__focus') { moveFocus(key === 'key' ? target : target.closest(CLICK_FOCUSABLE)); return true; }
+    \\  if (type === '__wheel') { wheelScroll(target, ...key.split('\\n').map(Number)); return true; }
+    \\  if (type === '__click') { actUntil = ak.now() + 5000; return keyClick(target); }
     \\  if (ACTIVATING[type] && !(type === 'keydown' && /^Escape\n/.test(key || ''))) actUntil = ak.now() + 5000;
     \\  if (lockEl && /^((pointer|mouse)(move|down|up)|click)$/.test(type) && inDoc(lockEl)) target = lockEl;
     \\  // The user scrolled the window: `scroll` follows as a task, as for a
@@ -452,9 +460,9 @@ pub let PRELUDE =
     \\  } else if (type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') {
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
     \\  } else if (type === 'wheel') {
-    \\    ev = new WheelEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, deltaX: dx, deltaY: dy, deltaMode: 0 });
-    \\  } else if (type === 'input') {
-    \\    ev = new InputEvent(type, { bubbles: true, composed: true, data: key === undefined ? null : key, inputType: 'insertText' });
+    \\    ev = new WheelEvent(type, { bubbles: true, cancelable: wheelCancelable(target), composed: true, clientX: x, clientY: y, deltaX: dx, deltaY: dy, deltaMode: 0 });
+    \\  } else if (type === 'input' || type === 'beforeinput') {
+    \\    ev = new InputEvent(type, { bubbles: true, cancelable: type === 'beforeinput', composed: true, data: key === undefined ? null : key, inputType: 'insertText' });
     \\  } else if (type === 'focus' || type === 'blur') {
     \\    ev = new FocusEvent(type, { composed: true });
     \\  } else if (type === 'focusin' || type === 'focusout') {
@@ -559,6 +567,11 @@ pub let PRELUDE =
     \\  const fragment = dispatch(this, ev) ? ak.activate(this) : undefined;
     \\  if (fragment) navigateTo(fragment, false);
     \\});
+    \\function keyClick(el) {
+    \\  const ev = new PointerEvent('click', { bubbles: true, cancelable: true, composed: true, pointerId: -1 });
+    \\  ev.isTrusted = true;
+    \\  return dispatch(el, ev);
+    \\}
     \\function focusEvent(target, type, relatedTarget) {
     \\  const ev = new FocusEvent(type, { bubbles: type === 'focusin' || type === 'focusout', composed: true, relatedTarget });
     \\  ev.isTrusted = true;
@@ -3576,8 +3589,10 @@ pub let PRELUDE =
     \\getter(ElementP, 'scrollHeight', function () { return ak.metric(this, 11); });
     \\// A scroll that moved fires `scroll` (at the element, or at the document
     \\// for the window) as a task, once for the scrolls of a target until then.
-    \\const scrollPending = new Set();
+    \\const scrollPending = new Set(), scrollEnds = new Map();
     \\function scrolled(target) {
+    \\  clearTimeout(scrollEnds.get(target));
+    \\  scrollEnds.set(target, setTimeout(() => { scrollEnds.delete(target); scrollEnd(target); }, 100));
     \\  if (scrollPending.has(target)) return;
     \\  scrollPending.add(target);
     \\  setTimeout(() => {
@@ -3585,6 +3600,17 @@ pub let PRELUDE =
     \\    if (target === G) dispatch(document, new Event('scroll', { bubbles: true }));
     \\    else dispatch(target, new Event('scroll'));
     \\  }, 0);
+    \\}
+    \\function scrollEnd(target) {
+    \\  if (target === G) dispatch(document, new Event('scrollend', { bubbles: true }));
+    \\  else if (target.isConnected) dispatch(target, new Event('scrollend'));
+    \\}
+    \\function wheelScroll(el, dx, dy) {
+    \\  for (let n = el; n instanceof Element && n !== document.documentElement && n !== document.body; n = n.parentElement) {
+    \\    const s = getComputedStyle(n);
+    \\    if (/auto|scroll/.test(s.overflowX + s.overflowY) && (n.scrollHeight > n.clientHeight || n.scrollWidth > n.clientWidth)) return n.scrollBy(dx, dy);
+    \\  }
+    \\  G.scrollBy(dx, dy);
     \\}
     \\function scrollTarget(el, left, top) {
     \\  if (ak.setScroll(el, left, top)) scrolled(el === null || el === document.documentElement ? G : el);
