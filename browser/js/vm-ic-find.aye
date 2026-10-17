@@ -1,0 +1,21 @@
+// v8: src/ic/ic.cc (IC::UpdatePolymorphicIC)
+
+fn vmIcFind(st: *mut VmState, e: *mut IcEntry, shape: u32, key: u32, store: bool) ?IcCase {
+    if e.state == IC_MEGA {
+        let s = st.stub[icStubIndex(shape, key, store)]
+
+        if s.atom == key && s.store == store && s.c.shape == shape {
+            return s.c
+        }
+
+        return null
+    }
+
+    for i in 0..e.n as usize {
+        if e.cases[i].shape == shape {
+            return e.cases[i]
+        }
+    }
+
+    return null
+}

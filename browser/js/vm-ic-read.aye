@@ -1,0 +1,19 @@
+// v8: src/ic/handler-configuration.h (LoadHandler::Kind)
+
+fn vmIcRead(it: *mut Interp, v: Value, holder: u32, slot: u32, key: u32) JsError!Value {
+    let p = it.heap.obj(holder).props[slot]
+
+    if (p.flags & F_ACCESSOR) == 0 {
+        if key == A_PROTOTYPE && it.heap.obj(holder).class == Class.Function && p.value is .Empty {
+            return it.materializePrototype(holder, slot)
+        }
+
+        return p.value
+    }
+
+    if isNullish(p.value) {
+        return Value.Undefined
+    }
+
+    return it.call0(p.value, v)
+}

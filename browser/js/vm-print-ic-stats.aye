@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+fn vmPrintIcStats(st: *mut VmState, b: *mut text.Builder) AllocError!void {
+    var states = [4]u64{0, 0, 0, 0}
+    var kinds = [5]u64{0, 0, 0, 0, 0}
+
+    for f in st.funcs.items() {
+        if f.code |c| {
+            for e in c.feedback {
+                states[e.state as usize] += 1
+                kinds[e.kind as usize] += 1
+            }
+        }
+    }
+
+    try b.append("vm: ic ")
+    try b.appendUint(states[IC_MONO as usize])
+    try b.append(" monomorphic, ")
+    try b.appendUint(states[IC_POLY as usize])
+    try b.append(" polymorphic, ")
+    try b.appendUint(states[IC_MEGA as usize])
+    try b.append(" megamorphic; keyed ")
+    try b.appendUint(kinds[KIND_DENSE as usize])
+    try b.append(" dense array, ")
+    try b.appendUint(kinds[KIND_STRING as usize])
+    try b.append(" string, ")
+    try b.appendUint(kinds[KIND_ARGUMENTS as usize])
+    try b.append(" arguments, ")
+    try b.appendUint(kinds[KIND_GENERIC as usize])
+    try b.append(" generic\n")
+}

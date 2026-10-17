@@ -42,6 +42,7 @@ pub struct VmState {
     // The callers of the frames pushed by the dispatch loop itself
     // (JS-to-JS calls without C recursion), innermost last.
     saved: List(VmSaved)
+    stub: []mut IcStub
 }
 
 // A caller suspended by a call that stays in the dispatch loop: where it
@@ -81,7 +82,11 @@ pub fn vmInit(it: *mut Interp) {
     if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
         stats = p[0] == '1'
     }
-    let st = it.alloc.create(VmState { funcs: List(VmFunc).init(it.alloc), stats: stats, ninsns: 0, ncalls: 0, saved: List(VmSaved).init(it.alloc) }) catch |e| {
+    let stub = it.alloc.alloc(IcStub { atom: NONE, store: false, c: emptyIcEntry().cases[0] }, IC_STUB_SIZE) catch |e| {
+        return
+    }
+    let st = it.alloc.create(VmState { funcs: List(VmFunc).init(it.alloc), stats: stats, ninsns: 0, ncalls: 0, saved: List(VmSaved).init(it.alloc), stub: stub }) catch |e| {
+        it.alloc.free(stub)
         return
     }
     it.vm = st
@@ -101,6 +106,7 @@ pub fn vmDeinit(it: *mut Interp) {
         }
         st.funcs.deinit()
         st.saved.deinit()
+        it.alloc.free(st.stub)
         it.alloc.destroy(st)
         it.vm = null
     }
@@ -168,6 +174,7 @@ fn vmPrintStats(st: *mut VmState) AllocError!void {
         try b.append(r.reason)
         try b.appendByte('\n')
     }
+    try vmPrintIcStats(st, &mut b)
     std.fs.stderr().write(b.bytes()) catch |e| {}
 }
 
@@ -1435,18 +1442,20 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // the tree walker's cache of that node
                 let o = regs[(base + vmImm(bytes, pc, w)) as usize]
                 let id = vmIdx(bytes, pc + w as usize, w) as u32
-                pc += 2 * w as usize
+                let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
+                pc += 3 * w as usize
                 regs[fp] = acc
-                acc = try getCachedProp(it, id, o, vmMemberName(it, id))
+                acc = try vmLoadNamed(it, st, e, o, vmMemberName(it, id))
                 regs = it.stack.items()
             }
             76 => {
                 // SetNamedProperty r, [n]: r.name = acc (Member node n)
                 let o = regs[(base + vmImm(bytes, pc, w)) as usize]
                 let id = vmIdx(bytes, pc + w as usize, w) as u32
-                pc += 2 * w as usize
+                let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
+                pc += 3 * w as usize
                 regs[fp] = acc
-                try setCachedProp(it, id, o, vmMemberName(it, id), acc)
+                try vmStoreNamed(it, st, e, o, vmMemberName(it, id), acc)
                 regs = it.stack.items()
             }
             77 => {
@@ -1603,18 +1612,20 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             93 => {
                 // v8: src/interpreter/interpreter-generator.cc (GetKeyedProperty)
                 let o = regs[(base + vmImm(bytes, pc, w)) as usize]
+                let e = &mut code.feedback[vmIdx(bytes, pc + w as usize, w) as usize]
                 pc += 2 * w as usize
                 regs[fp] = acc
-                acc = try it.getIndex(o, acc)
+                acc = try vmKeyedLoad(it, e, o, acc)
                 regs = it.stack.items()
             }
             94 => {
                 // v8: src/interpreter/interpreter-generator.cc (SetKeyedProperty)
                 let o = regs[(base + vmImm(bytes, pc, w)) as usize]
                 let k = regs[(base + vmImm(bytes, pc + w as usize, w)) as usize]
+                let e = &mut code.feedback[vmIdx(bytes, pc + 2 * w as usize, w) as usize]
                 pc += 3 * w as usize
                 regs[fp] = acc
-                try it.setIndex(o, k, acc)
+                try vmKeyedStore(it, e, o, k, acc)
                 regs = it.stack.items()
             }
             95 => {

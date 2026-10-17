@@ -1,0 +1,36 @@
+// v8: src/ic/ic.cc (StoreIC::ComputeHandler, TRANSITION)
+
+fn vmIcAddCase(it: *mut Interp, o: u32, key: u32) ?IcCase {
+    let ob = it.heap.obj(o)
+
+    if !ob.extensible || ob.frozen {
+        return null
+    }
+
+    var c = IcCase { shape: ob.shape, other: NONE, slot: ob.nprops, proto1: NONE, proto2: NONE }
+    let p1 = ob.proto
+
+    if p1 == NONE {
+        return c
+    }
+
+    if !vmIcProtoLacks(it, p1, key) {
+        return null
+    }
+
+    c.proto1 = it.heap.obj(p1).shape
+
+    let p2 = it.heap.obj(p1).proto
+
+    if p2 == NONE {
+        return c
+    }
+
+    if !vmIcProtoLacks(it, p2, key) || it.heap.obj(p2).proto != NONE {
+        return null
+    }
+
+    c.proto2 = it.heap.obj(p2).shape
+
+    return c
+}

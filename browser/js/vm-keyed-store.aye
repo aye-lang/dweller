@@ -1,0 +1,32 @@
+// v8: src/ic/ic.cc (KeyedStoreIC::Store)
+
+fn vmKeyedStore(it: *mut Interp, e: *mut IcEntry, v: Value, k: Value, value: Value) JsError!void {
+    match k {
+        .Num { n } => {
+            let o = objectOf(v)
+
+            if o != NONE && n >= 0.0 && n < it.heap.obj(o).nelems as f64 && (n as u32) as f64 == n {
+                let ob = it.heap.obj(o)
+
+                if (ob.class == Class.Array || ob.class == Class.Arguments) && !ob.frozen {
+                    var kind = KIND_ARGUMENTS
+
+                    if ob.class == Class.Array {
+                        kind = KIND_DENSE
+                    }
+
+                    vmIcNoteKind(e, kind)
+                    ob.elems[n as u32] = value
+
+                    return
+                }
+            }
+        }
+
+        _ => {}
+    }
+
+    vmIcNoteKind(e, KIND_GENERIC)
+
+    return it.setIndex(v, k, value)
+}
