@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn writeStopPart(c: Comp, computed: bool, out: *mut text.Builder) AllocError!void {
+    if colorValue(c) |v| {
+        if computed {
+            return writeValue(v, out)
+        }
+
+        if try writeSpecifiedColor(c.toks, out) {
+            return
+        }
+    }
+
+    if computed {
+        _ = try writeComp(c, out)
+    } else {
+        try writeTokens(c.toks, out)
+    }
+}

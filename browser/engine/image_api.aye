@@ -52,7 +52,13 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
         waited = asked as u32
     }
     let mapped = cache.nodes.get(h)
-    let loaded = try loadElementImage(cache, &p.doc, h, &base, css.Media { width: s.width, height: s.height }, ImageFetch.Background, waited)
+    var media = css.Media { width: s.width, height: s.height }
+    if p != s.page {
+        if p.styling |st| {
+            media = st.media
+        }
+    }
+    let loaded = try loadElementImage(cache, &p.doc, h, &base, media, ImageFetch.Background, waited)
     // A new bitmap changes the element's natural size: the next geometry
     // query must lay out its boxes again though the document did not
     // change (its styles stay), and so must the page.

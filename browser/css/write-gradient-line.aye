@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-images-4/#serialization
+fn writeGradientLine(g: Gradient, line: []Comp, computed: bool, out: *mut text.Builder) AllocError!void {
+    if computed && line.len == 2 && isIdent(line[1], "bottom") {
+        return
+    }
+
+    for k, c in line {
+        if computed && isIdent(c, "at") {
+            return writeGradientAt(g.at, out)
+        }
+
+        let sized = k + 1 < line.len && lenPctOf(line[k + 1]) != null
+
+        if (isIdent(c, "ellipse") && (computed || sized)) || (computed && isIdent(c, "farthest-corner")) {
+            continue
+        }
+
+        if out.bytes()[out.len() - 1] != '(' {
+            try out.appendByte(' ')
+        }
+
+        if computed {
+            _ = try writeComp(c, out)
+        } else {
+            try writeTokens(c.toks, out)
+        }
+    }
+}

@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-images-4/#serialization
+fn writeGradientAt(at: Position, out: *mut text.Builder) AllocError!void {
+    if at.x.px == 0.0 && at.x.pct == 50.0 && at.y.px == 0.0 && at.y.pct == 50.0 {
+        return
+    }
+
+    if out.bytes()[out.len() - 1] != '(' {
+        try out.appendByte(' ')
+    }
+
+    try out.append("at ")
+    try writeLenPct(at.x, out)
+    try out.appendByte(' ')
+    try writeLenPct(at.y, out)
+}

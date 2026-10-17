@@ -1,0 +1,33 @@
+import css
+import svg
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+
+// spec: https://drafts.csswg.org/css-images-4/#coloring-gradient-line
+fn spaceStops(alloc: Allocator, g: css.Gradient, stops: []svg.GradStop) AllocError![]svg.GradStop {
+    if g.space <= 1 || stops.len < 2 {
+        return stops
+    }
+
+    let steps: usize = 256
+    let out = try alloc.alloc(stops[0], (stops.len - 1) * steps + 1)
+
+    for i in 0..stops.len - 1 {
+        let a = stops[i]
+        let b = stops[i + 1]
+        let ca = stopCssColor(g.stops.items()[i].color, a.c)
+        let cb = stopCssColor(g.stops.items()[i + 1].color, b.c)
+
+        for k in 0..steps {
+            let w = k as f64 / steps as f64
+            let c = css.mixStop(g.space, g.method, ca, cb, w)
+
+            out[i * steps + k] = svg.GradStop { t: a.t + (b.t - a.t) * w, c: svg.Color { r: c.r, g: c.g, b: c.b, a: math.round(c.a * 255.0) as u8 } }
+        }
+    }
+
+    out[out.len - 1] = stops[stops.len - 1]
+
+    return out
+}
