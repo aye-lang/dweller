@@ -936,12 +936,17 @@ fn installCrashHandler() {
 // did before: a fault comes again when the handler returns; a signal that
 // was sent (kill, abort) is sent again.
 fn onCrash(sig: i32, info: ?[*]u8, ctx: ?[*]u8) {
+    if old_handler_sig != 0 {
+        endInOldHandler()
+        return
+    }
     var which: usize = 0
     for i, s in CRASH_SIGNALS {
         if s == sig {
             which = i
         }
     }
+    runOldFaultHandler(sig, which, info, ctx)
     // siginfo_t's si_code (after si_signo and si_errno): 0 or less when a
     // process sent the signal (macOS does not tell: taken as sent). It ends
     // the process as without handlers; a fault goes to the handler before.

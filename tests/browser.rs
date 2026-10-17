@@ -8420,6 +8420,32 @@ fn window_telemetry() {
         );
         assert!(got.contains("\"ev\":\"js_error\""), "{got}");
     }
+
+    // A stack overflow on macOS: Aye's panic line, then the crash record,
+    // and the window ends on SIGSEGV.
+    if cfg!(target_os = "macos") {
+        use std::os::unix::process::ExitStatusExt;
+        let overflowed = base.join("overflowed");
+        std::fs::create_dir_all(&overflowed).unwrap();
+        let out = dweller_command()
+            .current_dir(root())
+            .env("HOME", &home)
+            .env("DWELLER_PROFILE", &overflowed)
+            .env_remove("DWELLER_TELEMETRY")
+            .env_remove("DWELLER_TELEMETRY_DIR")
+            .args([page.as_str(), "--font", "fixed", "--frames", "300", "--events", "frame overflow"])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert_eq!(out.status.signal(), Some(11), "{err}");
+        assert!(err.contains("panic: stack overflow (deep recursion"), "{err}");
+        let got = records(&overflowed);
+        assert!(
+            got.lines()
+                .any(|l| l.contains("\"ev\":\"crash\"") && l.contains("\"signal\":\"SIGSEGV\"")),
+            "{got}"
+        );
+    }
     let _ = std::fs::remove_dir_all(&base);
 }
 
