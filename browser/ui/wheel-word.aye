@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn wheelWord(tmp: Allocator, ev: *SDL_Event) AllocError![]u8 {
+    let we = &ev.wheel
+    var b = text.Builder.init(tmp)
+
+    try b.append("wheel:")
+    try b.appendFloat(we.precise_x as f64)
+    try b.appendByte(',')
+    try b.appendFloat(we.precise_y as f64)
+
+    if we.direction == SDL_MOUSEWHEEL_FLIPPED {
+        try b.append(",flipped")
+    }
+
+    return b.bytes()
+}
