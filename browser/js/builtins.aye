@@ -60,6 +60,7 @@ pub fn installBuiltins(it: *mut Interp) JsError!void {
     try it.defineNative(g, "queueMicrotask", 1, globalQueueMicrotask)
     try it.runScript(LIB)
     try installTextCodec(it)
+    try installSpecScripts(it)
 }
 
 /// Turns a new array into an iterator over its elements.
@@ -513,6 +514,7 @@ pub fn definePropertyOrFalse(it: *mut Interp, o: u32, key: u32, desc: Value) JsE
 /// checked by toPropertyDescriptor: false when it is rejected, or a
 /// TypeError saying why if `throwing`.
 pub fn defineOwnProperty(it: *mut Interp, o: u32, key: u32, desc: Value, throwing: bool) JsError!bool {
+    try ownFunctionKeys(it, o)
     if it.heap.obj(o).class == Class.Proxy {
         return proxyDefine(it, o, key, desc, throwing)
     }
@@ -724,6 +726,7 @@ pub fn ownDescriptor(it: *mut Interp, o: u32, key: u32) JsError!Value {
     if it.heap.obj(o).class == Class.Proxy {
         return proxyOwnDescriptor(it, o, key)
     }
+    try ownFunctionKeys(it, o)
     if !it.hasOwn(o, key) {
         return Value.Undefined
     }

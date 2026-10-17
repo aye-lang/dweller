@@ -1,0 +1,13 @@
+// spec: https://tc39.es/ecma262/#sec-setfunctionname
+
+fn ownFunctionKey(it: *mut Interp, o: u32, key: u32) JsError!void {
+    if it.heap.findProp(o, key) != null {
+        return
+    }
+
+    let v = try it.functionNameOrLength(o, key)
+
+    try it.push(v)
+    try it.defineOwn(o, key, v, F_CONFIG)
+    it.pop()
+}

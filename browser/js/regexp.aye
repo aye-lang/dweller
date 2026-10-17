@@ -1109,25 +1109,6 @@ pub fn newRegExp(it: *mut Interp, pattern: u32, flags: u32) JsError!Value {
     let o = try it.newObjectOf(Class.RegExp, it.regexp_proto, ObjData.Prim { v: numVal(id as f64) })
     try it.push(objVal(o))
     try it.heap.addProp(o, A_LASTINDEX, numVal(0.0), Value.Undefined, F_WRITE)
-    try it.heap.addProp(o, A_SOURCE, try it.atomValue(pattern), Value.Undefined, 0)
-    try it.heap.addProp(o, A_FLAGS, try it.atomValue(flags), Value.Undefined, 0)
-    let prog = it.regexes.items()[id]
-    try it.defineOwn(o, try it.intern("global"), boolVal(prog.global), 0)
-    try it.defineOwn(o, try it.intern("ignoreCase"), boolVal(prog.icase), 0)
-    try it.defineOwn(o, try it.intern("multiline"), boolVal(prog.multiline), 0)
-    try it.defineOwn(o, try it.intern("sticky"), boolVal(prog.sticky), 0)
-    try it.defineOwn(o, try it.intern("dotAll"), boolVal(prog.dotall), 0)
-    var unicode = false
-    var indices = false
-    for c in it.heap.atoms.name(prog.flags) {
-        if c == 'u' {
-            unicode = true
-        } else if c == 'd' {
-            indices = true
-        }
-    }
-    try it.defineOwn(o, try it.intern("unicode"), boolVal(unicode), 0)
-    try it.defineOwn(o, try it.intern("hasIndices"), boolVal(indices), 0)
     return it.pop()
 }
 

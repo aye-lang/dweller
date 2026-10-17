@@ -1084,6 +1084,7 @@ pub let LIB =
     \\  },
     \\});
     \\Object.defineProperty(IteratorHelperPrototype, Symbol.toStringTag, { value: 'Iterator Helper', configurable: true });
+    \\hidden(G, '__iteratorHelper', helper);
     \\function limitOf(limit, o) {
     \\  const n = Number(limit);
     \\  if (n !== n) {
@@ -1343,9 +1344,12 @@ pub let LIB =
     \\}
     \\const setters = { FullYear: [0, 3], Month: [1, 2], Date: [2, 1], Hours: [3, 4], Minutes: [4, 3], Seconds: [5, 2], Milliseconds: [6, 1] };
     \\for (const k of Object.keys(setters)) {
-    \\  const f = setter(setters[k][0], setters[k][1]);
-    \\  hidden(DP, 'set' + k, f);
-    \\  hidden(DP, 'setUTC' + k, f);
+    \\  for (const name of ['set' + k, 'setUTC' + k]) {
+    \\    const f = setter(setters[k][0], setters[k][1]);
+    \\    Object.defineProperty(f, 'length', { value: setters[k][1], configurable: true });
+    \\    Object.defineProperty(f, 'name', { value: name, configurable: true });
+    \\    hidden(DP, name, f);
+    \\  }
     \\}
     \\const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     \\const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1419,7 +1423,10 @@ pub let LIB =
     \\  set(o, k, v, r) {
     \\    if (!isObjectLike(o)) throw new TypeError('Reflect.set called on non-object');
     \\    if (isModuleNamespace(o)) return false;
-    \\    if (r === undefined || r === o) { o[k] = v; return true; }
+    \\    if (r === undefined || r === o) {
+    \\      try { o[k] = v; } catch (e) { if (e instanceof TypeError && !canSet(o, k)) return false; throw e; }
+    \\      return true;
+    \\    }
     \\    // OrdinarySet with another receiver: a setter runs on it; a data
     \\    // property is defined on it (a proxy's [[Set]] is not called again).
     \\    const d = findDescriptor(o, k);
@@ -1448,6 +1455,12 @@ pub let LIB =
     \\};
     \\function isObjectLike(v) {
     \\  return v !== null && (typeof v === 'object' || typeof v === 'function');
+    \\}
+    \\function canSet(o, k) {
+    \\  const d = findDescriptor(o, k);
+    \\  if (!d) return Object.isExtensible(o);
+    \\  if (d.get || d.set) return !!d.set;
+    \\  return d.writable && (Object.prototype.hasOwnProperty.call(o, k) || Object.isExtensible(o));
     \\}
     \\function findDescriptor(o, k) {
     \\  for (let p = o; p !== null && p !== undefined; p = Object.getPrototypeOf(p)) {
@@ -1585,7 +1598,7 @@ pub let LIB =
     \\    }
     \\    return r;
     \\  }
-    \\  map(f, t) { return new this.constructor(Array.prototype.map.call(this, f, t)); }
+    \\  map(f, t) { if (typeof f !== 'function') throw new TypeError(String(f) + ' is not a function'); return new this.constructor(Array.from({ length: this.length }, (_, k) => f.call(t, this[k], k, this))); }
     \\  filter(f, t) { return new this.constructor(Array.prototype.filter.call(this, f, t)); }
     \\  sort(f) {
     \\    const a = Array.from(this);
