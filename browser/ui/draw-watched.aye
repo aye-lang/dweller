@@ -1,0 +1,27 @@
+import paint
+import std
+import std.math
+
+fn drawWatched(ui: *mut Ui, area: paint.IRect) {
+    let a = ui.agents orelse return
+
+    if a.watch.id == 0 {
+        return
+    }
+
+    ui.canvas.fillRect(area, paint.Rgba { r: 255, g: 255, b: 255, a: 255 })
+
+    let map = a.watch.map orelse return
+    let fw = a.watch.width as usize
+    let fh = a.watch.height as usize
+    let w = math.minOf(usize, fw, (area.x1 - area.x0) as usize)
+    let h = math.minOf(usize, fh, (area.y1 - area.y0) as usize)
+    let slot = (a.watch.seq % 2) as usize * fw * fh * 4
+
+    for y in 0..h {
+        let from = slot + y * fw * 4
+        let to = ((area.y0 as usize + y) * ui.canvas.width + area.x0 as usize) * 4
+
+        std.mem.copy(ui.canvas.pixels[to..to + w * 4], map[from..from + w * 4])
+    }
+}

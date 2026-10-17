@@ -139,6 +139,7 @@ pub struct Agents {
     chip_hover: u32
     menu: u32
     chip_text: text.Builder
+    watch: Watch
 }
 
 /// Starts listening at `path`; null (after a message) when it cannot.
@@ -181,6 +182,7 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
         chip_hover: 0,
         menu: 0,
         chip_text: text.Builder.init(ui.alloc),
+        watch: Watch {},
     })
     ui.agents = a
     // The tab strip is there from now on.
@@ -1335,17 +1337,13 @@ fn drawChips(ui: *mut Ui) AllocError!void {
         let r = paint.Rect { x: c.x[k], y: CHIP_Y, w: c.w[k], h: CHIP_H }
         let base = centered(ui, r.y, r.h, f)
         if c.id[k] == 0 {
-            fill(ui, r.x, r.y, r.w, r.h, SHOWN_BG)
+            fill(ui, r.x, r.y, r.w, r.h, chipBg(a.watch.id == 0, false))
             frame(ui, r, 1.0, LINE)
             try label(ui, r.x + PAD, base, "You", f, INK)
             continue
         }
         let sp = spaceOf(a, c.id[k]) orelse continue
-        var bg = PAPER
-        if a.chip_hover == sp.id || a.menu == sp.id {
-            bg = CHIP_HOVER
-        }
-        fill(ui, r.x, r.y, r.w, r.h, bg)
+        fill(ui, r.x, r.y, r.w, r.h, chipBg(a.watch.id == sp.id, a.chip_hover == sp.id || a.menu == sp.id))
         frame(ui, r, 1.0, LINE)
         disc(ui, r.x + PAD + CHIP_DOT / 2.0, r.y + r.h / 2.0, CHIP_DOT / 2.0, stateInk(sp))
         let tx = r.x + PAD + CHIP_DOT + 5.0
