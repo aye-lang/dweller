@@ -175,7 +175,9 @@ pub let BC_GET_ASYNC_ITERATOR: u8 = 128
 pub let BC_ASYNC_ITERATOR_NEXT: u8 = 129
 pub let BC_ITERATOR_RESULT: u8 = 130
 pub let BC_CALL_MODULE_RUNTIME: u8 = 131
-pub let BC_COUNT: u8 = 132
+pub let BC_THROW_CONST_ASSIGNMENT_ERROR: u8 = 132
+pub let BC_TO_NAME: u8 = 133
+pub let BC_COUNT: u8 = 134
 
 pub let BC_JUMP_CONST_DELTA: u8 = 8
 
@@ -348,6 +350,8 @@ pub let BC_INFO = [_]BcInfo{
     BcInfo { name: "AsyncIteratorNext", ops: [3]BcOp{BcOp.Reg, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
     BcInfo { name: "IteratorResult", ops: [3]BcOp{BcOp.Reg, BcOp.None, BcOp.None}, nops: 1, flags: BC_AT },
     BcInfo { name: "CallModuleRuntime", ops: [3]BcOp{BcOp.UImm, BcOp.Reg, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "ThrowConstAssignmentError", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_AT },
+    BcInfo { name: "ToName", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_AT },
 }
 
 pub fn bcIsForwardJump(op: u8) bool {
@@ -490,6 +494,7 @@ pub enum BcConst {
     Atom { id: u32 }
     Func { id: u32 }
     Template { id: u32 }
+    Big { atom: u32 }
     // a jump offset: of a `Jump*Constant`, or a `SwitchOnSmi` table entry
     Offset { v: u32 }
     // a free entry (padding between the slices, unbound table entries)
@@ -509,6 +514,7 @@ fn bcConstKey(c: BcConst) BcConstKey {
         .Template { id } => BcConstKey { kind: 3, bits: id as u64 }
         .Offset { v } => BcConstKey { kind: 4, bits: v as u64 }
         .Hole => BcConstKey { kind: 5, bits: 0 }
+        .Big { atom } => BcConstKey { kind: 6, bits: atom as u64 }
     }
 }
 
@@ -1245,6 +1251,11 @@ fn bcConstText(b: *mut text.Builder, c: BcConst, atoms: ?*Atoms) AllocError!void
             try b.append(">")
         }
         .Hole => try b.append("<hole>")
+        .Big { atom } => {
+            try b.append("<bigint ")
+            try b.appendUint(atom as u64)
+            try b.append(">")
+        }
     }
 }
 
