@@ -78,11 +78,27 @@
     return words;
   }
 
+  function wheelWords(source) {
+    const words = [];
+    for (const a of source.actions) {
+      if (a.type !== 'scroll') continue;
+      let x = a.x || 0, y = a.y || 0;
+      if (a.origin instanceof Element) {
+        const c = centre(a.origin);
+        x += c[0];
+        y += c[1];
+      }
+      words.push('wheel:' + point(x, y) + ',' + (a.deltaX || 0) + ',' + (a.deltaY || 0));
+    }
+    return words;
+  }
+
   function sequenceWords(actions) {
     const state = {x: 0, y: 0};
     let words = [];
     for (const source of actions) {
       if (source.type === 'pointer') words = words.concat(pointerWords(source, state));
+      if (source.type === 'wheel') words = words.concat(wheelWords(source));
       if (source.type === 'key') {
         for (const a of source.actions) {
           if (a.type === 'keyDown') words = words.concat(keyWords(a.value, true));

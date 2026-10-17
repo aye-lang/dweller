@@ -1,0 +1,18 @@
+import dom.Document
+import dom.NodeId
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/interaction.html#the-accesskey-attribute
+pub fn accessKeyTarget(doc: *Document, key: []u8) ?NodeId {
+    var cur: ?NodeId = doc.root
+
+    while cur |h| {
+        if text.eqlIgnoreCase(text.trim(doc.attr(h, "accesskey") orelse ""), key) {
+            return h
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+
+    return null
+}
