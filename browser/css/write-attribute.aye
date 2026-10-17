@@ -1,0 +1,45 @@
+import std.mem.AllocError
+import std.text
+
+fn writeAttribute(toks: []Token, out: *mut text.Builder) AllocError!void {
+    var i: usize = 0
+
+    try out.appendByte('[')
+
+    if i + 1 < toks.len && isDelimTok(toks[i + 1], '|') && !(i + 2 < toks.len && isDelimTok(toks[i + 2], '=')) {
+        if isDelimTok(toks[i], '*') {
+            try out.append("*|")
+        } else {
+            try writeIdent(toks[i].text, out)
+            try out.appendByte('|')
+        }
+
+        i += 2
+    } else if i < toks.len && isDelimTok(toks[i], '|') {
+        i += 1
+    }
+
+    if i < toks.len {
+        try writeIdent(toks[i].text, out)
+        i = skipWhitespace(toks, i + 1)
+    }
+
+    while i < toks.len && toks[i].kind == Tok.Delim {
+        try out.appendByte(toks[i].delim as u8)
+        i += 1
+    }
+
+    i = skipWhitespace(toks, i)
+
+    if i < toks.len {
+        try writeCssString(toks[i].text, out)
+        i = skipWhitespace(toks, i + 1)
+    }
+
+    if i < toks.len {
+        try out.appendByte(' ')
+        try writeLowerIdent(toks[i].text, out)
+    }
+
+    try out.appendByte(']')
+}

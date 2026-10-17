@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn writeTypePart(part: []Token, more: bool, out: *mut text.Builder) AllocError!void {
+    let name = part[part.len - 1]
+    let star = isDelimTok(name, '*')
+    let any = part.len == 1 || isDelimTok(part[0], '*')
+
+    if any && more && star {
+        return
+    }
+
+    if part.len == 2 {
+        try out.appendByte('|')
+    } else if !any {
+        try writeIdent(part[0].text, out)
+        try out.appendByte('|')
+    }
+
+    if star {
+        try out.appendByte('*')
+    } else {
+        try writeIdent(name.text, out)
+    }
+}

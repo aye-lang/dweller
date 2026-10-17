@@ -1,0 +1,30 @@
+import std.mem.AllocError
+import std.text
+
+fn writePseudoArgs(name: []u8, args: []Token, out: *mut text.Builder) AllocError!void {
+    if !(name.len > 4 && text.eqlIgnoreCase(name[..4], "nth-")) {
+        return writeSelectorList(args, out)
+    }
+
+    var end = args.len
+
+    for k, t in args {
+        if t.kind == Tok.Ident && text.eqlIgnoreCase(t.text, "of") {
+            end = k
+            break
+        }
+    }
+
+    var s = simple(SelKind.NthChild, "")
+
+    if !parseAnPlusB(args[..end], &mut s) {
+        return writeSelectorList(args, out)
+    }
+
+    try writeAnPlusB(s.a, s.b, out)
+
+    if end < args.len {
+        try out.append(" of ")
+        try writeSelectorList(trimWhitespace(args[end + 1..]), out)
+    }
+}
