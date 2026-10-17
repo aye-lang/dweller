@@ -1,0 +1,16 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
+
+fn vmBindParamPattern(c: *mut Compiler, p: u32, k: u32) CompileError!void {
+    match c.ast.node(p) {
+        .Rest { target } => {
+            try c.b.op1(BC_CREATE_REST_PARAMETER, k as i64)
+
+            return vmBindPattern(c, target, DECL_LET)
+        }
+
+        _ => {}
+    }
+
+    try c.b.op1(BC_LDAR, c.b.param(k) as i64)
+    try vmBindPattern(c, p, DECL_LET)
+}

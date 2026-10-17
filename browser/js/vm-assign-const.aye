@@ -1,0 +1,23 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildVariableAssignment)
+
+fn vmAssignConst(c: *mut Compiler, op: Op, target: u32, value: u32) CompileError!void {
+    if vmIsLogicalAssign(op) {
+        let end = try c.b.newLabel()
+
+        try c.visit(target)
+        try vmLogicalAssignJump(c, op, end)
+        try c.visit(value)
+        try vmThrowAssign(c, target)
+        try c.b.bind(end)
+
+        return
+    }
+
+    if op == Op.None {
+        try c.visit(value)
+    } else {
+        try c.visitBinary(op, target, value)
+    }
+
+    try vmThrowAssign(c, target)
+}
