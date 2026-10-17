@@ -1,0 +1,48 @@
+// chromium: third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.cc
+fn packTexel(out: []mut u8, o: usize, px: []u8, format: u32, kind: u32, premul: bool) {
+    var bytes = @zeroed([4]u8)
+    var floats = @zeroed([4]f32)
+    let alpha = px[3] as f32 / 255.0
+
+    for k in 0..4 {
+        bytes[k] = px[k]
+        floats[k] = px[k] as f32 / 255.0
+
+        if premul && k < 3 {
+            bytes[k] = premultiplied(px[k], px[3])
+            floats[k] = floats[k] * alpha
+        }
+    }
+
+    let picks = domChannels(format)
+    let r = bytes[0] as u32
+    let g = bytes[1] as u32
+    let b = bytes[2] as u32
+    let a = bytes[3] as u32
+
+    match kind {
+        0x1401 => {
+            for i in 0..picks.len {
+                out[o + i] = bytes[picks[i]]
+            }
+        }
+
+        0x140b => {
+            for i in 0..picks.len {
+                putLittle(out, o + i * 2, halfFloat(floats[picks[i]]), 2)
+            }
+        }
+
+        0x1406 => {
+            for i in 0..picks.len {
+                putLittle(out, o + i * 4, floatBits(floats[picks[i]]), 4)
+            }
+        }
+
+        0x8033 => putLittle(out, o, ((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4), 2)
+        0x8034 => putLittle(out, o, ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | (a >> 7), 2)
+        0x8363 => putLittle(out, o, ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3), 2)
+        0x8368 => putLittle(out, o, (floats[0] * 1023.0) as u32 | ((floats[1] * 1023.0) as u32 << 10) | ((floats[2] * 1023.0) as u32 << 20) | ((floats[3] * 3.0) as u32 << 30), 4)
+        _ => putLittle(out, o, (halfFloat(floats[0]) >> 4) | ((halfFloat(floats[1]) >> 4) << 11) | ((halfFloat(floats[2]) >> 5) << 22), 4)
+    }
+}

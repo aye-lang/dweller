@@ -34,3 +34,35 @@ jobs:
           path: |
             target/wpt-results
             target/test262-results
+
+  webgl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SDL_VIDEODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: target/webgl
+          key: webgl-cts-${{ hashFiles('browser/tools/webgl_cts.rev') }}
+      - uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+      - run: sh scripts/setup-ubuntu.sh
+      - run: browser/gpu/fetch_angle.sh
+      - run: |
+          git clone https://github.com/aye-lang/aye ../aye
+          git -C ../aye checkout "$(cat AYE_REV)"
+          cargo build --release --manifest-path ../aye/Cargo.toml
+          echo "AYE=$PWD/../aye/target/release/aye" >> "$GITHUB_ENV"
+      - run: browser/build.sh
+      - run: python3 browser/tools/webgl_conformance.py fetch
+      - run: python3 browser/tools/webgl_conformance.py run conformance2 conformance -j "$(nproc)"
+      - run: python3 browser/tools/webgl_conformance.py check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webgl-conformance-results
+          path: target/webgl-results
