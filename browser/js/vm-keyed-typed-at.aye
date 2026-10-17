@@ -1,0 +1,39 @@
+// v8: src/ic/accessor-assembler.cc (EmitElementLoad, TYPED_ARRAY elements)
+
+fn vmKeyedTypedAt(it: *mut Interp, e: *mut IcEntry, v: Value, k: Value) ?TypedAt {
+    let o = objectOf(v)
+    let i = match k {
+        .Num { n } => n
+        _ => -1.0
+    }
+
+    if o == NONE || it.heap.obj(o).class != Class.TypedArray {
+        return null
+    }
+
+    match it.heap.obj(o).data {
+        .View { store, off, len, kind } => {
+            let size = kindSize(kind)
+
+            if !(i >= 0.0 && i < len as f64 && (i as u32) as f64 == i) || kind >= K_BIGINT64 {
+                return null
+            }
+
+            let at = off + (i as u32) * size
+
+            if at as usize + size as usize > storeMem(it, store).len {
+                return null
+            }
+
+            if e.kind != KIND_TYPED {
+                vmIcNoteKind(e, KIND_TYPED)
+            }
+
+            return TypedAt { store: store, at: at, kind: kind }
+        }
+
+        _ => {}
+    }
+
+    return null
+}
