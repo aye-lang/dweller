@@ -227,6 +227,7 @@ struct Collector {
     t: *mut Tree
     out: *mut List(Piece)
     avail: f64
+    last: u32 = 0
 
     fn run(self: *mut Self, i: usize, depth: usize, rel_x: f64, rel_y: f64) AllocError!void {
         let n = self.t.children(i).len
@@ -304,6 +305,7 @@ struct Collector {
             p.w = mm.max
             p.min_w = mm.min
         }
+        self.last = 0
         // Lines may break before and after an atomic inline where they
         // wrap.
         if whiteSpaceOf(self.t.bx(i).style).wrap {
@@ -320,6 +322,7 @@ struct Collector {
         let s = self.t.bx(i).text
         let style = self.t.bx(i).style
         let ws = whiteSpaceOf(style)
+        let rules = breakRulesOf(self.t, i)
         let f = fontOf(style)
         var k: usize = 0
         while k < s.len {
@@ -327,6 +330,7 @@ struct Collector {
             p.rel_x = rel_x
             p.rel_y = rel_y
             p.start = k
+            self.last = 0
             if s[k] == '\n' {
                 p.kind = PieceKind.Break
                 k += 1
@@ -344,7 +348,10 @@ struct Collector {
                     // A line may break between East Asian characters
                     // (linebreak.aye).
                     let d = text.decode(s[k..])
-                    if ws.wrap && k > p.start && breaksBetween(prev, d.code) {
+                    if ws.wrap && k == p.start && self.last != 0 && breaksBetween(self.last, d.code, rules) {
+                        softenLastWord(self.out)
+                    }
+                    if ws.wrap && k > p.start && breaksBetween(prev, d.code, rules) {
                         p.soft = true
                         break
                     }
@@ -364,6 +371,7 @@ struct Collector {
                     }
                     k += d.len
                     prev = d.code
+                    self.last = d.code
                 }
             }
             p.end = k
@@ -477,7 +485,10 @@ fn inlineIntrinsic(t: *mut Tree, i: usize) AllocError!MinMax {
                 spaces += p.w
                 continue
             }
-            if p.kind == PieceKind.Atomic || p.kind == PieceKind.Float {
+            if p.kind == PieceKind.Word && wrapsMinContent(t.bx(p.box).style) && whiteSpaceOf(t.bx(p.box).style).wrap {
+                r.min = math.max(r.min, math.max(w, widestGrapheme(t, p)))
+                w = 0.0
+            } else if p.kind == PieceKind.Atomic || p.kind == PieceKind.Float {
                 w += spaces + p.min_w
             } else {
                 w += spaces + p.w
@@ -500,7 +511,7 @@ fn layoutInline(t: *mut Tree, i: usize, avail: f64) AllocError!f64 {
     try collectPieces(t, i, avail, &mut pieces)
     let rtl = isRtl(t.bx(i).style)
     resolveLevels(pieces.items(), rtl)
-    let ps = pieces.items()
+    var ps = pieces.items()
     // The inline boxes open at the end of the previous line.
     var open = List(usize).init(t.backing)
     defer open.deinit()
@@ -589,6 +600,10 @@ fn layoutInline(t: *mut Tree, i: usize, avail: f64) AllocError!f64 {
                         break
                     }
                 }
+            }
+            if !content && fit > lb.avail + 0.001 && try splitOverflow(t, &mut pieces, k, e, lb.avail) {
+                ps = pieces.items()
+                continue
             }
             width += w
             content = content || has

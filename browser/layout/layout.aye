@@ -876,10 +876,9 @@ fn anonymousBox(t: *mut Tree, parent: usize, kind: BoxKind) AllocError!usize {
 fn isCollapsibleSpace(t: *Tree, i: usize) bool {
     let b = t.bx(i)
     if b.kind == BoxKind.Text {
-        let ws = keywordOf(b.style[css.WHITE_SPACE])
-        let pre = text.eql(ws, "pre") || text.eql(ws, "pre-wrap") || text.eql(ws, "break-spaces")
+        let ws = whiteSpaceOf(b.style)
         for c in b.text {
-            if !isWhite(c) || pre || (c == '\n' && text.eql(ws, "pre-line")) {
+            if !isWhite(c) || !ws.collapse || (c == '\n' && ws.newlines) {
                 return false
             }
         }

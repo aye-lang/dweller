@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+fn writeWhiteSpacePair(collapse: []u8, wrap: []u8, out: *mut text.Builder) AllocError!void {
+    let nowrap = text.eql(wrap, "nowrap")
+
+    if text.eql(collapse, "collapse") && nowrap {
+        return out.append("nowrap")
+    }
+
+    if text.eql(collapse, "collapse") {
+        return out.append("normal")
+    }
+
+    if text.eql(collapse, "preserve") && nowrap {
+        return out.append("pre")
+    }
+
+    if text.eql(collapse, "preserve") {
+        return out.append("pre-wrap")
+    }
+
+    if text.eql(collapse, "preserve-breaks") && !nowrap {
+        return out.append("pre-line")
+    }
+
+    try out.append(collapse)
+
+    if nowrap {
+        try out.append(" nowrap")
+    }
+}
