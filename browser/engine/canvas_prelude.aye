@@ -502,7 +502,7 @@ pub let CANVAS_PRELUDE =
     \\    this._sync();
     \\    image = sourceNode(image);
     \\    if (!image) throw new TypeError('Expected image source');
-    \\    if (contexts.get(image) instanceof webgl.Context) webgl.snapshot(image);
+    \\    if (webgl.is(contexts.get(image))) webgl.snapshot(image);
     \\    const a = Array.from(arguments).slice(1).map(Number);
     \\    const iw = image.naturalWidth || image.width, ih = image.naturalHeight || image.height;
     \\    let sx = 0, sy = 0, sw = iw, sh = ih, dx, dy, dw, dh;
@@ -692,15 +692,16 @@ pub let CANVAS_PRELUDE =
     \\    }
     \\    return ctx instanceof CanvasRenderingContext2D ? ctx : null;
     \\  }
-    \\  if (kind !== 'webgl2') return null;
+    \\  const v1 = kind === 'webgl' || kind === 'experimental-webgl';
+    \\  if (kind !== 'webgl2' && !v1) return null;
     \\  if (!ctx) {
-    \\    ctx = webgl.create(this, this, options);
+    \\    ctx = v1 ? webgl.create1(this, this, options) : webgl.create(this, this, options);
     \\    if (ctx) contexts.set(this, ctx);
     \\  }
-    \\  return ctx instanceof webgl.Context ? ctx : null;
+    \\  return (v1 ? ctx instanceof webgl.Context1 : ctx instanceof webgl.Context) ? ctx : null;
     \\};
     \\P.toDataURL = function () {
-    \\  if (contexts.get(this) instanceof webgl.Context) return webgl.png(this);
+    \\  if (webgl.is(contexts.get(this))) return webgl.png(this);
     \\  return ak.canvasPng(this);
     \\};
     \\P.toBlob = function (callback) {
@@ -818,7 +819,7 @@ pub let CANVAS_PRELUDE =
     \\    // straight colors through premultiplied ones); an origin-unclean
     \\    // canvas, an image or a resize is drawn.
     \\    let copied = x1 <= x0 || y1 <= y0;
-    \\    if (!copied && width === w && height === h && node instanceof HTMLCanvasElement && !(contexts.get(node) instanceof webgl.Context)) {
+    \\    if (!copied && width === w && height === h && node instanceof HTMLCanvasElement && !webgl.is(contexts.get(node))) {
     \\      try {
     \\        const iw = x1-x0, ih = y1-y0;
     \\        const src = new Uint8ClampedArray(iw*ih*4), dst = new Uint8ClampedArray(width*height*4);
