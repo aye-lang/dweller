@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "browser/tools/taste_baseline.json"
 EXEMPT_KINDS = ("struct", "enum", "table", "registry", "generated")
-GENERATED_OR_VENDORED = ("browser/encoding/tables.aye",)
+GENERATED_OR_VENDORED = ("browser/encoding/tables.aye", "browser/html/entity-table.aye")
 REFERENCE = re.compile(r"https?://|\b(v8|blink|chromium|angle|spec):")
 DIRECTIVE = re.compile(r"//\s*(aye|taste):")
 FN_START = re.compile(r"^\s*(pub )?fn ")
