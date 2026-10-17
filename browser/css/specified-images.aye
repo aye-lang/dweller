@@ -1,0 +1,41 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn specifiedImages(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    var comps = List(Comp).init(alloc)
+    defer comps.deinit()
+
+    try splitComps(toks.items(), &mut comps)
+
+    for c in comps.items() {
+        if c.toks.len > 1 && !isGradient(c.toks[0]) {
+            return writeRaw(value, out)
+        }
+    }
+
+    for k, c in comps.items() {
+        if isComma(c) {
+            try out.appendByte(',')
+            continue
+        }
+
+        if k > 0 {
+            try out.appendByte(' ')
+        }
+
+        if !isGradient(c.toks[0]) {
+            try writeTokens(c.toks, out)
+        } else if !(try writeGradient(alloc, c, false, out)) {
+            return false
+        }
+    }
+
+    return true
+}
