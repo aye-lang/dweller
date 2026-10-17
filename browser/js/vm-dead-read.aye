@@ -1,9 +1,14 @@
 // v8: src/interpreter/bytecode-generator.cc (BuildThrowIfHole)
 
-fn vmDeadRead(c: *mut Compiler, name: u32) CompileError!void {
-    if c.switch_depth > 0 {
-        return c.fail("unsupported: read in the dead zone")
+fn vmDeadRead(c: *mut Compiler, r: i32, name: u32) CompileError!void {
+    if c.switch_depth == 0 {
+        return vmThrowHole(c, name)
     }
 
-    try vmThrowHole(c, name)
+    let saved = c.b.newReg()
+
+    try c.b.op1(BC_STAR, saved as i64)
+    try c.b.op1(BC_LDAR, r as i64)
+    try c.b.op1(BC_THROW_REFERENCE_ERROR_IF_HOLE, name as i64)
+    try c.b.op1(BC_LDAR, saved as i64)
 }

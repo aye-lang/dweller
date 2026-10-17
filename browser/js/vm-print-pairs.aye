@@ -1,0 +1,39 @@
+import std.mem.AllocError
+import std.text
+
+fn vmPrintPairs(st: *mut VmState, b: *mut text.Builder) AllocError!void {
+    let ps = st.pairs orelse {
+        return
+    }
+
+    var total: u64 = 0
+
+    for n in ps {
+        total += n
+    }
+
+    for _ in 0..30 {
+        var best: usize = 0
+
+        for i in 0..ps.len {
+            if ps[i] > ps[best] {
+                best = i
+            }
+        }
+
+        if ps[best] == 0 {
+            return
+        }
+
+        try b.append("vm: pair ")
+        try b.append(BC_INFO[best / 256].name)
+        try b.append(" ")
+        try b.append(BC_INFO[best % 256].name)
+        try b.append(" ")
+        try b.appendUint(ps[best])
+        try b.append(" of ")
+        try b.appendUint(total)
+        try b.appendByte('\n')
+        ps[best] = 0
+    }
+}

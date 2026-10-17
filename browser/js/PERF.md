@@ -130,6 +130,8 @@ string-to-atom subsystem.
 
 ### Guarded recipes and calls (`fast_expr.aye`, `interp.aye`)
 
+Removed in P4.78 (`fast_expr.aye` is gone; the VM runs these functions).
+
 After resolution, eligible expressions get flat recipes for constants,
 local slots, own data-property reads, dense array reads, numeric unary
 operators, and numeric binary operators. Scratch uses unboxed numbers,
@@ -212,6 +214,7 @@ reasons at exit. The VM is tried after the tree walker's frameless
 one-expression path (`fast_expr.aye`), which is cheaper per call for the
 functions it handles (array callbacks: +0.1 s on `array` when the VM went
 first).
+P4.78 removed that path: the VM runs those functions too.
 
 Fast build, 4-core Xeon 2.1 GHz Linux, whole process, median of 2–3:
 

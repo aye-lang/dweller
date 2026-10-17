@@ -177,7 +177,9 @@ pub let BC_ITERATOR_RESULT: u8 = 130
 pub let BC_CALL_MODULE_RUNTIME: u8 = 131
 pub let BC_THROW_CONST_ASSIGNMENT_ERROR: u8 = 132
 pub let BC_TO_NAME: u8 = 133
-pub let BC_COUNT: u8 = 134
+pub let BC_INC_REG: u8 = 134
+pub let BC_DEC_REG: u8 = 135
+pub let BC_COUNT: u8 = 136
 
 pub let BC_JUMP_CONST_DELTA: u8 = 8
 
@@ -352,6 +354,8 @@ pub let BC_INFO = [_]BcInfo{
     BcInfo { name: "CallModuleRuntime", ops: [3]BcOp{BcOp.UImm, BcOp.Reg, BcOp.None}, nops: 2, flags: BC_AT },
     BcInfo { name: "ThrowConstAssignmentError", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_AT },
     BcInfo { name: "ToName", ops: [3]BcOp{BcOp.None, BcOp.None, BcOp.None}, nops: 0, flags: BC_AT },
+    BcInfo { name: "IncReg", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
+    BcInfo { name: "DecReg", ops: [3]BcOp{BcOp.Reg, BcOp.Slot, BcOp.None}, nops: 2, flags: BC_AT },
 }
 
 pub fn bcIsForwardJump(op: u8) bool {
@@ -852,6 +856,7 @@ pub struct BcBuilder {
     topReg: i32
     maxReg: i32
     nslots: u32
+    accReg: i64 = BC_NO_ACC_REG
 
     pub fn init(alloc: Allocator, nparams: u32) BcBuilder {
         return BcBuilder {
@@ -977,6 +982,7 @@ pub struct BcBuilder {
                 scale = s
             }
         }
+        self.accReg = bcAccRegAfter(self.accReg, op, ops[0])
         try self.flushPos()
         return bcEncode(&mut self.code, op, ops, scale)
     }
@@ -991,6 +997,9 @@ pub struct BcBuilder {
         // operands beyond the instruction's count must be 0
         if (n < 1 && a != 0) || (n < 2 && b != 0) || (n < 3 && c != 0) {
             unreachable
+        }
+        if bcRedundant(self.accReg, op, a) {
+            return
         }
         _ = try self.put(op, [3]i64{a, b, c}, 1)
     }
@@ -1043,7 +1052,7 @@ pub struct BcBuilder {
         if self.labels.items()[label as usize] != BC_UNBOUND {
             unreachable
         }
-        let here = self.offset()
+        let here = bcTargetHere(self)
         self.labels.items()[label as usize] = here
         var i: usize = 0
         while i < self.pending.len() {
@@ -1112,7 +1121,7 @@ pub struct BcBuilder {
         if t.opAt == BC_UNBOUND || value < t.base || value - t.base >= t.n as i32 {
             unreachable
         }
-        self.pool.set(t.start + (value - t.base) as u32, BcConst.Offset { v: self.offset() - t.opAt })
+        self.pool.set(t.start + (value - t.base) as u32, BcConst.Offset { v: bcTargetHere(self) - t.opAt })
     }
 
     // -- handlers
@@ -1132,7 +1141,7 @@ pub struct BcBuilder {
 
     /// The handler of `h` starts here; it restores the context from `ctx`.
     pub fn handlerHere(self: *mut Self, h: u32, ctx: i32) {
-        self.handlers.items()[h as usize].handler = self.offset()
+        self.handlers.items()[h as usize].handler = bcTargetHere(self)
         self.handlers.items()[h as usize].ctx = ctx
     }
 

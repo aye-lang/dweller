@@ -1,0 +1,17 @@
+// v8: src/runtime/runtime-compiler.cc (Runtime_ResolvePossiblyDirectEval)
+
+fn directEval(it: *mut Interp, site: u32, top: usize, argc: usize) JsError!Value {
+    var v = Value.Undefined
+
+    if argc > 0 {
+        v = it.slot(top + 2)
+    }
+
+    it.truncate(top)
+
+    if !isStr(v) {
+        return v
+    }
+
+    return runEval(it, v, it.ast.eval_sites.get(site) orelse NONE)
+}
