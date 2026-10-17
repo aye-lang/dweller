@@ -60,6 +60,7 @@ import dom
 import dom.NodeId
 import encoding
 import engine
+import font
 import gpu
 import html
 import js
@@ -393,6 +394,10 @@ fn wpt(alloc: Allocator, args: [][]u8) !i32 {
     var out = text.Builder.init(alloc)
     defer out.deinit()
     engine.setScripting(true)
+    var sys = try font.System.init(alloc)
+    defer sys.deinit()
+    font.addEnvFonts(alloc, &mut sys)
+    engine.setDefaultMeasure(&mut sys)
     let p = try engine.load(alloc, &location)
     defer p.destroy()
     defer engine.closeContexts()
