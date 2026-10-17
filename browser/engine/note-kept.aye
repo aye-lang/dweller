@@ -1,0 +1,20 @@
+import animation
+import perf
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn noteKept(alloc: Allocator, t: *animation.Transitions) AllocError!void {
+    let began = perf.start()
+
+    if began == 0 {
+        return
+    }
+
+    var label = text.Builder.init(alloc)
+    defer label.deinit()
+    try label.appendUint(t.kept.len() as u64)
+    try label.append(" ")
+    try label.appendUint(t.frames.len() as u64)
+    perf.end("transitions_kept", began, label.bytes())
+}

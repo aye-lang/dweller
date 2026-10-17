@@ -1,0 +1,27 @@
+import css
+
+fn keptInUse(t: *Transitions, k: []u8) bool {
+    for r in t.running.items() {
+        if usesText(r.from, k) || usesText(r.to, k) || usesText(r.reversing_start, k) {
+            return true
+        }
+    }
+
+    var snaps = t.before.iterator()
+
+    while snaps.next() |e| {
+        if valuesUse(e.value.values, k) {
+            return true
+        }
+    }
+
+    var shown = t.shown.iterator()
+
+    while shown.next() |e| {
+        if valuesUse(e.value.values, k) {
+            return true
+        }
+    }
+
+    return false
+}

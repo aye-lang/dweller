@@ -5578,6 +5578,45 @@ fn window_css_transition() {
     );
 }
 
+#[test]
+fn window_transition_kept() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..250 {
+        events += " move:120,160 frame move:300,250 frame";
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/hover_transition.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "1100",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let kept: Vec<usize> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\ttransitions_kept\t").nth(1))
+        .map(|r| r.split('\t').nth(1).unwrap().split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(kept.len() >= 100, "{} transition frames", kept.len());
+    assert!(kept.iter().all(|&n| n <= 32), "kept grows: {kept:?}");
+}
+
 /// mistral.ai's squares (P4.57): a rAF loop that changes the `width` of
 /// 6 divs in the flex cells of a grid, on a page with images, lays out
 /// again only the boxes around them: after the first frame no layout of
