@@ -1,0 +1,53 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-4/#serializing-color-values
+pub fn specifiedValue(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    let index = propertyIndex(prop) orelse return writeRaw(value, out)
+    let trimmed = text.trim(value)
+
+    if PROPERTIES[index].kind != PKind.Color || trimmed.len == 0 {
+        return writeRaw(value, out)
+    }
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, trimmed, &mut toks)
+
+    let all = toks.items()
+
+    if all.len == 0 {
+        return false
+    }
+
+    let first = all[0]
+
+    for t in all {
+        if t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "var") {
+            return writeRaw(value, out)
+        }
+    }
+
+    if skipComponent(all, 0) < all.len {
+        return false
+    }
+
+    if first.kind == Tok.Ident && inList(first.text, "inherit initial unset revert revert-layer") != null {
+        return writeRaw(value, out)
+    }
+
+    if colorValue(Comp { toks: all }) == null {
+        return unparsedColor(all, value, out)
+    }
+
+    return writeSpecifiedColor(all, out)
+}
+
+fn writeRaw(value: []u8, out: *mut text.Builder) AllocError!bool {
+    try out.append(value)
+
+    return true
+}

@@ -1,0 +1,38 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#relative-colors
+fn channelValue(space: u8, n: usize, toks: []Token, origin: ?[4]f64) ?f64 {
+    let t = toks[0]
+    let hue = n == hueIndex(space)
+
+    if toks.len == 1 && t.kind == Tok.Ident {
+        if text.eqlIgnoreCase(t.text, "none") {
+            return math.nan()
+        }
+
+        return channelKeyword(space, origin, t.text)
+    }
+
+    if t.kind == Tok.Function && isMathFunction(t) {
+        return channelCalc(space, n, toks, origin)
+    }
+
+    if toks.len != 1 {
+        return null
+    }
+
+    if t.kind == Tok.Number {
+        return t.num
+    }
+
+    if t.kind == Tok.Percentage {
+        return scaledPercent(space, n, t.num)
+    }
+
+    if t.kind == Tok.Dimension && hue {
+        return angleDegrees(t)
+    }
+
+    return null
+}

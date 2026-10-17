@@ -1,0 +1,50 @@
+// spec: https://drafts.csswg.org/css-color-4/#color-conversion-code
+fn fromXyz(space: u8, xyz: [3]f64) [3]f64 {
+    if space == 0 || space == 13 || space == 14 {
+        let rgb = fromXyz(1, xyz)
+
+        if space == 13 {
+            return srgbToHsl(rgb)
+        }
+
+        if space == 14 {
+            return srgbToHwb(rgb)
+        }
+
+        return rgb
+    }
+
+    if space <= 6 {
+        var src = xyz
+
+        if space == 5 {
+            src = mat3(D65_TO_D50, xyz)
+        }
+
+        let lin = mat3(XYZ_TO_RGB[space - 1], src)
+
+        return [3]f64{fromLinear(space, lin[0]), fromLinear(space, lin[1]), fromLinear(space, lin[2])}
+    }
+
+    if space == 7 {
+        return mat3(D65_TO_D50, xyz)
+    }
+
+    if space == 9 {
+        return xyzToLab(mat3(D65_TO_D50, xyz))
+    }
+
+    if space == 10 {
+        return labToPolar(fromXyz(9, xyz))
+    }
+
+    if space == 11 {
+        return xyzToOklab(xyz)
+    }
+
+    if space == 12 {
+        return labToPolar(xyzToOklab(xyz))
+    }
+
+    return xyz
+}

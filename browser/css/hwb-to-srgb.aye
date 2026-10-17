@@ -1,0 +1,16 @@
+// spec: https://drafts.csswg.org/css-color-4/#hwb-to-rgb
+fn hwbToSrgb(hwb: [3]f64) [3]f64 {
+    let w = hwb[1] / 100.0
+    let b = hwb[2] / 100.0
+
+    if w + b >= 1.0 {
+        let gray = w / (w + b)
+
+        return [3]f64{gray, gray, gray}
+    }
+
+    let rgb = hslToSrgb([3]f64{hwb[0], 100.0, 50.0})
+    let k = 1.0 - w - b
+
+    return [3]f64{rgb[0] * k + w, rgb[1] * k + w, rgb[2] * k + w}
+}
