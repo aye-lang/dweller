@@ -1,0 +1,26 @@
+import css
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn styledElements(s: *Script, styles: *css.Styles, local: bool, out: *mut List(NodeId)) AllocError!void {
+    if local && !styles.moved_many {
+        for r in styles.restyled.items() {
+            try out.append(r.el)
+        }
+
+        for el in styles.moved_els.items() {
+            try out.append(el)
+        }
+
+        return
+    }
+
+    let doc = &s.page.doc
+    var at: ?NodeId = doc.root
+
+    while at |el| {
+        try out.append(el)
+        at = doc.following(el, doc.root)
+    }
+}

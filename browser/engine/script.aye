@@ -366,6 +366,8 @@ pub struct Script {
     // geometry changed since the last call (`hook_stamp`).
     layout_hook: u32
     hook_stamp: u64
+    animation_hook: u32 = js.NONE
+    animation_stamp: u64 = 0
     // The page listens for the window's scroll or observes intersections
     // (`ak.watchScroll`): a dump's scroll through it may load more.
     watches_scroll: bool = false
@@ -1648,6 +1650,7 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
+    try runAnimationHook(s)
     if s.title_version == s.version {
         return
     }

@@ -259,7 +259,7 @@ pub struct Styles {
     // element: `restyleSubtrees`), is held once less, and taken for new
     // values when no element holds it any more. A count that misses a
     // release only keeps an array longer.
-    fn intern(self: *mut Self, values: []Value, old: ?[]Value) AllocError![]Value {
+    pub fn intern(self: *mut Self, values: []Value, old: ?[]Value) AllocError![]Value {
         let h = hashValues(values)
         if self.shared.getPtr(h) |e| {
             if sameBits(e.values, values) {
@@ -292,7 +292,7 @@ pub struct Styles {
 
     // Holds the shared values `old` once less; when no element holds
     // them any more, they go to `free`.
-    fn release(self: *mut Self, old: ?[]Value) AllocError!void {
+    pub fn release(self: *mut Self, old: ?[]Value) AllocError!void {
         let o = old orelse return
         let h = hashValues(o)
         let e = self.shared.getPtr(h) orelse return

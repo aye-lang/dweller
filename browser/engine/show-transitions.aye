@@ -1,0 +1,37 @@
+import animation
+import css
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#starting
+fn showTransitions(s: *mut Script, styles: *mut css.Styles, local: bool) AllocError!void {
+    let t = &mut s.transitions
+    var els = List(NodeId).init(s.alloc)
+    defer els.deinit()
+
+    try styledElements(s, styles, local, &mut els)
+
+    let scratch = try s.alloc.alloc(css.Value.Initial, css.NPROPS)
+    defer s.alloc.free(scratch)
+
+    for el in els.items() {
+        let values = styles.get(el) orelse continue
+
+        if t.before.get(el.index) == null && t.shown.get(el.index) == null && !animation.transitionsWanted(values) {
+            continue
+        }
+
+        try animation.styleChange(t, el, values, s.now)
+
+        if !(try animation.shownValues(t, el, values, scratch, s.now)) {
+            _ = t.shown.remove(el.index)
+            continue
+        }
+
+        let shown = try styles.intern(scratch, values)
+
+        try styles.map.put(el.index, shown)
+        try t.shown.put(el.index, animation.Shown { values: shown, at: s.now })
+    }
+}

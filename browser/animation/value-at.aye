@@ -1,9 +1,12 @@
 import css
 import std.math
+import std.mem.AllocError
 
 // spec: https://drafts.csswg.org/css-transitions-1/#application
-fn valueAt(r: Transition, now: f64) css.Value {
-    return interpolate(r.from, r.to, progressAt(r, now)) orelse r.to
+fn valueAt(t: *mut Transitions, r: Transition, now: f64) AllocError!css.Value {
+    let v = (try transitionMix(t, r.prop, r.from, r.to, progressAt(r, now))) orelse r.to
+
+    return clampToRange(r.prop, v, try nonNegative(t.alloc, r.prop))
 }
 
 fn progressAt(r: Transition, now: f64) f64 {

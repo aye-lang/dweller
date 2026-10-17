@@ -1,0 +1,20 @@
+import css
+import std.mem.AllocError
+
+fn snapshotValue(t: *mut Transitions, p: usize, old: css.Value, v: css.Value) AllocError!css.Value {
+    if css.isTransformPart(p) && keywordOf(v).len > 0 {
+        if css.sameValue(old, v) {
+            return old
+        }
+
+        return ownedValue(t.alloc, &mut t.kept, v)
+    }
+
+    return interpolable(v)
+}
+
+fn interpolable(v: css.Value) css.Value {
+    let parts = partsOf(v) orelse return css.Value.Initial
+
+    return valueOfParts(parts)
+}

@@ -345,6 +345,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
         defer dirty.deinit()
         let local = try localChanges(s, g, version, &mut dirty)
         var fresh = sameStyles(s, g, st)
+        let rounds = g.restyled
         var restyled = false
         if fresh {
             // Nothing the styles depend on changed (a class no rule
@@ -357,6 +358,9 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
                 return e
             }
             restyled = fresh
+            if fresh && local {
+                try showTransitions(s, g.styles, true)
+            }
             if fresh && local && g.styles.moved {
                 // Values that layout reads changed (`css.paintOnly`).
                 if g.styles.moved_many {
@@ -379,6 +383,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
                 dropGeometry(s)
                 return e
             }
+            try releaseRestyled(g, rounds)
         }
         var kept = fresh && local && dirty.len() == 0
         if kept && !composite {
@@ -432,6 +437,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
                 g.deps.deinit()
                 s.alloc.destroy(g)
             }
+            try showTransitions(s, g.styles, false)
             let full_began = perf.start()
             let laid = try layOut(s, g.styles)
             perf.end("layout_full", full_began, p.url.href)
@@ -479,6 +485,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
         quirks = &styles.quirks
     }
     try deps.build(&st.author, &st.ua, quirks)
+    try showTransitions(s, styles, false)
     let full_began = perf.start()
     var laid = try layOut(s, styles)
     perf.end("layout_full", full_began, p.url.href)
