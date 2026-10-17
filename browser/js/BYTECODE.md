@@ -558,8 +558,8 @@ calling convention. The step from a tree-walked caller to a compiled
 callee is one function call, so mixed code is correct from the first
 card.
 
-- `DWELLER_JS_VM=0|1`: off by default until P4.75, on by default after
-  it. `0` stays as an escape hatch until P4.78.
+- `DWELLER_JS_VM=0|1`: on by default since P4.75 (off before it). `0`
+  stays as an escape hatch until P4.78.
 - `DWELLER_JS_VM_STATS=1` prints at exit: functions compiled, functions
   left on the tree walker by reason (`unsupported: ClassExpr`, ...),
   and the instruction count. Each card's verify checks that its
@@ -629,6 +629,33 @@ of `node --jitless` (now 5× to 11× slower).
 | P4.75 (on by default) | suite geomean 3–4× against today; site `scripts` 1.5–2.5× |
 | P4.76 (typed arrays over bytes) | typed-array loops 5–20×; `three` 1.5–3× |
 | P4.77 (register optimizer, fused instructions) | another 1.1–1.25× |
+
+Measured at P4.75 (VM on by default, fast build, median of 3, same
+machine type as `baseline.json`: 4-core Xeon 2.1 GHz, Node v22.22.0
+`--jitless`); all 15 checksums equal:
+
+| workload | baseline (s) | P4.75 (s) | speedup | node --jitless (s) | ratio to node |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| array | 0.230 | 0.182 | 1.26× | 0.062 | 2.9× |
+| calls | 4.604 | 1.875 | 2.46× | 0.253 | 7.4× |
+| closures | 3.482 | 1.538 | 2.26× | 0.292 | 5.3× |
+| crypto | 3.724 | 1.038 | 3.59× | 0.430 | 2.4× |
+| dom | 5.223 | 4.742 | 1.10× | – | – |
+| globals | 2.873 | 0.693 | 4.14× | 0.091 | 7.6× |
+| json | 0.716 | 0.552 | 1.30× | 0.249 | 2.2× |
+| loop | 2.149 | 0.513 | 4.19× | 0.267 | 1.9× |
+| methods | 0.476 | 0.188 | 2.54× | 0.072 | 2.6× |
+| navier-stokes | 16.298 | 2.663 | 6.12× | 1.508 | 1.8× |
+| raytrace | 2.130 | 0.901 | 2.36× | 0.239 | 3.8× |
+| richards | 1.962 | 0.527 | 3.72× | 0.185 | 2.8× |
+| splay | 3.913 | 1.921 | 2.04× | 0.381 | 5.0× |
+| strings | 0.150 | 0.098 | 1.53× | 0.049 | 2.0× |
+| three | 11.916 | 4.660 | 2.56× | 1.234 | 3.8× |
+| geomean | | | 2.45× | | 3.28× |
+
+Below the 3–4× estimate; the suite is 3.3× slower than `node
+--jitless` (the plan's target is 1.5×). The site `scripts`/`timers`
+phases are P4.75b (the archives are local).
 
 ## 7. V8 reference map
 

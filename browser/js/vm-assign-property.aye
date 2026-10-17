@@ -1,6 +1,10 @@
 // v8: src/interpreter/bytecode-generator.cc (VisitAssignment, VisitCompoundAssignment)
 
 fn vmAssignProperty(c: *mut Compiler, op: Op, target: u32, value: u32) CompileError!void {
+    if vmIsLogicalAssign(op) {
+        return vmAssignLogicalProperty(c, op, target, value)
+    }
+
     let mark = c.b.topReg
     let p = try vmPropertyReference(c, target, c.mayWrite(value))
 

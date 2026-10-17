@@ -1,0 +1,11 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitLogicalAssignment)
+
+fn vmAssignLogicalGlobal(c: *mut Compiler, op: Op, target: u32, value: u32) CompileError!void {
+    let end = try c.b.newLabel()
+
+    try c.b.op1(BC_LDA_GLOBAL, target as i64)
+    try vmLogicalAssignJump(c, op, end)
+    try c.visit(value)
+    try c.b.op1(BC_STA_GLOBAL, target as i64)
+    try c.b.bind(end)
+}

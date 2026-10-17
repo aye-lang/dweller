@@ -1,0 +1,11 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitLogicalAssignment)
+
+fn vmAssignLogicalReg(c: *mut Compiler, op: Op, r: i32, value: u32) CompileError!void {
+    let end = try c.b.newLabel()
+
+    try c.b.op1(BC_LDAR, r as i64)
+    try vmLogicalAssignJump(c, op, end)
+    try c.visit(value)
+    try c.b.op1(BC_STAR, r as i64)
+    try c.b.bind(end)
+}
