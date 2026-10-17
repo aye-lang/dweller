@@ -8676,6 +8676,33 @@ fn worker_module() {
     check_worker_page("module", false);
 }
 
+/// The worker pages over the test server (P11.14g): the worker script,
+/// its `importScripts`, module imports and a `blob:` worker load through
+/// the page's network loader.
+#[test]
+fn worker_http() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    for (name, sorted) in [("basic", true), ("module", false), ("transfer", false)] {
+        let page = format!("{}/workers/{name}.html", srv.base);
+        let want =
+            std::fs::read_to_string(root().join(format!("browser/tests/workers/{name}.txt")))
+                .unwrap();
+        let out = run(&["dump", "--text", "--js", &page]);
+        let order = |s: &str| {
+            let mut l: Vec<String> = s.lines().map(str::to_string).collect();
+            if sorted {
+                l.sort();
+            }
+            l
+        };
+        assert!(out.stderr.is_empty(), "{page}: {}", text(&out.stderr));
+        assert_eq!(order(&text(&out.stdout)), order(&want), "{page}");
+    }
+}
+
 /// `transfer` detaches the sender's ArrayBuffer and views on it move
 /// with it; buffers not in the list are copied.
 #[test]

@@ -1,0 +1,19 @@
+import engine.workers
+import js.JsError
+import js.Value
+
+fn answerWorker(l: *mut workers.Link, body: ?[]u8) JsError!Value {
+    if body |b| {
+        try l.stage(true, b)
+    }
+
+    let m = try l.seal(true, workers.FETCH, "")
+
+    l.answer(m) catch |e| {
+        l.release(m)
+
+        return JsError.OutOfMemory
+    }
+
+    return Value.Undefined
+}

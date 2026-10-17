@@ -1,0 +1,14 @@
+import js.Interp
+import net
+import std.text
+import url.Url
+
+fn workerModuleResponse(it: *mut Interp, target: *Url) net.FetchError!net.Response {
+    if text.eql(target.scheme, "file") || text.eql(target.scheme, "data") {
+        return net.fetchLocal(it.alloc, target)
+    }
+
+    let body = fetchThroughPage(it, target.href, FETCH) catch return net.FetchError.Network
+
+    return net.respond(it.alloc, "text/javascript", body) catch return net.FetchError.OutOfMemory
+}
