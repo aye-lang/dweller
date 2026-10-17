@@ -87,68 +87,6 @@ pub fn appendJoined(b: *mut text.Builder, s: []u8) AllocError!void {
     return b.append(s)
 }
 
-/// The byte offset of UTF-16 index `ui` in s (s.len at or past the end).
-/// An index inside a surrogate pair gives the pair's start.
-pub fn byteOffset(s: []u8, ui: u32) usize {
-    var i: usize = 0
-    var u: u32 = 0
-    while i < s.len && u < ui {
-        let d = decodeAt(s, i)
-        if d.cp >= 0x10000 {
-            u += 2
-            if u > ui {
-                return i
-            }
-        } else {
-            u += 1
-        }
-        i += d.len
-    }
-    return i
-}
-
-/// The UTF-16 index of byte offset `bi` (at a character boundary).
-pub fn unitOffset(s: []u8, bi: usize) u32 {
-    var i: usize = 0
-    var u: u32 = 0
-    while i < bi && i < s.len {
-        let d = decodeAt(s, i)
-        if d.cp >= 0x10000 {
-            u += 2
-        } else {
-            u += 1
-        }
-        i += d.len
-    }
-    return u
-}
-
-/// The code unit at UTF-16 index ui (< length).
-pub fn unitAt(s: []u8, ui: u32) u32 {
-    var i: usize = 0
-    var u: u32 = 0
-    while i < s.len {
-        let d = decodeAt(s, i)
-        if d.cp >= 0x10000 {
-            let v = d.cp - 0x10000
-            if u == ui {
-                return 0xD800 + (v >> 10)
-            }
-            if u + 1 == ui {
-                return 0xDC00 + (v & 0x3FF)
-            }
-            u += 2
-        } else {
-            if u == ui {
-                return d.cp
-            }
-            u += 1
-        }
-        i += d.len
-    }
-    return 0
-}
-
 /// Appends the code units [from, to) of s as WTF-8.
 /// (`units` is scratch space.)
 pub fn appendSlice(units: *mut List(u16), b: *mut text.Builder, s: []u8, ascii: bool, from: u32, to: u32) AllocError!void {

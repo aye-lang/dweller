@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn appendUnitRange(it: *mut Interp, b: *mut text.Builder, s: u32, from: u32, to: u32) AllocError!void {
+    let bytes = it.heap.bytes(s)
+
+    if it.heap.str(s).ascii {
+        return b.append(bytes[from as usize..to as usize])
+    }
+
+    var start = byteAt(it, s, from)
+
+    if it.heap.str(s).cursor_unit < from {
+        try appendWtf8(b, codeUnit(it, s, from))
+        start += 4
+    }
+
+    let end = byteAt(it, s, to)
+
+    try b.append(bytes[start..end])
+
+    if to < it.heap.str(s).len16 && it.heap.str(s).cursor_unit < to {
+        try appendWtf8(b, codeUnit(it, s, to - 1))
+    }
+}
