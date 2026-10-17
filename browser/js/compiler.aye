@@ -66,8 +66,6 @@ struct Compiler {
     scopes: List(u32)
     // Per register: a `let`/`const` not yet initialized (its dead zone).
     tdz: List(bool)
-    // Switch statements being compiled: a case can be entered past a
-    // declaration, so a dead zone there is only known at run time.
     switch_depth: u32
     // The register that holds `this` (-1: the function does not use it).
     this_reg: i32
@@ -126,10 +124,7 @@ struct Compiler {
     fn readReg(self: *mut Self, depth: u32, slot: u32, name: u32) CompileError!i32 {
         let r = try self.identReg(depth, slot)
         if r >= 0 && self.tdz.items()[r as usize] {
-            if self.switch_depth > 0 {
-                try self.fail("unsupported: read in the dead zone")
-            }
-            try vmThrowHole(self, name)
+            try vmDeadRead(self, name)
         }
         return r
     }
@@ -692,7 +687,6 @@ struct Compiler {
         if ncases < 3 || hi - lo + 1 > 2 * ncases + 8 {
             smi = false
         }
-        self.switch_depth += 1
         let mark = self.b.topReg
         let brk = try self.b.newLabel()
         let dfltLabel = try self.b.newLabel()
@@ -765,7 +759,6 @@ struct Compiler {
         self.ctl.pop()
         try self.b.bind(brk)
         try vmExitScope(self, scope)
-        self.switch_depth -= 1
         self.b.releaseRegs(mark)
     }
 
@@ -994,7 +987,7 @@ struct Compiler {
                 try self.b.jump(BC_JUMP, try self.target(label, true))
             }
             .Switch { disc, list, n, scope } => {
-                try self.visitSwitch(disc, list, n, scope)
+                try vmSwitch(self, disc, list, n, scope)
             }
             .Labeled { label, body } => {
                 try self.pending.append(label)
