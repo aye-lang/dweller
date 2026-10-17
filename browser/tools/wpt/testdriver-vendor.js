@@ -51,6 +51,8 @@
     return words;
   }
 
+  const BUTTONS = ['left', 'middle', 'right', 'back', 'forward'];
+
   function pointerWords(source, state) {
     const words = [];
     for (const a of source.actions) {
@@ -68,9 +70,9 @@
         state.y = y;
         words.push('move:' + point(x, y));
       } else if (a.type === 'pointerDown') {
-        words.push('click:' + point(state.x, state.y));
+        words.push('click:' + point(state.x, state.y) + ',' + BUTTONS[a.button || 0]);
       } else if (a.type === 'pointerUp') {
-        words.push('release:' + point(state.x, state.y));
+        words.push('release:' + point(state.x, state.y) + ',' + BUTTONS[a.button || 0]);
       }
     }
     return words;

@@ -429,6 +429,7 @@ pub struct Ui {
     // Game input: the mouse buttons held (DOM `buttons` bits), whether
     // the pointer is locked (relative mouse mode) and the window fullscreen.
     buttons: u32
+    clicks: u8
     locked: bool
     fullscreen: bool
     resized: bool
@@ -513,6 +514,7 @@ pub struct Ui {
             ibeam_cursor: SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM),
             swallow: false,
             buttons: 0,
+            clicks: 0,
             locked: false,
             fullscreen: false,
             resized: false,
@@ -1406,6 +1408,7 @@ pub struct Ui {
             let be = &ev.button
             let bit = buttonBit(be.button)
             self.buttons = self.buttons | bit
+            self.clicks = be.clicks
             let x = be.x as f64
             let y = be.y as f64
             if !self.locked {
@@ -1423,6 +1426,9 @@ pub struct Ui {
                 return
             }
             try self.pointerEvent("pointerdown", buttonIndex(be.button), x, y, 0.0, 0.0)
+            if be.button == SDL_BUTTON_RIGHT {
+                try self.pointerEvent("contextmenu", 2, x, y, 0.0, 0.0)
+            }
             if be.button == SDL_BUTTON_LEFT {
                 perf.noteAction("click")
                 try self.click(x, y)
@@ -1435,6 +1441,11 @@ pub struct Ui {
                 return
             }
             try self.pointerEvent("pointerup", buttonIndex(be.button), be.x as f64, be.y as f64, 0.0, 0.0)
+            if be.button != SDL_BUTTON_LEFT {
+                try self.pointerEvent("auxclick", buttonIndex(be.button), be.x as f64, be.y as f64, 0.0, 0.0)
+            } else if be.clicks == 2 {
+                try self.pointerEvent("dblclick", 0, be.x as f64, be.y as f64, 0.0, 0.0)
+            }
             if be.button == SDL_BUTTON_LEFT {
                 try releaseRange(self)
             }
@@ -1955,9 +1966,11 @@ pub struct Ui {
         try b.appendInt(self.buttons as i64)
         try b.append("\n")
         try b.appendInt(modBits(SDL_GetModState()) as i64)
+        try b.append("\n")
+        try b.appendInt(self.clicks as i64)
         let cy = y - self.top()
         let go_on = try engine.dispatchPointer(p, el, kind, b.bytes(), x, cy, mx, my)
-        if go_on && !text.eql(kind, "pointercancel") && !text.eql(kind, "click") {
+        if go_on && text.startsWith(kind, "pointer") && !text.eql(kind, "pointercancel") {
             // pointerdown -> mousedown, pointermove -> mousemove...
             var mouse: []u8 = "mousemove"
             if text.eql(kind, "pointerdown") {
@@ -1967,7 +1980,10 @@ pub struct Ui {
             } else if text.eql(kind, "pointerleave") {
                 mouse = "mouseleave"
             }
-            _ = try engine.dispatchPointer(p, el, mouse, b.bytes(), x, cy, mx, my)
+            let mouse_on = try engine.dispatchPointer(p, el, mouse, b.bytes(), x, cy, mx, my)
+            if mouse_on && text.eql(kind, "pointerdown") {
+                _ = try engine.dispatchEvent(p, el, "__focus", "")
+            }
         }
         try self.afterScripts()
     }
@@ -2182,24 +2198,20 @@ pub struct Ui {
     }
 }
 
-// DOM `button` of an SDL button (left 0, middle 1, right 2) and its bit in
+// DOM `button` of an SDL button (left 0, middle 1, right 2, back 3, forward 4) and its bit in
 // `buttons`.
 fn buttonIndex(b: u8) u32 {
-    if b == SDL_BUTTON_MIDDLE {
-        return 1
-    }
-    if b == SDL_BUTTON_RIGHT {
-        return 2
+    let index = [6]u32{0, 0, 1, 2, 3, 4}
+    if b < 6 {
+        return index[b as usize]
     }
     return 0
 }
 
 fn buttonBit(b: u8) u32 {
-    if b == SDL_BUTTON_MIDDLE {
-        return 4
-    }
-    if b == SDL_BUTTON_RIGHT {
-        return 2
+    let bits = [6]u32{1, 1, 4, 2, 8, 16}
+    if b < 6 {
+        return bits[b as usize]
     }
     return 1
 }

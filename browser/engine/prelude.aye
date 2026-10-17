@@ -427,6 +427,7 @@ pub let PRELUDE =
     \\// An event the browser makes (a click, a key, the load of the page).
     \\function hostEvent(target, type, key, x, y, dx, dy) {
     \\  if (type === '__host') { hostState(key); return true; }
+    \\  if (type === '__focus') { moveFocus(target.closest(CLICK_FOCUSABLE)); return true; }
     \\  if (ACTIVATING[type] && !(type === 'keydown' && /^Escape\n/.test(key || ''))) actUntil = ak.now() + 5000;
     \\  if (lockEl && /^((pointer|mouse)(move|down|up)|click)$/.test(type) && inDoc(lockEl)) target = lockEl;
     \\  // The user scrolled the window: `scroll` follows as a task, as for a
@@ -440,12 +441,13 @@ pub let PRELUDE =
     \\    const f = String(key).split('\n');
     \\    ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, composed: true, key: f[0], code: f[1] || '', repeat: f[2] === '1', location: +f[3] || 0 });
     \\    if (f.length > 4) KEY_MODS(ev, +f[4]);
-    \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || ((type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') && typeof key === 'string')) {
+    \\  } else if (/^pointer(down|move|up|cancel|leave|enter|over|out)$/.test(type) || /^mouse(move|enter|leave|over|out)$/.test(type) || (/^(click|auxclick|contextmenu|mousedown|mouseup|dblclick)$/.test(type) && typeof key === 'string')) {
     \\    const f = String(key).split('\n');
-    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: !/^(pointer|mouse)(leave|enter)$/.test(type), clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|mousedown|mouseup)$/.test(type) ? 1 : 0 };
-    \\    if (type[0] === 'p') { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
+    \\    const init = { bubbles: !/^(pointer|mouse)(leave|enter)$/.test(type), cancelable: !/^pointer(cancel|leave|enter)$/.test(type) && !/^mouse(leave|enter)$/.test(type), composed: !/^(pointer|mouse)(leave|enter)$/.test(type), clientX: x || 0, clientY: y || 0, button: +f[0] || 0, buttons: +f[1] || 0, movementX: dx || 0, movementY: dy || 0, detail: /^(click|auxclick|dblclick|mousedown|mouseup)$/.test(type) ? +f[3] || 1 : 0 };
+    \\    const pointer = type[0] === 'p' || /^(click|auxclick|contextmenu)$/.test(type);
+    \\    if (pointer) { init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true; init.width = 1; init.height = 1; init.pressure = init.buttons ? 0.5 : 0; if (type === 'pointermove') init.button = -1; }
     \\    else if (type === 'mousemove') init.button = 0;
-    \\    ev = type[0] === 'p' ? new PointerEvent(type, init) : new MouseEvent(type, init);
+    \\    ev = pointer ? new PointerEvent(type, init) : new MouseEvent(type, init);
     \\    if (f.length > 2) KEY_MODS(ev, +f[2]);
     \\  } else if (type === 'click' || type === 'mousedown' || type === 'mouseup' || type === 'dblclick') {
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
@@ -553,26 +555,32 @@ pub let PRELUDE =
     \\}
     \\hidden(HTMLP, 'click', function () {
     \\  if (this.hasAttribute('disabled') && /^(button|input|select|textarea)$/.test(this.localName)) return;
-    \\  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 1 });
+    \\  const ev = new PointerEvent('click', { bubbles: true, cancelable: true, composed: true, pointerId: -1 });
     \\  const fragment = dispatch(this, ev) ? ak.activate(this) : undefined;
     \\  if (fragment) navigateTo(fragment, false);
     \\});
-    \\hidden(HTMLP, 'focus', function () {
+    \\function focusEvent(target, type, relatedTarget) {
+    \\  const ev = new FocusEvent(type, { bubbles: type === 'focusin' || type === 'focusout', composed: true, relatedTarget });
+    \\  ev.isTrusted = true;
+    \\  dispatch(target, ev);
+    \\}
+    \\function moveFocus(next) {
     \\  const prev = ak.focused();
-    \\  if (prev === this) return;
-    \\  ak.setFocus(this);
+    \\  if (prev === next) return;
+    \\  ak.setFocus(next);
     \\  if (prev) {
-    \\    hostEvent(prev, 'blur');
-    \\    hostEvent(prev, 'focusout');
+    \\    focusEvent(prev, 'blur', next);
+    \\    focusEvent(prev, 'focusout', next);
     \\  }
-    \\  hostEvent(this, 'focus');
-    \\  hostEvent(this, 'focusin');
-    \\});
+    \\  if (next && ak.focused() === next) {
+    \\    focusEvent(next, 'focus', prev);
+    \\    focusEvent(next, 'focusin', prev);
+    \\  }
+    \\}
+    \\const CLICK_FOCUSABLE = '[tabindex],a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[contenteditable]';
+    \\hidden(HTMLP, 'focus', function () { moveFocus(this); });
     \\hidden(HTMLP, 'blur', function () {
-    \\  if (ak.focused() !== this) return;
-    \\  ak.setFocus(null);
-    \\  hostEvent(this, 'blur');
-    \\  hostEvent(this, 'focusout');
+    \\  if (ak.focused() === this) moveFocus(null);
     \\});
     \\
     \\// Attributes reflected as properties.
