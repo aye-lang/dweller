@@ -1,0 +1,59 @@
+import css
+import css.Value
+import std.list.List
+import std.math
+import std.mem.AllocError
+
+// blink: core/layout/table/table_borders.cc
+fn collapseBorders(t: *mut Tree, i: usize) AllocError!void {
+    let table = ownStyle(t, i)
+
+    if !isCollapsed(table) {
+        return
+    }
+
+    var rows = List(usize).init(t.backing)
+    defer rows.deinit()
+    try tableRows(t, i, &mut rows)
+
+    var outer = [4]f64{0.0, 0.0, 0.0, 0.0}
+    var outer_edges = [4]Edge{edgeOf(table, 0, 0), edgeOf(table, 1, 0), edgeOf(table, 2, 0), edgeOf(table, 3, 0)}
+
+    for ri, r in rows.items() {
+        var col: usize = 0
+        let n = t.children(r).len
+
+        for k in 0..n {
+            let cell = t.children(r)[k]
+            let edges = cellEdges(t, i, rows.items(), ri, k, col)
+            let shares = cellShares(edges)
+
+            t.bx(cell).style = try withEdges(t, ownStyle(t, cell), edges, shares)
+
+            for side in 0..4 {
+                if onOuterSide(side, ri, rows.len(), k, n) && edges[side].width - shares[side] > outer[side] {
+                    outer[side] = edges[side].width - shares[side]
+                    outer_edges[side] = edges[side]
+                }
+            }
+
+            col += t.bx(cell).span
+        }
+    }
+
+    let copy = try withEdges(t, table, outer_edges, outer)
+
+    for side in 0..4 {
+        copy[css.PADDING_TOP + side] = Value.Px { v: 0.0 }
+    }
+
+    t.bx(i).style = copy
+}
+
+fn cellShares(e: [4]Edge) [4]f64 {
+    return [4]f64{e[0].width - math.floor(e[0].width / 2.0), math.floor(e[1].width / 2.0), math.floor(e[2].width / 2.0), e[3].width - math.floor(e[3].width / 2.0)}
+}
+
+fn onOuterSide(side: usize, ri: usize, rows: usize, k: usize, n: usize) bool {
+    return (side == 0 && ri == 0) || (side == 2 && ri + 1 == rows) || (side == 3 && k == 0) || (side == 1 && k + 1 == n)
+}
