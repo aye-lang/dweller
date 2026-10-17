@@ -58,7 +58,6 @@ import std.heap.Arena
 import std.list.List
 import std.map.IntMap
 import std.map.StrMap
-import std.math
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -1614,24 +1613,6 @@ pub fn writeValue(v: Value, out: *mut text.Builder) AllocError!void {
         }
         .Unset => {
             try out.append("unset")
-        }
-    }
-}
-
-/// Appends `n` rounded to two decimals, without trailing zeros.
-pub fn writeNumber(n: f64, out: *mut text.Builder) AllocError!void {
-    var hundredths = math.round(n * 100.0) as i64
-    if hundredths < 0 {
-        try out.appendByte('-')
-        hundredths = -hundredths
-    }
-    try out.appendInt(hundredths / 100)
-    let frac = hundredths % 100
-    if frac != 0 {
-        try out.appendByte('.')
-        try out.appendInt(frac / 10)
-        if frac % 10 != 0 {
-            try out.appendInt(frac % 10)
         }
     }
 }
