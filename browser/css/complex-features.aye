@@ -1,0 +1,43 @@
+import std.list.List
+import std.mem.AllocError
+
+fn complexFeatures(sheet: *Sheet, k: usize, top: bool, out: *mut List(u64), neighbours: *mut List(u64), nesting: usize) AllocError![]u8 {
+    if nesting >= 16 { return "nesting" }
+
+    let cx = sheet.complexes.items()[k]
+    var from = cx.start
+    var first = cx.start
+
+    if top {
+        first = cx.start + 1
+        from = argumentStart(sheet, cx)
+    }
+
+    for ci in first..cx.end {
+        let comp = sheet.compounds.items()[ci]
+
+        for si in comp.start..comp.end {
+            let s = sheet.simples.items()[si]
+
+            for j in s.sub_start..s.sub_end {
+                let why = try complexFeatures(sheet, j, false, out, neighbours, nesting + 1)
+
+                if why.len > 0 { return why }
+            }
+        }
+
+        if !top && ci + 1 == cx.end { continue }
+
+        let mark = neighbours.len()
+
+        if !(try compoundFeatures(sheet, ci, neighbours)) { return "universal" }
+
+        if ci >= from {
+            for i in mark..neighbours.len() {
+                try out.append(neighbours.items()[i])
+            }
+        }
+    }
+
+    return ""
+}

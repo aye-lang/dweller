@@ -5764,6 +5764,32 @@ fn jsdom_fixtures_restyle_beside_shadow() {
     assert!(full <= 5, "{full} full cascades:\n{err}");
 }
 
+/// P4.75q: subtrees inserted on a page with `:has()` of any element and
+/// of siblings are styled again in place when no element in them (or
+/// beside them) has what the arguments look at: 3 of the 7 forced
+/// layouts restyle (none before); the others match a full one
+/// (`has_insert.tree`, `DWELLER_LAYOUT_CHECK` in `jsdom_fixtures`).
+#[test]
+fn jsdom_has_insert_restyles_partially() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_LAYOUT_WHY", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/has_insert.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_LAYOUT_WHY\tSTYLE_FULL\t").count();
+    let restyles = err.matches("DWELLER_TIMING\trestyle\t").count();
+    assert!(full <= 4 && restyles >= 3, "{full} full, {restyles} restyles:\n{err}");
+}
+
 /// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
 /// clock, which a task's steps move: a loop that waits for `Date.now()`
 /// ends, after the same work on every run.

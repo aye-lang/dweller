@@ -1,0 +1,16 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteChildren(s: *mut Script, parent: NodeId) AllocError!void {
+    if !keysWanted(s) { return }
+
+    if !s.page.doc.isConnected(parent) { return }
+
+    var c = s.page.doc.firstChild(parent)
+
+    while c |h| {
+        try noteSubtree(s, h)
+
+        c = s.page.doc.nextSibling(h)
+    }
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<title>subtrees inserted beside :has() rules</title>
+<style>
+:is(.a, .b):has(.mark) { color: rgb(255, 0, 0) }
+li:has(+ .sel) { font-weight: 700 }
+li:has(~ .far) { font-style: italic }
+.box { width: 100px }
+</style>
+<div class="a" id="a1"><p>first</p></div>
+<div class="a" id="a2"><p>second</p></div>
+<div class="b" id="b1"><p>third</p></div>
+<ul><li id="l1">one</li><li id="l2">two</li><li id="l3">three</li></ul>
+<pre id="out"></pre>
+<script>
+const out = [];
+const color = (id) => getComputedStyle(document.getElementById(id)).color;
+const weight = (id) => getComputedStyle(document.getElementById(id)).fontWeight;
+const style = (id) => getComputedStyle(document.getElementById(id)).fontStyle;
+const add = (parent, html) => {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  parent.appendChild(t.content);
+  return document.body.offsetHeight;
+};
+document.body.offsetHeight;
+add(document.getElementById('a1'), '<div class="box"><span>plain</span></div>');
+out.push('plain: ' + color('a1') + ' ' + color('a2') + ' ' + color('b1'));
+add(document.getElementById('a2'), '<div><span class="mark">mark</span></div>');
+out.push('mark: ' + color('a1') + ' ' + color('a2') + ' ' + color('b1'));
+const l2 = document.getElementById('l2');
+l2.parentNode.insertBefore(document.createElement('li'), l2);
+document.body.offsetHeight;
+out.push('li: ' + weight('l1') + ' ' + weight('l2'));
+const sel = document.createElement('li');
+sel.className = 'sel';
+l2.parentNode.insertBefore(sel, document.getElementById('l3'));
+document.body.offsetHeight;
+out.push('sel: ' + weight('l1') + ' ' + weight('l2') + ' ' + weight('l3'));
+document.getElementById('a2').firstElementChild.remove();
+document.body.offsetHeight;
+out.push('removed: ' + color('a2'));
+const far = document.createElement('li');
+far.className = 'far';
+l2.parentNode.appendChild(far);
+document.body.offsetHeight;
+out.push('far: ' + style('l1') + ' ' + style('l3'));
+document.getElementById('out').textContent = out.join('\n');
+</script>

@@ -1,0 +1,44 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "subtrees inserted beside :has() rules"
+      "\n"
+      <style>
+        "\n:is(.a, .b):has(.mark) { color: rgb(255, 0, 0) }\nli:has(+ .sel) { font-weight: 700 }\nli:has(~ .far) { font-style: italic }\n.box { width: 100px }\n"
+      "\n"
+    <body>
+      <div class="a" id="a1">
+        <p>
+          "first"
+        <div class="box">
+          <span>
+            "plain"
+      "\n"
+      <div class="a" id="a2">
+        <div>
+          <span class="mark">
+            "mark"
+      "\n"
+      <div class="b" id="b1">
+        <p>
+          "third"
+      "\n"
+      <ul>
+        <li id="l1">
+          "one"
+        <li>
+        <li id="l2">
+          "two"
+        <li class="sel">
+        <li id="l3">
+          "three"
+        <li class="far">
+      "\n"
+      <pre id="out">
+        "plain: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0)\nmark: rgb(0, 0, 0) rgb(255, 0, 0) rgb(0, 0, 0)\nli: 400 400\nsel: 400 700 400\nremoved: rgb(255, 0, 0)\nfar: italic italic"
+      "\n"
+      <script>
+        "\nconst out = [];\nconst color = (id) => getComputedStyle(document.getElementById(id)).color;\nconst weight = (id) => getComputedStyle(document.getElementById(id)).fontWeight;\nconst style = (id) => getComputedStyle(document.getElementById(id)).fontStyle;\nconst add = (parent, html) => {\n  const t = document.createElement('template');\n  t.innerHTML = html;\n  parent.appendChild(t.content);\n  return document.body.offsetHeight;\n};\ndocument.body.offsetHeight;\nadd(document.getElementById('a1'), '<div class=\"box\"><span>plain</span></div>');\nout.push('plain: ' + color('a1') + ' ' + color('a2') + ' ' + color('b1'));\nadd(document.getElementById('a2'), '<div><span class=\"mark\">mark</span></div>');\nout.push('mark: ' + color('a1') + ' ' + color('a2') + ' ' + color('b1'));\nconst l2 = document.getElementById('l2');\nl2.parentNode.insertBefore(document.createElement('li'), l2);\ndocument.body.offsetHeight;\nout.push('li: ' + weight('l1') + ' ' + weight('l2'));\nconst sel = document.createElement('li');\nsel.className = 'sel';\nl2.parentNode.insertBefore(sel, document.getElementById('l3'));\ndocument.body.offsetHeight;\nout.push('sel: ' + weight('l1') + ' ' + weight('l2') + ' ' + weight('l3'));\ndocument.getElementById('a2').firstElementChild.remove();\ndocument.body.offsetHeight;\nout.push('removed: ' + color('a2'));\nconst far = document.createElement('li');\nfar.className = 'far';\nl2.parentNode.appendChild(far);\ndocument.body.offsetHeight;\nout.push('far: ' + style('l1') + ' ' + style('l3'));\ndocument.getElementById('out').textContent = out.join('\\n');\n"
+      "\n"

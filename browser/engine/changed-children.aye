@@ -1,0 +1,19 @@
+import css
+import dom.NodeId
+import js.Interp
+import js.JsError
+
+fn changedChildren(it: *mut Interp, parent: NodeId) JsError!void {
+    let s = scriptOf(it)
+
+    if s.active == s.page {
+        s.version += 1
+        s.style_version += 1
+
+        try noteLayoutChange(s, parent, css.CHILDREN_CHANGED)
+    } else {
+        s.active.mutations += 1
+    }
+
+    return flushMutations(it)
+}
