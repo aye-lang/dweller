@@ -229,6 +229,7 @@ exits 0, the weekly job runs.
 | C4 | P10.4 | the conformance table, first baseline, `check`, weekly CI | C1–C3 | done | – |
 | C5 | P10.5 | fetch and XHR under upstream `wpt serve` (`DWELLER_RESOLVE`) | C4 | done | – |
 | C6 | P10.6 | `testdriver.js` subset through `--events` | C4 | done | `third_party/blink/web_tests/resources/testdriver-vendor.js` |
+| C7 | P10.42 | measure the areas not yet measured: every row of the plan table gets a `wpt_areas.json` entry and a baseline | C4 | done | – |
 
 ### Phase D: login readiness and the user bundle (lane login)
 
@@ -1769,6 +1770,40 @@ its area.
 - depends on: P10.4
 - time box: 90 min; model: opus
 - status: done 2026-10-17. `browser/tools/wpt/testdriver-vendor.js` (served for `resources/testdriver-vendor.js` and `tools/wpt/testdriver-vendor.js`) sets `in_automation` and implements `click` (`click:X,Y release:X,Y` at the element centre), `send_keys` (focus, then `key:` / `text:` / `keyup:` per character; WebDriver keys Backspace, Tab, Enter, Escape, arrows, Home, End, Delete) and `action_sequence` (pointer sources: `pointerMove` with viewport, element or pointer origin → `move:`, `pointerDown` → `click:`, `pointerUp` → `release:`; key sources: `keyDown`/`keyUp`). It logs `DWELLER_EVENTS <words>` and returns a promise; `dweller wpt` (`engine.runUntilReport`, replacing `runUntilConsole` in `main.aye`) drops that console line, feeds the words (`engine/feed-words.aye`: pointer events at the hit element, `click` and its default action through `engine.activate`, submit events; keydown/keyup at the focus, Tab moves the focus, Backspace and text edit a text field, Enter submits implicitly) and calls `__dwellerEventsDone()`. The words are the `--events` vocabulary of `ui/script.aye`, applied by the engine without a window (no SDL), so `ui/script.aye` is unchanged. There were no excludes to lift: `uievents` is a new area of `wpt_areas.json` (threshold 0 until it has a target); forms had none. Fixture `browser/tests/wpt/testdriver.html` (with WPT `resources/testdriver.js` at e58225ab), test `wpt_testdriver`; `wpt_py_serve` counts it. Scores (`wpt.py run uievents html/semantics/forms -j 4`): uievents 12/166 (7.2%) → 25/178 (14.0%), html/semantics/forms 1888/5335 (35.4%) → 1912/5337 (35.8%); no file lost a subtest. `conformance.py check` → 0; `cargo test --release --test browser -- wpt_` → 0 (4 passed). Left: `test_driver.Actions` pauses and wheel/touch/pen sources, modifier state across keys, the press target of a click (click goes to the release element), `pointerover`/`enter` and `mouseover`, `dblclick`, real form submission and navigation after an activation, `.sub.`/`--upstream` testdriver tests (upstream's served vendor file is the empty stub).
+
+#### P10.42: measure the areas not yet measured
+
+- goal: every row of "Not yet measured" in `docs/conformance.md` becomes a measured area with a baseline, so the H cards have a number to move. No engine code changes.
+- design: one `wpt_areas.json` entry per plan row, with the upstream directories below (no `exclude` except transforms). `uievents` takes the plan's 70 (it was 0 in P10.6) and `html/webappapis/timers` is the timers half of "Events and timers". `css/css-sizing` (never run, threshold 0) is folded into `css/box-sizing`. test262 `annexB` is `T262_AREAS["test262/annexB"] = "test/annexB"` beside built-ins and language (threshold 80). `planned.txt` is now empty and `conformance.py table` leaves out the "Not yet measured" section when it is. The weekly job needs no change: it runs `conformance.py run`, which walks `wpt_areas.json` and `T262_AREAS`, and `wpt.py fetch` sparse-checks out every dir of the file. Reftests and crashtests are in the counts (P10.2).
+- areas (key: dirs; why):
+  - `html/syntax`: `html/syntax/parsing`, `parsing-html-fragments`, `serializing-html-fragments` (the tree builder and the serializer; the XML ones are out of scope).
+  - `dom/api`: `dom/traversal`, `dom/ranges`, `dom/collections`, `html/dom` (the reflection tests are 90% of its subtests).
+  - `html/webappapis/timers`: the timers directory; `uievents` stays its own area.
+  - `css/selectors`: `css/selectors`.
+  - `css/cascade-variables`: `css/css-cascade`, `css/css-variables`.
+  - `css/values-color`: `css/css-values`, `css/css-color`.
+  - `css/box-sizing`: `css/css-box`, `css/css-sizing`, `css/CSS2/margin-padding-clear` (CSS 2 has no directory named "box model"; margin, padding and clear are its box tests).
+  - `css/floats-tables`: `css/CSS2/floats`, `floats-clear`, `css/css-tables`.
+  - `css/inline-text`: `css/css-inline`, `css/css-text`, `css/CSS2/linebox`.
+  - `css/overflow`: `css/css-overflow`.
+  - `css/css-grid`: `css/css-grid`.
+  - `css/positioning`: `css/css-position`, `css/CSS2/positioning`.
+  - `css/backgrounds-borders`: `css/css-backgrounds`, `css/css-borders`.
+  - `css/css-transforms`: excludes `*3d*`, `*perspective*`, `*backface*`, `*preserve*` (the plan row is 2D; 3D is P11 work).
+  - `css/css-fonts`: `css/css-fonts`.
+  - `images`: `html/semantics/embedded-content/the-img-element`, `css/css-images`, `png`, `gif` (`png` and `gif` are small decode dirs, mostly reftests).
+- not in any area yet: `css/CSS2/tables`, `normal-flow`, `borders`, `backgrounds`, `text`, `box-display`, `visudet` (CSS 2 suites, about 5000 files, mostly reftests of features the css3 dirs already cover); add them when an H card wants them.
+- thresholds: kept as the plan table says. A below-threshold area does not fail `check` (it fails only when the score falls more than 0.5 points below its baseline), so nothing was set to 0 for being out of reach; no area was given a baseline-only 0.
+- verify: `python3 browser/tools/conformance.py run AREA -j 4` per new area, `python3 browser/tools/conformance.py table`, `python3 browser/tools/conformance.py check; echo $?` -> 0, `python3 browser/tools/check_taste.py`
+- depends on: P10.4
+- status: done 2026-10-17. WPT e58225ab, test262 d53ebc8b, `-j 4` on 4 cores, 16 s to 175 s per area (about 12 min in all). Passed/total, score, threshold: `html/syntax` 727/2732 26.6 (90); `dom/api` 37762/64996 58.1 (75); `html/webappapis/timers` 20/25 80.0 (70, done); `uievents` 25/178 14.0 (70, was 0); `css/selectors` 1323/3342 39.6 (80); `css/cascade-variables` 557/1419 39.3 (75); `css/values-color` 8605/23211 37.1 (70); `css/box-sizing` 2864/8548 33.5 (70); `css/floats-tables` 759/1586 47.9 (65); `css/inline-text` 2251/8075 27.9 (60); `css/overflow` 482/1888 25.5 (60); `css/css-grid` 3313/17475 19.0 (60); `css/positioning` 953/2265 42.1 (70); `css/backgrounds-borders` 1671/8473 19.7 (65); `css/css-transforms` 748/5196 14.4 (50); `css/css-fonts` 2584/8226 31.4 (50); `images` 1022/5146 19.9 (60); `test262/annexB` 377/1044 36.1 (80, 42 skipped). All 17 rows of the old list are measured; nothing is left unmeasured. TIMEOUT files: overflow 32, grid 55, dom/api 16, selectors 15, cascade 14, values 7, fonts 7, images 5, syntax 4; no CRASH. `check` -> 0, `check_taste` -> 0. Left: the CSS 2 dirs above; the weekly job now runs about 40 min more than before (not yet timed on CI).
+- next H cards (real-site-relevant areas ranked by failing subtests; largest failing directory):
+  1. `dom/api`, 27,234 failing: `html/dom/reflection-*.html` (embedded 4,541, tabular 3,854, text 3,416, forms 3,230: IDL attribute reflection of HTML elements, one table-driven harness).
+  2. `css/values-color`, 14,606: `css/css-color/parsing` 6,609 (computed/valid/invalid colour syntaxes: `color()`, `lab()`, `oklch()`, relative colours), then `css/css-values/calc-size` 3,432.
+  3. `css/css-grid`, 14,162: `css/css-grid/abspos` 3,581 (then `grid-lanes` 2,816, `alignment` 1,571).
+  4. `css/backgrounds-borders`, 6,802: `css/css-backgrounds/animations` 4,577 (the interpolation tests; `parsing` is 519).
+  5. `css/inline-text`, 5,824: `css/css-text/animations` 1,201, then `i18n` 1,080 and `white-space` 514.
+  Runners-up: `css/box-sizing` 5,684 (`css-sizing/animation` 2,148), `css/css-fonts` 5,642 (`animations` 1,993, `parsing` 1,304), `css/css-transforms` 4,448 (`animation` 3,897), `images` 4,124 (`css-images/parsing` 2,183). Cross-cutting: the `animations`/`animation` directories of ten CSS areas hold about 16,600 failing subtests (property interpolation through `getComputedStyle` and Web Animations): one card for the interpolation of computed values would move more than any single area card.
 
 #### P10.35: encoding
 
