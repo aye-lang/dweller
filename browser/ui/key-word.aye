@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn keyWord(tmp: Allocator, ev: *SDL_Event) AllocError!?[]u8 {
+    let ke = &ev.key
+    let name = keyWordName(ke.keysym.sym) orelse return null
+    var b = text.Builder.init(tmp)
+
+    if ev.kind == SDL_KEYUP {
+        try b.append("keyup:")
+    } else {
+        try b.append("key:")
+    }
+
+    if ke.repeat != 0 {
+        try b.append("repeat+")
+    }
+
+    if (ke.keysym.mods & KMOD_CTRL) != 0 {
+        try b.append("ctrl+")
+    }
+
+    if (ke.keysym.mods & KMOD_ALT) != 0 {
+        try b.append("alt+")
+    }
+
+    if (ke.keysym.mods & KMOD_SHIFT) != 0 {
+        try b.append("shift+")
+    }
+
+    try b.append(name)
+
+    return b.bytes()
+}

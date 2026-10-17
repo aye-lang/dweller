@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn textWord(tmp: Allocator, ev: *SDL_Event) AllocError!?[]u8 {
+    let te = &ev.text
+    var b = text.Builder.init(tmp)
+
+    try b.append("text:")
+
+    for c in te.text {
+        if c == 0 {
+            break
+        }
+
+        if c == ' ' {
+            try b.appendByte('_')
+        } else {
+            try b.appendByte(c)
+        }
+    }
+
+    if b.len() > 36 {
+        return null
+    }
+
+    return b.bytes()
+}

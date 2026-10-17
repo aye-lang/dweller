@@ -1,0 +1,20 @@
+import js
+import js.Interp
+import js.JsError
+
+// https://webidl.spec.whatwg.org/#idl-DOMException
+fn domExceptionProto(it: *mut Interp) JsError!u32 {
+    let ctor = try it.getProp(js.objVal(it.global), try it.intern("DOMException"))
+
+    if !js.isObject(ctor) {
+        return it.error_proto
+    }
+
+    let proto = try it.getProp(ctor, try it.intern("prototype"))
+
+    if !js.isObject(proto) {
+        return it.error_proto
+    }
+
+    return js.objectOf(proto)
+}
