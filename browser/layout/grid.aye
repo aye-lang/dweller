@@ -14,7 +14,7 @@
 //   `name-start`, `name-end`), `auto`. Lines past the last column add
 //   `auto` columns. Then auto-placement, row by row: items with a
 //   definite row first, then the others from a cursor that only moves
-//   forward (no `dense`, no column flow).
+//   forward (`dense` restarts it; column flow transposes the grid).
 // - Track sizing: fixed tracks; content-sized tracks (`auto` and the
 //   `auto` minimums of `fr`) start at the min-content width of their
 //   items (items spanning several tracks share theirs) and grow toward
@@ -344,11 +344,7 @@ fn lineRef(v: Value, areas: []GridArea, count: usize, column: bool, end: bool) L
             return LineRef { kind: 1, n: math.min((n - 1) as f64, 1000.0) as i64 }
         }
         if n < 0 {
-            let idx = count as i64 + 1 + n
-            if idx < 0 {
-                return LineRef { kind: 1, n: 0 }
-            }
-            return LineRef { kind: 1, n: idx }
+            return LineRef { kind: 1, n: count as i64 + 1 + n }
         }
         return none
     } else |e| {}
@@ -380,7 +376,9 @@ fn lineRef(v: Value, areas: []GridArea, count: usize, column: bool, end: bool) L
 
 // From the start and end of a placement: the start line (or -1 for
 // auto) and the span.
-fn resolveLines(a: LineRef, b: LineRef) [2]i64 {
+fn resolveLines(start_ref: LineRef, end_ref: LineRef) [2]i64 {
+    let a = inImplicitGrid(start_ref)
+    let b = inImplicitGrid(end_ref)
     if a.kind == 1 {
         if b.kind == 1 {
             if b.n > a.n {
@@ -461,6 +459,9 @@ struct Grid {
     rows: List(Track)
     items: List(GridItem)
     nrows: usize
+    explicit_cols: usize = 0
+    explicit_rows: usize = 0
+    stretch_cols: bool = true
 
     fn deinit(self: *mut Self) {
         self.cols.deinit()
@@ -500,9 +501,6 @@ fn buildGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!Grid {
     while g.cols.len() < area_cols {
         try g.cols.append(Track { min: -1.0, max: -1.0, fr: 1.0 })
     }
-    if g.cols.len() == 0 {
-        try g.cols.append(Track { min: -1.0, max: -1.0, fr: 1.0 })
-    }
     let rows_template = keywordOf(style[css.GRID_TEMPLATE_ROWS])
     if !text.eql(rows_template, "none") && rows_template.len > 0 {
         if !(try parseTracks(t.backing, rows_template, ch, row_gap, u, &mut g.rows)) {
@@ -510,8 +508,17 @@ fn buildGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!Grid {
         }
     }
     // Placement.
-    var ncols = g.cols.len()
+    let ncols = g.cols.len()
+    g.explicit_cols = ncols
     let nrows_explicit = g.rows.len()
+    g.explicit_rows = nrows_explicit
+    g.stretch_cols = stretchesTracks(keywordOf(style[css.JUSTIFY_CONTENT]))
+    var auto_cols = List(Track).init(t.backing)
+    defer auto_cols.deinit()
+    var auto_rows = List(Track).init(t.backing)
+    defer auto_rows.deinit()
+    try autoTracks(t, i, css.GRID_AUTO_COLUMNS, cw, &mut auto_cols)
+    try autoTracks(t, i, css.GRID_AUTO_ROWS, ch, &mut auto_rows)
     var placed = List(bool).init(t.backing)
     defer placed.deinit()
     let kids = t.children(i)
@@ -527,7 +534,7 @@ fn buildGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!Grid {
         if cl[0] >= 0 {
             it.col = cl[0] as usize
             while g.cols.len() < it.col + it.cspan {
-                try g.cols.append(Track { min: -1.0, max: -1.0, fr: 0.0 })
+                try g.cols.append(implicitTrack(auto_cols.items(), g.cols.len() - g.explicit_cols))
             }
         } else {
             it.col = 1 << 30
@@ -539,72 +546,27 @@ fn buildGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!Grid {
         }
         try g.items.append(it)
     }
-    ncols = g.cols.len()
-    var cells = List(bool).init(t.backing)
-    defer cells.deinit()
-    var occ = Occupancy { cells: &mut cells, cols: ncols }
-    let all = g.items.items()
-    let auto_pos: usize = 1 << 30
-    // Items with a definite row.
-    for k in 0..all.len {
-        if all[k].row == auto_pos {
-            continue
-        }
-        if all[k].cspan > ncols {
-            all[k].cspan = ncols
-        }
-        if all[k].col == auto_pos {
-            var c: usize = 0
-            while c + all[k].cspan <= ncols && !occ.isFree(c, all[k].row, all[k].cspan, all[k].rspan) {
-                c += 1
-            }
-            if c + all[k].cspan > ncols {
-                c = 0
-            }
-            all[k].col = c
-        }
-        try occ.take(all[k].col, all[k].row, all[k].cspan, all[k].rspan)
+    let auto_flow = keywordOf(style[css.GRID_AUTO_FLOW])
+    let column_flow = text.indexOf(auto_flow, "column") != null
+    var across = g.cols.len()
+    if column_flow {
+        transposeItems(g.items.items())
+        across = nrows_explicit
     }
-    // The others, from a cursor.
-    var cur_row: usize = 0
-    var cur_col: usize = 0
-    for k in 0..all.len {
-        if all[k].row != auto_pos {
-            continue
-        }
-        if all[k].cspan > ncols {
-            all[k].cspan = ncols
-        }
-        let cs = all[k].cspan
-        let rs = all[k].rspan
-        if all[k].col != auto_pos {
-            let col = all[k].col
-            if col < cur_col {
-                cur_row += 1
-            }
-            cur_col = col
-            while !occ.isFree(col, cur_row, cs, rs) {
-                cur_row += 1
-            }
-        } else {
-            while true {
-                if cur_col + cs > ncols {
-                    cur_col = 0
-                    cur_row += 1
-                    continue
-                }
-                if occ.isFree(cur_col, cur_row, cs, rs) {
-                    break
-                }
-                cur_col += 1
-            }
-        }
-        all[k].col = cur_col
-        all[k].row = cur_row
-        try occ.take(cur_col, cur_row, cs, rs)
-        cur_col += cs
+    let used = try placeItems(t.backing, g.items.items(), acrossCount(g.items.items(), across), text.indexOf(auto_flow, "dense") != null)
+    var used_cols = used[1]
+    g.nrows = math.maxOf(usize, used[0], nrows_explicit)
+    if column_flow {
+        transposeItems(g.items.items())
+        used_cols = used[0]
+        g.nrows = math.maxOf(usize, used[1], nrows_explicit)
     }
-    g.nrows = math.max(occ.rows() as f64, nrows_explicit as f64) as usize
+    while g.cols.len() < used_cols {
+        try g.cols.append(implicitTrack(auto_cols.items(), g.cols.len() - g.explicit_cols))
+    }
+    while g.rows.len() < g.nrows {
+        try g.rows.append(implicitTrack(auto_rows.items(), g.rows.len() - nrows_explicit))
+    }
     return g
 }
 
@@ -785,7 +747,7 @@ fn sizeColumns(t: *mut Tree, g: *Grid, cw: f64, gap: f64, out: *mut List(f64)) A
                 break
             }
         }
-    } else if free > 0.001 {
+    } else if free > 0.001 && g.stretch_cols {
         // No fr track: the auto tracks stretch.
         var autos: usize = 0
         for k in 0..n {
@@ -844,13 +806,14 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     defer widths.deinit()
     try sizeColumns(t, &g, cw, col_gap, &mut widths)
     let ws = widths.items()
+    let spx = trackSpacing(keywordOf(style[css.JUSTIFY_CONTENT]), cw, ws, col_gap)
     // Column offsets.
     var xs = List(f64).init(t.backing)
     defer xs.deinit()
-    var x = 0.0
+    var x = spx.lead
     for k in 0..ws.len {
         try xs.append(x)
-        x += ws[k] + col_gap
+        x += ws[k] + col_gap + spx.between
     }
     // Items: widths, then their contents.
     for it in g.items.items() {
@@ -913,7 +876,7 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
                     hs.items()[r] += (ch - used) * g.rows.items()[r].fr / frs
                 }
             }
-        } else if frs <= 0.0 && ch > used {
+        } else if frs <= 0.0 && ch > used && stretchesTracks(keywordOf(style[css.ALIGN_CONTENT])) {
             // `align-content: normal`: the auto rows stretch.
             var autos: usize = 0
             for r in 0..g.nrows {
@@ -930,14 +893,15 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             }
         }
     }
+    let spy = trackSpacing(keywordOf(style[css.ALIGN_CONTENT]), ch, hs.items(), row_gap)
     var ys = List(f64).init(t.backing)
     defer ys.deinit()
-    var y = 0.0
+    var y = spy.lead
     for r in 0..g.nrows {
         try ys.append(y)
         y += hs.items()[r]
         if r + 1 < g.nrows {
-            y += row_gap
+            y += row_gap + spy.between
         }
     }
     // Positions, and alignment in the area's height.
@@ -946,7 +910,7 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         for r in it.row..it.row + it.rspan {
             ah += hs.items()[r]
         }
-        if ch >= 0.0 && isPercentHeight(t.bx(it.box).style[css.HEIGHT]) {
+        if isPercentHeight(t.bx(it.box).style[css.HEIGHT]) {
             // A percentage of the area's height.
             if t.bx(it.box).kind == BoxKind.Image {
                 var aw = col_gap * (it.cspan as f64 - 1.0)
@@ -977,6 +941,8 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         let pb = t.bx(it.box)
         pb.y = ys.items()[it.row] + pb.margin[0] + dy
     }
+    try recordGridLines(t, i, &g, xs.items(), ws, ys.items(), hs.items())
+
     // Absolutely positioned children: their static position.
     for c in t.children(i) {
         if t.bx(c).abs != 0 {

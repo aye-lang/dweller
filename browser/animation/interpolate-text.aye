@@ -1,0 +1,28 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#combining-values
+pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    let prop = css.propertyIndex(name) orelse return false
+
+    var sheet = try css.Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let nonneg = try nonNegative(alloc, prop)
+    let va = try parsedValue(&mut sheet, prop, name, a, out)
+    let vb = try parsedValue(&mut sheet, prop, name, b, out)
+
+    out.clear()
+
+    if va != null && vb != null {
+        if interpolate(va.?, vb.?, p) |v| {
+            try css.writeValue(clampToRange(prop, v, nonneg), out)
+
+            return true
+        }
+    }
+
+    return mixNumbers(a, b, p, isInteger(name), nonneg, out)
+}

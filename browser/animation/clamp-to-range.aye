@@ -1,0 +1,25 @@
+import css
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#combining-range
+fn clampToRange(prop: usize, v: css.Value, nonneg: bool) css.Value {
+    let unit = text.endsWith(css.PROPERTIES[prop].name, "opacity")
+    var low = -math.inf()
+    var high = math.inf()
+
+    if nonneg || unit {
+        low = 0.0
+    }
+
+    if unit {
+        high = 1.0
+    }
+
+    return match v {
+        .Px { v: x } => css.Value.Px { v: math.min(math.max(x, low), high) }
+        .Percent { v: x } => css.Value.Percent { v: math.min(math.max(x, low), high) }
+        .Number { v: x } => css.Value.Number { v: math.min(math.max(x, low), high) }
+        _ => v
+    }
+}

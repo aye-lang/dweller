@@ -1,0 +1,28 @@
+import css
+
+// spec: https://drafts.csswg.org/css-grid-2/#static-position
+fn gridStaticShift(t: *Tree, i: usize, cb: Area, static_at: f64, horizontal: bool) f64 {
+    let b = t.bx(i)
+    let p = b.parent orelse return 0.0
+    let g = t.bx(p)
+
+    if g.kind != BoxKind.Grid {
+        return 0.0
+    }
+
+    var area = paddingArea(g)
+
+    if g.grid_lines != null && containingBox(t, i) == p {
+        area = cb
+    }
+
+    if horizontal {
+        let room = area.w - b.w - b.margin[1] - b.margin[3]
+
+        return area.x - static_at + room * staticAlignFactor(alignWord(justifyOf(t, i), room), false, isKeyword(g.style[css.DIRECTION], "rtl"), true)
+    }
+
+    let room = area.h - b.h - b.margin[0] - b.margin[2]
+
+    return area.y - static_at + room * staticAlignFactor(alignWord(alignOf(t, i), room), false, false, false)
+}

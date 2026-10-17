@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-animations-1/#typedef-single-animation
+fn writeSingleAnimation(item: []Comp, comma: bool, outs: []mut text.Builder) AllocError!bool {
+    if comma {
+        for k in 0..8 {
+            try outs[k].append(", ")
+        }
+    }
+
+    let lens = [8]usize{outs[0].len(), outs[1].len(), outs[2].len(), outs[3].len(), outs[4].len(), outs[5].len(), outs[6].len(), outs[7].len()}
+
+    for c in item {
+        if !(try animationSlot(c, outs, lens[..])) {
+            return false
+        }
+    }
+
+    for k in 0..8 {
+        if outs[k].len() == lens[k] {
+            try outs[k].append(ANIMATION_DEFAULTS[k])
+        }
+    }
+
+    return item.len > 0
+}

@@ -10,17 +10,17 @@ pub fn styleChange(t: *mut Transitions, el: NodeId, after: []css.Value, now: f64
         try changeStyle(t, el, old, after, now)
     }
 
-    let wanted = transitionsWanted(after) && !isDisplayNone(after)
+    if isDisplayNone(after) && runningIndex(t, el, null) == null {
+        return forget(t, el, now)
+    }
 
-    if wanted && t.before.get(el.index) == null {
-        try t.before.put(el.index, Snapshot { el: el, values: try t.alloc.alloc(css.Value.Initial, css.NPROPS) })
+    if t.before.get(el.index) == null {
+        try t.before.put(el.index, Snapshot { el: el, values: try t.alloc.alloc(css.Value.Initial, css.NPROPS), wanted: false })
     }
 
     let snap = t.before.getPtr(el.index) orelse return
 
-    if !wanted && runningIndex(t, el, null) == null {
-        return forget(t, el, now)
-    }
+    snap.wanted = transitionsWanted(after)
 
     for p in 0..css.NPROPS {
         snap.values[p] = interpolable(after[p])
