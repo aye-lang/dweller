@@ -1,0 +1,21 @@
+import agent
+
+fn watchFromWindow(ui: *mut Ui, doc: *mut agent.Json, r: usize) {
+    let a = ui.agents.?
+    let w = (doc.getNum(r, "width") orelse 0.0) as i32
+    let h = (doc.getNum(r, "height") orelse 0.0) as i32
+
+    a.watch.on = doc.getBool(r, "on") orelse false
+
+    if !a.watch.on {
+        return
+    }
+
+    if w > 0 && h > 0 && (w != ui.win_w || h != ui.layoutHeight() as i32) {
+        SDL_SetWindowSize(ui.window, w, h + ui.top() as i32)
+    }
+
+    a.watch.due = true
+    ui.page.valid = false
+    ui.dirty = true
+}

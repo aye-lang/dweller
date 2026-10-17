@@ -682,6 +682,10 @@ fn removeSpace(ui: *mut Ui, sp: *mut Space) {
             }
         }
     }
+    if a.watch.id == sp.id {
+        showSpace(ui, 0) catch |e| {
+        }
+    }
     releaseSpace(a, sp)
     freeSpace(ui.alloc, sp)
     listsChanged(ui) catch |e| {
@@ -707,6 +711,8 @@ fn releaseSpace(a: *mut Agents, sp: *mut Space) {
     let p = sp.path.bytes()
     if p.len > 11 {
         removeSocket(p)
+        var frame_file = frameFilePath(p)
+        unlink(frame_file[..].ptr)
         var dir = @zeroed([110]u8)
         let n = p.len - 11
         if n < 109 {
@@ -816,6 +822,10 @@ fn fromSpace(ui: *mut Ui, sp: *mut Space, tmp: Allocator, line: []u8) AllocError
     }
     if text.eql(ctl, "close") {
         sp.closing = true
+        return false
+    }
+    if text.eql(ctl, "frame") {
+        frameFromSpace(ui, sp, &mut doc, r)
         return false
     }
     if !text.eql(ctl, "status") {
@@ -955,7 +965,7 @@ fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!
         if o == sp {
             continue
         }
-        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs, o.shared)
+        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs, o.shared, o.id == a.watch.id)
         try spaceLine(&mut detail, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
     }
     try w.endArray()
@@ -966,7 +976,7 @@ fn listsMessage(ui: *mut Ui, sp: *mut Space, out: *mut text.Builder) AllocError!
 }
 
 // A Space in `spaces`.
-fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32, shared: bool) AllocError!void {
+fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8, last: []u8, tabs: u32, shared: bool, watched: bool) AllocError!void {
     try w.beginObject()
     try w.key("id")
     try w.int(id as i64)
@@ -983,7 +993,7 @@ fn spaceEntry(w: *mut agent.Writer, id: u32, name: []u8, mine: bool, state: []u8
     try w.key("profile")
     try w.string(profileName(shared))
     try w.key("watched")
-    try w.boolean(false)
+    try w.boolean(watched)
     try w.endObject()
 }
 
@@ -1268,6 +1278,9 @@ fn spacesTimeout(ui: *mut Ui, timeout: i32) i32 {
         t = SPACE_POLL_MS
     }
     if a.control >= 0 {
+        if a.watch.due && t > FRAME_MS as i32 {
+            t = FRAME_MS as i32
+        }
         for i in 0..ui.count {
             if ui.slots[i].?.session.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
@@ -1375,6 +1388,9 @@ fn fromWindow(ui: *mut Ui, tmp: Allocator, line: []u8) AllocError!void {
     }
     if try applyShared(ui, &mut doc, r, ctl) {
         return
+    }
+    if text.eql(ctl, "watch") {
+        return watchFromWindow(ui, &mut doc, r)
     }
     if text.eql(ctl, "spaces") {
         me.id = (doc.getNum(r, "id") orelse 0.0) as u32
@@ -1564,7 +1580,7 @@ fn spacesReply(ui: *mut Ui, tmp: Allocator, reply: *mut agent.Reply) AllocError!
         if a.paused {
             state = "paused"
         }
-        try spaceEntry(&mut w, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32, me.shared)
+        try spaceEntry(&mut w, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32, me.shared, a.watch.on)
         try spaceLine(&mut detail, me.id, me.name.bytes(), true, state, spaceLast(a), ui.count as u32)
         n = 1 + me.others_n
         if me.others.len() > 0 {
@@ -1626,6 +1642,8 @@ fn leaveSpace(ui: *mut Ui) {
         a.inside = null
     }
     let p = a.path
+    var frame_file = frameFilePath(p)
+    unlink(frame_file[..].ptr)
     var end = p.len
     while end > 0 && p[end - 1] != '/' {
         end -= 1

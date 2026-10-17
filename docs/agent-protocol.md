@@ -561,7 +561,7 @@ person's input or the window's frames.
   the asking Space is always `working`, or `paused`), `waiting` (a
   `wait`), `idle`, `paused`, `done` (no agent) or `crashed`; `last` is
   the last action (as in the status bar, without `agent: `); `watched`
-  is false until P9.5. The other Spaces are as the window last heard
+  is true while the person watches that Space (below). The other Spaces are as the window last heard
   from them (their status comes over the control connection, below).
   MCP: one line per Space, `- Space 3 "Claude Code" (yours): working,
   2 tabs; last: ...`.
@@ -584,8 +584,8 @@ person's input or the window's frames.
   commands; looking still works) and its agent gets
   `{"event":"paused","space":3}`; resuming gives
   `{"event":"resumed","space":3}`. The toolbar's Pause button and
-  Cmd+Shift+P pause or resume every Space (the person's tabs are shown;
-  P9.5 makes them act on a shown Space only); a Space started while
+  Cmd+Shift+P pause or resume every Space, also while one is shown
+  (acting on the shown Space only is not done yet); a Space started while
   paused starts paused (without an event). Stopping a Space gives its
   agent `{"event":"stopped","space":3}`, then the end of its
   connection, and the Space ends (gone from `spaces`); one that does
@@ -608,8 +608,21 @@ person's input or the window's frames.
   attached, Close for a done or crashed Space; a click elsewhere or
   Escape closes it (that click does nothing else). Neither the chips
   nor the menu take the focus or touch the person's page. A stopped
-  Space's chip goes when its process ends. Watching a Space from its
-  chip comes in P9.5.
+  Space's chip goes when its process ends.
+- **Watching.** A click on a Space's chip (it also opens the chip's
+  menu), or Cmd+Shift+1..8 (the Nth chip from the left), shows that
+  Space; a click on "You" or Cmd+Shift+0 shows the person's tabs again,
+  and so does the end of the shown Space. The shown chip has the grey
+  of "You" before. The window sends the Space `watch` with the size of
+  its page area; the Space's window takes that size for its own page
+  area (its toolbar and tab strip above it) and, after each frame it
+  draws, at most 30 a second, writes its page area to its frame file
+  (`DIR/frame`, beside its socket) and sends `frame`. The window draws
+  the newest frame in its page area (white until the first one; the
+  toolbar, tab strip and address bar stay the person's), and sends
+  `watch` with `on` false to the Space it stops showing. While a Space
+  is shown, clicks in the page area do nothing (P9.6 gives them to the
+  Space); keys and the wheel still go to the person's page.
 - **Logins.** A `shared` Space starts with the window's cookies
   (session cookies too) and `localStorage`, and reads an origin's
   `localStorage` the window has not touched yet from the window's
@@ -627,7 +640,7 @@ person's input or the window's frames.
 - **Activity.** A Space's new last action shows in the window's status
   line after its name (`Alpha: click button "Sign in" [e3]`), and what
   the person did to a Space after it (`Alpha paused`). The outline of an
-  agent's target shows only where that tab is shown (P9.5).
+  agent's target is not drawn in a watched Space's frames yet.
 - A Space exits when it is stopped or closed, or when the window closes
   or is killed (the end of file on its control connection, a
   socketpair). If a Space crashes, its agent gets
@@ -654,6 +667,17 @@ sent once the rest went):
 | both | `storage` | `origin`, `kind` (`set`, `remove` or `clear`), `key`, `value` | the sender changed `localStorage`; the other side does the same (and the window passes it on) |
 | Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
 | Space | `close` | | its agent sent `space_close` (then it exits) |
+| window | `watch` | `on` (bool), `width`, `height` (the window's page area, CSS px), `scale` | send frames (or stop); the Space's page area takes that size |
+| Space | `frame` | `seq`, `width`, `height` (device px) | a new frame is in the frame file |
+
+The frame file holds two frames of `width` × `height` RGBA pixels, one
+after the other; frame `seq` is in slot `seq % 2`, so the Space writes
+the slot the window is not reading. The Space makes it (mode 0600),
+grows it with `ftruncate` and maps it shared; it never shrinks it, so
+the window's mapping (read-only, the size of the last `frame`) stays
+inside the file. The window maps it on a `frame` of the shown Space and
+copies the slot into its canvas when it draws; it never waits on the
+file or the Space. The Space removes the file with its directory.
 
 ### `dweller connect`
 

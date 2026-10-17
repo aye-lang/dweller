@@ -1,0 +1,35 @@
+// v8: src/ic/ic.cc (KeyedLoadIC::Load)
+
+fn vmKeyedDenseElem(it: *mut Interp, e: *mut IcEntry, v: Value, k: Value, store: bool) ?*mut Value {
+    let o = objectOf(v)
+
+    if o == NONE {
+        return null
+    }
+
+    let ob = it.heap.obj(o)
+    let i = match k {
+        .Num { n } => n
+        _ => -1.0
+    }
+
+    if !(i >= 0.0 && i < ob.nelems as f64 && (i as u32) as f64 == i) {
+        return null
+    }
+
+    var kind = KIND_DENSE
+
+    if store && ob.class == Class.Arguments {
+        kind = KIND_ARGUMENTS
+    }
+
+    if (ob.class != Class.Array && kind == KIND_DENSE) || (store && ob.frozen) || (!store && ob.elems[i as u32] is .Empty) {
+        return null
+    }
+
+    if e.kind != kind {
+        vmIcNoteKind(e, kind)
+    }
+
+    return &mut ob.elems[i as u32]
+}

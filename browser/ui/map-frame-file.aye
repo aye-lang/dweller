@@ -1,0 +1,63 @@
+let PROT_READ: i32 = 1
+let PROT_WRITE: i32 = 2
+let MAP_SHARED: i32 = 1
+let SEEK_END: i32 = 2
+
+fn mapFrameFile(w: *mut Watch, path: [*]u8, need: usize, writable: bool) bool {
+    if w.map != null && (need == w.len || writable && need < w.len) {
+        return true
+    }
+
+    unmapFrame(w)
+
+    if need == 0 {
+        return false
+    }
+
+    var flags: i32 = 0
+    var prot = PROT_READ
+
+    if writable {
+        flags = 2 | createFlag()
+        prot = PROT_READ | PROT_WRITE
+    }
+
+    let fd = openFile(path, flags, 384)
+
+    if fd < 0 {
+        return false
+    }
+
+    if writable {
+        ftruncate(fd, need as i64)
+    }
+
+    if lseek(fd, 0, SEEK_END) < need as i64 {
+        close(fd)
+
+        return false
+    }
+
+    let p = mmap(null, need, prot, MAP_SHARED, fd, 0)
+    var bits: i64 = 0
+
+    memcpy(@ptrCast([*]u8, &mut bits), @ptrCast([*]u8, &p), 8)
+    close(fd)
+
+    if bits == -1 {
+        return false
+    }
+
+    w.map = p
+    w.len = need
+
+    return true
+}
+
+fn createFlag() i32 {
+    if @targetOs() is .macos {
+        return 0x200
+    }
+
+    return 0x40
+}
