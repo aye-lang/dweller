@@ -49,6 +49,7 @@ pub let CHILDREN_CHANGED = StyleChange { what: 0, token: false }
 pub let STATE_CHANGED = StyleChange { what: 1, token: false }
 pub let HOVER_CHANGED = StyleChange { what: 2, token: false }
 pub let ACTIVE_CHANGED = StyleChange { what: 3, token: false }
+pub let FOCUS_CHANGED = StyleChange { what: 4, token: false }
 
 /// A change to the attribute `name`.
 pub fn attrChange(name: []u8) StyleChange {
@@ -69,8 +70,8 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
     for b in name {
         h = (h ^ (b as u64)) *% 1099511628211
     }
-    if h < 4 {
-        h += 4
+    if h < 5 {
+        h += 5
     }
     return h
 }
@@ -82,7 +83,7 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
 // "class" and "[class]" (for the change of any class).
 fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
     match s.kind {
-        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
+        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
         .Empty => {
             try out.append(CHILDREN_CHANGED.what)
         }
@@ -91,6 +92,9 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
         }
         .Active => {
             try out.append(ACTIVE_CHANGED.what)
+        }
+        .Focus, .FocusWithin, .FocusVisible => {
+            try out.append(FOCUS_CHANGED.what)
         }
         .Id => {
             try out.append(nameKey("", "id"))
@@ -203,9 +207,10 @@ pub struct RestyleDeps {
     style_attr: bool
     hover: bool
     active: bool
+    focus: bool
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, style_attr: false, hover: false, active: false }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, style_attr: false, hover: false, active: false, focus: false }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -242,6 +247,7 @@ pub struct RestyleDeps {
         self.style_attr = looksAtStyle(author) || looksAtStyle(ua)
         self.hover = looksAtKind(author, SelKind.Hover) || looksAtKind(ua, SelKind.Hover)
         self.active = looksAtKind(author, SelKind.Active) || looksAtKind(ua, SelKind.Active)
+        self.focus = looksAtFocus(author) || looksAtFocus(ua)
         if quirks |q| {
             self.style_attr = self.style_attr || looksAtStyle(q)
         }

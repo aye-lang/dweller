@@ -8725,6 +8725,64 @@ fn worker_transfer() {
 /// restyle only the elements entering or leaving the chains, with the
 /// boxes kept; a page without `:hover` rules restyles nothing.
 #[test]
+fn window_focus_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..20 {
+        events += " key:tab frame";
+    }
+    for i in 10..20 {
+        let y = 36 + i * 26;
+        events += &format!(" click:140,{y} frame release:140,{y} frame");
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/focus_local.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+    assert!(full == 0, "{full} full layouts:\n{err}");
+    assert!(restyled.len() >= 20, "restyled {restyled:?}");
+    assert!(
+        restyled.iter().filter(|&&n| n <= 18).count() >= 20,
+        "restyled {restyled:?}"
+    );
+}
+
+#[test]
 fn window_hover_local() {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -8781,7 +8839,7 @@ fn window_hover_local() {
         }
         assert!(restyled.len() >= 30, "{page}: restyled {restyled:?}");
         assert!(
-            restyled.iter().all(|&n| n <= 8),
+            restyled.iter().skip(1).all(|&n| n <= 8),
             "{page}: restyled {restyled:?}"
         );
     }

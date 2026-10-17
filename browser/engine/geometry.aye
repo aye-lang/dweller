@@ -807,10 +807,6 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
                 cur = doc.parent(c)
             }
         }
-        let up = doc.parent(top) orelse return false
-        if doc.node(up).kind != dom.Kind.Element {
-            return false
-        }
         if dom.same(top, el) && !deps.isDeep(change.what) {
             try addRoot(out, shallow, &mut found, el, change.what.token || change.what.what != css.CHILDREN_CHANGED.what)
             continue
@@ -818,6 +814,10 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
         if dom.same(top, el) && !deps.of_selector && !deps.reachesSiblings(change.what) {
             try addRoot(out, shallow, &mut found, el, false)
             continue
+        }
+        let up = doc.parent(top) orelse return false
+        if doc.node(up).kind != dom.Kind.Element {
+            return false
         }
         var first: ?NodeId = top
         if deps.of_selector {
