@@ -2912,6 +2912,8 @@ pub let PRELUDE =
     \\// timer sees the image's size before its event; scripts run meanwhile.
     \\// A new request cancels the old task.
     \\const ImageP = HTMLImageElement.prototype;
+    \\const lazyImage = G.__lazyImages(ak, imageUpdate);
+    \\delete G.__lazyImages;
     \\function imageEncodingError() { return new DOMException('The source image cannot be decoded.', 'EncodingError'); }
     \\function imageUpdate(el, now) {
     \\  if (ak.inTemplate(el)) return;
@@ -2932,6 +2934,7 @@ pub let PRELUDE =
     \\  if (now) load(); else ak.queueMicrotask(load);
     \\}
     \\function imageResult(el, state, result, src, srcset, inTask) {
+    \\  if (result === false) return lazyImage(el);
     \\  if (typeof result === 'number') {
     \\    // The task that decodes it once its background load ended.
     \\    state.task = ak.imageTask(() => {

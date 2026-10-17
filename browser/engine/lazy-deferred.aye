@@ -1,0 +1,19 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/urls-and-fetching.html#will-lazy-load-element-steps
+fn lazyDeferred(cache: *ImageCache, doc: *Document, el: NodeId) bool {
+    if !cache.scripting || !doc.isElement(el, "img") || !text.eqlIgnoreCase(doc.attr(el, "loading") orelse "", "lazy") {
+        return false
+    }
+
+    for h in cache.revealed.items() {
+        if dom.isSame(h, el) {
+            return false
+        }
+    }
+
+    return true
+}

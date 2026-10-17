@@ -65,9 +65,11 @@ pub struct ImageCache {
     // `preloadImages`): it loads them in the background, held in
     // `loads`, and leaves them out until they are in.
     background: bool = false
+    scripting: bool = false
+    revealed: List(NodeId)
 
     pub fn init(alloc: Allocator) ImageCache {
-        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc) }
+        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -115,6 +117,7 @@ pub struct ImageCache {
             self.alloc.free(k)
         }
         self.keys.deinit()
+        self.revealed.deinit()
     }
 
     // Sends `href` as the Referer of the images fetched from now on.
@@ -487,6 +490,7 @@ pub fn updateImages(page: *mut Page, media: css.Media) AllocError!void {
     if page.images == null {
         page.images = try page.alloc.create(ImageCache.init(page.alloc))
     }
+    page.images.?.scripting = scriptingEnabled() && !page.no_scripts
     var styles: ?*css.Styles = null
     if page.styling |st| {
         styles = &st.styles
@@ -548,7 +552,7 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
     var cur: ?NodeId = doc.root
     while cur |h| {
         cur = dom.shadowIncludingFollowing(doc, h, doc.root)
-        if !isImageElement(doc, h) {
+        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) {
             continue
         }
         if try loadElementImage(cache, doc, h, &base, media, ImageFetch.Now, 0) |loaded| {
@@ -580,7 +584,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
     var cur: ?NodeId = doc.root
     while cur |h| {
         cur = dom.shadowIncludingFollowing(doc, h, doc.root)
-        if !isImageElement(doc, h) {
+        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) {
             continue
         }
         let choice = (try chooseImage(cache.alloc, doc, h, media)) orelse continue
@@ -616,6 +620,7 @@ pub fn preloadImages(page: *mut Page, media: css.Media) AllocError!void {
     }
     let cache = page.images.?
     cache.background = true
+    cache.scripting = scriptingEnabled() && !page.no_scripts
     if cache.referrer.len == 0 {
         try cache.setReferrer(page.url.href)
     }

@@ -16,6 +16,7 @@ import std.math
 fn installImages(it: *mut Interp, ak: u32) JsError!void {
     try defMethod(it, ak, "imageLoad", 2, akImageLoad)
     try defMethod(it, ak, "imageTask", 2, akImageTask)
+    try defMethod(it, ak, "imageReveal", 1, akImageReveal)
 }
 
 // The page's image cache, made on first use.
@@ -24,6 +25,7 @@ fn scriptImages(p: *mut Page) JsError!*mut ImageCache {
         p.images = try p.alloc.create(ImageCache.init(p.alloc))
     }
     let cache = p.images.?
+    cache.scripting = true
     if cache.referrer.len == 0 {
         try cache.setReferrer(p.url.href)
     }
@@ -44,6 +46,9 @@ fn akImageLoad(it: *mut Interp, a: Args) JsError!Value {
         return Value.Null
     }
     let cache = try scriptImages(p)
+    if lazyDeferred(cache, &p.doc, h) {
+        return js.boolVal(false)
+    }
     let base = try documentBase(cache.alloc, &p.doc, &p.url)
     defer base.deinit(cache.alloc)
     var waited: u32 = 0
