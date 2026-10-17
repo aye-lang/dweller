@@ -1,12 +1,12 @@
 // v8: src/interpreter/bytecode-generator.cc (BuildSuspendPoint, VisitYield)
 
-fn vmSuspend(c: *mut Compiler, id: u32) CompileError!void {
+fn vmSuspend(c: *mut Compiler, id: u32, kind: u8) CompileError!void {
     let mark = c.b.topReg
     let v = c.b.newReg()
     let modes = try c.b.newJumpTable(2, 1)
     let end = try c.b.newLabel()
 
-    try c.b.op1(BC_SUSPEND_GENERATOR, c.gen_reg as i64)
+    try c.b.op2(BC_SUSPEND_GENERATOR, c.gen_reg as i64, kind as i64)
     try c.b.op2(BC_RESUME_GENERATOR, c.gen_reg as i64, v as i64)
     try c.b.switchOnSmi(modes)
     try c.b.op1(BC_LDAR, v as i64)

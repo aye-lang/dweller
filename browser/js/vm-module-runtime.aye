@@ -1,0 +1,19 @@
+// v8: src/runtime/runtime-module.cc (Runtime_GetImportMetaObject, Runtime_DynamicImportCall)
+
+fn vmModuleRuntime(it: *mut Interp, id: u32, at: usize) JsError!Value {
+    match it.ast.node(id) {
+        .ModuleLocals { list, n, lex, nlex } => {
+            return moduleLocals(it, list, n, lex, nlex)
+        }
+
+        .ImportMeta { referrer, module_id } => {
+            return importMeta(it, referrer, module_id)
+        }
+
+        .ImportCall { referrer, .. } => {
+            return callLoader(it, "dynamicImport", it.slot(at), try it.atomValue(referrer), it.slot(at + 1), Value.Undefined)
+        }
+
+        _ => unreachable
+    }
+}

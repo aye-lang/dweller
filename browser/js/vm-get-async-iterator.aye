@@ -1,0 +1,30 @@
+// v8: src/interpreter/bytecode-generator.cc (BuildGetIterator)
+
+fn vmGetAsyncIterator(it: *mut Interp, at: usize, v: Value) JsError!void {
+    it.setSlot(at + 2, Value.Bool { b: false })
+    it.setSlot(at + 3, Value.Bool { b: false })
+
+    if isObject(v) {
+        let af = try it.getProp(v, it.sym_async_iterator)
+
+        if it.isCallable(af) {
+            let iter = try it.call0(af, v)
+
+            it.setSlot(at, iter)
+            it.setSlot(at + 1, try it.getProp(iter, A_NEXT))
+            it.setSlot(at + 3, Value.Bool { b: true })
+
+            return
+        }
+    }
+
+    let top = it.stack.len()
+
+    if isNullish(v) || !try it.openIterator(v) {
+        try it.notA(v, "iterable")
+    }
+
+    it.setSlot(at, it.slot(top))
+    it.setSlot(at + 1, it.slot(top + 1))
+    it.truncate(top)
+}

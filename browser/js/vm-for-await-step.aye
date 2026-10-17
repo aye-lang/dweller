@@ -1,0 +1,18 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement, BuildAwait)
+
+fn vmForAwaitStep(c: *mut Compiler, r: i32, v: i32, brk: u32, id: u32) CompileError!void {
+    let bound = try c.b.newLabel()
+
+    try c.b.op1(BC_ASYNC_ITERATOR_NEXT, r as i64)
+    try vmSuspend(c, id, 1)
+    try c.b.op1(BC_ITERATOR_RESULT, r as i64)
+    try c.b.op1(BC_STAR, v as i64)
+    try c.b.op1(BC_LDAR, (r + 2) as i64)
+    try c.b.jump(BC_JUMP_IF_TRUE, brk)
+    try c.b.op1(BC_LDAR, (r + 3) as i64)
+    try c.b.jump(BC_JUMP_IF_TRUE, bound)
+    try c.b.op1(BC_LDAR, v as i64)
+    try vmSuspend(c, id, 1)
+    try c.b.op1(BC_STAR, v as i64)
+    try c.b.bind(bound)
+}

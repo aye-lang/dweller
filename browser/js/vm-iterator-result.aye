@@ -1,0 +1,17 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement)
+
+fn vmIteratorResult(it: *mut Interp, at: usize, r: Value) JsError!Value {
+    if !isObject(r) {
+        try it.notA(r, "an iterator result object")
+    }
+
+    let done = it.toBoolean(try it.getProp(r, A_DONE))
+
+    it.setSlot(at + 2, Value.Bool { b: done })
+
+    if done {
+        return Value.Undefined
+    }
+
+    return it.getProp(r, A_VALUE)
+}

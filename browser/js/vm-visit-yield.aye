@@ -1,6 +1,10 @@
 // v8: src/interpreter/bytecode-generator.cc (VisitYield)
 
 fn vmVisitYield(c: *mut Compiler, id: u32, arg: u32, delegate: bool) CompileError!void {
+    if delegate && c.ast.func(c.func).is_async {
+        return c.fail("unsupported: yield* in an async generator")
+    }
+
     if delegate {
         return vmVisitYieldStar(c, arg)
     }
@@ -11,5 +15,5 @@ fn vmVisitYield(c: *mut Compiler, id: u32, arg: u32, delegate: bool) CompileErro
         try c.visit(arg)
     }
 
-    return vmSuspend(c, id)
+    return vmSuspend(c, id, 0)
 }
