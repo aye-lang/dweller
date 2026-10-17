@@ -1,0 +1,23 @@
+import std.text
+
+fn breaksBefore(b: u32, ca: LineBreakClass, cb: LineBreakClass, rules: BreakRules) bool {
+    let loose = isLoose(rules)
+    let cj = rules.chinese_or_japanese
+
+    return match cb {
+        .CL, .CP, .IS, .GL, .HY => false
+        .QU => isInitialQuote(b)
+        .CJ => !text.eql(rules.strictness, "strict") && !keepsAll(rules)
+        .IN => loose
+        .EX => loose && cj && (b == 0xFF01 || b == 0xFF1F)
+        .BA => loose && ca == LineBreakClass.ID && (b == 0x2010 || b == 0x2013)
+        .PO => ca != LineBreakClass.ID && ca != LineBreakClass.XX
+        .PO_WIDE => ca != LineBreakClass.XX && (ca != LineBreakClass.ID || (loose && cj))
+        .NS => breaksBeforeNonstarter(b, loose, cj && !text.eql(rules.strictness, "strict"))
+        _ => true
+    }
+}
+
+fn keepsAll(rules: BreakRules) bool {
+    return text.eql(rules.word_break, "keep-all") || text.eql(rules.word_break, "auto-phrase")
+}
