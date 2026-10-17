@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import wpt_handler
 import wpt_reftest
 import wpt_upstream
 
@@ -268,6 +269,11 @@ class Handler(BaseHTTPRequestHandler):
             file = index
         if not file.is_file():
             return self.send_body(404, "text/plain", b"not found")
+        if file.suffix == ".py":
+            try:
+                return self.send_body(*wpt_handler.run(self.root, file, urlsplit(self.path).query, self.headers))
+            except Exception as e:
+                return self.send_body(500, "text/plain", repr(e).encode())
         ctype = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype.endswith(("javascript", "json", "xml")):
             ctype += "; charset=utf-8"

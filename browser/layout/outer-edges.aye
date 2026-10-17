@@ -1,0 +1,46 @@
+fn outerEdges(t: *Tree, table: usize, rows: []usize, ri: usize, k: usize, edges: [4]Edge) [4]Edge {
+    let r = rows[ri]
+    let last_row = ri + 1 == rows.len
+    let last_cell = k + 1 == t.children(r).len
+    var e = edges
+
+    if groupOf(t, r) |g| {
+        let gs = ownStyle(t, g)
+
+        if ri == 0 || groupOf(t, rows[ri - 1]) != g {
+            e[0] = strongerEdge(e[0], edgeOf(gs, 0, 2))
+        }
+
+        if last_row || groupOf(t, rows[ri + 1]) != g {
+            e[2] = strongerEdge(e[2], edgeOf(gs, 2, 2))
+        }
+
+        if k == 0 {
+            e[3] = strongerEdge(e[3], edgeOf(gs, 3, 2))
+        }
+
+        if last_cell {
+            e[1] = strongerEdge(e[1], edgeOf(gs, 1, 2))
+        }
+    }
+
+    let ts = ownStyle(t, table)
+
+    if ri == 0 {
+        e[0] = strongerEdge(e[0], edgeOf(ts, 0, 0))
+    }
+
+    if last_row {
+        e[2] = strongerEdge(e[2], edgeOf(ts, 2, 0))
+    }
+
+    if k == 0 {
+        e[3] = strongerEdge(e[3], edgeOf(ts, 3, 0))
+    }
+
+    if last_cell {
+        e[1] = strongerEdge(e[1], edgeOf(ts, 1, 0))
+    }
+
+    return e
+}

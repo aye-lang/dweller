@@ -534,6 +534,9 @@ fn refusalOf(ui: *mut Ui, conn: usize, cmd: []u8) []u8 {
         return "paused by user"
     }
     let c = a.conns[conn] orelse return ""
+    if connSlot(ui, c).taken {
+        return takenMessage(connSlot(ui, c).id)
+    }
     if agent.actsOnPage(cmd) && !connSlot(ui, c).agent {
         return USER_TAB
     }
@@ -1309,7 +1312,7 @@ fn stateInk(sp: *Space) Rgba {
 /// while an agent is attached; Close for a done or crashed one.
 fn menuItems(sp: *Space) usize {
     if sp.attached && !sp.crashed {
-        return 2
+        return 2 + menuExtra(sp)
     }
     return 1
 }
@@ -1320,6 +1323,9 @@ fn menuWord(sp: *Space, k: usize) []u8 {
     }
     if k == 1 {
         return "Stop"
+    }
+    if k == 2 {
+        return "Hand back"
     }
     if sp.paused {
         return "Resume"
@@ -1466,11 +1472,7 @@ fn clickMenu(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
     a.menu = 0
     ui.dirty = true
     if item |k| {
-        if menuItems(sp) == 2 && k == 0 {
-            try setPaused(ui, sp, !sp.paused)
-        } else {
-            try stopSpace(ui, sp)
-        }
+        try menuAction(ui, sp, k)
     }
     return true
 }
