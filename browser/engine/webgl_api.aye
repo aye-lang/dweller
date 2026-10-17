@@ -49,6 +49,7 @@ fn installWebGL(it: *mut Interp, o: u32) JsError!void {
     try defMethod(it, o, "webglFeedbackVarying", 3, akWebglFeedbackVarying)
     try defMethod(it, o, "webglTexParameter", 3, akWebglTexParameter)
     try defMethod(it, o, "webglCompressed", 14, akWebglCompressed)
+    try defMethod(it, o, "webglMore", 9, akWebglMore)
 }
 
 fn webglOf(it: *mut Interp, v: Value) JsError!*mut gpu.Context {
@@ -759,99 +760,10 @@ fn uniformv(gl: gpu.Api, form: u32, loc: i32, count: i32, p: [*]u8) {
     }
 }
 
-// The size in bytes of a pixel of `format` and `kind` (a GL type) that
-// a DOM source can be packed into (WebGLImageConversion's RGBA8 sources:
-// the byte formats and the three packed 16-bit ones); 0 for any other.
-fn domPixelSize(format: u32, kind: u32) usize {
-    if kind == 0x1401 {
-        if format == 0x1908 {
-            return 4
-        }
-        if format == 0x1907 {
-            return 3
-        }
-        if format == 0x190a || format == 0x8227 {
-            return 2
-        }
-        if format == 0x1909 || format == 0x1906 || format == 0x1903 {
-            return 1
-        }
-        return 0
-    }
-    if (kind == 0x8033 || kind == 0x8034) && format == 0x1908 {
-        return 2
-    }
-    if kind == 0x8363 && format == 0x1907 {
-        return 2
-    }
-    return 0
-}
-
 // Color times alpha, as WebGLImageConversion's premultiply: a float
 // scale, truncated.
 fn premultiplied(c: u8, a: u8) u8 {
     return ((c as f32) * ((a as f32) / 255.0)) as u8
-}
-
-// Straight RGBA8 `src` (w x h, top row first) packed for `format` and
-// `kind` (domPixelSize is not 0), rows tight, flipped when `flip`, the
-// color multiplied by alpha when `premul`.
-fn packDom(alloc: std.mem.Allocator, src: []u8, w: usize, h: usize, format: u32, kind: u32, flip: bool, premul: bool) std.mem.AllocError![]mut u8 {
-    let size = domPixelSize(format, kind)
-    let out = try alloc.alloc(0 as u8, w * h * size)
-    for y in 0..h {
-        var sy = y
-        if flip {
-            sy = h - 1 - y
-        }
-        for x in 0..w {
-            let i = (sy * w + x) * 4
-            var r = src[i]
-            var g = src[i + 1]
-            var b = src[i + 2]
-            let a = src[i + 3]
-            if premul {
-                r = premultiplied(r, a)
-                g = premultiplied(g, a)
-                b = premultiplied(b, a)
-            }
-            let o = (y * w + x) * size
-            if kind == 0x1401 {
-                if format == 0x1908 {
-                    out[o] = r
-                    out[o + 1] = g
-                    out[o + 2] = b
-                    out[o + 3] = a
-                } else if format == 0x1907 {
-                    out[o] = r
-                    out[o + 1] = g
-                    out[o + 2] = b
-                } else if format == 0x190a {
-                    out[o] = r
-                    out[o + 1] = a
-                } else if format == 0x8227 {
-                    out[o] = r
-                    out[o + 1] = g
-                } else if format == 0x1906 {
-                    out[o] = a
-                } else {
-                    out[o] = r
-                }
-            } else {
-                var v: u32 = 0
-                if kind == 0x8033 {
-                    v = ((r as u32 >> 4) << 12) | ((g as u32 >> 4) << 8) | ((b as u32 >> 4) << 4) | (a as u32 >> 4)
-                } else if kind == 0x8034 {
-                    v = ((r as u32 >> 3) << 11) | ((g as u32 >> 3) << 6) | ((b as u32 >> 3) << 1) | (a as u32 >> 7)
-                } else {
-                    v = ((r as u32 >> 3) << 11) | ((g as u32 >> 2) << 5) | (b as u32 >> 3)
-                }
-                out[o] = (v & 255) as u8
-                out[o + 1] = (v >> 8) as u8
-            }
-        }
-    }
-    return out
 }
 
 // An ArrayBufferView's `w` x `h` pixels of `size` bytes, as the unpack
@@ -895,7 +807,8 @@ fn repackView(alloc: std.mem.Allocator, src: []u8, w: usize, h: usize, size: usi
 // prelude's checks (Blink's TexImageHelper*). `spec` is [sub, target,
 // level, internalformat, xoffset, yoffset, width, height, format, type,
 // flipY, premultiply, kind, pixel size, unpack alignment, row length,
-// skip rows, skip pixels, source width, source height]. Kind 0: `source`
+// skip rows, skip pixels, source width, source height, zoffset, depth (0
+// for 2D), image height]. Kind 0: `source`
 // is a Uint8Array over the pixels (null: no data); flipY and premultiply
 // (1 RGBA bytes, 2 luminance-alpha bytes) repack them. Kind 1: an img or
 // canvas element; kind 2: the data of an ImageData; their straight RGBA8
@@ -904,8 +817,8 @@ fn repackView(alloc: std.mem.Allocator, src: []u8, w: usize, h: usize, size: usi
 // source that is not origin-clean throws SecurityError.
 fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
     let ctx = try webglOf(it, it.arg(a, 0))
-    var s = @zeroed([20]i32)
-    for i in 0..20 {
+    var s = @zeroed([23]i32)
+    for i in 0..23 {
         s[i] = js.toInt32(try it.toNumber(try canvasIndex(it, it.arg(a, 1), i)))
     }
     let sub = s[0] != 0
@@ -917,13 +830,9 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
     var w = s[6]
     var h = s[7]
     var data = []mut u8{}
-    // The repacked pixels, and the corner of a larger source.
+    // The repacked pixels.
     var packed: ?[]mut u8 = null
-    var corner: ?[]mut u8 = null
     defer if packed |bytes| {
-        it.alloc.free(bytes)
-    }
-    defer if corner |bytes| {
         it.alloc.free(bytes)
     }
     if s[12] == 0 {
@@ -964,7 +873,8 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
         if h < 0 {
             h = sh
         }
-        if sw < 1 || sh < 1 || w > sw || h > sh || rgba.len != sw as usize * sh as usize * 4 {
+        let rect = DomRect { x: s[17], y: s[16], w: w, h: h, d: math.maxOf(i32, s[21], 1), image_height: s[22] }
+        if sw < 1 || sh < 1 || rgba.len != sw as usize * sh as usize * 4 || !rect.fits(sw, sh) {
             ctx.raise(0x501)
             return Value.Undefined
         }
@@ -972,19 +882,7 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
             ctx.raise(0x502)
             return Value.Undefined
         }
-        // An explicit size takes the top left corner of the source.
-        var part = rgba
-        if w != sw {
-            let bytes = try it.alloc.alloc(0 as u8, w as usize * h as usize * 4)
-            corner = bytes
-            for y in 0..h as usize {
-                for x in 0..w as usize * 4 {
-                    bytes[y * w as usize * 4 + x] = rgba[y * sw as usize * 4 + x]
-                }
-            }
-            part = bytes
-        }
-        packed = try packDom(it.alloc, part[0..w as usize * h as usize * 4], w as usize, h as usize, format, kind, flip, s[11] != 0)
+        packed = try packDom(it.alloc, rgba, sw as usize, rect, format, kind, flip, s[11] != 0)
         data = packed.?
     }
     let gl = ctx.gl()
@@ -994,12 +892,15 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
         gl.glPixelStorei(0xcf2, 0)
         gl.glPixelStorei(0xcf3, 0)
         gl.glPixelStorei(0xcf4, 0)
+        gl.glPixelStorei(0x806e, 0)
     }
     var ptr: ?[*]u8 = null
     if data.len > 0 {
         ptr = data.ptr
     }
-    if sub {
+    if s[21] > 0 {
+        texImage3D(gl, s, w, h, ptr)
+    } else if sub {
         gl.glTexSubImage2D(target, s[2], s[4], s[5], w, h, format, kind, ptr)
     } else {
         gl.glTexImage2D(target, s[2], s[3], w, h, 0, format, kind, ptr)
@@ -1009,6 +910,7 @@ fn akWebglTex(it: *mut Interp, a: Args) JsError!Value {
         gl.glPixelStorei(0xcf2, s[15])
         gl.glPixelStorei(0xcf3, s[16])
         gl.glPixelStorei(0xcf4, s[17])
+        gl.glPixelStorei(0x806e, s[22])
     }
     return Value.Undefined
 }

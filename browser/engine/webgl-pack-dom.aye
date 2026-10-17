@@ -1,0 +1,35 @@
+import std
+
+// chromium: third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+fn packDom(alloc: std.mem.Allocator, src: []u8, sw: usize, rect: DomRect, format: u32, kind: u32, flip: bool, premul: bool) std.mem.AllocError![]mut u8 {
+    let size = domPixelSize(format, kind)
+    let w = rect.w as usize
+    let h = rect.h as usize
+    let d = rect.d as usize
+    let sh = src.len / 4 / sw
+    var slice = h
+
+    if rect.image_height > 0 {
+        slice = rect.image_height as usize
+    }
+
+    let out = try alloc.alloc(0 as u8, w * h * d * size)
+
+    for z in 0..d {
+        for y in 0..h {
+            var sy = rect.y as usize + z * slice + y
+
+            if flip {
+                sy = sh - 1 - sy
+            }
+
+            for x in 0..w {
+                let i = (sy * sw + rect.x as usize + x) * 4
+
+                packTexel(out, ((z * h + y) * w + x) * size, src[i..i + 4], format, kind, premul)
+            }
+        }
+    }
+
+    return out
+}

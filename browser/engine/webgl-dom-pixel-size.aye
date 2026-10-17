@@ -1,0 +1,25 @@
+// chromium: third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.cc
+fn domPixelSize(format: u32, kind: u32) usize {
+    let n = domChannels(format).len
+    let integer = format == 0x8d94 || format == 0x8228 || format == 0x8d98 || format == 0x8d99
+    let packed16 = ((kind == 0x8033 || kind == 0x8034) && format == 0x1908) || (kind == 0x8363 && format == 0x1907)
+
+    if n == 0 || (integer && kind != 0x1401) {
+        return 0
+    }
+
+    if packed16 {
+        return 2
+    }
+
+    if (kind == 0x8c3b && format == 0x1907) || (kind == 0x8368 && format == 0x1908) {
+        return 4
+    }
+
+    return match kind {
+        0x1401 => n
+        0x140b => n * 2
+        0x1406 => n * 4
+        _ => 0
+    }
+}
