@@ -1,0 +1,17 @@
+import std.list.List
+
+fn nativeProfileOf(it: *mut Interp) ?*mut NativeProfile {
+    if !it.native_profile_checked {
+        it.native_profile_checked = true
+
+        if getenv("DWELLER_JS_NATIVES".ptr) |p| {
+            if p[0] == '1' {
+                it.native_profile = it.alloc.create(NativeProfile { ns: List(u64).init(it.alloc), calls: List(u64).init(it.alloc), js_ns: 0, open: NONE, mark: 0 }) catch |e| {
+                    return null
+                }
+            }
+        }
+    }
+
+    return it.native_profile
+}

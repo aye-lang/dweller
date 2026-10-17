@@ -229,6 +229,11 @@ fn akActivate(it: *mut Interp, a: Args) JsError!Value {
     match act {
         .Follow { target } => {
             defer target.deinit(s.alloc)
+
+            if isFragmentOf(s.page, &target) {
+                return it.newString(target.href)
+            }
+
             try setNavigation(s, target.href)
         }
         .Submit { form, submitter } => {
@@ -678,6 +683,7 @@ fn responseFields(it: *mut Interp, r: u32, res: *net.Response, href: []u8) JsErr
         try setField(it, r, "url", href)
     }
     try setField(it, r, "type", res.mime)
+    try setField(it, r, "headers", res.headers_raw)
     try setField(it, r, "body", body)
     // Bytes that decoding changed (binary data, another charset): also
     // the bytes themselves, as code units 0..255, for arrayBuffer().

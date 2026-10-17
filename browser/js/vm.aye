@@ -195,7 +195,11 @@ pub fn vmLookup(it: *mut Interp, st: *mut VmState, func: u32) JsError!?VmFunc {
     }
     var f = st.funcs.items()[func]
     if !f.tried {
+        let compile_began = perf.start()
+        let compile_paused = switchNative(it, NONE)
         f = try compileFunction(it.alloc, &it.ast, func)
+        resumeNative(it, compile_paused)
+        perf.end("js_compile", compile_began, "")
         st.funcs.items()[func] = f
     }
     if f.code == null {
@@ -220,6 +224,8 @@ fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg
         vmPopFrame(it)
         it.truncate(mark)
     }
+    let outer = switchNative(it, NATIVE_JS)
+    defer resumeNative(it, outer)
     return vmRun(it, st, code, fp, argBase, argc)
 }
 

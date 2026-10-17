@@ -1,0 +1,22 @@
+fn nativeProfileSwitch(p: *mut NativeProfile, id: u32) u32 {
+    nativeProfileCharge(p, aye_std_monotonic_ns())
+    let outer = p.open
+
+    if id < NATIVE_JS {
+        while p.calls.len() <= id as usize {
+            p.ns.append(0) catch |e| {
+                return outer
+            }
+
+            p.calls.append(0) catch |e| {
+                return outer
+            }
+        }
+
+        p.calls.items()[id] += 1
+    }
+
+    p.open = id
+
+    return outer
+}
