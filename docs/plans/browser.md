@@ -241,7 +241,7 @@ Exit: R1–R7 of B9; Spaces by default.
 |---|---|---|---|---|---|
 | E1 | P9.5 | watching a Space: frames through a shared file, chips, Cmd+Shift+0..8 | – | open | `base/memory/shared_memory_mapping.h` (a mapped region per frame; idea only) |
 | E2 | P9.6 | take over and hand back | E1 | open | – |
-| E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | open | – |
+| E3 | P9.8 | code mode `run` in a realm of its own | – (beside E1, E2) | done | – |
 | E4 | P9.9 | Spaces by default, three agents in parallel, the in-process acting path removed | E2, E3, D2 | open | `docs/process_model_and_site_isolation.md` (why a process boundary, not a thread) |
 
 ### Phase F: the JS bytecode VM (lane vm, parallel track)
@@ -1019,6 +1019,7 @@ in order.
 - first: a unit test that a second realm calls into a page's realm and back (a click whose handler runs page script) under GC stress; if it fails, stop and report (B9 risks).
 - verify: `cargo test --release --test browser -- agent_sessions window_spaces > target/p9.8.log 2>&1; echo $?` → 0
 - time box: 120 min; model: opus
+- status: done 2026-10-17. Realm: a separate `js.Interp` per run (`js.newRealm`: builtins, GC stress honoured; 1 MB of C stack and depth 1000 below the run's caller), so the page's realm and the run's share no heap and no state (the engine's only module-level variable is `gc.trace_mode`). The functions are JS (`agent/run.js`) over one native, `__request(cmd, line)`, which feeds a JSON-lines request to `agentRequest` on the session, so each call is the command itself (refusals, announce, window commands); `wait` runs with the host set aside (the session's page-clock wait, never answered later). Between calls `Host.agentGoesOn` reads a Space's control connection (pause refuses the next acting call; stop ends the run and leaves it unanswered, as the connection closes after `stopped`); `ms` is checked between calls (wall clock) and by the realm's budget (processor time). First test: `run.jsonl` under `DWELLER_JS_GC=stress DWELLER_JS_VM=1` (clicks whose handlers run page script, navigations under the realm) gives `run.out` byte for byte, now part of `jsdom_gc_stress`. Tests: `sessions/run.jsonl`, `run.mcp.jsonl` (`browser_run`), `spaces/run.*` (a run in a Space; pause and stop mid-run). Left: `$262.createRealm` for test262 can use `js.newRealm`; a paused run fails its next acting call instead of waiting for resume; `tabs()`/`tabNew()` exist only in a window or Space; the result says "ran N calls" without its time, to keep goldens stable.
 
 #### P9.9: Spaces by default
 - lane: browser

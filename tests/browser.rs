@@ -5591,6 +5591,35 @@ fn jsdom_gc_stress() {
         failures.len(),
         failures.join("\n\n")
     );
+    // P9.8: code mode's realm calls into the page's realm and back.
+    let run = root().join("browser/tests/agent/sessions/run.jsonl");
+    let mut child = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_JS_GC", "stress")
+        .env("DWELLER_JS_VM", "1")
+        .arg("agent")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(
+        &mut child.stdin.take().unwrap(),
+        &std::fs::read(&run).unwrap(),
+    )
+    .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "run.jsonl under GC stress: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(run.with_extension("out")).unwrap(),
+        rooted(&text(&out.stdout)),
+        "run.jsonl under GC stress"
+    );
 }
 
 // ---- B8: net

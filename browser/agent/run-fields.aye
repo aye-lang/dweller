@@ -1,0 +1,34 @@
+import std.mem.Allocator
+import std.text
+
+let RUN_MS = 30000.0
+
+fn runFields(s: *mut Session, tmp: Allocator, doc: *mut Json, req: usize, w: *mut Writer) !void {
+    var why = text.Builder.init(tmp)
+    let code = argStr(doc, req, "code", &mut why) orelse {
+        return failField(w, tmp, why.bytes())
+    }
+
+    let report = try runCode(s, tmp, code, doc.getNum(req, "ms") orelse RUN_MS)
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var r = try Json.parse(tmp, report, &mut failure)
+    let root = r.root()
+    let calls = r.getNum(root, "calls") orelse 0.0
+
+    if r.getBool(root, "ok") orelse false {
+        try w.key("ok")
+        try w.boolean(true)
+        try w.key("result")
+        try w.string(try runResult(tmp, calls))
+        try w.key("value")
+        try w.raw(try member(&mut r, tmp, root, "value"))
+    } else {
+        try failField(w, tmp, r.getStr(root, "error") orelse "")
+    }
+
+    try w.key("log")
+    try w.raw(try member(&mut r, tmp, root, "log"))
+    try w.key("calls")
+    try w.int(calls as i64)
+    try pageFields(s, tmp, w)
+}
