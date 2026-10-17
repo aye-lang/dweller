@@ -106,6 +106,7 @@ pub struct Resolver {
     atoms: *mut Atoms
     globals: *mut GlobalNames
     scopes: List(RScope)
+    jumps: List(u32)
     // Top-level `var` names (atoms), to create on the global object.
     top_vars: List(u32)
     message: *mut text.Builder
@@ -130,6 +131,7 @@ pub struct Resolver {
             s.blocks.deinit()
         }
         self.scopes.deinit()
+        self.jumps.deinit()
         self.top_vars.deinit()
     }
 
@@ -684,7 +686,9 @@ pub struct Resolver {
                 }
                 try self.expr(cond)
                 try self.expr(update)
+                try self.jumps.append(1)
                 try self.stmt(body)
+                self.jumps.pop()
                 try self.popScope()
             }
             .ForIn { left, right, body, scope, .. } => {
@@ -698,15 +702,21 @@ pub struct Resolver {
                     }
                     _ => try self.pattern(left)
                 }
+                try self.jumps.append(1)
                 try self.stmt(body)
+                self.jumps.pop()
                 try self.popScope()
             }
             .While { cond, body } => {
                 try self.expr(cond)
+                try self.jumps.append(1)
                 try self.stmt(body)
+                self.jumps.pop()
             }
             .DoWhile { body, cond } => {
+                try self.jumps.append(1)
                 try self.stmt(body)
+                self.jumps.pop()
                 try self.expr(cond)
             }
             .Throw { arg } => try self.expr(arg)
@@ -732,6 +742,7 @@ pub struct Resolver {
                         _ => {}
                     }
                 }
+                try self.jumps.append(0)
                 for k in 0..n {
                     match self.ast.node(self.ast.item(list, k)) {
                         .Case { cond, list: cl, n: cn } => {
@@ -741,9 +752,16 @@ pub struct Resolver {
                         _ => {}
                     }
                 }
+                self.jumps.pop()
                 try self.popScope()
             }
-            .Labeled { body, .. } => try self.stmt(body)
+            .Labeled { label, body } => {
+                try self.jumps.append(label << 1 | resolveIsLoop(self.ast, body) as u32)
+                try self.stmt(body)
+                self.jumps.pop()
+            }
+            .Break { label } => try resolveCheckJump(self, label, false)
+            .Continue { label } => try resolveCheckJump(self, label, true)
             _ => {}
         }
     }
@@ -863,10 +881,14 @@ pub struct Resolver {
             .Seq { list, n } => try self.exprs(list, n)
             .Spread { arg } => try self.expr(arg)
             .SuperCall { list, n, this_node } => {
+                try resolveCheckSuper(self)
                 try self.expr(this_node)
                 try self.exprs(list, n)
             }
-            .SuperMember { this_node, .. } => try self.expr(this_node)
+            .SuperMember { this_node, .. } => {
+                try resolveCheckSuper(self)
+                try self.expr(this_node)
+            }
             .Yield { arg, .. } => try self.expr(arg)
             .Await { arg } => try self.expr(arg)
             .ImportCall { arg, options, .. } => {
@@ -915,6 +937,7 @@ pub struct Resolver {
                 try self.expr(quasi)
             }
             .SuperIndex { key, this_node } => {
+                try resolveCheckSuper(self)
                 try self.expr(key)
                 try self.expr(this_node)
             }
@@ -947,13 +970,14 @@ pub struct Resolver {
             kind = SCOPE_MODULE
         }
         try self.pushScope(kind, true, fi.arrow, false, f, fi.scope)
+        try self.jumps.append(NONE - (fi.arrow && !fi.eval_code) as u32)
         let s = self.current()
         if !fi.arrow {
             let slot = try self.declareIn(s, A_THIS, 0, false)
             self.ast.funcs.items()[f].this_slot = slot
         }
         for k in 0..fi.nparams {
-            try self.declarePattern(self.current(), self.ast.item(fi.params, k), 0, false)
+            try resolveDeclareParam(self, f, k)
         }
         if fi.simple && fi.nparams > 0 {
             var first: u32 = 0
@@ -989,6 +1013,7 @@ pub struct Resolver {
         }
         try self.stmts(fi.body, fi.nbody)
         try self.expr(fi.expr)
+        self.jumps.pop()
         try self.popScope()
     }
 
