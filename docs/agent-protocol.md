@@ -621,9 +621,30 @@ person's input or the window's frames.
   (`DIR/frame`, beside its socket) and sends `frame`. The window draws
   the newest frame in its page area (white until the first one; the
   toolbar, tab strip and address bar stay the person's), and sends
-  `watch` with `on` false to the Space it stops showing. While a Space
-  is shown, clicks in the page area do nothing (P9.6 gives them to the
-  Space); keys and the wheel still go to the person's page.
+  `watch` with `on` false to the Space it stops showing.
+- **Taking over.** While a Space is shown (and no chip menu is open),
+  the person's clicks in the page area, keys without Cmd while the page
+  has the focus, text and the wheel go to the Space, not to the
+  person's page: the window sends `input` with one word of `--events`
+  (`click:X,Y[,right|middle]`, `key:NAME` with `shift+`, `ctrl+`, `alt+`
+  and `repeat+`, `keyup:NAME`, `text:ABC` with `_` for a space,
+  `wheel:X,Y[,flipped]`), in the Space's window coordinates (its page
+  area sits where the window's does), and the Space handles it as its
+  own window would. Keys with no word (F-keys, say) are dropped. Showing
+  a Space, or clicking in its page area, gives the page the focus;
+  clicking the address bar takes it back. The first input after a tab
+  was free takes over the Space's shown tab: the Space sends the agent
+  `taken_over` (`space`, `tab`), and the agent's acting commands
+  (`ACTING`: navigate, click, type, eval, `tab_close`...) on that tab
+  fail with "the user took over tab N (wait for handed_back)"; reading
+  commands (`snapshot`, `read`, `find`, `screenshot`) and `wait` still
+  work, and the Space's other tabs and the other Spaces are not
+  touched. Hand back (the chip menu's third item, shown while the Space
+  has a taken tab; in tests the `--events` word `handback:N`) sends
+  `hand_back`; the Space frees every taken tab and sends `handed_back`
+  (`space`, `tab`) for each. The chip menu's item and `status`'s
+  `taken` come from the Space, so they follow its tabs. A closed tab
+  forgets its flag without an event.
 - **Logins.** A `shared` Space starts with the window's cookies
   (session cookies too) and `localStorage`, and reads an origin's
   `localStorage` the window has not touched yet from the window's
@@ -666,10 +687,12 @@ sent once the rest went):
 | window | `share` | `cookies` (the jar in the cookie file format, session cookies with expiry 0), `profile` (the window's profile directory, or empty) | first, to a `shared` Space only; then a `storage` `clear` per origin the window has read and a `set` per item |
 | both | `cookie` | `url`, `line` (the `Set-Cookie` value or the `document.cookie` assignment), `script` (bool: from a script, which cannot set HttpOnly) | the sender stored a cookie; the other side stores it again (the window also passes it to its other shared Spaces) |
 | both | `storage` | `origin`, `kind` (`set`, `remove` or `clear`), `key`, `value` | the sender changed `localStorage`; the other side does the same (and the window passes it on) |
-| Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
+| Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `taken` (bool: a tab is taken over), `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
 | Space | `close` | | its agent sent `space_close` (then it exits) |
 | window | `watch` | `on` (bool), `width`, `height` (the window's page area, CSS px), `scale` | send frames (or stop); the Space's page area takes that size |
 | Space | `frame` | `seq`, `width`, `height` (device px) | a new frame is in the frame file |
+| window | `input` | `events`: one word of `--events` | the person's click, key, text or wheel while watching |
+| window | `hand_back` | | the person gives the taken tabs back |
 
 The frame file holds two frames of `width` × `height` RGBA pixels, one
 after the other; frame `seq` is in slot `seq % 2`, so the Space writes
