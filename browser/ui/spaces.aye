@@ -126,6 +126,7 @@ pub struct Space {
     url: text.Builder
     // The person paused it.
     paused: bool
+    taken: bool = false
     // The person stopped it (at `stop_at`), or its agent closed it: it
     // goes when its process ends.
     stopping: bool
@@ -848,6 +849,7 @@ fn fromSpace(ui: *mut Ui, sp: *mut Space, tmp: Allocator, line: []u8) AllocError
     if try setText(&mut sp.url, doc.getStr(r, "url") orelse "") {
         changed = true
     }
+    sp.taken = doc.getBool(r, "taken") orelse false
     let tabs = (doc.getNum(r, "tabs") orelse 0.0) as u32
     if tabs != sp.tabs {
         sp.tabs = tabs
@@ -1164,6 +1166,8 @@ fn spaceWord(ui: *mut Ui, word: []u8) AllocError!bool {
             if sp.id == w.id {
                 if w.what == 2 {
                     try stopSpace(ui, sp)
+                } else if w.what == 3 {
+                    try handBack(ui, sp)
                 } else {
                     try setPaused(ui, sp, w.what == 0)
                 }
@@ -1175,7 +1179,7 @@ fn spaceWord(ui: *mut Ui, word: []u8) AllocError!bool {
 }
 
 struct SpaceWord {
-    // 0 pause, 1 resume, 2 stop.
+    // 0 pause, 1 resume, 2 stop, 3 hand back.
     what: u8
     id: u32
 }
@@ -1191,6 +1195,9 @@ fn spaceWordOf(word: []u8) ?SpaceWord {
     } else if text.startsWith(word, "stop:") {
         what = 2
         rest = word[5..]
+    } else if text.startsWith(word, "handback:") {
+        what = 3
+        rest = word[9..]
     } else {
         return null
     }
@@ -1392,6 +1399,12 @@ fn fromWindow(ui: *mut Ui, tmp: Allocator, line: []u8) AllocError!void {
     if text.eql(ctl, "watch") {
         return watchFromWindow(ui, &mut doc, r)
     }
+    if text.eql(ctl, "input") {
+        return inputFromWindow(ui, &mut doc, r)
+    }
+    if text.eql(ctl, "hand_back") {
+        return handBackFromWindow(ui)
+    }
     if text.eql(ctl, "spaces") {
         me.id = (doc.getNum(r, "id") orelse 0.0) as u32
         me.shared = text.eql(doc.getStr(r, "profile") orelse "", "shared")
@@ -1541,6 +1554,8 @@ fn spaceStatus(ui: *mut Ui) AllocError!void {
     try w.string(spaceLast(a))
     try w.key("tabs")
     try w.int(ui.count as i64)
+    try w.key("taken")
+    try w.boolean(anyTaken(ui))
     try w.key("title")
     try w.string(slotTitle(s))
     try w.key("url")
