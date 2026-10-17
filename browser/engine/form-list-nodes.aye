@@ -1,0 +1,35 @@
+import dom
+import dom.Document
+import dom.Kind
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn formListNodes(doc: *Document, form: NodeId, named: bool, name: []u8, out: *mut List(NodeId)) AllocError!void {
+    var root = form
+
+    while doc.parent(root) |p| {
+        root = p
+    }
+
+    var cur: ?NodeId = root
+
+    while cur |h| {
+        if doc.node(h).kind == Kind.Element && isListed(doc, h) && isOwnedBy(doc, h, form) && (!named || hasFormName(doc, h, name)) {
+            try out.append(h)
+        }
+
+        cur = doc.following(h, root)
+    }
+}
+
+fn isOwnedBy(doc: *Document, h: NodeId, form: NodeId) bool {
+    let owner = dom.formOwner(doc, h) orelse return false
+
+    return owner == form
+}
+
+fn hasFormName(doc: *Document, h: NodeId, name: []u8) bool {
+    return text.eql(doc.attr(h, "id") orelse "", name) || text.eql(doc.attr(h, "name") orelse "", name)
+}

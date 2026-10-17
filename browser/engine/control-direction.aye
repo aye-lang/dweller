@@ -1,0 +1,31 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.text
+
+// https://html.spec.whatwg.org/multipage/dom.html#the-directionality
+fn controlDirection(doc: *Document, el: NodeId) []u8 {
+    let own = doc.attr(el, "dir") orelse ""
+
+    if text.eqlIgnoreCase(own, "auto") {
+        return firstStrongDirection(dom.valueOf(doc, el))
+    }
+
+    var cur: ?NodeId = el
+
+    while cur |h| {
+        let d = doc.attr(h, "dir") orelse ""
+
+        if text.eqlIgnoreCase(d, "rtl") {
+            return "rtl"
+        }
+
+        if text.eqlIgnoreCase(d, "ltr") {
+            return "ltr"
+        }
+
+        cur = doc.parent(h)
+    }
+
+    return "ltr"
+}
