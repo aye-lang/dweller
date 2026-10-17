@@ -306,13 +306,25 @@ pub struct Resolver {
 
     // A call `eval(...)` of the global eval is a direct eval: every open
     // scope may be read by name (V8's `Scope::RecordEvalCall`).
-    fn directEval(self: *mut Self, callee: u32) {
-        match self.ast.node(callee) {
+    fn directEval(self: *mut Self, id: u32, callee: u32) AllocError!void {
+        let saved = self.ast.node(callee)
+
+        match saved {
             .Ident { name, depth, .. } => {
                 if depth == DEPTH_GLOBAL && text.eql(self.atoms.name(name), "eval") {
                     for i in 0..self.scopes.len() {
                         self.scopes.items()[i].eval = true
                     }
+
+                    var site = self.current().scope_id * 2
+
+                    if self.strict {
+                        site += 1
+                    }
+
+                    try self.ast.eval_sites.put(id, site)
+                    try self.lookup(callee, A_ARGUMENTS)
+                    self.ast.nodes.items()[callee] = saved
                 }
             }
             _ => {}
@@ -836,7 +848,7 @@ pub struct Resolver {
             .Call { callee, list, n, .. } => {
                 try self.expr(callee)
                 try self.exprs(list, n)
-                self.directEval(callee)
+                try self.directEval(e, callee)
             }
             .New { callee, list, n } => {
                 try self.expr(callee)
@@ -953,6 +965,9 @@ pub struct Resolver {
         try self.collectVarsList(self.current(), fi.body, fi.nbody)
         try self.declareLexical(fi.body, fi.nbody)
         try self.annexPass(self.current(), fi.body, fi.nbody)
+        if fi.eval_code && !fi.strict {
+            try evalHoistVars(self)
+        }
         if fi.own_name {
             var taken = false
             for b in self.current().bindings.items() {
