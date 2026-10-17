@@ -1,0 +1,29 @@
+import dom
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+pub fn activateLabel(page: *mut Page, label: dom.NodeId, clicked: dom.NodeId) AllocError!Activation {
+    let doc = &mut page.doc
+
+    if insideInteractive(doc, clicked, label) {
+        return Activation.Nothing
+    }
+
+    let control = labelControl(doc, label) orelse return Activation.Nothing
+
+    if dom.isDisabled(doc, control) {
+        return Activation.Nothing
+    }
+
+    if dom.isTextField(doc, control) || doc.isElement(control, "select") {
+        setFocus(page, control)
+
+        return Activation.Changed
+    }
+
+    if !(try dispatchEvent(page, control, "click", "")) {
+        return Activation.Changed
+    }
+
+    return activate(page, control)
+}
