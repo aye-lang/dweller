@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-10-17 at Dweller 3d1d559. WPT `e58225abb9`, test262 `d53ebc8b19`.
+Measured 2026-10-17 at Dweller 8a81a64. WPT `e58225abb9`, test262 `d53ebc8b19`.
 Score is passed over total subtests (WPT) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -20,7 +20,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/css-transforms` | 711 | 156 | 748/5196 | 14.4 | 50 | below | +0.0 |
 | `css/css-transitions` | 143 | 59 | 1415/3348 | 42.3 | - | baseline | +0.0 |
 | `css/css-animations` | 206 | 91 | 694/1398 | 49.6 | 60 | below | +0.0 |
-| `html/syntax` | 98 | 0 | 727/2732 | 26.6 | 90 | below | +0.0 |
+| `html/syntax` | 98 | 0 | 2558/2732 | 93.6 | 90 | done | +0.0 |
 | `dom/api` | 467 | 109 | 61330/64996 | 94.4 | 75 | done | +0.0 |
 | `html/webappapis/timers` | 16 | 0 | 20/25 | 80.0 | 70 | done | +0.0 |
 | `css/selectors` | 540 | 136 | 5023/6277 | 80.0 | 80 | done | +0.0 |

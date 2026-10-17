@@ -16,6 +16,10 @@ let RAW_TEXT_ELEMENTS = "style script xmp iframe noembed noframes plaintext nosc
 
 /// Appends the HTML of the children of `h` to `out`.
 fn serializeChildren(doc: *Document, h: NodeId, out: *mut text.Builder) AllocError!void {
+    if doc.node(h).kind == Kind.Element && html.isIn(doc.node(h).name, VOID_ELEMENTS) {
+        return
+    }
+
     var cur = doc.firstChild(h)
     if doc.isElement(h, "template") {
         // A template's contents.
@@ -80,8 +84,7 @@ fn serializeNode(doc: *Document, h: NodeId, out: *mut text.Builder) AllocError!v
     }
 }
 
-// `&`, no-break spaces and, in text, `<` and `>`, or, in an attribute,
-// `"` as character references.
+// https://html.spec.whatwg.org/multipage/parsing.html#escapingString
 fn escapeMarkup(s: []u8, attribute: bool, out: *mut text.Builder) AllocError!void {
     var i: usize = 0
     while i < s.len {
@@ -93,9 +96,9 @@ fn escapeMarkup(s: []u8, attribute: bool, out: *mut text.Builder) AllocError!voi
             i += 1
         } else if attribute && c == '"' {
             try out.append("&quot;")
-        } else if !attribute && c == '<' {
+        } else if c == '<' {
             try out.append("&lt;")
-        } else if !attribute && c == '>' {
+        } else if c == '>' {
             try out.append("&gt;")
         } else {
             try out.appendByte(c)
@@ -114,12 +117,24 @@ fn parseFragment(p: *mut Page, context: []u8, src: []u8, out: *mut List(NodeId))
     defer p.doc.recording = was
     // In a raw text element the markup is its text (`script.innerHTML =
     // code` keeps the code's `a<b` and `c>d`).
-    if html.isIn(context, "script style xmp iframe noembed noframes") {
+    if html.isIn(context, "script style xmp iframe noembed noframes plaintext noscript") {
         if src.len > 0 {
             try out.append(try p.doc.createText(src))
         }
         return
     }
+
+    if html.isIn(context, "title textarea") {
+        let decoded = try html.decodeText(p.alloc, src)
+        defer p.alloc.free(decoded)
+
+        if decoded.len > 0 {
+            try out.append(try p.doc.createText(decoded))
+        }
+
+        return
+    }
+
     // Table parts and options need their context to be parsed at all.
     var path = [3][]u8{"", "", ""}
     var depth: usize = 0
