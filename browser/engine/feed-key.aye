@@ -1,0 +1,32 @@
+import dom
+import std
+import std.mem.AllocError
+import std.text
+
+pub fn feedKey(p: *mut Page, word: []u8) AllocError!void {
+    let up = text.startsWith(word, "keyup:")
+    let colon = std.mem.indexOf(word, ':') orelse return
+    let name = word[colon + 1..]
+    let target = p.doc.controls.focus orelse p.doc.documentElement() orelse return
+
+    var kind: []u8 = "keydown"
+
+    if up {
+        kind = "keyup"
+    }
+
+    if !try dispatchEvent(p, target, kind, domKey(name)) || up {
+        return
+    }
+
+    let field = p.doc.controls.focus orelse return
+
+    if text.eql(name, "tab") {
+        setFocus(p, try nextFocus(p, true))
+    } else if text.eql(name, "backspace") && dom.isTextField(&p.doc, field) {
+        try dom.deleteBackward(&mut p.doc, field)
+        _ = try dispatchEvent(p, field, "input", "")
+    } else if text.eql(name, "return") && dom.isTextField(&p.doc, field) {
+        try runActivation(p, try implicitSubmit(p, field))
+    }
+}

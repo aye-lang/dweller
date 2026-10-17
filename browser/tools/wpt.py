@@ -37,6 +37,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 AREAS_FILE = HERE / "wpt_areas.json"
 REPORT_JS = HERE / "wpt" / "testharnessreport.js"
+VENDOR_JS = HERE / "wpt" / "testdriver-vendor.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
@@ -252,6 +253,8 @@ class Handler(BaseHTTPRequestHandler):
         # Our report script, wherever a page asks for it.
         if rel.endswith("resources/testharnessreport.js") or rel.endswith("tools/wpt/testharnessreport.js"):
             return self.send_body(200, "text/javascript; charset=utf-8", REPORT_JS.read_bytes())
+        if rel.endswith(("resources/testdriver-vendor.js", "tools/wpt/testdriver-vendor.js")):
+            return self.send_body(200, "text/javascript; charset=utf-8", VENDOR_JS.read_bytes())
         file = self.root.joinpath(*parts)
         wrapper = wrapper_source(file) if not path.endswith("/") else None
         if wrapper:

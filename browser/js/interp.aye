@@ -217,6 +217,7 @@ pub struct Interp {
     step_limit: u64
     deadline_ms: u64
     budget_ms: u64
+    goes_on: ?fn(*mut Interp) bool
     terminated: bool
     // The C stack (see markStackBase): the address at the start of the
     // task and the bytes it may use below it (0: no check).
@@ -365,6 +366,7 @@ pub struct Interp {
             step_limit: 0,
             deadline_ms: 0,
             budget_ms: 0,
+            goes_on: null,
             terminated: false,
             stack_base: 0,
             stack_room: 0,
@@ -629,6 +631,12 @@ pub struct Interp {
         if (self.step_limit > 0 && self.steps > self.step_limit) || (self.deadline_ms > 0 && cpuMs() > self.deadline_ms) {
             self.terminated = true
             return JsError.Terminated
+        }
+        if self.goes_on |f| {
+            if !f(self) {
+                self.terminated = true
+                return JsError.Terminated
+            }
         }
     }
 

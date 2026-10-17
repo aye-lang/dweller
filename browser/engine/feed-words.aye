@@ -1,0 +1,28 @@
+import std
+import std.mem.AllocError
+import std.text
+
+pub fn feedWords(p: *mut Page, words: []u8) AllocError!void {
+    var it = text.split(words, " ")
+
+    while it.next() |w| {
+        try feedWord(p, w)
+    }
+}
+
+fn feedWord(p: *mut Page, w: []u8) AllocError!void {
+    if text.startsWith(w, "key:") || text.startsWith(w, "keyup:") {
+        return feedKey(p, w)
+    }
+
+    if text.startsWith(w, "text:") {
+        return feedText(p, w[5..])
+    }
+
+    let colon = std.mem.indexOf(w, ':') orelse return
+    var xy = text.split(w[colon + 1..], ",")
+    let x = text.parseFloat(xy.next() orelse return) catch 0.0
+    let y = text.parseFloat(xy.next() orelse return) catch 0.0
+
+    try feedPointer(p, w, x, y)
+}
