@@ -16,7 +16,7 @@ fn vmStoreNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, ke
     }
 
     if it.heap.findProp(o, key) |slot| {
-        vmIcRecord(st, e, key, true, IcCase { shape: shape, other: NONE, slot: slot, proto1: NONE, proto2: NONE })
+        vmIcRecord(st, e, key, true, IcCase { shape: shape, other: NONE, slot: slot, proto: NONE, epoch: NONE })
 
         return it.setProp(v, key, value)
     }
@@ -29,7 +29,7 @@ fn vmStoreNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, ke
         let ob = it.heap.obj(o)
 
         if ob.shape != NONE && ob.nprops == c.slot + 1 && ob.props[c.slot].key == key {
-            vmIcRecord(st, e, key, true, IcCase { shape: c.shape, other: ob.shape, slot: c.slot, proto1: c.proto1, proto2: c.proto2 })
+            vmIcRecord(st, e, key, true, IcCase { shape: c.shape, other: ob.shape, slot: c.slot, proto: c.proto, epoch: it.heap.proto_epoch })
         }
     }
 }

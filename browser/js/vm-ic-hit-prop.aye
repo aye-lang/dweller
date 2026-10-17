@@ -1,0 +1,41 @@
+// v8: src/interpreter/interpreter-generator.cc (LdaNamedProperty)
+
+fn vmIcHitProp(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
+    let o = objectOf(v)
+
+    if o == NONE || e.state == IC_MEGA {
+        return null
+    }
+
+    let objs = it.heap.objs.items()
+    let ob = &mut objs[o]
+    let n = e.n as usize
+    var i: usize = 0
+
+    while i < n && e.cases[i].shape != ob.shape {
+        i += 1
+    }
+
+    if i == n || (ob.class != Class.Object && !cacheable(it, o, e.key)) {
+        return null
+    }
+
+    let c = &e.cases[i]
+    var holder = ob
+
+    if c.other != NONE {
+        if ob.proto != c.proto || c.epoch != it.heap.proto_epoch || (ob.class == Class.Function && (e.key == A_NAME || e.key == A_LENGTH)) {
+            return null
+        }
+
+        holder = &mut objs[c.other]
+    }
+
+    let p = &mut holder.props[c.slot]
+
+    if (p.flags & F_ACCESSOR) != 0 || p.value is .Empty {
+        return null
+    }
+
+    return p
+}

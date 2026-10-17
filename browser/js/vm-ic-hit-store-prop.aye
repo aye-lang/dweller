@@ -1,0 +1,29 @@
+// v8: src/interpreter/interpreter-generator.cc (StaNamedProperty)
+
+fn vmIcHitStoreProp(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
+    let o = objectOf(v)
+
+    if o == NONE || e.state == IC_MEGA {
+        return null
+    }
+
+    let ob = it.heap.obj(o)
+    let n = e.n as usize
+    var i: usize = 0
+
+    while i < n && e.cases[i].shape != ob.shape {
+        i += 1
+    }
+
+    if i == n || e.cases[i].other != NONE || ob.frozen || (ob.class != Class.Object && !cacheable(it, o, e.key)) {
+        return null
+    }
+
+    let p = &mut ob.props[e.cases[i].slot]
+
+    if (p.flags & (F_ACCESSOR | F_WRITE)) != F_WRITE {
+        return null
+    }
+
+    return p
+}

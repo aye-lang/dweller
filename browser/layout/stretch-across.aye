@@ -1,0 +1,28 @@
+import css
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-stretch
+fn stretchAcross(t: *mut Tree, c: usize, align: []u8, line_cross: f64, cw: f64, ch: f64) AllocError!bool {
+    let b = t.bx(c)
+
+    if !(text.eql(align, "stretch") || text.eql(align, "normal")) || !isKeyword(b.style[css.WIDTH], "auto") {
+        return false
+    }
+
+    let w = clampWidth(t, c, line_cross - b.margin[1] - b.margin[3], cw)
+    let h = b.h
+
+    if math.abs(w - b.w) < 0.01 {
+        return true
+    }
+
+    t.bx(c).w = w
+    t.bx(c).forced_h = h
+    try itemContents(t, c, cw, ch)
+    t.bx(c).forced_h = -1.0
+    t.bx(c).h = h
+
+    return true
+}

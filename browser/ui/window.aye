@@ -620,6 +620,7 @@ pub struct Ui {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
                 try self.draw()
+                try sendFrame(self, true)
                 perf.noteFrame(std.time.monotonicMs() - drew)
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
@@ -729,6 +730,7 @@ pub struct Ui {
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
             try runSpaceTimers(self)
+            try sendFrame(self, false)
             try pollAgents(self)
             if engine.hasContextRequests() {
                 try serveContexts(self)
@@ -1782,6 +1784,7 @@ pub struct Ui {
                 }
                 .Chip => {
                     clickChip(self, x, y)
+                    try showSpace(self, chipAt(self, x, y) orelse 0)
                 }
                 .None => {}
             }
@@ -1790,6 +1793,9 @@ pub struct Ui {
         if self.finding && y >= self.win_h as f64 - FINDBAR {
             self.focus = Focus.Find
             self.dirty = true
+            return
+        }
+        if self.agents != null && self.agents.?.watch.id != 0 {
             return
         }
         if self.focus != Focus.Page {
@@ -2144,6 +2150,7 @@ pub struct Ui {
             self.canvas.fillRect(paint.deviceRect(m, v), c)
         }
         self.canvas.popClip()
+        drawWatched(self, area)
         try drawToolbar(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)

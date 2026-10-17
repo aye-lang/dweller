@@ -4,21 +4,22 @@ fn vmIcLoadCase(it: *mut Interp, o: u32, key: u32) ?IcCase {
     let shape = it.heap.obj(o).shape
 
     if it.heap.findProp(o, key) |slot| {
-        return IcCase { shape: shape, other: NONE, slot: slot, proto1: NONE, proto2: NONE }
+        return IcCase { shape: shape, other: NONE, slot: slot, proto: NONE, epoch: NONE }
     }
 
-    if it.heap.obj(o).class == Class.Function && (key == A_NAME || key == A_LENGTH) {
-        return null
-    }
+    let virtual = key == A_NAME || key == A_LENGTH
+    var answers = virtual && it.heap.obj(o).class == Class.Function
+    var p = it.heap.obj(o).proto
 
-    let p = it.heap.obj(o).proto
+    while p != NONE && !answers && cacheable(it, p, key) {
+        it.heap.obj(p).used_as_proto = true
 
-    if p == NONE || it.heap.obj(p).shape == NONE || !cacheable(it, p, key) {
-        return null
-    }
+        if it.heap.findProp(p, key) |slot| {
+            return IcCase { shape: shape, other: p, slot: slot, proto: it.heap.obj(o).proto, epoch: it.heap.proto_epoch }
+        }
 
-    if it.heap.findProp(p, key) |slot| {
-        return IcCase { shape: shape, other: it.heap.obj(p).shape, slot: slot, proto1: NONE, proto2: NONE }
+        answers = virtual && it.heap.obj(p).class == Class.Function
+        p = it.heap.obj(p).proto
     }
 
     return null

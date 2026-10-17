@@ -1,0 +1,25 @@
+extern struct SigActionDarwin {
+    action: ?fn(i32, ?[*]u8, ?[*]u8)
+    mask: u32
+    flags: i32
+}
+
+let SA_SIGINFO_ONSTACK_DARWIN: i32 = 0x41
+
+fn installCrashAction(sig: i32, old: *mut SigAction) {
+    if @targetOs() is .macos {
+        var sa = @zeroed(SigActionDarwin)
+
+        sa.action = onCrash
+        sa.flags = SA_SIGINFO_ONSTACK_DARWIN
+        _ = sigaction(sig, @ptrCast(*SigAction, &sa), old)
+
+        return
+    }
+
+    var sa = @zeroed(SigAction)
+
+    sa.action = onCrash
+    sa.flags = SA_FLAGS
+    _ = sigaction(sig, &sa, old)
+}

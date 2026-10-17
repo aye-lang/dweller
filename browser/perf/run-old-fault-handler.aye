@@ -1,0 +1,15 @@
+let SA_SIGINFO_DARWIN: i32 = 0x40
+
+var old_handler_sig: i32 = 0
+
+fn runOldFaultHandler(sig: i32, which: usize, info: ?[*]u8, ctx: ?[*]u8) {
+    let old = @ptrCast(*SigActionDarwin, &old_actions[which])
+
+    if @targetOs() is .macos && info != null && old.flags & SA_SIGINFO_DARWIN != 0 {
+        if old.action |f| {
+            old_handler_sig = sig
+            f(sig, info, ctx)
+            old_handler_sig = 0
+        }
+    }
+}
