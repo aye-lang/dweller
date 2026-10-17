@@ -1,0 +1,12 @@
+extern fn pthread_sigmask(how: i32, set: *u32, old: ?*mut u32) i32
+
+let SIG_UNBLOCK_DARWIN: i32 = 2
+
+fn endInOldHandler() {
+    let sig = old_handler_sig
+    let set: u32 = (1 as u32) << ((sig - 1) as u32)
+
+    old_handler_sig = 0
+    _ = pthread_sigmask(SIG_UNBLOCK_DARWIN, &set, null)
+    onCrash(sig, null, null)
+}
