@@ -1,0 +1,32 @@
+import font
+import css
+import css.Value
+import layout
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-text-decor-3/#text-shadow-property
+fn textShadows(b: *mut Builder, style: []Value, x: f64, y: f64, s: []u8, face: font.Font, color: Rgba) AllocError!void {
+    let v = style[css.TEXT_SHADOW]
+
+    if layout.isKeyword(v, "none") {
+        return
+    }
+
+    var list = List([]css.Comp).init(b.t.alloc)
+
+    try css.readLayers(b.t.alloc, v, &mut list)
+
+    var k = list.len()
+
+    while k > 0 {
+        k -= 1
+
+        let sh = css.readShadow(list.items()[k]) orelse continue
+        let c = colorOf(sh.color, color)
+
+        if c.a != 0 {
+            try shadowText(b, sh, Item.Text { x: x + sh.x, y: y + sh.y, s: s, face: face, c: c })
+        }
+    }
+}

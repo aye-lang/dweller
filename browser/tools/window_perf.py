@@ -20,6 +20,12 @@
         `layout_full`, `net_sync`, `raster_px`) is over its budget or
         more than 20% under it. --update lowers the budgets (never
         raises them).
+    window_perf.py report (--replay | --live --chrome) [--site NAME] [--archives DIR]
+        W7 and W8 (P4.41, window_report.py), a row per non-excluded site of
+        sites.json; exits 1 when a row fails. --replay: `scroll` and `idle`
+        on the archives of DIR (default target/sites) against W7's limits.
+        --live --chrome: Dweller's first paint against Chrome's first
+        contentful paint (agent-browser), the median of 3 alternating runs.
 
 Both use SDL's dummy video driver; --real-window opens a real window
 that does not take the focus (DWELLER_BACKGROUND=1).
@@ -161,8 +167,8 @@ def idle(a):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["scroll", "idle", "gate"])
-    ap.add_argument("url", help="the page, or the budgets of `gate`")
+    ap.add_argument("mode", choices=["scroll", "idle", "gate", "report"])
+    ap.add_argument("url", nargs="?", help="the page, or the budgets of `gate`")
     ap.add_argument("--binary", default="target/dweller")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
@@ -170,6 +176,11 @@ def main():
     ap.add_argument("--minimize", action="store_true", help="idle: the window is minimized after its first frame")
     ap.add_argument("--settle", type=int, default=5, help="idle: seconds between the first frame and the measure")
     ap.add_argument("--log", help="keep the DWELLER_TIMING records here")
+    ap.add_argument("--replay", action="store_true", help="report: W7 on the archives")
+    ap.add_argument("--live", action="store_true", help="report: W8 on the live sites")
+    ap.add_argument("--chrome", action="store_true", help="report --live: compare with Chrome")
+    ap.add_argument("--site", action="append", help="report: only this site (repeatable)")
+    ap.add_argument("--archives", default="target/sites", help="report: the archive directory")
     ap.add_argument("--update", action="store_true", help="gate: lower the budgets to the values measured")
     a = ap.parse_args()
     if not os.path.exists(a.binary):
@@ -177,6 +188,9 @@ def main():
     if a.mode == "gate":
         import perf_gate
         perf_gate.gate(a)
+    elif a.mode == "report":
+        import window_report
+        window_report.report(a)
     else:
         scroll(a) if a.mode == "scroll" else idle(a)
 
