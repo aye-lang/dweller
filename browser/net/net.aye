@@ -39,6 +39,7 @@ pub struct Response {
     status: i64
     // The URL of the body when redirects led elsewhere, else empty.
     url: []mut u8
+    headers_raw: []mut u8
 
     pub fn deinit(self: *Self, alloc: Allocator) {
         alloc.free(self.mime)
@@ -46,6 +47,9 @@ pub struct Response {
         alloc.free(self.body)
         if self.url.len > 0 {
             alloc.free(self.url)
+        }
+        if self.headers_raw.len > 0 {
+            alloc.free(self.headers_raw)
         }
     }
 }
@@ -226,7 +230,7 @@ fn respond(alloc: Allocator, content_type: []u8, body: []mut u8) AllocError!Resp
     for i, c in ct.charset {
         charset[i] = c
     }
-    return Response { mime: mime, charset: charset, body: body, status: 200, url: []mut u8{} }
+    return Response { mime: mime, charset: charset, body: body, status: 200, url: []mut u8{}, headers_raw: []mut u8{} }
 }
 
 /// A content type split into its MIME type and `charset` parameter.

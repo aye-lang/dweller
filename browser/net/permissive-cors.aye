@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+fn permissiveCors(alloc: Allocator, req: Request, to: *Url) AllocError![]mut u8 {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    if req.kind == Kind.Other {
+        try corsAllowOrigin(alloc, req, to, &mut out)
+        try preflightAllow(req, &mut out)
+    }
+
+    return out.toOwned()
+}
