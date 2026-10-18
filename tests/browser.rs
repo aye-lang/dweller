@@ -8709,3 +8709,47 @@ fn worker_http() {
 fn worker_transfer() {
     check_worker_page("transfer", false);
 }
+
+/// P11.14h: a canvas hands its control to a worker
+/// (`transferControlToOffscreen`, transferred through `postMessage`); the
+/// worker clears its WebGL context in requestAnimationFrame and the frame
+/// shows in the placeholder canvas of `dweller screenshot` as `canvas.png`.
+#[test]
+fn worker_canvas() {
+    let out_png = scratch().join("worker_canvas.png");
+    let res = dweller_command()
+        .current_dir(root())
+        .args([
+            "screenshot",
+            "browser/tests/workers/canvas.html",
+            "-o",
+            out_png.to_str().unwrap(),
+            "--font",
+            "fixed",
+            "--width",
+            "120",
+            "--height",
+            "80",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        res.status.success() && res.stderr.is_empty(),
+        "{}\n{}",
+        res.status,
+        text(&res.stderr)
+    );
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let got = std::fs::read(&out_png).unwrap();
+    let golden = root().join("browser/tests/workers/canvas.png");
+    assert!(
+        got == std::fs::read(&golden).unwrap(),
+        "the image differs from {} (new one: {})",
+        golden.display(),
+        out_png.display()
+    );
+}

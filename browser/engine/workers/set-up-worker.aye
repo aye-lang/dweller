@@ -10,6 +10,9 @@ fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
     try installScope(it)
     _ = try it.runScript(WIRE_JS)
     _ = try it.runScript(SCOPE_JS)
+    if l.scope_hook |hook| {
+        try hook(it)
+    }
     it.script_url = try it.intern(l.href)
 
     if l.has_source {

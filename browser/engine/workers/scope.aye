@@ -7,8 +7,13 @@ pub struct Scope {
     link: *mut Link
     closing: bool
     started_ms: u64
+    bitmaps: ?dyn Bitmaps = null
 
-    fn finalize(self: *mut Self, tag: u32, index: u32, generation: u32) {}
+    fn finalize(self: *mut Self, tag: u32, index: u32, generation: u32) {
+        if self.bitmaps |b| {
+            b.drop(tag, index)
+        }
+    }
 
     fn trace(self: *mut Self, it: *mut Interp) bool {
         return false

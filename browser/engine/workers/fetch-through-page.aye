@@ -4,15 +4,7 @@ import std.mem
 
 fn fetchThroughPage(it: *mut Interp, href: []u8, kind: u8) JsError![]mut u8 {
     let l = scopeOf(it).link
-    let m = try l.seal(false, kind, href)
-
-    l.toPage(m) catch |e| {
-        l.release(m)
-
-        return JsError.OutOfMemory
-    }
-
-    let got = waitAnswer(l) orelse return failLoad(it)
+    let got = try askPage(it, href, kind)
     defer l.release(got)
 
     if got.buffers.len() == 0 {

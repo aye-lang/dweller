@@ -56,6 +56,9 @@ fn installCanvas(it: *mut Interp, o: u32) JsError!void {
 }
 
 fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
+    if workerBitmapsOf(it) != null {
+        return workerBitmap(it, v)
+    }
     let h = handleOf(it, v, TAG_NODE) orelse {
         try it.typeError("Canvas source is not an element")
         return JsError.Thrown
@@ -140,6 +143,9 @@ fn resetCanvas(p: *mut Page, h: NodeId, key: []u8) AllocError!void {
 }
 
 fn canvasChanged(it: *mut Interp) {
+    if workerBitmapsOf(it) != null {
+        return
+    }
     let s = scriptOf(it)
     if s.active == s.page {
         s.version += 1

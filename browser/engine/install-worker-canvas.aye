@@ -1,0 +1,35 @@
+import engine.workers
+import js
+import js.Interp
+import js.JsError
+import std.list.List
+
+let WORKER_CANVAS_JS = @embedFile("worker-canvas.js")
+let WORKER_COMMIT_JS = @embedFile("worker-commit.js")
+
+fn installWorkerCanvas(it: *mut Interp) JsError!void {
+    let b = try it.alloc.create(WorkerBitmaps { alloc: it.alloc, canvases: List(*mut CanvasBitmap).init(it.alloc), next_id: 1 })
+
+    @downcast(*mut workers.Scope, it.host.?).?.bitmaps = b
+    let o = try it.newObject(it.object_proto)
+
+    try it.defineValue(it.global, "__canvasHost", js.objVal(o))
+    try installWebGL(it, o)
+    try defMethod(it, o, "workerCanvas", 1, akWorkerCanvas)
+    try defMethod(it, o, "workerResize", 3, akWorkerResize)
+    try defMethod(it, o, "workerFrame", 2, akWorkerFrame)
+    _ = try it.runScript(WORKER_CANVAS_JS)
+
+    let src = try it.builder()
+    defer it.release(src)
+    try src.append("(function ({HTMLCanvasElement, HTMLImageElement, HTMLVideoElement, document, frame}) {\n")
+
+    for p in WORKER_CANVAS_PRELUDES {
+        try src.append(p)
+        try src.append(";\n")
+    }
+
+    try src.append(WORKER_COMMIT_JS)
+    try src.append("})(__workerCanvas);\ndelete globalThis.__workerCanvas;\n")
+    _ = try it.runScript(src.bytes())
+}
