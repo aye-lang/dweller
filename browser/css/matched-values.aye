@@ -4,6 +4,18 @@ import std.mem.AllocError
 fn matchedValues(c: *mut Computer, parent: []Value, inherited: ?*mut CustomLevel, is_root: bool) AllocError![]mut Value {
     let m = &mut c.out.matched
 
+    if c.sharing.hit |shared| {
+        c.sharing.hit = null
+        c.level = c.sharing.hit_level
+        let values = c.out.scratch
+
+        for i in 0..NPROPS {
+            values[i] = shared[i]
+        }
+
+        return values
+    }
+
     if is_root || !m.ok {
         m.ok = false
         try c.customLevel(inherited)

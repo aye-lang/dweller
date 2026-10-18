@@ -1,0 +1,29 @@
+fn siblingSensitive(sheet: *Sheet, cx: Complex, depth: usize) bool {
+    if depth >= 16 || cx.end <= cx.start { return true }
+
+    let compounds = sheet.compounds.items()
+
+    for ci in cx.start..cx.end {
+        if compounds[ci].combinator == '+' || compounds[ci].combinator == '~' { return true }
+    }
+
+    let subject = compounds[cx.end - 1]
+
+    for si in subject.start..subject.end {
+        let s = sheet.simples.items()[si]
+
+        if s.kind == SelKind.Is || s.kind == SelKind.Not {
+            for k in s.sub_start..s.sub_end {
+                if siblingSensitive(sheet, sheet.complexes.items()[k], depth + 1) { return true }
+            }
+        } else if !isPlain(s.kind) {
+            return true
+        }
+    }
+
+    return false
+}
+
+fn isPlain(kind: SelKind) bool {
+    return kind == SelKind.Universal || kind == SelKind.Type || kind == SelKind.Id || kind == SelKind.Class || kind == SelKind.Attr || kind == SelKind.Hover || kind == SelKind.Never
+}

@@ -58,6 +58,7 @@ pub struct RuleIndex {
     // All the rules, and the `::before`/`::after` selectors alone.
     all: Buckets
     pseudo: Buckets
+    sibling: SiblingIndex
     links: List(RuleLink)
     selected: List(usize)
     ancestors: List([4]u64)
@@ -69,6 +70,7 @@ pub struct RuleIndex {
             alloc: alloc,
             all: Buckets.init(alloc),
             pseudo: Buckets.init(alloc),
+            sibling: SiblingIndex.init(alloc),
             links: List(RuleLink).init(alloc),
             selected: List(usize).init(alloc),
             ancestors: List([4]u64).init(alloc),
@@ -80,6 +82,11 @@ pub struct RuleIndex {
     pub fn deinit(self: *mut Self) {
         self.all.deinit()
         self.pseudo.deinit()
+        self.sibling.deinit()
+        self.deinitLists()
+    }
+
+    fn deinitLists(self: *mut Self) {
         self.links.deinit()
         self.selected.deinit()
         self.ancestors.deinit()
@@ -115,6 +122,7 @@ pub struct RuleIndex {
         for ri, r in sheet.rules.items() {
             var fallback = false
             var pseudo_fallback = false
+            var sibling_fallback = false
             for k in r.sel_start..r.sel_end {
                 let cx = sheet.complexes.items()[k]
                 if !(try self.addComplex(&mut self.all, sheet, &mut counts, ri, cx, 0)) {
@@ -125,6 +133,12 @@ pub struct RuleIndex {
                         pseudo_fallback = true
                     }
                 }
+                if siblingSensitive(sheet, cx, 0) && !(try self.addComplex(&mut self.sibling.buckets, sheet, &mut counts, ri, cx, 0)) {
+                    sibling_fallback = true
+                }
+            }
+            if sibling_fallback {
+                try self.sibling.buckets.fallback.append(ri)
             }
             if fallback {
                 try self.all.fallback.append(ri)
@@ -135,6 +149,11 @@ pub struct RuleIndex {
         }
         for cx in sheet.complexes.items() {
             try self.ancestors.append(ancestorKeys(sheet, cx))
+        }
+        for s in sheet.simples.items() {
+            if s.kind == SelKind.Attr {
+                try self.sibling.attr_names.put(s.name, true)
+            }
         }
         self.rules = sheet.rules.len()
         self.ready = true
@@ -207,6 +226,15 @@ pub struct RuleIndex {
     pub fn candidates(self: *mut Self, sheet: *Sheet, doc: *Document, el: NodeId) AllocError![]usize {
         try self.build(sheet)
         return try self.collect(&self.all, doc, el)
+    }
+
+    pub fn siblingReady(self: *Self, sheet: *Sheet, max: usize) bool {
+        return self.ready && self.rules == sheet.rules.len() && self.sibling.buckets.fallback.len() <= max
+    }
+
+    pub fn siblingCandidates(self: *mut Self, sheet: *Sheet, doc: *Document, el: NodeId) AllocError![]usize {
+        try self.build(sheet)
+        return try self.collect(&self.sibling.buckets, doc, el)
     }
 
     // The rules with a `::before` or `::after` selector that may select

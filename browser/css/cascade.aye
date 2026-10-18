@@ -455,6 +455,7 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     var filters = AncestorFilters { map: IntMap(u32, AncestorFilter).init(out.alloc) }
@@ -579,6 +580,7 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     try c.addScopes(author)
@@ -648,6 +650,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     c.reuse = !keep
@@ -732,7 +735,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 _ = out.customs.remove(h.index)
                 let pseudos = takePseudos(out, h)
                 try styleElement(&mut c, ua, author, &mut hints, h)
-                let own_customs = c.custom_wins.len() > 0
+                let own_customs = c.custom_wins.len() > 0 || c.sharing.own_customs
                 try stylePseudos(&mut c, ua, ua_pseudo.items(), h)
                 try notePseudos(out, h, pseudos)
                 styled += 1
@@ -798,7 +801,6 @@ fn styleParent(doc: *Document, el: NodeId) ?NodeId {
 // The cascade for one element whose parent has its style.
 fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.Builder, h: NodeId) AllocError!void {
     let doc = c.doc
-    let out = c.out
     for i in 0..c.wins.len {
         c.wins[i].set = false
     }
@@ -816,39 +818,14 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
         }
     }
     setShadowHost(null)
-    try c.consider(ua, h, L_UA, MATCH_ELEMENT)
-    if doc.quirks {
-        try c.consider(&out.quirks, h, L_UA, MATCH_ELEMENT)
-    }
-    if doc.shadows.len() > 0 {
-        try c.considerShadowRules(h)
-    }
     hints.clear()
     try writeHints(doc, h, hints)
-    if hints.len() > 0 {
-        out.matched.ok = false
-        let range = try parseInline(&mut out.inline, hints.bytes())
-        for k in range.start..range.end {
-            try c.offer(out.inline.decls.items()[k], L_AUTHOR, 0)
-        }
-    }
-    if dom.same(root, doc.root) {
-        try c.consider(author, h, L_AUTHOR, MATCH_ELEMENT)
-    } else if c.scopeOf(root) |i| {
-        setShadowHost(dom.hostOf(doc, root))
-        try c.consider(c.scopes.items()[i].sheet, h, L_AUTHOR, MATCH_ELEMENT)
-        try c.considerParts(h, root)
-        setShadowHost(null)
-    }
-    if doc.attr(h, "style") |src| {
-        out.matched.ok = false
-        let range = try parseInline(&mut out.inline, src)
-        for k in range.start..range.end {
-            let d = out.inline.decls.items()[k]
-            try c.offer(d, declLevel(L_STYLE, d.important), 0)
-        }
+    let hints_key = nameKey("", hints.bytes())
+    if !(try shareStyle(c, ua, author, h, hints_key)) {
+        try matchElement(c, ua, author, hints.bytes(), h)
     }
     try c.compute(h)
+    try noteShared(c, author, h, hints_key)
 }
 
 // The indices of the rules of `sheet` with a selector of `::before` or
@@ -904,12 +881,14 @@ struct Computer {
     // (ancestor_filter.aye), and those of the element being styled.
     filters: ?*mut AncestorFilters
     filter: AncestorFilter
+    sharing: StyleSharing
 
     fn deinit(self: *mut Self) {
         self.picked_ua.deinit()
         self.picked_host.deinit()
         self.picked_own.deinit()
         self.matched.deinit()
+        self.sharing.recent.deinit()
         self.centered.deinit()
         self.custom_wins.deinit()
         self.custom_index.deinit()
