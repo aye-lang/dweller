@@ -1,0 +1,28 @@
+// spec: https://url.spec.whatwg.org/#relative-state
+fn relativeState(p: *mut Parser, c: i32) UrlError!bool {
+    let b = p.base orelse return UrlError.Invalid
+
+    try p.setString(&mut p.scheme, b.scheme)
+
+    if c == '/' || (p.special() && c == '\\') {
+        p.state = State.RelativeSlash
+
+        return false
+    }
+
+    try copyAuthority(p, b)
+    try copyPath(p, b)
+    try copyQuery(p, b)
+
+    if c == '?' {
+        p.startQuery()
+    } else if c == '#' {
+        p.startFragment()
+    } else if c != EOF {
+        p.has_query = false
+        p.shorten()
+        p.back(State.Path)
+    }
+
+    return false
+}

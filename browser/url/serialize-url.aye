@@ -1,0 +1,45 @@
+// spec: https://url.spec.whatwg.org/#concept-url-serializer
+import std.mem.Allocator
+import std.text
+
+fn serializeUrl(alloc: Allocator, p: *Parser) UrlError!Url {
+    var out = text.Builder.init(alloc)
+
+    errdefer out.deinit()
+
+    try out.append(p.scheme.bytes())
+    try out.appendByte(':')
+
+    var at = UrlSpans {}
+
+    try appendAuthority(&mut out, p, &mut at)
+
+    if !p.has_host && !p.opaque && p.segments.len() > 1 && p.segment(0).len == 0 {
+        try out.append("/.")
+    }
+
+    at.path_lo = out.len()
+    try appendPath(&mut out, p)
+    at.path_hi = out.len()
+    at.query_lo = at.path_hi
+    at.query_hi = at.path_hi
+
+    if p.has_query {
+        try out.appendByte('?')
+        at.query_lo = out.len()
+        try out.append(p.query.bytes())
+        at.query_hi = out.len()
+    }
+
+    at.frag_lo = out.len()
+    at.frag_hi = at.frag_lo
+
+    if p.has_fragment {
+        try out.appendByte('#')
+        at.frag_lo = out.len()
+        try out.append(p.fragment.bytes())
+        at.frag_hi = out.len()
+    }
+
+    return urlFromSpans(try out.toOwned(), p, &at)
+}

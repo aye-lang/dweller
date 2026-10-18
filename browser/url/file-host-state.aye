@@ -1,0 +1,33 @@
+// spec: https://url.spec.whatwg.org/#file-host-state
+import std.text
+
+fn fileHostState(p: *mut Parser, c: i32) UrlError!bool {
+    if !(c == EOF || c == '/' || c == '\\' || c == '?' || c == '#') {
+        try p.buffer.appendByte(c as u8)
+
+        return false
+    }
+
+    p.pointer -= 1
+
+    if p.override == null && isDriveLetter(p.buffer.bytes()) {
+        p.state = State.Path
+
+        return false
+    }
+
+    if p.buffer.len() == 0 {
+        p.has_host = true
+        p.host.clear()
+    } else {
+        try takeHost(p)
+
+        if text.eql(p.host.bytes(), "localhost") {
+            p.host.clear()
+        }
+    }
+
+    p.state = State.PathStart
+
+    return p.override != null
+}

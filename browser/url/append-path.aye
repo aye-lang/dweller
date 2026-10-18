@@ -1,0 +1,14 @@
+// spec: https://url.spec.whatwg.org/#url-path-serializer
+import std.mem.AllocError
+import std.text
+
+fn appendPath(out: *mut text.Builder, p: *Parser) AllocError!void {
+    if p.opaque {
+        return out.append(p.path_bytes.bytes())
+    }
+
+    for i in 0..p.segments.len() {
+        try out.appendByte('/')
+        try out.append(p.segment(i))
+    }
+}

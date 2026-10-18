@@ -1,0 +1,33 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-serializer
+import std.mem.AllocError
+import std.text
+
+fn appendIpv6(out: *mut text.Builder, pieces: *[8]u16) AllocError!void {
+    let compress = longestZeroRun(pieces)
+    var ignore0 = false
+
+    for i in 0..8 {
+        if ignore0 && pieces[i] == 0 {
+            continue
+        }
+
+        ignore0 = false
+
+        if compress == i as i64 {
+            try out.append(":")
+
+            if i == 0 {
+                try out.append(":")
+            }
+
+            ignore0 = true
+            continue
+        }
+
+        try appendHex(out, pieces[i])
+
+        if i != 7 {
+            try out.appendByte(':')
+        }
+    }
+}

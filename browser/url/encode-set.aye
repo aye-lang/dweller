@@ -1,0 +1,27 @@
+// spec: https://url.spec.whatwg.org/#percent-encoded-bytes
+enum EncodeSet {
+    C0Control
+    Fragment
+    Query
+    SpecialQuery
+    Path
+    Userinfo
+}
+
+fn inEncodeSet(c: u8, set: EncodeSet) bool {
+    if c < 0x20 || c > 0x7E {
+        return true
+    }
+
+    let query = c == ' ' || c == '"' || c == '#' || c == '<' || c == '>'
+    let path = query || c == '?' || c == '^' || c == '`' || c == '{' || c == '}'
+
+    return match set {
+        .C0Control => false
+        .Fragment => c == ' ' || c == '"' || c == '<' || c == '>' || c == '`'
+        .Query => query
+        .SpecialQuery => query || c == '\''
+        .Path => path
+        .Userinfo => path || c == '/' || c == ':' || c == ';' || c == '=' || c == '@' || (c >= '[' && c <= ']') || c == '|'
+    }
+}

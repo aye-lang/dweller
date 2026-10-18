@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#scheme-state
+import std.text
+
+fn enterAfterScheme(p: *mut Parser) {
+    if p.isFile() {
+        p.state = State.File
+    } else if p.special() && baseHasScheme(p, p.scheme.bytes()) {
+        p.state = State.SpecialRelativeOrAuthority
+    } else if p.special() {
+        p.state = State.SpecialAuthoritySlashes
+    } else if text.startsWith(p.rest(), "/") {
+        p.state = State.PathOrAuthority
+        p.pointer += 1
+    } else {
+        p.opaque = true
+        p.state = State.OpaquePath
+    }
+}
+
+fn baseHasScheme(p: *Parser, scheme: []u8) bool {
+    let b = p.base orelse return false
+
+    return text.eql(b.scheme, scheme)
+}

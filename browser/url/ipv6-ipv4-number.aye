@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-parser
+fn ipv6Ipv4Number(r: *mut Ipv6Reader) UrlError!i64 {
+    var n: i64 = -1
+
+    while isDigit(r.c()) {
+        if n == 0 {
+            return UrlError.Invalid
+        }
+
+        if n < 0 {
+            n = 0
+        }
+
+        n = n * 10 + (r.c() - '0') as i64
+
+        if n > 255 {
+            return UrlError.Invalid
+        }
+
+        r.pointer += 1
+    }
+
+    return n
+}

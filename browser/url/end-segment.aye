@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#path-state
+import std.mem.AllocError
+
+fn endSegment(p: *mut Parser, slash: bool) AllocError!void {
+    let seg = p.buffer.bytes()
+
+    if isDoubleDot(seg) {
+        p.shorten()
+
+        if !slash {
+            try p.appendSegment("")
+        }
+    } else if isSingleDot(seg) && !slash {
+        try p.appendSegment("")
+    } else if !isSingleDot(seg) {
+        if p.isFile() && p.segments.len() == 0 && isDriveLetter(seg) {
+            try p.appendSegmentPair(seg[..1], ":")
+        } else {
+            try p.appendSegment(seg)
+        }
+    }
+
+    p.buffer.clear()
+}
