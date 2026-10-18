@@ -305,7 +305,7 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
     }
     if sym == SDLK_TAB && !cmd {
         let next = try engine.nextFocus(p, !shift)
-        engine.setFocus(p, next)
+        try engine.keyFocus(p, next)
         try restyled(ui)
         if next |el| {
             showElement(ui, el)
@@ -345,12 +345,12 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
         }
         return false
     }
-    if sym == SDLK_SPACE && (dom.isCheckable(&p.doc, f) || p.doc.isElement(f, "button") || dom.isSubmitButton(&p.doc, f) || dom.isResetButton(&p.doc, f) || p.doc.isElement(f, "summary") || p.doc.isElement(f, "input")) {
-        try runActivation(ui, try engine.activate(p, f))
+    if sym == SDLK_SPACE && engine.spaceClicks(&p.doc, f) {
+        engine.space_pressed = f
         return true
     }
-    if enter && !dom.isCheckable(&p.doc, f) {
-        try runActivation(ui, try engine.activate(p, f))
+    if enter && engine.enterClicks(&p.doc, f) {
+        try runActivation(ui, try engine.keyClick(p, f))
         return true
     }
     return false
@@ -432,6 +432,9 @@ fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     let f = p.doc.controls.focus orelse return false
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
+    }
+    if !try engine.dispatchEvent(p, f, "beforeinput", s) {
+        return true
     }
     try dom.insertText(&mut p.doc, f, s)
     try engine.dispatchEvent(p, f, "input", s)

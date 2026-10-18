@@ -1,0 +1,22 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-transitions-1/#application
+pub fn shownValues(t: *mut Transitions, el: NodeId, values: []css.Value, out: []mut css.Value, now: f64) AllocError!bool {
+    var any = false
+
+    for p in 0..css.NPROPS {
+        out[p] = values[p]
+    }
+
+    for r in t.running.items() {
+        if dom.same(r.el, el) {
+            out[r.prop] = try valueAt(t, r, now)
+            any = true
+        }
+    }
+
+    return any
+}

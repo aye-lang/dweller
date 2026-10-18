@@ -226,6 +226,7 @@ fn logicalAlias(name: []u8) []u8 {
         "inline-size", "width", "block-size", "height",
         "min-inline-size", "min-width", "max-inline-size", "max-width",
         "min-block-size", "min-height", "max-block-size", "max-height",
+        "overflow-inline", "overflow-x", "overflow-block", "overflow-y",
     }
     var k: usize = 0
     while k + 1 < pairs.len {
@@ -324,6 +325,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         n = 4
     } else if text.eql(name, "outline") {
         first = OUTLINE_COLOR
+        n = 3
+    } else if text.eql(name, "line-clamp") || text.eql(name, "-webkit-line-clamp") {
+        first = MAX_LINES
         n = 3
     } else if text.eql(name, "text-wrap") {
         first = TEXT_WRAP_MODE
@@ -517,6 +521,12 @@ struct Declarer {
         }
         if text.eql(name, "outline") {
             return outlineShorthand(self, comps)
+        }
+        if text.eql(name, "line-clamp") {
+            return lineClampShorthand(self, comps, false)
+        }
+        if text.eql(name, "-webkit-line-clamp") {
+            return lineClampShorthand(self, comps, true)
         }
         if text.eql(name, "text-wrap") {
             return textWrapShorthand(self, comps)
@@ -1092,6 +1102,21 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
     if (prop >= TRANSITION_PROPERTY && prop <= TRANSITION_BEHAVIOR) || (prop >= ANIMATION_NAME && prop <= ANIMATION_COMPOSITION) {
         return transitionList(sheet, prop, comps)
+    }
+    if prop == OVERFLOW_CLIP_MARGIN {
+        return clipMarginValue(sheet, comps)
+    }
+    if prop == SCROLLBAR_GUTTER {
+        return scrollbarGutterValue(sheet, comps)
+    }
+    if prop == TEXT_OVERFLOW {
+        return textOverflowValue(sheet, comps)
+    }
+    if prop == MAX_LINES {
+        return maxLinesValue(sheet, comps)
+    }
+    if prop == BLOCK_ELLIPSIS {
+        return blockEllipsisValue(sheet, comps)
     }
 
     if p.kind == PKind.Raw {

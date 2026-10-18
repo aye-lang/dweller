@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#line-clamp
+fn specifiedLineClamp(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let comps = try components(&mut sheet, toks.items())
+
+    if text.eql(prop, "-webkit-line-clamp") {
+        let legacy = try webkitLineClampLonghands(&mut sheet, comps) orelse return false
+
+        return writeWebkitLineClamp(legacy[..], out)
+    }
+
+    let vals = try lineClampLonghands(&mut sheet, comps) orelse return false
+
+    return writeLineClamp(vals[..], out)
+}

@@ -1,0 +1,45 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#overflow-clip-margin
+fn clipMarginValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    var box: ?[]u8 = null
+    var px: ?f64 = null
+
+    for c in comps {
+        if box == null && identIn(c, "content-box padding-box border-box") != null {
+            box = identIn(c, "content-box padding-box border-box")
+        } else if px == null && lengthPx(c) != null {
+            px = lengthPx(c)
+        } else {
+            return null
+        }
+    }
+
+    var b = text.Builder.init(sheet.arena.allocator())
+    let shown = box orelse "padding-box"
+
+    if !text.eql(shown, "padding-box") {
+        try b.append(shown)
+    }
+
+    let n = px orelse 0.0
+
+    if n != 0.0 || b.len() == 0 {
+        if b.len() > 0 {
+            try b.appendByte(' ')
+        }
+
+        try writeNumber(n, &mut b)
+        try b.append("px")
+    }
+
+    return Value.Keyword { k: try b.toOwned() }
+}
+
+fn lengthPx(c: Comp) ?f64 {
+    return match lengthValue(c, false, false) orelse return null {
+        .Px { v } => v
+        _ => null
+    }
+}

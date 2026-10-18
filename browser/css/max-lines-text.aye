@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#max-lines
+fn maxLinesText(sheet: *mut Sheet, n: ?f64, auto: bool) AllocError!?Value {
+    var b = text.Builder.init(sheet.arena.allocator())
+
+    if n |count| {
+        try b.appendInt(count as i64)
+    }
+
+    if auto || n == null {
+        if b.len() > 0 {
+            try b.appendByte(' ')
+        }
+
+        try b.append("auto")
+    }
+
+    return Value.Keyword { k: try b.toOwned() }
+}

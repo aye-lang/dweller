@@ -1,0 +1,38 @@
+import css
+import dom
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+// blink: core/animation/css/css_animations.cc (CalculateAnimationUpdate)
+fn akAnimatedElements(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    let st = (try stylingWithoutFetch(s)) orelse return it.pop()
+
+    if st.author.keyframes.len() == 0 {
+        return it.pop()
+    }
+
+    let g = try geometry(s)
+    let doc = &mut s.page.doc
+    var at: ?dom.NodeId = doc.root
+
+    while at |el| {
+        if g.styles.get(el) |values| {
+            if !text.eql(keywordIn(values[css.ANIMATION_NAME]), "none") {
+                try it.heap.pushElem(arr, try wrap(it, el))
+            }
+        }
+
+        at = doc.following(el, doc.root)
+    }
+
+    return it.pop()
+}

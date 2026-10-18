@@ -1,0 +1,15 @@
+import std.text
+
+fn breaksAfter(a: u32, ca: LineBreakClass, cb: LineBreakClass, rules: BreakRules) bool {
+    return match ca {
+        .OP, .GL => false
+        .QU => !isInitialQuote(a)
+        .PR => cb != LineBreakClass.ID && cb != LineBreakClass.XX
+        .PR_WIDE => cb != LineBreakClass.XX && (cb != LineBreakClass.ID || (isLoose(rules) && rules.chinese_or_japanese))
+        _ => true
+    }
+}
+
+fn isLoose(rules: BreakRules) bool {
+    return text.eql(rules.strictness, "loose")
+}

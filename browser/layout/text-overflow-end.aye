@@ -1,0 +1,26 @@
+import css
+import css.Value
+import std.mem
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#text-overflow
+fn textOverflowEnd(style: []Value) []u8 {
+    let v = keywordOf(style[css.TEXT_OVERFLOW])
+    var start: usize = 0
+
+    if v.len > 0 && v[0] == '"' {
+        start = 1
+
+        while start + 1 < v.len && v[start] != '"' {
+            if v[start] == '\\' {
+                start += 1
+            }
+
+            start += 1
+        }
+    }
+
+    let space = mem.indexOf(v[start..], ' ') orelse return v
+
+    return v[start + space + 1..]
+}

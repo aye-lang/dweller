@@ -1,0 +1,36 @@
+import dom.NodeId
+import std
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-setproperty
+fn putStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!void {
+    let doc = &mut s.active.doc
+    let old = doc.attr(el, "style") orelse ""
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+    var done = false
+    var parts = text.split(old, ";")
+
+    while parts.next() |d| {
+        let colon = std.mem.indexOf(d, ':') orelse continue
+        let name = text.trim(d[..colon])
+
+        if text.eqlIgnoreCase(name, prop) {
+            if !done && text.trim(value).len > 0 {
+                try appendDecl(&mut b, prop, value)
+            }
+
+            done = true
+            continue
+        }
+
+        try appendDecl(&mut b, name, text.trim(d[colon + 1..]))
+    }
+
+    if !done && text.trim(value).len > 0 {
+        try appendDecl(&mut b, prop, value)
+    }
+
+    try doc.setAttr(el, "style", b.bytes())
+}

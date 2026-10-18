@@ -1,0 +1,20 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+pub fn isShown(t: *mut Transitions, el: NodeId, values: []css.Value) AllocError!bool {
+    let shown = t.shown.get(el.index) orelse return false
+
+    if shown.values.ptr != values.ptr {
+        return false
+    }
+
+    for r in t.running.items() {
+        if dom.same(r.el, el) && !css.sameValue(values[r.prop], try valueAt(t, r, shown.at)) {
+            return false
+        }
+    }
+
+    return true
+}

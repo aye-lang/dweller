@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-4/#text-overflow
+fn textOverflowValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    if comps.len > 2 {
+        return null
+    }
+
+    for c in comps {
+        if c.toks.len != 1 || (c.toks[0].kind != Tok.String && identIn(c, "clip ellipsis") == null) {
+            return null
+        }
+    }
+
+    return rawValue(sheet, comps)
+}

@@ -1,0 +1,29 @@
+// v8: src/interpreter/bytecode-generator.cc (VisitYieldStar)
+
+fn vmAsyncYieldStarCall(it: *mut Interp, at: usize) JsError!Value {
+    let mode = vmYieldStarMode(it, at + 2)
+    var method = it.slot(at + 1)
+
+    if mode == RESUME_THROW {
+        method = try it.getProp(it.slot(at), try it.intern("throw"))
+        it.setSlot(at + 4, numVal(0.0))
+    } else if mode == RESUME_RETURN {
+        method = try it.getProp(it.slot(at), try it.intern("return"))
+    }
+
+    if isNullish(method) {
+        if mode == RESUME_RETURN {
+            return iterResult(it, it.slot(at + 5), true)
+        }
+
+        let close = try it.getProp(it.slot(at), try it.intern("return"))
+
+        if !isNullish(close) {
+            _ = try it.call0(close, it.slot(at))
+        }
+
+        try it.typeError("The iterator does not provide a 'throw' method")
+    }
+
+    return it.call1(method, it.slot(at), it.slot(at + 5))
+}

@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-value
+pub fn writeLineClamp(vals: []Value, out: *mut text.Builder) AllocError!bool {
+    let max = keywordText(vals[0])
+    let ellipsis = keywordText(vals[1])
+    let cont = keywordText(vals[2])
+
+    if text.eql(cont, "normal") {
+        if !text.eql(max, "auto") || !text.eql(ellipsis, "no-ellipsis") {
+            return false
+        }
+
+        try out.append("none")
+
+        return true
+    }
+
+    try out.append(max)
+
+    if !text.eql(ellipsis, "ellipsis") {
+        try out.append(" ")
+        try out.append(ellipsis)
+    }
+
+    if text.eql(cont, "-webkit-legacy") {
+        try out.append(" -webkit-legacy")
+    }
+
+    return true
+}

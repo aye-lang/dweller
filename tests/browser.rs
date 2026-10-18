@@ -2327,11 +2327,11 @@ fn window_forms() {
             state("form.html", "element input name=q\nvalue yo\n"),
         ),
         (
-            "key:tab key:tab key:tab key:space key:tab key:down key:down key:tab text:a key:return text:b",
+            "key:tab key:tab key:tab key:space keyup:space key:tab key:down key:down key:tab text:a key:return text:b",
             state("form.html", "element textarea name=note\nvalue a\nb\n"),
         ),
         (
-            "key:tab key:tab key:tab key:space key:tab key:down key:down key:tab text:a key:return text:b click:170,60",
+            "key:tab key:tab key:tab key:space keyup:space key:tab key:down key:down key:tab text:a key:return text:b click:170,60",
             state(
                 "result.html?q=hi&go=1&all=yes&lang=ja&note=a%0D%0Ab&tags=b",
                 "",
@@ -5540,6 +5540,150 @@ fn window_transform_composite() {
     assert!(kept >= 50, "{kept} layers from the cache:\n{err}");
 }
 
+/// A CSS-only animation (P10.51b): `browser/tests/ui/css_spinner.html`
+/// moves and fades a box twice with no script. The window starts it from
+/// the styles, composites its frames without layout, damages only the
+/// box's rect, and once it ended runs no more animation frames.
+#[test]
+fn window_css_animation() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/css_spinner.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "150",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let first = recs
+        .iter()
+        .position(|r| r.0 == "ui_composite")
+        .expect("no composited frame");
+    let after = &recs[first..];
+    let composites = after.iter().filter(|r| r.0 == "ui_composite").count();
+    assert!(composites >= 15, "{composites} composited frames:\n{err}");
+    let damage: Vec<u64> = after
+        .iter()
+        .filter(|r| r.0 == "ui_damage_px")
+        .map(|r| r.1.split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        damage.iter().all(|&px| px <= 70 * 50),
+        "damage beyond the box: {damage:?}"
+    );
+    let last_raf = recs.iter().rposition(|r| r.0 == "ui_raf").unwrap();
+    let idle = recs[last_raf..].iter().filter(|r| r.0 == "ui_draw").count();
+    assert!(idle >= 50, "animation frames until the end ({idle} idle frames):\n{err}");
+    assert!(
+        recs[last_raf..]
+            .iter()
+            .filter(|r| r.0 == "ui_damage_px")
+            .skip(1)
+            .all(|r| r.1.starts_with("0 ")),
+        "damage after the animation ended:\n{err}"
+    );
+}
+
+/// A CSS transition on `:hover` (P10.51d): `browser/tests/ui/hover_transition.html`
+/// moves the pointer over a box with `transition: background-color .3s,
+/// transform .3s`, with no script. Its frames damage only the box's rect,
+/// and once it ended no more animation frames run.
+#[test]
+fn window_css_transition() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/hover_transition.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "150",
+            "--events",
+            "painted move:120,160",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let first = recs
+        .iter()
+        .position(|r| r.0 == "ui_raf")
+        .expect("no transition frame");
+    let after = &recs[first..];
+    let damage: Vec<u64> = after
+        .iter()
+        .filter(|r| r.0 == "ui_damage_px")
+        .map(|r| r.1.split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    let moving = damage.iter().filter(|&&px| px > 0).count();
+    assert!(moving >= 10, "{moving} frames with damage: {damage:?}");
+    assert!(
+        damage.iter().all(|&px| px <= 70 * 50),
+        "damage beyond the box: {damage:?}"
+    );
+    assert_eq!(
+        after.iter().filter(|r| r.0 == "layout_full").count(),
+        0,
+        "a full layout during the transition:\n{err}"
+    );
+    let last_raf = recs.iter().rposition(|r| r.0 == "ui_raf").unwrap();
+    let idle = recs[last_raf..].iter().filter(|r| r.0 == "ui_draw").count();
+    assert!(
+        idle >= 50,
+        "transition frames until the end ({idle} idle frames):\n{err}"
+    );
+    assert!(
+        recs[last_raf..]
+            .iter()
+            .filter(|r| r.0 == "ui_damage_px")
+            .skip(1)
+            .all(|r| r.1.starts_with("0 ")),
+        "damage after the transition ended:\n{err}"
+    );
+}
+
 /// mistral.ai's squares (P4.57): a rAF loop that changes the `width` of
 /// 6 divs in the flex cells of a grid, on a page with images, lays out
 /// again only the boxes around them: after the first frame no layout of
@@ -6818,6 +6962,25 @@ fn window_hidden_raf() {
     assert!(lines[..hidden].iter().any(|l| l == "raf"), "{lines:?}");
     assert!(!lines[hidden..shown].iter().any(|l| l == "raf"), "{lines:?}");
     assert!(lines[shown..].iter().any(|l| l == "raf"), "{lines:?}");
+}
+
+/// P4.75o: a cross-origin frame below the viewport runs no animation
+/// frames (Blink throttles its rendering); they run once it is scrolled
+/// into view.
+#[test]
+fn window_offscreen_frame_raf() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = "frame ".repeat(20);
+    let events = format!("painted {frames}key:end {frames}");
+    let lines = console_of("browser/tests/ui/offscreen-frame-raf.html", &events, "400");
+    let scrolled = position(&lines, "scrolled");
+    let before = lines[..scrolled].iter().filter(|l| *l == "frame raf").count();
+    let after = lines[scrolled..].iter().filter(|l| *l == "frame raf").count();
+    assert!(before <= 2, "{lines:?}");
+    assert!(after >= 5, "{lines:?}");
 }
 
 /// P4.55: the tab in the background runs its 100 ms interval about once

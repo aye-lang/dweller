@@ -2990,6 +2990,11 @@ pub struct Interp {
             v = try self.eval(arg)
         }
         if delegate {
+            if self.current_co |co| {
+                if co.is_async {
+                    return coAsyncYieldStar(self, v)
+                }
+            }
             return yieldDelegate(self, v)
         }
         return coYield(self, v, 0)
@@ -4478,6 +4483,7 @@ pub struct Interp {
             atoms: &mut self.heap.atoms,
             globals: &mut self.globals,
             scopes: List(RScope).init(self.alloc),
+            jumps: List(u32).init(self.alloc),
             top_vars: List(u32).init(self.alloc),
             message: message,
             floor: self.stackFloor(),
