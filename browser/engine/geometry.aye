@@ -93,13 +93,6 @@ let MAX_RESTYLE: usize = 4096
 // have, the whole document is styled into new styles.
 let RESTYLE_ROUNDS: usize = 4
 
-// The scroll offset a script gave a scroll container.
-struct ScrollOffset {
-    generation: u32
-    x: f64
-    y: f64
-}
-
 // A rectangle in CSS px.
 struct Area {
     x: f64
@@ -911,6 +904,7 @@ fn layOut(s: *mut Script, styles: *mut css.Styles) AllocError!Boxes {
         lost.deinit()
         return e
     }
+    tree.box_scrolls = &mut p.box_scrolls
     errdefer {
         tree.deinit()
         s.alloc.destroy(tree)
@@ -1379,11 +1373,11 @@ fn scrolledBy(s: *mut Script, g: *Geometry, i: usize) Area {
     var up = t.bx(i).parent
     while up |c| {
         let b = t.bx(c)
-        if s.scrolls.len() > 0 {
+        if s.page.box_scrolls.len() > 0 {
             if b.node |n| {
-                if s.scrolls.get(n.index) |o| {
+                if s.page.box_scrolls.get(n.index) |o| {
                     if o.generation == n.generation {
-                        let max = maxScroll(g, c)
+                        let max = maxScroll(g.tree, c)
                         d.x += math.clamp(o.x, 0.0, max.x)
                         d.y += math.clamp(o.y, 0.0, max.y)
                     }
@@ -1459,45 +1453,6 @@ fn areaBounds(areas: []Area) Area {
     return Area { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-// Is box `i` a scroll container (overflow other than `visible` and
-// `clip`)? The root's and the body's overflow is the viewport's.
-fn isScroller(g: *Geometry, i: usize) bool {
-    let t = g.tree
-    let b = t.bx(i)
-    if b.kind == layout.BoxKind.Inline || b.kind == layout.BoxKind.Text || b.kind == layout.BoxKind.LineBreak {
-        return false
-    }
-    if t.root == i {
-        return false
-    }
-    if b.node |el| {
-        if t.doc.isElement(el, "body") {
-            return false
-        }
-    }
-    return scrolls(b.style[css.OVERFLOW_X]) || scrolls(b.style[css.OVERFLOW_Y])
-}
-
-fn scrolls(v: css.Value) bool {
-    return !layout.isKeyword(v, "visible") && !layout.isKeyword(v, "clip")
-}
-
-// Does box `i` clip what overflows it (so that it does not add to the
-// scrolling area around it)?
-fn clipsOverflow(g: *Geometry, i: usize) bool {
-    let t = g.tree
-    let b = t.bx(i)
-    if t.root == i {
-        return false
-    }
-    if b.node |el| {
-        if t.doc.isElement(el, "body") {
-            return false
-        }
-    }
-    return !layout.isKeyword(b.style[css.OVERFLOW_X], "visible") || !layout.isKeyword(b.style[css.OVERFLOW_Y], "visible")
-}
-
 // The right and bottom edges (in `w`, `h`) of what box `i` holds: its
 // descendants' boxes with their end margins and its lines' fragments,
 // not going into boxes that clip. Fixed boxes are left out: they are
@@ -1529,26 +1484,10 @@ fn contentEdges(g: *Geometry, i: usize, edges: *mut Area) {
         }
         edges.w = math.max(edges.w, cb.ax + cb.w + cb.margin[1])
         edges.h = math.max(edges.h, cb.ay + cb.h + cb.margin[2])
-        if !clipsOverflow(g, c) {
+        if !clipsOverflow(t, c) {
             contentEdges(g, c, edges)
         }
     }
-}
-
-// How far a script can scroll box `i` (`w`, `h` unused).
-fn maxScroll(g: *Geometry, i: usize) Area {
-    let b = g.tree.bx(i)
-    let area = scrollableOverflow(g, i)
-    let cw = b.w - b.border[1] - b.border[3]
-    let ch = b.h - b.border[0] - b.border[2]
-    var max = Area { x: math.max(0.0, area.w - cw), y: math.max(0.0, area.h - ch), w: 0.0, h: 0.0 }
-    if layout.isKeyword(b.style[css.OVERFLOW_X], "clip") {
-        max.x = 0.0
-    }
-    if layout.isKeyword(b.style[css.OVERFLOW_Y], "clip") {
-        max.y = 0.0
-    }
-    return max
 }
 
 // The size of the document's scrolling area: the viewport and what the
@@ -1661,7 +1600,7 @@ fn metric(s: *mut Script, el: NodeId, k: i64) AllocError!f64 {
         return offsetMetric(s, g, el, k)
     }
     if k == 12 {
-        if isScroller(g, i) {
+        if isScroller(g.tree, i) {
             return 1.0
         }
         return 0.0
@@ -1682,21 +1621,21 @@ fn metric(s: *mut Script, el: NodeId, k: i64) AllocError!f64 {
         return math.round(b.h - b.border[0] - b.border[2])
     }
     if k == 8 || k == 9 {
-        if !isScroller(g, i) {
+        if !isScroller(g.tree, i) {
             return 0.0
         }
-        let o = s.scrolls.get(el.index) orelse return 0.0
+        let o = s.page.box_scrolls.get(el.index) orelse return 0.0
         if o.generation != el.generation {
             return 0.0
         }
-        let max = maxScroll(g, i)
+        let max = maxScroll(g.tree, i)
         if k == 8 {
             return math.clamp(o.y, 0.0, max.y)
         }
         return math.clamp(o.x, 0.0, max.x)
     }
     if k == 10 || k == 11 {
-        let area = scrollableOverflow(g, i)
+        let area = scrollableOverflow(g.tree, i)
         if k == 10 {
             return math.round(area.w)
         }
@@ -1833,16 +1772,16 @@ fn akSetScroll(it: *mut Interp, a: Args) JsError!Value {
     }
     let g = try geometry(s)
     let i = firstBox(g, el) orelse return js.boolVal(false)
-    if !isScroller(g, i) {
+    if !isScroller(g.tree, i) {
         return js.boolVal(false)
     }
-    var old = ScrollOffset { generation: el.generation, x: 0.0, y: 0.0 }
-    if s.scrolls.get(el.index) |o| {
+    var old = layout.BoxScroll { generation: el.generation, x: 0.0, y: 0.0 }
+    if s.page.box_scrolls.get(el.index) |o| {
         if o.generation == el.generation {
             old = o
         }
     }
-    let max = maxScroll(g, i)
+    let max = maxScroll(g.tree, i)
     old.x = math.clamp(old.x, 0.0, max.x)
     old.y = math.clamp(old.y, 0.0, max.y)
     var moved = old
@@ -1855,7 +1794,7 @@ fn akSetScroll(it: *mut Interp, a: Args) JsError!Value {
     if moved.x == old.x && moved.y == old.y {
         return js.boolVal(false)
     }
-    try s.scrolls.put(el.index, moved)
+    try s.page.box_scrolls.put(el.index, moved)
     s.geometry_changes += 1
     return js.boolVal(true)
 }

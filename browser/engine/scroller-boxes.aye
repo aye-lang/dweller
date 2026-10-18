@@ -1,0 +1,19 @@
+import layout
+import std.list.List
+import std.mem.AllocError
+
+fn scrollerBoxes(t: *layout.Tree, out: *mut List(usize)) AllocError!void {
+    let r = t.root orelse return
+
+    try scrollersUnder(t, r, out)
+}
+
+fn scrollersUnder(t: *layout.Tree, i: usize, out: *mut List(usize)) AllocError!void {
+    if t.bx(i).pseudo == 0 && t.bx(i).node != null && isScroller(t, i) {
+        try out.append(i)
+    }
+
+    for c in t.children(i) {
+        try scrollersUnder(t, c, out)
+    }
+}

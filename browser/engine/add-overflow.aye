@@ -2,8 +2,7 @@ import layout
 import std.math
 
 // blink: core/layout/scrollable_overflow_calculator.cc
-fn addOverflow(g: *Geometry, i: usize, r: *mut [4]f64) {
-    let t = g.tree
+fn addOverflow(t: *layout.Tree, i: usize, r: *mut [4]f64) {
     let b = t.bx(i)
 
     if layout.hasInlineContent(t, i) {
@@ -25,7 +24,7 @@ fn addOverflow(g: *Geometry, i: usize, r: *mut [4]f64) {
         let cb = t.bx(c)
 
         if cb.kind == layout.BoxKind.Inline || cb.kind == layout.BoxKind.Text || cb.kind == layout.BoxKind.LineBreak {
-            addOverflow(g, c, r)
+            addOverflow(t, c, r)
             continue
         }
 
@@ -46,8 +45,8 @@ fn addOverflow(g: *Geometry, i: usize, r: *mut [4]f64) {
             }
         }
 
-        if !clipsOverflow(g, c) {
-            addOverflow(g, c, r)
+        if !clipsOverflow(t, c) {
+            addOverflow(t, c, r)
         }
     }
 }

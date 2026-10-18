@@ -1,0 +1,37 @@
+import engine
+import std.mem.AllocError
+
+let LATCH_MS: u32 = 150
+
+// blink: core/input/scroll_manager.cc (scroll latching)
+fn wheelScrollElement(ui: *mut Ui, dx: f64, dy: f64) AllocError!bool {
+    let p = ui.tab.page orelse return false
+    let now = SDL_GetTicks()
+    let latched = ui.wheel_active && ui.wheel_precise && ui.wheel_page == p.id && now - ui.wheel_at < LATCH_MS
+
+    ui.wheel_precise = false
+    ui.wheel_at = now
+
+    if !latched {
+        try endWheelGesture(ui, true)
+
+        ui.wheel_el = null
+
+        if ui.mouse_in && ui.mouse_y >= ui.top() {
+            ui.wheel_el = try engine.wheelScrollTarget(p, ui.mouse_x + ui.tab.scroll_x, ui.mouse_y - ui.top() + ui.tab.scroll, dx, dy)
+        }
+    }
+
+    ui.wheel_active = true
+    ui.wheel_page = p.id
+
+    let el = ui.wheel_el orelse return false
+
+    if try engine.scrollElementBy(p, el, dx, dy) {
+        try ui.buildList(p.tree.?)
+
+        ui.repaint = true
+    }
+
+    return true
+}

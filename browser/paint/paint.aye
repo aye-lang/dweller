@@ -354,6 +354,8 @@ struct Builder {
     open: List(usize)
     ext_dx: f64 = 0.0
     ext_dy: f64 = 0.0
+    sx: f64 = 0.0
+    sy: f64 = 0.0
 
     // Is the layer box `i` promoted (`buildPromoted`)?
     fn promotes(self: *Self, i: usize) bool {
@@ -389,7 +391,13 @@ struct Builder {
         return false
     }
 
-    fn add(self: *mut Self, it: Item) AllocError!void {
+    fn add(self: *mut Self, item: Item) AllocError!void {
+        var it = item
+
+        if self.sx != 0.0 || self.sy != 0.0 {
+            it = moved(it, -self.sx, -self.sy)
+        }
+
         if self.m.isIdentity() {
             return self.list.items.append(it)
         }
@@ -633,15 +641,22 @@ struct Builder {
             cur = cb.parent
         }
         // Outermost first.
+        let outer_sx = self.sx
+        let outer_sy = self.sy
+        self.sx = 0.0
+        self.sy = 0.0
         var k = pushed
         while k > 0 {
             k -= 1
             try self.beginClip(clippers.items()[k])
+            scrollInto(self, clippers.items()[k], 1.0)
         }
         let outer_fixed = self.fixed
         self.fixed = self.fixed || lb.abs == 2
         try self.layer(i)
         self.fixed = outer_fixed
+        self.sx = outer_sx
+        self.sy = outer_sy
         for c in clippers.items() {
             try self.endClip(c)
         }
@@ -703,6 +718,7 @@ struct Builder {
         let clip = self.clips(i)
         if clip {
             try self.beginClip(i)
+            scrollInto(self, i, 1.0)
         }
         if layout.hasInlineContent(self.t, i) {
             try self.inlineFloats(i)
@@ -725,6 +741,7 @@ struct Builder {
             }
         }
         if clip {
+            scrollInto(self, i, -1.0)
             try self.endClip(i)
         }
         if visible {

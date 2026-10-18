@@ -1,0 +1,16 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+pub fn clientHeightOf(p: *mut Page, el: NodeId) AllocError!f64 {
+    let t = p.tree orelse return 0.0
+    var boxes = List(usize).init(p.alloc)
+    defer boxes.deinit()
+
+    try scrollerBoxes(t, &mut boxes)
+
+    let i = boxOfNode(t, boxes.items(), el) orelse return 0.0
+    let b = t.bx(i)
+
+    return b.h - b.border[0] - b.border[2]
+}

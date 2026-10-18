@@ -1,0 +1,20 @@
+import engine
+import std.mem.AllocError
+
+fn endWheelGesture(ui: *mut Ui, now: bool) AllocError!void {
+    if !ui.wheel_active || (!now && SDL_GetTicks() - ui.wheel_at < LATCH_MS) {
+        return
+    }
+
+    ui.wheel_active = false
+
+    let p = ui.tab.page orelse return
+
+    if p.id != ui.wheel_page {
+        return
+    }
+
+    let target = ui.wheel_el orelse p.doc.root
+
+    _ = try engine.dispatchEvent(p, target, "scrollend", "")
+}

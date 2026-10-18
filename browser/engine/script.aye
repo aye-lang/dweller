@@ -351,8 +351,6 @@ pub struct Script {
     paint_version: u64 = 0
     animated: List(NodeId)
     fixed: font.Fixed
-    // The scroll offsets scripts gave scroll containers, by node index.
-    scrolls: IntMap(u32, ScrollOffset)
     // The window's scroll offset; `scroll_moved` when a script moved it
     // since a front end took it (`takeScriptScroll`).
     scroll_x: f64
@@ -611,7 +609,6 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         paint_boxes: List(usize).init(alloc),
         animated: List(NodeId).init(alloc),
         fixed: font.Fixed.init(),
-        scrolls: IntMap(u32, ScrollOffset).init(alloc),
         scroll_x: 0.0,
         scroll_y: p.early_scroll,
         scroll_moved: false,
@@ -732,7 +729,6 @@ pub fn destroyScript(s: *mut Script) {
     s.restyle_seen.deinit()
     s.paint_boxes.deinit()
     s.animated.deinit()
-    s.scrolls.deinit()
     for t in s.timers.items() {
         if t.load != 0 {
             net.releaseLoad(t.load)
