@@ -8821,6 +8821,62 @@ fn window_focus_local() {
     );
 }
 
+/// Checkbox clicks and typing in a required field (P10.51i): the form
+/// states restyle only the controls and the elements whose selectors see
+/// them, with no full restyle or layout after the load.
+#[test]
+fn window_form_states() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for i in 0..10 {
+        let y = 55 + i * 30;
+        events += &format!(" click:5,{y} frame release:5,{y} frame");
+    }
+    events += " click:60,383 frame release:60,383 frame text:ab frame key:backspace frame";
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/form_states.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let layouts = recs.iter().filter(|r| r.0 == "layout").count();
+    assert!(layouts == 1, "{layouts} full layouts:\n{err}");
+    assert!(restyled.len() >= 12, "restyled {restyled:?}");
+    assert!(restyled.iter().all(|&n| n <= 12), "restyled {restyled:?}");
+}
+
 #[test]
 fn window_hover_local() {
     if !has_sdl() {

@@ -1,15 +1,17 @@
 fn stateUseAt(sheet: *Sheet, cx: Complex, ci: usize, key: u64, nested: bool) StateUse {
     let compounds = sheet.compounds.items()
 
-    if nested || cx.pseudo > 2 || siblingAfter(sheet, cx, ci) {
-        return StateUse { key: key, own: 0, target: null, around: true }
+    if nested || cx.pseudo > 2 {
+        return StateUse { key: key, own: 0, target: null, around: true, siblings: false }
     }
 
     let own = compoundFeature(sheet, compounds[ci])
 
     if ci == cx.end - 1 {
-        return StateUse { key: key, own: own, target: null, around: false }
+        return StateUse { key: key, own: own, target: null, around: false, siblings: false }
     }
 
-    return StateUse { key: key, own: own, target: compoundFeature(sheet, compounds[cx.end - 1]), around: false }
+    let comb = compounds[ci + 1].combinator
+
+    return StateUse { key: key, own: own, target: compoundFeature(sheet, compounds[cx.end - 1]), around: false, siblings: comb == '+' || comb == '~' }
 }

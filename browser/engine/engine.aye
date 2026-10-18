@@ -344,11 +344,7 @@ pub struct Page {
     fn layoutShared(self: *mut Self, measure: dyn font.Measurer, width: f64, height: f64) AllocError!bool {
         let s = self.script orelse return false
         let st = self.styling orelse return false
-        var shared = false
-        if s.geom |g| {
-            shared = g.shared && g.styling == st && g.controls == css.controlInputs(&self.doc)
-        }
-        if !shared || st.media.width != width || st.media.height != height || self.sheet_key != sheetSourceKey(&self.doc) {
+        if !sharesStyles(self) || st.media.width != width || st.media.height != height || self.sheet_key != sheetSourceKey(&self.doc) {
             return false
         }
         self.dropTree()
@@ -396,6 +392,9 @@ pub struct Page {
     /// (`stylesCurrent`); `layoutPage` lays it out again.
     pub fn restyle(self: *mut Self) AllocError!void {
         self.dropTree()
+        if sharesStyles(self) {
+            return
+        }
         if self.styling |st| {
             if st.version != domVersion(self) && self.sheet_key != sheetSourceKey(&self.doc) {
                 // A stylesheet source changed: rebuild it at layout.

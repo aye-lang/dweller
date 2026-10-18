@@ -1,0 +1,27 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteFormOwners(s: *mut Script, el: NodeId) AllocError!void {
+    let doc = &s.page.doc
+    var cur: ?NodeId = el
+
+    while cur |c| {
+        if dom.same(c, el) || doc.isElement(c, "form") || doc.isElement(c, "fieldset") {
+            try noteFormState(s, c)
+        }
+
+        cur = doc.parent(c)
+    }
+
+    if dom.formOwner(doc, el) |form| {
+        try noteFormState(s, form)
+    }
+}
+
+fn noteFormState(s: *mut Script, el: NodeId) AllocError!void {
+    if stateMattersAt(s, el, css.FORM_STATE_CHANGED) {
+        try noteLayoutChange(s, el, css.FORM_STATE_CHANGED)
+    }
+}

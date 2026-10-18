@@ -51,6 +51,7 @@ pub let HOVER_CHANGED = StyleChange { what: 2, token: false }
 pub let ACTIVE_CHANGED = StyleChange { what: 3, token: false }
 pub let FOCUS_CHANGED = StyleChange { what: 4, token: false }
 pub let FOCUS_WITHIN_CHANGED = StyleChange { what: 5, token: false }
+pub let FORM_STATE_CHANGED = StyleChange { what: 6, token: false }
 
 /// A change to the attribute `name`.
 pub fn attrChange(name: []u8) StyleChange {
@@ -71,8 +72,8 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
     for b in name {
         h = (h ^ (b as u64)) *% 1099511628211
     }
-    if h < 6 {
-        h += 6
+    if h < 7 {
+        h += 7
     }
     return h
 }
@@ -126,6 +127,7 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
         // States the attributes of `ALWAYS_DEEP` change (besides what
         // scripts do to controls, which restyles everything).
         .Checked => {
+            try out.append(FORM_STATE_CHANGED.what)
             try out.append(nameKey("", "checked"))
             try out.append(nameKey("", "selected"))
         }
@@ -136,6 +138,7 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
             try out.append(nameKey("", "required"))
         }
         .PlaceholderShown => {
+            try out.append(FORM_STATE_CHANGED.what)
             try out.append(nameKey("", "placeholder"))
             try out.append(nameKey("", "value"))
         }

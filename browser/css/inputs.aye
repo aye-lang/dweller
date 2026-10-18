@@ -278,18 +278,9 @@ pub fn controlInputs(doc: *Document) u64 {
     var controls: u64 = 0
     var it = ctl.map.iterator()
     while it.next() |e| {
-        let c = e.value
-        if isDefaultControl(doc, e.key, c) {
-            continue
-        }
-        var x = inputWord(INPUT_SEED, e.key as u64)
-        x = inputWord(x, c.generation as u64)
-        x = inputText(x, c.value)
-        x = inputText(x, c.custom)
-        x = inputWord(x, inputBit(c.dirty) | (inputBit(c.checked) << 1) | (inputBit(c.checked_dirty) << 2) | (inputBit(c.selected) << 3) | (inputBit(c.selected_dirty) << 4))
-        controls = controls +% x
+        controls = controls +% controlInput(doc, e.key, e.value)
     }
-    return inputWord(h, controls)
+    return inputWord(h, controls -% ctl.noted_inputs)
 }
 
 // The key of the class `name` in `ClassInfo.keys`: FNV-1a of it in

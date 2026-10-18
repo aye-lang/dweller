@@ -360,6 +360,7 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
 // the clipboard, Enter.
 fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, shift: bool) AllocError!bool {
     let doc = &mut p.doc
+    let before = engine.fieldInput(p, f)
     if cmd {
         if sym == 'a' {
             try dom.selectAll(doc, f)
@@ -421,6 +422,7 @@ fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, sh
         // Other keys type text (SDL_TEXTINPUT), and do not scroll.
         return true
     }
+    try engine.noteFieldEdit(p, f, before)
     try afterEdit(ui)
     return true
 }
@@ -433,7 +435,9 @@ fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
     }
+    let before = engine.fieldInput(p, f)
     try dom.insertText(&mut p.doc, f, s)
+    try engine.noteFieldEdit(p, f, before)
     try engine.dispatchEvent(p, f, "input", s)
     try afterEdit(ui)
     return true
