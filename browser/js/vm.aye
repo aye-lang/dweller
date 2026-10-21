@@ -1,7 +1,7 @@
-// js/vm: the bytecode interpreter (BYTECODE.md section 2), on unless
-// DWELLER_JS_VM=0. `invoke` asks `vmLookup` for a function's bytecode,
-// compiling it on the first call (compiler.aye); a function the
-// compiler does not support stays on the tree walker for good.
+// js/vm: the bytecode interpreter (BYTECODE.md section 2), the engine's
+// only execution path. `invoke` asks `vmCompiled` for a function's
+// bytecode, compiling it on the first call (compiler.aye); a function
+// the compiler does not support throws a SyntaxError naming it.
 //
 // The frame sits on `Interp.stack` right above the caller's
 // `[fn, this, args...]`: parameter i is register i - nparams, so the
@@ -70,16 +70,9 @@ struct VmEntry {
     env: u32
 }
 
-/// Turns the VM on unless DWELLER_JS_VM=0 (once per engine).
+/// Turns the VM on (once per engine).
 pub fn vmInit(it: *mut Interp) {
     it.vm_checked = true
-    var on = true
-    if getenv("DWELLER_JS_VM".ptr) |p| {
-        on = p[0] != '0'
-    }
-    if !on {
-        return
-    }
     var stats = false
     if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
         stats = p[0] == '1' || p[0] == 'p'
@@ -1860,7 +1853,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 let id = vmIdx(bytes, pc, w) as u32
                 pc += w as usize
                 regs[fp] = acc
-                acc = try it.eval(id)
+                acc = try vmRegExpLiteral(it, id)
                 regs = it.stack.items()
             }
             117 => {

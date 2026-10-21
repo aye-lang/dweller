@@ -796,10 +796,10 @@ pub struct Parser {
             try self.expect(Tok.LParen)
             let cond = try self.expression(false)
             try self.expect(Tok.RParen)
-            let cons = try self.statement()
+            let cons = try parseSubStatement(self)
             var alt: u32 = 0
             if self.eat(Tok.KwElse) {
-                alt = try self.statement()
+                alt = try parseSubStatement(self)
             }
             return self.mk(Node.If { cond: cond, cons: cons, alt: alt }, start)
         }
@@ -811,12 +811,12 @@ pub struct Parser {
             try self.expect(Tok.LParen)
             let cond = try self.expression(false)
             try self.expect(Tok.RParen)
-            let body = try self.statement()
+            let body = try parseSubStatement(self)
             return self.mk(Node.While { cond: cond, body: body }, start)
         }
         if k == Tok.KwDo {
             self.pos += 1
-            let body = try self.statement()
+            let body = try parseSubStatement(self)
             try self.expect(Tok.KwWhile)
             try self.expect(Tok.LParen)
             let cond = try self.expression(false)
@@ -872,7 +872,7 @@ pub struct Parser {
         if k == Tok.Ident && self.kindAt(1) == Tok.Colon {
             let label = try self.intern(self.tokText(self.tok()))
             self.pos += 2
-            let body = try self.statement()
+            let body = try parseSubStatement(self)
             return self.mk(Node.Labeled { label: label, body: body }, start)
         }
         let e = try self.expression(false)
@@ -991,10 +991,11 @@ pub struct Parser {
             self.pos += 1
             var left = init
             match self.ast.node(init) {
-                .VarDecl { n, .. } => {
+                .VarDecl { kind, list, n } => {
                     if n != 1 {
                         return self.fail("Invalid left-hand side in for-in loop: Must have a single binding.")
                     }
+                    try parseForInInitializer(self, kind, list, isOf)
                 }
                 _ => {
                     left = try self.toPattern(init)
@@ -1007,7 +1008,7 @@ pub struct Parser {
                 right = try self.expression(false)
             }
             try self.expect(Tok.RParen)
-            let body = try self.statement()
+            let body = try parseSubStatement(self)
             return self.mk(Node.ForIn { left: left, right: right, body: body, scope: scope, of: isOf, wait: wait }, start)
         }
         try self.expect(Tok.Semi)
@@ -1021,7 +1022,7 @@ pub struct Parser {
             update = try self.expression(false)
         }
         try self.expect(Tok.RParen)
-        let body = try self.statement()
+        let body = try parseSubStatement(self)
         return self.mk(Node.For { init: init, cond: cond, update: update, body: body, scope: scope }, start)
     }
 

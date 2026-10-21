@@ -38,7 +38,15 @@ fn defineClassElement(it: *mut Interp, elem: u32, ctor: u32, proto: u32, key: us
                 return next
             }
 
-            let m = try it.eval(value)
+            var m = Value.Undefined
+
+            match it.ast.node(value) {
+                .Func { f } => {
+                    m = try it.makeClosure(f)
+                }
+
+                _ => {}
+            }
 
             it.setHome(objectOf(m), target)
             try it.push(m)

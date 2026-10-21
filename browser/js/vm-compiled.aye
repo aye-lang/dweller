@@ -1,0 +1,13 @@
+fn vmCompiled(it: *mut Interp, func: u32) JsError!VmFunc {
+    if !it.vm_checked {
+        vmInit(it)
+    }
+
+    let st = it.vm orelse return JsError.OutOfMemory
+    let f = try vmLookup(it, st, func) orelse {
+        _ = try it.throwError(it.syntax_error_proto, st.funcs.items()[func].reason)
+        unreachable
+    }
+
+    return f
+}
