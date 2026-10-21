@@ -6280,17 +6280,26 @@ fn jsdom_gc_stress() {
     );
     // P9.8: code mode's realm calls into the page's realm and back.
     let run = root().join("browser/tests/agent/sessions/run.jsonl");
+    // A run's 30 s default budget is wall time, which GC stress takes
+    // most of on a slow runner: runs without their own `ms` get 300 s.
+    let input: String = std::fs::read_to_string(&run)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            if l.contains("\"cmd\":\"run\"") && !l.contains("\"ms\":") {
+                format!("{{\"ms\":300000,{}\n", &l[1..])
+            } else {
+                format!("{l}\n")
+            }
+        })
+        .collect();
     let mut child = dweller_command()
         .current_dir(root())
         .env("DWELLER_JS_GC", "stress")
         .arg("agent")
         .stdin(std::process::Stdio::piped())
         .spawn_drained();
-    std::io::Write::write_all(
-        &mut child.child.stdin.take().unwrap(),
-        &std::fs::read(&run).unwrap(),
-    )
-    .unwrap();
+    std::io::Write::write_all(&mut child.child.stdin.take().unwrap(), input.as_bytes()).unwrap();
     let out = child.wait_with_output_within(limit).unwrap();
     assert!(
         out.status.success() && out.stderr.is_empty(),
