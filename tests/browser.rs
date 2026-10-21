@@ -1161,7 +1161,7 @@ fn queries() {
 
 #[test]
 fn errors() {
-    let usage = "error: usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
+    let usage = "error: usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--dpr N] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
     expect(
         &[],
         2,
