@@ -6211,14 +6211,17 @@ fn benchmark_date_follows_virtual_clock() {
 
 /// The DOM fixtures again with a collection at every allocation
 /// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
-/// `gc_wrappers` allocates too much for that.
+/// `gc_wrappers` and `focus_freed` allocate too much for that.
 #[test]
 fn jsdom_gc_stress() {
     let dir = root().join("browser").join("tests").join("jsdom");
+    const HEAVY: [&str; 2] = ["gc_wrappers.html", "focus_freed.html"];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "html") && !p.ends_with("gc_wrappers.html"))
+        .filter(|p| {
+            p.extension().is_some_and(|e| e == "html") && !HEAVY.iter().any(|h| p.ends_with(h))
+        })
         .collect();
     pages.sort();
     // The slowest pages first, so that they do not all run at the end.
