@@ -22,6 +22,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -52,6 +53,7 @@ SKIP_NAME = re.compile(
 SKIP_SUB = re.compile(r"\.sub\.(html|js)$")
 HTML_EXT = (".html", ".htm", ".xhtml", ".xht")
 DEFAULT_GLOBALS = {"window", "dedicatedworker"}
+TEST_FONTS = ["Ahem.ttf"]
 
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -402,10 +404,21 @@ def run_area(name, spec, args, dweller, results_dir):
     return out
 
 
+def use_test_fonts(root):
+    """The fonts `wpt run --install-fonts` installs, as system fonts of the runs."""
+    fonts = REPO / "target" / "wpt-test-fonts"
+    fonts.mkdir(parents=True, exist_ok=True)
+    for name in TEST_FONTS:
+        if (Path(root) / "fonts" / name).exists():
+            shutil.copyfile(Path(root) / "fonts" / name, fonts / name)
+    os.environ["DWELLER_FONT_DIRS"] = str(fonts)
+
+
 def cmd_run(args):
     dweller = Path(args.dweller) if args.dweller else REPO / "target" / "dweller"
     if not dweller.exists():
         sys.exit(f"{dweller} not found (browser/build.sh)")
+    use_test_fonts(args.wpt_root)
     areas = load_areas()
     results_dir = Path(args.results_dir)
     for target in args.targets:

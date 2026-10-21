@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#font-relative-lengths
+pub fn fontUnitsOf(own: []Value, parent: []Value, size: f64) FontUnits {
+    let half = size * 0.5
+    let hook = font_units_hook orelse return FontUnits { ch: half, ex: half }
+    let family = keywordText(computedOr(own[FONT_FAMILY], parent[FONT_FAMILY]))
+    let weight = numberOr(computedOr(own[FONT_WEIGHT], parent[FONT_WEIGHT]), 400.0)
+    let italic = !text.eql(keywordText(computedOr(own[FONT_STYLE], parent[FONT_STYLE])), "normal")
+    let u = hook(family, size, weight, italic)
+
+    return FontUnits { ch: positiveOr(u.ch, half), ex: positiveOr(u.ex, half) }
+}
+
+fn computedOr(v: Value, parent: Value) Value {
+    return match v {
+        .Initial => parent
+        _ => v
+    }
+}
+
+fn positiveOr(n: f64, fallback: f64) f64 {
+    if n > 0.0 {
+        return n
+    }
+
+    return fallback
+}

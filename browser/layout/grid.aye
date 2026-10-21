@@ -69,6 +69,7 @@ struct GridArea {
 struct Units {
     font: f64
     root_font: f64
+    style: []Value
     vw: f64
     vh: f64
 }
@@ -81,6 +82,7 @@ fn unitsOf(t: *Tree, i: usize) Units {
     return Units {
         font: numberOf(t.bx(i).style[css.FONT_SIZE], 16.0),
         root_font: root_font,
+        style: t.bx(i).style,
         vw: t.viewport_w,
         vh: t.viewport_h,
     }
@@ -116,8 +118,11 @@ fn trackLength(s: []u8, base: f64, u: Units) ?f64 {
     if text.eqlIgnoreCase(unit, "rem") {
         return n * u.root_font
     }
-    if text.eqlIgnoreCase(unit, "ex") || text.eqlIgnoreCase(unit, "ch") {
-        return n * u.font * 0.5
+    if text.eqlIgnoreCase(unit, "ch") {
+        return n * css.fontUnitsOf(u.style, u.style, u.font).ch
+    }
+    if text.eqlIgnoreCase(unit, "ex") {
+        return n * css.fontUnitsOf(u.style, u.style, u.font).ex
     }
     let axis = css.viewportAxis(unit)
     if axis == 'w' {

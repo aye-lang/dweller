@@ -1,5 +1,4 @@
 """Reftests and crashtests for wpt.py (P10.2)."""
-import os
 import posixpath
 import re
 import subprocess
@@ -44,13 +43,12 @@ def fuzzy_of(text):
     return allowed["maxDifference"], allowed["totalPixels"]
 
 
-def screenshot(dweller, url, out, root, wait):
+def screenshot(dweller, url, out, wait):
     cmd = [str(dweller), "screenshot", url, "-o", str(out), "--width", "800", "--height", "600"]
     if wait:
         cmd += ["--wait-class", WAIT_CLASS]
-    env = dict(os.environ, DWELLER_FONT_DIRS=str(Path(root) / "fonts"))
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=SHOT_WALL,
-                       errors="replace", env=env, stdin=subprocess.DEVNULL)
+                       errors="replace", stdin=subprocess.DEVNULL)
     if p.returncode != 0:
         raise RuntimeError(f"exit {p.returncode}: {(p.stderr.strip().splitlines() or [''])[-1][:200]}")
     return Path(out).read_bytes()
@@ -94,7 +92,7 @@ def compare(dweller, root, base_url, tmp, shots, comparison, wait):
     a, b, kind, fuzzy = comparison
     for rel in (a, b):
         if rel not in shots:
-            shots[rel] = screenshot(dweller, f"{base_url}/{rel}", Path(tmp) / f"{len(shots)}.png", root, wait)
+            shots[rel] = screenshot(dweller, f"{base_url}/{rel}", Path(tmp) / f"{len(shots)}.png", wait)
     if kind == "match":
         return same_enough(shots[a], shots[b], fuzzy), f"{a} differs from {b}"
     return shots[a] != shots[b], f"{a} equals {b}"
@@ -125,7 +123,7 @@ def run_crashtest(dweller, root, base_url, test):
     wait = WAIT_CLASS in read_page(root, test["path"])
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            screenshot(dweller, base_url + test["url"], Path(tmp) / "shot.png", root, wait)
+            screenshot(dweller, base_url + test["url"], Path(tmp) / "shot.png", wait)
     except subprocess.TimeoutExpired:
         return {"status": "TIMEOUT", "message": f"no result in {SHOT_WALL} s", "subtests": []}
     except (RuntimeError, OSError) as e:

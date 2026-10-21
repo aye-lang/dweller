@@ -1,0 +1,22 @@
+import css
+import font
+
+// blink: third_party/blink/renderer/core/css/css_to_length_conversion_data.cc
+fn measureFontUnits(family: []u8, size: f64, weight: f64, italic: bool) css.FontUnits {
+    var measure = default_measure
+
+    if units_measure |m| {
+        measure = m
+    }
+
+    let m = measure orelse return css.FontUnits { ch: 0.0, ex: 0.0 }
+    let generic = font.genericOf(family)
+    let f = font.Font { size: size, bold: weight >= 600.0, italic: italic, mono: generic == font.Generic.Mono, serif: generic == font.Generic.Serif, weight: weight, family: family }
+    var ch = 0.0
+
+    if m.hasGlyph(f, '0') {
+        ch = m.width(f, "0")
+    }
+
+    return css.FontUnits { ch: ch, ex: m.metrics(f).x_height }
+}

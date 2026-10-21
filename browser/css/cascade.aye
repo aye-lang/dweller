@@ -1312,8 +1312,10 @@ struct Computer {
             }
             _ => {}
         }
+        useFontUnits(parent, parent, parent_font)
         values[FONT_SIZE] = self.absolute(font, parent_font)
         let font_px = numberOr(values[FONT_SIZE], 16.0)
+        useFontUnits(values, parent, font_px)
         if is_root {
             self.root_font = font_px
         }
@@ -1349,6 +1351,7 @@ struct Computer {
         fixOverflow(values)
         fixSpacing(values)
         fixMatchParent(values, parent, is_root)
+        dropFontUnits()
 
         return values
     }
@@ -1411,6 +1414,8 @@ struct Computer {
         return match v {
             .Em { v: n } => Value.Px { v: n * font }
             .Rem { v: n } => Value.Px { v: n * self.root_font }
+            .Ch { v: n } => Value.Px { v: n * currentFontUnits().ch }
+            .Ex { v: n } => Value.Px { v: n * currentFontUnits().ex }
             .Vw { v: n } => Value.Px { v: n * self.media.width / 100.0 }
             .Vh { v: n } => Value.Px { v: n * self.media.height / 100.0 }
             _ => v
@@ -1548,6 +1553,14 @@ pub fn writeValue(v: Value, out: *mut text.Builder) AllocError!void {
         .Rem { v: n } => {
             try writeNumber(n, out)
             try out.append("rem")
+        }
+        .Ch { v: n } => {
+            try writeNumber(n, out)
+            try out.append("ch")
+        }
+        .Ex { v: n } => {
+            try writeNumber(n, out)
+            try out.append("ex")
         }
         .Vw { v: n } => {
             try writeNumber(n, out)
@@ -1802,6 +1815,8 @@ fn tagOf(v: Value) u8 {
         .Inherit => 11
         .Initial => 12
         .Unset => 13
+        .Ch { .. } => 16
+        .Ex { .. } => 17
     }
 }
 
@@ -1812,6 +1827,8 @@ fn numberOf(v: Value) f64 {
         .Px { v: n } => n
         .Em { v: n } => n
         .Rem { v: n } => n
+        .Ch { v: n } => n
+        .Ex { v: n } => n
         .Vw { v: n } => n
         .Vh { v: n } => n
         .Percent { v: n } => n
