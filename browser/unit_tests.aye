@@ -280,6 +280,36 @@ test "elements share equal computed values, and a restyle of one leaves the othe
     @expectEqual("rgb(0, 128, 0);rgb(0, 0, 255);rgb(255, 0, 0);", out.bytes())
 }
 
+test "a hovered element does not share its sibling's values" {
+    let a = @testAllocator()
+    var doc = try html.parse(a, "<p id=a>t</p><p id=b>u</p><p id=c>v</p>")
+    defer doc.deinit()
+    let media = css.Media { width: 800.0, height: 600.0 }
+    var ua = try css.Sheet.init(a)
+    defer ua.deinit()
+    try css.uaSheet(&mut ua, media)
+    var author = try css.Sheet.init(a)
+    defer author.deinit()
+    try css.parseSheet(&mut author, "p:hover { color: red }", media)
+    doc.controls.hover = doc.getElementById("b")
+    var styles = try css.Styles.init(a)
+    defer styles.deinit()
+    try css.computeStyles(&doc, &ua, &author, media, &mut styles)
+    let ids = [3][]u8{"a", "b", "c"}
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    try colorsOf(&doc, &styles, ids[..], &mut out)
+    @expectEqual("rgb(0, 0, 0);rgb(255, 0, 0);rgb(0, 0, 0);", out.bytes())
+    @expect(styles.get(doc.getElementById("a").?).?.ptr == styles.get(doc.getElementById("c").?).?.ptr)
+    // The first one hovered: the others do not take its values.
+    doc.controls.hover = doc.getElementById("a")
+    var again = try css.Styles.init(a)
+    defer again.deinit()
+    try css.computeStyles(&doc, &ua, &author, media, &mut again)
+    try colorsOf(&doc, &again, ids[..], &mut out)
+    @expectEqual("rgb(255, 0, 0);rgb(0, 0, 0);rgb(0, 0, 0);", out.bytes())
+}
+
 test "adopted sheets and shadow trees" {
     let a = @testAllocator()
     let src = "<x-a><template shadowrootmode=open><style>p { margin-top: 1px }</style><p>in</p><slot></slot></template><p>light</p></x-a>"
