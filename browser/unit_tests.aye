@@ -484,6 +484,7 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     // A class a rule names does.
     @expect(try evalText(p, "document.getElementById('p').classList.add('on'); 0", &mut out))
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(255, 0, 0)", out.bytes())
     // So does a change no script made (the agent's), which no version
@@ -491,17 +492,20 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     try markColor(p, el)
     try p.doc.setAttr(el, "class", "x")
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(0, 0, 0)", out.bytes())
     // And the focus.
     try markColor(p, el)
-    p.doc.controls.focus = el
+    engine.setFocus(p, el)
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(0, 0, 255)", out.bytes())
     // And the viewport.
-    p.doc.controls.focus = null
+    engine.setFocus(p, null)
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try markColor(p, el)
     try p.layoutPage(&mut fixed, 400.0, 600.0)
     try styledColor(p, el, &mut out)
