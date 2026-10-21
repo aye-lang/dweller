@@ -10,7 +10,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `dom/events` | 180 | 8 | 669/877 | 76.3 | 70 | done | +0.0 |
 | `uievents` | 69 | 6 | 153/194 | 78.9 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2933/5398 | 54.3 | 60 | below | +0.0 |
-| `css/cssom` | 292 | 11 | 2128/3818 | 55.7 | - | baseline | +0.0 |
+| `css/cssom` | 292 | 11 | 2123/3817 | 55.6 | - | baseline | +1.4 |
 | `fetch/api` | 178 | 13 | 1603/2415 | 66.4 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 686/1233 | 55.6 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 4880/9998 | 48.8 | 80 | below | +0.0 |
@@ -28,7 +28,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/values-color` | 865 | 237 | 13538/23406 | 57.8 | 70 | below | +0.4 |
 | `css/box-sizing` | 1591 | 259 | 4397/8548 | 51.4 | 70 | below | +0.2 |
 | `css/floats-tables` | 709 | 251 | 887/1601 | 55.4 | 65 | below | +0.0 |
-| `css/inline-text` | 2343 | 407 | 4803/8083 | 59.4 | 60 | below | +1.0 |
+| `css/inline-text` | 2343 | 407 | 4658/8083 | 57.6 | 60 | below | +1.0 |
 | `css/overflow` | 939 | 189 | 1049/1921 | 54.6 | 60 | below | +1.0 |
 | `css/css-grid` | 2508 | 1085 | 7576/17565 | 43.1 | 60 | below | +0.0 |
 | `css/positioning` | 915 | 239 | 1417/2310 | 61.3 | 70 | below | +0.0 |

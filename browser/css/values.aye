@@ -259,6 +259,9 @@ fn pairLonghands(name: []u8) ?[2]usize {
     if text.eql(name, "inset-block") {
         return [2]usize{INSET_TOP, INSET_TOP + 2}
     }
+    if text.eql(name, "white-space") {
+        return [2]usize{WHITE_SPACE_COLLAPSE, TEXT_WRAP_MODE}
+    }
     if text.eql(name, "border-spacing") {
         return [2]usize{BORDER_SPACING_H, BORDER_SPACING_V}
     }
@@ -462,10 +465,6 @@ struct Declarer {
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
         try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
-
-        if prop == WHITE_SPACE {
-            try self.add(TEXT_WRAP_MODE, wrapOfWhiteSpace(v))
-        }
     }
 
     // A declaration parsed at computed-value time (or a custom property).
@@ -530,6 +529,9 @@ struct Declarer {
         }
         if text.eql(name, "text-wrap") {
             return textWrapShorthand(self, comps)
+        }
+        if text.eql(name, "white-space") {
+            return whiteSpaceShorthand(self, comps)
         }
         if text.eql(name, "list-style") {
             return self.listStyle(comps)

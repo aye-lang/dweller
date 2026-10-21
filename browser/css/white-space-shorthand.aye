@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-text-4/#white-space-property
+fn whiteSpaceShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
+    if comps.len == 1 && comps[0].toks.len == 1 && comps[0].toks[0].kind == Tok.Ident {
+        let k = comps[0].toks[0].text
+
+        if legacyWhiteSpace(k) |pair| {
+            try d.add(WHITE_SPACE_COLLAPSE, Value.Keyword { k: pair[0] })
+            try d.add(TEXT_WRAP_MODE, Value.Keyword { k: pair[1] })
+
+            return
+        }
+    }
+
+    let props = [2]usize{WHITE_SPACE_COLLAPSE, TEXT_WRAP_MODE}
+
+    return anyOrder(d, comps, props[..])
+}
