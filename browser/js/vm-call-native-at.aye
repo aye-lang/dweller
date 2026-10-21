@@ -1,0 +1,11 @@
+// v8: src/execution/arguments.h
+
+fn vmCallNativeAt(it: *mut Interp, id: u32, r: usize, argc: usize, thisv: Value) JsError!Value {
+    if it.stackExhausted() {
+        return it.rangeError("Maximum call stack size exceeded")
+    }
+
+    let a = Args { this: thisv, base: r + 2, argc: argc, callee: objectOf(it.slot(r)), new_target: NONE }
+
+    return callNative(it, id, a)
+}

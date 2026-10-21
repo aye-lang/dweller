@@ -375,21 +375,9 @@ fn vmMemberName(it: *mut Interp, id: u32) u32 {
 // evaluated.
 fn vmCallOp(it: *mut Interp, op: u8, top: usize, argc: usize, id: u32) JsError!Value {
     let f = it.slot(top)
-    var callee: u32 = 0
-    match it.ast.node(id) {
-        .Call { callee: c, .. } => {
-            callee = c
-        }
-        .New { callee: c, .. } => {
-            callee = c
-        }
-        .TaggedTemplate { tag: c, .. } => {
-            callee = c
-        }
-        _ => unreachable
-    }
     if !it.isCallable(f) {
         it.truncate(top)
+        let callee = vmCalleeNode(it, id)
         if op == BC_CONSTRUCT {
             return it.typeErrorAbout("", it.ast.srcText(callee), " is not a constructor")
         }
@@ -1496,10 +1484,19 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             77 => {
                 // CallProperty r, argc, [n]: r the callee, r+1 `this`, the
                 // arguments after it; n the Call node
-                let top = try vmPushCall(it, bytes, pc, w, fp, 77)
+                let r = (fp as i64 + vmImm(bytes, pc, w)) as usize
                 let argc = vmIdx(bytes, pc + w as usize, w) as usize
                 let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
                 pc += 3 * w as usize
+
+                if vmNativeCallee(it, regs[r], 77, id) |nid| {
+                    regs[fp] = acc
+                    acc = try vmCallNativeAt(it, nid, r, argc, regs[r + 1])
+                    regs = it.stack.items()
+                    continue
+                }
+
+                let top = try vmPushCall(it, bytes, pc - 3 * w as usize, w, fp, 77)
                 if try vmInlineCallee(it, st, 77, top) |e| {
                     let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.env, e.thisv, top + 2, argc, NONE)
                     try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
@@ -1519,10 +1516,19 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             78 => {
                 // CallUndefinedReceiver r, argc, [n]: as CallProperty with
                 // `this` undefined
-                let top = try vmPushCall(it, bytes, pc, w, fp, 78)
+                let r = (fp as i64 + vmImm(bytes, pc, w)) as usize
                 let argc = vmIdx(bytes, pc + w as usize, w) as usize
                 let id = vmIdx(bytes, pc + 2 * w as usize, w) as u32
                 pc += 3 * w as usize
+
+                if vmNativeCallee(it, regs[r], 78, id) |nid| {
+                    regs[fp] = acc
+                    acc = try vmCallNativeAt(it, nid, r, argc, Value.Undefined)
+                    regs = it.stack.items()
+                    continue
+                }
+
+                let top = try vmPushCall(it, bytes, pc - 3 * w as usize, w, fp, 78)
                 if try vmInlineCallee(it, st, 78, top) |e| {
                     let nfp = try vmPushFrame(it, st, e.code, e.this_reg, e.func, e.fobj, e.env, e.thisv, top + 2, argc, NONE)
                     try st.saved.append(VmSaved { code: code, pc: pc, fp: fp, top: top, construct: false, argBase: argBase, argc: nargs })
@@ -1577,10 +1583,17 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             }
             82 => {
                 // v8: src/interpreter/interpreter-generator.cc (LdaContextSlot)
-                regs[fp] = acc
-                acc = try vmLdaContextSlot(it, vmIdx(bytes, pc, w), vmIdx(bytes, pc + w as usize, w))
+                let up = vmIdx(bytes, pc, w)
+                let slot = vmIdx(bytes, pc + w as usize, w)
                 pc += 2 * w as usize
-                regs = it.stack.items()
+
+                if vmContextCell(it, up, slot) |x| {
+                    acc = x.*
+                } else {
+                    regs[fp] = acc
+                    acc = try vmLdaContextSlot(it, up, slot)
+                    regs = it.stack.items()
+                }
             }
             83 => {
                 // v8: src/interpreter/interpreter-generator.cc (StaContextSlot)
@@ -1652,6 +1665,8 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
 
                 if vmKeyedDenseElem(it, e, o, acc, false) |x| {
                     acc = x.*
+                } else if vmKeyedTypedLoad(it, e, o, acc) |x| {
+                    acc = x
                 } else {
                     regs[fp] = acc
                     acc = try vmKeyedLoadSlow(it, e, o, acc)
@@ -1667,7 +1682,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
 
                 if vmKeyedDenseElem(it, e, o, k, true) |x| {
                     x.* = acc
-                } else {
+                } else if !vmKeyedTypedStore(it, e, o, k, acc) {
                     regs[fp] = acc
                     try vmKeyedStoreSlow(it, e, o, k, acc)
                     regs = it.stack.items()
