@@ -131,6 +131,12 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
         }
         return null
     }
+    var hx = x
+    var hy = y
+    if layout.scrollOffsetOf(t, i) |o| {
+        hx += o.x
+        hy += o.y
+    }
     if layout.hasInlineContent(t, i) {
         let cx = b.ax + b.border[3] + b.padding[3]
         let cy = b.ay + b.border[0] + b.padding[0]
@@ -143,17 +149,17 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
                 fi -= 1
                 let f = t.frags.items()[fi]
                 if f.kind == FragKind.Atomic {
-                    if hitBox(t, f.box, x, y, layer) |n| {
+                    if hitBox(t, f.box, hx, hy, layer) |n| {
                         return n
                     }
-                } else if inside(x, y, cx + f.x, cy + f.y, f.w, f.h) && !passesThrough(t, f.box) {
+                } else if inside(hx, hy, cx + f.x, cy + f.y, f.w, f.h) && !passesThrough(t, f.box) {
                     if nodeOf(t, f.box) |n| {
                         return n
                     }
                 }
             }
         }
-        if hitFloats(t, i, x, y, layer) |n| {
+        if hitFloats(t, i, hx, hy, layer) |n| {
             return n
         }
     } else {
@@ -161,7 +167,7 @@ fn hitBox(t: *Tree, i: usize, x: f64, y: f64, layer: usize) ?NodeId {
         var k = kids.len
         while k > 0 {
             k -= 1
-            if hitBox(t, kids[k], x, y, layer) |n| {
+            if hitBox(t, kids[k], hx, hy, layer) |n| {
                 return n
             }
         }

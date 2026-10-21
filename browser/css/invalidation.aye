@@ -47,7 +47,12 @@ let ALWAYS_DEEP = "lang dir disabled checked selected value type name form requi
 
 pub let CHILDREN_CHANGED = StyleChange { what: 0, token: false }
 pub let STATE_CHANGED = StyleChange { what: 1, token: false }
-pub let RULES_CHANGED = StyleChange { what: 2, token: false }
+pub let HOVER_CHANGED = StyleChange { what: 2, token: false }
+pub let ACTIVE_CHANGED = StyleChange { what: 3, token: false }
+pub let FOCUS_CHANGED = StyleChange { what: 4, token: false }
+pub let FOCUS_WITHIN_CHANGED = StyleChange { what: 5, token: false }
+pub let FORM_STATE_CHANGED = StyleChange { what: 6, token: false }
+pub let RULES_CHANGED = StyleChange { what: 7, token: false }
 
 /// A change to the attribute `name`.
 pub fn attrChange(name: []u8) StyleChange {
@@ -59,7 +64,7 @@ pub fn classChange(name: []u8) StyleChange {
     return StyleChange { what: nameKey(".", name), token: true }
 }
 
-// FNV-1a of `prefix` and `name`, clear of 0 and 1.
+// FNV-1a of `prefix` and `name`, clear of the fixed changes (0 to 7).
 fn nameKey(prefix: []u8, name: []u8) u64 {
     var h: u64 = 14695981039346656037
     for b in prefix {
@@ -68,8 +73,8 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
     for b in name {
         h = (h ^ (b as u64)) *% 1099511628211
     }
-    if h < 2 {
-        h += 2
+    if h < 8 {
+        h += 8
     }
     return h
 }
@@ -81,9 +86,22 @@ fn nameKey(prefix: []u8, name: []u8) u64 {
 // "class" and "[class]" (for the change of any class).
 fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
     match s.kind {
-        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Hover, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Focus, .FocusWithin, .FocusVisible, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
+        .Universal, .Type, .FirstChild, .LastChild, .OnlyChild, .FirstOfType, .LastOfType, .Root, .Scope, .Never, .NthOfType, .NthLastOfType, .OnlyOfType, .HasAnchor, .Node, .Defined, .Not, .Is, .NthChild, .NthLastChild, .Has, .ScopeLimit => {}
         .Empty => {
             try out.append(CHILDREN_CHANGED.what)
+        }
+        .Hover => {
+            try out.append(HOVER_CHANGED.what)
+        }
+        .Active => {
+            try out.append(ACTIVE_CHANGED.what)
+        }
+        .Focus, .FocusVisible => {
+            try out.append(FOCUS_CHANGED.what)
+        }
+        .FocusWithin => {
+            try out.append(FOCUS_CHANGED.what)
+            try out.append(FOCUS_WITHIN_CHANGED.what)
         }
         .Id => {
             try out.append(nameKey("", "id"))
@@ -110,6 +128,7 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
         // States the attributes of `ALWAYS_DEEP` change (besides what
         // scripts do to controls, which restyles everything).
         .Checked => {
+            try out.append(FORM_STATE_CHANGED.what)
             try out.append(nameKey("", "checked"))
             try out.append(nameKey("", "selected"))
         }
@@ -120,6 +139,7 @@ fn simpleKeys(s: Simple, out: *mut List(u64)) AllocError!bool {
             try out.append(nameKey("", "required"))
         }
         .PlaceholderShown => {
+            try out.append(FORM_STATE_CHANGED.what)
             try out.append(nameKey("", "placeholder"))
             try out.append(nameKey("", "value"))
         }
@@ -191,16 +211,20 @@ pub struct RestyleDeps {
     deep_any: bool
     of_selector: bool
     whole: bool
-    whole_names: List(u64)
+    whole_has: WholeHas
     whole_any: bool
     whole_kind: []u8
     whole_name: []u8
     // A selector looks at the `style` attribute: a change to it is not
     // one that only the element's own declarations see.
     style_attr: bool
+    hover: bool
+    active: bool
+    focus: bool
+    states: List(StateUse)
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_names: List(u64).init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_has: WholeHas.init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false, hover: false, active: false, focus: false, states: List(StateUse).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -208,7 +232,12 @@ pub struct RestyleDeps {
         self.names.deinit()
         self.uses.deinit()
         self.deep.deinit()
-        self.whole_names.deinit()
+        self.deinitUses()
+    }
+
+    fn deinitUses(self: *mut Self) {
+        self.whole_has.deinit()
+        self.states.deinit()
     }
 
     /// Reads the selectors of the author sheet `author` (its `:has()`,
@@ -236,8 +265,14 @@ pub struct RestyleDeps {
             try self.addDeep(q)
         }
         self.style_attr = looksAtStyle(author) || looksAtStyle(ua)
+        self.hover = looksAtKind(author, SelKind.Hover) || looksAtKind(ua, SelKind.Hover)
+        self.active = looksAtKind(author, SelKind.Active) || looksAtKind(ua, SelKind.Active)
+        self.focus = looksAtFocus(author) || looksAtFocus(ua)
+        try addStateUses(&mut self.states, author)
+        try addStateUses(&mut self.states, ua)
         if quirks |q| {
             self.style_attr = self.style_attr || looksAtStyle(q)
+            try addStateUses(&mut self.states, q)
         }
     }
 
@@ -255,6 +290,10 @@ pub struct RestyleDeps {
             return true
         }
         return change.token && self.deep.contains(nameKey("", "[class]"))
+    }
+
+    pub fn reachesSiblings(self: *Self, change: StyleChange) bool {
+        return change.what < 2 || change.token || self.deep_any || (self.deep.get(change.what) orelse true)
     }
 
     fn addDeep(self: *mut Self, sheet: *Sheet) AllocError!void {
@@ -285,8 +324,9 @@ pub struct RestyleDeps {
                     if !(try simpleKeys(s, &mut keys)) {
                         self.deep_any = true
                     }
+                    let sibling = nesting > 0 || siblingAfter(sheet, cx, ci)
                     for key in keys.items() {
-                        try self.deep.put(key, true)
+                        try self.deep.put(key, sibling || (self.deep.get(key) orelse false))
                     }
                 }
                 if s.sub_end <= s.sub_start || s.kind == SelKind.Has {
@@ -314,6 +354,7 @@ pub struct RestyleDeps {
             self.whole = true
             self.whole_any = true
             self.whole_kind = "nesting"
+            self.whole_has.why = "nesting"
             return
         }
         let cx = sheet.complexes.items()[k]

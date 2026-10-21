@@ -68,11 +68,11 @@ url/
 ```
 
 硬門檻：一個非測試檔不准有兩個以上超過 5 行的函數。「它很 cohesive」不是豁免。
-豁免只有五種：一個 struct 與它的方法（方法仍受 300 行限制：太長就把方法按主題拆到同目錄的其他檔，若語言不允許跨檔方法，記成 compiler gap）、一個 enum 與只服務它的 `match` 表、純資料表、只接線的 registry（native 函數表、opcode 表：handler 各自一檔）、產生的檔。
+豁免只有五種：一個 struct 與它的方法（Aye 規定方法必須寫在 struct 本體內，這是語言設計：所以 struct 本體只放欄位與短方法，長的方法改成同目錄裡各自一檔的自由函數，struct 的方法只轉呼叫它）、一個 enum 與只服務它的 `match` 表、純資料表、只接線的 registry（native 函數表、opcode 表：handler 各自一檔）、產生的檔。
 同前綴的檔案家族升級成子模組目錄：`canvas_api.aye canvas_prelude.aye` → `canvas/`。
 派 sub agent 時把這段原文貼進去：不寫死門檻，agent 會用「已經是一件事」躲掉九成的檔。
 
-檔名 = 函數名或型別名的 kebab-case（Aye 編譯器若不接受 `-`，就用 snake_case，並在第一張 T 卡記下結論）。Aye 單元測試 `*_test.aye` 貼著它測的檔。
+檔名 = 函數名或型別名的 kebab-case（`read-authority.aye`，Aye 編譯器已確認接受 `-`）。Aye 單元測試保持 `*_test.aye`（`percent-decode_test.aye`），貼著它測的檔。
 
 ### 6. 先找現成的，才准自己寫
 
@@ -115,4 +115,4 @@ if end == start {
 return self.src[start..end]
 ```
 
-由 `check_taste.py` 擋（之後若 `aye fmt` 支援，改由它處理）。
+`aye fmt` 只保留、不新增空行，由 `check_taste.py` 擋。

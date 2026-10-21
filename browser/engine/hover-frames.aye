@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn hoverFrames(p: *mut Page, x: f64, y: f64) AllocError!void {
+    for k in 0..p.frames.len() {
+        let f = p.frames.items()[k]
+        let r = frameRect(p, k) orelse continue
+
+        if x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h {
+            try hoverAt(f.page, x - r.x, y - r.y + f.scroll)
+        } else {
+            try hoverElement(f.page, null)
+            try hoverFrames(f.page, -1.0, -1.0)
+        }
+    }
+}

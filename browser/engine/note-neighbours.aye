@@ -1,0 +1,29 @@
+import css
+import dom.Kind
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteNeighbours(s: *mut Script, prev: ?NodeId, next: ?NodeId) AllocError!void {
+    if !keysWanted(s) { return }
+
+    let doc = &s.page.doc
+    var p = prev
+
+    while p |h| {
+        if doc.node(h).kind == Kind.Element { break }
+
+        p = doc.prevSibling(h)
+    }
+
+    var n = next
+
+    while n |h| {
+        if doc.node(h).kind == Kind.Element { break }
+
+        n = doc.nextSibling(h)
+    }
+
+    if p |h| { try css.elementFeatures(doc, h, &mut s.restyle_neighbour_keys) }
+
+    if n |h| { try css.elementFeatures(doc, h, &mut s.restyle_neighbour_keys) }
+}

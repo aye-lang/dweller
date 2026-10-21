@@ -1,0 +1,28 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn rebuildChain(doc: *Document, chain: *mut List(NodeId), parent: ?NodeId) AllocError!usize {
+    var fresh = List(NodeId).init(chain.alloc)
+    var up = parent
+
+    while up |h| {
+        try fresh.append(h)
+        up = styleParent(doc, h)
+    }
+
+    let old = chain.items()
+    let now = fresh.items()
+    var shared: usize = 0
+
+    while shared < old.len && shared < now.len && dom.same(old[old.len - 1 - shared], now[now.len - 1 - shared]) {
+        shared += 1
+    }
+
+    chain.deinit()
+    chain.* = fresh
+
+    return shared
+}

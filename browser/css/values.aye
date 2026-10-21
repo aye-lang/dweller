@@ -259,6 +259,9 @@ fn pairLonghands(name: []u8) ?[2]usize {
     if text.eql(name, "inset-block") {
         return [2]usize{INSET_TOP, INSET_TOP + 2}
     }
+    if text.eql(name, "white-space") {
+        return [2]usize{WHITE_SPACE_COLLAPSE, TEXT_WRAP_MODE}
+    }
     if text.eql(name, "border-spacing") {
         return [2]usize{BORDER_SPACING_H, BORDER_SPACING_V}
     }
@@ -357,6 +360,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         step = 4
     } else if text.eql(name, "overflow") {
         first = OVERFLOW_X
+        n = 2
+    } else if text.eql(name, "overscroll-behavior") {
+        first = OVERSCROLL_BEHAVIOR_X
         n = 2
     } else if text.eql(name, "gap") {
         first = ROW_GAP
@@ -462,10 +468,6 @@ struct Declarer {
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
         try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
-
-        if prop == WHITE_SPACE {
-            try self.add(TEXT_WRAP_MODE, wrapOfWhiteSpace(v))
-        }
     }
 
     // A declaration parsed at computed-value time (or a custom property).
@@ -505,7 +507,10 @@ struct Declarer {
             }
         }
         if text.eql(name, "overflow") {
-            return self.overflow(comps)
+            return self.axisPair(OVERFLOW_X, comps)
+        }
+        if text.eql(name, "overscroll-behavior") {
+            return self.axisPair(OVERSCROLL_BEHAVIOR_X, comps)
         }
         if text.eql(name, "font") {
             return self.font(comps)
@@ -530,6 +535,9 @@ struct Declarer {
         }
         if text.eql(name, "text-wrap") {
             return textWrapShorthand(self, comps)
+        }
+        if text.eql(name, "white-space") {
+            return whiteSpaceShorthand(self, comps)
         }
         if text.eql(name, "list-style") {
             return self.listStyle(comps)
@@ -919,8 +927,8 @@ struct Declarer {
         }
     }
 
-    fn overflow(self: *mut Self, comps: []Comp) AllocError!void {
-        let props = [2]usize{OVERFLOW_X, OVERFLOW_Y}
+    fn axisPair(self: *mut Self, x_prop: usize, comps: []Comp) AllocError!void {
+        let props = [2]usize{x_prop, x_prop + 1}
         if try self.wide(comps, props[..]) {
             return
         }
@@ -929,10 +937,10 @@ struct Declarer {
         }
         let first = [1]Comp{comps[0]}
         let last = [1]Comp{comps[comps.len - 1]}
-        if try parseValue(self.sheet, OVERFLOW_X, first[..]) |x| {
-            if try parseValue(self.sheet, OVERFLOW_Y, last[..]) |y| {
-                try self.add(OVERFLOW_X, x)
-                try self.add(OVERFLOW_Y, y)
+        if try parseValue(self.sheet, x_prop, first[..]) |x| {
+            if try parseValue(self.sheet, x_prop + 1, last[..]) |y| {
+                try self.add(x_prop, x)
+                try self.add(x_prop + 1, y)
             }
         }
     }
@@ -1378,8 +1386,11 @@ fn lengthValue(c: Comp, percent: bool, nonneg: bool) ?Value {
     if text.eqlIgnoreCase(u, "rem") {
         return Value.Rem { v: t.num }
     }
-    if text.eqlIgnoreCase(u, "ex") || text.eqlIgnoreCase(u, "ch") {
-        return Value.Em { v: t.num * 0.5 }
+    if text.eqlIgnoreCase(u, "ch") {
+        return Value.Ch { v: t.num }
+    }
+    if text.eqlIgnoreCase(u, "ex") {
+        return Value.Ex { v: t.num }
     }
     let axis = viewportAxis(u)
     if axis == 'w' {

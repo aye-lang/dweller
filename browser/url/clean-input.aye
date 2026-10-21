@@ -1,0 +1,22 @@
+// spec: https://url.spec.whatwg.org/#concept-basic-url-parser
+import std.mem.AllocError
+import std.text
+
+fn cleanInput(out: *mut text.Builder, raw: []u8, trim: bool) AllocError!void {
+    var lo: usize = 0
+    var hi = raw.len
+
+    while trim && lo < hi && raw[lo] <= ' ' {
+        lo += 1
+    }
+
+    while trim && hi > lo && raw[hi - 1] <= ' ' {
+        hi -= 1
+    }
+
+    for c in raw[lo..hi] {
+        if c != '\t' && c != '\n' && c != '\r' {
+            try out.appendByte(c)
+        }
+    }
+}

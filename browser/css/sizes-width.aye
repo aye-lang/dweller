@@ -1,0 +1,33 @@
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// spec: https://html.spec.whatwg.org/multipage/images.html#parse-a-sizes-attribute
+pub fn sizesWidth(alloc: Allocator, sizes: []u8, m: Media) AllocError!f64 {
+    var arena = Arena.init(alloc)
+    defer arena.deinit()
+    var list = List(Token).init(arena.allocator())
+
+    try tokenize(arena.allocator(), sizes, &mut list)
+    setCalcContext(16.0, 16.0, m.width / 100.0, m.height / 100.0, -1.0)
+
+    let toks = list.items()
+    var start: usize = 0
+
+    while start <= toks.len {
+        var end = start
+
+        while end < toks.len && toks[end].kind != Tok.Comma {
+            end = skipComponent(toks, end)
+        }
+
+        if sourceSize(toks[start..end], m) |px| {
+            return px
+        }
+
+        start = end + 1
+    }
+
+    return m.width
+}

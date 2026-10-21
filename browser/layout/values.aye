@@ -65,7 +65,7 @@ pub fn fontOf(style: []Value) font.Font {
     let size = numberOf(style[css.FONT_SIZE], 16.0)
     let weight = numberOf(style[css.FONT_WEIGHT], 400.0)
     let family = keywordOf(style[css.FONT_FAMILY])
-    let generic = font.genericOf(family)
+    let generic = font.genericCached(family)
     return font.Font {
         size: size,
         bold: weight >= 600.0,
@@ -123,18 +123,15 @@ pub struct WhiteSpace {
 }
 
 pub fn whiteSpaceOf(style: []Value) WhiteSpace {
-    let ws = keywordOf(style[css.WHITE_SPACE])
+    let ws = keywordOf(style[css.WHITE_SPACE_COLLAPSE])
     let wrap = !text.eql(keywordOf(style[css.TEXT_WRAP_MODE]), "nowrap")
-    if text.eql(ws, "pre") {
+    if text.eql(ws, "preserve") || text.eql(ws, "break-spaces") {
         return WhiteSpace { collapse: false, newlines: true, wrap: wrap }
     }
-    if text.eql(ws, "nowrap") {
-        return WhiteSpace { collapse: true, newlines: false, wrap: wrap }
+    if text.eql(ws, "preserve-spaces") {
+        return WhiteSpace { collapse: false, newlines: false, wrap: wrap }
     }
-    if text.eql(ws, "pre-wrap") || text.eql(ws, "break-spaces") {
-        return WhiteSpace { collapse: false, newlines: true, wrap: wrap }
-    }
-    if text.eql(ws, "pre-line") {
+    if text.eql(ws, "preserve-breaks") {
         return WhiteSpace { collapse: true, newlines: true, wrap: wrap }
     }
     return WhiteSpace { collapse: true, newlines: false, wrap: wrap }

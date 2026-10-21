@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn appendHex(out: *mut text.Builder, v: u16) AllocError!void {
+    var shift: i64 = 12
+    var started = false
+
+    while shift >= 0 {
+        let d = (v >> shift as u16) & 15
+
+        if d != 0 || started || shift == 0 {
+            try out.appendByte(LOWER_HEX[d as usize])
+            started = true
+        }
+
+        shift -= 4
+    }
+}
+
+let LOWER_HEX = "0123456789abcdef"

@@ -1,13 +1,27 @@
 import css
 
 fn wholeUnseen(s: *Script, g: *Geometry) bool {
+    var children = false
+
     for c in s.restyle.items() {
-        if !g.deps.onlyOwnStyle(c.what) && css.wholeSees(&g.deps, c.what) {
+        if g.deps.onlyOwnStyle(c.what) { continue }
+
+        if c.what.what == css.CHILDREN_CHANGED.what && !c.what.token {
+            children = true
+        } else if css.wholeSees(&g.deps, c.what) {
             noteWholeSelector(s, &g.deps)
 
             return false
         }
     }
 
-    return true
+    if !children { return true }
+
+    let why = css.wholeChildrenWhy(&g.deps, &s.restyle_keys, &s.restyle_neighbour_keys, s.restyle_keys_unknown)
+
+    if why.len == 0 { return true }
+
+    noteWholeChildren(s, why, g.deps.whole_has.name)
+
+    return false
 }

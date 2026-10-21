@@ -1,0 +1,16 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn wkAnswer(it: *mut Interp, a: Args) JsError!Value {
+    let l = try pageLinkOf(it, try it.toNumber(it.arg(a, 0)) as u32)
+
+    if js.isNullish(it.arg(a, 1)) {
+        return answerWorker(l, null, "")
+    }
+
+    return answerWorker(l, try workers.bufferBytes(it, it.arg(a, 1)), "")
+}

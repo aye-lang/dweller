@@ -174,7 +174,6 @@ pub fn collectGarbage(it: *mut Interp) {
     for k in it.jobs_head..it.jobs.len() {
         markValue(it, it.jobs.items()[k])
     }
-    markCoroutines(it)
     markWeakRoots(it)
     // Trace, then mark the values of the weak collections whose keys are
     // marked and let the host keep more alive, until nothing changes.
@@ -247,14 +246,6 @@ fn sweep(it: *mut Interp) {
             .Host { tag, index, generation } => {
                 if it.host |h| {
                     h.finalize(tag, index, generation)
-                }
-            }
-            .Prim { v } => {
-                if ob.class == Class.Generator {
-                    match v {
-                        .Num { n } => coroutineCollected(it, n as u32)
-                        _ => {}
-                    }
                 }
             }
             _ => {}

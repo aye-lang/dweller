@@ -1,0 +1,31 @@
+// spec: https://url.spec.whatwg.org/#host-parsing
+import std.mem.Allocator
+import std.text
+
+fn parseHost(alloc: Allocator, input: []u8, opaque: bool, out: *mut text.Builder) UrlError!void {
+    if text.startsWith(input, "[") {
+        if !text.endsWith(input, "]") {
+            return UrlError.Invalid
+        }
+
+        return parseIpv6(input[1..input.len - 1], out)
+    }
+
+    if opaque {
+        return parseOpaqueHost(input, out)
+    }
+
+    let decoded = try percentDecode(alloc, input)
+    defer alloc.free(decoded)
+
+    var ascii = text.Builder.init(alloc)
+    defer ascii.deinit()
+
+    try domainToAscii(alloc, decoded, &mut ascii)
+
+    if endsInNumber(ascii.bytes()) {
+        return parseIpv4(ascii.bytes(), out)
+    }
+
+    try out.append(ascii.bytes())
+}

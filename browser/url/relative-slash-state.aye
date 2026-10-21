@@ -1,0 +1,15 @@
+// spec: https://url.spec.whatwg.org/#relative-slash-state
+fn relativeSlashState(p: *mut Parser, c: i32) UrlError!bool {
+    if p.special() && (c == '/' || c == '\\') {
+        p.state = State.SpecialAuthorityIgnoreSlashes
+    } else if c == '/' {
+        p.state = State.Authority
+    } else {
+        let b = p.base orelse return UrlError.Invalid
+
+        try copyAuthority(p, b)
+        p.back(State.Path)
+    }
+
+    return false
+}

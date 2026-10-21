@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn holdShared(out: *mut Styles, h: u64, values: []Value, old: ?[]Value) AllocError![]Value {
+    if old |o| {
+        if o.ptr == values.ptr { return o }
+    }
+
+    let s = out.shared.getPtr(h).?
+
+    s.refs += 1
+    try out.release(old)
+
+    return values
+}

@@ -1,0 +1,22 @@
+import dom.NodeId
+import image
+import std.mem.AllocError
+
+fn addWorkerBitmap(b: *mut WorkerBitmaps) AllocError!u32 {
+    let bmp = try b.alloc.create(image.Bitmap { width: 0, height: 0, pixels: []mut u8{} })
+    let c = b.alloc.create(CanvasBitmap { node: NodeId { index: b.next_id, generation: 0 }, bmp: bmp, epoch: 0, tainted: false }) catch |e| {
+        b.alloc.destroy(bmp)
+
+        return e
+    }
+
+    b.canvases.append(c) catch |e| {
+        releaseWorkerBitmap(b.alloc, c)
+
+        return e
+    }
+
+    b.next_id += 1
+
+    return c.node.index
+}

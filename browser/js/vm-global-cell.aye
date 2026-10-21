@@ -1,0 +1,21 @@
+// v8: src/ic/accessor-assembler.cc (LoadGlobalIC_TryPropertyCellCase)
+
+fn vmGlobalCell(it: *mut Interp, id: u32) ?*mut Value {
+    match it.ast.node(id) {
+        .Ident { name, depth, .. } => {
+            if depth != DEPTH_GLOBAL {
+                return null
+            }
+
+            let i = vmGlobalSlot(it, id, name)
+
+            if i != NONE && (it.heap.obj(it.global).props[i].flags & F_ACCESSOR) == 0 {
+                return &mut it.heap.obj(it.global).props[i].value
+            }
+        }
+
+        _ => {}
+    }
+
+    return null
+}

@@ -20,7 +20,8 @@ Rules of the lane:
 | Step | Card | What | Depends on | Status |
 |---|---|---|---|---|
 | T0 | T0 | `check_taste.py` with a baseline ratchet, in CI | – | done |
-| T1 | T1 | pilot: `url/` by the rules, the template for the rest | – | open |
+| T1 | T1 | pilot: `url/` by the rules, the template for the rest | – | done 2026-10-21, awaiting CEO review |
+| T1b | T1b | `Url` public fields `query`/`fragment` become `?[]u8`, callers updated | T1 | open |
 | T2 | T2 | `engine/prelude.aye` JavaScript into `.js` files with `@embedFile` | T1 | open |
 | T3+ | T3… | one module per card, smallest first: `encoding`, `perf`, `image`, `webfont`, `font`, `net`, `html`, `dom`, `svg`, `css`, `layout`, `paint`, `gpu`, `audio`, `wasm`, `agent`, `ui`, `engine`, `js` | T1 | open |
 
@@ -36,6 +37,13 @@ Rules of the lane:
 - files: `browser/url/`
 - verify: `cargo test --release --test browser -- url aye_unit_tests > target/t1.log 2>&1; echo $?` → 0; `aye check browser`; no golden changes
 - time box: 45 min; model: opus
+- status: done 2026-10-21, redone on the WHATWG parser of P10.57 (the first pilot, PR #79, split the old ad-hoc parser that P10.57 replaced). Findings: (1) Aye accepts `-` in file names (`aye check`/`test`/`build` fine), so files are kebab-case (`percent-decode.aye`); unit tests keep the `_test.aye` suffix (`percent-decode_test.aye`). (2) Methods of one struct may not live in several files: the spec (`aye spec structs`) says a struct's methods are all in its body by design, and other files take the struct as a parameter; so the rule-5 split of a long struct is free functions, not methods (no compiler gap to file). (3) `aye fmt` keeps the blank lines it finds, collapses a run of them to one and adds none (not even between top-level functions), so rule 7 has to be checked by `check_taste.py`. P10.57 already wrote the parser one state per file; T1 split the rest: `url.aye` (246 lines, 17 non-link comment lines, 5 long functions, 18 blank-line violations) becomes `url.aye` (struct `Url`), `url-error.aye`, `parse.aye`, `resolve.aye`, `resolve-in.aye`, `is-special-scheme.aye`, `is-alpha.aye`, `lower-byte.aye`, `last-index-of.aye`, `percent-decode.aye`, `escaped-byte-at.aye`, `hex-value.aye` and the tests `parse_test.aye`, `resolve_test.aye`, `percent-decode_test.aye`; `parser.aye` loses `State` (`state.aye`) and `Span` (`span.aye`); the `Url` field meanings and the supported subset are in `browser/url/URL.md`; `url.aye` left the taste baseline (it passes the new-file rules). Before / after: 72 → 88 `.aye` files, 1870 → 1884 lines, 71 → 60 comment lines (17 → 0 that are not `// spec:` links), largest file 246 (`url.aye`) → 123 (`parser.aye`, a struct and its short methods); every file passes the new-file rules. `parseWith` (a one-line forward) is gone; `hexValue` returns `?i64` instead of -1. The public `Url` fields keep their names (`scheme`, not `scheme_lower`; `has_query` + `query`) because callers use them; renaming them is T1b. Behavior: an old/new differential run over 882 parse/resolve cases (WPT `urltestdata.json` plus 4) printed every `Url` field, `isSpecial`, `withoutFragment` and `percentDecode` byte-identically; `aye test browser` passes; no golden changes.
+
+#### T1b: `Url` query and fragment as `?[]u8`
+- goal: rule 1 (`?T` for absence) on the public `Url` fields T1 left alone: `has_query` + `query` become `query: ?[]u8`, `has_fragment` + `fragment` become `fragment: ?[]u8`; every caller in `browser/` updated (`engine/history.aye`, `engine/tab.aye`, `engine/window_api.aye`, `agent/actions.aye` and the rest `rg` finds); `URL.md` drops the sentence on the old names.
+- files: `browser/url/`, the callers
+- verify: `aye test browser`; `cargo test --release --test browser -- url aye_unit_tests dump_fixtures js_conformance > target/t1b.log 2>&1; echo $?` → 0; `aye check browser`; no golden changes
+- depends on: T1; time box: 45 min; model: sonnet
 
 #### T2: the prelude's JavaScript in `.js` files
 - goal: `engine/prelude.aye` and the other `*_prelude.aye` files hold JavaScript in Aye string literals; move each into `.js` files under `browser/engine/js/` (one file per web API area), read with `@embedFile`, joined in the same order. Byte-for-byte the same script at run time.

@@ -1,0 +1,20 @@
+// spec: https://url.spec.whatwg.org/#path-state
+fn pathState(p: *mut Parser, c: i32) UrlError!bool {
+    let slash = c == '/' || (p.special() && c == '\\')
+
+    if !(c == EOF || slash || (p.override == null && (c == '?' || c == '#'))) {
+        try percentEncodeByte(&mut p.buffer, c as u8, EncodeSet.Path)
+
+        return false
+    }
+
+    try endSegment(p, slash)
+
+    if c == '?' {
+        p.startQuery()
+    } else if c == '#' {
+        p.startFragment()
+    }
+
+    return false
+}

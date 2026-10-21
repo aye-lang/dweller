@@ -1,0 +1,33 @@
+import std.math
+import std.text
+
+fn sourceSizeValue(toks: []Token) ?f64 {
+    let t = toks[0]
+
+    if isMathFunction(t) {
+        let value = calcValue(toks) orelse return null
+
+        return match value {
+            .Px { v } => math.max(v, 0.0),
+            _ => null,
+        }
+    }
+
+    if toks.len > 1 || t.num < 0.0 {
+        return null
+    }
+
+    if t.kind == Tok.Dimension {
+        return unitPx(math.abs(t.num), t.text)
+    }
+
+    if t.kind == Tok.Number && t.num == 0.0 {
+        return 0.0
+    }
+
+    if t.kind == Tok.Ident && text.eqlIgnoreCase(t.text, "auto") {
+        return -1.0
+    }
+
+    return null
+}

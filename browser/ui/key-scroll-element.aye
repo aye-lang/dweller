@@ -1,0 +1,45 @@
+import engine
+import std.mem.AllocError
+
+// blink: core/input/keyboard_event_manager.cc (DefaultArrowEventHandler)
+fn keyScrollElement(ui: *mut Ui, sym: i32, shift: bool) AllocError!bool {
+    let p = ui.tab.page orelse return false
+    let el = ui.scroll_el orelse return false
+
+    if ui.scroll_page != p.id {
+        return false
+    }
+
+    let view = try engine.clientHeightOf(p, el)
+    var dx = 0.0
+    var dy = 0.0
+
+    if sym == SDLK_DOWN {
+        dy = LINE_STEP
+    } else if sym == SDLK_UP {
+        dy = -LINE_STEP
+    } else if sym == SDLK_RIGHT {
+        dx = LINE_STEP
+    } else if sym == SDLK_LEFT {
+        dx = -LINE_STEP
+    } else if sym == SDLK_PAGEDOWN || (sym == SDLK_SPACE && !shift) {
+        dy = view - LINE_STEP
+    } else if sym == SDLK_PAGEUP || (sym == SDLK_SPACE && shift) {
+        dy = LINE_STEP - view
+    } else if sym == SDLK_HOME {
+        dy = -1.0e9
+    } else if sym == SDLK_END {
+        dy = 1.0e9
+    } else {
+        return false
+    }
+
+    if !(try engine.scrollElementBy(p, el, dx, dy)) {
+        return false
+    }
+
+    try ui.buildList(p.tree.?)
+    ui.repaint = true
+
+    return true
+}

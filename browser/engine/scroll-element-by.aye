@@ -1,0 +1,45 @@
+import dom.NodeId
+import css
+import layout
+import std.list.List
+import std.math
+import std.mem.AllocError
+
+pub fn scrollElementBy(p: *mut Page, el: NodeId, dx: f64, dy: f64) AllocError!bool {
+    let t = p.tree orelse return false
+    var boxes = List(usize).init(p.alloc)
+    defer boxes.deinit()
+
+    try scrollerBoxes(t, &mut boxes)
+
+    let i = boxOfNode(t, boxes.items(), el) orelse return false
+
+    if !canScrollBy(t, i, dx, dy) {
+        return false
+    }
+
+    let max = maxScroll(t, i)
+    var o = layout.BoxScroll { generation: el.generation, x: 0.0, y: 0.0 }
+
+    if layout.scrollOffsetOf(t, i) |c| {
+        o = c
+    }
+
+    if userScrolls(t.bx(i).style[css.OVERFLOW_X]) {
+        o.x = math.clamp(o.x + dx, 0.0, max.x)
+    }
+
+    if userScrolls(t.bx(i).style[css.OVERFLOW_Y]) {
+        o.y = math.clamp(o.y + dy, 0.0, max.y)
+    }
+
+    try p.box_scrolls.put(el.index, o)
+
+    if p.script |s| {
+        s.geometry_changes += 1
+    }
+
+    _ = try dispatchEvent(p, el, "scroll", "")
+
+    return true
+}

@@ -1,0 +1,32 @@
+import js.Interp
+import net
+import std.mem
+import std.text
+import url.Url
+
+fn workerModuleResponse(it: *mut Interp, target: *Url) net.FetchError!net.Response {
+    if text.eql(target.scheme, "file") || text.eql(target.scheme, "data") {
+        return net.fetchLocal(it.alloc, target)
+    }
+
+    let l = scopeOf(it).link
+    let got = askPage(it, target.href, FETCH) catch return net.FetchError.Network
+    defer l.release(got)
+
+    if got.buffers.len() == 0 {
+        return net.FetchError.Network
+    }
+
+    var mime: []u8 = got.json
+
+    if mime.len == 0 {
+        mime = "text/javascript"
+    }
+
+    let body = got.buffers.items()[0]
+    let out = it.alloc.alloc(0 as u8, body.len) catch return net.FetchError.OutOfMemory
+
+    mem.copy(out, body)
+
+    return net.respond(it.alloc, mime, out) catch return net.FetchError.OutOfMemory
+}

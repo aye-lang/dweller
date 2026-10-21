@@ -4,8 +4,8 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/, fonts/, css/support/, tools/ and docs/ (upstream
-      `wpt serve` needs the last two).
+      resources/, common/, fonts/, images/, css/support/, tools/ and
+      docs/ (upstream `wpt serve` needs the last two).
   wpt.py serve [--port N] [--wpt-root DIR] [--upstream]
       A static server on 127.0.0.1 for the checkout (see Server below), or
       with --upstream the checkout's own `wpt serve` (wpt_upstream.py).
@@ -22,6 +22,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -41,7 +42,7 @@ VENDOR_JS = HERE / "wpt" / "testdriver-vendor.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "css/support", "css/reference", "tools", "docs"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/reference", "tools", "docs"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
@@ -52,6 +53,7 @@ SKIP_NAME = re.compile(
 SKIP_SUB = re.compile(r"\.sub\.(html|js)$")
 HTML_EXT = (".html", ".htm", ".xhtml", ".xht")
 DEFAULT_GLOBALS = {"window", "dedicatedworker"}
+TEST_FONTS = ["Ahem.ttf"]
 
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -402,10 +404,21 @@ def run_area(name, spec, args, dweller, results_dir):
     return out
 
 
+def use_test_fonts(root):
+    """The fonts `wpt run --install-fonts` installs, as system fonts of the runs."""
+    fonts = REPO / "target" / "wpt-test-fonts"
+    fonts.mkdir(parents=True, exist_ok=True)
+    for name in TEST_FONTS:
+        if (Path(root) / "fonts" / name).exists():
+            shutil.copyfile(Path(root) / "fonts" / name, fonts / name)
+    os.environ["DWELLER_FONT_DIRS"] = str(fonts)
+
+
 def cmd_run(args):
     dweller = Path(args.dweller) if args.dweller else REPO / "target" / "dweller"
     if not dweller.exists():
         sys.exit(f"{dweller} not found (browser/build.sh)")
+    use_test_fonts(args.wpt_root)
     areas = load_areas()
     results_dir = Path(args.results_dir)
     for target in args.targets:

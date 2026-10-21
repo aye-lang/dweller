@@ -61,8 +61,8 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
     if dom.isDisabled(doc, el) {
         return Activation.Nothing
     }
-    let moved = focusOn(page, el)
-    doc.controls.focus_visible = dom.isTextField(doc, el)
+    let moved = focusOn(page, el) && page.script == null
+    try setFocusVisible(page, dom.isTextField(doc, el))
     if doc.isElement(el, "a") || doc.isElement(el, "area") {
         let href = text.trim(doc.attr(el, "href") orelse "")
         let target = page.follow(page.alloc, href) catch |e| {
@@ -100,9 +100,9 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
             if dom.isChecked(doc, el) {
                 return changedIf(moved)
             }
-            try dom.setChecked(doc, el, true)
+            try setCheckedNoted(page, el, true)
         } else {
-            try dom.setChecked(doc, el, !dom.isChecked(doc, el))
+            try setCheckedNoted(page, el, !dom.isChecked(doc, el))
         }
         try dispatchEvent(page, el, "input", "")
         try dispatchEvent(page, el, "change", "")
@@ -271,6 +271,8 @@ fn focusOn(page: *mut Page, el: NodeId) bool {
 /// Moves the focus to `el` (null: nowhere). A text field gets the caret
 /// at the end of its value.
 pub fn setFocus(page: *mut Page, el: ?NodeId) {
+    let old = scriptFocus(page)
+    let was_visible = page.doc.controls.focus_visible
     page.doc.controls.focus = el
     page.doc.controls.focus_visible = true
     if el |f| {
@@ -281,6 +283,8 @@ pub fn setFocus(page: *mut Page, el: ?NodeId) {
                 }
             }
         }
+    }
+    noteFocus(page, old, was_visible) catch |e| {
     }
 }
 

@@ -1,0 +1,23 @@
+// spec: https://url.spec.whatwg.org/#no-scheme-state
+import std.text
+
+fn noSchemeState(p: *mut Parser, c: i32) UrlError!bool {
+    let b = p.base orelse return UrlError.Invalid
+
+    if b.opaque && c != '#' {
+        return UrlError.Invalid
+    }
+
+    if b.opaque {
+        try p.setString(&mut p.scheme, b.scheme)
+        try copyPath(p, b)
+        try copyQuery(p, b)
+        p.startFragment()
+    } else if !text.eql(b.scheme, "file") {
+        p.back(State.Relative)
+    } else {
+        p.back(State.File)
+    }
+
+    return false
+}

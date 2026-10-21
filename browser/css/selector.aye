@@ -63,6 +63,7 @@ pub enum SelKind {
     Scope
     Empty
     Hover
+    Active
     Link
     Checked
     Disabled
@@ -978,6 +979,9 @@ fn pseudoClass(name: []u8) ?SelKind {
     if text.eqlIgnoreCase(name, "hover") {
         return SelKind.Hover
     }
+    if text.eqlIgnoreCase(name, "active") {
+        return SelKind.Active
+    }
     if text.eqlIgnoreCase(name, "link") || text.eqlIgnoreCase(name, "any-link") {
         return SelKind.Link
     }
@@ -1031,7 +1035,7 @@ fn pseudoClass(name: []u8) ?SelKind {
     }
     // States the browser does not have yet, and the pseudo-elements of
     // CSS 2 written with one colon.
-    if text.eqlIgnoreCase(name, "visited") || text.eqlIgnoreCase(name, "active") || text.eqlIgnoreCase(name, "target") || isLegacyPseudoElement(name) {
+    if text.eqlIgnoreCase(name, "visited") || text.eqlIgnoreCase(name, "target") || isLegacyPseudoElement(name) {
         return SelKind.Never
     }
     if inWords(name, "target-within user-invalid user-valid indeterminate autofill -webkit-autofill modal popover-open fullscreen picture-in-picture playing paused open closed out-of-range local-link current past future blank -moz-focusring -moz-ui-invalid") {
@@ -1273,48 +1277,7 @@ fn upElement(doc: *Document, el: NodeId) ?NodeId {
 // Does the compound `ci` match `el`, and the compounds before it (back to
 // `first`) match the elements that its combinator leads to?
 fn matchFrom(sheet: *Sheet, doc: *Document, first: usize, ci: usize, el: NodeId) bool {
-    let comp = sheet.compounds.items()[ci]
-    if !matchCompound(sheet, doc, comp, el) {
-        return false
-    }
-    if ci == first {
-        return true
-    }
-    let comb = comp.combinator
-    if comb == '>' {
-        if upElement(doc, el) |p| {
-            return matchFrom(sheet, doc, first, ci - 1, p)
-        }
-        return false
-    }
-    if dom.isSame(shadow_host, el) && (comb == '+' || comb == '~') {
-        // The host has no siblings in its shadow tree.
-        return false
-    }
-    if comb == '+' {
-        if prevElement(doc, el) |p| {
-            return matchFrom(sheet, doc, first, ci - 1, p)
-        }
-        return false
-    }
-    if comb == '~' {
-        var cur = prevElement(doc, el)
-        while cur |p| {
-            if matchFrom(sheet, doc, first, ci - 1, p) {
-                return true
-            }
-            cur = prevElement(doc, p)
-        }
-        return false
-    }
-    var up = upElement(doc, el)
-    while up |p| {
-        if matchFrom(sheet, doc, first, ci - 1, p) {
-            return true
-        }
-        up = upElement(doc, p)
-    }
-    return false
+    return matchSelector(sheet, doc, first, ci, el) == MatchStatus.Matches
 }
 
 fn matchCompound(sheet: *Sheet, doc: *Document, comp: Compound, el: NodeId) bool {
@@ -1405,6 +1368,9 @@ fn matchSimple(sheet: *Sheet, doc: *Document, s: Simple, el: NodeId) bool {
         }
         .Hover => {
             return dom.isHovered(doc, el)
+        }
+        .Active => {
+            return dom.inChain(doc, doc.controls.active, el)
         }
         .Link => {
             return (text.eql(n.name, "a") || text.eql(n.name, "area")) && doc.attr(el, "href") != null

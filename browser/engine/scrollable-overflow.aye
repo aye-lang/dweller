@@ -1,17 +1,18 @@
+import layout
 import std.math
 
 // spec: https://drafts.csswg.org/css-overflow-3/#scrollable
-fn scrollableOverflow(g: *Geometry, i: usize) Area {
-    let b = g.tree.bx(i)
+fn scrollableOverflow(t: *layout.Tree, i: usize) Area {
+    let b = t.bx(i)
     let px = b.ax + b.border[3]
     let py = b.ay + b.border[0]
     let pw = b.w - b.border[1] - b.border[3]
     let ph = b.h - b.border[0] - b.border[2]
     var r = [4]f64{px, py, px + pw, py + ph}
 
-    addOverflow(g, i, &mut r)
+    addOverflow(t, i, &mut r)
 
-    if inflowBounds(g.tree, i) |f| {
+    if inflowBounds(t, i) |f| {
         unite(&mut r, f[0] - b.padding[3], f[1] - b.padding[0], f[2] + b.padding[1], f[3] + b.padding[2])
     }
 

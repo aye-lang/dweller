@@ -1,0 +1,16 @@
+import dom
+import dom.NodeId
+
+fn aboveShadows(doc: *dom.Document, roots: []NodeId) bool {
+    for r in roots {
+        if !dom.same(doc.treeRoot(r), doc.root) { return false }
+
+        for root in doc.shadows.items() {
+            let host = dom.hostOf(doc, root) orelse continue
+
+            if isInclusiveAncestor(doc, host, r) { return false }
+        }
+    }
+
+    return true
+}

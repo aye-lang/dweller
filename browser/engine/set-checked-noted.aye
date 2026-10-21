@@ -1,0 +1,21 @@
+import css
+import dom
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+pub fn setCheckedNoted(p: *mut Page, el: NodeId, on: bool) AllocError!void {
+    var group = List(NodeId).init(p.alloc)
+    defer group.deinit()
+
+    if on && dom.isRadio(&p.doc, el) {
+        try dom.radioGroup(&p.doc, el, &mut group)
+    } else {
+        try group.append(el)
+    }
+
+    let before = css.controlsInput(&p.doc, group.items())
+
+    try dom.setChecked(&mut p.doc, el, on)
+    try noteFormStates(p, group.items(), before)
+}

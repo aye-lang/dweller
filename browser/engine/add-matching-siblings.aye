@@ -1,0 +1,23 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn addMatchingSiblings(doc: *Document, el: NodeId, f: u64, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    var cur = doc.nextSibling(el)
+
+    while cur |c| {
+        if doc.node(c).kind == dom.Kind.Element {
+            if css.hasFeature(doc, c, f) {
+                try addRoot(out, shallow, found, c, f != 0)
+            }
+
+            try addMatchingDescendants(doc, c, f, out, shallow, found)
+        }
+
+        cur = doc.nextSibling(c)
+    }
+}

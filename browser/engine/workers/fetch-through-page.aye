@@ -1,0 +1,20 @@
+import js.Interp
+import js.JsError
+import std.mem
+
+fn fetchThroughPage(it: *mut Interp, href: []u8, kind: u8) JsError![]mut u8 {
+    let l = scopeOf(it).link
+    let got = try askPage(it, href, kind)
+    defer l.release(got)
+
+    if got.buffers.len() == 0 {
+        return failLoad(it)
+    }
+
+    let body = got.buffers.items()[0]
+    let out = try it.alloc.alloc(0 as u8, body.len)
+
+    mem.copy(out, body)
+
+    return out
+}

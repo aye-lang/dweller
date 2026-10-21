@@ -1,0 +1,17 @@
+// spec: https://url.spec.whatwg.org/#query-state
+fn queryState(p: *mut Parser, c: i32) UrlError!bool {
+    if c != EOF && (p.override != null || c != '#') {
+        try p.buffer.appendByte(c as u8)
+
+        return false
+    }
+
+    try encodeQuery(p)
+    p.buffer.clear()
+
+    if c == '#' {
+        p.startFragment()
+    }
+
+    return false
+}

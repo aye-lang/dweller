@@ -1,0 +1,37 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv4-parser
+import std.text
+
+fn parseIpv4(input: []u8, out: *mut text.Builder) UrlError!void {
+    var s = input
+
+    if s.len > 0 && s[s.len - 1] == '.' {
+        s = s[..s.len - 1]
+    }
+
+    var parts = text.split(s, ".")
+    var count: usize = 0
+    var address: i64 = 0
+    var last: i64 = 0
+
+    while parts.next() |part| {
+        let n = parseIpv4Number(part) orelse return UrlError.Invalid
+
+        if count >= 4 || last > 255 {
+            return UrlError.Invalid
+        }
+
+        address = address * 256 + last
+        last = n
+        count += 1
+    }
+
+    if last >= limitFor(count) {
+        return UrlError.Invalid
+    }
+
+    return appendIpv4(out, (address << (8 * (5 - count) as i64)) + last)
+}
+
+fn limitFor(count: usize) i64 {
+    return (1 as i64) << (8 * (5 - count) as i64)
+}

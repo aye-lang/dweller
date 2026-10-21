@@ -1,0 +1,33 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+import encoding.Encoding
+
+fn newParser(alloc: Allocator, input: []u8, base: ?*Url, query_encoding: Encoding) Parser {
+    return Parser {
+        alloc: alloc,
+        input: input,
+        pointer: 0,
+        state: State.SchemeStart,
+        base: base,
+        override: null,
+        buffer: text.Builder.init(alloc),
+        at_sign_seen: false,
+        inside_brackets: false,
+        password_token_seen: false,
+        scheme: text.Builder.init(alloc),
+        username: text.Builder.init(alloc),
+        password: text.Builder.init(alloc),
+        has_host: false,
+        host: text.Builder.init(alloc),
+        port: -1,
+        path_bytes: text.Builder.init(alloc),
+        segments: List(Span).init(alloc),
+        opaque: false,
+        has_query: false,
+        query: text.Builder.init(alloc),
+        has_fragment: false,
+        fragment: text.Builder.init(alloc),
+        query_encoding: query_encoding,
+    }
+}

@@ -4,14 +4,8 @@ import std.mem.Allocator
 import std.text
 
 // spec: https://drafts.csswg.org/css-values-4/#combining-values
-pub fn interpolateText(alloc: Allocator, name: []u8, from: []u8, to: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
     let prop = css.propertyIndex(name) orelse return false
-    var na = text.Builder.init(alloc)
-    defer na.deinit()
-    var nb = text.Builder.init(alloc)
-    defer nb.deinit()
-    let a = try transformIdentity(name, from, to, &mut na)
-    let b = try transformIdentity(name, to, from, &mut nb)
 
     var sheet = try css.Sheet.init(alloc)
     defer sheet.deinit()
@@ -30,5 +24,9 @@ pub fn interpolateText(alloc: Allocator, name: []u8, from: []u8, to: []u8, p: f6
         }
     }
 
-    return mixNumbers(a, b, p, isInteger(name), nonneg, out)
+    if prop == css.BACKGROUND_IMAGE || prop == css.MASK_IMAGE {
+        return false
+    }
+
+    return mixText(prop, a, b, p, isInteger(name), nonneg, out)
 }

@@ -1,0 +1,41 @@
+// spec: https://url.spec.whatwg.org/#scheme-state
+import std.text
+
+fn schemeState(p: *mut Parser, c: i32) UrlError!bool {
+    if isSchemeByte(c) {
+        try p.buffer.appendByte(lowerByte(c as u8))
+
+        return false
+    }
+
+    if c != ':' {
+        if p.override != null {
+            return UrlError.Invalid
+        }
+
+        p.buffer.clear()
+        p.state = State.NoScheme
+        p.pointer = -1
+
+        return false
+    }
+
+    if p.override != null && !schemeChangeAllowed(p) {
+        return true
+    }
+
+    try p.setString(&mut p.scheme, p.buffer.bytes())
+
+    if p.override != null {
+        if p.port == defaultPort(p.scheme.bytes()) {
+            p.port = -1
+        }
+
+        return true
+    }
+
+    p.buffer.clear()
+    enterAfterScheme(p)
+
+    return false
+}

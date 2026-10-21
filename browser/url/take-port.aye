@@ -1,0 +1,18 @@
+fn takePort(p: *mut Parser) UrlError!void {
+    var port: i64 = 0
+
+    for d in p.buffer.bytes() {
+        port = port * 10 + (d - '0') as i64
+
+        if port > 65535 {
+            return UrlError.Invalid
+        }
+    }
+
+    if port == defaultPort(p.scheme.bytes()) {
+        port = -1
+    }
+
+    p.port = port
+    p.buffer.clear()
+}

@@ -1,0 +1,16 @@
+import dom.Document
+import dom.NodeId
+
+fn ancestorsStatus(sheet: *Sheet, doc: *Document, first: usize, ci: usize, el: NodeId) MatchStatus {
+    var up = upElement(doc, el)
+
+    while up |p| {
+        let status = matchSelector(sheet, doc, first, ci - 1, p)
+
+        if status == MatchStatus.Matches || status == MatchStatus.FailsCompletely { return status }
+
+        up = upElement(doc, p)
+    }
+
+    return MatchStatus.FailsCompletely
+}

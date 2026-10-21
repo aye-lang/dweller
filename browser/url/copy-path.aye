@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+fn copyPath(p: *mut Parser, from: *Url) AllocError!void {
+    p.segments.clear()
+    p.opaque = from.opaque
+
+    if from.opaque || from.path.len == 0 {
+        return p.setString(&mut p.path_bytes, from.path)
+    }
+
+    var parts = text.split(from.path[1..], "/")
+
+    while parts.next() |seg| {
+        try p.appendSegment(seg)
+    }
+}

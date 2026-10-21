@@ -1,0 +1,18 @@
+// spec: https://url.spec.whatwg.org/#concept-basic-url-parser
+import std.mem.Allocator
+import std.text
+import encoding.Encoding
+
+fn basicParse(alloc: Allocator, base: ?*Url, raw: []u8, query_encoding: Encoding) UrlError!Url {
+    var clean = text.Builder.init(alloc)
+    defer clean.deinit()
+
+    try cleanInput(&mut clean, raw, true)
+
+    var p = newParser(alloc, clean.bytes(), base, query_encoding)
+    defer freeParser(&mut p)
+
+    try runParser(&mut p)
+
+    return serializeUrl(alloc, &p)
+}

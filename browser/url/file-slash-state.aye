@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#file-slash-state
+import std.text
+
+fn fileSlashState(p: *mut Parser, c: i32) UrlError!bool {
+    if c == '/' || c == '\\' {
+        p.state = State.FileHost
+
+        return false
+    }
+
+    if p.base |b| {
+        if text.eql(b.scheme, "file") {
+            try p.setString(&mut p.host, b.host)
+
+            if !startsWithDriveLetter(p.fromPointer()) && isNormalizedDriveLetter(firstSegment(b.path)) {
+                try p.appendSegment(firstSegment(b.path))
+            }
+        }
+    }
+
+    p.back(State.Path)
+
+    return false
+}

@@ -2,7 +2,7 @@
 
 import perf
 
-fn vmRunScript(it: *mut Interp, root: u32) JsError!bool {
+fn vmRunScript(it: *mut Interp, root: u32) JsError!void {
     if !it.vm_checked {
         vmInit(it)
     }
@@ -27,11 +27,9 @@ fn vmRunScript(it: *mut Interp, root: u32) JsError!bool {
                 it.completion = v
             }
 
-            return true
+            return
         }
 
-        vmNoteScript(st, vf.reason)
+        _ = try it.throwError(it.syntax_error_proto, vf.reason)
     }
-
-    return false
 }

@@ -13,15 +13,7 @@ import std.mem.AllocError
 import std.text
 
 fn sheetSourceKey(doc: *Document) u64 {
-    var key = sheetMix(1469598103934665603, doc.sheets.generation)
-    key = treeSourceKey(doc, doc.root, key)
-    for root in doc.shadows.items() {
-        if doc.isLive(root) && doc.isConnected(root) {
-            key = sheetMix(key, 4)
-            key = sheetMix(key, root.index as u64)
-            key = treeSourceKey(doc, root, key)
-        }
-    }
+    var key = sheetMix(treesSourceKey(doc), doc.sheets.generation)
     for ad in doc.adopted.items() {
         if !doc.isConnected(ad.root) {
             continue

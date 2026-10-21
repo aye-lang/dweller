@@ -203,6 +203,7 @@ interpreter work of "Next steps".
 
 ## P4.63: bytecode VM core (straight-line functions)
 
+(History: the tree walker and `DWELLER_JS_VM` were removed in P4.78e.)
 `DWELLER_JS_VM=1` compiles a function on its first call (`compiler.aye`)
 and runs it in the dispatch loop (`vm.aye`) when it is straight-line
 code: literals, parameters and uncaptured locals in registers, every
@@ -239,8 +240,9 @@ generator or async, 112 Member, 109 Cond, 103 class constructor, ...).
 
 ## P4.75: the VM on by default
 
-`DWELLER_JS_VM` defaults to 1 (`DWELLER_JS_VM=0` runs the tree
-walker). jsbench, fast build, median of 3 against
+`DWELLER_JS_VM` defaulted to 1 (`DWELLER_JS_VM=0` ran the tree
+walker; since P4.78e the VM is the only execution path and the
+variable is gone). jsbench, fast build, median of 3 against
 `browser/tests/jsbench/baseline.json` (f888c35, same machine type):
 geomean 2.45× faster than the baseline (navier-stokes 6.12×, loop
 4.19×, globals 4.14×, richards 3.72×, crypto 3.59×; dom 1.10×, array

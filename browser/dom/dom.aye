@@ -139,6 +139,8 @@ pub struct Document {
     // Counts changes to `href` attributes (the key of `base_cache`).
     href_version: u64
     base_cache: *mut BaseCache
+    sheet_version: u64
+    sheet_key_cache: *mut SheetKeyCache
     // The state of form controls and the focus (controls.aye).
     controls: Controls
     // Quirks mode (no doctype, or a legacy one): set by the HTML parser.
@@ -177,6 +179,11 @@ pub struct Document {
             alloc.destroy(strings)
             return e
         }
+        let sheet_key_cache = alloc.create(SheetKeyCache { version: 0, shadows: 0, key: 0, valid: false }) catch |e| {
+            alloc.destroy(cache)
+            alloc.destroy(strings)
+            return e
+        }
         return Document {
             alloc: alloc,
             nodes: nodes,
@@ -185,6 +192,8 @@ pub struct Document {
             tree_version: 0,
             href_version: 0,
             base_cache: cache,
+            sheet_version: 0,
+            sheet_key_cache: sheet_key_cache,
             controls: Controls.init(alloc),
             quirks: false,
             templates: List(NodeId).init(alloc),
@@ -202,6 +211,7 @@ pub struct Document {
     pub fn deinit(self: *mut Self) {
         self.forgetBase()
         self.alloc.destroy(self.base_cache)
+        self.alloc.destroy(self.sheet_key_cache)
         self.templates.deinit()
         self.sheets.deinit()
         self.shadows.deinit()
@@ -400,6 +410,7 @@ pub struct Document {
                 self.record(Mutation { kind: 0, added: false, target: p, node: child, prev: c.prev, next: c.next, name: "", old: null })
             }
             self.tree_version += 1
+            noteSheetChange(self, child)
             let parent = self.node(p)
             if c.prev |prev| {
                 self.node(prev).next = c.next
@@ -433,6 +444,7 @@ pub struct Document {
             p.first_child = child
         }
         p.last_child = child
+        noteSheetChange(self, child)
         if self.recording {
             self.recordAdded(parent, child)
         }
@@ -455,6 +467,7 @@ pub struct Document {
                 self.node(parent).first_child = child
             }
             bn.prev = child
+            noteSheetChange(self, child)
             if self.recording {
                 self.recordAdded(parent, child)
             }
@@ -484,6 +497,7 @@ pub struct Document {
                     self.record(Mutation { kind: 2, added: false, target: last, node: null, prev: null, next: null, name: "", old: n.data })
                 }
                 n.data = joined
+                noteSheetChange(self, last)
                 return
             }
         }
@@ -496,6 +510,9 @@ pub struct Document {
         let n = self.node(el)
         if text.eql(name, "href") {
             self.href_version += 1
+        }
+        if isSheetElement(self, el) {
+            self.sheet_version += 1
         }
         for i, at in n.attrs {
             if text.eql(at.name, name) {
@@ -525,6 +542,9 @@ pub struct Document {
         if text.eql(name, "href") {
             self.href_version += 1
         }
+        if isSheetElement(self, el) {
+            self.sheet_version += 1
+        }
         var k: usize = 0
         for i in 0..n.attrs.len {
             let at = n.attrs[i]
@@ -544,7 +564,7 @@ pub struct Document {
         if self.recording {
             self.record(Mutation { kind: 2, added: false, target: h, node: null, prev: null, next: null, name: "", old: self.node(h).data })
         }
-        self.node(h).data = copy
+        setNodeData(self, h, copy)
     }
 
     // ---- recording changes for scripts

@@ -1,0 +1,14 @@
+import std.list.List
+import std.mem.AllocError
+
+fn addStateUses(uses: *mut List(StateUse), sheet: *Sheet) AllocError!void {
+    for r in sheet.rules.items() {
+        for k in r.sel_start..r.sel_end {
+            try addComplexStates(uses, sheet, k, false, 0)
+        }
+    }
+
+    for sc in sheet.scoped.items() {
+        try addStateUses(uses, sc.sheet)
+    }
+}

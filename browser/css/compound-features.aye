@@ -1,0 +1,32 @@
+import std.list.List
+import std.mem.AllocError
+
+fn compoundFeatures(sheet: *Sheet, ci: usize, out: *mut List(u64)) AllocError!bool {
+    let comp = sheet.compounds.items()[ci]
+    var best: u64 = 0
+    var best_rank: u8 = 0
+
+    for si in comp.start..comp.end {
+        let s = sheet.simples.items()[si]
+        let rank = subjectRank(s.kind)
+
+        if rank > best_rank {
+            best = simpleFeature(s)
+            best_rank = rank
+        }
+    }
+
+    if best_rank > 0 {
+        try out.append(best)
+
+        return true
+    }
+
+    for si in comp.start..comp.end {
+        let s = sheet.simples.items()[si]
+
+        if s.kind == SelKind.Is && s.sub_end > s.sub_start && (try isFeatures(sheet, s, out)) { return true }
+    }
+
+    return false
+}

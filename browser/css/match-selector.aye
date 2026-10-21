@@ -1,0 +1,28 @@
+import dom
+import dom.Document
+import dom.NodeId
+
+// blink: core/css/selector_checker.cc (SelectorChecker::MatchForRelation)
+fn matchSelector(sheet: *Sheet, doc: *Document, first: usize, ci: usize, el: NodeId) MatchStatus {
+    let comp = sheet.compounds.items()[ci]
+
+    if !matchCompound(sheet, doc, comp, el) { return MatchStatus.FailsLocally }
+
+    if ci == first { return MatchStatus.Matches }
+
+    let comb = comp.combinator
+
+    if comb == '>' { return parentStatus(sheet, doc, first, ci, el) }
+
+    if dom.isSame(shadow_host, el) && (comb == '+' || comb == '~') { return MatchStatus.FailsAllSiblings }
+
+    if comb == '+' {
+        let p = prevElement(doc, el) orelse return MatchStatus.FailsAllSiblings
+
+        return matchSelector(sheet, doc, first, ci - 1, p)
+    }
+
+    if comb == '~' { return siblingsStatus(sheet, doc, first, ci, el) }
+
+    return ancestorsStatus(sheet, doc, first, ci, el)
+}

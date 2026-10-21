@@ -1,0 +1,20 @@
+// v8: src/parsing/parser.cc (DesugarBindingInForEachStatement, Annex B initializer)
+
+fn vmForInInitializer(c: *mut Compiler, left: u32) CompileError!void {
+    match c.ast.node(left) {
+        .VarDecl { kind, list, .. } => {
+            match c.ast.node(c.ast.item(list, 0)) {
+                .Declarator { target, init } => {
+                    if init != 0 {
+                        try c.visit(init)
+                        try vmStoreTarget(c, target, kind)
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        _ => {}
+    }
+}

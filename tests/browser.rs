@@ -99,6 +99,20 @@ impl Drained {
             stderr,
         })
     }
+
+    /// `wait_with_output`, but the child is killed after `limit`: a run
+    /// that hangs fails its test instead of holding it for hours.
+    fn wait_with_output_within(mut self, limit: std::time::Duration) -> std::io::Result<Output> {
+        let start = std::time::Instant::now();
+        while self.try_wait()?.is_none() {
+            if start.elapsed() > limit {
+                let _ = self.kill();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        self.wait_with_output()
+    }
 }
 
 trait SpawnDrained {
@@ -1161,7 +1175,7 @@ fn queries() {
 
 #[test]
 fn errors() {
-    let usage = "error: usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
+    let usage = "error: usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--dpr N] [--font fixed|system] [--id ID | --tag NAME] FILE|URL\n";
     expect(
         &[],
         2,
@@ -1540,6 +1554,72 @@ error b: complete=true naturalWidth=0
         assert_eq!(log, page_log, "GC stress: {stress}");
         let requests = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
         assert_eq!(requests, "GET /fail/once.png\n", "GC stress: {stress}");
+    }
+}
+
+/// `loading=lazy` (`browser/tests/net/lazy_images.html`, 100 lazy
+/// images below an eager one in a 300 px viewport): the window fetches
+/// the eager image and the 15 lazy ones within 1250 px of the viewport at
+/// load, and each other one once scrolling brings it near.
+#[test]
+fn window_lazy_images() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let scroll = format!("loaded{}", " key:pagedown frame frame".repeat(40));
+    for (events, want) in [("loaded", 16), (scroll.as_str(), 101)] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/lazy_images.html", srv.base);
+        let out = run_window(&[
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+        ]);
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        let images: Vec<&str> = log.lines().filter(|l| l.contains(".png")).collect();
+        let once: std::collections::BTreeSet<&&str> = images.iter().collect();
+        assert_eq!((images.len(), once.len()), (want, want), "{events}\n{log}");
+    }
+}
+
+/// A horizontal scroller of 30 lazy 200px images in a 400px window:
+/// the 9 within 1250px of its visible part load, and 9 more once a
+/// script scrolls it 2000px to the right.
+#[test]
+fn window_lazy_images_in_scroller() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = " frame".repeat(20);
+    let scroll = format!("loaded{frames} key:pagedown{frames}");
+    for (events, want) in [("loaded", 9), (scroll.as_str(), 18)] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/lazy_scroller.html", srv.base);
+        let out = run_window(&[
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+        ]);
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        let images: Vec<&str> = log.lines().filter(|l| l.contains(".png")).collect();
+        let once: std::collections::BTreeSet<&&str> = images.iter().collect();
+        assert_eq!((images.len(), once.len()), (want, want), "{events}\n{log}");
     }
 }
 
@@ -4258,21 +4338,15 @@ fn jsbench_smoke() {
     );
 }
 
+/// The scripts and goldens, then the same under `DWELLER_JS_GC=stress`
+/// (the rooting rules of BYTECODE.md section 4). The stress pass leaves
+/// out the allocation and recursion workloads, which collect millions of
+/// times (minutes each).
 #[test]
 fn js_conformance() {
-    js_conformance_with(&[("DWELLER_JS_VM", "0")], &[]);
-}
-
-/// The same scripts and goldens with the bytecode VM on
-/// (`DWELLER_JS_VM=1`, BYTECODE.md section 1), then with the VM under
-/// `DWELLER_JS_GC=stress` too (the rooting rules of its section 4). The
-/// stress pass leaves out the allocation and recursion workloads, which
-/// collect millions of times (minutes each).
-#[test]
-fn js_conformance_vm() {
-    js_conformance_with(&[("DWELLER_JS_VM", "1")], &[]);
+    js_conformance_with(&[], &[]);
     js_conformance_with(
-        &[("DWELLER_JS_VM", "1"), ("DWELLER_JS_GC", "stress")],
+        &[("DWELLER_JS_GC", "stress")],
         &[
             "_gc_",
             "_perf_",
@@ -4302,7 +4376,7 @@ fn js_conformance_with(env: &[(&str, &str)], skip: &[&str]) {
         scripts.len()
     );
     dweller();
-    let bless = env == [("DWELLER_JS_VM", "0")] && std::env::var_os("DWELLER_BLESS").is_some();
+    let bless = env.is_empty() && std::env::var_os("DWELLER_BLESS").is_some();
     let failures: Vec<String> = common::run_queue(&scripts, |js| js_case(js, bless, env))
         .into_iter()
         .flatten()
@@ -5684,6 +5758,45 @@ fn window_css_transition() {
     );
 }
 
+#[test]
+fn window_transition_kept() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..250 {
+        events += " move:120,160 frame move:300,250 frame";
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/hover_transition.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "1100",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let kept: Vec<usize> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\ttransitions_kept\t").nth(1))
+        .map(|r| r.split('\t').nth(1).unwrap().split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(kept.len() >= 100, "{} transition frames", kept.len());
+    assert!(kept.iter().all(|&n| n <= 32), "kept grows: {kept:?}");
+}
+
 /// mistral.ai's squares (P4.57): a rAF loop that changes the `width` of
 /// 6 divs in the flex cells of a grid, on a page with images, lays out
 /// again only the boxes around them: after the first frame no layout of
@@ -5876,6 +5989,48 @@ fn window_wheel() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Wheel, trackpad and keys scroll the scroll container under the
+/// pointer (P10.58, ui/wheel-scroll-element.aye): it scrolls and the page
+/// does not; at its edge the next wheel scrolls the page, unless
+/// `overscroll-behavior: contain`; x deltas scroll it sideways; a
+/// trackpad gesture stays latched to it past its edge, and one that began
+/// on the page stays on the page; keys after a click in it scroll it;
+/// `scroll` and `scrollend` fire at it.
+#[test]
+fn window_scroll_containers() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = root().join("browser/tests/ui/scroller.html");
+    let words = |word: &str, n: usize| vec![word; n].join(" ");
+    let notch = "move:100,100 wheel:-1 frame";
+    let cases = [
+        ("", "move:100,100 wheel:-1".to_string(), 0, "top=40 left=0 y=0 scrolled=true ends=1"),
+        ("", words(notch, 6), 40, "top=200 left=0 y=40 scrolled=true"),
+        ("?contain", words(notch, 6), 0, "top=200 left=0 y=0 scrolled=true"),
+        ("", "move:100,100 wheel:3,0 frame".to_string(), 0, "top=0 left=120 y=0"),
+        ("", "move:100,300 wheel:-1".to_string(), 40, "top=0 left=0 y=40 scrolled=false"),
+        ("", words("move:100,100 wheel:-0.5", 50), 0, "top=200 left=0 y=0 scrolled=true ends=1"),
+        ("", format!("{} {}", words("move:100,300 wheel:-0.5", 3), words("move:100,100 wheel:-0.5", 3)), 30, "top=0 left=0 y=30"),
+        ("", "click:100,100 key:down key:down key:pagedown key:end key:right".to_string(), 0, "top=200 left=40 y=0"),
+    ];
+    let mut failures = Vec::new();
+    for (query, events, scroll, line) in &cases {
+        let target = format!("file://{}{query}", page.display());
+        let out = run_window(&[
+            &target, "--font", "fixed", "--width", "400", "--height", "340", "--frames", "120", "--state", "--text",
+            "--events", events,
+        ]);
+        let got = text(&out.stdout);
+        let want = format!("\nscroll {scroll}\n");
+        if !out.status.success() || !out.stderr.is_empty() || !got.contains(&want) || !got.contains(line) {
+            failures.push(format!("{query} {events}: expected {want:?} and {line:?}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// One run of a DOM fixture: `args` then the page; stdout must be
 /// `golden`, and stderr (console messages, uncaught exceptions) must be
 /// `err_golden`, or empty when there is no such file.
@@ -5898,7 +6053,6 @@ fn jsdom_case(
     let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_LAYOUT_CHECK", "1")
-        .env("DWELLER_JS_VM", "1")
         .args(&all)
         .output()
         .unwrap();
@@ -6014,6 +6168,32 @@ fn jsdom_fixtures_restyle_beside_shadow() {
     assert!(full <= 5, "{full} full cascades:\n{err}");
 }
 
+/// P4.75q: subtrees inserted on a page with `:has()` of any element and
+/// of siblings are styled again in place when no element in them (or
+/// beside them) has what the arguments look at: 3 of the 7 forced
+/// layouts restyle (none before); the others match a full one
+/// (`has_insert.tree`, `DWELLER_LAYOUT_CHECK` in `jsdom_fixtures`).
+#[test]
+fn jsdom_has_insert_restyles_partially() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_LAYOUT_WHY", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/has_insert.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_LAYOUT_WHY\tSTYLE_FULL\t").count();
+    let restyles = err.matches("DWELLER_TIMING\trestyle\t").count();
+    assert!(full <= 4 && restyles >= 3, "{full} full, {restyles} restyles:\n{err}");
+}
+
 /// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
 /// clock, which a task's steps move: a loop that waits for `Date.now()`
 /// ends, after the same work on every run.
@@ -6045,14 +6225,17 @@ fn benchmark_date_follows_virtual_clock() {
 
 /// The DOM fixtures again with a collection at every allocation
 /// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
-/// `gc_wrappers` allocates too much for that.
+/// `gc_wrappers` and `focus_freed` allocate too much for that.
 #[test]
 fn jsdom_gc_stress() {
     let dir = root().join("browser").join("tests").join("jsdom");
+    const HEAVY: [&str; 2] = ["gc_wrappers.html", "focus_freed.html"];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "html") && !p.ends_with("gc_wrappers.html"))
+        .filter(|p| {
+            p.extension().is_some_and(|e| e == "html") && !HEAVY.iter().any(|h| p.ends_with(h))
+        })
         .collect();
     pages.sort();
     // The slowest pages first, so that they do not all run at the end.
@@ -6063,6 +6246,8 @@ fn jsdom_gc_stress() {
         "layout_many_changes.html",
     ];
     pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
+    // A page takes up to about 2 minutes here; one that hangs is killed.
+    let limit = std::time::Duration::from_secs(600);
     dweller();
     let failures: Vec<String> = common::run_queue(&pages, |page| {
         let rel = page
@@ -6073,9 +6258,9 @@ fn jsdom_gc_stress() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
-            .env("DWELLER_JS_VM", "1")
             .args(["dump", "--tree", "--js", &rel])
-            .output()
+            .spawn_drained()
+            .wait_with_output_within(limit)
             .unwrap();
         let want = std::fs::read_to_string(page.with_extension("tree")).unwrap_or_default();
         if !out.status.success() || rooted(&text(&out.stdout)) != want {
@@ -6095,22 +6280,27 @@ fn jsdom_gc_stress() {
     );
     // P9.8: code mode's realm calls into the page's realm and back.
     let run = root().join("browser/tests/agent/sessions/run.jsonl");
+    // A run's 30 s default budget is wall time, which GC stress takes
+    // most of on a slow runner: runs without their own `ms` get 300 s.
+    let input: String = std::fs::read_to_string(&run)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            if l.contains("\"cmd\":\"run\"") && !l.contains("\"ms\":") {
+                format!("{{\"ms\":300000,{}\n", &l[1..])
+            } else {
+                format!("{l}\n")
+            }
+        })
+        .collect();
     let mut child = dweller_command()
         .current_dir(root())
         .env("DWELLER_JS_GC", "stress")
-        .env("DWELLER_JS_VM", "1")
         .arg("agent")
         .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    std::io::Write::write_all(
-        &mut child.stdin.take().unwrap(),
-        &std::fs::read(&run).unwrap(),
-    )
-    .unwrap();
-    let out = child.wait_with_output().unwrap();
+        .spawn_drained();
+    std::io::Write::write_all(&mut child.child.stdin.take().unwrap(), input.as_bytes()).unwrap();
+    let out = child.wait_with_output_within(limit).unwrap();
     assert!(
         out.status.success() && out.stderr.is_empty(),
         "run.jsonl under GC stress: {}\n{}",
@@ -7962,18 +8152,14 @@ fn dump_scrolls_through() {
     let sections = md(&[], "lazy_sections");
     assert!(
         sections.contains("Fourth section, at the bottom.")
-            && sections.contains("scroll events: 3;"),
+            && sections.contains("scroll events: 3; image loaded at"),
         "{sections}"
     );
+    // The native lazy image loads once the scroll brings it near.
     let sections = md(&["--no-scroll"], "lazy_sections");
     assert!(
-        !sections.contains("First section") && sections.contains("scroll events: 0;"),
-        "{sections}"
-    );
-    // The native lazy image is there either way: it loads at once.
-    assert!(
-        sections.contains("![A native lazy image](data:image/png")
-            && sections.contains("image loaded at"),
+        !sections.contains("First section")
+            && sections.contains("scroll events: 0; image loading"),
         "{sections}"
     );
     let list = md(&[], "infinite_list");
@@ -8839,9 +9025,260 @@ fn worker_module() {
     check_worker_page("module", false);
 }
 
+/// The worker pages over the test server (P11.14g): the worker script,
+/// its `importScripts`, module imports and a `blob:` worker load through
+/// the page's network loader.
+#[test]
+fn worker_http() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    for (name, sorted) in [("basic", true), ("module", false), ("transfer", false)] {
+        let page = format!("{}/workers/{name}.html", srv.base);
+        let want =
+            std::fs::read_to_string(root().join(format!("browser/tests/workers/{name}.txt")))
+                .unwrap();
+        let out = run(&["dump", "--text", "--js", &page]);
+        let order = |s: &str| {
+            let mut l: Vec<String> = s.lines().map(str::to_string).collect();
+            if sorted {
+                l.sort();
+            }
+            l
+        };
+        assert!(out.stderr.is_empty(), "{page}: {}", text(&out.stderr));
+        assert_eq!(order(&text(&out.stdout)), order(&want), "{page}");
+    }
+}
+
 /// `transfer` detaches the sender's ArrayBuffer and views on it move
 /// with it; buffers not in the list are copied.
 #[test]
 fn worker_transfer() {
     check_worker_page("transfer", false);
+}
+
+/// P11.14h: a canvas hands its control to a worker
+/// (`transferControlToOffscreen`, transferred through `postMessage`); the
+/// worker clears its WebGL context in requestAnimationFrame and the frame
+/// shows in the placeholder canvas of `dweller screenshot` as `canvas.png`.
+#[test]
+fn worker_canvas() {
+    let out_png = scratch().join("worker_canvas.png");
+    let res = dweller_command()
+        .current_dir(root())
+        .args([
+            "screenshot",
+            "browser/tests/workers/canvas.html",
+            "-o",
+            out_png.to_str().unwrap(),
+            "--font",
+            "fixed",
+            "--width",
+            "120",
+            "--height",
+            "80",
+        ])
+        .env("DWELLER_GL", "swiftshader")
+        .output()
+        .unwrap();
+    assert!(
+        res.status.success() && res.stderr.is_empty(),
+        "{}\n{}",
+        res.status,
+        text(&res.stderr)
+    );
+    if !angle_present() {
+        println!("skipped: no ANGLE (browser/gpu/angle.lock has no hashes yet)");
+        return;
+    }
+    let got = std::fs::read(&out_png).unwrap();
+    let golden = root().join("browser/tests/workers/canvas.png");
+    assert!(
+        got == std::fs::read(&golden).unwrap(),
+        "the image differs from {} (new one: {})",
+        golden.display(),
+        out_png.display()
+    );
+}
+
+/// A pointer moving over 50 cards (P10.51e): `:hover` and `:active`
+/// restyle only the elements entering or leaving the chains, with the
+/// boxes kept; a page without `:hover` rules restyles nothing.
+#[test]
+fn window_focus_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..20 {
+        events += " key:tab frame";
+    }
+    for i in 10..20 {
+        let y = 36 + i * 26;
+        events += &format!(" click:140,{y} frame release:140,{y} frame");
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/focus_local.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+    assert!(full == 0, "{full} full layouts:\n{err}");
+    assert!(restyled.len() >= 20, "restyled {restyled:?}");
+    assert!(
+        restyled.iter().filter(|&&n| n <= 18).count() >= 20,
+        "restyled {restyled:?}"
+    );
+}
+
+/// Checkbox clicks and typing in a required field (P10.51i): the form
+/// states restyle only the controls and the elements whose selectors see
+/// them, with no full restyle or layout after the load.
+#[test]
+fn window_form_states() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for i in 0..10 {
+        let y = 55 + i * 30;
+        events += &format!(" click:5,{y} frame release:5,{y} frame");
+    }
+    events += " click:60,383 frame release:60,383 frame text:ab frame key:backspace frame";
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/form_states.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let layouts = recs.iter().filter(|r| r.0 == "layout").count();
+    assert!(layouts == 1, "{layouts} full layouts:\n{err}");
+    assert!(restyled.len() >= 12, "restyled {restyled:?}");
+    assert!(restyled.iter().all(|&n| n <= 12), "restyled {restyled:?}");
+}
+
+#[test]
+fn window_hover_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for row in 0..5 {
+        for k in 0..10 {
+            events += &format!(" move:{},{} frame", 15 + k * 80, 22 + row * 46);
+        }
+    }
+    events += " click:15,22 frame release:15,22 frame";
+    for page in ["hover_local", "hover_none"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_LAYOUT_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .args([
+                &format!("browser/tests/ui/{page}.html"),
+                "--font",
+                "fixed",
+                "--width",
+                "800",
+                "--height",
+                "600",
+                "--frames",
+                "150",
+                "--events",
+                &events,
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("CHECK"), "{err}");
+        let recs: Vec<(&str, &str)> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| {
+                let f: Vec<&str> = r.split('\t').collect();
+                (f[0], *f.get(2).unwrap_or(&""))
+            })
+            .collect();
+        let restyled: Vec<usize> = recs
+            .iter()
+            .filter(|r| r.0 == "restyled_elements")
+            .map(|r| r.1.parse().unwrap())
+            .collect();
+        let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+        assert!(full <= 1, "{page}: {full} full layouts:\n{err}");
+        if page == "hover_none" {
+            assert!(restyled.is_empty(), "{page}: restyled {restyled:?}");
+            continue;
+        }
+        assert!(restyled.len() >= 30, "{page}: restyled {restyled:?}");
+        assert!(
+            restyled.iter().skip(1).all(|&n| n <= 8),
+            "{page}: restyled {restyled:?}"
+        );
+    }
 }

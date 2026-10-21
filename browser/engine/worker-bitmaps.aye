@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.Allocator
+
+let TAG_WORKER_CANVAS: u32 = 2
+
+struct WorkerBitmaps {
+    alloc: Allocator
+    canvases: List(*mut CanvasBitmap)
+    next_id: u32
+
+    fn drop(self: *mut Self, tag: u32, index: u32) {
+        if tag == TAG_WORKER_CANVAS {
+            dropWorkerBitmap(self, index)
+        }
+    }
+
+    fn free(self: *mut Self) {
+        for c in self.canvases.items() {
+            releaseWorkerBitmap(self.alloc, c)
+        }
+
+        self.canvases.deinit()
+        self.alloc.destroy(self)
+    }
+}

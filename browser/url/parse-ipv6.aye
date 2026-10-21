@@ -1,0 +1,27 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-parser
+import std.text
+
+fn parseIpv6(input: []u8, out: *mut text.Builder) UrlError!void {
+    var r = Ipv6Reader { input: input, pointer: 0, pieces: [8]u16{0, ..}, piece_index: 0, compress: -1 }
+
+    if r.c() == ':' {
+        if r.next() != ':' {
+            return UrlError.Invalid
+        }
+
+        r.pointer += 2
+        r.piece_index += 1
+        r.compress = r.piece_index as i64
+    }
+
+    while r.c() != EOF {
+        if !(try ipv6Piece(&mut r)) {
+            break
+        }
+    }
+
+    try ipv6Compress(&mut r)
+    try out.appendByte('[')
+    try appendIpv6(out, &r.pieces)
+    try out.appendByte(']')
+}

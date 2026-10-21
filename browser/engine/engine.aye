@@ -34,6 +34,7 @@ import net
 import perf
 import std
 import std.list.List
+import std.map.IntMap
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -84,6 +85,7 @@ pub struct Page {
     images: ?*mut ImageCache
     // The documents of its `frame` and `iframe` elements (frames.aye).
     frames: List(Frame)
+    box_scrolls: IntMap(u32, layout.BoxScroll)
     // Live frame-element lookups, invalidated by Document.tree_version.
     frame_elements: FrameElementIndex
     // Unique among the pages of the process (`findPage`).
@@ -152,6 +154,7 @@ pub struct Page {
             f.page.destroy()
         }
         self.frames.deinit()
+        self.box_scrolls.deinit()
         dropFrameLoads(self)
         self.frame_loads.deinit()
         self.frame_elements.nodes.deinit()
@@ -255,6 +258,7 @@ pub struct Page {
     /// changed; ordinary DOM changes reuse the parsed sheets.
     pub fn layoutPage(self: *mut Self, measure: dyn font.Measurer, width: f64, height: f64) AllocError!void {
         presentCanvases(self)
+        useUnitsMeasure(measure)
         if try self.layoutShared(measure, width, height) {
             return
         }
@@ -323,6 +327,7 @@ pub struct Page {
                 lost.deinit()
                 return e
             }
+            self.tree.?.box_scrolls = &mut self.box_scrolls
             // Its boxes name nodes: none is freed until it is dropped
             // (the window hit-tests it while scripts run, until the next
             // layout).
@@ -346,11 +351,7 @@ pub struct Page {
     fn layoutShared(self: *mut Self, measure: dyn font.Measurer, width: f64, height: f64) AllocError!bool {
         let s = self.script orelse return false
         let st = self.styling orelse return false
-        var shared = false
-        if s.geom |g| {
-            shared = g.shared && g.styling == st && g.controls == css.controlInputs(&self.doc)
-        }
-        if !shared || st.media.width != width || st.media.height != height || self.sheet_key != sheetSourceKey(&self.doc) {
+        if !sharesStyles(self) || st.media.width != width || st.media.height != height || self.sheet_key != sheetSourceKey(&self.doc) {
             return false
         }
         self.dropTree()
@@ -387,6 +388,7 @@ pub struct Page {
             }
         }
         self.tree = g.tree
+        g.tree.box_scrolls = &mut self.box_scrolls
         self.tree_borrowed = true
         self.doc.hold_frees = true
         try layoutFrames(self, measure)
@@ -398,6 +400,12 @@ pub struct Page {
     /// (`stylesCurrent`); `layoutPage` lays it out again.
     pub fn restyle(self: *mut Self) AllocError!void {
         self.dropTree()
+        if sharesStyles(self) {
+            let s = self.script.?
+            if s.restyle_all || s.restyle.len() > 0 {
+                return
+            }
+        }
         if self.styling |st| {
             if st.version != domVersion(self) && self.sheet_key != sheetSourceKey(&self.doc) {
                 // A stylesheet source changed: rebuild it at layout.
@@ -724,6 +732,7 @@ fn newPage(alloc: Allocator, located: Url, status: i64, failure: []u8, doc: Docu
         script: null,
         images: null,
         frames: List(Frame).init(alloc),
+        box_scrolls: IntMap(u32, layout.BoxScroll).init(alloc),
         frame_loads: List(FrameLoad).init(alloc),
         frame_elements: FrameElementIndex.init(alloc),
         id: id,

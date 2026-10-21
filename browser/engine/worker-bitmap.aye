@@ -1,0 +1,28 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+
+fn workerBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
+    let o = js.objectOf(v)
+
+    if o != js.NONE {
+        match it.heap.obj(o).data {
+            .Host { tag, index, .. } => {
+                if tag == TAG_WORKER_CANVAS {
+                    if workerBitmapsOf(it) |b| {
+                        if findWorkerBitmap(b, index) |c| {
+                            return c
+                        }
+                    }
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    try it.typeError("Canvas source is not a canvas")
+
+    return JsError.Thrown
+}

@@ -1,0 +1,55 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-parser
+fn ipv6Piece(r: *mut Ipv6Reader) UrlError!bool {
+    if r.piece_index == 8 {
+        return UrlError.Invalid
+    }
+
+    if r.c() == ':' {
+        if r.compress >= 0 {
+            return UrlError.Invalid
+        }
+
+        r.pointer += 1
+        r.piece_index += 1
+        r.compress = r.piece_index as i64
+
+        return true
+    }
+
+    var value: i64 = 0
+    var length: usize = 0
+
+    while length < 4 && r.c() >= 0 {
+        let digit = hexValue(r.c() as u8) orelse break
+
+        value = value * 16 + digit
+        r.pointer += 1
+        length += 1
+    }
+
+    if r.c() == '.' {
+        if length == 0 || r.piece_index > 6 {
+            return UrlError.Invalid
+        }
+
+        r.pointer -= length
+        try ipv6Ipv4(r)
+
+        return false
+    }
+
+    if r.c() == ':' {
+        r.pointer += 1
+
+        if r.c() == EOF {
+            return UrlError.Invalid
+        }
+    } else if r.c() != EOF {
+        return UrlError.Invalid
+    }
+
+    r.pieces[r.piece_index] = value as u16
+    r.piece_index += 1
+
+    return true
+}

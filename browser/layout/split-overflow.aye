@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+
+fn splitOverflow(t: *Tree, pieces: *mut List(Piece), k: usize, e: usize, room: f64) AllocError!bool {
+    var before = 0.0
+
+    for j in k..e {
+        let p = pieces.items()[j]
+
+        if p.kind == PieceKind.Word && before + p.w > room + 0.001 && (emergencyWrap(t.bx(p.box).style) || relaxesKeepAll(t, p)) {
+            return try splitWord(t, pieces, j, room - before)
+        }
+
+        if isContent(p) {
+            before += p.w
+        }
+    }
+
+    return false
+}

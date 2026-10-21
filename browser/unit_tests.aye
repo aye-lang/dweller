@@ -280,6 +280,35 @@ test "elements share equal computed values, and a restyle of one leaves the othe
     @expectEqual("rgb(0, 128, 0);rgb(0, 0, 255);rgb(255, 0, 0);", out.bytes())
 }
 
+test "a hovered element does not share its sibling's values" {
+    let a = @testAllocator()
+    var doc = try html.parse(a, "<p id=a>t</p><p id=b>u</p><p id=c>v</p>")
+    defer doc.deinit()
+    let media = css.Media { width: 800.0, height: 600.0 }
+    var ua = try css.Sheet.init(a)
+    defer ua.deinit()
+    try css.uaSheet(&mut ua, media)
+    var author = try css.Sheet.init(a)
+    defer author.deinit()
+    try css.parseSheet(&mut author, "p:hover { color: red }", media)
+    doc.controls.hover = doc.getElementById("b")
+    var styles = try css.Styles.init(a)
+    defer styles.deinit()
+    try css.computeStyles(&doc, &ua, &author, media, &mut styles)
+    let ids = [3][]u8{"a", "b", "c"}
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    try colorsOf(&doc, &styles, ids[..], &mut out)
+    @expectEqual("rgb(0, 0, 0);rgb(255, 0, 0);rgb(0, 0, 0);", out.bytes())
+    @expect(styles.get(doc.getElementById("a").?).?.ptr == styles.get(doc.getElementById("c").?).?.ptr)
+    doc.controls.hover = doc.getElementById("a")
+    var again = try css.Styles.init(a)
+    defer again.deinit()
+    try css.computeStyles(&doc, &ua, &author, media, &mut again)
+    try colorsOf(&doc, &again, ids[..], &mut out)
+    @expectEqual("rgb(255, 0, 0);rgb(0, 0, 0);rgb(0, 0, 0);", out.bytes())
+}
+
 test "adopted sheets and shadow trees" {
     let a = @testAllocator()
     let src = "<x-a><template shadowrootmode=open><style>p { margin-top: 1px }</style><p>in</p><slot></slot></template><p>light</p></x-a>"
@@ -352,7 +381,7 @@ test "css layered values" {
     let src = "p { background: url(../img/a.png) no-repeat right 10px top / 20px, linear-gradient(to right, red, blue 50%) #eee; -webkit-mask-image: url('#m'); border-radius: 4px 50% / 2px; box-shadow: inset 0 1px 2px rgb(0 0 0 / 50%) }"
     try css.parseSheet(&mut sheet, src, css.Media { width: 800.0, height: 600.0 })
     sheet.base = ""
-    @expectEqual("url(\"http://example.test/img/a.png\"), linear-gradient(to right, red, blue 50%)", keywordText(declValue(&sheet, css.BACKGROUND_IMAGE)))
+    @expectEqual("url(\"http://example.test/img/a.png\"), linear-gradient(to right, rgb(255, 0, 0), rgb(0, 0, 255) 50%)", keywordText(declValue(&sheet, css.BACKGROUND_IMAGE)))
     @expectEqual("no-repeat, repeat", keywordText(declValue(&sheet, css.BACKGROUND_REPEAT)))
     @expectEqual("url(\"#m\")", keywordText(declValue(&sheet, css.MASK_IMAGE)))
     @expectEqual("50% 2px", keywordText(declValue(&sheet, css.BORDER_TOP_LEFT_RADIUS + 1)))
@@ -484,6 +513,7 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     // A class a rule names does.
     @expect(try evalText(p, "document.getElementById('p').classList.add('on'); 0", &mut out))
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(255, 0, 0)", out.bytes())
     // So does a change no script made (the agent's), which no version
@@ -491,17 +521,20 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     try markColor(p, el)
     try p.doc.setAttr(el, "class", "x")
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(0, 0, 0)", out.bytes())
     // And the focus.
     try markColor(p, el)
-    p.doc.controls.focus = el
+    engine.setFocus(p, el)
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(0, 0, 255)", out.bytes())
     // And the viewport.
-    p.doc.controls.focus = null
+    engine.setFocus(p, null)
     try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
     try markColor(p, el)
     try p.layoutPage(&mut fixed, 400.0, 600.0)
     try styledColor(p, el, &mut out)
@@ -509,6 +542,33 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     try p.layoutPage(&mut fixed, 800.0, 600.0)
     try styledColor(p, el, &mut out)
     @expectEqual("rgb(0, 0, 0)", out.bytes())
+}
+
+test "a restyle styles the agent's change next to the changes scripts noted" {
+    let a = @testAllocator()
+    engine.setScripting(true)
+    let u = try url.parse(a, "data:text/html,<style>.on, [aria-checked=true] { color: red }</style><p id=p>t</p><p id=q>t</p><div><p id=r>t</p></div>")
+    defer u.deinit(a)
+    let p = try engine.load(a, &u)
+    defer p.destroy()
+    var fixed = font.Fixed.init()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
+    let q = p.doc.getElementById("q").?
+    let r = p.doc.getElementById("r").?
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    try markColor(p, r)
+    @expect(try evalText(p, "document.getElementById('p').classList.add('on'); 0", &mut out))
+    try p.doc.setAttr(q, "aria-checked", "true")
+    try engine.noteAttrChanged(p, q, "aria-checked")
+    try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
+    try styledColor(p, p.doc.getElementById("p").?, &mut out)
+    @expectEqual("rgb(255, 0, 0)", out.bytes())
+    try styledColor(p, q, &mut out)
+    @expectEqual("rgb(255, 0, 0)", out.bytes())
+    try styledColor(p, r, &mut out)
+    @expectEqual("marked", out.bytes())
 }
 
 test "style inputs see a class only where a selector can" {

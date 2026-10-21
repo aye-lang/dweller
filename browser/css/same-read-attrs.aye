@@ -1,0 +1,27 @@
+import dom.Document
+import dom.NodeId
+import std.text
+
+fn sameReadAttrs(sheet: *Sheet, doc: *Document, a: NodeId, b: NodeId) bool {
+    var read: usize = 0
+    var other_read: usize = 0
+
+    for at in doc.node(a).attrs {
+        if readsAttr(sheet, at.name) {
+            read += 1
+            let other = doc.attr(b, at.name) orelse return false
+
+            if !text.eql(other, at.value) { return false }
+        }
+    }
+
+    for at in doc.node(b).attrs {
+        if readsAttr(sheet, at.name) { other_read += 1 }
+    }
+
+    return read == other_read
+}
+
+fn readsAttr(sheet: *Sheet, name: []u8) bool {
+    return sheet.index.sibling.attr_names.contains(name) || isOneOf(name, "class style id part slot exportparts")
+}

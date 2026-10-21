@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn offerRule(c: *mut Computer, sheet: *Sheet, ri: usize, level: u8, spec: u32) AllocError!void {
+    let r = sheet.rules.items()[ri]
+    let decls = sheet.decls.items()
+
+    c.out.matched.add((matchedSheet(c, sheet) << 32) | (level as u64), ((ri as u64) << 32) | (spec as u64))
+
+    for k in r.decl_start..r.decl_end {
+        let d = decls[k]
+
+        try c.offer(d, declLevel(level, d.important), ruleOrder(sheet, r, d.important, spec))
+    }
+}

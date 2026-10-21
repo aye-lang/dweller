@@ -1,0 +1,21 @@
+import css
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/selectors-4/#the-active-pseudo
+pub fn pressAt(p: *mut Page, x: f64, y: f64, down: bool) AllocError!void {
+    let s = p.script orelse return
+    let t = p.tree orelse return
+    let old = p.doc.controls.active
+    var el = pointedElement(&p.doc, t, x, y)
+
+    if !down {
+        el = null
+    }
+
+    if old == null && el == null {
+        return
+    }
+
+    p.doc.controls.active = el
+    try notePointerState(s, old, el, css.ACTIVE_CHANGED)
+}

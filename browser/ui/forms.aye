@@ -105,7 +105,7 @@ fn clickPage(ui: *mut Ui, x: f64, y: f64) AllocError!void {
     if act is .Nothing {
         // A click outside the focused element takes the focus away.
         if before |b| {
-            if !inside(&p.doc, node, b) {
+            if !inside(&p.doc, node, b) && dom.isSame(p.doc.controls.focus, b) {
                 return blur(ui)
             }
         }
@@ -176,7 +176,7 @@ fn blur(ui: *mut Ui) AllocError!void {
     if ui.tab.page |p| {
         if p.doc.controls.focus != null {
             engine.setFocus(p, null)
-            try restyled(ui)
+            try ui.relayout()
         }
     }
 }
@@ -306,14 +306,14 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
     if sym == SDLK_TAB && !cmd {
         let next = try engine.nextFocus(p, !shift)
         try engine.keyFocus(p, next)
-        try restyled(ui)
+        try ui.relayout()
         if next |el| {
             showElement(ui, el)
         }
         return true
     }
     let f = p.doc.controls.focus orelse return false
-    p.doc.controls.focus_visible = true
+    try engine.setFocusVisible(p, true)
     let range = p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "range")
     if !cmd && (sym == SDLK_UP || sym == SDLK_DOWN || (range && (sym == SDLK_LEFT || sym == SDLK_RIGHT))) {
         if try dom.stepValue(&mut p.doc, f, sym == SDLK_UP || sym == SDLK_RIGHT) {
@@ -360,6 +360,7 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
 // the clipboard, Enter.
 fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, shift: bool) AllocError!bool {
     let doc = &mut p.doc
+    let before = engine.fieldInput(p, f)
     if cmd {
         if sym == 'a' {
             try dom.selectAll(doc, f)
@@ -421,6 +422,7 @@ fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, sh
         // Other keys type text (SDL_TEXTINPUT), and do not scroll.
         return true
     }
+    try engine.noteFieldEdit(p, f, before)
     try afterEdit(ui)
     return true
 }
@@ -436,7 +438,9 @@ fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     if !try engine.dispatchEvent(p, f, "beforeinput", s) {
         return true
     }
+    let before = engine.fieldInput(p, f)
     try dom.insertText(&mut p.doc, f, s)
+    try engine.noteFieldEdit(p, f, before)
     try engine.dispatchEvent(p, f, "input", s)
     try afterEdit(ui)
     return true

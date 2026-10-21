@@ -1,0 +1,23 @@
+import dom.NodeId
+
+fn ruleSpec(c: *mut Computer, sheet: *Sheet, ri: usize, el: NodeId, how: u8) ?u32 {
+    let r = sheet.rules.items()[ri]
+    var matched = false
+    var spec: u32 = 0
+
+    for k in r.sel_start..r.sel_end {
+        let cx = sheet.complexes.items()[k]
+
+        if how == MATCH_ELEMENT && !c.ancestorsMayMatch(sheet, k) { continue }
+
+        if (!matched || cx.spec > spec) && c.ruleMatches(sheet, cx, el, how) {
+            matched = true
+
+            if cx.spec > spec { spec = cx.spec }
+        }
+    }
+
+    if !matched || (r.cond != 0 && !c.containerOk(sheet, r.cond, el, false)) { return null }
+
+    return spec
+}

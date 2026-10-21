@@ -15,12 +15,17 @@ fn runWorker(l: *mut Link) {
 
     it.host = &mut scope
     it.local_loads_only = true
+    it.module_loader = workerModuleResponse
     it.markStackBase(WORKER_ROOM)
 
     setUpWorker(&mut it, l) catch |e| {
         reportError(&mut it, l)
     }
     serveWorker(&mut it, &mut scope)
+    if scope.bitmaps |b| {
+        b.free()
+        scope.bitmaps = null
+    }
 
     it.deinit()
     gpa.deinit()

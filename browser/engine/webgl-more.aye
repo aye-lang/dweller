@@ -1,0 +1,87 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.math
+
+fn akWebglMore(it: *mut Interp, a: Args) JsError!Value {
+    let ctx = try webglOf(it, it.arg(a, 0))
+    let op = try argU32(it, a, 1)
+    let gl = ctx.gl()
+    var words = @zeroed([1024]u32)
+    let out = @ptrCast([*]u8, &mut words[0])
+    var n: u32 = 1
+    let before = gl.glGetError() as u32
+
+    if before != 0 {
+        ctx.raise(before)
+    }
+
+    if op == 0 {
+        gl.glCopyTexImage2D(try argU32(it, a, 2), try argI32(it, a, 3), try argU32(it, a, 4), try argI32(it, a, 5), try argI32(it, a, 6), try argI32(it, a, 7), try argI32(it, a, 8), 0)
+        framebufferDrawn(it, ctx)
+    } else if op == 1 {
+        n = try argU32(it, a, 5)
+        let kind = try argU32(it, a, 4)
+
+        if kind == 0 {
+            gl.glGetUniformfv(try argU32(it, a, 2), try argI32(it, a, 3), out)
+        } else if kind == 1 {
+            gl.glGetUniformiv(try argU32(it, a, 2), try argI32(it, a, 3), out)
+        } else {
+            gl.glGetUniformuiv(try argU32(it, a, 2), try argI32(it, a, 3), out)
+        }
+    } else if op == 2 {
+        gl.glGetFramebufferAttachmentParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), @ptrCast(*mut i32, &mut words[0]))
+    } else if op == 3 {
+        n = math.minOf(u32, try argU32(it, a, 5), 1024)
+        gl.glGetActiveUniformBlockiv(try argU32(it, a, 2), try argU32(it, a, 3), try argU32(it, a, 4), out)
+    } else if op == 4 {
+        let index = try argU32(it, a, 3)
+
+        gl.glGetActiveUniformsiv(try argU32(it, a, 2), 1, &index, try argU32(it, a, 4), out)
+    } else if op == 6 {
+        gl.glGetRenderbufferParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut i32, &mut words[0]))
+    } else if op == 7 {
+        gl.glGetSamplerParameteriv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut i32, &mut words[0]))
+    } else if op == 8 {
+        gl.glGetSamplerParameterfv(try argU32(it, a, 2), try argU32(it, a, 3), @ptrCast(*mut f32, &mut words[0]))
+    } else if op == 9 {
+        let name = try cName(it, it.arg(a, 3))
+        defer it.alloc.free(name)
+
+        words[0] = gl.glGetFragDataLocation(try argU32(it, a, 2), name.ptr) as u32
+    } else if op == 10 {
+        var length: i32 = 0
+
+        gl.glGetActiveUniformBlockName(try argU32(it, a, 2), try argU32(it, a, 3), 4096, &mut length, out)
+        n = (length as u32 + 3) / 4
+    } else {
+        let name = try cName(it, it.arg(a, 3))
+        defer it.alloc.free(name)
+        let ptr = name.ptr
+
+        gl.glGetUniformIndices(try argU32(it, a, 2), 1, &ptr, &mut words[0])
+    }
+
+    let e = gl.glGetError() as u32
+
+    if e != 0 {
+        ctx.raise(e)
+
+        return Value.Null
+    }
+
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    for i in 0..n {
+        try it.heap.pushElem(arr, js.numVal(words[i] as f64))
+    }
+
+    it.pop()
+
+    return js.objVal(arr)
+}

@@ -1,0 +1,50 @@
+// spec: https://url.spec.whatwg.org/#concept-url-serializer
+import std.mem.AllocError
+import std.text
+
+fn appendAuthority(out: *mut text.Builder, p: *Parser, at: *mut UrlSpans) AllocError!void {
+    at.user_lo = out.len()
+    at.user_hi = at.user_lo
+    at.pass_lo = at.user_lo
+    at.pass_hi = at.user_lo
+    at.host_lo = at.user_lo
+    at.host_hi = at.user_lo
+    at.port_lo = at.user_lo
+    at.port_hi = at.user_lo
+
+    if !p.has_host {
+        return
+    }
+
+    try out.append("//")
+
+    if p.hasCredentials() {
+        at.user_lo = out.len()
+        try out.append(p.username.bytes())
+        at.user_hi = out.len()
+        at.pass_lo = at.user_hi
+        at.pass_hi = at.user_hi
+
+        if p.password.len() > 0 {
+            try out.appendByte(':')
+            at.pass_lo = out.len()
+            try out.append(p.password.bytes())
+            at.pass_hi = out.len()
+        }
+
+        try out.appendByte('@')
+    }
+
+    at.host_lo = out.len()
+    try out.append(p.host.bytes())
+    at.host_hi = out.len()
+    at.port_lo = at.host_hi
+    at.port_hi = at.host_hi
+
+    if p.port >= 0 {
+        try out.appendByte(':')
+        at.port_lo = out.len()
+        try out.appendInt(p.port)
+        at.port_hi = out.len()
+    }
+}

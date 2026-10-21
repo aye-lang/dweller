@@ -25,6 +25,7 @@
 // navigation they asked for happens.
 
 import agent
+import css
 import dom
 import dom.NodeId
 import engine
@@ -454,6 +455,13 @@ pub struct Ui {
     // The SDL timestamp of the last fractional (precise) wheel delta.
     precise_seen: bool
     precise_at: u32
+    wheel_precise: bool = false
+    wheel_active: bool = false
+    wheel_at: u32 = 0
+    wheel_page: u32 = 0
+    wheel_el: ?NodeId = null
+    scroll_el: ?NodeId = null
+    scroll_page: u32 = 0
     // Scripted events not fed yet (script.aye): they wait for agents.
     rest: text.Builder
     // perf.start() of the navigation whose first paint is not drawn yet
@@ -788,6 +796,7 @@ pub struct Ui {
         self.px_w = pw
         self.px_h = ph
         self.scale = pw as f64 / w as f64
+        css.setDevicePixelRatio(self.scale)
         self.frame_ns = displayPeriodNs(self.window)
         self.canvas.deinit()
         self.canvas = try paint.Canvas.init(self.alloc, pw as usize, ph as usize)
@@ -1432,6 +1441,7 @@ pub struct Ui {
                 try self.pointerEvent("contextmenu", 2, x, y, 0.0, 0.0)
             }
             if be.button == SDL_BUTTON_LEFT {
+                try self.press(x, y, true)
                 perf.noteAction("click")
                 try self.click(x, y)
             }
@@ -1450,6 +1460,7 @@ pub struct Ui {
                 try self.pointerEvent("dblclick", 0, be.x as f64, be.y as f64, 0.0, 0.0)
             }
             if be.button == SDL_BUTTON_LEFT {
+                try self.press(be.x as f64, be.y as f64, false)
                 try releaseRange(self)
             }
             if history_on && be.button == SDL_BUTTON_X1 {
@@ -1478,6 +1489,7 @@ pub struct Ui {
         if isFractional(dx) || isFractional(dy) {
             self.precise_seen = true
             self.precise_at = wh.timestamp
+            self.wheel_precise = true
         }
         let recent = self.precise_seen && wh.timestamp >= self.precise_at && wh.timestamp - self.precise_at < PRECISE_HOLD_MS
         let step = wheelStep(dx, dy, recent)
@@ -1499,11 +1511,12 @@ pub struct Ui {
         let dx = self.wheel_x
         let dy = self.wheel_y
         if dx == 0.0 && dy == 0.0 {
+            endWheelGesture(self, false)
             return
         }
         self.wheel_x = 0.0
         self.wheel_y = 0.0
-        if try self.wheelScripts(dx, dy) {
+        if try self.wheelScripts(dx, dy) && !(try wheelScrollElement(self, dx, dy)) {
             if dx != 0.0 {
                 self.scrollSideways(dx)
             }
@@ -1597,6 +1610,9 @@ pub struct Ui {
                 self.focus = Focus.Page
                 self.dirty = true
             }
+            return
+        }
+        if self.focus == Focus.Page && try keyScrollElement(self, sym, shift) {
             return
         }
         if self.focus == Focus.Page {
@@ -1745,6 +1761,12 @@ pub struct Ui {
     }
 
     // Clears the status line and sets the arrow (or I-beam) cursor.
+    fn press(self: *mut Self, x: f64, y: f64, down: bool) AllocError!void {
+        let p = self.tab.page orelse return
+
+        try engine.pressAt(p, x + self.tab.scroll_x, y - self.top() + self.tab.scroll, down)
+    }
+
     fn clearHover(self: *mut Self, ibeam: bool) AllocError!void {
         if self.hover.len() > 0 {
             self.hover.clear()
@@ -1828,6 +1850,7 @@ pub struct Ui {
         if !(try self.clickScripts(px, y)) {
             return self.afterScripts()
         }
+        try noteClickScroller(self, px, y)
         try clickPage(self, px, y)
         try self.afterScripts()
     }

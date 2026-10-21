@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<title>focus freed</title>
+<pre id="out"></pre>
+<script>
+// A focused element that a script removes and drops can be freed while
+// the focus still names it; the next focus change must not read it.
+function log(...parts) { document.getElementById('out').textContent += parts.join(' ') + '\n'; }
+const keep = document.createElement('input');
+document.body.appendChild(keep);
+(function () {
+  const f = document.createElement('input');
+  document.body.appendChild(f);
+  f.focus();
+  f.remove();
+})();
+let junk = [];
+for (let i = 0; i < 300000; i++) junk.push({ i: i, s: 'x' + i });
+junk = null;
+for (let i = 0; i < 300000; i++) ({ i: i });
+keep.focus();
+log('focused:', document.activeElement === keep);
+</script>

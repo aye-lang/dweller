@@ -17,21 +17,6 @@ import std.text
 import url
 import net
 
-// `import(arg, options)`: an exception of either expression is thrown at
-// once; everything after rejects the promise.
-fn evalImport(it: *mut Interp, arg: u32, options: u32, referrer: u32) JsError!Value {
-    let base = it.stack.len()
-    defer it.truncate(base)
-    let spec = try it.eval(arg)
-    try it.push(spec)
-    var opts = Value.Undefined
-    if options != 0 {
-        opts = try it.eval(options)
-    }
-    try it.push(opts)
-    return callLoader(it, "dynamicImport", spec, try it.atomValue(referrer), opts, Value.Undefined)
-}
-
 // Calls method `name` of the loader object (lib.aye) with four arguments.
 fn callLoader(it: *mut Interp, name: []u8, a0: Value, a1: Value, a2: Value, a3: Value) JsError!Value {
     let base = it.stack.len()

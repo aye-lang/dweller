@@ -1,0 +1,18 @@
+// spec: https://url.spec.whatwg.org/#authority-state
+fn authorityState(p: *mut Parser, c: i32) UrlError!bool {
+    if c == '@' {
+        try takeUserinfo(p)
+    } else if endsAuthority(p, c) {
+        if p.at_sign_seen && p.buffer.len() == 0 {
+            return UrlError.Invalid
+        }
+
+        p.pointer -= p.buffer.len() as i64 + 1
+        p.buffer.clear()
+        p.state = State.Host
+    } else {
+        try p.buffer.appendByte(c as u8)
+    }
+
+    return false
+}

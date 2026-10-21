@@ -311,6 +311,8 @@ pub struct Script {
     layout_noted: u64 = 0
     // The style sheets `computed` has: their sources (sheetSourceKey).
     computed_sheets: u64
+    sheet_key_held: bool = false
+    sheet_key_now: ?u64 = null
     title_version: u64
     // document.readyState: 0 loading, 1 interactive, 2 complete.
     ready: u8
@@ -341,6 +343,9 @@ pub struct Script {
     // The place in `restyle` of each change by `changeKey`.
     restyle_seen: IntMap(u64, usize)
     restyle_all: bool
+    restyle_keys: IntMap(u64, bool)
+    restyle_neighbour_keys: IntMap(u64, bool)
+    restyle_keys_unknown: bool
     // P4.56: the boxes whose transform or opacity alone changed in the
     // layouts since the window last built its display list
     // (`takePaintChanges`); `paint_whole` when anything else changed
@@ -352,8 +357,6 @@ pub struct Script {
     paint_version: u64 = 0
     animated: List(NodeId)
     fixed: font.Fixed
-    // The scroll offsets scripts gave scroll containers, by node index.
-    scrolls: IntMap(u32, ScrollOffset)
     // The window's scroll offset; `scroll_moved` when a script moved it
     // since a front end took it (`takeScriptScroll`).
     scroll_x: f64
@@ -610,11 +613,13 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         queue: List(NodeId).init(alloc),
         started: IntMap(u32, u32).init(alloc),
         restyle_seen: IntMap(u64, usize).init(alloc),
+        restyle_keys: IntMap(u64, bool).init(alloc),
+        restyle_neighbour_keys: IntMap(u64, bool).init(alloc),
+        restyle_keys_unknown: false,
         restyle_all: false,
         paint_boxes: List(usize).init(alloc),
         animated: List(NodeId).init(alloc),
         fixed: font.Fixed.init(),
-        scrolls: IntMap(u32, ScrollOffset).init(alloc),
         scroll_x: 0.0,
         scroll_y: p.early_scroll,
         scroll_moved: false,
@@ -666,6 +671,7 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(CSS_ANIMATIONS_PRELUDE)
     try s.it.runScript(REFLECTION_TABLE_PRELUDE)
     try s.it.runScript(REFLECTION_PRELUDE)
+    try s.it.runScript(LAZY_IMAGES_PRELUDE)
     try s.it.runScript(PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
@@ -682,9 +688,17 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(WEBGL_PRELUDE)
     try s.it.runScript(WEBGL2_REST_PRELUDE)
     try s.it.runScript(WEBGL2_EXT_PRELUDE)
+    try s.it.runScript(WEBGL_MORE_PRELUDE)
+    try s.it.runScript(WEBGL_COMPRESSED_CHECKS_PRELUDE)
     try s.it.runScript(WEBGL1_PRELUDE)
+    try s.it.runScript(WEBGL_ATTACHMENT_PARAMETER_PRELUDE)
+    try s.it.runScript(WEBGL_VIDEO_SOURCE_PRELUDE)
+    try s.it.runScript(WEBGL_RENDERBUFFER_PARAMETER_PRELUDE)
+    try s.it.runScript(WEBGL_SAMPLER_PARAMETER_PRELUDE)
+    try s.it.runScript(WEBGL_PROGRAM_NAMES_PRELUDE)
     try s.it.runScript(WEBGL_TEX_DOM_3D_PRELUDE)
     try s.it.runScript(CANVAS_PRELUDE)
+    try s.it.runScript(CANVAS_PLACEHOLDER_PRELUDE)
 
     if std.os.getenv("DWELLER_WEBGL_HARNESS") != null {
         try s.it.runScript(WEBGL_HARNESS_PRELUDE)
@@ -740,9 +754,10 @@ pub fn destroyScript(s: *mut Script) {
     dropGeometry(s)
     s.restyle.deinit()
     s.restyle_seen.deinit()
+    s.restyle_keys.deinit()
+    s.restyle_neighbour_keys.deinit()
     s.paint_boxes.deinit()
     s.animated.deinit()
-    s.scrolls.deinit()
     for t in s.timers.items() {
         if t.load != 0 {
             net.releaseLoad(t.load)

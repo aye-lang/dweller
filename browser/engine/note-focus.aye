@@ -1,0 +1,26 @@
+import css
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteFocus(p: *mut Page, old: ?NodeId, old_visible: bool) AllocError!void {
+    let now = scriptFocus(p)
+    var left = old
+
+    if sameHover(old, now) {
+        let f = now orelse return
+
+        if old_visible == p.doc.controls.focus_visible {
+            return
+        }
+
+        left = p.doc.parent(f)
+    }
+
+    let s = p.script orelse {
+        p.doc.controls.pointer_styled += 1
+
+        return
+    }
+
+    try notePointerState(s, left, now, css.FOCUS_CHANGED)
+}

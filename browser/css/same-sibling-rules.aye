@@ -1,0 +1,21 @@
+import dom.NodeId
+import std.mem.AllocError
+
+let MAX_SIBLING_RULES: usize = 32
+
+fn sameSiblingRules(c: *mut Computer, sheet: *Sheet, a: NodeId, b: NodeId) AllocError!bool {
+    if !sheet.index.siblingReady(sheet, MAX_SIBLING_RULES) || !sameReadAttrs(sheet, c.doc, a, b) { return false }
+
+    let rules = try sheet.index.siblingCandidates(sheet, c.doc, a)
+
+    if rules.len > MAX_SIBLING_RULES { return false }
+
+    for ri in rules {
+        let x = ruleSpec(c, sheet, ri, a, MATCH_ELEMENT)
+        let y = ruleSpec(c, sheet, ri, b, MATCH_ELEMENT)
+
+        if (x == null) != (y == null) || (x != null && x.? != y.?) { return false }
+    }
+
+    return true
+}
