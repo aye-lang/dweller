@@ -5975,6 +5975,48 @@ fn window_wheel() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Wheel, trackpad and keys scroll the scroll container under the
+/// pointer (P10.58, ui/wheel-scroll-element.aye): it scrolls and the page
+/// does not; at its edge the next wheel scrolls the page, unless
+/// `overscroll-behavior: contain`; x deltas scroll it sideways; a
+/// trackpad gesture stays latched to it past its edge, and one that began
+/// on the page stays on the page; keys after a click in it scroll it;
+/// `scroll` and `scrollend` fire at it.
+#[test]
+fn window_scroll_containers() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = root().join("browser/tests/ui/scroller.html");
+    let words = |word: &str, n: usize| vec![word; n].join(" ");
+    let notch = "move:100,100 wheel:-1 frame";
+    let cases = [
+        ("", "move:100,100 wheel:-1".to_string(), 0, "top=40 left=0 y=0 scrolled=true ends=1"),
+        ("", words(notch, 6), 40, "top=200 left=0 y=40 scrolled=true"),
+        ("?contain", words(notch, 6), 0, "top=200 left=0 y=0 scrolled=true"),
+        ("", "move:100,100 wheel:3,0 frame".to_string(), 0, "top=0 left=120 y=0"),
+        ("", "move:100,300 wheel:-1".to_string(), 40, "top=0 left=0 y=40 scrolled=false"),
+        ("", words("move:100,100 wheel:-0.5", 50), 0, "top=200 left=0 y=0 scrolled=true ends=1"),
+        ("", format!("{} {}", words("move:100,300 wheel:-0.5", 3), words("move:100,100 wheel:-0.5", 3)), 30, "top=0 left=0 y=30"),
+        ("", "click:100,100 key:down key:down key:pagedown key:end key:right".to_string(), 0, "top=200 left=40 y=0"),
+    ];
+    let mut failures = Vec::new();
+    for (query, events, scroll, line) in &cases {
+        let target = format!("file://{}{query}", page.display());
+        let out = run_window(&[
+            &target, "--font", "fixed", "--width", "400", "--height", "340", "--frames", "120", "--state", "--text",
+            "--events", events,
+        ]);
+        let got = text(&out.stdout);
+        let want = format!("\nscroll {scroll}\n");
+        if !out.status.success() || !out.stderr.is_empty() || !got.contains(&want) || !got.contains(line) {
+            failures.push(format!("{query} {events}: expected {want:?} and {line:?}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// One run of a DOM fixture: `args` then the page; stdout must be
 /// `golden`, and stderr (console messages, uncaught exceptions) must be
 /// `err_golden`, or empty when there is no such file.

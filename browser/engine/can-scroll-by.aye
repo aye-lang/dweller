@@ -1,0 +1,21 @@
+import css
+import layout
+
+fn canScrollBy(t: *layout.Tree, i: usize, dx: f64, dy: f64) bool {
+    let b = t.bx(i)
+    let max = maxScroll(t, i)
+    var o = layout.BoxScroll { generation: 0, x: 0.0, y: 0.0 }
+
+    if layout.scrollOffsetOf(t, i) |c| {
+        o = c
+    }
+
+    let down = (dy > 0.0 && o.y < max.y) || (dy < 0.0 && o.y > 0.0)
+    let right = (dx > 0.0 && o.x < max.x) || (dx < 0.0 && o.x > 0.0)
+
+    return (down && userScrolls(b.style[css.OVERFLOW_Y])) || (right && userScrolls(b.style[css.OVERFLOW_X]))
+}
+
+fn userScrolls(v: css.Value) bool {
+    return layout.isKeyword(v, "auto") || layout.isKeyword(v, "scroll")
+}

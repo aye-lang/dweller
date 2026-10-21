@@ -1,0 +1,30 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+// blink: core/input/scroll_manager.cc (RecomputeScrollChain)
+pub fn wheelScrollTarget(p: *mut Page, x: f64, y: f64, dx: f64, dy: f64) AllocError!?NodeId {
+    let t = p.tree orelse return null
+    var boxes = List(usize).init(p.alloc)
+    defer boxes.deinit()
+
+    try scrollerBoxes(t, &mut boxes)
+
+    if boxes.len() == 0 {
+        return null
+    }
+
+    var cur = nodeAt(t, x, y)
+
+    while cur |n| {
+        if boxOfNode(t, boxes.items(), n) |i| {
+            if canScrollBy(t, i, dx, dy) || chainStops(t.bx(i).style, dx, dy) {
+                return n
+            }
+        }
+
+        cur = p.doc.parent(n)
+    }
+
+    return null
+}

@@ -361,6 +361,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "overflow") {
         first = OVERFLOW_X
         n = 2
+    } else if text.eql(name, "overscroll-behavior") {
+        first = OVERSCROLL_BEHAVIOR_X
+        n = 2
     } else if text.eql(name, "gap") {
         first = ROW_GAP
         n = 2
@@ -504,7 +507,10 @@ struct Declarer {
             }
         }
         if text.eql(name, "overflow") {
-            return self.overflow(comps)
+            return self.axisPair(OVERFLOW_X, comps)
+        }
+        if text.eql(name, "overscroll-behavior") {
+            return self.axisPair(OVERSCROLL_BEHAVIOR_X, comps)
         }
         if text.eql(name, "font") {
             return self.font(comps)
@@ -921,8 +927,8 @@ struct Declarer {
         }
     }
 
-    fn overflow(self: *mut Self, comps: []Comp) AllocError!void {
-        let props = [2]usize{OVERFLOW_X, OVERFLOW_Y}
+    fn axisPair(self: *mut Self, x_prop: usize, comps: []Comp) AllocError!void {
+        let props = [2]usize{x_prop, x_prop + 1}
         if try self.wide(comps, props[..]) {
             return
         }
@@ -931,10 +937,10 @@ struct Declarer {
         }
         let first = [1]Comp{comps[0]}
         let last = [1]Comp{comps[comps.len - 1]}
-        if try parseValue(self.sheet, OVERFLOW_X, first[..]) |x| {
-            if try parseValue(self.sheet, OVERFLOW_Y, last[..]) |y| {
-                try self.add(OVERFLOW_X, x)
-                try self.add(OVERFLOW_Y, y)
+        if try parseValue(self.sheet, x_prop, first[..]) |x| {
+            if try parseValue(self.sheet, x_prop + 1, last[..]) |y| {
+                try self.add(x_prop, x)
+                try self.add(x_prop + 1, y)
             }
         }
     }

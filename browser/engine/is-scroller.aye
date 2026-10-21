@@ -1,0 +1,20 @@
+import css
+import layout
+
+fn isScroller(t: *layout.Tree, i: usize) bool {
+    let b = t.bx(i)
+
+    if b.kind == layout.BoxKind.Inline || b.kind == layout.BoxKind.Text || b.kind == layout.BoxKind.LineBreak {
+        return false
+    }
+
+    if !clipsOverflow(t, i) {
+        return false
+    }
+
+    return scrolls(b.style[css.OVERFLOW_X]) || scrolls(b.style[css.OVERFLOW_Y])
+}
+
+fn scrolls(v: css.Value) bool {
+    return !layout.isKeyword(v, "visible") && !layout.isKeyword(v, "clip")
+}
