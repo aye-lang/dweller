@@ -1,0 +1,15 @@
+import dom.Document
+import dom.Kind
+import dom.NodeId
+import std.map.IntMap
+import std.mem.AllocError
+
+pub fn subtreeFeatures(doc: *Document, top: NodeId, out: *mut IntMap(u64, bool)) AllocError!void {
+    var cur: ?NodeId = top
+
+    while cur |h| {
+        cur = doc.following(h, top)
+
+        if doc.node(h).kind == Kind.Element { try elementFeatures(doc, h, out) }
+    }
+}

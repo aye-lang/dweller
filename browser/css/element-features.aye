@@ -1,0 +1,20 @@
+import dom.Document
+import dom.NodeId
+import std.map.IntMap
+import std.mem.AllocError
+import std.text
+
+pub fn elementFeatures(doc: *Document, el: NodeId, out: *mut IntMap(u64, bool)) AllocError!void {
+    let n = doc.node(el)
+
+    try out.put(nameKey("<", n.name), true)
+
+    for at in n.attrs {
+        try out.put(nameKey("[", at.name), true)
+        try out.put(attrValueKey(at.name, at.value), true)
+
+        if text.eql(at.name, "id") { try out.put(nameKey("#", at.value), true) }
+
+        if text.eql(at.name, "class") { try putClassWords(at.value, out) }
+    }
+}

@@ -1,0 +1,14 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteShared(c: *mut Computer, author: *Sheet, h: NodeId, hints: u64) AllocError!void {
+    if !author.index.siblingReady(author, MAX_SIBLING_RULES) { return }
+
+    let parent = styleParent(c.doc, h) orelse return
+    let parent_values = c.out.map.get(parent.index) orelse return
+    let values = c.out.map.get(h.index) orelse return
+
+    if !mayShare(c.doc, h, parent) { return }
+
+    try c.sharing.note(Recent { el: h, parent: parent, parent_values: parent_values, values: values, hints: hints })
+}

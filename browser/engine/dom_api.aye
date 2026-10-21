@@ -59,6 +59,8 @@ fn changedAt(it: *mut Interp, at: NodeId, attr: []u8) JsError!void {
         var what = css.CHILDREN_CHANGED
         if attr.len > 0 {
             what = css.attrChange(attr)
+        } else {
+            s.restyle_keys_unknown = s.restyle_keys_unknown || s.page.doc.isConnected(at)
         }
         try noteLayoutChange(s, at, what)
     } else {
@@ -74,6 +76,7 @@ fn leaving(it: *mut Interp, child: NodeId) JsError!void {
     if s.active != s.page {
         return
     }
+    try noteRemoval(s, child)
     if s.page.doc.parent(child) |p| {
         try noteLayoutChange(s, p, css.CHILDREN_CHANGED)
     }
@@ -765,15 +768,16 @@ fn nodeSetTextContent(it: *mut Interp, a: Args) JsError!Value {
     let kind = doc.node(h).kind
     if kind == Kind.Text || kind == Kind.Comment {
         try doc.setData(h, b.bytes())
-        try changedAt(it, h, "")
+        try changedChildren(it, h)
         return Value.Undefined
     }
     if kind != Kind.Element && !doc.isFragment(h) {
         return Value.Undefined
     }
+    try noteChildren(scriptOf(it), h)
     removeChildren(doc, h)
     try doc.appendText(h, b.bytes())
-    try changedAt(it, h, "")
+    try changedChildren(it, h)
     return Value.Undefined
 }
 
@@ -807,7 +811,7 @@ fn nodeSetValue(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 0, b)
     }
     try doc.setData(h, b.bytes())
-    try changedAt(it, h, "")
+    try changedChildren(it, h)
     return Value.Undefined
 }
 
@@ -874,8 +878,9 @@ fn nodeAppendChild(it: *mut Interp, a: Args) JsError!Value {
     let child = try argNode(it, a, 0, "appendChild")
     try checkInsert(it, parent, child)
     try leaving(it, child)
+    try noteInsertion(scriptOf(it), parent, null)
     insertNode(docOf(it), parent, child, null)
-    try changedAt(it, parent, "")
+    try changedChildren(it, parent)
     return it.arg(a, 0)
 }
 
@@ -886,6 +891,7 @@ fn nodeInsertBefore(it: *mut Interp, a: Args) JsError!Value {
     let doc = docOf(it)
     try leaving(it, child)
     if js.isNullish(it.arg(a, 1)) {
+        try noteInsertion(scriptOf(it), parent, null)
         insertNode(doc, parent, child, null)
     } else {
         let before = try argNode(it, a, 1, "insertBefore")
@@ -893,10 +899,11 @@ fn nodeInsertBefore(it: *mut Interp, a: Args) JsError!Value {
             return domError(it, "NotFoundError", "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.")
         }
         if !dom.same(before, child) {
+            try noteInsertion(scriptOf(it), parent, before)
             insertNode(doc, parent, child, before)
         }
     }
-    try changedAt(it, parent, "")
+    try changedChildren(it, parent)
     return it.arg(a, 0)
 }
 
@@ -907,8 +914,9 @@ fn nodeRemoveChild(it: *mut Interp, a: Args) JsError!Value {
     if !dom.isSame(doc.parent(child), parent) {
         return domError(it, "NotFoundError", "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.")
     }
+    try noteRemoval(scriptOf(it), child)
     doc.detach(child)
-    try changedAt(it, parent, "")
+    try changedChildren(it, parent)
     return it.arg(a, 0)
 }
 
@@ -923,10 +931,11 @@ fn nodeReplaceChild(it: *mut Interp, a: Args) JsError!Value {
     try checkInsert(it, parent, fresh)
     if !dom.same(fresh, old) {
         try leaving(it, fresh)
+        try noteRemoval(scriptOf(it), old)
         insertNode(doc, parent, fresh, old)
         doc.detach(old)
     }
-    try changedAt(it, parent, "")
+    try changedChildren(it, parent)
     return it.arg(a, 1)
 }
 
@@ -934,8 +943,9 @@ fn nodeRemove(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisNode(it, a)
     let doc = docOf(it)
     if doc.parent(h) |p| {
+        try noteRemoval(scriptOf(it), h)
         doc.detach(h)
-        try changedAt(it, p, "")
+        try changedChildren(it, p)
     }
     return Value.Undefined
 }
@@ -1377,11 +1387,13 @@ fn replaceWithMarkup(it: *mut Interp, h: NodeId, context: []u8, src: []u8) JsErr
     if doc.isElement(h, "template") {
         target = doc.templateContent(h) orelse try doc.createTemplateContent(h)
     }
+    try noteChildren(scriptOf(it), target)
     removeChildren(doc, target)
     for n in nodes.items() {
         doc.appendChild(target, n)
     }
-    try changedAt(it, target, "")
+    try noteChildren(scriptOf(it), target)
+    try changedChildren(it, target)
 }
 
 fn elementOuterHtml(it: *mut Interp, a: Args) JsError!Value {
@@ -1408,11 +1420,13 @@ fn elementSetOuterHtml(it: *mut Interp, a: Args) JsError!Value {
         context = doc.node(parent).name
     }
     try parseFragment(scriptOf(it).active, context, b.bytes(), &mut nodes)
+    try noteRemoval(scriptOf(it), h)
     for n in nodes.items() {
         docOf(it).insertBefore(parent, n, h)
+        try noteSubtree(scriptOf(it), n)
     }
     docOf(it).detach(h)
-    try changedAt(it, parent, "")
+    try changedChildren(it, parent)
     return Value.Undefined
 }
 
@@ -1888,12 +1902,15 @@ fn documentSetTitle(it: *mut Interp, a: Args) JsError!Value {
     } else {
         let head = childNamed(doc, doc.documentElement(), "head") orelse return Value.Undefined
         t = try doc.createElement("title", []Attr{})
+        try noteInsertion(scriptOf(it), head, null)
         doc.appendChild(head, t)
+        try noteSubtree(scriptOf(it), t)
         at = head
     }
+    try noteChildren(scriptOf(it), t)
     removeChildren(doc, t)
     try doc.appendText(t, b.bytes())
-    try changedAt(it, at, "")
+    try changedChildren(it, at)
     return Value.Undefined
 }
 

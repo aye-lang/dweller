@@ -311,6 +311,8 @@ pub struct Script {
     layout_noted: u64 = 0
     // The style sheets `computed` has: their sources (sheetSourceKey).
     computed_sheets: u64
+    sheet_key_held: bool = false
+    sheet_key_now: ?u64 = null
     title_version: u64
     // document.readyState: 0 loading, 1 interactive, 2 complete.
     ready: u8
@@ -341,6 +343,9 @@ pub struct Script {
     // The place in `restyle` of each change by `changeKey`.
     restyle_seen: IntMap(u64, usize)
     restyle_all: bool
+    restyle_keys: IntMap(u64, bool)
+    restyle_neighbour_keys: IntMap(u64, bool)
+    restyle_keys_unknown: bool
     // P4.56: the boxes whose transform or opacity alone changed in the
     // layouts since the window last built its display list
     // (`takePaintChanges`); `paint_whole` when anything else changed
@@ -610,6 +615,9 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         queue: List(NodeId).init(alloc),
         started: IntMap(u32, u32).init(alloc),
         restyle_seen: IntMap(u64, usize).init(alloc),
+        restyle_keys: IntMap(u64, bool).init(alloc),
+        restyle_neighbour_keys: IntMap(u64, bool).init(alloc),
+        restyle_keys_unknown: false,
         restyle_all: false,
         paint_boxes: List(usize).init(alloc),
         animated: List(NodeId).init(alloc),
@@ -748,6 +756,8 @@ pub fn destroyScript(s: *mut Script) {
     dropGeometry(s)
     s.restyle.deinit()
     s.restyle_seen.deinit()
+    s.restyle_keys.deinit()
+    s.restyle_neighbour_keys.deinit()
     s.paint_boxes.deinit()
     s.animated.deinit()
     s.scrolls.deinit()

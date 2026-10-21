@@ -1,0 +1,30 @@
+import dom.NodeId
+import std.map.IntMap
+import std.mem.AllocError
+
+// blink: core/css/style_engine.cc
+fn inheritChain(c: *mut Computer, chain: []NodeId, roots: *IntMap(u32, bool)) AllocError!bool {
+    for h in chain {
+        if roots.contains(h.index) || c.out.map.get(h.index) == null { return false }
+    }
+
+    var i = chain.len
+
+    while i > 0 {
+        i -= 1
+        let h = chain[i]
+        let values = c.out.map.get(h.index).?
+        var parent_centers = false
+
+        if i + 1 == chain.len {
+            c.root_font = numberOr(values[FONT_SIZE], 16.0)
+            useLineHeight(lineHeightPx(values[LINE_HEIGHT], c.root_font), true)
+        } else {
+            parent_centers = c.centered.contains(chain[i + 1].index)
+        }
+
+        if centers(c.doc, h, values, parent_centers) { try c.centered.put(h.index, true) }
+    }
+
+    return true
+}

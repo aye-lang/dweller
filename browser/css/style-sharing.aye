@@ -1,0 +1,34 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+let SHARE_RECENT: usize = 16
+
+struct Recent {
+    el: NodeId
+    parent: NodeId
+    parent_values: []Value
+    values: []Value
+    hints: u64
+}
+
+// blink: core/css/resolver/shared_style_finder.cc (refs/tags/75.0.3770.0)
+struct StyleSharing {
+    recent: List(Recent)
+    next: usize
+    hit: ?[]Value
+    hit_level: ?*mut CustomLevel
+    own_customs: bool
+
+    fn init(alloc: Allocator) StyleSharing {
+        return StyleSharing { recent: List(Recent).init(alloc), next: 0, hit: null, hit_level: null, own_customs: false }
+    }
+
+    fn note(self: *mut Self, r: Recent) AllocError!void {
+        if self.recent.len() < SHARE_RECENT { return try self.recent.append(r) }
+
+        self.recent.items()[self.next] = r
+        self.next = (self.next + 1) % SHARE_RECENT
+    }
+}

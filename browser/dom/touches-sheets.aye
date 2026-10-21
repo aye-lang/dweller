@@ -1,0 +1,24 @@
+// blink: core/css/style_engine.cc
+fn touchesSheets(doc: *Document, node: NodeId) bool {
+    var up: ?NodeId = node
+
+    while up |h| {
+        if isSheetElement(doc, h) { return true }
+
+        up = doc.node(h).parent
+    }
+
+    var cur: ?NodeId = node
+
+    while cur |h| {
+        if isSheetElement(doc, h) || hostsShadow(doc, h) { return true }
+
+        cur = doc.following(h, node)
+    }
+
+    return false
+}
+
+fn hostsShadow(doc: *Document, h: NodeId) bool {
+    return doc.node(h).kind == Kind.Element && doc.node(h).shadow != null
+}

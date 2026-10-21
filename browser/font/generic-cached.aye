@@ -1,0 +1,32 @@
+import std.text
+
+let NO_ENTRY: usize = 97
+
+var generic_names: [8][96]u8 = @zeroed([8][96]u8)
+var generic_lens: [8]usize = [8]usize{NO_ENTRY, NO_ENTRY, NO_ENTRY, NO_ENTRY, NO_ENTRY, NO_ENTRY, NO_ENTRY, NO_ENTRY}
+var generic_kinds: [8]Generic = [8]Generic{Generic.Serif, Generic.Serif, Generic.Serif, Generic.Serif, Generic.Serif, Generic.Serif, Generic.Serif, Generic.Serif}
+var generic_next: usize = 0
+
+// blink: platform/fonts/font_cache.cc
+pub fn genericCached(families: []u8) Generic {
+    if families.len > 96 {
+        return genericOf(families)
+    }
+
+    for i in 0..8 {
+        if generic_lens[i] == families.len && text.eql(generic_names[i][..families.len], families) { return generic_kinds[i] }
+    }
+
+    let kind = genericOf(families)
+    let at = generic_next
+
+    generic_next = (generic_next + 1) % 8
+    generic_lens[at] = families.len
+    generic_kinds[at] = kind
+
+    for i in 0..families.len {
+        generic_names[at][i] = families[i]
+    }
+
+    return kind
+}

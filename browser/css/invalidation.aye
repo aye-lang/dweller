@@ -191,7 +191,7 @@ pub struct RestyleDeps {
     deep_any: bool
     of_selector: bool
     whole: bool
-    whole_names: List(u64)
+    whole_has: WholeHas
     whole_any: bool
     whole_kind: []u8
     whole_name: []u8
@@ -200,7 +200,7 @@ pub struct RestyleDeps {
     style_attr: bool
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_names: List(u64).init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_has: WholeHas.init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -208,7 +208,7 @@ pub struct RestyleDeps {
         self.names.deinit()
         self.uses.deinit()
         self.deep.deinit()
-        self.whole_names.deinit()
+        self.whole_has.deinit()
     }
 
     /// Reads the selectors of the author sheet `author` (its `:has()`,
@@ -314,6 +314,7 @@ pub struct RestyleDeps {
             self.whole = true
             self.whole_any = true
             self.whole_kind = "nesting"
+            self.whole_has.why = "nesting"
             return
         }
         let cx = sheet.complexes.items()[k]

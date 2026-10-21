@@ -118,6 +118,7 @@ pub struct Styles {
     // take the new ones (geometry.aye, P4.56). Beyond `MAX_MOVED`, they
     // count as moved.
     restyled: List(Restyled)
+    matched: MatchedCache
 
     pub fn init(alloc: Allocator) AllocError!Styles {
         let arena = try alloc.create(Arena.init(alloc))
@@ -173,6 +174,7 @@ pub struct Styles {
             class_infos: List(*ClassInfo).init(alloc),
             moved_els: List(NodeId).init(alloc),
             restyled: List(Restyled).init(alloc),
+            matched: MatchedCache.init(alloc),
         }
     }
 
@@ -207,6 +209,7 @@ pub struct Styles {
     pub fn deinit(self: *mut Self) {
         self.moved_els.deinit()
         self.restyled.deinit()
+        self.matched.deinit()
         self.class_infos.deinit()
         self.sizes.deinit()
         self.map.deinit()
@@ -259,7 +262,10 @@ pub struct Styles {
     // values when no element holds it any more. A count that misses a
     // release only keeps an array longer.
     pub fn intern(self: *mut Self, values: []Value, old: ?[]Value) AllocError![]Value {
-        let h = hashValues(values)
+        return self.internWith(values, hashValues(values), old)
+    }
+
+    fn internWith(self: *mut Self, values: []Value, h: u64, old: ?[]Value) AllocError![]Value {
         if self.shared.getPtr(h) |e| {
             if sameBits(e.values, values) {
                 let found: []Value = e.values
@@ -293,7 +299,10 @@ pub struct Styles {
     // them any more, they go to `free`.
     pub fn release(self: *mut Self, old: ?[]Value) AllocError!void {
         let o = old orelse return
-        let h = hashValues(o)
+        return self.releaseWith(o, hashValues(o))
+    }
+
+    fn releaseWith(self: *mut Self, o: []Value, h: u64) AllocError!void {
         let e = self.shared.getPtr(h) orelse return
         let mine: []Value = e.values
         if mine.ptr != o.ptr || e.refs == 0 {
@@ -441,10 +450,12 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
         picked_ua: List(usize).init(out.alloc),
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
+        matched: List(MatchedRule).init(out.alloc),
         reuse: false,
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     var filters = AncestorFilters { map: IntMap(u32, AncestorFilter).init(out.alloc) }
@@ -564,10 +575,12 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         picked_ua: List(usize).init(out.alloc),
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
+        matched: List(MatchedRule).init(out.alloc),
         reuse: false,
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     try c.addScopes(author)
@@ -601,7 +614,8 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
 /// has the styles of the whole document from before the changes under
 /// them: the ancestors of each root first (what it inherits, the root
 /// element's font size), as `computeStylesOf` does, unless the root
-/// before had the same parent. For a document without shadow trees.
+/// before had the same parent or no ancestor is a root (`inheritChain`
+/// reads their values). For a document without shadow trees.
 /// `keep`: the old values stay as they are (a layout still points at
 /// them), else they are written over when no element holds them any
 /// more. Sets `Styles.moved`. Returns how many elements it styled.
@@ -631,10 +645,12 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
         picked_ua: List(usize).init(out.alloc),
         picked_host: List(usize).init(out.alloc),
         picked_own: List(usize).init(out.alloc),
+        matched: List(MatchedRule).init(out.alloc),
         reuse: false,
         track: false,
         filters: null,
         filter: AncestorFilter.empty(),
+        sharing: StyleSharing.init(out.alloc),
     }
     defer c.deinit()
     c.reuse = !keep
@@ -663,6 +679,11 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     var last_parent: ?NodeId = null
     var pending = List(Pending).init(out.alloc)
     defer pending.deinit()
+    var root_set = IntMap(u32, bool).init(out.alloc)
+    defer root_set.deinit()
+    for r in roots {
+        try root_set.put(r.index, true)
+    }
     for ri, r in roots {
         let parent = styleParent(doc, r)
         // The custom properties the root inherited (styling the parent
@@ -680,12 +701,14 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 try chain.append(h)
                 up = styleParent(doc, h)
             }
-            var i = chain.len()
-            while i > 0 {
-                i -= 1
-                try styleElement(&mut c, ua, author, &mut hints, chain.items()[i])
+            if !(try inheritChain(&mut c, chain.items(), &root_set)) {
+                var i = chain.len()
+                while i > 0 {
+                    i -= 1
+                    try styleElement(&mut c, ua, author, &mut hints, chain.items()[i])
+                }
+                styled += chain.len()
             }
-            styled += chain.len()
         }
         if shallow[ri] {
             // Down from the root while what the elements inherit changes.
@@ -712,7 +735,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 _ = out.customs.remove(h.index)
                 let pseudos = takePseudos(out, h)
                 try styleElement(&mut c, ua, author, &mut hints, h)
-                let own_customs = c.custom_wins.len() > 0
+                let own_customs = c.custom_wins.len() > 0 || c.sharing.own_customs
                 try stylePseudos(&mut c, ua, ua_pseudo.items(), h)
                 try notePseudos(out, h, pseudos)
                 styled += 1
@@ -778,11 +801,11 @@ fn styleParent(doc: *Document, el: NodeId) ?NodeId {
 // The cascade for one element whose parent has its style.
 fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.Builder, h: NodeId) AllocError!void {
     let doc = c.doc
-    let out = c.out
     for i in 0..c.wins.len {
         c.wins[i].set = false
     }
     c.clearCustoms()
+    c.out.matched.start()
     c.el = h
     let root = treeOf(doc, h)
     if c.filters |f| {
@@ -795,37 +818,14 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
         }
     }
     setShadowHost(null)
-    try c.consider(ua, h, L_UA, MATCH_ELEMENT)
-    if doc.quirks {
-        try c.consider(&out.quirks, h, L_UA, MATCH_ELEMENT)
-    }
-    if doc.shadows.len() > 0 {
-        try c.considerShadowRules(h)
-    }
     hints.clear()
     try writeHints(doc, h, hints)
-    if hints.len() > 0 {
-        let range = try parseInline(&mut out.inline, hints.bytes())
-        for k in range.start..range.end {
-            try c.offer(out.inline.decls.items()[k], L_AUTHOR, 0)
-        }
-    }
-    if dom.same(root, doc.root) {
-        try c.consider(author, h, L_AUTHOR, MATCH_ELEMENT)
-    } else if c.scopeOf(root) |i| {
-        setShadowHost(dom.hostOf(doc, root))
-        try c.consider(c.scopes.items()[i].sheet, h, L_AUTHOR, MATCH_ELEMENT)
-        try c.considerParts(h, root)
-        setShadowHost(null)
-    }
-    if doc.attr(h, "style") |src| {
-        let range = try parseInline(&mut out.inline, src)
-        for k in range.start..range.end {
-            let d = out.inline.decls.items()[k]
-            try c.offer(d, declLevel(L_STYLE, d.important), 0)
-        }
+    let hints_key = nameKey("", hints.bytes())
+    if !(try shareStyle(c, ua, author, h, hints_key)) {
+        try matchElement(c, ua, author, hints.bytes(), h)
     }
     try c.compute(h)
+    try noteShared(c, author, h, hints_key)
 }
 
 // The indices of the rules of `sheet` with a selector of `::before` or
@@ -869,6 +869,7 @@ struct Computer {
     picked_ua: List(usize)
     picked_host: List(usize)
     picked_own: List(usize)
+    matched: List(MatchedRule)
     // Let an element's values from before go (`restyleSubtrees`: the
     // layout that pointed at them is gone), to be written over when no
     // other element holds them.
@@ -880,11 +881,14 @@ struct Computer {
     // (ancestor_filter.aye), and those of the element being styled.
     filters: ?*mut AncestorFilters
     filter: AncestorFilter
+    sharing: StyleSharing
 
     fn deinit(self: *mut Self) {
         self.picked_ua.deinit()
         self.picked_host.deinit()
         self.picked_own.deinit()
+        self.matched.deinit()
+        self.sharing.recent.deinit()
         self.centered.deinit()
         self.custom_wins.deinit()
         self.custom_index.deinit()
@@ -984,16 +988,7 @@ struct Computer {
     // `level`) that matches `el` (`how`: MATCH_*).
     fn consider(self: *mut Self, sheet: *Sheet, el: NodeId, level: u8, how: u8) AllocError!void {
         if how == MATCH_ELEMENT {
-            let candidates = try sheet.index.candidates(sheet, self.doc, el)
-            var previous: ?usize = null
-            for ri in candidates {
-                if previous == ri {
-                    continue
-                }
-                previous = ri
-                try self.considerRule(sheet, ri, el, level, how)
-            }
-            return
+            return considerCandidates(self, sheet, el, level)
         }
         // `::slotted()` and `::part()` rules describe the slot or the
         // host in their rightmost compound, not `el`: try them all.
@@ -1005,29 +1000,8 @@ struct Computer {
     // Offers the declarations of the rule `ri` of `sheet` (at the level
     // `level`) when it matches `el` (`how`: MATCH_*).
     fn considerRule(self: *mut Self, sheet: *Sheet, ri: usize, el: NodeId, level: u8, how: u8) AllocError!void {
-        let complexes = sheet.complexes.items()
-        let r = sheet.rules.items()[ri]
-        var matched = false
-        var spec: u32 = 0
-        for k in r.sel_start..r.sel_end {
-            let cx = complexes[k]
-            if how == MATCH_ELEMENT && !self.ancestorsMayMatch(sheet, k) {
-                continue
-            }
-            if (!matched || cx.spec > spec) && self.ruleMatches(sheet, cx, el, how) {
-                matched = true
-                if cx.spec > spec {
-                    spec = cx.spec
-                }
-            }
-        }
-        if !matched || (r.cond != 0 && !self.containerOk(sheet, r.cond, el, false)) {
-            return
-        }
-        let decls = sheet.decls.items()
-        for k in r.decl_start..r.decl_end {
-            let d = decls[k]
-            try self.offer(d, declLevel(level, d.important), ruleOrder(sheet, r, d.important, spec))
+        if ruleSpec(self, sheet, ri, el, how) |spec| {
+            try offerRule(self, sheet, ri, level, spec)
         }
     }
 
@@ -1117,10 +1091,15 @@ struct Computer {
             return true
         }
         let keys = sheet.index.ancestors.items()
-        if k >= keys.len || keys[k] == 0 {
+        if k >= keys.len {
             return true
         }
-        return self.filter.mayHave(keys[k])
+        for key in keys[k] {
+            if key != 0 && !self.filter.mayHave(key) {
+                return false
+            }
+        }
+        return true
     }
 
     fn considerPseudo(self: *mut Self, sheet: *Sheet, rules: []usize, el: NodeId, level: u8, pseudo: u8) AllocError!bool {
@@ -1199,10 +1178,14 @@ struct Computer {
     fn pending(self: *mut Self, p: usize, d: Decl) AllocError!Value {
         var toks = d.raw
         if usesContainerUnits(toks) {
+            self.out.matched.ok = false
             self.setContainerContext()
         }
         if hasVar(toks) {
             toks = (try substituteVars(self.out.arena.allocator(), toks, self.level, 0)) orelse return Value.Unset
+            if usesContainerUnits(toks) {
+                self.out.matched.ok = false
+            }
         }
         let sheet = &mut self.out.inline
         let comps = try components(sheet, toks)
@@ -1227,7 +1210,7 @@ struct Computer {
             }
             inherited = self.out.customs.get(p.index)
         }
-        try self.customLevel(inherited)
+        let values = try matchedValues(self, parent, inherited, is_root)
         if self.level |l| {
             try self.out.customs.put(el.index, l)
         }
@@ -1235,7 +1218,6 @@ struct Computer {
         if self.track {
             old = self.out.map.get(el.index)
         }
-        let values = try self.computeValues(parent, is_root)
         try self.alignCenter(el, values)
         var note = false
         var shift = false
@@ -1257,7 +1239,7 @@ struct Computer {
         if self.reuse {
             release = old
         }
-        try self.out.map.put(el.index, try self.out.intern(values, release))
+        try self.out.map.put(el.index, try keptValues(self.out, values, release))
         if note {
             try self.out.restyled.append(Restyled { el: el, old: old.?, shift: shift })
         }
@@ -1366,24 +1348,15 @@ struct Computer {
         if styleParent(self.doc, el) |p| {
             parent_centers = self.centered.contains(p.index)
         }
+        if parent_centers {
+            self.out.matched.ok = false
+        }
         let display = keywordText(values[DISPLAY])
         if parent_centers && (text.eql(display, "block") || text.eql(display, "table")) && text.eql(keywordText(values[FLOAT]), "none") && !text.eql(keywordText(values[POSITION]), "absolute") && !text.eql(keywordText(values[POSITION]), "fixed") && isZeroPx(values[MARGIN_TOP + 1]) && isZeroPx(values[MARGIN_TOP + 3]) {
             values[MARGIN_TOP + 1] = Value.Keyword { k: "auto" }
             values[MARGIN_TOP + 3] = Value.Keyword { k: "auto" }
         }
-        let name = self.doc.node(el).name
-        var centers = false
-        if !text.eql(keywordText(values[TEXT_ALIGN]), "center") {
-            centers = false
-        } else if text.eql(name, "center") {
-            centers = true
-        } else if self.doc.attr(el, "align") |a| {
-            let v = text.trim(a)
-            centers = text.eqlIgnoreCase(v, "center") || text.eqlIgnoreCase(v, "middle")
-        } else {
-            centers = parent_centers
-        }
-        if centers {
+        if centers(self.doc, el, values, parent_centers) {
             try self.centered.put(el.index, true)
         }
     }
@@ -1401,6 +1374,9 @@ struct Computer {
             }
         }
         let inherited = PROPERTIES[p].inherited
+        if !inherited && isInherit(v) {
+            self.out.matched.ok = false
+        }
         return match v {
             .Inherit => parent[p]
             .Initial => PROPERTIES[p].initial

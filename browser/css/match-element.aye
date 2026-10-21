@@ -1,0 +1,44 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn matchElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: []u8, h: NodeId) AllocError!void {
+    let doc = c.doc
+    let out = c.out
+    let root = treeOf(doc, h)
+
+    try c.consider(ua, h, L_UA, MATCH_ELEMENT)
+
+    if doc.quirks { try c.consider(&out.quirks, h, L_UA, MATCH_ELEMENT) }
+
+    if doc.shadows.len() > 0 { try c.considerShadowRules(h) }
+
+    if hints.len > 0 {
+        inlineKey(&mut out.matched, 1, hints)
+        let range = try parseInline(&mut out.inline, hints)
+
+        for k in range.start..range.end {
+            try c.offer(out.inline.decls.items()[k], L_AUTHOR, 0)
+        }
+    }
+
+    if dom.same(root, doc.root) {
+        try c.consider(author, h, L_AUTHOR, MATCH_ELEMENT)
+    } else if c.scopeOf(root) |i| {
+        setShadowHost(dom.hostOf(doc, root))
+        try c.consider(c.scopes.items()[i].sheet, h, L_AUTHOR, MATCH_ELEMENT)
+        try c.considerParts(h, root)
+        setShadowHost(null)
+    }
+
+    if doc.attr(h, "style") |src| {
+        inlineKey(&mut out.matched, 2, src)
+        let range = try parseInline(&mut out.inline, src)
+
+        for k in range.start..range.end {
+            let d = out.inline.decls.items()[k]
+
+            try c.offer(d, declLevel(L_STYLE, d.important), 0)
+        }
+    }
+}

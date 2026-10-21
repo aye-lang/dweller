@@ -1,0 +1,27 @@
+import std.mem.AllocError
+
+fn fillMatched(c: *mut Computer, e: *mut MatchedEntry, h: u64, context: [4]f64, parent: []Value, inherited: ?*mut CustomLevel) AllocError!void {
+    let out = c.out
+    let m = &mut out.matched
+
+    if e.used { try out.releaseWith(e.values, e.values_hash) }
+
+    if e.owned_parent.len == 0 { e.owned_parent = try m.alloc.alloc(Value.Initial, NPROPS) }
+
+    e.used = false
+    e.hash = h
+    e.n = m.n
+
+    for i in 0..e.n {
+        e.words[i] = m.words[i]
+    }
+
+    for i in 0..NPROPS {
+        if PROPERTIES[i].inherited { e.owned_parent[i] = parent[i] }
+    }
+
+    e.context = context
+    e.inherited = inherited
+    e.level = c.level
+    m.filling = e
+}

@@ -283,6 +283,15 @@ fn clearChanges(s: *mut Script) {
         s.restyle_seen.deinit()
         s.restyle_seen = IntMap(u64, usize).init(s.alloc)
     }
+    if s.restyle_keys.len() > 0 {
+        s.restyle_keys.deinit()
+        s.restyle_keys = IntMap(u64, bool).init(s.alloc)
+    }
+    if s.restyle_neighbour_keys.len() > 0 {
+        s.restyle_neighbour_keys.deinit()
+        s.restyle_neighbour_keys = IntMap(u64, bool).init(s.alloc)
+    }
+    s.restyle_keys_unknown = false
 }
 
 /// The state of the element `el` changed (`:defined`).
@@ -330,6 +339,8 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
             return g
         }
     }
+    holdSheetKey(s, true)
+    defer holdSheetKey(s, false)
     try takeSheetChanges(s)
     version = layoutVersion(p)
     let began = perf.start()
@@ -634,7 +645,7 @@ fn layoutStyling(s: *mut Script) AllocError!*mut Styling {
                     if g.sheets_seen == s.style_version {
                         return st
                     }
-                    if p.sheet_key == sheetSourceKey(&p.doc) {
+                    if p.sheet_key == scriptSheetKey(s) {
                         g.sheets_seen = s.style_version
                         return st
                     }
@@ -956,15 +967,19 @@ fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut Lis
 // Builds the boxes of each element of `dirty` again (of the nearest
 // element above it whose box can be, when its own cannot) and lays them out
 // again (layout/incremental.aye), when that is what a full layout gives:
-// not for a tree with floats, near a shadow tree, or container queries but in
-// the page's layout (`settleContainers`), nor
+// not for a tree with floats or in or under a shadow host, nor
 // after so many boxes were built again that the tree is mostly dropped
 // ones. False when it did not; the tree may then be changed in part and
 // must be laid out from scratch.
 fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!bool {
     let doc = &s.page.doc
     let t = g.tree
-    if g.floats || (g.styles.queried && !g.shared) || t.boxes.len() > 2 * g.built + 1024 {
+    if g.floats || t.boxes.len() > 2 * g.built + 1024 {
+        if g.floats {
+            noteFullLayout(s, "relayout:floats")
+        } else {
+            noteFullLayout(s, "relayout:dropped")
+        }
         return false
     }
     // The page's images, made since the tree was laid out (a bitmap that
@@ -984,6 +999,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
         var found: ?usize = null
         while cur |c| {
             if doc.node(c).kind != dom.Kind.Element {
+                noteFullLayout(s, "relayout:not_element")
                 return false
             }
             // Its box when it has one (not several) that can be built
@@ -999,6 +1015,9 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
             }
             cur = doc.parent(c)
         }
+        if found == null {
+            noteFullLayout(s, "relayout:no_box")
+        }
         let b = found orelse return false
         var known = false
         for r in roots.items() {
@@ -1011,7 +1030,8 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
             try root_nodes.append(t.bx(b).node.?)
         }
     }
-    if !clearOfShadows(doc, root_nodes.items()) {
+    if !aboveShadows(doc, root_nodes.items()) {
+        noteFullLayout(s, "relayout:shadows")
         return false
     }
     // Only the outermost: the others are built again with them.
@@ -1037,6 +1057,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     let built = t.boxes.len()
     for r in outer.items() {
         if !(try layout.rebuild(t, r, &mut forgotten)) {
+            noteFullLayout(s, "relayout:rebuild")
             return false
         }
     }
@@ -1065,6 +1086,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
     }
     for r in outer.items() {
         if !(try layout.relayout(t, r)) {
+            noteFullLayout(s, "relayout:relayout")
             return false
         }
     }

@@ -1,0 +1,44 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn shareStyle(c: *mut Computer, ua: *Sheet, author: *Sheet, h: NodeId, hints: u64) AllocError!bool {
+    c.sharing.own_customs = false
+
+    if !author.index.siblingReady(author, MAX_SIBLING_RULES) { return false }
+
+    let doc = c.doc
+    let out = c.out
+    let parent = styleParent(doc, h) orelse return false
+    let parent_values = out.map.get(parent.index) orelse return false
+
+    if !mayShare(doc, h, parent) { return false }
+
+    let n = doc.node(h)
+    let inherited = out.customs.get(parent.index)
+
+    for e in c.sharing.recent.items() {
+        if !dom.same(e.parent, parent) || e.hints != hints || e.parent_values.ptr != parent_values.ptr || dom.same(e.el, h) { continue }
+
+        let values = out.map.get(e.el.index) orelse continue
+        let other = doc.node(e.el)
+
+        if values.ptr != e.values.ptr || other.ns != n.ns || !text.eql(other.name, n.name) { continue }
+
+        if !(try sameSiblingRules(c, ua, h, e.el)) || (doc.quirks && !(try sameSiblingRules(c, &out.quirks, h, e.el))) || !(try sameSiblingRules(c, author, h, e.el)) { continue }
+
+        let level = out.customs.get(e.el.index)
+
+        if level != inherited && level.?.parent != inherited { continue }
+
+        c.sharing.hit = values
+        c.sharing.hit_level = level
+        c.sharing.own_customs = level != inherited
+        out.matched.ok = false
+
+        return true
+    }
+
+    return false
+}

@@ -1273,48 +1273,7 @@ fn upElement(doc: *Document, el: NodeId) ?NodeId {
 // Does the compound `ci` match `el`, and the compounds before it (back to
 // `first`) match the elements that its combinator leads to?
 fn matchFrom(sheet: *Sheet, doc: *Document, first: usize, ci: usize, el: NodeId) bool {
-    let comp = sheet.compounds.items()[ci]
-    if !matchCompound(sheet, doc, comp, el) {
-        return false
-    }
-    if ci == first {
-        return true
-    }
-    let comb = comp.combinator
-    if comb == '>' {
-        if upElement(doc, el) |p| {
-            return matchFrom(sheet, doc, first, ci - 1, p)
-        }
-        return false
-    }
-    if dom.isSame(shadow_host, el) && (comb == '+' || comb == '~') {
-        // The host has no siblings in its shadow tree.
-        return false
-    }
-    if comb == '+' {
-        if prevElement(doc, el) |p| {
-            return matchFrom(sheet, doc, first, ci - 1, p)
-        }
-        return false
-    }
-    if comb == '~' {
-        var cur = prevElement(doc, el)
-        while cur |p| {
-            if matchFrom(sheet, doc, first, ci - 1, p) {
-                return true
-            }
-            cur = prevElement(doc, p)
-        }
-        return false
-    }
-    var up = upElement(doc, el)
-    while up |p| {
-        if matchFrom(sheet, doc, first, ci - 1, p) {
-            return true
-        }
-        up = upElement(doc, p)
-    }
-    return false
+    return matchSelector(sheet, doc, first, ci, el) == MatchStatus.Matches
 }
 
 fn matchCompound(sheet: *Sheet, doc: *Document, comp: Compound, el: NodeId) bool {
