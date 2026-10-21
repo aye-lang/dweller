@@ -1,246 +1,33 @@
-// spec: https://url.spec.whatwg.org/
-
-import std.mem.AllocError
+// spec: https://url.spec.whatwg.org/#concept-url
 import std.mem.Allocator
-import std.text
-import encoding.Encoding
 
-pub error UrlError { Invalid, OutOfMemory }
-
-/// A parsed URL. `href` is the serialized URL, owned by the `Url` (free it
-/// with `deinit`); the other slices are parts of it.
 pub struct Url {
     href: []u8
-    // Lower case, without the `:`.
     scheme: []u8
     username: []u8
     password: []u8
-    // Lower case; empty when there is none (or for `file:///`).
     host: []u8
-    // Digits; empty for none or for the scheme's default port.
     port: []u8
-    // Starts with `/` for special URLs; anything for an opaque path.
     path: []u8
-    // Without the `?` and `#`.
     query: []u8
     fragment: []u8
     has_query: bool
     has_fragment: bool
-    // An opaque path (`data:...`, `mailto:...`): cannot be a base URL
-    // except for a fragment.
     opaque: bool
 
     pub fn deinit(self: *Self, alloc: Allocator) {
         alloc.free(self.href)
     }
 
-    /// Does the URL have one of the special schemes?
     pub fn isSpecial(self: *Self) bool {
         return isSpecialScheme(self.scheme)
     }
 
-    /// `href` without the fragment.
     pub fn withoutFragment(self: *Self) []u8 {
         if self.has_fragment {
             return self.href[..self.href.len - self.fragment.len - 1]
         }
+
         return self.href
     }
-}
-
-/// Parses an absolute URL.
-pub fn parse(alloc: Allocator, input: []u8) UrlError!Url {
-    return parseWith(alloc, null, input, Encoding.Utf8)
-}
-
-/// Resolves `input` (absolute or relative) against `base`.
-pub fn resolve(alloc: Allocator, base: *Url, input: []u8) UrlError!Url {
-    return parseWith(alloc, base, input, Encoding.Utf8)
-}
-
-pub fn resolveIn(alloc: Allocator, base: *Url, input: []u8, query_encoding: Encoding) UrlError!Url {
-    return parseWith(alloc, base, input, query_encoding)
-}
-
-fn parseWith(alloc: Allocator, base: ?*Url, raw: []u8, query_encoding: Encoding) UrlError!Url {
-    return basicParse(alloc, base, raw, query_encoding)
-}
-
-pub fn isSpecialScheme(scheme: []u8) bool {
-    var words = text.split("http https ws wss ftp file", " ")
-    while words.next() |w| {
-        if text.eqlIgnoreCase(scheme, w) {
-            return true
-        }
-    }
-    return false
-}
-
-fn isAlpha(c: u8) bool {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-fn lowerByte(c: u8) u8 {
-    if c >= 'A' && c <= 'Z' {
-        return c + 32
-    }
-    return c
-}
-
-fn lastIndexOf(s: []u8, b: u8) ?usize {
-    var i = s.len
-    while i > 0 {
-        i -= 1
-        if s[i] == b {
-            return i
-        }
-    }
-    return null
-}
-
-/// Decodes `%XX` escapes of `s` into new memory from `alloc`; a `%` that
-/// is not followed by two hex digits stays as it is.
-pub fn percentDecode(alloc: Allocator, s: []u8) AllocError![]mut u8 {
-    var out = text.Builder.init(alloc)
-    errdefer out.deinit()
-    var i: usize = 0
-    while i < s.len {
-        if s[i] == '%' && i + 2 < s.len && hexValue(s[i + 1]) >= 0 && hexValue(s[i + 2]) >= 0 {
-            try out.appendByte((hexValue(s[i + 1]) * 16 + hexValue(s[i + 2])) as u8)
-            i += 3
-        } else {
-            try out.appendByte(s[i])
-            i += 1
-        }
-    }
-    return out.toOwned()
-}
-
-fn hexValue(c: u8) i64 {
-    if c >= '0' && c <= '9' {
-        return (c - '0') as i64
-    }
-    if c >= 'a' && c <= 'f' {
-        return (c - 'a') as i64 + 10
-    }
-    if c >= 'A' && c <= 'F' {
-        return (c - 'A') as i64 + 10
-    }
-    return -1
-}
-
-// ---- tests
-
-fn expectParse(a: Allocator, input: []u8, want: []u8) !void {
-    let u = try parse(a, input)
-    defer u.deinit(a)
-    @expectEqual(want, u.href)
-}
-
-fn expectResolve(a: Allocator, base: []u8, input: []u8, want: []u8) !void {
-    let b = try parse(a, base)
-    defer b.deinit(a)
-    let u = try resolve(a, &b, input)
-    defer u.deinit(a)
-    @expectEqual(want, u.href)
-}
-
-test "absolute URLs" {
-    let a = @testAllocator()
-    try expectParse(a, "http://Example.COM", "http://example.com/")
-    try expectParse(a, "  https://example.com:443/a/./b/../c?x=1 y#frag ", "https://example.com/a/c?x=1%20y#frag")
-    try expectParse(a, "HTTP://user:pw@host:8080/p", "http://user:pw@host:8080/p")
-    try expectParse(a, "http:\\\\host\\a\\b", "http://host/a/b")
-    try expectParse(a, "http://host:0080/", "http://host/")
-    try expectParse(a, "file:///tmp/a b.html", "file:///tmp/a%20b.html")
-    try expectParse(a, "file://localhost/etc/hosts", "file:///etc/hosts")
-    try expectParse(a, "data:text/html,<p>Hi</p>", "data:text/html,<p>Hi</p>")
-    try expectParse(a, "mailto:someone@example.com", "mailto:someone@example.com")
-    try expectParse(a, "http://h/%2e%2E/a/%2e/b", "http://h/a/b")
-    try expectParse(a, "http://h/caf\xC3\xA9", "http://h/caf%C3%A9")
-}
-
-// Does resolving `input` (against `base` unless it is empty) fail?
-fn fails(a: Allocator, base: []u8, input: []u8) !bool {
-    if base.len == 0 {
-        let u = parse(a, input) catch |e| {
-            return true
-        }
-        u.deinit(a)
-        return false
-    }
-    let b = try parse(a, base)
-    defer b.deinit(a)
-    let u = resolve(a, &b, input) catch |e| {
-        return true
-    }
-    u.deinit(a)
-    return false
-}
-
-test "invalid URLs" {
-    let a = @testAllocator()
-    @expect(try fails(a, "", "no scheme"))
-    @expect(try fails(a, "", "http://"))
-    @expect(try fails(a, "", "http://h:99999/"))
-    @expect(try fails(a, "", "http://h:8x/"))
-    @expect(try fails(a, "data:text/html,x", "y"))
-}
-
-test "relative resolution (RFC 3986 examples)" {
-    let a = @testAllocator()
-    let base = "http://a/b/c/d;p?q"
-    try expectResolve(a, base, "g", "http://a/b/c/g")
-    try expectResolve(a, base, "./g", "http://a/b/c/g")
-    try expectResolve(a, base, "g/", "http://a/b/c/g/")
-    try expectResolve(a, base, "/g", "http://a/g")
-    try expectResolve(a, base, "//g", "http://g/")
-    try expectResolve(a, base, "?y", "http://a/b/c/d;p?y")
-    try expectResolve(a, base, "g?y", "http://a/b/c/g?y")
-    try expectResolve(a, base, "#s", "http://a/b/c/d;p?q#s")
-    try expectResolve(a, base, "g#s", "http://a/b/c/g#s")
-    try expectResolve(a, base, ";x", "http://a/b/c/;x")
-    try expectResolve(a, base, "", "http://a/b/c/d;p?q")
-    try expectResolve(a, base, ".", "http://a/b/c/")
-    try expectResolve(a, base, "./", "http://a/b/c/")
-    try expectResolve(a, base, "..", "http://a/b/")
-    try expectResolve(a, base, "../g", "http://a/b/g")
-    try expectResolve(a, base, "../..", "http://a/")
-    try expectResolve(a, base, "../../g", "http://a/g")
-    try expectResolve(a, base, "../../../g", "http://a/g")
-    try expectResolve(a, base, "/./g", "http://a/g")
-    try expectResolve(a, base, "g.", "http://a/b/c/g.")
-    try expectResolve(a, base, "g;x=1/../y", "http://a/b/c/y")
-    try expectResolve(a, base, "http:g", "http://a/b/c/g")
-    try expectResolve(a, base, "https://other/x", "https://other/x")
-}
-
-test "resolution against file and opaque bases" {
-    let a = @testAllocator()
-    try expectResolve(a, "file:///home/u/site/index.html", "img/a.png", "file:///home/u/site/img/a.png")
-    try expectResolve(a, "file:///home/u/site/index.html", "../b.html#top", "file:///home/u/b.html#top")
-    try expectResolve(a, "data:text/html,x", "#f", "data:text/html,x#f")
-    try expectResolve(a, "http://h/a/b", "\\c", "http://h/c")
-}
-
-test "parts" {
-    let a = @testAllocator()
-    let u = try parse(a, "https://me:pw@Host.example:8443/p/q?a=b#c")
-    defer u.deinit(a)
-    @expectEqual("https", u.scheme)
-    @expectEqual("me", u.username)
-    @expectEqual("pw", u.password)
-    @expectEqual("host.example", u.host)
-    @expectEqual("8443", u.port)
-    @expectEqual("/p/q", u.path)
-    @expectEqual("a=b", u.query)
-    @expectEqual("c", u.fragment)
-    @expectEqual("https://me:pw@host.example:8443/p/q?a=b", u.withoutFragment())
-}
-
-test "percent decoding" {
-    let a = @testAllocator()
-    let s = try percentDecode(a, "a%20b%zz%4")
-    defer a.free(s)
-    @expectEqual("a b%zz%4", s)
 }
