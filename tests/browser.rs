@@ -99,6 +99,20 @@ impl Drained {
             stderr,
         })
     }
+
+    /// `wait_with_output`, but the child is killed after `limit`: a run
+    /// that hangs fails its test instead of holding it for hours.
+    fn wait_with_output_within(mut self, limit: std::time::Duration) -> std::io::Result<Output> {
+        let start = std::time::Instant::now();
+        while self.try_wait()?.is_none() {
+            if start.elapsed() > limit {
+                let _ = self.kill();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        self.wait_with_output()
+    }
 }
 
 trait SpawnDrained {
@@ -6232,6 +6246,8 @@ fn jsdom_gc_stress() {
         "layout_many_changes.html",
     ];
     pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
+    // A page takes up to about 2 minutes here; one that hangs is killed.
+    let limit = std::time::Duration::from_secs(600);
     dweller();
     let failures: Vec<String> = common::run_queue(&pages, |page| {
         let rel = page
@@ -6243,7 +6259,8 @@ fn jsdom_gc_stress() {
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
             .args(["dump", "--tree", "--js", &rel])
-            .output()
+            .spawn_drained()
+            .wait_with_output_within(limit)
             .unwrap();
         let want = std::fs::read_to_string(page.with_extension("tree")).unwrap_or_default();
         if !out.status.success() || rooted(&text(&out.stdout)) != want {
@@ -6268,16 +6285,13 @@ fn jsdom_gc_stress() {
         .env("DWELLER_JS_GC", "stress")
         .arg("agent")
         .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn_drained();
     std::io::Write::write_all(
-        &mut child.stdin.take().unwrap(),
+        &mut child.child.stdin.take().unwrap(),
         &std::fs::read(&run).unwrap(),
     )
     .unwrap();
-    let out = child.wait_with_output().unwrap();
+    let out = child.wait_with_output_within(limit).unwrap();
     assert!(
         out.status.success() && out.stderr.is_empty(),
         "run.jsonl under GC stress: {}\n{}",
