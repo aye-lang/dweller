@@ -1,21 +1,26 @@
 // spec: https://url.spec.whatwg.org/#query-state
 import std.mem.AllocError
-import std.mem.Allocator
 import std.text
 import encoding
 import encoding.Encoding
 
-fn encodeQuery(alloc: Allocator, out: *mut text.Builder, p: *Parts, special: bool) AllocError!void {
-    if !special || p.query_encoding == Encoding.Utf8 || isWebSocket(p.scheme) {
-        return encode(out, p.query, Set.Query, special)
+fn encodeQuery(p: *mut Parser) AllocError!void {
+    var set = EncodeSet.Query
+
+    if p.special() {
+        set = EncodeSet.SpecialQuery
     }
 
-    let bytes = try encoding.fromUtf8With(alloc, p.query, p.query_encoding, "%26%23", "%3B")
-    defer alloc.free(bytes)
+    if !p.special() || p.query_encoding == Encoding.Utf8 || isWebSocket(p.scheme.bytes()) {
+        return percentEncode(&mut p.query, p.buffer.bytes(), set)
+    }
 
-    try encode(out, bytes, Set.Query, special)
+    let bytes = try encoding.fromUtf8With(p.alloc, p.buffer.bytes(), p.query_encoding, "%26%23", "%3B")
+    defer p.alloc.free(bytes)
+
+    try percentEncode(&mut p.query, bytes, set)
 }
 
 fn isWebSocket(scheme: []u8) bool {
-    return text.eqlIgnoreCase(scheme, "ws") || text.eqlIgnoreCase(scheme, "wss")
+    return text.eql(scheme, "ws") || text.eql(scheme, "wss")
 }

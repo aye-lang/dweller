@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#file-state
+fn fileFromBase(p: *mut Parser, b: *Url, c: i32) UrlError!bool {
+    try p.setString(&mut p.host, b.host)
+    try copyPath(p, b)
+    try copyQuery(p, b)
+
+    if c == '?' {
+        p.startQuery()
+    } else if c == '#' {
+        p.startFragment()
+    } else if c != EOF {
+        p.has_query = false
+
+        if !startsWithDriveLetter(p.fromPointer()) {
+            p.shorten()
+        } else {
+            p.segments.clear()
+        }
+
+        p.back(State.Path)
+    }
+
+    return false
+}

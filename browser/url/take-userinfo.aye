@@ -1,0 +1,24 @@
+// spec: https://url.spec.whatwg.org/#authority-state
+import std.mem.AllocError
+
+fn takeUserinfo(p: *mut Parser) AllocError!void {
+    if p.at_sign_seen && p.password_token_seen {
+        try p.password.append("%40")
+    } else if p.at_sign_seen {
+        try p.username.append("%40")
+    }
+
+    p.at_sign_seen = true
+
+    for b in p.buffer.bytes() {
+        if b == ':' && !p.password_token_seen {
+            p.password_token_seen = true
+        } else if p.password_token_seen {
+            try percentEncodeByte(&mut p.password, b, EncodeSet.Userinfo)
+        } else {
+            try percentEncodeByte(&mut p.username, b, EncodeSet.Userinfo)
+        }
+    }
+
+    p.buffer.clear()
+}

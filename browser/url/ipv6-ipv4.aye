@@ -1,0 +1,33 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-parser
+fn ipv6Ipv4(r: *mut Ipv6Reader) UrlError!void {
+    var numbers_seen: usize = 0
+
+    while r.c() != EOF {
+        if numbers_seen > 0 && r.c() == '.' && numbers_seen < 4 {
+            r.pointer += 1
+        } else if numbers_seen > 0 {
+            return UrlError.Invalid
+        }
+
+        if !isDigit(r.c()) {
+            return UrlError.Invalid
+        }
+
+        let n = try ipv6Ipv4Number(r)
+
+        r.pieces[r.piece_index] = (r.pieces[r.piece_index] as i64 * 256 + n) as u16
+        numbers_seen += 1
+
+        if numbers_seen == 2 || numbers_seen == 4 {
+            r.piece_index += 1
+        }
+    }
+
+    if numbers_seen != 4 {
+        return UrlError.Invalid
+    }
+}
+
+fn isDigit(c: i32) bool {
+    return c >= '0' && c <= '9'
+}

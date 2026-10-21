@@ -1,0 +1,28 @@
+// spec: https://url.spec.whatwg.org/#port-state
+fn portState(p: *mut Parser, c: i32) UrlError!bool {
+    if c >= '0' && c <= '9' {
+        try p.buffer.appendByte(c as u8)
+
+        return false
+    }
+
+    if !endsAuthority(p, c) && p.override == null {
+        return UrlError.Invalid
+    }
+
+    if p.buffer.len() > 0 {
+        try takePort(p)
+
+        if p.override != null {
+            return true
+        }
+    }
+
+    if p.override != null {
+        return UrlError.Invalid
+    }
+
+    p.back(State.PathStart)
+
+    return false
+}

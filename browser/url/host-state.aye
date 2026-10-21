@@ -1,0 +1,25 @@
+// spec: https://url.spec.whatwg.org/#host-state
+fn hostState(p: *mut Parser, c: i32) UrlError!bool {
+    if p.override != null && p.isFile() {
+        p.back(State.FileHost)
+    } else if c == ':' && !p.inside_brackets {
+        if p.buffer.len() == 0 || p.override == State.Hostname {
+            return UrlError.Invalid
+        }
+
+        try takeHost(p)
+        p.state = State.Port
+    } else if endsAuthority(p, c) {
+        return hostEnd(p)
+    } else {
+        if c == '[' {
+            p.inside_brackets = true
+        } else if c == ']' {
+            p.inside_brackets = false
+        }
+
+        try p.buffer.appendByte(c as u8)
+    }
+
+    return false
+}

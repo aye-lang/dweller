@@ -1,0 +1,23 @@
+// spec: https://url.spec.whatwg.org/#concept-ipv6-parser
+fn ipv6Compress(r: *mut Ipv6Reader) UrlError!void {
+    if r.compress < 0 {
+        if r.piece_index != 8 {
+            return UrlError.Invalid
+        }
+
+        return
+    }
+
+    let compress = r.compress as usize
+    var swaps = r.piece_index - compress
+    var i: usize = 7
+
+    while i != 0 && swaps > 0 {
+        let t = r.pieces[i]
+
+        r.pieces[i] = r.pieces[compress + swaps - 1]
+        r.pieces[compress + swaps - 1] = t
+        i -= 1
+        swaps -= 1
+    }
+}

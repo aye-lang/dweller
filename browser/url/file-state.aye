@@ -1,0 +1,28 @@
+// spec: https://url.spec.whatwg.org/#file-state
+import std.text
+
+fn fileState(p: *mut Parser, c: i32) UrlError!bool {
+    try p.setString(&mut p.scheme, "file")
+    p.has_host = true
+    p.host.clear()
+
+    if c == '/' || c == '\\' {
+        p.state = State.FileSlash
+
+        return false
+    }
+
+    let b = p.base orelse {
+        p.back(State.Path)
+
+        return false
+    }
+
+    if !text.eql(b.scheme, "file") {
+        p.back(State.Path)
+
+        return false
+    }
+
+    return fileFromBase(p, b, c)
+}

@@ -1,0 +1,16 @@
+// spec: https://url.spec.whatwg.org/#scheme-state
+import std.text
+
+fn schemeChangeAllowed(p: *Parser) bool {
+    let next = p.buffer.bytes()
+
+    if isSpecialScheme(next) != p.special() {
+        return false
+    }
+
+    if (p.hasCredentials() || p.port >= 0) && text.eql(next, "file") {
+        return false
+    }
+
+    return !(p.isFile() && p.emptyHost())
+}

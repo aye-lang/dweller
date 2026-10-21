@@ -1,0 +1,22 @@
+// spec: https://url.spec.whatwg.org/#ends-in-a-number-checker
+fn endsInNumber(host: []u8) bool {
+    var s = host
+
+    if s.len > 0 && s[s.len - 1] == '.' {
+        s = s[..s.len - 1]
+    }
+
+    let last = s[lastDot(s)..]
+
+    if last.len > 0 && allDigits(last) {
+        return true
+    }
+
+    return parseIpv4Number(last) >= 0
+}
+
+fn lastDot(s: []u8) usize {
+    let i = lastIndexOf(s, '.') orelse return 0
+
+    return i + 1
+}

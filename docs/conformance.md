@@ -13,7 +13,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/cssom` | 292 | 11 | 2123/3817 | 55.6 | - | baseline | +1.4 |
 | `fetch/api` | 178 | 13 | 1603/2415 | 66.4 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 686/1233 | 55.6 | 50 | done | +0.0 |
-| `url` | 34 | 0 | 4880/9998 | 48.8 | 80 | below | +0.0 |
+| `url` | 34 | 0 | 6672/9998 | 66.7 | 80 | below | +18.2 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1514/2385 | 63.5 | - | baseline | +0.0 |
 | `css/css-flexbox` | 1422 | 469 | 3654/5816 | 62.8 | 70 | below | +0.0 |

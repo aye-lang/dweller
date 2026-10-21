@@ -1,0 +1,22 @@
+// spec: https://url.spec.whatwg.org/#cannot-be-a-base-url-path-state
+import std.text
+
+fn opaquePathState(p: *mut Parser, c: i32) UrlError!bool {
+    if c == '?' {
+        p.startQuery()
+    } else if c == '#' {
+        p.startFragment()
+    } else if c == ' ' {
+        let next = p.rest()
+
+        if text.startsWith(next, "?") || text.startsWith(next, "#") {
+            try p.path_bytes.append("%20")
+        } else {
+            try p.path_bytes.appendByte(' ')
+        }
+    } else if c != EOF {
+        try percentEncodeByte(&mut p.path_bytes, c as u8, EncodeSet.C0Control)
+    }
+
+    return false
+}

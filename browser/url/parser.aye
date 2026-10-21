@@ -1,0 +1,152 @@
+// spec: https://url.spec.whatwg.org/#concept-basic-url-parser
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import encoding.Encoding
+
+enum State {
+    SchemeStart
+    Scheme
+    NoScheme
+    SpecialRelativeOrAuthority
+    PathOrAuthority
+    Relative
+    RelativeSlash
+    SpecialAuthoritySlashes
+    SpecialAuthorityIgnoreSlashes
+    Authority
+    Host
+    Hostname
+    Port
+    File
+    FileSlash
+    FileHost
+    PathStart
+    Path
+    OpaquePath
+    Query
+    Fragment
+}
+
+struct Span {
+    lo: usize
+    hi: usize
+}
+
+let EOF: i32 = -1
+
+struct Parser {
+    alloc: Allocator
+    input: []u8
+    pointer: i64
+    state: State
+    base: ?*Url
+    override: ?State
+    buffer: text.Builder
+    at_sign_seen: bool
+    inside_brackets: bool
+    password_token_seen: bool
+    scheme: text.Builder
+    username: text.Builder
+    password: text.Builder
+    has_host: bool
+    host: text.Builder
+    port: i64
+    path_bytes: text.Builder
+    segments: List(Span)
+    opaque: bool
+    has_query: bool
+    query: text.Builder
+    has_fragment: bool
+    fragment: text.Builder
+    query_encoding: Encoding
+
+    pub fn at(self: *Self, i: i64) i32 {
+        if i < 0 || i >= self.input.len as i64 {
+            return EOF
+        }
+
+        return self.input[i as usize] as i32
+    }
+
+    pub fn rest(self: *Self) []u8 {
+        return self.tail(self.pointer + 1)
+    }
+
+    pub fn fromPointer(self: *Self) []u8 {
+        return self.tail(self.pointer)
+    }
+
+    pub fn tail(self: *Self, from: i64) []u8 {
+        if from >= self.input.len as i64 {
+            return ""
+        }
+
+        return self.input[from as usize..]
+    }
+
+    pub fn special(self: *Self) bool {
+        return isSpecialScheme(self.scheme.bytes())
+    }
+
+    pub fn isFile(self: *Self) bool {
+        return text.eql(self.scheme.bytes(), "file")
+    }
+
+    pub fn segment(self: *Self, i: usize) []u8 {
+        let s = self.segments.items()[i]
+
+        return self.path_bytes.bytes()[s.lo..s.hi]
+    }
+
+    pub fn appendSegment(self: *mut Self, s: []u8) AllocError!void {
+        return self.appendSegmentPair(s, "")
+    }
+
+    pub fn appendSegmentPair(self: *mut Self, head: []u8, tail: []u8) AllocError!void {
+        let lo = self.path_bytes.len()
+
+        try self.path_bytes.append(head)
+        try self.path_bytes.append(tail)
+        try self.segments.append(Span { lo: lo, hi: self.path_bytes.len() })
+    }
+
+    pub fn shorten(self: *mut Self) {
+        if self.isFile() && self.segments.len() == 1 && isNormalizedDriveLetter(self.segment(0)) {
+            return
+        }
+
+        _ = self.segments.pop()
+    }
+
+    pub fn setString(self: *mut Self, b: *mut text.Builder, s: []u8) AllocError!void {
+        b.clear()
+        try b.append(s)
+    }
+
+    pub fn hasCredentials(self: *Self) bool {
+        return self.username.len() > 0 || self.password.len() > 0
+    }
+
+    pub fn emptyHost(self: *Self) bool {
+        return self.has_host && self.host.len() == 0
+    }
+
+    pub fn startQuery(self: *mut Self) {
+        self.has_query = true
+        self.query.clear()
+        self.state = State.Query
+    }
+
+    pub fn startFragment(self: *mut Self) {
+        self.has_fragment = true
+        self.fragment.clear()
+        self.state = State.Fragment
+    }
+
+    pub fn back(self: *mut Self, to: State) {
+        self.state = to
+        self.pointer -= 1
+    }
+}

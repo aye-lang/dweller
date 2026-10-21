@@ -1,0 +1,17 @@
+// spec: https://url.spec.whatwg.org/#concept-domain-to-ascii
+import std.mem.Allocator
+import std.text
+
+fn domainToAscii(alloc: Allocator, domain: []u8, out: *mut text.Builder) UrlError!void {
+    try uts46ToAscii(alloc, domain, out)
+
+    if out.len() == 0 {
+        return UrlError.Invalid
+    }
+
+    for c in out.bytes() {
+        if isForbiddenDomain(c) {
+            return UrlError.Invalid
+        }
+    }
+}

@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn percentEncode(out: *mut text.Builder, s: []u8, set: EncodeSet) AllocError!void {
+    for c in s {
+        try percentEncodeByte(out, c, set)
+    }
+}
+
+fn percentEncodeByte(out: *mut text.Builder, c: u8, set: EncodeSet) AllocError!void {
+    if !inEncodeSet(c, set) {
+        return out.appendByte(c)
+    }
+
+    try out.appendByte('%')
+    try out.appendByte(HEX[(c >> 4) as usize])
+    try out.appendByte(HEX[(c & 15) as usize])
+}
+
+let HEX = "0123456789ABCDEF"

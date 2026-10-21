@@ -1,0 +1,13 @@
+// spec: https://url.spec.whatwg.org/#scheme-start-state
+fn schemeStartState(p: *mut Parser, c: i32) UrlError!bool {
+    if c >= 0 && c < 128 && isAlpha(c as u8) {
+        try p.buffer.appendByte(lowerByte(c as u8))
+        p.state = State.Scheme
+    } else if p.override == null {
+        p.back(State.NoScheme)
+    } else {
+        return UrlError.Invalid
+    }
+
+    return false
+}
