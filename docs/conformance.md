@@ -17,8 +17,8 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1514/2385 | 63.5 | - | baseline | +0.0 |
 | `css/css-flexbox` | 1422 | 469 | 3654/5816 | 62.8 | 70 | below | +0.0 |
-| `css/css-transforms` | 711 | 156 | 2204/5196 | 42.4 | 50 | below | +0.0 |
-| `css/css-transitions` | 143 | 59 | 1473/3348 | 44.0 | - | baseline | +0.0 |
+| `css/css-transforms` | 711 | 156 | 2616/5196 | 50.3 | 50 | done | +0.0 |
+| `css/css-transitions` | 143 | 59 | 1416/3348 | 42.3 | - | baseline | +0.0 |
 | `css/css-animations` | 206 | 91 | 712/1398 | 50.9 | 60 | below | +0.0 |
 | `html/syntax` | 98 | 0 | 2560/2732 | 93.7 | 90 | done | +0.0 |
 | `dom/api` | 467 | 109 | 61380/64996 | 94.4 | 75 | done | +0.0 |

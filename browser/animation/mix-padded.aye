@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-individual-transforms
+fn mixPadded(p: usize, a: []u8, b: []u8, progress: f64, out: *mut text.Builder) AllocError!bool {
+    var n = componentCount(a)
+
+    if componentCount(b) > n {
+        n = componentCount(b)
+    }
+
+    var pa = text.Builder.init(out.alloc)
+    defer pa.deinit()
+
+    var pb = text.Builder.init(out.alloc)
+    defer pb.deinit()
+
+    try padComponents(p, a, n, &mut pa)
+    try padComponents(p, b, n, &mut pb)
+
+    return mixNumbers(pa.bytes(), pb.bytes(), progress, false, false, out)
+}

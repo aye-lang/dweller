@@ -1,0 +1,42 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#interpolation-of-transforms
+fn identityOf(p: usize, s: []u8, out: *mut text.Builder) AllocError!bool {
+    var name_start: usize = 0
+    var name: []u8 = ""
+    var arg: usize = 0
+    var i: usize = 0
+
+    while i < s.len {
+        let e = numberEnd(s, i)
+
+        if e > i {
+            let angle = e < s.len && isLetter(s[e])
+
+            try out.append(identityArg(p, name, arg, angle) orelse s[i..e])
+            arg += 1
+            i = e
+            continue
+        }
+
+        if !isLetter(s[i]) && s[i] != '(' {
+            name_start = i + 1
+        }
+
+        if s[i] == '(' {
+            name = s[name_start..i]
+            arg = 0
+        }
+
+        if text.eql(name, "perspective") {
+            return false
+        }
+
+        try out.appendByte(s[i])
+        i += 1
+    }
+
+    return p != css.TRANSFORM_ORIGIN
+}
