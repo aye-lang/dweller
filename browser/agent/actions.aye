@@ -311,7 +311,7 @@ fn clickNode(s: *mut Session, tmp: Allocator, p: *mut Page, el: NodeId) AllocErr
     }
     if isFocusable(p, el) {
         focusIn(s, p, el)
-        p.doc.controls.focus_visible = dom.isTextField(&p.doc, el)
+        try engine.setFocusVisible(p, dom.isTextField(&p.doc, el))
     }
     if !(try fire(p, el, "click", "")) {
         return done(try concat(tmp, "clicked ", who, "; a script canceled the default action"))
@@ -741,7 +741,7 @@ fn press(s: *mut Session, tmp: Allocator, key: []u8) AllocError!Outcome {
         return moveFocus(s, tmp, p, text.eql(key, "Tab"))
     }
     if p.doc.controls.focus |f| {
-        p.doc.controls.focus_visible = true
+        try engine.setFocusVisible(p, true)
         let who = try describeNode(s, tmp, p, f)
         let range = p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "range")
         if text.eql(key, "ArrowUp") || text.eql(key, "ArrowDown") || (range && (text.eql(key, "ArrowLeft") || text.eql(key, "ArrowRight"))) {

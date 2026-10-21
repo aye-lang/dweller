@@ -5684,6 +5684,45 @@ fn window_css_transition() {
     );
 }
 
+#[test]
+fn window_transition_kept() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..250 {
+        events += " move:120,160 frame move:300,250 frame";
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/hover_transition.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "1100",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let kept: Vec<usize> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\ttransitions_kept\t").nth(1))
+        .map(|r| r.split('\t').nth(1).unwrap().split(' ').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(kept.len() >= 100, "{} transition frames", kept.len());
+    assert!(kept.iter().all(|&n| n <= 32), "kept grows: {kept:?}");
+}
+
 /// mistral.ai's squares (P4.57): a rAF loop that changes the `width` of
 /// 6 divs in the flex cells of a grid, on a page with images, lays out
 /// again only the boxes around them: after the first frame no layout of
@@ -8941,4 +8980,184 @@ fn worker_canvas() {
         golden.display(),
         out_png.display()
     );
+}
+
+/// A pointer moving over 50 cards (P10.51e): `:hover` and `:active`
+/// restyle only the elements entering or leaving the chains, with the
+/// boxes kept; a page without `:hover` rules restyles nothing.
+#[test]
+fn window_focus_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for _ in 0..20 {
+        events += " key:tab frame";
+    }
+    for i in 10..20 {
+        let y = 36 + i * 26;
+        events += &format!(" click:140,{y} frame release:140,{y} frame");
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/focus_local.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+    assert!(full == 0, "{full} full layouts:\n{err}");
+    assert!(restyled.len() >= 20, "restyled {restyled:?}");
+    assert!(
+        restyled.iter().filter(|&&n| n <= 18).count() >= 20,
+        "restyled {restyled:?}"
+    );
+}
+
+/// Checkbox clicks and typing in a required field (P10.51i): the form
+/// states restyle only the controls and the elements whose selectors see
+/// them, with no full restyle or layout after the load.
+#[test]
+fn window_form_states() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for i in 0..10 {
+        let y = 55 + i * 30;
+        events += &format!(" click:5,{y} frame release:5,{y} frame");
+    }
+    events += " click:60,383 frame release:60,383 frame text:ab frame key:backspace frame";
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/form_states.html",
+            "--font",
+            "fixed",
+            "--width",
+            "800",
+            "--height",
+            "700",
+            "--frames",
+            "120",
+            "--events",
+            &events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let recs: Vec<(&str, &str)> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| {
+            let f: Vec<&str> = r.split('\t').collect();
+            (f[0], *f.get(2).unwrap_or(&""))
+        })
+        .collect();
+    let restyled: Vec<usize> = recs
+        .iter()
+        .filter(|r| r.0 == "restyled_elements")
+        .map(|r| r.1.parse().unwrap())
+        .collect();
+    let layouts = recs.iter().filter(|r| r.0 == "layout").count();
+    assert!(layouts == 1, "{layouts} full layouts:\n{err}");
+    assert!(restyled.len() >= 12, "restyled {restyled:?}");
+    assert!(restyled.iter().all(|&n| n <= 12), "restyled {restyled:?}");
+}
+
+#[test]
+fn window_hover_local() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let mut events = String::from("painted");
+    for row in 0..5 {
+        for k in 0..10 {
+            events += &format!(" move:{},{} frame", 15 + k * 80, 22 + row * 46);
+        }
+    }
+    events += " click:15,22 frame release:15,22 frame";
+    for page in ["hover_local", "hover_none"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_LAYOUT_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .args([
+                &format!("browser/tests/ui/{page}.html"),
+                "--font",
+                "fixed",
+                "--width",
+                "800",
+                "--height",
+                "600",
+                "--frames",
+                "150",
+                "--events",
+                &events,
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("CHECK"), "{err}");
+        let recs: Vec<(&str, &str)> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| {
+                let f: Vec<&str> = r.split('\t').collect();
+                (f[0], *f.get(2).unwrap_or(&""))
+            })
+            .collect();
+        let restyled: Vec<usize> = recs
+            .iter()
+            .filter(|r| r.0 == "restyled_elements")
+            .map(|r| r.1.parse().unwrap())
+            .collect();
+        let full = recs.iter().filter(|r| r.0 == "layout_full").count();
+        assert!(full <= 1, "{page}: {full} full layouts:\n{err}");
+        if page == "hover_none" {
+            assert!(restyled.is_empty(), "{page}: restyled {restyled:?}");
+            continue;
+        }
+        assert!(restyled.len() >= 30, "{page}: restyled {restyled:?}");
+        assert!(
+            restyled.iter().skip(1).all(|&n| n <= 8),
+            "{page}: restyled {restyled:?}"
+        );
+    }
 }

@@ -1,0 +1,18 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn notePointerState(s: *mut Script, old: ?NodeId, now: ?NodeId, change: css.StyleChange) AllocError!void {
+    if s.geom |g| {
+        if !css.seesState(&g.deps, change) {
+            return
+        }
+    }
+
+    s.page.doc.controls.pointer_styled += 1
+    s.version += 1
+    s.style_version += 1
+    try noteLeftChain(s, old, now, change)
+    try noteLeftChain(s, now, old, change)
+}

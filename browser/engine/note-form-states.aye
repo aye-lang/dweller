@@ -1,0 +1,28 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn noteFormStates(p: *mut Page, els: []NodeId, before: u64) AllocError!void {
+    let after = css.controlsInput(&p.doc, els)
+
+    if after == before {
+        return
+    }
+
+    p.doc.controls.pointer_styled += 1
+
+    let s = p.script orelse return
+
+    p.doc.controls.noted_inputs = p.doc.controls.noted_inputs +% (after -% before)
+    s.version += 1
+    s.style_version += 1
+
+    for el in els {
+        if dom.isTextField(&p.doc, el) {
+            try noteLayoutChange(s, el, css.CHILDREN_CHANGED)
+        }
+
+        try noteFormOwners(s, el)
+    }
+}

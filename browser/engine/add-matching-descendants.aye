@@ -1,0 +1,23 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn addMatchingDescendants(doc: *Document, el: NodeId, f: u64, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    if f == 0 {
+        return addRoot(out, shallow, found, el, false)
+    }
+
+    var cur = doc.following(el, el)
+
+    while cur |c| {
+        if doc.node(c).kind == dom.Kind.Element && css.hasFeature(doc, c, f) {
+            try addRoot(out, shallow, found, c, true)
+        }
+
+        cur = doc.following(c, el)
+    }
+}

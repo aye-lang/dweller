@@ -1432,6 +1432,7 @@ pub struct Ui {
                 try self.pointerEvent("contextmenu", 2, x, y, 0.0, 0.0)
             }
             if be.button == SDL_BUTTON_LEFT {
+                try self.press(x, y, true)
                 perf.noteAction("click")
                 try self.click(x, y)
             }
@@ -1450,6 +1451,7 @@ pub struct Ui {
                 try self.pointerEvent("dblclick", 0, be.x as f64, be.y as f64, 0.0, 0.0)
             }
             if be.button == SDL_BUTTON_LEFT {
+                try self.press(be.x as f64, be.y as f64, false)
                 try releaseRange(self)
             }
             if history_on && be.button == SDL_BUTTON_X1 {
@@ -1745,6 +1747,12 @@ pub struct Ui {
     }
 
     // Clears the status line and sets the arrow (or I-beam) cursor.
+    fn press(self: *mut Self, x: f64, y: f64, down: bool) AllocError!void {
+        let p = self.tab.page orelse return
+
+        try engine.pressAt(p, x + self.tab.scroll_x, y - self.top() + self.tab.scroll, down)
+    }
+
     fn clearHover(self: *mut Self, ibeam: bool) AllocError!void {
         if self.hover.len() > 0 {
             self.hover.clear()
