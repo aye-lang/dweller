@@ -22,6 +22,8 @@ pub struct Link {
     page_current: ?Message
     worker_outgoing: List([]mut u8)
     worker_current: ?Message
+    answers: List(Message)
+    scope_hook: ?ScopeHook = null
 
     pub fn alloc(self: *mut Self) Allocator {
         return self.gpa.allocator()
@@ -76,6 +78,20 @@ pub struct Link {
         defer self.mutex.unlock()
 
         try self.outbox.append(m)
+    }
+
+    pub fn answer(self: *mut Self, m: Message) AllocError!void {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        try self.answers.append(m)
+    }
+
+    pub fn takeAnswer(self: *mut Self) ?Message {
+        self.mutex.lock()
+        defer self.mutex.unlock()
+
+        return takeFirst(&mut self.answers)
     }
 
     pub fn takeInbox(self: *mut Self) ?Message {

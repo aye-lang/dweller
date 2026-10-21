@@ -1,0 +1,18 @@
+import image
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn resizeWorkerBitmap(alloc: Allocator, c: *mut CanvasBitmap, w: usize, h: usize) AllocError!void {
+    var size: usize = 0
+
+    if w <= CANVAS_SIDE && h <= CANVAS_SIDE && w * h <= CANVAS_PIXELS {
+        size = w * h * 4
+    }
+
+    let px = try alloc.alloc(0 as u8, size)
+
+    alloc.free(c.bmp.pixels)
+    c.bmp.* = image.Bitmap { width: w, height: h, pixels: px, version: c.bmp.version + 1 }
+    c.epoch += 1
+    resizeWebGL(c)
+}

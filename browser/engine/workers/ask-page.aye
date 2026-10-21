@@ -1,0 +1,21 @@
+import js.Interp
+import js.JsError
+
+fn askPage(it: *mut Interp, href: []u8, kind: u8) JsError!Message {
+    let l = scopeOf(it).link
+    let m = try l.seal(false, kind, href)
+
+    l.toPage(m) catch |e| {
+        l.release(m)
+
+        return JsError.OutOfMemory
+    }
+
+    let got = waitAnswer(l) orelse {
+        _ = try failLoad(it)
+
+        return JsError.Thrown
+    }
+
+    return got
+}

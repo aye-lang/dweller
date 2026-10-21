@@ -1,0 +1,41 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akWorkerFrame(it: *mut Interp, a: Args) JsError!Value {
+    let c = try workerBitmap(it, it.arg(a, 0))
+    let ctx = c.gl orelse return Value.Undefined
+
+    if !ctx.dirty {
+        return Value.Undefined
+    }
+
+    startFrame(ctx)
+    _ = try takeFrame(it.alloc, ctx, c.bmp)
+
+    let json = try it.builder()
+    defer it.release(json)
+    try json.append("{\"id\":")
+    try json.appendUint(js.toUint32(try it.toNumber(it.arg(a, 1))) as u64)
+    try json.append(",\"w\":")
+    try json.appendUint(c.bmp.width as u64)
+    try json.append(",\"h\":")
+    try json.appendUint(c.bmp.height as u64)
+    try json.append("}")
+
+    let l = @downcast(*mut workers.Scope, it.host.?).?.link
+
+    try l.stage(false, c.bmp.pixels)
+    let m = try l.seal(false, workers.FRAME, json.bytes())
+
+    l.toPage(m) catch |e| {
+        l.release(m)
+
+        return JsError.OutOfMemory
+    }
+
+    return Value.Undefined
+}

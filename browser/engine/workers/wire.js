@@ -4,9 +4,10 @@
     const msg = (typeof v === 'function' ? 'function' : String(v)) + ' could not be cloned.';
     throw typeof G.DOMException === 'function' ? new G.DOMException(msg, 'DataCloneError') : new TypeError(msg);
   }
+  const isCanvas = v => typeof G.OffscreenCanvas === 'function' && v instanceof G.OffscreenCanvas;
   function encode(value, transfer) {
     const list = Array.from(transfer || []);
-    for (const b of list) if (!(b instanceof ArrayBuffer) || b.detached) fail(b);
+    for (const b of list) if (!(b instanceof ArrayBuffer || isCanvas(b)) || b.detached) fail(b);
     const seen = new Map();
     const buffers = [];
     function number(v) {
@@ -29,6 +30,10 @@
       if (v instanceof Map) return { t: 'm', id, e: Array.from(v, ([k, x]) => [enc(k), enc(x)]) };
       if (v instanceof Set) return { t: 's', id, e: Array.from(v, enc) };
       if (v instanceof Error) return { t: 'e', id, n: v.name, m: v.message };
+      if (isCanvas(v)) {
+        if (!list.includes(v)) fail(v);
+        return { t: 'C', id, p: v._placeholder || 0, w: v.width, h: v.height };
+      }
       if (v instanceof ArrayBuffer) {
         buffers.push(v);
         return { t: 'B', id, i: buffers.length - 1 };
@@ -42,7 +47,7 @@
       return { t: 'o', id, p: Object.keys(v).map(k => [k, enc(v[k])]) };
     }
     const json = JSON.stringify(enc(value));
-    for (const b of list) if (!seen.has(b)) buffers.push(b);
+    for (const b of list) if (!seen.has(b) && b instanceof ArrayBuffer) buffers.push(b);
     return { json, buffers, moved: list };
   }
   function decode(json, buffers) {
@@ -63,6 +68,7 @@
         case 'e': return made[x.id] = new (errors[x.n] || Error)(x.m);
         case 'B': return made[x.id] = buffers[x.i];
         case 'V': return made[x.id] = new G[x.c](dec(x.b), x.o, x.n);
+        case 'C': out = made[x.id] = new G.OffscreenCanvas(x.w, x.h); out._placeholder = x.p; return out;
         case 'w': return made[x.id] = Object(dec(x.v));
         case 'o': out = made[x.id] = {}; for (const [k, v] of x.p) out[k] = dec(v); return out;
       }
@@ -73,7 +79,7 @@
   function send(host, value, transfer) {
     const w = encode(value, transfer);
     for (const b of w.buffers) host.stage(b);
-    for (const b of w.moved) b.transfer();
+    for (const b of w.moved) if (b instanceof ArrayBuffer) b.transfer(); else Object.defineProperty(b, 'detached', { value: true });
     return w.json;
   }
   function receive(host, json, n) {
