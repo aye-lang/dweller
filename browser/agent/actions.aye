@@ -338,6 +338,7 @@ fn clickNode(s: *mut Session, tmp: Allocator, p: *mut Page, el: NodeId) AllocErr
             } else {
                 try p.doc.setAttr(el, "aria-checked", "true")
             }
+            try engine.noteAttrChanged(p, el, "aria-checked")
             try relayout(s)
             try recordOn(s, tmp, p, "click on", el)
             return done(try concat(tmp, "toggled ", who, ""))
@@ -348,10 +349,12 @@ fn clickNode(s: *mut Session, tmp: Allocator, p: *mut Page, el: NodeId) AllocErr
             if p.doc.isElement(d, "details") {
                 if p.doc.attr(d, "open") != null {
                     removeAttr(&mut p.doc, d, "open")
+                    try engine.noteAttrChanged(p, d, "open")
                     try relayout(s)
                     return done(try concat(tmp, "collapsed ", who, ""))
                 }
                 try p.doc.setAttr(d, "open", "")
+                try engine.noteAttrChanged(p, d, "open")
                 try relayout(s)
                 return done(try concat(tmp, "expanded ", who, ""))
             }

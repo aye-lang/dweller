@@ -544,6 +544,33 @@ test "a restyle keeps the styles while nothing they depend on changed" {
     @expectEqual("rgb(0, 0, 0)", out.bytes())
 }
 
+test "a restyle styles the agent's change next to the changes scripts noted" {
+    let a = @testAllocator()
+    engine.setScripting(true)
+    let u = try url.parse(a, "data:text/html,<style>.on, [aria-checked=true] { color: red }</style><p id=p>t</p><p id=q>t</p><div><p id=r>t</p></div>")
+    defer u.deinit(a)
+    let p = try engine.load(a, &u)
+    defer p.destroy()
+    var fixed = font.Fixed.init()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
+    let q = p.doc.getElementById("q").?
+    let r = p.doc.getElementById("r").?
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    try markColor(p, r)
+    @expect(try evalText(p, "document.getElementById('p').classList.add('on'); 0", &mut out))
+    try p.doc.setAttr(q, "aria-checked", "true")
+    try engine.noteAttrChanged(p, q, "aria-checked")
+    try p.restyle()
+    try p.layoutPage(&mut fixed, 800.0, 600.0)
+    try styledColor(p, p.doc.getElementById("p").?, &mut out)
+    @expectEqual("rgb(255, 0, 0)", out.bytes())
+    try styledColor(p, q, &mut out)
+    @expectEqual("rgb(255, 0, 0)", out.bytes())
+    try styledColor(p, r, &mut out)
+    @expectEqual("marked", out.bytes())
+}
+
 test "style inputs see a class only where a selector can" {
     let a = @testAllocator()
     var doc = try html.parse(a, "<p id=p><a id=a>t</a><span id=s>u</span></p>")
