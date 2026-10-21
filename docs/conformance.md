@@ -34,7 +34,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/positioning` | 915 | 239 | 1417/2310 | 61.3 | 70 | below | +0.0 |
 | `css/backgrounds-borders` | 1041 | 295 | 2544/8473 | 30.0 | 65 | below | +0.0 |
 | `css/css-fonts` | 560 | 325 | 2740/8356 | 32.8 | 50 | below | -0.0 |
-| `images` | 714 | 269 | 1051/5146 | 20.4 | 60 | below | +0.0 |
+| `images` | 714 | 269 | 4052/5348 | 75.8 | 60 | done | +15.1 |
 | `test262/built-ins` | 18373 | 5450 | 12825/18373 | 69.8 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 15080/23210 | 65.0 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 377/1044 | 36.1 | 80 | below | +0.0 |

@@ -1351,7 +1351,7 @@ pub let PRELUDE =
     \\hidden(G, 'self', G);
     \\hidden(G, 'frames', G);
     \\hidden(G, 'closed', false);
-    \\hidden(G, 'devicePixelRatio', 1);
+    \\getter(G, 'devicePixelRatio', function () { return ak.devicePixelRatio(); });
     \\getter(G, 'innerWidth', function () { return ak.viewport(0); });
     \\getter(G, 'innerHeight', function () { return ak.viewport(1); });
     \\getter(G, 'outerWidth', function () { return ak.viewport(0); });
@@ -2706,6 +2706,13 @@ pub let PRELUDE =
     \\  const x1 = Math.min(a[0] + a[2], b[0] + b[2]), y1 = Math.min(a[1] + a[3], b[1] + b[3]);
     \\  return x1 >= x0 && y1 >= y0 ? [x0, y0, x1 - x0, y1 - y0] : null;
     \\}
+    \\function grownRect(r, m) {
+    \\  return [r[0] - m[3], r[1] - m[0], r[2] + m[1] + m[3], r[3] + m[0] + m[2]];
+    \\}
+    \\function scrollClip(el, margin) {
+    \\  const box = paddingBox(el);
+    \\  return grownRect(box, rootMargins(margin, box[2], box[3]));
+    \\}
     \\function paddingBox(el) {
     \\  const r = el.getBoundingClientRect();
     \\  return [r.x + el.clientLeft, r.y + el.clientTop, el.clientWidth, el.clientHeight];
@@ -2736,6 +2743,7 @@ pub let PRELUDE =
     \\    hidden(this, '_records', []);
     \\    this.root = (options && options.root) || null;
     \\    this.rootMargin = (options && options.rootMargin) || '0px';
+    \\    this.scrollMargin = (options && options.scrollMargin) || '0px';
     \\    this.thresholds = [].concat((options && options.threshold) || 0).map(Number).sort((a, b) => a - b);
     \\  }
     \\  observe(target) {
@@ -2764,13 +2772,13 @@ pub let PRELUDE =
     \\    const root = this.root;
     \\    let bounds = root ? paddingBox(root) : [0, 0, innerWidth, innerHeight];
     \\    const m = rootMargins(this.rootMargin, bounds[2], bounds[3]);
-    \\    bounds = [bounds[0] - m[3], bounds[1] - m[0], bounds[2] + m[1] + m[3], bounds[3] + m[0] + m[2]];
+    \\    bounds = grownRect(bounds, m);
     \\    const box = target.getBoundingClientRect();
     \\    const rendered = target.getClientRects().length > 0 && (!root || (root !== target && root.contains(target)));
     \\    let cut = rendered ? cutRect([box.x, box.y, box.width, box.height], bounds) : null;
     \\    // The scroll containers between the target and the root clip it.
     \\    for (let c = target.parentElement; cut && c && c !== root && c !== document.documentElement; c = c.parentElement) {
-    \\      if (ak.metric(c, 12)) cut = cutRect(cut, paddingBox(c));
+    \\      if (ak.metric(c, 12)) cut = cutRect(cut, scrollClip(c, this.scrollMargin));
     \\    }
     \\    const area = box.width * box.height;
     \\    const ratio = !cut ? 0 : area > 0 ? Math.min(1, cut[2] * cut[3] / area) : 1;
@@ -2926,8 +2934,10 @@ pub let PRELUDE =
     \\// timer sees the image's size before its event; scripts run meanwhile.
     \\// A new request cancels the old task.
     \\const ImageP = HTMLImageElement.prototype;
+    \\const lazyImage = G.__lazyImages(ak, imageUpdate);
+    \\delete G.__lazyImages;
     \\function imageEncodingError() { return new DOMException('The source image cannot be decoded.', 'EncodingError'); }
-    \\function imageUpdate(el) {
+    \\function imageUpdate(el, now) {
     \\  if (ak.inTemplate(el)) return;
     \\  const old = el.__imageRequest;
     \\  if (old) {
@@ -2938,19 +2948,21 @@ pub let PRELUDE =
     \\  const src = el.getAttribute('src'), srcset = el.getAttribute('srcset') || '';
     \\  const empty = !srcset && (src === null || src === '');
     \\  const parent = el.parentNode;
-    \\  const state = { complete: empty, width: 0, height: 0, currentSrc: '', status: 'pending', waiters: [], picture: !!parent && parent.localName === 'picture', task: 0 };
+    \\  const state = { complete: empty, width: 0, height: 0, currentSrc: '', status: 'pending', waiters: [], picture: !!parent && parent.localName === 'picture', task: 0, resumed: !!(old && old.lazy) };
     \\  hidden(el, '__imageRequest', state);
-    \\  ak.queueMicrotask(() => {
+    \\  const load = () => {
     \\    if (el.__imageRequest === state) imageResult(el, state, ak.imageLoad(el, 0), src, srcset);
-    \\  });
+    \\  };
+    \\  if (now) load(); else ak.queueMicrotask(load);
     \\}
     \\function imageResult(el, state, result, src, srcset, inTask) {
+    \\  if (typeof result === 'string') return lazyImage(el, state, result);
     \\  if (typeof result === 'number') {
     \\    // The task that decodes it once its background load ended.
     \\    state.task = ak.imageTask(() => {
     \\      state.task = 0;
     \\      if (el.__imageRequest === state) imageResult(el, state, ak.imageLoad(el, result), src, srcset, true);
-    \\    }, result);
+    \\    }, result, state.resumed);
     \\    return;
     \\  }
     \\  const good = result && result[1] >= 0;
@@ -2973,9 +2985,10 @@ pub let PRELUDE =
     \\  state.task = ak.imageTask(() => {
     \\    state.task = 0;
     \\    if (el.__imageRequest === state) hostEvent(el, good ? 'load' : 'error');
-    \\  }, 0);
+    \\  }, 0, state.resumed);
     \\}
     \\function imageState(el) {
+    \\  if (!el.__imageRequest && el.ownerDocument !== document) imageUpdate(el, true);
     \\  if (!el.__imageRequest) imageUpdate(el);
     \\  return el.__imageRequest || { complete: true, width: 0, height: 0, currentSrc: '', status: 'broken' };
     \\}
@@ -3021,7 +3034,7 @@ pub let PRELUDE =
     \\    // Adding async clears a dynamically created script's force-async flag,
     \\    // even when the content attribute is later removed without a getter.
     \\    if (kind === 1 && target instanceof HTMLScriptElement && name === 'async' && target.hasAttribute('async')) hidden(target, '__forceAsync', false);
-    \\    if (kind === 1 && target instanceof HTMLImageElement && ['src', 'srcset', 'sizes', 'crossorigin', 'referrerpolicy'].includes(name)) imageUpdate(target);
+    \\    if (kind === 1 && target instanceof HTMLImageElement && (['src', 'srcset', 'sizes', 'crossorigin', 'referrerpolicy'].includes(name) || (name === 'loading' && target.__imageRequest && target.__imageRequest.lazy))) imageUpdate(target);
     \\    if (kind === 3 && node) {
     \\      imageDiscover(node);
     \\      // Moving a loaded img out of a picture must reselect its own src.

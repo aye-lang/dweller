@@ -69,7 +69,7 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
                 n = 0
                 continue
             }
-            if !isIdent(c, "none") && !isImage(c) {
+            if !isIdent(c, "none") && !(try isValidImage(sheet.arena.allocator(), c)) {
                 return null
             }
             n += 1
@@ -147,6 +147,9 @@ fn writeComp(c: Comp, out: *mut text.Builder) AllocError!bool {
     if t.kind == Tok.Url {
         try writeUrl(t.text, out)
         return true
+    }
+    if isGradient(t) {
+        return writeComputedGradient(c, out)
     }
     if t.kind == Tok.Function {
         let inner = argsOf(c.toks)
@@ -1073,6 +1076,8 @@ pub struct Gradient {
     at: Position
     from: f64
     stops: List(Stop)
+    space: u8 = 0
+    method: u8 = 's'
 }
 
 /// The gradient of an image component; null when it is not one or is
@@ -1122,6 +1127,7 @@ pub fn readGradient(alloc: Allocator, c: Comp) AllocError!?Gradient {
     // The arguments, as groups between commas.
     var start: usize = 0
     var first = true
+    var after_hint = false
     for k in 0..all.len + 1 {
         if k < all.len && !isComma(all[k]) {
             continue
@@ -1134,12 +1140,19 @@ pub fn readGradient(alloc: Allocator, c: Comp) AllocError!?Gradient {
         if first {
             first = false
             if colorValue(group[0]) == null && !isIdent(group[0], "currentcolor") {
-                if !lineOf(&mut g, group, legacy) {
+                let split = splitInterpolation(group) orelse return null
+                applyInterpolation(&mut g, split.method)
+                if split.line.len > 0 && !lineOf(&mut g, split.line, legacy) {
                     return null
                 }
                 continue
             }
         }
+        let hint = group.len == 1 && colorValue(group[0]) == null && !isIdent(group[0], "currentcolor")
+        if hint && (after_hint || g.stops.len() == 0 || k == all.len) {
+            return null
+        }
+        after_hint = hint
         if !(try stopsOf(&mut g, group)) {
             return null
         }
@@ -1235,7 +1248,7 @@ fn lineOf(g: *mut Gradient, group: []Comp, legacy: bool) bool {
             g.extent = 3
         } else if isIdent(c, "farthest-corner") || isIdent(c, "cover") {
             g.extent = 0
-        } else if lenPctOf(c) |l| {
+        } else if gradientLength(c) |l| {
             g.extent = 4
             if lens == 0 {
                 g.rx = l
@@ -1308,9 +1321,15 @@ fn stopsOf(g: *mut Gradient, group: []Comp) AllocError!bool {
             }
         }
         if pos == null {
-            pos = lenPctOf(c)
+            pos = gradientLength(c)
+        }
+        if pos == null && g.kind == 2 && isMathFunction(c.toks[0]) {
+            pos = LenPct { px: 0.0, pct: 0.0 }
         }
         let p = pos orelse return false
+        if n == 2 {
+            return false
+        }
         let col = color orelse {
             // A color hint.
             if group.len == 1 {

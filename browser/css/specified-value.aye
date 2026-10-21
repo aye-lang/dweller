@@ -14,6 +14,10 @@ pub fn specifiedValue(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
         return specifiedLineClamp(alloc, prop, value, out)
     }
 
+    if inList(prop, "background-image mask-image") != null && text.indexOf(value, "gradient(") != null && text.indexOf(value, "var(") == null {
+        return specifiedImages(alloc, value, out)
+    }
+
     let index = propertyIndex(logicalAlias(prop)) orelse return writeRaw(value, out)
 
     if (index == OVERFLOW_X || index == OVERFLOW_Y) && !keepsRaw(value) {

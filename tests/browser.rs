@@ -1543,6 +1543,72 @@ error b: complete=true naturalWidth=0
     }
 }
 
+/// `loading=lazy` (`browser/tests/net/lazy_images.html`, 100 lazy
+/// images below an eager one in a 300 px viewport): the window fetches
+/// the eager image and the 15 lazy ones within 1250 px of the viewport at
+/// load, and each other one once scrolling brings it near.
+#[test]
+fn window_lazy_images() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let scroll = format!("loaded{}", " key:pagedown frame frame".repeat(40));
+    for (events, want) in [("loaded", 16), (scroll.as_str(), 101)] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/lazy_images.html", srv.base);
+        let out = run_window(&[
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+        ]);
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        let images: Vec<&str> = log.lines().filter(|l| l.contains(".png")).collect();
+        let once: std::collections::BTreeSet<&&str> = images.iter().collect();
+        assert_eq!((images.len(), once.len()), (want, want), "{events}\n{log}");
+    }
+}
+
+/// A horizontal scroller of 30 lazy 200px images in a 400px window:
+/// the 9 within 1250px of its visible part load, and 9 more once a
+/// script scrolls it 2000px to the right.
+#[test]
+fn window_lazy_images_in_scroller() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let frames = " frame".repeat(20);
+    let scroll = format!("loaded{frames} key:pagedown{frames}");
+    for (events, want) in [("loaded", 9), (scroll.as_str(), 18)] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/lazy_scroller.html", srv.base);
+        let out = run_window(&[
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+        ]);
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        let images: Vec<&str> = log.lines().filter(|l| l.contains(".png")).collect();
+        let once: std::collections::BTreeSet<&&str> = images.iter().collect();
+        assert_eq!((images.len(), once.len()), (want, want), "{events}\n{log}");
+    }
+}
+
 /// In the window the page lays out again when an image arrives: an
 /// observer sees the paragraph below it visible first and pushed out of
 /// the viewport after the image's load event.
@@ -8027,18 +8093,14 @@ fn dump_scrolls_through() {
     let sections = md(&[], "lazy_sections");
     assert!(
         sections.contains("Fourth section, at the bottom.")
-            && sections.contains("scroll events: 3;"),
+            && sections.contains("scroll events: 3; image loaded at"),
         "{sections}"
     );
+    // The native lazy image loads once the scroll brings it near.
     let sections = md(&["--no-scroll"], "lazy_sections");
     assert!(
-        !sections.contains("First section") && sections.contains("scroll events: 0;"),
-        "{sections}"
-    );
-    // The native lazy image is there either way: it loads at once.
-    assert!(
-        sections.contains("![A native lazy image](data:image/png")
-            && sections.contains("image loaded at"),
+        !sections.contains("First section")
+            && sections.contains("scroll events: 0; image loading"),
         "{sections}"
     );
     let list = md(&[], "infinite_list");

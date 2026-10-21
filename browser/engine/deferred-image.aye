@@ -1,0 +1,23 @@
+import css
+import dom.Document
+import dom.NodeId
+import js.Interp
+import js.JsError
+import js.Value
+import url
+import url.Url
+
+// spec: https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+fn deferredImage(it: *mut Interp, cache: *mut ImageCache, doc: *Document, el: NodeId, base: *Url, media: css.Media) JsError!?Value {
+    let choice = (try chooseImage(cache.alloc, doc, el, media)) orelse return try it.newString("")
+    let target = url.resolve(cache.alloc, base, choice.url) catch return try it.newString("")
+    defer target.deinit(cache.alloc)
+
+    if doc.attr(el, "crossorigin") == null && imageAvailable(cache, target.withoutFragment()) {
+        try cache.revealed.append(el)
+
+        return null
+    }
+
+    return try it.newString(target.href)
+}

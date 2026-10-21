@@ -4,8 +4,8 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/, fonts/, css/support/, tools/ and docs/ (upstream
-      `wpt serve` needs the last two).
+      resources/, common/, fonts/, images/, css/support/, tools/ and
+      docs/ (upstream `wpt serve` needs the last two).
   wpt.py serve [--port N] [--wpt-root DIR] [--upstream]
       A static server on 127.0.0.1 for the checkout (see Server below), or
       with --upstream the checkout's own `wpt serve` (wpt_upstream.py).
@@ -42,7 +42,7 @@ VENDOR_JS = HERE / "wpt" / "testdriver-vendor.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "css/support", "css/reference", "tools", "docs"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/reference", "tools", "docs"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
