@@ -155,6 +155,8 @@ fn dweller() -> &'static Path {
         let out = aye()
             .arg("build")
             .arg("browser")
+            .arg("--mode")
+            .arg("safe")
             .arg("-o")
             .arg(&exe)
             .output()
