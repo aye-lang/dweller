@@ -1,0 +1,13 @@
+# TC3b: shard the browser test step, per-test times
+
+- goal: cut the wall time of a green `ci` run by sharding `cargo test --release --test browser`, and record each test's time for later balancing and test selection.
+- cause: a green `ci` run takes about 33 min (median); about 95% of it is `cargo test --release --test browser` (15.8 min on macOS, 13.6 min on Ubuntu). Its 146 tests ran in one job per OS.
+- design: the job `browser-shard` has a matrix of `include` entries (`os`, `shard`, `shards`, `part`): Ubuntu 4 shards, macOS 2. Its name is `browser (<os>, <part>)`, e.g. `browser (ubuntu-24.04, 1/4)`. The step lists the names (`-- --list --format terse`), keeps the lines that end in `: test`, strips the suffix, sorts them and keeps the names whose line index mod `shards` is `shard` (awk); an empty list fails the step. It runs `cargo test --release --test browser -- --exact <names> --skip aye_unit_tests -Z unstable-options --report-time` with `RUSTC_BOOTSTRAP=1`, so each result line has its time (`<N.NNNs>`). `Code taste`, `CSS property ids`, `Module layers`, `aye check browser` and `aye test browser` run only on shard 0 of each OS. `aye_unit_tests` runs the same `aye test browser` as that step (same binary through `AYE`, same working directory, the same wasmtime `PKG_CONFIG_PATH`), so the cargo run skips it; the module count check (at least 15 modules) of that test is not run in CI any more. One job `browser` (`needs: browser-shard`, `if: always()`) fails unless every shard succeeded, so one check reports the whole result. The old checks `browser (macos-latest)` and `browser (ubuntu-24.04)` go away (main has no branch protection, so no required check names change). `perf` and every cache and fetch step are unchanged.
+- files: `.github/workflows/ci.yml`, `docs/plans/cards/TC3b.md` (new)
+- verify: the YAML parses (`ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml")'`); `python3 browser/tools/check_taste.py` passes; with the awk of the YAML, the shards for 4 and for 2 each partition the real `--list` output (union = all names, no overlap); the `ci` run of the PR shows the six shard checks and `browser`.
+
+## Status: done (local checks), 2026-11-01
+
+- The YAML parses; `check_taste.py` passes.
+- Partition check on the real list (146 names, all unique), with the awk program of the YAML: 4 shards get 37, 37, 36, 36 names; 2 shards get 73, 73. For each, the union equals the full list and no name is in two shards. `aye_unit_tests` is in shard 0 of both (index 6) and is skipped there.
+- Not checked locally: the run on GitHub (the PR's `ci` run shows the six shard checks, the `--report-time` times and `browser`).

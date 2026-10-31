@@ -10,21 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  browser:
+  browser-shard:
+    name: browser (${{ matrix.os }}, ${{ matrix.part }})
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        include:
+          - { os: macos-latest, shard: 0, shards: 2, part: 1/2 }
+          - { os: macos-latest, shard: 1, shards: 2, part: 2/2 }
+          - { os: ubuntu-24.04, shard: 0, shards: 4, part: 1/4 }
+          - { os: ubuntu-24.04, shard: 1, shards: 4, part: 2/4 }
+          - { os: ubuntu-24.04, shard: 2, shards: 4, part: 3/4 }
+          - { os: ubuntu-24.04, shard: 3, shards: 4, part: 4/4 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Code taste
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.shard == 0
         run: python3 browser/tools/check_taste.py
 
       - name: CSS property ids
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.shard == 0
         run: python3 browser/tools/gen_property_ids.py --check
 
       - name: Install system packages (Ubuntu)
@@ -74,16 +81,34 @@ jobs:
         run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
 
       - name: Module layers
+        if: matrix.shard == 0
         run: python3 browser/tools/check_layers.py
 
       - name: aye check browser
+        if: matrix.shard == 0
         run: aye check browser
 
       - name: aye test browser
+        if: matrix.shard == 0
         run: aye test browser
 
       - name: cargo test --release --test browser
-        run: AYE="$(command -v aye)" cargo test --release --test browser
+        run: |
+          export RUSTC_BOOTSTRAP=1
+          names="$(cargo test --release --test browser -- --list --format terse | sed -n 's/: test$//p' | sort | awk -v n=${{ matrix.shards }} -v s=${{ matrix.shard }} '(NR - 1) % n == s')"
+          if [ -z "$names" ]; then
+            echo "::error::shard ${{ matrix.part }} has no tests"
+            exit 1
+          fi
+          AYE="$(command -v aye)" cargo test --release --test browser -- --exact $names --skip aye_unit_tests -Z unstable-options --report-time
+
+  browser:
+    needs: browser-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every browser shard passed
+        run: test "${{ needs.browser-shard.result }}" = success
 
   perf:
     runs-on: macos-latest
