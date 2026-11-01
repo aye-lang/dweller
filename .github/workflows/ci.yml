@@ -24,6 +24,9 @@ jobs:
           - { os: ubuntu-24.04, shard: 2, shards: 4, part: 3/4 }
           - { os: ubuntu-24.04, shard: 3, shards: 4, part: 4/4 }
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -90,18 +93,31 @@ jobs:
         run: aye check browser
 
       - name: cargo test --release --test browser
+        run: .github/scripts/browser-shard.sh ${{ matrix.shard }} ${{ matrix.shards }}
+
+      - name: Upload flaky test names
+        if: hashFiles('target/flaky-tests.txt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-${{ matrix.os }}-${{ matrix.shard }}
+          path: target/flaky-tests.txt
+
+      - name: File flaky test issues
+        if: hashFiles('target/flaky-tests.txt') != '' && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          export RUSTC_BOOTSTRAP=1
-          if [ "$RUNNER_OS" = macOS ]; then col=3; else col=2; fi
-          names="$(cargo test --release --test browser -- --list --format terse | sed -n 's/: test$//p' \
-            | awk -v c=$col 'NR == FNR { t[$1] = $c; next } { print ($1 in t ? t[$1] : 10), $1 }' tests/browser-times.txt - \
-            | LC_ALL=C sort -k1,1nr -k2,2 \
-            | awk -v n=${{ matrix.shards }} -v s=${{ matrix.shard }} '{ b = 0; for (i = 1; i < n; i++) if (load[i] < load[b]) b = i; load[b] += $1 } b == s { print $2 }')"
-          if [ -z "$names" ]; then
-            echo "::error::shard ${{ matrix.part }} has no tests"
-            exit 1
-          fi
-          AYE="$(command -v aye)" cargo test --release --test browser -- --exact $names -Z unstable-options --report-time
+          gh label create flaky --force --color B60205 --description "failed, then passed on re-run"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          for name in $(cat target/flaky-tests.txt); do
+            number="$(gh issue list --search "in:title \"flaky: $name\"" --state open --json number,title --jq ".[] | select(.title == \"flaky: $name\") | .number" | head -n 1)"
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --body "Failed, then passed on re-run ($RUNNER_OS): $run_url"
+            else
+              gh issue create --title "flaky: $name" --label flaky --body "Failed, then passed on re-run ($RUNNER_OS): $run_url"
+            fi
+          done
 
   browser:
     needs: browser-shard
