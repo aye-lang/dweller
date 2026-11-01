@@ -1,0 +1,12 @@
+import engine
+import net
+
+fn pageSettled(ui: *mut Ui) bool {
+    if ui.rest.len() > 0 || ui.dirty || ui.repaint || ui.tab.early || net.loadsRunning() {
+        return false
+    }
+
+    let p = ui.tab.page orelse return true
+
+    return !engine.imagesLoading(p) && !engine.canvasFramesPending(p) && !engine.navigationPending(p) && engine.msUntilNextTimer(p) == null && !engine.animationFrameRequested(p)
+}

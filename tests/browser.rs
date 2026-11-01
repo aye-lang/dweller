@@ -1578,7 +1578,8 @@ fn window_lazy_images() {
         };
         let page = format!("{}/net/lazy_images.html", srv.base);
         let out = run_window(&[
-            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--until-idle",
+            "--events", events,
         ]);
         assert!(
             out.status.success(),
@@ -1611,7 +1612,8 @@ fn window_lazy_images_in_scroller() {
         };
         let page = format!("{}/net/lazy_scroller.html", srv.base);
         let out = run_window(&[
-            &page, "--width", "400", "--height", "300", "--frames", "200", "--events", events,
+            &page, "--width", "400", "--height", "300", "--frames", "200", "--until-idle",
+            "--events", events,
         ]);
         assert!(
             out.status.success(),
@@ -2127,7 +2129,7 @@ fn screenshot_errors() {
     );
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -6875,6 +6877,7 @@ fn window_input_priority() {
             "300",
             "--frames",
             "300",
+            "--until-idle",
             "--events",
             "frame frame frame frame frame frame frame frame text:abc frame",
             "--text",
@@ -7254,7 +7257,7 @@ fn window_history_steps() {
             .env("DWELLER_TIMING", "1")
             .args([
                 page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "600",
-                "--state", "--text", "--events", events,
+                "--until-idle", "--state", "--text", "--events", events,
             ])
             .output()
             .unwrap();
