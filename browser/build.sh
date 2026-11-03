@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds the Dweller browser for real use: `--mode fast` (optimized, no
-# safety checks; the tests build it in debug mode). The output goes to
-# target/dweller in this checkout (your worktree) unless a path is
+# Builds the Dweller browser for real use: `--mode safe` (optimized, with
+# the bounds and overflow checks, so a panic names the line). The output
+# goes to target/dweller in this checkout (your worktree) unless a path is
 # given; a relative path is taken from the checkout's root. Do not give a
 # path outside your worktree or a fixed name that other agents share (the
 # session scratchpad): another agent's build can replace your binary
@@ -13,16 +13,16 @@
 # target/release/aye. Anywhere else (the Dweller repository) it uses the
 # `aye` named by $AYE, or `aye` on the PATH.
 #
-# A fast build also writes `OUT.fast` (the binary's sha256): the timing
-# tools (browser/tools/fast_build.py) refuse a binary without it.
+# A safe or fast build also writes `OUT.safe` or `OUT.fast` (the binary's
+# sha256): the timing tools (browser/tools/fast_build.py) refuse a binary
+# without one.
 #
-# `--mode safe` keeps the bounds and overflow checks (a panic names the
-# line) at about the speed of `fast`; use it to look into a crash on a
-# real site.
+# `--mode fast` drops the checks: Q0.2 measured the safe build's longest
+# loop 9.5% and its jsbench time 17.6% over fast (browser/engine/PERF.md).
 set -e
 cd "$(dirname "$0")/.."
 out=target/dweller
-mode=fast
+mode=safe
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) mode="$2"; shift 2 ;;
@@ -44,9 +44,9 @@ if [ -f "$wasmtime_pc/wasmtime.pc" ]; then
     export PKG_CONFIG_PATH
 fi
 mkdir -p "$(dirname "$out")"
-rm -f "$out.fast"
+rm -f "$out.fast" "$out.safe"
 "$AYE" build browser -o "$out" --mode "$mode"
-if [ "$mode" = fast ]; then
-    shasum -a 256 "$out" | cut -d' ' -f1 > "$out.fast"
+if [ "$mode" != debug ]; then
+    shasum -a 256 "$out" | cut -d' ' -f1 > "$out.$mode"
 fi
 echo "$out ($mode)"

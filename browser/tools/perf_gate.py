@@ -125,7 +125,7 @@ def gate(a):
         results = {page: median_of(page, a.binary, port) for page in budgets}
     finally:
         server.terminate()
-    bad = table(results, budgets, fast_build.is_fast(a.binary) or a.allow_debug)
+    bad = table(results, budgets, fast_build.is_optimized(a.binary) or a.allow_debug)
     if a.update:
         json.dump(lowered(results, budgets), open(a.url, "w"), indent=2)
         open(a.url, "a").write("\n")
