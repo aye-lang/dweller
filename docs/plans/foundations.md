@@ -173,18 +173,30 @@ can be stopped.
 Exit: X1 and S2 hold with `DWELLER_PROCESS=site` as the default.
 Chromium: `docs/process_model_and_site_isolation.md`,
 `docs/security/` and `content/browser/site_instance_impl.cc`.
-Firefox's Fission design is the cross-check.
+Firefox's Fission design is the cross-check. The design is
+`docs/process-model.md` (Q2.1).
+
+How the steps run:
+- Each step adds the site-lock checks for its own messages. Q2.7 is
+  the audit of all of them, plus the compromised-renderer tests.
+- The table is in running order. The sandbox (Q2.8) comes before the
+  process swap (Q2.6).
+- Q1.7 lands before Q2.5.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
 | Q2.1 | Design note `docs/process-model.md`, about one page: what the browser and the renderers own, the IPC messages (navigation, frames, input, network, storage, frames tree), the site definition, the process reuse policy, and how Spaces fit in. Compare with Chromium and Fission | the user reads it | `docs/process_model_and_site_isolation.md`, `content/browser/renderer_host/render_process_host_impl.cc`, `content/browser/site_instance_impl.cc` |
+| Q2.1b | Split `ui/window.aye` into the window and a page view, still in one process, along the boundary that the IPC will cut | the `window_*` tests pass with no golden change | – |
 | Q2.2 | Renderer skeleton: `dweller --renderer`, launched by `posix_spawn`, with a `socketpair` for IPC (the mechanism of `ui/spaces.aye`). It renders one tab, and its frames go through shared memory to the window. Behind `DWELLER_PROCESS=tab` | a window test loads a page in a renderer, and the pixels match the in-process golden | `content/renderer/render_thread_impl.cc`, `components/viz/service/surfaces/` (idea only) |
 | Q2.3 | Input and UI across the boundary: mouse, wheel, keys, text input, focus, selection, find, cursor, title, URL, status, and the long-task chip | the `window_*` tests pass with `DWELLER_PROCESS=tab` | `content/browser/renderer_host/render_widget_host_impl.cc`, `input/` |
+| Q2.3b | Agent commands routed to the tab's renderer; the browser renumbers agent refs, so the protocol stays the same | `agent_sessions` passes with `DWELLER_PROCESS=tab` | – |
 | Q2.4 | Network in the browser process: a renderer asks for loads over IPC. Cookies, the HTTP cache, `localStorage` and the profile stay in the browser. A renderer opens no profile file | `window_login` passes with the flag, and a test shows the renderer has no profile path or open jar | `services/network/url_loader.cc`, `services/network/public/mojom/url_loader_factory.mojom` |
 | Q2.5 | Crash and hang: a dead renderer shows a sad-tab page with Reload, and the other tabs go on. A renderer that does not answer for 10 s gets "page unresponsive", and Stop kills it | tests kill a renderer, and hang one with `while(1){}` | `chrome/browser/ui/sad_tab.cc`, `chrome/browser/ui/hung_renderer/` |
-| Q2.6 | Process per site on navigation: a cross-site navigation swaps the renderer, and a same-site one reuses it. The site is scheme plus eTLD+1, from the public-suffix list in `net/` | a test goes a → b → a and checks pids and history | `content/browser/renderer_host/navigation_request.cc`, `render_frame_host_manager.cc` |
-| Q2.7 | Site lock: the browser checks every IPC request against the renderer's site (cookies, storage, `file:`, `postMessage` origin, navigation targets). A violation kills the renderer | a test hook acts as a compromised renderer: it asks for another site's cookies and is killed | `content/browser/child_process_security_policy_impl.cc` (`CanAccessDataForOrigin`) |
-| Q2.8 | OS sandbox for renderers. macOS: a seatbelt profile with no file reads outside the bundle and no network. Linux: seccomp-bpf and namespaces | a renderer that tries to open `~/.dweller` or a socket fails (test on both OSes) | `sandbox/mac/`, `sandbox/policy/mac/renderer.sb`, `sandbox/linux/seccomp-bpf/` |
+| Q2.8a | OS sandbox for renderers on macOS: a seatbelt profile with no file reads outside the bundle and no network | a renderer that tries to open `~/.dweller` or a socket fails | `sandbox/mac/`, `sandbox/policy/mac/renderer.sb` |
+| Q2.8b | OS sandbox for renderers on Linux: seccomp-bpf and namespaces. Executable memory stays allowed only for wasmtime (Q8) | the same test on Ubuntu | `sandbox/linux/seccomp-bpf/`, `sandbox/policy/linux/` |
+| Q2.6a | Navigation and session history move to the browser. The renderer asks, and the browser decides and commits | the `window_*` history and navigation tests pass with the flag | `content/browser/renderer_host/navigation_request.cc`, `navigation_controller_impl.cc` |
+| Q2.6b | Process per site on navigation: a cross-site navigation swaps the renderer, and a same-site one reuses it. The site is scheme plus eTLD+1 (`net/psl.aye`) | a test goes a → b → a and checks pids and history | `content/browser/renderer_host/render_frame_host_manager.cc`, `content/browser/site_instance_impl.cc` |
+| Q2.7 | Site-lock audit: every IPC message is checked against the renderer's site (cookies, storage, `file:`, `postMessage` origin, navigation targets). A violation kills the renderer. The checks were added by each step; this step lists them, closes the gaps and adds the tests | a test hook acts as a compromised renderer: it asks for another site's cookies and is killed | `content/browser/child_process_security_policy_impl.cc` (`CanAccessDataForOrigin`) |
 | Q2.9 | Out-of-process iframes 1: a cross-site iframe gets its own renderer. The parent lays out a remote-frame placeholder, and the window composites the child's frame at its rect, clip and scroll | a cross-site iframe test matches its pixel golden | `third_party/blink/renderer/core/frame/remote_frame.cc`, `content/browser/renderer_host/render_frame_proxy_host.cc` |
 | Q2.10 | OOPIF 2: hit testing sends input to the right process. Also focus traversal, nested scrolling, `IntersectionObserver` across processes, and resize | tests for click, keyboard focus, wheel and IO in a cross-site iframe | `components/viz/service/hit_test/`, `content/browser/renderer_host/render_widget_host_input_event_router.cc` |
 | Q2.11 | OOPIF 3: cross-process window proxies: `postMessage`, `parent`, `top`, `frames`, `location` set, `opener`, `name`, and `focus()`/`blur()` | WPT `html/browsers/origin` and the `postMessage` subsets are at threshold | `third_party/blink/renderer/core/frame/remote_dom_window.cc` |
@@ -204,11 +216,11 @@ with thresholds.
 | Q3.3 | `crossorigin` on script, link and img, plus ORB (opaque responses that a no-cors fetch must not expose) | WPT `fetch/orb` and `html/cross-origin` subsets | `services/network/orb/` |
 | Q3.4 | TLS: set peer and host verification, TLS ≥ 1.2 and the system CA store explicitly. A bad certificate gets an interstitial with no bypass on HSTS hosts | a local server with expired, self-signed and wrong-host certificates; each is refused | `net/cert/`, `components/security_interstitials/` |
 | Q3.5 | HSTS (the header and the preload list), mixed content (active content blocked, passive content upgraded) and `upgrade-insecure-requests` | WPT `mixed-content`, `upgrade-insecure-requests`; an HSTS test | `net/http/transport_security_state.cc`, `core/loader/mixed_content_checker.cc` |
-| Q3.6 | X-Frame-Options and CSP `frame-ancestors` (after Q2.9, because the check needs the frame tree in the browser) | WPT `x-frame-options`, `content-security-policy/frame-ancestors` | `content/browser/renderer_host/ancestor_throttle.cc` |
+| Q3.6 | X-Frame-Options and CSP `frame-ancestors` (after Q2.6a, because the check needs navigation in the browser) | WPT `x-frame-options`, `content-security-policy/frame-ancestors` | `content/browser/renderer_host/ancestor_throttle.cc` |
 | Q3.7 | CSP 1: parsing, `default-src` and `script-src` for external scripts, inline scripts with nonce and hash, and `eval` | WPT `content-security-policy/script-src` | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
 | Q3.8 | CSP 2: `style-src`, `img-src`, `connect-src`, `font-src`, `frame-src`, `base-uri`, `form-action` and report-only (no reports are sent) | WPT `content-security-policy` at threshold | the same |
 | Q3.9 | iframe `sandbox`: every token (`allow-top-navigation*`, `allow-popups*`, `allow-forms`, `allow-modals`, `allow-downloads`, and the others) | WPT `html/browsers/sandboxing` | `core/frame/sandbox_flags.cc` |
-| Q3.10 | `X-Content-Type-Options: nosniff`, and COOP (browsing-context-group switch, opener severed; after Q2.6) | WPT `fetch/nosniff`, `html/cross-origin-opener-policy` subsets | `services/network/cross_origin_opener_policy.cc`, `content/browser/renderer_host/` (COOP) |
+| Q3.10 | `X-Content-Type-Options: nosniff`, and COOP (browsing-context-group switch, opener severed; after Q2.6b) | WPT `fetch/nosniff`, `html/cross-origin-opener-policy` subsets | `services/network/cross_origin_opener_policy.cc`, `content/browser/renderer_host/` (COOP) |
 | Q3.11 | Small leaks: `Authorization` is removed on a cross-origin redirect, `window.name` is cleared on a cross-site navigation, top-level `data:` navigation is blocked, and private network access is blocked (public to local) | one test each | `services/network/private_network_access_checker.cc` |
 | Q3.12 | Agent socket: a `0700` directory, a `0600` socket and a token handshake. A process without the token is refused | a test without the token is refused | – |
 
