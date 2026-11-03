@@ -1,5 +1,10 @@
 # Plan: the Dweller browser
 
+**2026-11-04: the order of work is now `docs/plans/foundations.md`**
+(stable, secure and fast before more features; full site isolation;
+WebGL last). The cards, decisions and the Chromium module map below stay
+valid; the roadmap's running order and "Current state" are superseded.
+
 The work on `browser/` in `aye-lang/dweller`, a public repository (MIT
 OR Apache-2.0) split out of the Aye repo with its history (P8.2, done
 2026-10-15). The lane is active again: the window work (P4.31, P4.32)
