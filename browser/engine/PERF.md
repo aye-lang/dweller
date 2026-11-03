@@ -922,3 +922,144 @@ median of 3 alternating runs), 2026-10-17:
   CLI case reports its platform skip; no new skips or golden changes.
 - No compiler workaround was needed; `COMPILER_GAPS.md` is unchanged.
   `docs/browser.md` and `docs/browser-sites.md` are untouched.
+
+## Q0.2: fast and safe builds (2026-11-04)
+
+Main 7de2c08, compiler `AYE_REV` 0953905, Apple M2 Pro, 1024×768.
+`browser/build.sh target/dweller-fast --mode fast` and
+`browser/build.sh target/dweller-safe --mode safe`. Every run went through
+`scripts/capped.sh` (nice 10, one job at a time), one run after the
+other. W7 and W8 as in the P4.41 section (one run per site for W7, the
+median of 3 for W8); the safe build needs `--allow-debug`, because only a
+fast build has the `.fast` marker. jsbench: `browser/tests/jsbench/run.sh`
+with `BENCH_BIN=target/dweller-safe BENCH_BASELINE=target/dweller-fast
+BENCH_REF=none` (the two binaries interleaved, median of 3).
+
+**Cost of safe mode: longest loop +9.5% and scroll p95 +1.9% (median over
+sites of the safe/fast ratio; google's p95 is 0.0 in both and is left
+out), jsbench +17.6% (geometric mean of the fast/safe speedups: 0.850).**
+One W7 run per site is noisy on short loops (example 15 ms fast, 6 ms
+safe; lobsters 34 ms and 14 ms), so the per-site ratios go from 0.40 to
+1.33.
+
+W7 (replay), fast build:
+
+| Site | Longest loop ms | Scroll frame p50 / p95 ms | Idle CPU | W7 |
+|---|---:|---:|---:|---|
+| example | 15 | 0.0 / 0.1 | 0.3% | ok |
+| wikipedia-en | 258 | 2.1 / 225.2 | 0.4% | FAIL loop, scroll |
+| hn | 9 | 0.1 / 2.0 | 0.3% | ok |
+| github | 1193 | 3.1 / 533.5 | 0.4% | FAIL loop, scroll |
+| mdn | 93 | 4.4 / 7.6 | 0.4% | ok |
+| python-docs | 18 | 5.1 / 5.6 | 0.4% | ok |
+| rustdoc | 169 | 10.1 / 11.9 | 0.4% | FAIL loop |
+| bbc | 554 | 27.4 / 475.2 | 10.7% | FAIL loop, scroll, idle |
+| cnn-lite | 3 | 1.6 / 3.1 | 0.4% | ok |
+| lobsters | 34 | 0.1 / 1.8 | 0.3% | ok |
+| go-docs | 161 | 3.5 / 41.7 | 0.4% | FAIL loop, scroll |
+| duckduckgo | 10 | 0.0 / 2.4 | 0.4% | ok |
+| google | 30 | 0.0 / 0.0 | 0.4% | ok |
+| wikipedia (ja) | 209 | 2.4 / 189.0 | 0.4% | FAIL loop, scroll |
+| abehiroshi | 6 | 0.0 / 0.1 | 0.4% | ok |
+| zol | 10500 | 452.2 / 7483.2 | 19.3% | FAIL loop, scroll, idle |
+| youtube | 372 | 0.6 / 300.4 | 9.5% | FAIL loop, scroll, idle |
+| youtube-search | 832 | 147.0 / 466.2 | 33.5% | FAIL loop, scroll, idle |
+| react | 198 | 60.7 / 164.1 | 0.3% | FAIL loop, scroll |
+| mistral | 1289 | 53.6 / 326.6 | 95.3% | FAIL loop, scroll, idle |
+
+9 of 20 pass.
+
+W7 (replay), safe build:
+
+| Site | Longest loop ms | Scroll frame p50 / p95 ms | Idle CPU | W7 |
+|---|---:|---:|---:|---|
+| example | 6 | 0.0 / 0.2 | 0.1% | ok |
+| wikipedia-en | 252 | 2.2 / 227.6 | 0.1% | FAIL loop, scroll |
+| hn | 10 | 0.0 / 1.9 | 0.1% | ok |
+| github | 1450 | 3.4 / 543.4 | 9.6% | FAIL loop, scroll, idle |
+| mdn | 101 | 4.3 / 7.4 | 0.1% | FAIL loop |
+| python-docs | 23 | 4.8 / 5.3 | 0.2% | ok |
+| rustdoc | 187 | 11.4 / 21.1 | 0.2% | FAIL loop |
+| bbc | 612 | 40.1 / 559.4 | 11.6% | FAIL loop, scroll, idle |
+| cnn-lite | 4 | 1.5 / 2.5 | 0.1% | ok |
+| lobsters | 14 | 0.0 / 1.6 | 0.3% | ok |
+| go-docs | 152 | 6.6 / 45.4 | 0.4% | FAIL loop, scroll |
+| duckduckgo | 12 | 0.1 / 3.2 | 0.2% | ok |
+| google | 36 | 0.0 / 0.0 | 0.3% | ok |
+| wikipedia (ja) | 196 | 3.1 / 189.1 | 0.3% | FAIL loop, scroll |
+| abehiroshi | 8 | 0.0 / 0.3 | 0.3% | ok |
+| zol | 10886 | 223.4 / 9924.6 | 20.7% | FAIL loop, scroll, idle |
+| youtube | 398 | 0.8 / 291.7 | 10.4% | FAIL loop, scroll, idle |
+| youtube-search | 896 | 150.4 / 494.7 | 44.2% | FAIL loop, scroll, idle |
+| react | 179 | 20.2 / 166.1 | 0.8% | FAIL loop, scroll |
+| mistral | 1473 | 92.3 / 432.4 | 99.0% | FAIL loop, scroll, idle |
+
+8 of 20 pass. Against the fast build, mdn fails (101 ms, 1 ms over the
+limit) and github fails on idle too (9.6%; 0.4% fast, one run each).
+
+Against the 2026-10-17 W7 table (fast build), 7 sites have a different
+result, and the pass count is the same (9):
+
+- mdn: FAIL loop → ok (150 → 93 ms).
+- go-docs: ok → FAIL loop, scroll (99 → 161 ms; p95 10.0 → 41.7 ms).
+- wikipedia-en, wikipedia (ja), react: FAIL loop → FAIL loop, scroll
+  (p95 16.6 → 225.2, 8.2 → 189.0, 19.2 → 164.1 ms).
+- github: FAIL loop, scroll, idle → FAIL loop, scroll (idle 46.2% → 0.4%;
+  loop 2395 → 1193 ms).
+- bbc: FAIL loop, scroll → FAIL loop, scroll, idle (idle 0.8% → 10.7%).
+
+Not profiled here.
+
+W8 (live, fast build, Dweller first paint against Chrome's first
+contentful paint, median of 3 alternating runs):
+
+| Site | Dweller ms | Chrome ms | Gap ms | W8 |
+|---|---:|---:|---:|---|
+| example | 198 | 220 | -22 | ok |
+| wikipedia-en | 949 | 820 | 129 | ok |
+| hn | 767 | 800 | -33 | ok |
+| github | 429 | 852 | -423 | ok |
+| mdn | 493 | 656 | -163 | ok |
+| python-docs | 377 | 408 | -31 | ok |
+| rustdoc | 1013 | 576 | 437 | ok |
+| bbc | 413 | 376 | 37 | ok |
+| cnn-lite | 402 | 480 | -78 | ok |
+| lobsters | 753 | 1264 | -511 | ok |
+| go-docs | 531 | 852 | -321 | ok |
+| duckduckgo | 947 | 888 | 59 | ok |
+| google | 294 | 404 | -110 | ok |
+| wikipedia (ja) | 705 | 868 | -163 | ok |
+| abehiroshi | 540 | 496 | 44 | ok |
+| zol | 30079 | 3136 | 26943 | FAIL gap over 1000 ms |
+| youtube | 520 | 776 | -256 | ok |
+| youtube-search | 746 | 780 | -34 | ok |
+| react | 575 | 648 | -73 | ok |
+| mistral | 554 | 528 | 26 | ok |
+
+19 of 20 pass. zol's first paint was 3013 ms on 2026-10-17 and is
+30079 ms now (live network; not looked into).
+
+jsbench (seconds, median of 3; speedup = fast / safe):
+
+| workload | fast (s) | safe (s) | speedup |
+| --- | ---: | ---: | ---: |
+| array | 0.114 | 0.115 | 0.99 |
+| calls | 0.800 | 0.962 | 0.83 |
+| closures | 0.746 | 0.899 | 0.83 |
+| crypto | 0.652 | 0.832 | 0.78 |
+| dom | 2.473 | 2.254 | 1.10 |
+| globals | 0.300 | 0.374 | 0.80 |
+| json | 0.260 | 0.278 | 0.93 |
+| loop | 0.272 | 0.327 | 0.83 |
+| methods | 0.090 | 0.114 | 0.79 |
+| navier-stokes | 1.747 | 2.633 | 0.66 |
+| pixels | 1.176 | 1.416 | 0.83 |
+| raytrace | 0.461 | 0.563 | 0.82 |
+| richards | 0.301 | 0.385 | 0.78 |
+| splay | 0.775 | 0.843 | 0.92 |
+| strings | 0.050 | 0.052 | 0.96 |
+| three | 2.196 | 2.768 | 0.79 |
+| unicode-units | 0.116 | 0.132 | 0.88 |
+
+Geometric mean speedup 0.850 (the safe build takes 1.176× the time).
+Every checksum matched its golden in both builds.
