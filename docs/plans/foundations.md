@@ -76,8 +76,11 @@ Facts from four audits run on 2026-11-04; the details are in the steps.
   - The shipped build is `--mode fast` (no bounds checks, `build.sh:2`).
   - There is no fuzzing.
 - **Secure.**
-  - fetch and XHR read any origin: `net/permissive-cors.aye` allows
-    every `Kind.Other` request.
+  - The CORS check runs only in page JS (`engine/fetch-api.js`), so a
+    compromised renderer skips it, and XHR reads the body of any
+    origin (it filters only headers). `net/permissive-cors.aye` only
+    fills headers for archived responses that lack them (corrected by
+    Q3.2a; the first audit overstated it).
   - `fetchWith` (`engine/window_api.aye:611`) lets an http page request
     a `file:` URL. It checks only the method.
   - TLS runs on libcurl defaults (`net/http.aye:44`). There is no HSTS,
@@ -89,6 +92,10 @@ Facts from four audits run on 2026-11-04; the details are in the steps.
     (`engine/windows.aye:129`) and the cookie rules (`net/cookies.aye`).
 - **Fast.**
   - W8 passes on 20 of 20 sites. W7 passes on 9 of 20 (2026-10-17).
+    Q0.2 and Q0.4 (2026-11-04): same count; the rows that changed come
+    from the archives re-recorded on 2026-10-18 (more scripts), one
+    engine regression (react, 922271a) and zol's live load hitting the
+    30 s timeout.
   - The main causes: restyle falls back to the whole document for shadow
     trees, `:has()` and sheet changes, and relayout is refused
     (`relayoutDirty` 1301 times on mistral). zol and bbc are not
@@ -213,8 +220,11 @@ with thresholds.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q3.1 | `file:`: a test first shows that an http page cannot fetch, iframe, navigate to or load a `file:` URL. Then the fix: the initiator scheme rule, and each `file:` document gets an opaque origin | the test passes | `content/browser/child_process_security_policy_impl.cc` (`CanRequestURL`) |
-| Q3.2 | CORS for fetch and XHR: modes, preflight with a cache, credentials, and exposed headers. `permissive-cors` is kept only where WPT serving needs it | WPT `fetch/api/cors`, `cors/` and `xhr` gain, and `conformance.py check` passes | `services/network/cors/cors_url_loader.cc`, `preflight_controller.cc` |
+| Q3.1 | `file:`: a test first shows that an http page cannot fetch, iframe, navigate to or load a `file:` URL. Then the fix: the initiator scheme rule (done, #253) | the test passes | `content/browser/child_process_security_policy_impl.cc` (`CanRequestURL`) |
+| Q3.1c | `net.Request.initiator` is an `Initiator` (`Browser` or `Page`) with no default, so every request names who asked (done, #254) | `aye check browser` | – |
+| Q3.1b | Each `file:` document gets an opaque origin; the 3 tests that rely on one shared `file:` origin (`jsdom_fixtures`, `agent_sessions`, `storage_between_tabs`) move to served origins | those tests and `no_file_from_web` pass | `url/origin.cc` (file URLs are opaque) |
+| Q3.2a | CORS enforced in `net/` for fetch and XHR, keyed on the initiator: a failed check is a network error, and page JS only types and filters. Non-simple cross-origin requests fail until Q3.2b | a two-origin test; WPT `fetch/api`, `xhr` do not drop | `services/network/cors/cors_url_loader.cc`, `services/network/public/cpp/cors/cors.cc` |
+| Q3.2b | Preflight with a cache, `Access-Control-Expose-Headers`, and redirects in CORS mode | WPT `fetch/api/cors`, `cors/` and `xhr` gain, and `conformance.py check` passes | `services/network/cors/preflight_controller.cc`, `preflight_cache.cc` |
 | Q3.3 | `crossorigin` on script, link and img, plus ORB (opaque responses that a no-cors fetch must not expose) | WPT `fetch/orb` and `html/cross-origin` subsets | `services/network/orb/` |
 | Q3.4 | TLS: set peer and host verification, TLS ≥ 1.2 and the system CA store explicitly. A bad certificate gets an interstitial with no bypass on HSTS hosts | a local server with expired, self-signed and wrong-host certificates; each is refused | `net/cert/`, `components/security_interstitials/` |
 | Q3.5 | HSTS (the header and the preload list), mixed content (active content blocked, passive content upgraded) and `upgrade-insecure-requests` | WPT `mixed-content`, `upgrade-insecure-requests`; an HSTS test | `net/http/transport_security_state.cc`, `core/loader/mixed_content_checker.cc` |
@@ -234,7 +244,8 @@ sites they move.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q4.1 | Profile zol and bbc (`DWELLER_TIMING`, `DWELLER_LAYOUT_WHY`), and confirm the causes on github, mistral and youtube-search. This step only measures; it ends with cards ranked by ms | a table in `PERF.md` | – |
+| Q0.4a | The react scroll regression of 922271a (train-1: P10.36b with P4.74 or P10.26): split it and fix it | react scroll p95 under 25 ms on `target/sites-old-20261017/react` | – |
+| Q4.1 | Profile zol and bbc (`DWELLER_TIMING`, `DWELLER_LAYOUT_WHY`), and confirm the causes on github, mistral and youtube-search. Also profile the extra scripts of the re-recorded archives (Q0.4b: wikipedia-en and wikipedia (ja) scroll p95 under 33 ms; Q0.4c: go-docs's W7 row ok). This step only measures; it ends with cards ranked by ms | a table in `PERF.md` | – |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
@@ -245,7 +256,7 @@ sites they move.
 | Q4.9 | A shape cache by word (`layout/text-width.aye`) | the loop of wikipedia-en, rustdoc and mdn falls under 100 ms | `platform/fonts/shaping/caching_word_shaper.cc` |
 | Q4.10 | Image decode on a decode thread, with the pixels returned as a task, plus a decoded-image cache with a size budget | the bbc and zol loop falls, and `images` WPT does not drop | `platform/graphics/image_decoding_store.cc`, `cc/tiles/` (decode off the main thread) |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
-| Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked | live W8 does not drop, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
+| Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
