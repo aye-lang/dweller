@@ -150,6 +150,13 @@ def cmd_run(args):
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
             results = list(pool.map(lambda page: run_page(dweller, srv.base, page), found))
+
+        # under -j load a slow page can pass its timeout: re-run it once alone, and say so
+        for i, page in enumerate(found):
+            if results[i]["status"] == "TIMEOUT":
+                results[i] = run_page(dweller, srv.base, page)
+                print(f"::warning title=webgl timeout::{page.relative_to(TESTS)} timed out under -j {args.j}; "
+                      f"alone: {results[i]['status']}", flush=True)
     finally:
         srv.stop()
 
