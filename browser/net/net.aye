@@ -106,18 +106,18 @@ pub struct Request {
     // (`noteFrame`).
     top: []u8 = ""
     credentials: Credentials = Credentials.Include
-    initiator: []u8 = ""
+    initiator: Initiator
 }
 
 /// Fetches `target` as a document the user asked for.
 pub fn fetch(alloc: Allocator, target: *Url) FetchError!Response {
-    return request(alloc, target, Request {})
+    return request(alloc, target, Request { initiator: Initiator.Browser })
 }
 
 /// Fetches `target`, by POST with `body` when there is one (for `http:`
 /// and `https:`; other URLs ignore it).
 pub fn fetchWith(alloc: Allocator, target: *Url, body: ?*Body) FetchError!Response {
-    return request(alloc, target, Request { body: body })
+    return request(alloc, target, Request { body: body, initiator: Initiator.Browser })
 }
 
 /// Fetches `target` for `req`.

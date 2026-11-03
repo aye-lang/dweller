@@ -641,11 +641,11 @@ fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
     if !text.eqlIgnoreCase(name, "_blank") {
         let named = namedContext(from, name)
         if named != 0 {
-            try navigateContext(named, target.href, null, initiatorOf(s.page))
+            try navigateContext(named, target.href, null, originPage(s.page).url.href)
             return contextValue(s, named)
         }
     }
-    let id = try openContext(from, target.href, name, no_opener, true, null, initiatorOf(s.page))
+    let id = try openContext(from, target.href, name, no_opener, true, null, originPage(s.page).url.href)
     if no_opener || id == 0 {
         return Value.Null
     }
