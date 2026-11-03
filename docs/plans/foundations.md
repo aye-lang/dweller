@@ -34,7 +34,8 @@ Paths below are relative to it.
   out-of-process iframes. Each stage ships behind
   `DWELLER_PROCESS=...` until Q2.14 turns it on.
 - **The shipped build is checked.** It runs with bounds and overflow
-  checks (`--mode safe`), unless Q0.2 measures a cost over 5%.
+  checks (`--mode safe`). Q0.2 measured the cost (loop +9.5%, jsbench
+  +17.6%), and it is accepted (Q1.1).
 - **Real sites stay the final check, not the driver.**
 
 ## Done criteria
@@ -144,6 +145,7 @@ Exit: every number of "State" above is re-measured on the current
 | Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
 | Q0.2 | W7 and W8, plus `jsbench`, with a fast and with a safe build. A dated table goes in `PERF.md`, with the cost of safe mode | `window_perf.py report --replay` runs for both builds and the table is committed | – |
 | Q0.3 | Re-run W2, W3 and the conformance table on `main` | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
+| Q0.4 | Find why results changed since 2026-10-17 (Q0.2). zol's first paint went from 3013 to 30079 ms. The scroll p95 of wikipedia-en, wikipedia (ja), react and go-docs went from about 17 to about 225 ms. bbc's idle CPU rose to 10.7%. First decide whether the cause is the measurement (the `--until-idle` change 2c25b94, `window_perf.py` history) or the engine, by measuring the affected sites at 7de2c08 and at c0a6fa2. Then bisect. This step only finds the cause and files a card for it | each changed row is explained, naming a commit or a measurement artifact | – |
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -152,7 +154,7 @@ can be stopped.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q1.1 | The shipped build becomes `--mode safe` (when Q0.2 shows ≤ 5%), and CI runs a smoke test on the shipped mode | `build.sh` makes safe by default, and the smoke job is green | – |
+| Q1.1 | The shipped build becomes `--mode safe`, and CI runs a smoke test on the shipped mode. Q0.2 measured the cost (loop +9.5%, jsbench +17.6%), and it is accepted: until Q2.8, a memory bug in an unsandboxed process exposes everything. Q4 wins the time back. A card in the Aye repo asks for bounds-check elimination in loops (navier-stokes 0.66×) | `build.sh` builds safe by default, and the smoke job is green | Chromium ships libc++ with its hardening checks on (`build/config/compiler/BUILD.gn`, `use_safe_libcxx` → `_LIBCPP_HARDENING_MODE_EXTENSIVE`) |
 | Q1.2 | Find and fix the `jsdom_gc_stress` divergence under GC stress (run 39080652106), then bring `focus_freed` back into the stress run | `DWELLER_JS_GC=stress` gives the same `run.jsonl` 20 times in a row | `v8/src/heap/` (handles across allocation points) |
 | Q1.3 | Find the root cause of the `window_spaces` flake (`browser.rs:2990`, `:3044`) and fix it | the test passes 50 times in a row (`--test-threads 1`, repeated) | – |
 | Q1.4 | The same for `window_spaces_watch`, `window_css_animation` and `agent_sessions` | 50 times in a row each | – |
