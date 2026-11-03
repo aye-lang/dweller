@@ -1063,3 +1063,106 @@ jsbench (seconds, median of 3; speedup = fast / safe):
 
 Geometric mean speedup 0.850 (the safe build takes 1.176× the time).
 Every checksum matched its golden in both builds.
+
+## Q0.4: what changed since 2026-10-17
+
+Why the rows of the Q0.2 table differ from the P4.41 table of
+2026-10-17. Fast builds, Apple M2 Pro, every build and run through
+`scripts/capped.sh`, one after the other, one W7 run per cell unless
+stated. Binaries: 8069cf4 (the P4.41 commit, `AYE_REV` a067dfd),
+c0a6fa2 (2026-10-21, before the TC series, a067dfd) and 7de2c08 (Q0.2's
+commit, 0953905). Archives: `target/sites` (recaptured on 2026-10-18 by
+P4.75d for 10 sites) and `target/sites-old-20261017` (the archives P4.41
+measured, kept in the main checkout when P4.75d recaptured them; local,
+not in git).
+
+**The measurement did not change.** `--until-idle` (2c25b94, TC3k) is
+opt-in and `window_perf.py` never passes it. The only change to
+`window_perf.py` since 2026-10-17 is bbe756a (it refuses a binary
+without the `.fast` marker; `--allow-debug` skips that check), and
+`window_report.py`, `window_env.py` and `perf_gate.py` measure the same
+way. The tools at c0a6fa2 are byte-equal to today's, so "old binary with
+the old tool" is the c0a6fa2 column below. The engine did not change
+between c0a6fa2 and 7de2c08 (only `--until-idle` in `window.aye`):
+
+| Site (current archive) | c0a6fa2 loop / p95 / idle | 7de2c08 loop / p95 / idle |
+|---|---|---|
+| wikipedia-en | 233 / 207.1 / 0.3% | 242 / 221.4 / 0.1% |
+| wikipedia (ja) | 191 / 177.1 / 0.2% | 185 / 172.0 / 0.3% |
+| react | 171 / 131.0 / 1.2% | 168 / 122.9 / 0.7% |
+| go-docs | 161 / 40.3 / 0.3% | 160 / 39.9 / 0.4% |
+| bbc | 592 / 480.1 / 0.4% | 569 / 483.5 / 0.3% |
+| github | 1139 / 506.0 / 0.5% | 1151 / 521.0 / 0.1% |
+| mdn | 91 / 7.0 / 0.4% | 103 / 6.9 / 0.4% |
+
+**What changed is mostly the archives.** The 2026-10-14 archives missed
+requests that the engine makes (P4.75's verify: wikipedia-en 3, bbc 20,
+go-docs 2, wikipedia 3, react 7, zol 10 missed URLs). P4.75d recaptured
+them on 2026-10-18, one day after P4.41. The new archives hold the
+scripts that the old ones missed, and those scripts run during the
+scroll. 8069cf4 and 7de2c08 on the old archives, and 7de2c08 on the new
+ones (loop ms / scroll p95 ms):
+
+| Site | 8069cf4, old archive | 7de2c08, old archive | 7de2c08, new archive | What the new archive adds |
+|---|---|---|---|---|
+| wikipedia-en | 83 / 4.4 | 120 / 16.3 | 242 / 221.4 | MediaWiki's deferred modules: 2 × 1.3 MB and 2 × 0.85 MB of `load.php` JS (advancedSearch, centralNotice, popups, visualEditor init) |
+| wikipedia (ja) | 124 / 4.1 | 106 / 14.3 | 185 / 172.0 | the same modules on ja.wikipedia.org |
+| go-docs | 87 / 5.6 | 115 / 5.4 | 160 / 39.9 | `gtm.js` (523 KB), `gtag/js` (455 KB) and `analytics.js` (51 KB), inserted by a script |
+| react | 85 / 17.7 | 166 / 60–64 | 168 / 122.9 | 5 more Next.js chunks (650 KB of JS) |
+| bbc | 351 / 181.4 | 292 / 127.6 | 569 / 483.5 | 74 more files, ad and consent scripts (pubads 682 KB, permutive 776 KB, prebid 549 KB, ...) |
+
+react on the old archive is the one engine change (3 interleaved runs
+each: 8069cf4 84–88 ms / 17.7–22.2 ms, 7de2c08 166–168 ms / 59.6–64.0
+ms).
+
+**Engine bisects** (`git bisect run` with a script that builds the
+commit and measures one site; first parent first, then inside the merge):
+
+- react, scroll p95 ≥ 33 ms on the old archive: the first bad
+  first-parent commit is 8483ed8 (train-1, #169); inside it, 922271a,
+  the merge of `p10-36-flexbox` into `p10-36b-flexbox`. Both of its
+  parents are good (8ec2b2f 92 ms / 17.8 ms, be11025 84 ms / 22.6 ms),
+  the merge is bad (233 ms / 88.0 ms). It adds to P10.36b (0c4c5ac,
+  two-word alignment, row baseline alignment, computed flex) exactly two
+  changes: P4.74 (dd5f118, prototype chains of any depth hit the
+  named-load and store ICs) and P10.26 (c503c33, border-collapse and
+  border-spacing). So the regression is P10.36b together with one of
+  those two; which one is not split here.
+- github, idle CPU ≥ 5% on the current archive (github was not
+  recaptured): the first low commit is 44ff2f3 (#170, P4.75k: github's
+  adopted sheets, shadow-host subtrees and sibling `:has()` take the
+  incremental restyle). Before it 24.6–28.2% idle and a p95 of 800–1459
+  ms; from it on 0.4% and about 790 ms.
+
+**zol's first paint (W8).** Dweller's first paint of zol (`scroll
+--frames 3`, 3 interleaved rounds):
+
+| Binary | old archive (replay) | new archive (replay) | live |
+|---|---|---|---|
+| 8069cf4 | 744, 725, 724 ms | 704, 734, 675 ms | 30158, 30086, 30165 ms |
+| 7de2c08 | 842, 825, 826 ms | 835, 764, 780 ms | 10131, 10204, 30082 ms |
+
+Replayed, both binaries paint in under 0.9 s from both archives, so
+neither the engine nor the archive changed it. Live, the time is in the
+document request: the `requests` timing record of `https://www.zol.com.cn/`
+is 30.05 s of a 30.09 s first paint. 30 s and 10 s are the total and
+connect timeouts of `browser/net/http.aye` (`TIMEOUT_MS`,
+`CONNECT_TIMEOUT_MS`). From this network today, `curl` needs 3.5–37 s
+for the TLS handshake with zol's servers (36.156.186.x) and gets no first
+byte in 40 s, and Chrome (`agent-browser`) took 79 s and then had no
+first contentful paint. On 2026-11-04 (Q0.2) Chrome's median was 3136 ms
+while Dweller's was 30079 ms, so Dweller may give up or wait where Chrome
+gets through; not looked into here.
+
+Each changed row of Q0.2 against 2026-10-17:
+
+| Row | Change | Cause |
+|---|---|---|
+| wikipedia-en W7 | scroll p95 16.6 → 225.2 ms, now fails scroll | archive: the P4.75d recapture added MediaWiki's deferred `load.php` modules (4.5 MB of JS) that the 2026-10-14 archive missed. Old archive with 7de2c08: 16.3 ms |
+| wikipedia (ja) W7 | p95 8.2 → 189.0 ms, now fails scroll | archive: the same modules. Old archive with 7de2c08: 14.3 ms |
+| go-docs W7 | loop 99 → 161 ms, p95 10.0 → 41.7 ms, now fails loop and scroll | archive: `gtm.js`, `gtag/js` and `analytics.js` (1 MB of JS) are now in the archive. Old archive with 7de2c08: 115 ms / 5.4 ms; its loop sits near the 100 ms limit (87 ms at 8069cf4) |
+| react W7 | p95 19.2 → 164.1 ms, now fails scroll | engine and archive. Engine: 922271a (train-1, 8483ed8), P10.36b with P4.74 or P10.26: 18–22 → 60–64 ms on the old archive. Archive: 650 KB more Next.js chunks, 60–64 → 123–164 ms |
+| bbc W7 | idle 0.8% → 10.7%, now fails idle | measurement artifact: not reproduced. 0.3–0.4% in 7 runs today (5 with 7de2c08, 1 with c0a6fa2, 1 on the old archive). The Q0.2 run read 10.7% (fast) and 11.6% (safe) in one session; the cause of that session's reading is not known |
+| mdn W7 | loop 150 → 93 ms, now passes | no single commit: the loop is at the 100 ms limit. 8069cf4 today 116 ms; every bisect step from c1d5d99 on 82–98 ms; 7de2c08 91–103 ms in 3 runs. ok or FAIL is within the run-to-run spread |
+| github W7 | idle 46.2% → 0.4%, loop 2395 → 1193 ms, p95 1646.7 → 533.5 ms; no longer fails idle | engine: 44ff2f3 (P4.75k, the incremental restyle for github's adopted sheets, shadow hosts and sibling `:has()`) |
+| zol W8 | first paint 3013 → 30079 ms, now fails | live network: the document request runs into the 30 s (or 10 s connect) timeout of `http.aye`. Replay: 0.7–0.8 s with both binaries and both archives |
