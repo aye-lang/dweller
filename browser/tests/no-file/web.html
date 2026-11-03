@@ -1,0 +1,26 @@
+<!doctype html>
+<p id=out></p>
+<script>
+const dir = decodeURIComponent(location.search.slice(1))
+const seen = []
+const note = s => {
+  seen.push(s)
+  out.textContent = seen.sort().join(', ')
+}
+fetch(dir + 'secret.js').then(r => r.text()).then(t => note('fetch read ' + t.trim()), e => note('fetch ' + e.name))
+const x = new XMLHttpRequest()
+x.open('GET', dir + 'secret.js')
+x.onload = () => note('xhr read ' + x.responseText.trim())
+x.onerror = () => note('xhr error')
+x.send()
+for (const [tag, attr, file] of [['img', 'src', '../image/gif_two_colors.gif'], ['script', 'src', 'secret.js'], ['link', 'href', 'secret.css'], ['iframe', 'src', 'secret.html']]) {
+  const e = document.createElement(tag)
+  if (tag == 'link') e.rel = 'stylesheet'
+  e.onload = () => note(tag + ' load')
+  e.onerror = () => note(tag + ' error')
+  e[attr] = dir + file
+  document.body.append(e)
+}
+onmessage = e => note(e.data)
+setTimeout(() => note('style ' + getComputedStyle(out).color), 100)
+</script>

@@ -110,21 +110,21 @@ fn applyAction(s: *mut Session, tmp: Allocator, act: Action) AllocError!Outcome 
 fn navigate(s: *mut Session, tmp: Allocator, target: []u8) AllocError!Outcome {
     let dest = try targetUrl(s, tmp, target)
     if dest |w| {
-        return goTo(s, tmp, &w)
+        return goTo(s, tmp, &w, "")
     }
     return failed(try concat(tmp, "not a URL: ", target, ""))
 }
 
 /// Shows `target` in a new history entry (navigate, links): in the
 /// document when only the fragment differs, else by loading it.
-fn goTo(s: *mut Session, tmp: Allocator, target: *Url) AllocError!Outcome {
+fn goTo(s: *mut Session, tmp: Allocator, target: *Url, initiator: []u8) AllocError!Outcome {
     if s.tab.sameDocument(target) {
         try s.tab.toFragment(target)
         s.tab.settle(maxScroll(s))
         return done(try concat(tmp, "scrolled to #", target.fragment, ""))
     }
     s.tab.enter()
-    let p = try engine.load(s.alloc, target)
+    let p = try engine.loadWith(s.alloc, target, null, initiator)
     if p.failure.len > 0 {
         return refused(tmp, p)
     }
@@ -447,7 +447,7 @@ fn submitNow(s: *mut Session, tmp: Allocator, p: *mut Page, form: NodeId, submit
         post = &body
     }
     if engine.targetFrame(p, engine.linkTarget(p, form)) |slot| {
-        let fo = try loadInFrame(s, tmp, slot, &sub.target, post)
+        let fo = try loadInFrame(s, tmp, slot, &sub.target, post, engine.initiatorOf(p))
         var fm = text.Builder.init(tmp)
         try fm.append(what)
         try fm.append("; submitted the form: ")
@@ -461,7 +461,7 @@ fn submitNow(s: *mut Session, tmp: Allocator, p: *mut Page, form: NodeId, submit
         return done(try concat(tmp, what, "; the form submits in another tab", ""))
     }
     s.tab.enter()
-    let loaded = try engine.loadWith(s.alloc, &sub.target, post)
+    let loaded = try engine.loadWith(s.alloc, &sub.target, post, engine.initiatorOf(p))
     if loaded.failure.len > 0 {
         return refused(tmp, loaded)
     }
@@ -491,12 +491,12 @@ fn followLink(s: *mut Session, tmp: Allocator, p: *mut Page, a: NodeId, who: []u
     }
     var o = done("")
     if engine.targetFrame(p, engine.linkTarget(p, a)) |slot| {
-        o = try loadInFrame(s, tmp, slot, &target, null)
+        o = try loadInFrame(s, tmp, slot, &target, null, engine.initiatorOf(p))
     } else if try engine.openElsewhere(p, a, &target) {
         try engine.pumpContexts()
         o = done(try concat(tmp, "it opens in another tab: ", target.href, ""))
     } else {
-        o = try goTo(s, tmp, &target)
+        o = try goTo(s, tmp, &target, engine.initiatorOf(p))
     }
     if !o.ok {
         return o
@@ -511,7 +511,7 @@ fn followLink(s: *mut Session, tmp: Allocator, p: *mut Page, a: NodeId, who: []u
 
 /// Loads `target` (by POST with `body`) in the frame `slot` (a fragment
 /// of its document only scrolls it); the page shown stays.
-fn loadInFrame(s: *mut Session, tmp: Allocator, slot: engine.FrameSlot, target: *Url, body: ?*net.Body) AllocError!Outcome {
+fn loadInFrame(s: *mut Session, tmp: Allocator, slot: engine.FrameSlot, target: *Url, body: ?*net.Body, initiator: []u8) AllocError!Outcome {
     let fp = engine.slotPage(slot)
     let name = try frameName(tmp, slot)
     if body == null && target.has_fragment && text.eql(target.withoutFragment(), fp.url.withoutFragment()) {
@@ -523,7 +523,7 @@ fn loadInFrame(s: *mut Session, tmp: Allocator, slot: engine.FrameSlot, target: 
         try relayout(s)
         return done(try concat(tmp, "scrolled the frame", name, try concat(tmp, " to #", target.fragment, "")))
     }
-    try engine.navigateFrame(slot, target, body)
+    try engine.navigateFrame(slot, target, body, initiator)
     try relayout(s)
     try buildAx(s, tmp)
     let np = engine.slotPage(slot)

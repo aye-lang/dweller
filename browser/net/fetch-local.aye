@@ -2,7 +2,11 @@ import std.mem.Allocator
 import std.text
 import url.Url
 
-pub fn fetchLocal(alloc: Allocator, target: *Url) FetchError!Response {
+pub fn fetchLocal(alloc: Allocator, target: *Url, initiator: []u8) FetchError!Response {
+    if !initiatorMayLoad(initiator, target) {
+        return FetchError.Network
+    }
+
     if text.eql(target.scheme, "file") {
         return fetchFile(alloc, target)
     }

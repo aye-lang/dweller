@@ -106,6 +106,7 @@ pub struct Request {
     // (`noteFrame`).
     top: []u8 = ""
     credentials: Credentials = Credentials.Include
+    initiator: []u8 = ""
 }
 
 /// Fetches `target` as a document the user asked for.
@@ -121,6 +122,10 @@ pub fn fetchWith(alloc: Allocator, target: *Url, body: ?*Body) FetchError!Respon
 
 /// Fetches `target` for `req`.
 pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
+    if !initiatorMayLoad(req.initiator, target) {
+        return FetchError.Network
+    }
+
     let began = perf.start()
     defer perf.end("requests", began, target.href)
     if try archiveRead(alloc, target, req) |res| {

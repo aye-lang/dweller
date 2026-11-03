@@ -465,12 +465,12 @@ fn stylesCurrent(doc: *Document, media: css.Media, styles: *css.Styles) bool {
 /// Loads `target`: fetches it, decodes and parses the document. A fetch
 /// that fails gives an error page saying why. Free with `destroy`.
 pub fn load(alloc: Allocator, target: *Url) AllocError!*mut Page {
-    return loadWith(alloc, target, null)
+    return loadWith(alloc, target, null, "")
 }
 
 /// `load`, by POST with `body` when there is one (a form submission).
-pub fn loadWith(alloc: Allocator, target: *Url, body: ?*net.Body) AllocError!*mut Page {
-    let p = try fetchPage(alloc, target, body, encoding.Encoding.Windows1252, "")
+pub fn loadWith(alloc: Allocator, target: *Url, body: ?*net.Body, initiator: []u8) AllocError!*mut Page {
+    let p = try fetchPage(alloc, target, body, encoding.Encoding.Windows1252, "", initiator)
     errdefer p.destroy()
     try attachLoading(p)
     try runDocument(p, scriptingEnabled())
@@ -480,7 +480,7 @@ pub fn loadWith(alloc: Allocator, target: *Url, body: ?*net.Body) AllocError!*mu
 /// `load` for a session history entry whose serialized state is `state`
 /// (null for none): the page's scripts see it as history.state.
 pub fn loadState(alloc: Allocator, target: *Url, state: ?[]u8) AllocError!*mut Page {
-    let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252, "")
+    let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252, "", "")
     errdefer p.destroy()
     if state |st| {
         try p.history.replace(p.url.href, st)
@@ -493,8 +493,8 @@ pub fn loadState(alloc: Allocator, target: *Url, state: ?[]u8) AllocError!*mut P
 /// The window's navigation, in steps: fetches and parses `target`
 /// without running its scripts. `startEarly` starts loading what it
 /// names, `stepPageScripts` runs its scripts once they are in.
-pub fn loadParsed(alloc: Allocator, target: *Url) AllocError!*mut Page {
-    let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252, "")
+pub fn loadParsed(alloc: Allocator, target: *Url, initiator: []u8) AllocError!*mut Page {
+    let p = try fetchPage(alloc, target, null, encoding.Encoding.Windows1252, "", initiator)
     errdefer p.destroy()
     try attachLoading(p)
     p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
@@ -635,9 +635,9 @@ pub fn scriptsRan(p: *Page) bool {
 // encoding). `top`: the URL of the top-level page of a frame's document
 // (its site is the site for cookies), "" for a top-level navigation.
 // Its scripts have not run (`runDocument`).
-fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encoding.Encoding, top: []u8) AllocError!*mut Page {
+fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encoding.Encoding, top: []u8, initiator: []u8) AllocError!*mut Page {
     let fetch_began = perf.start()
-    let res = net.request(alloc, target, net.Request { body: body, top: top }) catch |e| {
+    let res = net.request(alloc, target, net.Request { body: body, top: top, initiator: initiator }) catch |e| {
         perf.end("fetch", fetch_began, target.href)
         match e {
             .OutOfMemory => {

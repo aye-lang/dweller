@@ -107,14 +107,14 @@ pub struct Tab {
     /// the entries forward of it). A link to a fragment of the current
     /// document only scrolls (`toFragment`). Returns whether a new page
     /// was loaded (which then needs a layout).
-    pub fn navigate(self: *mut Self, target: *Url) AllocError!bool {
+    pub fn navigate(self: *mut Self, target: *Url, initiator: []u8) AllocError!bool {
         if self.sameDocument(target) {
             try self.toFragment(target)
             return false
         }
         self.enter()
         perf.noteNavigation()
-        let p = try load(self.alloc, target)
+        let p = try loadWith(self.alloc, target, null, initiator)
         errdefer p.destroy()
         try self.push(target, p)
         return true
@@ -125,14 +125,14 @@ pub struct Tab {
     /// its sheets, scripts and images (`startEarly`, for a viewport
     /// `width` x `height`) go on. `sheetsIn` says when to lay it out,
     /// `scriptsIn` when to run its scripts (`stepEarly`).
-    pub fn navigateEarly(self: *mut Self, target: *Url, width: f64, height: f64) AllocError!bool {
+    pub fn navigateEarly(self: *mut Self, target: *Url, width: f64, height: f64, initiator: []u8) AllocError!bool {
         if self.sameDocument(target) {
             try self.toFragment(target)
             return false
         }
         self.enter()
         perf.noteNavigation()
-        let p = try loadParsed(self.alloc, target)
+        let p = try loadParsed(self.alloc, target, initiator)
         errdefer p.destroy()
         try self.push(target, p)
         self.early = true
