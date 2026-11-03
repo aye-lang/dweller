@@ -23,7 +23,7 @@ use any `aye` on the PATH; `browser/aye.toml` names the executable:
 
 ```
 aye build browser                               # writes ./dweller
-AYE=/path/to/aye browser/build.sh               # fast mode, target/dweller
+AYE=/path/to/aye browser/build.sh               # safe mode, target/dweller
 ```
 
 Run it:

@@ -92,6 +92,17 @@ jobs:
         if: matrix.shard == 0
         run: aye check browser
 
+      - name: Smoke the shipped build
+        if: runner.os == 'Linux' && matrix.shard == 0
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          browser/build.sh target/dweller-shipped
+          test -f target/dweller-shipped.safe
+          target/dweller-shipped dump --tree browser/tests/article.html > /dev/null
+          target/dweller-shipped dump --layout browser/tests/basic.html > /dev/null
+          target/dweller-shipped --frames 30 browser/tests/article.html
+
       - name: cargo test --release --test browser
         run: .github/scripts/browser-shard.sh ${{ matrix.shard }} ${{ matrix.shards }}
 

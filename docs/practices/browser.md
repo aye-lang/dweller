@@ -656,9 +656,9 @@ viewport, not the size the final layout uses.
 
 ### Build in safe mode to find a crash
 **Context:** the browser crashes on a real site.
-**Good:** `browser/build.sh --mode safe` keeps bounds and overflow
-checks at about the speed of `fast`, so a panic names the line
-(`browser/build.sh:10-14`). The default `fast` build has no checks.
+**Good:** `browser/build.sh` (safe mode, the default and the shipped
+build since Q1.1) keeps bounds and overflow checks, so a panic names the
+line (`browser/build.sh:2-3`). `--mode fast` has no checks.
 **Why:** a fast build turns a bounds error into silent memory damage
 far from its cause.
 

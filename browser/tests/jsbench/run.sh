@@ -7,6 +7,6 @@
 set -eu
 cd "$(dirname "$0")/../../.."
 if [ -z "${BENCH_BIN:-}" ]; then
-    browser/build.sh
+    browser/build.sh --mode fast
 fi
 exec python3 browser/tools/jsbench.py "$@"
