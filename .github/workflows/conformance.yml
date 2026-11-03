@@ -50,8 +50,14 @@ jobs:
         with:
           path: target/angle
           key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+      - uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
       - run: sh scripts/setup-ubuntu.sh
       - run: browser/gpu/fetch_angle.sh
+      # without libwasmtime `WebAssembly` is undefined and conformance2/wasm falls (Q0.1)
+      - run: browser/wasm/fetch_wasmtime.sh
       - run: |
           git clone https://github.com/aye-lang/aye ../aye
           git -C ../aye checkout "$(cat AYE_REV)"
