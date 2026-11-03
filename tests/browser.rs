@@ -8652,6 +8652,68 @@ fn web_font_files() {
     }
 }
 
+/// Q3.1: a web page cannot read or show a local file
+/// (`browser/tests/no-file/`, net/initiator-may-load.aye). From an http
+/// page, fetch, XHR, img, script, a style sheet and an iframe of a
+/// `file:` URL fail as network errors, and `location`, `window.open` and
+/// a link click to one show no byte of it. The same pages as `file:`
+/// pages load and show it all, and the browser opens a `file:` URL it
+/// is given.
+#[test]
+fn no_file_from_web() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let web = format!("{}/no-file/", srv.base);
+    let local = format!("file://{}/browser/tests/no-file/", root().display());
+    let secret = "LOCAL SECRET";
+    let loads = |dir: &str| {
+        let out = run(&["dump", "--js", "--text", &format!("{dir}web.html?{local}")]);
+        assert!(out.status.success(), "{dir}: {}", text(&out.stderr));
+        text(&out.stdout).lines().next().unwrap_or("").to_string()
+    };
+    assert_eq!(
+        loads(&web),
+        "fetch TypeError, iframe load, img error, script error, style rgb(0, 0, 0), xhr error"
+    );
+    assert_eq!(
+        loads(&local),
+        "fetch read secret = 'LOCAL SECRET', framed LOCAL SECRET, iframe load, img load, script load, style rgb(255, 0, 0), xhr read secret = 'LOCAL SECRET'"
+    );
+    let goes = |dir: &str, how: &str, events: &str| {
+        let out = run_window(&[
+            &format!("{dir}go.html?{how}&{local}"),
+            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
+            "--events", events, "--state", "--text",
+        ]);
+        assert!(
+            out.status.success() && out.stderr.is_empty(),
+            "{dir} {how}: {}\n{}",
+            out.status,
+            text(&out.stderr)
+        );
+        text(&out.stdout)
+    };
+    for (how, events) in [
+        ("location", "frame frame frame"),
+        ("open", "frame frame frame"),
+        ("click", "frame click:12,50 frame frame frame"),
+    ] {
+        let got = goes(&web, how, events);
+        assert!(!got.contains(secret), "{how} from the web:\n{got}");
+        let got = goes(&local, how, events);
+        assert!(
+            got.starts_with(&format!("url {local}secret.html\n")) && got.contains(secret),
+            "{how} from a file:\n{got}"
+        );
+    }
+}
+
 /// P4.52: window.open, `target=_blank`, `window.opener` and postMessage
 /// between tabs (engine/contexts.aye), on the test server's two origins
 /// (`127.0.0.1` and `localhost`, `browser/tests/popup/`). The OAuth

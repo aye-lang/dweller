@@ -71,6 +71,7 @@ pub struct ContextRequest {
     post: bool
     content_type: []mut u8
     body: []mut u8
+    initiator: []mut u8
 }
 
 struct ContextTable {
@@ -283,7 +284,7 @@ fn ownedBytes(alloc: Allocator, b: []u8) AllocError![]mut u8 {
     return c
 }
 
-fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body) AllocError!void {
+fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body, initiator: []u8) AllocError!void {
     let t = bc_table orelse return
     let h = try ownedBytes(t.alloc, href)
     errdefer t.alloc.free(h)
@@ -297,7 +298,9 @@ fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body) AllocErro
     errdefer t.alloc.free(c)
     let d = try ownedBytes(t.alloc, data)
     errdefer t.alloc.free(d)
-    try t.requests.append(ContextRequest { ask: ask, context: id, href: h, post: body != null, content_type: c, body: d })
+    let i = try ownedBytes(t.alloc, initiator)
+    errdefer t.alloc.free(i)
+    try t.requests.append(ContextRequest { ask: ask, context: id, href: h, post: body != null, content_type: c, body: d, initiator: i })
 }
 
 /// The oldest request not served yet (the caller frees it:
@@ -308,14 +311,6 @@ pub fn takeContextRequest() ?ContextRequest {
         return null
     }
     return t.requests.orderedRemove(0)
-}
-
-pub fn freeContextRequest(r: ContextRequest) {
-    let t = bc_table orelse return
-    t.alloc.free(r.href)
-    t.alloc.free(r.content_type)
-    t.alloc.free(r.body)
-    bcRelease()
 }
 
 /// Are requests waiting?
@@ -334,7 +329,7 @@ pub fn setTabHost(on: bool) {
 /// Opens a new context named `name` (empty: none; `_blank` is none)
 /// from context `from` (its opener unless `no_opener`), which loads
 /// `href` (by POST with `body`) once the front end gave it a tab. Its id.
-fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body) AllocError!u32 {
+fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body, initiator: []u8) AllocError!u32 {
     let t = bc_table orelse return 0
     let id = try addContext(t.alloc, false)
     let c = contextOf(id).?
@@ -349,13 +344,13 @@ fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bo
     if !text.eqlIgnoreCase(name, "_blank") {
         try setContextName(id, name)
     }
-    try pushRequest(ContextAsk.Open, id, href, body)
+    try pushRequest(ContextAsk.Open, id, href, body, initiator)
     return id
 }
 
 /// Context `id` loads `href` (by POST with `body`) in its tab.
-fn navigateContext(id: u32, href: []u8, body: ?*net.Body) AllocError!void {
-    return pushRequest(ContextAsk.Navigate, id, href, body)
+fn navigateContext(id: u32, href: []u8, body: ?*net.Body, initiator: []u8) AllocError!void {
+    return pushRequest(ContextAsk.Navigate, id, href, body, initiator)
 }
 
 /// Asks the front end to close context `id`.
@@ -366,7 +361,7 @@ fn closeContext(id: u32) AllocError!void {
             return
         }
     }
-    return pushRequest(ContextAsk.Close, id, "", null)
+    return pushRequest(ContextAsk.Close, id, "", null, "")
 }
 
 /// May a script of context `from` close context `id`? Only one that a
@@ -416,7 +411,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if !text.eqlIgnoreCase(name, "_blank") {
         let named = namedContext(from, name)
         if named != 0 {
-            try navigateContext(named, href, body)
+            try navigateContext(named, href, body, initiatorOf(p))
             return named
         }
     }
@@ -424,7 +419,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if text.eqlIgnoreCase(name, "_blank") && !relHas(rel, "opener") {
         no_opener = true
     }
-    return openContext(from, href, name, no_opener, false, body)
+    return openContext(from, href, name, no_opener, false, body, initiatorOf(p))
 }
 
 /// A link `el` of `p` to `target` whose `target` attribute names another
@@ -483,7 +478,7 @@ pub fn pumpContexts() AllocError!void {
                     continue
                 }
                 defer target.deinit(t.alloc)
-                try tab.navigate(&target)
+                try tab.navigate(&target, initiatorOf(p))
                 did = true
             } else if ran {
                 did = true
@@ -522,11 +517,11 @@ fn serveInMemory(t: *mut ContextTable, r: ContextRequest) AllocError!void {
 /// when it has a body. Returns whether a new page was loaded.
 pub fn loadInTab(tab: *mut Tab, target: *Url, r: ContextRequest) AllocError!bool {
     if !r.post {
-        return tab.navigate(target)
+        return tab.navigate(target, r.initiator)
     }
     var body = net.Body { content_type: r.content_type, data: r.body }
     tab.enter()
-    let p = try loadWith(tab.alloc, target, &body)
+    let p = try loadWith(tab.alloc, target, &body, r.initiator)
     errdefer p.destroy()
     try tab.push(target, p)
     return true

@@ -601,7 +601,7 @@ pub struct Ui {
         }
         SDL_StartTextInput()
         if first |f| {
-            try self.go(f)
+            try self.go(f, "")
         } else {
             self.focus = Focus.Address
             try self.setTitle()
@@ -1004,9 +1004,9 @@ pub struct Ui {
     // once its document is parsed and its sheets are in, its scripts run
     // once they are in too, and its images fill in as they arrive; the
     // loop goes on meanwhile (`advanceLoad`, `imagesIn`).
-    fn go(self: *mut Self, target: *url.Url) AllocError!void {
+    fn go(self: *mut Self, target: *url.Url, initiator: []u8) AllocError!void {
         let t_go = perf.start()
-        let loaded = try self.tab.navigateEarly(target, self.win_w as f64, self.layoutHeight())
+        let loaded = try self.tab.navigateEarly(target, self.win_w as f64, self.layoutHeight(), initiator)
         perf.end("ui_navigate", t_go, "")
         if !loaded {
             return self.navigated(false)
@@ -1169,7 +1169,7 @@ pub struct Ui {
         }
         defer target.deinit(self.alloc)
         self.focus = Focus.Page
-        try self.go(&target)
+        try self.go(&target, "")
     }
 
     fn back(self: *mut Self) AllocError!void {
@@ -2119,7 +2119,7 @@ pub struct Ui {
                     return
                 }
                 defer target.deinit(self.alloc)
-                return self.go(&target)
+                return self.go(&target, engine.initiatorOf(p))
             }
             .History => {
                 return self.goBy(nav.step)

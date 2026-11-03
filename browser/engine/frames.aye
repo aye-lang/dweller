@@ -328,7 +328,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
                 }
             } else {
                 try net.noteNavigation(target.href, p.url.href)
-                child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href)
+                child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, initiatorOf(p))
             }
         } else |e| {
             match e {
@@ -503,14 +503,14 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
-            return navigateFrame(FrameSlot { parent: p, index: k }, &target, null)
+            return navigateFrame(FrameSlot { parent: p, index: k }, &target, null, initiatorOf(c))
         }
         .Reload => {
             let target = url.parse(p.alloc, c.url.href) catch |e| {
                 return
             }
             defer target.deinit(p.alloc)
-            return navigateFrame(FrameSlot { parent: p, index: k }, &target, null)
+            return navigateFrame(FrameSlot { parent: p, index: k }, &target, null, initiatorOf(c))
         }
         .Submit => {
             let sub = (try submitForm(c, nav.form.?, nav.submitter)) orelse return
@@ -520,7 +520,7 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
             if sub.post {
                 post = &body
             }
-            return navigateFrame(FrameSlot { parent: p, index: k }, &sub.target, post)
+            return navigateFrame(FrameSlot { parent: p, index: k }, &sub.target, post, initiatorOf(c))
         }
         .History => {
             // An entry of another document of the frame: loaded again,
@@ -531,7 +531,7 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
-            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href)
+            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, "")
             if e.state |st| {
                 try child.history.replace(child.url.href, st)
             }
@@ -567,9 +567,9 @@ pub fn slotPage(slot: FrameSlot) *mut Page {
 /// its document: its scripts run and its load event fires. The layout
 /// trees of its page and of the pages above are dropped (they showed
 /// the old document): lay the tab's page out again.
-pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body) AllocError!void {
+pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator: []u8) AllocError!void {
     let p = slot.parent
-    let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href)
+    let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href, initiator)
     return showInFrame(slot, child, null)
 }
 

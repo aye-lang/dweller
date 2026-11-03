@@ -197,13 +197,13 @@ fn clickFrame(ui: *mut Ui, fp: engine.FramePoint) AllocError!void {
         }
         defer target.deinit(ui.alloc)
         if engine.targetFrame(fp.page, engine.linkTarget(fp.page, link.el)) |slot| {
-            try engine.navigateFrame(slot, &target, null)
+            try engine.navigateFrame(slot, &target, null, engine.initiatorOf(fp.page))
             return ui.relayout()
         }
         if try engine.openElsewhere(fp.page, link.el, &target) {
             return serveContexts(ui)
         }
-        return ui.go(&target)
+        return ui.go(&target, engine.initiatorOf(fp.page))
     }
     let act = try engine.activate(fp.page, node)
     match act {
@@ -231,13 +231,13 @@ fn submitInFrame(ui: *mut Ui, p: *mut engine.Page, form: NodeId, submitter: ?Nod
         if sub.post {
             post = &body
         }
-        try engine.navigateFrame(slot, &sub.target, post)
+        try engine.navigateFrame(slot, &sub.target, post, engine.initiatorOf(p))
         return ui.relayout()
     }
     if try engine.submitElsewhere(p, form, &sub) {
         return serveContexts(ui)
     }
-    let loaded = try engine.navigateTo(ui.tab, &sub)
+    let loaded = try engine.navigateTo(ui.tab, &sub, engine.initiatorOf(p))
     return ui.navigated(loaded)
 }
 
@@ -253,7 +253,7 @@ fn runActivation(ui: *mut Ui, act: engine.Activation) AllocError!void {
         }
         .Follow { target } => {
             defer target.deinit(ui.alloc)
-            try ui.go(&target)
+            try ui.go(&target, engine.initiatorOf(ui.tab.page.?))
         }
         .Submit { form, submitter } => {
             try submit(ui, form, submitter)
@@ -288,7 +288,7 @@ fn submitNow(ui: *mut Ui, form: NodeId, submitter: ?NodeId) AllocError!void {
     if try engine.submitElsewhere(p, form, &sub) {
         return serveContexts(ui)
     }
-    let loaded = try engine.navigateTo(ui.tab, &sub)
+    let loaded = try engine.navigateTo(ui.tab, &sub, engine.initiatorOf(p))
     try ui.navigated(loaded)
 }
 
