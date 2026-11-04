@@ -1,0 +1,16 @@
+import std.list.List
+import std.mem.Allocator
+import std.sync.Channel
+import std.thread.Thread
+
+let DECODE_THREADS: usize = 2
+let DECODE_QUEUE: usize = 16384
+let DECODE_STACK: usize = 16 << 20
+
+struct DecodePool {
+    alloc: Allocator
+    queue: Channel(*mut DecodeJob)
+    threads: List(Thread)
+}
+
+var decode_pool: ?*mut DecodePool = null

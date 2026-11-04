@@ -40,6 +40,8 @@ struct CachedImage {
     pic: ?*mut svg.Picture
     // Canvas reads are refused for cross-origin images, including redirects.
     tainted: bool
+    encoded: []mut u8 = []mut u8{}
+    used: u64 = 0
 }
 
 pub struct ImageCache {
@@ -67,14 +69,25 @@ pub struct ImageCache {
     background: bool = false
     scripting: bool = false
     revealed: List(NodeId)
+    decodes: List(*mut DecodeJob)
+    uses: u64 = 0
+    landed: bool = false
 
     pub fn init(alloc: Allocator) ImageCache {
-        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc) }
+        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
+        for job in self.decodes.items() {
+            job.cancelled.store(1)
+        }
+        landDecodes(self, true)
+        self.decodes.deinit()
         for e in self.entries.items() {
             self.alloc.free(e.href)
+            if e.encoded.len > 0 {
+                self.alloc.free(e.encoded)
+            }
             if e.bmp |b| {
                 b.deinit(self.alloc)
                 self.alloc.destroy(b)
@@ -229,8 +242,10 @@ pub struct ImageCache {
 
     /// The bitmap of `href`, fetched and decoded the first time.
     fn bitmapOf(self: *mut Self, href: []u8) AllocError!?*mut image.Bitmap {
-        for e in self.entries.items() {
+        for i in 0..self.entries.len() {
+            let e = &mut self.entries.items()[i]
             if text.eql(e.href, href) {
+                try touchImage(self, e)
                 return e.bmp
             }
         }
@@ -239,24 +254,34 @@ pub struct ImageCache {
         var bmp: ?*mut image.Bitmap = null
         var pic: ?*mut svg.Picture = null
         var tainted = true
-        let decoded = fetchImage(self.alloc, href, self.referrer, &mut pic, &mut tainted)
+        var kept: []mut u8 = []mut u8{}
+        let decoded = fetchImage(self.alloc, href, self.referrer, &mut pic, &mut tainted, self.background, &mut kept)
         if decoded |d| {
             bmp = self.alloc.create(d) catch |e| {
                 var lost = d
                 lost.deinit(self.alloc)
                 self.alloc.free(owned)
+                if kept.len > 0 {
+                    self.alloc.free(kept)
+                }
                 dropPicture(self.alloc, pic)
                 return e
             }
         }
-        self.entries.append(CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted }) catch |e| {
+        self.entries.append(CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted, encoded: kept }) catch |e| {
             self.alloc.free(owned)
+            if kept.len > 0 {
+                self.alloc.free(kept)
+            }
             if bmp |b| {
                 b.deinit(self.alloc)
                 self.alloc.destroy(b)
             }
             dropPicture(self.alloc, pic)
             return e
+        }
+        if kept.len > 0 {
+            try startDecode(self, bmp.?, kept)
         }
         return bmp
     }
@@ -289,7 +314,7 @@ fn dropPicture(alloc: Allocator, pic: ?*mut svg.Picture) {
 
 // Fetches and decodes `href`; null when either fails. An SVG image
 // goes to `pic`, its bitmap is only its natural size.
-fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.Picture, tainted: *mut bool) ?image.Bitmap {
+fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.Picture, tainted: *mut bool, later: bool, kept: *mut []mut u8) ?image.Bitmap {
     let target = url.parse(alloc, href) catch |e| {
         return null
     }
@@ -314,6 +339,13 @@ fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.
     defer perf.end("image_decode", decode_began, href)
     if isSvg(res.mime, res.body) {
         return svgImage(alloc, res.body, pic)
+    }
+    if later {
+        if image.headerSize(res.body) |size| {
+            kept.* = alloc.alloc(0 as u8, res.body.len) catch return null
+            std.mem.copy(kept.*, res.body)
+            return image.Bitmap { width: size[0], height: size[1], pixels: alloc.alloc(0 as u8, 0) catch unreachable }
+        }
     }
     let bmp = image.decode(alloc, res.body) catch |e| {
         if perf.telemetryOn() {
@@ -648,7 +680,7 @@ pub fn imagesArrived(page: *mut Page) bool {
 /// Are images of `page` loading in the background (`preloadImages`)?
 pub fn imagesLoading(page: *mut Page) bool {
     let cache = page.images orelse return false
-    return cache.background && cache.loads.len() > 0
+    return cache.background && (cache.loads.len() > 0 || cache.decodes.len() > 0)
 }
 
 // The URLs of the images of the style sheets (as their computed values

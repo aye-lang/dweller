@@ -1,0 +1,27 @@
+import std
+
+fn landDecodes(cache: *mut ImageCache, all: bool) {
+    var i = cache.decodes.len()
+
+    while i > 0 {
+        i -= 1
+
+        let job = cache.decodes.items()[i]
+
+        if !all && job.done.load() == 0 {
+            continue
+        }
+
+        while job.done.load() == 0 {
+            std.time.sleep(1)
+        }
+
+        landDecode(cache.alloc, job)
+        _ = cache.decodes.orderedRemove(i)
+        cache.landed = true
+    }
+
+    if cache.landed {
+        evictDecoded(cache)
+    }
+}

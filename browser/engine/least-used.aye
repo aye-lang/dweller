@@ -1,0 +1,22 @@
+import image
+import layout
+
+fn leastUsed(cache: *mut ImageCache) ?*mut image.Bitmap {
+    var best: ?*mut image.Bitmap = null
+    var best_used: u64 = 0
+
+    for e in cache.entries.items() {
+        let bmp = e.bmp orelse continue
+
+        if e.encoded.len == 0 || bmp.pixels.len == 0 || layout.usesBitmap(&cache.nodes, bmp) || decoding(cache, bmp) {
+            continue
+        }
+
+        if best == null || e.used < best_used {
+            best = bmp
+            best_used = e.used
+        }
+    }
+
+    return best
+}

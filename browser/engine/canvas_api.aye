@@ -250,6 +250,7 @@ fn canvasSource(it: *mut Interp, source: Value) JsError!?CanvasSource {
     let loaded = (try loadElementImage(cache, &p.doc, h, &base, css.Media { width: s.width, height: s.height }, ImageFetch.Now, 0)) orelse return null
     defer loaded.target.deinit(cache.alloc)
     let bmp = loaded.bmp orelse return null
+    waitDecode(cache, bmp)
     let pic = cache.pictureOf(loaded.target.withoutFragment())
     if pic |drawing| {
         if bmp.pixels.len == 0 && bmp.width <= CANVAS_SIDE && bmp.height <= CANVAS_SIDE && bmp.width * bmp.height <= CANVAS_PIXELS {

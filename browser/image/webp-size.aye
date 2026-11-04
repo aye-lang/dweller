@@ -1,0 +1,47 @@
+import std
+
+fn webpSize(data: []u8) ?[2]usize {
+    let riff = webpLe32(data, 4) as usize
+
+    if riff < 4 {
+        return null
+    }
+
+    var end = data.len
+
+    if riff <= data.len - 8 {
+        end = riff + 8
+    }
+
+    let body = data[12..end]
+
+    if body.len < 8 {
+        return null
+    }
+
+    if std.mem.eql(body[0..4], "VP8X") {
+        let x = webpChunk(body, 0) catch return null
+
+        if x.body.len < 10 {
+            return null
+        }
+
+        return checkedSize(webpLe24(x.body, 4) + 1, webpLe24(x.body, 7) + 1)
+    }
+
+    var frame = webpEmptyFrame()
+
+    webpFrameChunks(body, &mut frame) catch |e| {
+        return null
+    }
+
+    if frame.has_alph {
+        return null
+    }
+
+    if frame.has_vp8 {
+        return vp8Size(frame.vp8)
+    }
+
+    return vp8lSize(frame.vp8l)
+}
