@@ -176,17 +176,18 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
             s.curl = curl_easy_init()
         }
         if s.curl |curl| {
-            var keep = cacheable
-            var res = try transfer(alloc, curl, target, req, s, &mut keep)
-            if keep && res.status >= 200 && res.status < 300 {
-                s.cache.keep(target.withoutFragment(), &res, false) catch |e| {
-                    res.deinit(alloc)
-                    return FetchError.OutOfMemory
+            if !sharedBusy(curl) {
+                var keep = cacheable
+                var res = try transfer(alloc, curl, target, req, s, &mut keep)
+                if keep && res.status >= 200 && res.status < 300 {
+                    s.cache.keep(target.withoutFragment(), &res, false) catch |e| {
+                        res.deinit(alloc)
+                        return FetchError.OutOfMemory
+                    }
                 }
+                return res
             }
-            return res
         }
-        return FetchError.Network
     }
     if curl_easy_init() |curl| {
         defer curl_easy_cleanup(curl)
@@ -246,6 +247,8 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         try initiator.append(target.withoutFragment())
     }
     var crossed = false
+    var cors = req
+    var tainted = false
     var hops: i64 = 0
     var status: i64 = 0
     // Asked again with the credentials of the challenge's realm.
@@ -311,6 +314,10 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         }
         here.clear()
         try here.append(withoutHash(moved))
+        if try corsRedirect(alloc, cors, at.href, here.bytes(), sink.headers_raw.bytes()) {
+            cors.initiator = Initiator.Page { url: "" }
+            tainted = true
+        }
     }
     if sink.no_store {
         keep.* = false
@@ -333,6 +340,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
     let body = try sink.body.toOwned()
     var res = try respond(alloc, ct, body)
     res.status = status
+    res.tainted = tainted
     res.headers_raw = try sink.headers_raw.toOwned()
     if !text.eql(final_url, target.withoutFragment()) {
         res.url = copyBytes(alloc, final_url) catch |e| {

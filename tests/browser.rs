@@ -6617,7 +6617,7 @@ fn xhr_methods() {
 /// the same port, XHR and fetch read a body only when the response's
 /// Access-Control-Allow-Origin allows the page (`*` not for a
 /// credentialed request); else XHR ends with status 0 and `error`, fetch
-/// rejects. A request that needs a preflight is not sent.
+/// rejects. A request whose preflight fails is not sent.
 /// (`browser/tests/net/cors.html` must print `cors.txt`.)
 #[test]
 fn cors_in_net() {
@@ -6642,6 +6642,40 @@ fn cors_in_net() {
         &root().join("browser/tests/net/cors.txt"),
         &text(&out.stdout),
         "cors_in_net",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// CORS preflight in net (Q3.2b): a cross-origin PUT with `x-test` is
+/// preceded by one OPTIONS, the same request within Max-Age by none; a
+/// denied preflight leaves the PUT unsent; a redirect to another URL is
+/// preflighted again, one to a URL with credentials fails. Both the
+/// background loader (fetch) and the synchronous path (sync XHR).
+/// (`browser/tests/net/cors-preflight.html` must print `cors-preflight.txt`.)
+#[test]
+fn cors_preflight() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/cors-preflight.html", srv.base),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/cors-preflight.txt"),
+        &text(&out.stdout),
+        "cors_preflight",
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));

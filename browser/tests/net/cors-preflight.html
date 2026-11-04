@@ -1,0 +1,33 @@
+<!doctype html>
+<title>CORS preflight</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = location.origin.replace('127.0.0.1', 'localhost');
+function put(name, path) {
+  return fetch(other + path, { method: 'PUT', headers: { 'x-test': '1' } }).then(
+    r => r.text().then(t => log(name + ': ' + r.type + ' status ' + r.status + ' ' + t)),
+    e => log(name + ': ' + e.name));
+}
+function syncPut(name, path) {
+  const x = new XMLHttpRequest();
+  x.open('PUT', other + path, false);
+  x.setRequestHeader('X-Test', '1');
+  try {
+    x.send();
+  } catch (e) {}
+  log(name + ': status ' + x.status + ' ' + x.responseText);
+}
+(async () => {
+  await put('put with x-test', '/preflight/a');
+  await put('the same put again', '/preflight/a');
+  await put('a put the preflight denies', '/preflight/deny');
+  await put('a put redirected', '/preflight/hop');
+  await put('a put redirected to a URL with credentials', '/preflight/cred');
+  syncPut('sync xhr put', '/preflight/sync');
+  syncPut('sync xhr put redirected', '/preflight/hop-sync');
+  const seen = await (await fetch('/log')).text();
+  log(seen.split('\n').filter(l => l.includes('/preflight/')).join('\n'));
+})();
+</script>

@@ -1,0 +1,59 @@
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://fetch.spec.whatwg.org/#cors-preflight-fetch
+fn preflight(alloc: Allocator, req: Request, target: *Url) FetchError!void {
+    if !(try needsPreflight(alloc, req, target.href)) {
+        return
+    }
+
+    let include = req.credentials == Credentials.Include
+    var method = req.method
+    var key = text.Builder.init(alloc)
+    defer key.deinit()
+    var names = text.Builder.init(alloc)
+    defer names.deinit()
+    var ask = text.Builder.init(alloc)
+    defer ask.deinit()
+
+    if method.len == 0 {
+        method = "GET"
+    }
+
+    try corsOrigin(alloc, req, target.href, &mut key)
+    try key.append(" ")
+    try key.append(target.withoutFragment())
+
+    if include {
+        try key.append(" include")
+    }
+
+    try unsafeHeaderNames(alloc, req.headers, &mut names)
+    try ask.append("Access-Control-Request-Method: ")
+    try ask.append(method)
+
+    if names.len() > 0 {
+        try ask.append("\nAccess-Control-Request-Headers: ")
+        try ask.append(names.bytes())
+    }
+
+    if session |s| {
+        if s.preflights.find(key.bytes(), now()) |hit| {
+            if preflightAllows(method, names.bytes(), hit.methods, hit.headers, include) { return }
+        }
+    }
+
+    var res = try request(alloc, target, Request { kind: Kind.Other, referrer: req.referrer, method: "OPTIONS", headers: ask.bytes(), top: req.top, credentials: Credentials.Omit, initiator: req.initiator })
+    defer res.deinit(alloc)
+    let methods = requestHeaderValue(res.headers_raw, "Access-Control-Allow-Methods")
+    let headers = requestHeaderValue(res.headers_raw, "Access-Control-Allow-Headers")
+
+    if res.status < 200 || res.status > 299 || res.url.len > 0 || !(try corsCheck(alloc, req, target.href, res.headers_raw)) || !preflightAllows(method, names.bytes(), methods, headers, include) {
+        return FetchError.Network
+    }
+
+    if session |s| {
+        try s.preflights.keep(key.bytes(), methods, headers, now() + preflightMaxAge(res.headers_raw))
+    }
+}
