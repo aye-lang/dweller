@@ -273,8 +273,9 @@ pub fn liveRequest(target: *Url) bool {
 pub fn startRequest(target: *Url, req: Request) u32 {
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
-    let sendable = corsSendable(ld.alloc, req, target.href) catch |e| {
-        return 0
+    var sendable = true
+    preflight(ld.alloc, req, target) catch |e| {
+        sendable = false
     }
     let l = newRequest(ld, target, req) catch |e| {
         return 0
@@ -474,6 +475,14 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                 release(ld.alloc, a.verb)
                 a.verb = get
             }
+            let cors = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+            let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
+                return failRequest(ld, l, e)
+            }
+            if tainted {
+                release(ld.alloc, a.initiator)
+                a.initiator = []mut u8{}
+            }
             if !startHop(ld, s, l, withoutHash(moved)) {
                 failRequest(ld, l, FetchError.Network)
             }
@@ -485,7 +494,13 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     }
     let checked = Request { kind: l.kind, referrer: l.referrer, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
 
-    if !(corsCheck(ld.alloc, checked, l.href, &a.res) catch false) {
+    var at: []u8 = l.href
+
+    if a.res.url.len > 0 {
+        at = a.res.url
+    }
+
+    if !(corsCheck(ld.alloc, checked, at, a.res.headers_raw) catch false) {
         return failRequest(ld, l, FetchError.Network)
     }
 

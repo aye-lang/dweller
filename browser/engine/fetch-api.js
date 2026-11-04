@@ -146,7 +146,7 @@ const CORS_SAFE = ['cache-control', 'content-language', 'content-length', 'conte
 function corsFiltered(res, credentials) {
   const exposed = (res.headers.get('access-control-expose-headers') || '').split(',').map(s => s.trim().toLowerCase());
   const all = exposed.includes('*') && credentials !== 'include';
-  res.headers._list = res.headers._list.filter(p => CORS_SAFE.includes(p[0]) || exposed.includes(p[0]) || (all && p[0] !== 'set-cookie'));
+  res.headers._list = res.headers._list.filter(p => p[0] !== 'set-cookie' && p[0] !== 'set-cookie2' && (CORS_SAFE.includes(p[0]) || exposed.includes(p[0]) || all));
 }
 
 function opaque(res, type, url) {

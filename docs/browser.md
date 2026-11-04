@@ -49,6 +49,7 @@ browser/
   ui/             SDL2 window, chrome (address bar, tabs), input, the
                   agent socket (`--agent-socket`, `connect`), Spaces
   perf/           `DWELLER_TIMING` phase records; local telemetry
+  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML)
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
@@ -139,6 +140,38 @@ loop's largest phase, a crash's signal and top frame), and ranks them
 by count times sites affected, then lists each site's median first
 paint, load and scroll frame times.
 
+## Fuzzing
+
+`dweller fuzz TARGET [--seconds N] [--corpus DIR] [--seed S]` (`fuzz/`)
+runs every file of the corpus (default `browser/tests/fuzz/TARGET/`)
+once, then for N seconds (default 60) mutates them and parses each
+mutant with the target's entry point. A mutant is 1 to 8 stacked
+mutations of a corpus file: a bit flip, a random byte inserted, a range
+deleted, a splice with another corpus file, or a token from the
+target's dictionary inserted. Before each input the binary writes it to
+`target/fuzz/TARGET/current`, so a panic or a signal leaves the input
+behind. It is blind: Aye has no coverage hooks yet, so the corpus does
+not grow. With `--seconds 0` it only runs the corpus, which is how a
+single input is replayed.
+
+Targets: `html` parses the input as a document (`html.parse`) and as
+the markup of `innerHTML` (`html.parseWith`, no declarative shadow
+roots).
+
+`python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
+build (`target/dweller-fuzz`, built by `browser/build.sh` when
+missing): it restarts the binary after each crash, keeps the first
+input of each unique crash (by the panic's `file:line:col`, else the
+signal) as `target/fuzz/TARGET/crashes/<hash>` with `<hash>.txt` (the
+panic), minimizes it by deleting byte ranges (at most 300 tries) into
+`<hash>.min`, and prints one line per unique crash. Exit 0 without a
+crash, 1 with one. Run it through `scripts/capped.sh`.
+
+A new target is one file in `fuzz/`: a dictionary, a function
+`fn(Allocator, []u8) AllocError!void` that parses the input, and a
+`Target` value, listed in `fuzz/targets.aye`; its seed corpus goes in
+`browser/tests/fuzz/<target>/` (files under 4 KB).
+
 ## Milestones
 
 Same rules as `milestones.md`: tests first; a milestone is done when its
@@ -167,8 +200,7 @@ agent sessions load pages through `engine.load` and keep history in a
   between documents, one joint session history for a tab and its
   frames (a frame's `history.length` counts only its own entries);
   calendar, color and file pickers, `datalist`; rotations and skews
-  other than quarter turns are not drawn; sticky only against the viewport; CORS without
-  preflight (a cross-origin request that needs one fails); no AVIF;
+  other than quarter turns are not drawn; sticky only against the viewport; no AVIF;
   page loads are slow on big sites (in progress), and so is the JS
   interpreter (in progress). The list of public sites is in
   [`docs/browser-sites.md`](browser-sites.md), their expected state in
@@ -635,8 +667,16 @@ on (`--no-js` turns it off), `dump` with `--js`.
     (`net/cors-check.aye`, Chromium's `CheckAccess`): the response is a
     network error unless `Access-Control-Allow-Origin` is the page's
     origin, or `*` for a request without credentials, and a credentialed
-    one also needs `Access-Control-Allow-Credentials: true`. No
-    preflight yet: a request that would need one is not sent and fails.
+    one also needs `Access-Control-Allow-Credentials: true`. A request
+    with a method or header outside the CORS safelist is sent only after
+    a preflight (`net/preflight.aye`, Chromium's `PreflightController`):
+    an `OPTIONS` without credentials whose answer must be 2xx, pass the
+    same check and list the method and headers. Its result is cached per
+    origin, URL and credentials mode for `Access-Control-Max-Age` (5 s
+    by default, 2 h at most; per process until net moves to the browser
+    process). On each redirect of a CORS request the redirect response
+    is checked too, a URL with credentials fails, a cross-origin hop
+    makes the origin `null`, and the new URL gets its own preflight.
     Not done: the "Lax+POST" two-minute allowance of Chrome, schemeful
     same-site, partitioned cookies (CHIPS). Tests: `net_samesite`, unit
     tests "net: public suffixes...", "net: SameSite, the public suffix
