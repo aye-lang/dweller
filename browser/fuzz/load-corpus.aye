@@ -1,0 +1,19 @@
+import std.fs
+import std.list.List
+import std.mem.Allocator
+import std.path
+
+fn loadCorpus(alloc: Allocator, dir: []u8) ![][]u8 {
+    let entries = try fs.readDir(alloc, dir)
+    defer entries.deinit()
+
+    var files = List([]u8).init(alloc)
+
+    for e in entries.items {
+        if e.kind is .File {
+            try files.append(try fs.readFile(alloc, try path.join(alloc, dir, e.name)))
+        }
+    }
+
+    return files.items()
+}

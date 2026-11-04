@@ -61,6 +61,7 @@ import dom.NodeId
 import encoding
 import engine
 import font
+import fuzz
 import gpu
 import html
 import js
@@ -75,7 +76,7 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--dpr N] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -129,6 +130,9 @@ fn run(alloc: Allocator) i32 {
     }
     if args.len >= 2 && text.eql(args[1], "space") {
         return ui.spaceMain(alloc, args[2..])
+    }
+    if args.len >= 2 && text.eql(args[1], "fuzz") {
+        return fuzz.fuzzMain(alloc, args[2..])
     }
     // DWELLER_PROFILE: the profile directory (net/profile.aye) of any
     // command but a Space's (it gets the window's jar); the
