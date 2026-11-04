@@ -90,6 +90,7 @@ struct Sink {
     realm: text.Builder
     // How the jar's cookies go with the request (set by `prepare`).
     context: Context
+    error_text: [256]u8
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -214,6 +215,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         challenged: false,
         realm: text.Builder.init(alloc),
         context: Context.SameSite,
+        error_text: @zeroed([256]u8),
     }
     defer sink.body.deinit()
     defer sink.cookies.deinit()
@@ -277,7 +279,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
             return FetchError.TooLarge
         }
         if code != 0 {
-            return curlError(code)
+            return curlError(code, curl, &sink)
         }
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &mut status)
         try storeCookies(s, &at, &sink)
@@ -358,6 +360,7 @@ fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Req
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1 as i64)
     applyResolve(alloc, curl)
+    setTls(curl, sink)
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, sink.limit as i64)
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, onBody)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, @ptrCast([*]u8, sink))
@@ -556,7 +559,7 @@ fn copyBytes(alloc: Allocator, s: []u8) AllocError![]mut u8 {
 }
 
 // The `FetchError` of a libcurl error code (CURLcode).
-fn curlError(code: i32) FetchError {
+fn curlError(code: i32, curl: *mut Curl, sink: *Sink) FetchError {
     return match code {
         1 => FetchError.Unsupported
         3 => FetchError.Invalid
@@ -565,7 +568,8 @@ fn curlError(code: i32) FetchError {
         28 => FetchError.Timeout
         47 => FetchError.TooManyRedirects
         63 => FetchError.TooLarge
-        35, 51, 53, 54, 58, 59, 60, 64, 66, 77, 80, 82, 83, 90, 91, 98 => FetchError.Tls
+        35, 51, 60 => tlsError(curl, code, sink)
+        53, 54, 58, 59, 64, 66, 77, 80, 82, 83, 90, 91, 98 => FetchError.Tls
         _ => FetchError.Network
     }
 }

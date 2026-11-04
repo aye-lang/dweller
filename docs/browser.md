@@ -593,7 +593,14 @@ on (`--no-js` turns it off), `dump` with `--js`.
     redirects followed by hand (each hop stores its cookies), Accept by
     kind, Accept-Language, Referer (strict-origin-when-cross-origin), a
     User-Agent with "Dweller" (also `navigator.userAgent`), 32 MB / 16
-    MB size limits, TLS errors. `<base href>` for links, forms, images,
+    MB size limits. TLS (`net/set-tls.aye`, Q3.4): peer and host
+    verification, TLS 1.2 or later and libcurl's built-in CA store, set
+    on every request; a certificate that is expired, self-signed or from
+    an unknown issuer, or for another host, or a server without TLS 1.2,
+    gives a top-level navigation the "Your connection is not private"
+    page with the host and the reason (no way past it), the agent's
+    navigate a failure with the reason, and frames, subresources, fetch
+    and XHR a network error. `<base href>` for links, forms, images,
     sheets, scripts, `fetch` and `location`. A page's images, sheets and
     scripts are fetched concurrently (libcurl multi, 6 connections per
     host). The `<meta charset>` prescan follows WHATWG's (all the labels
