@@ -269,6 +269,7 @@ pub struct Script {
     start_ms: u64
     real: bool
     task_began: u64 = 0
+    hang_at: u64 = 0
     vsync: bool = false
     hidden: bool = false
     throttled: bool = false
@@ -632,6 +633,9 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
     }
     s.it.host = s
     s.it.max_depth = PAGE_DEPTH
+    if s.real {
+        s.it.goes_on = pageGoesOn
+    }
     // The pages of a tab share one virtual clock.
     if rootPage(p).script |top| {
         if !s.real {
@@ -1280,6 +1284,7 @@ fn enter(s: *mut Script) {
         } else if s.real {
             s.it.startBudget(0, 0)
             s.task_began = time.monotonicMs()
+            s.hang_at = s.task_began + HANG_MS
         } else {
             s.it.startBudget(TASK_BACKSTOP_MS, TASK_STEPS)
         }
