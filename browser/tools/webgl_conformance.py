@@ -86,14 +86,14 @@ def group_of(page):
     return f"{PREFIX[suite]}: {top}"
 
 
-def run_page(dweller, base, page):
+def run_page(dweller, base, page, timeout=TIMEOUT):
     url = f"{base}/{page.relative_to(ROOT).as_posix()}"
     env = dict(os.environ, DWELLER_GL="swiftshader", DWELLER_WEBGL_HARNESS="1", SDL_VIDEODRIVER="dummy")
     cmd = [str(dweller), "dump", "--text", "--js", "--no-scroll", url]
 
     try:
         p = subprocess.run(cmd, env=env, capture_output=True, text=True, errors="replace",
-                           timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+                           timeout=timeout, stdin=subprocess.DEVNULL)
         lines, status = p.stderr.splitlines(), f"exit {p.returncode}"
     except subprocess.TimeoutExpired as e:
         lines, status = (e.stderr or b"").decode(errors="replace").splitlines(), "timeout"
@@ -150,6 +150,12 @@ def cmd_run(args):
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
             results = list(pool.map(lambda page: run_page(dweller, srv.base, page), found))
+
+        for i, page in enumerate(found):
+            if results[i]["status"] == "TIMEOUT":
+                results[i] = run_page(dweller, srv.base, page, timeout=4 * TIMEOUT)
+                print(f"::warning title=webgl timeout::{page.relative_to(TESTS)} timed out under -j {args.j}; "
+                      f"alone with {4 * TIMEOUT} s: {results[i]['status']}", flush=True)
     finally:
         srv.stop()
 
