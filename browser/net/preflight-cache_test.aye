@@ -1,0 +1,12 @@
+test "a preflight result is kept until it expires, and a new one replaces it" {
+    var cache = PreflightCache.init(@testAllocator())
+    defer cache.deinit()
+
+    try cache.keep("o url", "PUT", "x-test", 105)
+    @expectEqual("PUT", cache.find("o url", 100).?.methods)
+    @expect(cache.find("o url", 105) == null)
+    @expect(cache.find("other", 100) == null)
+    try cache.keep("o url", "DELETE", "", 200)
+    @expectEqual("DELETE", cache.find("o url", 150).?.methods)
+    @expectEqual(1 as usize, cache.results.items().len)
+}

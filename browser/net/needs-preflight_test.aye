@@ -1,0 +1,12 @@
+test "a cross-origin request outside the safelist needs a preflight" {
+    let a = @testAllocator()
+    let page = Initiator.Page { url: "http://127.0.0.1:8000/page" }
+    let at = "http://localhost:8000/api"
+
+    @expect(try needsPreflight(a, Request { method: "PUT", mode: Mode.Cors, initiator: page }, at))
+    @expect(try needsPreflight(a, Request { headers: "X-Test: 1", mode: Mode.Cors, initiator: page }, at))
+    @expect(try needsPreflight(a, Request { method: "POST", headers: "Content-Type: application/json", mode: Mode.Cors, initiator: page }, at))
+    @expect(!(try needsPreflight(a, Request { method: "POST", headers: "Content-Type: text/plain;charset=UTF-8", mode: Mode.Cors, initiator: page }, at)))
+    @expect(!(try needsPreflight(a, Request { method: "PUT", initiator: page }, at)))
+    @expect(!(try needsPreflight(a, Request { method: "PUT", mode: Mode.Cors, initiator: page }, "http://127.0.0.1:8000/api")))
+}
