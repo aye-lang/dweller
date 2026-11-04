@@ -1,11 +1,17 @@
 pub fn decodesLanded(p: *mut Page, all: bool) bool {
-    let cache = p.images orelse return false
+    var landed = false
+
+    for f in p.frames.items() {
+        landed = decodesLanded(f.page, all) || landed
+    }
+
+    let cache = p.images orelse return landed
 
     landDecodes(cache, all)
 
-    let landed = cache.landed
+    let mine = cache.landed
 
     cache.landed = false
 
-    return landed
+    return landed || mine
 }

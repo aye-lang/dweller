@@ -72,6 +72,7 @@ pub struct ImageCache {
     decodes: List(*mut DecodeJob)
     uses: u64 = 0
     landed: bool = false
+    decode_later: bool = false
 
     pub fn init(alloc: Allocator) ImageCache {
         return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc) }
@@ -255,7 +256,7 @@ pub struct ImageCache {
         var pic: ?*mut svg.Picture = null
         var tainted = true
         var kept: []mut u8 = []mut u8{}
-        let decoded = fetchImage(self.alloc, href, self.referrer, &mut pic, &mut tainted, self.background, &mut kept)
+        let decoded = fetchImage(self.alloc, href, self.referrer, &mut pic, &mut tainted, self.decode_later, &mut kept)
         if decoded |d| {
             bmp = self.alloc.create(d) catch |e| {
                 var lost = d
@@ -523,6 +524,7 @@ pub fn updateImages(page: *mut Page, media: css.Media) AllocError!void {
         page.images = try page.alloc.create(ImageCache.init(page.alloc))
     }
     page.images.?.scripting = scriptingEnabled() && !page.no_scripts
+    page.images.?.decode_later = decodesLater(page)
     var styles: ?*css.Styles = null
     if page.styling |st| {
         styles = &st.styles
@@ -680,7 +682,7 @@ pub fn imagesArrived(page: *mut Page) bool {
 /// Are images of `page` loading in the background (`preloadImages`)?
 pub fn imagesLoading(page: *mut Page) bool {
     let cache = page.images orelse return false
-    return cache.background && (cache.loads.len() > 0 || cache.decodes.len() > 0)
+    return cache.background && cache.loads.len() > 0
 }
 
 // The URLs of the images of the style sheets (as their computed values
