@@ -119,6 +119,8 @@ pub struct Styles {
     // count as moved.
     restyled: List(Restyled)
     matched: MatchedCache
+    animating: IntMap(u32, NodeId)
+    transitioning: IntMap(u32, NodeId)
 
     pub fn init(alloc: Allocator) AllocError!Styles {
         let arena = try alloc.create(Arena.init(alloc))
@@ -175,6 +177,8 @@ pub struct Styles {
             moved_els: List(NodeId).init(alloc),
             restyled: List(Restyled).init(alloc),
             matched: MatchedCache.init(alloc),
+            animating: IntMap(u32, NodeId).init(alloc),
+            transitioning: IntMap(u32, NodeId).init(alloc),
         }
     }
 
@@ -210,6 +214,8 @@ pub struct Styles {
         self.moved_els.deinit()
         self.restyled.deinit()
         self.matched.deinit()
+        self.animating.deinit()
+        self.transitioning.deinit()
         self.class_infos.deinit()
         self.sizes.deinit()
         self.map.deinit()
@@ -1235,6 +1241,7 @@ struct Computer {
             release = old
         }
         try self.out.map.put(el.index, try keptValues(self.out, values, release))
+        try noteAnimated(self.out, el, values)
         if note {
             try self.out.restyled.append(Restyled { el: el, old: old.?, shift: shift })
         }
