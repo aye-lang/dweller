@@ -2342,25 +2342,25 @@ pub let PRELUDE =
     \\}
     \\// The arguments of ak.fetch for a request with `method`, `headers` (a
     \\// Headers), `body` (as extractBody keeps it, or null) and `credentials`
-    \\// ('omit', 'same-origin', 'include'): the headers but the forbidden
+    \\// ('omit', 'same-origin', 'include') and `mode`: the headers but the forbidden
     \\// ones, and the body as bytes (undefined for none; an empty one for a
     \\// POST or PUT without one, as Content-Length: 0).
-    \\function fetchArgs(url, method, headers, body, credentials) {
+    \\function fetchArgs(url, method, headers, body, credentials, mode) {
     \\  const lines = headers._sorted().filter(p => !forbiddenHeader(p[0], p[1])).map(p => p[0] + ': ' + p[1]).join('\n');
     \\  let bytes;
     \\  if (body instanceof FormData) bytes = formDataBytes(body);
     \\  else if (body !== null) bytes = blobBytes([body]);
     \\  else if (method === 'POST' || method === 'PUT') bytes = '';
-    \\  return [url, method, lines, bytes, credentials];
+    \\  return [url, method, lines, bytes, credentials, mode];
     \\}
     \\function blobResponse(url, method) {
     \\  const blob = method === 'GET' ? blobStore.get(url.split('#')[0]) : undefined;
     \\  if (!blob) return { error: 'blob URL not found' };
     \\  return { status: 200, url, type: blob.type, body: new TextDecoder().decode(blob._array()), raw: blob._bytes };
     \\}
-    \\function startFetch(url, method, headers, body, credentials, done) {
+    \\function startFetch(url, method, headers, body, credentials, mode, done) {
     \\  if (url.startsWith('blob:')) return ak.imageTask(() => done(blobResponse(url, method)), 0);
-    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials), done);
+    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done);
     \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
@@ -2385,7 +2385,7 @@ pub let PRELUDE =
     \\      ak.clearTimer(task);
     \\      reject(signal.reason);
     \\    };
-    \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, x => {
+    \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, req.mode, x => {
     \\      const r = fetchTaken(x);
     \\      if (done) return;
     \\      done = true;
@@ -3205,12 +3205,12 @@ pub let PRELUDE =
     \\    this._sent = true;
     \\    const credentials = this.withCredentials ? 'include' : 'same-origin';
     \\    if (!this._async) {
-    \\      this._load(this._url.startsWith('blob:') ? blobResponse(this._url, this._method) : ak.fetch(...fetchArgs(this._url, this._method, this._headers, this._body, credentials)));
+    \\      this._load(this._url.startsWith('blob:') ? blobResponse(this._url, this._method) : ak.fetch(...fetchArgs(this._url, this._method, this._headers, this._body, credentials, 'cors')));
     \\      return;
     \\    }
     \\    this._fire('loadstart');
     \\    if (!this._sent || this._task !== 0) return;
-    \\    this._task = startFetch(this._url, this._method, this._headers, this._body, credentials, x => {
+    \\    this._task = startFetch(this._url, this._method, this._headers, this._body, credentials, 'cors', x => {
     \\      this._task = 0;
     \\      this._load(fetchTaken(x));
     \\    });

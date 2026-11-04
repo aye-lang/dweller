@@ -68,6 +68,8 @@ struct Ask {
     // `Request.top` and `Request.credentials`.
     top: []mut u8
     credentials: Credentials
+    mode: Mode
+    initiator: []mut u8
     // The method of the current hop, NUL-terminated (libcurl's custom
     // request), and whether it still sends the body (a redirect may drop
     // both, as `transfer`).
@@ -271,12 +273,15 @@ pub fn liveRequest(target: *Url) bool {
 pub fn startRequest(target: *Url, req: Request) u32 {
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
+    let sendable = corsSendable(ld.alloc, req, target.href) catch |e| {
+        return 0
+    }
     let l = newRequest(ld, target, req) catch |e| {
         return 0
     }
     let a = l.ask.?
     a.began = perf.start()
-    if !startHop(ld, s, l, l.href) {
+    if !sendable || !startHop(ld, s, l, l.href) {
         failRequest(ld, l, FetchError.Network)
     }
     pumpLoads()
@@ -317,6 +322,8 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         has_body: req.body != null,
         top: []mut u8{},
         credentials: req.credentials,
+        mode: req.mode,
+        initiator: []mut u8{},
         verb: []mut u8{},
         post: req.body != null,
         began: 0,
@@ -344,6 +351,10 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
     a.method = try dup(ld.alloc, req.method)
     a.headers = try dup(ld.alloc, req.headers)
     a.top = try dup(ld.alloc, req.top)
+    a.initiator = try dup(ld.alloc, match req.initiator {
+        .Browser => ""
+        .Page { url: page } => page
+    })
     if req.body |b| {
         a.content_type = try dup(ld.alloc, b.content_type)
         a.data = try dup(ld.alloc, b.data)
@@ -472,6 +483,12 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     keepRequest(ld.alloc, l, job, status) catch |e| {
         return failRequest(ld, l, e)
     }
+    let checked = Request { kind: l.kind, referrer: l.referrer, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+
+    if !(corsCheck(ld.alloc, checked, l.href, &a.res) catch false) {
+        return failRequest(ld, l, FetchError.Network)
+    }
+
     l.state = LoadState.Done
     endRequest(ld, l)
 }
@@ -708,6 +725,7 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
         release(ld.alloc, a.method)
         release(ld.alloc, a.headers)
         release(ld.alloc, a.top)
+        release(ld.alloc, a.initiator)
         release(ld.alloc, a.content_type)
         release(ld.alloc, a.data)
         release(ld.alloc, a.verb)

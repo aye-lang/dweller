@@ -55,7 +55,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "storage", 4, akStorage)
     try defMethod(it, o, "setStorageHandler", 1, akSetStorageHandler)
     try defMethod(it, o, "fetch", 1, akFetch)
-    try defMethod(it, o, "fetchStart", 6, akFetchStart)
+    try defMethod(it, o, "fetchStart", 7, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
@@ -525,16 +525,16 @@ fn akHostRequest(it: *mut Interp, a: Args) JsError!Value {
 // ---- fetch
 
 // The response to a request of argument 0: { status, url, type, body },
-// or { error } when it failed. Arguments 1 to 4 are optional: the method
+// or { error } when it failed. Arguments 1 to 5 are optional: the method
 // (GET), more headers ("name: value" lines separated by "\n"), the
-// body, a string of code units 0..255 (the bytes, as Blob keeps them),
-// and the credentials mode ("omit", "same-origin", the default, or
-// "include"). The request is made now (a synchronous XMLHttpRequest).
+// body (code units 0..255, as Blob keeps the bytes), the credentials
+// mode ("omit", "same-origin", the default, or "include") and the
+// request mode ("no-cors", else cors). Made now (a synchronous XHR).
 fn akFetch(it: *mut Interp, a: Args) JsError!Value {
     return fetchWith(it, a, false)
 }
 
-// fetchStart(url, method, headers, body, credentials, callback): the request of
+// fetchStart(url, method, headers, body, credentials, mode, callback): the request of
 // akFetch, in the background (net.startRequest) when it can be; queues
 // the task that calls `callback` once it ended, with the request's id
 // for fetchTake, or with the response (made now: another scheme, a
@@ -543,7 +543,7 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
 // request when it runs (script.aye's runnable), so that the order of
 // tasks never depends on the network.
 fn akFetchStart(it: *mut Interp, a: Args) JsError!Value {
-    _ = try js.callableArg(it, a, 5)
+    _ = try js.callableArg(it, a, 6)
     return fetchWith(it, a, true)
 }
 
@@ -629,6 +629,14 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
             req.credentials = net.Credentials.Include
         }
     }
+    let mode = try it.builder()
+    defer it.release(mode)
+    try argText(it, a, 5, mode)
+
+    if !text.eql(mode.bytes(), "no-cors") {
+        req.mode = net.Mode.Cors
+    }
+
     let method = try it.builder()
     defer it.release(method)
     if !js.isUndef(it.arg(a, 1)) {
@@ -720,7 +728,7 @@ fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     let s = scriptOf(it)
     let arr = try it.newArray(0)
     try it.push(js.objVal(arr))
-    try it.heap.pushElem(arr, it.arg(a, 5))
+    try it.heap.pushElem(arr, it.arg(a, 6))
     if waits != 0 {
         try it.heap.pushElem(arr, js.numVal(waits as f64))
     } else {

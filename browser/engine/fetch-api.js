@@ -142,16 +142,6 @@ hidden(Response, 'json', function json(data, init) {
   return new Response(body, { status: options.status, statusText: options.statusText, headers });
 });
 
-// https://fetch.spec.whatwg.org/#cors-check
-function corsOk(res, credentials) {
-  const origin = res.headers.get('access-control-allow-origin');
-  if (origin === null) return false;
-  if (origin === '*' && credentials !== 'include') return true;
-  if (origin !== location.origin) return false;
-
-  return credentials !== 'include' || res.headers.get('access-control-allow-credentials') === 'true';
-}
-
 const CORS_SAFE = ['cache-control', 'content-language', 'content-length', 'content-type', 'expires', 'last-modified', 'pragma'];
 function corsFiltered(res, credentials) {
   const exposed = (res.headers.get('access-control-expose-headers') || '').split(',').map(s => s.trim().toLowerCase());
@@ -187,8 +177,6 @@ function filtered(req, res) {
   else if (req.mode === 'same-origin') throw new TypeError('Failed to fetch: mode is same-origin');
   else if (req.mode === 'no-cors') opaque(res, 'opaque', '');
   else {
-    if (!corsOk(res, req.credentials)) throw new TypeError('Failed to fetch: CORS check failed');
-
     corsFiltered(res, req.credentials);
     hidden(res, '_type', 'cors');
   }

@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: services/network/public/cpp/cors/cors.cc CheckAccess
+fn corsCheck(alloc: Allocator, req: Request, target: []u8, res: *Response) AllocError!bool {
+    var at: []u8 = target
+    var origin = text.Builder.init(alloc)
+    defer origin.deinit()
+
+    if res.url.len > 0 {
+        at = res.url
+    }
+
+    try corsOrigin(alloc, req, at, &mut origin)
+    let allow = requestHeaderValue(res.headers_raw, "Access-Control-Allow-Origin")
+    let include = req.credentials == Credentials.Include
+
+    if origin.bytes().len == 0 || (text.eql(allow, "*") && !include) {
+        return true
+    }
+
+    return text.eql(allow, origin.bytes()) && (!include || text.eql(requestHeaderValue(res.headers_raw, "Access-Control-Allow-Credentials"), "true"))
+}
