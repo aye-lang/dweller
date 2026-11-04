@@ -239,13 +239,8 @@ with thresholds.
 ## Q4: interactivity (lane perf)
 
 Exit: W7 holds on all 20 sites, first in process and then again after
-Q2.14.
-
-Running order, from the Q4.1 profile (2026-11-04, `PERF.md` "Q4.1"):
-Q4.6, Q4.13, Q4.9, Q4.14, Q4.15, Q4.10, Q4.3, Q4.2 with Q4.4, Q4.11,
-Q4.16, Q4.17, Q4.12. Q4.5, Q4.7 and Q4.8 moved nothing measured on
-their own; they run only if a later profile shows them. Each step
-states the W7 sites it moves.
+Q2.14. Steps 2–9 each start from the Q4.1 profile and state the W7
+sites they move.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
@@ -262,11 +257,6 @@ states the W7 sites it moves.
 | Q4.10 | Image decode on a decode thread, with the pixels returned as a task, plus a decoded-image cache with a size budget | the bbc and zol loop falls, and `images` WPT does not drop | `platform/graphics/image_decoding_store.cc`, `cc/tiles/` (decode off the main thread) |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
-| Q4.13 | `querySelector(All)`, `getElementById`, `getElementsByClassName` and `window` named access use id, class and name indexes kept by the DOM, and a cache of parsed selectors (Q4.1: zol ~2700 ms in `querySelectorAll`, ~700 ms in named lookups) | zol's loop falls by those ms; `dom/nodes` WPT does not drop | `core/css/selector_query.cc` (fast paths, `SelectorQueryCache`), `core/dom/tree_ordered_map.cc`, `core/html/window_name_collection.cc` |
-| Q4.14 | CSS animation and transition checks visit only elements that have animations or transitions (Q4.1: zol, youtube-search, 1357 ms; ~16% idle CPU) | the idle CPU of those sites falls under 5% | `core/animation/document_animations.cc`, `core/animation/css/css_animations.cc` |
-| Q4.15 | No raster when a frame has no damage, and only the damaged rect otherwise (Q4.1: mistral 2193 ms idle, react 47 ms per frame) | mistral's and react's idle CPU and react's scroll p95 pass | `cc/trees/damage_tracker.cc`, `cc/scheduler/scheduler.cc` (no frame without damage) |
-| Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
-| Q4.17 | Canvas 2D drawing cost (Q4.1: mistral 1268 ms idle) | mistral's idle CPU passes | `modules/canvas/canvas2d/canvas_rendering_context_2d.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 

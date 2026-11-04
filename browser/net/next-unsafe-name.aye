@@ -1,0 +1,16 @@
+import std.text
+
+fn nextUnsafeName(lines: []u8, prev: []u8) ?[]u8 {
+    var all = text.split(lines, "\n")
+    var found: ?[]u8 = null
+
+    while all.next() |line| {
+        let name = headerName(line)
+
+        if line.len > 0 && !safelistedHeader(line) && bytesBefore(prev, name) && (found == null || bytesBefore(name, found.?)) {
+            found = name
+        }
+    }
+
+    return found
+}
