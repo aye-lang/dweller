@@ -1,11 +1,11 @@
-import css
 import dom
+import dom.NodeId
 import js
 import js.Args
 import js.Interp
 import js.JsError
 import js.Value
-import std.text
+import std.list.List
 
 // blink: core/animation/css/css_animations.cc (CalculateAnimationUpdate)
 fn akAnimatedElements(it: *mut Interp, a: Args) JsError!Value {
@@ -21,17 +21,19 @@ fn akAnimatedElements(it: *mut Interp, a: Args) JsError!Value {
     }
 
     let g = try geometry(s)
-    let doc = &mut s.page.doc
-    var at: ?dom.NodeId = doc.root
+    var els = List(NodeId).init(s.alloc)
+    defer els.deinit()
 
-    while at |el| {
-        if g.styles.get(el) |values| {
-            if !text.eql(keywordIn(values[css.ANIMATION_NAME]), "none") {
-                try it.heap.pushElem(arr, try wrap(it, el))
-            }
-        }
+    var entries = g.styles.animating.iterator()
 
-        at = doc.following(el, doc.root)
+    while entries.next() |e| {
+        try els.append(e.value.*)
+    }
+
+    try dom.inTreeOrder(&s.page.doc, &mut els)
+
+    for el in els.items() {
+        try it.heap.pushElem(arr, try wrap(it, el))
     }
 
     return it.pop()
