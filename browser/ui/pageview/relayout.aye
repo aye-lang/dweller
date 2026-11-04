@@ -1,0 +1,65 @@
+import engine
+import perf
+import std
+import std.mem.AllocError
+
+pub fn relayout(view: *mut PageView, query: ?[]u8, from_timers: bool) AllocError!void {
+    if view.tab.early && !view.tab.painted {
+        dropList(view)
+        view.dirty = true
+
+        return
+    }
+
+    if view.tab.stepping && !engine.scriptsRan(view.tab.page.?) {
+        view.dirty = true
+
+        return
+    }
+
+    let t_relayout = perf.start()
+    let began = std.time.monotonicMs()
+    var composited = false
+
+    if view.tab.page |p| {
+        let before = p.tree
+
+        try p.layoutPage(view.measure, view.width, view.layout_height)
+        view.laid_version = engine.treeVersion(p)
+        try noteAnimated(view, p)
+
+        if view.list != null && p.tree != null && before == p.tree {
+            composited = composite(view, p)
+        }
+
+        if !composited {
+            dropList(view)
+
+            if p.tree |t| {
+                try buildList(view, t)
+            }
+        }
+
+        engine.markPainted(p)
+        try engine.afterLayout(p)
+    } else {
+        dropList(view)
+    }
+
+    if composited {
+        perf.end("ui_composite", t_relayout, "")
+    } else {
+        perf.end("ui_relayout", t_relayout, "")
+    }
+
+    try find(view, query, false)
+    view.tab.clampScroll(maxScroll(view))
+
+    if from_timers {
+        view.repaint = true
+    } else {
+        view.dirty = true
+    }
+
+    view.relayout_ms = std.time.monotonicMs() - began
+}

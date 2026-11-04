@@ -1,0 +1,67 @@
+import dom
+import engine
+import std.mem.AllocError
+
+let PROMOTE_AFTER: u32 = 2
+
+let MAX_PROMOTED: usize = 32
+
+fn noteAnimated(view: *mut PageView, p: *mut engine.Page) AllocError!void {
+    try engine.takeAnimated(p, &mut view.anim_els)
+
+    if view.anim_els.len() == 0 && view.anim.len() == 0 {
+        return
+    }
+
+    view.anim_seq += 1
+
+    let seq = view.anim_seq
+
+    for el in view.anim_els.items() {
+        var found = false
+
+        for k in 0..view.anim.len() {
+            let a = &mut view.anim.items()[k]
+
+            if dom.same(a.el, el) {
+                found = true
+
+                if a.seq + 1 == seq {
+                    a.n += 1
+                    a.seq = seq
+                }
+            }
+        }
+
+        if !found {
+            try view.anim.append(Anim { el: el, n: 1, seq: seq })
+        }
+    }
+
+    var k: usize = 0
+
+    while k < view.anim.len() {
+        let a = view.anim.items()[k]
+
+        if a.seq != seq {
+            _ = view.anim.swapRemove(k)
+            continue
+        }
+
+        if a.n >= PROMOTE_AFTER && view.promote.len() < MAX_PROMOTED {
+            var known = false
+
+            for el in view.promote.items() {
+                if dom.same(el, a.el) {
+                    known = true
+                }
+            }
+
+            if !known {
+                try view.promote.append(a.el)
+            }
+        }
+
+        k += 1
+    }
+}

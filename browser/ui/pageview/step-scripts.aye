@@ -1,0 +1,27 @@
+import engine
+import std
+import std.mem.AllocError
+
+let SCRIPTS_MS: u64 = 50
+
+pub fn stepScripts(view: *mut PageView, at_once: bool) AllocError!bool {
+    let began = std.time.monotonicMs()
+
+    while true {
+        if try view.tab.stepEarly() {
+            return true
+        }
+
+        let p = view.tab.page orelse return true
+
+        if engine.scriptsRan(p) {
+            return view.tab.stepEarly()
+        }
+
+        if !at_once && std.time.monotonicMs() - began >= SCRIPTS_MS {
+            return false
+        }
+    }
+
+    return false
+}

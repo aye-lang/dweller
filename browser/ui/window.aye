@@ -26,7 +26,6 @@
 
 import agent
 import css
-import dom
 import dom.NodeId
 import engine
 import font
@@ -35,11 +34,11 @@ import net
 import paint
 import perf
 import std
-import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 import url
+import ui.pageview
 
 let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
@@ -62,12 +61,6 @@ let TASK_BUDGET_MS: u64 = 50
 // A WebGL frame read back at the end of a frame is mapped at most this
 // long after (ms): the next frame.
 let READBACK_MS: i32 = 16
-// The page's scripts run for at most this many ms an iteration while it
-// loads (one at least), so that input and frames come between them.
-let SCRIPTS_MS: u64 = 50
-// Images that arrived lay the page out again at most every this many ms,
-// or twice the last layout's time when that is longer.
-let IMAGE_RELAYOUT_MS: u64 = 100
 /// CSS px of one unit of a precise (trackpad, Magic Mouse) wheel delta.
 /// SDL's cocoa backend sends NSEvent `deltaY`, which for precise
 /// devices is `scrollingDeltaY` (points, what Safari and Chrome scroll
@@ -393,28 +386,12 @@ pub struct Ui {
     active: usize
     next_tab: u32
     tab: *mut engine.Tab
-    list: ?paint.DisplayList
-    // The page's fixed or sticky boxes moved since `list` was built.
-    relist: bool
-    // The page tree's scroll offset when `list` was built (the scripts'
-    // layout, the same tree, may move its fixed boxes).
-    list_scroll: f64 = 0.0
+    page_view: pageview.PageView
     focus: Focus
     address: Field
-    // Find in page: the bar is open, its query, the matches (document
-    // CSS px) and the current one.
+    // Find in page: the bar is open and its query.
     finding: bool
     find: Field
-    matches: List(paint.Rect)
-    // P4.56: the page's elements whose layer boxes get layers of their
-    // own (`paint.buildPromoted`): their transform or opacity changed in
-    // `PROMOTE_AFTER` relayouts in a row (`anim`: how many, and in which
-    // relayout `anim_seq` last).
-    promote: List(NodeId)
-    anim: List(Anim)
-    anim_els: List(NodeId)
-    anim_seq: u64 = 0
-    current: usize
     // The sign-in prompt of a 401 (auth.aye).
     auth: AuthPrompt
     // The URL of the link under the mouse (resolved), for the status
@@ -446,8 +423,6 @@ pub struct Ui {
     // Inside the timers' `afterScripts`.
     from_timers: bool = false
     quit: bool
-    // engine.domVersion of the page when it was last laid out.
-    laid_version: u64
     // The agents (agents.aye), when the window listens for them.
     agents: ?*mut Agents
     // The mouse, in window points, while it is over the window.
@@ -473,10 +448,6 @@ pub struct Ui {
     // perf.start() of the navigation whose first paint is not drawn yet
     // (the `ui_first_paint` record); 0 for none.
     paint_began: u64 = 0
-    // When images that arrived were last laid out (monotonic ms), and
-    // how long the last relayout took.
-    images_at: u64 = 0
-    relayout_ms: u64 = 0
     frame_ns: u64 = 16666667
     next_frame_ns: u64 = 0
     hidden: bool = false
@@ -504,17 +475,11 @@ pub struct Ui {
             active: 0,
             next_tab: 2,
             tab: first.session.tab,
-            list: null,
-            relist: false,
+            page_view: pageview.PageView.init(alloc, measure, first.session.tab),
             focus: Focus.Page,
             address: Field.init(alloc),
             finding: false,
             find: Field.init(alloc),
-            matches: List(paint.Rect).init(alloc),
-            promote: List(NodeId).init(alloc),
-            anim: List(Anim).init(alloc),
-            anim_els: List(NodeId).init(alloc),
-            current: 0,
             auth: AuthPrompt.init(alloc),
             hover: text.Builder.init(alloc),
             hand: false,
@@ -532,7 +497,6 @@ pub struct Ui {
             resized: false,
             dirty: true,
             quit: false,
-            laid_version: 0,
             agents: null,
             mouse_in: false,
             mouse_x: 0.0,
@@ -547,7 +511,7 @@ pub struct Ui {
 
     fn deinit(self: *mut Self) {
         SDL_StopTextInput()
-        self.dropList()
+        pageview.shutdown(&mut self.page_view)
         if self.texture |t| {
             SDL_DestroyTexture(t)
         }
@@ -569,28 +533,37 @@ pub struct Ui {
         self.address.deinit()
         self.find.deinit()
         self.auth.deinit()
-        self.matches.deinit()
         self.hover.deinit()
-        self.promote.deinit()
-        self.anim.deinit()
-        self.anim_els.deinit()
+    }
+
+    fn view(self: *mut Self) *mut pageview.PageView {
+        pageview.resize(&mut self.page_view, self.win_w as f64, self.layoutHeight(), self.viewHeight(), self.scale)
+        return &mut self.page_view
+    }
+
+    fn noteDamage(self: *mut Self) {
+        let d = pageview.takeDamage(&mut self.page_view)
+        if d.dirty {
+            self.dirty = true
+        }
+        if d.repaint {
+            self.repaint = true
+        }
+    }
+
+    fn findQuery(self: *mut Self) ?[]u8 {
+        if self.finding {
+            return self.find.bytes()
+        }
+        return null
     }
 
     fn dropList(self: *mut Self) {
-        if self.list |l| {
-            var old = l
-            old.deinit()
-        }
-        self.list = null
-        self.page.sigs.clear()
+        pageview.dropList(self.view())
     }
 
-    // The display list of the page tree `t` (and its items' signatures).
     fn buildList(self: *mut Self, t: *mut layout.Tree) AllocError!void {
-        self.dropList()
-        self.list = try paint.buildPromoted(self.alloc, t, self.promote.items())
-        self.list_scroll = t.scroll_y
-        try paint.signature(&self.list.?, t, &mut self.page.sigs)
+        return pageview.buildList(self.view(), t)
     }
 
     // Sizes the canvas to the window and opens the first page (or, with
@@ -641,7 +614,7 @@ pub struct Ui {
                 self.dirty = false
                 self.repaint = false
                 drawn += 1
-                if self.paint_began != 0 && self.list != null {
+                if self.paint_began != 0 && pageview.hasFrame(self.view()) {
                     perf.end("ui_first_paint", self.paint_began, self.tab.href())
                     self.paint_began = 0
                 }
@@ -862,140 +835,13 @@ pub struct Ui {
         return h
     }
 
-    fn maxScroll(self: *Self) f64 {
-        if self.list |l| {
-            let m = l.height - self.viewHeight()
-            if m > 0.0 {
-                return m
-            }
-        }
-        return 0.0
+    fn maxScroll(self: *mut Self) f64 {
+        return pageview.maxScroll(self.view())
     }
 
-    // Lays the page out again for the window and rebuilds the display
-    // list (and the find matches).
     fn relayout(self: *mut Self) AllocError!void {
-        // A page shown early is laid out once its sheets are in
-        // (`advanceLoad`).
-        if self.tab.early && !self.tab.painted {
-            self.dropList()
-            self.dirty = true
-            return
-        }
-        // While its scripts run, one per iteration, the page keeps the
-        // layout from before them (`advanceLoad` lays it out after).
-        if self.tab.stepping && !engine.scriptsRan(self.tab.page.?) {
-            self.dirty = true
-            return
-        }
-        let t_relayout = perf.start()
-        let began = std.time.monotonicMs()
-        // A change of transforms and opacities alone moves and blends
-        // the promoted layers in the list as it is (`ui_composite`, P4.56).
-        var composited = false
-        if self.tab.page |p| {
-            let before = p.tree
-            try p.layoutPage(self.measure, self.win_w as f64, self.layoutHeight())
-            self.laid_version = engine.treeVersion(p)
-            try self.noteAnimated(p)
-            if self.list != null && p.tree != null && before == p.tree {
-                composited = self.composite(p)
-            }
-            if !composited {
-                self.dropList()
-                if p.tree |t| {
-                    try self.buildList(t)
-                }
-            }
-            engine.markPainted(p)
-            try engine.afterLayout(p)
-        } else {
-            self.dropList()
-        }
-        if composited {
-            perf.end("ui_composite", t_relayout, "")
-        } else {
-            perf.end("ui_relayout", t_relayout, "")
-        }
-        try self.findAll(false)
-        self.tab.clampScroll(self.maxScroll())
-        if self.from_timers {
-            self.repaint = true
-        } else {
-            self.dirty = true
-        }
-        self.relayout_ms = std.time.monotonicMs() - began
-    }
-
-    // Counts the relayouts in a row in which each element's transform or
-    // opacity changed; one that changed in `PROMOTE_AFTER` is promoted.
-    fn noteAnimated(self: *mut Self, p: *mut engine.Page) AllocError!void {
-        try engine.takeAnimated(p, &mut self.anim_els)
-        if self.anim_els.len() == 0 && self.anim.len() == 0 {
-            return
-        }
-        self.anim_seq += 1
-        let seq = self.anim_seq
-        for el in self.anim_els.items() {
-            var found = false
-            for k in 0..self.anim.len() {
-                let a = &mut self.anim.items()[k]
-                if dom.same(a.el, el) {
-                    found = true
-                    if a.seq + 1 == seq {
-                        a.n += 1
-                        a.seq = seq
-                    }
-                }
-            }
-            if !found {
-                try self.anim.append(Anim { el: el, n: 1, seq: seq })
-            }
-        }
-        var k: usize = 0
-        while k < self.anim.len() {
-            let a = self.anim.items()[k]
-            if a.seq != seq {
-                _ = self.anim.swapRemove(k)
-                continue
-            }
-            if a.n >= PROMOTE_AFTER && self.promote.len() < MAX_PROMOTED {
-                var known = false
-                for el in self.promote.items() {
-                    if dom.same(el, a.el) {
-                        known = true
-                    }
-                }
-                if !known {
-                    try self.promote.append(a.el)
-                }
-            }
-            k += 1
-        }
-    }
-
-    // Moves and blends the promoted layers of the boxes whose transform
-    // or opacity alone changed since the list was built; false when the
-    // list must be built again.
-    fn composite(self: *mut Self, p: *mut engine.Page) bool {
-        let boxes = engine.paintChanges(p) orelse return false
-        let t = p.tree orelse return false
-        var l = &mut self.list.?
-        for b in boxes {
-            if b >= t.boxes.len() {
-                return false
-            }
-            var off = [2]f64{0.0, 0.0}
-            if layout.translationOf(t, b) |e| {
-                off = e
-            }
-            let o = paint.opacityOf(t.bx(b).style)
-            let alpha = std.math.floor(o * 255.0 + 0.5) as u8
-            if !paint.patchLayer(l, self.page.sigs.items(), b, off[0], off[1], alpha) {
-                return false
-            }
-        }
-        return true
+        try pageview.relayout(self.view(), self.findQuery(), self.from_timers)
+        self.noteDamage()
     }
 
     // ---- navigation
@@ -1032,7 +878,7 @@ pub struct Ui {
             return
         }
         let painted = self.tab.painted
-        if !(try self.stepScripts(at_once)) {
+        if !(try pageview.stepScripts(self.view(), at_once)) {
             return
         }
         if self.tab.page |p| {
@@ -1050,26 +896,6 @@ pub struct Ui {
         try self.afterScripts()
     }
 
-    // Runs steps of the load of the page shown early (tab.stepEarly):
-    // scripts until SCRIPTS_MS passed (one at least; all when
-    // `at_once`), then whether its frames are in. True once it loaded.
-    fn stepScripts(self: *mut Self, at_once: bool) AllocError!bool {
-        let began = std.time.monotonicMs()
-        while true {
-            if try self.tab.stepEarly() {
-                return true
-            }
-            let p = self.tab.page orelse return true
-            if engine.scriptsRan(p) {
-                return self.tab.stepEarly()
-            }
-            if !at_once && std.time.monotonicMs() - began >= SCRIPTS_MS {
-                return false
-            }
-        }
-        return false
-    }
-
     // After the first layout of a new page: scrolls where the tab wants,
     // or where a script of the page scrolled while it loaded.
     fn settleScroll(self: *mut Self) {
@@ -1083,24 +909,9 @@ pub struct Ui {
         self.scrollTo(y)
     }
 
-    // Lays the page out again when images that its layout left out
-    // arrived (engine.preloadImages), not more often than
-    // IMAGE_RELAYOUT_MS or twice the last relayout's time.
     fn imagesIn(self: *mut Self) AllocError!void {
-        if self.tab.early && !self.tab.painted {
-            return
-        }
-        let p = self.tab.page orelse return
-        let now = std.time.monotonicMs()
-        var gap = IMAGE_RELAYOUT_MS
-        if 2 * self.relayout_ms > gap {
-            gap = 2 * self.relayout_ms
-        }
-        if now - self.images_at < gap || !engine.imagesArrived(p) {
-            return
-        }
-        try self.relayout()
-        self.images_at = std.time.monotonicMs()
+        try pageview.imagesIn(self.view(), self.findQuery(), self.from_timers)
+        self.noteDamage()
     }
 
     // After the tab moved: lay out a new page, scroll where the tab
@@ -1205,57 +1016,18 @@ pub struct Ui {
     // ---- scrolling and find
 
     fn scrollBy(self: *mut Self, dy: f64) {
-        let before = self.tab.scroll
-        self.tab.scroll += dy
-        self.tab.clampScroll(self.maxScroll())
-        if self.tab.scroll != before {
-            // The chrome stays: only the page's pixels move.
-            self.repaint = true
-            perf.noteScroll()
-            self.followScroll()
-        }
-        if self.tab.page |p| {
-            // Out of memory: the scripts see the old offset.
-            engine.setScriptScroll(p, self.tab.scroll) catch |e| {
-            }
-        }
+        pageview.scrollBy(self.view(), dy)
+        self.noteDamage()
     }
 
     fn scrollTo(self: *mut Self, y: f64) {
-        self.scrollBy(y - self.tab.scroll)
+        pageview.scrollTo(self.view(), y)
+        self.noteDamage()
     }
 
-    // Scrolls a page wider than the window sideways by `dx` px.
     fn scrollSideways(self: *mut Self, dx: f64) {
-        var max = 0.0
-        if self.list |l| {
-            max = std.math.max(0.0, l.width - self.win_w as f64)
-        }
-        let x = std.math.clamp(self.tab.scroll_x + dx, 0.0, max)
-        if x != self.tab.scroll_x {
-            self.tab.scroll_x = x
-            self.repaint = true
-        }
-    }
-
-    // Moves the page's fixed and sticky boxes to the scroll offset when
-    // they are not there yet (`draw` paints them again).
-    fn followScroll(self: *mut Self) {
-        if self.tab.page |p| {
-            if p.tree |t| {
-                if t.scroll_y != self.list_scroll {
-                    // The scripts' layout moved them (`Page.tree_borrowed`):
-                    // back to where `list` has them.
-                    _ = layout.scrollTo(t, self.list_scroll)
-                }
-                let y = snappedScroll(self.tab.scroll, self.scale)
-                if t.scroll_y != y && layout.scrollTo(t, y) && (self.list == null || !paint.followPinned(&mut self.list.?, self.page.sigs.items(), t)) {
-                    self.relist = true
-                }
-                // Else `list` is right at this offset too.
-                self.list_scroll = t.scroll_y
-            }
-        }
+        pageview.scrollSideways(self.view(), dx)
+        self.noteDamage()
     }
 
     // Scrolls the frame under the mouse by `dy` px; false when the mouse
@@ -1264,15 +1036,9 @@ pub struct Ui {
         if !self.mouse_in || self.mouse_y < self.top() {
             return false
         }
-        let p = self.tab.page orelse return false
-        if !engine.scrollFrameAt(p, self.mouse_x + self.tab.scroll_x, self.mouse_y - self.top() + self.tab.scroll, dy) {
-            return false
-        }
-        if p.tree |t| {
-            try self.buildList(t)
-        }
-        self.repaint = true
-        return true
+        let scrolled = try pageview.scrollFrame(self.view(), self.mouse_x, self.mouse_y - self.top(), dy)
+        self.noteDamage()
+        return scrolled
     }
 
     fn openFind(self: *mut Self) AllocError!void {
@@ -1283,10 +1049,10 @@ pub struct Ui {
         self.dirty = true
     }
 
-    fn closeFind(self: *mut Self) {
+    fn closeFind(self: *mut Self) AllocError!void {
         self.finding = false
         self.focus = Focus.Page
-        self.matches.clear()
+        try pageview.find(self.view(), null, false)
         self.tab.clampScroll(self.maxScroll())
         self.dirty = true
     }
@@ -1294,52 +1060,13 @@ pub struct Ui {
     // Finds the query again; with `jump`, scrolls to the first match at
     // or below the top of the view.
     fn findAll(self: *mut Self, jump: bool) AllocError!void {
-        self.matches.clear()
-        self.current = 0
-        if !self.finding {
-            return
-        }
-        if self.tab.page |p| {
-            if p.tree |t| {
-                try engine.findText(t, self.find.bytes(), &mut self.matches)
-            }
-        }
-        if jump {
-            for i, m in self.matches.items() {
-                if m.y >= self.tab.scroll {
-                    self.current = i
-                    break
-                }
-            }
-            self.showMatch()
-        }
-        self.dirty = true
+        try pageview.find(self.view(), self.findQuery(), jump)
+        self.noteDamage()
     }
 
-    // Goes to the next match (or the previous one).
     fn nextMatch(self: *mut Self, backwards: bool) {
-        let n = self.matches.len()
-        if n == 0 {
-            return
-        }
-        if backwards {
-            self.current = (self.current + n - 1) % n
-        } else {
-            self.current = (self.current + 1) % n
-        }
-        self.showMatch()
-        self.dirty = true
-    }
-
-    // Scrolls the current match into view (a third down the view).
-    fn showMatch(self: *mut Self) {
-        if self.current < self.matches.len() {
-            let m = self.matches.items()[self.current]
-            let view = self.viewHeight()
-            if m.y < self.tab.scroll || m.y + m.h > self.tab.scroll + view {
-                self.scrollTo(m.y - view / 3.0)
-            }
-        }
+        pageview.findNext(self.view(), backwards)
+        self.noteDamage()
     }
 
     // ---- events
@@ -1423,9 +1150,7 @@ pub struct Ui {
                 return
             }
             try self.mouseMoved(me.x as f64, me.y as f64)
-            if self.tab.page |p| {
-                try engine.hoverAt(p, me.x as f64 + self.tab.scroll_x, me.y as f64 - self.top() + self.tab.scroll)
-            }
+            try pageview.inputHover(self.view(), me.x as f64, me.y as f64 - self.top())
             try self.pointerEvent("pointermove", 0, me.x as f64, me.y as f64, mx, my)
         } else if kind == SDL_MOUSEBUTTONDOWN {
             let be = &ev.button
@@ -1616,7 +1341,7 @@ pub struct Ui {
         }
         if sym == SDLK_ESCAPE {
             if self.finding {
-                self.closeFind()
+                try self.closeFind()
             } else if self.focus == Focus.Address {
                 try setAddress(self)
                 self.focus = Focus.Page
@@ -1774,9 +1499,7 @@ pub struct Ui {
 
     // Clears the status line and sets the arrow (or I-beam) cursor.
     fn press(self: *mut Self, x: f64, y: f64, down: bool) AllocError!void {
-        let p = self.tab.page orelse return
-
-        try engine.pressAt(p, x + self.tab.scroll_x, y - self.top() + self.tab.scroll, down)
+        return pageview.inputPress(self.view(), x, y - self.top(), down)
     }
 
     fn clearHover(self: *mut Self, ibeam: bool) AllocError!void {
@@ -1800,12 +1523,7 @@ pub struct Ui {
 
     // The link at a window point in the content area.
     fn linkAt(self: *mut Self, x: f64, y: f64) ?engine.Link {
-        if self.tab.page |p| {
-            if p.tree |t| {
-                return engine.linkAt(t, x, y - self.top() + self.tab.scroll)
-            }
-        }
-        return null
+        return pageview.linkAt(self.view(), x, y - self.top())
     }
 
     fn click(self: *mut Self, x: f64, y: f64) AllocError!void {
@@ -1874,21 +1592,14 @@ pub struct Ui {
     // it is laid out again first, so that the default action looks at
     // the new layout.
     fn clickScripts(self: *mut Self, x: f64, y: f64) AllocError!bool {
-        let p = self.tab.page orelse return true
-        if !engine.hasScripts(p) || self.dropdown != null {
+        if self.dropdown != null {
             return true
         }
-        let t = p.tree orelse return true
-        var el = engine.nodeAt(t, x, y - self.top() + self.tab.scroll) orelse return true
-        if p.doc.node(el).kind != dom.Kind.Element {
-            el = p.doc.parent(el) orelse return true
-        }
-        let go_on = try engine.dispatchEvent(p, el, "click", "")
-        if self.tab.page |now| {
-            if engine.treeVersion(now) != self.laid_version {
-                try self.relayout()
-                try self.setTitle()
-            }
+        let ran = try pageview.inputClick(self.view(), x, y - self.top())
+        let go_on = ran orelse return true
+        if pageview.needsLayout(self.view()) {
+            try self.relayout()
+            try self.setTitle()
         }
         return go_on
     }
@@ -1897,16 +1608,10 @@ pub struct Ui {
     // down) at the element under the mouse; false when a listener
     // canceled it.
     fn wheelScripts(self: *mut Self, dx: f64, dy: f64) AllocError!bool {
-        let p = self.tab.page orelse return true
-        if !engine.hasScripts(p) || !self.mouse_in || self.mouse_y < self.top() {
+        if !self.mouse_in || self.mouse_y < self.top() {
             return true
         }
-        let t = p.tree orelse return true
-        var el = engine.nodeAt(t, self.mouse_x + self.tab.scroll_x, self.mouse_y - self.top() + self.tab.scroll) orelse return true
-        if p.doc.node(el).kind != dom.Kind.Element {
-            el = p.doc.parent(el) orelse return true
-        }
-        return engine.dispatchWheel(p, el, self.mouse_x, self.mouse_y - self.top(), dx, dy)
+        return pageview.inputWheel(self.view(), self.mouse_x, self.mouse_y - self.top(), dx, dy)
     }
 
     // A key goes up: `keyup` for the page's scripts, as for a game.
@@ -1930,23 +1635,6 @@ pub struct Ui {
     // location\nmods").
     fn keyScripts(self: *mut Self, kind: []u8, sym: i32, mods: u16, sc: i32, repeat: bool) AllocError!bool {
         let shift = (mods & KMOD_SHIFT) != 0
-        let p = self.tab.page orelse return true
-        if !engine.hasScripts(p) {
-            return true
-        }
-        var target = engine.scriptFocus(p)
-        if target == null {
-            if p.doc.documentElement() |root| {
-                var cur = p.doc.firstChild(root)
-                while cur |c| {
-                    if p.doc.isElement(c, "body") {
-                        target = c
-                    }
-                    cur = p.doc.nextSibling(c)
-                }
-            }
-        }
-        let el = target orelse return true
         var name = [1]u8{0}
         let code = domCode(sc)
         var key: []u8 = keyName(sym)
@@ -1978,7 +1666,7 @@ pub struct Ui {
         try b.appendInt(keyLocation(sc) as i64)
         try b.append("\n")
         try b.appendInt(modBits(mods) as i64)
-        return engine.dispatchEvent(p, el, kind, b.bytes())
+        return pageview.inputKey(self.view(), kind, b.bytes())
     }
 
     // Fires a pointer event of the mouse (pointerId 1) at the element under
@@ -1988,22 +1676,12 @@ pub struct Ui {
     // position where the lock began.
     fn pointerEvent(self: *mut Self, kind: []u8, button: u32, x: f64, y: f64, mx: f64, my: f64) AllocError!void {
         self.pointer_on = true
-        let p = self.tab.page orelse return
-        if !engine.hasScripts(p) || self.dropdown != null || self.auth.open {
+        if self.dropdown != null || self.auth.open {
             return
         }
-        let t = p.tree orelse return
         let leaving = text.eql(kind, "pointerleave") || text.eql(kind, "pointercancel")
         if !self.locked && !leaving && (y < self.top() || y >= self.top() + self.viewHeight()) {
             return
-        }
-        var found = engine.nodeAt(t, x + self.tab.scroll_x, y - self.top() + self.tab.scroll)
-        if found == null {
-            found = p.doc.documentElement()
-        }
-        var el = found orelse return
-        if p.doc.node(el).kind != dom.Kind.Element {
-            el = p.doc.parent(el) orelse return
         }
         var b = text.Builder.init(self.alloc)
         defer b.deinit()
@@ -2014,35 +1692,18 @@ pub struct Ui {
         try b.appendInt(modBits(SDL_GetModState()) as i64)
         try b.append("\n")
         try b.appendInt(self.clicks as i64)
-        let cy = y - self.top()
-        let go_on = try engine.dispatchPointer(p, el, kind, b.bytes(), x, cy, mx, my)
-        self.pointer_on = go_on
-        if go_on && text.startsWith(kind, "pointer") && !text.eql(kind, "pointercancel") {
-            // pointerdown -> mousedown, pointermove -> mousemove...
-            var mouse: []u8 = "mousemove"
-            if text.eql(kind, "pointerdown") {
-                mouse = "mousedown"
-            } else if text.eql(kind, "pointerup") {
-                mouse = "mouseup"
-            } else if text.eql(kind, "pointerleave") {
-                mouse = "mouseleave"
-            }
-            let mouse_on = try engine.dispatchPointer(p, el, mouse, b.bytes(), x, cy, mx, my)
-            self.pointer_on = mouse_on
-            if mouse_on && text.eql(kind, "pointerdown") {
-                _ = try engine.dispatchEvent(p, el, "__focus", "")
-            }
+        let on = try pageview.inputPointer(self.view(), kind, b.bytes(), x, y - self.top(), mx, my)
+        if on |go_on| {
+            self.pointer_on = go_on
+            try self.afterScripts()
         }
-        try self.afterScripts()
     }
 
     // Tells the page what the window did (`hostState` of the prelude):
     // "lock:1", "lock:0", "lockerror", "fs:1", "fs:0", "fserror", "hidden"
     // or "visible".
     fn hostState(self: *mut Self, what: []u8) AllocError!void {
-        let p = self.tab.page orelse return
-        let t = p.doc.documentElement() orelse return
-        _ = try engine.dispatchEvent(p, t, "__host", what)
+        return pageview.hostState(self.view(), what)
     }
 
     // Does what scripts asked of the window: pointer lock
@@ -2134,7 +1795,7 @@ pub struct Ui {
             }
             .None => {}
         }
-        if engine.treeVersion(p) != self.laid_version {
+        if pageview.needsLayout(self.view()) {
             try self.relayout()
             try self.setTitle()
         }
@@ -2176,20 +1837,12 @@ pub struct Ui {
     // ---- drawing
 
     fn draw(self: *mut Self) AllocError!void {
-        self.followScroll()
-        if self.relist {
-            self.relist = false
-            if self.tab.page |p| {
-                if p.tree |t| {
-                    try self.buildList(t)
-                }
-            }
-        }
+        try pageview.frame(self.view())
         let s = self.scale
         let top = self.top()
         let bottom = self.win_h as f64
         let content = paint.Rect { x: 0.0, y: top, w: self.win_w as f64, h: self.viewHeight() }
-        let v = paint.View { scale: s, dx: -snappedScroll(self.tab.scroll_x, s) * s, dy: (top - snappedScroll(self.tab.scroll, s)) * s }
+        let v = paint.View { scale: s, dx: -pageview.snappedScroll(self.tab.scroll_x, s) * s, dy: (top - pageview.snappedScroll(self.tab.scroll, s)) * s }
         let flat = paint.View { scale: s, dx: 0.0, dy: 0.0 }
         let area = paint.deviceRect(content, flat)
         // The page's pixels, then the window: all of it when something
@@ -2205,17 +1858,11 @@ pub struct Ui {
         }
         blitPage(self)
         try self.canvas.pushClip(area)
-        if self.list != null {
+        if pageview.hasFrame(self.view()) {
             try drawPageState(self, v)
             try drawAgentFlash(self, v)
         }
-        for i, m in self.matches.items() {
-            var c = paint.Rgba { r: 255, g: 230, b: 0, a: 110 }
-            if i == self.current {
-                c = paint.Rgba { r: 255, g: 140, b: 0, a: 140 }
-            }
-            self.canvas.fillRect(paint.deviceRect(m, v), c)
-        }
+        pageview.paintMatches(self.view(), &mut self.canvas, v)
         self.canvas.popClip()
         drawWatched(self, area)
         try drawToolbar(self)
@@ -2286,14 +1933,3 @@ fn keyName(sym: i32) []u8 {
     }
     return ""
 }
-
-// An element whose transform or opacity changed in the last `n`
-// relayouts in a row, the last `seq` (`Ui.noteAnimated`).
-struct Anim {
-    el: NodeId
-    n: u32
-    seq: u64
-}
-
-let PROMOTE_AFTER: u32 = 2
-let MAX_PROMOTED: usize = 32

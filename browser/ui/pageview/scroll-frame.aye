@@ -1,0 +1,18 @@
+import engine
+import std.mem.AllocError
+
+pub fn scrollFrame(view: *mut PageView, x: f64, y: f64, dy: f64) AllocError!bool {
+    let p = view.tab.page orelse return false
+
+    if !engine.scrollFrameAt(p, x + view.tab.scroll_x, y + view.tab.scroll, dy) {
+        return false
+    }
+
+    if p.tree |t| {
+        try buildList(view, t)
+    }
+
+    view.repaint = true
+
+    return true
+}

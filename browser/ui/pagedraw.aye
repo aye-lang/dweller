@@ -17,6 +17,7 @@ import std.list.List
 import std.math
 import std.mem.AllocError
 import std.mem.Allocator
+import ui.pageview
 
 extern fn getenv(name: [*]u8) ?[*]u8
 extern fn memcmp(a: [*]u8, b: [*]u8, n: usize) i32
@@ -24,8 +25,7 @@ extern fn memcmp(a: [*]u8, b: [*]u8, n: usize) i32
 pub struct PageDraw {
     alloc: Allocator
     canvas: paint.Canvas
-    // The signatures of `Ui.list`, and of what `canvas` shows.
-    sigs: List(paint.Sig)
+    // The signatures of what `canvas` shows.
     drawn: List(paint.Sig)
     // How `canvas` was drawn: false when it shows nothing yet.
     valid: bool
@@ -52,7 +52,6 @@ pub struct PageDraw {
         return PageDraw {
             alloc: alloc,
             canvas: paint.Canvas.init(alloc, 0, 0) catch unreachable,
-            sigs: List(paint.Sig).init(alloc),
             drawn: List(paint.Sig).init(alloc),
             valid: false,
             view: paint.View { scale: 1.0, dx: 0.0, dy: 0.0 },
@@ -72,7 +71,6 @@ pub struct PageDraw {
 
     pub fn deinit(self: *mut Self) {
         self.canvas.deinit()
-        self.sigs.deinit()
         self.drawn.deinit()
         self.cache.deinit()
         self.damage.deinit()
@@ -102,7 +100,7 @@ pub struct PageDraw {
 }
 
 /// Brings the page's pixels (`ui.page.canvas`, the window's `area`) up to
-/// date with `ui.list` scrolled as the tab is; true when it drew
+/// date with `ui.page_view.list` scrolled as the tab is; true when it drew
 /// something. They are drawn with the page's own origin, so that the
 /// device coordinates of what is in view are never more than those of
 /// the page (adding a scroll offset to them is then exact, and a scroll
@@ -110,9 +108,9 @@ pub struct PageDraw {
 fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     let pd = &mut ui.page
     let s = ui.scale
-    let v = paint.View { scale: s, dx: -snappedScroll(ui.tab.scroll_x, s) * s, dy: -snappedScroll(ui.tab.scroll, s) * s }
+    let v = paint.View { scale: s, dx: -pageview.snappedScroll(ui.tab.scroll_x, s) * s, dy: -pageview.snappedScroll(ui.tab.scroll, s) * s }
     var bg = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
-    if ui.list |l| {
+    if ui.page_view.list |l| {
         bg = l.background
     }
     try pd.resize(math.maxOf(i64, 0, area.x1 - area.x0) as usize, math.maxOf(i64, 0, area.y1 - area.y0) as usize)
@@ -120,7 +118,7 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     let all = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
     let slot = ui.slots[ui.active].?
     let doc = (slot.id as u64) << 32 | (slot.shown & 0xffffffff)
-    var whole = !pd.valid || v.scale != pd.view.scale || !sameRgba(bg, pd.background) || doc != pd.doc || ui.list == null
+    var whole = !pd.valid || v.scale != pd.view.scale || !sameRgba(bg, pd.background) || doc != pd.doc || ui.page_view.list == null
     if doc != pd.doc {
         // Another document: the cache's keys may name its freed pixels.
         pd.cache.clear()
@@ -150,18 +148,18 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
                 } else if mx < 0 {
                     try pd.damage.add(paint.IRect { x0: all.x1 + mx, y0: 0, x1: all.x1, y1: all.y1 })
                 }
-                try paint.edgeLayers(pd.sigs.items(), v, all, &mut pd.damage)
+                try paint.edgeLayers(ui.page_view.sigs.items(), v, all, &mut pd.damage)
             }
-            try paint.diff(pd.drawn.items(), pd.sigs.items(), v, all, &mut pd.damage)
+            try paint.diff(pd.drawn.items(), ui.page_view.sigs.items(), v, all, &mut pd.damage)
         }
     }
     if whole {
         pd.damage.clear()
         try pd.damage.add(all)
     }
-    _ = try paint.spreadLayers(pd.sigs.items(), v, all, &mut pd.damage)
+    _ = try paint.spreadLayers(ui.page_view.sigs.items(), v, all, &mut pd.damage)
     let drew = !pd.damage.isEmpty()
-    var reuse = paint.Reuse { sigs: pd.sigs.items(), cache: &mut pd.cache }
+    var reuse = paint.Reuse { sigs: ui.page_view.sigs.items(), cache: &mut pd.cache }
     if drew {
         for r in pd.damage.rects.items() {
             try drawRinged(ui, r, v, bg, &mut reuse)
@@ -177,7 +175,7 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
         perf.end("ui_layers", t, pairLabel(reuse.kept as u64, reuse.drawn as u64))
     }
     pd.drawn.clear()
-    for sg in pd.sigs.items() {
+    for sg in ui.page_view.sigs.items() {
         try pd.drawn.append(sg)
     }
     pd.valid = true
@@ -251,9 +249,9 @@ fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
     try sc.pushClip(area)
     defer sc.popClip()
     sc.fillRect(area, bg)
-    if ui.list |l| {
+    if ui.page_view.list |l| {
         // The window's drawing, without damage or cache.
-        var whole = paint.Reuse { sigs: pd.sigs.items(), cache: null }
+        var whole = paint.Reuse { sigs: ui.page_view.sigs.items(), cache: null }
         try paint.renderWith(&l, sc, v, &mut ui.painter, &mut whole)
     }
     var count: usize = 0
@@ -282,9 +280,9 @@ fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
         let i = (b.y0 as usize * sc.width + b.x0 as usize) * 4
         let pi = (((b.y0 + pd.ring) % area.y1) as usize * sc.width + b.x0 as usize) * 4
         std.log.err("  page {} {} {} {} full {} {} {} {}", pd.canvas.pixels[pi], pd.canvas.pixels[pi + 1], pd.canvas.pixels[pi + 2], pd.canvas.pixels[pi + 3], sc.pixels[i], sc.pixels[i + 1], sc.pixels[i + 2], sc.pixels[i + 3])
-        if ui.list |l| {
+        if ui.page_view.list |l| {
             for k, it in l.items.items() {
-                let d = paint.deviceBounds(pd.sigs.items()[k].b, v)
+                let d = paint.deviceBounds(ui.page_view.sigs.items()[k].b, v)
                 if d.x0 <= b.x0 && b.x0 < d.x1 && d.y0 <= b.y0 && b.y0 < d.y1 {
                     std.log.err("  item {} {} {},{} - {},{}", k, paint.kindName(it), d.x0, d.y0, d.x1, d.y1)
                 }
@@ -296,7 +294,7 @@ fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
 /// Is something drawn over the page (find matches, the focused field,
 /// a dropdown, the status line, an agent's flash, a menu)?
 fn pageOverlays(ui: *mut Ui) bool {
-    if ui.matches.len() > 0 || ui.finding || ui.dropdown != null || ui.hover.len() > 0 {
+    if ui.page_view.matches.len() > 0 || ui.finding || ui.dropdown != null || ui.hover.len() > 0 {
         return true
     }
     if chipStatus(ui).len > 0 || agentStatus(ui).len > 0 {
