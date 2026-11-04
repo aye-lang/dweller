@@ -5042,7 +5042,8 @@ fn window_relayout_incremental() {
                 "--height",
                 "300",
                 "--frames",
-                "40",
+                "600",
+                "--until-idle",
                 "--text",
             ])
             .output()
@@ -5269,7 +5270,8 @@ fn window_webgl() {
             "--height",
             "800",
             "--frames",
-            "300",
+            "1000",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -5503,7 +5505,8 @@ fn webgl_three_cube() {
             .env("DWELLER_TIMING", "1")
             .env("DWELLER_GL", "swiftshader")
             .args([
-                target, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "200",
+                target, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "600",
+                "--until-idle",
             ])
             .output()
             .unwrap();
@@ -5637,7 +5640,8 @@ fn window_transform_composite() {
             "--height",
             "400",
             "--frames",
-            "200",
+            "600",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -5673,7 +5677,10 @@ fn window_transform_composite() {
 /// A CSS-only animation (P10.51b): `browser/tests/ui/css_spinner.html`
 /// moves and fades a box twice with no script. The window starts it from
 /// the styles, composites its frames without layout, damages only the
-/// box's rect, and once it ended runs no more animation frames.
+/// box's rect, and once it ended runs no more animation frames. The
+/// animation runs on the wall clock (2 x 600 ms), so 15 composited frames
+/// fit at up to 80 ms a frame, and 300 frames leave 50 after its end at
+/// 10 ms a frame; `--until-idle` would end the run before those 50.
 #[test]
 fn window_css_animation() {
     if !has_sdl() {
@@ -5693,7 +5700,7 @@ fn window_css_animation() {
             "--height",
             "300",
             "--frames",
-            "150",
+            "300",
         ])
         .output()
         .unwrap();
@@ -5738,9 +5745,12 @@ fn window_css_animation() {
 }
 
 /// A CSS transition on `:hover` (P10.51d): `browser/tests/ui/hover_transition.html`
-/// moves the pointer over a box with `transition: background-color .3s,
-/// transform .3s`, with no script. Its frames damage only the box's rect,
-/// and once it ended no more animation frames run.
+/// moves the pointer over a box with `transition: background-color .6s,
+/// transform .6s`, with no script. Its frames damage only the box's rect,
+/// and once it ended no more animation frames run. As in
+/// `window_css_animation` the transition runs on the wall clock: 10
+/// frames fit in it at up to 60 ms a frame, and 300 frames leave 50 after
+/// it at 10 ms a frame.
 #[test]
 fn window_css_transition() {
     if !has_sdl() {
@@ -5760,7 +5770,7 @@ fn window_css_transition() {
             "--height",
             "300",
             "--frames",
-            "150",
+            "300",
             "--events",
             "painted move:120,160",
         ])
@@ -5878,7 +5888,8 @@ fn window_width_animation() {
             "--height",
             "400",
             "--frames",
-            "100",
+            "600",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -7033,7 +7044,8 @@ fn window_raf_vsync() {
             "--height",
             "300",
             "--frames",
-            "600",
+            "1200",
+            "--until-idle",
             "--text",
         ])
         .spawn_drained();
@@ -7041,7 +7053,7 @@ fn window_raf_vsync() {
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
             let _ = window.kill();
-            panic!("the window did not draw 600 frames in 60 s");
+            panic!("the window did not end in 60 s");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -7628,8 +7640,8 @@ fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
     }
     let out = c
         .args([
-            url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "40",
-            "--state", "--text", "--events", events,
+            url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
+            "--until-idle", "--state", "--text", "--events", events,
         ])
         .output()
         .unwrap();
@@ -8121,7 +8133,8 @@ fn window_login_basic_prompt() {
             "--height",
             "300",
             "--frames",
-            "40",
+            "400",
+            "--until-idle",
             "--events",
             "frame text:alice key:tab text:wonder",
             "--save",
@@ -8817,8 +8830,8 @@ fn no_file_from_web() {
     let goes = |dir: &str, how: &str, events: &str| {
         let out = run_window(&[
             &format!("{dir}go.html?{how}&{local}"),
-            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
-            "--events", events, "--state", "--text",
+            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+            "--until-idle", "--events", events, "--state", "--text",
         ]);
         assert!(
             out.status.success() && out.stderr.is_empty(),
@@ -8879,8 +8892,8 @@ fn window_login_popup() {
     let window = |page: &str, events: &str| {
         let url = format!("{base}/popup/{page}");
         let out = run_window(&[
-            &url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
-            "--events", events, "--state", "--text",
+            &url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+            "--until-idle", "--events", events, "--state", "--text",
         ]);
         assert!(
             out.status.success() && out.stderr.is_empty(),
