@@ -26,6 +26,12 @@
 #                    answers Access-Control-Allow-Origin: * and a CORS
 #                    preflight (OPTIONS with Access-Control-Request-Method)
 #   /fetch-redirect/STATUS  (any method) STATUS to /fetch-echo?redirected
+#   /preflight/NAME  (any method) records the method, path and
+#                    Access-Control-Request-Headers (in /log) and answers
+#                    ACAO *; OPTIONS also allows PUT and x-test for 60 s
+#                    unless NAME has "deny"; a PUT to a NAME with "hop"
+#                    is a 307 to NAME with "after" for "hop", with "cred"
+#                    a 307 to a URL with credentials
 #   /net/start       302 to /net/page.html, setting the cookies of COOKIES
 #   /headers         the request's Accept, Accept-Language, Referer and
 #                    Cookie headers, as text/plain
@@ -359,6 +365,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0") or "0")
             body = self.rfile.read(length)
         path = urllib.parse.urlsplit(self.path).path
+        if path.startswith("/preflight/"):
+            self.preflight_route(path)
+            return
         if path.startswith("/fetch-redirect/"):
             self.reply(int(path[len("/fetch-redirect/"):]), [("Location", "/fetch-echo?redirected"), ("Access-Control-Allow-Origin", "*")])
             return
@@ -381,6 +390,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
+
+    def preflight_route(self, path):
+        asked = self.headers.get("Access-Control-Request-Headers")
+        LOG.append(" ".join([self.command, path] + ([asked] if asked else [])) + "\n")
+        status, headers = 200, [("Access-Control-Allow-Origin", "*"), ("Content-Type", "text/plain")]
+        if self.command == "OPTIONS" and "deny" not in path:
+            headers += [("Access-Control-Allow-Methods", "PUT"), ("Access-Control-Allow-Headers", "x-test"), ("Access-Control-Max-Age", "60")]
+        if self.command == "PUT" and "hop" in path:
+            status = 307
+            headers.append(("Location", path.replace("hop", "after")))
+        if self.command == "PUT" and "cred" in path:
+            status = 307
+            headers.append(("Location", "http://u:p@%s/preflight/landed" % self.headers["Host"]))
+        self.reply(status, headers, (self.command + " " + path).encode())
 
     # ---- the login fixture
 

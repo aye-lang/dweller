@@ -2,7 +2,18 @@ import std.mem.Allocator
 import url.Url
 
 fn corsChecked(alloc: Allocator, req: Request, target: *Url, res: Response) FetchError!Response {
-    if corsCheck(alloc, req, target.href, &res) catch false {
+    var at: []u8 = target.href
+    var checked = req
+
+    if res.url.len > 0 {
+        at = res.url
+    }
+
+    if res.tainted {
+        checked.initiator = Initiator.Page { url: "" }
+    }
+
+    if corsCheck(alloc, checked, at, res.headers_raw) catch false {
         return res
     }
 

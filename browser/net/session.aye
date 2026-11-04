@@ -35,6 +35,7 @@ struct Session {
     share: ?*mut CurlShare
     jar: Jar
     cache: Cache
+    preflights: PreflightCache
     // DWELLER_COOKIE_FILE, `<profile>/cookies`, or empty.
     cookie_file: []mut u8
     // The cookie file has session cookies too (a profile's).
@@ -80,6 +81,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         share: curl_share_init(),
         jar: Jar.init(alloc),
         cache: Cache.init(alloc),
+        preflights: PreflightCache.init(alloc),
         cookie_file: file,
         sessions: false,
         profile: []mut u8{},
@@ -210,6 +212,7 @@ pub fn stop() {
     }
     s.frames.deinit()
     s.cache.deinit()
+    s.preflights.deinit()
     release(s.alloc, s.cookie_file)
     release(s.alloc, s.profile)
     release(s.alloc, s.nav_target)

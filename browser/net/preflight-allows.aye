@@ -1,0 +1,20 @@
+import std.text
+
+// chromium: services/network/cors/preflight_result.cc EnsureAllowedRequest
+fn preflightAllows(method: []u8, names: []u8, methods: []u8, headers: []u8, include: bool) bool {
+    var unsafe = text.split(names, ",")
+    let any_method = !include && tokenListed(methods, "*", false)
+    let any_header = !include && tokenListed(headers, "*", false)
+
+    if !text.eql(method, "GET") && !text.eql(method, "HEAD") && !text.eql(method, "POST") && !any_method && !tokenListed(methods, method, false) {
+        return false
+    }
+
+    while unsafe.next() |name| {
+        if name.len > 0 && !tokenListed(headers, name, true) && (!any_header || text.eql(name, "authorization")) {
+            return false
+        }
+    }
+
+    return true
+}

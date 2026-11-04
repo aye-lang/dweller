@@ -1169,6 +1169,8 @@ Each changed row of Q0.2 against 2026-10-17:
 
 2026-11-04 (Q0.4a): the react engine regression is 1021c3f (P10.30), not 922271a; split with 2–3 runs per point, 922271a reads 18–23 ms and its bad bisect step was one noisy run. P10.30's `decorateFrom` measured the font and scanned the line of every ancestor of every text fragment, twice per fragment (`paint_build` 47 ms per relayout on main). It now returns for a box without a decoration line: `paint_build` 4 ms, react on the old archive 19.4–29.5 ms (median 20.2; 23.3 rebased on 092213e) against main's 65.5–100.2 ms; `css/css-text-decor` 1027/1694 before and after.
 
+2026-11-04 (Q4.6a): `relayoutDirty` no longer refuses trees with floats; a change is laid out again from the nearest formatting root that holds the floats around it (`relayoutFrom`), and from the next one up when that root changes size. Replay, safe build, main 39781c6 against this branch: zol scroll `DWELLER_LAYOUT_WHY` `relayout:floats` 1304 → 0 (95 `relayout:dropped` now show: the tree mostly dropped boxes), full layouts with `DWELLER_LAYOUT_CHECK` 1430 → 179; zol W7 loop 11436 → 5200 ms, scroll p50/p95 235.7/9309.7 → 411.1/4249.6 ms, idle 18.3 → 13.0% (the p50 frame rose; the loop time of the whole run fell 54.2 → 36.4 s, full layouts 21.3 s → 2.8 s, dirty relayouts 0.01 → 4.6 s at 3.5 ms each); mistral idle `relayout:floats` 83 → 0, loop 1672 → 1523 ms, p95 454.4 → 412.4 ms, idle 99.1 → 99.5%. Both still fail W7.
+
 ## Q4.1: where the W7 time goes (2026-11-04)
 
 Main f998dbf, the compiler at `AYE_REV`, the shipped build

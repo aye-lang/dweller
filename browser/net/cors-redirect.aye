@@ -1,0 +1,41 @@
+import std.mem.Allocator
+import std.text
+import url
+
+// https://fetch.spec.whatwg.org/#http-redirect-fetch
+fn corsRedirect(alloc: Allocator, req: Request, from: []u8, to: []u8, headers: []u8) FetchError!bool {
+    if req.mode != Mode.Cors {
+        return false
+    }
+
+    var origin = text.Builder.init(alloc)
+    defer origin.deinit()
+    var moved = text.Builder.init(alloc)
+    defer moved.deinit()
+    try corsOrigin(alloc, req, from, &mut origin)
+    try corsOrigin(alloc, req, to, &mut moved)
+    let here = url.parse(alloc, from) catch |e| {
+        return FetchError.Invalid
+    }
+
+    defer here.deinit(alloc)
+    let next = url.parse(alloc, to) catch |e| {
+        return FetchError.Invalid
+    }
+
+    defer next.deinit(alloc)
+    let taint = origin.bytes().len > 0 && !sameOrigin(&here, &next)
+    var hop = req
+
+    if !(try corsCheck(alloc, req, from, headers)) || (moved.bytes().len > 0 && (next.username.len > 0 || next.password.len > 0)) {
+        return FetchError.Network
+    }
+
+    if taint {
+        hop.initiator = Initiator.Page { url: "" }
+    }
+
+    try preflight(alloc, hop, &next)
+
+    return taint
+}
