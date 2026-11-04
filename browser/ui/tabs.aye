@@ -34,6 +34,7 @@ pub struct TabSlot {
     agent: bool
     taken: bool = false
     next_run_ns: u64 = 0
+    process: ?*mut TabProcess = null
 }
 
 fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.System, id: u32) AllocError!*mut TabSlot {
@@ -43,6 +44,7 @@ fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.Syst
 }
 
 fn freeSlot(alloc: Allocator, slot: *mut TabSlot) {
+    endTabProcess(alloc, slot.process)
     agent.freeSession(&mut slot.session)
     alloc.destroy(slot)
 }
@@ -50,6 +52,12 @@ fn freeSlot(alloc: Allocator, slot: *mut TabSlot) {
 /// The title of a tab for the strip and for agents: the page's title,
 /// else its URL, else "New tab".
 fn slotTitle(slot: *TabSlot) []u8 {
+    if slot.process |tp| {
+        if tp.title.len() > 0 {
+            return tp.title.bytes()
+        }
+    }
+
     let t = slot.session.tab
     if t.page |p| {
         if p.title.len > 0 {

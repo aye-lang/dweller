@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn readTabProcess(tp: *mut TabProcess) AllocError!bool {
+    var buf = @zeroed([4096]u8)
+
+    while true {
+        let n = readSome(tp.fd, buf[..])
+
+        if n < 0 { return true }
+        if n == 0 { return false }
+
+        try tp.inbox.append(buf[0..n as usize])
+    }
+
+    unreachable
+}

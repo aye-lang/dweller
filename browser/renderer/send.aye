@@ -1,0 +1,12 @@
+import ipc
+import std
+import std.mem.Allocator
+import std.text
+
+fn send(alloc: Allocator, conn: std.fs.File, frame: u32, m: ipc.Message) !void {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try ipc.encode(&mut out, frame, m)
+    try conn.write(out.bytes())
+}

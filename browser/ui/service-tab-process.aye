@@ -1,0 +1,22 @@
+import ipc
+import std.mem.AllocError
+
+fn serviceTabProcess(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!bool {
+    if tp.gone.len > 0 { return false }
+
+    try queueNavigate(slot, tp)
+
+    let sent = sendSome(tp.fd, tp.outbox.bytes())
+
+    if sent > 0 {
+        ipc.consume(&mut tp.outbox, sent as usize)
+    }
+
+    if sent < 0 || !(try readTabProcess(tp)) {
+        dropTabProcess(tp, "crashed")
+
+        return true
+    }
+
+    return takeMessages(slot, tp)
+}

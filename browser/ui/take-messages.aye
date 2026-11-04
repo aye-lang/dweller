@@ -1,0 +1,34 @@
+import ipc
+import std
+import std.mem.AllocError
+
+fn takeMessages(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!bool {
+    var changed = false
+
+    while tp.gone.len == 0 {
+        let got = ipc.nextMessage(tp.inbox.bytes()) catch |e| {
+            badMessage(tp, @tagName(e))
+
+            return true
+        }
+
+        let g = got orelse return changed
+        let why = try rendererSent(slot, tp, g)
+
+        if why.len > 0 {
+            badMessage(tp, why)
+
+            return true
+        }
+
+        ipc.consume(&mut tp.inbox, g.used)
+        changed = true
+    }
+
+    return changed
+}
+
+fn badMessage(tp: *mut TabProcess, why: []u8) {
+    std.log.err("bad message: {} {}", why, tp.pid)
+    dropTabProcess(tp, why)
+}

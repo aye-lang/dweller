@@ -1,0 +1,38 @@
+import std
+import std.heap.Arena
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn startTabProcess(alloc: Allocator) AllocError!?*mut TabProcess {
+    var arena = Arena.init(alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    var sv = [2]i32{-1, -1}
+
+    if socketpair(AF_UNIX, SOCK_STREAM, 0, sv[..].ptr) != 0 { return null }
+
+    cloexec(sv[0])
+    noSigpipe(sv[0])
+
+    let args = try std.os.args(tmp)
+    var argv = [3][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64)}
+    let pid = try spawnProgram(tmp, argv[..])
+
+    closeFd(sv[1])
+
+    if pid <= 0 {
+        closeFd(sv[0])
+
+        return null
+    }
+
+    return try alloc.create(TabProcess {
+        pid: pid,
+        fd: sv[0],
+        inbox: text.Builder.init(alloc),
+        outbox: text.Builder.init(alloc),
+        url: text.Builder.init(alloc),
+        title: text.Builder.init(alloc),
+    })
+}

@@ -9373,3 +9373,59 @@ fn window_hover_local() {
         );
     }
 }
+
+/// Q2.2a: with `DWELLER_PROCESS=tab` each tab has a renderer process of
+/// its own (`dweller --renderer FD`, the binary IPC of
+/// docs/process-model.md §2). The tab's title comes from the renderer,
+/// whose pid is not the window's; a renderer that is killed is noted for
+/// its tab (`gone crashed`); one that sends a malformed message is
+/// killed (`bad message:` on stderr). Without the flag no renderer runs.
+#[test]
+fn window_renderer_lifecycle() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str, envs: &[(&str, &str)]| -> (u32, String, String) {
+        let child = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (pid, text(&out.stdout), text(&out.stderr))
+    };
+    let renderer = |state: &str| -> Vec<String> {
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+        line.splitn(4, ' ').map(String::from).collect()
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+
+    let (window, state, err) = run("renderer:loaded", &tab);
+    let r = renderer(&state);
+    assert!(err.is_empty(), "{err}");
+    assert_ne!(r[1], window.to_string(), "the renderer is another process");
+    assert_eq!(&r[2..], ["title", "Form"], "{state}");
+
+    let (_, state, err) = run("renderer:loaded renderer:kill renderer:gone", &tab);
+    assert!(err.is_empty(), "{err}");
+    assert_eq!(&renderer(&state)[2..], ["gone", "crashed"], "{state}");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "malformed")];
+    let (_, state, err) = run("renderer:gone", &evil);
+    let r = renderer(&state);
+    assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
+    assert_eq!(err, format!("error: bad message: UnknownType {}\n", r[1]));
+
+    let (_, state, err) = run("", &[]);
+    assert!(err.is_empty(), "{err}");
+    assert!(!state.contains("renderer "), "{state}");
+}

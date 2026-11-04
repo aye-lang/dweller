@@ -1,0 +1,21 @@
+import engine
+import ipc
+import std
+import std.mem.Allocator
+import std.text
+import url
+
+fn load(alloc: Allocator, conn: std.fs.File, frame: u32, href: []u8) !void {
+    let target = try url.parse(alloc, href)
+    defer target.deinit(alloc)
+    let p = try engine.load(alloc, &target)
+    defer p.destroy()
+
+    try send(alloc, conn, frame, ipc.Message.Loaded { title: p.title, url: p.url.href })
+
+    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "malformed") {
+        var bad = @zeroed([16]u8)
+
+        try conn.write(bad[..])
+    }
+}
