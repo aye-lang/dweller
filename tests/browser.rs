@@ -5521,8 +5521,8 @@ fn window_container_queries() {
             .env(env, "1")
             .env_remove(without)
             .args([
-                &url, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "90",
-                "--text",
+                &url, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "600",
+                "--until-idle", "--text",
             ])
             .output()
             .unwrap();
