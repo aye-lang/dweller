@@ -5122,6 +5122,57 @@ fn window_relayout_floats() {
     );
 }
 
+/// Attribute changes are laid out again incrementally (Q4.6b): one that
+/// a selector names, presentational ones (`width` of an image,
+/// `hidden`) and ones layout reads (`colspan`, a canvas's `width`, `ol
+/// start`) relay out their boxes, with the same boxes as a full layout
+/// (`DWELLER_LAYOUT_CHECK`); ones that no selector names (`data-x`,
+/// `aria-label`) lay out nothing.
+#[test]
+fn window_relayout_attr() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let layouts = |page: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_LAYOUT_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .args([
+                page,
+                "--font",
+                "fixed",
+                "--width",
+                "400",
+                "--height",
+                "300",
+                "--frames",
+                "600",
+                "--until-idle",
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("CHECK"), "{err}");
+        let phases: Vec<&str> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| r.split('\t').next().unwrap())
+            .collect();
+        let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+        let after = &phases[first..];
+        let count = |name: &str| after.iter().filter(|p| **p == name).count();
+        (count("layout_full") + count("layout"), count("layout_dirty"), err.clone())
+    };
+    let (full, dirty, err) = layouts("browser/tests/ui/relayout_attr.html");
+    assert_eq!(full, 0, "full layouts after the first frame:\n{err}");
+    assert!(dirty >= 30, "{dirty} dirty relayouts:\n{err}");
+    let (full, dirty, err) = layouts("browser/tests/ui/relayout_attr_unmatched.html");
+    assert_eq!(full + dirty, 0, "layouts after the first frame:\n{err}");
+}
+
 /// The window draws only what changed (P4.35, ui/pagedraw.aye): with
 /// `DWELLER_DAMAGE_CHECK` each frame is drawn whole too and compared; a
 /// canvas animation draws part of the page, an unchanged frame nothing.
