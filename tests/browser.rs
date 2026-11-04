@@ -1183,7 +1183,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
