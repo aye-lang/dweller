@@ -49,6 +49,7 @@ browser/
   ui/             SDL2 window, chrome (address bar, tabs), input, the
                   agent socket (`--agent-socket`, `connect`), Spaces
   perf/           `DWELLER_TIMING` phase records; local telemetry
+  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML)
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
@@ -138,6 +139,38 @@ failed load's kind and status, a decode's format and error, a slow
 loop's largest phase, a crash's signal and top frame), and ranks them
 by count times sites affected, then lists each site's median first
 paint, load and scroll frame times.
+
+## Fuzzing
+
+`dweller fuzz TARGET [--seconds N] [--corpus DIR] [--seed S]` (`fuzz/`)
+runs every file of the corpus (default `browser/tests/fuzz/TARGET/`)
+once, then for N seconds (default 60) mutates them and parses each
+mutant with the target's entry point. A mutant is 1 to 8 stacked
+mutations of a corpus file: a bit flip, a random byte inserted, a range
+deleted, a splice with another corpus file, or a token from the
+target's dictionary inserted. Before each input the binary writes it to
+`target/fuzz/TARGET/current`, so a panic or a signal leaves the input
+behind. It is blind: Aye has no coverage hooks yet, so the corpus does
+not grow. With `--seconds 0` it only runs the corpus, which is how a
+single input is replayed.
+
+Targets: `html` parses the input as a document (`html.parse`) and as
+the markup of `innerHTML` (`html.parseWith`, no declarative shadow
+roots).
+
+`python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
+build (`target/dweller-fuzz`, built by `browser/build.sh` when
+missing): it restarts the binary after each crash, keeps the first
+input of each unique crash (by the panic's `file:line:col`, else the
+signal) as `target/fuzz/TARGET/crashes/<hash>` with `<hash>.txt` (the
+panic), minimizes it by deleting byte ranges (at most 300 tries) into
+`<hash>.min`, and prints one line per unique crash. Exit 0 without a
+crash, 1 with one. Run it through `scripts/capped.sh`.
+
+A new target is one file in `fuzz/`: a dictionary, a function
+`fn(Allocator, []u8) AllocError!void` that parses the input, and a
+`Target` value, listed in `fuzz/targets.aye`; its seed corpus goes in
+`browser/tests/fuzz/<target>/` (files under 4 KB).
 
 ## Milestones
 
