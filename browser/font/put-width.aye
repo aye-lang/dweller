@@ -1,0 +1,16 @@
+import std.mem
+import std.mem.AllocError
+
+fn putWidth(c: *mut WidthCache, f: Font, s: []u8, w: f64) AllocError!void {
+    if c.entries >= WIDTH_CACHE_ENTRIES {
+        c.clear()
+    }
+
+    let widths = try widthsOf(c, f)
+    let owned = try c.alloc.alloc(0 as u8, s.len)
+
+    mem.copy(owned, s)
+    try c.owned_keys.append(owned)
+    try widths.put(owned, w)
+    c.entries += 1
+}
