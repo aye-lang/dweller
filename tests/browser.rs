@@ -5093,7 +5093,8 @@ fn window_relayout_floats() {
             "--height",
             "300",
             "--frames",
-            "40",
+            "600",
+            "--until-idle",
         ])
         .output()
         .unwrap();
