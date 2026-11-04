@@ -7068,6 +7068,43 @@ fn window_long_task() {
     );
 }
 
+/// Q1.7: a click starts `try { while (1) {} } finally { ... }`
+/// (`browser/tests/ui/stuck.html`). After 5 s the window shows "This page
+/// is not responding"; Wait gives the script 5 s more, and the bar comes
+/// again; Stop ends it as V8's TerminateExecution does (no `catch` and no
+/// `finally` runs). A later click on the other button runs its handler.
+#[test]
+fn window_stuck_script() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/stuck.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "2",
+        "--state",
+        "--text",
+        "--events",
+        "click:50,65 click:288,56 frame click:360,56 frame click:50,115",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("\nunresponsive 2\n"), "{got}");
+    assert!(got.contains("\nstart hang after\n"), "{got}");
+}
+
 /// P4.33: the window paints a page once its document and its sheet are
 /// in (0.3 s), before its script and its image arrive (1.5 s), and the
 /// click and the wheel during the load are handled before the script

@@ -1,0 +1,36 @@
+import engine
+import std.mem.AllocError
+
+var stuck_ui: ?*mut Ui = null
+
+fn watchStuck(ui: *mut Ui) {
+    stuck_ui = ui
+    engine.setHangHook(stuckHook)
+}
+
+fn stuckHook() bool {
+    return askStuck(stuck_ui.?) catch return false
+}
+
+// chromium: chrome/browser/ui/views/hung_renderer_view.cc
+fn askStuck(ui: *mut Ui) AllocError!bool {
+    var ev = @zeroed(SDL_Event)
+
+    ui.stuck = true
+    ui.unresponsive += 1
+    ui.dirty = true
+    try ui.draw()
+
+    while ui.stuck {
+        try resumeScript(ui)
+
+        if ui.stuck && SDL_WaitEventTimeout(&mut ev, 100) != 0 {
+            try ui.handle(&ev)
+        }
+    }
+
+    ui.dirty = true
+    try ui.draw()
+
+    return ui.wait
+}
