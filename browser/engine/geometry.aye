@@ -67,9 +67,8 @@ struct Geometry {
     restyled: usize
     // `Script.layout_noted` at `version`.
     noted: u64
-    // Whether the tree has floats, and how many boxes it had when laid
-    // out from scratch (`relayoutDirty`).
-    floats: bool
+    // How many boxes the tree had when laid out from scratch
+    // (`relayoutDirty`).
     built: usize
     // The page's own layout (`adoptLayout`): `styles` are those of
     // `Page.styling` (`styling`), which the page owns, and the page shows
@@ -449,7 +448,6 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
             g.tree = laid.tree
             g.first = laid.first
             g.next = laid.next
-            g.floats = laid.floats
             g.built = laid.tree.boxes.len()
             g.version = version
             g.noted = s.layout_noted
@@ -494,7 +492,7 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
     let full_began = perf.start()
     var laid = try layOut(s, styles)
     perf.end("layout_full", full_began, p.url.href)
-    let g = s.alloc.create(Geometry { tree: laid.tree, styles: styles, first: laid.first, next: laid.next, version: version, width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, floats: laid.floats, built: laid.tree.boxes.len() }) catch |e| {
+    let g = s.alloc.create(Geometry { tree: laid.tree, styles: styles, first: laid.first, next: laid.next, version: version, width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, built: laid.tree.boxes.len() }) catch |e| {
         laid.tree.deinit()
         s.alloc.destroy(laid.tree)
         laid.first.deinit()
@@ -675,7 +673,7 @@ fn adoptLayout(s: *mut Script, st: *mut Styling, tree: *mut layout.Tree) AllocEr
     var next = List(usize).init(s.alloc)
     errdefer next.deinit()
     try indexBoxes(tree, &mut first, &mut next)
-    let g = try s.alloc.create(Geometry { tree: tree, styles: &mut st.styles, first: first, next: next, version: layoutVersion(p), width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, floats: layout.hasFloats(tree), built: tree.boxes.len(), shared: true, sheets_seen: s.style_version, controls: css.controlInputs(&p.doc) })
+    let g = try s.alloc.create(Geometry { tree: tree, styles: &mut st.styles, first: first, next: next, version: layoutVersion(p), width: s.width, height: s.height, styling: st, sheets: s.computed_sheets, mutations: p.mutations, deps: deps, restyled: 0, noted: s.layout_noted, built: tree.boxes.len(), shared: true, sheets_seen: s.style_version, controls: css.controlInputs(&p.doc) })
     s.geom = g
     p.tree_borrowed = true
 }
@@ -912,7 +910,6 @@ struct Boxes {
     tree: *mut layout.Tree
     first: IntMap(u32, usize)
     next: List(usize)
-    floats: bool
 }
 
 // Lays the document out with `styles`.
@@ -945,7 +942,7 @@ fn layOut(s: *mut Script, styles: *mut css.Styles) AllocError!Boxes {
     var next = List(usize).init(s.alloc)
     errdefer next.deinit()
     try indexBoxes(tree, &mut first, &mut next)
-    return Boxes { tree: tree, first: first, next: next, floats: layout.hasFloats(tree) }
+    return Boxes { tree: tree, first: first, next: next }
 }
 
 // Each node's first box in `first`, and each box's next box of the same
@@ -970,19 +967,15 @@ fn indexBoxes(tree: *layout.Tree, first: *mut IntMap(u32, usize), next: *mut Lis
 // Builds the boxes of each element of `dirty` again (of the nearest
 // element above it whose box can be, when its own cannot) and lays them out
 // again (layout/incremental.aye), when that is what a full layout gives:
-// not for a tree with floats or in or under a shadow host, nor
+// not in or under a shadow host, nor
 // after so many boxes were built again that the tree is mostly dropped
 // ones. False when it did not; the tree may then be changed in part and
 // must be laid out from scratch.
 fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!bool {
     let doc = &s.page.doc
     let t = g.tree
-    if g.floats || t.boxes.len() > 2 * g.built + 1024 {
-        if g.floats {
-            noteFullLayout(s, "relayout:floats")
-        } else {
-            noteFullLayout(s, "relayout:dropped")
-        }
+    if t.boxes.len() > 2 * g.built + 1024 {
+        noteFullLayout(s, "relayout:dropped")
         return false
     }
     // The page's images, made since the tree was laid out (a bitmap that

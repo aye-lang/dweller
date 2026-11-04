@@ -6,8 +6,8 @@
 //
 // Only where the full layout gives the same: a block box in block flow
 // up to the root (no flex, grid or table around it, nothing
-// shrink-to-fit or out of flow, no line clamp), in a tree without
-// floats (`hasFloats`). The box laid out again and those under it are
+// shrink-to-fit or out of flow, no line clamp), from the formatting
+// root that holds its floats (`relayoutFrom`). The boxes laid out are
 // then positioned, transformed and scrolled as in a full layout
 // (`finish`): the transforms and sticky offsets of the boxes above
 // moved all under them, also the absolutely positioned boxes (whose
@@ -22,17 +22,6 @@ import dom.NodeId
 import std.list.List
 import std.mem.AllocError
 import std.text
-
-/// Does the tree have a float? `relayout` assumes none: the lines beside
-/// a float depend on boxes outside the subtree laid out again.
-pub fn hasFloats(t: *Tree) bool {
-    for b in t.boxes.items() {
-        if b.float != 0 {
-            return true
-        }
-    }
-    return false
-}
 
 // Is box `i` in block flow: a block box (or a block-level flex or grid
 // container) whose size does not depend on the widths of its content
@@ -136,8 +125,8 @@ fn rebuildKind(k: BoxKind) bool {
 
 /// Builds the boxes under box `i` (`canRebuild`) again from its element's
 /// children and computed values (also its own); the nodes of the boxes
-/// it drops go to `forgotten`. False when it builds a float: the tree
-/// must then be laid out from scratch.
+/// it drops go to `forgotten`. False when it cannot (`canRebuild`): the
+/// tree must then be laid out from scratch.
 pub fn rebuild(t: *mut Tree, i: usize, forgotten: *mut List(NodeId)) AllocError!bool {
     if !canRebuild(t, i) {
         return false
@@ -154,11 +143,6 @@ pub fn rebuild(t: *mut Tree, i: usize, forgotten: *mut List(NodeId)) AllocError!
     try buildChildren(t, i, el)
     try buildPseudo(t, i, el, 2)
     try fixUp(t, i)
-    for j in first..t.boxes.len() {
-        if t.bx(j).float != 0 {
-            return false
-        }
-    }
     try prepareBox(t, i)
     for j in first..t.boxes.len() {
         try prepareBox(t, j)
@@ -246,11 +230,16 @@ fn relayoutUp(t: *mut Tree, i: usize) AllocError!bool {
         t.bx(c).has_intrinsic = false
         cur = t.bx(c).parent
     }
-    var x = i
+    var x = relayoutFrom(t, i)
     while true {
         let old = t.bx(x).*
         t.bx(x).laid = false
         t.keep_under = x
+
+        if holdsFloats(t, x) {
+            t.keep_under = null
+        }
+
         let up = old.parent orelse {
             t.clamp_left = 0
             t.float_base = t.floats.len()
@@ -268,7 +257,8 @@ fn relayoutUp(t: *mut Tree, i: usize) AllocError!bool {
             place(t, x, pb.ax + pb.border[3] + pb.padding[3], pb.ay + pb.border[0] + pb.padding[0])
             return (try finish(t, x)) && rebaseline(t, x, old)
         }
-        x = up
+
+        x = relayoutFrom(t, up)
     }
     return false
 }

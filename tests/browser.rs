@@ -5070,6 +5070,56 @@ fn window_relayout_incremental() {
     assert!(count("restyle") >= 5, "no subtree restyles:\n{stderr}");
 }
 
+/// Q4.6a: texts next to floats lay out again from the formatting root
+/// that holds the floats (`relayoutFrom`), up to the next root when that
+/// one changes size: no full layout after the first frame, the same
+/// boxes as a full layout (`DWELLER_LAYOUT_CHECK`).
+#[test]
+fn window_relayout_floats() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/relayout_floats.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "40",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let phases: Vec<&str> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| r.split('\t').next().unwrap())
+        .collect();
+    let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+    let after = &phases[first..];
+    let count = |name: &str| after.iter().filter(|p| **p == name).count();
+    assert_eq!(
+        count("layout_full") + count("layout"),
+        0,
+        "full layouts after the first frame:\n{err}"
+    );
+    assert!(
+        count("layout_dirty") >= 30,
+        "{} dirty relayouts:\n{err}",
+        count("layout_dirty")
+    );
+}
+
 /// The window draws only what changed (P4.35, ui/pagedraw.aye): with
 /// `DWELLER_DAMAGE_CHECK` each frame is drawn whole too and compared; a
 /// canvas animation draws part of the page, an unchanged frame nothing.

@@ -1,0 +1,29 @@
+<!doctype html>
+<title>incremental relayout with floats</title>
+<style>
+.f { float: left; width: 60px; height: 40px; background: #c00 }
+.r { float: right; width: 30px; height: 70px; background: #00c }
+#root { display: flow-root }
+#hold { overflow: hidden }
+#grow { display: flow-root }
+</style>
+<div id="root"><div class="f"></div><p id="a">frame 0</p></div>
+<div><div class="f"></div></div>
+<p id="b">frame 0 text beside the float</p>
+<div id="hold"><div class="r"></div><div id="grow"><p id="c">line</p></div><p>after</p></div>
+<p>end</p>
+<script>
+// Each frame changes a text next to a float in a flow-root, a text that
+// the float of the block before wraps around, and a text that makes a
+// flow-root next to a float in another root taller or shorter
+// (window_relayout_floats).
+let n = 0;
+function tick() {
+  n++;
+  document.getElementById('a').textContent = 'frame ' + n + ' beside a float in a flow-root'.repeat(n % 3);
+  document.getElementById('b').textContent = 'frame ' + n + ' text beside the float'.repeat(n % 4);
+  document.getElementById('c').textContent = 'line ' + n + ' of a flow-root that grows'.repeat(n % 5);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
