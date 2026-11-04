@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+struct PreflightResult {
+    key: []mut u8
+    methods: []mut u8
+    headers: []mut u8
+    expires: i64
+
+    fn init(alloc: Allocator, key: []u8, methods: []u8, headers: []u8, expires: i64) AllocError!PreflightResult {
+        let owned_key = try dup(alloc, key)
+
+        errdefer release(alloc, owned_key)
+        let owned_methods = try dup(alloc, methods)
+
+        errdefer release(alloc, owned_methods)
+
+        return PreflightResult { key: owned_key, methods: owned_methods, headers: try dup(alloc, headers), expires: expires }
+    }
+
+    fn deinit(self: *Self, alloc: Allocator) {
+        release(alloc, self.key)
+        release(alloc, self.methods)
+        release(alloc, self.headers)
+    }
+}

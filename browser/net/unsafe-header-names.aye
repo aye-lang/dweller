@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://fetch.spec.whatwg.org/#cors-unsafe-request-header-names
+fn unsafeHeaderNames(alloc: Allocator, headers: []u8, out: *mut text.Builder) AllocError!void {
+    let lower = try alloc.alloc(0 as u8, headers.len)
+    defer alloc.free(lower)
+    std.mem.copy(lower, headers)
+    text.toLower(lower)
+    var last: []u8 = ""
+    let first = out.len()
+
+    while nextUnsafeName(lower, last) |name| {
+        if out.len() > first {
+            try out.appendByte(',')
+        }
+
+        try out.append(name)
+        last = name
+    }
+}

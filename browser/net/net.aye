@@ -40,6 +40,7 @@ pub struct Response {
     // The URL of the body when redirects led elsewhere, else empty.
     url: []mut u8
     headers_raw: []mut u8
+    tainted: bool = false
 
     pub fn deinit(self: *Self, alloc: Allocator) {
         alloc.free(self.mime)
@@ -123,9 +124,11 @@ pub fn fetchWith(alloc: Allocator, target: *Url, body: ?*Body) FetchError!Respon
 
 /// Fetches `target` for `req`.
 pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
-    if !initiatorMayLoad(req.initiator, target) || !(try corsSendable(alloc, req, target.href)) {
+    if !initiatorMayLoad(req.initiator, target) {
         return FetchError.Network
     }
+
+    try preflight(alloc, req, target)
 
     let began = perf.start()
     defer perf.end("requests", began, target.href)

@@ -1183,7 +1183,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -6628,7 +6628,7 @@ fn xhr_methods() {
 /// the same port, XHR and fetch read a body only when the response's
 /// Access-Control-Allow-Origin allows the page (`*` not for a
 /// credentialed request); else XHR ends with status 0 and `error`, fetch
-/// rejects. A request that needs a preflight is not sent.
+/// rejects. A request whose preflight fails is not sent.
 /// (`browser/tests/net/cors.html` must print `cors.txt`.)
 #[test]
 fn cors_in_net() {
@@ -6653,6 +6653,40 @@ fn cors_in_net() {
         &root().join("browser/tests/net/cors.txt"),
         &text(&out.stdout),
         "cors_in_net",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// CORS preflight in net (Q3.2b): a cross-origin PUT with `x-test` is
+/// preceded by one OPTIONS, the same request within Max-Age by none; a
+/// denied preflight leaves the PUT unsent; a redirect to another URL is
+/// preflighted again, one to a URL with credentials fails. Both the
+/// background loader (fetch) and the synchronous path (sync XHR).
+/// (`browser/tests/net/cors-preflight.html` must print `cors-preflight.txt`.)
+#[test]
+fn cors_preflight() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/cors-preflight.html", srv.base),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/cors-preflight.txt"),
+        &text(&out.stdout),
+        "cors_preflight",
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -7112,6 +7146,43 @@ fn window_long_task() {
             || text(&out.stderr).contains("Script terminated: it ran too long"),
         "{got}"
     );
+}
+
+/// Q1.7: a click starts `try { while (1) {} } finally { ... }`
+/// (`browser/tests/ui/stuck.html`). After 5 s the window shows "This page
+/// is not responding"; Wait gives the script 5 s more, and the bar comes
+/// again; Stop ends it as V8's TerminateExecution does (no `catch` and no
+/// `finally` runs). A later click on the other button runs its handler.
+#[test]
+fn window_stuck_script() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/stuck.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "2",
+        "--state",
+        "--text",
+        "--events",
+        "click:50,65 click:288,56 frame click:360,56 frame click:50,115",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("\nunresponsive 2\n"), "{got}");
+    assert!(got.contains("\nstart hang after\n"), "{got}");
 }
 
 /// P4.33: the window paints a page once its document and its sheet are

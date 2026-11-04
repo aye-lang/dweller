@@ -1,0 +1,40 @@
+import std.text
+
+fn mutateFrom(seed: u64, out: *mut text.Builder) {
+    var rng = Rng { state: seed }
+    let dictionary = [_][]u8{"<table>", "&#x"}
+
+    mutate(&mut rng, "<p>hello</p>", "<b>other</b>", dictionary[0..], out) catch unreachable
+}
+
+test "the same seed mutates to the same bytes" {
+    let a = @testAllocator()
+    var first = text.Builder.init(a)
+    defer first.deinit()
+    var second = text.Builder.init(a)
+    defer second.deinit()
+
+    for seed in 0..64 {
+        mutateFrom(seed as u64, &mut first)
+        mutateFrom(seed as u64, &mut second)
+        @expectEqual(first.bytes(), second.bytes())
+    }
+}
+
+test "the seeds reach every kind of mutation" {
+    let a = @testAllocator()
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    var token = false
+    var spliced = false
+    var shorter = false
+
+    for seed in 0..256 {
+        mutateFrom(seed as u64, &mut out)
+        token = token || text.indexOf(out.bytes(), "<table>") != null
+        spliced = spliced || text.indexOf(out.bytes(), "other") != null
+        shorter = shorter || out.bytes().len < 12
+    }
+
+    @expect(token && spliced && shorter)
+}

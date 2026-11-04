@@ -280,6 +280,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             }
             var ui = Ui.init(alloc, window, renderer, measure, system, first_tab)
             defer ui.deinit()
+            watchStuck(&mut ui)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -423,6 +424,9 @@ pub struct Ui {
     // Inside the timers' `afterScripts`.
     from_timers: bool = false
     quit: bool
+    stuck: bool = false
+    wait: bool = false
+    unresponsive: u32 = 0
     // The agents (agents.aye), when the window listens for them.
     agents: ?*mut Agents
     // The mouse, in window points, while it is over the window.
@@ -1072,6 +1076,9 @@ pub struct Ui {
     // ---- events
 
     fn handle(self: *mut Self, ev: *SDL_Event) AllocError!void {
+        if self.stuck {
+            return stuckInput(self, ev)
+        }
         noteInput(self, ev)
         if try forwardInput(self, ev) {
             return
@@ -1878,6 +1885,9 @@ pub struct Ui {
         }
         if self.finding {
             try drawFindBar(self, bottom)
+        }
+        if self.stuck {
+            try drawStuckBar(self)
         }
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
