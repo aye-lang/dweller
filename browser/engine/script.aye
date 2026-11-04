@@ -1681,7 +1681,11 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
-    try runAnimationHook(s)
+
+    if !s.real {
+        try runAnimationHook(s)
+    }
+
     if s.title_version == s.version {
         return
     }
