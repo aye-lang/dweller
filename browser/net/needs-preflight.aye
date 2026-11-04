@@ -3,10 +3,10 @@ import std.mem.Allocator
 import std.text
 
 // chromium: services/network/cors/cors_url_loader.cc NeedsPreflight
-fn corsSendable(alloc: Allocator, req: Request, at: []u8) AllocError!bool {
+fn needsPreflight(alloc: Allocator, req: Request, at: []u8) AllocError!bool {
     var origin = text.Builder.init(alloc)
     defer origin.deinit()
     try corsOrigin(alloc, req, at, &mut origin)
 
-    return origin.bytes().len == 0 || corsSafelisted(req)
+    return origin.bytes().len > 0 && !corsSafelisted(req)
 }

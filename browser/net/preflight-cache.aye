@@ -1,0 +1,37 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: services/network/cors/preflight_cache.cc
+struct PreflightCache {
+    alloc: Allocator
+    results: List(PreflightResult)
+
+    fn init(alloc: Allocator) PreflightCache {
+        return PreflightCache { alloc: alloc, results: List(PreflightResult).init(alloc) }
+    }
+
+    fn deinit(self: *mut Self) {
+        for r in self.results.items() {
+            r.deinit(self.alloc)
+        }
+
+        self.results.deinit()
+    }
+
+    fn find(self: *Self, key: []u8, seconds: i64) ?PreflightResult {
+        let i = preflightIndex(self.results.items(), key) orelse return null
+
+        if self.results.items()[i].expires <= seconds { return null }
+
+        return self.results.items()[i]
+    }
+
+    fn keep(self: *mut Self, key: []u8, methods: []u8, headers: []u8, expires: i64) AllocError!void {
+        if preflightIndex(self.results.items(), key) |i| {
+            self.results.swapRemove(i).deinit(self.alloc)
+        }
+
+        try self.results.append(try PreflightResult.init(self.alloc, key, methods, headers, expires))
+    }
+}

@@ -1,0 +1,10 @@
+import std.text
+
+test "unsafe header names are lower case, sorted and unique" {
+    let a = @testAllocator()
+    var out = text.Builder.init(a)
+    defer out.deinit()
+
+    try unsafeHeaderNames(a, "X-B: 1\nAccept: */*\nx-a: 2\nX-b: 3\nContent-Type: application/json", &mut out)
+    @expectEqual("content-type,x-a,x-b", out.bytes())
+}

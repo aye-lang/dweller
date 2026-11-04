@@ -167,8 +167,7 @@ agent sessions load pages through `engine.load` and keep history in a
   between documents, one joint session history for a tab and its
   frames (a frame's `history.length` counts only its own entries);
   calendar, color and file pickers, `datalist`; rotations and skews
-  other than quarter turns are not drawn; sticky only against the viewport; CORS without
-  preflight (a cross-origin request that needs one fails); no AVIF;
+  other than quarter turns are not drawn; sticky only against the viewport; no AVIF;
   page loads are slow on big sites (in progress), and so is the JS
   interpreter (in progress). The list of public sites is in
   [`docs/browser-sites.md`](browser-sites.md), their expected state in
@@ -635,8 +634,16 @@ on (`--no-js` turns it off), `dump` with `--js`.
     (`net/cors-check.aye`, Chromium's `CheckAccess`): the response is a
     network error unless `Access-Control-Allow-Origin` is the page's
     origin, or `*` for a request without credentials, and a credentialed
-    one also needs `Access-Control-Allow-Credentials: true`. No
-    preflight yet: a request that would need one is not sent and fails.
+    one also needs `Access-Control-Allow-Credentials: true`. A request
+    with a method or header outside the CORS safelist is sent only after
+    a preflight (`net/preflight.aye`, Chromium's `PreflightController`):
+    an `OPTIONS` without credentials whose answer must be 2xx, pass the
+    same check and list the method and headers. Its result is cached per
+    origin, URL and credentials mode for `Access-Control-Max-Age` (5 s
+    by default, 2 h at most; per process until net moves to the browser
+    process). On each redirect of a CORS request the redirect response
+    is checked too, a URL with credentials fails, a cross-origin hop
+    makes the origin `null`, and the new URL gets its own preflight.
     Not done: the "Lax+POST" two-minute allowance of Chrome, schemeful
     same-site, partitioned cookies (CHIPS). Tests: `net_samesite`, unit
     tests "net: public suffixes...", "net: SameSite, the public suffix
