@@ -1,0 +1,14 @@
+import std.text
+
+// https://fetch.spec.whatwg.org/#cors-safelisted-method
+fn corsSafelisted(req: Request) bool {
+    var lines = text.split(req.headers, "\n")
+
+    while lines.next() |line| {
+        if line.len > 0 && !safelistedHeader(line) {
+            return false
+        }
+    }
+
+    return req.method.len == 0 || text.eql(req.method, "GET") || text.eql(req.method, "HEAD") || text.eql(req.method, "POST")
+}

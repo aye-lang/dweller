@@ -1,0 +1,43 @@
+<!doctype html>
+<title>CORS</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = location.origin.replace('127.0.0.1', 'localhost');
+function xhr(name, path, credentials) {
+  const x = new XMLHttpRequest();
+  x.withCredentials = credentials;
+  const ended = new Promise(resolve => {
+    x.onload = () => resolve('load');
+    x.onerror = () => resolve('error');
+  });
+  x.open('GET', other + path);
+  x.send();
+  return ended.then(ev => log(name + ': ' + ev + ' status ' + x.status + ' body ' + (x.responseText.length > 0)));
+}
+function get(name, url, init) {
+  return fetch(url, init).then(
+    r => r.text().then(t => log(name + ': ' + r.type + ' status ' + r.status + ' body ' + (t.length > 0))),
+    e => log(name + ': ' + e.name));
+}
+(async () => {
+  await xhr('xhr without ACAO', '/basic.txt', false);
+  await xhr('xhr with ACAO *', '/fetch-echo', false);
+  await xhr('xhr credentialed with ACAO *', '/fetch-echo', true);
+  await xhr('xhr credentialed with ACAO origin', '/samesite/echo', true);
+  const sync = new XMLHttpRequest();
+  sync.open('GET', other + '/basic.txt', false);
+  sync.send();
+  log('sync xhr without ACAO: status ' + sync.status + ' body ' + (sync.responseText.length > 0));
+  await get('fetch without ACAO', other + '/basic.txt');
+  await get('fetch with ACAO *', other + '/fetch-echo');
+  await get('fetch credentialed with ACAO *', other + '/fetch-echo', { credentials: 'include' });
+  await get('fetch credentialed with ACAO origin', other + '/samesite/echo', { credentials: 'include' });
+  await get('fetch no-cors', other + '/basic.txt', { mode: 'no-cors' });
+  await get('fetch same origin', '/basic.txt');
+  await get('fetch needing a preflight', other + '/log/cors-unsent.txt', { method: 'POST', headers: { 'x-test': '1' } });
+  const seen = await (await fetch('/log')).text();
+  log('unsent request reached the server: ' + seen.includes('cors-unsent'));
+})();
+</script>

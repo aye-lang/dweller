@@ -6613,6 +6613,40 @@ fn xhr_methods() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// CORS is enforced in net (Q3.2a): from `127.0.0.1` to `localhost` of
+/// the same port, XHR and fetch read a body only when the response's
+/// Access-Control-Allow-Origin allows the page (`*` not for a
+/// credentialed request); else XHR ends with status 0 and `error`, fetch
+/// rejects. A request that needs a preflight is not sent.
+/// (`browser/tests/net/cors.html` must print `cors.txt`.)
+#[test]
+fn cors_in_net() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/cors.html", srv.base),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/cors.txt"),
+        &text(&out.stdout),
+        "cors_in_net",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task

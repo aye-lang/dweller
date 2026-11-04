@@ -167,8 +167,8 @@ agent sessions load pages through `engine.load` and keep history in a
   between documents, one joint session history for a tab and its
   frames (a frame's `history.length` counts only its own entries);
   calendar, color and file pickers, `datalist`; rotations and skews
-  other than quarter turns are not drawn; sticky only against the viewport; no CORS (so no
-  `Access-Control-Allow-Credentials` check either); no AVIF;
+  other than quarter turns are not drawn; sticky only against the viewport; CORS without
+  preflight (a cross-origin request that needs one fails); no AVIF;
   page loads are slow on big sites (in progress), and so is the JS
   interpreter (in progress). The list of public sites is in
   [`docs/browser-sites.md`](browser-sites.md), their expected state in
@@ -630,8 +630,13 @@ on (`--no-js` turns it off), `dump` with `--js`.
     per-site allow list). `fetch` honours `credentials` (`same-origin`,
     the default, sends and stores cookies only for the page's origin on
     each hop; `omit` never; `include` as any request), XHR sends
-    `include` with `withCredentials` and `same-origin` without. There
-    is no CORS, so `Access-Control-Allow-Credentials` is not checked.
+    `include` with `withCredentials` and `same-origin` without. net
+    enforces CORS for a cross-origin `fetch` (mode `cors`) and XHR
+    (`net/cors-check.aye`, Chromium's `CheckAccess`): the response is a
+    network error unless `Access-Control-Allow-Origin` is the page's
+    origin, or `*` for a request without credentials, and a credentialed
+    one also needs `Access-Control-Allow-Credentials: true`. No
+    preflight yet: a request that would need one is not sent and fails.
     Not done: the "Lax+POST" two-minute allowance of Chrome, schemeful
     same-site, partitioned cookies (CHIPS). Tests: `net_samesite`, unit
     tests "net: public suffixes...", "net: SameSite, the public suffix

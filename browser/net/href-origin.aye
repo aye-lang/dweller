@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+// https://html.spec.whatwg.org/multipage/browsers.html#ascii-serialisation-of-an-origin
+fn hrefOrigin(alloc: Allocator, href: []u8, out: *mut text.Builder) AllocError!void {
+    let at = url.parse(alloc, href) catch |e| {
+        return out.append("null")
+    }
+
+    defer at.deinit(alloc)
+
+    if !isHttp(&at) {
+        return out.append("null")
+    }
+
+    try originOf(&at, out)
+}
