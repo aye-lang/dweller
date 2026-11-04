@@ -27,7 +27,7 @@ const namedValue = name => {
 
 const handler = {
   get(target, key, receiver) {
-    if (typeof key !== 'string' || key === '' || key in ETP) return Reflect.get(target, key, receiver);
+    if (typeof key !== 'string' || key === '' || key in ETP || !Reflect.has(target, key)) return Reflect.get(target, key, receiver);
 
     const v = namedValue(key);
 

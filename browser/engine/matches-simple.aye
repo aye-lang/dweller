@@ -1,0 +1,16 @@
+import css
+import css.SelKind
+import dom.Document
+import dom.Kind
+import dom.NodeId
+import std.text
+
+fn matchesSimple(doc: *Document, h: NodeId, s: css.Simple) bool {
+    let n = doc.node(h)
+
+    if n.kind != Kind.Element || s.kind == SelKind.Universal { return n.kind == Kind.Element }
+
+    if s.kind == SelKind.Type { return text.eql(n.name, s.name) }
+
+    return hasClass(doc.attr(h, "class") orelse "", s.name)
+}

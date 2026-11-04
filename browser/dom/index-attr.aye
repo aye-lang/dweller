@@ -1,0 +1,21 @@
+import std.list.List
+import std.map.StrMap
+import std.mem.AllocError
+import std.text
+
+// blink: core/dom/tree_ordered_map.cc
+fn indexAttr(doc: *mut Document, el: NodeId, name: []u8, value: []u8) AllocError!void {
+    let index = indexFor(doc, name) orelse return
+
+    if index.getPtr(value) == null { try index.put(value, List(NodeId).init(doc.alloc)) }
+
+    try index.getPtr(value).?.append(el)
+}
+
+fn indexFor(doc: *mut Document, name: []u8) ?*mut StrMap(List(NodeId)) {
+    if text.eql(name, "id") { return &mut doc.ids }
+
+    if text.eql(name, "name") { return &mut doc.names }
+
+    return null
+}

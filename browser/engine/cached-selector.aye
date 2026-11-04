@@ -1,0 +1,20 @@
+import std.mem
+import std.mem.AllocError
+
+let MAX_CACHED_SELECTORS: usize = 256
+
+// blink: core/css/selector_query.cc
+fn cachedSelector(s: *mut Script, src: []u8) AllocError!?*Selector {
+    if s.selectors.getPtr(src) |hit| { return hit }
+
+    let sel = (try parseSelector(s.page, src)) orelse return null
+    let key = try s.alloc.alloc(0 as u8, src.len)
+
+    mem.copy(key, src)
+
+    if s.selectors.len() >= MAX_CACHED_SELECTORS { dropSelectors(s) }
+
+    try s.selectors.put(key, sel)
+
+    return s.selectors.getPtr(key)
+}
