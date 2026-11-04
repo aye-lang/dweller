@@ -1,0 +1,20 @@
+// https://curl.se/libcurl/c/CURLOPT_SSLVERSION.html
+import std
+
+let CURLOPT_SSL_VERIFYPEER: i32 = 64
+let CURLOPT_SSL_VERIFYHOST: i32 = 81
+let CURLOPT_SSLVERSION: i32 = 32
+let CURLOPT_CAINFO: i32 = 10065
+let CURLOPT_ERRORBUFFER: i32 = 10010
+let CURL_SSLVERSION_TLSv1_2: i64 = 6
+
+fn setTls(curl: *mut Curl, sink: *mut Sink) {
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1 as i64)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2 as i64)
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2)
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, @ptrCast([*]u8, &mut sink.error_text))
+
+    if std.os.getenv("DWELLER_TEST_CA") |ca| {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, ca.ptr)
+    }
+}

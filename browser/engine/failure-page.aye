@@ -1,0 +1,19 @@
+import html
+import std.mem.AllocError
+import std.mem.Allocator
+import url
+import url.Url
+
+fn failurePage(alloc: Allocator, target: *Url, why: []u8, src: []u8) AllocError!*mut Page {
+    var doc = try html.parse(alloc, src)
+
+    errdefer doc.deinit()
+
+    var located = url.parse(alloc, target.href) catch |e| {
+        return AllocError.OutOfMemory
+    }
+
+    errdefer located.deinit(alloc)
+
+    return newPage(alloc, located, 0, why, doc)
+}

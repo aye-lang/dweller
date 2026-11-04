@@ -6494,7 +6494,7 @@ fn net_http() {
         &["dump", "--text", &format!("{https}/")],
         1,
         "",
-        &format!("error: cannot fetch {https}/: the secure connection failed (TLS)\n"),
+        &format!("error: cannot fetch {https}/: the server does not support TLS 1.2 or later\n"),
     );
     // No charset in the Content-Type: the <meta charset> decides.
     expect(
@@ -6503,6 +6503,134 @@ fn net_http() {
         "\u{201c}quoted\u{201d} caf\u{e9}\n",
         "",
     );
+}
+
+#[test]
+fn tls_errors() {
+    use std::io::{BufRead, Write};
+    let tls = root().join("browser/tests/tls");
+    let Ok(mut child) = Command::new("python3")
+        .arg("-I")
+        .arg(root().join("browser/tests/tls_server.py"))
+        .arg(&tls)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let _srv = Server {
+        child,
+        base: String::new(),
+    };
+    let ports: Vec<u16> = line
+        .split_whitespace()
+        .map(|p| p.parse().unwrap())
+        .collect();
+    assert_eq!(ports.len(), 5, "{line}");
+    let with_ca = |args: &[&str]| {
+        dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let at = |port: u16| format!("https://127.0.0.1:{port}/");
+    let valid = at(ports[0]);
+    let untrusted = "the certificate is self-signed or from an unknown issuer";
+
+    let out = with_ca(&["dump", "--text", &valid]);
+    assert_eq!(text(&out.stdout), "secure page\n", "{}", text(&out.stderr));
+    expect(
+        &["dump", "--text", &valid],
+        1,
+        "",
+        &format!("error: cannot fetch {valid}: {untrusted}\n"),
+    );
+    let out = with_ca(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{valid}fetch.html?{valid}"),
+    ]);
+    assert_eq!(
+        text(&out.stdout),
+        "fetch: status 200\nxhr: load status 200\n",
+        "{}",
+        text(&out.stderr)
+    );
+
+    let mut cases = vec![
+        (ports[1], "the certificate has expired"),
+        (ports[2], untrusted),
+        (ports[3], "the certificate is for another host"),
+    ];
+    if ports[4] == 0 {
+        println!("skipped TLS 1.1: this platform's OpenSSL does not offer it");
+    } else {
+        cases.push((ports[4], "the server does not support TLS 1.2 or later"));
+    }
+    for (port, why) in cases {
+        let bad = at(port);
+        let out = with_ca(&["dump", "--text", &bad]);
+        assert_eq!(out.status.code(), Some(1), "{bad}");
+        assert_eq!(
+            text(&out.stderr),
+            format!("error: cannot fetch {bad}: {why}\n")
+        );
+
+        let out = with_ca(&[
+            "dump",
+            "--text",
+            "--js",
+            &format!("{valid}fetch.html?{bad}"),
+        ]);
+        assert_eq!(
+            text(&out.stdout),
+            "fetch: TypeError\nxhr: error status 0\n",
+            "{bad}: {}",
+            text(&out.stderr)
+        );
+
+        if has_sdl() {
+            let out = with_ca(&[&bad, "--frames", "1", "--text"]);
+            let shown = text(&out.stdout);
+            assert!(
+                shown.contains("Your connection is not private")
+                    && shown.contains("127.0.0.1")
+                    && shown.contains(why),
+                "{bad}: {shown}\n{}",
+                text(&out.stderr)
+            );
+        }
+
+        let mut agent = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .arg("agent")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        agent
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{bad}\"}}\n").as_bytes())
+            .unwrap();
+        let reply = text(&agent.wait_with_output().unwrap().stdout);
+        assert!(
+            reply.contains("\"ok\":false") && reply.contains(&format!("cannot fetch {bad}: {why}")),
+            "{reply}"
+        );
+    }
 }
 
 /// P10.21: SameSite (Lax by default), the third-party policy and

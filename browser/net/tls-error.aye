@@ -1,0 +1,33 @@
+// https://docs.openssl.org/3.0/man3/X509_STORE_CTX_get_error/
+import std.text
+
+let CURLINFO_SSL_VERIFYRESULT: i32 = 2097165
+
+fn tlsError(curl: *mut Curl, code: i32, sink: *Sink) FetchError {
+    let message = sink.error_text[0..strlen(@ptrCast([*]u8, &sink.error_text))]
+
+    if text.indexOf(message, "subject name") != null {
+        return FetchError.CertWrongHost
+    }
+
+    for old in [3][]u8{"protocol version", "unsupported protocol", "wrong version number"} {
+        if text.indexOf(message, old) != null {
+            return FetchError.TlsVersion
+        }
+    }
+
+    if code == 35 {
+        return FetchError.Tls
+    }
+
+    var verify: i64 = 0
+
+    curl_easy_getinfo(curl, CURLINFO_SSL_VERIFYRESULT, &mut verify)
+
+    return match verify {
+        10 => FetchError.CertExpired
+        2, 18, 19, 20, 21 => FetchError.CertUntrusted
+        62 => FetchError.CertWrongHost
+        _ => FetchError.CertInvalid
+    }
+}
