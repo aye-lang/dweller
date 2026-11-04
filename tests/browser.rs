@@ -6230,16 +6230,13 @@ fn benchmark_date_follows_virtual_clock() {
 
 /// The DOM fixtures again with a collection at every allocation
 /// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
-/// `gc_wrappers` and `focus_freed` allocate too much for that.
-fn jsdom_gc_stress(part: usize) {
+#[test]
+fn jsdom_gc_stress() {
     let dir = root().join("browser").join("tests").join("jsdom");
-    const HEAVY: [&str; 2] = ["gc_wrappers.html", "focus_freed.html"];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.extension().is_some_and(|e| e == "html") && !HEAVY.iter().any(|h| p.ends_with(h))
-        })
+        .filter(|p| p.extension().is_some_and(|e| e == "html"))
         .collect();
     pages.sort();
     // The slowest pages first, so that they do not all run at the end.
@@ -6250,7 +6247,6 @@ fn jsdom_gc_stress(part: usize) {
         "layout_many_changes.html",
     ];
     pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
-    let pages: Vec<PathBuf> = pages.into_iter().skip(part).step_by(4).collect();
     // A page takes up to about 2 minutes here; one that hangs is killed.
     let limit = std::time::Duration::from_secs(600);
     dweller();
@@ -6283,9 +6279,6 @@ fn jsdom_gc_stress(part: usize) {
         failures.len(),
         failures.join("\n\n")
     );
-    if part != 3 {
-        return;
-    }
     // P9.8: code mode's realm calls into the page's realm and back.
     let run = root().join("browser/tests/agent/sessions/run.jsonl");
     // A run's 30 s default budget is wall time, which GC stress takes
@@ -6320,26 +6313,6 @@ fn jsdom_gc_stress(part: usize) {
         rooted(&text(&out.stdout)),
         "run.jsonl under GC stress"
     );
-}
-
-#[test]
-fn jsdom_gc_stress_0() {
-    jsdom_gc_stress(0);
-}
-
-#[test]
-fn jsdom_gc_stress_1() {
-    jsdom_gc_stress(1);
-}
-
-#[test]
-fn jsdom_gc_stress_2() {
-    jsdom_gc_stress(2);
-}
-
-#[test]
-fn jsdom_gc_stress_3() {
-    jsdom_gc_stress(3);
 }
 
 // ---- B8: net
