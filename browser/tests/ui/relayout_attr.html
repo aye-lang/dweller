@@ -1,0 +1,39 @@
+<!doctype html>
+<title>incremental relayout after attribute changes</title>
+<style>
+[data-y] { padding-left: 20px }
+td { border: 1px solid }
+</style>
+<div id="x">a div whose data-x and aria-label no selector names</div>
+<p id="y">a paragraph that [data-y] pads</p>
+<p><img id="img" width="10" height="10"> an image</p>
+<div><p id="h">a paragraph that is hidden and shown</p></div>
+<div><table><tr><td id="td">a</td><td>b</td></tr><tr><td>c</td><td>d</td><td>e</td></tr></table></div>
+<p><canvas id="cv" width="20" height="10"></canvas> a canvas</p>
+<ol id="ol"><li>one</li><li>two</li></ol>
+<div id="fill"></div>
+<p>end</p>
+<script>
+// Each frame changes attributes that no selector names, one that a
+// selector names, presentational ones and ones layout reads
+// (window_relayout_attr). The empty elements keep the restyled count
+// under `RESTYLE_ROUNDS` times the styled elements for 40 ticks.
+for (let i = 0; i < 300; i++) document.getElementById('fill').append(document.createElement('i'));
+let n = 0;
+function tick() {
+  n++;
+  const x = document.getElementById('x');
+  x.dataset.x = n;
+  x.setAttribute('aria-label', 'frame ' + n);
+  document.getElementById('y').toggleAttribute('data-y', n % 2 == 1);
+  document.getElementById('img').width = 10 + n % 7 * 10;
+  document.getElementById('h').hidden = n % 3 == 1;
+  document.getElementById('td').colSpan = 1 + n % 2;
+  document.getElementById('cv').width = 20 + n % 5 * 15;
+  document.getElementById('ol').start = n % 4;
+  if (n < 40) {
+    requestAnimationFrame(tick);
+  }
+}
+requestAnimationFrame(tick);
+</script>

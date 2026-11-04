@@ -1,0 +1,73 @@
+test "the id index follows attribute changes" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let el_attrs = [1]Attr{Attr { name: "id", value: "a" }}
+    let el = try doc.createElement("div", el_attrs[..])
+    doc.appendChild(doc.root, el)
+    @expect(isSame(doc.getElementById("a"), el))
+    try doc.setAttr(el, "id", "b")
+    @expect(doc.getElementById("a") == null)
+    @expect(isSame(doc.getElementById("b"), el))
+    doc.removeAttr(el, "id")
+    @expect(doc.getElementById("b") == null)
+    try doc.setAttr(el, "id", "c")
+    @expect(isSame(doc.getElementById("c"), el))
+}
+
+test "the id index follows insert and remove" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let el = try doc.createElement("div", []Attr{})
+    try doc.setAttr(el, "id", "x")
+    @expect(doc.getElementById("x") == null)
+    doc.appendChild(doc.root, el)
+    @expect(isSame(doc.getElementById("x"), el))
+    let frag = try doc.createFragment()
+    doc.appendChild(frag, el)
+    @expect(doc.getElementById("x") == null)
+    @expect(isSame(elementById(&doc, frag, "x"), el))
+    doc.detach(el)
+    @expect(elementById(&doc, frag, "x") == null)
+    @expect(doc.releaseIfUnused(el))
+    @expectEqual(0, doc.withId("x").len)
+}
+
+test "the first of duplicate ids in tree order wins" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let later_attrs = [1]Attr{Attr { name: "id", value: "d" }}
+    let later = try doc.createElement("p", later_attrs[..])
+    let first_attrs = [1]Attr{Attr { name: "id", value: "d" }}
+    let first = try doc.createElement("p", first_attrs[..])
+    doc.appendChild(doc.root, later)
+    doc.insertBefore(doc.root, first, later)
+    @expect(isSame(doc.getElementById("d"), first))
+    doc.detach(first)
+    @expect(isSame(doc.getElementById("d"), later))
+}
+
+test "a shadow tree is its own id scope" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let host = try doc.createElement("div", []Attr{})
+    doc.appendChild(doc.root, host)
+    let root = try attachShadow(&mut doc, host, false)
+    let inner_attrs = [1]Attr{Attr { name: "id", value: "s" }}
+    let inner = try doc.createElement("span", inner_attrs[..])
+    doc.appendChild(root, inner)
+    @expect(doc.getElementById("s") == null)
+    @expect(isSame(elementById(&doc, root, "s"), inner))
+}
+
+test "the name index follows attribute changes" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+    let form_attrs = [1]Attr{Attr { name: "name", value: "f" }}
+    let form = try doc.createElement("form", form_attrs[..])
+    @expectEqual(1, doc.withName("f").len)
+    try doc.setAttr(form, "name", "g")
+    @expectEqual(0, doc.withName("f").len)
+    @expectEqual(1, doc.withName("g").len)
+    doc.removeAttr(form, "name")
+    @expectEqual(0, doc.withName("g").len)
+}

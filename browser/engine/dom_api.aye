@@ -534,6 +534,7 @@ fn installDom(s: *mut Script) JsError!void {
     try accessor(it, docp, "currentScript", documentCurrentScript, null)
     try accessor(it, docp, "doctype", documentDoctype, null)
     try defMethod(it, docp, "getElementById", 1, documentGetElementById)
+    try defMethod(it, fragment, "getElementById", 1, fragmentGetElementById)
     try defMethod(it, docp, "createElement", 1, documentCreateElement)
     try defMethod(it, docp, "createTextNode", 1, documentCreateTextNode)
     try defMethod(it, docp, "createComment", 1, documentCreateComment)
@@ -1051,11 +1052,11 @@ fn nodeGetRootNode(it: *mut Interp, a: Args) JsError!Value {
 // ---- queries
 
 // The selector of argument 0, or a SyntaxError.
-fn argSelector(it: *mut Interp, a: Args, name: []u8) JsError!Selector {
+fn argSelector(it: *mut Interp, a: Args, name: []u8) JsError!*Selector {
     let b = try it.builder()
     defer it.release(b)
     try argText(it, a, 0, b)
-    if try parseSelector(scriptOf(it).page, b.bytes()) |sel| {
+    if try cachedSelector(scriptOf(it), b.bytes()) |sel| {
         return sel
     }
     let m = try it.builder()
@@ -1078,6 +1079,9 @@ fn selectAll(it: *mut Interp, top: NodeId, sel: *Selector, limit: usize, out: *m
         css.setSelectorScope(top)
     }
     defer css.setSelectorScope(null)
+    if try selectFast(doc, top, sel, limit, out) {
+        return
+    }
     var cur = doc.following(top, top)
     while cur |h| {
         if doc.node(h).kind == Kind.Element && selectorMatches(sel, doc, h) {
@@ -1092,11 +1096,10 @@ fn selectAll(it: *mut Interp, top: NodeId, sel: *Selector, limit: usize, out: *m
 
 fn nodeQuerySelector(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisNode(it, a)
-    var sel = try argSelector(it, a, "querySelector")
-    defer sel.sheet.deinit()
+    let sel = try argSelector(it, a, "querySelector")
     var found = List(NodeId).init(it.alloc)
     defer found.deinit()
-    try selectAll(it, h, &sel, 1, &mut found)
+    try selectAll(it, h, sel, 1, &mut found)
     if found.len() > 0 {
         return wrap(it, found.items()[0])
     }
@@ -1105,11 +1108,10 @@ fn nodeQuerySelector(it: *mut Interp, a: Args) JsError!Value {
 
 fn nodeQuerySelectorAll(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisNode(it, a)
-    var sel = try argSelector(it, a, "querySelectorAll")
-    defer sel.sheet.deinit()
+    let sel = try argSelector(it, a, "querySelectorAll")
     var found = List(NodeId).init(it.alloc)
     defer found.deinit()
-    try selectAll(it, h, &sel, 1 << 40, &mut found)
+    try selectAll(it, h, sel, 1 << 40, &mut found)
     return wrapAll(it, found.items())
 }
 
@@ -1138,23 +1140,21 @@ fn isSpace(c: u8) bool {
 
 fn elementMatches(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisElement(it, a)
-    var sel = try argSelector(it, a, "matches")
-    defer sel.sheet.deinit()
+    let sel = try argSelector(it, a, "matches")
     css.setSelectorScope(h)
     defer css.setSelectorScope(null)
-    return js.boolVal(selectorMatches(&sel, docOf(it), h))
+    return js.boolVal(selectorMatches(sel, docOf(it), h))
 }
 
 fn elementClosest(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisElement(it, a)
-    var sel = try argSelector(it, a, "closest")
-    defer sel.sheet.deinit()
+    let sel = try argSelector(it, a, "closest")
     css.setSelectorScope(h)
     defer css.setSelectorScope(null)
     let doc = docOf(it)
     var cur: ?NodeId = h
     while cur |c| {
-        if doc.node(c).kind == Kind.Element && selectorMatches(&sel, doc, c) {
+        if doc.node(c).kind == Kind.Element && selectorMatches(sel, doc, c) {
             return wrap(it, c)
         }
         cur = doc.parent(c)

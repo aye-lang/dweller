@@ -1,0 +1,37 @@
+import dom
+import dom.NodeId
+
+test "the animating and transitioning sets gain and lose elements as their styles change" {
+    let a = @testAllocator()
+    var doc = try dom.Document.init(a)
+    defer doc.deinit()
+    let spin = try doc.createElement("div", []dom.Attr{})
+    let fade = try doc.createElement("div", []dom.Attr{})
+    let still = try doc.createElement("div", []dom.Attr{})
+    try doc.setAttr(spin, "class", "spin")
+    try doc.setAttr(fade, "class", "fade")
+    doc.appendChild(doc.root, spin)
+    doc.appendChild(doc.root, fade)
+    doc.appendChild(doc.root, still)
+    let media = Media { width: 800.0, height: 600.0 }
+    var ua = try Sheet.init(a)
+    defer ua.deinit()
+    var author = try Sheet.init(a)
+    defer author.deinit()
+    try parseSheet(&mut author, ".spin { animation-name: spin } .fade { transition: opacity 1s } .zero { transition: opacity 0s }", media)
+    var styles = try Styles.init(a)
+    defer styles.deinit()
+    try computeStyles(&doc, &ua, &author, media, &mut styles)
+    @expectEqual(1, styles.animating.len())
+    @expect(styles.animating.contains(spin.index))
+    @expectEqual(1, styles.transitioning.len())
+    @expect(styles.transitioning.contains(fade.index))
+    try doc.setAttr(spin, "class", "fade")
+    try doc.setAttr(fade, "class", "zero")
+    let roots = [2]NodeId{spin, fade}
+    let shallow = [2]bool{false, false}
+    _ = try restyleSubtrees(&doc, &ua, &author, media, roots[..], shallow[..], false, &mut styles)
+    @expectEqual(0, styles.animating.len())
+    @expectEqual(1, styles.transitioning.len())
+    @expect(styles.transitioning.contains(spin.index))
+}

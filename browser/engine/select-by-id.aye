@@ -1,0 +1,23 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn selectById(doc: *Document, top: NodeId, sel: *Selector, id: []u8, out: *mut List(NodeId)) AllocError!bool {
+    var found: ?NodeId = null
+
+    for h in doc.withId(id) {
+        if !dom.same(h, top) && isInclusiveAncestor(doc, top, h) {
+            if found != null { return false }
+
+            found = h
+        }
+    }
+
+    let h = found orelse return true
+
+    if selectorMatches(sel, doc, h) { try out.append(h) }
+
+    return true
+}
