@@ -1,0 +1,34 @@
+pub struct Reader {
+    data: []u8
+    at: usize = 0
+
+    pub fn readU16(self: *mut Self) DecodeError!u16 {
+        let b = try self.take(2)
+
+        return b[0] as u16 | (b[1] as u16) << 8
+    }
+
+    pub fn readU32(self: *mut Self) DecodeError!u32 {
+        let b = try self.take(4)
+
+        return b[0] as u32 | (b[1] as u32) << 8 | (b[2] as u32) << 16 | (b[3] as u32) << 24
+    }
+
+    pub fn readBytes(self: *mut Self) DecodeError![]u8 {
+        let n = try self.readU32()
+
+        return self.take(n as usize)
+    }
+
+    pub fn take(self: *mut Self, n: usize) DecodeError![]u8 {
+        if n > self.data.len - self.at { return DecodeError.PastTheEnd }
+
+        self.at += n
+
+        return self.data[self.at - n..self.at]
+    }
+
+    pub fn end(self: *Self) DecodeError!void {
+        if self.at != self.data.len { return DecodeError.LeftOver }
+    }
+}

@@ -54,7 +54,7 @@ Where the modules go:
 **Transport.** As Spaces do now: the browser makes a
 `socketpair(AF_UNIX, SOCK_STREAM)`, its end gets `FD_CLOEXEC` and
 `SO_NOSIGPIPE`, and it starts the same binary with `posix_spawnp`
-(`dweller renderer --ipc FD`). It does not fork, so the browser's
+(`dweller --renderer FD`). It does not fork, so the browser's
 memory is not copied. One socket per renderer carries every message,
 so all messages of a renderer are in one order. Pixel buffers, and
 later chosen files and fonts, go as fds with `SCM_RIGHTS` (`sendmsg`
@@ -70,7 +70,7 @@ a fixed order: u32, u64 and f64 little-endian, bytes as a u32 length
 and the data. One `ipc.Reader` checks the bounds of every read. These
 are bad messages (§4): a read past the end, bytes left over, an unknown
 type, a payload over 1 MiB (body chunks: 256 KiB). `DWELLER_IPC_LOG=1`
-prints each message as one text line on stderr. Why not the JSON lines
+prints each message as one text line on stderr. Type codes are numbered in the order the messages are added (Q2.2a: 1 `hello`, 2 `navigate`, 3 `loaded`, 4 `shutdown`; `ipc/message.aye`); flags and request id stay 0 until a message uses them. Why not the JSON lines
 of Spaces: bodies are binary (base64 costs a third more), and the
 browser parses what a compromised process writes; a fixed binary codec
 has less to get wrong than a JSON parser. JSON stays for the agent
@@ -96,7 +96,7 @@ protocol.
 
 | Group | Messages |
 |---|---|
-| lifecycle | R→B `hello{version, pid}`; B→R `init{lock, partition, scale, font, js, flags}`; B→R `shutdown` (SIGKILL after 1 s, as for Spaces); B→R `visible{frame, on}` (hidden: timers throttled, no frames); B→R `memory_pressure` |
+| lifecycle | R→B `hello{version, pid}` (the first message, frame 0; the browser checks the version and that the pid is the one it spawned); Q2.2a only, until Q2.6 brings the navigation group: B→R `navigate{url}` (frame = the tab), R→B `loaded{title, url}` (the renderer loads the page itself, without scripts); B→R `init{lock, partition, scale, font, js, flags}`; B→R `shutdown` (SIGKILL after 1 s, as for Spaces); B→R `visible{frame, on}` (hidden: timers throttled, no frames); B→R `memory_pressure` |
 | navigation | R→B `begin_navigation{frame, url, method, body, referrer, target, gesture, replace}` (links, forms, `location`, `window.open`); B→R `commit_navigation{frame, nav, url, origin, status, headers, entry}`, then `body_data{nav, bytes}` and `body_done{nav}`; R→B `did_commit{frame, nav, url, origin}`; R→B `same_document{frame, url, state, replace}` (pushState, fragments); B→R `navigate{frame, entry}` (back, forward, reload); B→R `before_unload` and `unload{frame}`, with replies; R→B `loading{frame, state}`, `title{frame, text}` |
 | frames | B→R `buffers{frame, w, h}` with 2 fds; R→B `frame{frame, buffer, seq, damage[], children[], over?}` (§5); B→R `frame_ack{frame, buffer}`; B→R `resize{frame, w, h, scale}`; R→B `child_size{child, w, h}`; B→R `viewport_intersection{frame, rect}` |
 | input | B→R `input{frame, seq, word}` (the `--events` words of P9.6, in frame coordinates); R→B `input_ack{seq, consumed, dx, dy}` (scroll left over bubbles up); R→B `cursor`, `status_url`, `focus_changed{frame}`, `advance_focus{frame, dir}`; B→R `focus{frame, dir}`; B→R `hit_test{frame, x, y}`, R→B its reply; B→R `find{text, dir}`, R→B `find_reply{count, active, rects}`; B→R `edit{copy, paste, select_all}`; R→B `popup{frame, rect, items}`, B→R `popup_choice`; R→B `long_task{ms}` |

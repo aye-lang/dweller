@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.text
+
+fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .Hello { version, pid } => {
+            try putU32(out, version)
+            try putU32(out, pid)
+        }
+
+        .Navigate { url } => try putBytes(out, url)
+        .Loaded { title, url } => {
+            try putBytes(out, title)
+            try putBytes(out, url)
+        }
+
+        .Shutdown => {}
+    }
+}

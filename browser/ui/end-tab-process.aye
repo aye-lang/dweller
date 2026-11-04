@@ -1,0 +1,33 @@
+import ipc
+import std
+import std.mem.Allocator
+
+fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
+    let tp = process orelse return
+
+    if tp.gone.len == 0 {
+        ipc.encode(&mut tp.outbox, 0, ipc.Message.Shutdown) catch |e| {
+        }
+
+        _ = sendSome(tp.fd, tp.outbox.bytes())
+
+        var st: i32 = 0
+        let end = std.time.monotonicMs() + END_MS
+
+        while waitpid(tp.pid, &mut st, WNOHANG) == 0 {
+            if std.time.monotonicMs() > end {
+                kill(tp.pid, SIGKILL)
+            }
+
+            std.time.sleep(2)
+        }
+
+        closeFd(tp.fd)
+    }
+
+    tp.inbox.deinit()
+    tp.outbox.deinit()
+    tp.url.deinit()
+    tp.title.deinit()
+    alloc.destroy(tp)
+}

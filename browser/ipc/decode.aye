@@ -1,0 +1,14 @@
+pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
+    var r = Reader { data: payload }
+    let m = match kind {
+        1 => Message.Hello { version: try r.readU32(), pid: try r.readU32() }
+        2 => Message.Navigate { url: try r.readBytes() }
+        3 => Message.Loaded { title: try r.readBytes(), url: try r.readBytes() }
+        4 => Message.Shutdown
+        _ => return DecodeError.UnknownType
+    }
+
+    try r.end()
+
+    return m
+}
