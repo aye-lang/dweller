@@ -1,0 +1,28 @@
+import css
+import css.SelKind
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+// blink: core/css/selector_query.cc
+fn selectFast(doc: *Document, top: NodeId, sel: *Selector, limit: usize, out: *mut List(NodeId)) AllocError!bool {
+    if sel.end != sel.start + 1 || sel.sheet.complexes.items()[sel.start].pseudo != 0 { return false }
+
+    let cx = sel.sheet.complexes.items()[sel.start]
+    let last = sel.sheet.compounds.items()[cx.end - 1]
+
+    if rightmostId(&sel.sheet, last) |id| { return selectById(doc, top, sel, id, out) }
+
+    if cx.end != cx.start + 1 || last.end != last.start + 1 { return false }
+
+    return selectSimple(doc, top, sel.sheet.simples.items()[last.start], limit, out)
+}
+
+fn rightmostId(sheet: *css.Sheet, comp: css.Compound) ?[]u8 {
+    for s in sheet.simples.items()[comp.start..comp.end] {
+        if s.kind == SelKind.Id { return s.name }
+    }
+
+    return null
+}

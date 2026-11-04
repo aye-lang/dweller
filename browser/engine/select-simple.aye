@@ -1,0 +1,23 @@
+import css
+import css.SelKind
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn selectSimple(doc: *Document, top: NodeId, s: css.Simple, limit: usize, out: *mut List(NodeId)) AllocError!bool {
+    if s.kind != SelKind.Type && s.kind != SelKind.Class && s.kind != SelKind.Universal { return false }
+
+    var cur = doc.following(top, top)
+
+    while cur |h| {
+        if matchesSimple(doc, h, s) {
+            try out.append(h)
+            if out.len() >= limit { return true }
+        }
+
+        cur = doc.following(h, top)
+    }
+
+    return true
+}
