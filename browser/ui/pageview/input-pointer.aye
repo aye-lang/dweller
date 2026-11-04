@@ -1,0 +1,33 @@
+import dom
+import engine
+import std.mem.AllocError
+import std.text
+
+pub fn inputPointer(view: *mut PageView, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!?bool {
+    let p = view.tab.page orelse return null
+
+    if !engine.hasScripts(p) {
+        return null
+    }
+
+    let t = p.tree orelse return null
+    var found = engine.nodeAt(t, x + view.tab.scroll_x, y + view.tab.scroll)
+
+    if found == null {
+        found = p.doc.documentElement()
+    }
+
+    var el = found orelse return null
+
+    if p.doc.node(el).kind != dom.Kind.Element {
+        el = p.doc.parent(el) orelse return null
+    }
+
+    let go_on = try engine.dispatchPointer(p, el, kind, detail, x, y, mx, my)
+
+    if go_on && text.startsWith(kind, "pointer") && !text.eql(kind, "pointercancel") {
+        return try mouseEvent(p, el, kind, detail, x, y, mx, my)
+    }
+
+    return go_on
+}

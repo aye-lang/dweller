@@ -1,0 +1,24 @@
+import dom.NodeId
+import engine
+import std.mem.AllocError
+import std.text
+
+fn mouseEvent(p: *mut engine.Page, el: NodeId, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!bool {
+    var mouse: []u8 = "mousemove"
+
+    if text.eql(kind, "pointerdown") {
+        mouse = "mousedown"
+    } else if text.eql(kind, "pointerup") {
+        mouse = "mouseup"
+    } else if text.eql(kind, "pointerleave") {
+        mouse = "mouseleave"
+    }
+
+    let mouse_on = try engine.dispatchPointer(p, el, mouse, detail, x, y, mx, my)
+
+    if mouse_on && text.eql(kind, "pointerdown") {
+        _ = try engine.dispatchEvent(p, el, "__focus", "")
+    }
+
+    return mouse_on
+}
