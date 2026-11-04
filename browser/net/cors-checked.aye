@@ -1,0 +1,12 @@
+import std.mem.Allocator
+import url.Url
+
+fn corsChecked(alloc: Allocator, req: Request, target: *Url, res: Response) FetchError!Response {
+    if corsCheck(alloc, req, target.href, &res) catch false {
+        return res
+    }
+
+    res.deinit(alloc)
+
+    return FetchError.Network
+}
