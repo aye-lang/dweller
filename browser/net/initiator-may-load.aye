@@ -2,6 +2,13 @@ import std.text
 import url.Url
 
 // chromium: content/browser/child_process_security_policy_impl.cc CanRequestURL
-pub fn initiatorMayLoad(initiator: []u8, target: *Url) bool {
-    return !text.eql(target.scheme, "file") || initiator.len == 0 || text.startsWith(initiator, "file:")
+pub fn initiatorMayLoad(initiator: Initiator, target: *Url) bool {
+    if !text.eql(target.scheme, "file") {
+        return true
+    }
+
+    return match initiator {
+        .Browser => true
+        .Page { url } => text.startsWith(url, "file:")
+    }
 }

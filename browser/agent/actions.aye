@@ -110,14 +110,14 @@ fn applyAction(s: *mut Session, tmp: Allocator, act: Action) AllocError!Outcome 
 fn navigate(s: *mut Session, tmp: Allocator, target: []u8) AllocError!Outcome {
     let dest = try targetUrl(s, tmp, target)
     if dest |w| {
-        return goTo(s, tmp, &w, "")
+        return goTo(s, tmp, &w, net.Initiator.Browser)
     }
     return failed(try concat(tmp, "not a URL: ", target, ""))
 }
 
 /// Shows `target` in a new history entry (navigate, links): in the
 /// document when only the fragment differs, else by loading it.
-fn goTo(s: *mut Session, tmp: Allocator, target: *Url, initiator: []u8) AllocError!Outcome {
+fn goTo(s: *mut Session, tmp: Allocator, target: *Url, initiator: net.Initiator) AllocError!Outcome {
     if s.tab.sameDocument(target) {
         try s.tab.toFragment(target)
         s.tab.settle(maxScroll(s))
@@ -511,7 +511,7 @@ fn followLink(s: *mut Session, tmp: Allocator, p: *mut Page, a: NodeId, who: []u
 
 /// Loads `target` (by POST with `body`) in the frame `slot` (a fragment
 /// of its document only scrolls it); the page shown stays.
-fn loadInFrame(s: *mut Session, tmp: Allocator, slot: engine.FrameSlot, target: *Url, body: ?*net.Body, initiator: []u8) AllocError!Outcome {
+fn loadInFrame(s: *mut Session, tmp: Allocator, slot: engine.FrameSlot, target: *Url, body: ?*net.Body, initiator: net.Initiator) AllocError!Outcome {
     let fp = engine.slotPage(slot)
     let name = try frameName(tmp, slot)
     if body == null && target.has_fragment && text.eql(target.withoutFragment(), fp.url.withoutFragment()) {

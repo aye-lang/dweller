@@ -240,7 +240,7 @@ fn startFrameLoads(p: *mut Page) AllocError!void {
         for i, c in target.href {
             href[i] = c
         }
-        let id = net.startRequest(&target, net.Request { kind: net.Kind.Document, referrer: p.url.href, top: rootPage(p).url.href })
+        let id = net.startRequest(&target, net.Request { kind: net.Kind.Document, referrer: p.url.href, top: rootPage(p).url.href, initiator: initiatorOf(p) })
         if id == 0 {
             p.alloc.free(href)
             return AllocError.OutOfMemory
@@ -531,7 +531,7 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
-            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, "")
+            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, net.Initiator.Browser)
             if e.state |st| {
                 try child.history.replace(child.url.href, st)
             }
@@ -567,7 +567,7 @@ pub fn slotPage(slot: FrameSlot) *mut Page {
 /// its document: its scripts run and its load event fires. The layout
 /// trees of its page and of the pages above are dropped (they showed
 /// the old document): lay the tab's page out again.
-pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator: []u8) AllocError!void {
+pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator: net.Initiator) AllocError!void {
     let p = slot.parent
     let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href, initiator)
     return showInFrame(slot, child, null)

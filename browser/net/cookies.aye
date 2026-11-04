@@ -917,7 +917,7 @@ fn contextFor(alloc: Allocator, req: Request, href: []u8, method: []u8, initiato
 test "cookie contexts: navigations, subresources, credentials" {
     let alloc = @testAllocator()
     let a = "https://www.a.example/page"
-    let nav = Request {}
+    let nav = Request { initiator: Initiator.Browser }
     // Top-level navigations: the initiator's site decides, and a chain
     // that crossed sites stays cross-site.
     @expect(contextFor(alloc, nav, "https://a.example/", "GET", a, false) == Context.SameSite)
@@ -927,23 +927,23 @@ test "cookie contexts: navigations, subresources, credentials" {
     @expect(contextFor(alloc, nav, "http://127.0.0.1:8000/", "GET", "http://localhost:8000/", false) == Context.CrossSiteGet)
     // Subresources and fetch: third-party when the top-level site
     // differs (the referrer's, or `top`'s for a frame).
-    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a }, "https://img.a.example/x.png", "GET", a, false) == Context.SameSite)
-    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a }, "https://b.example/x.png", "GET", a, false) == Context.ThirdParty)
-    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: "file:///tmp/x.html" }, "https://b.example/x.png", "GET", "file:///tmp/x.html", false) == Context.ThirdParty)
-    let frame = Request { kind: Kind.Document, referrer: a, top: a }
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a, initiator: Initiator.Page { url: a } }, "https://img.a.example/x.png", "GET", a, false) == Context.SameSite)
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: a, initiator: Initiator.Page { url: a } }, "https://b.example/x.png", "GET", a, false) == Context.ThirdParty)
+    @expect(contextFor(alloc, Request { kind: Kind.Image, referrer: "file:///tmp/x.html", initiator: Initiator.Page { url: "file:///tmp/x.html" } }, "https://b.example/x.png", "GET", "file:///tmp/x.html", false) == Context.ThirdParty)
+    let frame = Request { kind: Kind.Document, referrer: a, top: a, initiator: Initiator.Page { url: a } }
     @expect(contextFor(alloc, frame, "https://b.example/frame.html", "GET", a, false) == Context.ThirdParty)
     @expect(contextFor(alloc, frame, "https://a.example/frame.html", "GET", a, false) == Context.SameSite)
     // A same-site frame of a cross-site page: third-party.
-    let inner = Request { kind: Kind.Other, referrer: "https://b.example/f", top: a }
+    let inner = Request { kind: Kind.Other, referrer: "https://b.example/f", top: a, initiator: Initiator.Page { url: "https://b.example/f" } }
     @expect(contextFor(alloc, inner, "https://b.example/api", "GET", "https://b.example/f", false) == Context.ThirdParty)
     // credentials: omit; same-origin only to the initiator's origin.
-    @expect(contextFor(alloc, Request { kind: Kind.Other, referrer: a, credentials: Credentials.Omit }, "https://www.a.example/api", "GET", a, false) == Context.Omit)
-    let same = Request { kind: Kind.Other, referrer: a, credentials: Credentials.SameOrigin }
+    @expect(contextFor(alloc, Request { kind: Kind.Other, referrer: a, credentials: Credentials.Omit, initiator: Initiator.Page { url: a } }, "https://www.a.example/api", "GET", a, false) == Context.Omit)
+    let same = Request { kind: Kind.Other, referrer: a, credentials: Credentials.SameOrigin, initiator: Initiator.Page { url: a } }
     @expect(contextFor(alloc, same, "https://www.a.example/api", "POST", a, false) == Context.SameSite)
     @expect(contextFor(alloc, same, "https://api.a.example/api", "GET", a, false) == Context.Omit)
-    let include = Request { kind: Kind.Other, referrer: a, credentials: Credentials.Include }
+    let include = Request { kind: Kind.Other, referrer: a, credentials: Credentials.Include, initiator: Initiator.Page { url: a } }
     @expect(contextFor(alloc, include, "https://api.a.example/api", "GET", a, false) == Context.SameSite)
     @expect(contextFor(alloc, include, "https://b.example/api", "GET", a, false) == Context.ThirdParty)
     // No page (a command line fetch): same-site.
-    @expect(contextFor(alloc, Request { kind: Kind.Other }, "https://b.example/api", "GET", "", false) == Context.SameSite)
+    @expect(contextFor(alloc, Request { kind: Kind.Other, initiator: Initiator.Browser }, "https://b.example/api", "GET", "", false) == Context.SameSite)
 }

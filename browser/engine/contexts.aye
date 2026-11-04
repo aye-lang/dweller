@@ -411,7 +411,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if !text.eqlIgnoreCase(name, "_blank") {
         let named = namedContext(from, name)
         if named != 0 {
-            try navigateContext(named, href, body, initiatorOf(p))
+            try navigateContext(named, href, body, originPage(p).url.href)
             return named
         }
     }
@@ -419,7 +419,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if text.eqlIgnoreCase(name, "_blank") && !relHas(rel, "opener") {
         no_opener = true
     }
-    return openContext(from, href, name, no_opener, false, body, initiatorOf(p))
+    return openContext(from, href, name, no_opener, false, body, originPage(p).url.href)
 }
 
 /// A link `el` of `p` to `target` whose `target` attribute names another
@@ -516,12 +516,15 @@ fn serveInMemory(t: *mut ContextTable, r: ContextRequest) AllocError!void {
 /// Loads the URL of request `r` (`target`, parsed) in `tab`, by POST
 /// when it has a body. Returns whether a new page was loaded.
 pub fn loadInTab(tab: *mut Tab, target: *Url, r: ContextRequest) AllocError!bool {
+    let initiator = net.Initiator.Page { url: r.initiator }
+
     if !r.post {
-        return tab.navigate(target, r.initiator)
+        return tab.navigate(target, initiator)
     }
+
     var body = net.Body { content_type: r.content_type, data: r.body }
     tab.enter()
-    let p = try loadWith(tab.alloc, target, &body, r.initiator)
+    let p = try loadWith(tab.alloc, target, &body, initiator)
     errdefer p.destroy()
     try tab.push(target, p)
     return true

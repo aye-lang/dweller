@@ -141,7 +141,7 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
     }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(href) {
-        l.job = startJob(ld.alloc, s, ld.multi, href, Request { kind: kind, referrer: l.referrer }, "GET", null)
+        l.job = startJob(ld.alloc, s, ld.multi, href, Request { kind: kind, referrer: l.referrer, initiator: Initiator.Page { url: l.referrer } }, "GET", null)
         l.state = LoadState.Running
         if l.job == null {
             l.state = LoadState.Failed
@@ -372,7 +372,7 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials }
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -407,7 +407,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
     }
     defer target.deinit(ld.alloc)
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials }
+    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -665,7 +665,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
                 return
             }
             l.hops += 1
-            l.job = startJob(ld.alloc, s, ld.multi, moved, Request { kind: l.kind, referrer: l.referrer }, "GET", null)
+            l.job = startJob(ld.alloc, s, ld.multi, moved, Request { kind: l.kind, referrer: l.referrer, initiator: Initiator.Page { url: l.referrer } }, "GET", null)
             if l.job != null {
                 l.state = LoadState.Running
             }
