@@ -1,0 +1,22 @@
+import engine
+import std.mem.AllocError
+
+pub fn find(view: *mut PageView, query: ?[]u8, jump: bool) AllocError!void {
+    view.matches.clear()
+    view.current = 0
+
+    let q = query orelse return
+
+    if view.tab.page |p| {
+        if p.tree |t| {
+            try engine.findText(t, q, &mut view.matches)
+        }
+    }
+
+    if jump {
+        view.current = firstMatchBelow(view)
+        showMatch(view)
+    }
+
+    view.dirty = true
+}

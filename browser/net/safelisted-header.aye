@@ -1,0 +1,14 @@
+import std.text
+
+// https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+fn safelistedHeader(line: []u8) bool {
+    let name = headerName(line)
+    let value = headerText(line)
+    let mime = parseContentType(value).mime
+
+    if text.eqlIgnoreCase(name, "content-type") {
+        return value.len <= 128 && (text.eqlIgnoreCase(mime, "application/x-www-form-urlencoded") || text.eqlIgnoreCase(mime, "multipart/form-data") || text.eqlIgnoreCase(mime, "text/plain"))
+    }
+
+    return value.len <= 128 && (text.eqlIgnoreCase(name, "accept") || text.eqlIgnoreCase(name, "accept-language") || text.eqlIgnoreCase(name, "content-language"))
+}

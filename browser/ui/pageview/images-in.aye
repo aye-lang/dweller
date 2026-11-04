@@ -1,0 +1,26 @@
+import engine
+import std
+import std.mem.AllocError
+
+let IMAGE_RELAYOUT_MS: u64 = 100
+
+pub fn imagesIn(view: *mut PageView, query: ?[]u8, from_timers: bool) AllocError!void {
+    if view.tab.early && !view.tab.painted {
+        return
+    }
+
+    let p = view.tab.page orelse return
+    let now = std.time.monotonicMs()
+    var gap = IMAGE_RELAYOUT_MS
+
+    if 2 * view.relayout_ms > gap {
+        gap = 2 * view.relayout_ms
+    }
+
+    if now - view.images_at < gap || !engine.imagesArrived(p) {
+        return
+    }
+
+    try relayout(view, query, from_timers)
+    view.images_at = std.time.monotonicMs()
+}

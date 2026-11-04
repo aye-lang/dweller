@@ -1,0 +1,20 @@
+import layout
+import paint
+
+fn followScroll(view: *mut PageView) {
+    if view.tab.page |p| {
+        if p.tree |t| {
+            if t.scroll_y != view.list_scroll {
+                _ = layout.scrollTo(t, view.list_scroll)
+            }
+
+            let y = snappedScroll(view.tab.scroll, view.scale)
+
+            if t.scroll_y != y && layout.scrollTo(t, y) && (view.list == null || !paint.followPinned(&mut view.list.?, view.sigs.items(), t)) {
+                view.relist = true
+            }
+
+            view.list_scroll = t.scroll_y
+        }
+    }
+}

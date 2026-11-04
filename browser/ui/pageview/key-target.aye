@@ -1,0 +1,22 @@
+import dom.NodeId
+import engine
+
+fn keyTarget(p: *mut engine.Page) ?NodeId {
+    var target = engine.scriptFocus(p)
+
+    if target == null {
+        if p.doc.documentElement() |root| {
+            var cur = p.doc.firstChild(root)
+
+            while cur |c| {
+                if p.doc.isElement(c, "body") {
+                    target = c
+                }
+
+                cur = p.doc.nextSibling(c)
+            }
+        }
+    }
+
+    return target
+}

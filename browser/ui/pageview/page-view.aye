@@ -1,0 +1,44 @@
+import dom.NodeId
+import engine
+import font
+import paint
+import std.list.List
+import std.mem.Allocator
+
+pub struct PageView {
+    alloc: Allocator
+    measure: dyn font.Measurer
+    tab: *mut engine.Tab
+    list: ?paint.DisplayList = null
+    sigs: List(paint.Sig)
+    relist: bool = false
+    list_scroll: f64 = 0.0
+    laid_version: u64 = 0
+    matches: List(paint.Rect)
+    current: usize = 0
+    promote: List(NodeId)
+    anim: List(Anim)
+    anim_els: List(NodeId)
+    anim_seq: u64 = 0
+    relayout_ms: u64 = 0
+    images_at: u64 = 0
+    width: f64 = 0.0
+    layout_height: f64 = 1.0
+    view_height: f64 = 1.0
+    scale: f64 = 1.0
+    dirty: bool = false
+    repaint: bool = false
+
+    pub fn init(alloc: Allocator, measure: dyn font.Measurer, tab: *mut engine.Tab) PageView {
+        return PageView {
+            alloc: alloc,
+            measure: measure,
+            tab: tab,
+            sigs: List(paint.Sig).init(alloc),
+            matches: List(paint.Rect).init(alloc),
+            promote: List(NodeId).init(alloc),
+            anim: List(Anim).init(alloc),
+            anim_els: List(NodeId).init(alloc),
+        }
+    }
+}

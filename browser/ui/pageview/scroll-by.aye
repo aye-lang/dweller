@@ -1,0 +1,20 @@
+import engine
+import perf
+
+pub fn scrollBy(view: *mut PageView, dy: f64) {
+    let before = view.tab.scroll
+
+    view.tab.scroll += dy
+    view.tab.clampScroll(maxScroll(view))
+
+    if view.tab.scroll != before {
+        view.repaint = true
+        perf.noteScroll()
+        followScroll(view)
+    }
+
+    if view.tab.page |p| {
+        engine.setScriptScroll(p, view.tab.scroll) catch |e| {
+        }
+    }
+}

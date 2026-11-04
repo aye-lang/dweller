@@ -1,0 +1,20 @@
+import dom
+import engine
+import std.mem.AllocError
+
+pub fn inputWheel(view: *mut PageView, x: f64, y: f64, dx: f64, dy: f64) AllocError!bool {
+    let p = view.tab.page orelse return true
+
+    if !engine.hasScripts(p) {
+        return true
+    }
+
+    let t = p.tree orelse return true
+    var el = engine.nodeAt(t, x + view.tab.scroll_x, y + view.tab.scroll) orelse return true
+
+    if p.doc.node(el).kind != dom.Kind.Element {
+        el = p.doc.parent(el) orelse return true
+    }
+
+    return engine.dispatchWheel(p, el, x, y, dx, dy)
+}

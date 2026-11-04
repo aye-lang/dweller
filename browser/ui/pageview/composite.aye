@@ -1,0 +1,31 @@
+import engine
+import layout
+import paint
+import std
+
+fn composite(view: *mut PageView, p: *mut engine.Page) bool {
+    let boxes = engine.paintChanges(p) orelse return false
+    let t = p.tree orelse return false
+    var l = &mut view.list.?
+
+    for b in boxes {
+        if b >= t.boxes.len() {
+            return false
+        }
+
+        var off = [2]f64{0.0, 0.0}
+
+        if layout.translationOf(t, b) |e| {
+            off = e
+        }
+
+        let o = paint.opacityOf(t.bx(b).style)
+        let alpha = std.math.floor(o * 255.0 + 0.5) as u8
+
+        if !paint.patchLayer(l, view.sigs.items(), b, off[0], off[1], alpha) {
+            return false
+        }
+    }
+
+    return true
+}

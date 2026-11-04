@@ -1,0 +1,22 @@
+import dom
+import engine
+import std.mem.AllocError
+
+pub fn inputClick(view: *mut PageView, x: f64, y: f64) AllocError!?bool {
+    let p = view.tab.page orelse return null
+
+    if !engine.hasScripts(p) {
+        return null
+    }
+
+    let t = p.tree orelse return null
+    var el = engine.nodeAt(t, x, y + view.tab.scroll) orelse return null
+
+    if p.doc.node(el).kind != dom.Kind.Element {
+        el = p.doc.parent(el) orelse return null
+    }
+
+    let go_on = try engine.dispatchEvent(p, el, "click", "")
+
+    return go_on
+}
