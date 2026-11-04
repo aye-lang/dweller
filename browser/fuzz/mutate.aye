@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+pub fn mutate(rng: *mut Rng, input: []u8, other: []u8, dictionary: [][]u8, out: *mut text.Builder) AllocError!void {
+    let at = rng.below(input.len + 1)
+    let op = rng.below(5)
+
+    out.clear()
+    try out.append(input[0..at])
+
+    if op == 0 && at < input.len {
+        try out.appendByte(input[at] ^ ((1 as u8) << (rng.below(8) as u8)))
+        try out.append(input[at + 1..])
+    } else if op == 1 {
+        try out.appendByte((rng.next() & 0xFF) as u8)
+        try out.append(input[at..])
+    } else if op == 2 {
+        try out.append(input[at + rng.below(input.len - at + 1)..])
+    } else if op == 3 {
+        try out.append(other[rng.below(other.len + 1)..])
+    } else {
+        try out.append(dictionary[rng.below(dictionary.len)])
+        try out.append(input[at..])
+    }
+}

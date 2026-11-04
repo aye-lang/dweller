@@ -1,0 +1,20 @@
+import js.Interp
+import std.time
+
+let HANG_MS: u64 = 5000
+
+// v8: src/execution/stack-guard.cc
+fn pageGoesOn(it: *mut Interp) bool {
+    let s = scriptOf(it)
+    let hook = hang_hook orelse return true
+
+    if s.depth == 0 || time.monotonicMs() < s.hang_at {
+        return true
+    }
+
+    let wait = hook()
+
+    s.hang_at = time.monotonicMs() + HANG_MS
+
+    return wait
+}
