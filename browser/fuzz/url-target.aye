@@ -1,0 +1,41 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+let URL_DICTIONARY = [_][]u8{
+    ":", "/", "//", "\\", "?", "#", "@", "%", "%2e", "%2E%2e", "%00", "%zz", "%41", ".", "..", "/./", "/../", "\t", "\n", " ", "\0",
+    "[", "]", "::", "[::1]", "[1:0::]", "[::ffff:1.2.3.4]", "[0:0:0:0:0:0:13.1.68.3]", "0x", "0x7f.1", "1.2.3.4", "4294967296", "09",
+    "http:", "https:", "file:", "ws:", "wss:", "ftp:", "data:", "blob:", "javascript:", "mailto:", "non-spec:", "sc:",
+    "http://", "file://", "file:///C:/", "C|", "/c:/", "user:pass@", ":@", ":8080", ":65536", ":0", "xn--", "xn--a", "a.b.",
+    "ß", "é", "\xe3\x80\x82", "\xef\xbf\xbd", "\xe2\x80\x8b", "^", "|", "<", ">", "`", "{", "}", "'", "\"",
+}
+
+let BASE = "http://user:pass@example.org:8080/a/b/c?q#f"
+
+fn urlTarget() Target {
+    return Target { name: "url", dictionary: URL_DICTIONARY[0..], run: fuzzUrl }
+}
+
+// spec: https://url.spec.whatwg.org/#url-serializing (the serializer is idempotent)
+fn fuzzUrl(alloc: Allocator, input: []u8) AllocError!void {
+    var base = url.parse(alloc, BASE) catch unreachable
+    defer base.deinit(alloc)
+
+    var first = url.resolve(alloc, &base, input) catch |e| {
+        if e == url.UrlError.OutOfMemory {
+            return AllocError.OutOfMemory
+        }
+
+        return
+    }
+
+    defer first.deinit(alloc)
+
+    var again = url.parse(alloc, first.href) catch unreachable
+    defer again.deinit(alloc)
+
+    if !text.eql(first.href, again.href) {
+        unreachable
+    }
+}

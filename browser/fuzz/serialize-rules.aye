@@ -1,0 +1,28 @@
+import css
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-rule
+fn serializeRules(alloc: Allocator, input: []u8) AllocError!void {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    var rules = text.split(input, "}")
+
+    while rules.next() |r| {
+        let brace = std.mem.indexOf(r, '{') orelse continue
+
+        try serializeSelector(alloc, r[..brace], &mut out)
+
+        var decls = text.split(r[brace + 1..], ";")
+
+        while decls.next() |d| {
+            let colon = std.mem.indexOf(d, ':') orelse continue
+
+            out.clear()
+            _ = try css.specifiedValue(alloc, text.trim(d[..colon]), d[colon + 1..], &mut out)
+        }
+    }
+}
