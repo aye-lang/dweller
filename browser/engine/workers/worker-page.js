@@ -13,6 +13,8 @@
       if (arguments.length === 0) throw new TypeError("Failed to construct 'Worker': 1 argument required, but only 0 present.");
       const href = new URL(String(url), document.baseURI).href;
       const module = !!options && options.type === 'module';
+      const credentials = module && options.credentials !== undefined ? String(options.credentials) : 'same-origin';
+      if (!['omit', 'same-origin', 'include'].includes(credentials)) throw new TypeError("Failed to construct 'Worker': The provided value '" + credentials + "' is not a valid enum value of type RequestCredentials.");
       let source;
       if (href.startsWith('blob:')) {
         const blob = blobs.get(href);
@@ -22,6 +24,7 @@
       this.onmessage = null;
       this.onmessageerror = null;
       this.onerror = null;
+      hidden(this, '_credentials', credentials);
       hidden(this, '_id', h.start(href, module, source));
       workers.set(this._id, this);
     }
@@ -45,7 +48,7 @@
       } else if (kind === FETCH_SAME_ORIGIN && new URL(json).origin !== location.origin) {
         h.answer(id, null);
       } else {
-        h.fetch(id, json, kind === FETCH_MODULE);
+        h.fetch(id, json, kind === FETCH_MODULE, w._credentials);
       }
       return;
     }

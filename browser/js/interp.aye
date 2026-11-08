@@ -267,6 +267,7 @@ pub struct Interp {
     // Default referrer for classic scripts, and the root of the module
     // loader object (lib.aye).
     script_url: u32 = 0
+    script_include: bool = false
     import_driver: u32 = NONE
     // The native getter of module namespace properties (modules.aye).
     module_cell_get: u32 = NONE
@@ -700,11 +701,11 @@ pub struct Interp {
     }
 
     pub fn slot(self: *Self, i: usize) Value {
-        return self.stack.items()[i]
+        return self.stack.buf[..self.stack.count][i]
     }
 
     pub fn setSlot(self: *mut Self, i: usize, v: Value) {
-        self.stack.items()[i] = v
+        self.stack.buf[..self.stack.count][i] = v
     }
 
     /// Argument i of a native call (undefined when missing).
@@ -2812,6 +2813,7 @@ pub struct Interp {
             strict: false,
             floor: self.stackFloor(),
             referrer: referrer,
+            include: self.script_include,
             module: module,
             info: info,
         }

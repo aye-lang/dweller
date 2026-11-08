@@ -18,11 +18,12 @@ HOSTS = [
     "not-web-platform.test",
 ]
 HTTP_PORTS = (8000, 8001)
+HTTPS_PORTS = (8443, 8444)
 START_WAIT = 90
 
 
 def resolve_setting():
-    return ",".join(f"{h}:{p}:127.0.0.1" for h in HOSTS for p in HTTP_PORTS)
+    return ",".join(f"{h}:{p}:127.0.0.1" for h in HOSTS for p in HTTP_PORTS + HTTPS_PORTS)
 
 
 def listening(port):
@@ -32,7 +33,8 @@ def listening(port):
 
 
 class Upstream:
-    """`wpt serve` on web-platform.test:8000 (and :8001), answered by
+    """`wpt serve` on web-platform.test:8000 (and :8001, https on :8443
+    and :8444 with the checkout's tools/certs), answered by
     127.0.0.1 through DWELLER_RESOLVE; our testharnessreport.js replaces
     the checkout's."""
 
@@ -40,6 +42,7 @@ class Upstream:
         self.root = Path(root)
         self.report_js = report_js
         self.base = f"http://{HOSTS[0]}:{HTTP_PORTS[0]}"
+        self.https_base = f"https://{HOSTS[0]}:{HTTPS_PORTS[0]}"
         self.proc = None
 
     def config(self):
@@ -47,7 +50,7 @@ class Upstream:
         path.write_text(json.dumps({
             "server_host": "127.0.0.1",
             "check_subdomains": False,
-            "ports": {"http": list(HTTP_PORTS)},
+            "ports": {"http": list(HTTP_PORTS), "https": list(HTTPS_PORTS)},
         }))
         return path
 
@@ -59,7 +62,7 @@ class Upstream:
             [sys.executable, "wpt", "serve", "--no-h2", "--config", str(self.config())],
             cwd=self.root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         deadline = time.time() + START_WAIT
-        while not listening(HTTP_PORTS[-1]):
+        while not (listening(HTTP_PORTS[-1]) and listening(HTTPS_PORTS[-1])):
             if self.proc.poll() is not None or time.time() > deadline:
                 self.stop()
                 sys.exit(f"wpt serve did not start (see {self.root}/_dweller_serve.log)")

@@ -1,0 +1,22 @@
+import engine
+import ipc
+import std.mem.AllocError
+import url.Url
+
+fn tellStorage(from: *TabProcess, at: *Url, ask: engine.StorageAsk, done: engine.StorageDone, old: []u8) AllocError!void {
+    var nulls: u32 = 0
+
+    if ask.op == 3 { nulls = 7 }
+    if ask.op == 2 { nulls = 4 }
+    if ask.op == 1 && !done.found { nulls = 2 }
+
+    var next = tab_processes
+
+    while next |tp| {
+        next = tp.next
+
+        if tp != from && tp.gone.len == 0 && hostsOrigin(tp, at) {
+            try ipc.encode(&mut tp.outbox, 0, ipc.Message.StorageEvent { nulls: nulls, key: ask.key, old: old, value: ask.value, url: ask.href })
+        }
+    }
+}

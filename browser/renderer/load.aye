@@ -17,6 +17,10 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
         sent = &body
     }
 
+    if r.context == 0 { r.context = try engine.newTabContext(r.alloc) }
+
+    engine.setLoadingContext(r.context)
+
     let p = try engine.loadWith(r.alloc, &target, sent, net.Initiator.Browser)
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {

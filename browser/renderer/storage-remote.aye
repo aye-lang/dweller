@@ -1,0 +1,29 @@
+import engine
+import ipc
+import std.mem.AllocError
+import std.text
+
+let MAX_ITEM_BYTES: usize = 1040384
+
+fn storageRemote(ask: engine.StorageAsk, out: ?*mut text.Builder) AllocError!engine.StorageDone {
+    let r = store_renderer orelse return engine.StorageDone {}
+
+    if ask.key.len + ask.value.len > MAX_ITEM_BYTES { return engine.StorageDone { refused: true } }
+
+    let m = ipc.Message.Storage { doc: storeDoc(r, ask.href, "storage"), context: ask.context, session: ask.session as u32, op: ask.op, index: ask.index, key: ask.key, value: ask.value }
+
+    send(r.alloc, r.conn, r.tab, m) catch return engine.StorageDone {}
+
+    let into = out orelse return engine.StorageDone {}
+    let got = awaitReply(r) orelse return engine.StorageDone {}
+
+    match got {
+        .StorageReply { found, refused, changed, count, value } => {
+            try into.append(value)
+
+            return engine.StorageDone { found: found == 1, refused: refused == 1, changed: changed == 1, count: count }
+        }
+
+        _ => return engine.StorageDone {}
+    }
+}

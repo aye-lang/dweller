@@ -1,0 +1,18 @@
+import perf
+
+pub fn awaitLoads(ids: []u32, referrer: []u8) {
+    for id in ids {
+        if loadState(id) != LoadState.Running {
+            continue
+        }
+
+        let sync_began = perf.start()
+
+        waitLoad(id)
+        perf.end("net_sync", sync_began, referrer)
+    }
+
+    for id in ids {
+        releaseLoad(id)
+    }
+}

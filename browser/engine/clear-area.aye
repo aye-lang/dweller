@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn clearArea(st: *mut Store, area: []u8, session: bool) AllocError!StorageDone {
+    var i: usize = 0
+    var cleared = false
+
+    while i * 3 < st.items.len() {
+        if text.eql(st.items.items()[i * 3], area) {
+            removeStoreItem(st, i)
+            cleared = true
+        } else {
+            i += 1
+        }
+    }
+
+    if cleared && !session {
+        try markDirty(st, area)
+        try noteLocalChange(area, null, null)
+    }
+
+    return StorageDone { changed: cleared }
+}

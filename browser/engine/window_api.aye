@@ -556,13 +556,13 @@ fn moduleLoad(it: *mut Interp, a: Args) JsError!Value {
     let done = try js.callableArg(it, a, 2)
     let target = try argUrl(it, a) orelse return js.boolVal(false)
     defer target.deinit(it.alloc)
-    if !net.liveRequest(&target) || !sameOriginUrl(&originPage(scriptOf(it).page).url, &target) {
+    if !net.liveRequest(&target) {
         return js.boolVal(false)
     }
     let referrer = try it.builder()
     defer it.release(referrer)
     try argText(it, a, 1, referrer)
-    let id = net.startLoad(target.withoutFragment(), net.Kind.Script, referrer.bytes())
+    let id = net.startLoadAs(target.withoutFragment(), moduleRequest(scriptOf(it).page, referrer.bytes(), it.toBoolean(it.arg(a, 3))))
     if id == 0 {
         return js.boolVal(false)
     }

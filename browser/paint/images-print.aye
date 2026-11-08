@@ -1,0 +1,24 @@
+import layout
+
+fn imagesPrint(imgs: *layout.Images) u64 {
+    var h = hu(0x6a09e667f3bcc908, imgs.changes)
+    var els = imgs.map.iterator()
+
+    while els.next() |e| {
+        h = hu(hu(h, e.key as u64), imageRefPrint(e.value))
+    }
+
+    var urls = imgs.urls.iterator()
+
+    while urls.next() |e| {
+        h = hu(hbytes(h, e.key), imageRefPrint(e.value))
+    }
+
+    return h
+}
+
+fn imageRefPrint(r: *layout.ImageRef) u64 {
+    let pic = r.pic != null
+
+    return hu(hu(hu(hu(hu(@hash(r.bmp), r.bmp.shown()), @hash(r.bmp.pixels.ptr)), r.bmp.pixels.len as u64), r.generation as u64), bit(pic))
+}
