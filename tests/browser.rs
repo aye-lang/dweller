@@ -10295,7 +10295,7 @@ fn window_renderer_input() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "60", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -10367,7 +10367,7 @@ fn window_renderer_focus() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "60", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -10407,7 +10407,7 @@ fn window_renderer_focus() {
 
     let (_, err) = run(&golden, "loaded click:90,102", &[]);
     assert!(err.is_empty(), "{err}");
-    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input window:blur", &tab);
+    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input window:blur renderer:next", &tab);
     assert!(err.is_empty(), "{err}");
     let (w, a) = page_area(&shot);
     let (_, b) = page_area(&golden);
@@ -10467,7 +10467,7 @@ fn window_renderer_input_actions() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "60", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
