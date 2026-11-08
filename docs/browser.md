@@ -49,7 +49,7 @@ browser/
   ui/             SDL2 window, chrome (address bar, tabs), input, the
                   agent socket (`--agent-socket`, `connect`), Spaces
   perf/           `DWELLER_TIMING` phase records; local telemetry
-  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML)
+  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML, CSS, URL, JS)
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
@@ -162,7 +162,12 @@ CSSOM does: the text before each `{` through `css.selectorText` when it
 parses as a selector list, each `prop: value` of the block through
 `css.specifiedValue`. `url` resolves the input against a fixed base
 (`url.resolve`), parses its `href` again and panics unless that parses
-to the same `href` (the serializer is idempotent).
+to the same `href` (the serializer is idempotent). `js` parses the
+input in a fresh realm as a classic script and as a module
+(`Interp.parseCode`, which also resolves scopes) and compiles each that
+parses to bytecode (`compileScript` for the script, `compileFunction`
+for every function the parse made), without running it, as V8's
+`test/fuzzer/parser.cc` does.
 
 `python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
 build (`target/dweller-fuzz`, built by `browser/build.sh` when
