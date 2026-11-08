@@ -57,9 +57,14 @@ client connect to it through `dweller connect`, a bridge between stdio
 and the window's socket:
 
 ```
-/path/to/dweller --agent-socket /tmp/dweller.sock https://example.com/ &
-claude mcp add dweller -- /path/to/dweller connect /tmp/dweller.sock --mcp
+/path/to/dweller --agent-socket ~/.dweller/agent.sock https://example.com/ &
+claude mcp add dweller -- /path/to/dweller connect ~/.dweller/agent.sock --mcp
 ```
+
+The socket's directory must be yours alone (`0700`; the window makes it
+when it is missing), and every connection starts with the token the
+window writes next to the socket (`agent.sock.token`); `dweller connect`
+sends it for you (docs/agent-protocol.md, "A shared window").
 
 The agent then works in the tab you see (or in a background tab it
 opens with `browser_tab_new`), and you see what it does:
@@ -76,6 +81,6 @@ opens with `browser_tab_new`), and you see what it does:
 - Cmd+T, Cmd+W and Cmd+1..9 open, close and show tabs.
 
 Any MCP client that starts stdio servers works the same way: the command
-is `dweller` with the arguments `connect /tmp/dweller.sock --mcp`. Without
+is `dweller` with the arguments `connect ~/.dweller/agent.sock --mcp`. Without
 `--mcp`, the connection speaks the JSON lines of `dweller agent`.
 Socket paths are limited to about 100 bytes.
