@@ -283,6 +283,7 @@ pub struct Script {
     audio_owner: usize = 0
     audio_notify: u32 = 0xFFFFFFFF
     activated: bool = false
+    activation_ns: ?u64 = null
     // Messages ("[log] text"), owned, until a front end takes them.
     console: List([]mut u8)
     nav_kind: NavKind
@@ -1903,11 +1904,9 @@ pub fn setViewport(p: *mut Page, width: f64, height: f64) {
 /// canceled it (preventDefault): skip the default action.
 pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocError!bool {
     let s = p.script orelse return true
+    noteActivation(s, kind, key)
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
-    }
-    if isActivation(kind) {
-        s.activated = true
     }
     let it = &mut s.it
     let base = it.stack.len()
@@ -1935,6 +1934,7 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
 /// listener canceled it.
 pub fn dispatchPointer(p: *mut Page, target: NodeId, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!bool {
     let s = p.script orelse return true
+    noteActivation(s, kind, "")
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
     }

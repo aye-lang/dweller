@@ -7759,7 +7759,9 @@ fn cache_partition() {
 /// trustworthy gets no `Sec-Fetch-*`. Q3.14b: `referrerpolicy` and
 /// `rel=noreferrer` on links, forms and frames, fetch's `referrerPolicy`,
 /// a redirect's `Referrer-Policy`, no `Origin` after a POST's 303,
-/// `referrerpolicy` on `img` and `link`.
+/// `referrerpolicy` on `img` and `link`. Q3.14c: `font` and `worker`
+/// destinations; a script's `form.submit()` without user activation
+/// sends no `Sec-Fetch-User`.
 #[test]
 fn fetch_metadata() {
     use std::io::BufRead;
@@ -7800,6 +7802,8 @@ fn fetch_metadata() {
     };
     let page = format!("{site}/with-other/net/fetch-metadata.html?other={ip}");
     dump(&["--text", "--js", &page]);
+    let shot = scratch().join("fetch_metadata_font.png");
+    let fonts = dweller_command().current_dir(root()).envs(tls).args(["screenshot", &page, "-o", shot.to_str().unwrap(), "--font", "system", "--width", "400", "--height", "300"]).output().unwrap();
     dump(&["--text", &format!("{site}/meta/typed.html")]);
     dump(&["--text", "--js", &format!("{site}/net/fetch-metadata-meta.html")]);
     dump(&["--text", "--js", &format!("{site}/policy/no-referrer/net/fetch-metadata-plain.html")]);
@@ -7820,6 +7824,10 @@ fn fetch_metadata() {
     meta("GET /meta/img-noref.png", &format!("sec-fetch-dest=image | {none} | referer="));
     meta("GET /meta/img-unsafe.png", &format!("sec-fetch-dest=image | {none} | referer={policy}"));
     meta("GET /meta/sheet-noref.css", &format!("sec-fetch-dest=style | {none} | referer="));
+    if !text(&fonts.stderr).contains("no system font found") {
+        meta("GET /meta/font.ttf", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=font | {none} | referer={page}"));
+    }
+    meta("GET /meta/worker.js", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=worker | {none} | referer={page}"));
 
     if let Some(plain) = server() {
         let plain_port = plain.base.rsplit(':').next().unwrap().to_string();
@@ -7838,6 +7846,15 @@ fn fetch_metadata() {
         println!("skipped the navigations: no SDL2");
         return;
     }
+    let scripted = format!("{site}/net/scripted_submit.html?{ip}/meta/scripted.html");
+    let out = dweller_command()
+        .current_dir(root())
+        .envs(tls)
+        .args([scripted.as_str(), "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", "loaded loaded"])
+        .output()
+        .unwrap();
+    assert!(out.status.success() && out.stderr.is_empty(), "scripted submit: {}", text(&out.stderr));
+    meta("GET /meta/scripted.html", &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | {none} | referer={site}/"));
     for tab in [false, true] {
         let name = if tab { "tab" } else { "window" };
         let target = format!("{ip}/meta/nav-{name}.html");

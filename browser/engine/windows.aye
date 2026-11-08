@@ -26,6 +26,7 @@ import js.Args
 import js.Interp
 import js.JsError
 import js.Value
+import net
 import std
 import std.map.IntMap
 import std.mem.AllocError
@@ -631,6 +632,7 @@ fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
     if here |p| {
         if p.script |ts| {
             try setNavigation(ts, target.href)
+            try net.noteNavigation(target.href, s.page.url.href, hasTransientActivation(s.page))
         }
         return windowValue(s, p)
     }
@@ -645,6 +647,7 @@ fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
             return contextValue(s, named)
         }
     }
+    consumeActivation(s.page)
     let id = try openContext(from, target.href, name, no_opener, true, null, originPage(s.page).url.href)
     if no_opener || id == 0 {
         return Value.Null

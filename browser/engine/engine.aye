@@ -206,7 +206,7 @@ pub struct Page {
     /// the Referer.
     pub fn follow(self: *Self, alloc: Allocator, href: []u8) url.UrlError!Url {
         let target = try self.resolve(alloc, href)
-        net.noteNavigation(target.href, self.url.href, true) catch |e| {
+        net.noteNavigation(target.href, self.url.href, hasTransientActivation(self)) catch |e| {
             target.deinit(alloc)
             return url.UrlError.OutOfMemory
         }

@@ -4,7 +4,9 @@ test "a request's kind, credentials and mode survive their codes" {
     let back = codedRequest(code[0], code[1], code[2], Initiator.Browser) orelse return @expect(false)
 
     @expect(back.kind == Kind.Image && back.credentials == Credentials.Omit && back.mode == Mode.Cors)
-    @expect(codedRequest(5, 0, 0, Initiator.Browser) == null)
+    @expect((codedRequest(5, 0, 0, Initiator.Browser) orelse return @expect(false)).kind == Kind.Font)
+    @expect((codedRequest(6, 0, 0, Initiator.Browser) orelse return @expect(false)).kind == Kind.Worker)
+    @expect(codedRequest(7, 0, 0, Initiator.Browser) == null)
     @expect(fetchErrorOf(fetchErrorCode(FetchError.CertExpired)) == FetchError.CertExpired)
     @expect(fetchErrorOf(99) == FetchError.Network)
 }
