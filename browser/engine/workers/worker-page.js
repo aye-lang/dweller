@@ -1,5 +1,5 @@
 (function (G, h, wire) {
-  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5;
+  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5, FETCH_MODULE = 6;
   const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
   const blobs = URL._blobStore;
   const workers = new Map();
@@ -38,14 +38,14 @@
   hidden(G, '__workerDeliver', function (id, kind, json, n) {
     const w = workers.get(id);
     if (!w) return;
-    if (kind === FETCH || kind === FETCH_SAME_ORIGIN) {
+    if (kind === FETCH || kind === FETCH_SAME_ORIGIN || kind === FETCH_MODULE) {
       if (json.startsWith('blob:')) {
         const blob = blobs.get(json);
         h.answer(id, blob ? blob._array().buffer : null);
       } else if (kind === FETCH_SAME_ORIGIN && new URL(json).origin !== location.origin) {
         h.answer(id, null);
       } else {
-        h.fetch(id, json);
+        h.fetch(id, json, kind === FETCH_MODULE);
       }
       return;
     }

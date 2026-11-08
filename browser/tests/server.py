@@ -60,6 +60,10 @@
 #                    Access-Control-Allow-Origin: the request's Origin (or
 #                    *) and Access-Control-Allow-Credentials: true
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
+#   /cookie-module?acao&acac  a JS module that records the request's
+#                    Cookie header; `acao` echoes Origin in
+#                    Access-Control-Allow-Origin, `acac` adds
+#                    Access-Control-Allow-Credentials: true
 #   /held/NAME       as /slow/NAME, but answered once a /held-now
 #                    request counted it instead of after 0.3 s
 #   /after-fail/NAME as /slow/NAME, but answered once a /fail/ request
@@ -234,6 +238,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path.startswith("/acao/"):
             origin = self.headers.get("Origin", "*")
             self.reply_file(path[len("/acao/"):], [("Access-Control-Allow-Origin", origin), ("Access-Control-Allow-Credentials", "true")])
+        elif path.startswith("/cookie-module?"):
+            self.cookie_module()
         elif path.startswith("/nosniff/"):
             self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
         elif path.startswith("/held/"):
@@ -562,6 +568,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.page(200, "SSO", "<p>SSO done on %s, cookies: %s</p>" % (host, cookie))
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
+
+    def cookie_module(self):
+        query = urllib.parse.urlsplit(self.path).query.split("&")
+        cookie = json.dumps(self.headers.get("Cookie", ""))
+        headers = [("Content-Type", "text/javascript"), ("Cache-Control", "no-store")]
+        if "acao" in query:
+            headers.append(("Access-Control-Allow-Origin", self.headers.get("Origin", "*")))
+        if "acac" in query:
+            headers.append(("Access-Control-Allow-Credentials", "true"))
+        body = "hits.push('cookie');\nself.lastCookie = %s;\n" % cookie
+        self.reply(200, headers, body.encode())
 
     def samesite(self, method):
         port = self.server.server_address[1]

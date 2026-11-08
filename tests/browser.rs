@@ -7064,6 +7064,36 @@ fn crossorigin_orb() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Module scripts are fetched in CORS mode (Q3.3b): a cross-origin module,
+/// or a module it imports, without ACAO is a load error (an error event,
+/// a rejected import()); with ACAO it runs, as a same-origin graph does.
+/// Credentials are same-origin by default and sent cross-origin only for
+/// `crossorigin=use-credentials`, which also needs ACAC. The other origin
+/// is a second server on 127.0.0.1: same-site, so its cookies are sent.
+/// (`browser/tests/net/module-cors.html` must print `module-cors.txt`.)
+#[test]
+fn module_cors() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/module-cors.html?other={}", srv.base, other.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/module-cors.txt"),
+        &text(&out.stdout),
+        "module_cors",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task

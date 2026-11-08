@@ -1,0 +1,36 @@
+import dom.NodeId
+import perf
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-element
+fn runModuleElement(s: *mut Script, el: NodeId) AllocError!bool {
+    let p = s.page
+    let began = perf.start()
+    let source = p.doc.attr(el, "src") orelse "inline module"
+    defer perf.end("script", began, source)
+
+    s.current = null
+    var base = try p.currentBase(s.alloc)
+    defer base.deinit(s.alloc)
+
+    let include = text.eqlIgnoreCase(p.doc.attr(el, "crossorigin") orelse "", "use-credentials")
+
+    if p.doc.attr(el, "src") |src| {
+        let target = p.resolve(s.alloc, src) catch |e| {
+            try addConsole(s, "[error] Failed to load module script: ", src)
+
+            return false
+        }
+
+        defer target.deinit(s.alloc)
+
+        return runModuleGraph(s, target.href, "", base.href, include)
+    }
+
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+    try p.doc.textContent(el, &mut b)
+
+    return runModuleGraph(s, null, b.bytes(), base.href, include)
+}
