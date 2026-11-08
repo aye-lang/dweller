@@ -346,14 +346,13 @@ fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
     }
     inheritUpgrades(p, c)
-    c.sandbox = p.sandbox
+    var flags = p.sandbox
     if p.doc.isElement(el, "iframe") {
         if p.doc.attr(el, "sandbox") |v| {
-            c.sandbox |= parseSandbox(v)
+            flags |= parseSandbox(v)
         }
     }
-    c.no_scripts = c.sandbox & SB_SCRIPTS != 0
-    c.opaque = c.sandbox & SB_ORIGIN != 0
+    setSandbox(c, flags)
 }
 
 // A page made from `src` (an iframe's srcdoc, or nothing), at `address`
@@ -435,7 +434,9 @@ fn syncFrames(p: *mut Page) AllocError!void {
             try reloadFrame(p, k, key)
         } else {
             p.alloc.free(key)
-            try followFrameNavigation(p, k)
+            if !try submitIntoFrame(f.page) {
+                try followFrameNavigation(p, k)
+            }
         }
         k += 1
     }

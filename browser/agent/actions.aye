@@ -446,6 +446,9 @@ fn submitNow(s: *mut Session, tmp: Allocator, p: *mut Page, form: NodeId, submit
     if sub.post {
         post = &body
     }
+    if !engine.sandboxAllowsTarget(p, form, true) {
+        return done(try concat(tmp, what, "; the sandbox of its frame blocks the submission", ""))
+    }
     if engine.targetFrame(p, engine.linkTarget(p, form)) |slot| {
         let fo = try loadInFrame(s, tmp, slot, &sub.target, post, engine.initiatorOf(p))
         var fm = text.Builder.init(tmp)
@@ -488,6 +491,9 @@ fn followLink(s: *mut Session, tmp: Allocator, p: *mut Page, a: NodeId, who: []u
     }
     let target = p.follow(tmp, href) catch |e| {
         return failed(try concat(tmp, "cannot follow ", who, ": not a URL"))
+    }
+    if !engine.sandboxAllowsTarget(p, a, true) {
+        return done(try concat(tmp, "clicked ", who, "; the sandbox of its frame blocks the navigation"))
     }
     var o = done("")
     if engine.targetFrame(p, engine.linkTarget(p, a)) |slot| {

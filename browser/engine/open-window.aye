@@ -1,0 +1,92 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#window-open-steps
+fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Value {
+    let s = scriptOf(it)
+    let ub = try it.builder()
+    defer it.release(ub)
+    let tb = try it.builder()
+    defer it.release(tb)
+    let fb = try it.builder()
+    defer it.release(fb)
+
+    try argText(it, a, at, ub)
+    try argText(it, a, at + 1, tb)
+    try argText(it, a, at + 2, fb)
+    var href = text.trim(ub.bytes())
+
+    if href.len == 0 {
+        href = "about:blank"
+    }
+
+    let target = source.resolve(it.alloc, href) catch |e| {
+        return domError(it, "SyntaxError", "Failed to execute 'open' on 'Window': Unable to open a window with invalid URL.")
+    }
+
+    defer target.deinit(it.alloc)
+
+    var name = text.trim(tb.bytes())
+
+    if name.len == 0 {
+        name = "_blank"
+    }
+
+    let no_opener = featureOn(fb.bytes(), "noopener") || featureOn(fb.bytes(), "noreferrer")
+    var here: ?*mut Page = null
+
+    if text.eqlIgnoreCase(name, "_self") {
+        here = source
+    } else if text.eqlIgnoreCase(name, "_parent") {
+        here = source.parent orelse source
+    } else if text.eqlIgnoreCase(name, "_top") {
+        here = rootPage(source)
+    } else if !text.eqlIgnoreCase(name, "_blank") {
+        if namedFrame(rootPage(source), name) |slot| {
+            here = slotPage(slot)
+        }
+    }
+
+    if here |p| {
+        if !sandboxAllowsNavigation(source, p, false) {
+            return Value.Null
+        }
+
+        if p.script |ts| {
+            try setNavigation(ts, target.href)
+        }
+
+        return windowValue(s, p)
+    }
+
+    if source.sandbox & SB_AUXILIARY_NAVIGATION != 0 {
+        return Value.Null
+    }
+
+    let from = contextOfPage(source)
+
+    if contextOf(from) == null {
+        return Value.Null
+    }
+
+    if !text.eqlIgnoreCase(name, "_blank") {
+        let named = namedContext(from, name)
+
+        if named != 0 {
+            try navigateContext(named, target.href, null, originPage(source).url.href)
+
+            return contextValue(s, named)
+        }
+    }
+
+    let id = try openContext(from, target.href, name, no_opener, true, null, originPage(source).url.href, source.sandbox)
+
+    if no_opener || id == 0 {
+        return Value.Null
+    }
+
+    return contextValue(s, id)
+}

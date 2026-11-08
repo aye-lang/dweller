@@ -1,0 +1,17 @@
+import dom
+import net
+import std.mem.AllocError
+
+pub fn submitElsewhere(p: *mut Page, form: dom.NodeId, sub: *Submission) AllocError!bool {
+    if !sandboxAllowsTarget(p, form, true) {
+        return true
+    }
+
+    if !sub.post {
+        return (try targetContext(p, form, sub.target.href, null)) != 0
+    }
+
+    var body = net.Body { content_type: sub.content_type, data: sub.body }
+
+    return (try targetContext(p, form, sub.target.href, &body)) != 0
+}

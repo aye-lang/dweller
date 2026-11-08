@@ -434,14 +434,11 @@ pub fn submitForm(page: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!
     let post = text.eqlIgnoreCase(method, "post")
     // An empty action is the document's URL; others resolve against the
     // base URL.
-    var target = url.resolve(alloc, &page.url, "") catch |e| {
-        return null
+    if action.len == 0 {
+        action = page.url.href
     }
-    if action.len > 0 {
-        target.deinit(alloc)
-        target = page.resolve(alloc, action) catch |e| {
-            return null
-        }
+    var target = page.resolve(alloc, action) catch |e| {
+        return null
     }
     if text.eql(target.scheme, "javascript") {
         target.deinit(alloc)

@@ -762,6 +762,10 @@ pub let PRELUDE =
     \\    return this.__relList;
     \\  }, function (v) { this.setAttribute('rel', String(v)); });
     \\}
+    \\getter(HTMLIFrameElement.prototype, 'sandbox', function () {
+    \\  if (!this.__sandbox) hidden(this, '__sandbox', new DOMTokenList(this, 'sandbox'));
+    \\  return this.__sandbox;
+    \\}, function (v) { this.setAttribute('sandbox', String(v)); });
     \\getter(ElementP, 'classList', function () {
     \\  let l = this.__classList;
     \\  if (!l) {
@@ -1631,6 +1635,9 @@ pub let PRELUDE =
     \\}, function (v) { ak.winNavigate(this, String(v)); });
     \\for (const k of ['focus', 'blur']) hidden(WindowP, k, function () {});
     \\hidden(WindowP, 'close', function close() { ak.winClose(this); });
+    \\hidden(WindowP, 'open', function open(url, target, features) {
+    \\  return ak.winOpen(this, url === undefined ? '' : String(url), target === undefined ? '_blank' : String(target), features === undefined ? '' : String(features));
+    \\});
     \\for (const k of Object.getOwnPropertyNames(G)) if (/^[A-Z]/.test(k) && typeof G[k] === 'function') hidden(WindowP, k, G[k]);
     \\ak.setWindowProto(WindowP);
     \\getter(HTMLP, 'contentWindow', function () { return /^i?frame$/.test(this.localName) ? ak.contentWindow(this) : undefined; });

@@ -1,0 +1,16 @@
+import dom
+import std.mem.AllocError
+import std.text
+import url.Url
+
+pub fn openElsewhere(p: *mut Page, el: dom.NodeId, target: *Url) AllocError!bool {
+    if text.eql(target.scheme, "javascript") || text.eql(target.scheme, "mailto") {
+        return false
+    }
+
+    if !sandboxAllowsTarget(p, el, true) {
+        return true
+    }
+
+    return (try targetContext(p, el, target.href, null)) != 0
+}
