@@ -1,0 +1,25 @@
+import net
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn fetchedResponse(alloc: Allocator, f: *Fetched) AllocError!net.Response {
+    var res = net.Response { mime: try owned(alloc, f.mime.bytes()), charset: []mut u8{}, body: []mut u8{}, status: f.status, url: []mut u8{}, headers_raw: []mut u8{}, tainted: f.tainted }
+
+    res.charset = try owned(alloc, f.charset.bytes())
+    res.body = try owned(alloc, f.body.bytes())
+
+    if f.url.len() > 0 { res.url = try owned(alloc, f.url.bytes()) }
+
+    if f.headers.len() > 0 { res.headers_raw = try owned(alloc, f.headers.bytes()) }
+
+    return res
+}
+
+fn owned(alloc: Allocator, b: []u8) AllocError![]mut u8 {
+    let out = try alloc.alloc(0 as u8, b.len)
+
+    std.mem.copy(out, b)
+
+    return out
+}

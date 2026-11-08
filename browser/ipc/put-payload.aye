@@ -105,6 +105,38 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, id)
             try putBytes(out, answer)
         }
+
+        .Fetch { id, doc, nav, kind, credentials, mode, method, url, referrer, top, headers, content_type, has_body, body } => {
+            let numbers = [6]u32{id, doc, nav, kind, credentials, mode}
+            let texts = [6][]u8{method, url, referrer, top, headers, content_type}
+
+            for v in numbers { try putU32(out, v) }
+
+            for b in texts { try putBytes(out, b) }
+
+            try putU32(out, has_body)
+            try putBytes(out, body)
+        }
+
+        .FetchHead { id, doc, status, tainted, mime, charset, url, headers } => {
+            let numbers = [4]u32{id, doc, status, tainted}
+            let texts = [4][]u8{mime, charset, url, headers}
+
+            for v in numbers { try putU32(out, v) }
+
+            for b in texts { try putBytes(out, b) }
+        }
+
+        .FetchBody { id, chunk } => {
+            try putU32(out, id)
+            try putBytes(out, chunk)
+        }
+
+        .FetchEnd { id } => try putU32(out, id)
+        .FetchFail { id, code } => {
+            try putU32(out, id)
+            try putU32(out, code)
+        }
     }
 }
 

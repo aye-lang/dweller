@@ -106,6 +106,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.answered = true
         }
 
+        .Fetch { .. } => {
+            if got.frame != slot.id { return "bad fetch" }
+
+            return answerFetch(tp, got.frame, got.message)
+        }
+
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 

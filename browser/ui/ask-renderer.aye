@@ -7,10 +7,15 @@ fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut te
 
     if mcp { flag = 1 }
 
-    tp.outbox.clear()
     try ipc.encode(&mut tp.outbox, 0, ipc.Message.Agent { id: id, mcp: flag, line: line })
 
     if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
+
+    tp.outbox.clear()
+    tp.agent_id = id
+    tp.agent_acts = true
+
+    defer tp.agent_id = 0
 
     var buf = @zeroed([65536]u8)
 
@@ -21,6 +26,20 @@ fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut te
 
         if got |g| {
             if !ipc.fromRenderer(g.message) { return "not from a renderer" }
+
+            if g.message is .Fetch {
+                let why = try answerFetch(tp, 0, g.message)
+
+                if why.len > 0 { return why }
+
+                ipc.consume(&mut tp.inbox, g.used)
+
+                if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
+
+                tp.outbox.clear()
+
+                continue
+            }
 
             if g.message is .AgentReply {
                 match g.message {

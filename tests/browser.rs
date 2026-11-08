@@ -8322,8 +8322,20 @@ const SIGN_IN: &str = "key:tab text:alice key:tab text:wonderland key:return fra
 /// directory `profile` when given (`DWELLER_PROFILE`, P4.50); its
 /// `--state` and `--text`.
 fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
+    login_window_with(url, events, profile, &[])
+}
+
+/// With `envs` (`DWELLER_PROCESS=tab`) the page loads in a renderer, so
+/// the script first waits for it, and after each Enter for the input to
+/// be handled and the navigation it started to load.
+fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&str, &str)]) -> String {
+    let waited = format!(
+        "renderer:loaded {}",
+        events.replace("key:return", "key:return renderer:input renderer:loaded")
+    );
+    let events = if envs.is_empty() { events } else { &waited };
     let mut c = dweller_command();
-    c.current_dir(root());
+    c.current_dir(root()).envs(envs.iter().copied());
     if let Some(p) = profile {
         c.env("DWELLER_PROFILE", p);
     }
@@ -8364,6 +8376,18 @@ fn profile(name: &str) -> PathBuf {
 /// P10.22) and popups (`window_login_popup`, P4.52).
 #[test]
 fn window_login() {
+    window_login_in(&[]);
+}
+
+/// Q2.4a: the same sign-in runs with `DWELLER_PROCESS=tab`, every load
+/// made by the browser's net for the renderer (its cookies, redirects,
+/// POSTs and 401s).
+#[test]
+fn window_login_in_renderer() {
+    window_login_in(&[("DWELLER_PROCESS", "tab")]);
+}
+
+fn window_login_in(envs: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -8380,7 +8404,7 @@ fn window_login() {
             "{what}: want {want:?}, not {not:?}, got:\n{got}"
         );
     };
-    let stranger = login_window(&account, "frame", None);
+    let stranger = login_window_with(&account, "frame", None, envs);
     has(
         &stranger,
         &[
@@ -8390,10 +8414,11 @@ fn window_login() {
         &["Signed in as"],
         "a stranger at /account",
     );
-    let wrong = login_window(
+    let wrong = login_window_with(
         &account,
         "key:tab text:alice key:tab text:queen key:return frame frame",
         None,
+        envs,
     );
     has(
         &wrong,
@@ -8401,19 +8426,22 @@ fn window_login() {
         &["Signed in as"],
         "a wrong password",
     );
-    let stale = login_window(&format!("{base}/login/stale.html"), SIGN_IN, None);
+    let stale = login_window_with(&format!("{base}/login/stale.html"), SIGN_IN, None, envs);
     has(
         &stale,
         &["bad CSRF token"],
         &["Signed in as"],
         "a stale CSRF token",
     );
-    let signed_in = login_window(&account, SIGN_IN, None);
+    // Under the flag the window's history does not follow the renderer's
+    // navigations yet (Q2.6).
+    let history = if envs.is_empty() { "history 2 of 2\n" } else { "" };
+    let signed_in = login_window_with(&account, SIGN_IN, None, envs);
     has(
         &signed_in,
         &[
             &format!("url {account}\n"),
-            "history 2 of 2\n",
+            history,
             "Signed in as Alice Liddell",
             "tab cookie: yes",
         ],
@@ -8421,13 +8449,14 @@ fn window_login() {
         "signing in",
     );
     // Sign out (the button after the fields), then /account again.
-    let out = login_window(
+    let out = login_window_with(
         &account,
         &format!(
             "{SIGN_IN} key:tab key:return frame frame {}",
             go_to(&account)
         ),
         None,
+        envs,
     );
     has(
         &out,
@@ -8440,7 +8469,7 @@ fn window_login() {
     );
     // 127.0.0.1 -> localhost -> 127.0.0.1, a cookie at each hop: back on
     // 127.0.0.1 only its own cookie comes.
-    let sso = login_window(&format!("{base}/sso/start"), "frame", None);
+    let sso = login_window_with(&format!("{base}/sso/start"), "frame", None, envs);
     has(
         &sso,
         &[
@@ -8453,17 +8482,18 @@ fn window_login() {
     // HTTP Basic: the 401 page without credentials, 200 with URL
     // userinfo (libcurl sends it). The sheet and the cache are P10.22's.
     let basic = format!("{base}/basic");
-    let refused = login_window(&basic, "frame", None);
+    let refused = login_window_with(&basic, "frame", None, envs);
     has(
         &refused,
         &["401: sign in to realm r"],
         &["signed in as alice"],
         "/basic without credentials",
     );
-    let userinfo = login_window(
+    let userinfo = login_window_with(
         &basic.replace("http://", "http://alice:wonderland@"),
         "frame",
         None,
+        envs,
     );
     has(
         &userinfo,
@@ -8472,10 +8502,11 @@ fn window_login() {
         "/basic with URL userinfo",
     );
     // localStorage between pages of one run.
-    let storage = login_window(
+    let storage = login_window_with(
         &format!("{base}/login/store.html"),
         &format!("frame {}", go_to(&format!("{base}/login/read.html"))),
         None,
+        envs,
     );
     has(
         &storage,
@@ -10259,6 +10290,55 @@ fn window_renderer_lifecycle() {
     let (_, state, err) = run("", &[]);
     assert!(err.is_empty(), "{err}");
     assert!(!state.contains("renderer "), "{state}");
+}
+
+/// Q2.4a: with `DWELLER_PROCESS=tab` the renderer's loads go through the
+/// browser's net, which runs CORS and ORB for the initiator it knows: a
+/// two-origin page shows the same text as in the window's own process.
+/// A renderer that names a document the browser never gave it as a
+/// request's initiator is killed (`bad message: bad fetch`).
+#[test]
+fn window_renderer_net() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+    for page in ["net/cors.html", "net/crossorigin.html"] {
+        let href = format!("{}/{page}", srv.base);
+        let page_only = |got: String| -> String {
+            got.lines()
+                .filter(|l| !l.starts_with("renderer"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let own = page_only(login_window_with(&href, "frame", None, &[]));
+        let renderer = page_only(login_window_with(&href, "frame", None, &tab));
+        assert!(own.contains("fetch same origin: basic status 200 body true") || own.contains("crossorigin"), "{page}: {own}");
+        assert_eq!(renderer, own, "{page}");
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TEST_EVIL", "initiator")
+        .args([
+            &format!("{}/net/cors.html", srv.base),
+            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
+        ])
+        .output()
+        .unwrap();
+    let state = text(&out.stdout);
+    let line = state
+        .lines()
+        .find(|l| l.starts_with("renderer "))
+        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+    let r: Vec<&str> = line.splitn(4, ' ').collect();
+    assert_eq!(&r[2..], ["gone", "bad fetch"], "{state}");
+    assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]));
 }
 
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
