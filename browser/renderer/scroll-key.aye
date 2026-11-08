@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+let LINE_STEP: f64 = 40.0
+
+// blink: core/input/keyboard_event_manager.cc (DefaultArrowEventHandler)
+fn scrollKey(r: *mut TabRenderer, key: []u8, shift: bool) AllocError!void {
+    let view = r.height as f64 / r.scale
+    let space = text.eql(key, " ")
+    var dx = 0.0
+    var dy = 0.0
+
+    if text.eql(key, "ArrowDown") {
+        dy = LINE_STEP
+    } else if text.eql(key, "ArrowUp") {
+        dy = -LINE_STEP
+    } else if text.eql(key, "ArrowRight") {
+        dx = LINE_STEP
+    } else if text.eql(key, "ArrowLeft") {
+        dx = -LINE_STEP
+    } else if text.eql(key, "PageDown") || (space && !shift) {
+        dy = view - LINE_STEP
+    } else if text.eql(key, "PageUp") || (space && shift) {
+        dy = LINE_STEP - view
+    } else if text.eql(key, "Home") {
+        dy = -r.max_y
+    } else if text.eql(key, "End") {
+        dy = r.max_y
+    }
+
+    try scrollPage(r, dx, dy)
+}

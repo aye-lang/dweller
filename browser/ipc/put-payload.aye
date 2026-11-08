@@ -32,5 +32,43 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .FrameAck { buffer } => try putU32(out, buffer)
+        .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
+            try putU32(out, seq)
+            try putU32(out, kind)
+            try putF64(out, x)
+            try putF64(out, y)
+            try putF64(out, mx)
+            try putF64(out, my)
+            try putU32(out, button)
+            try putU32(out, buttons)
+            try putU32(out, mods)
+            try putU32(out, clicks)
+        }
+
+        .Wheel { seq, x, y, dx, dy, precise } => {
+            try putU32(out, seq)
+            try putF64(out, x)
+            try putF64(out, y)
+            try putF64(out, dx)
+            try putF64(out, dy)
+            try putU32(out, precise)
+        }
+
+        .Key { seq, down, key, code, repeat, location, mods } => {
+            try putU32(out, seq)
+            try putU32(out, down)
+            try putBytes(out, key)
+            try putBytes(out, code)
+            try putU32(out, repeat)
+            try putU32(out, location)
+            try putU32(out, mods)
+        }
+
+        .Text { seq, typed } => {
+            try putU32(out, seq)
+            try putBytes(out, typed)
+        }
+
+        .InputAck { seq } => try putU32(out, seq)
     }
 }

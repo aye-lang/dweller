@@ -9815,3 +9815,68 @@ fn window_renderer_frames() {
         golden.display()
     );
 }
+
+#[test]
+fn window_renderer_input() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run_page = |page: &str, png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "60", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let page = "browser/tests/ui/renderer_input.html";
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| run_page(page, png, events, envs);
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let scroll = |state: &str| state.lines().find(|l| l.starts_with("scroll ")).unwrap_or("").to_string();
+    let still = scratch().join("renderer_input_still.png");
+    let golden = scratch().join("renderer_input_in_process.png");
+    let shot = scratch().join("renderer_input_tab.png");
+    let scroller = "browser/tests/ui/scroller.html";
+    // The in-process window draws a caret over the field; the renderer draws none yet (Q2.3c).
+    let cases = [
+        ("click", page, "click:30,60", 0),
+        ("typing", page, "click:30,112 text:hello", 2),
+        ("wheel", page, "wheel:-3", 0),
+        ("inner scroller", scroller, "move:50,100 wheel:-1", 0),
+    ];
+    for (what, page, events, caret) in cases {
+        let (_, err) = run_page(page, &still, "renderer:loaded renderer:frame", &tab);
+        assert!(err.is_empty(), "{err}");
+        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[]);
+        assert!(err.is_empty(), "{err}");
+        let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
+        assert!(err.is_empty(), "{err}");
+        assert!(state.contains("\nrenderer-frame "), "{state}");
+        assert_eq!(scroll(&state), "scroll 0", "{what}: the window scrolled its own copy\n{state}");
+        assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
+        assert!(!state.contains("value hello"), "{what}: the window typed into its own copy\n{state}");
+        let (w, _, a) = png_rgba(&std::fs::read(&shot).unwrap());
+        let (_, _, b) = png_rgba(&std::fs::read(&golden).unwrap());
+        let columns: std::collections::BTreeSet<usize> =
+            (0..a.len() / 4).filter(|i| a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]).map(|i| i % w).collect();
+        assert!(
+            columns.len() <= caret,
+            "{what}: the renderer's frame {} differs from the in-process window {} in columns {columns:?}\n{in_process}",
+            shot.display(),
+            golden.display()
+        );
+    }
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "ack")];
+    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:30,60 renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone unexpected input_ack"), "{state}");
+    assert_eq!(err, format!("error: bad message: unexpected input_ack {pid}\n"));
+}

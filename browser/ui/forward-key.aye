@@ -1,0 +1,28 @@
+import ipc
+import std.mem.AllocError
+
+fn forwardKey(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool {
+    let ke = &ev.key
+    let sym = ke.keysym.sym
+    let mods = ke.keysym.mods
+    let down = ev.kind == SDL_KEYDOWN
+    var sc = ke.keysym.scancode
+
+    if (mods & (KMOD_GUI | KMOD_CTRL)) != 0 || (sym == SDLK_ESCAPE && ui.finding) { return false }
+
+    if sc == 0 {
+        sc = scancodeOfSym(sym)
+    }
+
+    if down {
+        ui.swallow = false
+    }
+
+    let key = domKey(sym, sc, (mods & KMOD_SHIFT) != 0)
+    let m = ipc.Message.Key { seq: tp.seq + 1, down: down as u32, key: key, code: domCode(sc), repeat: (ke.repeat != 0) as u32, location: keyLocation(sc) as u32, mods: modBits(mods) as u32 }
+
+    tp.seq += 1
+    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, m)
+
+    return true
+}

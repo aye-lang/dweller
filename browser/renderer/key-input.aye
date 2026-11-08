@@ -1,0 +1,44 @@
+import engine
+import std.mem.AllocError
+import std.text
+import ui.pageview
+
+fn keyInput(r: *mut TabRenderer, down: bool, key: []u8, code: []u8, repeat: u32, location: u32, mods: u32) AllocError!void {
+    let p = r.page orelse return
+    var kind: []u8 = "keyup"
+    var go_on = true
+
+    if down {
+        kind = "keydown"
+        r.swallow = false
+    }
+
+    var b = text.Builder.init(r.alloc)
+    defer b.deinit()
+
+    try b.append(key)
+    try b.appendByte('\n')
+    try b.append(code)
+    try b.appendByte('\n')
+    try b.appendInt(repeat as i64)
+    try b.appendByte('\n')
+    try b.appendInt(location as i64)
+    try b.appendByte('\n')
+    try b.appendInt(mods as i64)
+
+    if key.len > 0 && engine.hasScripts(p) {
+        if pageview.keyTarget(p) |el| { go_on = try engine.dispatchEvent(p, el, kind, b.bytes()) }
+    }
+
+    if !down { return }
+
+    if !go_on {
+        r.swallow = true
+
+        return
+    }
+
+    if try fieldKey(p, key, (mods & 1) != 0) { return }
+
+    try scrollKey(r, key, (mods & 1) != 0)
+}

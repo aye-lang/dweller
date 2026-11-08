@@ -19,7 +19,18 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.loading = false
         }
 
-        .Frame { buffer, width, height, damage, .. } => return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+            if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
+
+            return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+        }
+
+        .InputAck { seq } => {
+            if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
+
+            tp.acked = seq
+        }
+
         _ => {}
     }
 

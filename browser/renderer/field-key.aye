@@ -1,0 +1,31 @@
+import dom
+import engine
+import std.mem.AllocError
+import std.text
+
+let MOVE_KEYS = [6][]u8{"ArrowLeft", "ArrowRight", "Home", "End", "ArrowUp", "ArrowDown"}
+let MOVES = [6]dom.Motion{dom.Motion.Left, dom.Motion.Right, dom.Motion.Home, dom.Motion.End, dom.Motion.Up, dom.Motion.Down}
+
+fn fieldKey(p: *mut engine.Page, key: []u8, shift: bool) AllocError!bool {
+    let f = p.doc.controls.focus orelse return false
+
+    if !dom.isTextField(&p.doc, f) { return false }
+
+    let before = engine.fieldInput(p, f)
+
+    if text.eql(key, "Backspace") {
+        try dom.deleteBackward(&mut p.doc, f)
+        try engine.dispatchEvent(p, f, "input", "")
+    } else if text.eql(key, "Delete") {
+        try dom.deleteForward(&mut p.doc, f)
+        try engine.dispatchEvent(p, f, "input", "")
+    }
+
+    for i, k in MOVE_KEYS {
+        if text.eql(key, k) { try dom.moveCaret(&mut p.doc, f, MOVES[i], shift) }
+    }
+
+    try engine.noteFieldEdit(p, f, before)
+
+    return true
+}

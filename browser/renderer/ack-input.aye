@@ -1,0 +1,16 @@
+import ipc
+import std
+import std.text
+
+fn ackInput(r: *mut TabRenderer) !void {
+    if r.seq == r.acked { return }
+
+    var seq = r.seq
+
+    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "ack") {
+        seq += 1
+    }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.InputAck { seq: seq })
+    r.acked = r.seq
+}
