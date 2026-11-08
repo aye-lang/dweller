@@ -717,6 +717,8 @@ fn setUp(s: *mut Script) JsError!void {
     try installAudio(&mut s.it)
     try s.it.runScript(AUDIO_PRELUDE)
     try installWorkers(&mut s.it)
+    s.it.module_loader = pageModuleResponse
+    s.it.module_prefetch = pagePrefetchModules
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
@@ -1004,6 +1006,9 @@ fn scriptHrefsOf(p: *mut Page, els: []NodeId, out: *mut text.Builder) AllocError
         if p.doc.attr(el, "src") orelse p.doc.attr(el, "href") |src| {
             if p.resolve(p.alloc, src) |target| {
                 defer target.deinit(p.alloc)
+                if (isModuleScript(p, el) || !p.doc.isElement(el, "script")) && !sameOriginUrl(&originPage(p).url, &target) {
+                    continue
+                }
                 try out.append(target.withoutFragment())
                 try out.appendByte('\n')
             } else |e| {
@@ -1046,7 +1051,9 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
         return
     }
     if isModuleScript(p, el) {
-        return runModuleElement(s, el)
+        _ = try runModuleElement(s, el)
+
+        return
     }
     if isScriptType(p, el, "importmap") {
         return addImportMap(s, el)
@@ -1074,41 +1081,6 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
     defer b.deinit()
     try p.doc.textContent(el, &mut b)
     return runSourceOf(s, el, b.bytes())
-}
-
-// A module script: its graph is fetched, linked and evaluated (deferred,
-// in document order with `defer` scripts). An error before evaluation is
-// reported as uncaught; the loader reports a failed evaluation.
-fn runModuleElement(s: *mut Script, el: NodeId) AllocError!void {
-    let p = s.page
-    let began = perf.start()
-    let source = p.doc.attr(el, "src") orelse "inline module"
-    defer perf.end("script", began, source)
-    s.current = null
-    var b = text.Builder.init(s.alloc)
-    defer b.deinit()
-    var base = try p.currentBase(s.alloc)
-    defer base.deinit(s.alloc)
-    enter(s)
-    if p.doc.attr(el, "src") |src| {
-        let target = p.resolve(s.alloc, src) catch |e| {
-            leave(s)
-            return addConsole(s, "[error] Failed to load module script: ", src)
-        }
-        defer target.deinit(s.alloc)
-        js.runModuleScript(&mut s.it, target.href, "", base.href) catch |e| {
-            leave(s)
-            return uncaught(s, e)
-        }
-    } else {
-        try p.doc.textContent(el, &mut b)
-        js.runModuleScript(&mut s.it, null, b.bytes(), base.href) catch |e| {
-            leave(s)
-            return uncaught(s, e)
-        }
-    }
-    leave(s)
-    try runMicrotasks(s)
 }
 
 // `<script type="importmap">`: its JSON goes to the module loader.
@@ -1684,6 +1656,10 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
+
+    if s.page.images |cache| {
+        try settleCanvases(cache)
+    }
 
     if !s.real {
         try runAnimationHook(s)

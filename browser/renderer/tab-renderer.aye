@@ -1,3 +1,4 @@
+import agent
 import dom.NodeId
 import engine
 import font
@@ -22,6 +23,11 @@ struct TabRenderer {
     marks: List(Mark)
     title: text.Builder
     href: text.Builder
+    target: text.Builder
+    inbox: text.Builder
+    current: text.Builder
+    docs: text.Builder
+    fetches: u32 = 0
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
@@ -53,6 +59,9 @@ struct TabRenderer {
     focused: bool = false
     caret_on: bool = true
     blink_at: u64 = 0
+    cursor: u32 = 0
+    busy: bool = false
+    session: ?*mut agent.Session = null
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -76,6 +85,13 @@ struct TabRenderer {
     pub fn deinit(self: *mut Self) {
         if self.page |p| { p.destroy() }
 
+        if self.session |s| {
+            if self.width > 0 { s.tab.page = null }
+
+            agent.freeSession(s)
+            self.alloc.destroy(s)
+        }
+
         dropBuffers(self)
 
         for fd in self.fds.items() { close(fd) }
@@ -85,5 +101,9 @@ struct TabRenderer {
         self.marks.deinit()
         self.title.deinit()
         self.href.deinit()
+        self.target.deinit()
+        self.inbox.deinit()
+        self.current.deinit()
+        self.docs.deinit()
     }
 }

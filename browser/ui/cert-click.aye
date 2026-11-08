@@ -1,4 +1,3 @@
-import net
 import std.mem.AllocError
 
 fn certClick(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
@@ -9,20 +8,8 @@ fn certClick(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
         return false
     }
 
-    if !inRect(bar.button, x, y) {
-        return true
-    }
-
-    ui.dirty = true
-
-    if !ui.cert_advanced {
-        ui.cert_advanced = true
-
-        return true
-    }
-
-    if try net.allowCert(p.url.host, p.cert.?) {
-        try ui.reload()
+    if inRect(bar.button, x, y) {
+        try pressCert(ui, p)
     }
 
     return true

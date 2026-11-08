@@ -1236,12 +1236,17 @@ impl Drop for Server {
 }
 
 fn server() -> Option<Server> {
+    server_on("127.0.0.1")
+}
+
+fn server_on(host: &str) -> Option<Server> {
     use std::io::BufRead;
     let tests = root().join("browser").join("tests");
     let mut child = Command::new("python3")
         .arg("-I")
         .arg(tests.join("server.py"))
         .arg(&tests)
+        .arg(host)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -1251,9 +1256,14 @@ fn server() -> Option<Server> {
         .read_line(&mut line)
         .ok()?;
     let port: u16 = line.trim().parse().ok()?;
+    let shown = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
     Some(Server {
         child,
-        base: format!("http://127.0.0.1:{port}"),
+        base: format!("http://{shown}:{port}"),
     })
 }
 
@@ -2701,6 +2711,47 @@ fn agent_fixtures() {
 /// must be `X.out` (`X.mcp.out`).
 #[test]
 fn agent_sessions() {
+    agent_sessions_with(&[]);
+}
+
+/// Q2.3b: with `DWELLER_PROCESS=tab` the agent's commands are answered by
+/// a renderer process, with the same expected output.
+#[test]
+fn agent_sessions_in_renderer() {
+    agent_sessions_with(&[("DWELLER_PROCESS", "tab")]);
+}
+
+/// Q2.3b: a renderer that answers a request id it was not sent is killed.
+#[test]
+fn agent_sessions_bad_reply() {
+    use std::io::Write;
+    let mut child = dweller_command()
+        .current_dir(root())
+        .arg("agent")
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TEST_EVIL", "agent")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"id\":1,\"cmd\":\"snapshot\"}\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(!out.status.success(), "the relay goes on after a bad answer");
+    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("bad message: bad agent_reply "),
+        "no bad agent_reply: {}",
+        text(&out.stderr)
+    );
+}
+
+fn agent_sessions_with(env: &[(&str, &str)]) {
     use std::io::Write;
     let dir = root()
         .join("browser")
@@ -2729,6 +2780,7 @@ fn agent_sessions() {
         let mut child = dweller_command()
             .current_dir(root())
             .arg(mode)
+            .envs(env.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -6735,7 +6787,7 @@ fn tls_errors() {
         .split_whitespace()
         .map(|p| p.parse().unwrap())
         .collect();
-    assert_eq!(ports.len(), 5, "{line}");
+    assert_eq!(ports.len(), 6, "{line}");
     let with_ca = |args: &[&str]| {
         dweller_command()
             .current_dir(root())
@@ -6842,7 +6894,10 @@ fn tls_errors() {
 /// host, and a reload does not ask again; another process with another
 /// profile asks again. A page script that fetches the bad host gets no
 /// bar. An HSTS host with a bad certificate has no bar: clicks where
-/// the button would be change nothing.
+/// the button would be change nothing. Q3.4c: Tab and Enter reach the
+/// bar; the exception is for the accepted key (the switching server
+/// changes its certificate after `/switch`); an HSTS header over a
+/// bypassed connection is not stored.
 #[test]
 fn cert_bypass() {
     use std::io::BufRead;
@@ -6909,6 +6964,24 @@ fn cert_bypass() {
         "{shown}\n{err}"
     );
 
+    let (shown, err) = window(&first, &page, "frame key:tab key:return frame");
+    assert!(shown.contains("cert Proceed to 127.0.0.1 (unsafe)\n"), "Tab and Enter reach the bar: {shown}\n{err}");
+    let (shown, err) = window(&first, &page, "frame key:tab key:return key:return loaded");
+    assert!(shown.contains("fetch: status 200\n") && !shown.contains("cert "), "{shown}\n{err}");
+
+    let switching = format!("https://127.0.0.1:{}/", ports[5]);
+    let switched = format!("frame {button} {button} loaded key:cmd+l text:{switching}switch key:return loaded key:cmd+r loaded");
+    let (shown, err) = window(&first, &switching, &switched);
+    assert!(
+        shown.contains("Your connection is not private") && shown.contains("cert Advanced\n"),
+        "an exception is for the key that was accepted: {shown}\n{err}"
+    );
+    let (shown, err) = window(&first, &switching, &format!("{switched} {button} {button} loaded"));
+    assert!(
+        shown.contains("secure page") && !shown.contains("cert "),
+        "proceeding past the other key too: {shown}\n{err}"
+    );
+
     for (port, why) in [(ports[1], "has expired"), (ports[3], "is for another host")] {
         let other = format!("https://127.0.0.1:{port}/");
         let events = format!("frame {button} {button} loaded key:cmd+l text:{other} key:return loaded");
@@ -6938,18 +7011,19 @@ fn cert_bypass() {
     let site_url = format!("https://site.test:{}/", site.tls);
     let out = site.run(Some(&hsts), &["dump", "--text", &format!("{site_url}hsts")]);
     assert_eq!(text(&out.stdout), "https page\n", "{}", text(&out.stderr));
-    let untrusted_site = |profile: &Path| {
+    let untrusted_site = |profile: &Path, page: &str, events: &str| {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .env("DWELLER_RESOLVE", format!("site.test:{}:127.0.0.1", site.tls))
             .env("DWELLER_PROFILE", profile)
-            .args([&site_url, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", &format!("frame {button} {button} frame")])
+            .args([page, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", events])
             .output()
             .unwrap();
         text(&out.stdout)
     };
-    let shown = untrusted_site(&hsts);
+    let proceed = format!("frame {button} {button} loaded");
+    let shown = untrusted_site(&hsts, &site_url, &proceed);
     assert!(
         shown.contains("Your connection is not private") && !shown.contains("cert "),
         "no bypass on an HSTS host: {shown}"
@@ -6957,10 +7031,18 @@ fn cert_bypass() {
     let fresh = scratch().join("cert-bypass-fresh");
     let _ = std::fs::remove_dir_all(&fresh);
     std::fs::create_dir_all(&fresh).unwrap();
-    let shown = untrusted_site(&fresh);
+    let shown = untrusted_site(&fresh, &format!("{site_url}hsts"), &proceed);
     assert!(
         shown.contains("https page") && !shown.contains("not private"),
         "the same clicks proceed on the host before its HSTS header: {shown}"
+    );
+    let saved = std::fs::read_to_string(fresh.join("hsts")).unwrap_or_default();
+    assert!(!saved.contains("site.test"), "no HSTS from a bypassed connection: {saved}");
+    let insecure = format!("http://site.test:{}/", site.tls);
+    let shown = untrusted_site(&fresh, &format!("{site_url}hsts"), &format!("{proceed} key:cmd+l text:{insecure} key:return loaded"));
+    assert!(
+        shown.contains("Cannot load this page") && !shown.contains("not private"),
+        "http to the host is not upgraded after a bypassed HSTS header: {shown}"
     );
 }
 
@@ -7331,6 +7413,117 @@ fn cors_in_net() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Q3.11: a cross-origin redirect drops `Authorization` (a script's,
+/// fetch and sync XHR) and the URL's credentials; a same-origin one
+/// keeps them.
+#[test]
+fn redirect_credentials() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/redirect-credentials.html", srv.base),
+    ]);
+    assert_eq!(
+        text(&out.stdout).trim_end(),
+        "fetch same-origin: authorization true\n\
+         fetch cross-origin: authorization false\n\
+         sync xhr cross-origin: authorization false",
+        "{}",
+        text(&out.stderr)
+    );
+    let userinfo = srv.base.replace("http://", "http://u:p@");
+    let other = srv.base.replace("127.0.0.1", "localhost");
+    let direct = run(&["dump", "--text", &format!("{userinfo}/fetch-echo")]);
+    assert!(text(&direct.stdout).contains("\"authorization\""));
+    let moved = run(&[
+        "dump",
+        "--text",
+        &format!("{userinfo}/fetch-redirect-to?{other}/fetch-echo"),
+    ]);
+    assert!(text(&moved.stdout).contains("/fetch-echo"), "{}", text(&moved.stdout));
+    assert!(!text(&moved.stdout).contains("\"authorization\""), "{}", text(&moved.stdout));
+}
+
+/// Q3.11: window.name survives a same-origin navigation and is cleared
+/// on a cross-origin one (no opener); a page cannot navigate the top
+/// level to `data:` (it stays, with a console error), a `data:` iframe
+/// loads, and a `data:` URL the person types loads.
+#[test]
+fn window_name_and_top_data() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let other = base.replace("127.0.0.1", "localhost");
+    let window = |url: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_CONSOLE", "1")
+            .args([
+                url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "200",
+                "--until-idle", "--state", "--text",
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{url}: {}\n{}", out.status, text(&out.stderr));
+        format!("{}{}", text(&out.stdout), text(&out.stderr))
+    };
+    let same = window(&format!("{base}/net/name-set.html?/net/name-show.html"));
+    assert!(same.contains("name \"secret\""), "{same}");
+    let cross = window(&format!("{base}/net/name-set.html?{other}/net/name-show.html"));
+    assert!(cross.contains("name \"\""), "{cross}");
+    let stayed = window(&format!("{base}/net/data-nav.html"));
+    assert!(
+        stayed.contains(&format!("url {base}/net/data-nav.html\n"))
+            && stayed.contains("history 1 of 1\n")
+            && stayed.contains("stayed, frame data loaded")
+            && stayed.contains("[error] Not allowed to navigate top frame to data URL: data:text/html,"),
+        "{stayed}"
+    );
+    let typed = window("data:text/html,<p>typed data</p>");
+    assert!(typed.contains("typed data"), "{typed}");
+}
+
+/// Q3.11: a public page (`DWELLER_PUBLIC_ADDRESS` makes 127.0.0.1 public)
+/// cannot fetch or XHR a loopback address (`[::1]`); a loopback page can.
+#[test]
+fn private_network_access() {
+    let (Some(page), Some(local)) = (server(), server_on("::1")) else {
+        println!("skipped: cannot start python3 for the test servers");
+        return;
+    };
+    let href = format!("{}/net/pna.html?{}", page.base, local.base);
+    let public = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PUBLIC_ADDRESS", "127.0.0.1")
+        .args(["dump", "--text", "--js", &href])
+        .output()
+        .unwrap();
+    assert_eq!(
+        text(&public.stdout).trim_end(),
+        "fetch: TypeError\nsync xhr: NetworkError",
+        "{}",
+        text(&public.stderr)
+    );
+    let loopback = run(&["dump", "--text", "--js", &href]);
+    assert_eq!(
+        text(&loopback.stdout).trim_end(),
+        "fetch: 200\nsync xhr: 200",
+        "{}",
+        text(&loopback.stderr)
+    );
+}
+
 /// CORS preflight in net (Q3.2b): a cross-origin PUT with `x-test` is
 /// preceded by one OPTIONS, the same request within Max-Age by none; a
 /// denied preflight leaves the PUT unsent; a redirect to another URL is
@@ -7390,6 +7583,36 @@ fn crossorigin_orb() {
         &root().join("browser/tests/net/crossorigin.txt"),
         &text(&out.stdout),
         "crossorigin_orb",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Module scripts are fetched in CORS mode (Q3.3b): a cross-origin module,
+/// or a module it imports, without ACAO is a load error (an error event,
+/// a rejected import()); with ACAO it runs, as a same-origin graph does.
+/// Credentials are same-origin by default and sent cross-origin only for
+/// `crossorigin=use-credentials`, which also needs ACAC. The other origin
+/// is a second server on 127.0.0.1: same-site, so its cookies are sent.
+/// (`browser/tests/net/module-cors.html` must print `module-cors.txt`.)
+#[test]
+fn module_cors() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/module-cors.html?other={}", srv.base, other.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/module-cors.txt"),
+        &text(&out.stdout),
+        "module_cors",
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -8312,8 +8535,20 @@ const SIGN_IN: &str = "key:tab text:alice key:tab text:wonderland key:return fra
 /// directory `profile` when given (`DWELLER_PROFILE`, P4.50); its
 /// `--state` and `--text`.
 fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
+    login_window_with(url, events, profile, &[])
+}
+
+/// With `envs` (`DWELLER_PROCESS=tab`) the page loads in a renderer, so
+/// the script first waits for it, and after each Enter for the input to
+/// be handled and the navigation it started to load.
+fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&str, &str)]) -> String {
+    let waited = format!(
+        "renderer:loaded {}",
+        events.replace("key:return", "key:return renderer:input renderer:loaded")
+    );
+    let events = if envs.is_empty() { events } else { &waited };
     let mut c = dweller_command();
-    c.current_dir(root());
+    c.current_dir(root()).envs(envs.iter().copied());
     if let Some(p) = profile {
         c.env("DWELLER_PROFILE", p);
     }
@@ -8354,6 +8589,18 @@ fn profile(name: &str) -> PathBuf {
 /// P10.22) and popups (`window_login_popup`, P4.52).
 #[test]
 fn window_login() {
+    window_login_in(&[]);
+}
+
+/// Q2.4a: the same sign-in runs with `DWELLER_PROCESS=tab`, every load
+/// made by the browser's net for the renderer (its cookies, redirects,
+/// POSTs and 401s).
+#[test]
+fn window_login_in_renderer() {
+    window_login_in(&[("DWELLER_PROCESS", "tab")]);
+}
+
+fn window_login_in(envs: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -8364,13 +8611,19 @@ fn window_login() {
     };
     let base = &srv.base;
     let account = format!("{base}/account");
+    // Under the flag the committed URL is the address line's (`url` is
+    // the window's own page).
     let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+        let committed = |w: &&str| match w.strip_prefix("url ") {
+            Some(rest) if !envs.is_empty() => got.contains(&format!("address {rest}")),
+            _ => got.contains(w),
+        };
         assert!(
-            want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+            want.iter().all(|w| committed(w)) && !not.iter().any(|n| got.contains(n)),
             "{what}: want {want:?}, not {not:?}, got:\n{got}"
         );
     };
-    let stranger = login_window(&account, "frame", None);
+    let stranger = login_window_with(&account, "frame", None, envs);
     has(
         &stranger,
         &[
@@ -8380,10 +8633,11 @@ fn window_login() {
         &["Signed in as"],
         "a stranger at /account",
     );
-    let wrong = login_window(
+    let wrong = login_window_with(
         &account,
         "key:tab text:alice key:tab text:queen key:return frame frame",
         None,
+        envs,
     );
     has(
         &wrong,
@@ -8391,19 +8645,22 @@ fn window_login() {
         &["Signed in as"],
         "a wrong password",
     );
-    let stale = login_window(&format!("{base}/login/stale.html"), SIGN_IN, None);
+    let stale = login_window_with(&format!("{base}/login/stale.html"), SIGN_IN, None, envs);
     has(
         &stale,
         &["bad CSRF token"],
         &["Signed in as"],
         "a stale CSRF token",
     );
-    let signed_in = login_window(&account, SIGN_IN, None);
+    // Under the flag the window's history does not follow the renderer's
+    // navigations yet (Q2.6).
+    let history = if envs.is_empty() { "history 2 of 2\n" } else { "" };
+    let signed_in = login_window_with(&account, SIGN_IN, None, envs);
     has(
         &signed_in,
         &[
             &format!("url {account}\n"),
-            "history 2 of 2\n",
+            history,
             "Signed in as Alice Liddell",
             "tab cookie: yes",
         ],
@@ -8411,13 +8668,14 @@ fn window_login() {
         "signing in",
     );
     // Sign out (the button after the fields), then /account again.
-    let out = login_window(
+    let out = login_window_with(
         &account,
         &format!(
             "{SIGN_IN} key:tab key:return frame frame {}",
             go_to(&account)
         ),
         None,
+        envs,
     );
     has(
         &out,
@@ -8430,7 +8688,7 @@ fn window_login() {
     );
     // 127.0.0.1 -> localhost -> 127.0.0.1, a cookie at each hop: back on
     // 127.0.0.1 only its own cookie comes.
-    let sso = login_window(&format!("{base}/sso/start"), "frame", None);
+    let sso = login_window_with(&format!("{base}/sso/start"), "frame", None, envs);
     has(
         &sso,
         &[
@@ -8443,17 +8701,18 @@ fn window_login() {
     // HTTP Basic: the 401 page without credentials, 200 with URL
     // userinfo (libcurl sends it). The sheet and the cache are P10.22's.
     let basic = format!("{base}/basic");
-    let refused = login_window(&basic, "frame", None);
+    let refused = login_window_with(&basic, "frame", None, envs);
     has(
         &refused,
         &["401: sign in to realm r"],
         &["signed in as alice"],
         "/basic without credentials",
     );
-    let userinfo = login_window(
+    let userinfo = login_window_with(
         &basic.replace("http://", "http://alice:wonderland@"),
         "frame",
         None,
+        envs,
     );
     has(
         &userinfo,
@@ -8462,10 +8721,11 @@ fn window_login() {
         "/basic with URL userinfo",
     );
     // localStorage between pages of one run.
-    let storage = login_window(
+    let storage = login_window_with(
         &format!("{base}/login/store.html"),
         &format!("frame {}", go_to(&format!("{base}/login/read.html"))),
         None,
+        envs,
     );
     has(
         &storage,
@@ -10251,6 +10511,55 @@ fn window_renderer_lifecycle() {
     assert!(!state.contains("renderer "), "{state}");
 }
 
+/// Q2.4a: with `DWELLER_PROCESS=tab` the renderer's loads go through the
+/// browser's net, which runs CORS and ORB for the initiator it knows: a
+/// two-origin page shows the same text as in the window's own process.
+/// A renderer that names a document the browser never gave it as a
+/// request's initiator is killed (`bad message: bad fetch`).
+#[test]
+fn window_renderer_net() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+    for page in ["net/cors.html", "net/crossorigin.html"] {
+        let href = format!("{}/{page}", srv.base);
+        let page_only = |got: String| -> String {
+            got.lines()
+                .filter(|l| !l.starts_with("renderer"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let own = page_only(login_window_with(&href, "frame", None, &[]));
+        let renderer = page_only(login_window_with(&href, "frame", None, &tab));
+        assert!(own.contains("fetch same origin: basic status 200 body true") || own.contains("crossorigin"), "{page}: {own}");
+        assert_eq!(renderer, own, "{page}");
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TEST_EVIL", "initiator")
+        .args([
+            &format!("{}/net/cors.html", srv.base),
+            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
+        ])
+        .output()
+        .unwrap();
+    let state = text(&out.stdout);
+    let line = state
+        .lines()
+        .find(|l| l.starts_with("renderer "))
+        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+    let r: Vec<&str> = line.splitn(4, ' ').collect();
+    assert_eq!(&r[2..], ["gone", "bad fetch"], "{state}");
+    assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]));
+}
+
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
 /// renderer: the browser gives it two shared-memory buffers (`resize`
 /// with 2 fds), it paints the page into one and sends `frame`, and the
@@ -10545,4 +10854,112 @@ fn window_renderer_input_actions() {
     let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
     assert_eq!(err, format!("error: navigation refused: {secret}\n"));
     assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
+}
+
+/// Q2.3e: with `DWELLER_PROCESS=tab` the window keeps no copy of the
+/// page (`browser/tests/ui/renderer_status.html`): its image is fetched
+/// once, by the renderer. The renderer reports the hover link (status
+/// line) and the cursor shape, a task past 5 s ("The page is busy" until
+/// it ends), Tab past the last element (the address bar takes the focus),
+/// and the window's blur fires `blur` in the page. A cross-origin
+/// redirect commits in the renderer without a second fetch, and a chain
+/// of 25 redirects ends on an error page (20 is the limit).
+#[test]
+fn window_renderer_status() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let window = |page: &str, events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "2000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let hits = |path: &str| {
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        log.matches(&format!("GET {path} ")).count() + log.matches(&format!("GET {path}\n")).count()
+    };
+    let page = format!("{}/ui/renderer_status.html", srv.base);
+
+    let state = window(&page, "renderer:loaded renderer:frame move:30,60 renderer:input");
+    assert!(state.contains(&format!("\nstatus {}/ui/target.html\n", srv.base)), "{state}");
+    assert!(state.contains("\nrenderer-cursor pointer\n"), "{state}");
+    assert_eq!(hits("/log/renderer-status-nostore.png"), 1, "the window loaded its own copy of the page");
+
+    let state = window(&page, "renderer:loaded renderer:frame move:30,60 renderer:input move:30,102 renderer:input");
+    assert!(state.contains("\nstatus \n") && state.contains("\nrenderer-cursor text\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame window:blur frame frame move:300,300 renderer:input");
+    assert!(state.contains(" title Blurred\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame key:tab key:tab key:tab renderer:input");
+    assert!(state.contains("\nfocus page\n"), "{state}");
+    let state = window(&page, "renderer:loaded renderer:frame key:tab key:tab key:tab key:tab renderer:input frame frame");
+    assert!(state.contains("\nfocus address\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame click:30,145 renderer:busy");
+    assert!(state.contains("\nstatus The page is busy\n"), "{state}");
+    let state = window(&page, "renderer:loaded renderer:frame click:30,145 renderer:input frame");
+    assert!(state.contains(" title Ran\n") && state.contains("\nstatus \n"), "{state}");
+
+    let port = srv.base.rsplit(':').next().unwrap();
+    let landed = format!("http://localhost:{port}/log/renderer-hop-nostore.html");
+    let state = window(&format!("{}/samesite/go?to={landed}", srv.base), "renderer:loaded renderer:frame");
+    assert!(state.contains(&format!("\naddress {landed}\n")) && state.contains(" title Logged\n"), "{state}");
+    assert_eq!(hits("/log/renderer-hop-nostore.html"), 1, "the cross-origin redirect was fetched twice");
+
+    let state = window(&format!("{}/hops/20", srv.base), "renderer:loaded renderer:frame");
+    assert!(state.contains(" title Hops\n"), "{state}");
+    let state = window(&format!("{}/hops/25", srv.base), "renderer:loaded renderer:frame");
+    assert!(!state.contains(" title Hops\n") && state.contains("\nrenderer-frame "), "{state}");
+}
+
+/// Q2.3b: with `DWELLER_PROCESS=tab` a window's agent commands are
+/// answered by the tab's renderer, byte for byte as by the window
+/// itself; a renderer that answers a request id it was not sent is
+/// killed.
+#[test]
+fn window_renderer_agent() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let requests = [
+        "{\"id\":1,\"cmd\":\"navigate\",\"url\":\"browser/tests/agent/site/todo.html\"}",
+        "{\"id\":2,\"cmd\":\"type\",\"ref\":\"e2\",\"text\":\"Buy milk\",\"submit\":true}",
+        "{\"id\":3,\"cmd\":\"snapshot\"}",
+        "{\"id\":4,\"cmd\":\"eval\",\"expression\":\"document.title\"}",
+        "{\"id\":5,\"cmd\":\"click\",\"ref\":\"e4\"}",
+        "{\"id\":6,\"cmd\":\"read\"}",
+        "{\"id\":7,\"cmd\":\"tabs\"}",
+    ];
+    let session = |sock: &str, env: &[(&str, &str)]| -> (Vec<String>, String) {
+        let window = spaces_window_env(sock, &[], env);
+        let mut conn = AgentConn::open(sock);
+        let got: Vec<String> = requests.iter().map(|r| conn.ask(r).0).collect();
+        drop(conn);
+        let out = window.wait_with_output().unwrap();
+        (got, text(&out.stderr))
+    };
+    let (want, _) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
+    let (got, err) = session(&format!("target/sockets/q23b-tab-{}.sock", std::process::id()), &[("DWELLER_PROCESS", "tab")]);
+    assert!(want[0].contains("\"ok\":true"), "{}", want[0]);
+    assert_eq!(got, want, "{err}");
+    let (bad, err) = session(
+        &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
+        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "agent")],
+    );
+    assert!(err.contains("bad message: bad agent_reply "), "{err}");
+    assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
 }

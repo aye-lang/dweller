@@ -1,0 +1,36 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+let CURLOPT_CONNECT_ONLY: i32 = 141
+let CURLOPT_CERTINFO: i32 = 172
+let CURLINFO_CERTINFO: i32 = 4194338
+
+fn certPin(alloc: Allocator, at: *Url) AllocError!?[]mut u8 {
+    let curl = curl_easy_init() orelse return null
+    defer curl_easy_cleanup(curl)
+    var address = text.Builder.init(alloc)
+    defer address.deinit()
+
+    try address.append(at.withoutFragment())
+    try address.appendByte(0)
+    curl_easy_setopt(curl, CURLOPT_URL, address.bytes().ptr)
+    curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 1 as i64)
+    curl_easy_setopt(curl, CURLOPT_CERTINFO, 1 as i64)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0 as i64)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0 as i64)
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECT_TIMEOUT_MS)
+    applyResolve(alloc, curl)
+
+    var info: ?*CurlCertinfo = null
+
+    if curl_easy_perform(curl) != 0 || curl_easy_getinfo(curl, CURLINFO_CERTINFO, &mut info) != 0 {
+        return null
+    }
+
+    let certs = info orelse return null
+    let pem = leafPem(certs) orelse return null
+
+    return pinOf(alloc, pem)
+}

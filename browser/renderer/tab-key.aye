@@ -1,8 +1,10 @@
 import engine
-import std.mem.AllocError
+import ipc
 
 // chromium: third_party/blink/renderer/core/page/focus_controller.cc AdvanceFocus
-fn tabKey(r: *mut TabRenderer, p: *mut engine.Page, shift: bool) AllocError!void {
+fn tabKey(r: *mut TabRenderer, p: *mut engine.Page, shift: bool) !void {
+    if try atFocusEdge(p, !shift) { return send(r.alloc, r.conn, r.tab, ipc.Message.TakeFocus { reverse: shift as u32 }) }
+
     let next = try engine.nextFocus(p, !shift)
 
     try engine.keyFocus(p, next)

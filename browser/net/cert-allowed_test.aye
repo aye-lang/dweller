@@ -1,20 +1,48 @@
-test "a certificate exception is for its host and its kind of error only" {
+import url
+import std.text
+
+test "a certificate exception is for its host, its kind of error and its key only" {
     let a = @testAllocator()
     var certs = CertExceptions.init(a)
     defer certs.deinit()
 
-    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted)
-    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted)
+    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted, "sha256//A")
+    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted, "sha256//A")
 
     @expect(certs.list.len() == 1)
-    @expect(certAllowed(&certs, "127.0.0.1", CertKind.Untrusted))
-    @expect(!certAllowed(&certs, "127.0.0.1", CertKind.Expired))
-    @expect(!certAllowed(&certs, "127.0.0.2", CertKind.Untrusted))
+    @expect(certAllowed(&certs, "127.0.0.1", CertKind.Untrusted, "sha256//A"))
+    @expect(!certAllowed(&certs, "127.0.0.1", CertKind.Untrusted, "sha256//B"))
+    @expect(!certAllowed(&certs, "127.0.0.1", CertKind.Expired, "sha256//A"))
+    @expect(!certAllowed(&certs, "127.0.0.2", CertKind.Untrusted, "sha256//A"))
+}
+
+test "the pins of a host and kind, also accepted for the kind relaxed before" {
+    let a = @testAllocator()
+    var certs = CertExceptions.init(a)
+    defer certs.deinit()
+    var pins = text.Builder.init(a)
+    defer pins.deinit()
+
+    try addCert(&mut certs, "h", CertKind.Untrusted, "sha256//A")
+    try addCert(&mut certs, "h", CertKind.Untrusted, "sha256//B")
+    try addCert(&mut certs, "h", CertKind.WrongHost, "sha256//B")
+    try certPins(&certs, "h", CertKind.Untrusted, null, &mut pins)
+
+    @expectEqual("sha256//A;sha256//B", pins.bytes())
+
+    pins.clear()
+    try certPins(&certs, "h", CertKind.WrongHost, CertKind.Untrusted, &mut pins)
+
+    @expectEqual("sha256//B", pins.bytes())
 }
 
 test "no bypass on HSTS hosts" {
+    let a = @testAllocator()
+    var at = try url.parse(a, "https://github.com/")
+    defer at.deinit(a)
+
     @expect(!certBypassable("github.com"))
     @expect(!certBypassable("gist.github.com"))
     @expect(certBypassable("127.0.0.1"))
-    @expect(!(try allowCert("github.com", CertKind.Untrusted)))
+    @expect(!(try allowCert(&at, CertKind.Untrusted)))
 }

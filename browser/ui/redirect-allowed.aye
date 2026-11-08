@@ -1,0 +1,16 @@
+import std.mem.Allocator
+import std.text
+import url
+
+fn redirectAllowed(alloc: Allocator, committed: []u8, href: []u8) bool {
+    let from = url.parse(alloc, committed) catch return false
+    defer from.deinit(alloc)
+    let to = url.parse(alloc, href) catch return false
+    defer to.deinit(alloc)
+
+    return isHttp(from.scheme) && isHttp(to.scheme)
+}
+
+fn isHttp(scheme: []u8) bool {
+    return text.eql(scheme, "http") || text.eql(scheme, "https")
+}

@@ -1,0 +1,36 @@
+import agent
+import ipc
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, line: []u8) AllocError!?bool {
+    let cmd = agent.pageCommand(tmp, line) orelse return null
+
+    if agent.actsOnPage(cmd) && refusalOf(ui, conn, cmd).len > 0 { return null }
+
+    if slot.process == null { slot.process = try startTabProcess(ui.alloc, ui.painter.system == null) }
+
+    let tp = slot.process orelse return null
+
+    if tp.gone.len > 0 { return null }
+
+    let c = ui.agents.?.conns[conn].?
+
+    c.asked = true
+
+    if !tp.hello || tp.buffers.width == 0 || tp.agent_id != 0 || tp.answered { return false }
+
+    var flag: u32 = 0
+
+    if c.mode == 2 { flag = 1 }
+
+    tp.next_agent += 1
+    tp.agent_id = tp.next_agent
+    tp.agent_conn = conn
+    tp.agent_acts = agent.actsOnPage(cmd)
+    tp.answered = false
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Agent { id: tp.agent_id, mcp: flag, line: line })
+
+    return true
+}

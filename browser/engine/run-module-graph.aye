@@ -1,0 +1,25 @@
+import js
+import std.mem.AllocError
+
+fn runModuleGraph(s: *mut Script, href: ?[]u8, source: []u8, base: []u8, include: bool) AllocError!bool {
+    enter(s)
+
+    let graph = js.runModuleScript(&mut s.it, href, source, base, include) catch |e| {
+        leave(s)
+        try uncaught(s, e)
+
+        return true
+    }
+
+    leave(s)
+
+    if graph is .Null {
+        try addConsole(s, "[error] Failed to load module script: ", href orelse "inline module")
+
+        return false
+    }
+
+    try runMicrotasks(s)
+
+    return true
+}

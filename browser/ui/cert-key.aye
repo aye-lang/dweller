@@ -1,0 +1,24 @@
+import std.mem.AllocError
+
+fn certKey(ui: *mut Ui, sym: i32, cmd: bool) AllocError!bool {
+    let p = certPage(ui) orelse return false
+
+    if ui.focus != Focus.Page || cmd {
+        return false
+    }
+
+    if sym == SDLK_TAB {
+        ui.cert_focused = !ui.cert_focused
+        ui.dirty = true
+
+        return true
+    }
+
+    if !ui.cert_focused || (sym != SDLK_RETURN && sym != SDLK_KP_ENTER && sym != SDLK_SPACE) {
+        return false
+    }
+
+    try pressCert(ui, p)
+
+    return true
+}

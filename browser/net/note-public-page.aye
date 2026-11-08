@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn notePublicPage(page: []u8) AllocError!void {
+    let s = session orelse return
+
+    if publicPage(page) {
+        return
+    }
+
+    let owned = try dup(s.alloc, page)
+
+    s.public_pages.append(owned) catch |e| {
+        release(s.alloc, owned)
+
+        return e
+    }
+}

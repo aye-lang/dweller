@@ -1,0 +1,48 @@
+import ipc
+import net
+import std.mem.AllocError
+import url
+
+// chromium: services/network/url_loader.cc (request_initiator_origin_lock)
+fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .Fetch { id, doc, nav, kind, credentials, mode, method, url: href, referrer, top, headers, content_type, has_body, body } => {
+            if id != tp.fetches + 1 || nav > 1 || has_body > 1 || doc > docCount(tp) { return "bad fetch" }
+
+            tp.fetches = id
+
+            let alloc = tp.url.alloc
+            let target = url.parse(alloc, href) catch |e| {
+                try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.Invalid) })
+
+                return ""
+            }
+
+            defer target.deinit(alloc)
+
+            let navigates = nav == 1 && kind == 0 && top.len == 0 && fetchNavigates(tp, target.href)
+            var req = net.codedRequest(kind, credentials, mode, fetchInitiator(tp, doc, navigates)) orelse return "bad fetch"
+            var sent = net.Body { content_type: content_type, data: body }
+
+            req.method = method
+            req.referrer = referrer
+            req.top = top
+            req.headers = headers
+
+            if has_body == 1 { req.body = &sent }
+
+            var res = net.request(alloc, &target, req) catch |e| {
+                try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(e) })
+
+                return ""
+            }
+
+            defer res.deinit(alloc)
+            try sendFetched(tp, on, id, navigates, kind == 0, target.href, &res)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}
