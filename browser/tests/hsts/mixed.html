@@ -1,0 +1,36 @@
+<!doctype html>
+<title>Mixed content</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const [tls, plain] = location.search.slice(1).split(',');
+const at = port => 'http://site.test:' + port;
+const script = src => new Promise(done => {
+  const s = document.createElement('script');
+  s.onload = () => { log('script: ' + ran); done(); };
+  s.onerror = () => { log('script: error'); done(); };
+  s.src = src;
+  document.head.appendChild(s);
+});
+const image = src => new Promise(done => {
+  const i = new Image();
+  i.onload = () => { log('img: load'); done(); };
+  i.onerror = () => { log('img: error'); done(); };
+  i.src = src;
+});
+const frame = src => new Promise(done => {
+  const f = document.createElement('iframe');
+  f.onload = () => setTimeout(done, 100);
+  f.src = src;
+  document.body.appendChild(f);
+});
+window.onmessage = e => log(e.data);
+(async () => {
+  await script(at(plain) + '/x.js');
+  await frame(at(plain) + '/frame.html');
+  await fetch(at(plain) + '/data').then(r => r.text()).then(t => log('fetch: ' + t), e => log('fetch: ' + e.name));
+  await image(at(tls) + '/img.gif');
+  log('done');
+})();
+</script>

@@ -2,7 +2,7 @@ import std.mem.AllocError
 import std.text
 
 // chromium: net/http/transport_security_state.cc AddHSTSHeader
-fn hstsStore(h: *mut Hsts, host: []u8, policy: HstsPolicy, now: i64) AllocError!bool {
+fn hstsStore(h: *mut Hsts, host: []u8, policy: HstsPolicy, when: i64) AllocError!bool {
     var had: ?bool = null
     let kept = policy.max_age > 0
 
@@ -18,8 +18,9 @@ fn hstsStore(h: *mut Hsts, host: []u8, policy: HstsPolicy, now: i64) AllocError!
     if kept {
         let owned = try dup(h.alloc, host)
 
-        h.hosts.append(HstsHost { host: owned, expiry: now + policy.max_age, subdomains: policy.subdomains }) catch |e| {
+        h.hosts.append(HstsHost { host: owned, expiry: when + policy.max_age, subdomains: policy.subdomains }) catch |e| {
             h.alloc.free(owned)
+
             return e
         }
     }

@@ -1,0 +1,23 @@
+import std.text
+
+test "a preloaded host is upgraded on the first visit, mixed content is blocked or upgraded" {
+    let a = @testAllocator()
+    let browser = Request { kind: Kind.Document, initiator: Initiator.Browser }
+    let secure_page = Initiator.Page { url: "https://site.example/" }
+    var out = text.Builder.init(a)
+    defer out.deinit()
+
+    @expect(try secureHref(a, browser, "http://github.com/x?y", &mut out))
+    @expect(text.eql(out.bytes(), "https://github.com/x?y"))
+
+    out.clear()
+    @expect(try secureHref(a, browser, "http://example.com/", &mut out))
+    @expect(text.eql(out.bytes(), "http://example.com/"))
+
+    out.clear()
+    @expect(try secureHref(a, Request { kind: Kind.Image, initiator: secure_page }, "http://cdn.example/i.png", &mut out))
+    @expect(text.eql(out.bytes(), "https://cdn.example/i.png"))
+
+    out.clear()
+    @expect(!(try secureHref(a, Request { kind: Kind.Script, initiator: secure_page }, "http://cdn.example/s.js", &mut out)))
+}
