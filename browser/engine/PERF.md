@@ -1458,3 +1458,23 @@ task) finds the pixels different from the last seen copy.
 every frame and its script takes 29 ms of each: the raster saved becomes
 60% more frames. Next: the per-frame relayout and style (7.3 ms) and the
 rotated `drawImage` sampling.
+
+## Q4.18: what relayouts mistral each frame (2026-11-08)
+
+`docs/plans/cards/Q4.18.md`. A `browser/build.sh` (safe) build of
+`origin/q4-17-canvas2d-cost` f713802, mistral replay, one idle run with
+`DWELLER_TIMING=1 DWELLER_LAYOUT_WHY=1`, and three throwaway builds, all
+through `scripts/capped.sh`.
+
+The canvas is not the cause: with `canvasChanged` returning at once (no DOM
+version bump from any draw), relayouts per 10 s stay 354 → 355 and every
+record count of the run stays within 1%. The cause is the page's
+reading-progress label: its rAF writes `textContent = "0%"`, the same text,
+to one `<p>` each frame; Dweller replaces the Text node, the DOM version
+moves, and the window lays out and rebuilds the display list of the whole
+tab. Per steady frame (medians): `ui_relayout` 5.0 ms (mean 7.5), of it
+`paint_build` 4.1 ms (6 builds, the page and its 5 iframes), `images` 0.8,
+`paint_sig` 0.3; `restyle` 0.04 and `layout_dirty` 0.09 ms. Blink's
+same-text skip (`Node::setTextContent`) applies only without mutation
+observers, and mistral has `childList` + `subtree` observers on `BODY`, so
+no code change here; the next step is a partial display-list rebuild.
