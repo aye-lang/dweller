@@ -1,0 +1,18 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#allow-all-inline
+fn allowsAllInline(list: []u8) bool {
+    var at: usize = 0
+
+    while nextWord(list, &mut at) |source| {
+        if isNonceOrHash(source) || text.eqlIgnoreCase(source, "'strict-dynamic'") {
+            return false
+        }
+    }
+
+    return hasSource(list, "'unsafe-inline'")
+}
+
+fn isNonceOrHash(source: []u8) bool {
+    return startsWithIgnoreCase(source, "'nonce-") || startsWithIgnoreCase(source, "'sha256-") || startsWithIgnoreCase(source, "'sha384-") || startsWithIgnoreCase(source, "'sha512-")
+}

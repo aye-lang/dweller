@@ -1,0 +1,20 @@
+import std.crypto
+import std.encoding
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://w3c.github.io/webappsec-csp/#match-element-to-source-list
+fn hashMatches(alloc: Allocator, source: []u8, code: []u8) AllocError!bool {
+    let prefix = "'sha256-"
+
+    if !quotedWith(source, prefix) {
+        return false
+    }
+
+    let digest = crypto.sha256(code)
+    let actual = try encoding.base64Encode(alloc, digest[..])
+
+    defer alloc.free(actual)
+
+    return sameBase64(source[prefix.len..source.len - 1], actual)
+}

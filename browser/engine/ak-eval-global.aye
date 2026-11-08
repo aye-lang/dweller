@@ -1,0 +1,16 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+fn akEvalGlobal(it: *mut Interp, a: Args) JsError!Value {
+    let b = try it.builder()
+    defer it.release(b)
+    try argText(it, a, 0, b)
+    try js.refuseStringCode(it)
+    try it.runScript(b.bytes())
+
+    return Value.Undefined
+}

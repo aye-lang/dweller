@@ -1,0 +1,18 @@
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#port-part-matches
+fn portPartMatch(port: []u8, target: *Url) bool {
+    let default = defaultPort(target.scheme)
+    var actual = target.port
+
+    if actual.len == 0 {
+        actual = default
+    }
+
+    if port.len == 0 {
+        return text.eql(actual, default)
+    }
+
+    return text.eql(port, "*") || text.eql(port, actual) || (text.eql(port, "80") && text.eql(actual, "443"))
+}

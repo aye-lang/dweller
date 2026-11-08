@@ -1,0 +1,17 @@
+import csp
+import dom.NodeId
+import std.mem.AllocError
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn urlRefused(s: *mut Script, el: NodeId, target: *Url) AllocError!bool {
+    let p = s.page
+
+    if csp.scriptUrlRefusal(p.csp, target, &p.url, p.doc.attr(el, "nonce") orelse "") |d| {
+        try refuseScript(s, el, target.href, d)
+
+        return true
+    }
+
+    return false
+}

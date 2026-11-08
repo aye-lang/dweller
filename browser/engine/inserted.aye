@@ -182,6 +182,9 @@ fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
         var b = text.Builder.init(s.alloc)
         defer b.deinit()
         try p.doc.textContent(el, &mut b)
+        if try inlineRefused(s, el, b.bytes()) {
+            return js.numVal(1.0)
+        }
         try runCode(s, el, b.bytes(), false)
     }
     return js.numVal(1.0)
@@ -278,6 +281,9 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer target.deinit(s.alloc)
+    if try urlRefused(s, el, &target) {
+        return js.boolVal(false)
+    }
     let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })) catch |e| {
         match e {
             .OutOfMemory => {

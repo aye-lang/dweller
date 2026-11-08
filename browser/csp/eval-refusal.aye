@@ -1,0 +1,16 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#can-compile-strings
+pub fn evalRefusal(policies: []u8) ?[]u8 {
+    var all = text.split(policies, ",")
+
+    while all.next() |policy| {
+        let d = scriptDirective(policy, false) orelse continue
+
+        if !hasSource(sourceList(d), "'unsafe-eval'") {
+            return d
+        }
+    }
+
+    return null
+}

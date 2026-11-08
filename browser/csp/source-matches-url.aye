@@ -1,0 +1,27 @@
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#match-url-to-source-expression
+fn sourceMatchesUrl(source: []u8, target: *Url, page: *Url) bool {
+    if text.eql(source, "*") {
+        return text.eql(target.scheme, "http") || text.eql(target.scheme, "https") || text.eql(target.scheme, page.scheme)
+    }
+
+    if text.eqlIgnoreCase(source, "'self'") {
+        return selfMatches(target, page)
+    }
+
+    if source[0] == '\'' {
+        return false
+    }
+
+    if source[source.len - 1] == ':' && text.indexOf(source, "/") == null {
+        return schemePartMatch(source[..source.len - 1], target.scheme)
+    }
+
+    return hostSourceMatches(source, target, page)
+}
+
+fn selfMatches(target: *Url, page: *Url) bool {
+    return page.host.len > 0 && text.eqlIgnoreCase(page.host, target.host) && schemePartMatch(page.scheme, target.scheme) && portPartMatch(page.port, target)
+}
