@@ -1,0 +1,19 @@
+// v8: src/builtins/arm64/builtins-arm64.cc (Generate_FunctionPrototypeCall)
+fn vmCallsClosure(it: *mut Interp, f: Value, target: Value) bool {
+    let o = objectOf(f)
+
+    if o == NONE || (o != it.function_call && o != it.function_apply) {
+        return false
+    }
+
+    let t = objectOf(target)
+
+    if t == NONE {
+        return false
+    }
+
+    return match it.heap.obj(t).data {
+        .Closure { .. } => true
+        _ => false
+    }
+}

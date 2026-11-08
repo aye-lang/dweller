@@ -1,0 +1,13 @@
+import dom.NodeId
+import engine
+import ipc
+import net
+
+fn sendSubmission(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) !void {
+    let sub = (try engine.submitForm(p, form, submitter)) orelse return
+    defer sub.deinit(r.alloc)
+
+    if try engine.submitElsewhere(p, form, &sub) { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: sub.target.href, post: sub.post as u32, content_type: sub.content_type, body: sub.body, referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy(p.url.href)) })
+}

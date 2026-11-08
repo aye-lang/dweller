@@ -1974,6 +1974,22 @@ fn check_png(path: &Path) -> (u32, u32) {
     size
 }
 
+/// Q1.10d2: a JPEG whose decode passes the 256 MiB cap decodes at 1/2,
+/// but lays out, reports and draws at the size in its header.
+#[test]
+fn downscaled_jpeg_natural_size() {
+    let page = "browser/tests/image/cap_natural.html";
+    let out = run(&["dump", "--text", "--js", page]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let got = text(&out.stdout);
+    assert!(
+        got.contains("natural 6324x6324 width 6324x6324 box 6324x6324 drawn 128,128,128,255"),
+        "{got}"
+    );
+    let layout = text(&run(&["dump", "--layout", page]).stdout);
+    assert!(layout.contains("replaced <img id=\"i\" src=\"cap_large.jpg\"> (0, 0) 6324x6324"), "{layout}");
+}
+
 #[test]
 fn png_validity() {
     let out = scratch().join("valid.png");
@@ -2724,12 +2740,35 @@ fn agent_sessions_in_renderer() {
 /// Q2.3b: a renderer that answers a request id it was not sent is killed.
 #[test]
 fn agent_sessions_bad_reply() {
+    let out = relay_snapshot(&[("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")]);
+    assert!(!out.status.success(), "the relay goes on after a bad answer");
+    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("bad message: bad agent_reply "),
+        "no bad agent_reply: {}",
+        text(&out.stderr)
+    );
+}
+
+/// Q2.7b: a compromise hook without `DWELLER_TEST=1` does nothing: the
+/// renderer answers as it would without it.
+#[test]
+fn agent_sessions_hook_needs_test() {
+    let out = relay_snapshot(&[("DWELLER_TEST_EVIL", "agent")]);
+    assert!(out.status.success(), "{}: {}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).starts_with("{\"id\":1,"), "{}", text(&out.stdout));
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
+}
+
+// `dweller agent` with `DWELLER_PROCESS=tab` and `env`, asked one snapshot.
+fn relay_snapshot(env: &[(&str, &str)]) -> std::process::Output {
     use std::io::Write;
     let mut child = dweller_command()
         .current_dir(root())
         .arg("agent")
         .env("DWELLER_PROCESS", "tab")
-        .env("DWELLER_TEST_EVIL", "agent")
+        .env_remove("DWELLER_TEST")
+        .envs(env.iter().copied())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -2741,14 +2780,7 @@ fn agent_sessions_bad_reply() {
         .unwrap()
         .write_all(b"{\"id\":1,\"cmd\":\"snapshot\"}\n")
         .unwrap();
-    let out = child.wait_with_output().unwrap();
-    assert!(!out.status.success(), "the relay goes on after a bad answer");
-    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
-    assert!(
-        text(&out.stderr).contains("bad message: bad agent_reply "),
-        "no bad agent_reply: {}",
-        text(&out.stderr)
-    );
+    child.wait_with_output().unwrap()
 }
 
 fn agent_sessions_with(env: &[(&str, &str)]) {
@@ -5048,22 +5080,34 @@ fn window_pointer_lock() {
 /// back moves in the document (popstate shows item 2 again).
 #[test]
 fn window_history_api() {
+    window_history_api_in(&[]);
+}
+
+/// Q2.6a: the same with `DWELLER_PROCESS=tab`: the browser records the
+/// renderer's pushState entries, and back is a traversal in the
+/// renderer's document.
+#[test]
+fn window_history_api_in_renderer() {
+    window_history_api_in(&[("DWELLER_PROCESS", "tab")]);
+}
+
+fn window_history_api_in(envs: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let args = [
-        "browser/tests/agent/site/spa.html",
-        "--font",
-        "fixed",
-        "--frames",
-        "5",
-        "--state",
-        "--text",
-        "--events",
-        "click:30,133 click:140,133 key:cmd+[",
-    ];
-    let out = run_window(&args);
+    let (frames, events) = if envs.is_empty() {
+        ("5", "click:30,133 click:140,133 key:cmd+[")
+    } else {
+        ("1000", "renderer:loaded click:30,133 renderer:input click:140,133 renderer:input key:cmd+[ renderer:loaded")
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .envs(envs.iter().copied())
+        .args(["browser/tests/agent/site/spa.html", "--font", "fixed", "--frames", frames, "--state", "--text", "--events", events])
+        .args(if envs.is_empty() { &[][..] } else { &["--until-idle"][..] })
+        .output()
+        .unwrap();
     let got = text(&out.stdout);
     assert!(
         out.status.success() && out.stderr.is_empty(),
@@ -7720,6 +7764,80 @@ fn script_events() {
     }
 }
 
+/// Content-Security-Policy `script-src` (Q3.7), the pages of
+/// `browser/tests/csp/` served with the policies of their `.policy`
+/// files: an external script the policy does not allow is not fetched,
+/// fires `error` and logs the directive; `'self'` and a host source
+/// allow theirs; a `<meta>` policy applies; two policies must both allow
+/// (the second through `default-src`). Inline scripts run with the
+/// policy's nonce or sha256 hash, and `'unsafe-inline'` is ignored next
+/// to them. `eval` and `new Function` throw EvalError without
+/// `'unsafe-eval'`.
+#[test]
+fn csp_script_src() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let refused = |src: &str, directive: &str| {
+        format!(
+            "[error] Refused to load the script '{src}' because it violates the following Content Security Policy directive: \"{directive}\"."
+        )
+    };
+    let (parsed, same, cross) = (
+        format!("{}/csp/parsed.js", srv.base),
+        format!("{}/csp/same.js", srv.base),
+        format!("{}/csp/cross.js", other.base),
+    );
+    let host = format!("script-src 'nonce-r' {}", other.base);
+    let inline = "[error] Refused to execute inline script because it violates the following Content Security Policy directive: \"script-src 'nonce-r' 'sha256-PNUJduEfysGozdHcUzEt/SHPlhpzZRXdDLB9QVvFYEk=' 'unsafe-inline'\".".to_string();
+    let cases = [
+        (
+            "self",
+            "parsed: ran true\nsame: load, ran true\ncross: error, ran false\ndone\n",
+            vec![refused(&cross, "script-src 'self' 'nonce-r'")],
+        ),
+        (
+            "host",
+            "parsed: ran false\nsame: error, ran false\ncross: load, ran true\ndone\n",
+            vec![refused(&parsed, &host), refused(&same, &host)],
+        ),
+        (
+            "two",
+            "parsed: ran true\nsame: load, ran true\ncross: error, ran false\ndone\n",
+            vec![refused(&cross, "default-src 'self' 'nonce-r'")],
+        ),
+        (
+            "meta",
+            "parsed: ran false\nsame: error, ran false\ncross: error, ran false\ndone\n",
+            vec![
+                refused(&parsed, "script-src 'nonce-r'"),
+                refused(&same, "script-src 'nonce-r'"),
+                refused(&cross, "script-src 'nonce-r'"),
+            ],
+        ),
+        ("inline", "nonce match: ran\nhash match: ran\ndone\n", vec![inline.clone(), inline]),
+        ("eval", "eval: EvalError\nFunction: EvalError\n", vec![]),
+        ("unsafe-eval", "eval: 2\nFunction: 2\n", vec![]),
+    ];
+    for (page, want, errors) in cases {
+        let out = run(&[
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/csp/{page}.html?other={}", srv.base, other.base),
+        ]);
+        assert!(out.status.success(), "{page}: {}\n{}", out.status, text(&out.stderr));
+        assert_eq!(text(&out.stdout), want, "{page}: {}", text(&out.stderr));
+        let logged: Vec<String> = text(&out.stderr)
+            .lines()
+            .filter(|l| l.starts_with("[error] "))
+            .map(String::from)
+            .collect();
+        assert_eq!(logged, errors, "{page}");
+    }
+}
+
 /// The HTTP cache is keyed by the top-level site, the frame site and the
 /// credentials (Q3.13). A page on `127.0.0.1` embeds a script of
 /// `localhost`, then a frame of `localhost` embeds it (another frame
@@ -7756,7 +7874,12 @@ fn cache_partition() {
 /// policies, over https (`server.py` with `hsts/site.pem`; `site.test`
 /// and `127.0.0.1` are two sites of one port). `/meta/` records the
 /// headers in `/meta-log`. A plain http host that is not potentially
-/// trustworthy gets no `Sec-Fetch-*`.
+/// trustworthy gets no `Sec-Fetch-*`. Q3.14b: `referrerpolicy` and
+/// `rel=noreferrer` on links, forms and frames, fetch's `referrerPolicy`,
+/// a redirect's `Referrer-Policy`, no `Origin` after a POST's 303,
+/// `referrerpolicy` on `img` and `link`. Q3.14c: `font` and `worker`
+/// destinations; a script's `form.submit()` without user activation
+/// sends no `Sec-Fetch-User`.
 #[test]
 fn fetch_metadata() {
     use std::io::BufRead;
@@ -7797,9 +7920,13 @@ fn fetch_metadata() {
     };
     let page = format!("{site}/with-other/net/fetch-metadata.html?other={ip}");
     dump(&["--text", "--js", &page]);
+    let shot = scratch().join("fetch_metadata_font.png");
+    let fonts = dweller_command().current_dir(root()).envs(tls).args(["screenshot", &page, "-o", shot.to_str().unwrap(), "--font", "system", "--width", "400", "--height", "300"]).output().unwrap();
     dump(&["--text", &format!("{site}/meta/typed.html")]);
     dump(&["--text", "--js", &format!("{site}/net/fetch-metadata-meta.html")]);
     dump(&["--text", "--js", &format!("{site}/policy/no-referrer/net/fetch-metadata-plain.html")]);
+    let policy = format!("{site}/with-other/net/fetch-metadata-policy.html?other={ip}");
+    dump(&["--text", "--js", &policy]);
     let none = "sec-fetch-user= | origin=";
     meta("GET /meta/same.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={page}"));
     meta("GET /meta/cross.js", &format!("sec-fetch-site=cross-site | sec-fetch-mode=no-cors | sec-fetch-dest=script | {none} | referer={site}/"));
@@ -7808,6 +7935,17 @@ fn fetch_metadata() {
     meta("GET /meta/typed.html", "sec-fetch-site=none | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer=");
     meta("GET /meta/meta-origin.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={site}/"));
     meta("GET /meta/header-none.png", &format!("sec-fetch-dest=image | {none} | referer="));
+    meta("GET /meta/frame-noref.html", &format!("sec-fetch-dest=iframe | {none} | referer="));
+    meta("GET /meta/redirected.js", &format!("sec-fetch-dest=script | {none} | referer="));
+    meta("GET /meta/fetch-noref", "referer=");
+    meta("GET /meta/fetch-303", &format!("origin= | referer={policy}"));
+    meta("GET /meta/img-noref.png", &format!("sec-fetch-dest=image | {none} | referer="));
+    meta("GET /meta/img-unsafe.png", &format!("sec-fetch-dest=image | {none} | referer={policy}"));
+    meta("GET /meta/sheet-noref.css", &format!("sec-fetch-dest=style | {none} | referer="));
+    if !text(&fonts.stderr).contains("no system font found") {
+        meta("GET /meta/font.ttf", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=font | {none} | referer={page}"));
+    }
+    meta("GET /meta/worker.js", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=worker | {none} | referer={page}"));
 
     if let Some(plain) = server() {
         let plain_port = plain.base.rsplit(':').next().unwrap().to_string();
@@ -7826,12 +7964,23 @@ fn fetch_metadata() {
         println!("skipped the navigations: no SDL2");
         return;
     }
+    let scripted = format!("{site}/net/scripted_submit.html?{ip}/meta/scripted.html");
+    let out = dweller_command()
+        .current_dir(root())
+        .envs(tls)
+        .args([scripted.as_str(), "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", "loaded loaded"])
+        .output()
+        .unwrap();
+    assert!(out.status.success() && out.stderr.is_empty(), "scripted submit: {}", text(&out.stderr));
+    meta("GET /meta/scripted.html", &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | {none} | referer={site}/"));
     for tab in [false, true] {
         let name = if tab { "tab" } else { "window" };
         let target = format!("{ip}/meta/nav-{name}.html");
-        let links = format!("{site}/net/samesite_links.html?{target}");
+        let samesite = format!("{site}/net/samesite_links.html?{target}");
+        let referrer = format!("{site}/net/referrer_links.html?{ip}/meta/policy-{name}-");
         let (wait, then) = if tab { ("renderer:loaded ", " renderer:input renderer:loaded") } else { ("loaded ", " loaded") };
-        for click in ["click:80,65", "click:60,115"] {
+        let clicks = [(&samesite, "click:80,65"), (&samesite, "click:60,115"), (&referrer, "click:80,65"), (&referrer, "click:80,115"), (&referrer, "click:60,165"), (&referrer, "click:60,215")];
+        for (links, click) in clicks {
             let mut c = dweller_command();
             c.current_dir(root()).envs(tls);
             if tab {
@@ -7839,7 +7988,7 @@ fn fetch_metadata() {
             }
             let events = format!("{wait}{click}{then}");
             let out = c
-                .args([&links, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", &events])
+                .args([links, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", &events])
                 .output()
                 .unwrap();
             assert!(out.status.success() && out.stderr.is_empty(), "{name} {click}: {}", text(&out.stderr));
@@ -7847,6 +7996,11 @@ fn fetch_metadata() {
         let path = format!("/meta/nav-{name}.html");
         meta(&format!("GET {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer={site}/"));
         meta(&format!("POST {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin={site} | referer={site}/"));
+        let nav = "sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1";
+        meta(&format!("GET /meta/policy-{name}-unsafe.html"), &format!("{nav} | origin= | referer={referrer}"));
+        meta(&format!("GET /meta/policy-{name}-noref.html"), &format!("{nav} | origin= | referer="));
+        meta(&format!("POST /meta/policy-{name}-nopost.html"), &format!("{nav} | origin=null | referer="));
+        meta(&format!("GET /meta/policy-{name}-see.html"), &format!("{nav} | origin= | referer={site}/"));
     }
 }
 
@@ -8341,6 +8495,72 @@ fn window_stuck_script() {
     );
     assert!(got.contains("\nunresponsive 2\n"), "{got}");
     assert!(got.contains("\nstart hang after\n"), "{got}");
+}
+
+/// Q1.8: a page that allocates without end (`out-of-memory.html`) passes
+/// `DWELLER_JS_HEAP_LIMIT` after a full collection: its script ends and
+/// the tab shows "This page ran out of memory". The window lives, and a
+/// second tab runs a page that allocates 40 MB of strings, drops them and
+/// allocates them again (`allocate-and-free.html`) without hitting the limit.
+#[test]
+fn window_out_of_memory() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |last: &str| -> (String, String) {
+        let events = format!(
+            "painted frame key:cmd+t text:browser/tests/ui/ text:allocate-and-free.html key:return loaded frame {last}"
+        );
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_CONSOLE", "1")
+            .env("DWELLER_JS_HEAP_LIMIT", "64000000")
+            .args([
+                "browser/tests/ui/out-of-memory.html",
+                "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+                "--state", "--text", "--events", &events,
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let (got, err) = run("");
+    assert!(got.contains("tabs 2, showing 2\n") && got.contains("\nfreed 40000\n"), "{got}");
+    assert!(err.contains("[error] Script terminated: out of memory"), "{err}");
+    let (got, _) = run("key:cmd+1 frame");
+    assert!(got.contains("tabs 2, showing 1\n"), "{got}");
+    assert!(got.contains("This page ran out of memory") && got.contains("Reload"), "{got}");
+}
+
+/// Q1.8: with `DWELLER_PROCESS=tab` the renderer whose page runs out of
+/// memory shows the same page and tells the browser (`OutOfMemory`), which
+/// keeps it: the renderer line has the page's title, not `gone`.
+#[test]
+fn window_renderer_out_of_memory() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_JS_HEAP_LIMIT", "64000000")
+        .args([
+            "browser/tests/ui/out-of-memory.html",
+            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:loaded frame frame frame",
+        ])
+        .output()
+        .unwrap();
+    let state = text(&out.stdout);
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    let line = state
+        .lines()
+        .find(|l| l.starts_with("renderer "))
+        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+    let r: Vec<&str> = line.splitn(3, ' ').collect();
+    assert_eq!(r[2], "title Out of memory", "{state}");
 }
 
 /// Q1.7b: a headless window never waits for a click on the stuck bar. A
@@ -9038,9 +9258,7 @@ fn window_login_in(envs: &[(&str, &str)]) {
         &["Signed in as"],
         "a stale CSRF token",
     );
-    // Under the flag the window's history does not follow the renderer's
-    // navigations yet (Q2.6).
-    let history = if envs.is_empty() { "history 2 of 2\n" } else { "" };
+    let history = "history 2 of 2\n";
     let signed_in = login_window_with(&account, SIGN_IN, None, envs);
     has(
         &signed_in,
@@ -9977,6 +10195,46 @@ fn window_framesets() {
     );
 }
 
+/// Q3.9b: a person's click on a `target=_top` link or form in a
+/// sandboxed frame loads in the tab only with `allow-top-navigation` or
+/// `allow-top-navigation-by-user-activation`.
+#[test]
+fn window_sandbox_targets() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let ui = format!("file://{}/browser/tests/ui/", root().display());
+    let cases = [
+        ("click:10,60", "url sandbox_targets.html\n"),
+        ("click:10,100", "url other.html\n"),
+        ("click:10,140", "url sandbox_targets.html\n"),
+        ("click:10,180", "url other.html?\n"),
+    ];
+    let mut failures = Vec::new();
+    for (events, want) in cases {
+        let out = run_window(&[
+            "browser/tests/ui/sandbox_targets.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "340",
+            "--frames",
+            "1",
+            "--state",
+            "--events",
+            events,
+        ]);
+        let got = text(&out.stdout).replace(&ui, "");
+        if !out.status.success() || !out.stderr.is_empty() || !got.starts_with(want) {
+            failures.push(format!("--events {events:?}: expected {want:?}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// `browser/tests/fonts/bold.html`: bold text from a face of one weight
 /// gets synthetic bold, and from a variable face its `wght` axis, so the
 /// bold rows have more ink than the regular ones (and the variable bold
@@ -10886,7 +11144,7 @@ fn window_renderer_lifecycle() {
     assert!(err.is_empty(), "{err}");
     assert_eq!(&renderer(&state)[2..], ["gone", "crashed"], "{state}");
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "malformed")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "malformed")];
     let (_, state, err) = run("renderer:gone", &evil);
     let r = renderer(&state);
     assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
@@ -10932,14 +11190,15 @@ fn window_renderer_net() {
     }
     let headers = format!("{}/net/request_headers.html", srv.base);
     let plain = login_window_with(&headers, "frame", None, &tab);
-    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "headers")]);
+    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "headers")]);
     assert!(plain.contains(&format!("Referer: {headers}")) && !evil.contains("evil"), "{evil}");
-    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer ")).collect::<Vec<_>>().join("\n");
+    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer")).collect::<Vec<_>>().join("\n");
     assert_eq!(page_only(&evil), page_only(&plain));
     for evil in ["initiator", "top", "referrer", "trace"] {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
             .args([
                 &format!("{}/net/cors.html", srv.base),
@@ -11065,6 +11324,7 @@ fn window_renderer_storage() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
             .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
             .output()
@@ -11313,7 +11573,7 @@ fn window_renderer_frames() {
         golden.display()
     );
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "frame")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "frame")];
     let (state, err) = run(&tab, "renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11367,7 +11627,7 @@ fn window_renderer_sandbox() {
     };
     let golden = scratch().join("renderer_sandbox_in_process.png");
     let tab = scratch().join("renderer_sandbox_tab.png");
-    let probe = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
+    let probe = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
 
     let (_, err) = run(&golden, "loaded", &[]);
     assert!(err.is_empty(), "{err}");
@@ -11382,7 +11642,7 @@ fn window_renderer_sandbox() {
         golden.display()
     );
 
-    let open = [probe[0], probe[1], ("DWELLER_NO_SANDBOX", "1")];
+    let open = [probe[0], probe[1], probe[2], ("DWELLER_NO_SANDBOX", "1")];
     let (state, err) = run(&tab, "renderer:loaded renderer:frame", &open);
     assert!(err.starts_with("warning: DWELLER_NO_SANDBOX=1, the renderer runs without a sandbox\n"), "{err}");
     assert!(err.contains("sandbox-probe home=0 tmp=0 tcp=") && err.ends_with(" fork=0\n") && !err.contains("tcp=1 "), "{err}");
@@ -11445,7 +11705,7 @@ fn window_renderer_input() {
         );
     }
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "ack")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "ack")];
     let (state, err) = run(&shot, "renderer:loaded renderer:frame click:30,60 renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11541,14 +11801,212 @@ fn window_renderer_focus() {
     let pushed = format!("file://{}/browser/tests/ui/renderer_focus.html?pushed", root().display());
     assert!(state.contains(&format!("\naddress {pushed}\n")), "{state}");
     assert!(state.contains(" title Pushed\n"), "{state}");
-    assert!(state.starts_with("url file://") && state.lines().next().unwrap().ends_with("renderer_focus.html"), "{state}");
+    assert!(state.starts_with(&format!("url {pushed}\n")) && state.contains("\nhistory 2 of 2\n"), "{state}");
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "url")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "url")];
     let (state, err) = run(&shot, "renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
     assert!(line.ends_with(" gone bad url"), "{state}");
     assert_eq!(err, format!("error: bad message: bad url {pid}\n"));
+}
+
+/// Q2.6a: with `DWELLER_PROCESS=tab` the browser owns the tab's session
+/// history (`browser/tests/ui/renderer_history.html`): `location.href`,
+/// `history.back()`, `form.submit()` and `location.reload()` from the
+/// page's scripts are navigations the browser makes, `location.hash` and
+/// pushState are entries it records, a back or forward to an entry of the
+/// shown document fires popstate (and hashchange) without a load, a
+/// top-level `data:` navigation from the page is refused, and a
+/// pushState reported with another origin kills the renderer.
+#[test]
+fn window_renderer_history() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/renderer_history.html", "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--text", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let page = format!("file://{}/browser/tests/ui/renderer_history.html", root().display());
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let to = "renderer:loaded click:50,62 renderer:input renderer:loaded";
+    let cases: Vec<(String, Vec<String>, &str)> = vec![
+        (to.into(), vec![format!("\naddress {page}?to=1\nhistory 2 of 2\n"), "length 2".into()], "location.href"),
+        (
+            format!("{to} click:50,106 renderer:input renderer:loaded"),
+            vec![format!("\naddress {page}\nhistory 1 of 2\n"), "events load load load".into()],
+            "history.back to another document",
+        ),
+        (
+            "renderer:loaded click:50,150 renderer:input renderer:loaded".into(),
+            vec![format!("\naddress {page}?q=sent\nhistory 2 of 2\n")],
+            "form.submit",
+        ),
+        (
+            "renderer:loaded click:50,194 renderer:input key:cmd+[ renderer:loaded".into(),
+            vec![format!("\naddress {page}\nhistory 1 of 2\n"), "events load popstate hashchange popstate hashchange".into()],
+            "location.hash, then back in the document",
+        ),
+        (
+            "renderer:loaded click:50,238 renderer:input key:cmd+[ renderer:loaded key:cmd+] renderer:loaded".into(),
+            vec![format!("\naddress {page}?pushed\nhistory 2 of 2\n"), "length 2 state {\"n\":1} events load popstate popstate".into()],
+            "pushState, back and forward in the document",
+        ),
+        (
+            "renderer:loaded click:50,326 renderer:input renderer:loaded".into(),
+            vec![format!("\naddress {page}\nhistory 1 of 1\n"), "events load reload load".into()],
+            "location.reload",
+        ),
+    ];
+    for (events, wants, what) in &cases {
+        let (state, err) = run(events, &tab);
+        assert!(err.is_empty(), "{what}: {err}");
+        for want in wants {
+            assert!(state.contains(want.as_str()), "{what}: expected {want:?} in:\n{state}");
+        }
+    }
+
+    let (state, err) = run("renderer:loaded click:50,282 renderer:input", &tab);
+    assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
+    assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "pushstate")];
+    let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone bad url"), "{state}");
+    assert_eq!(err, format!("error: bad message: bad url {pid}\n"));
+}
+
+/// Q2.6b: with `DWELLER_PROCESS=tab` a cross-site navigation
+/// (`127.0.0.1` and `localhost` are two sites) commits in a new renderer
+/// and retires the old one; a same-site one stays in its renderer. The
+/// way back to a site is a new renderer again (no process is kept), and
+/// back and forward across sites swap too.
+#[test]
+fn window_renderer_sites() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let run = |events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let pids = |state: &str| -> Vec<String> {
+        let line = state.lines().find(|l| l.starts_with("renderer-pids ")).unwrap_or("");
+        line.split(' ').skip(1).map(String::from).collect()
+    };
+    let distinct = |p: &[String]| p.iter().collect::<std::collections::HashSet<_>>().len() == p.len();
+
+    let state = run("renderer:loaded click:50,106 renderer:input renderer:loaded");
+    assert!(state.contains(&format!("\naddress {page}?same\nhistory 2 of 2\n")), "{state}");
+    assert!(state.contains(" title 127.0.0.1?same\n") && state.contains("\nrenderer-site http://127.0.0.1\n"), "{state}");
+    assert_eq!(pids(&state).len(), 1, "same site keeps the renderer:\n{state}");
+
+    let there = "renderer:loaded click:50,62 renderer:input renderer:loaded click:50,62 renderer:input renderer:loaded";
+    let cases = [
+        (there.to_string(), page.as_str(), "3 of 3", "127.0.0.1", 3),
+        (format!("{there} key:cmd+[ renderer:loaded"), other.as_str(), "2 of 3", "localhost", 4),
+        (format!("{there} key:cmd+[ renderer:loaded key:cmd+] renderer:loaded"), page.as_str(), "3 of 3", "127.0.0.1", 5),
+    ];
+    for (events, address, at, host, count) in &cases {
+        let state = run(events);
+        let p = pids(&state);
+        assert!(state.contains(&format!("\naddress {address}\nhistory {at}\n")), "{events}:\n{state}");
+        assert!(state.contains(&format!("\nrenderer {} title {host}\n", p.last().unwrap())), "{events}:\n{state}");
+        assert!(state.contains(&format!("\nrenderer-site http://{host}\n")), "{events}:\n{state}");
+        assert!(p.len() == *count && distinct(&p), "{events}: renderers {p:?}\n{state}");
+    }
+}
+
+/// Q2.7: with `DWELLER_PROCESS=tab` and `DWELLER_TEST=1`, the renderer
+/// of the second tab acts compromised (`DWELLER_TEST_EVIL`) and sends one
+/// forged message about another site: a cross-site frame's cookies
+/// (`site` on `site-lock.html?cookie`) or storage (`?storage`), a
+/// fetch whose initiator the browser never recorded, a pushState to
+/// another site, the commit of a cross-site navigation without its
+/// response. The browser kills that renderer (`bad message: REASON PID`)
+/// and the window and the first tab's renderer live. Without the hook the
+/// renderer does not ask for the cross-site frame's cookies or storage,
+/// and nothing is killed.
+#[test]
+fn window_renderer_site_lock() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let first = format!("{}/ui/renderer_sites.html", srv.base);
+    let evil = format!("{}/ui/site-lock.html", srv.base);
+    let run = |hook: &str, second: &str, then: &str| -> (String, String) {
+        let mut cmd = dweller_command();
+        cmd.current_dir(root()).env("DWELLER_PROCESS", "tab").env("DWELLER_TEST", "1");
+        if !hook.is_empty() {
+            cmd.env("DWELLER_TEST_EVIL", hook);
+        }
+        let events = format!("renderer:loaded key:cmd+t {} key:return renderer:loaded {then} key:cmd+1 renderer:frame frame", typed(second));
+        let out = cmd
+            .args([first.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", &events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{hook} {second}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let first_lives = |state: &str, killed: &str, case: &str| {
+        let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert!(r.len() == 4 && r[1] != killed && r[2..] == ["title", "127.0.0.1"], "{case}: the first tab's renderer\n{state}");
+        assert!(state.contains("tabs 2, showing 1"), "{case}: {state}");
+    };
+
+    for search in ["?cookie", "?storage"] {
+        let (state, err) = run("", &format!("{evil}{search}"), "frame frame frame");
+        assert!(err.is_empty(), "{search} without the hook: {err}");
+        first_lives(&state, "", search);
+    }
+
+    let cases = [
+        ("site", format!("{evil}?cookie"), "renderer:gone", "cookie outside site lock"),
+        ("site", format!("{evil}?storage"), "renderer:gone", "storage outside site lock"),
+        ("initiator", evil.clone(), "renderer:gone", "bad fetch"),
+        ("pushstate", evil.clone(), "renderer:gone", "bad url"),
+        ("commit", evil.clone(), "click:50,88 renderer:gone", "commit outside site lock"),
+    ];
+    for (hook, second, then, why) in &cases {
+        let (state, err) = run(hook, second, then);
+        let pid = err.strip_prefix(&format!("error: bad message: {why} ")).and_then(|p| p.strip_suffix('\n'));
+        let pid = pid.unwrap_or_else(|| panic!("{hook} {second}: stderr {err:?}\n{state}"));
+        assert!(pid.parse::<u32>().is_ok(), "{hook}: {err}");
+        first_lives(&state, pid, hook);
+    }
 }
 
 /// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default
@@ -11722,8 +12180,165 @@ fn window_renderer_agent() {
     assert_eq!(got, want, "{err}");
     let (bad, err) = session(
         &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
-        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "agent")],
+        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")],
     );
     assert!(err.contains("bad message: bad agent_reply "), "{err}");
     assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
+}
+
+/// Q2.7b: with `DWELLER_PROCESS=tab` an agent's navigation to another
+/// site (`127.0.0.1` and `localhost`) commits in a new renderer, as the
+/// user's do: one process of the window's tree ends and another starts at
+/// each swap, and the agent's next command is answered by the new page.
+#[test]
+fn window_renderer_agent_sites() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    fn tree(pid: &str) -> Vec<String> {
+        let out = Command::new("pgrep").args(["-P", pid]).output().unwrap();
+        let kids: Vec<String> = text(&out.stdout).lines().map(str::to_string).collect();
+        kids.iter().flat_map(|k| tree(k)).chain(kids.clone()).collect()
+    }
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let sock = format!("target/sockets/q27b-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &[], &[("DWELLER_PROCESS", "tab")]);
+    let mut conn = AgentConn::open(&sock);
+    let mut trees: Vec<std::collections::HashSet<String>> = Vec::new();
+    for (n, (to, host)) in [(&page, "127.0.0.1"), (&other, "localhost"), (&page, "127.0.0.1")].into_iter().enumerate() {
+        let went = conn.ask(&format!("{{\"id\":{n},\"cmd\":\"navigate\",\"url\":\"{to}\"}}")).0;
+        assert!(went.starts_with(&format!("{{\"id\":{n},\"ok\":true,")) && went.contains(&format!("\"url\":\"{to}\"")), "{went}");
+        let title = conn.ask("{\"id\":9,\"cmd\":\"eval\",\"expression\":\"document.title\"}").0;
+        assert!(title.contains(&format!("\"result\":\"{host}\"")), "{to}: {title}");
+        trees.push(tree(&window.id().to_string()).into_iter().collect());
+    }
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    for w in trees.windows(2) {
+        assert!(w[1].difference(&w[0]).count() == 1 && w[0].difference(&w[1]).count() == 1, "no swap: {trees:?}");
+    }
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
+}
+
+// The ref of the element named `name` in a snapshot answer (`e7`).
+fn ref_named(snap: &str, name: &str) -> String {
+    let at = snap.find(&format!("{name}\\\" [e")).unwrap_or_else(|| panic!("no {name} in {snap}"));
+    let rest = &snap[at + name.len() + 4..];
+    rest[..rest.find(']').unwrap()].to_string()
+}
+
+/// Q2.7c: with `DWELLER_PROCESS=tab` a ref of a page the tab left is
+/// refused, as in a window without the flag, whether the navigation
+/// stayed in the renderer or swapped it; an `eval` whose script navigates
+/// to another site gets an answer.
+#[test]
+fn window_renderer_agent_refs() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let same = format!("{page}?same");
+    let sock = format!("target/sockets/q27c-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &[], &[("DWELLER_PROCESS", "tab")]);
+    let mut conn = AgentConn::open(&sock);
+    let mut n = 0;
+    let mut ask = |conn: &mut AgentConn, body: String| {
+        n += 1;
+        conn.ask(&format!("{{\"id\":{n},{body}}}")).0
+    };
+    let mut snapped = |conn: &mut AgentConn, to: &str| {
+        let went = ask(conn, format!("\"cmd\":\"navigate\",\"url\":\"{page}\""));
+        assert!(went.contains("\"ok\":true"), "{went}");
+        let old = ref_named(&ask(conn, "\"cmd\":\"snapshot\"".into()), "same site");
+        let went = ask(conn, format!("\"cmd\":\"navigate\",\"url\":\"{to}\""));
+        assert!(went.contains("\"ok\":true"), "{went}");
+        let clicked = ask(conn, format!("\"cmd\":\"click\",\"ref\":\"{old}\""));
+        assert!(clicked.contains(&format!("\"ok\":false,\"error\":\"unknown ref {old}:")), "{to}: {clicked}");
+        ask(conn, "\"cmd\":\"eval\",\"expression\":\"document.title\"".into())
+    };
+    let title = snapped(&mut conn, &same);
+    assert!(title.contains("\"result\":\"127.0.0.1?same\""), "same site: {title}");
+    let title = snapped(&mut conn, &other);
+    assert!(title.contains("\"result\":\"localhost\""), "other site: {title}");
+    drop(snapped);
+    let went = ask(&mut conn, format!("\"cmd\":\"navigate\",\"url\":\"{page}\""));
+    assert!(went.contains("\"ok\":true"), "{went}");
+    let old = ref_named(&ask(&mut conn, "\"cmd\":\"snapshot\"".into()), "same site");
+    let evaled = conn.ask(&format!("{{\"id\":99,\"cmd\":\"eval\",\"expression\":\"location.href = '{other}'\"}}")).0;
+    assert!(evaled.starts_with("{\"id\":99,"), "{evaled}");
+    let mut title = String::new();
+    for _ in 0..50 {
+        title = ask(&mut conn, "\"cmd\":\"eval\",\"expression\":\"document.title\"".into());
+        if title.contains("\"result\":\"localhost\"") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(title.contains("\"result\":\"localhost\""), "the eval did not navigate: {title}");
+    let clicked = ask(&mut conn, format!("\"cmd\":\"click\",\"ref\":\"{old}\""));
+    assert!(clicked.contains(&format!("unknown ref {old}:")), "after the eval: {clicked}");
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
+}
+
+/// Q2.7c: `dweller agent` with `DWELLER_PROCESS=tab` follows a
+/// navigation to another site into a new renderer, and the old page's
+/// refs are refused there.
+#[test]
+fn agent_sessions_relay_sites() {
+    use std::io::{BufRead, Write};
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let mut child = dweller_command()
+        .current_dir(root())
+        .arg("agent")
+        .env("DWELLER_PROCESS", "tab")
+        .env_remove("DWELLER_TEST")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let pid = child.id().to_string();
+    let mut ask = move |line: String| {
+        stdin.write_all(format!("{line}\n").as_bytes()).unwrap();
+        let mut got = String::new();
+        stdout.read_line(&mut got).unwrap();
+        got
+    };
+    let kids = || text(&Command::new("pgrep").args(["-P", &pid]).output().unwrap().stdout);
+    let went = ask(format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{page}\"}}"));
+    assert!(went.contains("\"ok\":true"), "{went}");
+    let before = kids();
+    let old = ref_named(&ask("{\"id\":2,\"cmd\":\"snapshot\"}".into()), "same site");
+    let went = ask(format!("{{\"id\":3,\"cmd\":\"navigate\",\"url\":\"{other}\"}}"));
+    assert!(went.starts_with("{\"id\":3,\"ok\":true,") && went.contains(&format!("\"url\":\"{other}\"")), "{went}");
+    let after = kids();
+    let clicked = ask(format!("{{\"id\":4,\"cmd\":\"click\",\"ref\":\"{old}\"}}"));
+    assert!(clicked.contains(&format!("\"ok\":false,\"error\":\"unknown ref {old}:")), "{clicked}");
+    let title = ask("{\"id\":5,\"cmd\":\"eval\",\"expression\":\"document.title\"}".into());
+    assert!(title.contains("\"result\":\"localhost\""), "{title}");
+    drop(ask);
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}: {}", out.status, text(&out.stderr));
+    assert!(!before.is_empty() && !after.is_empty() && before != after, "no swap: {before:?} {after:?}");
 }

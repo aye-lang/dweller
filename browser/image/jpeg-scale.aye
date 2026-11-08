@@ -1,0 +1,20 @@
+// chromium: third_party/blink/renderer/platform/image-decoders/jpeg/jpeg_image_decoder.cc DesiredScaleNumerator
+fn jpegScale(dec: *JpegDecoder, plane: usize, coef_bytes: usize) ImageError!usize {
+    var scale: usize = 1
+
+    while scale <= 8 {
+        let pixels = jpegScaled(dec.width, scale) * jpegScaled(dec.height, scale)
+
+        if pixels * (4 + dec.ncomp) + plane / (scale * scale) + coef_bytes <= MAX_DECODED_BYTES {
+            return scale
+        }
+
+        scale *= 2
+    }
+
+    return ImageError.Unsupported
+}
+
+fn jpegScaled(n: usize, scale: usize) usize {
+    return (n + scale - 1) / scale
+}

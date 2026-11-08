@@ -1,10 +1,9 @@
-import dom.Document
 import net
 import std.mem.AllocError
 
 // https://w3c.github.io/webappsec-upgrade-insecure-requests/#delivery
-fn notePageUpgrades(doc: *Document, res: *net.Response, page: []u8) AllocError!void {
-    if net.upgradeDirective(net.requestHeaderValue(res.headers_raw, "Content-Security-Policy")) || metaUpgrades(doc) {
+fn notePageUpgrades(policy: []u8, page: []u8) AllocError!void {
+    if net.upgradeDirective(policy) {
         try net.noteUpgradeInsecure(page)
     }
 }

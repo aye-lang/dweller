@@ -1,0 +1,21 @@
+import dom.NodeId
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#allowed-by-sandboxing-to-navigate
+pub fn sandboxAllowsTarget(p: *mut Page, el: NodeId, activated: bool) bool {
+    let name = linkTarget(p, el)
+
+    if targetFrame(p, name) |slot| {
+        return sandboxAllowsNavigation(p, slotPage(slot), activated)
+    }
+
+    if text.eqlIgnoreCase(name, "_top") || text.eqlIgnoreCase(name, "_parent") || text.eqlIgnoreCase(name, "_self") || name.len == 0 {
+        return sandboxAllowsNavigation(p, rootPage(p), activated)
+    }
+
+    if !text.eqlIgnoreCase(name, "_blank") && namedContext(contextOfPage(p), name) != 0 {
+        return p.sandbox & SB_NAVIGATION == 0
+    }
+
+    return p.sandbox & SB_AUXILIARY_NAVIGATION == 0
+}

@@ -1,0 +1,24 @@
+import std.text
+import url.Url
+
+// chromium: services/network/public/cpp/content_security_policy/csp_source.cc
+fn hostSourceMatches(source: []u8, target: *Url, page: *Url) bool {
+    var scheme = page.scheme
+    var rest = source
+
+    if text.indexOf(rest, "://") |i| {
+        scheme = rest[..i]
+        rest = rest[i + 3..]
+    }
+
+    let path_at = text.indexOf(rest, "/") orelse rest.len
+    let authority = rest[..path_at]
+    let port_at = text.indexOf(authority, ":") orelse authority.len
+    var port = ""
+
+    if port_at < authority.len {
+        port = authority[port_at + 1..]
+    }
+
+    return target.host.len > 0 && schemePartMatch(scheme, target.scheme) && hostPartMatch(authority[..port_at], target.host) && portPartMatch(port, target) && pathPartMatch(rest[path_at..], target.path)
+}

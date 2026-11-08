@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+pub fn outOfMemoryPage(alloc: Allocator, target: *Url) AllocError!*mut Page {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try b.append("<title>Out of memory</title><h1>This page ran out of memory</h1><p><a href=\"")
+    try escaped(&mut b, target.href)
+    try b.append("\">Reload</a></p>")
+
+    return failurePage(alloc, target, "out of memory", b.bytes())
+}

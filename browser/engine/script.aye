@@ -31,6 +31,7 @@
 
 import animation
 import audio
+import csp
 import dom
 import dom.Kind
 import dom.NodeId
@@ -283,6 +284,7 @@ pub struct Script {
     audio_owner: usize = 0
     audio_notify: u32 = 0xFFFFFFFF
     activated: bool = false
+    activation_ns: ?u64 = null
     // Messages ("[log] text"), owned, until a front end takes them.
     console: List([]mut u8)
     nav_kind: NavKind
@@ -659,6 +661,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         }
     }
     s.it.script_url = s.it.intern(p.base.href) catch return AllocError.OutOfMemory
+    s.it.eval_refusal = csp.evalRefusal(p.csp) orelse ""
     return s
 }
 
@@ -1053,6 +1056,9 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     try p.doc.textContent(el, &mut b)
+    if try inlineRefused(s, el, b.bytes()) {
+        return
+    }
     return runSourceOf(s, el, b.bytes())
 }
 
@@ -1293,7 +1299,7 @@ fn uncaught(s: *mut Script, e: JsError) AllocError!void {
         }
         .Terminated => {
             s.it.exception = Value.Undefined
-            return addConsole(s, "[error] ", "Script terminated: it ran too long")
+            return addConsole(s, "[error] ", terminatedWhy(s))
         }
         _ => {}
     }
@@ -1903,11 +1909,9 @@ pub fn setViewport(p: *mut Page, width: f64, height: f64) {
 /// canceled it (preventDefault): skip the default action.
 pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocError!bool {
     let s = p.script orelse return true
+    noteActivation(s, kind, key)
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
-    }
-    if isActivation(kind) {
-        s.activated = true
     }
     let it = &mut s.it
     let base = it.stack.len()
@@ -1935,6 +1939,7 @@ pub fn dispatchEvent(p: *mut Page, target: NodeId, kind: []u8, key: []u8) AllocE
 /// listener canceled it.
 pub fn dispatchPointer(p: *mut Page, target: NodeId, kind: []u8, detail: []u8, x: f64, y: f64, mx: f64, my: f64) AllocError!bool {
     let s = p.script orelse return true
+    noteActivation(s, kind, "")
     if s.dispatcher == js.NONE || !p.doc.isLive(target) {
         return true
     }
@@ -2029,7 +2034,7 @@ pub fn evalInPage(p: *mut Page, src: []u8, out: *mut text.Builder) AllocError!bo
             }
             .Terminated => {
                 s.it.exception = Value.Undefined
-                try out.append("Script terminated: it ran too long")
+                try out.append(terminatedWhy(s))
                 try runMicrotasks(s)
                 try afterTask(s)
                 return false

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<title>History</title>
+<body style="margin: 0">
+<button id="to" style="display: block; width: 300px; height: 40px; margin: 0">location.href</button>
+<button id="back" style="display: block; width: 300px; height: 40px; margin: 0">history.back</button>
+<button id="submit" style="display: block; width: 300px; height: 40px; margin: 0">form.submit</button>
+<button id="hash" style="display: block; width: 300px; height: 40px; margin: 0">location.hash</button>
+<button id="push" style="display: block; width: 300px; height: 40px; margin: 0">pushState</button>
+<button id="data" style="display: block; width: 300px; height: 40px; margin: 0">data:</button>
+<button id="reload" style="display: block; width: 300px; height: 40px; margin: 0">reload</button>
+<form action="renderer_history.html"><input type="hidden" name="q" value="sent"></form>
+<p id="info"></p>
+<script>
+const page = location.pathname;
+let events = sessionStorage.getItem('events') || '';
+function note(e) {
+  events += e + ' ';
+  sessionStorage.setItem('events', events);
+  show();
+}
+function show() {
+  info.textContent = 'search ' + location.search + ' hash ' + location.hash + ' length ' + history.length + ' state ' + JSON.stringify(history.state) + ' events ' + events;
+}
+to.onclick = () => { location.href = page + '?to=1'; };
+back.onclick = () => history.back();
+submit.onclick = () => document.forms[0].submit();
+hash.onclick = () => { location.hash = 'h'; };
+push.onclick = () => { history.pushState({ n: 1 }, '', '?pushed'); show(); };
+data.onclick = () => { location.href = 'data:text/html,hi'; };
+reload.onclick = () => { note('reload'); location.reload(); };
+addEventListener('popstate', e => note('popstate'));
+addEventListener('hashchange', e => note('hashchange'));
+note('load');
+</script>

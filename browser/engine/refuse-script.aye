@@ -1,0 +1,23 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#report-violation
+fn refuseScript(s: *mut Script, el: NodeId, href: []u8, directive: []u8) AllocError!void {
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+
+    if href.len > 0 {
+        try b.append("Refused to load the script '")
+        try b.append(href)
+        try b.append("' because")
+    } else {
+        try b.append("Refused to execute inline script because")
+    }
+
+    try b.append(" it violates the following Content Security Policy directive: \"")
+    try b.append(directive)
+    try b.append("\".")
+    try addConsole(s, "[error] ", b.bytes())
+    try fireLoadEvent(s, el, "securitypolicyviolation")
+}

@@ -49,6 +49,7 @@ pub struct BrowsingContext {
     loose: bool
     // Without a window: the tab the engine keeps it in (`pumpContexts`).
     own: ?*mut Tab
+    popup_sandbox: u32
 }
 
 /// What a request asks of the front end.
@@ -147,7 +148,7 @@ fn addContext(alloc: Allocator, loose: bool) AllocError!u32 {
     t.next_id += 1
     let name = try alloc.alloc(0 as u8, 0)
     errdefer alloc.free(name)
-    try t.items.append(BrowsingContext { id: id, page: null, opener: 0, name: name, by_script: false, agent: false, loose: loose, own: null })
+    try t.items.append(BrowsingContext { id: id, page: null, opener: 0, name: name, by_script: false, agent: false, loose: loose, own: null, popup_sandbox: 0 })
     return id
 }
 
@@ -216,6 +217,9 @@ fn attachLoading(p: *mut Page) AllocError!void {
     try resetWindowName(c, p)
     c.page = p
     p.context = id
+    if c.popup_sandbox != 0 {
+        setSandbox(p, p.sandbox | c.popup_sandbox)
+    }
 }
 
 // Page `p` is freed: its context no longer shows it (a loose context
@@ -330,7 +334,7 @@ pub fn setTabHost(on: bool) {
 /// Opens a new context named `name` (empty: none; `_blank` is none)
 /// from context `from` (its opener unless `no_opener`), which loads
 /// `href` (by POST with `body`) once the front end gave it a tab. Its id.
-fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body, initiator: []u8) AllocError!u32 {
+fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body, initiator: []u8, sandbox: u32) AllocError!u32 {
     let t = bc_table orelse return 0
     let id = try addContext(t.alloc, false)
     let c = contextOf(id).?
@@ -339,6 +343,10 @@ fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bo
         try copySessionStorage(from, id)
     }
     c.by_script = by_script
+    // spec: https://html.spec.whatwg.org/multipage/browsers.html#popup-sandboxing-flag-set
+    if sandbox & SB_PROPAGATES_TO_POPUPS != 0 {
+        c.popup_sandbox = sandbox
+    }
     if contextOf(from) |f| {
         c.agent = f.agent
     }
@@ -420,27 +428,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if text.eqlIgnoreCase(name, "_blank") && !relHas(rel, "opener") {
         no_opener = true
     }
-    return openContext(from, href, name, no_opener, false, body, originPage(p).url.href)
-}
-
-/// A link `el` of `p` to `target` whose `target` attribute names another
-/// tab (`_blank`, a tab's name, a name no frame or tab has): asks the
-/// front end to load it there and returns true; false when it loads in
-/// this tab or a frame of it.
-pub fn openElsewhere(p: *mut Page, el: dom.NodeId, target: *Url) AllocError!bool {
-    if text.eql(target.scheme, "javascript") || text.eql(target.scheme, "mailto") {
-        return false
-    }
-    return (try targetContext(p, el, target.href, null)) != 0
-}
-
-/// `openElsewhere` for the submission `sub` of `form`.
-pub fn submitElsewhere(p: *mut Page, form: dom.NodeId, sub: *Submission) AllocError!bool {
-    if !sub.post {
-        return (try targetContext(p, form, sub.target.href, null)) != 0
-    }
-    var body = net.Body { content_type: sub.content_type, data: sub.body }
-    return (try targetContext(p, form, sub.target.href, &body)) != 0
+    return openContext(from, href, name, no_opener, false, body, originPage(p).url.href, p.sandbox)
 }
 
 // ---- without a window

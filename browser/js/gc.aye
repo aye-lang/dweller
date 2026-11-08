@@ -232,6 +232,7 @@ fn drain(it: *mut Interp) {
 
 fn sweep(it: *mut Interp) {
     var live: usize = 0
+    var bytes: usize = 0
     for i in 0..it.heap.objs.len() {
         let ob = &mut it.heap.objs.items()[i]
         if !ob.live {
@@ -240,6 +241,7 @@ fn sweep(it: *mut Interp) {
         if ob.mark {
             ob.mark = false
             live += 1
+            bytes += objBytes(ob)
             continue
         }
         match ob.data {
@@ -261,6 +263,7 @@ fn sweep(it: *mut Interp) {
         if c.mark || c.perm {
             c.mark = false
             live += 1
+            bytes += strBytes(c)
             continue
         }
         it.heap.freeStr(i as u32)
@@ -274,6 +277,7 @@ fn sweep(it: *mut Interp) {
         if ev.mark {
             ev.mark = false
             live += 1
+            bytes += envBytes(ev)
             continue
         }
         it.heap.freeEnv(i as u32)
@@ -281,6 +285,10 @@ fn sweep(it: *mut Interp) {
     }
     it.heap.allocs_before_gc += it.heap.since_gc as u64
     it.heap.since_gc = 0
+    it.heap.bytes_since_gc = 0
+    it.heap.live_bytes = bytes
+    it.heap.out_of_memory = it.heap.out_of_memory || bytes > it.heap.limit_bytes
+    it.terminated = it.terminated || it.heap.out_of_memory
     if it.heap.threshold > 1 {
         it.heap.threshold = live * 2
         if it.heap.threshold < 20000 {

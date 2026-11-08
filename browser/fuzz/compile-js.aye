@@ -1,0 +1,33 @@
+import js
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn compileJs(alloc: Allocator, it: *mut js.Interp, src: []u8, module: bool) AllocError!void {
+    var info = js.ModuleInfo.init(alloc)
+    defer info.deinit()
+
+    let first = it.ast.funcs.len()
+
+    let root = it.parseCode(src, module, 0, &mut info) catch |e| {
+        if e == js.JsError.Thrown {
+            return
+        }
+
+        return AllocError.OutOfMemory
+    }
+
+    if !module {
+        freeCode(alloc, try js.compileScript(alloc, &it.ast, root))
+    }
+
+    for f in first..it.ast.funcs.len() {
+        freeCode(alloc, try js.compileFunction(alloc, &it.ast, f as u32))
+    }
+}
+
+fn freeCode(alloc: Allocator, f: js.VmFunc) {
+    if f.code |code| {
+        code.deinit()
+        alloc.destroy(code)
+    }
+}

@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+// https://httpwg.org/specs/rfc9110.html#field-lines
+pub fn appendHeaderValues(lines: []u8, name: []u8, out: *mut text.Builder) AllocError!void {
+    var all = text.split(lines, "\n")
+
+    while all.next() |line| {
+        if text.eqlIgnoreCase(headerName(line), name) {
+            if out.len() > 0 {
+                try out.appendByte(',')
+            }
+
+            try out.append(headerText(line))
+        }
+    }
+}

@@ -1,0 +1,19 @@
+import net
+import std.mem.AllocError
+import std.text
+import url
+
+// chromium: content/browser/site_info.cc GetSiteForURLInternal
+fn writeSite(href: []u8, out: *mut text.Builder) AllocError!void {
+    out.clear()
+
+    let u = url.parse(out.alloc, href) catch return
+    defer u.deinit(out.alloc)
+
+    if text.eql(u.scheme, "file") { return out.append("file:") }
+    if (!text.eql(u.scheme, "http") && !text.eql(u.scheme, "https")) || u.host.len == 0 { return }
+
+    try out.append(u.scheme)
+    try out.append("://")
+    try out.append(net.siteOf(u.host))
+}

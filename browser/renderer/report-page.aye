@@ -4,7 +4,11 @@ import std.text
 fn reportPage(r: *mut TabRenderer) !void {
     try endBusy(r)
 
+    try endOutOfMemory(r)
+
     let p = r.page orelse return
+
+    try scriptNavigation(r, p)
 
     if !text.eql(p.title, r.title.bytes()) {
         r.title.clear()
@@ -12,9 +16,5 @@ fn reportPage(r: *mut TabRenderer) !void {
         try send(r.alloc, r.conn, r.tab, ipc.Message.Title { title: p.title })
     }
 
-    if !text.eql(p.url.href, r.href.bytes()) {
-        r.href.clear()
-        try r.href.append(p.url.href)
-        try send(r.alloc, r.conn, r.tab, ipc.Message.SameDocument { url: p.url.href })
-    }
+    try reportHistory(r, p)
 }

@@ -1,0 +1,34 @@
+import image
+import std.mem.AllocError
+import std.mem.Allocator
+
+let IMAGE_DICTIONARY = [_][]u8{
+    "\x89PNG\r\n\x1a\n", "IHDR", "IDAT", "IEND", "PLTE", "tRNS", "acTL", "fcTL", "fdAT", "\x78\x9c", "\x78\x01",
+    "\xff\xd8\xff", "\xff\xc0", "\xff\xc1", "\xff\xc2", "\xff\xc4", "\xff\xdb", "\xff\xda", "\xff\xdd", "\xff\xd0", "\xff\xd9",
+    "\xff\xe1\x00\x16Exif\x00\x00MM\x00\x2a", "\xff\xeeAdobe", "GIF87a", "GIF89a", "!\xf9\x04", "!\xff\x0bNETSCAPE2.0", ",", ";",
+    "RIFF", "WEBP", "VP8 ", "VP8L", "VP8X", "ALPH", "ANIM", "ANMF", "\x9d\x01\x2a", "\x2f", "\x00\x00\x01\x00", "\x00\x00\x02\x00",
+    "\x28\x00\x00\x00", "\x00\x00\x00\x00", "\xff\xff\xff\xff", "\x7f\xff\xff\xff", "\x00\x40", "\x40\x00", "\x01\x00", "\x00\x01",
+}
+
+fn imageTarget() Target {
+    return Target { name: "image", dictionary: IMAGE_DICTIONARY[0..], run: fuzzImage }
+}
+
+// chromium: third_party/blink/renderer/platform/image-decoders/image_decoder_fuzzer_utils.cc
+fn fuzzImage(alloc: Allocator, input: []u8) AllocError!void {
+    _ = image.headerSize(input)
+
+    var bmp = image.decode(alloc, input) catch |e| {
+        if e == image.ImageError.OutOfMemory {
+            return AllocError.OutOfMemory
+        }
+
+        return
+    }
+
+    defer bmp.deinit(alloc)
+
+    if bmp.pixels.len != bmp.width * bmp.height * 4 {
+        unreachable
+    }
+}

@@ -160,6 +160,11 @@ fn webpAlpha(alloc: Allocator, chunk: []u8, bmp: *mut Bitmap) ImageError!void {
     if method > 1 {
         return ImageError.Invalid
     }
+    var per_pixel: usize = 5
+    if method == 1 {
+        per_pixel = 13
+    }
+    try checkDecodeBytes(w * h * per_pixel)
     let alpha = try alloc.alloc(0 as u8, w * h)
     defer alloc.free(alpha)
     if method == 0 {
@@ -230,16 +235,18 @@ fn webpFirstFrame(alloc: Allocator, chunks: []u8, cw: usize, ch: usize) ImageErr
         }
         var frame = webpEmptyFrame()
         try webpFrameChunks(c.body[16..], &mut frame)
+        if (fw != cw || fh != ch) && (fw * fh + cw * ch) * 4 > MAX_DECODED_BYTES {
+            return ImageError.Unsupported
+        }
         let img = try webpDecodeFrame(alloc, &frame)
-        defer img.deinit(alloc)
         if img.width != fw || img.height != fh {
+            img.deinit(alloc)
             return ImageError.Invalid
         }
-        if fx == 0 && fy == 0 && fw == cw && fh == ch {
-            let copy = try newBitmap(alloc, cw, ch)
-            std.mem.copy(copy.pixels, img.pixels)
-            return copy
+        if fw == cw && fh == ch {
+            return img
         }
+        defer img.deinit(alloc)
         let canvas = try newBitmap(alloc, cw, ch)
         for y in 0..fh {
             let from = y * fw * 4

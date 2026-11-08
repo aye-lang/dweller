@@ -94,13 +94,13 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         return false
     }
     if held == null {
-        net.prefetch(alloc, hrefs.bytes(), net.Kind.Script, referrer)
+        net.prefetch(alloc, hrefs.bytes(), net.Kind.Font, referrer)
     }
     var added = false
     for w in wanted.items() {
         let d = descOf(faces[w.face], w.href)
         if held |cache| {
-            let ok = cache.loadedInBackground(w.href, net.Kind.Script) orelse continue
+            let ok = cache.loadedInBackground(w.href, net.Kind.Font) orelse continue
             if !ok {
                 // Failed: the fallback faces from now on.
                 try measure.addWebFont(d, "")
@@ -117,7 +117,7 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         }
         if url.parse(alloc, w.href) |target| {
             defer target.deinit(alloc)
-            if net.request(alloc, &target, net.Request { kind: net.Kind.Script, referrer: referrer, initiator: net.Initiator.Page { url: referrer } }) |res| {
+            if net.request(alloc, &target, net.Request { kind: net.Kind.Font, referrer: referrer, initiator: net.Initiator.Page { url: referrer } }) |res| {
                 defer res.deinit(alloc)
                 if res.status >= 200 && res.status < 300 {
                     owned = try webfont.sfntOf(alloc, res.body)

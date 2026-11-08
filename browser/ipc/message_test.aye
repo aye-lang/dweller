@@ -18,10 +18,16 @@ test "the focus, title and same-document messages round-trip" {
         _ => @expect(false)
     }
 
-    let moved = try roundTrip(&mut out, 7, Message.SameDocument { url: "http://a/b#c" })
+    let moved = try roundTrip(&mut out, 7, Message.SameDocument { url: "http://a/b#c", index: 2, nulls: 0, state: "s" })
 
     match moved.message {
-        .SameDocument { url } => @expectEqual("http://a/b#c", url)
+        .SameDocument { url, index, nulls, state } => {
+            @expectEqual("http://a/b#c", url)
+            @expectEqual(2, index)
+            @expectEqual(0, nulls)
+            @expectEqual("s", state)
+        }
+
         _ => @expect(false)
     }
 }
@@ -69,32 +75,35 @@ test "the cursor, target URL, long task, take focus and redirect messages round-
         _ => @expect(false)
     }
 
-    let asked = try roundTrip(&mut out, 7, Message.Agent { id: 3, mcp: 1, line: "{}" })
+    let asked = try roundTrip(&mut out, 7, Message.Agent { id: 3, mcp: 1, ref_base: 9, line: "{}" })
 
     match asked.message {
-        .Agent { id, mcp, line } => {
+        .Agent { id, mcp, ref_base, line } => {
             @expectEqual(3, id)
             @expectEqual(1, mcp)
+            @expectEqual(9, ref_base)
             @expectEqual("{}", line)
         }
 
         _ => @expect(false)
     }
 
-    let answered = try roundTrip(&mut out, 7, Message.AgentReply { id: 3, answer: "ok" })
+    let answered = try roundTrip(&mut out, 7, Message.AgentReply { id: 3, next_ref: 12, answer: "ok" })
 
     match answered.message {
-        .AgentReply { id, answer } => {
+        .AgentReply { id, next_ref, answer } => {
             @expectEqual(3, id)
+            @expectEqual(12, next_ref)
             @expectEqual("ok", answer)
         }
 
         _ => @expect(false)
     }
 
-    @expect(!fromRenderer(Message.Agent { id: 0, mcp: 0, line: "" }) && fromRenderer(Message.AgentReply { id: 0, answer: "" }))
+    @expect(!fromRenderer(Message.Agent { id: 0, mcp: 0, ref_base: 1, line: "" }) && fromRenderer(Message.AgentReply { id: 0, next_ref: 1, answer: "" }))
     @expect(fromRenderer(Message.Cursor { shape: 0 }) && fromRenderer(Message.TargetUrl { url: "" }) && fromRenderer(Message.LongTask { on: 1, ms: 0 }))
     @expect(fromRenderer(Message.TakeFocus { reverse: 0 }) && fromRenderer(Message.Redirect { url: "" }))
+    @expect(fromRenderer(Message.OutOfMemory))
 }
 
 test "ping and pong round-trip and go the right way" {
@@ -203,4 +212,32 @@ test "cookie and storage messages round-trip and go the right way" {
     @expect(fromRenderer(Message.Storage { doc: 0, context: 0, session: 0, op: 0, index: 0, key: "", value: "" }))
     @expect(!fromRenderer(Message.Cookies { cookies: "" }) && !fromRenderer(Message.StorageReply { found: 0, refused: 0, changed: 0, count: 0, value: "" }))
     @expect(!fromRenderer(Message.StorageEvent { nulls: 0, key: "", old: "", value: "", url: "" }))
+}
+
+test "the session history, history go and traverse messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let shape = try roundTrip(&mut out, 7, Message.SessionHistory { index: 1, length: 3, scroll: 40.0, nulls: 1, state: "" })
+
+    match shape.message {
+        .SessionHistory { index, length, scroll, nulls, .. } => {
+            @expectEqual(1, index)
+            @expectEqual(3, length)
+            @expectEqual(40.0, scroll)
+            @expectEqual(1, nulls)
+        }
+
+        _ => @expect(false)
+    }
+
+    let went = try roundTrip(&mut out, 7, Message.HistoryGo { index: 2 })
+
+    match went.message {
+        .HistoryGo { index } => @expectEqual(2, index)
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.HistoryGo { index: 0 }))
+    @expect(!fromRenderer(Message.SessionHistory { index: 0, length: 1, scroll: 0.0, nulls: 1, state: "" }) && !fromRenderer(Message.Traverse { index: 0 }))
 }

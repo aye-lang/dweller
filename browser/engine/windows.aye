@@ -63,6 +63,7 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "setWindowProto", 1, akSetWindowProto)
     try defMethod(it, o, "setMessageHandler", 1, akSetMessageHandler)
     try defMethod(it, o, "openWindow", 3, akOpenWindow)
+    try defMethod(it, o, "winOpen", 4, akWinOpen)
     try defMethod(it, o, "openerWindow", 0, akOpenerWindow)
     try defMethod(it, o, "dropOpener", 0, akDropOpener)
     try defMethod(it, o, "closeWindow", 0, akCloseWindow)
@@ -596,69 +597,12 @@ fn featureOn(features: []u8, name: []u8) bool {
 // URL, its opener this page's context unless `noopener` or `noreferrer`
 // (then the result is null). The window of where it loads.
 fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
-    let s = scriptOf(it)
-    let ub = try it.builder()
-    defer it.release(ub)
-    try argText(it, a, 0, ub)
-    let tb = try it.builder()
-    defer it.release(tb)
-    try argText(it, a, 1, tb)
-    let fb = try it.builder()
-    defer it.release(fb)
-    try argText(it, a, 2, fb)
-    var href = text.trim(ub.bytes())
-    if href.len == 0 {
-        href = "about:blank"
-    }
-    let target = s.page.resolve(it.alloc, href) catch |e| {
-        return domError(it, "SyntaxError", "Failed to execute 'open' on 'Window': Unable to open a window with invalid URL.")
-    }
-    defer target.deinit(it.alloc)
-    var name = text.trim(tb.bytes())
-    if name.len == 0 {
-        name = "_blank"
-    }
-    let no_opener = featureOn(fb.bytes(), "noopener") || featureOn(fb.bytes(), "noreferrer")
-    var here: ?*mut Page = null
-    if text.eqlIgnoreCase(name, "_self") {
-        here = s.page
-    } else if text.eqlIgnoreCase(name, "_parent") {
-        here = s.page.parent orelse s.page
-    } else if text.eqlIgnoreCase(name, "_top") {
-        here = rootPage(s.page)
-    } else if !text.eqlIgnoreCase(name, "_blank") {
-        if namedFrame(rootPage(s.page), name) |slot| {
-            here = slotPage(slot)
-        }
-    }
-    if here |p| {
-        if !sandboxAllowsNavigation(s.page, p, false) {
-            return Value.Null
-        }
-        if p.script |ts| {
-            try setNavigation(ts, target.href)
-        }
-        return windowValue(s, p)
-    }
-    if s.page.sandbox & SB_AUXILIARY_NAVIGATION != 0 {
-        return Value.Null
-    }
-    let from = contextOfPage(s.page)
-    if contextOf(from) == null {
-        return Value.Null
-    }
-    if !text.eqlIgnoreCase(name, "_blank") {
-        let named = namedContext(from, name)
-        if named != 0 {
-            try navigateContext(named, target.href, null, originPage(s.page).url.href)
-            return contextValue(s, named)
-        }
-    }
-    let id = try openContext(from, target.href, name, no_opener, true, null, originPage(s.page).url.href)
-    if no_opener || id == 0 {
-        return Value.Null
-    }
-    return contextValue(s, id)
+    return openWindow(it, scriptOf(it).page, a, 0)
+}
+
+fn akWinOpen(it: *mut Interp, a: Args) JsError!Value {
+    let page = (try argWindow(it, a)) orelse return Value.Null
+    return openWindow(it, page, a, 1)
 }
 
 // The window of the context that opened this page's (null for none, or

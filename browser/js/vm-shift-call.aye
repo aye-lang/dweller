@@ -1,0 +1,33 @@
+// v8: src/builtins/arm64/builtins-arm64.cc (Generate_FunctionPrototypeApply)
+fn vmShiftCall(it: *mut Interp, top: usize, argc: usize) JsError!usize {
+    let apply = objectOf(it.slot(top)) == it.function_apply
+
+    it.setSlot(top, it.slot(top + 1))
+
+    if argc == 0 {
+        it.setSlot(top + 1, Value.Undefined)
+
+        return 0
+    }
+
+    if apply {
+        var list = Value.Undefined
+
+        if argc >= 2 {
+            list = it.slot(top + 3)
+        }
+
+        it.setSlot(top + 1, it.slot(top + 2))
+        it.truncate(top + 2)
+
+        return pushArrayLike(it, list)
+    }
+
+    for i in 0..argc {
+        it.setSlot(top + 1 + i, it.slot(top + 2 + i))
+    }
+
+    it.truncate(top + 1 + argc)
+
+    return argc - 1
+}

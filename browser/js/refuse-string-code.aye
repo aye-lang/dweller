@@ -1,0 +1,13 @@
+// https://w3c.github.io/webappsec-csp/#can-compile-strings
+pub fn refuseStringCode(it: *mut Interp) JsError!void {
+    if it.eval_refusal.len == 0 {
+        return
+    }
+
+    let b = try it.builder()
+    defer it.release(b)
+    try b.append("Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"")
+    try b.append(it.eval_refusal)
+    try b.append("\".")
+    _ = try it.throwError(it.eval_error_proto, b.bytes())
+}

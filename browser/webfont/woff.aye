@@ -74,8 +74,10 @@ pub fn unwoff(alloc: Allocator, data: []u8) AllocError!?[]mut u8 {
     var size = 12 + n * 16
     for k in 0..n {
         let e = 44 + k * 20
+        let offset = be32(data, e + 4) as usize
+        let comp = be32(data, e + 8) as usize
         let orig = be32(data, e + 12) as usize
-        if orig > 0x10000000 {
+        if orig > 0x10000000 || offset > data.len || comp > data.len - offset || comp > orig || (comp < orig && orig > comp * 1032) {
             return null
         }
         size += (orig + 3) & ~(3 as usize)
@@ -101,10 +103,6 @@ pub fn unwoff(alloc: Allocator, data: []u8) AllocError!?[]mut u8 {
         let offset = be32(data, e + 4) as usize
         let comp = be32(data, e + 8) as usize
         let orig = be32(data, e + 12) as usize
-        if offset > data.len || comp > data.len - offset || comp > orig {
-            alloc.free(out)
-            return null
-        }
         let r = 12 + k * 16
         put32(out, r, be32(data, e))
         put32(out, r + 4, be32(data, e + 16))

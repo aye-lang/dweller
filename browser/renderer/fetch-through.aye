@@ -11,7 +11,7 @@ fn fetchThrough(r: *mut TabRenderer) {
 
 fn fetchRemote(alloc: Allocator, target: *Url, req: net.Request) net.FetchError!net.Response {
     let r = fetch_renderer orelse return net.FetchError.Network
-    let nav = req.initiator is .Browser && req.kind == net.Kind.Document && req.top.len == 0
+    let nav = (req.initiator is .Browser || tabLoads(r)) && req.kind == net.Kind.Document && req.top.len == 0
 
     r.fetches += 1
     askFetch(r, r.fetches, nav, target, req) catch return net.FetchError.Network

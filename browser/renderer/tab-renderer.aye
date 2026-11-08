@@ -28,6 +28,7 @@ struct TabRenderer {
     current: text.Builder
     reply: text.Builder
     docs: text.Builder
+    top: text.Builder
     fetches: u32 = 0
     blink: bool
     page: ?*mut engine.Page = null
@@ -64,6 +65,16 @@ struct TabRenderer {
     cursor: u32 = 0
     busy: bool = false
     session: ?*mut agent.Session = null
+    history: engine.SessionHistory
+    mirrored: bool = false
+    at: u32 = 0
+    hist_index: u32 = 0
+    hist_length: u32 = 1
+    hist_scroll: f64 = 0.0
+    hist_state: text.Builder
+    hist_null: bool = true
+    said_state: text.Builder
+    said_null: bool = true
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -110,5 +121,9 @@ struct TabRenderer {
         self.current.deinit()
         self.reply.deinit()
         self.docs.deinit()
+        self.top.deinit()
+        self.history.deinit()
+        self.hist_state.deinit()
+        self.said_state.deinit()
     }
 }

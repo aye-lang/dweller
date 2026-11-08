@@ -1,0 +1,17 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#parse-serialized-policy
+pub fn directiveOf(policy: []u8, name: []u8) ?[]u8 {
+    var directives = text.split(policy, ";")
+
+    while directives.next() |d| {
+        var at: usize = 0
+        let first = nextWord(d, &mut at) orelse continue
+
+        if text.eqlIgnoreCase(first, name) {
+            return text.trim(d)
+        }
+    }
+
+    return null
+}

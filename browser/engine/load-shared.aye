@@ -1,0 +1,20 @@
+import encoding
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+pub fn loadShared(alloc: Allocator, target: *Url, body: ?*net.Body, initiator: net.Initiator, h: *mut SessionHistory) AllocError!*mut Page {
+    let p = try fetchPage(alloc, target, body, encoding.Encoding.Windows1252, "", initiator)
+
+    errdefer p.destroy()
+
+    if h.now().state |st| { try p.history.replace(p.url.href, st) }
+
+    try h.adoptAt(h.current, &mut p.history)
+    p.shared = h
+    try attachLoading(p)
+    try runDocument(p, scriptingEnabled())
+
+    return p
+}

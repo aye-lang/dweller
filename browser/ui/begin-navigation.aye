@@ -2,10 +2,11 @@ import ipc
 import net
 import std
 import std.mem.AllocError
+import std.text
 import url
 
 // chromium: content/browser/renderer_host/render_frame_host_impl.cc BeginNavigation
-fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, content_type: []u8, body: []u8) AllocError!void {
+fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, content_type: []u8, body: []u8, policy: net.ReferrerPolicy) AllocError!void {
     let alloc = tp.url.alloc
     let target = url.parse(alloc, href) catch |e| {
         return
@@ -19,11 +20,23 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
         return
     }
 
+    if text.eql(target.scheme, "data") {
+        std.log.err("Not allowed to navigate top frame to data URL: {}", target.href)
+
+        return
+    }
+
+    let at = slot.session.tab.history.current + 1
+
     tp.nav_initiator.clear()
     try tp.nav_initiator.append(topOf(tp))
+    tp.nav_policy = policy
     tp.committed.clear()
     try tp.committed.append(target.href)
+    tp.push_on_commit = true
+    try sendSessionHistory(slot, tp, at, at + 1)
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Navigate { url: target.href, post: (post != 0) as u32, content_type: content_type, body: body })
     tp.loading = true
     tp.redirected = false
+    tp.nav_failed = false
 }

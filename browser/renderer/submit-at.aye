@@ -1,14 +1,8 @@
 import dom.NodeId
 import engine
-import ipc
 
 fn submitAt(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) !void {
     if !(try engine.validateSubmission(p, form, submitter)) || !(try engine.dispatchSubmit(p, form, submitter)) { return p.restyle() }
 
-    let sub = (try engine.submitForm(p, form, submitter)) orelse return
-    defer sub.deinit(r.alloc)
-
-    if try engine.submitElsewhere(p, form, &sub) { return }
-
-    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: sub.target.href, post: sub.post as u32, content_type: sub.content_type, body: sub.body })
+    try sendSubmission(r, p, form, submitter)
 }

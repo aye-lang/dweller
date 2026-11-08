@@ -1,0 +1,22 @@
+import ipc
+import std.mem.AllocError
+
+fn navigateSpeculative(slot: *TabSlot, next: *mut TabProcess) AllocError!void {
+    if next.agent_id != 0 && next.buffers.width == 0 { return }
+
+    let h = &slot.session.tab.history
+    var at = h.current
+    var length = h.len()
+
+    if next.push_on_commit {
+        at += 1
+        length = at + 1
+    }
+
+    try next.committed.append(next.url.bytes())
+    try sendSessionHistory(slot, next, at, length)
+
+    if next.agent_id != 0 { return ipc.encode(&mut next.outbox, slot.id, ipc.Message.Agent { id: next.agent_id, mcp: next.agent_mcp as u32, ref_base: next.next_ref, line: next.agent_line.bytes() }) }
+
+    try ipc.encode(&mut next.outbox, slot.id, ipc.Message.Navigate { url: next.url.bytes(), post: 0, content_type: "", body: "" })
+}

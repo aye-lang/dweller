@@ -1,4 +1,5 @@
 import ipc
+import net
 import std
 import std.mem.AllocError
 
@@ -20,6 +21,9 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if (!tp.loading && !by_agent) || got.frame != slot.id { return "unexpected loaded" }
             if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
             if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if !tp.nav_failed && !(try inSiteLock(tp, url)) { return "commit outside site lock" }
+
+            if tp.loading { try commitEntry(slot, tp, url) }
 
             try showCommitted(tp, title, url)
             tp.loading = false
@@ -31,8 +35,9 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try showCommitted(tp, title, tp.committed.bytes())
         }
 
-        .SameDocument { url } => {
+        .SameDocument { url, index, nulls, state } => {
             if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if nulls > 1 || !(try sameDocumentEntry(slot, tp, url, index, nulls, state)) { return "bad same_document" }
 
             try showCommitted(tp, tp.title.bytes(), url)
         }
@@ -40,13 +45,23 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
+            if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
+
             return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
         }
 
-        .BeginNavigation { url, post, content_type, body } => {
+        .HistoryGo { index } => {
+            if got.frame != slot.id || index as usize >= slot.session.tab.history.len() { return "bad history_go" }
+
+            if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
+        }
+
+        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
             if got.frame != slot.id { return "unexpected begin_navigation" }
 
-            try beginNavigation(slot, tp, url, post, content_type, body)
+            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
+
+            try beginNavigation(slot, tp, url, post, content_type, body, policy)
         }
 
         .Popup { items, disabled, selected, x, y, w, h } => {
@@ -98,9 +113,10 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try tp.committed.append(url)
         }
 
-        .AgentReply { id, answer } => {
-            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id { return "bad agent_reply" }
+        .AgentReply { id, next_ref, answer } => {
+            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id || next_ref < tp.next_ref { return "bad agent_reply" }
 
+            tp.next_ref = next_ref
             tp.answer.clear()
             try tp.answer.append(answer)
             tp.agent_id = 0
@@ -111,6 +127,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id { return "bad fetch" }
 
             return answerFetch(tp, got.frame, got.message)
+        }
+
+        .OutOfMemory => {
+            if got.frame != slot.id { return "bad out_of_memory" }
+
+            try showCommitted(tp, "Out of memory", tp.committed.bytes())
         }
 
         .CookieGet { .. }, .CookieSet { .. } => {

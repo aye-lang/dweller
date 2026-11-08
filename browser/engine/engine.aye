@@ -100,6 +100,7 @@ pub struct Page {
     // A sandboxed frame: no scripts (without `allow-scripts`), and an
     // origin of its own (without `allow-same-origin`).
     no_scripts: bool
+    csp: []u8 = ""
     opaque: bool
     sandbox: u32
     // Changes the scripts of other pages made to the document (through
@@ -162,6 +163,7 @@ pub struct Page {
         self.frame_elements.nodes.deinit()
         self.history.deinit()
         self.doc.deinit()
+        freePolicy(alloc, self.csp)
         alloc.free(self.title)
         self.url.deinit(alloc)
         self.base.deinit(alloc)
@@ -207,7 +209,7 @@ pub struct Page {
     /// the Referer.
     pub fn follow(self: *Self, alloc: Allocator, href: []u8) url.UrlError!Url {
         let target = try self.resolve(alloc, href)
-        net.noteNavigation(target.href, self.url.href, true) catch |e| {
+        net.noteNavigation(target.href, self.url.href, hasTransientActivation(self)) catch |e| {
             target.deinit(alloc)
             return url.UrlError.OutOfMemory
         }
@@ -677,9 +679,12 @@ fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding
     var doc = try documentOf(alloc, res.mime, src)
     perf.end("html", parse_began, target.href)
     errdefer doc.deinit()
-    try notePageUpgrades(&doc, res, located.href)
+    let policy = try pagePolicy(alloc, &doc, res)
+    errdefer freePolicy(alloc, policy)
+    try notePageUpgrades(policy, located.href)
     try notePageReferrerPolicy(alloc, &doc, res, located.href)
     let p = try newPage(alloc, located, res.status, "", doc)
+    p.csp = policy
     p.encoding = enc
     p.plain = text.eql(res.mime, "text/plain")
     return p

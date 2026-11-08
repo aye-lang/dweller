@@ -79,6 +79,8 @@ pub enum Kind {
     Script
     // A script's `fetch()`.
     Other
+    Font
+    Worker
 }
 
 /// Whether a request sends and stores cookies (Fetch's credentials
@@ -188,6 +190,12 @@ pub fn noteFailure(kind: Kind, status: i64, href: []u8) {
         .Script => {
             name = "script"
         }
+        .Font => {
+            name = "font"
+        }
+        .Worker => {
+            name = "worker"
+        }
         .Other => {}
     }
     perf.noteLoadFailed(name, status, href)
@@ -218,6 +226,9 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     if r.referrer.len == 0 && text.eql(hint_target, target.withoutFragment()) {
         r.referrer = hint_referrer
         r.user_activated = s.nav_user
+        if r.referrer_policy == null {
+            r.referrer_policy = nav_policy
+        }
     }
     return fetchHttp(alloc, target, r)
 }

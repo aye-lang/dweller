@@ -1,0 +1,36 @@
+import js
+import std.mem.AllocError
+import std.mem.Allocator
+
+let JS_DICTIONARY = [_][]u8{
+    "(", ")", "[", "]", "{", "}", ";", ",", ".", "...", "?.", "??", "??=", "||=", "&&=", "=>", "=", "==", "===", "!==",
+    "+", "++", "-", "--", "*", "**", "/", "/=", "%", "<<", ">>>", "&", "|", "^", "~", "!", "?", ":", "#x", "@",
+    "'", "\"", "`", "${", "\\", "\\u{61}", "\\u0061", "\n", "\r\n", "\xe2\x80\xa8", " ", "\t", "\0", "//", "/*", "*/", "<!--", "-->",
+    "var ", "let ", "const ", "function ", "function* ", "async ", "await ", "yield ", "yield* ", "class ", "extends ",
+    "static ", "get ", "set ", "new ", "new.target", "super", "super.x", "super()", "this", "return ", "if (", "else ",
+    "for (", "for await (", " of ", " in ", "while (", "do ", "switch (", "case ", "default:", "break ", "continue ",
+    "try {", "catch (e)", "finally {", "throw ", "with (", "debugger", "delete ", "typeof ", "void ", "instanceof ",
+    "import ", "import(", "import.meta", "export ", "export default ", "from ", " as ", "* as ns", "label:",
+    "\"use strict\";", "arguments", "eval(", "undefined", "null", "true", "false", "0x1f", "0b1", "0o7", "1n", "1_000",
+    ".5e-3", "/a+/gimsuyd", "/[\\p{L}]/v", "a", "b", "x", "()=>{}", "async () => {}", "function f(a = 1, ...r) {}",
+    "class C { #p; static { } m() {} }", "{a, b: [c] = d, ...e}", "[a, , ...b]", "f`x${y}z`", "a?.[b]?.(c)",
+}
+
+let JS_ROOM: u64 = 5 << 20
+
+fn jsTarget() Target {
+    return Target { name: "js", dictionary: JS_DICTIONARY[0..], run: fuzzJs }
+}
+
+// v8: test/fuzzer/parser.cc
+fn fuzzJs(alloc: Allocator, input: []u8) AllocError!void {
+    var it = js.newRealm(alloc) catch |e| {
+        return AllocError.OutOfMemory
+    }
+
+    defer it.deinit()
+
+    it.markStackBase(JS_ROOM)
+    try compileJs(alloc, &mut it, input, false)
+    try compileJs(alloc, &mut it, input, true)
+}

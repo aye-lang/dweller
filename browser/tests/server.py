@@ -68,8 +68,13 @@
 #                    Referer in /meta-log and answers as /log/NAME
 #   /meta-log        the requests /meta/ recorded, sorted
 #   /policy/POLICY/NAME  the file NAME with Referrer-Policy: POLICY
+#   /policy-redirect/POLICY/NAME  302 to /meta/NAME with Referrer-Policy: POLICY
+#   /see/NAME        (POST) 303 to /meta/NAME
 #   /with-other/NAME?other=URL  the HTML file NAME with each $OTHER
 #                    replaced by URL (a page that names another origin)
+#   /csp/NAME?other=URL  the file csp/NAME with one Content-Security-Policy
+#                    header per line of csp/NAME.policy (when there is
+#                    one), each $OTHER replaced by URL
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
 #   /cookie-module?acao&acac  a JS module that records the request's
 #                    Cookie header; `acao` echoes Origin in
@@ -242,6 +247,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/plain")], "".join(sorted(META)).encode())
         elif path.startswith("/meta/"):
             self.log_metadata("GET")
+        elif path.startswith("/policy-redirect/"):
+            policy, _, name = path[len("/policy-redirect/"):].partition("/")
+            self.reply(302, [("Location", "/meta/" + name), ("Referrer-Policy", policy)])
         elif path.startswith("/policy/"):
             policy, _, name = path[len("/policy/"):].partition("/")
             self.reply_file(name, [("Referrer-Policy", policy)])
@@ -274,6 +282,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with open(os.path.join(ROOT, parts.path[len("/with-other/"):]), "rb") as f:
                 page = f.read().replace(b"$OTHER", other.encode())
             self.reply(200, [("Content-Type", "text/html")], page)
+        elif path.startswith("/csp/"):
+            self.csp_page(path)
         elif path.startswith("/cookie-module?"):
             self.cookie_module()
         elif path.startswith("/nosniff/"):
@@ -348,6 +358,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    def csp_page(self, path):
+        parts = urllib.parse.urlsplit(path)
+        other = dict(urllib.parse.parse_qsl(parts.query)).get("other", "")
+        file = os.path.join(ROOT, parts.path[1:])
+        with open(file, "rb") as f:
+            data = f.read()
+        headers = [("Content-Type", mimetypes.guess_type(file)[0] or "text/plain")]
+        if os.path.isfile(file + ".policy"):
+            with open(file + ".policy") as f:
+                headers += [("Content-Security-Policy", line.replace("$OTHER", other)) for line in f.read().splitlines()]
+        self.reply(200, headers, data)
+
     def log_request_line(self, method, body=b""):
         parts = [method + " " + self.path]
         for name in ["Accept", "Referer", "Cookie", "Content-Type"]:
@@ -390,6 +412,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.log_request_line("POST", body)
         elif self.path.startswith("/meta/"):
             self.log_metadata("POST")
+        elif self.path.startswith("/see/"):
+            self.reply(303, [("Location", "/meta/" + self.path[len("/see/"):])])
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
         else:

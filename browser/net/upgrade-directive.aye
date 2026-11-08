@@ -1,3 +1,4 @@
+import csp
 import std.text
 
 // https://w3c.github.io/webappsec-upgrade-insecure-requests/#delivery
@@ -5,12 +6,8 @@ pub fn upgradeDirective(policy: []u8) bool {
     var policies = text.split(policy, ",")
 
     while policies.next() |p| {
-        var directives = text.split(p, ";")
-
-        while directives.next() |d| {
-            if text.eqlIgnoreCase(text.trim(d), "upgrade-insecure-requests") {
-                return true
-            }
+        if csp.directiveOf(p, "upgrade-insecure-requests") != null {
+            return true
         }
     }
 

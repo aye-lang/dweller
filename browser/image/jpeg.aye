@@ -97,6 +97,7 @@ struct JpegDecoder {
     eobrun: u32
     // EXIF orientation, 1 (as stored) to 8.
     orientation: u8
+    scale: usize
 }
 
 // Entropy-coded data: bytes with 0xFF 0x00 meaning 0xFF, read most
@@ -196,6 +197,7 @@ pub fn decodeJpeg(alloc: Allocator, data: []u8) ImageError!Bitmap {
         coefs: []mut i16{},
         eobrun: 0,
         orientation: 1,
+        scale: 1,
     }
     defer if dec.has_frame {
         alloc.free(dec.plane)
@@ -326,7 +328,7 @@ fn jpegFrame(dec: *mut JpegDecoder, alloc: Allocator, body: []u8, progressive: b
         // The height comes later in a DNL marker: nobody writes those.
         return ImageError.Unsupported
     }
-    try checkSize(width, height)
+    try checkSide(width, height)
     if body.len < 6 + n * 3 {
         return ImageError.Invalid
     }
@@ -366,7 +368,17 @@ fn jpegFrame(dec: *mut JpegDecoder, alloc: Allocator, body: []u8, progressive: b
         total += c.stride * dec.mcus_y * c.v * 8
         blocks += c.bw * dec.mcus_y * c.v
     }
-    dec.plane = try alloc.alloc(0 as u8, total)
+    var coef_bytes: usize = 0
+    if progressive {
+        coef_bytes = blocks * 64 * 2
+    }
+    let scale = try jpegScale(dec, total, coef_bytes)
+    dec.scale = scale
+    for i in 0..n {
+        dec.comps[i].offset /= scale * scale
+        dec.comps[i].stride /= scale
+    }
+    dec.plane = try alloc.alloc(0 as u8, total / (scale * scale))
     if progressive {
         dec.coefs = alloc.alloc(0 as i16, blocks * 64) catch |e| {
             alloc.free(dec.plane)
@@ -879,6 +891,9 @@ fn jpegStore(dec: *mut JpegDecoder, ci: usize, coef: []mut f32, bx: usize, by: u
     for y in 0..8 {
         jpegIdct1(ws, y * 8, 1, coef)
     }
+    if dec.scale > 1 {
+        return jpegStoreScaled(dec, ci, coef, bx, by)
+    }
     let c = &dec.comps[ci]
     let base = c.offset + by * 8 * c.stride + bx * 8
     for y in 0..8 {
@@ -943,10 +958,12 @@ fn jpegIdct1(src: []f32, at: usize, step: usize, out: []mut f32) {
 // Upsamples every component to the image size, converts to RGB and
 // returns the bitmap.
 fn jpegOutput(dec: *JpegDecoder, alloc: Allocator) ImageError!Bitmap {
-    var bmp = try newBitmap(alloc, dec.width, dec.height)
+    let w = jpegScaled(dec.width, dec.scale)
+    let h = jpegScaled(dec.height, dec.scale)
+    var bmp = try newBitmap(alloc, w, h)
     errdefer bmp.deinit(alloc)
-    let w = dec.width
-    let h = dec.height
+    bmp.natural_width = dec.width
+    bmp.natural_height = dec.height
     let full = try alloc.alloc(0 as u8, w * h * dec.ncomp)
     defer alloc.free(full)
     for i in 0..dec.ncomp {
@@ -1100,11 +1117,17 @@ fn jpegOrient(alloc: Allocator, src: *Bitmap, o: u8) ImageError!Bitmap {
     let h = src.height
     var ow = w
     var oh = h
+    var nw = src.naturalWidth()
+    var nh = src.naturalHeight()
     if o >= 5 {
         ow = h
         oh = w
+        nw = src.naturalHeight()
+        nh = src.naturalWidth()
     }
-    let out = try newBitmap(alloc, ow, oh)
+    var out = try newBitmap(alloc, ow, oh)
+    out.natural_width = nw
+    out.natural_height = nh
     for y in 0..oh {
         for x in 0..ow {
             // The source pixel of (x, y).
@@ -1155,13 +1178,13 @@ fn jpegClamp(v: i32) u8 {
 fn jpegUpsample(dec: *JpegDecoder, ci: usize, out: []mut u8) {
     let c = &dec.comps[ci]
     let src = dec.plane[c.offset..]
-    let w = dec.width
-    let h = dec.height
+    let w = jpegScaled(dec.width, dec.scale)
+    let h = jpegScaled(dec.height, dec.scale)
     let sx = dec.hmax / c.h
     let sy = dec.vmax / c.v
     let exact = sx * c.h == dec.hmax && sy * c.v == dec.vmax
-    let cw = c.width
-    let ch = c.height
+    let cw = jpegScaled(c.width, dec.scale)
+    let ch = jpegScaled(c.height, dec.scale)
     if exact && sx == 1 && sy == 1 {
         for y in 0..h {
             std.mem.copy(out[y * w..(y + 1) * w], src[y * c.stride..y * c.stride + w])

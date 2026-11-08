@@ -20,6 +20,10 @@ fn runClassicElement(s: *mut Script, el: NodeId, src: []u8) AllocError!bool {
 
     defer target.deinit(s.alloc)
 
+    if try urlRefused(s, el, &target) {
+        return false
+    }
+
     let res = net.request(s.alloc, &target, scriptRequest(p, el)) catch |e| {
         if e == net.FetchError.OutOfMemory {
             return AllocError.OutOfMemory

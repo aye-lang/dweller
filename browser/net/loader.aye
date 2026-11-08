@@ -424,7 +424,7 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
+    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.verb[..a.verb.len - 1], headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -517,6 +517,9 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                 std.mem.copy(get, "GET")
                 release(ld.alloc, a.verb)
                 a.verb = get
+            }
+            if parseReferrerPolicy(requestHeaderValue(job.sink.headers_raw.bytes(), "Referrer-Policy")) |policy| {
+                l.referrer_policy = policy
             }
             if crossOrigin(ld.alloc, job.at.href, moved) {
                 dropCredentials(ld.alloc, &mut a.headers) catch |e| {
@@ -752,6 +755,9 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
             }
             if l.mode == Mode.Cors {
                 return
+            }
+            if parseReferrerPolicy(requestHeaderValue(job.sink.headers_raw.bytes(), "Referrer-Policy")) |policy| {
+                l.referrer_policy = policy
             }
             l.hops += 1
             l.job = startJob(ld.alloc, s, ld.multi, moved, loadRequest(l), "GET", null)
