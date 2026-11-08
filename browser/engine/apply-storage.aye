@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn applyStorage(alloc: Allocator, area: []u8, ask: StorageAsk, out: *mut text.Builder) AllocError!StorageDone {
+    let st = try storeOf(alloc, ask.session)
+
+    if !ask.session { try loadOrigin(st, area) }
+
+    if ask.op == 1 { return setAreaItem(st, area, ask, out) }
+    if ask.op == 2 { return removeAreaItem(st, area, ask, out) }
+    if ask.op == 3 { return clearArea(st, area, ask.session) }
+    if ask.op == 4 || ask.op == 5 { return keyOfArea(st, area, ask, out) }
+
+    let i = findItem(st, area, ask.key) orelse return StorageDone {}
+
+    try out.append(st.items.items()[i * 3 + 2])
+
+    return StorageDone { found: true }
+}

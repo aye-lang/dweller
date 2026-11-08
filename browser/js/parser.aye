@@ -93,6 +93,7 @@ pub struct Parser {
     floor: u64
     // URL atom for ImportCall and import.meta; zero for anonymous scripts.
     referrer: u32 = 0
+    include: bool = false
     module: bool = false
     // A return is illegal in module code, but legal in its nested functions.
     module_body: bool = false
@@ -1659,7 +1660,7 @@ pub struct Parser {
                 self.eat(Tok.Comma)
             }
             try self.expect(Tok.RParen)
-            return self.mk(Node.ImportCall { arg: arg, options: options, referrer: self.referrer }, start)
+            return self.mk(Node.ImportCall { arg: arg, options: options, referrer: self.referrer, include: self.include }, start)
         }
         if k == Tok.BigInt {
             let atom = try self.intern(self.src[t.start as usize..t.end as usize - 1])

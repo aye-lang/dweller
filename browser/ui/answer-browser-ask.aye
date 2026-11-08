@@ -1,0 +1,15 @@
+import ipc
+import std.mem.AllocError
+
+fn answerBrowserAsk(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    return match m {
+        .Fetch { .. } => answerFetch(tp, on, m)
+        .CookieGet { .. }, .CookieSet { .. } => answerCookie(tp, on, m)
+        .Storage { .. } => answerStorage(tp, on, m)
+        _ => ""
+    }
+}
+
+fn asksBrowser(m: ipc.Message) bool {
+    return m is .Fetch || m is .CookieGet || m is .CookieSet || m is .Storage
+}

@@ -14,6 +14,8 @@
       of wpt_areas.json) or of a path (a directory or file under the
       root), and writes target/wpt-results/<area>.json. Reftests and
       crashtests (wpt_reftest.py) are screenshot comparisons and loads.
+      `.https.` tests load from https://web-platform.test with the
+      checkout's tools/certs, whose CA Dweller trusts only in these runs.
 """
 import argparse
 import concurrent.futures
@@ -23,6 +25,7 @@ import mimetypes
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import threading
@@ -47,7 +50,7 @@ EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/refe
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
 SKIP_NAME = re.compile(
-    r"\.(https|serviceworker|sharedworker|worker|window-module|any\.worker)\.(html|js)$"
+    r"\.(serviceworker|sharedworker|worker|window-module|any\.worker)\.(html|js)$"
     r"|-manual\.|-ref\.|-notref\."
 )
 SKIP_SUB = re.compile(r"\.sub\.(html|js)$")
@@ -204,7 +207,7 @@ def discover(root, rel, excludes, upstream=False):
                 skipped += 1
                 continue
             url = "/" + relp[:-3] + ".html"
-            tests.append({"path": relp, "url": url, "kind": "testharness",
+            tests.append({"path": relp, "url": url, "kind": "testharness", "https": ".https." in name,
                           "timeout": TIMEOUT_LONG if meta["timeout"] == "long" else TIMEOUT_NORMAL})
         elif name.endswith(HTML_EXT):
             if skipped_name(name, upstream):
@@ -218,7 +221,7 @@ def discover(root, rel, excludes, upstream=False):
             if kind is None:
                 continue
             long = re.search(r"""<meta\s+name\s*=\s*["']?timeout["']?\s+content\s*=\s*["']?long""", text)
-            tests.append({"path": relp, "url": "/" + relp, "kind": kind,
+            tests.append({"path": relp, "url": "/" + relp, "kind": kind, "https": ".https." in name,
                           "timeout": TIMEOUT_LONG if long else TIMEOUT_NORMAL})
     return tests, skipped
 
@@ -297,21 +300,49 @@ class Server:
     `Name: value` per line), generated X.any.html / X.window.html pages for
     X.any.js / X.window.js (with the `// META: script=` lines and a long
     timeout for `timeout=long`), and browser/tools/wpt/testharnessreport.js
-    as /resources/testharnessreport.js."""
+    as /resources/testharnessreport.js. With `https`, a second listener
+    serves the same root over TLS at https_base."""
 
-    def __init__(self, root, port=0):
+    def __init__(self, root, port=0, https=False):
         handler = type("H", (Handler,), {"root": Path(root)})
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.base = f"http://127.0.0.1:{self.port}"
+        self.servers = [self.httpd]
+        self.https_base = self.resolve = None
+        if not https:
+            return
+        tls = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        tls.daemon_threads = True
+        tls.socket = tls_context(root).wrap_socket(tls.socket, server_side=True)
+        self.servers.append(tls)
+        tls_port = tls.server_address[1]
+        self.https_base = f"https://{wpt_upstream.HOSTS[0]}:{tls_port}"
+        self.resolve = f"{wpt_upstream.HOSTS[0]}:{tls_port}:127.0.0.1"
 
     def start(self):
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        if self.resolve:
+            os.environ["DWELLER_RESOLVE"] = self.resolve
+        for httpd in self.servers:
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
     def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
+        for httpd in self.servers:
+            httpd.shutdown()
+            httpd.server_close()
+
+
+def tls_context(root):
+    """WPT's own certificate for web-platform.test and its subdomains."""
+    certs = Path(root) / "tools" / "certs"
+    files = [certs / "web-platform.test.pem", certs / "web-platform.test.key"]
+    for f in files:
+        if not f.is_file():
+            sys.exit(f"{f} not found: .https. tests need WPT's certificates (run `wpt.py fetch`)")
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(*files)
+    return ctx
 
 
 def cmd_serve(args):
@@ -374,12 +405,12 @@ def run_area(name, spec, args, dweller, results_dir):
         t, s = discover(root, d, spec.get("exclude", []), upstream)
         tests += t
         skipped += s
-    srv = wpt_upstream.Upstream(root, REPORT_JS) if upstream else Server(root)
+    https = any(t["https"] for t in tests)
+    srv = wpt_upstream.Upstream(root, REPORT_JS) if upstream else Server(root, https=https)
     srv.start()
-    base = srv.base
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
-            outs = list(pool.map(lambda t: run_test(dweller, root, base, t), tests))
+            outs = list(pool.map(lambda t: run_test(dweller, root, srv.https_base if t["https"] else srv.base, t), tests))
     finally:
         srv.stop()
     files, passed, total = [], 0, 0
@@ -414,11 +445,19 @@ def use_test_fonts(root):
     os.environ["DWELLER_FONT_DIRS"] = str(fonts)
 
 
+def trust_test_ca(root):
+    """Dweller trusts WPT's CA (tools/certs/cacert.pem) in these runs only:
+    DWELLER_TEST_CA counts only together with DWELLER_TEST=1."""
+    os.environ["DWELLER_TEST"] = "1"
+    os.environ["DWELLER_TEST_CA"] = str(Path(root) / "tools" / "certs" / "cacert.pem")
+
+
 def cmd_run(args):
     dweller = Path(args.dweller) if args.dweller else REPO / "target" / "dweller"
     if not dweller.exists():
         sys.exit(f"{dweller} not found (browser/build.sh)")
     use_test_fonts(args.wpt_root)
+    trust_test_ca(args.wpt_root)
     areas = load_areas()
     results_dir = Path(args.results_dir)
     for target in args.targets:

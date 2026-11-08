@@ -54,6 +54,9 @@ struct Load {
     job: ?*mut Job
     // A script's request: what it asks and what it got.
     ask: ?*mut Ask
+    mode: Mode = Mode.NoCors
+    credentials: Credentials = Credentials.Include
+    initiator: []mut u8 = []mut u8{}
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -106,13 +109,23 @@ let SHARED_FAILED: i32 = 2
 /// loaded in the background (another scheme, no session): fetch it as
 /// usual then.
 pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
+    return startLoadAs(href, Request { kind: kind, referrer: referrer, initiator: Initiator.Page { url: referrer } })
+}
+
+pub fn startLoadAs(href: []u8, req: Request) u32 {
+    let kind = req.kind
+    let referrer = req.referrer
+    let initiator = match req.initiator {
+        .Browser => ""
+        .Page { url: page } => page
+    }
     if !text.startsWith(href, "http://") && !text.startsWith(href, "https://") {
         return 0
     }
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
 
-    if !securedAsIs(ld.alloc, Request { kind: kind, referrer: referrer, initiator: Initiator.Page { url: referrer } }, href) {
+    if !securedAsIs(ld.alloc, req, href) {
         return 0
     }
 
@@ -127,6 +140,11 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
         release(ld.alloc, owned)
         return 0
     }
+    let page = dup(ld.alloc, initiator) catch |e| {
+        release(ld.alloc, owned)
+        release(ld.alloc, from)
+        return 0
+    }
     let l = ld.alloc.create(Load {
         id: ld.next_id,
         href: owned,
@@ -137,9 +155,13 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
         hops: 0,
         job: null,
         ask: null,
+        mode: req.mode,
+        credentials: req.credentials,
+        initiator: page,
     }) catch |e| {
         release(ld.alloc, owned)
         release(ld.alloc, from)
+        release(ld.alloc, page)
         return 0
     }
     ld.loads.append(l) catch |e| {
@@ -148,7 +170,7 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
     }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(href) {
-        l.job = startJob(ld.alloc, s, ld.multi, href, Request { kind: kind, referrer: l.referrer, initiator: Initiator.Page { url: l.referrer } }, "GET", null)
+        l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null)
         l.state = LoadState.Running
         if l.job == null {
             l.state = LoadState.Failed
@@ -715,8 +737,11 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
             if l.hops >= MAX_REDIRECTS || (!text.startsWith(moved, "http://") && !text.startsWith(moved, "https://")) {
                 return
             }
+            if l.mode == Mode.Cors {
+                return
+            }
             l.hops += 1
-            l.job = startJob(ld.alloc, s, ld.multi, moved, Request { kind: l.kind, referrer: l.referrer, initiator: Initiator.Page { url: l.referrer } }, "GET", null)
+            l.job = startJob(ld.alloc, s, ld.multi, moved, loadRequest(l), "GET", null)
             if l.job != null {
                 l.state = LoadState.Running
             }
@@ -771,5 +796,6 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
     }
     release(ld.alloc, l.href)
     release(ld.alloc, l.referrer)
+    release(ld.alloc, l.initiator)
     ld.alloc.destroy(l)
 }

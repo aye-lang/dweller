@@ -356,6 +356,7 @@ fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     // Its subresources are for the top-level page's site (cookies).
     net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
     }
+    inheritUpgrades(p, c)
     c.no_scripts = p.no_scripts
     c.opaque = p.opaque
     if p.doc.isElement(el, "iframe") {
@@ -659,7 +660,7 @@ fn layoutFrames(p: *mut Page, measure: dyn font.Measurer) AllocError!void {
                 if f.page.tree |sub| {
                     let scroll = math.min(f.scroll, maxFrameScroll(sub, r.h))
                     p.frames.items()[k].scroll = scroll
-                    try t.frames.append(layout.FrameView { node: f.el, tree: sub, scroll: scroll })
+                    try t.frames.append(layout.FrameView { node: f.el, tree: sub, scroll: scroll, stamp: treeVersion(f.page) })
                 }
             }
         }

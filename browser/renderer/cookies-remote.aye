@@ -1,0 +1,17 @@
+import ipc
+import std.mem.AllocError
+import std.text
+import url.Url
+
+fn cookiesRemote(page: *Url, out: *mut text.Builder) AllocError!void {
+    let r = store_renderer orelse return
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.CookieGet { doc: storeDoc(r, page.href, "cookie") }) catch return
+
+    let got = awaitReply(r) orelse return
+
+    match got {
+        .Cookies { cookies } => try out.append(cookies)
+        _ => {}
+    }
+}
