@@ -1,0 +1,29 @@
+import std.text
+
+let FORBIDDEN_HEADERS = [_][]u8{"accept-charset", "accept-encoding", "access-control-request-headers", "access-control-request-method", "access-control-request-private-network", "connection", "content-length", "cookie", "cookie2", "date", "dnt", "expect", "host", "keep-alive", "origin", "referer", "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "via"}
+let METHOD_HEADERS = [_][]u8{"x-http-method", "x-http-method-override", "x-method-override"}
+
+// https://fetch.spec.whatwg.org/#forbidden-request-header
+fn forbiddenHeader(name: []u8, value: []u8) bool {
+    let prefixed = (name.len >= 6 && text.eqlIgnoreCase(name[..6], "proxy-")) || (name.len >= 4 && text.eqlIgnoreCase(name[..4], "sec-"))
+
+    if prefixed || listedIgnoreCase(FORBIDDEN_HEADERS[..], name) { return true }
+
+    if !listedIgnoreCase(METHOD_HEADERS[..], name) { return false }
+
+    var methods = text.split(value, ",")
+
+    while methods.next() |m| {
+        if forbiddenMethod(m) { return true }
+    }
+
+    return false
+}
+
+fn listedIgnoreCase(names: [][]u8, name: []u8) bool {
+    for n in names {
+        if text.eqlIgnoreCase(n, name) { return true }
+    }
+
+    return false
+}

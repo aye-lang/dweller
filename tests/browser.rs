@@ -10303,6 +10303,10 @@ fn window_renderer_lifecycle() {
 /// two-origin page shows the same text as in the window's own process.
 /// A renderer that names a document the browser never gave it as a
 /// request's initiator is killed (`bad message: bad fetch`).
+/// Q2.4d: so is one that claims another top-level site, a referrer of
+/// another origin or the TRACE method; the `Cookie`, `Referer`, `Origin`
+/// and `Sec-*` headers it adds are dropped (the page shows the headers
+/// net sent, as without them).
 #[test]
 fn window_renderer_net() {
     if !has_sdl() {
@@ -10327,24 +10331,32 @@ fn window_renderer_net() {
         assert!(own.contains("fetch same origin: basic status 200 body true") || own.contains("crossorigin"), "{page}: {own}");
         assert_eq!(renderer, own, "{page}");
     }
-    let out = dweller_command()
-        .current_dir(root())
-        .env("DWELLER_PROCESS", "tab")
-        .env("DWELLER_TEST_EVIL", "initiator")
-        .args([
-            &format!("{}/net/cors.html", srv.base),
-            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
-        ])
-        .output()
-        .unwrap();
-    let state = text(&out.stdout);
-    let line = state
-        .lines()
-        .find(|l| l.starts_with("renderer "))
-        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
-    let r: Vec<&str> = line.splitn(4, ' ').collect();
-    assert_eq!(&r[2..], ["gone", "bad fetch"], "{state}");
-    assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]));
+    let headers = format!("{}/net/request_headers.html", srv.base);
+    let plain = login_window_with(&headers, "frame", None, &tab);
+    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "headers")]);
+    assert!(plain.contains(&format!("Referer: {headers}")) && !evil.contains("evil"), "{evil}");
+    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer ")).collect::<Vec<_>>().join("\n");
+    assert_eq!(page_only(&evil), page_only(&plain));
+    for evil in ["initiator", "top", "referrer", "trace"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST_EVIL", evil)
+            .args([
+                &format!("{}/net/cors.html", srv.base),
+                "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
+            ])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("{evil}: no renderer line in\n{state}"));
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert_eq!(&r[2..], ["gone", "bad fetch"], "{evil}: {state}");
+        assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]), "{evil}");
+    }
 }
 
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
