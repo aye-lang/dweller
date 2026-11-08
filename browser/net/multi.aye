@@ -67,9 +67,6 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
     defer ids.deinit()
     var lines = text.split(hrefs, "\n")
     while lines.next() |href| {
-        if s.cache.has(href) {
-            continue
-        }
         let id = startLoad(href, kind, referrer)
         if id == 0 {
             continue
@@ -133,7 +130,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, r
         at.deinit(alloc)
         return null
     }
-    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, req.referrer, false, &mut job.sink) catch |e| {
+    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, req.referrer, false, fetchSiteAt(alloc, requestOrigin(req, req.referrer), &job.at, FetchSite.SameOrigin), &mut job.sink) catch |e| {
         freeJob(alloc, job)
         return null
     }

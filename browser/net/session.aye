@@ -1,7 +1,7 @@
 // The network session of the process (`start` ... `stop`): one libcurl
-// easy handle reused for every HTTP request, and a share handle that
-// keeps connections, TLS sessions and DNS answers for it and for the
-// concurrent fetches of multi.aye; the cookie jar (cookies.aye), the
+// easy handle reused for every HTTP request, and a share handle per
+// network partition (`shareFor`) that keeps connections, TLS sessions
+// and DNS answers for it and for the concurrent fetches of multi.aye; the cookie jar (cookies.aye), the
 // cache of subresources (cache.aye), and the referrer of the next
 // navigation. Without a session (unit tests), every request has a handle
 // of its own and no cookies or cache. With a profile directory
@@ -32,7 +32,7 @@ extern fn getenv(name: [*]u8) ?[*]u8
 struct Session {
     alloc: Allocator
     curl: ?*mut Curl
-    share: ?*mut CurlShare
+    shares: List(PartitionShare)
     jar: Jar
     cache: Cache
     preflights: PreflightCache
@@ -50,6 +50,7 @@ struct Session {
     // the page's URL.
     nav_target: []mut u8
     nav_referrer: []mut u8
+    nav_user: bool
     // `noteFrame`: the documents shown in frames and their top-level
     // pages.
     frames: List(FrameTop)
@@ -83,7 +84,7 @@ pub fn start(alloc: Allocator) AllocError!void {
     let s = alloc.create(Session {
         alloc: alloc,
         curl: null,
-        share: curl_share_init(),
+        shares: List(PartitionShare).init(alloc),
         jar: Jar.init(alloc),
         cache: Cache.init(alloc),
         preflights: PreflightCache.init(alloc),
@@ -94,6 +95,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         saved_ms: 0,
         nav_target: []mut u8{},
         nav_referrer: []mut u8{},
+        nav_user: false,
         frames: List(FrameTop).init(alloc),
         hsts: Hsts.init(alloc),
         certs: CertExceptions.init(alloc),
@@ -104,11 +106,6 @@ pub fn start(alloc: Allocator) AllocError!void {
         return e
     }
     session = s
-    if s.share |sh| {
-        curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT)
-        curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS)
-        curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION)
-    }
     if file.len > 0 && std.fs.exists(file) {
         let saved = std.fs.readFile(alloc, file) catch |e| {
             return
@@ -201,6 +198,7 @@ fn writesCookies(s: *Session) bool {
 /// Ends the session: saves the cookies (when there is a cookie file and
 /// they changed) and frees everything.
 pub fn stop() {
+    dropReferrerPolicies()
     let s = session orelse return
     session = null
     dropStoredCookies(s.alloc)
@@ -217,9 +215,11 @@ pub fn stop() {
     if s.curl |c| {
         curl_easy_cleanup(c)
     }
-    if s.share |sh| {
-        curl_share_cleanup(sh)
+    for p in s.shares.items() {
+        curl_share_cleanup(p.share)
+        release(s.alloc, p.owned_partition)
     }
+    s.shares.deinit()
     s.jar.deinit()
     for f in s.frames.items() {
         release(s.alloc, f.doc)
@@ -263,7 +263,7 @@ pub fn now() i64 {
 /// Remembers that the next load of `target` is a navigation from the
 /// page at `referrer` (a link, a form, a script), so that it is sent as
 /// the Referer. The next document fetch forgets it.
-pub fn noteNavigation(target: []u8, referrer: []u8) AllocError!void {
+pub fn noteNavigation(target: []u8, referrer: []u8, user: bool) AllocError!void {
     let s = session orelse return
     let t = try dup(s.alloc, withoutHash(target))
     let r = dup(s.alloc, referrer) catch |e| {
@@ -274,6 +274,7 @@ pub fn noteNavigation(target: []u8, referrer: []u8) AllocError!void {
     release(s.alloc, s.nav_referrer)
     s.nav_target = t
     s.nav_referrer = r
+    s.nav_user = user
 }
 
 /// Notes that the page `page` (its id) shows the document at `doc` in

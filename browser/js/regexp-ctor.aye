@@ -1,0 +1,59 @@
+// spec: https://tc39.es/ecma262/#sec-regexp-pattern-flags
+fn regexpCtor(it: *mut Interp, a: Args) JsError!Value {
+    let pv = it.arg(a, 0)
+    var fv = it.arg(a, 1)
+    var like = false
+
+    if isObject(pv) {
+        like = try isRegExp(it, pv)
+    }
+
+    if like && a.new_target == NONE && isUndef(fv) {
+        let c = try it.getProp(pv, A_CONSTRUCTOR)
+
+        if objectOf(c) == a.callee {
+            return pv
+        }
+    }
+
+    if it.hasClass(pv, Class.RegExp) {
+        let prog = progOf(it, objectOf(pv))
+
+        if isUndef(fv) {
+            return newRegExp(it, prog.source, prog.flags)
+        }
+
+        return newRegExp(it, prog.source, try atomOrEmpty(it, fv))
+    }
+
+    var src = pv
+
+    if like {
+        src = try it.getProp(pv, A_SOURCE)
+        try it.push(src)
+
+        if isUndef(fv) {
+            fv = try it.getProp(pv, A_FLAGS)
+        }
+
+        it.pop()
+    }
+
+    try it.push(src)
+    try it.push(fv)
+    let pattern = try atomOrEmpty(it, src)
+    let flags = try atomOrEmpty(it, fv)
+
+    it.pop()
+    it.pop()
+
+    return newRegExp(it, pattern, flags)
+}
+
+fn atomOrEmpty(it: *mut Interp, v: Value) JsError!u32 {
+    if isUndef(v) {
+        return A_EMPTY
+    }
+
+    return it.toKey(try it.toStringValue(v))
+}

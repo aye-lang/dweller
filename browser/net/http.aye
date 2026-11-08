@@ -176,8 +176,10 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
     let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other
     if session |s| {
+        let key = try cacheKey(alloc, req, target.withoutFragment())
+        defer alloc.free(key)
         if cacheable {
-            if try s.cache.lookup(alloc, target.withoutFragment()) |hit| {
+            if try s.cache.lookup(alloc, key) |hit| {
                 return hit
             }
         }
@@ -189,7 +191,7 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
                 var keep = cacheable
                 var res = try transfer(alloc, curl, target, req, s, &mut keep)
                 if keep && !res.tainted && res.status >= 200 && res.status < 300 {
-                    s.cache.keep(target.withoutFragment(), &res, false) catch |e| {
+                    s.cache.keep(key, &res, false) catch |e| {
                         res.deinit(alloc)
                         return FetchError.OutOfMemory
                     }
@@ -267,11 +269,17 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
     var status: i64 = 0
     // Asked again with the credentials of the challenge's realm.
     var retried = false
+    let origin = requestOrigin(req, req.referrer)
+    var site = FetchSite.SameOrigin
+    if origin.len == 0 {
+        site = FetchSite.None
+    }
     while true {
         var at = url.parse(alloc, here.bytes()) catch |e| {
             return FetchError.Invalid
         }
         defer at.deinit(alloc)
+        site = fetchSiteAt(alloc, origin, &at, site)
         sink.body.clear()
         sink.cookies.clear()
         sink.no_store = false
@@ -280,7 +288,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         try here.appendByte(0)
         var headers: ?*mut CurlList = null
         defer curl_slist_free_all(headers)
-        headers = try prepare(alloc, curl, here.bytes().ptr, &at, sent, method.bytes()[..method.len() - 1], post, s, initiator.bytes(), crossed, &mut sink)
+        headers = try prepare(alloc, curl, here.bytes().ptr, &at, sent, method.bytes()[..method.len() - 1], post, s, initiator.bytes(), crossed, site, &mut sink)
         if sink.context == Context.CrossSiteGet || sink.context == Context.CrossSitePost {
             crossed = true
         }
@@ -345,6 +353,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
 
         if try corsRedirect(alloc, cors, at.href, here.bytes(), sink.headers_raw.bytes()) {
             cors.initiator = Initiator.Page { url: "" }
+            sent.initiator = Initiator.Page { url: "null" }
             tainted = true
         }
     }
@@ -389,9 +398,9 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
 // response going to `sink`, whose cookie context it sets (`contextOf`,
 // with `initiator` and `crossed`). Returns the header list, to free
 // after the transfer.
-fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Request, method: []u8, post: ?*Body, s: ?*mut Session, initiator: []u8, crossed: bool, sink: *mut Sink) FetchError!?*mut CurlList {
+fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Request, method: []u8, post: ?*Body, s: ?*mut Session, initiator: []u8, crossed: bool, site: FetchSite, sink: *mut Sink) FetchError!?*mut CurlList {
     sink.context = try contextOf(alloc, req, at, method, initiator, crossed)
-    let headers = try requestHeaders(alloc, at, req, post, s, sink.context)
+    let headers = try requestHeaders(alloc, at, req, post, s, sink.context, site)
     curl_easy_setopt(curl, CURLOPT_URL, address)
     curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT.ptr)
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "".ptr)
@@ -424,7 +433,7 @@ fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Req
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.ptr)
     }
     if s |ses| {
-        if ses.share |sh| {
+        if try shareFor(alloc, ses, req, at.href) |sh| {
             curl_easy_setopt(curl, CURLOPT_SHARE, sh)
         }
     }
@@ -449,7 +458,7 @@ fn storeCookies(s: ?*mut Session, at: *Url, sink: *Sink) AllocError!void {
 
 // The headers of a request to `at` besides the User-Agent, the cookies
 // of `context` (a list for libcurl; null when there is none).
-fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*mut Session, context: Context) FetchError!?*mut CurlList {
+fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*mut Session, context: Context, site: FetchSite) FetchError!?*mut CurlList {
     var list: ?*mut CurlList = null
     errdefer curl_slist_free_all(list)
     var h = text.Builder.init(alloc)
@@ -466,7 +475,7 @@ fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*m
     }
     try h.append("Referer: ")
     let before = h.len()
-    try referrerOf(alloc, req.referrer, at, &mut h)
+    try referrerOf(alloc, req.referrer, referrerPolicyOf(req), at, &mut h)
     if h.len() > before {
         list = try addHeader(list, &mut h)
     }
@@ -475,6 +484,7 @@ fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*m
     if h.len() > 0 {
         list = try addHeader(list, &mut h)
     }
+    list = try secFetchHeaders(list, &mut h, req, at, site)
     if s != null && !hasHeader(req.headers, "authorization") && try authHeader(at, &mut h) {
         list = try addHeader(list, &mut h)
     }
@@ -558,39 +568,6 @@ fn acceptOf(kind: Kind) []u8 {
         .Image => "image/webp,image/png,image/gif,image/jpeg,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
         .Script, .Other => "*/*"
     }
-}
-
-/// Appends to `out` the Referer that a request to `to` from the page at
-/// `referrer` sends (the default policy, strict-origin-when-cross-origin):
-/// the page's URL without the fragment for the same origin, its origin
-/// for another one, nothing from https to http or from a page that is
-/// not http(s).
-pub fn referrerOf(alloc: Allocator, referrer: []u8, to: *Url, out: *mut text.Builder) AllocError!void {
-    if referrer.len == 0 {
-        return
-    }
-    let from = url.parse(alloc, referrer) catch |e| {
-        return
-    }
-    defer from.deinit(alloc)
-    let https = text.eql(from.scheme, "https")
-    if !https && !text.eql(from.scheme, "http") {
-        return
-    }
-    if https && !text.eql(to.scheme, "https") {
-        return
-    }
-    if text.eql(from.scheme, to.scheme) && text.eql(from.host, to.host) && text.eql(from.port, to.port) && from.username.len == 0 && from.password.len == 0 {
-        return out.append(from.withoutFragment())
-    }
-    try out.append(from.scheme)
-    try out.append("://")
-    try out.append(from.host)
-    if from.port.len > 0 {
-        try out.appendByte(':')
-        try out.append(from.port)
-    }
-    try out.appendByte('/')
 }
 
 fn copyBytes(alloc: Allocator, s: []u8) AllocError![]mut u8 {
