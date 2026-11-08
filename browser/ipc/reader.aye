@@ -14,6 +14,12 @@ pub struct Reader {
         return b[0] as u32 | (b[1] as u32) << 8 | (b[2] as u32) << 16 | (b[3] as u32) << 24
     }
 
+    pub fn readF64(self: *mut Self) DecodeError!f64 {
+        var bits = (try self.readU32()) as u64 | ((try self.readU32()) as u64) << 32
+
+        return @ptrCast(*f64, &bits).*
+    }
+
     pub fn readBytes(self: *mut Self) DecodeError![]u8 {
         let n = try self.readU32()
 

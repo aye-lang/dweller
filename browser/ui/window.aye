@@ -318,6 +318,12 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             }
             if o.save.len > 0 {
                 // The last frame shows what the last events did.
+                if ui.tab.page |p| {
+                    if engine.decodesLanded(p, true) {
+                        ui.page_view.relist = true
+                        ui.dirty = true
+                    }
+                }
                 if ui.dirty {
                     ui.draw() catch |e| {
                         std.log.err("out of memory")
@@ -688,7 +694,7 @@ pub struct Ui {
                         timeout = ms as i32
                     }
                 }
-                if (self.tab.early || engine.imagesLoading(p)) && timeout > LOAD_POLL_MS {
+                if (self.tab.early || engine.imagesLoading(p) || engine.decodesPending(p)) && timeout > LOAD_POLL_MS {
                     timeout = LOAD_POLL_MS
                 }
                 if engine.canvasFramesPending(p) && timeout > READBACK_MS {
@@ -1876,6 +1882,7 @@ pub struct Ui {
         pageview.paintMatches(self.view(), &mut self.canvas, v)
         self.canvas.popClip()
         drawWatched(self, area)
+        drawTabFrame(self, area)
         try drawToolbar(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)

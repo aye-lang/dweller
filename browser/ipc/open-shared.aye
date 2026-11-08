@@ -1,0 +1,30 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+extern fn shm_open(name: [*]u8, flags: i32, ...) i32
+extern fn shm_unlink(name: [*]u8) i32
+extern fn memfd_create(name: [*]u8, flags: u32) i32
+extern fn getpid() i32
+
+var made: i64 = 0
+
+fn openShared(alloc: Allocator) AllocError!i32 {
+    if !(@targetOs() is .macos) { return memfd_create("dweller-frame\x00".ptr, 1) }
+
+    var name = text.Builder.init(alloc)
+    defer name.deinit()
+
+    made += 1
+    try name.append("/dweller-")
+    try name.appendInt(getpid() as i64)
+    try name.appendByte('-')
+    try name.appendInt(made)
+    try name.appendByte(0)
+
+    let fd = shm_open(name.bytes().ptr, 0xa02, 384)
+
+    shm_unlink(name.bytes().ptr)
+
+    return fd
+}

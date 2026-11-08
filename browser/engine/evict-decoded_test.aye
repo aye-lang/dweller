@@ -1,0 +1,41 @@
+test "decodes land later from the decode threads, the least used past the budget is evicted and decodes again" {
+    let a = @testAllocator()
+    var cache = ImageCache.init(a)
+
+    defer stopDecoding()
+    defer cache.deinit()
+
+    cache.decode_later = true
+
+    let tall = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAAECAYAAACk7+45AAAAEUlEQVR4nGP4z8DwH4QZcDMAHxMP8b9IbMkAAAAASUVORK5CYII="
+    let dot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    let big = (try cache.bitmapOf(tall, null)).?
+    let small = (try cache.bitmapOf(dot, null)).?
+
+    @expectEqual(2 as usize, big.width)
+    @expectEqual(4 as usize, big.height)
+    @expectEqual(0 as usize, big.pixels.len)
+    @expectEqual(2 as usize, cache.decodes.len())
+
+    landDecodes(&mut cache, true)
+
+    @expectEqual(0 as usize, cache.decodes.len())
+    @expectEqual(32 as usize, big.pixels.len)
+    @expectEqual(4 as usize, small.pixels.len)
+
+    _ = try cache.bitmapOf(dot, null)
+    _ = try cache.bitmapOf(tall, null)
+
+    evictDecoded(&mut cache, 32)
+
+    @expectEqual(32 as usize, big.pixels.len)
+    @expectEqual(0 as usize, small.pixels.len)
+
+    _ = try cache.bitmapOf(dot, null)
+
+    @expectEqual(1 as usize, cache.decodes.len())
+
+    landDecodes(&mut cache, true)
+
+    @expectEqual(4 as usize, small.pixels.len)
+}

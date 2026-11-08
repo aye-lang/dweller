@@ -1,0 +1,14 @@
+import image
+import std.sync.Channel
+
+fn runDecodes(queue: *mut Channel(*mut DecodeJob)) {
+    while queue.recv() |job| {
+        if job.cancelled.load() == 0 {
+            if image.decode(job.gpa.allocator(), job.bytes) |bmp| {
+                job.decoded = bmp
+            } else |e| {}
+        }
+
+        job.done.store(1)
+    }
+}

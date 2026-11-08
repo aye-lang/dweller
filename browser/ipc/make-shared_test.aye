@@ -1,0 +1,17 @@
+test "a shared buffer shows one mapping's bytes in another" {
+    let fd = try makeShared(@testAllocator(), 4096)
+    let writer = mapShared(fd, 4096, true).?
+    let reader = mapShared(fd, 4096, false).?
+
+    close(fd)
+    writer[4095] = 7
+
+    @expectEqual(7, reader[4095])
+
+    unmapShared(writer, 4096)
+    unmapShared(reader, 4096)
+}
+
+test "no mapping without a buffer" {
+    @expect(mapShared(-1, 4096, false) == null)
+}

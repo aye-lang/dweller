@@ -1,3 +1,4 @@
+import font
 import std
 import std.mem.Allocator
 import std.text
@@ -7,5 +8,14 @@ pub fn serve(alloc: Allocator, fd: []u8) i32 {
 
     if sock < 0 { return 2 }
 
-    return serveOn(alloc, std.fs.File { fd: sock as i32 })
+    let conn = std.fs.File { fd: sock as i32 }
+    var sys = font.System.init(alloc) catch |e| {
+        var fixed = font.Fixed.init()
+
+        return serveOn(alloc, conn, &mut fixed, null)
+    }
+
+    defer sys.deinit()
+
+    return serveOn(alloc, conn, &mut sys, &mut sys)
 }

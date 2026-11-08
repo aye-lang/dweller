@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+
+pub fn takeRights(control: []u8, fds: *mut List(i32)) AllocError!void {
+    if control.len < rightsHead() { return }
+
+    var r = Reader { data: control }
+    let len = r.readU32() catch unreachable
+
+    _ = r.take(rightsHead() - 12) catch unreachable
+
+    let level = r.readU32() catch unreachable
+    let kind = r.readU32() catch unreachable
+
+    if level != solSocket() || kind != SCM_RIGHTS || len as usize > control.len || (len as usize) < rightsHead() { return }
+
+    for k in 0..(len as usize - rightsHead()) / 4 {
+        try fds.append((r.readU32() catch unreachable) as i32)
+    }
+}

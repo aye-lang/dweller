@@ -63,10 +63,7 @@ pub struct Cache {
                 errdefer alloc.free(charset)
                 let body = try copyBytes(alloc, e.body)
                 errdefer alloc.free(body)
-                var moved = []mut u8{}
-                if e.moved.len > 0 {
-                    moved = try dup(alloc, e.moved)
-                }
+                let moved = try dup(alloc, e.moved)
                 errdefer release(alloc, moved)
                 let headers = try dup(alloc, e.headers)
                 if e.once {
@@ -102,13 +99,4 @@ pub struct Cache {
         }
         self.bytes += res.body.len
     }
-}
-
-fn freeEntry(alloc: Allocator, e: Cached) {
-    release(alloc, e.href)
-    release(alloc, e.mime)
-    release(alloc, e.charset)
-    release(alloc, e.body)
-    release(alloc, e.moved)
-    release(alloc, e.headers)
 }

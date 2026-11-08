@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+extern fn sendmsg(fd: i32, msg: *MsgHdr, flags: i32) isize
+
+pub fn sendFds(alloc: Allocator, fd: i32, data: []u8, fds: []i32) AllocError!isize {
+    var control = text.Builder.init(alloc)
+    defer control.deinit()
+
+    try putRights(&mut control, fds)
+
+    var iov = IoVec { base: data.ptr, len: data.len }
+    let msg = MsgHdr { name: null, namelen: 0, iov: &mut iov, iovlen: 1, control: control.bytes().ptr, controllen: control.len() as u64, flags: 0 }
+
+    return sendmsg(fd, &msg, dontWait())
+}
+
+fn dontWait() i32 {
+    if @targetOs() is .macos { return 0x80 }
+
+    return 0x40 | 0x4000
+}

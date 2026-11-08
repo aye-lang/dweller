@@ -1,0 +1,15 @@
+import std.list.List
+import std.mem.AllocError
+
+extern fn recvmsg(fd: i32, msg: *mut MsgHdr, flags: i32) isize
+
+pub fn recvFds(fd: i32, buf: []mut u8, fds: *mut List(i32)) AllocError!isize {
+    var control = @zeroed([64]u8)
+    var iov = IoVec { base: buf.ptr, len: buf.len }
+    var msg = MsgHdr { name: null, namelen: 0, iov: &mut iov, iovlen: 1, control: control[..].ptr, controllen: 64, flags: 0 }
+    let n = recvmsg(fd, &mut msg, 0)
+
+    try takeRights(control[..], fds)
+
+    return n
+}

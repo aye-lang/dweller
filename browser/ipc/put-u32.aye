@@ -1,7 +1,7 @@
 import std.mem.AllocError
 import std.text
 
-fn putU32(out: *mut text.Builder, v: u32) AllocError!void {
+pub fn putU32(out: *mut text.Builder, v: u32) AllocError!void {
     try out.appendByte(byte(v, 0))
     try out.appendByte(byte(v, 8))
     try out.appendByte(byte(v, 16))
@@ -11,6 +11,14 @@ fn putU32(out: *mut text.Builder, v: u32) AllocError!void {
 fn putBytes(out: *mut text.Builder, b: []u8) AllocError!void {
     try putU32(out, b.len as u32)
     try out.append(b)
+}
+
+fn putF64(out: *mut text.Builder, v: f64) AllocError!void {
+    var x = v
+    let bits = @ptrCast(*u64, &x).*
+
+    try putU32(out, (bits & 0xffffffff) as u32)
+    try putU32(out, (bits >> 32) as u32)
 }
 
 fn setU32(out: *mut text.Builder, at: usize, v: u32) {

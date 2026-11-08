@@ -9919,3 +9919,53 @@ fn window_renderer_lifecycle() {
     assert!(err.is_empty(), "{err}");
     assert!(!state.contains("renderer "), "{state}");
 }
+
+/// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
+/// renderer: the browser gives it two shared-memory buffers (`resize`
+/// with 2 fds), it paints the page into one and sends `frame`, and the
+/// window shows that buffer. The window's PNG is the one of the same
+/// page painted in the window's own process. A frame of a size the
+/// browser did not give kills the renderer (`bad message: wrong size`).
+#[test]
+fn window_renderer_frames() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let golden = scratch().join("renderer_frames_in_process.png");
+    let tab = scratch().join("renderer_frames_tab.png");
+
+    let (state, err) = run(&golden, "loaded", &[]);
+    assert!(err.is_empty(), "{err}");
+    assert!(!state.contains("renderer"), "{state}");
+
+    let (state, err) = run(&tab, "renderer:loaded renderer:frame", &[("DWELLER_PROCESS", "tab")]);
+    assert!(err.is_empty(), "{err}");
+    assert!(state.contains("\nrenderer-frame "), "{state}");
+    assert!(
+        std::fs::read(&tab).unwrap() == std::fs::read(&golden).unwrap(),
+        "the renderer's frame {} differs from the in-process window {}",
+        tab.display(),
+        golden.display()
+    );
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "frame")];
+    let (state, err) = run(&tab, "renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone wrong size"), "{state}");
+    assert_eq!(err, format!("error: bad message: wrong size {pid}\n"));
+    assert!(!state.contains("renderer-frame"), "{state}");
+}
