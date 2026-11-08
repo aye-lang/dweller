@@ -72,6 +72,7 @@ var session: ?*mut Session = null
 /// Starts the session: every fetch until `stop` shares it. Loads the
 /// cookies of the file named by DWELLER_COOKIE_FILE, if there is one.
 pub fn start(alloc: Allocator) AllocError!void {
+    noProfileInRenderer()
     if session != null {
         return
     }
@@ -122,6 +123,7 @@ pub fn start(alloc: Allocator) AllocError!void {
 /// DWELLER_COOKIE_FILE names the cookie file. When another process
 /// holds the profile, its cookies are loaded but never written.
 pub fn openProfile(dir: []u8) AllocError!void {
+    noProfileInRenderer()
     let s = session orelse return
     if s.profile.len > 0 || dir.len == 0 {
         return
@@ -150,6 +152,7 @@ pub fn openProfile(dir: []u8) AllocError!void {
 
 /// The profile directory, or empty.
 pub fn profileDir() []u8 {
+    noProfileInRenderer()
     let s = session orelse return ""
     return s.profile
 }
@@ -157,6 +160,7 @@ pub fn profileDir() []u8 {
 /// Is the profile written to? Not without one, nor when another process
 /// holds it.
 pub fn profileWritable() bool {
+    noProfileInRenderer()
     let s = session orelse return false
     return s.profile.len > 0 && s.lock >= 0
 }
