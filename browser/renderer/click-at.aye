@@ -1,8 +1,7 @@
 import dom
 import engine
-import std.mem.AllocError
 
-fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) AllocError!void {
+fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) !void {
     if engine.hasScripts(p) {
         let hit = engine.nodeAt(p.tree orelse return, x, y)
 
@@ -19,6 +18,8 @@ fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) AllocError!
         return
     }
 
+    if try pressRange(r, p, node, x) { return }
+
     let before = p.doc.controls.focus
     let act = try engine.activate(p, node)
 
@@ -28,15 +29,11 @@ fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) AllocError!
         }
     }
 
-    match act {
-        .Changed => try p.restyle()
-        .Follow { target } => target.deinit(r.alloc)
-        .Nothing => {
-            if before |b| {
-                if !inside(&p.doc, node, b) && dom.isSame(p.doc.controls.focus, b) { engine.setFocus(p, null) }
-            }
+    if act is .Nothing {
+        if before |b| {
+            if !inside(&p.doc, node, b) && dom.isSame(p.doc.controls.focus, b) { engine.setFocus(p, null) }
         }
-
-        _ => {}
     }
+
+    try runAct(r, p, act)
 }

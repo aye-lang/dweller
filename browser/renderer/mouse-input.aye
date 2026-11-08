@@ -1,13 +1,15 @@
 import engine
-import std.mem.AllocError
 
-fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) AllocError!void {
+fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) !void {
     let p = r.page orelse return
     let x = at.x + r.scroll_x
     let y = at.y + r.scroll_y
 
     if kind == 0 {
         try engine.hoverAt(p, x, y)
+
+        if r.range != null { try dragRange(r, p, x) }
+
         try pointerAt(r, p, "pointermove", 0, at)
 
         return
@@ -22,6 +24,7 @@ fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) AllocErr
         if button != 0 { return }
 
         try engine.pressAt(p, x, y, true)
+        r.scroll_el = try engine.scrollerAt(p, x, y)
 
         return clickAt(r, p, x, y)
     }
@@ -34,5 +37,13 @@ fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) AllocErr
         try pointerAt(r, p, "dblclick", 0, at)
     }
 
-    if button == 0 { try engine.pressAt(p, x, y, false) }
+    if button != 0 { return }
+
+    try engine.pressAt(p, x, y, false)
+
+    if r.range |el| {
+        r.range = null
+
+        try engine.dispatchEvent(p, el, "change", "")
+    }
 }

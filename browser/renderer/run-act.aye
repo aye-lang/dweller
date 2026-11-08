@@ -1,0 +1,21 @@
+import engine
+import ipc
+
+fn runAct(r: *mut TabRenderer, p: *mut engine.Page, act: engine.Activation) !void {
+    match act {
+        .Changed => try p.restyle()
+        .Follow { target } => {
+            defer target.deinit(r.alloc)
+
+            try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: target.href, post: 0, content_type: "", body: "" })
+        }
+
+        .Submit { form, submitter } => try submitAt(r, p, form, submitter)
+        .OpenSelect { el } => {
+            try p.restyle()
+            try openPopup(r, p, el)
+        }
+
+        .Nothing => {}
+    }
+}

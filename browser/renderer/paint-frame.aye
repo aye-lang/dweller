@@ -35,6 +35,15 @@ fn paintFrame(r: *mut TabRenderer) !void {
     r.max_x = math.max(0.0, list.width - r.width as f64 / r.scale)
     r.max_y = math.max(0.0, list.height - r.height as f64 / r.scale)
 
+    if r.scroll_x > r.max_x || r.scroll_y > r.max_y {
+        try scrollPage(r, 0.0, 0.0)
+        _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
+        list.deinit()
+        list = try paint.build(r.alloc, t)
+        sigs.clear()
+        try paint.signature(&list, t, &mut sigs)
+    }
+
     let whole = try frameDamage(r, sigs.items(), list.background, &mut damage)
     let old = r.drawn
 

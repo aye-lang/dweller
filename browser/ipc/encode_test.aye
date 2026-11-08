@@ -34,10 +34,16 @@ test "navigate round-trips through the framing" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 7, Message.Navigate { url: "https://example.com/a" })
+    let got = try roundTrip(&mut out, 7, Message.Navigate { url: "https://example.com/a", post: 1, content_type: "text/plain", body: "a=1" })
 
     match got.message {
-        .Navigate { url } => @expectEqual("https://example.com/a", url)
+        .Navigate { url, post, content_type, body } => {
+            @expectEqual("https://example.com/a", url)
+            @expectEqual(1, post)
+            @expectEqual("text/plain", content_type)
+            @expectEqual("a=1", body)
+        }
+
         _ => @expect(false)
     }
 }
@@ -183,7 +189,7 @@ test "two messages in one buffer come one at a time" {
     defer out.deinit()
 
     try encode(&mut out, 0, Message.Shutdown)
-    try encode(&mut out, 3, Message.Navigate { url: "u" })
+    try encode(&mut out, 3, Message.Navigate { url: "u", post: 0, content_type: "", body: "" })
 
     let first = (try nextMessage(out.bytes())).?
     let second = (try nextMessage(out.bytes()[first.used..])).?
@@ -205,12 +211,12 @@ test "bad messages" {
 
     @expectEqual("TooLong", failure(unknown[..]))
 
-    try encode(&mut out, 0, Message.Navigate { url: "abc" })
-    out.buf[16] = 9
+    try encode(&mut out, 0, Message.Text { seq: 1, typed: "abc" })
+    out.buf[20] = 9
 
     @expectEqual("PastTheEnd", failure(out.bytes()))
 
-    out.buf[16] = 2
+    out.buf[20] = 2
 
     @expectEqual("LeftOver", failure(out.bytes()))
 }
@@ -226,11 +232,50 @@ fn failure(buf: []u8) []u8 {
 test "what a renderer may send" {
     @expect(fromRenderer(Message.Hello { version: VERSION, pid: 1 }))
     @expect(fromRenderer(Message.Loaded { title: "", url: "" }))
-    @expect(!fromRenderer(Message.Navigate { url: "" }))
+    @expect(!fromRenderer(Message.Navigate { url: "", post: 0, content_type: "", body: "" }))
     @expect(!fromRenderer(Message.Shutdown))
     @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "" }))
     @expect(!fromRenderer(Message.Resize { width: 1, height: 1, scale: 1.0, buffer: 1 }))
     @expect(!fromRenderer(Message.FrameAck { buffer: 1 }))
     @expect(!fromRenderer(Message.Text { seq: 1, typed: "" }))
     @expect(fromRenderer(Message.InputAck { seq: 1 }))
+    @expect(fromRenderer(Message.BeginNavigation { url: "", post: 0, content_type: "", body: "" }))
+    @expect(fromRenderer(Message.Popup { items: "", disabled: "", selected: 0, x: 0.0, y: 0.0, w: 0.0, h: 0.0 }))
+    @expect(!fromRenderer(Message.PopupChoice { index: 0 }))
+}
+
+test "the navigation and popup messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let nav = try roundTrip(&mut out, 7, Message.BeginNavigation { url: "http://a/b", post: 0, content_type: "", body: "" })
+
+    match nav.message {
+        .BeginNavigation { url, post, .. } => {
+            @expectEqual("http://a/b", url)
+            @expectEqual(0, post)
+        }
+
+        _ => @expect(false)
+    }
+
+    let popup = try roundTrip(&mut out, 7, Message.Popup { items: "a\nb", disabled: "01", selected: 1, x: 1.0, y: 2.0, w: 3.0, h: 4.0 })
+
+    match popup.message {
+        .Popup { items, disabled, selected, h, .. } => {
+            @expectEqual("a\nb", items)
+            @expectEqual("01", disabled)
+            @expectEqual(1, selected)
+            @expectEqual(4.0, h)
+        }
+
+        _ => @expect(false)
+    }
+
+    let choice = try roundTrip(&mut out, 7, Message.PopupChoice { index: 2 })
+
+    match choice.message {
+        .PopupChoice { index } => @expectEqual(2, index)
+        _ => @expect(false)
+    }
 }

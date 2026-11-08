@@ -1,0 +1,13 @@
+import ipc
+import std.mem.AllocError
+
+fn chooseRow(ui: *mut Ui, dd: Dropdown, k: usize) AllocError!void {
+    if !dd.remote { return chooseOption(ui, dd.sel, k) }
+
+    let slot = ui.slots[ui.active].?
+    let tp = slot.process orelse return
+
+    if tp.gone.len > 0 || k >= tp.popup_off.len() || tp.popup_off.bytes()[k] == '1' { return }
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.PopupChoice { index: k as u32 })
+}

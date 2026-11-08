@@ -1,0 +1,19 @@
+import std.text
+
+let LINE_STEP: f64 = 40.0
+
+// blink: core/input/keyboard_event_manager.cc (DefaultArrowEventHandler)
+fn keyDelta(key: []u8, shift: bool, view: f64, far: f64) ?[2]f64 {
+    let space = text.eql(key, " ")
+
+    if text.eql(key, "ArrowDown") { return [2]f64{0.0, LINE_STEP} }
+    if text.eql(key, "ArrowUp") { return [2]f64{0.0, -LINE_STEP} }
+    if text.eql(key, "ArrowRight") { return [2]f64{LINE_STEP, 0.0} }
+    if text.eql(key, "ArrowLeft") { return [2]f64{-LINE_STEP, 0.0} }
+    if text.eql(key, "PageDown") || (space && !shift) { return [2]f64{0.0, view - LINE_STEP} }
+    if text.eql(key, "PageUp") || (space && shift) { return [2]f64{0.0, LINE_STEP - view} }
+    if text.eql(key, "Home") { return [2]f64{0.0, -far} }
+    if text.eql(key, "End") { return [2]f64{0.0, far} }
+
+    return null
+}

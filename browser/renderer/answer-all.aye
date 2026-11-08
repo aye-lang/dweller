@@ -7,7 +7,8 @@ fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
         used += got.used
 
         match got.message {
-            .Navigate { url } => try load(r, got.frame, url)
+            .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
+            .PopupChoice { index } => try choosePopup(r, index)
             .Resize { width, height, scale, buffer } => {
                 if !takeBuffers(r, width, height, scale, buffer) { return null }
             }

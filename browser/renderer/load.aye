@@ -1,13 +1,21 @@
 import engine
 import ipc
+import net
 import std
 import std.text
 import url
 
-fn load(r: *mut TabRenderer, frame: u32, href: []u8) !void {
+fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: []u8, data: []u8) !void {
     let target = try url.parse(r.alloc, href)
     defer target.deinit(r.alloc)
-    let p = try engine.load(r.alloc, &target)
+    var body = net.Body { content_type: content_type, data: data }
+    var sent: ?*net.Body = null
+
+    if post {
+        sent = &body
+    }
+
+    let p = try engine.loadWith(r.alloc, &target, sent, net.Initiator.Browser)
 
     if r.page |old| { old.destroy() }
 
@@ -17,6 +25,10 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8) !void {
     r.scroll_x = 0.0
     r.scroll_y = 0.0
     r.wheel_el = null
+    r.scroll_el = null
+    r.range = null
+    r.space = null
+    r.popup = null
 
     try send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: p.title, url: p.url.href })
 

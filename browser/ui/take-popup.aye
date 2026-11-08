@@ -1,0 +1,30 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+fn takePopup(ui: *mut Ui, tp: *mut TabProcess, active: bool) AllocError!void {
+    let a = tp.popup_at
+    let view_w = ui.page.canvas.width as f64 / ui.scale
+    let view_h = ui.page.canvas.height as f64 / ui.scale
+
+    tp.popup_new = false
+
+    if !(a[0] >= 0.0 && a[1] >= 0.0 && a[2] >= 0.0 && a[3] >= 0.0 && a[0] + a[2] <= view_w && a[1] + a[3] <= view_h) { return badMessage(tp, "popup outside the tab") }
+    if !active || ui.dropdown != null { return }
+
+    let p = ui.tab.page orelse return
+    let f = dropdownFont()
+    let m = ui.measure.metrics(f)
+    var w = a[2]
+    var row_text = text.Builder.init(ui.alloc)
+    defer row_text.deinit()
+
+    for k in 0..tp.popup_off.len() {
+        row_text.clear()
+        _ = try remoteRow(ui, k, &mut row_text)
+        w = math.max(w, ui.measure.width(f, row_text.bytes()) + 16.0)
+    }
+
+    ui.dropdown = Dropdown { sel: p.doc.root, x: a[0] + ui.tab.scroll_x, y: a[1] + a[3] + ui.tab.scroll, w: w, row: math.ceil(m.ascent + m.descent + m.line_gap) + 4.0, count: tp.popup_off.len(), hover: tp.popup_selected as usize, remote: true }
+    ui.dirty = true
+}

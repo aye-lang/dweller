@@ -2,7 +2,7 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
     var r = Reader { data: payload }
     let m = match kind {
         1 => Message.Hello { version: try r.readU32(), pid: try r.readU32() }
-        2 => Message.Navigate { url: try r.readBytes() }
+        2 => Message.Navigate { url: try r.readBytes(), post: try r.readU32(), content_type: try r.readBytes(), body: try r.readBytes() }
         3 => Message.Loaded { title: try r.readBytes(), url: try r.readBytes() }
         4 => Message.Shutdown
         5 => Message.Resize { width: try r.readU32(), height: try r.readU32(), scale: try r.readF64(), buffer: try r.readU32() }
@@ -13,6 +13,9 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         10 => Message.Key { seq: try r.readU32(), down: try r.readU32(), key: try r.readBytes(), code: try r.readBytes(), repeat: try r.readU32(), location: try r.readU32(), mods: try r.readU32() }
         11 => Message.Text { seq: try r.readU32(), typed: try r.readBytes() }
         12 => Message.InputAck { seq: try r.readU32() }
+        13 => Message.BeginNavigation { url: try r.readBytes(), post: try r.readU32(), content_type: try r.readBytes(), body: try r.readBytes() }
+        14 => Message.Popup { items: try r.readBytes(), disabled: try r.readBytes(), selected: try r.readU32(), x: try r.readF64(), y: try r.readF64(), w: try r.readF64(), h: try r.readF64() }
+        15 => Message.PopupChoice { index: try r.readU32() }
         _ => return DecodeError.UnknownType
     }
 

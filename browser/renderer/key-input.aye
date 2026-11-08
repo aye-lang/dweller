@@ -1,9 +1,8 @@
 import engine
-import std.mem.AllocError
 import std.text
 import ui.pageview
 
-fn keyInput(r: *mut TabRenderer, down: bool, key: []u8, code: []u8, repeat: u32, location: u32, mods: u32) AllocError!void {
+fn keyInput(r: *mut TabRenderer, down: bool, key: []u8, code: []u8, repeat: u32, location: u32, mods: u32) !void {
     let p = r.page orelse return
     var kind: []u8 = "keyup"
     var go_on = true
@@ -30,6 +29,7 @@ fn keyInput(r: *mut TabRenderer, down: bool, key: []u8, code: []u8, repeat: u32,
         if pageview.keyTarget(p) |el| { go_on = try engine.dispatchEvent(p, el, kind, b.bytes()) }
     }
 
+    if !down && go_on && text.eql(key, " ") { try releaseSpace(r, p) }
     if !down { return }
 
     if !go_on {
@@ -38,7 +38,8 @@ fn keyInput(r: *mut TabRenderer, down: bool, key: []u8, code: []u8, repeat: u32,
         return
     }
 
-    if try fieldKey(p, key, (mods & 1) != 0) { return }
+    if try focusKey(r, p, key, mods) { return }
+    if (mods & 10) != 0 || try keyScroller(r, p, key, (mods & 1) != 0) { return }
 
     try scrollKey(r, key, (mods & 1) != 0)
 }

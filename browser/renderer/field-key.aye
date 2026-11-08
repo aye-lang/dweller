@@ -1,15 +1,38 @@
 import dom
+import dom.NodeId
 import engine
-import std.mem.AllocError
 import std.text
 
 let MOVE_KEYS = [6][]u8{"ArrowLeft", "ArrowRight", "Home", "End", "ArrowUp", "ArrowDown"}
 let MOVES = [6]dom.Motion{dom.Motion.Left, dom.Motion.Right, dom.Motion.Home, dom.Motion.End, dom.Motion.Up, dom.Motion.Down}
+let COMMAND_MOVES = [6]dom.Motion{dom.Motion.Home, dom.Motion.End, dom.Motion.Home, dom.Motion.End, dom.Motion.Start, dom.Motion.Finish}
 
-fn fieldKey(p: *mut engine.Page, key: []u8, shift: bool) AllocError!bool {
-    let f = p.doc.controls.focus orelse return false
+fn fieldKey(r: *mut TabRenderer, p: *mut engine.Page, f: NodeId, key: []u8, mods: u32) !bool {
+    let shift = (mods & 1) != 0
+    var moves = MOVES
 
-    if !dom.isTextField(&p.doc, f) { return false }
+    if text.eql(key, "Escape") {
+        engine.setFocus(p, null)
+
+        return true
+    }
+
+    if text.eql(key, "Enter") && p.doc.isElement(f, "textarea") {
+        try dom.insertText(&mut p.doc, f, "\n")
+        try engine.dispatchEvent(p, f, "input", "")
+
+        return true
+    }
+
+    if text.eql(key, "Enter") {
+        try runAct(r, p, try engine.implicitSubmit(p, f))
+
+        return true
+    }
+
+    if (mods & 10) != 0 {
+        moves = COMMAND_MOVES
+    }
 
     let before = engine.fieldInput(p, f)
 
@@ -22,7 +45,7 @@ fn fieldKey(p: *mut engine.Page, key: []u8, shift: bool) AllocError!bool {
     }
 
     for i, k in MOVE_KEYS {
-        if text.eql(key, k) { try dom.moveCaret(&mut p.doc, f, MOVES[i], shift) }
+        if text.eql(key, k) { try dom.moveCaret(&mut p.doc, f, moves[i], shift) }
     }
 
     try engine.noteFieldEdit(p, f, before)

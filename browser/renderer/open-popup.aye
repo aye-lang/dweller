@@ -1,0 +1,41 @@
+import dom
+import dom.NodeId
+import engine
+import ipc
+import std.list.List
+import std.text
+
+fn openPopup(r: *mut TabRenderer, p: *mut engine.Page, el: NodeId) !void {
+    if dom.isDisabled(&p.doc, el) { return }
+
+    let box = engine.boxRect(p, el) orelse return
+    var opts = List(NodeId).init(r.alloc)
+    defer opts.deinit()
+
+    try dom.options(&p.doc, el, &mut opts)
+
+    if opts.len() == 0 { return }
+
+    var items = text.Builder.init(r.alloc)
+    defer items.deinit()
+    var disabled = text.Builder.init(r.alloc)
+    defer disabled.deinit()
+
+    for k, o in opts.items() {
+        if k > 0 { try items.appendByte('\n') }
+
+        try dom.optionLabel(&p.doc, o, &mut items)
+        try disabled.appendByte('0' + dom.isDisabled(&p.doc, o) as u8)
+    }
+
+    let shown = try dom.selectedIndex(&p.doc, el)
+    var selected: u32 = 0
+
+    if shown >= 0 {
+        selected = shown as u32
+    }
+
+    r.popup = el
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Popup { items: items.bytes(), disabled: disabled.bytes(), selected: selected, x: box.x - r.scroll_x, y: box.y - r.scroll_y, w: box.w, h: box.h })
+}
