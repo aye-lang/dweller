@@ -1,6 +1,6 @@
 import std.text
 
-fn rendererWaits(ui: *Ui, word: []u8) bool {
+fn rendererWaits(ui: *mut Ui, word: []u8) bool {
     if !text.startsWith(word, "renderer:") || text.eql(word, "renderer:kill") { return false }
 
     let tp = ui.slots[ui.active].?.process orelse return true
@@ -9,6 +9,7 @@ fn rendererWaits(ui: *Ui, word: []u8) bool {
     if text.eql(word, "renderer:input") { return tp.gone.len == 0 && tp.acked != tp.seq }
     if text.eql(word, "renderer:busy") { return tp.gone.len == 0 && !tp.busy }
     if text.eql(word, "renderer:frame") { return tp.gone.len == 0 && tp.buffers.shown == 0 }
+    if text.eql(word, "renderer:next") { return nextFrameWaits(ui, tp) }
 
     return tp.gone.len == 0 && (tp.loading || tp.url.len() == 0)
 }
