@@ -11121,6 +11121,59 @@ fn window_renderer_frames() {
     );
 }
 
+/// Q2.8a: on macOS a renderer enters its seatbelt sandbox before it reads
+/// any page. With `DWELLER_TEST_SANDBOX_PROBE=1` it then tries to open
+/// the profile (`$HOME/.dweller`), to write in /tmp, to connect to
+/// 127.0.0.1 and to fork, and prints each errno: all are EPERM (1), and
+/// the page still matches the in-process window. With
+/// `DWELLER_NO_SANDBOX=1` it warns and the same probes succeed.
+#[test]
+fn window_renderer_sandbox() {
+    if !has_sdl() || !cfg!(target_os = "macos") {
+        println!("skipped: macOS with SDL2 only");
+        return;
+    }
+    let home = scratch().join("sandbox_home");
+    let profile = home.join(".dweller");
+    std::fs::create_dir_all(&profile).unwrap();
+    let base = [("HOME", home.to_str().unwrap()), ("DWELLER_PROFILE", profile.to_str().unwrap())];
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(base.iter().copied())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let golden = scratch().join("renderer_sandbox_in_process.png");
+    let tab = scratch().join("renderer_sandbox_tab.png");
+    let probe = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
+
+    let (_, err) = run(&golden, "loaded", &[]);
+    assert!(err.is_empty(), "{err}");
+
+    let (state, err) = run(&tab, "renderer:loaded renderer:frame", &probe);
+    assert_eq!(err, "sandbox-probe home=1 tmp=1 tcp=1 fork=1\n");
+    assert!(state.contains("\nrenderer-frame "), "{state}");
+    assert!(
+        std::fs::read(&tab).unwrap() == std::fs::read(&golden).unwrap(),
+        "the sandboxed renderer's frame {} differs from the in-process window {}",
+        tab.display(),
+        golden.display()
+    );
+
+    let open = [probe[0], probe[1], ("DWELLER_NO_SANDBOX", "1")];
+    let (state, err) = run(&tab, "renderer:loaded renderer:frame", &open);
+    assert!(err.starts_with("warning: DWELLER_NO_SANDBOX=1, the renderer runs without a sandbox\n"), "{err}");
+    assert!(err.contains("sandbox-probe home=0 tmp=0 tcp=") && err.ends_with(" fork=0\n") && !err.contains("tcp=1 "), "{err}");
+    assert!(state.contains("\nrenderer-frame "), "{state}");
+}
+
 #[test]
 fn window_renderer_input() {
     if !has_sdl() {

@@ -1,0 +1,47 @@
+import std
+import std.mem.Allocator
+import std.text
+
+extern fn sandbox_init_with_parameters(profile: [*]u8, flags: u64, params: [*]?[*]u8, failure: *mut ?[*]u8) i32
+extern fn sandbox_free_error(failure: [*]u8)
+extern fn _NSGetExecutablePath(buf: [*]u8, size: *mut u32) i32
+extern fn realpath(path: [*]u8, out: [*]u8) ?[*]u8
+extern fn getenv(name: [*]u8) ?[*]u8
+extern fn strlen(s: [*]u8) usize
+
+let PROFILE = @embedFile("sandbox.sb")
+
+fn enterSeatbelt(alloc: Allocator) bool {
+    var exe = @zeroed([1024]u8)
+    var real = @zeroed([1024]u8)
+    var size: u32 = 1024
+
+    if _NSGetExecutablePath(exe[..].ptr, &mut size) != 0 || realpath(exe[..].ptr, real[..].ptr) == null {
+        std.log.err("sandbox: no executable path")
+
+        return false
+    }
+
+    let dir = std.path.dirname(real[..strlen(real[..].ptr)])
+    var strs = text.Builder.init(alloc)
+
+    defer strs.deinit()
+    strs.append(PROFILE) catch return false
+    strs.appendByte(0) catch return false
+    strs.append(dir) catch return false
+    strs.appendByte(0) catch return false
+
+    let all = strs.bytes()
+    let home: ?[*]u8 = getenv("HOME".ptr) orelse "".ptr
+    var params = [5]?[*]u8{"EXECUTABLE_DIR".ptr, all[PROFILE.len + 1..].ptr, "HOME_DIR".ptr, home, null}
+    var failure: ?[*]u8 = null
+
+    if sandbox_init_with_parameters(all.ptr, 0, params[..].ptr, &mut failure) == 0 { return true }
+
+    if failure |e| {
+        std.log.err("sandbox: {}", e[0..strlen(e)])
+        sandbox_free_error(e)
+    }
+
+    return false
+}

@@ -10,6 +10,10 @@ import std.text
 extern fn getpid() i32
 
 fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, system: ?*mut font.System, blink: bool) i32 {
+    if !enterSandbox(alloc) { return 3 }
+
+    probeSandbox(alloc)
+
     var r = TabRenderer { alloc: alloc, conn: conn, measure: measure, system: system, fds: List(i32).init(alloc), drawn: List(paint.Sig).init(alloc), marks: List(Mark).init(alloc), title: text.Builder.init(alloc), href: text.Builder.init(alloc), target: text.Builder.init(alloc), inbox: text.Builder.init(alloc), current: text.Builder.init(alloc), reply: text.Builder.init(alloc), docs: text.Builder.init(alloc), blink: blink }
     defer r.deinit()
     defer engine.closeContexts()

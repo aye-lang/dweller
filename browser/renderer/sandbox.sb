@@ -1,0 +1,56 @@
+; chromium: sandbox/policy/mac/common.sb, sandbox/policy/mac/renderer.sb
+(version 1)
+
+(deny default)
+
+(define (home-path subpath) (string-append (param "HOME_DIR") subpath))
+
+(allow signal (target self))
+(allow process-info* (target self))
+
+(allow file-read* (subpath (param "EXECUTABLE_DIR")))
+
+(allow file-read*
+  (subpath "/usr/lib")
+  (subpath "/System/Library/Frameworks")
+  (subpath "/System/Library/PrivateFrameworks")
+  (subpath "/Library/Apple/System/Library/Frameworks")
+  (subpath "/Library/Apple/System/Library/PrivateFrameworks")
+  (subpath "/System/Cryptexes/OS")
+  (subpath "/System/Volumes/Preboot/Cryptexes/OS"))
+
+(allow file-read-data file-read-metadata
+  (subpath "/System/Library/Fonts")
+  (subpath "/Library/Fonts")
+  (subpath (home-path "/Library/Fonts")))
+
+(allow file-read-data
+  (literal "/dev/urandom")
+  (literal "/dev/random")
+  (literal "/dev/null")
+  (literal "/private/etc/localtime")
+  (subpath "/private/var/db/timezone")
+  (subpath "/usr/share/zoneinfo"))
+
+(allow file-write-data
+  (require-all
+    (literal "/dev/null")
+    (vnode-type CHARACTER-DEVICE)))
+
+(allow sysctl-read
+  (sysctl-name "hw.activecpu")
+  (sysctl-name "hw.cachelinesize_compat")
+  (sysctl-name "hw.logicalcpu_max")
+  (sysctl-name "hw.machine")
+  (sysctl-name "hw.memsize")
+  (sysctl-name "hw.ncpu")
+  (sysctl-name "hw.pagesize_compat")
+  (sysctl-name "kern.osproductversion")
+  (sysctl-name "kern.osrelease")
+  (sysctl-name "kern.ostype")
+  (sysctl-name "kern.osversion")
+  (sysctl-name "kern.usrstack64")
+  (sysctl-name "kern.version")
+  (sysctl-name "sysctl.proc_cputype")
+  (sysctl-name-prefix "hw.optional.")
+  (sysctl-name-prefix "hw.perflevel"))

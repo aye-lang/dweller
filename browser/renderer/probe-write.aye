@@ -1,0 +1,17 @@
+extern fn unlink(path: [*]u8) i32
+
+let O_WRONLY_CREAT_DARWIN: i32 = 0x0201
+let O_WRONLY_CREAT_LINUX: i32 = 0x0041
+let PROBE_FILE = "/tmp/dweller-sandbox-probe"
+
+fn probeWrite() i32 {
+    var flags = O_WRONLY_CREAT_LINUX
+
+    if @targetOs() is .macos { flags = O_WRONLY_CREAT_DARWIN }
+
+    let got = openErrno(openPath(PROBE_FILE.ptr, flags, 0o600))
+
+    if got == 0 { unlink(PROBE_FILE.ptr) }
+
+    return got
+}

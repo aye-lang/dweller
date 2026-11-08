@@ -1,0 +1,23 @@
+extern fn socket(domain: i32, kind: i32, protocol: i32) i32
+extern fn connect(fd: i32, addr: [*]u8, len: u32) i32
+
+let DISCARD_DARWIN = [16]u8{16, 2, 0, 9, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0}
+let DISCARD_LINUX = [16]u8{2, 0, 0, 9, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0}
+
+fn probeConnect() i32 {
+    let fd = socket(2, 1, 0)
+
+    if fd < 0 { return errno() }
+
+    var addr = DISCARD_LINUX
+
+    if @targetOs() is .macos { addr = DISCARD_DARWIN }
+
+    var got: i32 = 0
+
+    if connect(fd, addr[..].ptr, 16) != 0 { got = errno() }
+
+    close(fd)
+
+    return got
+}
