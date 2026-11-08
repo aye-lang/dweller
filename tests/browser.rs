@@ -10582,6 +10582,10 @@ fn window_renderer_lifecycle() {
 /// two-origin page shows the same text as in the window's own process.
 /// A renderer that names a document the browser never gave it as a
 /// request's initiator is killed (`bad message: bad fetch`).
+/// Q2.4d: so is one that claims another top-level site, a referrer of
+/// another origin or the TRACE method; the `Cookie`, `Referer`, `Origin`
+/// and `Sec-*` headers it adds are dropped (the page shows the headers
+/// net sent, as without them).
 #[test]
 fn window_renderer_net() {
     if !has_sdl() {
@@ -10606,24 +10610,75 @@ fn window_renderer_net() {
         assert!(own.contains("fetch same origin: basic status 200 body true") || own.contains("crossorigin"), "{page}: {own}");
         assert_eq!(renderer, own, "{page}");
     }
+    let headers = format!("{}/net/request_headers.html", srv.base);
+    let plain = login_window_with(&headers, "frame", None, &tab);
+    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "headers")]);
+    assert!(plain.contains(&format!("Referer: {headers}")) && !evil.contains("evil"), "{evil}");
+    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer ")).collect::<Vec<_>>().join("\n");
+    assert_eq!(page_only(&evil), page_only(&plain));
+    for evil in ["initiator", "top", "referrer", "trace"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST_EVIL", evil)
+            .args([
+                &format!("{}/net/cors.html", srv.base),
+                "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
+            ])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("{evil}: no renderer line in\n{state}"));
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert_eq!(&r[2..], ["gone", "bad fetch"], "{evil}: {state}");
+        assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]), "{evil}");
+    }
+}
+
+/// Q2.4f: a navigation the browser starts for a renderer (a link click,
+/// a form submission, `browser/tests/net/samesite_links.html`) carries
+/// the page that began it, so net decides SameSite as in the window's
+/// own process: from `127.0.0.1` to `localhost` a link sends Lax but not
+/// Strict cookies and a form POST neither; from `localhost` a link sends
+/// both, and so does a typed URL.
+#[test]
+fn window_renderer_samesite() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let site = srv.base.clone();
+    let other = site.replace("127.0.0.1", "localhost");
+    let dir = profile("renderer_samesite");
     let out = dweller_command()
         .current_dir(root())
-        .env("DWELLER_PROCESS", "tab")
-        .env("DWELLER_TEST_EVIL", "initiator")
-        .args([
-            &format!("{}/net/cors.html", srv.base),
-            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
-        ])
+        .env("DWELLER_PROFILE", &dir)
+        .args(["dump", "--text", &format!("{other}/samesite/set")])
         .output()
         .unwrap();
-    let state = text(&out.stdout);
-    let line = state
-        .lines()
-        .find(|l| l.starts_with("renderer "))
-        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
-    let r: Vec<&str> = line.splitn(4, ' ').collect();
-    assert_eq!(&r[2..], ["gone", "bad fetch"], "{state}");
-    assert_eq!(text(&out.stderr), format!("error: bad message: bad fetch {}\n", r[1]));
+    assert_eq!(text(&out.stdout), "set\n", "{}", text(&out.stderr));
+    let show = format!("{other}/samesite/show");
+    let tab = [("DWELLER_PROCESS", "tab")];
+    for envs in [&[][..], &tab[..]] {
+        let (wait, then) = if envs.is_empty() { ("loaded ", " loaded") } else { ("", " renderer:input renderer:loaded") };
+        for (what, from, click, want) in [
+            ("cross-site link", &site, "click:80,65", "GET cookies: lax=1; dflt=1"),
+            ("cross-site post", &site, "click:60,115", "POST cookies:"),
+            ("same-site link", &other, "click:80,65", "GET cookies: strict=1; lax=1; dflt=1"),
+        ] {
+            let got = login_window_with(&format!("{from}/net/samesite_links.html?{show}"), &format!("{wait}{click}{then}"), Some(&dir), envs);
+            assert!(got.lines().any(|l| l.trim_end().ends_with(&format!("Show{want}"))), "{what} {envs:?}: want {want:?}, got:\n{got}");
+        }
+        let typed = login_window_with(&show, "frame", Some(&dir), envs);
+        assert!(typed.lines().any(|l| l == "ShowGET cookies: strict=1; lax=1; dflt=1"), "typed {envs:?}: {typed}");
+    }
 }
 
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
