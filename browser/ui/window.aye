@@ -409,6 +409,8 @@ pub struct Ui {
     dropdown: ?Dropdown
     range_drag: bool
     inactive: bool = false
+    select_drag: bool = false
+    frame_mark: ?u32 = null
     arrow_cursor: ?*mut SDL_Cursor
     hand_cursor: ?*mut SDL_Cursor
     ibeam_cursor: ?*mut SDL_Cursor
@@ -1137,6 +1139,7 @@ pub struct Ui {
                 try self.keyUp(ke.keysym.sym, ke.keysym.mods, sc)
             } else {
                 perf.noteAction("key")
+                self.select_drag = false
                 try self.key(ke.keysym.sym, ke.keysym.mods, sc, ke.repeat != 0)
             }
         } else if kind == SDL_TEXTINPUT {
@@ -1194,6 +1197,7 @@ pub struct Ui {
                 try self.pointerEvent("contextmenu", 2, x, y, 0.0, 0.0)
             }
             if be.button == SDL_BUTTON_LEFT {
+                self.select_drag = true
                 try self.press(x, y, true)
                 perf.noteAction("click")
                 try self.click(x, y)
@@ -1463,7 +1467,7 @@ pub struct Ui {
         if self.range_drag {
             try dragRange(self, wx + self.tab.scroll_x)
         }
-        if (self.buttons & buttonBit(SDL_BUTTON_LEFT)) != 0 {
+        if self.select_drag && (self.buttons & buttonBit(SDL_BUTTON_LEFT)) != 0 {
             try dragSelectPage(self, wx, y)
         }
         if hoverChips(self, wx, y) {

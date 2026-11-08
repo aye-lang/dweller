@@ -10287,7 +10287,17 @@ fn window_renderer_focus() {
         (0..a.len() / 4).filter(|i| a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]).map(|i| i % w).collect();
     assert!((1..=2).contains(&columns.len()), "window blur: the caret did not hide, columns {columns:?}\n{state}");
 
-    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input", &[("DWELLER_PROCESS", "tab")]);
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .arg(&shot)
+        .args(["--events", "renderer:loaded renderer:frame click:90,102 renderer:input renderer:next renderer:next"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "blink: {}\n{}", out.status, text(&out.stderr));
+    let (state, err) = (text(&out.stdout), text(&out.stderr));
     assert!(err.is_empty(), "{err}");
     let line = state.lines().find(|l| l.starts_with("renderer-frame ")).unwrap_or("");
     let rect: Vec<i64> = line.split(' ').skip(4).filter_map(|v| v.parse().ok()).collect();
