@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+// chromium: net/base/schemeful_site.h
+fn appendSite(alloc: Allocator, out: *mut text.Builder, href: []u8) AllocError!void {
+    let at = url.parse(alloc, href) catch |e| {
+        if e == url.UrlError.OutOfMemory {
+            return AllocError.OutOfMemory
+        }
+
+        return
+    }
+
+    defer at.deinit(alloc)
+
+    try out.append(at.scheme)
+    try out.append("://")
+    try out.append(siteOf(at.host))
+}

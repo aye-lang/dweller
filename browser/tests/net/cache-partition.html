@@ -1,0 +1,24 @@
+<!doctype html>
+<title>the HTTP cache is partitioned</title>
+<pre id="out"></pre>
+<script src="$OTHER/logged-acao/net/cache-partition/r.js?embed"></script>
+<iframe src="$OTHER/with-other/net/cache-partition/frame.html?other=$OTHER"></iframe>
+<iframe src="/with-other/net/cache-partition/frame.html?other=$OTHER"></iframe>
+<script>
+const out = document.getElementById('out');
+function load(attrs) {
+  return new Promise(resolve => {
+    const el = document.createElement('script');
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+    document.head.appendChild(el);
+  });
+}
+window.addEventListener('load', async () => {
+  const src = '$OTHER/logged-acao/net/cache-partition/r.js?cred';
+  out.textContent += 'credentialed: ' + await load({ src }) + '\n';
+  out.textContent += 'uncredentialed: ' + await load({ src, crossorigin: 'anonymous' }) + '\n';
+  out.textContent += 'done\n';
+});
+</script>

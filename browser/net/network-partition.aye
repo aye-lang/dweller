@@ -1,0 +1,34 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: net/http/http_cache.cc (GenerateCacheKey)
+fn networkPartition(alloc: Allocator, req: Request, href: []u8) AllocError![]mut u8 {
+    var frame = requestOrigin(req, req.referrer)
+    var top = req.top
+
+    if req.kind == Kind.Document {
+        frame = href
+    } else if top.len == 0 {
+        top = frameTop(frame) orelse frame
+    }
+
+    if top.len == 0 {
+        top = frame
+    }
+
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    if try credentialed(alloc, req, href) {
+        try out.append("1/_dk_")
+    } else {
+        try out.append("0/_dk_")
+    }
+
+    try appendSite(alloc, &mut out, top)
+    try out.appendByte(' ')
+    try appendSite(alloc, &mut out, frame)
+
+    return out.toOwned()
+}
