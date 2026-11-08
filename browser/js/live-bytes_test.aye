@@ -1,0 +1,45 @@
+let OWNED = "var s = 'x'.repeat(100000); var arr = new Array(50000).fill(0); var buf = new ArrayBuffer(200000)"
+
+fn terminates(it: *mut Interp, src: []u8) bool {
+    _ = it.evalScript(src) catch |e| {
+        return e == JsError.Terminated
+    }
+
+    return false
+}
+
+test "the heap counts the bytes of strings, arrays and array buffers" {
+    var it = try Interp.create(@testAllocator())
+    defer it.deinit()
+    try installBuiltins(&mut it)
+
+    collectGarbage(&mut it)
+    let empty = it.heap.live_bytes
+    let want = 100000 + 50000 * @sizeOf(Value) + 200000
+
+    _ = try it.evalScript(OWNED)
+    collectGarbage(&mut it)
+
+    @expect(it.heap.live_bytes - empty >= want)
+    @expect(it.heap.live_bytes - empty < 2 * want)
+
+    _ = try it.evalScript("s = null; arr = null; buf = null")
+    collectGarbage(&mut it)
+
+    @expect(it.heap.live_bytes < empty + 100000)
+    @expect(!it.heap.out_of_memory)
+}
+
+test "a heap past its limit after a collection ends the script" {
+    var it = try Interp.create(@testAllocator())
+    defer it.deinit()
+    try installBuiltins(&mut it)
+    it.heap.limit_bytes = 4000000
+
+    _ = try it.evalScript("var junk; for (let i = 0; i < 100; i++) junk = 'y'.repeat(1000000)")
+
+    @expect(!it.heap.out_of_memory)
+
+    @expect(terminates(&mut it, "var a = []; try { for (;;) a.push('z'.repeat(1000) + a.length) } finally { a.caught = 1 }"))
+    @expect(it.heap.out_of_memory)
+}

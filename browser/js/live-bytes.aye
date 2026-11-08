@@ -1,0 +1,27 @@
+pub fn objBytes(ob: *Obj) usize {
+    var n = @sizeOf(Obj) + ob.props.len * @sizeOf(Prop) + ob.elems.len * @sizeOf(Value)
+
+    if ob.keys |ki| {
+        n += ki.slots.len * 8
+    }
+
+    match ob.data {
+        .Bytes { mem, external, .. } => {
+            if !external { n += mem.len }
+        }
+
+        _ => {}
+    }
+
+    return n
+}
+
+pub fn strBytes(c: *StrCell) usize {
+    if c.owned { return @sizeOf(StrCell) + c.bytes.len }
+
+    return @sizeOf(StrCell)
+}
+
+pub fn envBytes(ev: *Env) usize {
+    return @sizeOf(Env) + ev.slots.len * @sizeOf(Value)
+}

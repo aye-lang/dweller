@@ -112,6 +112,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerFetch(tp, got.frame, got.message)
         }
 
+        .OutOfMemory => {
+            if got.frame != slot.id { return "bad out_of_memory" }
+
+            try showCommitted(tp, "Out of memory", tp.committed.bytes())
+        }
+
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
