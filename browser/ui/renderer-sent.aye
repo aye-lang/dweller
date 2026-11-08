@@ -20,6 +20,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if (!tp.loading && !by_agent) || got.frame != slot.id { return "unexpected loaded" }
             if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
             if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if tp.loading && !tp.nav_failed && !(try inSiteLock(tp, url)) { return "commit outside site lock" }
 
             if tp.loading { try commitEntry(slot, tp, url) }
 

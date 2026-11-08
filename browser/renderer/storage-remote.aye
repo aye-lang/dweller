@@ -10,7 +10,8 @@ fn storageRemote(ask: engine.StorageAsk, out: ?*mut text.Builder) AllocError!eng
 
     if ask.key.len + ask.value.len > MAX_ITEM_BYTES { return engine.StorageDone { refused: true } }
 
-    let m = ipc.Message.Storage { doc: storeDoc(r, ask.href, "storage"), context: ask.context, session: ask.session as u32, op: ask.op, index: ask.index, key: ask.key, value: ask.value }
+    let doc = storeDoc(r, ask.href, "storage") orelse return engine.StorageDone {}
+    let m = ipc.Message.Storage { doc: doc, context: ask.context, session: ask.session as u32, op: ask.op, index: ask.index, key: ask.key, value: ask.value }
 
     send(r.alloc, r.conn, r.tab, m) catch return engine.StorageDone {}
 

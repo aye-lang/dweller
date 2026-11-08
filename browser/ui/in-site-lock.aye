@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/child_process_security_policy_impl.cc CanAccessDataForOrigin
+fn inSiteLock(tp: *TabProcess, href: []u8) AllocError!bool {
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+    var top = text.Builder.init(tp.url.alloc)
+    defer top.deinit()
+
+    try writeSite(href, &mut site)
+    try writeSite(topOf(tp), &mut top)
+
+    return site.len() == 0 || text.eql(site.bytes(), tp.site.bytes()) || text.eql(site.bytes(), top.bytes())
+}

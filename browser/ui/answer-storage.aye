@@ -21,6 +21,9 @@ fn answerStorage(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             if op >= 6 { return tabSessionChanged(&mut area, tp.tab, op, index) }
 
             let href = fetchDoc(tp, doc)
+
+            if !(try inSiteLock(tp, href)) { return "storage outside site lock" }
+
             let page = url.parse(alloc, href) catch |e| {
                 try ipc.encode(&mut tp.outbox, on, ipc.Message.StorageReply { found: 0, refused: 0, changed: 0, count: 0, value: "" })
 

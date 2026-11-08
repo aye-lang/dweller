@@ -11478,6 +11478,72 @@ fn window_renderer_sites() {
     }
 }
 
+/// Q2.7: with `DWELLER_PROCESS=tab` and `DWELLER_TEST=1`, the renderer
+/// of the second tab acts compromised (`DWELLER_TEST_EVIL`) and sends one
+/// forged message about another site: a cross-site frame's cookies
+/// (`site` on `site-lock.html?cookie`) or storage (`?storage`), a
+/// fetch whose initiator the browser never recorded, a pushState to
+/// another site, the commit of a cross-site navigation without its
+/// response. The browser kills that renderer (`bad message: REASON PID`)
+/// and the window and the first tab's renderer live. Without the hook the
+/// renderer does not ask for the cross-site frame's cookies or storage,
+/// and nothing is killed.
+#[test]
+fn window_renderer_site_lock() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let first = format!("{}/ui/renderer_sites.html", srv.base);
+    let evil = format!("{}/ui/site-lock.html", srv.base);
+    let run = |hook: &str, second: &str, then: &str| -> (String, String) {
+        let mut cmd = dweller_command();
+        cmd.current_dir(root()).env("DWELLER_PROCESS", "tab").env("DWELLER_TEST", "1");
+        if !hook.is_empty() {
+            cmd.env("DWELLER_TEST_EVIL", hook);
+        }
+        let events = format!("renderer:loaded key:cmd+t {} key:return renderer:loaded {then} key:cmd+1 renderer:frame frame", typed(second));
+        let out = cmd
+            .args([first.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", &events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{hook} {second}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let first_lives = |state: &str, killed: &str, case: &str| {
+        let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert!(r.len() == 4 && r[1] != killed && r[2..] == ["title", "127.0.0.1"], "{case}: the first tab's renderer\n{state}");
+        assert!(state.contains("tabs 2, showing 1"), "{case}: {state}");
+    };
+
+    for search in ["?cookie", "?storage"] {
+        let (state, err) = run("", &format!("{evil}{search}"), "frame frame frame");
+        assert!(err.is_empty(), "{search} without the hook: {err}");
+        first_lives(&state, "", search);
+    }
+
+    let cases = [
+        ("site", format!("{evil}?cookie"), "renderer:gone", "cookie outside site lock"),
+        ("site", format!("{evil}?storage"), "renderer:gone", "storage outside site lock"),
+        ("initiator", evil.clone(), "renderer:gone", "bad fetch"),
+        ("pushstate", evil.clone(), "renderer:gone", "bad url"),
+        ("commit", evil.clone(), "click:50,88 renderer:gone", "commit outside site lock"),
+    ];
+    for (hook, second, then, why) in &cases {
+        let (state, err) = run(hook, second, then);
+        let pid = err.strip_prefix(&format!("error: bad message: {why} ")).and_then(|p| p.strip_suffix('\n'));
+        let pid = pid.unwrap_or_else(|| panic!("{hook} {second}: stderr {err:?}\n{state}"));
+        assert!(pid.parse::<u32>().is_ok(), "{hook}: {err}");
+        first_lives(&state, pid, hook);
+    }
+}
+
 /// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default
 /// actions (`browser/tests/ui/renderer_actions.html`): a link click and
 /// a form POST are asked of the browser, which navigates the renderer,

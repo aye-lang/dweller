@@ -1,0 +1,14 @@
+import net
+import std.text
+import url
+
+fn outsideTop(r: *TabRenderer, href: []u8) bool {
+    let at = url.parse(r.alloc, href) catch return false
+    defer at.deinit(r.alloc)
+    let top = url.parse(r.alloc, r.top.bytes()) catch return false
+    defer top.deinit(r.alloc)
+
+    if !text.eql(at.scheme, "http") && !text.eql(at.scheme, "https") { return false }
+
+    return !text.eql(at.scheme, top.scheme) || !net.sameSite(&at, &top)
+}

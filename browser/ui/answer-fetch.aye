@@ -43,6 +43,8 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             if has_body == 1 { req.body = &sent }
 
             var res = net.request(alloc, &target, req) catch |e| {
+                if navigates { tp.nav_failed = true }
+
                 try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(e) })
 
                 return ""
