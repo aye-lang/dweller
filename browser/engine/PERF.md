@@ -1353,3 +1353,74 @@ refusals, and #1 and #4 name the full layouts. Q4.12 is W8 (live) and is
 not measured here. After #1, #3 and #5, zol's frame is the bytecode and
 the layouts that are left. react and go-docs then fail only on their loop
 (script 38–68 ms with a layout or restyle in the same iteration).
+
+## Q4.15b: Q4.10 and Q4.15 on W7 (2026-11-08)
+
+Before: 87f4863 (main before #279). After: 2f29716 (main with #279 image
+decode off the main thread and #283 damage-only window redraw). Both are
+`browser/build.sh` (safe) builds with the compiler at `target/release/aye`,
+Apple M2 Pro, 1024×768, the archives of `target/sites`. Every build and run
+went through `scripts/capped.sh`, one after the other, before and after
+alternating. `window_perf.py report --replay --site bbc --site zol --site
+mistral --site react`, 3 runs of each build; the table has the median of
+the 3 (spread in brackets). W7 limits: loop under 100 ms, scroll p95 under
+33 ms, idle CPU under 5%.
+
+| Site | Build | Longest loop ms | Scroll p50 / p95 ms | Idle CPU | W7 |
+|---|---|---:|---:|---:|---|
+| bbc | before | 578 (572–585) | 24.9 / 501.6 (491–504) | 0.3% | FAIL loop, scroll |
+| bbc | after | 568 (564–578) | 26.3 / 489.9 (480–514) | 0.3% | FAIL loop, scroll |
+| zol | before | 810 (800–812) | 280.6 / 561.4 (555–565) | 13.4% | FAIL loop, scroll, idle |
+| zol | after | 811 (806–852) | 290.7 / 527.8 (517–554) | 13.9% (12.4–14.8) | FAIL loop, scroll, idle |
+| mistral | before | 1409 (1408–1419) | 43.9 / 366.4 (361–412) | 99.2% | FAIL loop, scroll, idle |
+| mistral | after | 1562 (1537–1564) | 44.0 / 346.4 (345–353) | 99.3% | FAIL loop, scroll, idle |
+| react | before | 117 (115–117) | 17.1 / 51.0 (50–52) | 0.6% | FAIL loop, scroll |
+| react | after | 119 (119–126) | 18.7 / 51.3 (50–52) | 0.5% | FAIL loop, scroll |
+
+No row changes between pass and fail. Run-to-run spread is under 10% except
+mistral's before p95 (361–412, 14%) and zol's idle (12.4–14.8%).
+
+Mistral, one profiled idle run per build (`DWELLER_TIMING=1`, `--log`; the
+last 199 and 191 loop iterations are the measured 10 s), ms per 10 s:
+
+| Phase | before | after |
+|---|---:|---:|
+| `ui_loop` (busy) | 10186 | 10147 |
+| `ui_raf` (script) | 5734 | 5692 |
+| of it `canvas_draw` | 1783 | 1750 |
+| `ui_draw` (raster) | 3573 | 3480 |
+| `ui_relayout` | 1656 | 1714 |
+| `ui_timers` | 876 | 973 |
+| draws | 199 | 191 |
+| `ui_window_px` records | 0 | 1 |
+
+Every frame of both builds has `raster_px 482804 1`: one damage rect of
+482804 px (61% of the window) that the page's canvas animation redraws
+each frame.
+
+Mistral scroll run (one each): `image_decode` on the main thread 1097 ms
+before, 3 ms after.
+
+### Findings
+
+- Q4.10 moved what it targeted: mistral's main-thread image decode
+  1097 → 3 ms in the scroll run, and the scroll p95 fell 366 → 346 ms
+  (the before spread reaches 412). The longest loop did not fall: 1409 →
+  1562 ms. In the after build the longest iteration is the load task with
+  the first paint (`ui_first_paint` 1050 ms) and the page script
+  `layout.astro…js` (784 ms), not an image task. The before build's 1409 ms
+  iteration was the image load task (timers 1334 ms). The 11% rise is the
+  size of the load iteration, not decode.
+- Q4.15 did not move mistral's idle: 99.2% → 99.3%, raster 3573 → 3480 ms.
+  The idle raster comes from the page's canvas, not from the whole-window
+  redraw. The page damage is 482804 px in every frame in both builds, and
+  the new branch composes the window only for that damage (one
+  `ui_window_px` record in the after run). The 3.5 s of `ui_draw` is the
+  page's raster of that damage (the `blendLayerPixels` path of the rAF
+  canvas animation), 17–18 ms a frame. Whole-window redraw was not the
+  cause. The window path of #283 shows in no number here.
+- bbc, zol and react are inside the noise for both changes: no loop, p50,
+  p95 or idle number moves by more than the spread. bbc's cause is bytecode,
+  zol's the layouts and queries of Q4.1 (loop 5200 → 810 ms between
+  Q4.6a and now), react's the raster and partial restyle.
+- Idle of bbc and react is already under 5%; zol's 13% is its rAF loop.
