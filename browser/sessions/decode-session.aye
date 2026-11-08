@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn decodeSession(alloc: Allocator, bytes: []u8) AllocError!?SavedWindow {
+    var w = SavedWindow.init(alloc)
+
+    errdefer w.deinit()
+
+    if try readSession(bytes, &mut w) {
+        return w
+    }
+
+    w.deinit()
+
+    return null
+}

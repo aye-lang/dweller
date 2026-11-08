@@ -1,0 +1,19 @@
+import std.list.List
+import std.mem.Allocator
+
+pub struct SavedWindow {
+    tabs: List(SavedTab)
+    selected: usize
+
+    pub fn init(alloc: Allocator) SavedWindow {
+        return SavedWindow { tabs: List(SavedTab).init(alloc), selected: 0 }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for i in 0..self.tabs.len() {
+            self.tabs.items()[i].urls.deinit()
+        }
+
+        self.tabs.deinit()
+    }
+}

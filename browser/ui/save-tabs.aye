@@ -1,0 +1,27 @@
+import sessions
+import std.mem.AllocError
+import std.text
+
+fn saveTabs(ui: *mut Ui, now: bool) AllocError!void {
+    if !sessions.sessionsOn() || ui.tab_processes { return }
+
+    var w = sessions.SavedWindow.init(ui.alloc)
+    defer w.deinit()
+    var out = text.Builder.init(ui.alloc)
+    defer out.deinit()
+
+    w.selected = ui.active
+
+    for i in 0..ui.count {
+        let h = &ui.slots[i].?.session.tab.history
+
+        try w.tabs.append(sessions.SavedTab.init(ui.alloc, slotTitle(ui.slots[i].?), h.current))
+
+        for e in h.entries.items() {
+            try w.tabs.items()[i].urls.append(e.href)
+        }
+    }
+
+    try sessions.encodeSession(&w, &mut out)
+    try sessions.saveSession(out.bytes(), now)
+}

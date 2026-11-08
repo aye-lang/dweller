@@ -1,0 +1,16 @@
+import net
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn openSessionFile(alloc: Allocator, by_default: bool) AllocError!void {
+    let wanted = std.os.getenv("DWELLER_RESTORE") orelse ""
+    let on = text.eql(wanted, "1") || (by_default && !text.eql(wanted, "0"))
+
+    if !on || !net.profileWritable() || session_file != null { return }
+
+    let path = try net.joinPath(alloc, net.profileDir(), "session")
+
+    session_file = try alloc.create(SessionFile { alloc: alloc, owned_path: path, written: text.Builder.init(alloc), saved_ms: 0 })
+}
