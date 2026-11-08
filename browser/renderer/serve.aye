@@ -11,21 +11,22 @@ pub fn serve(alloc: Allocator, fd: []u8, settings: [][]u8) i32 {
 
     let conn = std.fs.File { fd: sock as i32 }
     var fixed = font.Fixed.init()
+    let blink = !has(settings, "--steady-caret")
 
     engine.setScripting(!has(settings, "--no-js"))
     engine.setRealClock(true)
     engine.setCanvasFixed(true)
 
-    if has(settings, "fixed") { return serveOn(alloc, conn, &mut fixed, null) }
+    if has(settings, "fixed") { return serveOn(alloc, conn, &mut fixed, null, blink) }
 
     var sys = font.System.init(alloc) catch |e| {
-        return serveOn(alloc, conn, &mut fixed, null)
+        return serveOn(alloc, conn, &mut fixed, null, blink)
     }
 
     defer sys.deinit()
     engine.setCanvasFixed(false)
 
-    return serveOn(alloc, conn, &mut sys, &mut sys)
+    return serveOn(alloc, conn, &mut sys, &mut sys, blink)
 }
 
 fn has(settings: [][]u8, word: []u8) bool {

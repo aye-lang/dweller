@@ -1,0 +1,15 @@
+import net
+import std.mem.Allocator
+import std.text
+import url
+
+fn commitMatches(alloc: Allocator, committed: []u8, href: []u8) bool {
+    let want = url.parse(alloc, committed) catch return false
+    defer want.deinit(alloc)
+    let got = url.parse(alloc, href) catch return false
+    defer got.deinit(alloc)
+
+    let files = text.eql(want.scheme, "file") && text.eql(got.scheme, "file") && text.eql(want.path, got.path)
+
+    return files || text.eql(want.withoutFragment(), got.withoutFragment()) || net.sameOrigin(&want, &got)
+}

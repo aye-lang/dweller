@@ -44,11 +44,22 @@ fn paintFrame(r: *mut TabRenderer) !void {
         try paint.signature(&list, t, &mut sigs)
     }
 
+    var marks = List(Mark).init(r.alloc)
+    defer marks.deinit()
+
+    try fieldMarks(r, p, &mut marks)
+
     let whole = try frameDamage(r, sigs.items(), list.background, &mut damage)
+
+    if !whole && !sameMarks(r.marks.items(), marks.items()) { try addMarks(r, &mut damage, marks.items()) }
+
     let old = r.drawn
+    let old_marks = r.marks
 
     r.drawn = sigs
     sigs = old
+    r.marks = marks
+    marks = old_marks
     r.background = list.background
     r.drawn_x = r.scroll_x
     r.drawn_y = r.scroll_y

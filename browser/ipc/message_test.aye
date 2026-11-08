@@ -1,0 +1,27 @@
+import std.text
+
+test "the focus, title and same-document messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let focus = try roundTrip(&mut out, 7, Message.Focus { on: 1 })
+
+    match focus.message {
+        .Focus { on } => @expectEqual(1, on)
+        _ => @expect(false)
+    }
+
+    let named = try roundTrip(&mut out, 7, Message.Title { title: "Hi" })
+
+    match named.message {
+        .Title { title } => @expectEqual("Hi", title)
+        _ => @expect(false)
+    }
+
+    let moved = try roundTrip(&mut out, 7, Message.SameDocument { url: "http://a/b#c" })
+
+    match moved.message {
+        .SameDocument { url } => @expectEqual("http://a/b#c", url)
+        _ => @expect(false)
+    }
+}
