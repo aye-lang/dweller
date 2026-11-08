@@ -6,7 +6,7 @@ against the layer table below:
 
   platform   ui gpu audio font net perf
   core       animation css layout paint image svg webfont encoding url dom
-  front end  html js wasm engine agent
+  front end  html js wasm engine agent pageview renderer
 
 Rules: a core module, or a platform module other than `ui` (the window
 shell, which hosts the engine), imports no front-end module, and nothing
@@ -22,7 +22,7 @@ import sys
 
 PLATFORM = {"ui", "gpu", "audio", "font", "net", "perf"}
 CORE = {"animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "url", "dom"}
-FRONT = {"html", "js", "wasm", "engine", "agent"}
+FRONT = {"html", "js", "wasm", "engine", "agent", "pageview", "renderer"}
 
 # (path prefix relative to browser/, imported module): removed by card.
 EXCEPTIONS = {
