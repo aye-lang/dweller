@@ -77,11 +77,13 @@ import url
 import url.Url
 
 let USAGE = "usage: dweller dump --tree|--text|--style|--layout [--js [--no-scroll | --scroll-steps N]] [--width PX] [--dpr N] [--font fixed|system] [--id ID | --tag NAME] FILE|URL"
-let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET"
+let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | fuzz --list | agent | mcp | connect SOCKET"
 
 pub fn main() {
     var gpa = std.heap.General.init()
-    net.start(gpa.allocator()) catch |e| {
+    if !rendererRun(gpa.allocator()) {
+        net.start(gpa.allocator()) catch |e| {
+        }
     }
     let status = run(gpa.allocator())
     engine.saveStorage()

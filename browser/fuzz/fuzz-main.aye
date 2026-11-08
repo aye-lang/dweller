@@ -5,7 +5,7 @@ import std.mem.Allocator
 import std.text
 import std.time
 
-let USAGE = "usage: dweller fuzz TARGET [--seconds N] [--corpus DIR] [--seed S]"
+let USAGE = "usage: dweller fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | fuzz --list"
 
 pub fn fuzzMain(alloc: Allocator, args: [][]u8) i32 {
     return fuzzCommand(alloc, args) catch |e| {
@@ -16,6 +16,10 @@ pub fn fuzzMain(alloc: Allocator, args: [][]u8) i32 {
 }
 
 fn fuzzCommand(alloc: Allocator, args: [][]u8) !i32 {
+    if args.len == 1 && text.eql(args[0], "--list") {
+        return listTargets()
+    }
+
     var arena = Arena.init(alloc)
     defer arena.deinit()
 

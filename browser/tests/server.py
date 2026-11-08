@@ -63,6 +63,11 @@
 #                    *) and Access-Control-Allow-Credentials: true
 #   /logged-acao/NAME  as /acao/NAME, recording the request (method,
 #                    path, Origin, Cookie) in /log
+#   /meta/NAME       (GET and POST) records the request's method, path,
+#                    Sec-Fetch-Site, -Mode, -Dest, -User, Origin and
+#                    Referer in /meta-log and answers as /log/NAME
+#   /meta-log        the requests /meta/ recorded, sorted
+#   /policy/POLICY/NAME  the file NAME with Referrer-Policy: POLICY
 #   /with-other/NAME?other=URL  the HTML file NAME with each $OTHER
 #                    replaced by URL (a page that names another origin)
 #   /csp/NAME?other=URL  the file csp/NAME with one Content-Security-Policy
@@ -106,6 +111,7 @@ import mimetypes
 import os
 import secrets
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -126,6 +132,7 @@ COOKIES = [
 ]
 
 LOG = []
+META = []
 
 SLOW = {"now": 0, "peak": 0}
 SLOW_LOCK = threading.Lock()
@@ -234,6 +241,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/plain")], lines.encode())
         elif path == "/log":
             self.reply(200, [("Content-Type", "text/plain")], "".join(sorted(LOG)).encode())
+        elif path == "/meta-log":
+            self.reply(200, [("Content-Type", "text/plain")], "".join(sorted(META)).encode())
+        elif path.startswith("/meta/"):
+            self.log_metadata("GET")
+        elif path.startswith("/policy/"):
+            policy, _, name = path[len("/policy/"):].partition("/")
+            self.reply_file(name, [("Referrer-Policy", policy)])
         elif path.startswith("/log/"):
             self.log_request_line("GET")
         elif path.startswith("/fail/"):
@@ -369,6 +383,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             headers.append(("Cache-Control", "private, no-store"))
         self.reply(200, headers, data)
 
+    def log_metadata(self, method):
+        names = ["Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User", "Origin", "Referer"]
+        META.append(" | ".join([method + " " + self.path] + ["%s=%s" % (n.lower(), self.headers.get(n, "")) for n in names]) + "\n")
+        self.reply(200, [("Content-Type", "text/html")], b"<title>Meta</title><p>meta " + self.path.encode())
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         body = self.rfile.read(length)
@@ -386,6 +405,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.samesite("POST")
         elif self.path.startswith("/log/"):
             self.log_request_line("POST", body)
+        elif self.path.startswith("/meta/"):
+            self.log_metadata("POST")
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
         else:
@@ -737,5 +758,9 @@ class Server6(http.server.ThreadingHTTPServer):
 
 host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
 server = (Server6 if ":" in host else http.server.ThreadingHTTPServer)((host, 0), Handler)
+if len(sys.argv) > 3:
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(sys.argv[3])
+    server.socket = tls.wrap_socket(server.socket, server_side=True)
 print(server.server_address[1], flush=True)
 server.serve_forever()

@@ -1,0 +1,27 @@
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+// chromium: services/network/sec_header_helpers.cc
+fn fetchSiteAt(alloc: Allocator, origin: []u8, at: *Url, was: FetchSite) FetchSite {
+    if was == FetchSite.None || was == FetchSite.CrossSite {
+        return was
+    }
+
+    let from = url.parse(alloc, origin) catch |e| {
+        return FetchSite.CrossSite
+    }
+
+    defer from.deinit(alloc)
+
+    if sameOrigin(&from, at) {
+        return was
+    }
+
+    if text.eql(from.scheme, at.scheme) && text.eqlIgnoreCase(siteOf(from.host), siteOf(at.host)) {
+        return FetchSite.SameSite
+    }
+
+    return FetchSite.CrossSite
+}
