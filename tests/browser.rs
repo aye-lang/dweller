@@ -2139,7 +2139,7 @@ fn screenshot_errors() {
     );
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -8446,6 +8446,91 @@ fn window_offscreen_frame_raf() {
     let after = lines[scrolled..].iter().filter(|l| *l == "frame raf").count();
     assert!(before <= 2, "{lines:?}");
     assert!(after >= 5, "{lines:?}");
+}
+
+/// Q1.9: what `SESSION_EVENTS` makes in an empty window: a tab with two
+/// entries, back on the first, and a second tab, shown.
+const SESSION_EVENTS: &str = "key:cmd+l text:browser/tests/basic.html key:return loaded key:cmd+l text:browser/tests/article.html key:return loaded key:cmd+[ loaded key:cmd+t text:browser/tests/attributes.html key:return loaded";
+
+fn session_run(profile: &Path, restore: &str, events: &str) -> (String, String) {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROFILE", profile)
+        .env("DWELLER_RESTORE", restore)
+        .args(["--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--events", events])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+    (text(&out.stdout), text(&out.stderr))
+}
+
+fn shows(got: &str, page: &str, history: &str, tabs: &str) -> bool {
+    got.contains(&format!("/browser/tests/{page}\nscroll ")) && got.contains(&format!("\nhistory {history}\n")) && got.contains(&format!("\ntabs {tabs}\n"))
+}
+
+// The window started again on `profile` has the tabs of `SESSION_EVENTS`:
+// the second one shown; the first, loaded when shown, on its first entry
+// with the second ahead of it.
+fn session_restored(profile: &Path) {
+    let (got, err) = session_run(profile, "1", "frame");
+    assert!(shows(&got, "attributes.html", "1 of 1", "2, showing 2") && err.is_empty(), "{got}\n{err}");
+    let (got, err) = session_run(profile, "1", "key:cmd+1 loaded");
+    assert!(shows(&got, "basic.html", "1 of 2", "2, showing 1") && err.is_empty(), "{got}\n{err}");
+    let (got, err) = session_run(profile, "1", "key:cmd+] loaded");
+    assert!(shows(&got, "article.html", "2 of 2", "2, showing 1") && err.is_empty(), "{got}\n{err}");
+}
+
+/// Q1.9: the window killed (SIGKILL) once its session was saved (at most
+/// a second after the last change) comes back with its tabs.
+#[test]
+fn window_session_restore_after_kill() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = profile("session-kill");
+    let mut window = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROFILE", &dir)
+        .env("DWELLER_RESTORE", "1")
+        .args(["--width", "800", "--height", "600", "--frames", "16384", "--events", SESSION_EVENTS])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    while !std::fs::read_to_string(dir.join("session")).is_ok_and(|s| s.starts_with("dweller-session 1\n1\n") && s.ends_with("/attributes.html\nend\n")) {
+        if start.elapsed() > std::time::Duration::from_secs(30) {
+            let _ = window.kill();
+            panic!("no session saved: {:?}", std::fs::read_to_string(dir.join("session")));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let status = Command::new("kill").args(["-9", &window.id().to_string()]).status().unwrap();
+    assert!(status.success());
+    window.wait().unwrap();
+    session_restored(&dir);
+}
+
+/// Q1.9: after a clean quit the tabs come back too. DWELLER_RESTORE=0
+/// starts fresh; a torn session file starts a new tab, and says so.
+#[test]
+fn window_session_restore_after_quit() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = profile("session-quit");
+    let (_, err) = session_run(&dir, "1", SESSION_EVENTS);
+    assert!(err.is_empty(), "{err}");
+    session_restored(&dir);
+    let (got, _) = session_run(&dir, "0", "frame");
+    assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
+    let saved = std::fs::read(dir.join("session")).unwrap();
+    std::fs::write(dir.join("session"), &saved[..saved.len() / 2]).unwrap();
+    let (got, err) = session_run(&dir, "1", "frame");
+    assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
+    assert_eq!(err, "error: the saved session is unreadable: starting with a new tab\n");
 }
 
 /// P4.55: the tab in the background runs its 100 ms interval about once

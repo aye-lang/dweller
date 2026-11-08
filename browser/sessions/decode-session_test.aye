@@ -1,0 +1,49 @@
+import std.text
+
+test "a saved session decodes to the tabs, entries, current entries and selected tab it was encoded from" {
+    let alloc = @testAllocator()
+    var w = SavedWindow.init(alloc)
+    defer w.deinit()
+
+    try w.tabs.append(SavedTab.init(alloc, "A\ntitle", 0))
+    try w.tabs.items()[0].urls.append("file:///a.html")
+    try w.tabs.items()[0].urls.append("file:///b.html")
+    try w.tabs.append(SavedTab.init(alloc, "", 0))
+    w.selected = 1
+
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try encodeSession(&w, &mut out)
+
+    @expectEqual("dweller-session 1\n1\ntab 0 2\nA title\nfile:///a.html\nfile:///b.html\ntab 0 0\n\nend\n", out.bytes())
+
+    var back = (try decodeSession(alloc, out.bytes())).?
+    defer back.deinit()
+
+    @expectEqual(1, back.selected)
+    @expectEqual(2, back.tabs.len())
+    @expectEqual("A title", back.tabs.items()[0].title)
+    @expectEqual("file:///b.html", back.tabs.items()[0].urls.items()[1])
+    @expectEqual(0, back.tabs.items()[1].urls.len())
+}
+
+test "a torn, foreign or inconsistent session file decodes to none" {
+    let alloc = @testAllocator()
+    let whole = "dweller-session 1\n0\ntab 1 2\nT\nfile:///a.html\nfile:///b.html\nend\n"
+
+    for n in 0..whole.len - 1 {
+        @expect((try decodeSession(alloc, whole[..n])) == null)
+    }
+
+    @expect((try decodeSession(alloc, "cookies\n0\n")) == null)
+    @expect((try decodeSession(alloc, "dweller-session 1\n1\ntab 0 1\nT\nfile:///a.html\nend\n")) == null)
+    @expect((try decodeSession(alloc, "dweller-session 1\n0\ntab 2 2\nT\nfile:///a.html\nfile:///b.html\nend\n")) == null)
+    @expect((try decodeSession(alloc, "dweller-session 1\n0\ntab -1 2\nT\nfile:///a.html\nfile:///b.html\nend\n")) == null)
+
+    var ok = (try decodeSession(alloc, whole[..whole.len - 1])).?
+
+    @expectEqual(1, ok.tabs.items()[0].current)
+
+    ok.deinit()
+}

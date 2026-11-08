@@ -1,0 +1,18 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+pub fn saveSession(bytes: []u8, now: bool) AllocError!void {
+    let f = session_file orelse return
+    let ms = std.time.monotonicMs()
+
+    if text.eql(f.written.bytes(), bytes) || (!now && ms < f.saved_ms + SAVE_GAP_MS) { return }
+
+    f.saved_ms = ms
+
+    if try net.writeAtomic(f.alloc, f.owned_path, bytes) {
+        f.written.clear()
+        try f.written.append(bytes)
+    }
+}

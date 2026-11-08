@@ -1,0 +1,24 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn readTab(head: []u8, lines: *mut text.Split, w: *mut SavedWindow) AllocError!bool {
+    var fields = text.split(head, " ")
+
+    let kind = fields.next() orelse ""
+    let current = sessionNumber(fields.next()) orelse return false
+    let count = sessionNumber(fields.next()) orelse return false
+    let title = lines.next() orelse return false
+
+    if !text.eql(kind, "tab") || fields.next() != null || (current > 0 && current >= count) { return false }
+
+    try w.tabs.append(SavedTab.init(w.tabs.alloc, title, current))
+
+    let urls = &mut w.tabs.items()[w.tabs.len() - 1].urls
+
+    for i in 0..count {
+        try urls.append(lines.next() orelse return false)
+    }
+
+    return true
+}

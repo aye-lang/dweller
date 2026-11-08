@@ -1,0 +1,41 @@
+import engine
+import sessions
+import std
+import std.mem.AllocError
+
+fn restoreTabs(ui: *mut Ui) AllocError!bool {
+    if ui.tab_processes { return false }
+
+    let bytes = (try sessions.savedSession(ui.alloc)) orelse return false
+    defer ui.alloc.free(bytes)
+    var saved = (try sessions.decodeSession(ui.alloc, bytes)) orelse return unreadableSession()
+    defer saved.deinit()
+
+    for i in 0..saved.tabs.len() {
+        if i > 0 && (try openTab(ui, false)) == null { break }
+
+        let slot = ui.slots[i].?
+        let t = &saved.tabs.items()[i]
+
+        for u in t.urls.items() {
+            try slot.session.tab.history.push(u, engine.newPageId(), null, false)
+        }
+
+        slot.session.tab.history.current = t.current
+        slot.unloaded = t.urls.len() > 0
+    }
+
+    var shown = saved.selected
+
+    if shown >= ui.count { shown = 0 }
+
+    try showTab(ui, shown)
+
+    return true
+}
+
+fn unreadableSession() bool {
+    std.log.err("the saved session is unreadable: starting with a new tab")
+
+    return false
+}

@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn readSession(bytes: []u8, w: *mut SavedWindow) AllocError!bool {
+    var lines = text.split(bytes, "\n")
+
+    if !text.eql(lines.next() orelse "", SESSION_HEAD) { return false }
+
+    w.selected = sessionNumber(lines.next()) orelse return false
+
+    while lines.next() |line| {
+        if text.eql(line, "end") {
+            return w.selected < w.tabs.len()
+        }
+
+        if !(try readTab(line, &mut lines, w)) { return false }
+    }
+
+    return false
+}

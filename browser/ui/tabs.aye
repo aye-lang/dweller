@@ -35,6 +35,7 @@ pub struct TabSlot {
     taken: bool = false
     next_run_ns: u64 = 0
     process: ?*mut TabProcess = null
+    unloaded: bool = false
 }
 
 fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.System, id: u32) AllocError!*mut TabSlot {
@@ -87,6 +88,12 @@ fn showTab(ui: *mut Ui, i: usize) AllocError!void {
     ui.active = i
     ui.tab = ui.slots[i].?.session.tab
     pageview.visible(&mut ui.page_view, ui.tab)
+
+    if ui.slots[i].?.unloaded {
+        ui.slots[i].?.unloaded = false
+        try ui.reload()
+    }
+
     ui.dropdown = null
     try ui.relayout()
     try setAddress(ui)
