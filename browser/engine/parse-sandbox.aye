@@ -1,0 +1,14 @@
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#parse-a-sandboxing-directive
+fn parseSandbox(v: []u8) u32 {
+    var flags = SB_ALL
+    var start: usize = 0
+
+    for i in 0..v.len + 1 {
+        if i == v.len || v[i] == ' ' || v[i] == '\t' || v[i] == '\n' || v[i] == '\r' || v[i] == 0x0c {
+            flags = flags & ~sandboxTokenFlags(v[start..i])
+            start = i + 1
+        }
+    }
+
+    return flags
+}

@@ -166,17 +166,6 @@ fn sourceKey(alloc: Allocator, doc: *dom.Document, el: NodeId) AllocError![]mut 
     return b.toOwned()
 }
 
-// Do the tokens of the `sandbox` attribute `v` include `token`?
-fn sandboxAllows(v: []u8, token: []u8) bool {
-    var parts = text.split(v, " ")
-    while parts.next() |part| {
-        if text.eqlIgnoreCase(text.trim(part), token) {
-            return true
-        }
-    }
-    return false
-}
-
 // Loads the documents of the frame elements of `p`, in tree order (the
 // ones a script already asked for are there).
 fn loadFrames(p: *mut Page) AllocError!void {
@@ -357,18 +346,14 @@ fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
     }
     inheritUpgrades(p, c)
-    c.no_scripts = p.no_scripts
-    c.opaque = p.opaque
+    c.sandbox = p.sandbox
     if p.doc.isElement(el, "iframe") {
         if p.doc.attr(el, "sandbox") |v| {
-            if !sandboxAllows(v, "allow-scripts") {
-                c.no_scripts = true
-            }
-            if !sandboxAllows(v, "allow-same-origin") {
-                c.opaque = true
-            }
+            c.sandbox |= parseSandbox(v)
         }
     }
+    c.no_scripts = c.sandbox & SB_SCRIPTS != 0
+    c.opaque = c.sandbox & SB_ORIGIN != 0
 }
 
 // A page made from `src` (an iframe's srcdoc, or nothing), at `address`

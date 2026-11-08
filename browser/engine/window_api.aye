@@ -473,6 +473,9 @@ fn akReload(it: *mut Interp, a: Args) JsError!Value {
 
 // alert, confirm and prompt never block: they are console messages.
 fn akAlert(it: *mut Interp, a: Args) JsError!Value {
+    if scriptOf(it).page.sandbox & SB_MODALS != 0 {
+        return Value.Undefined
+    }
     let kind = try it.builder()
     defer it.release(kind)
     try kind.appendByte('[')
@@ -995,6 +998,9 @@ fn akCookie(it: *mut Interp, a: Args) JsError!Value {
     let b = try it.builder()
     defer it.release(b)
     let page = scriptOf(it).page
+    if page.sandbox & SB_ORIGIN != 0 {
+        return domError(it, "SecurityError", "Failed to read the 'cookie' property from 'Document': the document is sandboxed.")
+    }
     net.scriptCookies(&page.url, &rootPage(page).url, b) catch |e| {
         return JsError.OutOfMemory
     }
@@ -1006,6 +1012,9 @@ fn akSetCookie(it: *mut Interp, a: Args) JsError!Value {
     defer it.release(b)
     try argText(it, a, 0, b)
     let page = scriptOf(it).page
+    if page.sandbox & SB_ORIGIN != 0 {
+        return domError(it, "SecurityError", "Failed to set the 'cookie' property on 'Document': the document is sandboxed.")
+    }
     net.setScriptCookie(&page.url, &rootPage(page).url, b.bytes()) catch |e| {
         return JsError.OutOfMemory
     }

@@ -369,6 +369,9 @@ fn storeOf(alloc: Allocator, session: bool) AllocError!*mut Store {
 // 5 length; for the page's origin, of sessionStorage when `session`.
 fn akStorage(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
+    if s.page.sandbox & SB_ORIGIN != 0 {
+        return domError(it, "SecurityError", "Failed to read the 'localStorage' property from 'Window': the document is sandboxed.")
+    }
     let session = it.toBoolean(it.arg(a, 3))
     let op = try it.toNumber(it.arg(a, 0))
     let area = try it.builder()
