@@ -1,0 +1,28 @@
+extern fn mkdir(path: [*]u8, mode: u32) i32
+extern fn getuid() u32
+
+let S_IFMT: u32 = 0xf000
+let S_IFDIR: u32 = 0x4000
+let OPEN_TO_OTHERS: u32 = 63
+
+fn socketDirRefusal(sock: []u8) ?[]u8 {
+    var dir = socketDir(sock)
+
+    mkdir(dir[..].ptr, 448)
+
+    let st = ownerModeOf(dir[..].ptr) orelse return null
+
+    if st.mode & S_IFMT != S_IFDIR {
+        return "its directory is not a directory"
+    }
+
+    if st.uid != getuid() {
+        return "its directory belongs to another user"
+    }
+
+    if st.mode & OPEN_TO_OTHERS != 0 {
+        return "other users can open its directory (it must be 0700)"
+    }
+
+    return null
+}

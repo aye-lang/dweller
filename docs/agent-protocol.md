@@ -413,6 +413,22 @@ Space, a process of its own ([Spaces](#spaces)); the window itself
 never runs an agent's request. `--spaces` is still accepted and does
 nothing: Spaces are the default (P9.9).
 
+- **Who may connect (Q3.12).** The socket's directory is the user's
+  alone: the window makes it `0700` when it is missing, and refuses to
+  start (`cannot listen on PATH: ...`) when it is not a directory,
+  belongs to another user, or other users can open it (any group or
+  other bit), so `/tmp/dweller.sock` is refused; use a directory of
+  your own, such as `~/.dweller/agent.sock`. The socket file is `0600`.
+  Before it listens the window writes a token, 32 random bytes from the
+  OS as 64 hex digits, to `PATH.token` (`0600`; removed with the
+  socket). The first line of every connection must be
+  `{"token":"HEX"}` with that token: a connection whose first line is
+  anything else (or that sends more than 256 bytes without a newline,
+  or ends first) gets one line,
+  `{"id":null,"ok":false,"error":"no token: ..."}`, and is closed; none
+  of its requests runs. `dweller connect` reads `PATH.token` and sends
+  that line itself; a client of its own reads the file, sends the line,
+  then speaks the protocol below (the hello comes after it).
 - Each connection speaks JSON lines, as `dweller agent`, unless its
   first line is the hello `{"mcp":true}` (no response) or a JSON-RPC
   message: then it speaks MCP, as `dweller mcp`. At most 8 agents
@@ -501,7 +517,8 @@ served by a Space, a process of its own, so no agent request runs on
 the window's thread; a slow load or a long `eval` never holds up the
 person's input or the window's frames.
 
-- The window reads a connection's first line, then starts its Space
+- The window reads a connection's first line after the token, then
+  starts its Space
   (`dweller space --control FD --agent-socket DIR/agent.sock --width W
   --height H`, internal: the window program, headless, with the
   window's size, font and `--no-js`; `DIR` is
@@ -689,13 +706,14 @@ MCP clients start a server as a command and talk to its stdio.
 `dweller connect PATH [--mcp] [--name NAME] [--space N]` is that
 command for a window: it copies stdin to the socket and the socket to
 stdout until either ends (when stdin ends, the window answers what it
-was sent, then closes). With `--mcp`, `--name` or `--space` it sends
-the hello first (`{"mcp":true,"name":"NAME","space":N}`, with the
+was sent, then closes). It first sends the token line (it reads
+`SOCKET.token`, see [A shared window](#a-shared-window)). With `--mcp`,
+`--name` or `--space` it then sends the hello (`{"mcp":true,"name":"NAME","space":N}`, with the
 members asked for). With Claude Code:
 
 ```
-dweller --agent-socket /tmp/dweller.sock https://example.com/ &
-claude mcp add dweller -- dweller connect /tmp/dweller.sock --mcp
+dweller --agent-socket ~/.dweller/agent.sock https://example.com/ &
+claude mcp add dweller -- dweller connect ~/.dweller/agent.sock --mcp
 ```
 
 The tools are those of `dweller mcp` plus `browser_tabs`,

@@ -1,0 +1,39 @@
+import dom
+import engine
+import layout
+import std.text
+
+fn focusKey(r: *mut TabRenderer, p: *mut engine.Page, key: []u8, mods: u32) !bool {
+    let f = p.doc.controls.focus orelse return false
+    let enter = text.eql(key, "Enter")
+    let space = text.eql(key, " ")
+
+    if dom.isTextField(&p.doc, f) { return fieldKey(r, p, f, key, mods) }
+    if (mods & 10) != 0 { return false }
+
+    if text.eql(key, "Escape") {
+        engine.setFocus(p, null)
+
+        return true
+    }
+
+    if p.doc.isElement(f, "select") && (space || enter) && !layout.isListBox(&p.doc, f) {
+        try openPopup(r, p, f)
+
+        return true
+    }
+
+    if space && engine.spaceClicks(&p.doc, f) {
+        r.space = f
+
+        return true
+    }
+
+    if enter && engine.enterClicks(&p.doc, f) {
+        try runAct(r, p, try engine.keyClick(p, f))
+
+        return true
+    }
+
+    return false
+}

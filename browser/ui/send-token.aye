@@ -1,0 +1,27 @@
+import std
+
+let TOKEN_HEAD = "{\"token\":\""
+let TOKEN_TAIL = "\"}\n"
+
+fn sendToken(fd: i32, sock: []u8) bool {
+    var path = tokenFilePath(sock)
+    var line = @zeroed([77]u8)
+    let file = openFile(path[..].ptr, 0)
+
+    if file < 0 {
+        return false
+    }
+
+    let n = read(file, line[10..].ptr, 64)
+
+    close(file)
+
+    if n != 64 {
+        return false
+    }
+
+    std.mem.copy(line[0..10], TOKEN_HEAD)
+    std.mem.copy(line[74..77], TOKEN_TAIL)
+
+    return sendAll(fd, line[..])
+}

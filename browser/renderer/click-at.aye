@@ -1,0 +1,39 @@
+import dom
+import engine
+
+fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) !void {
+    if engine.hasScripts(p) {
+        let hit = engine.nodeAt(p.tree orelse return, x, y)
+
+        if hit |n| {
+            if !(try engine.dispatchEvent(p, elementOf(p, n), "click", "")) { return }
+        }
+
+        try layOut(r, p)
+    }
+
+    let node = engine.nodeAt(p.tree orelse return, x, y) orelse {
+        engine.setFocus(p, null)
+
+        return
+    }
+
+    if try pressRange(r, p, node, x) { return }
+
+    let before = p.doc.controls.focus
+    let act = try engine.activate(p, node)
+
+    if p.doc.controls.focus |f| {
+        if dom.isTextField(&p.doc, f) && inside(&p.doc, node, f) {
+            try dom.setCaret(&mut p.doc, f, engine.offsetAt(p, f, x, y))
+        }
+    }
+
+    if act is .Nothing {
+        if before |b| {
+            if !inside(&p.doc, node, b) && dom.isSame(p.doc.controls.focus, b) { engine.setFocus(p, null) }
+        }
+    }
+
+    try runAct(r, p, act)
+}

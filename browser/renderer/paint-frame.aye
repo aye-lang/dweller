@@ -1,6 +1,9 @@
 import ipc
+import layout
+import pageview
 import paint
 import std
+import std.math
 import std.list.List
 import std.text
 
@@ -14,16 +17,32 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     if !r.due || !r.free[k] { return }
 
-    try p.layoutPage(r.measure, r.width as f64 / r.scale, r.height as f64 / r.scale)
+    try layOut(r, p)
 
-    var list = try paint.build(r.alloc, p.tree.?)
+    let t = p.tree.?
+
+    _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
+
+    var list = try paint.build(r.alloc, t)
     defer list.deinit()
     var sigs = List(paint.Sig).init(r.alloc)
     defer sigs.deinit()
     var damage = paint.Damage.init(r.alloc)
     defer damage.deinit()
 
-    try paint.signature(&list, p.tree.?, &mut sigs)
+    try paint.signature(&list, t, &mut sigs)
+
+    r.max_x = math.max(0.0, list.width - r.width as f64 / r.scale)
+    r.max_y = math.max(0.0, list.height - r.height as f64 / r.scale)
+
+    if r.scroll_x > r.max_x || r.scroll_y > r.max_y {
+        try scrollPage(r, 0.0, 0.0)
+        _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
+        list.deinit()
+        list = try paint.build(r.alloc, t)
+        sigs.clear()
+        try paint.signature(&list, t, &mut sigs)
+    }
 
     let whole = try frameDamage(r, sigs.items(), list.background, &mut damage)
     let old = r.drawn
@@ -31,6 +50,8 @@ fn paintFrame(r: *mut TabRenderer) !void {
     r.drawn = sigs
     sigs = old
     r.background = list.background
+    r.drawn_x = r.scroll_x
+    r.drawn_y = r.scroll_y
     r.due = false
 
     if damage.isEmpty() { return }
@@ -51,5 +72,5 @@ fn paintFrame(r: *mut TabRenderer) !void {
         width += 1
     }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k as u32, width: width, height: r.height, scroll_x: 0.0, scroll_y: 0.0, damage: rects.bytes() })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k as u32, width: width, height: r.height, scroll_x: r.scroll_x, scroll_y: r.scroll_y, damage: rects.bytes() })
 }

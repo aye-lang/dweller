@@ -31,6 +31,7 @@ import engine
 import font
 import layout
 import net
+import pageview
 import paint
 import perf
 import std
@@ -38,7 +39,6 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 import url
-import ui.pageview
 
 let UI_USAGE = "usage: dweller [open] FILE|URL [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
@@ -1094,6 +1094,9 @@ pub struct Ui {
         if try forwardInput(self, ev) {
             return
         }
+        if try forwardTab(self, ev) {
+            return
+        }
         let kind = ev.kind
         if kind == SDL_MOUSEWHEEL {
             perf.noteAction("wheel")
@@ -1271,6 +1274,9 @@ pub struct Ui {
         }
         self.wheel_x = 0.0
         self.wheel_y = 0.0
+        if try forwardWheel(self, dx, dy) {
+            return
+        }
         if try self.wheelScripts(dx, dy) && !(try wheelScrollElement(self, dx, dy)) {
             if dx != 0.0 {
                 self.scrollSideways(dx)
@@ -1652,20 +1658,8 @@ pub struct Ui {
     // `repeat`, `location` and modifiers go along ("key\ncode\nrepeat\n
     // location\nmods").
     fn keyScripts(self: *mut Self, kind: []u8, sym: i32, mods: u16, sc: i32, repeat: bool) AllocError!bool {
-        let shift = (mods & KMOD_SHIFT) != 0
-        var name = [1]u8{0}
         let code = domCode(sc)
-        var key: []u8 = keyName(sym)
-        if key.len == 0 {
-            key = keyOfCode(code)
-        }
-        if key.len == 0 && sym > 32 && sym < 127 {
-            name[0] = sym as u8
-            if shift && name[0] >= 'a' && name[0] <= 'z' {
-                name[0] -= 32
-            }
-            key = name[..]
-        }
+        let key = domKey(sym, sc, (mods & KMOD_SHIFT) != 0)
         if key.len == 0 {
             return true
         }
@@ -1694,7 +1688,7 @@ pub struct Ui {
     // position where the lock began.
     fn pointerEvent(self: *mut Self, kind: []u8, button: u32, x: f64, y: f64, mx: f64, my: f64) AllocError!void {
         self.pointer_on = true
-        if self.dropdown != null || self.auth.open {
+        if self.dropdown != null || self.auth.open || tabInput(self) != null {
             return
         }
         let leaving = text.eql(kind, "pointerleave") || text.eql(kind, "pointercancel")

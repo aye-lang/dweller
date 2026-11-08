@@ -7,17 +7,41 @@ fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
         used += got.used
 
         match got.message {
-            .Navigate { url } => try load(r, got.frame, url)
+            .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
+            .PopupChoice { index } => try choosePopup(r, index)
             .Resize { width, height, scale, buffer } => {
                 if !takeBuffers(r, width, height, scale, buffer) { return null }
             }
 
             .FrameAck { buffer } => r.ack(buffer)
+            .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
+                if kind > 3 { return null }
+
+                try mouseInput(r, kind, button, MouseAt { x: x, y: y, mx: mx, my: my, buttons: buttons, mods: mods, clicks: clicks })
+                r.took(seq)
+            }
+
+            .Wheel { seq, x, y, dx, dy, precise } => {
+                try wheelInput(r, x, y, dx, dy, precise != 0)
+                r.took(seq)
+            }
+
+            .Key { seq, down, key, code, repeat, location, mods } => {
+                try keyInput(r, down != 0, key, code, repeat, location, mods)
+                r.took(seq)
+            }
+
+            .Text { seq, typed } => {
+                try textInput(r, typed)
+                r.took(seq)
+            }
+
             _ => return null
         }
     }
 
     try paintFrame(r)
+    try ackInput(r)
 
     return used
 }

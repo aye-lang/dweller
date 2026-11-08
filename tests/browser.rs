@@ -2968,7 +2968,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     use std::time::{Duration, Instant};
     let name = input.file_name().unwrap().to_string_lossy().into_owned();
     // A short relative path: sockets' paths are limited to ~100 bytes.
-    let sock = format!("target/agent-spaces-{}-{n}.sock", std::process::id());
+    let sock = format!("target/sockets/agent-spaces-{}-{n}.sock", std::process::id());
     let _ = std::fs::remove_file(root().join(&sock));
     let mut args = vec![
         "--agent-socket".to_string(),
@@ -3026,6 +3026,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
                 return Err(format!("cannot connect to {sock}: {e}"));
             }
         };
+        s.write_all(token_line(&sock).as_bytes()).unwrap();
         s.write_all(&requests).unwrap();
         s.shutdown(std::net::Shutdown::Write).unwrap();
         s.read_to_string(&mut got).unwrap();
@@ -3209,6 +3210,13 @@ fn spaces_window_env(sock: &str, extra: &[&str], env: &[(&str, &str)]) -> Draine
     window
 }
 
+// The first line of a connection to the window's socket `sock`: the
+// token the window wrote next to it (Q3.12).
+fn token_line(sock: &str) -> String {
+    let token = std::fs::read_to_string(root().join(format!("{sock}.token"))).unwrap();
+    format!("{{\"token\":\"{token}\"}}\n")
+}
+
 // A connection to the window's socket (relative to the root: short).
 struct AgentConn {
     stream: std::os::unix::net::UnixStream,
@@ -3224,7 +3232,9 @@ impl AgentConn {
             .set_read_timeout(Some(std::time::Duration::from_secs(30)))
             .unwrap();
         let read = std::io::BufReader::new(stream.try_clone().unwrap());
-        AgentConn { stream, read }
+        let mut conn = AgentConn { stream, read };
+        conn.send(token_line(sock).trim_end());
+        conn
     }
 
     fn send(&mut self, line: &str) {
@@ -3302,7 +3312,7 @@ fn space_records(err: &str) -> (Vec<Record>, String) {
 // waits 1500 ms; while both run, C asks for `tabs` and the user clicks
 // into a text field and types (`agents:4`: after C's answer).
 fn responsive_session(base: &str) -> Responsive {
-    let sock = format!("target/spaces-resp-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-resp-{}.sock", std::process::id());
     let extra = vec![
         "--state",
         "--events",
@@ -3458,7 +3468,7 @@ fn window_spaces_crash() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/spaces-crash-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-crash-{}.sock", std::process::id());
     let mut window = spaces_window(&sock, &["--spaces"]);
     let mut a = AgentConn::open(&sock);
     let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
@@ -3495,7 +3505,7 @@ fn window_spaces_crash() {
     no_spaces_left(window_pid).unwrap();
 
     // The window killed: its Space exits by itself.
-    let sock = format!("target/spaces-kill-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-kill-{}.sock", std::process::id());
     let mut window = spaces_window(&sock, &["--spaces"]);
     let mut a = AgentConn::open(&sock);
     let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
@@ -3536,7 +3546,7 @@ fn window_spaces_control() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/spaces-control-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-control-{}.sock", std::process::id());
     let window = spaces_window(
         &sock,
         &[
@@ -3692,7 +3702,7 @@ fn window_spaces_parallel() {
         .iter()
         .enumerate()
         .map(|(i, (name, script))| {
-            let sock = format!("target/spaces-alone{i}-{}.sock", std::process::id());
+            let sock = format!("target/sockets/spaces-alone{i}-{}.sock", std::process::id());
             let window = spaces_window(&sock, &[]);
             let got = answers(&mut named_conn(&sock, name), script);
             let out = window.wait_with_output().unwrap();
@@ -3701,7 +3711,7 @@ fn window_spaces_parallel() {
             got
         })
         .collect();
-    let sock = format!("target/spaces-parallel-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-parallel-{}.sock", std::process::id());
     let window = spaces_window(&sock, &["--state", "--events", "agents:9 pause:2"]);
     let pid = window.id();
     let mut conns: Vec<AgentConn> = PARALLEL_SCRIPTS
@@ -3754,7 +3764,7 @@ fn window_spaces_logins() {
         return;
     };
     let base = &srv.base;
-    let sock = format!("target/spaces-logins-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-logins-{}.sock", std::process::id());
     let events = format!(
         "agents:8 key:cmd+l {} key:return",
         typed(&format!("{base}/login/shared.html"))
@@ -3865,7 +3875,7 @@ fn window_spaces_chips() {
     // With --font fixed in 800 px, the chips are You 503-536, Alpha
     // 541-599, Beta 604-656, Gamma 661-719 (y 9-31); a menu's items are
     // 24 px from y 38, under its chip. Without Gamma, Beta is 667-719.
-    let sock = format!("target/spaces-chips-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-chips-{}.sock", std::process::id());
     let png = scratch().join("spaces_chips.png");
     let events = "wheel:-3 agents:3 click:570,20 click:560,50 \
                   agents:6 click:690,20 click:680,74 \
@@ -3980,7 +3990,7 @@ fn window_spaces_takeover() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/spaces-takeover-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-takeover-{}.sock", std::process::id());
     let window = spaces_window(
         &sock,
         &[
@@ -4037,7 +4047,7 @@ fn window_spaces_watch() {
     }
     let green = scratch().join("green.html");
     std::fs::write(&green, "<body style=\"background:#00aa00\">green</body>").unwrap();
-    let sock = format!("target/spaces-watch-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-watch-{}.sock", std::process::id());
     let png = scratch().join("spaces_watch.png");
     // With --font fixed in 800 px, Alpha's chip is 661-719 (y 9-31).
     let window = spaces_window(
@@ -4115,6 +4125,60 @@ fn serde_like(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// Q3.12: the window's socket is `0600` in a `0700` directory it makes,
+/// next to a `0600` token file; a connection whose first line is not
+/// `{"token":...}` with that token is refused and runs nothing, and a
+/// directory other users can open is refused.
+#[test]
+fn window_agent_socket_token() {
+    use std::io::{Read, Write};
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = format!("target/agent-token-{}", std::process::id());
+    let _ = std::fs::remove_dir_all(root().join(&dir));
+    let sock = format!("{dir}/agent.sock");
+    let window = spaces_window(&sock, &["--state", "browser/tests/basic.html"]);
+    let mode = |p: &str| std::fs::metadata(root().join(p)).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&dir), 0o700);
+    assert_eq!(mode(&sock), 0o600);
+    assert_eq!(mode(&format!("{sock}.token")), 0o600);
+    let token = std::fs::read_to_string(root().join(format!("{sock}.token"))).unwrap();
+    assert!(token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()), "{token}");
+    let refused = "{\"id\":null,\"ok\":false,\"error\":\"no token: the first line must be {\\\"token\\\":\\\"...\\\"} with the token in the socket's .token file\"}\n";
+    let wrong = format!("{{\"token\":\"{}\"}}\n", "0".repeat(64));
+    for first in ["", wrong.as_str()] {
+        let mut s = std::os::unix::net::UnixStream::connect(root().join(&sock)).unwrap();
+        s.write_all(format!("{first}{{\"id\":1,\"cmd\":\"tab_new\"}}\n").as_bytes()).unwrap();
+        let mut got = String::new();
+        s.read_to_string(&mut got).unwrap();
+        assert_eq!(got, refused);
+    }
+    let mut conn = AgentConn::open(&sock);
+    let (got, _) = conn.ask(r#"{"id":1,"cmd":"tabs"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    conn.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(conn.line(), "");
+    let out = window.wait_with_output_within(std::time::Duration::from_secs(30)).unwrap();
+    assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
+    assert!(text(&out.stdout).contains("tabs 1, showing 1\n"), "{}", text(&out.stdout));
+    assert!(!root().join(&sock).exists() && !root().join(format!("{sock}.token")).exists());
+    let open = format!("target/agent-open-{}", std::process::id());
+    let _ = std::fs::remove_dir_all(root().join(&open));
+    std::fs::DirBuilder::new().mode(0o755).create(root().join(&open)).unwrap();
+    std::fs::set_permissions(root().join(&open), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = run_window(&["--agent-socket", &format!("{open}/x.sock"), "--frames", "1"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stderr),
+        format!("error: cannot listen on {open}/x.sock: other users can open its directory (it must be 0700)\n")
+    );
+    let _ = std::fs::remove_dir_all(root().join(&dir));
+    let _ = std::fs::remove_dir_all(root().join(&open));
+}
+
 /// `dweller connect` and `--agent-socket` errors.
 #[test]
 fn window_agents_errors() {
@@ -4133,14 +4197,14 @@ fn window_agents_errors() {
     if has_sdl() {
         let out = run_window(&[
             "--agent-socket",
-            "target/no-such-dir/x.sock",
+            "target/no-such-dir/sub/x.sock",
             "--frames",
             "1",
         ]);
         assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
         assert_eq!(
             text(&out.stderr),
-            "error: cannot listen on target/no-such-dir/x.sock\n"
+            "error: cannot listen on target/no-such-dir/sub/x.sock\n"
         );
     }
     expect(
@@ -10090,4 +10154,139 @@ fn window_renderer_frames() {
         tab.display(),
         golden.display()
     );
+}
+
+#[test]
+fn window_renderer_input() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run_page = |page: &str, png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "60", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let page = "browser/tests/ui/renderer_input.html";
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| run_page(page, png, events, envs);
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let scroll = |state: &str| state.lines().find(|l| l.starts_with("scroll ")).unwrap_or("").to_string();
+    let still = scratch().join("renderer_input_still.png");
+    let golden = scratch().join("renderer_input_in_process.png");
+    let shot = scratch().join("renderer_input_tab.png");
+    let scroller = "browser/tests/ui/scroller.html";
+    // The in-process window draws a caret over the field; the renderer draws none yet (Q2.3c).
+    let cases = [
+        ("click", page, "click:30,60", 0),
+        ("typing", page, "click:30,112 text:hello", 2),
+        ("wheel", page, "wheel:-3", 0),
+        ("inner scroller", scroller, "move:50,100 wheel:-1", 0),
+    ];
+    for (what, page, events, caret) in cases {
+        let (_, err) = run_page(page, &still, "renderer:loaded renderer:frame", &tab);
+        assert!(err.is_empty(), "{err}");
+        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[]);
+        assert!(err.is_empty(), "{err}");
+        let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
+        assert!(err.is_empty(), "{err}");
+        assert!(state.contains("\nrenderer-frame "), "{state}");
+        assert_eq!(scroll(&state), "scroll 0", "{what}: the window scrolled its own copy\n{state}");
+        assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
+        assert!(!state.contains("value hello"), "{what}: the window typed into its own copy\n{state}");
+        let (w, _, a) = png_rgba(&std::fs::read(&shot).unwrap());
+        let (_, _, b) = png_rgba(&std::fs::read(&golden).unwrap());
+        let columns: std::collections::BTreeSet<usize> =
+            (0..a.len() / 4).filter(|i| a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]).map(|i| i % w).collect();
+        assert!(
+            columns.len() <= caret,
+            "{what}: the renderer's frame {} differs from the in-process window {} in columns {columns:?}\n{in_process}",
+            shot.display(),
+            golden.display()
+        );
+    }
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "ack")];
+    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:30,60 renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone unexpected input_ack"), "{state}");
+    assert_eq!(err, format!("error: bad message: unexpected input_ack {pid}\n"));
+}
+
+/// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default
+/// actions (`browser/tests/ui/renderer_actions.html`): a link click and
+/// a form POST are asked of the browser, which navigates the renderer,
+/// and refuses a `file:` link of an http page; a `select` choice comes
+/// back from the window's dropdown; Space presses a button; keys scroll
+/// the page. Each gives the same PNG as the in-process window.
+#[test]
+fn window_renderer_input_actions() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let run = |page: &str, png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "60", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let secret = format!("file://{}/browser/tests/no-file/secret.html", root().display());
+    let page = format!("{}/ui/renderer_actions.html?{secret}", srv.base);
+    // The toolbar still shows the window's own copy of the page (Q2.3d).
+    let page_area = |png: &Path| {
+        let (w, _, rgba) = png_rgba(&std::fs::read(png).unwrap());
+        rgba[40 * w * 4..].to_vec()
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let still = scratch().join("renderer_actions_still.png");
+    let golden = scratch().join("renderer_actions_in_process.png");
+    let shot = scratch().join("renderer_actions_tab.png");
+    let cases = [
+        ("link", page.as_str(), "click:80,65 renderer:input renderer:loaded"),
+        ("form post", page.as_str(), "click:260,165 renderer:input renderer:loaded"),
+        ("select", page.as_str(), "click:60,215 release:60,215 renderer:input click:60,260 release:60,260"),
+        ("space", page.as_str(), "click:60,115 key:space keyup:space"),
+        ("key scroll", "browser/tests/ui/renderer_input.html", "click:390,330 key:pagedown key:down"),
+    ];
+    for (what, page, events) in cases {
+        let in_process_events: Vec<&str> = events.split(' ').filter(|w| !w.starts_with("renderer:")).collect();
+        let (_, err) = run(page, &still, "renderer:loaded renderer:frame", &tab);
+        assert!(err.is_empty(), "{err}");
+        let (_, err) = run(page, &golden, &format!("loaded {} loaded move:390,330", in_process_events.join(" ")), &[]);
+        assert!(err.is_empty(), "{what}: {err}");
+        let (state, err) = run(page, &shot, &format!("renderer:loaded renderer:frame {events} move:390,330 renderer:input"), &tab);
+        assert!(err.is_empty(), "{what}: {err}");
+        assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
+        assert!(
+            page_area(&shot) == page_area(&golden),
+            "{what}: the renderer's frame {} differs from the in-process window {}\n{state}",
+            shot.display(),
+            golden.display()
+        );
+    }
+
+    run(&page, &still, "renderer:loaded renderer:frame", &tab);
+    let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
+    assert_eq!(err, format!("error: navigation refused: {secret}\n"));
+    assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
 }
