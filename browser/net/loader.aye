@@ -455,7 +455,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     storeCookies(s, &job.at, &job.sink) catch |e| {
         return failRequest(ld, l, FetchError.OutOfMemory)
     }
-    noteHsts(s, &job.at, job.sink.headers_raw.bytes()) catch |e| {
+    noteHsts(s, &job.at, &job.sink) catch |e| {
         return failRequest(ld, l, FetchError.OutOfMemory)
     }
     var status: i64 = 0
@@ -482,6 +482,11 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                 std.mem.copy(get, "GET")
                 release(ld.alloc, a.verb)
                 a.verb = get
+            }
+            if crossOrigin(ld.alloc, job.at.href, moved) {
+                dropCredentials(ld.alloc, &mut a.headers) catch |e| {
+                    return failRequest(ld, l, FetchError.OutOfMemory)
+                }
             }
             let cors = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
@@ -697,7 +702,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     storeCookies(s, &job.at, &job.sink) catch |e| {
         return
     }
-    noteHsts(s, &job.at, job.sink.headers_raw.bytes()) catch |e| {
+    noteHsts(s, &job.at, &job.sink) catch |e| {
         return
     }
     var status: i64 = 0

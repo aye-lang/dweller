@@ -1,0 +1,22 @@
+// https://www.rfc-editor.org/rfc/rfc5280#section-4.1
+fn spkiOf(der: []u8) ?[]u8 {
+    let cert = readDer(der, 0) orelse return null
+    let tbs = readDer(der, cert.body) orelse return null
+    var at = tbs.body
+
+    if at < der.len && der[at] == 0xa0 {
+        let version = readDer(der, at) orelse return null
+
+        at = version.end
+    }
+
+    for i in 0..5 {
+        let field = readDer(der, at) orelse return null
+
+        at = field.end
+    }
+
+    let spki = readDer(der, at) orelse return null
+
+    return der[at..spki.end]
+}

@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn certPins(certs: *CertExceptions, host: []u8, kind: CertKind, also: ?CertKind, out: *mut text.Builder) AllocError!void {
+    for e in certs.list.items() {
+        if e.kind != kind || !text.eql(e.host, host) {
+            continue
+        }
+
+        if also |k| {
+            if !certAllowed(certs, host, k, e.pin) {
+                continue
+            }
+        }
+
+        if out.len() > 0 {
+            try out.appendByte(';')
+        }
+
+        try out.append(e.pin)
+    }
+}

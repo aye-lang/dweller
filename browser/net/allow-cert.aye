@@ -1,13 +1,17 @@
 import std.mem.AllocError
+import url.Url
 
-pub fn allowCert(host: []u8, kind: CertKind) AllocError!bool {
-    if !certBypassable(host) {
+pub fn allowCert(at: *Url, kind: CertKind) AllocError!bool {
+    if !certBypassable(at.host) {
         return false
     }
 
     let s = session orelse return false
+    let pin = try certPin(s.alloc, at) orelse return false
 
-    try addCert(&mut s.certs, host, kind)
+    defer s.alloc.free(pin)
+
+    try addCert(&mut s.certs, at.host, kind, pin)
 
     return true
 }

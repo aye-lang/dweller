@@ -27,6 +27,7 @@
 #                    answers Access-Control-Allow-Origin: * and a CORS
 #                    preflight (OPTIONS with Access-Control-Request-Method)
 #   /fetch-redirect/STATUS  (any method) STATUS to /fetch-echo?redirected
+#   /fetch-redirect-to?URL  (any method) 307 to URL
 #   /preflight/NAME  (any method) records the method, path and
 #                    Access-Control-Request-Headers (in /log) and answers
 #                    ACAO *; OPTIONS also allows PUT and x-test for 60 s
@@ -61,6 +62,10 @@
 #                    Access-Control-Allow-Origin: the request's Origin (or
 #                    *) and Access-Control-Allow-Credentials: true
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
+#   /cookie-module?acao&acac  a JS module that records the request's
+#                    Cookie header; `acao` echoes Origin in
+#                    Access-Control-Allow-Origin, `acac` adds
+#                    Access-Control-Allow-Credentials: true
 #   /held/NAME       as /slow/NAME, but answered once a /held-now
 #                    request counted it instead of after 0.3 s
 #   /after-fail/NAME as /slow/NAME, but answered once a /fail/ request
@@ -241,6 +246,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path.startswith("/acao/"):
             origin = self.headers.get("Origin", "*")
             self.reply_file(path[len("/acao/"):], [("Access-Control-Allow-Origin", origin), ("Access-Control-Allow-Credentials", "true")])
+        elif path.startswith("/cookie-module?"):
+            self.cookie_module()
         elif path.startswith("/nosniff/"):
             self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
         elif path.startswith("/held/"):
@@ -387,6 +394,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         if path.startswith("/fetch-redirect/"):
             self.reply(int(path[len("/fetch-redirect/"):]), [("Location", "/fetch-echo?redirected"), ("Access-Control-Allow-Origin", "*")])
+            return
+        if path == "/fetch-redirect-to":
+            self.reply(307, [("Location", urllib.parse.urlsplit(self.path).query), ("Access-Control-Allow-Origin", "*")])
             return
         if path != "/fetch-echo":
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
@@ -570,6 +580,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
+    def cookie_module(self):
+        query = urllib.parse.urlsplit(self.path).query.split("&")
+        cookie = json.dumps(self.headers.get("Cookie", ""))
+        headers = [("Content-Type", "text/javascript"), ("Cache-Control", "no-store")]
+        if "acao" in query:
+            headers.append(("Access-Control-Allow-Origin", self.headers.get("Origin", "*")))
+        if "acac" in query:
+            headers.append(("Access-Control-Allow-Credentials", "true"))
+        body = "hits.push('cookie');\nself.lastCookie = %s;\n" % cookie
+        self.reply(200, headers, body.encode())
+
     def samesite(self, method):
         port = self.server.server_address[1]
         parts = urllib.parse.urlsplit(self.path)
@@ -679,6 +700,11 @@ def form_fields(ctype, body):
     return []
 
 
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+class Server6(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+server = (Server6 if ":" in host else http.server.ThreadingHTTPServer)((host, 0), Handler)
 print(server.server_address[1], flush=True)
 server.serve_forever()

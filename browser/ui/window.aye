@@ -439,6 +439,7 @@ pub struct Ui {
     quit: bool
     stuck: bool = false
     cert_advanced: bool = false
+    cert_focused: bool = false
     wait: bool = false
     unresponsive: u32 = 0
     // The agents (agents.aye), when the window listens for them.
@@ -951,6 +952,7 @@ pub struct Ui {
         self.dropdown = null
         self.range_drag = false
         self.cert_advanced = false
+        self.cert_focused = false
         if loaded {
             // The agents' refs are of the old document.
             self.slots[self.active].?.shown += 1
@@ -1323,6 +1325,10 @@ pub struct Ui {
         }
         let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
         let shift = (mods & KMOD_SHIFT) != 0
+        if try certKey(self, sym, cmd) {
+            self.swallow = true
+            return
+        }
         if cmd && try windowKey(self, sym, shift) {
             self.swallow = true
             return

@@ -1,0 +1,31 @@
+// https://www.itu.int/rec/T-REC-X.690
+fn readDer(der: []u8, at: usize) ?DerItem {
+    if at + 2 > der.len {
+        return null
+    }
+
+    var len = der[at + 1] as usize
+    var body = at + 2
+
+    if len >= 0x80 {
+        let n = len - 0x80
+
+        if n == 0 || n > 4 || body + n > der.len {
+            return null
+        }
+
+        len = 0
+
+        for b in der[body..body + n] {
+            len = len * 256 + b as usize
+        }
+
+        body += n
+    }
+
+    if body + len > der.len {
+        return null
+    }
+
+    return DerItem { body: body, end: body + len }
+}

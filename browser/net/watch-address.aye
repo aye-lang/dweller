@@ -1,0 +1,10 @@
+let CURLOPT_PREREQFUNCTION: i32 = 20312
+let CURLOPT_PREREQDATA: i32 = 10313
+
+// https://wicg.github.io/private-network-access/#integration-fetch
+fn watchAddress(curl: *mut Curl, req: Request, sink: *mut Sink) {
+    sink.public_only = req.kind != Kind.Document && publicPage(withoutHash(req.referrer))
+    sink.reached_public = false
+    curl_easy_setopt(curl, CURLOPT_PREREQFUNCTION, onConnected)
+    curl_easy_setopt(curl, CURLOPT_PREREQDATA, @ptrCast([*]u8, sink))
+}
