@@ -5226,6 +5226,113 @@ fn window_damage() {
     assert!(px.contains(&0), "no frame without damage: {px:?}");
 }
 
+/// The DWELLER_TIMING records of each frame of a window's `err`, as
+/// (name, label) pairs: those written up to and including each `ui_draw`.
+fn frame_records(err: &str) -> Vec<Vec<(String, String)>> {
+    let mut frames = vec![Vec::new()];
+    for line in err.lines() {
+        let Some(record) = line.strip_prefix("info: DWELLER_TIMING\t") else {
+            continue;
+        };
+        let fields: Vec<&str> = record.split('\t').collect();
+        let name = fields[0].to_string();
+        let label = fields.get(2).unwrap_or(&"").to_string();
+        let end = name == "ui_draw";
+        frames.last_mut().unwrap().push((name, label));
+        if end {
+            frames.push(Vec::new());
+        }
+    }
+    frames.pop();
+    frames
+}
+
+// The window and page rasters of a frame's records ("PIXELS RECTS").
+fn rasters(frame: &[(String, String)]) -> Vec<(&str, &str)> {
+    frame
+        .iter()
+        .filter(|(n, _)| n == "ui_window_px" || n == "raster_px")
+        .map(|(n, l)| (n.as_str(), l.as_str()))
+        .collect()
+}
+
+fn damage_window_run(page: &str, png: &std::path::Path, events: &str) -> String {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_DAMAGE_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            page,
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "200",
+            "--until-idle",
+            "--save",
+            png.to_str().unwrap(),
+            "--events",
+            events,
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("DAMAGE CHECK"), "{err}");
+    err
+}
+
+/// Q4.15: a still page with a focused field (an overlay over the page)
+/// rasters nothing once loaded: 20 more frames draw no page pixel and
+/// compose no window pixel.
+#[test]
+fn window_idle_no_raster() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let png = std::env::temp_dir().join(format!("dweller-q415-idle-{}.png", std::process::id()));
+    let events = format!("painted{}", " frame".repeat(20));
+    let err = damage_window_run("browser/tests/ui/damage_window_final.html", &png, &events);
+    let _ = std::fs::remove_file(&png);
+    let frames = frame_records(&err);
+    assert!(frames.len() >= 20, "{} frames:\n{err}", frames.len());
+    let idle: Vec<_> = frames[frames.len() - 15..].iter().map(|f| rasters(f)).collect();
+    assert!(idle.iter().all(|r| r.is_empty()), "rasters while idle: {idle:?}");
+}
+
+/// Q4.15: with a focused field over the page, a rAF tick that changes
+/// one box's color rasters that box alone (its 40x30 rect with the
+/// one-pixel margin of the damage) in the page and in the window, and
+/// the window equals the page drawn with that color from the start.
+#[test]
+fn window_damage_rect_only() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = std::env::temp_dir();
+    let id = std::process::id();
+    let changed = dir.join(format!("dweller-q415-changed-{id}.png"));
+    let whole = dir.join(format!("dweller-q415-whole-{id}.png"));
+    let err = damage_window_run("browser/tests/ui/damage_window.html", &changed, "painted");
+    damage_window_run("browser/tests/ui/damage_window_final.html", &whole, "painted");
+    let (a, b) = (std::fs::read(&changed).unwrap(), std::fs::read(&whole).unwrap());
+    let _ = std::fs::remove_file(&changed);
+    let _ = std::fs::remove_file(&whole);
+    assert!(a == b, "the window differs from a whole drawing");
+    let frames = frame_records(&err);
+    let painted = frames
+        .iter()
+        .rposition(|f| f.iter().any(|(n, _)| n == "ui_window_px"))
+        .unwrap_or_else(|| panic!("no window raster:\n{err}"));
+    let last = rasters(&frames[painted]);
+    assert_eq!(last, vec![("raster_px", "1344 1"), ("ui_window_px", "1344 1")], "{err}");
+}
+
 /// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed
