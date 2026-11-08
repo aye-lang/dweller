@@ -8398,9 +8398,15 @@ fn window_login_in(envs: &[(&str, &str)]) {
     };
     let base = &srv.base;
     let account = format!("{base}/account");
+    // Under the flag the committed URL is the address line's (`url` is
+    // the window's own page).
     let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+        let committed = |w: &&str| match w.strip_prefix("url ") {
+            Some(rest) if !envs.is_empty() => got.contains(&format!("address {rest}")),
+            _ => got.contains(w),
+        };
         assert!(
-            want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+            want.iter().all(|w| committed(w)) && !not.iter().any(|n| got.contains(n)),
             "{what}: want {want:?}, not {not:?}, got:\n{got}"
         );
     };
