@@ -1,0 +1,22 @@
+// v8: src/builtins/builtins-array.cc (BUILTIN(ArrayConcat), Fast_ArrayConcat, the protector checks)
+fn concatIsPlain(it: *mut Interp, a: Args) bool {
+    let o = objectOf(a.this)
+
+    if o == NONE || it.heap.obj(o).class != Class.Array || it.heap.obj(o).proto != it.array_proto {
+        return false
+    }
+
+    if it.heap.findProp(o, A_CONSTRUCTOR) != null || !plainArrayConstructor(it) || !noSpreadable(it, o) {
+        return false
+    }
+
+    for i in 0..a.argc {
+        let e = objectOf(it.arg(a, i))
+
+        if e != NONE && !noSpreadable(it, e) {
+            return false
+        }
+    }
+
+    return true
+}
