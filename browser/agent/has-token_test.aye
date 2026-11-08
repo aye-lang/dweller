@@ -1,0 +1,15 @@
+import std.heap.Arena
+
+test "hasToken takes only the right token" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    let a = arena.allocator()
+
+    @expectEqual(true, hasToken(a, "{\"token\":\"ab12\"}", "ab12"))
+    @expectEqual(true, hasToken(a, "{ \"token\": \"ab12\" }", "ab12"))
+    @expectEqual(false, hasToken(a, "{\"token\":\"ab13\"}", "ab12"))
+    @expectEqual(false, hasToken(a, "{\"token\":\"ab1\"}", "ab12"))
+    @expectEqual(false, hasToken(a, "{\"cmd\":\"snapshot\"}", "ab12"))
+    @expectEqual(false, hasToken(a, "[\"ab12\"]", "ab12"))
+    @expectEqual(false, hasToken(a, "not json", "ab12"))
+}

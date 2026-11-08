@@ -28,6 +28,7 @@ extern fn send(fd: i32, buf: [*]u8, n: usize, flags: i32) isize
 extern fn setsockopt(fd: i32, level: i32, name: i32, value: [*]u8, len: u32) i32
 extern fn shutdown(fd: i32, how: i32) i32
 extern fn unlink(path: [*]u8) i32
+extern fn chmod(path: [*]u8, mode: u32) i32
 extern fn rename(from: [*]u8, to: [*]u8) i32
 extern fn read(fd: i32, buf: [*]u8, n: usize) isize
 extern fn write(fd: i32, buf: [*]u8, n: usize) isize
@@ -127,7 +128,7 @@ fn listenAt(path: []u8) i32 {
         return -1
     }
     cloexec(fd)
-    if bind(fd, tmp[..].ptr, n + 2) != 0 {
+    if bind(fd, tmp[..].ptr, n + 2) != 0 || chmod(tmp[2..].ptr, 384) != 0 {
         close(fd)
         return -1
     }
@@ -137,14 +138,6 @@ fn listenAt(path: []u8) i32 {
         return -1
     }
     return fd
-}
-
-/// Removes the socket file at `path`.
-fn removeSocket(path: []u8) {
-    var addr = @zeroed([110]u8)
-    if unixAddr(path, &mut addr) > 0 {
-        unlink(addr[2..].ptr)
-    }
 }
 
 /// A connection to the socket at `path`; -1 on failure.
@@ -164,6 +157,10 @@ fn connectTo(path: []u8) i32 {
         return -1
     }
     noSigpipe(fd)
+    if !sendToken(fd, path) {
+        close(fd)
+        return -1
+    }
     return fd
 }
 

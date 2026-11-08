@@ -1,0 +1,16 @@
+import dom
+import dom.NodeId
+import engine
+import std.mem.AllocError
+import std.text
+
+fn pressRange(r: *mut TabRenderer, p: *mut engine.Page, node: NodeId, x: f64) AllocError!bool {
+    if !p.doc.isElement(node, "input") || !text.eql(dom.inputType(&p.doc, node), "range") || dom.isDisabled(&p.doc, node) { return false }
+
+    engine.setFocus(p, node)
+    r.range = node
+
+    try dragRange(r, p, x)
+
+    return true
+}

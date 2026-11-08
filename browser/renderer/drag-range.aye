@@ -1,0 +1,19 @@
+import dom
+import engine
+import std.math
+import std.mem.AllocError
+
+fn dragRange(r: *mut TabRenderer, p: *mut engine.Page, x: f64) AllocError!void {
+    let el = r.range orelse return
+    let box = engine.boxRect(p, el) orelse return
+
+    if box.w <= 12.0 { return }
+
+    let min = dom.rangeMin(&p.doc, el)
+    let max = dom.rangeMax(&p.doc, el)
+    let fraction = math.max(0.0, math.min(1.0, (x - box.x - 6.0) / (box.w - 12.0)))
+
+    try dom.setRange(&mut p.doc, el, min + fraction * (max - min))
+    try engine.dispatchEvent(p, el, "input", "")
+    try p.restyle()
+}

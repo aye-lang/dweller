@@ -1,0 +1,31 @@
+import ipc
+import std.mem.AllocError
+
+fn forwardTab(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
+    let tp = tabInput(ui) orelse return false
+    let k = ev.kind
+
+    if k == SDL_MOUSEMOTION || k == SDL_MOUSEBUTTONDOWN || k == SDL_MOUSEBUTTONUP { return forwardMouse(ui, tp, ev) }
+
+    if k == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_LEAVE {
+        try sendMouse(ui, tp, 3, 0, 0.0, 0.0)
+
+        return false
+    }
+
+    if ui.focus != Focus.Page { return false }
+    if k == SDL_KEYDOWN || k == SDL_KEYUP { return forwardKey(ui, tp, ev) }
+    if k != SDL_TEXTINPUT || ui.swallow { return false }
+
+    let te = &ev.text
+    var n: usize = 0
+
+    while n < te.text.len && te.text[n] != 0 {
+        n += 1
+    }
+
+    tp.seq += 1
+    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, ipc.Message.Text { seq: tp.seq, typed: te.text[0..n] })
+
+    return true
+}
