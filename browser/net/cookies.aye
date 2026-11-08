@@ -461,12 +461,8 @@ pub fn contextOf(alloc: Allocator, req: Request, at: *Url, method: []u8, initiat
             f.deinit(alloc)
         }
     }
-    if req.credentials == Credentials.SameOrigin {
-        if from |f| {
-            if !sameOrigin(&f, at) {
-                return Context.Omit
-            }
-        }
+    if req.credentials == Credentials.SameOrigin && !(try sameOriginRequest(alloc, req, initiator, at)) {
+        return Context.Omit
     }
     if req.kind == Kind.Document && req.top.len == 0 {
         var cross = crossed

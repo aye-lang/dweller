@@ -607,7 +607,7 @@ pub let LIB =
     \\        if (!moduleMap.has(moduleKey(url, m.requests[i][1])) && !urls.includes(url)) urls.push(url);
     \\      }
     \\    }
-    \\    if (urls.length > 1) prefetchModules(urls.join('\n'), root.url);
+    \\    if (urls.length > 1) prefetchModules(urls.join('\n'), root.url, root.include === true);
     \\    const next = [];
     \\    for (const m of level) {
     \\      if (m.deps !== null) continue;
@@ -880,13 +880,13 @@ pub let LIB =
     \\let loadLater = null;
     \\// Loads urls in the background, then calls done (at once when there is
     \\// nothing to wait for).
-    \\function loadInBackground(urls, referrer, done) {
+    \\function loadInBackground(urls, referrer, include, done) {
     \\  if (loadLater === null || urls.length === 0) { done(); return; }
     \\  let left = 1;
     \\  const one = () => { if (--left === 0) done(); };
     \\  for (const url of urls) {
     \\    left++;
-    \\    if (!loadLater(url, referrer, one)) left--;
+    \\    if (!loadLater(url, referrer, one, include)) left--;
     \\  }
     \\  one();
     \\}
@@ -913,7 +913,7 @@ pub let LIB =
     \\      }
     \\    }
     \\    if (wanted.length === 0) { done(); return; }
-    \\    loadInBackground(urls, root.url, () => {
+    \\    loadInBackground(urls, root.url, root.include === true, () => {
     \\      level = [];
     \\      for (const [url, type, referrer, include] of wanted) {
     \\        try { level.push(getModule(url, type, referrer, include)); } catch (e) {}
@@ -932,7 +932,7 @@ pub let LIB =
     \\}
     \\const moduleLoader = {
     \\  // import(specifier, options) from code of `referrer`.
-    \\  dynamicImport(specifier, referrer, options) {
+    \\  dynamicImport(specifier, referrer, options, include) {
     \\    return new Promise((resolve, reject) => {
     \\      let spec;
     \\      let type = '';
@@ -956,10 +956,10 @@ pub let LIB =
     \\        try {
     \\          url = resolveSpecifier(referrer, spec);
     \\        } catch (e) { reject(e); return; }
-    \\        loadInBackground(moduleMap.has(moduleKey(url, type)) ? [] : [url], referrer, () => {
+    \\        loadInBackground(moduleMap.has(moduleKey(url, type)) ? [] : [url], referrer, include === true, () => {
     \\          let m;
     \\          try {
-    \\            m = getModule(url, type, referrer, (moduleMap.get(referrer) || {}).include === true);
+    \\            m = getModule(url, type, referrer, include === true);
     \\          } catch (e) { reject(e); return; }
     \\          graphInBackground(m, () => {
     \\            let p;
@@ -978,7 +978,7 @@ pub let LIB =
     \\  moduleScript(href, source, base, include) {
     \\    let m;
     \\    try {
-    \\      m = href !== null ? getModule(href, '', base, include) : setupModule(parseModule(source, base));
+    \\      m = href !== null ? getModule(href, '', base, include) : setupModule(parseModule(source, base, include));
     \\      if (href === null) m.include = include;
     \\      loadGraph(m);
     \\    } catch (e) {

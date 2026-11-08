@@ -1,0 +1,15 @@
+fn concatElem(it: *mut Interp, src: u32, j: u32) JsError!Value {
+    let v = it.heap.obj(src).elems[j]
+
+    if !isHole(it, src, j) {
+        return v
+    }
+
+    let key = try it.toKey(numVal(j as f64))
+
+    if !it.hasProperty(src, key) {
+        return v
+    }
+
+    return it.getProp(objVal(src), key)
+}
