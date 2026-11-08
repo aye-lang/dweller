@@ -1,0 +1,28 @@
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-fetch-metadata/#fetch-integration
+fn secFetchHeaders(list: ?*mut CurlList, h: *mut text.Builder, req: Request, at: *Url, site: FetchSite) FetchError!?*mut CurlList {
+    if !trustworthyUrl(at) {
+        return list
+    }
+
+    try h.append("Sec-Fetch-Site: ")
+    try h.append(fetchSiteName(site))
+
+    var more = try addHeader(list, h)
+
+    try h.append("Sec-Fetch-Mode: ")
+    try h.append(secFetchMode(req))
+    more = try addHeader(more, h)
+    try h.append("Sec-Fetch-Dest: ")
+    try h.append(secFetchDest(req))
+    more = try addHeader(more, h)
+
+    if req.kind == Kind.Document && req.top.len == 0 && (req.user_activated || site == FetchSite.None) {
+        try h.append("Sec-Fetch-User: ?1")
+        more = try addHeader(more, h)
+    }
+
+    return more
+}

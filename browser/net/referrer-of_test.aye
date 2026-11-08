@@ -1,0 +1,39 @@
+import std.mem.Allocator
+import std.text
+import url
+
+fn referrerFor(a: Allocator, referrer: []u8, policy: ReferrerPolicy, to: []u8, want: []u8) bool {
+    let at = url.parse(a, to) catch unreachable
+
+    defer at.deinit(a)
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+    referrerOf(a, referrer, policy, &at, &mut out) catch unreachable
+
+    return text.eql(out.bytes(), want)
+}
+
+test "net: the Referer of each referrer policy" {
+    let a = @testAllocator()
+    let page = "https://a.example/p?q#f"
+    let same = "https://a.example/x"
+    let cross = "https://b.example/x"
+    let down = "http://b.example/x"
+
+    @expect(referrerFor(a, page, ReferrerPolicy.StrictOriginWhenCrossOrigin, same, "https://a.example/p?q"))
+    @expect(referrerFor(a, page, ReferrerPolicy.StrictOriginWhenCrossOrigin, cross, "https://a.example/"))
+    @expect(referrerFor(a, page, ReferrerPolicy.StrictOriginWhenCrossOrigin, down, ""))
+    @expect(referrerFor(a, page, ReferrerPolicy.NoReferrer, same, ""))
+    @expect(referrerFor(a, page, ReferrerPolicy.Origin, same, "https://a.example/"))
+    @expect(referrerFor(a, page, ReferrerPolicy.Origin, down, "https://a.example/"))
+    @expect(referrerFor(a, page, ReferrerPolicy.StrictOrigin, down, ""))
+    @expect(referrerFor(a, page, ReferrerPolicy.SameOrigin, same, "https://a.example/p?q"))
+    @expect(referrerFor(a, page, ReferrerPolicy.SameOrigin, cross, ""))
+    @expect(referrerFor(a, page, ReferrerPolicy.OriginWhenCrossOrigin, down, "https://a.example/"))
+    @expect(referrerFor(a, page, ReferrerPolicy.NoReferrerWhenDowngrade, cross, "https://a.example/p?q"))
+    @expect(referrerFor(a, page, ReferrerPolicy.NoReferrerWhenDowngrade, down, ""))
+    @expect(referrerFor(a, page, ReferrerPolicy.UnsafeUrl, down, "https://a.example/p?q"))
+    @expect(referrerFor(a, "file:///tmp/a.html", ReferrerPolicy.UnsafeUrl, cross, ""))
+}

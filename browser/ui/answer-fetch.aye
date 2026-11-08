@@ -7,7 +7,7 @@ import url
 // chromium: services/network/url_loader.cc (request_initiator_origin_lock)
 fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
     match m {
-        .Fetch { id, doc, nav, kind, credentials, mode, method, url: href, referrer, top, headers, content_type, has_body, body } => {
+        .Fetch { id, doc, nav, kind, credentials, mode, method, url: href, referrer, referrer_policy, top, headers, content_type, has_body, body } => {
             if id != tp.fetches + 1 || nav > 1 || has_body > 1 || doc > docCount(tp) { return "bad fetch" }
 
             tp.fetches = id
@@ -35,9 +35,14 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
 
             req.method = method
             req.referrer = referrer
+            req.referrer_policy = net.parseReferrerPolicy(referrer_policy)
             req.headers = allowed.bytes()
 
-            if navigates && tp.loading { req.referrer = tp.nav_initiator.bytes() }
+            if navigates && tp.loading {
+                req.referrer = tp.nav_initiator.bytes()
+                req.user_activated = true
+            }
+
             if !navigates { req.top = topOf(tp) }
 
             if has_body == 1 { req.body = &sent }

@@ -278,7 +278,7 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer target.deinit(s.alloc)
-    let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })) catch |e| {
+    let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, referrer_policy: net.parseReferrerPolicy(p.doc.attr(el, "referrerpolicy") orelse ""), initiator: initiatorOf(p) })) catch |e| {
         match e {
             .OutOfMemory => {
                 return JsError.OutOfMemory

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import hashlib
+import json
 import random
 import re
 import signal
@@ -72,7 +73,7 @@ def run(args):
     out = ROOT / "target/fuzz" / args.target
     crashes = out / "crashes"
     crashes.mkdir(parents=True, exist_ok=True)
-    corpus = ROOT / "browser/tests/fuzz" / args.target
+    corpus = ROOT / (args.corpus or f"browser/tests/fuzz/{args.target}")
     end = time.monotonic() + args.minutes * 60
     found = {}
     inputs = ms = 0
@@ -102,6 +103,9 @@ def run(args):
     print(f"fuzz {args.target}: {inputs} inputs in completed runs, {rate}/s, {len(found)} unique crashes")
     for key, (message, hits, small_name, size, small_size) in found.items():
         print(f"crash {message} ({hits} hits) {crashes / small_name} ({small_size} bytes, from {size})")
+    if args.report:
+        report = [{"key": key, "message": message, "hits": hits, "input": str(crashes / small_name)} for key, (message, hits, small_name, _, _) in found.items()]
+        Path(args.report).write_text(json.dumps(report, indent=1) + "\n")
     return 1 if found else 0
 
 
@@ -112,6 +116,8 @@ def main():
     p.add_argument("target")
     p.add_argument("--minutes", type=float, default=10)
     p.add_argument("--binary", default="target/dweller-fuzz")
+    p.add_argument("--corpus", help="default browser/tests/fuzz/TARGET")
+    p.add_argument("--report", help="writes the unique crashes there as JSON")
     return run(parser.parse_args())
 
 

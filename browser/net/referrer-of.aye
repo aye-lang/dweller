@@ -1,0 +1,45 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+// https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+pub fn referrerOf(alloc: Allocator, referrer: []u8, policy: ReferrerPolicy, to: *Url, out: *mut text.Builder) AllocError!void {
+    if referrer.len == 0 || policy == ReferrerPolicy.NoReferrer {
+        return
+    }
+
+    let from = url.parse(alloc, referrer) catch |e| {
+        return
+    }
+
+    defer from.deinit(alloc)
+
+    if !text.eql(from.scheme, "https") && !text.eql(from.scheme, "http") {
+        return
+    }
+
+    let same = text.eql(from.scheme, to.scheme) && text.eql(from.host, to.host) && text.eql(from.port, to.port) && from.username.len == 0 && from.password.len == 0
+    let downgrade = trustworthyUrl(&from) && !trustworthyUrl(to)
+    let strict = policy == ReferrerPolicy.StrictOrigin || policy == ReferrerPolicy.StrictOriginWhenCrossOrigin || policy == ReferrerPolicy.NoReferrerWhenDowngrade
+
+    if (strict && downgrade) || (policy == ReferrerPolicy.SameOrigin && !same) {
+        return
+    }
+
+    if policy == ReferrerPolicy.UnsafeUrl || policy == ReferrerPolicy.NoReferrerWhenDowngrade || (same && policy != ReferrerPolicy.Origin && policy != ReferrerPolicy.StrictOrigin) {
+        return out.append(from.withoutFragment())
+    }
+
+    try out.append(from.scheme)
+    try out.append("://")
+    try out.append(from.host)
+
+    if from.port.len > 0 {
+        try out.appendByte(':')
+        try out.append(from.port)
+    }
+
+    try out.appendByte('/')
+}

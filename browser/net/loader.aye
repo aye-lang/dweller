@@ -57,6 +57,8 @@ struct Load {
     mode: Mode = Mode.NoCors
     credentials: Credentials = Credentials.Include
     initiator: []mut u8 = []mut u8{}
+    key: []mut u8 = []mut u8{}
+    referrer_policy: ?ReferrerPolicy = null
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -129,18 +131,25 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         return 0
     }
 
-    if findLoad(ld, href) |l| {
+    let key = cacheKey(ld.alloc, req, href) catch |e| {
+        return 0
+    }
+    if findKeyed(ld, key) |l| {
+        release(ld.alloc, key)
         l.users += 1
         return l.id
     }
     let owned = dup(ld.alloc, href) catch |e| {
+        release(ld.alloc, key)
         return 0
     }
     let from = dup(ld.alloc, referrer) catch |e| {
+        release(ld.alloc, key)
         release(ld.alloc, owned)
         return 0
     }
     let page = dup(ld.alloc, initiator) catch |e| {
+        release(ld.alloc, key)
         release(ld.alloc, owned)
         release(ld.alloc, from)
         return 0
@@ -151,6 +160,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         kind: kind,
         referrer: from,
         users: 1,
+        referrer_policy: req.referrer_policy,
         state: LoadState.Done,
         hops: 0,
         job: null,
@@ -158,7 +168,9 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         mode: req.mode,
         credentials: req.credentials,
         initiator: page,
+        key: key,
     }) catch |e| {
+        release(ld.alloc, key)
         release(ld.alloc, owned)
         release(ld.alloc, from)
         release(ld.alloc, page)
@@ -169,7 +181,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         return 0
     }
     ld.next_id += 1
-    if !archiveReplay() && !s.cache.has(href) {
+    if !archiveReplay() && !s.cache.has(key) {
         l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null)
         l.state = LoadState.Running
         if l.job == null {
@@ -365,6 +377,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         kind: req.kind,
         referrer: []mut u8{},
         users: 1,
+        referrer_policy: req.referrer_policy,
         state: LoadState.Running,
         hops: 0,
         job: null,
@@ -411,7 +424,7 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
+    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -446,7 +459,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
     }
     defer target.deinit(ld.alloc)
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
+    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -510,7 +523,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                     return failRequest(ld, l, FetchError.OutOfMemory)
                 }
             }
-            let cors = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)
             }
@@ -527,7 +540,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     keepRequest(ld.alloc, l, job, status) catch |e| {
         return failRequest(ld, l, e)
     }
-    let checked = Request { kind: l.kind, referrer: l.referrer, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+    let checked = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
 
     var at: []u8 = l.href
 
@@ -755,7 +768,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     l.state = LoadState.Done
 }
 
-// Keeps the response of `job`, the last hop of `l`, under `l.href`.
+// Keeps the response of `job`, the last hop of `l`, under `l.key`.
 fn keepLoad(alloc: Allocator, s: *mut Session, l: *Load, job: *mut Job, status: i64) FetchError!void {
     var content_type: ?[*]u8 = null
     curl_easy_getinfo(job.curl, CURLINFO_CONTENT_TYPE, &mut content_type)
@@ -774,7 +787,7 @@ fn keepLoad(alloc: Allocator, s: *mut Session, l: *Load, job: *mut Job, status: 
         res.url = try dup(alloc, job.at.href)
     }
     let lasting = status >= 200 && status < 300 && !job.sink.no_store
-    try s.cache.keep(l.href, &res, !lasting)
+    try s.cache.keep(l.key, &res, !lasting)
 }
 
 fn freeLoad(ld: *mut Loader, l: *mut Load) {
@@ -797,5 +810,6 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
     release(ld.alloc, l.href)
     release(ld.alloc, l.referrer)
     release(ld.alloc, l.initiator)
+    release(ld.alloc, l.key)
     ld.alloc.destroy(l)
 }
