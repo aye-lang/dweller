@@ -1,9 +1,13 @@
 import animation
 import dom.NodeId
+import perf
 import std.list.List
 import std.mem.AllocError
 
 fn restyleTransitioning(s: *mut Script) AllocError!void {
+    let began = perf.start()
+    defer perf.end("transition_walk", began, s.page.url.href)
+
     var els = List(NodeId).init(s.alloc)
     defer els.deinit()
 
