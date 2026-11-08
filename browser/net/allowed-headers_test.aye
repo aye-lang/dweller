@@ -1,0 +1,18 @@
+import std.text
+
+test "a renderer's headers lose the forbidden ones" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    @expect(try allowedHeaders("X-A: 1\nCookie: a=1\nreferer: http://a.test/\nSec-Fetch-Site: same-origin\nProxy-Authorization: x\nOrigin: http://b.test\nX-HTTP-Method-Override: GET, trace\nX-Method-Override: PUT\nHost: c.test", &mut out))
+    @expectEqual("X-A: 1\nX-Method-Override: PUT", out.bytes())
+}
+
+test "a header line that is not a header kills" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    @expect(!(try allowedHeaders("no colon", &mut out)))
+    @expect(!(try allowedHeaders("Bad Name: 1", &mut out)))
+    @expect(!(try allowedHeaders("X-A: 1\r\nCookie: a=1", &mut out)))
+}

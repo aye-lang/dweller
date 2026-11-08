@@ -1,0 +1,19 @@
+import engine
+import ipc
+import net
+import std.mem.AllocError
+import url.Url
+
+var store_renderer: ?*mut TabRenderer = null
+
+fn storeThrough(r: *mut TabRenderer) {
+    store_renderer = r
+    net.setRemoteCookies(cookiesRemote, cookieSetRemote)
+    engine.setStorageRemote(storageRemote)
+}
+
+fn cookieSetRemote(page: *Url, line: []u8) AllocError!void {
+    let r = store_renderer orelse return
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.CookieSet { doc: storeDoc(r, page.href, "cookie"), line: line }) catch return
+}

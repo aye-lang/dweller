@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+import std.text
+
+pub fn allowedHeaders(headers: []u8, out: *mut text.Builder) AllocError!bool {
+    var lines = text.split(headers, "\n")
+
+    while lines.next() |line| {
+        if line.len == 0 { continue }
+
+        let colon = std.mem.indexOf(line, ':') orelse return false
+
+        if !isToken(line[..colon]) || std.mem.indexOf(line, '\r') != null || std.mem.indexOf(line, 0) != null { return false }
+
+        if forbiddenHeader(line[..colon], headerText(line)) { continue }
+
+        if out.len() > 0 { try out.appendByte('\n') }
+
+        try out.append(line)
+    }
+
+    return true
+}

@@ -19,6 +19,8 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
         return
     }
 
+    tp.nav_initiator.clear()
+    try tp.nav_initiator.append(topOf(tp))
     tp.committed.clear()
     try tp.committed.append(target.href)
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Navigate { url: target.href, post: (post != 0) as u32, content_type: content_type, body: body })

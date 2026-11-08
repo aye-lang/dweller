@@ -308,6 +308,7 @@ pub struct Tree {
     // The documents of the frames, laid out by the engine afterwards.
     frames: List(FrameView)
     box_scrolls: ?*mut IntMap(u32, BoxScroll) = null
+    serial: u64 = 0
 
     pub fn deinit(self: *mut Self) {
         self.arena.deinit()
@@ -412,6 +413,7 @@ pub fn layoutDocumentWith(alloc: Allocator, doc: *Document, styles: *css.Styles,
         scrolled: List(usize).init(a),
         scroll_y: 0.0,
         frames: List(FrameView).init(a),
+        serial: nextSerial(),
     }
     errdefer t.deinit()
     if doc.documentElement() |el| {

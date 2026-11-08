@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+fn setAreaItem(st: *mut Store, area: []u8, ask: StorageAsk, out: *mut text.Builder) AllocError!StorageDone {
+    let found = findItem(st, area, ask.key)
+    var used = areaBytes(st, area) + ask.key.len + ask.value.len
+
+    if found |i| {
+        let old = st.items.items()[i * 3 + 2]
+
+        if text.eql(old, ask.value) { return StorageDone { found: true } }
+
+        used -= ask.key.len + old.len
+    }
+
+    if used > STORAGE_QUOTA { return StorageDone { refused: true } }
+
+    if found |i| {
+        try out.append(st.items.items()[i * 3 + 2])
+
+        let copy = try ownedCopy(st.alloc, ask.value)
+
+        st.alloc.free(st.items.items()[i * 3 + 2])
+        st.items.items()[i * 3 + 2] = copy
+    } else {
+        try appendItem(st, area, ask.key, ask.value)
+    }
+
+    if !ask.session {
+        try markDirty(st, area)
+        try noteLocalChange(area, ask.key, ask.value)
+    }
+
+    return StorageDone { found: found != null, changed: true }
+}
