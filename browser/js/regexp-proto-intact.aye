@@ -1,0 +1,26 @@
+// v8: src/builtins/builtins-regexp-gen.cc (RegExpBuiltinsAssembler::IsFastRegExpNoPrototype)
+fn regexpProtoIntact(it: *mut Interp, species: bool) bool {
+    if it.regexp_snapshot == NONE {
+        return false
+    }
+
+    let p = it.heap.obj(it.regexp_proto)
+    let snap = it.heap.obj(it.regexp_snapshot)
+    var k: u32 = 0
+
+    while k < snap.nelems {
+        let key = snapU32(snap.elems[k])
+
+        if key != A_CONSTRUCTOR || species {
+            let i = snapshotSlot(it, snap, k, key) orelse return false
+
+            if !it.strictEquals(p.props[i].value, snap.elems[k + 2]) || !it.strictEquals(p.props[i].setter, snap.elems[k + 3]) {
+                return false
+            }
+        }
+
+        k += 4
+    }
+
+    return true
+}
