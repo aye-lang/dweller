@@ -1,0 +1,12 @@
+test "a socket path too long for sockaddr_un is refused before its directory is made" {
+    var long = @zeroed([99]u8)
+
+    for i in 0..long.len {
+        long[i] = 'a'
+    }
+
+    long[0] = '/'
+    long[4] = '/'
+
+    @expectEqual("its path is longer than 98 bytes", socketDirRefusal(long[..]) orelse "")
+}
