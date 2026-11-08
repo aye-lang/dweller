@@ -1,0 +1,35 @@
+import std.mem.AllocError
+
+fn answerAsked(ui: *mut Ui, conn: usize) AllocError!void {
+    let c = ui.agents.?.conns[conn].?
+    let tp = connSlot(ui, c).process orelse {
+        c.asked = false
+
+        return
+    }
+
+    if tp.gone.len > 0 && tp.agent_id != 0 && tp.agent_conn == conn {
+        tp.agent_id = 0
+        c.asked = false
+
+        if !sendAll(c.fd, "{\"id\":null,\"ok\":false,\"error\":\"the tab's renderer is gone\"}\n") { c.gone = true }
+
+        return
+    }
+
+    if tp.agent_id != 0 && tp.agent_conn == conn { return }
+
+    c.asked = false
+
+    if !tp.answered || tp.agent_conn != conn { return }
+
+    tp.answered = false
+
+    if tp.answer.len() > 0 {
+        try tp.answer.appendByte('\n')
+
+        if !sendAll(c.fd, tp.answer.bytes()) { c.gone = true }
+    }
+
+    ui.dirty = true
+}

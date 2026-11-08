@@ -1,0 +1,28 @@
+import std.list.List
+
+fn vmInitProf(it: *mut Interp, st: *mut VmState) {
+    if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
+        if p[0] != 't' {
+            return
+        }
+    } else {
+        return
+    }
+
+    let ns = it.alloc.alloc(0 as u64, 257) catch |e| {
+        return
+    }
+
+    let n = it.alloc.alloc(0 as u64, 257) catch |e| {
+        it.alloc.free(ns)
+
+        return
+    }
+
+    st.prof = it.alloc.create(VmProf { op_ns: ns, op_n: n, fn_ns: List(u64).init(it.alloc), fn_n: List(u64).init(it.alloc), slow: List(u64).init(it.alloc) }) catch |e| {
+        it.alloc.free(ns)
+        it.alloc.free(n)
+
+        return
+    }
+}

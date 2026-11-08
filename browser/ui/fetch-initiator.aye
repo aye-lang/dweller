@@ -1,0 +1,19 @@
+import net
+import std.text
+
+fn fetchInitiator(tp: *TabProcess, doc: u32, navigates: bool) net.Initiator {
+    if navigates { return net.Initiator.Browser }
+
+    if doc == 0 { return net.Initiator.Page { url: tp.committed.bytes() } }
+
+    var lines = text.split(tp.docs.bytes(), "\n")
+    var n: u32 = 0
+
+    while lines.next() |line| {
+        n += 1
+
+        if n == doc { return net.Initiator.Page { url: line } }
+    }
+
+    return net.Initiator.Page { url: "" }
+}

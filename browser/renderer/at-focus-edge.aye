@@ -1,0 +1,19 @@
+import dom.NodeId
+import engine
+import std.list.List
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/page/focus_controller.cc AdvanceFocusInDocumentOrder
+fn atFocusEdge(p: *mut engine.Page, forward: bool) AllocError!bool {
+    let f = p.doc.controls.focus orelse return false
+    var all = List(NodeId).init(p.alloc)
+    defer all.deinit()
+
+    try engine.focusables(p, &mut all)
+
+    if all.len() == 0 { return false }
+
+    if forward { return all.items()[all.len() - 1] == f }
+
+    return all.items()[0] == f
+}

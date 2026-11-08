@@ -1,0 +1,30 @@
+import ipc
+import net
+import std
+import std.text
+import url.Url
+
+let EVIL_DOC: u32 = 4096
+
+fn askFetch(r: *mut TabRenderer, id: u32, nav: bool, target: *Url, req: net.Request) !void {
+    let code = net.requestCode(req)
+    var doc: u32 = 0
+    var content_type: []u8 = ""
+    var data: []u8 = ""
+
+    match req.initiator {
+        .Browser => {}
+        .Page { url } => {
+            doc = docOf(r, url)
+
+            if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "initiator") { doc = EVIL_DOC }
+        }
+    }
+
+    if req.body |b| {
+        content_type = b.content_type
+        data = b.data
+    }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Fetch { id: id, doc: doc, nav: nav as u32, kind: code[0], credentials: code[1], mode: code[2], method: req.method, url: target.href, referrer: req.referrer, top: req.top, headers: req.headers, content_type: content_type, has_body: (req.body != null) as u32, body: data })
+}

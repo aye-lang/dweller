@@ -1,0 +1,14 @@
+import std.heap.Arena
+
+test "pageCommand names the page commands a renderer answers" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    let a = arena.allocator()
+
+    @expectEqual("click", pageCommand(a, "{\"id\":1,\"cmd\":\"click\",\"ref\":\"e2\"}") orelse "")
+    @expectEqual("snapshot", pageCommand(a, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"browser_snapshot\"}}") orelse "")
+    @expect(pageCommand(a, "{\"id\":3,\"cmd\":\"tabs\"}") == null)
+    @expect(pageCommand(a, "{\"id\":4,\"cmd\":\"wait\",\"ms\":10}") == null)
+    @expect(pageCommand(a, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/list\"}") == null)
+    @expect(pageCommand(a, "not json") == null)
+}

@@ -1,0 +1,14 @@
+import agent
+import engine
+import std.mem.AllocError
+
+fn agentSession(r: *mut TabRenderer) AllocError!*mut agent.Session {
+    if r.width == 0 {
+        engine.setRealClock(false)
+        engine.setCanvasFixed(false)
+
+        return agent.headlessSession(r.alloc)
+    }
+
+    return try r.alloc.create(try agent.newWindowSession(r.alloc, r.measure, r.system, r.width as f64 / r.scale, r.height as f64 / r.scale))
+}
