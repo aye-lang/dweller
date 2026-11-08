@@ -1,0 +1,38 @@
+import engine
+import font
+import std
+import std.list.List
+import std.mem.Allocator
+
+extern fn close(fd: i32) i32
+
+struct TabRenderer {
+    alloc: Allocator
+    conn: std.fs.File
+    measure: dyn font.Measurer
+    system: ?*mut font.System
+    fds: List(i32)
+    page: ?*mut engine.Page = null
+    tab: u32 = 0
+    first: u32 = 0
+    width: u32 = 0
+    height: u32 = 0
+    scale: f64 = 1.0
+    maps: [2]?[*]u8 = [2]?[*]u8{null, null}
+    free: [2]bool = [2]bool{false, false}
+    due: bool = false
+
+    pub fn ack(self: *mut Self, buffer: u32) {
+        if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        if self.page |p| { p.destroy() }
+
+        dropBuffers(self)
+
+        for fd in self.fds.items() { close(fd) }
+
+        self.fds.deinit()
+    }
+}

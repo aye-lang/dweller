@@ -1,20 +1,23 @@
 import ipc
-import std
-import std.mem.Allocator
 
-fn answerAll(alloc: Allocator, conn: std.fs.File, bytes: []u8) !?usize {
+fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
     var used: usize = 0
 
     while try ipc.nextMessage(bytes[used..]) |got| {
         used += got.used
 
-        let href = match got.message {
-            .Navigate { url } => url
+        match got.message {
+            .Navigate { url } => try load(r, got.frame, url)
+            .Resize { width, height, scale, buffer } => {
+                if !takeBuffers(r, width, height, scale, buffer) { return null }
+            }
+
+            .FrameAck { buffer } => r.ack(buffer)
             _ => return null
         }
-
-        try load(alloc, conn, got.frame, href)
     }
+
+    try paintFrame(r)
 
     return used
 }

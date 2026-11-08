@@ -1,0 +1,38 @@
+import ipc
+import paint
+import std
+import std.text
+
+fn paintFrame(r: *mut TabRenderer) !void {
+    let p = r.page orelse return
+    var k: u32 = 0
+
+    if !r.free[0] {
+        k = 1
+    }
+
+    if !r.due || !r.free[k] { return }
+
+    try p.layoutPage(r.measure, r.width as f64 / r.scale, r.height as f64 / r.scale)
+
+    var list = try paint.build(r.alloc, p.tree.?)
+    defer list.deinit()
+    var canvas = try paint.Canvas.init(r.alloc, r.width as usize, r.height as usize)
+    defer canvas.deinit()
+    var painter = paint.TextPainter.init(r.alloc, r.system)
+    defer painter.deinit()
+
+    canvas.clear(list.background)
+    try paint.render(&list, &mut canvas, paint.View { scale: r.scale, dx: 0.0, dy: 0.0 }, &mut painter)
+    std.mem.copy(r.maps[k].?[0..canvas.pixels.len], canvas.pixels)
+    r.free[k] = false
+    r.due = false
+
+    var width = r.width
+
+    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "frame") {
+        width += 1
+    }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k, width: width, height: r.height, scroll_x: 0.0, scroll_y: 0.0, damage: "" })
+}

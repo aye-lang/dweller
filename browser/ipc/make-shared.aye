@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+extern fn ftruncate(fd: i32, size: i64) i32
+extern fn close(fd: i32) i32
+
+pub fn makeShared(alloc: Allocator, size: usize) AllocError!i32 {
+    let fd = try openShared(alloc)
+
+    if fd >= 0 && ftruncate(fd, size as i64) != 0 {
+        close(fd)
+
+        return -1
+    }
+
+    return fd
+}
