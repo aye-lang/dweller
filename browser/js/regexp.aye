@@ -1086,7 +1086,8 @@ fn searchFrom(m: *mut Matcher, from: usize) bool {
 fn installRegExp(it: *mut Interp) JsError!void {
     let p = it.regexp_proto
     try makeConstructor(it, "RegExp", 2, regexpCtor, p)
-    try it.defineNative(p, "exec", 1, regexpExec)
+    it.regexp_exec = try it.defineNative(p, "exec", 1, regexpExec)
+    try it.addRoot(objVal(it.regexp_exec))
     try it.defineNative(p, "test", 1, regexpTest)
     try it.defineNative(p, "toString", 0, regexpToString)
 }
@@ -1110,25 +1111,6 @@ pub fn newRegExp(it: *mut Interp, pattern: u32, flags: u32) JsError!Value {
     try it.push(objVal(o))
     try it.heap.addProp(o, A_LASTINDEX, numVal(0.0), Value.Undefined, F_WRITE)
     return it.pop()
-}
-
-fn regexpCtor(it: *mut Interp, a: Args) JsError!Value {
-    let pv = it.arg(a, 0)
-    var pattern = A_EMPTY
-    var flags = A_EMPTY
-    if it.hasClass(pv, Class.RegExp) {
-        let prog = progOf(it, objectOf(pv))
-        pattern = prog.source
-        flags = prog.flags
-    } else if !isUndef(pv) {
-        let ps = try it.toStringValue(pv)
-        pattern = try it.toKey(ps)
-    }
-    if !isUndef(it.arg(a, 1)) {
-        let fs = try it.toStringValue(it.arg(a, 1))
-        flags = try it.toKey(fs)
-    }
-    return newRegExp(it, pattern, flags)
 }
 
 fn progOf(it: *mut Interp, o: u32) *RegexProg {
@@ -1256,17 +1238,6 @@ fn regexpExec(it: *mut Interp, a: Args) JsError!Value {
     let r = try matchArray(it, o, strOf(sv), caps)
     it.pop()
     return r
-}
-
-fn regexpTest(it: *mut Interp, a: Args) JsError!Value {
-    let o = try thisRegExp(it, a.this)
-    let sv = try argString(it, a, 0)
-    try it.push(sv)
-    let caps = try capsFor(it, o)
-    defer it.heap.int_mem.put(caps)
-    let found = try execRaw(it, o, strOf(sv), caps)
-    it.pop()
-    return boolVal(found)
 }
 
 // The RegExp of a match/search argument (strings become patterns).

@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn cArgs(tmp: Allocator, argv: [][]u8) AllocError![]?[*]u8 {
+    var strs = text.Builder.init(tmp)
+
+    for arg in argv {
+        try strs.append(arg)
+        try strs.appendByte(0)
+    }
+
+    let none: ?[*]u8 = null
+    let ptrs = try tmp.alloc(none, argv.len + 1)
+    let all = strs.bytes()
+    var off: usize = 0
+
+    for k, arg in argv {
+        ptrs[k] = all[off..].ptr
+        off += arg.len + 1
+    }
+
+    return ptrs
+}

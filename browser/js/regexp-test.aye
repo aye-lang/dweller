@@ -1,0 +1,36 @@
+// spec: https://tc39.es/ecma262/#sec-regexp.prototype.test
+fn regexpTest(it: *mut Interp, a: Args) JsError!Value {
+    if !isObject(a.this) {
+        try it.typeError("RegExp.prototype.test called on a non-object")
+    }
+
+    let sv = try argString(it, a, 0)
+
+    try it.push(sv)
+    let f = try it.getProp(a.this, A_EXEC)
+
+    if objectOf(f) != it.regexp_exec && it.isCallable(f) {
+        let r = try it.call1(f, a.this, sv)
+
+        it.pop()
+
+        if isObject(r) {
+            return boolVal(true)
+        }
+
+        if !isNullish(r) || isUndef(r) {
+            try it.typeError("RegExp exec method returned something other than an Object or null")
+        }
+
+        return boolVal(false)
+    }
+
+    let o = try thisRegExp(it, a.this)
+    let caps = try capsFor(it, o)
+    defer it.heap.int_mem.put(caps)
+    let found = try execRaw(it, o, strOf(sv), caps)
+
+    it.pop()
+
+    return boolVal(found)
+}

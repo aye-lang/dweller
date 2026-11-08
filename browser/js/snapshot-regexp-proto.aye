@@ -1,0 +1,17 @@
+let WATCHED = [11][]u8{"exec", "flags", "global", "ignoreCase", "multiline", "dotAll", "unicode", "unicodeSets", "sticky", "hasIndices", "constructor"}
+
+fn snapshotRegExpProto(it: *mut Interp) JsError!void {
+    let snap = try it.newArray(0)
+
+    try it.addRoot(objVal(snap))
+
+    for name in WATCHED {
+        try snapshotRegExpProp(it, snap, try it.intern(name))
+    }
+
+    for sym in [5]u32{it.sym_match, it.sym_match_all, it.sym_replace, it.sym_search, it.sym_split} {
+        try snapshotRegExpProp(it, snap, sym)
+    }
+
+    it.regexp_snapshot = snap
+}

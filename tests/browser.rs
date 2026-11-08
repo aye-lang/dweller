@@ -1183,7 +1183,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | fuzz --list | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -4189,8 +4189,8 @@ fn window_agent_socket_token() {
         println!("skipped: no SDL2");
         return;
     }
-    let dir = format!("target/agent-token-{}", std::process::id());
-    let _ = std::fs::remove_dir_all(root().join(&dir));
+    let dir = format!("/tmp/dw-{}-token", std::process::id());
+    let _ = std::fs::remove_dir_all(&dir);
     let sock = format!("{dir}/agent.sock");
     let window = spaces_window(&sock, &["--state", "browser/tests/basic.html"]);
     let mode = |p: &str| std::fs::metadata(root().join(p)).unwrap().permissions().mode() & 0o777;
@@ -4217,18 +4217,18 @@ fn window_agent_socket_token() {
     assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
     assert!(text(&out.stdout).contains("tabs 1, showing 1\n"), "{}", text(&out.stdout));
     assert!(!root().join(&sock).exists() && !root().join(format!("{sock}.token")).exists());
-    let open = format!("target/agent-open-{}", std::process::id());
-    let _ = std::fs::remove_dir_all(root().join(&open));
-    std::fs::DirBuilder::new().mode(0o755).create(root().join(&open)).unwrap();
-    std::fs::set_permissions(root().join(&open), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let open = format!("/tmp/dw-{}-open", std::process::id());
+    let _ = std::fs::remove_dir_all(&open);
+    std::fs::DirBuilder::new().mode(0o755).create(&open).unwrap();
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
     let out = run_window(&["--agent-socket", &format!("{open}/x.sock"), "--frames", "1"]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert_eq!(
         text(&out.stderr),
         format!("error: cannot listen on {open}/x.sock: other users can open its directory (it must be 0700)\n")
     );
-    let _ = std::fs::remove_dir_all(root().join(&dir));
-    let _ = std::fs::remove_dir_all(root().join(&open));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&open);
 }
 
 /// `dweller connect` and `--agent-socket` errors.
@@ -10845,7 +10845,7 @@ fn window_renderer_lifecycle() {
 
     let (_, state, err) = run("", &[]);
     assert!(err.is_empty(), "{err}");
-    assert!(!state.contains("renderer "), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer ")), "{state}");
 }
 
 /// Q2.4a: with `DWELLER_PROCESS=tab` the renderer's loads go through the
@@ -11031,6 +11031,92 @@ fn window_renderer_storage() {
     }
 }
 
+/// Q2.4c: with `DWELLER_PROCESS=tab` and a profile, no renderer (the
+/// window's, and its agent's Space's, which shows a page that uses
+/// `document.cookie` and `localStorage`, served over http) holds a file
+/// of the profile open,
+/// or a regular file but the binary and system libraries (macOS:
+/// `lsof`; Linux: `/proc/PID/fd`).
+#[test]
+fn window_renderer_no_profile_files() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = profile("q24c-profile");
+    let dir_text = dir.canonicalize().unwrap().to_str().unwrap().to_string();
+    let sock = format!("target/sockets/q24c-{}.sock", std::process::id());
+    let envs = [("DWELLER_PROCESS", "tab"), ("DWELLER_PROFILE", dir.to_str().unwrap())];
+    let window = spaces_window_env(&sock, &[], &envs);
+    let mut conn = AgentConn::open(&sock);
+    let page = format!("{}/storage/script-cookies.html", srv.base);
+    let (got, _) = conn.ask(&format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":{}}}", serde_like(&page)));
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let used = "(localStorage.setItem('q24c', 'kept'), localStorage.getItem('q24c') + ' ' + document.cookie)";
+    let (got, _) = conn.ask(&format!("{{\"id\":2,\"cmd\":\"eval\",\"expression\":{}}}", serde_like(used)));
+    assert!(got.contains("kept js=1"), "{got}");
+    let children = |pid: &str| -> Vec<String> {
+        let out = Command::new("pgrep").args(["-P", pid]).output().unwrap();
+        text(&out.stdout).lines().map(str::to_string).collect()
+    };
+    let spaces = children(&window.id().to_string());
+    let listed: Vec<(String, Vec<(String, bool, String)>)> = spaces
+        .iter()
+        .chain(spaces.iter().flat_map(|p| children(p)).collect::<Vec<_>>().iter())
+        .filter(|pid| {
+            let args = Command::new("ps").args(["-o", "args=", "-p", pid]).output().unwrap();
+            text(&args.stdout).contains(" --renderer 3 ")
+        })
+        .map(|pid| (pid.clone(), open_files(pid)))
+        .collect();
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    assert!(out.status.success(), "the window: {}\n{}", out.status, text(&out.stderr));
+    let exe = dweller().canonicalize().unwrap();
+    let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
+    assert!(listed.len() >= 2, "want the window's renderer and its Space's: {listed:?}");
+    for (pid, files) in &listed {
+        assert!(!files.is_empty(), "no open files listed for {pid}");
+        for (fd, regular, name) in files {
+            assert!(!name.starts_with(&dir_text), "renderer {pid} holds {name} (fd {fd}) of the profile");
+            let allowed = !regular || fd == "txt" || Path::new(name) == exe || system.iter().any(|s| name.starts_with(s));
+            assert!(allowed, "renderer {pid} holds the regular file {name} (fd {fd}): {files:?}");
+        }
+    }
+}
+
+/// The open files of process `pid`: (fd, is a regular file, path).
+fn open_files(pid: &str) -> Vec<(String, bool, String)> {
+    if cfg!(target_os = "macos") {
+        let out = Command::new("lsof").args(["-n", "-P", "-F", "ftn", "-p", pid]).output().unwrap();
+        let mut files: Vec<(String, bool, String)> = Vec::new();
+        for line in text(&out.stdout).lines() {
+            let (tag, rest) = line.split_at(1.min(line.len()));
+            match tag {
+                "f" => files.push((rest.to_string(), false, String::new())),
+                "t" => files.last_mut().unwrap().1 = rest == "REG",
+                "n" => files.last_mut().unwrap().2 = rest.to_string(),
+                _ => {}
+            }
+        }
+        return files;
+    }
+    let dir = PathBuf::from(format!("/proc/{pid}/fd"));
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| {
+            let path = e.unwrap().path();
+            let name = std::fs::read_link(&path).unwrap_or_default().to_string_lossy().to_string();
+            let regular = std::fs::metadata(&path).map(|m| m.is_file()).unwrap_or(false);
+            (path.file_name().unwrap().to_string_lossy().to_string(), regular, name)
+        })
+        .collect()
+}
+
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
 /// renderer: the browser gives it two shared-memory buffers (`resize`
 /// with 2 fds), it paints the page into one and sends `frame`, and the
@@ -11061,7 +11147,7 @@ fn window_renderer_frames() {
 
     let (state, err) = run(&golden, "loaded", &[]);
     assert!(err.is_empty(), "{err}");
-    assert!(!state.contains("renderer"), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer")), "{state}");
 
     let (state, err) = run(&tab, "renderer:loaded renderer:frame", &[("DWELLER_PROCESS", "tab")]);
     assert!(err.is_empty(), "{err}");
@@ -11079,7 +11165,7 @@ fn window_renderer_frames() {
     let pid = line.split(' ').nth(1).unwrap_or("");
     assert!(line.ends_with(" gone wrong size"), "{state}");
     assert_eq!(err, format!("error: bad message: wrong size {pid}\n"));
-    assert!(!state.contains("renderer-frame"), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer-frame")), "{state}");
 
     let page = "browser/tests/ui/renderer_damage.html";
     let (_, err) = run_page(page, &golden, "loaded", &[]);

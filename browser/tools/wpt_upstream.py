@@ -1,7 +1,9 @@
 """Upstream `wpt serve` from the pinned checkout (P10.5)."""
+import atexit
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -32,6 +34,13 @@ def listening(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def signal_group(pid, sig):
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        pass
+
+
 class Upstream:
     """`wpt serve` on web-platform.test:8000 (and :8001, https on :8443
     and :8444 with the checkout's tools/certs), answered by
@@ -60,7 +69,9 @@ class Upstream:
         log = open(self.root / "_dweller_serve.log", "w")
         self.proc = subprocess.Popen(
             [sys.executable, "wpt", "serve", "--no-h2", "--config", str(self.config())],
-            cwd=self.root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            cwd=self.root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            start_new_session=True)
+        atexit.register(self.stop)
         deadline = time.time() + START_WAIT
         while not (listening(HTTP_PORTS[-1]) and listening(HTTPS_PORTS[-1])):
             if self.proc.poll() is not None or time.time() > deadline:
@@ -69,6 +80,13 @@ class Upstream:
             time.sleep(0.5)
 
     def stop(self):
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+        if not self.proc:
+            return
+        signal_group(self.proc.pid, signal.SIGTERM)
+        try:
             self.proc.wait(30)
+        except subprocess.TimeoutExpired:
+            pass
+        signal_group(self.proc.pid, signal.SIGKILL)
+        self.proc.wait()
+        self.proc = None
