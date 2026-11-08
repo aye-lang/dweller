@@ -10540,6 +10540,49 @@ fn window_renderer_net() {
     }
 }
 
+/// Q2.4f: a navigation the browser starts for a renderer (a link click,
+/// a form submission, `browser/tests/net/samesite_links.html`) carries
+/// the page that began it, so net decides SameSite as in the window's
+/// own process: from `127.0.0.1` to `localhost` a link sends Lax but not
+/// Strict cookies and a form POST neither; from `localhost` a link sends
+/// both, and so does a typed URL.
+#[test]
+fn window_renderer_samesite() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let site = srv.base.clone();
+    let other = site.replace("127.0.0.1", "localhost");
+    let dir = profile("renderer_samesite");
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROFILE", &dir)
+        .args(["dump", "--text", &format!("{other}/samesite/set")])
+        .output()
+        .unwrap();
+    assert_eq!(text(&out.stdout), "set\n", "{}", text(&out.stderr));
+    let show = format!("{other}/samesite/show");
+    let tab = [("DWELLER_PROCESS", "tab")];
+    for envs in [&[][..], &tab[..]] {
+        let (wait, then) = if envs.is_empty() { ("loaded ", " loaded") } else { ("", " renderer:input renderer:loaded") };
+        for (what, from, click, want) in [
+            ("cross-site link", &site, "click:80,65", "GET cookies: lax=1; dflt=1"),
+            ("cross-site post", &site, "click:60,115", "POST cookies:"),
+            ("same-site link", &other, "click:80,65", "GET cookies: strict=1; lax=1; dflt=1"),
+        ] {
+            let got = login_window_with(&format!("{from}/net/samesite_links.html?{show}"), &format!("{wait}{click}{then}"), Some(&dir), envs);
+            assert!(got.lines().any(|l| l.trim_end().ends_with(&format!("Show{want}"))), "{what} {envs:?}: want {want:?}, got:\n{got}");
+        }
+        let typed = login_window_with(&show, "frame", Some(&dir), envs);
+        assert!(typed.lines().any(|l| l == "ShowGET cookies: strict=1; lax=1; dflt=1"), "typed {envs:?}: {typed}");
+    }
+}
+
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
 /// renderer: the browser gives it two shared-memory buffers (`resize`
 /// with 2 fds), it paints the page into one and sends `frame`, and the
