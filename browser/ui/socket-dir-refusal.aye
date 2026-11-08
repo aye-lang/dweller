@@ -1,3 +1,5 @@
+import std
+
 extern fn mkdir(path: [*]u8, mode: u32) i32
 extern fn getuid() u32
 
@@ -10,7 +12,7 @@ fn socketDirRefusal(sock: []u8) ?[]u8 {
 
     mkdir(dir[..].ptr, 448)
 
-    let st = ownerModeOf(dir[..].ptr) orelse return null
+    let st = std.fs.stat(dir[..std.mem.indexOf(dir[..], 0) orelse dir.len]) catch return null
 
     if st.mode & S_IFMT != S_IFDIR {
         return "its directory is not a directory"
