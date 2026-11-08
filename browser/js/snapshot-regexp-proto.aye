@@ -1,0 +1,18 @@
+fn snapshotRegExpProto(it: *mut Interp) JsError!void {
+    let snap = try it.newArray(0)
+
+    try it.addRoot(objVal(snap))
+
+    let p = it.heap.obj(it.regexp_proto)
+
+    for i in 0..p.nprops {
+        let e = it.heap.obj(it.regexp_proto).props[i]
+
+        try it.heap.pushElem(snap, numVal(e.key as f64))
+        try it.heap.pushElem(snap, e.value)
+        try it.heap.pushElem(snap, e.setter)
+        try it.heap.pushElem(snap, numVal(e.flags as f64))
+    }
+
+    it.regexp_snapshot = snap
+}

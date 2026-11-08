@@ -1,0 +1,25 @@
+// v8: src/builtins/builtins-regexp-gen.cc (RegExpBuiltinsAssembler::IsFastRegExpNoPrototype)
+fn regexpProtoIntact(it: *mut Interp) bool {
+    if it.regexp_snapshot == NONE {
+        return false
+    }
+
+    let p = it.heap.obj(it.regexp_proto)
+    let snap = it.heap.obj(it.regexp_snapshot)
+
+    if p.nprops * 4 != snap.nelems {
+        return false
+    }
+
+    for i in 0..p.nprops {
+        let e = p.props[i]
+        let k = i * 4
+        let same_key = it.strictEquals(numVal(e.key as f64), snap.elems[k]) && it.strictEquals(numVal(e.flags as f64), snap.elems[k + 3])
+
+        if !same_key || !it.strictEquals(e.value, snap.elems[k + 1]) || !it.strictEquals(e.setter, snap.elems[k + 2]) {
+            return false
+        }
+    }
+
+    return true
+}
