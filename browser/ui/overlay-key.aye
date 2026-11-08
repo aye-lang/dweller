@@ -1,0 +1,52 @@
+import dom
+import engine
+import paint
+import std.list.List
+import std.mem.AllocError
+
+pub fn overlayKey(ui: *mut Ui, v: paint.View) AllocError!?u64 {
+    if ui.agents != null || ui.stuck || ui.auth.open || ui.finding || ui.dropdown != null || ui.page_view.matches.len() > 0 {
+        return null
+    }
+
+    var h = mixKey(mixKey(mixKey(@hash(v.dx), @hash(v.dy)), @hash(v.scale)), mixKey(@hash(ui.win_w), @hash(ui.win_h)))
+
+    for b in ui.hover.bytes() {
+        h = mixKey(h, b as u64)
+    }
+
+    let p = ui.tab.page orelse return h
+
+    if p.doc.controls.validation != null {
+        return null
+    }
+
+    let f = p.doc.controls.focus orelse return h
+
+    h = mixKey(h, @hash(f))
+
+    if !dom.isTextField(&p.doc, f) {
+        return h
+    }
+
+    var rects = List(paint.Rect).init(ui.alloc)
+    defer rects.deinit()
+
+    try engine.selectionRects(p, f, &mut rects)
+
+    for r in rects.items() {
+        h = mixKey(h, @hash(r))
+    }
+
+    if rects.len() == 0 {
+        if engine.caretRect(p, f) |c| {
+            h = mixKey(h, @hash(c))
+        }
+    }
+
+    return h
+}
+
+fn mixKey(h: u64, v: u64) u64 {
+    return (h ^ v) *% 0x100000001b3 ^ (v >> 29)
+}

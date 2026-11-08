@@ -427,6 +427,7 @@ pub struct Ui {
     // The page's display list changed after its timers: the next frame
     // draws what changed, and nothing when no pixel did.
     repaint: bool = false
+    overlay_key: ?u64 = null
     // Inside the timers' `afterScripts`.
     from_timers: bool = false
     quit: bool
@@ -1867,6 +1868,15 @@ pub struct Ui {
             }
             return
         }
+        let key = try overlayKey(self, v)
+        if !self.dirty && !self.page.stale && key != null && self.overlay_key != null && key.? == self.overlay_key.? {
+            if drew {
+                try composeDamage(self, area, v, bottom)
+            }
+            return
+        }
+        self.overlay_key = key
+        let began = perf.start()
         blitPage(self)
         try self.canvas.pushClip(area)
         if pageview.hasFrame(self.view()) {
@@ -1904,6 +1914,7 @@ pub struct Ui {
             SDL_RenderPresent(self.renderer)
             notePresent(self)
         }
+        perf.end("ui_window_px", began, pairLabel((self.canvas.width * self.canvas.height) as u64, 1))
     }
 }
 
