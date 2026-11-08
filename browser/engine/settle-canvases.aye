@@ -1,0 +1,33 @@
+import std
+import std.mem.AllocError
+
+extern fn memcmp(a: [*]u8, b: [*]u8, n: usize) i32
+
+let SETTLED_BYTES: usize = 16777216
+
+// chromium: third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+fn settleCanvases(cache: *mut ImageCache) AllocError!void {
+    for i in 0..cache.canvases.len() {
+        let c = &mut cache.canvases.items()[i]
+        let bmp = c.bmp
+
+        if bmp.looked_at == bmp.version || bmp.pixels.len > SETTLED_BYTES {
+            continue
+        }
+
+        if c.seen.len == bmp.pixels.len && memcmp(c.seen.ptr, bmp.pixels.ptr, bmp.pixels.len) == 0 {
+            bmp.looked_at = bmp.version
+            continue
+        }
+
+        if c.seen.len != bmp.pixels.len {
+            cache.alloc.free(c.seen)
+            c.seen = []mut u8{}
+            c.seen = try cache.alloc.alloc(0 as u8, bmp.pixels.len)
+        }
+
+        std.mem.copy(c.seen, bmp.pixels)
+        bmp.look += 1
+        bmp.looked_at = bmp.version
+    }
+}
