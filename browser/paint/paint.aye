@@ -169,17 +169,19 @@ let SELECTED = Rgba { r: 206, g: 206, b: 206, a: 255 }
 /// The display list of a laid-out tree.
 pub fn build(alloc: Allocator, t: *mut Tree) AllocError!DisplayList {
     let none = [0]dom.NodeId{}
-    return buildWith(alloc, t, false, none[..])
+    return buildWith(alloc, t, false, none[..], null)
 }
 
 /// `build` for the window (P4.56): the layer boxes of the elements of
 /// `promote` and those whose `will-change` names `transform` or
 /// `opacity` are groups of their own, promoted (`Promoted`).
-pub fn buildPromoted(alloc: Allocator, t: *mut Tree, promote: []dom.NodeId) AllocError!DisplayList {
-    return buildWith(alloc, t, true, promote)
+pub fn buildPromoted(alloc: Allocator, t: *mut Tree, promote: []dom.NodeId, frames: *mut FrameLists) AllocError!DisplayList {
+    let list = try buildWith(alloc, t, true, promote, frames)
+    frames.dropUnused()
+    return list
 }
 
-fn buildWith(alloc: Allocator, t: *mut Tree, window: bool, promote: []dom.NodeId) AllocError!DisplayList {
+fn buildWith(alloc: Allocator, t: *mut Tree, window: bool, promote: []dom.NodeId, frames: ?*mut FrameLists) AllocError!DisplayList {
     let began = perf.start()
     defer perf.end("paint_build", began, "document")
     var b = Builder {
@@ -192,6 +194,7 @@ fn buildWith(alloc: Allocator, t: *mut Tree, window: bool, promote: []dom.NodeId
         window: window,
         promote: promote,
         open: List(usize).init(t.backing),
+        frames: frames,
     }
     defer b.open.deinit()
     errdefer b.list.deinit()
@@ -352,6 +355,7 @@ struct Builder {
     window: bool = false
     promote: []dom.NodeId
     open: List(usize)
+    frames: ?*mut FrameLists = null
     ext_dx: f64 = 0.0
     ext_dy: f64 = 0.0
     sx: f64 = 0.0
@@ -975,7 +979,7 @@ struct Builder {
         if self.t.bx(i).node |el| {
             for fv in self.t.frames.items() {
                 if dom.same(fv.node, el) {
-                    return self.subframe(fv.tree, fv.scroll, x, y, w, h)
+                    return self.subframe(fv, x, y, w, h)
                 }
             }
             if self.t.images |imgs| {
@@ -1031,20 +1035,18 @@ struct Builder {
     // The display list of a frame's document `sub` (scrolled by
     // `scroll`), moved to (`x`, `y`) and clipped to `w` x `h` on its
     // canvas color.
-    fn subframe(self: *mut Self, sub: *mut Tree, scroll: f64, x: f64, y: f64, w: f64, h: f64) AllocError!void {
+    fn subframe(self: *mut Self, fv: layout.FrameView, x: f64, y: f64, w: f64, h: f64) AllocError!void {
         if w <= 0.0 || h <= 0.0 {
             return
         }
-        var inner = try build(self.t.backing, sub)
-        defer inner.deinit()
-        let r = Rect { x: x, y: y, w: w, h: h }
-        try self.add(Item.Clip { r: r })
-        try self.add(Item.Fill { r: r, c: inner.background })
-        for it in inner.items.items() {
-            try self.add(moved(it, x, y - scroll))
+        if self.frames |c| {
+            return frameItems(self, try cachedFrame(c, fv), fv.scroll, Rect { x: x, y: y, w: w, h: h })
         }
-        try self.add(Item.Unclip)
+        var inner = try build(self.t.backing, fv.tree)
+        defer inner.deinit()
+        return frameItems(self, &inner, fv.scroll, Rect { x: x, y: y, w: w, h: h })
     }
+
 
     fn checkbox(self: *mut Self, el: dom.NodeId, x: f64, y: f64, w: f64, h: f64) AllocError!void {
         let size = math.floor(math.min(w, h))

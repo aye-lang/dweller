@@ -1,0 +1,40 @@
+import std.text
+
+test "storage ops on an area: set, get, key, length, remove, clear and the quota" {
+    let alloc = @testAllocator()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+    let area = "9.1 http://a"
+    let ask = StorageAsk { href: "http://a/", context: 1, session: true, op: 1, key: "k", value: "v1" }
+
+    @expect((try applyStorage(alloc, area, ask, &mut out)).changed)
+
+    let again = StorageAsk { href: "http://a/", context: 1, session: true, op: 1, key: "k", value: "v2" }
+    let done = try applyStorage(alloc, area, again, &mut out)
+
+    @expect(done.changed && done.found)
+    @expectEqual("v1", out.bytes())
+    @expectEqual(1, (try applyStorage(alloc, area, StorageAsk { href: "", context: 1, session: true, op: 5 }, &mut out)).count)
+
+    out.clear()
+
+    @expect((try applyStorage(alloc, area, StorageAsk { href: "", context: 1, session: true, op: 4, index: 0 }, &mut out)).found)
+    @expectEqual("k", out.bytes())
+
+    try copySessionAreas("9.1 ", "9.2 ")
+    out.clear()
+
+    @expect((try applyStorage(alloc, "9.2 http://a", StorageAsk { href: "", context: 2, session: true, op: 0, key: "k" }, &mut out)).found)
+    @expectEqual("v2", out.bytes())
+
+    let big = try alloc.alloc(0 as u8, STORAGE_QUOTA)
+    defer alloc.free(big)
+
+    @expect((try applyStorage(alloc, area, StorageAsk { href: "", context: 1, session: true, op: 1, key: "b", value: big }, &mut out)).refused)
+    @expect((try applyStorage(alloc, area, StorageAsk { href: "", context: 1, session: true, op: 2, key: "k" }, &mut out)).changed)
+    @expect(!(try applyStorage(alloc, area, StorageAsk { href: "", context: 1, session: true, op: 3 }, &mut out)).changed)
+
+    dropSessionAreas("9.")
+
+    @expect(session_store == null)
+}

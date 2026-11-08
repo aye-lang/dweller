@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+import std.text
+import url
+
+fn docCookies(tp: *TabProcess, doc: u32, line: ?[]u8, out: *mut text.Builder) AllocError!void {
+    let alloc = tp.url.alloc
+    let page = url.parse(alloc, fetchDoc(tp, doc)) catch return
+    defer page.deinit(alloc)
+    let top = url.parse(alloc, topOf(tp)) catch return
+    defer top.deinit(alloc)
+
+    if line |set| { return net.setScriptCookie(&page, &top, set) }
+
+    try net.scriptCookies(&page, &top, out)
+}

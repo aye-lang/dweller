@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+fn removeAreaItem(st: *mut Store, area: []u8, ask: StorageAsk, out: *mut text.Builder) AllocError!StorageDone {
+    let i = findItem(st, area, ask.key) orelse return StorageDone {}
+
+    try out.append(st.items.items()[i * 3 + 2])
+    removeStoreItem(st, i)
+
+    if !ask.session {
+        try markDirty(st, area)
+        try noteLocalChange(area, ask.key, null)
+    }
+
+    return StorageDone { found: true, changed: true }
+}

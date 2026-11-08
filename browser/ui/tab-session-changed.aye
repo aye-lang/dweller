@@ -1,0 +1,19 @@
+import engine
+import std.mem.AllocError
+import std.text
+
+fn tabSessionChanged(from: *mut text.Builder, tab: u32, op: u32, to: u32) AllocError![]u8 {
+    if op == 7 {
+        engine.dropSessionAreas(from.bytes())
+
+        return ""
+    }
+
+    var area = text.Builder.init(from.alloc)
+    defer area.deinit()
+
+    try tabArea(&mut area, tab, to)
+    try engine.copySessionAreas(from.bytes(), area.bytes())
+
+    return ""
+}
