@@ -1,0 +1,42 @@
+import ipc
+import net
+import std.mem.AllocError
+import std.text
+
+let CHUNK: usize = 262144
+
+fn sendFetched(tp: *mut TabProcess, on: u32, id: u32, navigates: bool, document: bool, href: []u8, res: *net.Response) AllocError!void {
+    var final = href
+    var doc: u32 = 0
+
+    if res.url.len > 0 { final = res.url }
+
+    if navigates {
+        tp.committed.clear()
+        try tp.committed.append(final)
+        tp.docs.clear()
+    } else if document {
+        try tp.docs.append(final)
+        try tp.docs.appendByte('\n')
+        doc = docCount(tp)
+    }
+
+    var kept = text.Builder.init(tp.url.alloc)
+    defer kept.deinit()
+
+    try headersWithoutCookies(res.headers_raw, &mut kept)
+    try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchHead { id: id, doc: doc, status: res.status as u32, tainted: res.tainted as u32, mime: res.mime, charset: res.charset, url: res.url, headers: kept.bytes() })
+
+    var at: usize = 0
+
+    while at < res.body.len {
+        var end = at + CHUNK
+
+        if end > res.body.len { end = res.body.len }
+
+        try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchBody { id: id, chunk: res.body[at..end] })
+        at = end
+    }
+
+    try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchEnd { id: id })
+}
