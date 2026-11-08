@@ -1,0 +1,49 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn vmProfPrint(it: *Interp, p: *VmProf) AllocError!void {
+    var b = text.Builder.init(it.alloc)
+    defer b.deinit()
+    try b.append("info: DWELLER_JS_VM_PROF\ttop\t")
+    try b.appendUint(p.top_ns)
+    try b.append("\ninfo: DWELLER_JS_VM_PROF\tallocs\t")
+    try b.appendUint(it.heap.allocs_before_gc + it.heap.since_gc as u64)
+    try b.appendByte('\n')
+
+    for op in 0..256 {
+        if p.op_n[op] == 0 {
+            continue
+        }
+
+        try b.append("info: DWELLER_JS_VM_PROF\top\t")
+        try b.append(BC_INFO[op].name)
+        try b.append("\t")
+        try b.appendUint(p.op_ns[op])
+        try b.append("\t")
+        try b.appendUint(p.op_n[op])
+        try b.appendByte('\n')
+    }
+
+    for f in 0..p.fn_ns.len() {
+        if p.fn_ns.items()[f] != 0 {
+            try vmProfPrintFunc(it, &mut b, f as u32, p.fn_ns.items()[f], p.fn_n.items()[f])
+        }
+    }
+
+    for i in 0..p.slow.len() {
+        if p.slow.items()[i] == 0 {
+            continue
+        }
+
+        try b.append("info: DWELLER_JS_VM_PROF\tslow\t")
+        try b.append(it.heap.atoms.name((i / VM_SLOW_KINDS as usize) as u32))
+        try b.append("\t")
+        try b.appendUint((i % VM_SLOW_KINDS as usize) as u64)
+        try b.append("\t")
+        try b.appendUint(p.slow.items()[i])
+        try b.appendByte('\n')
+    }
+
+    std.fs.stderr().write(b.bytes()) catch |e| {}
+}

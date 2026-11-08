@@ -7,6 +7,7 @@
 #   /redirect-style  302 to /style/link.html (relative URLs resolve
 #                    against the final URL)
 #   /redirect-loop   302 to itself
+#   /hops/N          302 to /hops/N-1; /hops/0 a small HTML page ("Hops")
 #   /oauth/approve?redirect_uri=U&state=S&seen=X
 #                    302 to U?code=c0de&state=S&seen=X (the sign-in
 #                    origin sending a popup back to its opener's
@@ -194,6 +195,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(302, [("Location", f"http://localhost:{port}/paint/img/photo.png")])
         elif path == "/redirect-loop":
             self.reply(302, [("Location", "/redirect-loop")])
+        elif path.startswith("/hops/"):
+            n = int(path[len("/hops/"):])
+            if n > 0:
+                self.reply(302, [("Location", "/hops/%d" % (n - 1))])
+            else:
+                self.reply(200, [("Content-Type", "text/html")], b"<title>Hops</title><p>hops</p>")
         elif path.startswith("/oauth/approve?"):
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
             back = query.get("redirect_uri", ["/"])[0]

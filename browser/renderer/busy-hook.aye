@@ -1,0 +1,20 @@
+import engine
+import ipc
+
+var busy_renderer: ?*mut TabRenderer = null
+
+fn watchBusy(r: *mut TabRenderer) {
+    busy_renderer = r
+    engine.setHangHook(busyHook)
+}
+
+fn busyHook() bool {
+    let r = busy_renderer orelse return true
+
+    if r.busy { return true }
+
+    r.busy = true
+    send(r.alloc, r.conn, r.tab, ipc.Message.LongTask { on: 1, ms: 0 }) catch return true
+
+    return true
+}

@@ -1,0 +1,40 @@
+import ipc
+import std.mem.AllocError
+
+fn takeFetched(r: *mut TabRenderer, m: ipc.Message, nav: bool, href: []u8, f: *mut Fetched) AllocError!bool {
+    match m {
+        .FetchHead { id, doc, status, tainted, mime, charset, url, headers } => {
+            try f.mime.append(mime)
+            try f.charset.append(charset)
+            try f.url.append(url)
+            try f.headers.append(headers)
+            f.status = status as i64
+            f.tainted = tainted != 0
+
+            if nav { r.docs.clear() }
+
+            if doc > 0 {
+                try r.docs.appendUint(doc as u64)
+                try r.docs.appendByte(' ')
+                try r.docs.append(url)
+
+                if url.len == 0 { try r.docs.append(href) }
+
+                try r.docs.appendByte('\n')
+            }
+        }
+
+        .FetchBody { id, chunk } => try f.body.append(chunk)
+        .FetchEnd { id } => {
+            f.ended = true
+        }
+
+        .FetchFail { id, code } => {
+            f.failed = code
+        }
+
+        _ => return false
+    }
+
+    return true
+}

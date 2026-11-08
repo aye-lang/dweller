@@ -1,27 +1,26 @@
 import ipc
 
-fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
-    var used: usize = 0
+fn answerAll(r: *mut TabRenderer) !bool {
+    while try ipc.nextMessage(r.inbox.bytes()) |held| {
+        r.current.clear()
+        try r.current.append(r.inbox.bytes()[..held.used])
+        ipc.consume(&mut r.inbox, held.used)
 
-    while try ipc.nextMessage(bytes[used..]) |got| {
-        used += got.used
+        let got = (try ipc.nextMessage(r.current.bytes())).?
 
         match got.message {
             .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
             .PopupChoice { index } => try choosePopup(r, index)
             .Resize { width, height, scale, buffer } => {
-                if !takeBuffers(r, width, height, scale, buffer) { return null }
+                if !takeBuffers(r, width, height, scale, buffer) { return false }
             }
 
             .FrameAck { buffer } => r.ack(buffer)
-            .Focus { on } => {
-                r.focused = on != 0
-                r.due = true
-                r.wake()
-            }
+            .Focus { on } => try focusPage(r, on != 0)
+            .Agent { id, mcp, line } => try answerAgent(r, got.frame, id, mcp != 0, line)
 
             .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
-                if kind > 3 { return null }
+                if kind > 3 { return false }
 
                 try mouseInput(r, kind, button, MouseAt { x: x, y: y, mx: mx, my: my, buttons: buttons, mods: mods, clicks: clicks })
                 r.took(seq)
@@ -42,13 +41,13 @@ fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
                 r.took(seq)
             }
 
-            _ => return null
+            _ => return false
         }
     }
 
     try paintFrame(r)
-    try ackInput(r)
     try reportPage(r)
+    try ackInput(r)
 
-    return used
+    return true
 }

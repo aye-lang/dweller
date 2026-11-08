@@ -1,0 +1,10 @@
+import engine
+import ipc
+
+fn endBusy(r: *mut TabRenderer) !void {
+    if !r.busy { return }
+
+    r.busy = false
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.LongTask { on: 0, ms: engine.takeLongTask() as u32 })
+}

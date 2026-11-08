@@ -1,0 +1,12 @@
+import std.mem.Allocator
+import std.text
+import url
+
+fn agentCommitAllowed(alloc: Allocator, committed: []u8, href: []u8) bool {
+    let to = url.parse(alloc, href) catch return false
+    defer to.deinit(alloc)
+
+    if isHttp(to.scheme) { return true }
+
+    return text.eql(to.scheme, "file") && (committed.len == 0 || text.startsWith(committed, "file:"))
+}

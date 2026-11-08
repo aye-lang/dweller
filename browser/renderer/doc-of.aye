@@ -1,0 +1,22 @@
+import net
+import std
+import std.text
+import url
+
+fn docOf(r: *TabRenderer, claimed: []u8) u32 {
+    let at = url.parse(r.alloc, claimed) catch return 0
+    defer at.deinit(r.alloc)
+    var lines = text.split(r.docs.bytes(), "\n")
+
+    while lines.next() |line| {
+        let space = std.mem.indexOf(line, ' ') orelse continue
+        let doc = url.parse(r.alloc, line[space + 1..]) catch continue
+        let same = net.sameOrigin(&at, &doc)
+
+        doc.deinit(r.alloc)
+
+        if same { return (text.parseInt(line[..space]) catch 0) as u32 }
+    }
+
+    return 0
+}

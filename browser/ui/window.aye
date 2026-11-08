@@ -350,6 +350,10 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                     p.doc.textContent(p.doc.root, &mut b) catch |e| {
                         return 1
                     }
+                } else {
+                    rendererText(&mut ui, &mut b) catch |e| {
+                        return 1
+                    }
                 }
                 @print(b.bytes())
             }
@@ -870,6 +874,10 @@ pub struct Ui {
     // once they are in too, and its images fill in as they arrive; the
     // loop goes on meanwhile (`advanceLoad`, `imagesIn`).
     fn go(self: *mut Self, target: *url.Url, initiator: net.Initiator) AllocError!void {
+        if self.tab_processes {
+            try self.tab.history.push(target.href, 0, null, false)
+            return goInRenderer(self)
+        }
         let t_go = perf.start()
         let loaded = try self.tab.navigateEarly(target, self.win_w as f64, self.layoutHeight(), initiator)
         perf.end("ui_navigate", t_go, "")
@@ -1010,6 +1018,10 @@ pub struct Ui {
     // Moves `step` entries in the history (0: reload): in the document
     // shown, its scripts got popstate; else its page loads in steps.
     fn goBy(self: *mut Self, step: i64) AllocError!void {
+        if self.tab_processes {
+            self.tab.history.current = self.tab.history.indexAt(step) orelse return
+            return goInRenderer(self)
+        }
         let t_go = perf.start()
         let moved = try engine.traverseEarly(self.tab, step, self.win_w as f64, self.layoutHeight())
         perf.end("ui_navigate", t_go, "")
@@ -1889,7 +1901,7 @@ pub struct Ui {
         let began = perf.start()
         blitPage(self)
         try self.canvas.pushClip(area)
-        if pageview.hasFrame(self.view()) {
+        if pageview.hasFrame(self.view()) || self.dropdown != null {
             try drawPageState(self, v)
             try drawAgentFlash(self, v)
         }

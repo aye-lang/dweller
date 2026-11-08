@@ -1,0 +1,28 @@
+import agent
+import std.mem.AllocError
+import std.text
+
+let WAIT_LINE = "{\"id\":0,\"cmd\":\"wait\",\"ms\":5000}"
+let TEXT_LINE = "{\"id\":0,\"cmd\":\"eval\",\"expression\":\"document.documentElement.textContent\"}"
+
+fn rendererText(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
+    let slot = ui.slots[ui.active] orelse return
+    let tp = slot.process orelse return
+
+    if !tp.hello || tp.gone.len > 0 { return }
+
+    var reply = text.Builder.init(ui.alloc)
+    defer reply.deinit()
+
+    if (try askRenderer(tp, tp.next_agent + 1, false, WAIT_LINE, &mut reply)).len > 0 { return }
+
+    reply.clear()
+
+    if (try askRenderer(tp, tp.next_agent + 2, false, TEXT_LINE, &mut reply)).len > 0 { return }
+
+    var failure = agent.ParseFailure { pos: 0, msg: "" }
+    var doc = agent.Json.parse(ui.alloc, reply.bytes(), &mut failure) catch return
+    defer doc.deinit()
+
+    try out.append(doc.getStr(doc.root(), "result") orelse "")
+}
