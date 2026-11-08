@@ -1,0 +1,188 @@
+name: fuzz
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: seconds per target
+        default: "600"
+      plant:
+        description: "1 plants a crash in the html target (.github/scripts/fuzz-plant.sh) to test the issue filing"
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: sh scripts/setup-ubuntu.sh
+
+      - name: Cache ANGLE
+        uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+
+      - name: Fetch ANGLE
+        run: |
+          if grep -q '^[0-9a-f]\{64\}  ' browser/gpu/angle.lock; then
+            browser/gpu/fetch_angle.sh
+          else
+            echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
+          fi
+
+      - name: Cache wasmtime
+        uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
+
+      - name: Fetch wasmtime
+        run: |
+          pc="$(browser/wasm/fetch_wasmtime.sh)"
+          echo "PKG_CONFIG_PATH=$pc" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the pinned aye
+        id: aye-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/aye
+          key: aye-${{ runner.os }}-${{ hashFiles('AYE_REV') }}
+
+      - name: Install the pinned aye
+        if: steps.aye-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
+
+      - name: Build the browser
+        run: browser/build.sh target/dweller-fuzz
+
+      - name: List the fuzz targets
+        id: list
+        run: |
+          targets="$(target/dweller-fuzz fuzz --list | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')"
+          echo "$targets"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: targets
+    name: fuzz (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: write
+    env:
+      TARGET: ${{ matrix.target }}
+      SECONDS_PER_TARGET: ${{ inputs.seconds || '600' }}
+      PLANT: ${{ inputs.plant || '0' }}
+      CORPUS: target/fuzz-corpus/${{ matrix.target }}
+      REPORT: target/fuzz/${{ matrix.target }}/report.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: sh scripts/setup-ubuntu.sh
+
+      - name: Cache ANGLE
+        uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+
+      - name: Fetch ANGLE
+        run: |
+          if grep -q '^[0-9a-f]\{64\}  ' browser/gpu/angle.lock; then
+            browser/gpu/fetch_angle.sh
+          else
+            echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
+          fi
+
+      - name: Cache wasmtime
+        uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
+
+      - name: Fetch wasmtime
+        run: |
+          pc="$(browser/wasm/fetch_wasmtime.sh)"
+          echo "PKG_CONFIG_PATH=$pc" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the pinned aye
+        id: aye-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/aye
+          key: aye-${{ runner.os }}-${{ hashFiles('AYE_REV') }}
+
+      - name: Install the pinned aye
+        if: steps.aye-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
+
+      - name: Plant a crash
+        if: env.PLANT == '1'
+        run: sh .github/scripts/fuzz-plant.sh
+
+      - name: Build the browser
+        run: browser/build.sh target/dweller-fuzz
+
+      - name: Restore the corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CORPUS }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Merge the seed corpus
+        id: merge
+        run: |
+          mkdir -p "$CORPUS"
+          cp "browser/tests/fuzz/$TARGET"/* "$CORPUS"/
+          echo "$(ls "$CORPUS" | wc -l) corpus files"
+
+      - name: Fuzz
+        run: |
+          minutes="$(python3 -c "print($SECONDS_PER_TARGET / 60)")"
+          python3 browser/tools/fuzz.py run "$TARGET" --minutes "$minutes" --binary target/dweller-fuzz --corpus "$CORPUS" --report "$REPORT"
+
+      - name: Save the corpus
+        if: always() && steps.merge.outcome == 'success' && env.PLANT != '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CORPUS }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload the crashing inputs
+        if: failure() && hashFiles(env.REPORT) != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: target/fuzz/${{ matrix.target }}/crashes/
+
+      - name: File fuzz issues
+        if: failure() && hashFiles(env.REPORT) != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/fuzz-file-issues.py "$TARGET" "$REPORT" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

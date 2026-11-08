@@ -1,0 +1,25 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn rendererEnv(tmp: Allocator) AllocError![]?[*]u8 {
+    let all = try processEnv(tmp)
+    var kept = List(?[*]u8).init(tmp)
+    var k: usize = 0
+
+    while all[k] |entry| {
+        let line = entry[0..strlen(entry)]
+        let name = line[..std.mem.indexOf(line, '=') orelse line.len]
+
+        if rendererKeeps(name) {
+            try kept.append(entry)
+        }
+
+        k += 1
+    }
+
+    try kept.append(null)
+
+    return kept.items()
+}

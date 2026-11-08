@@ -1183,7 +1183,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | fuzz --list | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -10961,6 +10961,92 @@ fn window_renderer_storage() {
         assert_eq!(&r[2..], ["gone", why], "{evil}: {state}");
         assert_eq!(text(&out.stderr), format!("error: bad message: {why} {}\n", r[1]), "{evil}");
     }
+}
+
+/// Q2.4c: with `DWELLER_PROCESS=tab` and a profile, no renderer (the
+/// window's, and its agent's Space's, which shows a page that uses
+/// `document.cookie` and `localStorage`, served over http) holds a file
+/// of the profile open,
+/// or a regular file but the binary and system libraries (macOS:
+/// `lsof`; Linux: `/proc/PID/fd`).
+#[test]
+fn window_renderer_no_profile_files() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = profile("q24c-profile");
+    let dir_text = dir.canonicalize().unwrap().to_str().unwrap().to_string();
+    let sock = format!("target/sockets/q24c-{}.sock", std::process::id());
+    let envs = [("DWELLER_PROCESS", "tab"), ("DWELLER_PROFILE", dir.to_str().unwrap())];
+    let window = spaces_window_env(&sock, &[], &envs);
+    let mut conn = AgentConn::open(&sock);
+    let page = format!("{}/storage/script-cookies.html", srv.base);
+    let (got, _) = conn.ask(&format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":{}}}", serde_like(&page)));
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let used = "(localStorage.setItem('q24c', 'kept'), localStorage.getItem('q24c') + ' ' + document.cookie)";
+    let (got, _) = conn.ask(&format!("{{\"id\":2,\"cmd\":\"eval\",\"expression\":{}}}", serde_like(used)));
+    assert!(got.contains("kept js=1"), "{got}");
+    let children = |pid: &str| -> Vec<String> {
+        let out = Command::new("pgrep").args(["-P", pid]).output().unwrap();
+        text(&out.stdout).lines().map(str::to_string).collect()
+    };
+    let spaces = children(&window.id().to_string());
+    let listed: Vec<(String, Vec<(String, bool, String)>)> = spaces
+        .iter()
+        .chain(spaces.iter().flat_map(|p| children(p)).collect::<Vec<_>>().iter())
+        .filter(|pid| {
+            let args = Command::new("ps").args(["-o", "args=", "-p", pid]).output().unwrap();
+            text(&args.stdout).contains(" --renderer 3 ")
+        })
+        .map(|pid| (pid.clone(), open_files(pid)))
+        .collect();
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    assert!(out.status.success(), "the window: {}\n{}", out.status, text(&out.stderr));
+    let exe = dweller().canonicalize().unwrap();
+    let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
+    assert!(listed.len() >= 2, "want the window's renderer and its Space's: {listed:?}");
+    for (pid, files) in &listed {
+        assert!(!files.is_empty(), "no open files listed for {pid}");
+        for (fd, regular, name) in files {
+            assert!(!name.starts_with(&dir_text), "renderer {pid} holds {name} (fd {fd}) of the profile");
+            let allowed = !regular || fd == "txt" || Path::new(name) == exe || system.iter().any(|s| name.starts_with(s));
+            assert!(allowed, "renderer {pid} holds the regular file {name} (fd {fd}): {files:?}");
+        }
+    }
+}
+
+/// The open files of process `pid`: (fd, is a regular file, path).
+fn open_files(pid: &str) -> Vec<(String, bool, String)> {
+    if cfg!(target_os = "macos") {
+        let out = Command::new("lsof").args(["-n", "-P", "-F", "ftn", "-p", pid]).output().unwrap();
+        let mut files: Vec<(String, bool, String)> = Vec::new();
+        for line in text(&out.stdout).lines() {
+            let (tag, rest) = line.split_at(1.min(line.len()));
+            match tag {
+                "f" => files.push((rest.to_string(), false, String::new())),
+                "t" => files.last_mut().unwrap().1 = rest == "REG",
+                "n" => files.last_mut().unwrap().2 = rest.to_string(),
+                _ => {}
+            }
+        }
+        return files;
+    }
+    let dir = PathBuf::from(format!("/proc/{pid}/fd"));
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| {
+            let path = e.unwrap().path();
+            let name = std::fs::read_link(&path).unwrap_or_default().to_string_lossy().to_string();
+            let regular = std::fs::metadata(&path).map(|m| m.is_file()).unwrap_or(false);
+            (path.file_name().unwrap().to_string_lossy().to_string(), regular, name)
+        })
+        .collect()
 }
 
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
