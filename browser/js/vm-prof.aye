@@ -1,0 +1,46 @@
+import std.list.List
+
+pub let VM_PROF_OUTSIDE: u32 = 256
+
+struct VmProf {
+    op_ns: []mut u64
+    op_n: []mut u64
+    fn_ns: List(u64)
+    fn_n: List(u64)
+    slow: List(u64)
+    top_ns: u64 = 0
+    mark: u64 = 0
+    op: u32 = VM_PROF_OUTSIDE
+    func: u32 = NONE
+
+    fn charge(self: *mut Self, now: u64) {
+        vmProfCharge(self, now - self.mark)
+        self.mark = now
+    }
+
+    fn tick(self: *mut Self, op: u8, func: u32) {
+        self.charge(aye_std_monotonic_ns())
+        self.op = op as u32
+        self.func = func
+        self.op_n[op as usize] += 1
+        vmProfCount(self, func)
+    }
+
+    fn enter(self: *mut Self) u64 {
+        self.charge(aye_std_monotonic_ns())
+
+        return ((self.op as u64) << 32) | self.func as u64
+    }
+
+    fn leave(self: *mut Self, outer: u64) {
+        self.charge(aye_std_monotonic_ns())
+        self.op = (outer >> 32) as u32
+        self.func = (outer & 0xFFFFFFFF) as u32
+    }
+
+    fn deinit(self: *mut Self) {
+        self.fn_ns.deinit()
+        self.fn_n.deinit()
+        self.slow.deinit()
+    }
+}
