@@ -1,0 +1,22 @@
+import std.math
+import std.text
+
+test "a channel too big for millionths serializes as a number, not an overflow" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    try writeChannel(1e36, &mut out)
+    try out.appendByte(' ')
+    try writeChannel(-math.inf(), &mut out)
+    try out.appendByte(' ')
+    try writeChannel(0.5, &mut out)
+    @expectEqual("1e+36 calc(-infinity) 0.5", out.bytes())
+}
+
+test "the specified value of oklch() with a huge chroma serializes" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    @expect(try specifiedValue(@testAllocator(), "color", "oklch(1 1e36 2", &mut out))
+    @expectEqual("oklch(1 1e+36 2)", out.bytes())
+}
