@@ -1,0 +1,13 @@
+import net
+import std.mem.AllocError
+
+// https://html.spec.whatwg.org/multipage/browsing-the-web.html#apply-the-history-step
+fn resetWindowName(c: *mut BrowsingContext, to: *mut Page) AllocError!void {
+    let old = c.page orelse return
+
+    if c.opener != 0 || c.name.len == 0 || net.sameOrigin(&old.url, &to.url) {
+        return
+    }
+
+    try setContextName(c.id, "")
+}

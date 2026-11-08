@@ -56,6 +56,7 @@ struct Session {
     hsts: Hsts
     certs: CertExceptions
     upgrading: List([]mut u8)
+    public_pages: List([]mut u8)
 }
 
 // A frame's page (its id), the URL of its document and of its
@@ -96,6 +97,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         hsts: Hsts.init(alloc),
         certs: CertExceptions.init(alloc),
         upgrading: List([]mut u8).init(alloc),
+        public_pages: List([]mut u8).init(alloc),
     }) catch |e| {
         release(alloc, file)
         return e
@@ -226,6 +228,10 @@ pub fn stop() {
         release(s.alloc, p)
     }
     s.upgrading.deinit()
+    for p in s.public_pages.items() {
+        release(s.alloc, p)
+    }
+    s.public_pages.deinit()
     s.cache.deinit()
     s.preflights.deinit()
     release(s.alloc, s.cookie_file)

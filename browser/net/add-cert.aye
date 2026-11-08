@@ -1,7 +1,7 @@
 import std.mem.AllocError
 
-fn addCert(certs: *mut CertExceptions, host: []u8, kind: CertKind) AllocError!void {
-    if certAllowed(certs, host, kind) {
+fn addCert(certs: *mut CertExceptions, host: []u8, kind: CertKind, pin: []u8) AllocError!void {
+    if certAllowed(certs, host, kind, pin) {
         return
     }
 
@@ -9,5 +9,9 @@ fn addCert(certs: *mut CertExceptions, host: []u8, kind: CertKind) AllocError!vo
 
     errdefer certs.alloc.free(owned_host)
 
-    try certs.list.append(CertException { host: owned_host, kind: kind })
+    let owned_pin = try dup(certs.alloc, pin)
+
+    errdefer certs.alloc.free(owned_pin)
+
+    try certs.list.append(CertException { host: owned_host, kind: kind, pin: owned_pin })
 }

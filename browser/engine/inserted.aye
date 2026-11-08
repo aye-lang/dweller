@@ -175,7 +175,7 @@ fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
     let outer = s.current
     defer s.current = outer
     if module {
-        try runModuleElement(s, el)
+        _ = try runModuleElement(s, el)
     } else {
         var b = text.Builder.init(s.alloc)
         defer b.deinit()
@@ -215,7 +215,7 @@ fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
     if p.doc.attr(el, "src") |src| {
         if p.resolve(s.alloc, src) |target| {
             defer target.deinit(s.alloc)
-            if net.liveRequest(&target) && p.doc.attr(el, "crossorigin") == null {
+            if net.liveRequest(&target) && p.doc.attr(el, "crossorigin") == null && (!isModuleScript(p, el) || sameOriginUrl(&originPage(p).url, &target)) {
                 waits = net.startLoad(target.withoutFragment(), net.Kind.Script, p.url.href)
                 if waits != 0 && net.loadState(waits) != net.LoadState.Running {
                     net.releaseLoad(waits)
@@ -266,8 +266,7 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
     s.writes_ignored += 1
     defer s.writes_ignored -= 1
     if isModuleScript(p, el) {
-        try runModuleElement(s, el)
-        return js.boolVal(true)
+        return js.boolVal(try runModuleElement(s, el))
     }
     if js.isStr(it.arg(a, 1)) {
         return runBlobScript(it, s, el, a)

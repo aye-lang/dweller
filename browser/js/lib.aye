@@ -459,6 +459,7 @@ pub let LIB =
     \\// InnerModuleEvaluation over strongly connected components, and async
     \\// evaluation for top-level await).
     \\const moduleMap = new Map();
+    \\const fetchFailures = new WeakSet();
     \\const resolveModule = G.__engine.resolveModule;
     \\const fetchModule = G.__engine.fetchModule;
     \\const parseModule = G.__engine.parseModule;
@@ -511,15 +512,17 @@ pub let LIB =
     \\}
     \\function moduleKey(url, type) { return type === '' ? url : url + ' ' + type; }
     \\// The record of the module at url; a failed fetch or parse is cached too.
-    \\function getModule(url, type, referrer) {
+    \\function getModule(url, type, referrer, include) {
     \\  const key = moduleKey(url, type);
     \\  let m = moduleMap.get(key);
     \\  if (m === undefined) {
     \\    try {
     \\      if (type !== '' && type !== 'json') throw new TypeError('Unsupported module type "' + type + '"');
-    \\      m = setupModule(fetchModule(url, referrer, type));
+    \\      m = setupModule(fetchModule(url, referrer, type, include));
+    \\      m.include = include;
     \\    } catch (e) {
     \\      m = { failed: true, error: e };
+    \\      if (e instanceof TypeError) fetchFailures.add(e);
     \\    }
     \\    moduleMap.set(key, m);
     \\  }
@@ -609,7 +612,7 @@ pub let LIB =
     \\    for (const m of level) {
     \\      if (m.deps !== null) continue;
     \\      const deps = [];
-    \\      for (let i = 0; i < m.requests.length; i++) deps.push(getModule(m.urls[i], m.requests[i][1], m.url));
+    \\      for (let i = 0; i < m.requests.length; i++) deps.push(getModule(m.urls[i], m.requests[i][1], m.url, m.include));
     \\      m.deps = deps;
     \\      given.push(m);
     \\      for (const d of deps) {
@@ -904,7 +907,7 @@ pub let LIB =
     \\      for (let i = 0; i < m.requests.length; i++) {
     \\        try {
     \\          const url = resolveSpecifier(m.url, m.requests[i][0]);
-    \\          wanted.push([url, m.requests[i][1], m.url]);
+    \\          wanted.push([url, m.requests[i][1], m.url, m.include]);
     \\          if (!moduleMap.has(moduleKey(url, m.requests[i][1])) && !urls.includes(url)) urls.push(url);
     \\        } catch (e) {}
     \\      }
@@ -912,8 +915,8 @@ pub let LIB =
     \\    if (wanted.length === 0) { done(); return; }
     \\    loadInBackground(urls, root.url, () => {
     \\      level = [];
-    \\      for (const [url, type, referrer] of wanted) {
-    \\        try { level.push(getModule(url, type, referrer)); } catch (e) {}
+    \\      for (const [url, type, referrer, include] of wanted) {
+    \\        try { level.push(getModule(url, type, referrer, include)); } catch (e) {}
     \\      }
     \\      step();
     \\    });
@@ -956,7 +959,7 @@ pub let LIB =
     \\        loadInBackground(moduleMap.has(moduleKey(url, type)) ? [] : [url], referrer, () => {
     \\          let m;
     \\          try {
-    \\            m = getModule(url, type, referrer);
+    \\            m = getModule(url, type, referrer, (moduleMap.get(referrer) || {}).include === true);
     \\          } catch (e) { reject(e); return; }
     \\          graphInBackground(m, () => {
     \\            let p;
@@ -972,8 +975,16 @@ pub let LIB =
     \\    });
     \\  },
     \\  // A page's module script: the module at href, or inline source.
-    \\  moduleScript(href, source, base) {
-    \\    const m = href !== null ? getModule(href, '', base) : setupModule(parseModule(source, base));
+    \\  moduleScript(href, source, base, include) {
+    \\    let m;
+    \\    try {
+    \\      m = href !== null ? getModule(href, '', base, include) : setupModule(parseModule(source, base));
+    \\      if (href === null) m.include = include;
+    \\      loadGraph(m);
+    \\    } catch (e) {
+    \\      if (fetchFailures.has(e)) return null;
+    \\      throw e;
+    \\    }
     \\    const p = runGraph(m);
     \\    p.then(undefined, e => {
     \\      const report = G.reportError;
