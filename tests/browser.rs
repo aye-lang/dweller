@@ -8145,6 +8145,75 @@ fn window_stuck_script() {
     assert!(got.contains("\nstart hang after\n"), "{got}");
 }
 
+/// Q1.7b: a headless window never waits for a click on the stuck bar. A
+/// page whose first task runs 6 s ends with `--until-idle`: the bar
+/// chooses Wait and logs one line. The `stuck:stop` word chooses Stop.
+#[test]
+fn window_stuck_headless() {
+    use std::time::Duration;
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let window = |args: &[&str]| {
+        dweller_command()
+            .current_dir(root())
+            .args(args)
+            .spawn_drained()
+            .wait_with_output_within(Duration::from_secs(60))
+            .unwrap()
+    };
+    let out = window(&[
+        "browser/tests/ui/stuck_load.html",
+        "--font",
+        "fixed",
+        "--frames",
+        "200",
+        "--until-idle",
+        "--state",
+        "--text",
+    ]);
+    let got = text(&out.stdout);
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(
+        err.starts_with("stuck: page busy ")
+            && err.ends_with(" ms, waiting\n")
+            && err.lines().count() == 1,
+        "{err}"
+    );
+    assert!(
+        got.contains("\nunresponsive 1\n") && got.contains("start done"),
+        "{got}"
+    );
+    let out = window(&[
+        "browser/tests/ui/stuck.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "2",
+        "--state",
+        "--text",
+        "--events",
+        "click:50,65 stuck:stop frame click:50,115",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(
+        got.contains("\nunresponsive 1\n") && got.contains("\nstart hang after\n"),
+        "{got}"
+    );
+}
+
 /// P4.33: the window paints a page once its document and its sheet are
 /// in (0.3 s), before its script and its image arrive (1.5 s), and the
 /// click and the wheel during the load are handled before the script
