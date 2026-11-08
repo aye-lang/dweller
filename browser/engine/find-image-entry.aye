@@ -1,0 +1,17 @@
+import net
+
+fn findImageEntry(cache: *ImageCache, href: []u8, mode: net.Mode, credentials: ?net.Credentials) ?usize {
+    var at = cache.by_href.get(href)
+
+    while at |i| {
+        let e = &cache.entries.items()[i]
+
+        if e.mode == mode && (credentials == null || e.credentials == credentials.?) {
+            return i
+        }
+
+        at = e.same_href
+    }
+
+    return null
+}

@@ -1,0 +1,26 @@
+import std.mem.AllocError
+
+fn addImageEntry(cache: *mut ImageCache, entry: CachedImage) AllocError!void {
+    let at = cache.entries.len()
+    let first = cache.by_href.get(entry.href)
+
+    if first == null {
+        try cache.by_href.put(entry.href, at)
+    }
+
+    cache.entries.append(entry) catch |e| {
+        if first == null {
+            _ = cache.by_href.remove(entry.href)
+        }
+
+        return e
+    }
+
+    var tail = first orelse return
+
+    while cache.entries.items()[tail].same_href |next| {
+        tail = next
+    }
+
+    cache.entries.items()[tail].same_href = at
+}

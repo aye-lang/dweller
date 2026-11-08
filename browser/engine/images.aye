@@ -25,6 +25,8 @@ import perf
 import std
 import std.heap.Arena
 import std.list.List
+import std.map.HashMap
+import std.map.StrMap
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -43,11 +45,13 @@ struct CachedImage {
     used: u64 = 0
     mode: net.Mode = net.Mode.NoCors
     credentials: net.Credentials = net.Credentials.Include
+    same_href: ?usize = null
 }
 
 pub struct ImageCache {
     alloc: Allocator
     entries: List(CachedImage)
+    by_href: StrMap(usize)
     nodes: layout.Images
     canvases: List(CanvasBitmap)
     canvas_fonts: ?*mut font.System
@@ -74,9 +78,12 @@ pub struct ImageCache {
     uses: u64 = 0
     landed: bool = false
     decode_later: bool = false
+    shown: HashMap(NodeId, []mut u8)
+    fingerprint: text.Builder
+    element_loads: u64 = 0
 
     pub fn init(alloc: Allocator) ImageCache {
-        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc) }
+        return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), by_href: StrMap(usize).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc), shown: HashMap(NodeId, []mut u8).init(alloc), fingerprint: text.Builder.init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -100,6 +107,13 @@ pub struct ImageCache {
             }
         }
         self.entries.deinit()
+        self.by_href.deinit()
+        var shown = self.shown.iterator()
+        while shown.next() |s| {
+            self.alloc.free(s.value.*)
+        }
+        self.shown.deinit()
+        self.fingerprint.deinit()
         for c in self.canvases.items() {
             freeWebGL(self.alloc, c)
             self.alloc.free(c.seen)
@@ -146,12 +160,7 @@ pub struct ImageCache {
 
     // Was `href` fetched already (decoded or not)?
     fn known(self: *Self, href: []u8) bool {
-        for e in self.entries.items() {
-            if text.eql(e.href, href) && e.mode == net.Mode.NoCors {
-                return true
-            }
-        }
-        return false
+        return findImageEntry(self, href, net.Mode.NoCors, null) != null
     }
 
     // Keeps `href` as a URL that could not be fetched, unless it is known.
@@ -161,7 +170,7 @@ pub struct ImageCache {
         }
         let owned = try self.alloc.alloc(0 as u8, href.len)
         std.mem.copy(owned, href)
-        self.entries.append(CachedImage { href: owned, bmp: null, pic: null, tainted: true }) catch |e| {
+        addImageEntry(self, CachedImage { href: owned, bmp: null, pic: null, tainted: true }) catch |e| {
             self.alloc.free(owned)
             return e
         }
@@ -236,24 +245,18 @@ pub struct ImageCache {
     /// The picture of `href` when it is a fetched SVG image.
     fn pictureOf(self: *Self, href: []u8, crossorigin: ?[]u8) ?*mut svg.Picture {
         let wanted = self.imageRequest(crossorigin)
-        for e in self.entries.items() {
-            if text.eql(e.href, href) && e.mode == wanted.mode && e.credentials == wanted.credentials {
-                return e.pic
-            }
-        }
-        return null
+        let i = findImageEntry(self, href, wanted.mode, wanted.credentials) orelse return null
+        return self.entries.items()[i].pic
     }
 
     /// The bitmap of `href`, fetched and decoded the first time.
     fn bitmapOf(self: *mut Self, href: []u8, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!?*mut image.Bitmap {
         var wanted = self.imageRequest(crossorigin)
         wanted.referrer_policy = policy
-        for i in 0..self.entries.len() {
+        if findImageEntry(self, href, wanted.mode, wanted.credentials) |i| {
             let e = &mut self.entries.items()[i]
-            if text.eql(e.href, href) && e.mode == wanted.mode && e.credentials == wanted.credentials {
-                try touchImage(self, e)
-                return e.bmp
-            }
+            try touchImage(self, e)
+            return e.bmp
         }
         let owned = try self.alloc.alloc(0 as u8, href.len)
         std.mem.copy(owned, href)
@@ -274,7 +277,7 @@ pub struct ImageCache {
                 return e
             }
         }
-        self.entries.append(CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted, encoded: kept, mode: wanted.mode, credentials: wanted.credentials }) catch |e| {
+        addImageEntry(self, CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted, encoded: kept, mode: wanted.mode, credentials: wanted.credentials }) catch |e| {
             self.alloc.free(owned)
             if kept.len > 0 {
                 self.alloc.free(kept)
@@ -469,6 +472,8 @@ enum ImageFetch {
 fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Url, media: css.Media, fetch: ImageFetch, waited: u32) AllocError!?LoadedElementImage {
     // Even an empty or broken replacement must drop the old rendered
     // bitmap; the same one again is no change.
+    cache.element_loads += 1
+    forgetShown(cache, h)
     let mark = cache.nodes.drop(h)
     defer cache.nodes.settle(h, mark) catch |e| {
         cache.nodes.any_changed = true
@@ -501,6 +506,7 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
         } else {
             try cache.nodes.putScaled(h, b, choice.density)
         }
+        try rememberShown(cache, base, doc, h, choice)
     }
     return LoadedElementImage { target: target, bmp: bmp, density: choice.density }
 }
@@ -594,7 +600,7 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
     var cur: ?NodeId = doc.root
     while cur |h| {
         cur = dom.shadowIncludingFollowing(doc, h, doc.root)
-        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) {
+        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) || (try shownUnchanged(cache, &base, doc, h, media)) {
             continue
         }
         if try loadElementImage(cache, doc, h, &base, media, ImageFetch.Now, 0) |loaded| {
@@ -626,7 +632,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
     var cur: ?NodeId = doc.root
     while cur |h| {
         cur = dom.shadowIncludingFollowing(doc, h, doc.root)
-        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) {
+        if !isImageElement(doc, h) || lazyDeferred(cache, doc, h) || (try shownUnchanged(cache, base, doc, h, media)) {
             continue
         }
         let choice = (try chooseImage(cache.alloc, doc, h, media)) orelse continue
