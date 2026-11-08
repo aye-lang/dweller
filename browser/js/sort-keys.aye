@@ -1,0 +1,41 @@
+// v8: third_party/v8/builtins/array-sort.tq (SortCompareDefault)
+fn sortKeys(it: *mut Interp, f: Value, work: u32) JsError!u32 {
+    let n = alen(it, work)
+    var convert = false
+
+    if !isUndef(f) || n < 2 {
+        return work
+    }
+
+    for i in 0..n {
+        let e = it.heap.obj(work).elems[i]
+
+        if isObject(e) {
+            return work
+        }
+
+        convert = convert || !(isStr(e) || isUndef(e))
+    }
+
+    if !convert {
+        return work
+    }
+
+    let keys = try it.newArray(n)
+
+    try it.push(objVal(keys))
+
+    for i in 0..n {
+        let e = it.heap.obj(work).elems[i]
+
+        if !isUndef(e) {
+            let s = try it.toStringValue(e)
+
+            it.heap.obj(keys).elems[i] = s
+        }
+    }
+
+    it.pop()
+
+    return keys
+}

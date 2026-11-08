@@ -792,6 +792,16 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
     }
     let tmp = try it.newArray(alen(it, work))
     try it.push(objVal(tmp))
+    let keys = try sortKeys(it, f, work)
+
+    try it.push(objVal(keys))
+    var tmpk = tmp
+
+    if keys != work {
+        tmpk = try it.newArray(alen(it, work))
+    }
+
+    try it.push(objVal(tmpk))
     let m = alen(it, work)
     var width: u32 = 1
     while width < m {
@@ -809,24 +819,46 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
             var j = mid
             var k = lo
             while i < mid && j < hi {
-                let x = it.heap.obj(work).elems[i]
-                let y = it.heap.obj(work).elems[j]
+                let x = it.heap.obj(keys).elems[i]
+                let y = it.heap.obj(keys).elems[j]
+
                 if try sortLess(it, f, y, x) {
-                    it.heap.obj(tmp).elems[k] = y
+                    it.heap.obj(tmpk).elems[k] = y
+
+                    if keys != work {
+                        it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[j]
+                    }
+
                     j += 1
                 } else {
-                    it.heap.obj(tmp).elems[k] = x
+                    it.heap.obj(tmpk).elems[k] = x
+
+                    if keys != work {
+                        it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[i]
+                    }
+
                     i += 1
                 }
+
                 k += 1
             }
             while i < mid {
                 it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[i]
+
+                if keys != work {
+                    it.heap.obj(tmpk).elems[k] = it.heap.obj(keys).elems[i]
+                }
+
                 i += 1
                 k += 1
             }
             while j < hi {
                 it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[j]
+
+                if keys != work {
+                    it.heap.obj(tmpk).elems[k] = it.heap.obj(keys).elems[j]
+                }
+
                 j += 1
                 k += 1
             }
@@ -835,6 +867,13 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
         for i in 0..m {
             it.heap.obj(work).elems[i] = it.heap.obj(tmp).elems[i]
         }
+
+        if keys != work {
+            for i in 0..m {
+                it.heap.obj(keys).elems[i] = it.heap.obj(tmpk).elems[i]
+            }
+        }
+
         width *= 2
     }
     try it.heap.setLength(o, m + holes, Value.Empty)
@@ -844,6 +883,8 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
     for i in m..m + holes {
         it.heap.obj(o).elems[i] = Value.Empty
     }
+    it.pop()
+    it.pop()
     it.pop()
     it.pop()
     return a.this
