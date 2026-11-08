@@ -42,3 +42,18 @@ test "a JPEG past the decode cap decodes at a scale that fits and keeps its natu
     @expect(size[0] == 6324 && size[1] == 6324)
     @expect(bmp.pixels[0] == 128 && bmp.pixels[3] == 255)
 }
+
+test "an image whose bitmap fits but whose working buffers pass the decode cap is refused" {
+    let a = @testAllocator()
+    let deep = try readFixture(a, "cap_deep.png")
+
+    defer a.free(deep)
+
+    let lossless = try readFixture(a, "cap_lossless.webp")
+
+    defer a.free(lossless)
+
+    @expect(headerSize(deep) != null && headerSize(lossless) != null)
+    @expect(isRefused(a, deep))
+    @expect(isRefused(a, lossless))
+}

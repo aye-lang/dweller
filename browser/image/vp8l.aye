@@ -133,10 +133,10 @@ pub fn vp8lDecode(alloc: Allocator, data: []u8) ImageError!Bitmap {
     if try dec.br.read(3) != 0 {
         return ImageError.Invalid
     }
-    var bmp = try newBitmap(alloc, w, h)
-    errdefer bmp.deinit(alloc)
+    try checkDecodeBytes(w * h * 8)
     let argb = try vp8lMainImage(&mut dec, w, h)
     defer alloc.free(argb)
+    var bmp = try newBitmap(alloc, w, h)
     let px = bmp.pixels
     for i in 0..w * h {
         let p = argb[i]
