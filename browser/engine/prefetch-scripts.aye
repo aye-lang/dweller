@@ -1,3 +1,4 @@
+import csp
 import dom.NodeId
 import net
 import perf
@@ -14,6 +15,11 @@ fn prefetchScripts(p: *mut Page, els: []NodeId) AllocError!void {
         let src = p.doc.attr(el, "src") orelse p.doc.attr(el, "href") orelse continue
         let target = p.resolve(p.alloc, src) catch continue
         defer target.deinit(p.alloc)
+
+        if csp.scriptUrlRefusal(p.csp, &target, &p.url, p.doc.attr(el, "nonce") orelse "") != null {
+            continue
+        }
+
         let id = net.startLoadAs(target.withoutFragment(), scriptRequest(p, el))
 
         if id != 0 {

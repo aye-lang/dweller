@@ -7720,6 +7720,80 @@ fn script_events() {
     }
 }
 
+/// Content-Security-Policy `script-src` (Q3.7), the pages of
+/// `browser/tests/csp/` served with the policies of their `.policy`
+/// files: an external script the policy does not allow is not fetched,
+/// fires `error` and logs the directive; `'self'` and a host source
+/// allow theirs; a `<meta>` policy applies; two policies must both allow
+/// (the second through `default-src`). Inline scripts run with the
+/// policy's nonce or sha256 hash, and `'unsafe-inline'` is ignored next
+/// to them. `eval` and `new Function` throw EvalError without
+/// `'unsafe-eval'`.
+#[test]
+fn csp_script_src() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let refused = |src: &str, directive: &str| {
+        format!(
+            "[error] Refused to load the script '{src}' because it violates the following Content Security Policy directive: \"{directive}\"."
+        )
+    };
+    let (parsed, same, cross) = (
+        format!("{}/csp/parsed.js", srv.base),
+        format!("{}/csp/same.js", srv.base),
+        format!("{}/csp/cross.js", other.base),
+    );
+    let host = format!("script-src 'nonce-r' {}", other.base);
+    let inline = "[error] Refused to execute inline script because it violates the following Content Security Policy directive: \"script-src 'nonce-r' 'sha256-PNUJduEfysGozdHcUzEt/SHPlhpzZRXdDLB9QVvFYEk=' 'unsafe-inline'\".".to_string();
+    let cases = [
+        (
+            "self",
+            "parsed: ran true\nsame: load, ran true\ncross: error, ran false\ndone\n",
+            vec![refused(&cross, "script-src 'self' 'nonce-r'")],
+        ),
+        (
+            "host",
+            "parsed: ran false\nsame: error, ran false\ncross: load, ran true\ndone\n",
+            vec![refused(&parsed, &host), refused(&same, &host)],
+        ),
+        (
+            "two",
+            "parsed: ran true\nsame: load, ran true\ncross: error, ran false\ndone\n",
+            vec![refused(&cross, "default-src 'self' 'nonce-r'")],
+        ),
+        (
+            "meta",
+            "parsed: ran false\nsame: error, ran false\ncross: error, ran false\ndone\n",
+            vec![
+                refused(&parsed, "script-src 'nonce-r'"),
+                refused(&same, "script-src 'nonce-r'"),
+                refused(&cross, "script-src 'nonce-r'"),
+            ],
+        ),
+        ("inline", "nonce match: ran\nhash match: ran\ndone\n", vec![inline.clone(), inline]),
+        ("eval", "eval: EvalError\nFunction: EvalError\n", vec![]),
+        ("unsafe-eval", "eval: 2\nFunction: 2\n", vec![]),
+    ];
+    for (page, want, errors) in cases {
+        let out = run(&[
+            "dump",
+            "--text",
+            "--js",
+            &format!("{}/csp/{page}.html?other={}", srv.base, other.base),
+        ]);
+        assert!(out.status.success(), "{page}: {}\n{}", out.status, text(&out.stderr));
+        assert_eq!(text(&out.stdout), want, "{page}: {}", text(&out.stderr));
+        let logged: Vec<String> = text(&out.stderr)
+            .lines()
+            .filter(|l| l.starts_with("[error] "))
+            .map(String::from)
+            .collect();
+        assert_eq!(logged, errors, "{page}");
+    }
+}
+
 /// The HTTP cache is keyed by the top-level site, the frame site and the
 /// credentials (Q3.13). A page on `127.0.0.1` embeds a script of
 /// `localhost`, then a frame of `localhost` embeds it (another frame

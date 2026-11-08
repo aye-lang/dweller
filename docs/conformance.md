@@ -41,6 +41,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `html/browsers/sandboxing` | 21 | 1 | 9/32 | 28.1 | 25 | done | new |
 | `fetch/metadata` | 87 | 0 | 541/1828 | 29.6 | 25 | done | new |
 | `referrer-policy` | 1392 | 0 | 4166/8465 | 49.2 | 45 | done | new |
+| `content-security-policy/script-src` | 97 | 0 | 68/215 | 31.6 | 30 | done | new |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |
