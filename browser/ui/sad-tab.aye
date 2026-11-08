@@ -1,0 +1,33 @@
+import paint
+import std.text
+
+let SAD_TOP: f64 = 96.0
+let SAD_BUTTON_W: f64 = 80.0
+let SAD_BUTTON_H: f64 = 28.0
+
+pub struct SadTab {
+    page: paint.Rect
+    heading: []u8
+    reload: paint.Rect
+}
+
+// chromium: chrome/browser/ui/sad_tab.cc
+fn sadTabOf(ui: *Ui) ?SadTab {
+    let tp = ui.slots[ui.active].?.process orelse return null
+
+    if tp.gone.len == 0 { return null }
+
+    let top = ui.top()
+    let w = ui.win_w as f64
+    var heading = "This page was stopped"
+
+    if text.eql(tp.gone, "crashed") {
+        heading = "This page crashed"
+    }
+
+    return SadTab {
+        page: paint.Rect { x: 0.0, y: top, w: w, h: ui.viewHeight() },
+        heading: heading,
+        reload: paint.Rect { x: (w - SAD_BUTTON_W) / 2.0, y: top + SAD_TOP + 48.0, w: SAD_BUTTON_W, h: SAD_BUTTON_H },
+    }
+}

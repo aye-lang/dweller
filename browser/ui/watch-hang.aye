@@ -1,0 +1,26 @@
+import ipc
+import std
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc
+fn watchHang(tp: *mut TabProcess) AllocError!bool {
+    let now = std.time.monotonicMs()
+
+    if !tp.hello || tp.hung { return false }
+
+    if tp.ping_at == 0 {
+        if now - tp.pong_at >= PING_MS {
+            tp.ping += 1
+            tp.ping_at = now
+            try ipc.encode(&mut tp.outbox, 0, ipc.Message.Ping { n: tp.ping })
+        }
+
+        return false
+    }
+
+    if now - tp.ping_at < hangMs() { return false }
+
+    tp.hung = true
+
+    return true
+}

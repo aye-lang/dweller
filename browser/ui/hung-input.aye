@@ -1,0 +1,17 @@
+fn hungInput(ui: *mut Ui, ev: *SDL_Event) bool {
+    let tp = hungProcess(ui) orelse return false
+    let b = stuckBarOf(ui)
+    let x = ev.button.x as f64
+    let y = ev.button.y as f64
+
+    if ev.kind != SDL_MOUSEBUTTONDOWN || !inRect(b.box, x, y) { return false }
+
+    if inRect(b.wait, x, y) {
+        waitHang(tp)
+        ui.dirty = true
+    } else if inRect(b.stop, x, y) {
+        stopHung(ui)
+    }
+
+    return true
+}

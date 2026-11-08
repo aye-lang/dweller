@@ -16,7 +16,8 @@ fn awaitFetch(r: *mut TabRenderer, alloc: Allocator, nav: bool, href: []u8) net.
             let got = ipc.nextMessage(r.inbox.bytes()[at..]) catch return net.FetchError.Network
             let g = got orelse break
             let used = g.used
-            let took = takeFetched(r, g.message, nav, href, &mut f) catch return net.FetchError.OutOfMemory
+            let pinged = answerPing(r, g.message) catch return net.FetchError.Network
+            let took = pinged || (takeFetched(r, g.message, nav, href, &mut f) catch return net.FetchError.OutOfMemory)
 
             if took { cutOut(&mut r.inbox, at, used) } else { at += used }
         }

@@ -6,6 +6,8 @@ fn serviceTabProcess(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!bool {
 
     try queueNavigate(slot, tp)
 
+    let hung = try watchHang(tp)
+
     let sent = sendSome(tp.fd, tp.outbox.bytes())
 
     if sent > 0 {
@@ -18,5 +20,5 @@ fn serviceTabProcess(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!bool {
         return true
     }
 
-    return takeMessages(slot, tp)
+    return (try takeMessages(slot, tp)) || hung
 }

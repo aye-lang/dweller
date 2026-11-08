@@ -1,4 +1,5 @@
 import ipc
+import std
 import std.mem.AllocError
 
 let MAX_URL_CHARS: usize = 2097152
@@ -128,6 +129,15 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+        }
+
+        .Pong { n } => {
+            if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }
+
+            tp.ping_at = 0
+            tp.pong_at = std.time.monotonicMs()
+            tp.hung = false
+            tp.hang_seen = false
         }
 
         _ => {}

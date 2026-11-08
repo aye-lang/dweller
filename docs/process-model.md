@@ -96,7 +96,7 @@ protocol.
 
 | Group | Messages |
 |---|---|
-| lifecycle | R→B `hello{version, pid}` (the first message, frame 0; the browser checks the version and that the pid is the one it spawned); Q2.2a only, until Q2.6 brings the navigation group: B→R `navigate{url}` (frame = the tab), R→B `loaded{title, url}` (the renderer loads the page itself and runs its scripts and timers); `font` and `js` of `init` go as spawn arguments for now (`--font fixed|system`, `--no-js`, Q2.2c); B→R `init{lock, partition, scale, font, js, flags}`; B→R `shutdown` (SIGKILL after 1 s, as for Spaces); B→R `visible{frame, on}` (hidden: timers throttled, no frames); B→R `memory_pressure` |
+| lifecycle | R→B `hello{version, pid}` (the first message, frame 0; the browser checks the version and that the pid is the one it spawned); Q2.2a only, until Q2.6 brings the navigation group: B→R `navigate{url}` (frame = the tab), R→B `loaded{title, url}` (the renderer loads the page itself and runs its scripts and timers); `font` and `js` of `init` go as spawn arguments for now (`--font fixed|system`, `--no-js`, Q2.2c); B→R `init{lock, partition, scale, font, js, flags}`; B→R `shutdown` (SIGKILL after 1 s, as for Spaces); B→R `visible{frame, on}` (hidden: timers throttled, no frames); B→R `memory_pressure`; Q2.5: B→R `ping{n}` (frame 0, at most once a second, one open at a time), R→B `pong{n}` (the same `n`, else `bad pong`) |
 | navigation | R→B `begin_navigation{frame, url, method, body, referrer, target, gesture, replace}` (links, forms, `location`, `window.open`); B→R `commit_navigation{frame, nav, url, origin, status, headers, entry}`, then `body_data{nav, bytes}` and `body_done{nav}`; R→B `did_commit{frame, nav, url, origin}`; R→B `same_document{frame, url, state, replace}` (pushState, fragments); B→R `navigate{frame, entry}` (back, forward, reload); B→R `before_unload` and `unload{frame}`, with replies; R→B `loading{frame, state}`, `title{frame, text}`; Q2.3d has R→B `title{text}` and `same_document{url}`, and the browser kills a renderer whose `loaded` or `same_document` URL is not the one it navigated to, the same document, or the same origin (`bad url`) |
 | frames | B→R `buffers{frame, w, h}` with 2 fds; R→B `frame{frame, buffer, seq, damage[], children[], over?}` (§5); B→R `frame_ack{frame, buffer}`; B→R `resize{frame, w, h, scale}`; R→B `child_size{child, w, h}`; B→R `viewport_intersection{frame, rect}` |
 | input | Q2.3a: B→R `mouse{seq, kind (0 move, 1 down, 2 up, 3 leave), x, y, mx, my, button, buttons, mods, clicks}`, `wheel{seq, x, y, dx, dy, precise}` (CSS px, coalesced per loop iteration; x = y = -1 when the mouse is not over the page), `key{seq, down, key, code, repeat, location, mods}` (DOM `key` and `code`), `text{seq, text}`, all in the tab's viewport coordinates; R→B `input_ack{seq}` (every input up to `seq` handled and its frame sent; later `consumed, dx, dy` for scroll that bubbles up); Q2.3d: B→R `focus{on}` (the page has the window's focus or not: the window lost it, or the toolbar took it; the renderer hides the caret and stops its blink); Tab, the focus ring, the caret and the selection of text fields are the renderer's; R→B `cursor`, `status_url`, `focus_changed{frame}`, `advance_focus{frame, dir}`; B→R `focus{frame, dir}`; B→R `hit_test{frame, x, y}`, R→B its reply; B→R `find{text, dir}`, R→B `find_reply{count, active, rects}`; B→R `edit{copy, paste, select_all}`; R→B `popup{frame, rect, items}`, B→R `popup_choice`; R→B `long_task{ms}` |
@@ -336,6 +336,11 @@ flag of Q1.7, moved to shared memory), and it throws the uncatchable
 termination. A renderer that does not react within 2 s gets SIGKILL and
 takes the crash path. So the browser can stop a script although the
 renderer's only thread does not read its socket.
+
+Q2.5 ships the first half: the hang signal is a `ping` the renderer has
+not answered for 10 s (`DWELLER_HANG_MS`), and Stop is SIGKILL, so the
+tab shows the sad tab "This page was stopped". The interrupt word in
+shared memory, which would keep the page, is not built yet.
 
 **The browser ends** (quit or crash): each renderer reads the end of
 file and exits, as a Space does now.

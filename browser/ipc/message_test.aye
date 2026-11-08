@@ -97,6 +97,19 @@ test "the cursor, target URL, long task, take focus and redirect messages round-
     @expect(fromRenderer(Message.TakeFocus { reverse: 0 }) && fromRenderer(Message.Redirect { url: "" }))
 }
 
+test "ping and pong round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    let pinged = try roundTrip(&mut out, 0, Message.Ping { n: 4 })
+
+    match pinged.message {
+        .Ping { n } => @expectEqual(4, n)
+        _ => @expect(false)
+    }
+
+    @expect(!fromRenderer(Message.Ping { n: 0 }) && fromRenderer(Message.Pong { n: 0 }))
+}
+
 test "fetch messages round-trip and go the right way" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()

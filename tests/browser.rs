@@ -10907,9 +10907,15 @@ fn window_renderer_no_profile_files() {
         })
         .map(|pid| (pid.clone(), open_files(pid)))
         .collect();
+    let lock = format!("{dir_text}/lock");
+    let space_files: Vec<(String, Vec<(String, bool, String)>)> = spaces.iter().filter(|pid| !listed.iter().any(|(r, _)| r == *pid)).map(|pid| (pid.clone(), open_files(pid))).collect();
     drop(conn);
     let out = window.wait_with_output().unwrap();
     assert!(out.status.success(), "the window: {}\n{}", out.status, text(&out.stderr));
+    assert!(!space_files.is_empty(), "want the agent's Space: {spaces:?}");
+    for (pid, files) in &space_files {
+        assert!(files.iter().all(|(_, _, name)| *name != lock), "Space {pid} inherited the profile's lock: {files:?}");
+    }
     let exe = dweller().canonicalize().unwrap();
     let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
     assert!(listed.len() >= 2, "want the window's renderer and its Space's: {listed:?}");
@@ -10921,6 +10927,105 @@ fn window_renderer_no_profile_files() {
             assert!(allowed, "renderer {pid} holds the regular file {name} (fd {fd}): {files:?}");
         }
     }
+}
+
+/// Q2.5: with `DWELLER_PROCESS=tab` a renderer that dies (SIGKILL) shows
+/// the browser's sad tab ("This page crashed"); the other tab's renderer
+/// goes on; Reload (the sad tab's button, or cmd+R) starts a fresh
+/// renderer that loads the tab's page again.
+#[test]
+fn window_renderer_sad_tab() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let renderer = |state: &str| -> Vec<String> {
+        let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+        line.splitn(4, ' ').map(String::from).collect()
+    };
+
+    let killed = run("renderer:loaded renderer:kill renderer:gone frame");
+    assert_eq!(&renderer(&killed)[2..], ["gone", "crashed"], "{killed}");
+    assert!(killed.contains("\nsad-tab This page crashed\n"), "{killed}");
+
+    let tabs = format!(
+        "renderer:loaded key:cmd+t {} key:return renderer:loaded key:cmd+1 renderer:kill renderer:gone frame key:cmd+2 renderer:loaded renderer:frame frame",
+        typed("browser/tests/ui/stuck.html")
+    );
+    let other = run(&tabs);
+    assert_eq!(&renderer(&other)[2..], ["title", "Stuck"], "{other}");
+    assert!(other.contains("tabs 2, showing 2") && !other.contains("sad-tab"), "{other}");
+
+    for reload in ["click:512,198", "key:cmd+r"] {
+        let again = run(&format!("renderer:loaded renderer:kill renderer:gone frame {reload} frame renderer:loaded"));
+        assert_eq!(&renderer(&again)[2..], ["title", "Form"], "{reload}: {again}");
+        assert!(!again.contains("sad-tab"), "{reload}: {again}");
+    }
+}
+
+/// Q2.5: a renderer that does not answer the browser's ping for
+/// `DWELLER_HANG_MS` (a `while (1) {}` in its page) shows the "not
+/// responding" bar; `stuck:stop` kills it, the sad tab says "This page
+/// was stopped", and the window reaps it while it runs (no zombie).
+/// Without an answer a headless run waits, and says so on stderr.
+#[test]
+fn window_renderer_hang() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let start = |events: &str| {
+        dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_HANG_MS", "1000")
+            .args(["browser/tests/ui/renderer_hang.html", "--frames", "600", "--state", "--events", events])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let mut child = start("renderer:hung stuck:stop renderer:gone");
+    let window = child.id().to_string();
+    let mut pid = String::new();
+    while pid.is_empty() && child.try_wait().unwrap().is_none() {
+        let out = Command::new("pgrep").args(["-P", &window]).output().unwrap();
+        pid = text(&out.stdout).lines().next().unwrap_or("").to_string();
+        pause();
+    }
+    let mut reaped = false;
+    while !reaped && child.try_wait().unwrap().is_none() {
+        let ps = Command::new("ps").args(["-o", "stat=", "-p", &pid]).output().unwrap();
+        reaped = text(&ps.stdout).trim().is_empty();
+        pause();
+    }
+    let out = child.wait_with_output().unwrap();
+    let state = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(out.stderr.is_empty(), "{}", text(&out.stderr));
+    assert!(!pid.is_empty() && reaped, "renderer {pid:?} was not reaped while the window ran\n{state}");
+    assert!(state.contains(&format!("renderer {pid} gone stopped\n")), "{state}");
+    assert!(state.contains("\nsad-tab This page was stopped\n") && state.contains("\nunresponsive 1\n"), "{state}");
+
+    let out = start("renderer:hung").wait_with_output().unwrap();
+    let state = text(&out.stdout);
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(err.starts_with("stuck: renderer ") && err.contains(" not answering, waiting\n"), "{err}");
+    assert!(!state.contains(" gone ") && state.contains("\nunresponsive "), "{state}");
 }
 
 /// The open files of process `pid`: (fd, is a regular file, path).

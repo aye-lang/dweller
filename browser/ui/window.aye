@@ -1099,6 +1099,9 @@ pub struct Ui {
         if self.stuck {
             return stuckInput(self, ev)
         }
+        if hungInput(self, ev) || (try sadTabInput(self, ev)) {
+            return
+        }
         noteInput(self, ev)
         if try forwardInput(self, ev) {
             return
@@ -1906,6 +1909,9 @@ pub struct Ui {
             try drawAgentFlash(self, v)
         }
         pageview.paintMatches(self.view(), &mut self.canvas, v)
+        if sadTabOf(self) |sad| {
+            try drawSadTab(self, sad)
+        }
         self.canvas.popClip()
         drawWatched(self, area)
         try drawToolbar(self)
@@ -1922,7 +1928,7 @@ pub struct Ui {
         if self.finding {
             try drawFindBar(self, bottom)
         }
-        if self.stuck {
+        if self.stuck || hungProcess(self) != null {
             try drawStuckBar(self)
         }
         if certPage(self) |p| {
