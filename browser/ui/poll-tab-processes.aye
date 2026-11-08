@@ -12,9 +12,11 @@ fn pollTabProcesses(ui: *mut Ui) AllocError!void {
 
         if slot.process |tp| {
             try giveBuffers(ui, slot, tp)
+            try tellFocus(ui, slot, tp, i == ui.active)
 
             if try serviceTabProcess(slot, tp) { ui.dirty = true }
             if tp.popup_new { try takePopup(ui, tp, i == ui.active) }
+            if tp.shown_new && i == ui.active { try showToolbar(ui, tp) }
             if i == ui.active && (tp.whole || tp.damage.len() > 0) { ui.repaint = true }
         }
     }
