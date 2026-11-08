@@ -41,6 +41,7 @@ pub struct VmState {
     nwalked: u64 = 0
     pairs: ?[]mut u64 = null
     lastOp: u8 = 0
+    prof: ?*mut VmProf = null
     // The callers of the frames pushed by the dispatch loop itself
     // (JS-to-JS calls without C recursion), innermost last.
     saved: List(VmSaved)
@@ -75,7 +76,7 @@ pub fn vmInit(it: *mut Interp) {
     it.vm_checked = true
     var stats = false
     if getenv("DWELLER_JS_VM_STATS".ptr) |p| {
-        stats = p[0] == '1' || p[0] == 'p'
+        stats = p[0] == '1' || p[0] == 'p' || p[0] == 't'
     }
     let stub = it.alloc.alloc(IcStub { atom: NONE, store: false, c: emptyIcEntry().cases[0] }, IC_STUB_SIZE) catch |e| {
         return
@@ -86,6 +87,7 @@ pub fn vmInit(it: *mut Interp) {
     }
     it.vm = st
     vmInitPairs(it, st)
+    vmInitProf(it, st)
 }
 
 /// Prints the statistics (DWELLER_JS_VM_STATS=1) and frees the code.
@@ -103,6 +105,7 @@ pub fn vmDeinit(it: *mut Interp) {
         st.funcs.deinit()
         st.saved.deinit()
         it.alloc.free(st.stub)
+        freeVmProf(it, st)
 
         if st.pairs |ps| {
             it.alloc.free(ps)
@@ -194,6 +197,10 @@ pub fn vmLookup(it: *mut Interp, st: *mut VmState, func: u32) JsError!?VmFunc {
         resumeNative(it, compile_paused)
         perf.end("js_compile", compile_began, "")
         st.funcs.items()[func] = f
+
+        if f.code |c| {
+            c.func = func
+        }
     }
     if f.code == null {
         st.nwalked += 1
@@ -489,6 +496,17 @@ fn vmConstOffset(consts: []BcConst, k: i64) usize {
 fn vmRun(it: *mut Interp, st: *mut VmState, code: *BytecodeArray, fp: usize, argBase: usize, argc: usize) JsError!Value {
     let depth = st.saved.len()
     var f = VmFault { code: code, pc: 0, fp: fp, argBase: argBase, argc: argc, acc: Value.Undefined, resume: false }
+    var prof_outer: u64 = 0
+
+    if st.prof |p| {
+        prof_outer = p.enter()
+    }
+
+    defer {
+        if st.prof |p| {
+            p.leave(prof_outer)
+        }
+    }
 
     while true {
         f.resume = false
@@ -546,6 +564,10 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
         if count {
             st.ninsns += 1
             vmCountPair(st, op)
+
+            if st.prof |p| {
+                p.tick(op, code.func)
+            }
         }
 
         match op {
