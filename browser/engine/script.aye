@@ -1293,7 +1293,7 @@ fn uncaught(s: *mut Script, e: JsError) AllocError!void {
         }
         .Terminated => {
             s.it.exception = Value.Undefined
-            return addConsole(s, "[error] ", "Script terminated: it ran too long")
+            return addConsole(s, "[error] ", terminatedWhy(s))
         }
         _ => {}
     }
@@ -2029,7 +2029,7 @@ pub fn evalInPage(p: *mut Page, src: []u8, out: *mut text.Builder) AllocError!bo
             }
             .Terminated => {
                 s.it.exception = Value.Undefined
-                try out.append("Script terminated: it ran too long")
+                try out.append(terminatedWhy(s))
                 try runMicrotasks(s)
                 try afterTask(s)
                 return false

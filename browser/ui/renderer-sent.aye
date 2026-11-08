@@ -113,6 +113,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerFetch(tp, got.frame, got.message)
         }
 
+        .OutOfMemory => {
+            if got.frame != slot.id { return "bad out_of_memory" }
+
+            try showCommitted(tp, "Out of memory", tp.committed.bytes())
+        }
+
         .CookieGet { .. }, .CookieSet { .. } => {
             if got.frame != slot.id { return "bad cookie" }
 

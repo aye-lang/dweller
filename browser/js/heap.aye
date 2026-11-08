@@ -206,6 +206,10 @@ pub struct Heap {
     since_gc: usize
     allocs_before_gc: u64 = 0
     threshold: usize
+    bytes_since_gc: usize = 0
+    live_bytes: usize = 0
+    limit_bytes: usize = 0
+    out_of_memory: bool = false
     proto_epoch: u32
     load_epoch: u32
 
@@ -228,6 +232,7 @@ pub struct Heap {
             rope_stack: List(u32).init(alloc),
             since_gc: 0,
             threshold: 20000,
+            limit_bytes: heapLimit(),
             proto_epoch: 0,
             load_epoch: 0,
         }
@@ -282,6 +287,7 @@ pub struct Heap {
 
     pub fn newObj(self: *mut Self, class: Class, proto: u32, data: ObjData) AllocError!u32 {
         self.since_gc += 1
+        self.bytes_since_gc += @sizeOf(Obj)
         let o = Obj {
             class: class,
             proto: proto,
@@ -373,6 +379,7 @@ pub struct Heap {
             if cap < 4 {
                 cap = 4
             }
+            self.bytes_since_gc += (cap - ob.props.len) * @sizeOf(Prop)
             ob.props = try self.prop_mem.grow(ob.props, cap, Prop { key: 0, value: Value.Undefined, setter: Value.Undefined, flags: 0 })
         }
         ob.props[n] = Prop { key: key, value: value, setter: setter, flags: flags }
@@ -439,6 +446,7 @@ pub struct Heap {
             if cap < n as usize {
                 cap = n as usize
             }
+            self.bytes_since_gc += (cap - ob.elems.len) * @sizeOf(Value)
             ob.elems = try self.val_mem.grow(ob.elems, cap, Value.Undefined)
         }
         var i = ob.nelems
@@ -485,6 +493,7 @@ pub struct Heap {
     /// A rope for the concatenation of a and b (no bytes are copied).
     pub fn concat(self: *mut Self, a: u32, b: u32) AllocError!u32 {
         self.since_gc += 1
+        self.bytes_since_gc += @sizeOf(StrCell)
         let ca = self.strs.items()[a]
         let cb = self.strs.items()[b]
         let c = StrCell {
@@ -515,6 +524,7 @@ pub struct Heap {
     // with a small explicit stack: ropes can be very deep).
     fn flatten(self: *mut Self, s: u32) {
         let total = self.strs.items()[s].rope_len
+        self.bytes_since_gc += total
         let buf = self.byte_mem.get(total, 0) catch |e| {
             return
         }
@@ -551,6 +561,7 @@ pub struct Heap {
     // A cell for `b`; `owned`: the cell gives `b` back to byte_mem.
     fn cell(self: *mut Self, b: []mut u8, owned: bool, perm: bool) AllocError!u32 {
         self.since_gc += 1
+        self.bytes_since_gc += @sizeOf(StrCell) + b.len
         var ascii = true
         var units: u32 = 0
         var i: usize = 0
@@ -653,6 +664,7 @@ pub struct Heap {
     /// yet initialized).
     pub fn newEnv(self: *mut Self, n: u32, parent: u32, fill: Value) AllocError!u32 {
         self.since_gc += 1
+        self.bytes_since_gc += @sizeOf(Env) + n as usize * @sizeOf(Value)
         var slots = []mut Value{}
         if n > 0 {
             slots = try self.val_mem.get(n as usize, fill)

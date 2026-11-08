@@ -491,7 +491,7 @@ pub struct Interp {
         if ms > 0 {
             self.deadline_ms = cpuMs() + ms
         }
-        self.terminated = false
+        self.terminated = self.heap.out_of_memory
     }
 
     /// From here on, the code of this thread may use `room` bytes of C
@@ -629,7 +629,7 @@ pub struct Interp {
     // ---- allocation (may collect garbage first)
 
     fn maybeGc(self: *mut Self) {
-        if self.heap.since_gc >= self.heap.threshold {
+        if self.heap.since_gc >= self.heap.threshold || (self.heap.live_bytes + self.heap.bytes_since_gc > self.heap.limit_bytes && !self.heap.out_of_memory) {
             collectGarbage(self)
         }
     }

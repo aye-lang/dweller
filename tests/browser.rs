@@ -8343,6 +8343,72 @@ fn window_stuck_script() {
     assert!(got.contains("\nstart hang after\n"), "{got}");
 }
 
+/// Q1.8: a page that allocates without end (`out-of-memory.html`) passes
+/// `DWELLER_JS_HEAP_LIMIT` after a full collection: its script ends and
+/// the tab shows "This page ran out of memory". The window lives, and a
+/// second tab runs a page that allocates 40 MB of strings, drops them and
+/// allocates them again (`allocate-and-free.html`) without hitting the limit.
+#[test]
+fn window_out_of_memory() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |last: &str| -> (String, String) {
+        let events = format!(
+            "painted frame key:cmd+t text:browser/tests/ui/ text:allocate-and-free.html key:return loaded frame {last}"
+        );
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_CONSOLE", "1")
+            .env("DWELLER_JS_HEAP_LIMIT", "64000000")
+            .args([
+                "browser/tests/ui/out-of-memory.html",
+                "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+                "--state", "--text", "--events", &events,
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let (got, err) = run("");
+    assert!(got.contains("tabs 2, showing 2\n") && got.contains("\nfreed 40000\n"), "{got}");
+    assert!(err.contains("[error] Script terminated: out of memory"), "{err}");
+    let (got, _) = run("key:cmd+1 frame");
+    assert!(got.contains("tabs 2, showing 1\n"), "{got}");
+    assert!(got.contains("This page ran out of memory") && got.contains("Reload"), "{got}");
+}
+
+/// Q1.8: with `DWELLER_PROCESS=tab` the renderer whose page runs out of
+/// memory shows the same page and tells the browser (`OutOfMemory`), which
+/// keeps it: the renderer line has the page's title, not `gone`.
+#[test]
+fn window_renderer_out_of_memory() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_JS_HEAP_LIMIT", "64000000")
+        .args([
+            "browser/tests/ui/out-of-memory.html",
+            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:loaded frame frame frame",
+        ])
+        .output()
+        .unwrap();
+    let state = text(&out.stdout);
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    let line = state
+        .lines()
+        .find(|l| l.starts_with("renderer "))
+        .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+    let r: Vec<&str> = line.splitn(3, ' ').collect();
+    assert_eq!(r[2], "title Out of memory", "{state}");
+}
+
 /// Q1.7b: a headless window never waits for a click on the stuck bar. A
 /// page whose first task runs 6 s ends with `--until-idle`: the bar
 /// chooses Wait and logs one line. The `stuck:stop` word chooses Stop.

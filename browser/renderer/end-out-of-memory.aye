@@ -1,0 +1,14 @@
+import engine
+import ipc
+
+fn endOutOfMemory(r: *mut TabRenderer) !void {
+    let p = r.page orelse return
+
+    if !engine.pageOutOfMemory(p) { return }
+
+    let shown = try engine.outOfMemoryPage(r.alloc, &p.url)
+
+    p.destroy()
+    try adoptPage(r, r.tab, shown)
+    try send(r.alloc, r.conn, r.tab, ipc.Message.OutOfMemory)
+}
