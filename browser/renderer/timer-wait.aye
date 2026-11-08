@@ -1,9 +1,24 @@
 import engine
+import std
 import std.math
 
 fn timerWait(r: *mut TabRenderer) i32 {
     let p = r.page orelse return -1
-    let ms = engine.msUntilNextTimer(p) orelse return -1
+    var wait: i32 = -1
+    var left: i32 = 0
+    let now = std.time.monotonicMs()
 
-    return math.ceil(ms) as i32
+    if engine.msUntilNextTimer(p) |ms| {
+        wait = math.ceil(ms) as i32
+    }
+
+    if !caretBlinks(r, p) { return wait }
+
+    if r.blink_at > now {
+        left = (r.blink_at - now) as i32
+    }
+
+    if wait < 0 || left < wait { return left }
+
+    return wait
 }

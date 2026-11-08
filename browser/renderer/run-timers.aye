@@ -1,4 +1,5 @@
 import engine
+import std
 
 fn runTimers(r: *mut TabRenderer) !void {
     let p = r.page orelse return
@@ -7,5 +8,12 @@ fn runTimers(r: *mut TabRenderer) !void {
         r.due = true
     }
 
+    if caretBlinks(r, p) && std.time.monotonicMs() >= r.blink_at {
+        r.caret_on = !r.caret_on
+        r.blink_at = std.time.monotonicMs() + BLINK_MS
+        r.due = true
+    }
+
     try paintFrame(r)
+    try reportPage(r)
 }

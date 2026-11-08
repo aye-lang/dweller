@@ -6,8 +6,11 @@ import paint
 import std
 import std.list.List
 import std.mem.Allocator
+import std.text
 
 extern fn close(fd: i32) i32
+
+let BLINK_MS: u64 = 500
 
 struct TabRenderer {
     alloc: Allocator
@@ -16,6 +19,10 @@ struct TabRenderer {
     system: ?*mut font.System
     fds: List(i32)
     drawn: List(paint.Sig)
+    marks: List(Mark)
+    title: text.Builder
+    href: text.Builder
+    blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
     first: u32 = 0
@@ -42,6 +49,10 @@ struct TabRenderer {
     range: ?NodeId = null
     space: ?NodeId = null
     popup: ?NodeId = null
+    select_el: ?NodeId = null
+    focused: bool = false
+    caret_on: bool = true
+    blink_at: u64 = 0
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -50,6 +61,12 @@ struct TabRenderer {
     pub fn took(self: *mut Self, seq: u32) {
         self.seq = seq
         self.due = true
+        self.wake()
+    }
+
+    pub fn wake(self: *mut Self) {
+        self.caret_on = true
+        self.blink_at = std.time.monotonicMs() + BLINK_MS
     }
 
     pub fn view(self: *Self) paint.View {
@@ -65,5 +82,8 @@ struct TabRenderer {
 
         self.fds.deinit()
         self.drawn.deinit()
+        self.marks.deinit()
+        self.title.deinit()
+        self.href.deinit()
     }
 }
