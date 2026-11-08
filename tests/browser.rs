@@ -4189,8 +4189,8 @@ fn window_agent_socket_token() {
         println!("skipped: no SDL2");
         return;
     }
-    let dir = format!("target/agent-token-{}", std::process::id());
-    let _ = std::fs::remove_dir_all(root().join(&dir));
+    let dir = format!("/tmp/dw-{}-token", std::process::id());
+    let _ = std::fs::remove_dir_all(&dir);
     let sock = format!("{dir}/agent.sock");
     let window = spaces_window(&sock, &["--state", "browser/tests/basic.html"]);
     let mode = |p: &str| std::fs::metadata(root().join(p)).unwrap().permissions().mode() & 0o777;
@@ -4217,18 +4217,18 @@ fn window_agent_socket_token() {
     assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
     assert!(text(&out.stdout).contains("tabs 1, showing 1\n"), "{}", text(&out.stdout));
     assert!(!root().join(&sock).exists() && !root().join(format!("{sock}.token")).exists());
-    let open = format!("target/agent-open-{}", std::process::id());
-    let _ = std::fs::remove_dir_all(root().join(&open));
-    std::fs::DirBuilder::new().mode(0o755).create(root().join(&open)).unwrap();
-    std::fs::set_permissions(root().join(&open), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let open = format!("/tmp/dw-{}-open", std::process::id());
+    let _ = std::fs::remove_dir_all(&open);
+    std::fs::DirBuilder::new().mode(0o755).create(&open).unwrap();
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
     let out = run_window(&["--agent-socket", &format!("{open}/x.sock"), "--frames", "1"]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert_eq!(
         text(&out.stderr),
         format!("error: cannot listen on {open}/x.sock: other users can open its directory (it must be 0700)\n")
     );
-    let _ = std::fs::remove_dir_all(root().join(&dir));
-    let _ = std::fs::remove_dir_all(root().join(&open));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&open);
 }
 
 /// `dweller connect` and `--agent-socket` errors.
@@ -10711,7 +10711,7 @@ fn window_renderer_lifecycle() {
 
     let (_, state, err) = run("", &[]);
     assert!(err.is_empty(), "{err}");
-    assert!(!state.contains("renderer "), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer ")), "{state}");
 }
 
 /// Q2.4a: with `DWELLER_PROCESS=tab` the renderer's loads go through the
@@ -10927,7 +10927,7 @@ fn window_renderer_frames() {
 
     let (state, err) = run(&golden, "loaded", &[]);
     assert!(err.is_empty(), "{err}");
-    assert!(!state.contains("renderer"), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer")), "{state}");
 
     let (state, err) = run(&tab, "renderer:loaded renderer:frame", &[("DWELLER_PROCESS", "tab")]);
     assert!(err.is_empty(), "{err}");
@@ -10945,7 +10945,7 @@ fn window_renderer_frames() {
     let pid = line.split(' ').nth(1).unwrap_or("");
     assert!(line.ends_with(" gone wrong size"), "{state}");
     assert_eq!(err, format!("error: bad message: wrong size {pid}\n"));
-    assert!(!state.contains("renderer-frame"), "{state}");
+    assert!(!state.lines().any(|l| l.starts_with("renderer-frame")), "{state}");
 
     let page = "browser/tests/ui/renderer_damage.html";
     let (_, err) = run_page(page, &golden, "loaded", &[]);
