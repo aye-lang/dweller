@@ -1,0 +1,26 @@
+<!doctype html>
+<title>CSP meta</title>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-r'">
+<pre id="out"></pre>
+<script nonce="r">
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = new URLSearchParams(location.search).get('other');
+function load(name, src) {
+  const el = document.createElement('script');
+  const ended = new Promise(resolve => {
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+  });
+  el.src = src;
+  document.head.appendChild(el);
+  return ended.then(ev => log(name + ': ' + ev + ', ran ' + !!self[name]));
+}
+document.addEventListener('DOMContentLoaded', async () => {
+  log('parsed: ran ' + !!self.parsed);
+  await load('same', '/csp/same.js');
+  await load('cross', other + '/csp/cross.js');
+  log('done');
+});
+</script>
+<script src="/csp/parsed.js"></script>
