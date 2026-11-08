@@ -1,0 +1,21 @@
+fn vmProfCharge(p: *mut VmProf, d: u64) {
+    p.op_ns[p.op as usize] += d
+
+    if p.op == VM_PROF_OUTSIDE {
+        return
+    }
+
+    if p.func == NONE {
+        p.top_ns += d
+
+        return
+    }
+
+    while p.fn_ns.len() <= p.func as usize {
+        p.fn_ns.append(0) catch |e| {
+            return
+        }
+    }
+
+    p.fn_ns.items()[p.func] += d
+}
