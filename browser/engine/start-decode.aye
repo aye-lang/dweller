@@ -1,0 +1,13 @@
+import image
+import std
+import std.mem.AllocError
+import std.sync.Atomic
+
+fn startDecode(cache: *mut ImageCache, bmp: *mut image.Bitmap, bytes: []u8) AllocError!void {
+    let pool = try decodePoolOf(cache.alloc)
+    let job = try cache.alloc.create(DecodeJob { gpa: std.heap.General.init(), bytes: bytes, bmp: bmp, done: Atomic(u32).init(0), cancelled: Atomic(u32).init(0) })
+
+    errdefer cache.alloc.destroy(job)
+    try cache.decodes.append(job)
+    pool.queue.send(job) catch unreachable
+}

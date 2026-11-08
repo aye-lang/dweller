@@ -1,0 +1,18 @@
+import image
+import std
+import std.mem.Allocator
+
+fn takePixels(alloc: Allocator, bmp: *mut image.Bitmap, d: *image.Bitmap) {
+    if d.width != bmp.width || d.height != bmp.height {
+        return
+    }
+
+    let px = alloc.alloc(0 as u8, d.pixels.len) catch |e| {
+        return
+    }
+
+    std.mem.copy(px, d.pixels)
+    alloc.free(bmp.pixels)
+    bmp.pixels = px
+    bmp.version += 1
+}
