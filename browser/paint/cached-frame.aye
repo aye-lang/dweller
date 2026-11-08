@@ -1,0 +1,23 @@
+import layout
+import std.mem.AllocError
+
+fn cachedFrame(c: *mut FrameLists, fv: layout.FrameView) AllocError!*DisplayList {
+    let print = framePrint(fv.tree)
+
+    for i in 0..c.lists.len() {
+        let f = &mut c.lists.items()[i]
+
+        if !f.used && f.tree == fv.tree && f.stamp == fv.stamp && f.print == print {
+            f.used = true
+
+            return &f.list
+        }
+    }
+
+    let list = try build(c.lists.alloc, fv.tree)
+
+    c.builds += 1
+    try c.lists.append(FrameList { tree: fv.tree, stamp: fv.stamp, print: print, list: list, used: true })
+
+    return &c.lists.items()[c.lists.len() - 1].list
+}

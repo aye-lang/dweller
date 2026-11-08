@@ -5397,6 +5397,39 @@ fn window_damage_rect_only() {
     assert_eq!(last, vec![("raster_px", "1344 1"), ("ui_window_px", "1344 1")], "{err}");
 }
 
+/// Q4.19: a rAF tick that writes the same text into the top document
+/// builds the display list of that document alone; the still iframe keeps
+/// its list, the iframe whose own script changes its text is built again
+/// in the frames it changes, and the last frame equals the final page
+/// drawn from the start.
+#[test]
+fn window_frame_lists_reused() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = std::env::temp_dir();
+    let id = std::process::id();
+    let changed = dir.join(format!("dweller-q419-changed-{id}.png"));
+    let whole = dir.join(format!("dweller-q419-whole-{id}.png"));
+    let err = damage_window_run("browser/tests/ui/frame_lists.html", &changed, "painted");
+    damage_window_run("browser/tests/ui/frame_lists_final.html", &whole, "painted");
+    let (a, b) = (std::fs::read(&changed).unwrap(), std::fs::read(&whole).unwrap());
+    let _ = std::fs::remove_file(&changed);
+    let _ = std::fs::remove_file(&whole);
+    assert!(a == b, "the window differs from the final page drawn whole");
+    let builds: Vec<usize> = frame_records(&err)
+        .iter()
+        .map(|f| f.iter().filter(|(n, _)| n == "paint_build").count())
+        .collect();
+    let top_only = builds.iter().filter(|&&n| n == 1).count();
+    let with_b = builds.iter().filter(|&&n| n == 2).count();
+    let all = builds.iter().filter(|&&n| n >= 3).count();
+    assert!(top_only >= 20, "{top_only} frames built the top list alone: {builds:?}");
+    assert!(with_b >= 5, "{with_b} frames built the changing iframe: {builds:?}");
+    assert!(all <= 2, "{all} frames built every list: {builds:?}");
+}
+
 /// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed
