@@ -1,0 +1,15 @@
+import dom
+import engine
+import std.mem.AllocError
+
+fn dragSelect(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) AllocError!void {
+    let f = r.select_el orelse return
+
+    if !dom.isSame(p.doc.controls.focus, f) {
+        r.select_el = null
+
+        return
+    }
+
+    try dom.extendCaret(&mut p.doc, f, engine.offsetAt(p, f, x, y))
+}
