@@ -1,0 +1,26 @@
+import std.text
+
+let HTML_SIGNATURES = [14][]u8{"<!doctype html", "<script", "<html", "<head", "<iframe", "<h1", "<div", "<font", "<table", "<a", "<style", "<title", "<b", "<p"}
+
+// chromium: services/network/orb/orb_sniffers.cc SniffForHTML
+fn sniffsHtml(head: []u8) bool {
+    var rest = text.trim(head)
+
+    while true {
+        for signature in HTML_SIGNATURES {
+            if rest.len >= signature.len && text.eqlIgnoreCase(rest[..signature.len], signature) {
+                return true
+            }
+        }
+
+        if !text.startsWith(rest, "<!--") {
+            return false
+        }
+
+        let end = text.indexOf(rest[4..], "-->") orelse return false
+
+        rest = text.trim(rest[end + 7..])
+    }
+
+    return false
+}

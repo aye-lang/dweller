@@ -150,7 +150,7 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     defer perf.end("requests", began, target.href)
     if try archiveRead(alloc, target, req) |res| {
         noteFailure(req.kind, res.status, target.href)
-        return corsChecked(alloc, req, target, res)
+        return orbChecked(alloc, req, target, try corsChecked(alloc, req, target, res))
     }
     let res = requestLive(alloc, target, req) catch |e| {
         archiveWrite(alloc, target, req, null, describe(e))
@@ -161,7 +161,7 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     }
     archiveWrite(alloc, target, req, &res, "")
     noteFailure(req.kind, res.status, target.href)
-    return corsChecked(alloc, req, target, res)
+    return orbChecked(alloc, req, target, try corsChecked(alloc, req, target, res))
 }
 
 /// Telemetry: a request for `kind` ended with `status` (0: no response).

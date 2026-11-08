@@ -1,0 +1,17 @@
+import net
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cors-settings-attributes
+fn corsRequest(crossorigin: ?[]u8, req: net.Request) net.Request {
+    let value = crossorigin orelse return req
+    var cors = req
+
+    cors.mode = net.Mode.Cors
+    cors.credentials = net.Credentials.SameOrigin
+
+    if text.eqlIgnoreCase(value, "use-credentials") {
+        cors.credentials = net.Credentials.Include
+    }
+
+    return cors
+}

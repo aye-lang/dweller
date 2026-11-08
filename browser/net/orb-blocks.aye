@@ -1,0 +1,28 @@
+import image
+import std.text
+
+// chromium: services/network/orb/orb_impl.cc OpaqueResponseBlockingAnalyzer
+fn orbBlocks(mime: []u8, headers: []u8, body: []u8) bool {
+    var options = text.split(requestHeaderValue(headers, "X-Content-Type-Options"), ",")
+    let nosniff = text.eqlIgnoreCase(text.trim(options.next() orelse ""), "nosniff")
+    let class = orbMimeClass(mime)
+    var head = body
+
+    if head.len > 1024 {
+        head = body[..1024]
+    }
+
+    if class == MimeClass.Safelisted {
+        return false
+    }
+
+    if class == MimeClass.NeverSniffed || (nosniff && class == MimeClass.Blocklisted) {
+        return true
+    }
+
+    if image.sniff(head) != image.Format.Unknown || mime.len == 0 {
+        return false
+    }
+
+    return sniffsHtml(head) || text.startsWith(text.trim(head), "<?xml") || sniffsJson(head)
+}

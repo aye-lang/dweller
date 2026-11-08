@@ -14,6 +14,7 @@ import js.Args
 import js.Interp
 import js.JsError
 import js.Value
+import net
 import paint
 import perf
 import std
@@ -250,7 +251,7 @@ fn canvasSource(it: *mut Interp, source: Value) JsError!?CanvasSource {
     let loaded = (try loadElementImage(cache, &p.doc, h, &base, css.Media { width: s.width, height: s.height }, ImageFetch.Now, 0)) orelse return null
     defer loaded.target.deinit(cache.alloc)
     let bmp = loaded.bmp orelse return null
-    let pic = cache.pictureOf(loaded.target.withoutFragment())
+    let pic = cache.pictureOf(loaded.target.withoutFragment(), p.doc.attr(h, "crossorigin"))
     if pic |drawing| {
         if bmp.pixels.len == 0 && bmp.width <= CANVAS_SIDE && bmp.height <= CANVAS_SIDE && bmp.width * bmp.height <= CANVAS_PIXELS {
             let px = try it.alloc.alloc(0 as u8, bmp.width * bmp.height * 4)
@@ -1024,7 +1025,7 @@ fn sourceTainted(it: *mut Interp, source: Value) JsError!bool {
     }
     defer target.deinit(it.alloc)
     for entry in cache.entries.items() {
-        if text.eql(entry.href, target.withoutFragment()) && entry.bmp != null {
+        if text.eql(entry.href, target.withoutFragment()) && entry.bmp != null && (entry.mode == net.Mode.Cors) == (page.doc.attr(h, "crossorigin") != null) {
             return entry.tainted
         }
     }

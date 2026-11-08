@@ -215,7 +215,7 @@ fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
     if p.doc.attr(el, "src") |src| {
         if p.resolve(s.alloc, src) |target| {
             defer target.deinit(s.alloc)
-            if net.liveRequest(&target) {
+            if net.liveRequest(&target) && p.doc.attr(el, "crossorigin") == null {
                 waits = net.startLoad(target.withoutFragment(), net.Kind.Script, p.url.href)
                 if waits != 0 && net.loadState(waits) != net.LoadState.Running {
                     net.releaseLoad(waits)
@@ -277,7 +277,7 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer target.deinit(s.alloc)
-    let res = net.request(s.alloc, &target, net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) }) catch |e| {
+    let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })) catch |e| {
         match e {
             .OutOfMemory => {
                 return JsError.OutOfMemory

@@ -1,0 +1,18 @@
+import std.mem.Allocator
+import url.Url
+
+fn orbChecked(alloc: Allocator, req: Request, target: *Url, res: Response) FetchError!Response {
+    var at: []u8 = target.href
+
+    if res.url.len > 0 {
+        at = res.url
+    }
+
+    if !(orbRefuses(alloc, req, at, &res) catch true) {
+        return res
+    }
+
+    res.deinit(alloc)
+
+    return blocked(req, target.href)
+}

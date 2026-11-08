@@ -7034,6 +7034,36 @@ fn cors_preflight() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// `crossorigin` on script, img and link (Q3.3): a CORS-mode request
+/// that loads when the other origin sends ACAO and is a load error when
+/// it does not; a CORS image is readable by canvas, a no-cors one taints
+/// it. ORB in net: a no-cors script, image or fetch of a cross-origin
+/// JSON, HTML or nosniff text/plain response is blocked, a real script
+/// or image is not. (`browser/tests/net/crossorigin.html` must print
+/// `crossorigin.txt`.)
+#[test]
+fn crossorigin_orb() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/crossorigin.html", srv.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/crossorigin.txt"),
+        &text(&out.stdout),
+        "crossorigin_orb",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task
@@ -7863,7 +7893,7 @@ fn inserted_scripts() {
     );
     let port = srv.base.rsplit(':').next().unwrap();
     let missing = format!(
-        "[error] Failed to load script: {}/net/inserted_missing.js\n[error] Blocked a script of another origin served as HTML: http://localhost:{port}/log/inserted.html\n",
+        "[error] Failed to load script: {}/net/inserted_missing.js\n[error] Failed to load script: http://localhost:{port}/log/inserted.html\n",
         srv.base
     );
     let mut dumps = Vec::new();
