@@ -1,0 +1,17 @@
+import dom
+import engine
+import std.mem.AllocError
+
+fn textInput(r: *mut TabRenderer, typed: []u8) AllocError!void {
+    let p = r.page orelse return
+    let f = p.doc.controls.focus orelse return
+
+    if r.swallow || !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null { return }
+    if !(try engine.dispatchEvent(p, f, "beforeinput", typed)) { return }
+
+    let before = engine.fieldInput(p, f)
+
+    try dom.insertText(&mut p.doc, f, typed)
+    try engine.noteFieldEdit(p, f, before)
+    try engine.dispatchEvent(p, f, "input", typed)
+}

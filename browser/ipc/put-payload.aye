@@ -8,7 +8,9 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, pid)
         }
 
-        .Navigate { url } => try putBytes(out, url)
+        .Navigate { url, post, content_type, body } => try putNavigation(out, url, post, content_type, body)
+        .BeginNavigation { url, post, content_type, body } => try putNavigation(out, url, post, content_type, body)
+
         .Loaded { title, url } => {
             try putBytes(out, title)
             try putBytes(out, url)
@@ -32,5 +34,61 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .FrameAck { buffer } => try putU32(out, buffer)
+        .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
+            try putU32(out, seq)
+            try putU32(out, kind)
+            try putF64(out, x)
+            try putF64(out, y)
+            try putF64(out, mx)
+            try putF64(out, my)
+            try putU32(out, button)
+            try putU32(out, buttons)
+            try putU32(out, mods)
+            try putU32(out, clicks)
+        }
+
+        .Wheel { seq, x, y, dx, dy, precise } => {
+            try putU32(out, seq)
+            try putF64(out, x)
+            try putF64(out, y)
+            try putF64(out, dx)
+            try putF64(out, dy)
+            try putU32(out, precise)
+        }
+
+        .Key { seq, down, key, code, repeat, location, mods } => {
+            try putU32(out, seq)
+            try putU32(out, down)
+            try putBytes(out, key)
+            try putBytes(out, code)
+            try putU32(out, repeat)
+            try putU32(out, location)
+            try putU32(out, mods)
+        }
+
+        .Text { seq, typed } => {
+            try putU32(out, seq)
+            try putBytes(out, typed)
+        }
+
+        .InputAck { seq } => try putU32(out, seq)
+        .Popup { items, disabled, selected, x, y, w, h } => {
+            try putBytes(out, items)
+            try putBytes(out, disabled)
+            try putU32(out, selected)
+            try putF64(out, x)
+            try putF64(out, y)
+            try putF64(out, w)
+            try putF64(out, h)
+        }
+
+        .PopupChoice { index } => try putU32(out, index)
     }
+}
+
+fn putNavigation(out: *mut text.Builder, url: []u8, post: u32, content_type: []u8, body: []u8) AllocError!void {
+    try putBytes(out, url)
+    try putU32(out, post)
+    try putBytes(out, content_type)
+    try putBytes(out, body)
 }

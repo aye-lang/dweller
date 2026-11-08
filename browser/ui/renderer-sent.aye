@@ -19,7 +19,36 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.loading = false
         }
 
-        .Frame { buffer, width, height, damage, .. } => return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+            if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
+
+            return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+        }
+
+        .BeginNavigation { url, post, content_type, body } => {
+            if got.frame != slot.id { return "unexpected begin_navigation" }
+
+            try beginNavigation(slot, tp, url, post, content_type, body)
+        }
+
+        .Popup { items, disabled, selected, x, y, w, h } => {
+            if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
+
+            tp.popup.clear()
+            try tp.popup.append(items)
+            tp.popup_off.clear()
+            try tp.popup_off.append(disabled)
+            tp.popup_at = [4]f64{x, y, w, h}
+            tp.popup_selected = selected
+            tp.popup_new = true
+        }
+
+        .InputAck { seq } => {
+            if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
+
+            tp.acked = seq
+        }
+
         _ => {}
     }
 

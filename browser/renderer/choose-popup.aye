@@ -1,0 +1,24 @@
+import dom
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn choosePopup(r: *mut TabRenderer, index: u32) AllocError!void {
+    let p = r.page orelse return
+    let sel = r.popup orelse return
+
+    r.popup = null
+
+    if !p.doc.isLive(sel) { return }
+
+    var opts = List(NodeId).init(r.alloc)
+    defer opts.deinit()
+
+    try dom.options(&p.doc, sel, &mut opts)
+
+    if index as usize >= opts.len() || dom.isDisabled(&p.doc, opts.items()[index]) { return }
+
+    try dom.selectOption(&mut p.doc, sel, opts.items()[index])
+    try p.restyle()
+    r.due = true
+}

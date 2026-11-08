@@ -1,0 +1,29 @@
+import engine
+import pageview
+import std.mem.AllocError
+import std.text
+
+fn pointerAt(r: *TabRenderer, p: *mut engine.Page, kind: []u8, button: u32, at: MouseAt) AllocError!void {
+    if !engine.hasScripts(p) { return }
+
+    let t = p.tree orelse return
+    let node = engine.nodeAt(t, at.x + r.scroll_x, at.y + r.scroll_y) orelse p.doc.documentElement() orelse return
+    let el = elementOf(p, node)
+
+    var b = text.Builder.init(r.alloc)
+    defer b.deinit()
+
+    try b.appendInt(button as i64)
+    try b.appendByte('\n')
+    try b.appendInt(at.buttons as i64)
+    try b.appendByte('\n')
+    try b.appendInt(at.mods as i64)
+    try b.appendByte('\n')
+    try b.appendInt(at.clicks as i64)
+
+    let go_on = try engine.dispatchPointer(p, el, kind, b.bytes(), at.x, at.y, at.mx, at.my)
+
+    if go_on && text.startsWith(kind, "pointer") {
+        _ = try pageview.mouseEvent(p, el, kind, b.bytes(), at.x, at.y, at.mx, at.my)
+    }
+}

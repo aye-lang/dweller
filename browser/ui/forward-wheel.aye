@@ -1,0 +1,21 @@
+import ipc
+import std.mem.AllocError
+
+fn forwardWheel(ui: *mut Ui, dx: f64, dy: f64) AllocError!bool {
+    let tp = tabInput(ui) orelse return false
+    var x = -1.0
+    var y = -1.0
+
+    if ui.mouse_in && ui.mouse_y >= ui.top() {
+        x = ui.mouse_x
+        y = ui.mouse_y - ui.top()
+    }
+
+    let m = ipc.Message.Wheel { seq: tp.seq + 1, x: x, y: y, dx: dx, dy: dy, precise: ui.wheel_precise as u32 }
+
+    tp.seq += 1
+    ui.wheel_precise = false
+    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, m)
+
+    return true
+}
