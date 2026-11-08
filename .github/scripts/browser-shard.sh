@@ -13,9 +13,9 @@ run_tests() {
 
 if [ "$RUNNER_OS" = macOS ]; then col=3; else col=2; fi
 names="$(cargo test --release --test browser -- --list --format terse | sed -n 's/: test$//p' \
-  | awk -v c=$col 'NR == FNR { t[$1] = $c; next } { print ($1 in t ? t[$1] : 10), $1 }' tests/browser-times.txt - \
+  | awk -v c=$col 'NR == FNR { t[$1] = $c; next } { k = $1; if (!(k in t)) sub(/.*::/, "", k); print (k in t ? t[k] : 10), k, $1 }' tests/browser-times.txt - \
   | LC_ALL=C sort -k1,1nr -k2,2 \
-  | awk -v n="$shards" -v s="$shard" '{ b = 0; for (i = 1; i < n; i++) if (load[i] < load[b]) b = i; load[b] += $1 } b == s { print $2 }')"
+  | awk -v n="$shards" -v s="$shard" '{ b = 0; for (i = 1; i < n; i++) if (load[i] < load[b]) b = i; load[b] += $1 } b == s { print $3 }')"
 if [ -z "$names" ]; then
   echo "::error::shard $((shard + 1))/$shards has no tests"
   exit 1
