@@ -1,0 +1,11 @@
+import std.text
+import url.Url
+
+fn originHidden(policy: ReferrerPolicy, from: *Url, to: *Url) bool {
+    return match policy {
+        .NoReferrer => true
+        .NoReferrerWhenDowngrade, .StrictOrigin, .StrictOriginWhenCrossOrigin => text.eql(from.scheme, "https") && !text.eql(to.scheme, "https")
+        .SameOrigin => !sameOrigin(from, to)
+        _ => false
+    }
+}

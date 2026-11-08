@@ -50,6 +50,7 @@ struct Session {
     // the page's URL.
     nav_target: []mut u8
     nav_referrer: []mut u8
+    nav_user: bool
     // `noteFrame`: the documents shown in frames and their top-level
     // pages.
     frames: List(FrameTop)
@@ -94,6 +95,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         saved_ms: 0,
         nav_target: []mut u8{},
         nav_referrer: []mut u8{},
+        nav_user: false,
         frames: List(FrameTop).init(alloc),
         hsts: Hsts.init(alloc),
         certs: CertExceptions.init(alloc),
@@ -196,6 +198,7 @@ fn writesCookies(s: *Session) bool {
 /// Ends the session: saves the cookies (when there is a cookie file and
 /// they changed) and frees everything.
 pub fn stop() {
+    dropReferrerPolicies()
     let s = session orelse return
     session = null
     dropStoredCookies(s.alloc)
@@ -260,7 +263,7 @@ pub fn now() i64 {
 /// Remembers that the next load of `target` is a navigation from the
 /// page at `referrer` (a link, a form, a script), so that it is sent as
 /// the Referer. The next document fetch forgets it.
-pub fn noteNavigation(target: []u8, referrer: []u8) AllocError!void {
+pub fn noteNavigation(target: []u8, referrer: []u8, user: bool) AllocError!void {
     let s = session orelse return
     let t = try dup(s.alloc, withoutHash(target))
     let r = dup(s.alloc, referrer) catch |e| {
@@ -271,6 +274,7 @@ pub fn noteNavigation(target: []u8, referrer: []u8) AllocError!void {
     release(s.alloc, s.nav_referrer)
     s.nav_target = t
     s.nav_referrer = r
+    s.nav_user = user
 }
 
 /// Notes that the page `page` (its id) shows the document at `doc` in

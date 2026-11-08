@@ -1,0 +1,20 @@
+import dom.Document
+import dom.NodeId
+import net
+import std.text
+
+// https://html.spec.whatwg.org/multipage/semantics.html#meta-referrer
+fn metaReferrerPolicy(doc: *Document) ?net.ReferrerPolicy {
+    var policy: ?net.ReferrerPolicy = null
+    var cur: ?NodeId = doc.root
+
+    while cur |h| {
+        if doc.isElement(h, "meta") && text.eqlIgnoreCase(doc.attr(h, "name") orelse "", "referrer") {
+            policy = net.parseReferrerPolicy(doc.attr(h, "content") orelse "") orelse policy
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+
+    return policy
+}
