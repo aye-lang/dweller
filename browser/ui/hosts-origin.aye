@@ -1,0 +1,24 @@
+import net
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+fn hostsOrigin(tp: *TabProcess, at: *Url) bool {
+    if sameOriginAs(tp.url.alloc, topOf(tp), at) { return true }
+
+    var lines = text.split(tp.docs.bytes(), "\n")
+
+    while lines.next() |line| {
+        if sameOriginAs(tp.url.alloc, line, at) { return true }
+    }
+
+    return false
+}
+
+fn sameOriginAs(alloc: Allocator, href: []u8, at: *Url) bool {
+    let u = url.parse(alloc, href) catch return false
+    defer u.deinit(alloc)
+
+    return net.sameOrigin(&u, at)
+}

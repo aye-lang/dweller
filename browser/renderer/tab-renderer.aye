@@ -26,11 +26,13 @@ struct TabRenderer {
     target: text.Builder
     inbox: text.Builder
     current: text.Builder
+    reply: text.Builder
     docs: text.Builder
     fetches: u32 = 0
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
+    context: u32 = 0
     first: u32 = 0
     width: u32 = 0
     height: u32 = 0
@@ -85,6 +87,8 @@ struct TabRenderer {
     pub fn deinit(self: *mut Self) {
         if self.page |p| { p.destroy() }
 
+        if self.context != 0 { engine.tabContextGone(self.context) }
+
         if self.session |s| {
             if self.width > 0 { s.tab.page = null }
 
@@ -104,6 +108,7 @@ struct TabRenderer {
         self.target.deinit()
         self.inbox.deinit()
         self.current.deinit()
+        self.reply.deinit()
         self.docs.deinit()
     }
 }

@@ -336,6 +336,7 @@ fn scriptContext(page: *Url, top: *Url) Context {
 /// Appends to `out` the cookies that a script of the page at `page`
 /// sees (`document.cookie`), its top-level page at `top`.
 pub fn scriptCookies(page: *Url, top: *Url, out: *mut text.Builder) AllocError!void {
+    if remote_cookies |hook| { return hook(page, out) }
     let s = session orelse return
     return s.jar.header(page, true, scriptContext(page, top), now(), out)
 }
@@ -343,11 +344,11 @@ pub fn scriptCookies(page: *Url, top: *Url, out: *mut text.Builder) AllocError!v
 /// Stores a cookie set by a script of the page at `page`, its top-level
 /// page at `top` (`document.cookie = line`); none in a third-party frame.
 pub fn setScriptCookie(page: *Url, top: *Url, line: []u8) AllocError!void {
+    if remote_cookie_set |hook| { return hook(page, line) }
     let s = session orelse return
-    if storesIn(scriptContext(page, top)) {
-        try s.jar.store(page, line, true, now())
-        try noteStored(page, line, true)
-    }
+    if !storesIn(scriptContext(page, top)) { return }
+    try s.jar.store(page, line, true, now())
+    try noteStored(page, line, true)
 }
 
 fn withoutHash(href: []u8) []u8 {

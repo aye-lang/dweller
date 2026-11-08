@@ -141,6 +141,38 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, id)
             try putU32(out, code)
         }
+
+        .CookieGet { doc } => try putU32(out, doc)
+        .Cookies { cookies } => try putBytes(out, cookies)
+        .CookieSet { doc, line } => {
+            try putU32(out, doc)
+            try putBytes(out, line)
+        }
+
+        .Storage { doc, context, session, op, index, key, value } => {
+            let numbers = [5]u32{doc, context, session, op, index}
+
+            for v in numbers { try putU32(out, v) }
+
+            try putBytes(out, key)
+            try putBytes(out, value)
+        }
+
+        .StorageReply { found, refused, changed, count, value } => {
+            let numbers = [4]u32{found, refused, changed, count}
+
+            for v in numbers { try putU32(out, v) }
+
+            try putBytes(out, value)
+        }
+
+        .StorageEvent { nulls, key, old, value, url } => {
+            let texts = [4][]u8{key, old, value, url}
+
+            try putU32(out, nulls)
+
+            for b in texts { try putBytes(out, b) }
+        }
     }
 }
 

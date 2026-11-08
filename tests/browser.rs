@@ -5449,6 +5449,39 @@ fn window_damage_rect_only() {
     assert_eq!(last, vec![("raster_px", "1344 1"), ("ui_window_px", "1344 1")], "{err}");
 }
 
+/// Q4.19: a rAF tick that writes the same text into the top document
+/// builds the display list of that document alone; the still iframe keeps
+/// its list, the iframe whose own script changes its text is built again
+/// in the frames it changes, and the last frame equals the final page
+/// drawn from the start.
+#[test]
+fn window_frame_lists_reused() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = std::env::temp_dir();
+    let id = std::process::id();
+    let changed = dir.join(format!("dweller-q419-changed-{id}.png"));
+    let whole = dir.join(format!("dweller-q419-whole-{id}.png"));
+    let err = damage_window_run("browser/tests/ui/frame_lists.html", &changed, "painted");
+    damage_window_run("browser/tests/ui/frame_lists_final.html", &whole, "painted");
+    let (a, b) = (std::fs::read(&changed).unwrap(), std::fs::read(&whole).unwrap());
+    let _ = std::fs::remove_file(&changed);
+    let _ = std::fs::remove_file(&whole);
+    assert!(a == b, "the window differs from the final page drawn whole");
+    let builds: Vec<usize> = frame_records(&err)
+        .iter()
+        .map(|f| f.iter().filter(|(n, _)| n == "paint_build").count())
+        .collect();
+    let top_only = builds.iter().filter(|&&n| n == 1).count();
+    let with_b = builds.iter().filter(|&&n| n == 2).count();
+    let all = builds.iter().filter(|&&n| n >= 3).count();
+    assert!(top_only >= 20, "{top_only} frames built the top list alone: {builds:?}");
+    assert!(with_b >= 5, "{with_b} frames built the changing iframe: {builds:?}");
+    assert!(all <= 2, "{all} frames built every list: {builds:?}");
+}
+
 /// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed
@@ -6507,6 +6540,41 @@ fn jsdom_fixtures_restyle_beside_shadow() {
     assert!(out.status.success(), "{}\n{err}", out.status);
     let full = err.matches("DWELLER_TIMING\tstyle_full\t").count();
     assert!(full <= 5, "{full} full cascades:\n{err}");
+}
+
+/// Q4.16b: in a rAF with a running CSS transition,
+/// `browser/tests/ui/transition_reads.html` writes a style and reads
+/// getBoundingClientRect 100 times: the reads see the frame's transition
+/// value (the value getComputedStyle gives), the transition walk
+/// (`transition_walk`) runs at most once more than with 1 read (99 more
+/// before), and a style change between two reads is seen by the second.
+#[test]
+fn geometry_reads_restyle_once() {
+    let run = |reads: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TIMING", "1")
+            .args([
+                "dump",
+                "--text",
+                "--js",
+                &format!("browser/tests/ui/transition_reads.html?{reads}"),
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        let walks = err.matches("DWELLER_TIMING\ttransition_walk\t").count();
+        (text(&out.stdout), walks)
+    };
+    let (many, many_walks) = run("100");
+    let (one, one_walks) = run("1");
+    assert!(many.contains("1 true true 50 70"), "{many}");
+    assert_eq!(many, one);
+    assert!(
+        many_walks <= one_walks + 1,
+        "{many_walks} transition walks with 100 reads, {one_walks} with 1"
+    );
 }
 
 /// P4.75q: subtrees inserted on a page with `:has()` of any element and
@@ -8288,6 +8356,75 @@ fn window_stuck_script() {
     );
     assert!(got.contains("\nunresponsive 2\n"), "{got}");
     assert!(got.contains("\nstart hang after\n"), "{got}");
+}
+
+/// Q1.7b: a headless window never waits for a click on the stuck bar. A
+/// page whose first task runs 6 s ends with `--until-idle`: the bar
+/// chooses Wait and logs one line. The `stuck:stop` word chooses Stop.
+#[test]
+fn window_stuck_headless() {
+    use std::time::Duration;
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let window = |args: &[&str]| {
+        dweller_command()
+            .current_dir(root())
+            .args(args)
+            .spawn_drained()
+            .wait_with_output_within(Duration::from_secs(60))
+            .unwrap()
+    };
+    let out = window(&[
+        "browser/tests/ui/stuck_load.html",
+        "--font",
+        "fixed",
+        "--frames",
+        "200",
+        "--until-idle",
+        "--state",
+        "--text",
+    ]);
+    let got = text(&out.stdout);
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(
+        err.starts_with("stuck: page busy ")
+            && err.ends_with(" ms, waiting\n")
+            && err.lines().count() == 1,
+        "{err}"
+    );
+    assert!(
+        got.contains("\nunresponsive 1\n") && got.contains("start done"),
+        "{got}"
+    );
+    let out = window(&[
+        "browser/tests/ui/stuck.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "2",
+        "--state",
+        "--text",
+        "--events",
+        "click:50,65 stuck:stop frame click:50,115",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(
+        got.contains("\nunresponsive 1\n") && got.contains("\nstart hang after\n"),
+        "{got}"
+    );
 }
 
 /// P4.33: the window paints a page once its document and its sheet are
@@ -10791,6 +10928,85 @@ fn window_renderer_samesite() {
         }
         let typed = login_window_with(&show, "frame", Some(&dir), envs);
         assert!(typed.lines().any(|l| l == "ShowGET cookies: strict=1; lax=1; dflt=1"), "typed {envs:?}: {typed}");
+    }
+}
+
+/// Q2.4b: with `DWELLER_PROCESS=tab` `document.cookie`, `localStorage`
+/// and `sessionStorage` live in the browser, and pages see what they see
+/// in the window's own process: an `HttpOnly` cookie set by the server
+/// is not in `document.cookie` (`login/details.html`), a script stores
+/// neither an `HttpOnly` nor a `Secure` cookie on http:, the popups of
+/// `storage/tabs.html` share localStorage and copy sessionStorage as in
+/// `storage_between_tabs`, and a write in one tab reaches another tab of
+/// the origin as a `storage` event (another renderer under the flag) but
+/// not a tab of another origin. A renderer that asks for the cookies or
+/// the storage of a document it was not given is killed.
+#[test]
+fn window_renderer_storage() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let write = format!("{base}/storage/write.html");
+    let other = format!("{}?other", write.replace("127.0.0.1", "localhost"));
+    let port = base.rsplit(':').next().unwrap();
+    for envs in [&[][..], &tab[..]] {
+        let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+            assert!(
+                want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+                "{what} {envs:?}: want {want:?}, not {not:?}, got:\n{got}"
+            );
+        };
+        let details = login_window_with(&format!("{base}/login/details.html"), "frame frame frame", None, envs);
+        has(&details, &["fetch 200 cookie tab=1", "xhr 200 cookie tab=1"], &["cookie sid", "; sid="], "HttpOnly");
+        let script = login_window_with(&format!("{base}/storage/script-cookies.html"), "frame", None, envs);
+        has(&script, &["script cookies: [js=1]"], &[], "script cookies");
+        let tabs = login_window_with(&format!("{base}/storage/tabs.html"), "frame frame frame key:cmd+1 frame frame", None, envs);
+        has(
+            &tabs,
+            &["copy=from the opener (old null, local, from child.html?copy) | fresh=null (old null, local, from child.html?fresh) | own session child: null | own length 1"],
+            &[],
+            "storage between popups",
+        );
+        let visits = format!("{base}/storage/visits.html");
+        let again = login_window_with(&visits, &format!("frame {}", go_to(&visits)), None, envs);
+        has(&again, &["visits 2"], &[], "sessionStorage across a navigation");
+        let (wait, then) = if envs.is_empty() { (" loaded", " loaded frame") } else { ("", "") };
+        let events = format!(
+            "frame key:cmd+t {} key:return{wait} key:cmd+t {} key:return{wait} key:cmd+1{then} frame frame",
+            typed(&write),
+            typed(&other)
+        );
+        let heard = login_window_with(&format!("{base}/storage/listen.html"), &events, None, envs);
+        has(
+            &heard,
+            &[&format!("heard written=127.0.0.1:{port} (old null, from write.html)")],
+            &["written?other"],
+            "storage events between tabs",
+        );
+    }
+    for (evil, page, why) in [("cookie", "storage/script-cookies.html", "bad cookie"), ("storage", "storage/write.html", "bad storage")] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST_EVIL", evil)
+            .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("{evil}: no renderer line in\n{state}"));
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert_eq!(&r[2..], ["gone", why], "{evil}: {state}");
+        assert_eq!(text(&out.stderr), format!("error: bad message: {why} {}\n", r[1]), "{evil}");
     }
 }
 
