@@ -77,8 +77,6 @@ pub struct Conn {
     wait_idle: bool
     // The peer is gone: the connection is closed after this round.
     gone: bool
-    // A request its tab's renderer answers (Q2.3b), or one held until
-    // that renderer is ready.
     asked: bool
     // With --spaces: the Space serving it (null: not started yet).
     space: ?*mut Space
@@ -432,7 +430,6 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     if ui.tab_processes {
         if try askTabRenderer(ui, i, slot, tmp, line) |sent| {
             if !sent {
-                // Held until its renderer is ready: served again then.
                 let rest = try tmp.alloc(0 as u8, c.pending.len())
                 std.mem.copy(rest, c.pending.bytes())
                 c.pending.clear()
