@@ -23,6 +23,8 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
 
     try mirrorHistory(r)
 
+    if evilTest("commit") && outsideTop(r, href) { return send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: "", url: href }) }
+
     let p = try engine.loadShared(r.alloc, &target, sent, net.Initiator.Browser, &mut r.history)
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {

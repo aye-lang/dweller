@@ -14,6 +14,7 @@ fn storeThrough(r: *mut TabRenderer) {
 
 fn cookieSetRemote(page: *Url, line: []u8) AllocError!void {
     let r = store_renderer orelse return
+    let doc = storeDoc(r, page.href, "cookie") orelse return
 
-    send(r.alloc, r.conn, r.tab, ipc.Message.CookieSet { doc: storeDoc(r, page.href, "cookie"), line: line }) catch return
+    send(r.alloc, r.conn, r.tab, ipc.Message.CookieSet { doc: doc, line: line }) catch return
 }
