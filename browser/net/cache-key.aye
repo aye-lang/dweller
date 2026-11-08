@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn cacheKey(alloc: Allocator, req: Request, href: []u8) AllocError![]mut u8 {
+    let partition = try networkPartition(alloc, req, href)
+    defer alloc.free(partition)
+
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try out.append(partition)
+    try out.appendByte(' ')
+    try out.append(href)
+
+    return out.toOwned()
+}
