@@ -17,7 +17,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [7][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64), "--font", "system", "", ""}
+    var argv = [7][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -34,7 +34,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
         n += 1
     }
 
-    let pid = try spawnProgram(tmp, argv[..n])
+    let pid = try spawnRenderer(tmp, argv[..n], sv[1])
 
     closeFd(sv[1])
 

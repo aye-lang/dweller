@@ -1,0 +1,36 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: net/socket/client_socket_pool.h (GroupId)
+fn shareFor(alloc: Allocator, s: *mut Session, req: Request, href: []u8) AllocError!?*mut CurlShare {
+    let partition = try networkPartition(alloc, req, href)
+    defer alloc.free(partition)
+
+    for p in s.shares.items() {
+        if text.eql(p.owned_partition, partition) {
+            return p.share
+        }
+    }
+
+    let sh = curl_share_init() orelse return null
+
+    curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT)
+    curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS)
+    curl_share_setopt(sh, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION)
+
+    let owned = dup(s.alloc, partition) catch |e| {
+        curl_share_cleanup(sh)
+
+        return e
+    }
+
+    s.shares.append(PartitionShare { owned_partition: owned, share: sh }) catch |e| {
+        release(s.alloc, owned)
+        curl_share_cleanup(sh)
+
+        return e
+    }
+
+    return sh
+}
