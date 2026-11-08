@@ -1,6 +1,7 @@
 import dom.NodeId
 import engine
 import ipc
+import net
 
 fn submitAt(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) !void {
     if !(try engine.validateSubmission(p, form, submitter)) || !(try engine.dispatchSubmit(p, form, submitter)) { return p.restyle() }
@@ -10,5 +11,5 @@ fn submitAt(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?
 
     if try engine.submitElsewhere(p, form, &sub) { return }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: sub.target.href, post: sub.post as u32, content_type: sub.content_type, body: sub.body })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: sub.target.href, post: sub.post as u32, content_type: sub.content_type, body: sub.body, referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy()) })
 }

@@ -68,6 +68,7 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
         let target = page.follow(page.alloc, href) catch |e| {
             return Activation.Nothing
         }
+        net.noteNavigationPolicy(linkReferrerPolicy(doc, el))
         if text.eql(target.scheme, "javascript") || text.eql(target.scheme, "mailto") {
             target.deinit(page.alloc)
             return Activation.Nothing
@@ -481,6 +482,9 @@ pub fn submitForm(page: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!
         body.clear()
     }
     try net.noteNavigation(target.href, page.url.href, true)
+    if relHas(page.doc.attr(form, "rel") orelse "", "noreferrer") {
+        net.noteNavigationPolicy(net.ReferrerPolicy.NoReferrer)
+    }
     let ct = try ctype.toOwned()
     errdefer alloc.free(ct)
     let data = try body.toOwned()

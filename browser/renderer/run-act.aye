@@ -1,5 +1,6 @@
 import engine
 import ipc
+import net
 
 fn runAct(r: *mut TabRenderer, p: *mut engine.Page, act: engine.Activation) !void {
     match act {
@@ -7,7 +8,7 @@ fn runAct(r: *mut TabRenderer, p: *mut engine.Page, act: engine.Activation) !voi
         .Follow { target } => {
             defer target.deinit(r.alloc)
 
-            try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: target.href, post: 0, content_type: "", body: "" })
+            try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: target.href, post: 0, content_type: "", body: "", referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy()) })
         }
 
         .Submit { form, submitter } => try submitAt(r, p, form, submitter)

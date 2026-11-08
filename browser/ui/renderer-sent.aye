@@ -1,4 +1,5 @@
 import ipc
+import net
 import std.mem.AllocError
 
 let MAX_URL_CHARS: usize = 2097152
@@ -42,10 +43,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
         }
 
-        .BeginNavigation { url, post, content_type, body } => {
+        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
             if got.frame != slot.id { return "unexpected begin_navigation" }
 
-            try beginNavigation(slot, tp, url, post, content_type, body)
+            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
+
+            try beginNavigation(slot, tp, url, post, content_type, body, policy)
         }
 
         .Popup { items, disabled, selected, x, y, w, h } => {

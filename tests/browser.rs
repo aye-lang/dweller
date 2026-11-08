@@ -7688,7 +7688,9 @@ fn cache_partition() {
 /// policies, over https (`server.py` with `hsts/site.pem`; `site.test`
 /// and `127.0.0.1` are two sites of one port). `/meta/` records the
 /// headers in `/meta-log`. A plain http host that is not potentially
-/// trustworthy gets no `Sec-Fetch-*`.
+/// trustworthy gets no `Sec-Fetch-*`. Q3.14b: `referrerpolicy` and
+/// `rel=noreferrer` on links, forms and frames, fetch's `referrerPolicy`,
+/// a redirect's `Referrer-Policy`, no `Origin` after a POST's 303.
 #[test]
 fn fetch_metadata() {
     use std::io::BufRead;
@@ -7732,6 +7734,8 @@ fn fetch_metadata() {
     dump(&["--text", &format!("{site}/meta/typed.html")]);
     dump(&["--text", "--js", &format!("{site}/net/fetch-metadata-meta.html")]);
     dump(&["--text", "--js", &format!("{site}/policy/no-referrer/net/fetch-metadata-plain.html")]);
+    let policy = format!("{site}/with-other/net/fetch-metadata-policy.html?other={ip}");
+    dump(&["--text", "--js", &policy]);
     let none = "sec-fetch-user= | origin=";
     meta("GET /meta/same.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={page}"));
     meta("GET /meta/cross.js", &format!("sec-fetch-site=cross-site | sec-fetch-mode=no-cors | sec-fetch-dest=script | {none} | referer={site}/"));
@@ -7740,6 +7744,10 @@ fn fetch_metadata() {
     meta("GET /meta/typed.html", "sec-fetch-site=none | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer=");
     meta("GET /meta/meta-origin.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={site}/"));
     meta("GET /meta/header-none.png", &format!("sec-fetch-dest=image | {none} | referer="));
+    meta("GET /meta/frame-noref.html", &format!("sec-fetch-dest=iframe | {none} | referer="));
+    meta("GET /meta/redirected.js", &format!("sec-fetch-dest=script | {none} | referer="));
+    meta("GET /meta/fetch-noref", "referer=");
+    meta("GET /meta/fetch-303", &format!("origin= | referer={policy}"));
 
     if let Some(plain) = server() {
         let plain_port = plain.base.rsplit(':').next().unwrap().to_string();
@@ -7761,9 +7769,11 @@ fn fetch_metadata() {
     for tab in [false, true] {
         let name = if tab { "tab" } else { "window" };
         let target = format!("{ip}/meta/nav-{name}.html");
-        let links = format!("{site}/net/samesite_links.html?{target}");
+        let samesite = format!("{site}/net/samesite_links.html?{target}");
+        let referrer = format!("{site}/net/referrer_links.html?{ip}/meta/policy-{name}-");
         let (wait, then) = if tab { ("renderer:loaded ", " renderer:input renderer:loaded") } else { ("loaded ", " loaded") };
-        for click in ["click:80,65", "click:60,115"] {
+        let clicks = [(&samesite, "click:80,65"), (&samesite, "click:60,115"), (&referrer, "click:80,65"), (&referrer, "click:80,115"), (&referrer, "click:60,165"), (&referrer, "click:60,215")];
+        for (links, click) in clicks {
             let mut c = dweller_command();
             c.current_dir(root()).envs(tls);
             if tab {
@@ -7771,7 +7781,7 @@ fn fetch_metadata() {
             }
             let events = format!("{wait}{click}{then}");
             let out = c
-                .args([&links, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", &events])
+                .args([links, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", &events])
                 .output()
                 .unwrap();
             assert!(out.status.success() && out.stderr.is_empty(), "{name} {click}: {}", text(&out.stderr));
@@ -7779,6 +7789,11 @@ fn fetch_metadata() {
         let path = format!("/meta/nav-{name}.html");
         meta(&format!("GET {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer={site}/"));
         meta(&format!("POST {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin={site} | referer={site}/"));
+        let nav = "sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1";
+        meta(&format!("GET /meta/policy-{name}-unsafe.html"), &format!("{nav} | origin= | referer={referrer}"));
+        meta(&format!("GET /meta/policy-{name}-noref.html"), &format!("{nav} | origin= | referer="));
+        meta(&format!("POST /meta/policy-{name}-nopost.html"), &format!("{nav} | origin=null | referer="));
+        meta(&format!("GET /meta/policy-{name}-see.html"), &format!("{nav} | origin= | referer={site}/"));
     }
 }
 
