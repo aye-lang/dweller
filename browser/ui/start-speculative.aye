@@ -1,0 +1,32 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc CreateSpeculativeRenderFrameHost
+fn startSpeculative(ui: *mut Ui, slot: *mut TabSlot, old: *mut TabProcess) AllocError!void {
+    var res = old.swap_to.?
+    let started = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id)
+
+    old.swap_to = null
+
+    if started == null {
+        res.deinit(ui.alloc)
+
+        return failSwap(slot, old)
+    }
+
+    let next = started.?
+    var href: []u8 = old.committed.bytes()
+
+    if res.url.len > 0 { href = res.url }
+
+    try writeSite(href, &mut next.site)
+    try next.url.append(href)
+    next.pids.clear()
+    try next.pids.append(old.pids.bytes())
+    try next.pids.appendByte(' ')
+    try next.pids.appendInt(next.pid as i64)
+    next.primed = res
+    next.doc_seq = old.doc_seq
+    next.push_on_commit = old.push_on_commit
+    next.loading = true
+    slot.speculative = next
+}

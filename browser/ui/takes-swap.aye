@@ -1,0 +1,23 @@
+import net
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc GetFrameHostForNavigation
+fn takesSwap(tp: *mut TabProcess, res: net.Response, href: []u8) AllocError!bool {
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+
+    try writeSite(href, &mut site)
+
+    if site.len() == 0 || text.eql(site.bytes(), tp.site.bytes()) { return false }
+
+    if tp.site.len() == 0 {
+        try tp.site.append(site.bytes())
+
+        return false
+    }
+
+    tp.swap_to = res
+
+    return true
+}

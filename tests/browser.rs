@@ -10729,7 +10729,7 @@ fn window_renderer_net() {
     let plain = login_window_with(&headers, "frame", None, &tab);
     let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "headers")]);
     assert!(plain.contains(&format!("Referer: {headers}")) && !evil.contains("evil"), "{evil}");
-    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer ")).collect::<Vec<_>>().join("\n");
+    let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer")).collect::<Vec<_>>().join("\n");
     assert_eq!(page_only(&evil), page_only(&plain));
     for evil in ["initiator", "top", "referrer", "trace"] {
         let out = dweller_command()
@@ -11420,6 +11420,62 @@ fn window_renderer_history() {
     let pid = line.split(' ').nth(1).unwrap_or("");
     assert!(line.ends_with(" gone bad url"), "{state}");
     assert_eq!(err, format!("error: bad message: bad url {pid}\n"));
+}
+
+/// Q2.6b: with `DWELLER_PROCESS=tab` a cross-site navigation
+/// (`127.0.0.1` and `localhost` are two sites) commits in a new renderer
+/// and retires the old one; a same-site one stays in its renderer. The
+/// way back to a site is a new renderer again (no process is kept), and
+/// back and forward across sites swap too.
+#[test]
+fn window_renderer_sites() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let run = |events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let pids = |state: &str| -> Vec<String> {
+        let line = state.lines().find(|l| l.starts_with("renderer-pids ")).unwrap_or("");
+        line.split(' ').skip(1).map(String::from).collect()
+    };
+    let distinct = |p: &[String]| p.iter().collect::<std::collections::HashSet<_>>().len() == p.len();
+
+    let state = run("renderer:loaded click:50,106 renderer:input renderer:loaded");
+    assert!(state.contains(&format!("\naddress {page}?same\nhistory 2 of 2\n")), "{state}");
+    assert!(state.contains(" title 127.0.0.1?same\n") && state.contains("\nrenderer-site http://127.0.0.1\n"), "{state}");
+    assert_eq!(pids(&state).len(), 1, "same site keeps the renderer:\n{state}");
+
+    let there = "renderer:loaded click:50,62 renderer:input renderer:loaded click:50,62 renderer:input renderer:loaded";
+    let cases = [
+        (there.to_string(), page.as_str(), "3 of 3", "127.0.0.1", 3),
+        (format!("{there} key:cmd+[ renderer:loaded"), other.as_str(), "2 of 3", "localhost", 4),
+        (format!("{there} key:cmd+[ renderer:loaded key:cmd+] renderer:loaded"), page.as_str(), "3 of 3", "127.0.0.1", 5),
+    ];
+    for (events, address, at, host, count) in &cases {
+        let state = run(events);
+        let p = pids(&state);
+        assert!(state.contains(&format!("\naddress {address}\nhistory {at}\n")), "{events}:\n{state}");
+        assert!(state.contains(&format!("\nrenderer {} title {host}\n", p.last().unwrap())), "{events}:\n{state}");
+        assert!(state.contains(&format!("\nrenderer-site http://{host}\n")), "{events}:\n{state}");
+        assert!(p.len() == *count && distinct(&p), "{events}: renderers {p:?}\n{state}");
+    }
 }
 
 /// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default

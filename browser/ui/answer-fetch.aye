@@ -22,6 +22,9 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             defer target.deinit(alloc)
 
             let navigates = nav == 1 && kind == 0 && top.len == 0 && fetchNavigates(tp, target.href)
+
+            if navigates && tp.loading && tp.primed != null { return sendPrimed(tp, on, id, target.href) }
+
             var req = net.codedRequest(kind, credentials, mode, fetchInitiator(tp, doc, navigates)) orelse return "bad fetch"
             var sent = net.Body { content_type: content_type, data: body }
             var allowed = text.Builder.init(alloc)
@@ -44,6 +47,12 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
 
                 return ""
             }
+
+            var final = target.href
+
+            if res.url.len > 0 { final = res.url }
+
+            if navigates && tp.loading && (try takesSwap(tp, res, final)) { return "" }
 
             defer res.deinit(alloc)
             try sendFetched(tp, on, id, navigates, kind == 0, target.href, &res)

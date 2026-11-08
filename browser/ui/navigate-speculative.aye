@@ -1,0 +1,17 @@
+import ipc
+import std.mem.AllocError
+
+fn navigateSpeculative(slot: *TabSlot, next: *mut TabProcess) AllocError!void {
+    let h = &slot.session.tab.history
+    var at = h.current
+    var length = h.len()
+
+    if next.push_on_commit {
+        at += 1
+        length = at + 1
+    }
+
+    try next.committed.append(next.url.bytes())
+    try sendSessionHistory(slot, next, at, length)
+    try ipc.encode(&mut next.outbox, slot.id, ipc.Message.Navigate { url: next.url.bytes(), post: 0, content_type: "", body: "" })
+}
