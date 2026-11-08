@@ -70,6 +70,27 @@ then lists them all (`docs/decisions.md:318`).
 **Why:** a default keeps another branch's new literals valid; a required
 field is the right choice only when a silent default would be wrong.
 
+### Put a new Rust test in its own area file
+**Context:** adding a test to `cargo test --test browser`.
+**Bad:** every card appended its test at the end of `tests/browser.rs`
+(12 344 lines), so any two PRs in the merge queue conflicted.
+**Good:** `tests/browser.rs` holds the shared helpers and one
+`#[path = "browser/<area>.rs"] mod <area>;` pair per file, in
+alphabetical order; the tests are in `tests/browser/<area>.rs`, each
+starting with `use super::*;`. Put a new test in the matching area file,
+or in a new `tests/browser/<area>_<topic>.rs` with its own alphabetical
+`mod` pair. Keep a helper next to its tests when only one file uses it;
+move it to `tests/browser.rs` when a second file needs it. Name a module
+so that the shared filters keep working: either every test in it contains
+the module name (`window_renderer`, `agent`), or the name has no `_` and
+is no test's full name (`net`, `paint`). Then a filter such as
+`window_` or a full test name selects the same tests as before; a bare
+module name (`net`) or `net::` selects the whole file.
+**Why:** test names now print with the module path
+(`net::hsts`). `.github/scripts/browser-shard.sh` runs them with
+`--exact` by that path and looks up `tests/browser-times.txt` by the
+bare name, so moving a test between files keeps its time and its shard.
+
 ## CSS
 
 ### Do not alias a shorthand to a longhand

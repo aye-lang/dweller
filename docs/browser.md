@@ -53,6 +53,14 @@ browser/
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
+The Rust tests (`cargo test --test browser`) are in
+`tests/browser/<area>.rs`, one file per area; `tests/browser.rs` holds
+the shared helpers and one alphabetical `mod` line per file. A new test
+goes in the matching area file or in its own
+`tests/browser/<area>_<topic>.rs` with one more `mod` line
+(`docs/practices/browser.md`, "Put a new Rust test in its own area
+file").
+
 ### Layers
 
 | Layer | Modules |
