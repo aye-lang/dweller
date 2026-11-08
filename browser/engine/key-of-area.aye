@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn keyOfArea(st: *mut Store, area: []u8, ask: StorageAsk, out: *mut text.Builder) AllocError!StorageDone {
+    var n: u32 = 0
+    let items = st.items.items()
+
+    for i in 0..items.len / 3 {
+        if text.eql(items[i * 3], area) {
+            if ask.op == 4 && n == ask.index {
+                try out.append(items[i * 3 + 1])
+
+                return StorageDone { found: true }
+            }
+
+            n += 1
+        }
+    }
+
+    return StorageDone { count: n }
+}
