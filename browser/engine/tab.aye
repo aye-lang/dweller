@@ -109,6 +109,9 @@ pub struct Tab {
     /// document only scrolls (`toFragment`). Returns whether a new page
     /// was loaded (which then needs a layout).
     pub fn navigate(self: *mut Self, target: *Url, initiator: net.Initiator) AllocError!bool {
+        if try blocksTopData(self.page, target, initiator) {
+            return false
+        }
         if self.sameDocument(target) {
             try self.toFragment(target)
             return false
@@ -127,6 +130,9 @@ pub struct Tab {
     /// `width` x `height`) go on. `sheetsIn` says when to lay it out,
     /// `scriptsIn` when to run its scripts (`stepEarly`).
     pub fn navigateEarly(self: *mut Self, target: *Url, width: f64, height: f64, initiator: net.Initiator) AllocError!bool {
+        if try blocksTopData(self.page, target, initiator) {
+            return false
+        }
         if self.sameDocument(target) {
             try self.toFragment(target)
             return false

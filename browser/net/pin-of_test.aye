@@ -1,0 +1,11 @@
+let SELF_SIGNED = "Cert:-----BEGIN CERTIFICATE-----\nMIIBrzCCAVSgAwIBAgIUaXKRG+DW3BgyXTZkCSU9XCNoLmQwCgYIKoZIzj0EAwIwIzEhMB8GA1UEAwwYZHdlbGxlciB0ZXN0IHNlbGYtc2lnbmVkMCAXDTI2MTEwNDAxNTUyMVoYDzIxMjYxMDExMDE1NTIxWjAjMSEwHwYDVQQDDBhkd2VsbGVyIHRlc3Qgc2VsZi1zaWduZWQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASKLXcUEah4d7aJOewqc64oRNf8YaZQjs5L1YMNJbCI6fInEreyWSamk+EYeIH4G4zhJW2y5xiVtwVP67nOosdfo2QwYjAdBgNVHQ4EFgQU16WYLzUoXizX6l0URBFMle5kXj8wHwYDVR0jBBgwFoAU16WYLzUoXizX6l0URBFMle5kXj8wDwYDVR0TAQH/BAUwAwEB/zAPBgNVHREECDAGhwR/AAABMAoGCCqGSM49BAMCA0kAMEYCIQDAZ19UwuzFkTLBSTvr6hzuDzJKIZ3mSMox4ylrUs+/wwIhAIXPjguDwDwkvQZFNlQMCSFYapfCVWPiA3BcabSCtZQr\n-----END CERTIFICATE-----\n"
+
+test "a certificate's pin is the SHA-256 of its public key" {
+    let a = @testAllocator()
+    let pin = (try pinOf(a, SELF_SIGNED)).?
+    defer a.free(pin)
+
+    @expectEqual("sha256//LxP14xGQ4K6Ohw4C+bR5cevHvvXNoS5h6OQ6M+maaI4=", pin)
+    @expect((try pinOf(a, "Cert:-----BEGIN CERTIFICATE-----\nMAA=\n-----END CERTIFICATE-----")) == null)
+    @expect((try pinOf(a, "no certificate")) == null)
+}

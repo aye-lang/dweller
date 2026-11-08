@@ -213,6 +213,7 @@ fn attachLoading(p: *mut Page) AllocError!void {
         id = try addContext(p.alloc, true)
     }
     let c = contextOf(id).?
+    try resetWindowName(c, p)
     c.page = p
     p.context = id
 }
@@ -517,6 +518,10 @@ fn serveInMemory(t: *mut ContextTable, r: ContextRequest) AllocError!void {
 /// when it has a body. Returns whether a new page was loaded.
 pub fn loadInTab(tab: *mut Tab, target: *Url, r: ContextRequest) AllocError!bool {
     let initiator = net.Initiator.Page { url: r.initiator }
+
+    if try blocksTopData(tab.page, target, initiator) {
+        return false
+    }
 
     if !r.post {
         return tab.navigate(target, initiator)

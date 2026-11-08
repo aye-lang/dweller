@@ -54,7 +54,11 @@ none of these: `type="module"` scripts were skipped and `nomodule` ran.
 
 - Module scripts inserted by a script (not the parser) do not run, as for
   classic scripts; script elements fire no `load`/`error` events.
-- No module CORS checks, integrity, or `import.meta` beyond `url` and
+- Modules are fetched in CORS mode (Q3.3b, `docs/plans/cards/Q3.3b.md`):
+  credentials same-origin, or include for `crossorigin=use-credentials`
+  (inherited by the graph). A failed fetch of a module script's graph is
+  an error event at an inserted element, not an uncaught error.
+- No integrity, or `import.meta` beyond `url` and
   `resolve`. Import attribute types other than `json` are TypeErrors.
 - `async` module scripts run like deferred ones.
 
