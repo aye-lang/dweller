@@ -1,0 +1,97 @@
+import layout
+import std.mem.Allocator
+import std.text
+import url
+
+fn loadScripted(a: Allocator, src: []u8) !*mut Page {
+    setScripting(true)
+    let u = try url.parse(a, src)
+
+    defer u.deinit(a)
+
+    return try load(a, &u)
+}
+
+fn read(p: *mut Page, src: []u8, out: *mut text.Builder) !*mut Geometry {
+    out.clear()
+    @expect(try evalInPage(p, src, out))
+
+    return p.script.?.geom.?
+}
+
+fn sameAsFull(s: *mut Script, g: *mut Geometry) !bool {
+    var full = try layOut(s, g.styles)
+
+    defer {
+        full.tree.deinit()
+        s.alloc.destroy(full.tree)
+        full.first.deinit()
+        full.next.deinit()
+    }
+
+    _ = layout.scrollTo(full.tree, g.tree.scroll_y)
+
+    return sameBoxes(s, g.tree, g.tree.root.?, full.tree, full.tree.root.?)
+}
+
+test "a read after changes layout does not read lays nothing out" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<style>.on { color: red }</style><div id=a><p id=p>t</p></div>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let g = try read(p, "document.getElementById('a').offsetWidth", &mut out)
+    let tree = g.tree
+    let boxes = tree.boxes.len()
+    let after = try read(p, "var e = document.getElementById('p'); e.style.color = 'blue'; e.classList.add('on'); e.classList.add('nobody'); document.createElement('div').textContent = 'x'; document.getElementById('a').offsetWidth", &mut out)
+
+    @expectEqual("784", out.bytes())
+    @expect(after.tree == tree)
+    @expectEqual(boxes, after.tree.boxes.len())
+}
+
+test "a read after a width change lays out only the changed element" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<div id=a><p>t</p></div><div><p>u</p><p>v</p><p>w</p><p>x</p><p>y</p></div>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let g = try read(p, "document.getElementById('a').offsetWidth", &mut out)
+    let tree = g.tree
+    let boxes = tree.boxes.len()
+    let after = try read(p, "var e = document.getElementById('a'); e.style.width = '50px'; e.offsetWidth", &mut out)
+
+    @expectEqual("50", out.bytes())
+    @expect(after.tree == tree)
+    @expect(after.tree.boxes.len() - boxes < 5)
+    @expect(try sameAsFull(p.script.?, after))
+}
+
+test "a class change inside a fixed box with a width lays out only inside it" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<style>.w { position: fixed; right: 10px; bottom: 30px; width: 98px } .w ul { position: relative } li { height: 28px; position: relative } li.on { border-left: 4px solid } li.on::before { content: ''; position: absolute; left: 14px; top: 5px; width: 4px; height: 18px }</style><div><p>a</p><p>b</p><p>c</p><p>d</p><p>e</p><p>f</p><p>g</p><p>h</p></div><div class=w><div><ul><li id=x>a</li><li id=y class=on>b</li></ul></div></div>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let g = try read(p, "document.getElementById('x').offsetHeight", &mut out)
+    let tree = g.tree
+    let boxes = tree.boxes.len()
+    let after = try read(p, "document.getElementById('y').classList.remove('on'); document.getElementById('x').classList.add('on'); document.getElementById('x').offsetHeight", &mut out)
+
+    @expectEqual("28", out.bytes())
+    @expect(after.tree == tree)
+    @expect(after.tree.boxes.len() - boxes < 12)
+    @expect(try sameAsFull(p.script.?, after))
+}
