@@ -1,0 +1,28 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn noteReferrerPolicy(alloc: Allocator, page: []u8, policy: ReferrerPolicy) AllocError!void {
+    if page_referrer_policies == null {
+        page_referrer_policies = try alloc.create(PageReferrerPolicies { alloc: alloc, pages: List(PagePolicy).init(alloc) })
+    }
+
+    let all = page_referrer_policies orelse return
+
+    for i, p in all.pages.items() {
+        if text.eql(p.owned_page, page) {
+            all.pages.items()[i].policy = policy
+
+            return
+        }
+    }
+
+    let owned = try dup(all.alloc, page)
+
+    all.pages.append(PagePolicy { owned_page: owned, policy: policy }) catch |e| {
+        release(all.alloc, owned)
+
+        return e
+    }
+}

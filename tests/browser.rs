@@ -7684,6 +7684,104 @@ fn cache_partition() {
     }
 }
 
+/// Q3.14: Fetch Metadata, `Origin` on a POST navigation and referrer
+/// policies, over https (`server.py` with `hsts/site.pem`; `site.test`
+/// and `127.0.0.1` are two sites of one port). `/meta/` records the
+/// headers in `/meta-log`. A plain http host that is not potentially
+/// trustworthy gets no `Sec-Fetch-*`.
+#[test]
+fn fetch_metadata() {
+    use std::io::BufRead;
+    let tests = root().join("browser/tests");
+    let Ok(mut child) = Command::new("python3")
+        .arg("-I")
+        .arg(tests.join("server.py"))
+        .arg(&tests)
+        .arg("127.0.0.1")
+        .arg(tests.join("hsts/site.pem"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let _srv = Server { child, base: String::new() };
+    let port: u16 = line.trim().parse().unwrap();
+    let site = format!("https://site.test:{port}");
+    let ip = format!("https://127.0.0.1:{port}");
+    let resolve = format!("site.test:{port}:127.0.0.1");
+    let ca = tests.join("hsts/ca.pem");
+    let ca = ca.to_str().unwrap();
+    let tls = [("DWELLER_TEST", "1"), ("DWELLER_TEST_CA", ca), ("DWELLER_RESOLVE", resolve.as_str())];
+    let dump = |args: &[&str]| {
+        let out = dweller_command().current_dir(root()).envs(tls).arg("dump").args(args).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let meta = |path: &str, want: &str| {
+        let log = dump(&["--text", &format!("{ip}/meta-log")]);
+        assert!(log.lines().any(|l| l.starts_with(path) && l.ends_with(want)), "{path}: want {want:?} in\n{log}");
+    };
+    let page = format!("{site}/with-other/net/fetch-metadata.html?other={ip}");
+    dump(&["--text", "--js", &page]);
+    dump(&["--text", &format!("{site}/meta/typed.html")]);
+    dump(&["--text", "--js", &format!("{site}/net/fetch-metadata-meta.html")]);
+    dump(&["--text", "--js", &format!("{site}/policy/no-referrer/net/fetch-metadata-plain.html")]);
+    let none = "sec-fetch-user= | origin=";
+    meta("GET /meta/same.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={page}"));
+    meta("GET /meta/cross.js", &format!("sec-fetch-site=cross-site | sec-fetch-mode=no-cors | sec-fetch-dest=script | {none} | referer={site}/"));
+    meta("GET /meta/frame.html", &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=iframe | {none} | referer={site}/"));
+    meta("GET /meta/noref.js", &format!("sec-fetch-dest=script | {none} | referer="));
+    meta("GET /meta/typed.html", "sec-fetch-site=none | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer=");
+    meta("GET /meta/meta-origin.png", &format!("sec-fetch-site=same-origin | sec-fetch-mode=no-cors | sec-fetch-dest=image | {none} | referer={site}/"));
+    meta("GET /meta/header-none.png", &format!("sec-fetch-dest=image | {none} | referer="));
+
+    if let Some(plain) = server() {
+        let plain_port = plain.base.rsplit(':').next().unwrap().to_string();
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_RESOLVE", format!("plain.test:{plain_port}:127.0.0.1"))
+            .args(["dump", "--text", &format!("http://plain.test:{plain_port}/meta/plain.html")])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        let log = text(&run(&["dump", "--text", &format!("{}/meta-log", plain.base)]).stdout);
+        assert_eq!(log, "GET /meta/plain.html | sec-fetch-site= | sec-fetch-mode= | sec-fetch-dest= | sec-fetch-user= | origin= | referer=\n");
+    }
+
+    if !has_sdl() {
+        println!("skipped the navigations: no SDL2");
+        return;
+    }
+    for tab in [false, true] {
+        let name = if tab { "tab" } else { "window" };
+        let target = format!("{ip}/meta/nav-{name}.html");
+        let links = format!("{site}/net/samesite_links.html?{target}");
+        let (wait, then) = if tab { ("renderer:loaded ", " renderer:input renderer:loaded") } else { ("loaded ", " loaded") };
+        for click in ["click:80,65", "click:60,115"] {
+            let mut c = dweller_command();
+            c.current_dir(root()).envs(tls);
+            if tab {
+                c.env("DWELLER_PROCESS", "tab");
+            }
+            let events = format!("{wait}{click}{then}");
+            let out = c
+                .args([&links, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text", "--events", &events])
+                .output()
+                .unwrap();
+            assert!(out.status.success() && out.stderr.is_empty(), "{name} {click}: {}", text(&out.stderr));
+        }
+        let path = format!("/meta/nav-{name}.html");
+        meta(&format!("GET {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin= | referer={site}/"));
+        meta(&format!("POST {path}"), &format!("sec-fetch-site=cross-site | sec-fetch-mode=navigate | sec-fetch-dest=document | sec-fetch-user=?1 | origin={site} | referer={site}/"));
+    }
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task

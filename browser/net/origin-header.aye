@@ -7,9 +7,14 @@ import url.Url
 // https://fetch.spec.whatwg.org/#append-a-request-origin-header
 fn originHeader(alloc: Allocator, req: Request, to: *Url, out: *mut text.Builder) AllocError!void {
     let origin = requestOrigin(req, req.referrer)
+    let read = (req.method.len == 0 && req.body == null) || text.eql(req.method, "GET") || text.eql(req.method, "HEAD")
 
-    if (req.kind != Kind.Other && req.mode != Mode.Cors) || origin.len == 0 {
+    if (req.kind != Kind.Other && req.mode != Mode.Cors && read) || origin.len == 0 {
         return
+    }
+
+    if text.eql(origin, "null") {
+        return out.append("Origin: null")
     }
 
     let from = url.parse(alloc, origin) catch |e| {
@@ -17,10 +22,13 @@ fn originHeader(alloc: Allocator, req: Request, to: *Url, out: *mut text.Builder
     }
 
     defer from.deinit(alloc)
-    let read = req.method.len == 0 || text.eql(req.method, "GET") || text.eql(req.method, "HEAD")
 
     if (read && sameOrigin(&from, to)) || (!text.eql(from.scheme, "http") && !text.eql(from.scheme, "https")) {
         return
+    }
+
+    if req.mode != Mode.Cors && !read && originHidden(referrerPolicyOf(req), &from, to) {
+        return out.append("Origin: null")
     }
 
     try out.append("Origin: ")

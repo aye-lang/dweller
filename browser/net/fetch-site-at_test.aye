@@ -1,0 +1,22 @@
+import std.mem.Allocator
+import url
+
+fn siteFrom(a: Allocator, origin: []u8, to: []u8, was: FetchSite) FetchSite {
+    let at = url.parse(a, to) catch unreachable
+
+    defer at.deinit(a)
+
+    return fetchSiteAt(a, origin, &at, was)
+}
+
+test "net: Sec-Fetch-Site of each URL of a chain" {
+    let a = @testAllocator()
+
+    @expect(siteFrom(a, "https://a.example", "https://a.example/x", FetchSite.SameOrigin) == FetchSite.SameOrigin)
+    @expect(siteFrom(a, "https://a.example", "https://b.a.example/x", FetchSite.SameOrigin) == FetchSite.SameSite)
+    @expect(siteFrom(a, "https://a.example", "https://a.example/x", FetchSite.SameSite) == FetchSite.SameSite)
+    @expect(siteFrom(a, "https://a.example", "http://a.example/x", FetchSite.SameOrigin) == FetchSite.CrossSite)
+    @expect(siteFrom(a, "https://a.example", "https://b.example/x", FetchSite.SameOrigin) == FetchSite.CrossSite)
+    @expect(siteFrom(a, "https://b.example", "https://b.example/x", FetchSite.CrossSite) == FetchSite.CrossSite)
+    @expect(siteFrom(a, "", "https://b.example/x", FetchSite.None) == FetchSite.None)
+}

@@ -100,7 +100,7 @@ test "the cursor, target URL, long task, take focus and redirect messages round-
 test "fetch messages round-trip and go the right way" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
-    let asked = try roundTrip(&mut out, 7, Message.Fetch { id: 1, doc: 2, nav: 0, kind: 3, credentials: 1, mode: 1, method: "POST", url: "https://a/x", referrer: "https://a/", top: "", headers: "X-A: 1", content_type: "text/plain", has_body: 1, body: "hi" })
+    let asked = try roundTrip(&mut out, 7, Message.Fetch { id: 1, doc: 2, nav: 0, kind: 3, credentials: 1, mode: 1, method: "POST", url: "https://a/x", referrer: "https://a/", referrer_policy: "origin", top: "", headers: "X-A: 1", content_type: "text/plain", has_body: 1, body: "hi" })
 
     match asked.message {
         .Fetch { id, doc, kind, method, url, headers, has_body, body, .. } => {
@@ -137,7 +137,7 @@ test "fetch messages round-trip and go the right way" {
         _ => @expect(false)
     }
 
-    @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
+    @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", referrer_policy: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
     @expect(!fromRenderer(Message.FetchHead { id: 0, doc: 0, status: 0, tainted: 0, mime: "", charset: "", url: "", headers: "" }) && !fromRenderer(Message.FetchBody { id: 0, chunk: "" }))
     @expect(!fromRenderer(Message.FetchEnd { id: 0 }) && !fromRenderer(Message.FetchFail { id: 0, code: 0 }))
 }
