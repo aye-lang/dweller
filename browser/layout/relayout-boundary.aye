@@ -1,0 +1,14 @@
+import css
+import css.Value
+
+// blink: core/layout/layout_object.cc ObjectIsRelayoutBoundary
+fn relayoutBoundary(t: *Tree, i: usize) bool {
+    let s = t.bx(i).style
+    let sized = lengthOf(s[css.WIDTH], 0.0) != null || (lengthOf(s[css.INSET_TOP + 1], 0.0) != null && lengthOf(s[css.INSET_TOP + 3], 0.0) != null)
+
+    return t.bx(i).abs != 0 && sized && fixedBound(s[css.MIN_WIDTH]) && fixedBound(s[css.MAX_WIDTH])
+}
+
+fn fixedBound(v: Value) bool {
+    return lengthOf(v, 0.0) != null || isKeyword(v, "auto") || isKeyword(v, "none")
+}

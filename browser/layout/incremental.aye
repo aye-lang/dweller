@@ -49,6 +49,9 @@ fn blockLevelKind(k: BoxKind) bool {
 fn blockFlowUp(t: *Tree, i: usize) bool {
     var cur: ?usize = i
     while cur |c| {
+        if c != i && relayoutBoundary(t, c) {
+            return true
+        }
         if !inBlockFlow(t, c) {
             return false
         }
@@ -231,7 +234,7 @@ fn relayoutUp(t: *mut Tree, i: usize) AllocError!bool {
         cur = t.bx(c).parent
     }
     var x = relayoutFrom(t, i)
-    while true {
+    while t.bx(x).abs == 0 {
         let old = t.bx(x).*
         t.bx(x).laid = false
         t.keep_under = x
