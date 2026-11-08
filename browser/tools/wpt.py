@@ -300,28 +300,35 @@ class Server:
     `Name: value` per line), generated X.any.html / X.window.html pages for
     X.any.js / X.window.js (with the `// META: script=` lines and a long
     timeout for `timeout=long`), and browser/tools/wpt/testharnessreport.js
-    as /resources/testharnessreport.js."""
+    as /resources/testharnessreport.js. With `https`, a second listener
+    serves the same root over TLS at https_base."""
 
-    def __init__(self, root, port=0):
+    def __init__(self, root, port=0, https=False):
         handler = type("H", (Handler,), {"root": Path(root)})
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.base = f"http://127.0.0.1:{self.port}"
-        self.tls = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.tls.daemon_threads = True
-        self.tls.socket = tls_context(root).wrap_socket(self.tls.socket, server_side=True)
-        tls_port = self.tls.server_address[1]
+        self.servers = [self.httpd]
+        self.https_base = self.resolve = None
+        if not https:
+            return
+        tls = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        tls.daemon_threads = True
+        tls.socket = tls_context(root).wrap_socket(tls.socket, server_side=True)
+        self.servers.append(tls)
+        tls_port = tls.server_address[1]
         self.https_base = f"https://{wpt_upstream.HOSTS[0]}:{tls_port}"
         self.resolve = f"{wpt_upstream.HOSTS[0]}:{tls_port}:127.0.0.1"
 
     def start(self):
-        os.environ["DWELLER_RESOLVE"] = self.resolve
-        for httpd in (self.httpd, self.tls):
+        if self.resolve:
+            os.environ["DWELLER_RESOLVE"] = self.resolve
+        for httpd in self.servers:
             threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
     def stop(self):
-        for httpd in (self.httpd, self.tls):
+        for httpd in self.servers:
             httpd.shutdown()
             httpd.server_close()
 
@@ -329,8 +336,12 @@ class Server:
 def tls_context(root):
     """WPT's own certificate for web-platform.test and its subdomains."""
     certs = Path(root) / "tools" / "certs"
+    files = [certs / "web-platform.test.pem", certs / "web-platform.test.key"]
+    for f in files:
+        if not f.is_file():
+            sys.exit(f"{f} not found: .https. tests need WPT's certificates (run `wpt.py fetch`)")
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.load_cert_chain(certs / "web-platform.test.pem", certs / "web-platform.test.key")
+    ctx.load_cert_chain(*files)
     return ctx
 
 
@@ -394,7 +405,8 @@ def run_area(name, spec, args, dweller, results_dir):
         t, s = discover(root, d, spec.get("exclude", []), upstream)
         tests += t
         skipped += s
-    srv = wpt_upstream.Upstream(root, REPORT_JS) if upstream else Server(root)
+    https = any(t["https"] for t in tests)
+    srv = wpt_upstream.Upstream(root, REPORT_JS) if upstream else Server(root, https=https)
     srv.start()
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
