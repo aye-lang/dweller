@@ -1,7 +1,5 @@
 import ipc
 import net
-import std
-import std.text
 import url.Url
 
 let EVIL_DOC: u32 = 4096
@@ -10,7 +8,6 @@ let EVIL_HEADERS = "Cookie: evil=1\nReferer: http://evil.example/\nSec-Fetch-Sit
 
 fn askFetch(r: *mut TabRenderer, id: u32, nav: bool, target: *Url, req: net.Request) !void {
     let code = net.requestCode(req)
-    let evil = std.os.getenv("DWELLER_TEST_EVIL") orelse ""
     var doc: u32 = 0
     var content_type: []u8 = ""
     var data: []u8 = ""
@@ -21,11 +18,11 @@ fn askFetch(r: *mut TabRenderer, id: u32, nav: bool, target: *Url, req: net.Requ
         .Page { url } => {
             doc = docOf(r, url)
 
-            if text.eql(evil, "initiator") { doc = EVIL_DOC }
-            if text.eql(evil, "top") { sent.top = EVIL_URL }
-            if text.eql(evil, "referrer") { sent.referrer = EVIL_URL }
-            if text.eql(evil, "trace") { sent.method = "TRACE" }
-            if text.eql(evil, "headers") { sent.headers = EVIL_HEADERS }
+            if evilTest("initiator") { doc = EVIL_DOC }
+            if evilTest("top") { sent.top = EVIL_URL }
+            if evilTest("referrer") { sent.referrer = EVIL_URL }
+            if evilTest("trace") { sent.method = "TRACE" }
+            if evilTest("headers") { sent.headers = EVIL_HEADERS }
         }
     }
 
