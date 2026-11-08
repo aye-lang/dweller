@@ -643,6 +643,11 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
             .OutOfMemory => {
                 return AllocError.OutOfMemory
             }
+            .CertExpired, .CertUntrusted, .CertWrongHost, .CertInvalid, .TlsVersion => {
+                if top.len == 0 {
+                    return notPrivatePage(alloc, target, net.describe(e))
+                }
+            }
             _ => {}
         }
         return errorPage(alloc, target, net.describe(e))
@@ -794,13 +799,7 @@ fn errorPage(alloc: Allocator, target: *Url, why: []u8) AllocError!*mut Page {
     try b.append("</p><p>")
     try escaped(&mut b, why)
     try b.append("</p>")
-    var doc = try html.parse(alloc, b.bytes())
-    errdefer doc.deinit()
-    var located = url.parse(alloc, target.href) catch |e| {
-        return AllocError.OutOfMemory
-    }
-    errdefer located.deinit(alloc)
-    return newPage(alloc, located, 0, why, doc)
+    return failurePage(alloc, target, why, b.bytes())
 }
 
 fn escaped(b: *mut text.Builder, s: []u8) AllocError!void {

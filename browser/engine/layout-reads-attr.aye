@@ -1,0 +1,28 @@
+import css
+import std.text
+
+let LAYOUT_ATTRS = "*/lang td/colspan th/colspan ol/start li/value details/open svg/viewbox canvas/width canvas/height frameset/cols frameset/rows textarea/cols textarea/rows textarea/placeholder input/type input/value input/size input/placeholder select/size select/multiple option/label option/value option/selected option/disabled optgroup/disabled"
+
+fn layoutReadsAttr(name: []u8, change: css.StyleChange) bool {
+    var start: usize = 0
+
+    while start < LAYOUT_ATTRS.len {
+        var end = start
+
+        while end < LAYOUT_ATTRS.len && LAYOUT_ATTRS[end] != ' ' {
+            end += 1
+        }
+
+        let entry = LAYOUT_ATTRS[start..end]
+        let slash = text.indexOf(entry, "/").?
+        let el = entry[0..slash]
+
+        if !change.token && (text.eql(el, "*") || text.eql(el, name)) && css.attrChange(entry[slash + 1..]).what == change.what {
+            return true
+        }
+
+        start = end + 1
+    }
+
+    return false
+}

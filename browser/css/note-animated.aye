@@ -1,0 +1,18 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// blink: core/animation/css/css_animations.cc (CalculateAnimationUpdate, CalculateTransitionUpdate)
+fn noteAnimated(out: *mut Styles, el: NodeId, values: []Value) AllocError!void {
+    if text.eql(keywordText(values[ANIMATION_NAME]), "none") {
+        _ = out.animating.remove(el.index)
+    } else {
+        try out.animating.put(el.index, el)
+    }
+
+    if sameValue(values[TRANSITION_DURATION], out.initial[TRANSITION_DURATION]) && sameValue(values[TRANSITION_DELAY], out.initial[TRANSITION_DELAY]) {
+        _ = out.transitioning.remove(el.index)
+    } else {
+        try out.transitioning.put(el.index, el)
+    }
+}

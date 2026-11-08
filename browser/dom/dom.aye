@@ -14,6 +14,7 @@
 
 import std.heap.Arena
 import std.list.List
+import std.map.StrMap
 import std.mem.AllocError
 import std.mem.Allocator
 import std.pool.Handle
@@ -166,6 +167,8 @@ pub struct Document {
     // `releaseHeld`.
     hold_frees: bool
     held: List(NodeId)
+    ids: StrMap(List(NodeId))
+    names: StrMap(List(NodeId))
 
     /// An empty document: only the `Document` node.
     pub fn init(alloc: Allocator) AllocError!Document {
@@ -205,6 +208,8 @@ pub struct Document {
             recording: false,
             hold_frees: false,
             held: List(NodeId).init(alloc),
+            ids: StrMap(List(NodeId)).init(alloc),
+            names: StrMap(List(NodeId)).init(alloc),
         }
     }
 
@@ -219,6 +224,8 @@ pub struct Document {
         self.adopted.deinit()
         self.log.deinit()
         self.held.deinit()
+        freeIndex(&mut self.ids)
+        freeIndex(&mut self.names)
         self.controls.deinit()
         self.strings.deinit()
         self.alloc.destroy(self.strings)
@@ -302,7 +309,11 @@ pub struct Document {
             }
             n.attrs = copy
         }
-        return self.nodes.insert(n)
+        let h = try self.nodes.insert(n)
+        for at in n.attrs {
+            try indexAttr(self, h, at.name, at.value)
+        }
+        return h
     }
 
     pub fn createText(self: *mut Self, data: []u8) AllocError!NodeId {
@@ -520,6 +531,8 @@ pub struct Document {
                 if self.recording {
                     self.record(Mutation { kind: 1, added: false, target: el, node: null, prev: null, next: null, name: at.name, old: at.value })
                 }
+                unindexAttr(self, el, at.name, at.value)
+                try indexAttr(self, el, at.name, v)
                 self.node(el).attrs[i].value = v
                 return
             }
@@ -532,8 +545,10 @@ pub struct Document {
         for i, at in n.attrs {
             more[i] = at
         }
-        more[n.attrs.len] = Attr { name: try self.dup(name), value: try self.dup(value) }
+        let added = Attr { name: try self.dup(name), value: try self.dup(value) }
+        more[n.attrs.len] = added
         self.node(el).attrs = more
+        try indexAttr(self, el, added.name, added.value)
     }
 
     /// Removes the attribute `name` of the element `el`, if it has one.
@@ -551,8 +566,11 @@ pub struct Document {
             if !text.eql(at.name, name) {
                 n.attrs[k] = at
                 k += 1
-            } else if self.recording {
-                self.record(Mutation { kind: 1, added: false, target: el, node: null, prev: null, next: null, name: at.name, old: at.value })
+            } else {
+                unindexAttr(self, el, at.name, at.value)
+                if self.recording {
+                    self.record(Mutation { kind: 1, added: false, target: el, node: null, prev: null, next: null, name: at.name, old: at.value })
+                }
             }
         }
         n.attrs = n.attrs[0..k]
@@ -702,8 +720,10 @@ pub struct Document {
                 break
             }
             self.detach(leaf)
+            forgetIndexed(self, leaf)
             self.nodes.remove(leaf)
         }
+        forgetIndexed(self, top)
         self.nodes.remove(top)
         return true
     }
@@ -786,18 +806,19 @@ pub struct Document {
 
     /// The first element with the attribute `id` equal to `id`.
     pub fn getElementById(self: *Self, id: []u8) ?NodeId {
-        var cur: ?NodeId = self.root
-        while cur |h| {
-            if self.node(h).kind == Kind.Element {
-                if self.attr(h, "id") |v| {
-                    if text.eql(v, id) {
-                        return h
-                    }
-                }
-            }
-            cur = self.following(h, self.root)
-        }
-        return null
+        return elementById(self, self.root, id)
+    }
+
+    pub fn withId(self: *Self, id: []u8) []NodeId {
+        let l = self.ids.getPtr(id) orelse return []NodeId{}
+
+        return l.items()
+    }
+
+    pub fn withName(self: *Self, name: []u8) []NodeId {
+        let l = self.names.getPtr(name) orelse return []NodeId{}
+
+        return l.items()
     }
 
     /// Appends to `out` every element named `name` in document order;

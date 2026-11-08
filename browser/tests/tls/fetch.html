@@ -1,0 +1,18 @@
+<!doctype html>
+<title>TLS fetch</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const target = location.search.slice(1);
+(async () => {
+  await fetch(target).then(r => log('fetch: status ' + r.status), e => log('fetch: ' + e.name));
+  const x = new XMLHttpRequest();
+  await new Promise(resolve => {
+    x.onload = () => { log('xhr: load status ' + x.status); resolve(); };
+    x.onerror = () => { log('xhr: error status ' + x.status); resolve(); };
+    x.open('GET', target);
+    x.send();
+  });
+})();
+</script>

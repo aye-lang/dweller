@@ -343,8 +343,8 @@ fn layoutGeometry(s: *mut Script) AllocError!*mut Geometry {
         noteFullLayout(s, "no_geometry")
     }
     if s.geom |g| {
-        // When only children and `style` and `class` attributes changed:
-        // the elements whose boxes to build again (`relayoutDirty`).
+        // When the changes were all noted: the elements whose boxes to
+        // build again (`relayoutDirty`).
         var dirty = List(NodeId).init(s.alloc)
         defer dirty.deinit()
         let local = try localChanges(s, g, version, &mut dirty)
@@ -733,19 +733,18 @@ fn restyle(s: *mut Script, g: *mut Geometry, st: *Styling, keep: bool) AllocErro
 }
 
 // Were the changes to the document since `g` (at `version` now) all
-// noted (`noteLayoutChange`), to children and to `style` and `class`
-// attributes? Then the boxes of `g` stay but those of the elements in
-// `dirty` (a changed text's parent; an element whose `::before` or
-// `::after` shows an attribute, `content: attr()`) and of those whose
-// values that layout reads change. Not for an image's new source or
-// bitmap, which only move `Script.layout_version`.
+// noted (`noteLayoutChange`)? Then the boxes of `g` stay but those of
+// the elements in `dirty` (a changed text's parent; an element whose
+// `::before` or `::after` shows an attribute, `content: attr()`, or
+// whose changed attribute layout reads, `layoutReadsAttr`) and of those
+// whose values that layout reads change. Not for an image's new source
+// or bitmap, which only move `Script.layout_version`.
 fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(NodeId)) AllocError!bool {
     if s.restyle_all || s.page.mutations != g.mutations || version - g.version != s.layout_noted - g.noted {
         noteFullLayout(s, "local:unnoted")
         return false
     }
     let doc = &s.page.doc
-    let style = css.attrChange("style").what
     for c in s.restyle.items() {
         if c.what.what == css.CHILDREN_CHANGED.what && !c.what.token {
             if !doc.isLive(c.at) || !doc.isConnected(c.at) {
@@ -756,13 +755,10 @@ fn localChanges(s: *mut Script, g: *Geometry, version: u64, dirty: *mut List(Nod
                 el = doc.parent(el) orelse return false
             }
             try dirty.append(el)
-        } else if c.what.token || c.what.what == style || c.what.what == css.RULES_CHANGED.what {
-            if showsAttr(g, c.at, 1) || showsAttr(g, c.at, 2) {
+        } else if !css.isPointerState(c.what) && doc.isLive(c.at) {
+            if showsAttr(g, c.at, 1) || showsAttr(g, c.at, 2) || layoutReadsAttr(doc.node(c.at).name, c.what) {
                 try dirty.append(c.at)
             }
-        } else if !css.isPointerState(c.what) {
-            noteFullLayout(s, "local:attr")
-            return false
         }
     }
     return true

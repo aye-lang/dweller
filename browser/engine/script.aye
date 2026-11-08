@@ -238,6 +238,7 @@ pub struct Script {
     tag_protos: StrMap(u32)
     // The prototypes of SVG elements with interfaces of their own.
     svg_tag_protos: StrMap(u32)
+    selectors: StrMap(Selector)
     svg_proto: u32
     svg_svg_proto: u32
     mathml_proto: u32
@@ -567,6 +568,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         shadow_proto: js.NONE,
         tag_protos: StrMap(u32).init(alloc),
         svg_tag_protos: StrMap(u32).init(alloc),
+        selectors: StrMap(Selector).init(alloc),
         svg_proto: js.NONE,
         svg_svg_proto: js.NONE,
         mathml_proto: js.NONE,
@@ -752,6 +754,7 @@ pub fn destroyScript(s: *mut Script) {
     s.free_lists.deinit()
     s.tag_protos.deinit()
     s.svg_tag_protos.deinit()
+    dropSelectors(s)
     s.written.deinit()
     dropComputed(s)
     s.transitions.deinit()
@@ -1678,7 +1681,11 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
-    try runAnimationHook(s)
+
+    if !s.real {
+        try runAnimationHook(s)
+    }
+
     if s.title_version == s.version {
         return
     }
