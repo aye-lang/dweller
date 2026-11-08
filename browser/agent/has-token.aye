@@ -1,0 +1,15 @@
+import std.crypto
+import std.mem.Allocator
+
+pub fn hasToken(tmp: Allocator, line: []u8, token: []u8) bool {
+    var failure = ParseFailure { pos: 0, msg: "" }
+
+    var doc = Json.parse(tmp, line, &mut failure) catch |e| {
+        return false
+    }
+
+    defer doc.deinit()
+    let got = doc.getStr(doc.root(), "token") orelse return false
+
+    return crypto.constantTimeEqual(got, token)
+}

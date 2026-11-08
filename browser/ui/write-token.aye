@@ -1,0 +1,42 @@
+import std.crypto
+import std.encoding
+import std.mem.Allocator
+
+fn writeToken(alloc: Allocator, sock: []u8) ?[]u8 {
+    var raw = @zeroed([32]u8)
+
+    crypto.randomBytes(raw[..]) catch |e| {
+        return null
+    }
+
+    let token = encoding.hexEncode(alloc, raw[..]) catch |e| {
+        return null
+    }
+
+    var path = tokenFilePath(sock)
+
+    unlink(path[..].ptr)
+
+    let fd = openFile(path[..].ptr, 1 | createFlag() | exclusiveFlag(), 384)
+    let written = fd >= 0 && writeAll(fd, token)
+
+    if fd >= 0 {
+        close(fd)
+    }
+
+    if !written {
+        alloc.free(token)
+
+        return null
+    }
+
+    return token
+}
+
+fn exclusiveFlag() i32 {
+    if @targetOs() is .macos {
+        return 0x800
+    }
+
+    return 0x80
+}
