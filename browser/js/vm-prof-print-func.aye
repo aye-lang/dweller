@@ -1,0 +1,37 @@
+import std.mem.AllocError
+import std.text
+
+fn vmProfPrintFunc(it: *Interp, b: *mut text.Builder, f: u32, ns: u64, n: u64) AllocError!void {
+    let fi = it.ast.func(f)
+    var end = fi.end
+
+    if end > fi.start + 60 {
+        end = fi.start + 60
+    }
+
+    try b.append("info: DWELLER_JS_VM_PROF\tfn\t")
+    try b.appendUint(ns)
+    try b.append("\t")
+    try b.appendUint(n)
+    try b.append("\t")
+
+    if fi.name != NONE {
+        try b.append(it.heap.atoms.name(fi.name))
+    }
+
+    try b.append("\t")
+    try b.appendUint(fi.start as u64)
+    try b.append("\t")
+
+    for c in it.ast.source.bytes()[fi.start as usize..end as usize] {
+        var shown = c
+
+        if c < ' ' {
+            shown = ' '
+        }
+
+        try b.appendByte(shown)
+    }
+
+    try b.appendByte('\n')
+}
