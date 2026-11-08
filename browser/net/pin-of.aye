@@ -1,0 +1,33 @@
+// https://curl.se/libcurl/c/CURLOPT_PINNEDPUBLICKEY.html
+import std.crypto
+import std.encoding
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
+
+fn pinOf(alloc: Allocator, pem: []u8) AllocError!?[]mut u8 {
+    let begin = text.indexOf(pem, PEM_BEGIN) orelse return null
+    let rest = pem[begin + PEM_BEGIN.len..]
+    let end = text.indexOf(rest, "-----END") orelse return null
+    let der = base64Decode(alloc, rest[..end]) catch |e| {
+        return null
+    }
+
+    defer alloc.free(der)
+
+    let spki = spkiOf(der) orelse return null
+    let hash = crypto.sha256(spki)
+    let digest = try encoding.base64Encode(alloc, hash[..])
+
+    defer alloc.free(digest)
+
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try b.append("sha256//")
+    try b.append(digest)
+
+    return try b.toOwned()
+}

@@ -1,3 +1,8 @@
+// https://curl.se/libcurl/c/CURLOPT_PINNEDPUBLICKEY.html
+import std.text
+
+let CURLOPT_PINNEDPUBLICKEY: i32 = 10230
+
 fn relaxTls(curl: *mut Curl, code: i32, sink: *mut Sink) bool {
     let s = session orelse return false
 
@@ -6,8 +11,18 @@ fn relaxTls(curl: *mut Curl, code: i32, sink: *mut Sink) bool {
     }
 
     let kind = certKindOf(tlsError(curl, code, sink)) orelse return false
+    var pins = text.Builder.init(s.alloc)
+    defer pins.deinit()
 
-    if !certAllowed(&s.certs, sink.cert_host, kind) {
+    certPins(&s.certs, sink.cert_host, kind, sink.cert_kind, &mut pins) catch |e| {
+        return false
+    }
+
+    if pins.len() == 0 {
+        return false
+    }
+
+    pins.appendByte(0) catch |e| {
         return false
     }
 
@@ -17,6 +32,8 @@ fn relaxTls(curl: *mut Curl, code: i32, sink: *mut Sink) bool {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0 as i64)
     }
 
+    curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, pins.bytes().ptr)
+    sink.cert_kind = kind
     sink.cert_relaxed += 1
     sink.error_text[0] = 0
 

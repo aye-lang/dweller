@@ -6639,7 +6639,7 @@ fn tls_errors() {
         .split_whitespace()
         .map(|p| p.parse().unwrap())
         .collect();
-    assert_eq!(ports.len(), 5, "{line}");
+    assert_eq!(ports.len(), 6, "{line}");
     let with_ca = |args: &[&str]| {
         dweller_command()
             .current_dir(root())
@@ -6746,7 +6746,10 @@ fn tls_errors() {
 /// host, and a reload does not ask again; another process with another
 /// profile asks again. A page script that fetches the bad host gets no
 /// bar. An HSTS host with a bad certificate has no bar: clicks where
-/// the button would be change nothing.
+/// the button would be change nothing. Q3.4c: Tab and Enter reach the
+/// bar; the exception is for the accepted key (the switching server
+/// changes its certificate after `/switch`); an HSTS header over a
+/// bypassed connection is not stored.
 #[test]
 fn cert_bypass() {
     use std::io::BufRead;
@@ -6813,6 +6816,24 @@ fn cert_bypass() {
         "{shown}\n{err}"
     );
 
+    let (shown, err) = window(&first, &page, "frame key:tab key:return frame");
+    assert!(shown.contains("cert Proceed to 127.0.0.1 (unsafe)\n"), "Tab and Enter reach the bar: {shown}\n{err}");
+    let (shown, err) = window(&first, &page, "frame key:tab key:return key:return loaded");
+    assert!(shown.contains("fetch: status 200\n") && !shown.contains("cert "), "{shown}\n{err}");
+
+    let switching = format!("https://127.0.0.1:{}/", ports[5]);
+    let switched = format!("frame {button} {button} loaded key:cmd+l text:{switching}switch key:return loaded key:cmd+r loaded");
+    let (shown, err) = window(&first, &switching, &switched);
+    assert!(
+        shown.contains("Your connection is not private") && shown.contains("cert Advanced\n"),
+        "an exception is for the key that was accepted: {shown}\n{err}"
+    );
+    let (shown, err) = window(&first, &switching, &format!("{switched} {button} {button} loaded"));
+    assert!(
+        shown.contains("secure page") && !shown.contains("cert "),
+        "proceeding past the other key too: {shown}\n{err}"
+    );
+
     for (port, why) in [(ports[1], "has expired"), (ports[3], "is for another host")] {
         let other = format!("https://127.0.0.1:{port}/");
         let events = format!("frame {button} {button} loaded key:cmd+l text:{other} key:return loaded");
@@ -6842,18 +6863,19 @@ fn cert_bypass() {
     let site_url = format!("https://site.test:{}/", site.tls);
     let out = site.run(Some(&hsts), &["dump", "--text", &format!("{site_url}hsts")]);
     assert_eq!(text(&out.stdout), "https page\n", "{}", text(&out.stderr));
-    let untrusted_site = |profile: &Path| {
+    let untrusted_site = |profile: &Path, page: &str, events: &str| {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .env("DWELLER_RESOLVE", format!("site.test:{}:127.0.0.1", site.tls))
             .env("DWELLER_PROFILE", profile)
-            .args([&site_url, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", &format!("frame {button} {button} frame")])
+            .args([page, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", events])
             .output()
             .unwrap();
         text(&out.stdout)
     };
-    let shown = untrusted_site(&hsts);
+    let proceed = format!("frame {button} {button} loaded");
+    let shown = untrusted_site(&hsts, &site_url, &proceed);
     assert!(
         shown.contains("Your connection is not private") && !shown.contains("cert "),
         "no bypass on an HSTS host: {shown}"
@@ -6861,10 +6883,18 @@ fn cert_bypass() {
     let fresh = scratch().join("cert-bypass-fresh");
     let _ = std::fs::remove_dir_all(&fresh);
     std::fs::create_dir_all(&fresh).unwrap();
-    let shown = untrusted_site(&fresh);
+    let shown = untrusted_site(&fresh, &format!("{site_url}hsts"), &proceed);
     assert!(
         shown.contains("https page") && !shown.contains("not private"),
         "the same clicks proceed on the host before its HSTS header: {shown}"
+    );
+    let saved = std::fs::read_to_string(fresh.join("hsts")).unwrap_or_default();
+    assert!(!saved.contains("site.test"), "no HSTS from a bypassed connection: {saved}");
+    let insecure = format!("http://site.test:{}/", site.tls);
+    let shown = untrusted_site(&fresh, &format!("{site_url}hsts"), &format!("{proceed} key:cmd+l text:{insecure} key:return loaded"));
+    assert!(
+        shown.contains("Cannot load this page") && !shown.contains("not private"),
+        "http to the host is not upgraded after a bypassed HSTS header: {shown}"
     );
 }
 
