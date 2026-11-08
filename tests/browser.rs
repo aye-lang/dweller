@@ -10019,3 +10019,73 @@ fn window_renderer_input() {
     assert!(line.ends_with(" gone unexpected input_ack"), "{state}");
     assert_eq!(err, format!("error: bad message: unexpected input_ack {pid}\n"));
 }
+
+/// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default
+/// actions (`browser/tests/ui/renderer_actions.html`): a link click and
+/// a form POST are asked of the browser, which navigates the renderer,
+/// and refuses a `file:` link of an http page; a `select` choice comes
+/// back from the window's dropdown; Space presses a button; keys scroll
+/// the page. Each gives the same PNG as the in-process window.
+#[test]
+fn window_renderer_input_actions() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let run = |page: &str, png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "60", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let secret = format!("file://{}/browser/tests/no-file/secret.html", root().display());
+    let page = format!("{}/ui/renderer_actions.html?{secret}", srv.base);
+    // The toolbar still shows the window's own copy of the page (Q2.3d).
+    let page_area = |png: &Path| {
+        let (w, _, rgba) = png_rgba(&std::fs::read(png).unwrap());
+        rgba[40 * w * 4..].to_vec()
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let still = scratch().join("renderer_actions_still.png");
+    let golden = scratch().join("renderer_actions_in_process.png");
+    let shot = scratch().join("renderer_actions_tab.png");
+    let cases = [
+        ("link", page.as_str(), "click:80,65 renderer:input renderer:loaded"),
+        ("form post", page.as_str(), "click:260,165 renderer:input renderer:loaded"),
+        ("select", page.as_str(), "click:60,215 release:60,215 renderer:input click:60,260 release:60,260"),
+        ("space", page.as_str(), "click:60,115 key:space keyup:space"),
+        ("key scroll", "browser/tests/ui/renderer_input.html", "click:390,330 key:pagedown key:down"),
+    ];
+    for (what, page, events) in cases {
+        let in_process_events: Vec<&str> = events.split(' ').filter(|w| !w.starts_with("renderer:")).collect();
+        let (_, err) = run(page, &still, "renderer:loaded renderer:frame", &tab);
+        assert!(err.is_empty(), "{err}");
+        let (_, err) = run(page, &golden, &format!("loaded {} loaded move:390,330", in_process_events.join(" ")), &[]);
+        assert!(err.is_empty(), "{what}: {err}");
+        let (state, err) = run(page, &shot, &format!("renderer:loaded renderer:frame {events} move:390,330 renderer:input"), &tab);
+        assert!(err.is_empty(), "{what}: {err}");
+        assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
+        assert!(
+            page_area(&shot) == page_area(&golden),
+            "{what}: the renderer's frame {} differs from the in-process window {}\n{state}",
+            shot.display(),
+            golden.display()
+        );
+    }
+
+    run(&page, &still, "renderer:loaded renderer:frame", &tab);
+    let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
+    assert_eq!(err, format!("error: navigation refused: {secret}\n"));
+    assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
+}
