@@ -1424,3 +1424,37 @@ before, 3 ms after.
   zol's the layouts and queries of Q4.1 (loop 5200 → 810 ms between
   Q4.6a and now), react's the raster and partial restyle.
 - Idle of bbc and react is already under 5%; zol's 13% is its rAF loop.
+
+## Q4.17: canvas 2D cost on mistral (2026-11-08)
+
+Before: main 5ff6f43. After: branch `q4-17-canvas2d-cost` (card
+`docs/plans/cards/Q4.17.md`). Both `browser/build.sh` (safe) builds, Apple
+M2 Pro, 1024×768, `target/sites`, every run through `scripts/capped.sh`,
+before and after alternating, 3 runs each, medians.
+
+Profile of the before build (one idle run, `DWELLER_TIMING`, a macOS
+`sample`): the canvas is an 800×600 widget canvas that draws a rotated
+`drawImage` (8.0 ms) and a `source-in` fill (1.9 ms) each frame, and its
+pixels are the same in 265 of 300 frames. Each draw bumped the bitmap's
+version, so every frame had 482804 px of damage, and the raster under it
+redrew the page's 2880×1504 background scaled to 1394×728 (1416 of the
+1883 samples of `renderWith`). The fix: paint's image items use
+`Bitmap.shown()`, which changes only when `settleCanvases` (end of each
+task) finds the pixels different from the last seen copy.
+
+| mistral idle, per 10 s | before | after |
+|---|---:|---:|
+| idle CPU (`report --replay`) | 99.4% | 99.3% |
+| frames | 195 | 313 |
+| ms a frame | 52.3 | 32.5 |
+| `ui_draw` (raster) | 3535 | 257 |
+| frames with page damage | 195 | 5 |
+| `canvas_draw` | 1739 (8.9 a frame) | 2562 (8.2 a frame) |
+| `ui_raf` | 5696 | 8970 |
+| `ui_relayout` | 1710 | 2274 |
+
+`report --replay --site mistral`: loop 1590 → 1557 ms, scroll p95 348.0 →
+350.1 ms; W7 still fails. Idle CPU does not fall because the page asks for
+every frame and its script takes 29 ms of each: the raster saved becomes
+60% more frames. Next: the per-frame relayout and style (7.3 ms) and the
+rotated `drawImage` sampling.
