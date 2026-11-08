@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc UpdateTargetURL
+fn showStatus(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
+    tp.status_new = false
+    ui.hover.clear()
+
+    if tp.busy {
+        try ui.hover.append("The page is busy")
+    } else if tp.long_ms > 0 {
+        try ui.hover.append("A page task ran for ")
+        try ui.hover.appendUint(tp.long_ms as u64 / 1000)
+        try ui.hover.append(" s")
+        tp.long_ms = 0
+    } else {
+        try ui.hover.append(tp.target.bytes())
+    }
+
+    ui.setCursor(tp.cursor == 1, tp.cursor == 2)
+    ui.dirty = true
+}

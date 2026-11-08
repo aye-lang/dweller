@@ -10312,3 +10312,72 @@ fn window_renderer_input_actions() {
     assert_eq!(err, format!("error: navigation refused: {secret}\n"));
     assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
 }
+
+/// Q2.3e: with `DWELLER_PROCESS=tab` the window keeps no copy of the
+/// page (`browser/tests/ui/renderer_status.html`): its image is fetched
+/// once, by the renderer. The renderer reports the hover link (status
+/// line) and the cursor shape, a task past 5 s ("The page is busy" until
+/// it ends), Tab past the last element (the address bar takes the focus),
+/// and the window's blur fires `blur` in the page. A cross-origin
+/// redirect commits in the renderer without a second fetch, and a chain
+/// of 25 redirects ends on an error page (20 is the limit).
+#[test]
+fn window_renderer_status() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let window = |page: &str, events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "2000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let hits = |path: &str| {
+        let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+        log.matches(&format!("GET {path} ")).count() + log.matches(&format!("GET {path}\n")).count()
+    };
+    let page = format!("{}/ui/renderer_status.html", srv.base);
+
+    let state = window(&page, "renderer:loaded renderer:frame move:30,60 renderer:input");
+    assert!(state.contains(&format!("\nstatus {}/ui/target.html\n", srv.base)), "{state}");
+    assert!(state.contains("\nrenderer-cursor pointer\n"), "{state}");
+    assert_eq!(hits("/log/renderer-status-nostore.png"), 1, "the window loaded its own copy of the page");
+
+    let state = window(&page, "renderer:loaded renderer:frame move:30,60 renderer:input move:30,102 renderer:input");
+    assert!(state.contains("\nstatus \n") && state.contains("\nrenderer-cursor text\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame window:blur frame frame move:300,300 renderer:input");
+    assert!(state.contains(" title Blurred\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame key:tab key:tab key:tab renderer:input");
+    assert!(state.contains("\nfocus page\n"), "{state}");
+    let state = window(&page, "renderer:loaded renderer:frame key:tab key:tab key:tab key:tab renderer:input frame frame");
+    assert!(state.contains("\nfocus address\n"), "{state}");
+
+    let state = window(&page, "renderer:loaded renderer:frame click:30,145 renderer:busy");
+    assert!(state.contains("\nstatus The page is busy\n"), "{state}");
+    let state = window(&page, "renderer:loaded renderer:frame click:30,145 renderer:input frame");
+    assert!(state.contains(" title Ran\n") && state.contains("\nstatus \n"), "{state}");
+
+    let port = srv.base.rsplit(':').next().unwrap();
+    let landed = format!("http://localhost:{port}/log/renderer-hop-nostore.html");
+    let state = window(&format!("{}/samesite/go?to={landed}", srv.base), "renderer:loaded renderer:frame");
+    assert!(state.contains(&format!("\naddress {landed}\n")) && state.contains(" title Logged\n"), "{state}");
+    assert_eq!(hits("/log/renderer-hop-nostore.html"), 1, "the cross-origin redirect was fetched twice");
+
+    let state = window(&format!("{}/hops/20", srv.base), "renderer:loaded renderer:frame");
+    assert!(state.contains(" title Hops\n"), "{state}");
+    let state = window(&format!("{}/hops/25", srv.base), "renderer:loaded renderer:frame");
+    assert!(!state.contains(" title Hops\n") && state.contains("\nrenderer-frame "), "{state}");
+}

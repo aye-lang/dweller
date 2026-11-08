@@ -25,3 +25,50 @@ test "the focus, title and same-document messages round-trip" {
         _ => @expect(false)
     }
 }
+
+test "the cursor, target URL, long task, take focus and redirect messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let cursor = try roundTrip(&mut out, 7, Message.Cursor { shape: 2 })
+
+    match cursor.message {
+        .Cursor { shape } => @expectEqual(2, shape)
+        _ => @expect(false)
+    }
+
+    let target = try roundTrip(&mut out, 7, Message.TargetUrl { url: "http://a/" })
+
+    match target.message {
+        .TargetUrl { url } => @expectEqual("http://a/", url)
+        _ => @expect(false)
+    }
+
+    let long = try roundTrip(&mut out, 7, Message.LongTask { on: 0, ms: 12000 })
+
+    match long.message {
+        .LongTask { on, ms } => {
+            @expectEqual(0, on)
+            @expectEqual(12000, ms)
+        }
+
+        _ => @expect(false)
+    }
+
+    let taken = try roundTrip(&mut out, 7, Message.TakeFocus { reverse: 1 })
+
+    match taken.message {
+        .TakeFocus { reverse } => @expectEqual(1, reverse)
+        _ => @expect(false)
+    }
+
+    let moved = try roundTrip(&mut out, 7, Message.Redirect { url: "http://b/" })
+
+    match moved.message {
+        .Redirect { url } => @expectEqual("http://b/", url)
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.Cursor { shape: 0 }) && fromRenderer(Message.TargetUrl { url: "" }) && fromRenderer(Message.LongTask { on: 1, ms: 0 }))
+    @expect(fromRenderer(Message.TakeFocus { reverse: 0 }) && fromRenderer(Message.Redirect { url: "" }))
+}

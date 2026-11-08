@@ -14,11 +14,7 @@ fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
             }
 
             .FrameAck { buffer } => r.ack(buffer)
-            .Focus { on } => {
-                r.focused = on != 0
-                r.due = true
-                r.wake()
-            }
+            .Focus { on } => try focusPage(r, on != 0)
 
             .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
                 if kind > 3 { return null }
@@ -47,8 +43,8 @@ fn answerAll(r: *mut TabRenderer, bytes: []u8) !?usize {
     }
 
     try paintFrame(r)
-    try ackInput(r)
     try reportPage(r)
+    try ackInput(r)
 
     return used
 }

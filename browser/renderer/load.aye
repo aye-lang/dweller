@@ -18,10 +18,7 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
     let p = try engine.loadWith(r.alloc, &target, sent, net.Initiator.Browser)
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {
-        try send(r.alloc, r.conn, frame, ipc.Message.BeginNavigation { url: p.url.href, post: 0, content_type: "", body: "" })
-        p.destroy()
-
-        return
+        try send(r.alloc, r.conn, frame, ipc.Message.Redirect { url: p.url.href })
     }
 
     if r.page |old| { old.destroy() }
