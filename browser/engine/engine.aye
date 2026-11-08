@@ -65,6 +65,7 @@ pub struct Page {
     status: i64
     // Why the fetch failed ("" when it did not).
     failure: []u8
+    cert: ?net.CertKind = null
     doc: Document
     // The encoding the document was decoded from (forms submit in it).
     encoding: encoding.Encoding
@@ -645,7 +646,7 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
             }
             .CertExpired, .CertUntrusted, .CertWrongHost, .CertInvalid, .TlsVersion => {
                 if top.len == 0 {
-                    return notPrivatePage(alloc, target, net.describe(e))
+                    return notPrivatePage(alloc, target, net.describe(e), net.certKindOf(e))
                 }
             }
             _ => {}

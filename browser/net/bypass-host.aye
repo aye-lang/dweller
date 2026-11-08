@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+fn bypassHost(alloc: Allocator, req: Request, at: *Url, s: ?*mut Session) AllocError![]u8 {
+    let ses = s orelse return ""
+
+    if ses.certs.list.len() == 0 || !certBypassable(at.host) {
+        return ""
+    }
+
+    if req.kind == Kind.Document && req.top.len == 0 {
+        return at.host
+    }
+
+    var top = req.top
+
+    if top.len == 0 {
+        top = frameTop(req.referrer) orelse req.referrer
+    }
+
+    var page = url.parse(alloc, top) catch |e| {
+        return ""
+    }
+
+    defer page.deinit(alloc)
+
+    if !text.eql(page.host, at.host) {
+        return ""
+    }
+
+    return at.host
+}
