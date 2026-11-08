@@ -328,14 +328,13 @@ fn jpegFrame(dec: *mut JpegDecoder, alloc: Allocator, body: []u8, progressive: b
         // The height comes later in a DNL marker: nobody writes those.
         return ImageError.Unsupported
     }
-    let scale = try jpegScale(width, height)
+    try checkSide(width, height)
     if body.len < 6 + n * 3 {
         return ImageError.Invalid
     }
     dec.width = width
     dec.height = height
     dec.ncomp = n
-    dec.scale = scale
     for i in 0..n {
         let c = body[6 + i * 3..9 + i * 3]
         let h = (c[1] >> 4) as usize
@@ -361,18 +360,25 @@ fn jpegFrame(dec: *mut JpegDecoder, alloc: Allocator, body: []u8, progressive: b
     for i in 0..n {
         let c = &mut dec.comps[i]
         c.offset = total
-        c.stride = dec.mcus_x * c.h * 8 / scale
+        c.stride = dec.mcus_x * c.h * 8
         c.width = (width * c.h + dec.hmax - 1) / dec.hmax
         c.height = (height * c.v + dec.vmax - 1) / dec.vmax
         c.first = blocks
         c.bw = dec.mcus_x * c.h
-        total += c.stride * dec.mcus_y * c.v * 8 / scale
+        total += c.stride * dec.mcus_y * c.v * 8
         blocks += c.bw * dec.mcus_y * c.v
     }
-    if progressive && blocks * 64 * 2 > MAX_DECODED_BYTES {
-        return ImageError.Unsupported
+    var coef_bytes: usize = 0
+    if progressive {
+        coef_bytes = blocks * 64 * 2
     }
-    dec.plane = try alloc.alloc(0 as u8, total)
+    let scale = try jpegScale(dec, total, coef_bytes)
+    dec.scale = scale
+    for i in 0..n {
+        dec.comps[i].offset /= scale * scale
+        dec.comps[i].stride /= scale
+    }
+    dec.plane = try alloc.alloc(0 as u8, total / (scale * scale))
     if progressive {
         dec.coefs = alloc.alloc(0 as i16, blocks * 64) catch |e| {
             alloc.free(dec.plane)
@@ -956,6 +962,8 @@ fn jpegOutput(dec: *JpegDecoder, alloc: Allocator) ImageError!Bitmap {
     let h = jpegScaled(dec.height, dec.scale)
     var bmp = try newBitmap(alloc, w, h)
     errdefer bmp.deinit(alloc)
+    bmp.natural_width = dec.width
+    bmp.natural_height = dec.height
     let full = try alloc.alloc(0 as u8, w * h * dec.ncomp)
     defer alloc.free(full)
     for i in 0..dec.ncomp {
@@ -1109,11 +1117,17 @@ fn jpegOrient(alloc: Allocator, src: *Bitmap, o: u8) ImageError!Bitmap {
     let h = src.height
     var ow = w
     var oh = h
+    var nw = src.naturalWidth()
+    var nh = src.naturalHeight()
     if o >= 5 {
         ow = h
         oh = w
+        nw = src.naturalHeight()
+        nh = src.naturalWidth()
     }
-    let out = try newBitmap(alloc, ow, oh)
+    var out = try newBitmap(alloc, ow, oh)
+    out.natural_width = nw
+    out.natural_height = nh
     for y in 0..oh {
         for x in 0..ow {
             // The source pixel of (x, y).

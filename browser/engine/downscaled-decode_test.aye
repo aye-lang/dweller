@@ -1,0 +1,22 @@
+test "a JPEG decoded downscaled lands in the header-sized bitmap and keeps its natural size" {
+    let a = @testAllocator()
+    var cache = ImageCache.init(a)
+
+    defer stopDecoding()
+    defer cache.deinit()
+
+    cache.decode_later = true
+
+    let url = "data:image/jpeg;base64,/9j/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/xAAUAAEAAAAAAAAAAAAAAAAAAAAA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/AABEIGLQYtAMBEQACEQADEQD/2gAMAwEAAgADAAA/AP/Z"
+    let bmp = (try cache.bitmapOf(url, null)).?
+
+    @expectEqual(6324 as usize, bmp.width)
+    @expectEqual(0 as usize, bmp.pixels.len)
+
+    landDecodes(&mut cache, true)
+
+    @expectEqual(3162 as usize, bmp.width)
+    @expectEqual(6324 as usize, bmp.naturalWidth())
+    @expectEqual(6324 as usize, bmp.naturalHeight())
+    @expectEqual(3162 * 3162 * 4 as usize, bmp.pixels.len)
+}

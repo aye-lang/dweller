@@ -25,7 +25,7 @@ test "an image whose pixels or coefficients pass the decode cap is refused from 
     @expect(isRefused(a, progressive))
 }
 
-test "a JPEG past the decode cap decodes at a scale that fits" {
+test "a JPEG past the decode cap decodes at a scale that fits and keeps its natural size" {
     let a = @testAllocator()
     let data = try readFixture(a, "cap_large.jpg")
 
@@ -37,7 +37,8 @@ test "a JPEG past the decode cap decodes at a scale that fits" {
 
     let size = headerSize(data) orelse [2]usize{0, 0}
 
-    @expect(bmp.width == 3000 && bmp.height == 2000)
-    @expect(size[0] == 3000 && size[1] == 2000)
+    @expect(bmp.width == 3162 && bmp.height == 3162)
+    @expect(bmp.naturalWidth() == 6324 && bmp.naturalHeight() == 6324)
+    @expect(size[0] == 6324 && size[1] == 6324)
     @expect(bmp.pixels[0] == 128 && bmp.pixels[3] == 255)
 }
