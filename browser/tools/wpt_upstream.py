@@ -34,11 +34,25 @@ def listening(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def signal_group(pid, sig):
+def live_members(pgid):
+    out = subprocess.run(["ps", "-A", "-o", "pid=,pgid=,stat="], capture_output=True, text=True, check=True).stdout
+    rows = (line.split() for line in out.splitlines())
+    return [int(r[0]) for r in rows if len(r) == 3 and r[1] == str(pgid) and not r[2].startswith("Z")]
+
+
+def signal_pid(pid, sig, kill):
     try:
-        os.killpg(pid, sig)
+        kill(pid, sig)
     except ProcessLookupError:
         pass
+
+
+def signal_group(pgid, sig):
+    try:
+        signal_pid(pgid, sig, os.killpg)
+    except PermissionError:
+        for pid in live_members(pgid):
+            signal_pid(pid, sig, os.kill)
 
 
 class Upstream:
