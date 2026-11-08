@@ -6717,6 +6717,7 @@ fn tls_errors() {
     let with_ca = |args: &[&str]| {
         dweller_command()
             .current_dir(root())
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .args(args)
             .output()
@@ -6733,6 +6734,18 @@ fn tls_errors() {
         1,
         "",
         &format!("error: cannot fetch {valid}: {untrusted}\n"),
+    );
+    let out = dweller_command()
+        .current_dir(root())
+        .env_remove("DWELLER_TEST")
+        .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+        .args(["dump", "--text", &valid])
+        .output()
+        .unwrap();
+    assert_eq!(
+        text(&out.stderr),
+        format!("error: cannot fetch {valid}: {untrusted}\n"),
+        "the test CA is trusted only with DWELLER_TEST=1"
     );
     let out = with_ca(&[
         "dump",
@@ -6793,6 +6806,7 @@ fn tls_errors() {
 
         let mut agent = dweller_command()
             .current_dir(root())
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .arg("agent")
             .stdin(std::process::Stdio::piped())
@@ -6860,6 +6874,7 @@ fn cert_bypass() {
     let window = |profile: &Path, page: &str, events: &str| {
         let out = dweller_command()
             .current_dir(root())
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .env("DWELLER_PROFILE", profile)
             .args([page, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", events])
@@ -6940,6 +6955,7 @@ fn cert_bypass() {
     let untrusted_site = |profile: &Path, page: &str, events: &str| {
         let out = dweller_command()
             .current_dir(root())
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_CA", tls.join("ca.pem"))
             .env("DWELLER_RESOLVE", format!("site.test:{}:127.0.0.1", site.tls))
             .env("DWELLER_PROFILE", profile)
@@ -7015,6 +7031,7 @@ impl HstsSite {
         let (t, p) = (self.tls, self.plain);
         let mut c = dweller_command();
         c.current_dir(root())
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_CA", root().join("browser/tests/hsts/ca.pem"))
             .env(
                 "DWELLER_RESOLVE",
@@ -7073,7 +7090,9 @@ fn hsts() {
 /// and an http image is upgraded (the image URL is the TLS port, so it
 /// loads only when upgraded); on an http page all of them load as
 /// asked. `upgrade-insecure-requests` (CSP header or `<meta>`) upgrades
-/// the page's script and fetch.
+/// the page's script and fetch; Q3.5b: also its same-host navigation
+/// (`location` to the http URL of the TLS port shows the https page),
+/// and its frames inherit it (the frame's own http script is upgraded).
 #[test]
 fn mixed_content() {
     let Some(site) = HstsSite::start() else {
@@ -7108,6 +7127,16 @@ fn mixed_content() {
         let out = site.run(None, &[&page, "--frames", "200", "--until-idle", "--text"]);
         let shown = text(&out.stdout);
         assert!(shown.starts_with(&format!("Mixed content\n{want}")), "{page}: {shown}\n{}", text(&out.stderr));
+    }
+    let uir = [
+        ("uir-nav.html", "https page"),
+        ("uir-frame.html", "UIR frame\nframe: https: script: https\n"),
+    ];
+    for (page, want) in uir {
+        let at = format!("https://site.test:{t}/{page}");
+        let out = site.run(None, &[&at, "--frames", "200", "--until-idle", "--text"]);
+        let shown = text(&out.stdout);
+        assert!(shown.contains(want), "{page}: {shown}\n{}", text(&out.stderr));
     }
 }
 
