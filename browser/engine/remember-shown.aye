@@ -1,0 +1,19 @@
+import dom.Document
+import dom.NodeId
+import std
+import std.mem.AllocError
+import url.Url
+
+fn rememberShown(cache: *mut ImageCache, base: *Url, doc: *Document, h: NodeId, choice: ImageChoice) AllocError!void {
+    try imageFingerprint(&mut cache.fingerprint, base, doc, h, choice)
+
+    let owned = try cache.alloc.alloc(0 as u8, cache.fingerprint.bytes().len)
+
+    std.mem.copy(owned, cache.fingerprint.bytes())
+    forgetShown(cache, h)
+    cache.shown.put(h, owned) catch |e| {
+        cache.alloc.free(owned)
+
+        return e
+    }
+}

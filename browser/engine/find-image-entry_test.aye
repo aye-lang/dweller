@@ -1,0 +1,22 @@
+import net
+
+test "image entries are found by URL, mode and credentials" {
+    let a = @testAllocator()
+    var cache = ImageCache.init(a)
+    defer cache.deinit()
+    let dot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAAECAYAAACk7+45AAAAEUlEQVR4nGP4z8DwH4QZcDMAHxMP8b9IbMkAAAAASUVORK5CYII="
+
+    @expect(!cache.known(dot))
+
+    let plain = (try cache.bitmapOf(dot, null, null)).?
+    let cors = (try cache.bitmapOf(dot, "anonymous", null)).?
+
+    @expect(cache.known(dot))
+    @expect(plain != cors)
+    @expectEqual(2 as usize, cache.entries.len())
+    @expectEqual(0 as usize, findImageEntry(&cache, dot, net.Mode.NoCors, null).?)
+    @expectEqual(1 as usize, findImageEntry(&cache, dot, net.Mode.Cors, null).?)
+    @expect(findImageEntry(&cache, "data:,missing", net.Mode.NoCors, null) == null)
+    @expect((try cache.bitmapOf(dot, "anonymous", null)).? == cors)
+    @expectEqual(2 as usize, cache.entries.len())
+}

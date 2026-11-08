@@ -1,0 +1,19 @@
+import css
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+import url.Url
+
+fn shownUnchanged(cache: *mut ImageCache, base: *Url, doc: *Document, h: NodeId, media: css.Media) AllocError!bool {
+    let shown = cache.shown.get(h) orelse return false
+    let choice = (try chooseImage(cache.alloc, doc, h, media)) orelse return false
+
+    if cache.nodes.get(h) == null {
+        return false
+    }
+
+    try imageFingerprint(&mut cache.fingerprint, base, doc, h, choice)
+
+    return text.eql(cache.fingerprint.bytes(), shown)
+}

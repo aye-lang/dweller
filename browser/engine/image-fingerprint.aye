@@ -1,0 +1,23 @@
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+import url.Url
+
+fn imageFingerprint(out: *mut text.Builder, base: *Url, doc: *Document, h: NodeId, choice: ImageChoice) AllocError!void {
+    out.clear()
+    try out.append(base.href)
+    try out.appendByte(0)
+    try out.append(choice.url)
+    try out.appendByte(0)
+    try out.appendFloat(choice.density)
+
+    for name in [2][]u8{"crossorigin", "referrerpolicy"} {
+        try out.appendByte(0)
+
+        if doc.attr(h, name) |v| {
+            try out.appendByte(1)
+            try out.append(v)
+        }
+    }
+}
