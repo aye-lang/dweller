@@ -5,19 +5,27 @@ import std.text
 import url.Url
 
 let EVIL_DOC: u32 = 4096
+let EVIL_URL = "http://evil.example/"
+let EVIL_HEADERS = "Cookie: evil=1\nReferer: http://evil.example/\nSec-Fetch-Site: same-origin\nOrigin: http://evil.example"
 
 fn askFetch(r: *mut TabRenderer, id: u32, nav: bool, target: *Url, req: net.Request) !void {
     let code = net.requestCode(req)
+    let evil = std.os.getenv("DWELLER_TEST_EVIL") orelse ""
     var doc: u32 = 0
     var content_type: []u8 = ""
     var data: []u8 = ""
+    var sent = req
 
     match req.initiator {
         .Browser => {}
         .Page { url } => {
             doc = docOf(r, url)
 
-            if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "initiator") { doc = EVIL_DOC }
+            if text.eql(evil, "initiator") { doc = EVIL_DOC }
+            if text.eql(evil, "top") { sent.top = EVIL_URL }
+            if text.eql(evil, "referrer") { sent.referrer = EVIL_URL }
+            if text.eql(evil, "trace") { sent.method = "TRACE" }
+            if text.eql(evil, "headers") { sent.headers = EVIL_HEADERS }
         }
     }
 
@@ -26,5 +34,5 @@ fn askFetch(r: *mut TabRenderer, id: u32, nav: bool, target: *Url, req: net.Requ
         data = b.data
     }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.Fetch { id: id, doc: doc, nav: nav as u32, kind: code[0], credentials: code[1], mode: code[2], method: req.method, url: target.href, referrer: req.referrer, top: req.top, headers: req.headers, content_type: content_type, has_body: (req.body != null) as u32, body: data })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Fetch { id: id, doc: doc, nav: nav as u32, kind: code[0], credentials: code[1], mode: code[2], method: sent.method, url: target.href, referrer: sent.referrer, top: sent.top, headers: sent.headers, content_type: content_type, has_body: (req.body != null) as u32, body: data })
 }

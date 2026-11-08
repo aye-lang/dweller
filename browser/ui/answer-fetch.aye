@@ -1,6 +1,7 @@
 import ipc
 import net
 import std.mem.AllocError
+import std.text
 import url
 
 // chromium: services/network/url_loader.cc (request_initiator_origin_lock)
@@ -23,11 +24,18 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             let navigates = nav == 1 && kind == 0 && top.len == 0 && fetchNavigates(tp, target.href)
             var req = net.codedRequest(kind, credentials, mode, fetchInitiator(tp, doc, navigates)) orelse return "bad fetch"
             var sent = net.Body { content_type: content_type, data: body }
+            var allowed = text.Builder.init(alloc)
+            defer allowed.deinit()
+
+            if !net.methodAllowed(method) || !topClaimed(alloc, topOf(tp), top) || !referrerAllowed(alloc, fetchDoc(tp, doc), referrer) { return "bad fetch" }
+            if !(try net.allowedHeaders(headers, &mut allowed)) { return "bad fetch" }
 
             req.method = method
             req.referrer = referrer
-            req.top = top
-            req.headers = headers
+            req.headers = allowed.bytes()
+
+            if navigates && tp.loading { req.referrer = tp.nav_initiator.bytes() }
+            if !navigates { req.top = topOf(tp) }
 
             if has_body == 1 { req.body = &sent }
 

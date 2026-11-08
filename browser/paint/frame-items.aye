@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn frameItems(b: *mut Builder, inner: *DisplayList, scroll: f64, r: Rect) AllocError!void {
+    try b.add(Item.Clip { r: r })
+    try b.add(Item.Fill { r: r, c: inner.background })
+
+    for it in inner.items.items() {
+        try b.add(moved(it, r.x, r.y - scroll))
+    }
+
+    try b.add(Item.Unclip)
+}

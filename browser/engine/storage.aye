@@ -307,45 +307,36 @@ fn contextPrefix(b: *mut text.Builder, id: u32) AllocError!void {
 
 /// Context `id` closed: its sessionStorage goes (contexts.aye).
 fn dropSessionStorage(id: u32) {
+    if storage_remote |hook| {
+        _ = hook(StorageAsk { href: "", context: id, session: true, op: 7 }, null) catch |e| {
+            return
+        }
+        return
+    }
     let st = session_store orelse return
     var b = text.Builder.init(st.alloc)
     defer b.deinit()
     contextPrefix(&mut b, id) catch |e| {
         return
     }
-    var i: usize = 0
-    while i * 3 < st.items.len() {
-        if text.startsWith(st.items.items()[i * 3], b.bytes()) {
-            removeStoreItem(st, i)
-        } else {
-            i += 1
-        }
-    }
-    if st.items.len() == 0 {
-        session_store = null
-        freeStore(st)
-    }
+    dropSessionAreas(b.bytes())
 }
 
 /// Context `to`, opened by a page of context `from`, starts with a copy
 /// of `from`'s sessionStorage (contexts.aye).
 fn copySessionStorage(from: u32, to: u32) AllocError!void {
-    let st = session_store orelse return
-    var src = text.Builder.init(st.alloc)
-    defer src.deinit()
-    try contextPrefix(&mut src, from)
-    var area = text.Builder.init(st.alloc)
-    defer area.deinit()
-    let n = st.items.len() / 3
-    for i in 0..n {
-        let a = st.items.items()[i * 3]
-        if text.startsWith(a, src.bytes()) {
-            area.clear()
-            try contextPrefix(&mut area, to)
-            try area.append(a[src.bytes().len..])
-            try appendItem(st, area.bytes(), st.items.items()[i * 3 + 1], st.items.items()[i * 3 + 2])
-        }
+    if storage_remote |hook| {
+        _ = try hook(StorageAsk { href: "", context: from, session: true, op: 6, index: to }, null)
+        return
     }
+    let st = session_store orelse return
+    var a = text.Builder.init(st.alloc)
+    defer a.deinit()
+    var b = text.Builder.init(st.alloc)
+    defer b.deinit()
+    try contextPrefix(&mut a, from)
+    try contextPrefix(&mut b, to)
+    try copySessionAreas(a.bytes(), b.bytes())
 }
 
 // ---- the natives
@@ -353,14 +344,7 @@ fn copySessionStorage(from: u32, to: u32) AllocError!void {
 // The origin of page `p` as the storage key: scheme://host[:port] of
 // the page whose origin it has (an about:blank frame its parent's).
 fn appendStorageOrigin(b: *mut text.Builder, p: *mut Page) AllocError!void {
-    let u = &originPage(p).url
-    try b.append(u.scheme)
-    try b.append("://")
-    try b.append(u.host)
-    if u.port.len > 0 {
-        try b.appendByte(':')
-        try b.append(u.port)
-    }
+    try storageOrigin(b, &originPage(p).url)
 }
 
 fn storeOf(alloc: Allocator, session: bool) AllocError!*mut Store {
@@ -386,116 +370,43 @@ fn storeOf(alloc: Allocator, session: bool) AllocError!*mut Store {
 fn akStorage(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
     let session = it.toBoolean(it.arg(a, 3))
+    let op = try it.toNumber(it.arg(a, 0))
     let area = try it.builder()
     defer it.release(area)
-    var ctx: u32 = 0
-    if session {
-        ctx = contextOfPage(s.page)
-        try contextPrefix(area, ctx)
-    }
-    try appendStorageOrigin(area, s.page)
-    let st = try storeOf(s.alloc, session)
-    if !session {
-        try loadOrigin(st, area.bytes())
-    }
-    let op = try it.toNumber(it.arg(a, 0))
-    if op == 3.0 {
-        var i: usize = 0
-        var cleared = false
-        while i * 3 < st.items.len() {
-            if text.eql(st.items.items()[i * 3], area.bytes()) {
-                removeStoreItem(st, i)
-                cleared = true
-            } else {
-                i += 1
-            }
-        }
-        if cleared {
-            if !session {
-                try markDirty(st, area.bytes())
-                try noteLocalChange(area.bytes(), null, null)
-            }
-            try storageChanged(s, ctx, session, null, null, null)
-        }
-        return Value.Undefined
-    }
-    if op == 4.0 || op == 5.0 {
-        let want = try it.toNumber(it.arg(a, 1))
-        var n: usize = 0
-        let items = st.items.items()
-        for i in 0..items.len / 3 {
-            if text.eql(items[i * 3], area.bytes()) {
-                if op == 4.0 && n as f64 == want {
-                    return it.newString(items[i * 3 + 1])
-                }
-                n += 1
-            }
-        }
-        if op == 5.0 {
-            return js.numVal(n as f64)
-        }
-        return Value.Null
-    }
     let key = try it.builder()
     defer it.release(key)
-    try argText(it, a, 1, key)
-    let found = findItem(st, area.bytes(), key.bytes())
-    if op == 0.0 {
-        if found |i| {
-            return it.newString(st.items.items()[i * 3 + 2])
-        }
-        return Value.Null
-    }
-    if op == 2.0 {
-        let i = found orelse return Value.Undefined
-        let old = try it.builder()
-        defer it.release(old)
-        try old.append(st.items.items()[i * 3 + 2])
-        removeStoreItem(st, i)
-        if !session {
-            try markDirty(st, area.bytes())
-            try noteLocalChange(area.bytes(), key.bytes(), null)
-        }
-        try storageChanged(s, ctx, session, key.bytes(), old.bytes(), null)
-        return Value.Undefined
-    }
-    if op != 1.0 {
-        return Value.Undefined
-    }
     let v = try it.builder()
     defer it.release(v)
-    try argText(it, a, 2, v)
-    var used = areaBytes(st, area.bytes()) + key.bytes().len + v.bytes().len
-    if found |i| {
-        if text.eql(st.items.items()[i * 3 + 2], v.bytes()) {
-            return Value.Undefined
+    let out = try it.builder()
+    defer it.release(out)
+    var ask = StorageAsk { href: originPage(s.page).url.href, context: 0, session: session, op: op as u32 }
+    if !(op >= 0.0 && op <= 5.0) {
+        return Value.Undefined
+    }
+    if session {
+        ask.context = contextOfPage(s.page)
+        try contextPrefix(area, ask.context)
+    }
+    try appendStorageOrigin(area, s.page)
+    if op == 4.0 {
+        let want = try it.toNumber(it.arg(a, 1))
+        if !(want >= 0.0 && want < 4294967296.0) || want != std.math.floor(want) {
+            return Value.Null
         }
-        used -= key.bytes().len + st.items.items()[i * 3 + 2].len
+        ask.index = want as u32
     }
-    if used > STORAGE_QUOTA {
-        // The prelude throws QuotaExceededError.
-        return js.boolVal(false)
+    if op <= 2.0 {
+        try argText(it, a, 1, key)
+        ask.key = key.bytes()
     }
-    let old = try it.builder()
-    defer it.release(old)
-    if found |i| {
-        try old.append(st.items.items()[i * 3 + 2])
-        let copy = try ownedCopy(st.alloc, v.bytes())
-        st.alloc.free(st.items.items()[i * 3 + 2])
-        st.items.items()[i * 3 + 2] = copy
-    } else {
-        try appendItem(st, area.bytes(), key.bytes(), v.bytes())
+    if op == 1.0 {
+        try argText(it, a, 2, v)
+        ask.value = v.bytes()
     }
-    if !session {
-        try markDirty(st, area.bytes())
-        try noteLocalChange(area.bytes(), key.bytes(), v.bytes())
+    let done = askStorage(s.alloc, ask, area.bytes(), out) catch |e| {
+        return JsError.OutOfMemory
     }
-    var was: ?[]u8 = null
-    if found != null {
-        was = old.bytes()
-    }
-    try storageChanged(s, ctx, session, key.bytes(), was, v.bytes())
-    return Value.Undefined
+    return storageResult(it, s, ask, done, out.bytes())
 }
 
 fn akSetStorageHandler(it: *mut Interp, a: Args) JsError!Value {

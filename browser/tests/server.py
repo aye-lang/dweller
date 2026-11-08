@@ -61,6 +61,10 @@
 #   /acao/NAME       the file NAME (as /slow/NAME, at once) with
 #                    Access-Control-Allow-Origin: the request's Origin (or
 #                    *) and Access-Control-Allow-Credentials: true
+#   /logged-acao/NAME  as /acao/NAME, recording the request (method,
+#                    path, Origin, Cookie) in /log
+#   /with-other/NAME?other=URL  the HTML file NAME with each $OTHER
+#                    replaced by URL (a page that names another origin)
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
 #   /cookie-module?acao&acac  a JS module that records the request's
 #                    Cookie header; `acao` echoes Origin in
@@ -246,6 +250,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path.startswith("/acao/"):
             origin = self.headers.get("Origin", "*")
             self.reply_file(path[len("/acao/"):], [("Access-Control-Allow-Origin", origin), ("Access-Control-Allow-Credentials", "true")])
+        elif path.startswith("/logged-acao/"):
+            LOG.append("GET %s origin=%s cookie=%s\n" % (path, self.headers.get("Origin", ""), self.headers.get("Cookie", "")))
+            origin = self.headers.get("Origin", "*")
+            self.reply_file(path[len("/logged-acao/"):], [("Access-Control-Allow-Origin", origin), ("Access-Control-Allow-Credentials", "true")])
+        elif path.startswith("/with-other/"):
+            parts = urllib.parse.urlsplit(path)
+            other = dict(urllib.parse.parse_qsl(parts.query)).get("other", "")
+            with open(os.path.join(ROOT, parts.path[len("/with-other/"):]), "rb") as f:
+                page = f.read().replace(b"$OTHER", other.encode())
+            self.reply(200, [("Content-Type", "text/html")], page)
         elif path.startswith("/cookie-module?"):
             self.cookie_module()
         elif path.startswith("/nosniff/"):
