@@ -175,7 +175,9 @@ fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
     let outer = s.current
     defer s.current = outer
     if module {
-        _ = try runModuleElement(s, el)
+        if !(try runModuleElement(s, el)) {
+            return js.numVal(3.0)
+        }
     } else {
         var b = text.Builder.init(s.alloc)
         defer b.deinit()
@@ -215,8 +217,8 @@ fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
     if p.doc.attr(el, "src") |src| {
         if p.resolve(s.alloc, src) |target| {
             defer target.deinit(s.alloc)
-            if net.liveRequest(&target) && p.doc.attr(el, "crossorigin") == null && (!isModuleScript(p, el) || sameOriginUrl(&originPage(p).url, &target)) {
-                waits = net.startLoad(target.withoutFragment(), net.Kind.Script, p.url.href)
+            if net.liveRequest(&target) {
+                waits = net.startLoadAs(target.withoutFragment(), scriptRequest(p, el))
                 if waits != 0 && net.loadState(waits) != net.LoadState.Running {
                     net.releaseLoad(waits)
                     waits = 0

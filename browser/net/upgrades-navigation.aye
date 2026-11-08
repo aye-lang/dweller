@@ -1,0 +1,21 @@
+import std.mem.Allocator
+import std.text
+import url.Url
+import url.parse
+
+// chromium: third_party/blink/renderer/core/loader/mixed_content_checker.cc UpgradeInsecureRequest
+fn upgradesNavigation(alloc: Allocator, req: Request, at: *Url) bool {
+    let page = match req.initiator {
+        .Browser => ""
+        .Page { url } => url
+    }
+
+    if req.kind != Kind.Document || req.top.len > 0 || trustworthyHost(at.host) || !upgradesInsecure(page) {
+        return false
+    }
+
+    var from = parse(alloc, page) catch return false
+    defer from.deinit(alloc)
+
+    return text.eql(from.host, at.host)
+}

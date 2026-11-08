@@ -1,0 +1,63 @@
+<!doctype html>
+<title>load and error events of parser-inserted scripts</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const hits = [];
+self.other = '$OTHER';
+self.imports = 0;
+const show = e => {
+  if (e.target.localName === 'script') log(e.target.dataset.name + ': ' + e.type + (e.bubbles ? ', bubbles' : ''));
+};
+document.addEventListener('load', show, true);
+document.addEventListener('error', show, true);
+window.addEventListener('error', e => log('window error: ' + e.message));
+function inserted(name, attrs, text) {
+  const el = document.createElement('script');
+  el.dataset.name = name;
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  const ended = new Promise(resolve => {
+    el.onload = resolve;
+    el.onerror = resolve;
+  });
+  if (text !== undefined) el.textContent = text;
+  document.head.appendChild(el);
+  return (text === undefined ? ended : Promise.resolve()).then(() => self.imported).then(c => log(name + ' cookies: ' + JSON.stringify(c)), e => log(name + ': ' + e.name));
+}
+function worker(name, options) {
+  return new Promise(resolve => {
+    const w = new Worker('/net/script-events/worker.js', options);
+    w.onmessage = e => { log(name + ' cookies: ' + JSON.stringify(e.data)); w.terminate(); resolve(); };
+    w.postMessage(other);
+  });
+}
+window.addEventListener('load', async () => {
+  await fetch('/samesite/set');
+  const src = other + '/acao/net/script-events/imports.js?';
+  await inserted('import() from a module', { type: 'module', src: src + 1 });
+  await inserted('import() from a use-credentials module', { type: 'module', src: src + 2, crossorigin: 'use-credentials' });
+  await inserted('import() from an anonymous classic script', { src: src + 3, crossorigin: 'anonymous' });
+  await inserted('import() from a use-credentials classic script', { src: src + 4, crossorigin: 'use-credentials' });
+  const code = "self.imported = import(self.other + '/cookie-module?acao&acac&' + ++self.imports).then(() => self.lastCookie);";
+  await inserted('import() from an inline module', { type: 'module' }, code);
+  await inserted('import() from a use-credentials inline module', { type: 'module', crossorigin: 'use-credentials' }, code);
+  await worker('module worker', { type: 'module' });
+  await worker('module worker with credentials include', { type: 'module', credentials: 'include' });
+  log('done');
+});
+</script>
+<script data-name="classic" src="/net/script-events/ran.js?1"></script>
+<script data-name="classic 404" src="/net/script-events/absent.js"></script>
+<script data-name="classic with an empty src" src=""></script>
+<script data-name="classic anonymous without ACAO" crossorigin src="$OTHER/net/script-events/ran.js?2"></script>
+<script data-name="classic anonymous with ACAO" crossorigin src="$OTHER/acao/net/script-events/ran.js?3"></script>
+<script data-name="inline classic">log('ran: inline classic');</script>
+<script type="module" data-name="module" src="/net/script-events/ran.js?4"></script>
+<script type="module" data-name="module 404" src="/net/script-events/absent.js"></script>
+<script type="module" data-name="module without ACAO" src="$OTHER/net/script-events/ran.js?5"></script>
+<script type="module" data-name="module with ACAO" src="$OTHER/logged-acao/net/script-events/ran.js?kept"></script>
+<script type="module" data-name="removed module" id="gone" src="$OTHER/logged-acao/net/script-events/ran.js?gone"></script>
+<script type="module" data-name="inline module">log('ran: inline module');</script>
+<script type="module" data-name="inline module importing a module without ACAO">import '$OTHER/net/script-events/ran.js?6';</script>
+<script>document.getElementById('gone').remove();</script>
