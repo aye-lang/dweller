@@ -21,6 +21,8 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
             if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
 
+            if tp.loading { try commitEntry(slot, tp, url) }
+
             try showCommitted(tp, title, url)
             tp.loading = false
         }
@@ -31,8 +33,9 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try showCommitted(tp, title, tp.committed.bytes())
         }
 
-        .SameDocument { url } => {
+        .SameDocument { url, index, nulls, state } => {
             if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if nulls > 1 || !(try sameDocumentEntry(slot, tp, url, index, nulls, state)) { return "bad same_document" }
 
             try showCommitted(tp, tp.title.bytes(), url)
         }
@@ -40,7 +43,15 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
+            if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
+
             return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+        }
+
+        .HistoryGo { index } => {
+            if got.frame != slot.id || index as usize >= slot.session.tab.history.len() { return "bad history_go" }
+
+            if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
         }
 
         .BeginNavigation { url, post, content_type, body } => {

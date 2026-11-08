@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!void {
+    let h = &mut slot.session.tab.history
+
+    tp.doc_seq += 1
+    tp.url.clear()
+    try tp.url.append(href)
+
+    if tp.push_on_commit || h.len() == 0 {
+        tp.push_on_commit = false
+
+        return h.push(href, tp.doc_seq, null, false)
+    }
+
+    try h.replace(href, h.now().state)
+    h.now().doc = tp.doc_seq
+}

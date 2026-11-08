@@ -21,7 +21,9 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
 
     engine.setLoadingContext(r.context)
 
-    let p = try engine.loadWith(r.alloc, &target, sent, net.Initiator.Browser)
+    try mirrorHistory(r)
+
+    let p = try engine.loadShared(r.alloc, &target, sent, net.Initiator.Browser, &mut r.history)
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {
         try send(r.alloc, r.conn, frame, ipc.Message.Redirect { url: p.url.href })
@@ -30,6 +32,7 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
     if r.page |old| { old.destroy() }
 
     try adoptPage(r, frame, p)
+    try sharedHistory(r)
 
     if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "url") {
         r.href.clear()

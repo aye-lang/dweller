@@ -6,15 +6,13 @@ fn reportPage(r: *mut TabRenderer) !void {
 
     let p = r.page orelse return
 
+    try scriptNavigation(r, p)
+
     if !text.eql(p.title, r.title.bytes()) {
         r.title.clear()
         try r.title.append(p.title)
         try send(r.alloc, r.conn, r.tab, ipc.Message.Title { title: p.title })
     }
 
-    if !text.eql(p.url.href, r.href.bytes()) {
-        r.href.clear()
-        try r.href.append(p.url.href)
-        try send(r.alloc, r.conn, r.tab, ipc.Message.SameDocument { url: p.url.href })
-    }
+    try reportHistory(r, p)
 }

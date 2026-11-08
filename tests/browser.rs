@@ -5048,22 +5048,34 @@ fn window_pointer_lock() {
 /// back moves in the document (popstate shows item 2 again).
 #[test]
 fn window_history_api() {
+    window_history_api_in(&[]);
+}
+
+/// Q2.6a: the same with `DWELLER_PROCESS=tab`: the browser records the
+/// renderer's pushState entries, and back is a traversal in the
+/// renderer's document.
+#[test]
+fn window_history_api_in_renderer() {
+    window_history_api_in(&[("DWELLER_PROCESS", "tab")]);
+}
+
+fn window_history_api_in(envs: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let args = [
-        "browser/tests/agent/site/spa.html",
-        "--font",
-        "fixed",
-        "--frames",
-        "5",
-        "--state",
-        "--text",
-        "--events",
-        "click:30,133 click:140,133 key:cmd+[",
-    ];
-    let out = run_window(&args);
+    let (frames, events) = if envs.is_empty() {
+        ("5", "click:30,133 click:140,133 key:cmd+[")
+    } else {
+        ("1000", "renderer:loaded click:30,133 renderer:input click:140,133 renderer:input key:cmd+[ renderer:loaded")
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .envs(envs.iter().copied())
+        .args(["browser/tests/agent/site/spa.html", "--font", "fixed", "--frames", frames, "--state", "--text", "--events", events])
+        .args(if envs.is_empty() { &[][..] } else { &["--until-idle"][..] })
+        .output()
+        .unwrap();
     let got = text(&out.stdout);
     assert!(
         out.status.success() && out.stderr.is_empty(),
@@ -8823,9 +8835,7 @@ fn window_login_in(envs: &[(&str, &str)]) {
         &["Signed in as"],
         "a stale CSRF token",
     );
-    // Under the flag the window's history does not follow the renderer's
-    // navigations yet (Q2.6).
-    let history = if envs.is_empty() { "history 2 of 2\n" } else { "" };
+    let history = "history 2 of 2\n";
     let signed_in = login_window_with(&account, SIGN_IN, None, envs);
     has(
         &signed_in,
@@ -11326,10 +11336,86 @@ fn window_renderer_focus() {
     let pushed = format!("file://{}/browser/tests/ui/renderer_focus.html?pushed", root().display());
     assert!(state.contains(&format!("\naddress {pushed}\n")), "{state}");
     assert!(state.contains(" title Pushed\n"), "{state}");
-    assert!(state.starts_with("url file://") && state.lines().next().unwrap().ends_with("renderer_focus.html"), "{state}");
+    assert!(state.starts_with(&format!("url {pushed}\n")) && state.contains("\nhistory 2 of 2\n"), "{state}");
 
     let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "url")];
     let (state, err) = run(&shot, "renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone bad url"), "{state}");
+    assert_eq!(err, format!("error: bad message: bad url {pid}\n"));
+}
+
+/// Q2.6a: with `DWELLER_PROCESS=tab` the browser owns the tab's session
+/// history (`browser/tests/ui/renderer_history.html`): `location.href`,
+/// `history.back()`, `form.submit()` and `location.reload()` from the
+/// page's scripts are navigations the browser makes, `location.hash` and
+/// pushState are entries it records, a back or forward to an entry of the
+/// shown document fires popstate (and hashchange) without a load, a
+/// top-level `data:` navigation from the page is refused, and a
+/// pushState reported with another origin kills the renderer.
+#[test]
+fn window_renderer_history() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/renderer_history.html", "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--text", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let page = format!("file://{}/browser/tests/ui/renderer_history.html", root().display());
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let to = "renderer:loaded click:50,62 renderer:input renderer:loaded";
+    let cases: Vec<(String, Vec<String>, &str)> = vec![
+        (to.into(), vec![format!("\naddress {page}?to=1\nhistory 2 of 2\n"), "length 2".into()], "location.href"),
+        (
+            format!("{to} click:50,106 renderer:input renderer:loaded"),
+            vec![format!("\naddress {page}\nhistory 1 of 2\n"), "events load load load".into()],
+            "history.back to another document",
+        ),
+        (
+            "renderer:loaded click:50,150 renderer:input renderer:loaded".into(),
+            vec![format!("\naddress {page}?q=sent\nhistory 2 of 2\n")],
+            "form.submit",
+        ),
+        (
+            "renderer:loaded click:50,194 renderer:input key:cmd+[ renderer:loaded".into(),
+            vec![format!("\naddress {page}\nhistory 1 of 2\n"), "events load popstate hashchange popstate hashchange".into()],
+            "location.hash, then back in the document",
+        ),
+        (
+            "renderer:loaded click:50,238 renderer:input key:cmd+[ renderer:loaded key:cmd+] renderer:loaded".into(),
+            vec![format!("\naddress {page}?pushed\nhistory 2 of 2\n"), "length 2 state {\"n\":1} events load popstate popstate".into()],
+            "pushState, back and forward in the document",
+        ),
+        (
+            "renderer:loaded click:50,326 renderer:input renderer:loaded".into(),
+            vec![format!("\naddress {page}\nhistory 1 of 1\n"), "events load reload load".into()],
+            "location.reload",
+        ),
+    ];
+    for (events, wants, what) in &cases {
+        let (state, err) = run(events, &tab);
+        assert!(err.is_empty(), "{what}: {err}");
+        for want in wants {
+            assert!(state.contains(want.as_str()), "{what}: expected {want:?} in:\n{state}");
+        }
+    }
+
+    let (state, err) = run("renderer:loaded click:50,282 renderer:input", &tab);
+    assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
+    assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "pushstate")];
+    let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
     assert!(line.ends_with(" gone bad url"), "{state}");

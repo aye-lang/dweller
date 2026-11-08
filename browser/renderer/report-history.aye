@@ -1,0 +1,35 @@
+import engine
+import ipc
+import std
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc DidCommitSameDocumentNavigation
+fn reportHistory(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let h = p.sessionHistory()
+    let state = h.now().state
+    var at = r.at
+
+    if r.mirrored { at = h.current as u32 }
+
+    if text.eql(p.url.href, r.href.bytes()) && at == r.at && sameState(r, state) { return }
+
+    r.href.clear()
+    try r.href.append(p.url.href)
+    r.at = at
+    try noteState(r, state)
+
+    var href = p.url.href
+    var nulls: u32 = 0
+
+    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "pushstate") { href = "https://evil.example/" }
+
+    if state == null { nulls = 1 }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.SameDocument { url: href, index: at, nulls: nulls, state: state orelse "" })
+}
+
+fn sameState(r: *TabRenderer, state: ?[]u8) bool {
+    if state |st| { return !r.said_null && text.eql(st, r.said_state.bytes()) }
+
+    return r.said_null
+}

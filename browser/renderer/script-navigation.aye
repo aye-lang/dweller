@@ -1,0 +1,19 @@
+import engine
+import ipc
+
+// chromium: content/browser/renderer_host/navigation_controller_impl.cc GoToOffset
+fn scriptNavigation(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let nav = engine.takeNavigation(p)
+    let at = p.sessionHistory().current as i64
+
+    match nav.kind {
+        .To => try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: nav.href, post: 0, content_type: "", body: "" })
+        .History => try send(r.alloc, r.conn, r.tab, ipc.Message.HistoryGo { index: (at + nav.step) as u32 })
+        .Reload => try send(r.alloc, r.conn, r.tab, ipc.Message.HistoryGo { index: at as u32 })
+        .Submit => {
+            if nav.form |form| { try sendSubmission(r, p, form, nav.submitter) }
+        }
+
+        .None => {}
+    }
+}

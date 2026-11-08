@@ -18,7 +18,7 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         15 => Message.PopupChoice { index: try r.readU32() }
         16 => Message.Focus { on: try r.readU32() }
         17 => Message.Title { title: try r.readBytes() }
-        18 => Message.SameDocument { url: try r.readBytes() }
+        18 => Message.SameDocument { url: try r.readBytes(), index: try r.readU32(), nulls: try r.readU32(), state: try r.readBytes() }
         19 => Message.Cursor { shape: try r.readU32() }
         20 => Message.TargetUrl { url: try r.readBytes() }
         21 => Message.LongTask { on: try r.readU32(), ms: try r.readU32() }
@@ -39,6 +39,9 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         36 => Message.StorageEvent { nulls: try r.readU32(), key: try r.readBytes(), old: try r.readBytes(), value: try r.readBytes(), url: try r.readBytes() }
         37 => Message.Ping { n: try r.readU32() }
         38 => Message.Pong { n: try r.readU32() }
+        39 => Message.SessionHistory { index: try r.readU32(), length: try r.readU32(), scroll: try r.readF64(), nulls: try r.readU32(), state: try r.readBytes() }
+        40 => Message.HistoryGo { index: try r.readU32() }
+        41 => Message.Traverse { index: try r.readU32() }
         _ => return DecodeError.UnknownType
     }
 
