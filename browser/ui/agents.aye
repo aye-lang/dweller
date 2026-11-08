@@ -79,12 +79,14 @@ pub struct Conn {
     gone: bool
     // With --spaces: the Space serving it (null: not started yet).
     space: ?*mut Space
+    admitted: bool
 }
 
 /// The agents' side of a window.
 pub struct Agents {
     path: []u8
     fd: i32
+    token: []u8
     conns: [8]?*mut Conn
     // Quit when the last agent leaves (tests): `ever` is set once one
     // came.
@@ -144,14 +146,25 @@ pub struct Agents {
 
 /// Starts listening at `path`; null (after a message) when it cannot.
 fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
+    if socketDirRefusal(path) |why| {
+        std.log.err("cannot listen on {}: {}", path, why)
+        return false
+    }
+    let token = writeToken(ui.alloc, path) orelse {
+        std.log.err("cannot listen on {}", path)
+        return false
+    }
     let fd = listenAt(path)
     if fd < 0 {
+        removeSocket(path)
+        ui.alloc.free(token)
         std.log.err("cannot listen on {}", path)
         return false
     }
     let a = try ui.alloc.create(Agents {
         path: path,
         fd: fd,
+        token: token,
         conns: @zeroed([8]?*mut Conn),
         exit_when_idle: exit_when_idle,
         ever: false,
@@ -202,6 +215,7 @@ fn stopAgents(ui: *mut Ui) {
     }
     closeFd(a.fd)
     removeSocket(a.path)
+    ui.alloc.free(a.token)
     leaveSpace(ui)
     a.reap.deinit()
     if a.dropped |slot| {
@@ -272,6 +286,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             wait_idle: false,
             gone: false,
             space: null,
+            admitted: false,
         })
         if a.inside |me| {
             // A Space: its agent acts on its first tab, or on the tab
@@ -282,7 +297,6 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             }
             try spaceStatus(ui)
         }
-        a.ever = true
         ui.dirty = true
     }
     var buf = @zeroed([16384]u8)
@@ -295,6 +309,9 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
     }
     for i in 0..MAX_AGENTS {
         let c = a.conns[i] orelse continue
+        if !(try admitConn(ui, i, buf[..])) {
+            continue
+        }
         if a.spaces {
             try relay(ui, i, buf[..])
             continue
