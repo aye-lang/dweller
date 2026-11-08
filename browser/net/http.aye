@@ -172,7 +172,7 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 }
 
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
-    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other && req.mode == Mode.NoCors
+    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other && !(try corsApplies(alloc, req, target.href))
     if session |s| {
         if cacheable {
             if try s.cache.lookup(alloc, target.withoutFragment()) |hit| {

@@ -556,7 +556,7 @@ fn moduleLoad(it: *mut Interp, a: Args) JsError!Value {
     let done = try js.callableArg(it, a, 2)
     let target = try argUrl(it, a) orelse return js.boolVal(false)
     defer target.deinit(it.alloc)
-    if !net.liveRequest(&target) {
+    if !net.liveRequest(&target) || !sameOriginUrl(&originPage(scriptOf(it).page).url, &target) {
         return js.boolVal(false)
     }
     let referrer = try it.builder()

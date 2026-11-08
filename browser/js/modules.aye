@@ -45,10 +45,10 @@ pub fn importModule(it: *mut Interp, specifier: []u8, referrer: u32) JsError!Val
     return callLoader(it, "dynamicImport", spec, try it.atomValue(referrer), Value.Undefined, Value.Undefined)
 }
 
-/// Runs a module script of a page: the module at `href`, else the inline
-/// `source` with the document's URL `base`. Loading, parsing and linking
-/// errors throw; the result is the promise of its evaluation.
-pub fn runModuleScript(it: *mut Interp, href: ?[]u8, source: []u8, base: []u8) JsError!Value {
+/// Runs a module script of a page: the module at `href` (credentials when
+/// `include`), else the inline `source` with the document's URL `base`.
+/// Parse and link errors throw; null when a fetch failed, else the promise.
+pub fn runModuleScript(it: *mut Interp, href: ?[]u8, source: []u8, base: []u8, include: bool) JsError!Value {
     let at = it.stack.len()
     defer it.truncate(at)
     var target = Value.Null
@@ -60,7 +60,7 @@ pub fn runModuleScript(it: *mut Interp, href: ?[]u8, source: []u8, base: []u8) J
     try it.push(src)
     let b = try it.newString(base)
     try it.push(b)
-    return callLoader(it, "moduleScript", target, src, b, Value.Undefined)
+    return callLoader(it, "moduleScript", target, src, b, boolVal(include))
 }
 
 /// Gives the loader a page's import map (the JSON text of a
@@ -144,7 +144,11 @@ fn engineFetchModule(it: *mut Interp, a: Args) JsError!Value {
     }
     defer target.deinit(it.alloc)
     let json = (it.arg(a, 2) is .Str) && text.eql(it.heap.bytes(strOf(it.arg(a, 2))), "json")
-    let res = moduleResponse(it, &target, it.heap.bytes(strOf(it.arg(a, 1)))) catch |e| {
+    var credentials = net.Credentials.SameOrigin
+    if it.toBoolean(it.arg(a, 3)) {
+        credentials = net.Credentials.Include
+    }
+    let res = moduleResponse(it, &target, it.heap.bytes(strOf(it.arg(a, 1))), credentials) catch |e| {
         if e == net.FetchError.OutOfMemory {
             return JsError.OutOfMemory
         }
@@ -198,7 +202,9 @@ fn enginePrefetchModules(it: *mut Interp, a: Args) JsError!Value {
     var referrer = text.Builder.init(it.alloc)
     defer referrer.deinit()
     try referrer.append(it.heap.bytes(strOf(it.arg(a, 1))))
-    if !it.local_loads_only {
+    if it.module_prefetch |prefetch| {
+        prefetch(it, hrefs.bytes(), referrer.bytes())
+    } else if !it.local_loads_only {
         net.prefetch(it.alloc, hrefs.bytes(), net.Kind.Script, referrer.bytes())
     }
     return Value.Undefined
@@ -423,7 +429,7 @@ fn installModules(it: *mut Interp, e: u32) JsError!void {
     it.module_cell_get = try it.newNative("", 0, moduleCellGet)
     try it.addRoot(objVal(it.module_cell_get))
     try it.defineNative(e, "resolveModule", 3, engineResolveModule)
-    try it.defineNative(e, "fetchModule", 3, engineFetchModule)
+    try it.defineNative(e, "fetchModule", 4, engineFetchModule)
     try it.defineNative(e, "parseModule", 2, engineParseModule)
     try it.defineNative(e, "prefetchModules", 2, enginePrefetchModules)
     try it.defineNative(e, "isModuleNamespace", 1, engineIsModuleNamespace)
