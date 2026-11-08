@@ -1,0 +1,16 @@
+import engine
+import std.mem.AllocError
+import std.text
+
+fn drawCertBar(ui: *mut Ui, p: *engine.Page) AllocError!void {
+    let bar = try certBarOf(ui, p)
+    let f = uiFont(13.0)
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+
+    try certLabel(ui, p, &mut b)
+    fill(ui, bar.box.x, bar.box.y, bar.box.w, bar.box.h, BAR_BG)
+    fill(ui, bar.box.x, bar.box.y + bar.box.h - 1.0, bar.box.w, 1.0, LINE)
+    try label(ui, PAD, centered(ui, bar.box.y, bar.box.h, f), "This connection is not private", f, INK)
+    try drawButton(ui, bar.button, b.bytes(), ui.cert_advanced)
+}

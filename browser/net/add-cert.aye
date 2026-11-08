@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+fn addCert(certs: *mut CertExceptions, host: []u8, kind: CertKind) AllocError!void {
+    if certAllowed(certs, host, kind) {
+        return
+    }
+
+    let owned_host = try dup(certs.alloc, host)
+
+    errdefer certs.alloc.free(owned_host)
+
+    try certs.list.append(CertException { host: owned_host, kind: kind })
+}

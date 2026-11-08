@@ -6846,6 +6846,134 @@ fn tls_errors() {
     }
 }
 
+/// Q3.4b: the window's certificate bar (browser chrome, not the page)
+/// offers "Advanced", then "Proceed to HOST (unsafe)". Proceeding past
+/// the self-signed server loads its page, whose script fetches the same
+/// host, and a reload does not ask again; another process with another
+/// profile asks again. A page script that fetches the bad host gets no
+/// bar. An HSTS host with a bad certificate has no bar: clicks where
+/// the button would be change nothing.
+#[test]
+fn cert_bypass() {
+    use std::io::BufRead;
+    if !has_sdl() {
+        println!("skipped: no SDL");
+        return;
+    }
+    let tls = root().join("browser/tests/tls");
+    let Ok(mut child) = Command::new("python3")
+        .arg("-I")
+        .arg(root().join("browser/tests/tls_server.py"))
+        .arg(&tls)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let _srv = Server {
+        child,
+        base: String::new(),
+    };
+    let ports: Vec<u16> = line
+        .split_whitespace()
+        .map(|p| p.parse().unwrap())
+        .collect();
+    let bad = format!("https://127.0.0.1:{}/", ports[2]);
+    let valid = format!("https://127.0.0.1:{}/", ports[0]);
+    let window = |profile: &Path, page: &str, events: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .env("DWELLER_PROFILE", profile)
+            .args([page, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", events])
+            .output()
+            .unwrap();
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let first = scratch().join("cert-bypass-1");
+    let second = scratch().join("cert-bypass-2");
+    for dir in [&first, &second] {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let button = "click:780,56";
+    let page = format!("{bad}fetch.html?{bad}");
+
+    let (shown, err) = window(&first, &page, "frame");
+    assert!(
+        shown.contains("Your connection is not private") && shown.contains("cert Advanced\n"),
+        "{shown}\n{err}"
+    );
+    let (shown, err) = window(&first, &page, &format!("frame {button} frame"));
+    assert!(shown.contains("cert Proceed to 127.0.0.1 (unsafe)\n"), "{shown}\n{err}");
+
+    let (shown, err) = window(&first, &page, &format!("frame {button} {button} loaded key:cmd+r loaded"));
+    assert!(
+        shown.contains("fetch: status 200\nxhr: load status 200\n") && !shown.contains("cert ") && !shown.contains("not private"),
+        "{shown}\n{err}"
+    );
+
+    for (port, why) in [(ports[1], "has expired"), (ports[3], "is for another host")] {
+        let other = format!("https://127.0.0.1:{port}/");
+        let events = format!("frame {button} {button} loaded key:cmd+l text:{other} key:return loaded");
+        let (shown, err) = window(&first, &page, &events);
+        assert!(
+            shown.contains("Your connection is not private") && shown.contains(why) && shown.contains("cert Advanced\n"),
+            "an exception is for one kind of error: {shown}\n{err}"
+        );
+    }
+
+    let (shown, err) = window(&second, &page, "frame");
+    assert!(shown.contains("cert Advanced\n"), "a new profile asks again: {shown}\n{err}");
+
+    let (shown, err) = window(&second, &format!("{valid}fetch.html?{bad}"), &format!("frame {button} {button} frame"));
+    assert!(
+        shown.contains("fetch: TypeError\nxhr: error status 0\n") && !shown.contains("cert "),
+        "a page's fetch gets no bypass: {shown}\n{err}"
+    );
+
+    let Some(site) = HstsSite::start() else {
+        println!("skipped the HSTS case: cannot start python3 for the test server");
+        return;
+    };
+    let hsts = scratch().join("cert-bypass-hsts");
+    let _ = std::fs::remove_dir_all(&hsts);
+    std::fs::create_dir_all(&hsts).unwrap();
+    let site_url = format!("https://site.test:{}/", site.tls);
+    let out = site.run(Some(&hsts), &["dump", "--text", &format!("{site_url}hsts")]);
+    assert_eq!(text(&out.stdout), "https page\n", "{}", text(&out.stderr));
+    let untrusted_site = |profile: &Path| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .env("DWELLER_RESOLVE", format!("site.test:{}:127.0.0.1", site.tls))
+            .env("DWELLER_PROFILE", profile)
+            .args([&site_url, "--width", "800", "--height", "600", "--frames", "300", "--until-idle", "--state", "--text", "--events", &format!("frame {button} {button} frame")])
+            .output()
+            .unwrap();
+        text(&out.stdout)
+    };
+    let shown = untrusted_site(&hsts);
+    assert!(
+        shown.contains("Your connection is not private") && !shown.contains("cert "),
+        "no bypass on an HSTS host: {shown}"
+    );
+    let fresh = scratch().join("cert-bypass-fresh");
+    let _ = std::fs::remove_dir_all(&fresh);
+    std::fs::create_dir_all(&fresh).unwrap();
+    let shown = untrusted_site(&fresh);
+    assert!(
+        shown.contains("https page") && !shown.contains("not private"),
+        "the same clicks proceed on the host before its HSTS header: {shown}"
+    );
+}
+
 /// `browser/tests/hsts_server.py`: one TLS and one plain port on
 /// 127.0.0.1 with `site.test` (and `sub.site.test`) mapped to both
 /// through `DWELLER_RESOLVE`; runs `dweller args...` in `profile` when
@@ -10329,7 +10457,17 @@ fn window_renderer_focus() {
         (0..a.len() / 4).filter(|i| a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]).map(|i| i % w).collect();
     assert!((1..=2).contains(&columns.len()), "window blur: the caret did not hide, columns {columns:?}\n{state}");
 
-    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input", &[("DWELLER_PROCESS", "tab")]);
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .arg(&shot)
+        .args(["--events", "renderer:loaded renderer:frame click:90,102 renderer:input renderer:next renderer:next"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "blink: {}\n{}", out.status, text(&out.stderr));
+    let (state, err) = (text(&out.stdout), text(&out.stderr));
     assert!(err.is_empty(), "{err}");
     let line = state.lines().find(|l| l.starts_with("renderer-frame ")).unwrap_or("");
     let rect: Vec<i64> = line.split(' ').skip(4).filter_map(|v| v.parse().ok()).collect();

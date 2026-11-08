@@ -409,6 +409,7 @@ pub struct Ui {
     dropdown: ?Dropdown
     range_drag: bool
     inactive: bool = false
+    frame_mark: ?u32 = null
     arrow_cursor: ?*mut SDL_Cursor
     hand_cursor: ?*mut SDL_Cursor
     ibeam_cursor: ?*mut SDL_Cursor
@@ -433,6 +434,7 @@ pub struct Ui {
     from_timers: bool = false
     quit: bool
     stuck: bool = false
+    cert_advanced: bool = false
     wait: bool = false
     unresponsive: u32 = 0
     // The agents (agents.aye), when the window listens for them.
@@ -944,6 +946,7 @@ pub struct Ui {
         }
         self.dropdown = null
         self.range_drag = false
+        self.cert_advanced = false
         if loaded {
             // The agents' refs are of the old document.
             self.slots[self.active].?.shown += 1
@@ -1560,6 +1563,9 @@ pub struct Ui {
         if self.auth.open {
             return authClick(self, x, y)
         }
+        if try certClick(self, x, y) {
+            return
+        }
         if try clickMenu(self, x, y) {
             return
         }
@@ -1908,6 +1914,9 @@ pub struct Ui {
         }
         if self.stuck {
             try drawStuckBar(self)
+        }
+        if certPage(self) |p| {
+            try drawCertBar(self, p)
         }
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
