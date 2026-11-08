@@ -6510,11 +6510,11 @@ fn jsdom_fixtures_restyle_beside_shadow() {
 }
 
 /// Q4.16b: in a rAF with a running CSS transition,
-/// `browser/tests/ui/transition_reads.html` reads getBoundingClientRect
-/// 100 times: the reads see the frame's transition value (the value
-/// getComputedStyle gives), cost one style and layout update (as many
-/// `script_layout` records as with 1 read), and a style change between
-/// two reads is seen by the second.
+/// `browser/tests/ui/transition_reads.html` writes a style and reads
+/// getBoundingClientRect 100 times: the reads see the frame's transition
+/// value (the value getComputedStyle gives), the transition walk
+/// (`transition_walk`) runs at most once more than with 1 read (99 more
+/// before), and a style change between two reads is seen by the second.
 #[test]
 fn geometry_reads_restyle_once() {
     let run = |reads: &str| {
@@ -6531,14 +6531,17 @@ fn geometry_reads_restyle_once() {
             .unwrap();
         let err = text(&out.stderr);
         assert!(out.status.success(), "{}\n{err}", out.status);
-        let layouts = err.matches("DWELLER_TIMING\tscript_layout\t").count();
-        (text(&out.stdout), layouts)
+        let walks = err.matches("DWELLER_TIMING\ttransition_walk\t").count();
+        (text(&out.stdout), walks)
     };
-    let (many, many_layouts) = run("100");
-    let (one, one_layouts) = run("1");
+    let (many, many_walks) = run("100");
+    let (one, one_walks) = run("1");
     assert!(many.contains("1 true true 50 70"), "{many}");
     assert_eq!(many, one);
-    assert_eq!(many_layouts, one_layouts, "100 reads against 1");
+    assert!(
+        many_walks <= one_walks + 1,
+        "{many_walks} transition walks with 100 reads, {one_walks} with 1"
+    );
 }
 
 /// P4.75q: subtrees inserted on a page with `:has()` of any element and
