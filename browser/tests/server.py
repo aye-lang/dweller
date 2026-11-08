@@ -68,6 +68,8 @@
 #                    Referer in /meta-log and answers as /log/NAME
 #   /meta-log        the requests /meta/ recorded, sorted
 #   /policy/POLICY/NAME  the file NAME with Referrer-Policy: POLICY
+#   /policy-redirect/POLICY/NAME  302 to /meta/NAME with Referrer-Policy: POLICY
+#   /see/NAME        (POST) 303 to /meta/NAME
 #   /with-other/NAME?other=URL  the HTML file NAME with each $OTHER
 #                    replaced by URL (a page that names another origin)
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
@@ -242,6 +244,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/plain")], "".join(sorted(META)).encode())
         elif path.startswith("/meta/"):
             self.log_metadata("GET")
+        elif path.startswith("/policy-redirect/"):
+            policy, _, name = path[len("/policy-redirect/"):].partition("/")
+            self.reply(302, [("Location", "/meta/" + name), ("Referrer-Policy", policy)])
         elif path.startswith("/policy/"):
             policy, _, name = path[len("/policy/"):].partition("/")
             self.reply_file(name, [("Referrer-Policy", policy)])
@@ -390,6 +395,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.log_request_line("POST", body)
         elif self.path.startswith("/meta/"):
             self.log_metadata("POST")
+        elif self.path.startswith("/see/"):
+            self.reply(303, [("Location", "/meta/" + self.path[len("/see/"):])])
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
         else:

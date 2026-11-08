@@ -239,7 +239,7 @@ test "what a renderer may send" {
     @expect(!fromRenderer(Message.FrameAck { buffer: 1 }))
     @expect(!fromRenderer(Message.Text { seq: 1, typed: "" }))
     @expect(fromRenderer(Message.InputAck { seq: 1 }))
-    @expect(fromRenderer(Message.BeginNavigation { url: "", post: 0, content_type: "", body: "" }))
+    @expect(fromRenderer(Message.BeginNavigation { url: "", post: 0, content_type: "", body: "", referrer_policy: 0 }))
     @expect(fromRenderer(Message.Popup { items: "", disabled: "", selected: 0, x: 0.0, y: 0.0, w: 0.0, h: 0.0 }))
     @expect(!fromRenderer(Message.PopupChoice { index: 0 }))
     @expect(!fromRenderer(Message.Focus { on: 1 }))
@@ -251,12 +251,13 @@ test "the navigation and popup messages round-trip" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let nav = try roundTrip(&mut out, 7, Message.BeginNavigation { url: "http://a/b", post: 0, content_type: "", body: "" })
+    let nav = try roundTrip(&mut out, 7, Message.BeginNavigation { url: "http://a/b", post: 0, content_type: "", body: "", referrer_policy: 7 })
 
     match nav.message {
-        .BeginNavigation { url, post, .. } => {
+        .BeginNavigation { url, post, referrer_policy, .. } => {
             @expectEqual("http://a/b", url)
             @expectEqual(0, post)
+            @expectEqual(7, referrer_policy)
         }
 
         _ => @expect(false)

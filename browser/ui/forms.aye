@@ -196,6 +196,7 @@ fn clickFrame(ui: *mut Ui, fp: engine.FramePoint) AllocError!void {
         let target = fp.page.follow(ui.alloc, link.href) catch |e| {
             return
         }
+        net.noteNavigationPolicy(engine.linkReferrerPolicy(&fp.page.doc, link.el))
         defer target.deinit(ui.alloc)
         if engine.targetFrame(fp.page, engine.linkTarget(fp.page, link.el)) |slot| {
             try engine.navigateFrame(slot, &target, null, engine.initiatorOf(fp.page))

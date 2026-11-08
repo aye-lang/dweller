@@ -334,9 +334,13 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         let get_or_head = text.eql(verb, "GET") || text.eql(verb, "HEAD")
         if (status == 303 && !get_or_head) || ((status == 301 || status == 302) && text.eql(verb, "POST")) {
             post = null
+            sent.method = "GET"
             method.clear()
             try method.append("GET")
             try method.appendByte(0)
+        }
+        if parseReferrerPolicy(requestHeaderValue(sink.headers_raw.bytes(), "Referrer-Policy")) |p| {
+            sent.referrer_policy = p
         }
         here.clear()
 
@@ -566,7 +570,7 @@ fn acceptOf(kind: Kind) []u8 {
         .Document => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         .Style => "text/css,*/*;q=0.1"
         .Image => "image/webp,image/png,image/gif,image/jpeg,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-        .Script, .Other => "*/*"
+        .Script, .Other, .Font, .Worker => "*/*"
     }
 }
 

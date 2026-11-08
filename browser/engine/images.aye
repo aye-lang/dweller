@@ -245,8 +245,9 @@ pub struct ImageCache {
     }
 
     /// The bitmap of `href`, fetched and decoded the first time.
-    fn bitmapOf(self: *mut Self, href: []u8, crossorigin: ?[]u8) AllocError!?*mut image.Bitmap {
-        let wanted = self.imageRequest(crossorigin)
+    fn bitmapOf(self: *mut Self, href: []u8, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!?*mut image.Bitmap {
+        var wanted = self.imageRequest(crossorigin)
+        wanted.referrer_policy = policy
         for i in 0..self.entries.len() {
             let e = &mut self.entries.items()[i]
             if text.eql(e.href, href) && e.mode == wanted.mode && e.credentials == wanted.credentials {
@@ -478,13 +479,14 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
     errdefer target.deinit(cache.alloc)
     let href = target.withoutFragment()
     let crossorigin = doc.attr(h, "crossorigin")
-    if crossorigin == null && !cache.known(href) && net.loadHeld(href) {
+    let policy = doc.attr(h, "referrerpolicy")
+    if crossorigin == null && policy == null && !cache.known(href) && net.loadHeld(href) {
         // Rendering waits for the request that loads it.
         if fetch == ImageFetch.Now {
             return LoadedElementImage { target: target, bmp: null, density: choice.density, load: 0 }
         }
     }
-    if crossorigin == null && !cache.known(href) && fetch == ImageFetch.Background {
+    if crossorigin == null && policy == null && !cache.known(href) && fetch == ImageFetch.Background {
         if waited == 0 || net.loadOf(href) != waited {
             let id = net.startLoad(href, net.Kind.Image, cache.referrer)
             if id != 0 {
@@ -492,7 +494,7 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
             }
         }
     }
-    let bmp = try cache.bitmapOf(target.withoutFragment(), crossorigin)
+    let bmp = try cache.bitmapOf(target.withoutFragment(), crossorigin, net.parseReferrerPolicy(policy orelse ""))
     if bmp |b| {
         if cache.pictureOf(target.withoutFragment(), crossorigin) |pic| {
             try cache.nodes.putPicture(h, b, pic)
@@ -579,7 +581,7 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
         if !cache.known(target.withoutFragment()) && net.loadHeld(target.withoutFragment()) {
             continue
         }
-        if try cache.bitmapOf(target.withoutFragment(), null) |bmp| {
+        if try cache.bitmapOf(target.withoutFragment(), null, null) |bmp| {
             let owned = try cache.alloc.alloc(0 as u8, key.len)
             std.mem.copy(owned, key)
             cache.keys.append(owned) catch |e| {
@@ -633,7 +635,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
         }
         defer target.deinit(cache.alloc)
         // A script's request loads it in the background.
-        if doc.attr(h, "crossorigin") != null || cache.known(target.withoutFragment()) || net.loadHeld(target.withoutFragment()) {
+        if doc.attr(h, "crossorigin") != null || doc.attr(h, "referrerpolicy") != null || cache.known(target.withoutFragment()) || net.loadHeld(target.withoutFragment()) {
             continue
         }
         try hrefs.append(target.withoutFragment())

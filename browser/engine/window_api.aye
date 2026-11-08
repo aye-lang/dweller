@@ -459,7 +459,7 @@ fn akNavigate(it: *mut Interp, a: Args) JsError!Value {
             return it.pop()
         }
         try setNavigation(s, u.href)
-        net.noteNavigation(u.href, s.page.url.href, false) catch |e| {
+        net.noteNavigation(u.href, s.page.url.href, hasTransientActivation(s.page)) catch |e| {
             return JsError.OutOfMemory
         }
     }
@@ -537,7 +537,7 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
     return fetchWith(it, a, false)
 }
 
-// fetchStart(url, method, headers, body, credentials, mode, callback): the request of
+// fetchStart(url, method, headers, body, credentials, mode, callback, referrerPolicy): the request of
 // akFetch, in the background (net.startRequest) when it can be; queues
 // the task that calls `callback` once it ended, with the request's id
 // for fetchTake, or with the response (made now: another scheme, a
@@ -635,6 +635,11 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     let mode = try it.builder()
     defer it.release(mode)
     try argText(it, a, 5, mode)
+
+    let policy = try it.builder()
+    defer it.release(policy)
+    try argText(it, a, 7, policy)
+    req.referrer_policy = net.parseReferrerPolicy(policy.bytes())
 
     if !text.eql(mode.bytes(), "no-cors") {
         req.mode = net.Mode.Cors
