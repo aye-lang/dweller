@@ -1,0 +1,29 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+
+let CSS_DICTIONARY = [_][]u8{
+    "{", "}", ";", ":", "(", ")", "[", "]", ",", " ", "\n", "\0", "\\", "\"", "'", "/*", "*/", "<!--", "-->",
+    "!important", "@media ", "@supports ", "@layer ", "@container ", "@scope ", "@import ", "@font-face", "@keyframes ",
+    "@property ", "@namespace ", "@page", "@starting-style", "screen and (min-width: 1px)", "not (display: grid)", "layer(x)",
+    "&", ">", "+", "~", "*", "|", "*|", "#id", ".c", "[a=b]", "[a|=b i]", "[a^='b' s]", "::before", "::slotted(", "::part(",
+    ":not(", ":is(", ":where(", ":has(", ":nth-child(", ":nth-last-of-type(", "2n+1", "-n+3", " of ", ":host(", ":root",
+    "var(--x)", "--x", "calc(", "min(", "max(", "clamp(", "attr(", "env(", "url(", "url(x)", "rgb(", "hsl(", "oklch(",
+    "color-mix(in srgb, ", "linear-gradient(", "repeating-radial-gradient(", "1px", "50%", "1e3", "-.5", "1/2", "U+0-7F",
+    "inherit", "initial", "unset", "revert", "revert-layer", "none", "auto", "transparent", "currentcolor",
+    "color", "display", "grid-template-areas", "font", "background-image", "margin", "overflow", "line-clamp",
+    "white-space", "transform", "animation", "transition", "inset", "content", "counter-reset",
+}
+
+fn cssTarget() Target {
+    return Target { name: "css", dictionary: CSS_DICTIONARY[0..], run: fuzzCss }
+}
+
+fn fuzzCss(alloc: Allocator, input: []u8) AllocError!void {
+    var sheet = try css.Sheet.init(alloc)
+    defer sheet.deinit()
+
+    try css.parseSheet(&mut sheet, input, css.Media { width: 800.0, height: 600.0 })
+    _ = try css.parseInline(&mut sheet, input)
+    try serializeRules(alloc, input)
+}

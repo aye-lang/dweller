@@ -1,0 +1,23 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstylerule-selectortext
+fn serializeSelector(alloc: Allocator, src: []u8, out: *mut text.Builder) AllocError!void {
+    var sheet = try css.Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var rule = text.Builder.init(alloc)
+    defer rule.deinit()
+
+    try rule.append(src)
+    try rule.append(" {}")
+    try css.parseSheet(&mut sheet, rule.bytes(), css.Media { width: 800.0, height: 600.0 })
+
+    out.clear()
+
+    if sheet.rules.len() == 1 && text.trim(src).len > 0 {
+        try css.selectorText(alloc, src, out)
+    }
+}

@@ -156,7 +156,13 @@ single input is replayed.
 
 Targets: `html` parses the input as a document (`html.parse`) and as
 the markup of `innerHTML` (`html.parseWith`, no declarative shadow
-roots).
+roots). `css` parses the input as a style sheet (`css.parseSheet`) and
+as a `style` attribute (`css.parseInline`), then serializes it as the
+CSSOM does: the text before each `{` through `css.selectorText` when it
+parses as a selector list, each `prop: value` of the block through
+`css.specifiedValue`. `url` resolves the input against a fixed base
+(`url.resolve`), parses its `href` again and panics unless that parses
+to the same `href` (the serializer is idempotent).
 
 `python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
 build (`target/dweller-fuzz`, built by `browser/build.sh` when

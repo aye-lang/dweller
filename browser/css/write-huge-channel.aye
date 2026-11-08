@@ -1,0 +1,20 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeHugeChannel(n: f64, out: *mut text.Builder) AllocError!void {
+    if math.isNan(n) {
+        return out.append("calc(NaN)")
+    }
+
+    if n > 0.0 && math.isInf(n) {
+        return out.append("calc(infinity)")
+    }
+
+    if math.isInf(n) {
+        return out.append("calc(-infinity)")
+    }
+
+    return out.appendFloatExact(n)
+}
