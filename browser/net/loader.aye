@@ -508,7 +508,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
         at = a.res.url
     }
 
-    if !(corsCheck(ld.alloc, checked, at, a.res.headers_raw) catch false) {
+    if !(corsCheck(ld.alloc, checked, at, a.res.headers_raw) catch false) || (orbRefuses(ld.alloc, checked, at, &a.res) catch true) {
         return failRequest(ld, l, FetchError.Network)
     }
 
@@ -736,6 +736,7 @@ fn keepLoad(alloc: Allocator, s: *mut Session, l: *Load, job: *mut Job, status: 
     var res = try respond(alloc, ct, body)
     defer res.deinit(alloc)
     res.status = status
+    res.headers_raw = try job.sink.headers_raw.toOwned()
     if !text.eql(job.at.href, l.href) {
         res.url = try dup(alloc, job.at.href)
     }

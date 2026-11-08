@@ -1,0 +1,20 @@
+test "ORB blocks HTML, XML, JSON and never-sniffed types, not scripts, styles or images" {
+    let png = "\x89PNG\r\n\x1a\n...."
+
+    @expect(orbBlocks("text/html", "", "<!doctype html><p>secret"))
+    @expect(orbBlocks("text/plain", "", "  <!-- c --> <html>"))
+    @expect(orbBlocks("application/json", "", "{\"token\": \"secret\"}"))
+    @expect(orbBlocks("text/javascript", "", ")]}'\n[1]"))
+    @expect(orbBlocks("application/xml", "", "<?xml version=\"1.0\"?><a/>"))
+    @expect(orbBlocks("application/pdf", "", "%PDF-1.7"))
+    @expect(orbBlocks("text/plain", "X-Content-Type-Options: nosniff", "window.x = 1"))
+    @expect(!orbBlocks("text/plain", "", "window.x = 1"))
+    @expect(!orbBlocks("text/javascript", "", "window.x = {\"a\": 1}"))
+    @expect(!orbBlocks("text/javascript", "", "<!-- old comment\nwindow.x = 1"))
+    @expect(!orbBlocks("text/css", "X-Content-Type-Options: nosniff", "<html>"))
+    @expect(!orbBlocks("text/html", "", png))
+    @expect(!orbBlocks("image/svg+xml", "", "<?xml version=\"1.0\"?><svg/>"))
+    @expect(!orbBlocks("video/mp4", "", "{\"a\": 1}"))
+    @expect(!orbBlocks("", "", "<html>"))
+    @expect(!orbBlocks("application/json", "", "[1, 2]"))
+}

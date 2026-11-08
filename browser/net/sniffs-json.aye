@@ -1,0 +1,26 @@
+import std.text
+
+let PARSER_BREAKERS = [7][]u8{")]}'", "{}&&", "{} &&", "for(;;);", "while(1);", "for (;;);", "while (1);"}
+
+// chromium: services/network/orb/orb_sniffers.cc SniffForFetchOnlyResource
+fn sniffsJson(head: []u8) bool {
+    let rest = text.trim(head)
+
+    for breaker in PARSER_BREAKERS {
+        if text.startsWith(rest, breaker) {
+            return true
+        }
+    }
+
+    if !text.startsWith(rest, "{") {
+        return false
+    }
+
+    let key = text.trim(rest[1..])
+
+    if !text.startsWith(key, "\"") {
+        return false
+    }
+
+    return jsonKeyEnds(key[1..])
+}
