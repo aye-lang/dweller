@@ -1,0 +1,33 @@
+import std.map.StrMap
+import std.mem
+import std.mem.AllocError
+import std.text
+
+fn widthsOf(c: *mut WidthCache, f: Font) AllocError!*mut StrMap(f64) {
+    if c.last < c.fonts.len() && sameFont(c.fonts.items()[c.last].font, f) {
+        return &mut c.fonts.items()[c.last].widths
+    }
+
+    for i in 0..c.fonts.len() {
+        if sameFont(c.fonts.items()[i].font, f) {
+            c.last = i
+
+            return &mut c.fonts.items()[i].widths
+        }
+    }
+
+    let family = try c.alloc.alloc(0 as u8, f.family.len)
+    var font = f
+
+    mem.copy(family, f.family)
+    try c.owned_families.append(family)
+    font.family = family
+    try c.fonts.append(FontWidths { font: font, widths: StrMap(f64).init(c.alloc) })
+    c.last = c.fonts.len() - 1
+
+    return &mut c.fonts.items()[c.last].widths
+}
+
+fn sameFont(a: Font, b: Font) bool {
+    return a.size == b.size && a.weight == b.weight && a.bold == b.bold && a.italic == b.italic && a.mono == b.mono && a.serif == b.serif && a.rtl == b.rtl && a.letter_spacing == b.letter_spacing && a.word_spacing == b.word_spacing && text.eql(a.family, b.family)
+}

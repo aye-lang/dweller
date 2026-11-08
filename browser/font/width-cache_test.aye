@@ -1,0 +1,45 @@
+import std.text
+
+test "cached widths equal shaped widths in two fonts" {
+    var s = System.init(@testAllocator()) catch |e| {
+        return
+    }
+    defer s.deinit()
+
+    let sans = Font { size: 16.0, bold: false, italic: false, mono: false }
+    let serif = Font { size: 13.5, bold: true, italic: true, mono: false, serif: true, weight: 700.0, letter_spacing: 1.5 }
+    let words = [10][]u8{"Hello", "AVATAR", " ", "office", "Wa,", "日本語", "e\xCC\x81", "سلام", "שלום", "a b"}
+
+    for f in [2]Font{sans, serif} {
+        for w in words {
+            let shaped = try s.shapeText(f, w, null)
+
+            @expectEqual(shaped, s.width(f, w))
+            @expectEqual(shaped, s.width(f, w))
+        }
+    }
+
+    @expectEqual(2 as usize, s.widths.fonts.len())
+    @expectEqual(20 as usize, s.widths.entries)
+}
+
+test "the width cache clears when full" {
+    var c = WidthCache.init(@testAllocator())
+    defer c.deinit()
+
+    let f = Font { size: 16.0, bold: false, italic: false, mono: false }
+    var word = text.Builder.init(@testAllocator())
+    defer word.deinit()
+
+    for i in 0..WIDTH_CACHE_ENTRIES + 1 {
+        word.clear()
+        try word.appendInt(i as i64)
+        try putWidth(&mut c, f, word.bytes(), i as f64)
+    }
+
+    let widths = try widthsOf(&mut c, f)
+
+    @expectEqual(1 as usize, c.entries)
+    @expectEqual(1 as usize, widths.len())
+    @expectEqual(WIDTH_CACHE_ENTRIES as f64, widths.get(word.bytes()) orelse -1.0)
+}

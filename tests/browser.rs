@@ -6494,7 +6494,7 @@ fn net_http() {
         &["dump", "--text", &format!("{https}/")],
         1,
         "",
-        &format!("error: cannot fetch {https}/: the secure connection failed (TLS)\n"),
+        &format!("error: cannot fetch {https}/: the server does not support TLS 1.2 or later\n"),
     );
     // No charset in the Content-Type: the <meta charset> decides.
     expect(
@@ -6503,6 +6503,134 @@ fn net_http() {
         "\u{201c}quoted\u{201d} caf\u{e9}\n",
         "",
     );
+}
+
+#[test]
+fn tls_errors() {
+    use std::io::{BufRead, Write};
+    let tls = root().join("browser/tests/tls");
+    let Ok(mut child) = Command::new("python3")
+        .arg("-I")
+        .arg(root().join("browser/tests/tls_server.py"))
+        .arg(&tls)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let _srv = Server {
+        child,
+        base: String::new(),
+    };
+    let ports: Vec<u16> = line
+        .split_whitespace()
+        .map(|p| p.parse().unwrap())
+        .collect();
+    assert_eq!(ports.len(), 5, "{line}");
+    let with_ca = |args: &[&str]| {
+        dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let at = |port: u16| format!("https://127.0.0.1:{port}/");
+    let valid = at(ports[0]);
+    let untrusted = "the certificate is self-signed or from an unknown issuer";
+
+    let out = with_ca(&["dump", "--text", &valid]);
+    assert_eq!(text(&out.stdout), "secure page\n", "{}", text(&out.stderr));
+    expect(
+        &["dump", "--text", &valid],
+        1,
+        "",
+        &format!("error: cannot fetch {valid}: {untrusted}\n"),
+    );
+    let out = with_ca(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{valid}fetch.html?{valid}"),
+    ]);
+    assert_eq!(
+        text(&out.stdout),
+        "fetch: status 200\nxhr: load status 200\n",
+        "{}",
+        text(&out.stderr)
+    );
+
+    let mut cases = vec![
+        (ports[1], "the certificate has expired"),
+        (ports[2], untrusted),
+        (ports[3], "the certificate is for another host"),
+    ];
+    if ports[4] == 0 {
+        println!("skipped TLS 1.1: this platform's OpenSSL does not offer it");
+    } else {
+        cases.push((ports[4], "the server does not support TLS 1.2 or later"));
+    }
+    for (port, why) in cases {
+        let bad = at(port);
+        let out = with_ca(&["dump", "--text", &bad]);
+        assert_eq!(out.status.code(), Some(1), "{bad}");
+        assert_eq!(
+            text(&out.stderr),
+            format!("error: cannot fetch {bad}: {why}\n")
+        );
+
+        let out = with_ca(&[
+            "dump",
+            "--text",
+            "--js",
+            &format!("{valid}fetch.html?{bad}"),
+        ]);
+        assert_eq!(
+            text(&out.stdout),
+            "fetch: TypeError\nxhr: error status 0\n",
+            "{bad}: {}",
+            text(&out.stderr)
+        );
+
+        if has_sdl() {
+            let out = with_ca(&[&bad, "--frames", "1", "--text"]);
+            let shown = text(&out.stdout);
+            assert!(
+                shown.contains("Your connection is not private")
+                    && shown.contains("127.0.0.1")
+                    && shown.contains(why),
+                "{bad}: {shown}\n{}",
+                text(&out.stderr)
+            );
+        }
+
+        let mut agent = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TEST_CA", tls.join("ca.pem"))
+            .arg("agent")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        agent
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{bad}\"}}\n").as_bytes())
+            .unwrap();
+        let reply = text(&agent.wait_with_output().unwrap().stdout);
+        assert!(
+            reply.contains("\"ok\":false") && reply.contains(&format!("cannot fetch {bad}: {why}")),
+            "{reply}"
+        );
+    }
 }
 
 /// P10.21: SameSite (Lax by default), the third-party policy and
@@ -9565,4 +9693,60 @@ fn window_hover_local() {
             "{page}: restyled {restyled:?}"
         );
     }
+}
+
+/// Q2.2a: with `DWELLER_PROCESS=tab` each tab has a renderer process of
+/// its own (`dweller --renderer FD`, the binary IPC of
+/// docs/process-model.md §2). The tab's title comes from the renderer,
+/// whose pid is not the window's; a renderer that is killed is noted for
+/// its tab (`gone crashed`); one that sends a malformed message is
+/// killed (`bad message:` on stderr). Without the flag no renderer runs.
+#[test]
+fn window_renderer_lifecycle() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str, envs: &[(&str, &str)]| -> (u32, String, String) {
+        let child = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (pid, text(&out.stdout), text(&out.stderr))
+    };
+    let renderer = |state: &str| -> Vec<String> {
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+        line.splitn(4, ' ').map(String::from).collect()
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+
+    let (window, state, err) = run("renderer:loaded", &tab);
+    let r = renderer(&state);
+    assert!(err.is_empty(), "{err}");
+    assert_ne!(r[1], window.to_string(), "the renderer is another process");
+    assert_eq!(&r[2..], ["title", "Form"], "{state}");
+
+    let (_, state, err) = run("renderer:loaded renderer:kill renderer:gone", &tab);
+    assert!(err.is_empty(), "{err}");
+    assert_eq!(&renderer(&state)[2..], ["gone", "crashed"], "{state}");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "malformed")];
+    let (_, state, err) = run("renderer:gone", &evil);
+    let r = renderer(&state);
+    assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
+    assert_eq!(err, format!("error: bad message: UnknownType {}\n", r[1]));
+
+    let (_, state, err) = run("", &[]);
+    assert!(err.is_empty(), "{err}");
+    assert!(!state.contains("renderer "), "{state}");
 }

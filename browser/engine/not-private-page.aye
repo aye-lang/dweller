@@ -1,0 +1,22 @@
+// chromium: components/security_interstitials/core/ssl_error_ui.cc
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+let NOT_PRIVATE = @embedFile("not-private.html")
+
+fn notPrivatePage(alloc: Allocator, target: *Url, why: []u8) AllocError!*mut Page {
+    let host_at = text.indexOf(NOT_PRIVATE, "{host}").?
+    let why_at = text.indexOf(NOT_PRIVATE, "{reason}").?
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try b.append(NOT_PRIVATE[..host_at])
+    try escaped(&mut b, target.host)
+    try b.append(NOT_PRIVATE[host_at + 6..why_at])
+    try escaped(&mut b, why)
+    try b.append(NOT_PRIVATE[why_at + 8..])
+
+    return failurePage(alloc, target, why, b.bytes())
+}

@@ -1,0 +1,20 @@
+let HEADER_LEN: usize = 16
+let MAX_PAYLOAD: u32 = 1048576
+
+pub fn nextMessage(buf: []u8) DecodeError!?Got {
+    if buf.len < HEADER_LEN { return null }
+
+    var r = Reader { data: buf[..HEADER_LEN] }
+    let len = try r.readU32()
+    let kind = try r.readU16()
+
+    if len > MAX_PAYLOAD { return DecodeError.TooLong }
+    if buf.len - HEADER_LEN < len as usize { return null }
+
+    _ = try r.readU16()
+
+    let frame = try r.readU32()
+    let end = HEADER_LEN + len as usize
+
+    return Got { frame: frame, message: try decode(kind, buf[HEADER_LEN..end]), used: end }
+}
