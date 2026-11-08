@@ -6,19 +6,23 @@ fn regexpProtoIntact(it: *mut Interp) bool {
 
     let p = it.heap.obj(it.regexp_proto)
     let snap = it.heap.obj(it.regexp_snapshot)
+    var k: u32 = 0
 
-    if p.nprops * 4 != snap.nelems {
-        return false
-    }
+    while k < snap.nelems {
+        let i = match snap.elems[k + 1] {
+            .Num { n } => n as u32
+            _ => NONE
+        }
 
-    for i in 0..p.nprops {
-        let e = p.props[i]
-        let k = i * 4
-        let same_key = it.strictEquals(numVal(e.key as f64), snap.elems[k]) && it.strictEquals(numVal(e.flags as f64), snap.elems[k + 3])
-
-        if !same_key || !it.strictEquals(e.value, snap.elems[k + 1]) || !it.strictEquals(e.setter, snap.elems[k + 2]) {
+        if i >= p.nprops || !it.strictEquals(numVal(p.props[i].key as f64), snap.elems[k]) {
             return false
         }
+
+        if !it.strictEquals(p.props[i].value, snap.elems[k + 2]) || !it.strictEquals(p.props[i].setter, snap.elems[k + 3]) {
+            return false
+        }
+
+        k += 4
     }
 
     return true
