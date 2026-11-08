@@ -157,12 +157,14 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
         pd.damage.clear()
         try pd.damage.add(all)
     }
+    try addTabDamage(ui, all)
     _ = try paint.spreadLayers(ui.page_view.sigs.items(), v, all, &mut pd.damage)
     let drew = !pd.damage.isEmpty()
     var reuse = paint.Reuse { sigs: ui.page_view.sigs.items(), cache: &mut pd.cache }
     if drew {
         for r in pd.damage.rects.items() {
             try drawRinged(ui, r, v, bg, &mut reuse)
+            copyTabFrame(ui, r)
         }
         uploadPage(pd)
     }
@@ -302,11 +304,6 @@ fn pageOverlays(ui: *mut Ui) bool {
     }
     if ui.agents |a| {
         if a.flash || a.menu != 0 || a.watch.id != 0 {
-            return true
-        }
-    }
-    if ui.slots[ui.active].?.process |tp| {
-        if tp.buffers.shown != 0 {
             return true
         }
     }

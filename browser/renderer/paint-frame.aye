@@ -1,11 +1,12 @@
 import ipc
 import paint
 import std
+import std.list.List
 import std.text
 
 fn paintFrame(r: *mut TabRenderer) !void {
     let p = r.page orelse return
-    var k: u32 = 0
+    var k: usize = 0
 
     if !r.free[0] {
         k = 1
@@ -17,22 +18,38 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     var list = try paint.build(r.alloc, p.tree.?)
     defer list.deinit()
-    var canvas = try paint.Canvas.init(r.alloc, r.width as usize, r.height as usize)
-    defer canvas.deinit()
-    var painter = paint.TextPainter.init(r.alloc, r.system)
-    defer painter.deinit()
+    var sigs = List(paint.Sig).init(r.alloc)
+    defer sigs.deinit()
+    var damage = paint.Damage.init(r.alloc)
+    defer damage.deinit()
 
-    canvas.clear(list.background)
-    try paint.render(&list, &mut canvas, paint.View { scale: r.scale, dx: 0.0, dy: 0.0 }, &mut painter)
-    std.mem.copy(r.maps[k].?[0..canvas.pixels.len], canvas.pixels)
-    r.free[k] = false
+    try paint.signature(&list, p.tree.?, &mut sigs)
+
+    let whole = try frameDamage(r, sigs.items(), list.background, &mut damage)
+    let old = r.drawn
+
+    r.drawn = sigs
+    sigs = old
+    r.background = list.background
     r.due = false
 
+    if damage.isEmpty() { return }
+
+    try drawDamage(r, k, &list, &damage)
+    r.free[k] = false
+    r.sent = k
+
+    var rects = text.Builder.init(r.alloc)
+    defer rects.deinit()
     var width = r.width
+
+    if !whole {
+        try putDamage(&mut rects, &damage)
+    }
 
     if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "frame") {
         width += 1
     }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k, width: width, height: r.height, scroll_x: 0.0, scroll_y: 0.0, damage: "" })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k as u32, width: width, height: r.height, scroll_x: 0.0, scroll_y: 0.0, damage: rects.bytes() })
 }

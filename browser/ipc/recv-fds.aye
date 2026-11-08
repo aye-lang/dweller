@@ -3,13 +3,24 @@ import std.mem.AllocError
 
 extern fn recvmsg(fd: i32, msg: *mut MsgHdr, flags: i32) isize
 
+// chromium: mojo/core/channel_posix.cc
 pub fn recvFds(fd: i32, buf: []mut u8, fds: *mut List(i32)) AllocError!isize {
-    var control = @zeroed([64]u8)
-    var iov = IoVec { base: buf.ptr, len: buf.len }
-    var msg = MsgHdr { name: null, namelen: 0, iov: &mut iov, iovlen: 1, control: control[..].ptr, controllen: 64, flags: 0 }
-    let n = recvmsg(fd, &mut msg, 0)
+    var n: usize = 0
+    var flags: i32 = 0
 
-    try takeRights(control[..], fds)
+    while n < buf.len {
+        var control = @zeroed([512]u8)
+        var iov = IoVec { base: buf[n..].ptr, len: buf.len - n }
+        var msg = MsgHdr { name: null, namelen: 0, iov: &mut iov, iovlen: 1, control: control[..].ptr, controllen: 512, flags: 0 }
+        let got = recvmsg(fd, &mut msg, flags)
 
-    return n
+        if got <= 0 && n == 0 { return got }
+        if got <= 0 { break }
+
+        try takeRights(control[..], fds)
+        n += got as usize
+        flags = dontWait()
+    }
+
+    return n as isize
 }

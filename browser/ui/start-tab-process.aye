@@ -1,10 +1,11 @@
+import engine
 import std
 import std.heap.Arena
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
-fn startTabProcess(alloc: Allocator) AllocError!?*mut TabProcess {
+fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
     var arena = Arena.init(alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -16,8 +17,18 @@ fn startTabProcess(alloc: Allocator) AllocError!?*mut TabProcess {
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [3][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64)}
-    let pid = try spawnProgram(tmp, argv[..])
+    var argv = [6][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64), "--font", "system", "--no-js"}
+    var n: usize = 6
+
+    if fixed {
+        argv[4] = "fixed"
+    }
+
+    if engine.scriptingEnabled() {
+        n = 5
+    }
+
+    let pid = try spawnProgram(tmp, argv[..n])
 
     closeFd(sv[1])
 
@@ -34,5 +45,7 @@ fn startTabProcess(alloc: Allocator) AllocError!?*mut TabProcess {
         outbox: text.Builder.init(alloc),
         url: text.Builder.init(alloc),
         title: text.Builder.init(alloc),
+        damage: text.Builder.init(alloc),
+        last_damage: text.Builder.init(alloc),
     })
 }
