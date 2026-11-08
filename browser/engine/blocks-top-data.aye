@@ -1,0 +1,18 @@
+import net
+import std.mem.AllocError
+import std.text
+import url.Url
+
+// chromium: content/browser/renderer_host/navigation_request.cc
+fn blocksTopData(from: ?*mut Page, target: *Url, initiator: net.Initiator) AllocError!bool {
+    if !text.eql(target.scheme, "data") || initiator is .Browser {
+        return false
+    }
+
+    let p = from orelse return true
+    let s = p.script orelse return true
+
+    try addConsole(s, "[error] Not allowed to navigate top frame to data URL: ", target.href)
+
+    return true
+}

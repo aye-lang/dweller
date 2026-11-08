@@ -1,0 +1,17 @@
+import std.mem.Allocator
+import url
+
+fn crossOrigin(alloc: Allocator, from: []u8, to: []u8) bool {
+    let a = url.parse(alloc, from) catch |e| {
+        return true
+    }
+
+    defer a.deinit(alloc)
+    let b = url.parse(alloc, to) catch |e| {
+        return true
+    }
+
+    defer b.deinit(alloc)
+
+    return !sameOrigin(&a, &b)
+}

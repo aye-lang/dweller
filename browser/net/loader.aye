@@ -483,6 +483,11 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                 release(ld.alloc, a.verb)
                 a.verb = get
             }
+            if crossOrigin(ld.alloc, job.at.href, moved) {
+                dropCredentials(ld.alloc, &mut a.headers) catch |e| {
+                    return failRequest(ld, l, FetchError.OutOfMemory)
+                }
+            }
             let cors = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)

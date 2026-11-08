@@ -1236,12 +1236,17 @@ impl Drop for Server {
 }
 
 fn server() -> Option<Server> {
+    server_on("127.0.0.1")
+}
+
+fn server_on(host: &str) -> Option<Server> {
     use std::io::BufRead;
     let tests = root().join("browser").join("tests");
     let mut child = Command::new("python3")
         .arg("-I")
         .arg(tests.join("server.py"))
         .arg(&tests)
+        .arg(host)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -1251,9 +1256,14 @@ fn server() -> Option<Server> {
         .read_line(&mut line)
         .ok()?;
     let port: u16 = line.trim().parse().ok()?;
+    let shown = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
     Some(Server {
         child,
-        base: format!("http://127.0.0.1:{port}"),
+        base: format!("http://{shown}:{port}"),
     })
 }
 
@@ -7327,6 +7337,117 @@ fn cors_in_net() {
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Q3.11: a cross-origin redirect drops `Authorization` (a script's,
+/// fetch and sync XHR) and the URL's credentials; a same-origin one
+/// keeps them.
+#[test]
+fn redirect_credentials() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/redirect-credentials.html", srv.base),
+    ]);
+    assert_eq!(
+        text(&out.stdout).trim_end(),
+        "fetch same-origin: authorization true\n\
+         fetch cross-origin: authorization false\n\
+         sync xhr cross-origin: authorization false",
+        "{}",
+        text(&out.stderr)
+    );
+    let userinfo = srv.base.replace("http://", "http://u:p@");
+    let other = srv.base.replace("127.0.0.1", "localhost");
+    let direct = run(&["dump", "--text", &format!("{userinfo}/fetch-echo")]);
+    assert!(text(&direct.stdout).contains("\"authorization\""));
+    let moved = run(&[
+        "dump",
+        "--text",
+        &format!("{userinfo}/fetch-redirect-to?{other}/fetch-echo"),
+    ]);
+    assert!(text(&moved.stdout).contains("/fetch-echo"), "{}", text(&moved.stdout));
+    assert!(!text(&moved.stdout).contains("\"authorization\""), "{}", text(&moved.stdout));
+}
+
+/// Q3.11: window.name survives a same-origin navigation and is cleared
+/// on a cross-origin one (no opener); a page cannot navigate the top
+/// level to `data:` (it stays, with a console error), a `data:` iframe
+/// loads, and a `data:` URL the person types loads.
+#[test]
+fn window_name_and_top_data() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let other = base.replace("127.0.0.1", "localhost");
+    let window = |url: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_CONSOLE", "1")
+            .args([
+                url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "200",
+                "--until-idle", "--state", "--text",
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{url}: {}\n{}", out.status, text(&out.stderr));
+        format!("{}{}", text(&out.stdout), text(&out.stderr))
+    };
+    let same = window(&format!("{base}/net/name-set.html?/net/name-show.html"));
+    assert!(same.contains("name \"secret\""), "{same}");
+    let cross = window(&format!("{base}/net/name-set.html?{other}/net/name-show.html"));
+    assert!(cross.contains("name \"\""), "{cross}");
+    let stayed = window(&format!("{base}/net/data-nav.html"));
+    assert!(
+        stayed.contains(&format!("url {base}/net/data-nav.html\n"))
+            && stayed.contains("history 1 of 1\n")
+            && stayed.contains("stayed, frame data loaded")
+            && stayed.contains("[error] Not allowed to navigate top frame to data URL: data:text/html,"),
+        "{stayed}"
+    );
+    let typed = window("data:text/html,<p>typed data</p>");
+    assert!(typed.contains("typed data"), "{typed}");
+}
+
+/// Q3.11: a public page (`DWELLER_PUBLIC_ADDRESS` makes 127.0.0.1 public)
+/// cannot fetch or XHR a loopback address (`[::1]`); a loopback page can.
+#[test]
+fn private_network_access() {
+    let (Some(page), Some(local)) = (server(), server_on("::1")) else {
+        println!("skipped: cannot start python3 for the test servers");
+        return;
+    };
+    let href = format!("{}/net/pna.html?{}", page.base, local.base);
+    let public = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PUBLIC_ADDRESS", "127.0.0.1")
+        .args(["dump", "--text", "--js", &href])
+        .output()
+        .unwrap();
+    assert_eq!(
+        text(&public.stdout).trim_end(),
+        "fetch: TypeError\nsync xhr: NetworkError",
+        "{}",
+        text(&public.stderr)
+    );
+    let loopback = run(&["dump", "--text", "--js", &href]);
+    assert_eq!(
+        text(&loopback.stdout).trim_end(),
+        "fetch: 200\nsync xhr: 200",
+        "{}",
+        text(&loopback.stderr)
+    );
 }
 
 /// CORS preflight in net (Q3.2b): a cross-origin PUT with `x-test` is

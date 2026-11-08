@@ -26,6 +26,7 @@
 #                    answers Access-Control-Allow-Origin: * and a CORS
 #                    preflight (OPTIONS with Access-Control-Request-Method)
 #   /fetch-redirect/STATUS  (any method) STATUS to /fetch-echo?redirected
+#   /fetch-redirect-to?URL  (any method) 307 to URL
 #   /preflight/NAME  (any method) records the method, path and
 #                    Access-Control-Request-Headers (in /log) and answers
 #                    ACAO *; OPTIONS also allows PUT and x-test for 60 s
@@ -387,6 +388,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path.startswith("/fetch-redirect/"):
             self.reply(int(path[len("/fetch-redirect/"):]), [("Location", "/fetch-echo?redirected"), ("Access-Control-Allow-Origin", "*")])
             return
+        if path == "/fetch-redirect-to":
+            self.reply(307, [("Location", urllib.parse.urlsplit(self.path).query), ("Access-Control-Allow-Origin", "*")])
+            return
         if path != "/fetch-echo":
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
             return
@@ -689,6 +693,11 @@ def form_fields(ctype, body):
     return []
 
 
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+class Server6(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+server = (Server6 if ":" in host else http.server.ThreadingHTTPServer)((host, 0), Handler)
 print(server.server_address[1], flush=True)
 server.serve_forever()
