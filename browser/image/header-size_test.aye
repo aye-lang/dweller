@@ -1,0 +1,37 @@
+import std
+
+test "the size in an image's header is the size it decodes to" {
+    let a = @testAllocator()
+    let manifest = try readFixture(a, "manifest.txt")
+
+    defer a.free(manifest)
+
+    var lines = std.text.split(manifest, "\n")
+    var checked: usize = 0
+
+    while lines.next() |line| {
+        var fields = std.text.split(line, " ")
+        let name = fields.next() orelse ""
+
+        if name.len == 0 || std.text.startsWith(name, "ico_") {
+            continue
+        }
+
+        let data = try readFixture(a, name)
+
+        defer a.free(data)
+
+        let bmp = decode(a, data) catch |e| {
+            continue
+        }
+
+        defer bmp.deinit(a)
+
+        let size = headerSize(data) orelse [2]usize{0, 0}
+
+        @expect(size[0] == bmp.width && size[1] == bmp.height)
+        checked += 1
+    }
+
+    @expect(checked > 140)
+}

@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn touchImage(cache: *mut ImageCache, e: *mut CachedImage) AllocError!void {
+    e.used = cache.uses
+    cache.uses += 1
+
+    let bmp = e.bmp orelse return
+
+    if e.encoded.len > 0 && bmp.pixels.len == 0 && bmp.version > 0 && !decoding(cache, bmp) {
+        try startDecode(cache, bmp, e.encoded)
+    }
+}

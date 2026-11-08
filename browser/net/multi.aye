@@ -92,7 +92,16 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
 // A request for `href` with `method` (NUL-terminated past its end
 // unless GET, POST or HEAD) and `post` (alive until the transfer ends)
 // added to `m`; null when it cannot be made.
-fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, href: []u8, req: Request, method: []u8, post: ?*Body) ?*mut Job {
+fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, req: Request, method: []u8, post: ?*Body) ?*mut Job {
+    var secured = text.Builder.init(alloc)
+    defer secured.deinit()
+
+    if !(secureHref(alloc, req, asked, &mut secured) catch false) {
+        noteFailure(req.kind, 0, asked)
+        return null
+    }
+
+    let href = secured.bytes()
     let at = url.parse(alloc, href) catch |e| {
         return null
     }

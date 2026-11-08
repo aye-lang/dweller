@@ -1,0 +1,20 @@
+import url
+
+test "mixed content: blocked, upgraded or allowed" {
+    let a = @testAllocator()
+    let insecure = try url.parse(a, "http://cdn.example/x")
+    defer insecure.deinit(a)
+    let local = try url.parse(a, "http://127.0.0.1:8000/x")
+    defer local.deinit(a)
+    let secure_page = Initiator.Page { url: "https://site.example/" }
+
+    @expect(mixedContent(Request { kind: Kind.Script, initiator: secure_page }, &insecure) == Mixed.Block)
+    @expect(mixedContent(Request { kind: Kind.Style, initiator: secure_page }, &insecure) == Mixed.Block)
+    @expect(mixedContent(Request { kind: Kind.Other, initiator: secure_page }, &insecure) == Mixed.Block)
+    @expect(mixedContent(Request { kind: Kind.Document, top: "https://site.example/", initiator: secure_page }, &insecure) == Mixed.Block)
+    @expect(mixedContent(Request { kind: Kind.Image, initiator: secure_page }, &insecure) == Mixed.Upgrade)
+    @expect(mixedContent(Request { kind: Kind.Document, initiator: secure_page }, &insecure) == Mixed.None)
+    @expect(mixedContent(Request { kind: Kind.Script, initiator: secure_page }, &local) == Mixed.None)
+    @expect(mixedContent(Request { kind: Kind.Script, initiator: Initiator.Page { url: "http://site.example/" } }, &insecure) == Mixed.None)
+    @expect(mixedContent(Request { kind: Kind.Script, initiator: Initiator.Browser }, &insecure) == Mixed.None)
+}

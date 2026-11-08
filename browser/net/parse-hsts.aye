@@ -1,0 +1,41 @@
+import std
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc6797#section-6.1
+fn parseHsts(value: []u8) ?HstsPolicy {
+    var max_age: ?i64 = null
+    var subdomains = false
+    var directives = text.split(value, ";")
+
+    while directives.next() |part| {
+        let d = text.trim(part)
+        let eq = std.mem.indexOf(d, '=') orelse d.len
+        let name = text.trim(d[..eq])
+
+        if text.eqlIgnoreCase(name, "max-age") {
+            if max_age != null {
+                return null
+            }
+
+            max_age = hstsSeconds(unquoted(text.trim(d[std.math.minOf(usize, eq + 1, d.len)..]))) orelse return null
+        } else if text.eqlIgnoreCase(name, "includesubdomains") {
+            if subdomains || eq < d.len {
+                return null
+            }
+
+            subdomains = true
+        }
+    }
+
+    let age = max_age orelse return null
+
+    return HstsPolicy { max_age: age, subdomains: subdomains }
+}
+
+fn unquoted(s: []u8) []u8 {
+    if s.len >= 2 && s[0] == '"' && s[s.len - 1] == '"' {
+        return s[1..s.len - 1]
+    }
+
+    return s
+}

@@ -1,0 +1,11 @@
+import std.mem.Allocator
+
+fn landDecode(alloc: Allocator, job: *mut DecodeJob) {
+    if job.decoded |d| {
+        takePixels(alloc, job.bmp, &d)
+        d.deinit(job.gpa.allocator())
+    }
+
+    job.gpa.deinit()
+    alloc.destroy(job)
+}

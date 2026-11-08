@@ -111,6 +111,11 @@ pub fn startLoad(href: []u8, kind: Kind, referrer: []u8) u32 {
     }
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
+
+    if !securedAsIs(ld.alloc, Request { kind: kind, referrer: referrer, initiator: Initiator.Page { url: referrer } }, href) {
+        return 0
+    }
+
     if findLoad(ld, href) |l| {
         l.users += 1
         return l.id
@@ -450,6 +455,9 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     storeCookies(s, &job.at, &job.sink) catch |e| {
         return failRequest(ld, l, FetchError.OutOfMemory)
     }
+    noteHsts(s, &job.at, job.sink.headers_raw.bytes()) catch |e| {
+        return failRequest(ld, l, FetchError.OutOfMemory)
+    }
     var status: i64 = 0
     curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
     var location: ?[*]u8 = null
@@ -684,6 +692,9 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
         return
     }
     storeCookies(s, &job.at, &job.sink) catch |e| {
+        return
+    }
+    noteHsts(s, &job.at, job.sink.headers_raw.bytes()) catch |e| {
         return
     }
     var status: i64 = 0

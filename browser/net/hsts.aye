@@ -1,0 +1,19 @@
+import std.list.List
+import std.mem.Allocator
+
+pub struct Hsts {
+    alloc: Allocator
+    hosts: List(HstsHost)
+
+    pub fn init(alloc: Allocator) Hsts {
+        return Hsts { alloc: alloc, hosts: List(HstsHost).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for e in self.hosts.items() {
+            self.alloc.free(e.host)
+        }
+
+        self.hosts.deinit()
+    }
+}

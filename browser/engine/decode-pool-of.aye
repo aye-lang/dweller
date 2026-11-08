@@ -1,0 +1,22 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.sync.Channel
+import std.thread
+import std.thread.Thread
+
+fn decodePoolOf(alloc: Allocator) AllocError!*mut DecodePool {
+    if decode_pool |pool| {
+        return pool
+    }
+
+    let pool = try alloc.create(DecodePool { alloc: alloc, queue: try Channel(*mut DecodeJob).init(alloc, DECODE_QUEUE), threads: List(Thread).init(alloc) })
+
+    for i in 0..DECODE_THREADS {
+        try pool.threads.append(thread.spawnWithStack(Channel(*mut DecodeJob), runDecodes, &mut pool.queue, DECODE_STACK) catch unreachable)
+    }
+
+    decode_pool = pool
+
+    return pool
+}

@@ -1,0 +1,56 @@
+fn jpegSize(data: []u8) ?[2]usize {
+    var pos: usize = 2
+    var orientation: u8 = 1
+
+    while pos < data.len {
+        if data[pos] != 0xFF {
+            pos += 1
+
+            continue
+        }
+
+        while pos < data.len && data[pos] == 0xFF {
+            pos += 1
+        }
+
+        if pos >= data.len {
+            return null
+        }
+
+        let m = data[pos]
+
+        pos += 1
+
+        if m == 0x01 || m == 0xD8 || (m >= 0xD0 && m <= 0xD7) {
+            continue
+        }
+
+        if m == 0xD9 || m == 0xDA || data.len - pos < 2 {
+            return null
+        }
+
+        let seg = (data[pos] as usize << 8) | data[pos + 1] as usize
+
+        if seg < 2 || seg > data.len - pos {
+            return null
+        }
+
+        let body = data[pos + 2..pos + seg]
+
+        pos += seg
+
+        if m == 0xC0 || m == 0xC1 || m == 0xC2 {
+            return jpegFrameSize(body, orientation)
+        }
+
+        if m >= 0xC3 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
+            return null
+        }
+
+        if m == 0xE1 && orientation == 1 {
+            orientation = jpegExifOrientation(body)
+        }
+    }
+
+    return null
+}
