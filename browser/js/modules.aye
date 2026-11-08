@@ -178,7 +178,7 @@ fn engineFetchModule(it: *mut Interp, a: Args) JsError!Value {
     if !local && !isModuleMime(res.mime) {
         return it.typeError("Module response is not JavaScript")
     }
-    return moduleRecord(it, res.body, finalUrl)
+    return moduleRecord(it, res.body, finalUrl, credentials == net.Credentials.Include)
 }
 
 // (source, URL) -> the module record of an inline module script.
@@ -190,7 +190,7 @@ fn engineParseModule(it: *mut Interp, a: Args) JsError!Value {
     var href = text.Builder.init(it.alloc)
     defer href.deinit()
     try href.append(it.heap.bytes(strOf(it.arg(a, 1))))
-    return moduleRecord(it, src.bytes(), href.bytes())
+    return moduleRecord(it, src.bytes(), href.bytes(), it.toBoolean(it.arg(a, 2)))
 }
 
 // prefetchModules(hrefs, referrer): fetches the modules (one URL per
@@ -203,7 +203,7 @@ fn enginePrefetchModules(it: *mut Interp, a: Args) JsError!Value {
     defer referrer.deinit()
     try referrer.append(it.heap.bytes(strOf(it.arg(a, 1))))
     if it.module_prefetch |prefetch| {
-        prefetch(it, hrefs.bytes(), referrer.bytes())
+        prefetch(it, hrefs.bytes(), referrer.bytes(), it.toBoolean(it.arg(a, 2)))
     } else if !it.local_loads_only {
         net.prefetch(it.alloc, hrefs.bytes(), net.Kind.Script, referrer.bytes())
     }
@@ -223,9 +223,12 @@ fn isJsonMime(mime: []u8) bool {
 
 // Parses a module and makes its record, with the coroutine of its code
 // not yet started.
-fn moduleRecord(it: *mut Interp, src: []u8, href: []u8) JsError!Value {
+fn moduleRecord(it: *mut Interp, src: []u8, href: []u8, include: bool) JsError!Value {
     let base = it.stack.len()
     defer it.truncate(base)
+    let outer = it.script_include
+    it.script_include = include
+    defer it.script_include = outer
     let referrer = try it.intern(href)
     var info = ModuleInfo.init(it.alloc)
     defer info.deinit()
@@ -430,8 +433,8 @@ fn installModules(it: *mut Interp, e: u32) JsError!void {
     try it.addRoot(objVal(it.module_cell_get))
     try it.defineNative(e, "resolveModule", 3, engineResolveModule)
     try it.defineNative(e, "fetchModule", 4, engineFetchModule)
-    try it.defineNative(e, "parseModule", 2, engineParseModule)
-    try it.defineNative(e, "prefetchModules", 2, enginePrefetchModules)
+    try it.defineNative(e, "parseModule", 3, engineParseModule)
+    try it.defineNative(e, "prefetchModules", 3, enginePrefetchModules)
     try it.defineNative(e, "isModuleNamespace", 1, engineIsModuleNamespace)
     try it.defineNative(e, "constCell", 1, engineConstCell)
     try it.defineNative(e, "makeNamespace", 1, engineMakeNamespace)

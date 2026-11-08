@@ -6,11 +6,13 @@ import url.Url
 
 // https://fetch.spec.whatwg.org/#append-a-request-origin-header
 fn originHeader(alloc: Allocator, req: Request, to: *Url, out: *mut text.Builder) AllocError!void {
-    if (req.kind != Kind.Other && req.mode != Mode.Cors) || req.referrer.len == 0 {
+    let origin = requestOrigin(req, req.referrer)
+
+    if (req.kind != Kind.Other && req.mode != Mode.Cors) || origin.len == 0 {
         return
     }
 
-    let from = url.parse(alloc, req.referrer) catch |e| {
+    let from = url.parse(alloc, origin) catch |e| {
         return
     }
 

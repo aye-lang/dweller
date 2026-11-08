@@ -1,0 +1,46 @@
+import dom.NodeId
+import encoding
+import net
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script
+fn runClassicElement(s: *mut Script, el: NodeId, src: []u8) AllocError!bool {
+    let p = s.page
+
+    if text.trim(src).len == 0 {
+        return false
+    }
+
+    let target = p.resolve(s.alloc, src) catch |e| {
+        try addConsole(s, "[error] Failed to load script: ", src)
+
+        return false
+    }
+
+    defer target.deinit(s.alloc)
+
+    let res = net.request(s.alloc, &target, scriptRequest(p, el)) catch |e| {
+        if e == net.FetchError.OutOfMemory {
+            return AllocError.OutOfMemory
+        }
+
+        try addConsole(s, "[error] Failed to load script: ", target.href)
+
+        return false
+    }
+
+    defer res.deinit(s.alloc)
+
+    if res.status != 0 && (res.status < 200 || res.status > 299) {
+        try addConsole(s, "[error] Failed to load script: ", target.href)
+
+        return false
+    }
+
+    let code = try encoding.toUtf8(s.alloc, res.body, encoding.sniffOr(res.body, res.charset, p.encoding))
+    defer s.alloc.free(code)
+    try runSourceOf(s, el, code)
+
+    return true
+}

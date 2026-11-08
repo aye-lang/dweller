@@ -7573,6 +7573,43 @@ fn module_cors() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Scripts of the page's HTML fire `load` once they ran and `error` when
+/// the fetch or its CORS check failed (Q3.3c); `import()` takes the
+/// credentials of the script that calls it, a module worker those of its
+/// `credentials` option. A cross-origin module with ACAO is fetched by the
+/// page's prefetch (also when a script removes it before it runs) and runs
+/// from the cache, without a second request.
+/// (`browser/tests/net/script-events.html` must print `script-events.txt`.)
+#[test]
+fn script_events() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/with-other/net/script-events.html?other={}", srv.base, other.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/script-events.txt"),
+        &text(&out.stdout),
+        "script_events",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let log = text(&run(&["dump", "--text", &format!("{}/log", other.base)]).stdout);
+    let origin = format!("origin={}", srv.base);
+    for query in ["kept", "gone"] {
+        let hits: Vec<&str> = log.lines().filter(|l| l.contains(&format!("ran.js?{query} "))).collect();
+        assert_eq!(hits.len(), 1, "{query}: {log}");
+        assert!(hits[0].ends_with(&format!("{origin} cookie=")), "{query}: {log}");
+    }
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task

@@ -174,7 +174,7 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 }
 
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
-    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other && !(try corsApplies(alloc, req, target.href))
+    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other
     if session |s| {
         if cacheable {
             if try s.cache.lookup(alloc, target.withoutFragment()) |hit| {
@@ -188,7 +188,7 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
             if !sharedBusy(curl) {
                 var keep = cacheable
                 var res = try transfer(alloc, curl, target, req, s, &mut keep)
-                if keep && res.status >= 200 && res.status < 300 {
+                if keep && !res.tainted && res.status >= 200 && res.status < 300 {
                     s.cache.keep(target.withoutFragment(), &res, false) catch |e| {
                         res.deinit(alloc)
                         return FetchError.OutOfMemory
