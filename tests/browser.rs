@@ -7720,6 +7720,38 @@ fn script_events() {
     }
 }
 
+/// The HTTP cache is keyed by the top-level site, the frame site and the
+/// credentials (Q3.13). A page on `127.0.0.1` embeds a script of
+/// `localhost`, then a frame of `localhost` embeds it (another frame
+/// site: a second request), then a frame of `127.0.0.1` (the page's
+/// partition: from the cache). A credentialed load of a script, then an
+/// uncredentialed one (`crossorigin=anonymous`): a second request.
+#[test]
+fn cache_partition() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let other = srv.base.replace("127.0.0.1", "localhost");
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/with-other/net/cache-partition.html?other={other}", srv.base),
+    ]);
+    assert_eq!(
+        text(&out.stdout).trim_end(),
+        "credentialed: load\nuncredentialed: load\ndone",
+        "{}",
+        text(&out.stderr)
+    );
+    let log = text(&run(&["dump", "--text", &format!("{}/log", srv.base)]).stdout);
+    for query in ["embed", "cred"] {
+        let hits = log.lines().filter(|l| l.contains(&format!("r.js?{query} "))).count();
+        assert_eq!(hits, 2, "{query}: {log}");
+    }
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task

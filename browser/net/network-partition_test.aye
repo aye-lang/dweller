@@ -1,0 +1,39 @@
+test "the partition is the top-level site, the frame site and the credentials" {
+    let a = @testAllocator()
+    let page = Initiator.Page { url: "http://www.a.test:8000/page" }
+    let other = Initiator.Page { url: "http://b.test/page" }
+    let r = "http://cdn.test/r.js"
+
+    let script = try networkPartition(a, Request { kind: Kind.Script, referrer: "http://www.a.test:8000/page", initiator: page }, r)
+    defer a.free(script)
+    let elsewhere = try networkPartition(a, Request { kind: Kind.Script, referrer: "http://b.test/page", initiator: other }, r)
+    defer a.free(elsewhere)
+    let framed = try networkPartition(a, Request { kind: Kind.Image, top: "https://top.test/", initiator: other }, r)
+    defer a.free(framed)
+    let omitted = try networkPartition(a, Request { kind: Kind.Script, credentials: Credentials.Omit, initiator: page }, r)
+    defer a.free(omitted)
+    let cross = try networkPartition(a, Request { kind: Kind.Script, credentials: Credentials.SameOrigin, initiator: page }, r)
+    defer a.free(cross)
+    let same = try networkPartition(a, Request { kind: Kind.Script, credentials: Credentials.SameOrigin, initiator: page }, "http://www.a.test:8000/r.js")
+    defer a.free(same)
+    let navigation = try networkPartition(a, Request { referrer: "http://b.test/page", initiator: other }, "http://www.a.test/")
+    defer a.free(navigation)
+
+    @expectEqual("1/_dk_http://a.test http://a.test", script)
+    @expectEqual("1/_dk_http://b.test http://b.test", elsewhere)
+    @expectEqual("1/_dk_https://top.test http://b.test", framed)
+    @expectEqual("0/_dk_http://a.test http://a.test", omitted)
+    @expectEqual("0/_dk_http://a.test http://a.test", cross)
+    @expectEqual("1/_dk_http://a.test http://a.test", same)
+    @expectEqual("1/_dk_http://a.test http://a.test", navigation)
+}
+
+test "the cache key is the partition and the URL" {
+    let a = @testAllocator()
+    let req = Request { kind: Kind.Style, initiator: Initiator.Page { url: "http://a.test/" } }
+
+    let key = try cacheKey(a, req, "http://a.test/s.css")
+    defer a.free(key)
+
+    @expectEqual("1/_dk_http://a.test http://a.test http://a.test/s.css", key)
+}
