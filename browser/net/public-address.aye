@@ -1,0 +1,26 @@
+import std
+import std.text
+
+// https://wicg.github.io/private-network-access/#ip-address-space-heading
+fn publicAddress(ip: []u8) bool {
+    if getenv("DWELLER_PUBLIC_ADDRESS".ptr) |p| {
+        if text.eql(ip, p[0..strlen(p)]) {
+            return true
+        }
+    }
+
+    var v4 = ip
+
+    if text.startsWith(ip, "::ffff:") {
+        v4 = ip[7..]
+    }
+
+    if std.mem.indexOf(v4, ':') == null {
+        let a = ipv4Octet(v4, 0)
+        let b = ipv4Octet(v4, 1)
+
+        return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168))
+    }
+
+    return !(text.eql(ip, "::1") || text.eql(ip, "::") || text.startsWith(ip, "fc") || text.startsWith(ip, "fd") || text.startsWith(ip, "fe8") || text.startsWith(ip, "fe9") || text.startsWith(ip, "fea") || text.startsWith(ip, "feb"))
+}

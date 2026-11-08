@@ -1,0 +1,30 @@
+import dom
+import engine
+import paint
+import std.list.List
+import std.mem.AllocError
+
+let CARET_INK = paint.Rgba { r: 0, g: 0, b: 0, a: 255 }
+let SELECTED_TEXT = paint.Rgba { r: 0, g: 110, b: 255, a: 90 }
+
+fn fieldMarks(r: *TabRenderer, p: *engine.Page, out: *mut List(Mark)) AllocError!void {
+    let f = p.doc.controls.focus orelse return
+
+    if !dom.isTextField(&p.doc, f) { return }
+
+    let v = r.view()
+    var rects = List(paint.Rect).init(r.alloc)
+    defer rects.deinit()
+
+    try engine.selectionRects(p, f, &mut rects)
+
+    for s in rects.items() {
+        try out.append(Mark { rect: paint.deviceRect(s, v), ink: SELECTED_TEXT })
+    }
+
+    if rects.len() > 0 || !r.focused || !r.caret_on { return }
+
+    let c = engine.caretRect(p, f) orelse return
+
+    try out.append(Mark { rect: paint.deviceRect(c, v), ink: CARET_INK })
+}

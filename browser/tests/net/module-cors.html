@@ -1,0 +1,46 @@
+<!doctype html>
+<title>module scripts in CORS mode</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = new URLSearchParams(location.search).get('other');
+const hits = [];
+function module(name, src, co) {
+  const el = document.createElement('script');
+  el.type = 'module';
+  if (co !== undefined) el.setAttribute('crossorigin', co);
+  const before = hits.length;
+  const ended = new Promise(resolve => {
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+  });
+  el.src = src;
+  document.head.appendChild(el);
+  return ended.then(ev => log(name + ': ' + ev + ', ran ' + (hits.length > before)));
+}
+function cookies(name, query, co) {
+  self.lastCookie = undefined;
+  return module(name, other + '/cookie-module?' + query, co).then(() => log(name + ' cookies: ' + JSON.stringify(self.lastCookie)));
+}
+function dynamic(name, src) {
+  return import(src).then(() => log(name + ': resolved'), e => log(name + ': ' + e.name));
+}
+document.addEventListener('DOMContentLoaded', async () => {
+  await fetch('/samesite/set');
+  await module('module same-origin', '/net/module-cors/hit.js?1');
+  await module('module without ACAO', other + '/net/module-cors/hit.js?2');
+  await module('module with ACAO', other + '/acao/net/module-cors/hit.js?3');
+  await module('module anonymous without ACAO', other + '/net/module-cors/hit.js?4', 'anonymous');
+  await module('module importing a module without ACAO', other + '/acao/net/module-cors/imports-plain.js');
+  await module('module importing a module with ACAO', other + '/acao/net/module-cors/imports-acao.js');
+  await dynamic('import() without ACAO', other + '/net/module-cors/hit.js?7');
+  await dynamic('import() with ACAO', other + '/acao/net/module-cors/hit.js?8');
+  await dynamic('import() same-origin', '/net/module-cors/hit.js?9');
+  await cookies('module with ACAO and ACAC', 'acao&acac&1');
+  await cookies('module use-credentials with ACAO and ACAC', 'acao&acac&2', 'use-credentials');
+  await cookies('module use-credentials with ACAO only', 'acao&3', 'use-credentials');
+  await cookies('module anonymous with ACAO only', 'acao&4', 'anonymous');
+});
+</script>
+<script type="module" src="module-cors/same.js"></script>

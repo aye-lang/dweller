@@ -17,15 +17,21 @@ fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [6][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64), "--font", "system", "--no-js"}
-    var n: usize = 6
+    var argv = [7][]u8{args[0], "--renderer", try number(tmp, sv[1] as i64), "--font", "system", "", ""}
+    var n: usize = 5
 
     if fixed {
         argv[4] = "fixed"
     }
 
-    if engine.scriptingEnabled() {
-        n = 5
+    if !engine.scriptingEnabled() {
+        argv[n] = "--no-js"
+        n += 1
+    }
+
+    if std.os.getenv("DWELLER_STEADY_CARET") != null {
+        argv[n] = "--steady-caret"
+        n += 1
     }
 
     let pid = try spawnProgram(tmp, argv[..n])
@@ -45,9 +51,12 @@ fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
         outbox: text.Builder.init(alloc),
         url: text.Builder.init(alloc),
         committed: text.Builder.init(alloc),
+        docs: text.Builder.init(alloc),
         popup: text.Builder.init(alloc),
         popup_off: text.Builder.init(alloc),
         title: text.Builder.init(alloc),
+        target: text.Builder.init(alloc),
+        answer: text.Builder.init(alloc),
         damage: text.Builder.init(alloc),
         last_damage: text.Builder.init(alloc),
     })

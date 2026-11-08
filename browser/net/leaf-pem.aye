@@ -1,0 +1,27 @@
+// https://curl.se/libcurl/c/CURLINFO_CERTINFO.html
+import std.text
+
+extern struct CurlCertinfo {
+    count: i32
+    certs: [*]?*mut CurlList
+}
+
+fn leafPem(info: *CurlCertinfo) ?[]u8 {
+    if info.count < 1 {
+        return null
+    }
+
+    var field = info.certs[0]
+
+    while field |f| {
+        let line = f.data[0..strlen(f.data)]
+
+        if text.startsWith(line, "Cert:") {
+            return line[5..]
+        }
+
+        field = f.next
+    }
+
+    return null
+}

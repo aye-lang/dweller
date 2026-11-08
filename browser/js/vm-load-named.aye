@@ -3,7 +3,15 @@
 fn vmLoadNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, key: u32) JsError!Value {
     let o = objectOf(v)
 
-    if o == NONE || it.heap.obj(o).shape == NONE || !cacheable(it, o, key) {
+    if o == NONE {
+        vmProfSlow(st, key, 0)
+
+        return it.getProp(v, key)
+    }
+
+    if it.heap.obj(o).shape == NONE || !cacheable(it, o, key) {
+        vmProfSlow(st, key, 6)
+
         return it.getProp(v, key)
     }
 
@@ -11,8 +19,18 @@ fn vmLoadNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, key
         let holder = vmIcLoadHolder(it, c, o, key)
 
         if holder != NONE {
+            vmProfSlow(st, key, 1)
+
             return vmIcRead(it, v, holder, c.slot, key)
         }
+
+        vmProfSlow(st, key, 5)
+    }
+
+    if e.state == IC_MEGA {
+        vmProfSlow(st, key, 4)
+    } else {
+        vmProfSlow(st, key, 2)
     }
 
     if vmIcLoadCase(it, o, key) |c| {

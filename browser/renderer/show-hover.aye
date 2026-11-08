@@ -1,0 +1,17 @@
+import ipc
+import std.text
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc SetCursor
+fn showHover(r: *mut TabRenderer, shape: u32, href: []u8) !void {
+    if shape != r.cursor {
+        r.cursor = shape
+
+        try send(r.alloc, r.conn, r.tab, ipc.Message.Cursor { shape: shape })
+    }
+
+    if !text.eql(href, r.target.bytes()) {
+        r.target.clear()
+        try r.target.append(href)
+        try send(r.alloc, r.conn, r.tab, ipc.Message.TargetUrl { url: href })
+    }
+}

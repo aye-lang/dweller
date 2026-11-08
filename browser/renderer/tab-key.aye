@@ -1,0 +1,22 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/page/focus_controller.cc AdvanceFocus
+fn tabKey(r: *mut TabRenderer, p: *mut engine.Page, shift: bool) !void {
+    if try atFocusEdge(p, !shift) { return send(r.alloc, r.conn, r.tab, ipc.Message.TakeFocus { reverse: shift as u32 }) }
+
+    let next = try engine.nextFocus(p, !shift)
+
+    try engine.keyFocus(p, next)
+    try layOut(r, p)
+
+    let el = next orelse return
+    let box = engine.boxRect(p, el) orelse return
+    let view = r.height as f64 / r.scale
+
+    if box.y < r.scroll_y {
+        try scrollPage(r, 0.0, box.y - 8.0 - r.scroll_y)
+    } else if box.y + box.h > r.scroll_y + view {
+        try scrollPage(r, 0.0, box.y + box.h - view + 8.0 - r.scroll_y)
+    }
+}

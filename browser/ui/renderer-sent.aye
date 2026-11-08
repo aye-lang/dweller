@@ -1,6 +1,8 @@
 import ipc
 import std.mem.AllocError
 
+let MAX_URL_CHARS: usize = 2097152
+
 fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
     if !ipc.fromRenderer(got.message) { return "not from a renderer" }
 
@@ -11,12 +13,27 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.hello = true
         }
 
-        .Loaded { title, .. } => {
-            if !tp.loading || got.frame != slot.id { return "unexpected loaded" }
+        .Loaded { title, url } => {
+            let by_agent = !tp.loading && tp.agent_id != 0 && tp.agent_acts
 
-            tp.title.clear()
-            try tp.title.append(title)
+            if (!tp.loading && !by_agent) || got.frame != slot.id { return "unexpected loaded" }
+            if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+
+            try showCommitted(tp, title, url)
             tp.loading = false
+        }
+
+        .Title { title } => {
+            if got.frame != slot.id || title.len > 4096 { return "bad title" }
+
+            try showCommitted(tp, title, tp.committed.bytes())
+        }
+
+        .SameDocument { url } => {
+            if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+
+            try showCommitted(tp, tp.title.bytes(), url)
         }
 
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
@@ -41,6 +58,58 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.popup_at = [4]f64{x, y, w, h}
             tp.popup_selected = selected
             tp.popup_new = true
+        }
+
+        .Cursor { shape } => {
+            if got.frame != slot.id || shape > 2 { return "bad cursor" }
+
+            tp.cursor = shape
+            tp.status_new = true
+        }
+
+        .TargetUrl { url } => {
+            if got.frame != slot.id || url.len > MAX_URL_CHARS { return "bad target_url" }
+
+            tp.target.clear()
+            try tp.target.append(url)
+            tp.status_new = true
+        }
+
+        .LongTask { on, ms } => {
+            if got.frame != slot.id || on > 1 || (on == 1) == tp.busy { return "bad long_task" }
+
+            tp.busy = on == 1
+            tp.long_ms = ms
+            tp.status_new = true
+        }
+
+        .TakeFocus { reverse } => {
+            if got.frame != slot.id || reverse > 1 { return "bad take_focus" }
+
+            tp.take_focus = true
+        }
+
+        .Redirect { url } => {
+            if got.frame != slot.id || !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad redirect" }
+
+            tp.redirected = true
+            tp.committed.clear()
+            try tp.committed.append(url)
+        }
+
+        .AgentReply { id, answer } => {
+            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id { return "bad agent_reply" }
+
+            tp.answer.clear()
+            try tp.answer.append(answer)
+            tp.agent_id = 0
+            tp.answered = true
+        }
+
+        .Fetch { .. } => {
+            if got.frame != slot.id { return "bad fetch" }
+
+            return answerFetch(tp, got.frame, got.message)
         }
 
         .InputAck { seq } => {

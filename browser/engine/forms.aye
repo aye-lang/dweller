@@ -751,6 +751,9 @@ fn headerEscape(out: *mut text.Builder, s: []u8) AllocError!void {
 /// not kept: going back to the entry, or reloading it, loads its URL by
 /// GET). Returns whether a page was loaded.
 pub fn navigateTo(tab: *mut Tab, sub: *Submission, initiator: net.Initiator) AllocError!bool {
+    if try blocksTopData(tab.page, &sub.target, initiator) {
+        return false
+    }
     if !sub.post {
         return tab.navigate(&sub.target, initiator)
     }

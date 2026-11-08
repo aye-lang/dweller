@@ -1,0 +1,143 @@
+import std.text
+
+test "the focus, title and same-document messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let focus = try roundTrip(&mut out, 7, Message.Focus { on: 1 })
+
+    match focus.message {
+        .Focus { on } => @expectEqual(1, on)
+        _ => @expect(false)
+    }
+
+    let named = try roundTrip(&mut out, 7, Message.Title { title: "Hi" })
+
+    match named.message {
+        .Title { title } => @expectEqual("Hi", title)
+        _ => @expect(false)
+    }
+
+    let moved = try roundTrip(&mut out, 7, Message.SameDocument { url: "http://a/b#c" })
+
+    match moved.message {
+        .SameDocument { url } => @expectEqual("http://a/b#c", url)
+        _ => @expect(false)
+    }
+}
+
+test "the cursor, target URL, long task, take focus and redirect messages round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let cursor = try roundTrip(&mut out, 7, Message.Cursor { shape: 2 })
+
+    match cursor.message {
+        .Cursor { shape } => @expectEqual(2, shape)
+        _ => @expect(false)
+    }
+
+    let target = try roundTrip(&mut out, 7, Message.TargetUrl { url: "http://a/" })
+
+    match target.message {
+        .TargetUrl { url } => @expectEqual("http://a/", url)
+        _ => @expect(false)
+    }
+
+    let long = try roundTrip(&mut out, 7, Message.LongTask { on: 0, ms: 12000 })
+
+    match long.message {
+        .LongTask { on, ms } => {
+            @expectEqual(0, on)
+            @expectEqual(12000, ms)
+        }
+
+        _ => @expect(false)
+    }
+
+    let taken = try roundTrip(&mut out, 7, Message.TakeFocus { reverse: 1 })
+
+    match taken.message {
+        .TakeFocus { reverse } => @expectEqual(1, reverse)
+        _ => @expect(false)
+    }
+
+    let moved = try roundTrip(&mut out, 7, Message.Redirect { url: "http://b/" })
+
+    match moved.message {
+        .Redirect { url } => @expectEqual("http://b/", url)
+        _ => @expect(false)
+    }
+
+    let asked = try roundTrip(&mut out, 7, Message.Agent { id: 3, mcp: 1, line: "{}" })
+
+    match asked.message {
+        .Agent { id, mcp, line } => {
+            @expectEqual(3, id)
+            @expectEqual(1, mcp)
+            @expectEqual("{}", line)
+        }
+
+        _ => @expect(false)
+    }
+
+    let answered = try roundTrip(&mut out, 7, Message.AgentReply { id: 3, answer: "ok" })
+
+    match answered.message {
+        .AgentReply { id, answer } => {
+            @expectEqual(3, id)
+            @expectEqual("ok", answer)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(!fromRenderer(Message.Agent { id: 0, mcp: 0, line: "" }) && fromRenderer(Message.AgentReply { id: 0, answer: "" }))
+    @expect(fromRenderer(Message.Cursor { shape: 0 }) && fromRenderer(Message.TargetUrl { url: "" }) && fromRenderer(Message.LongTask { on: 1, ms: 0 }))
+    @expect(fromRenderer(Message.TakeFocus { reverse: 0 }) && fromRenderer(Message.Redirect { url: "" }))
+}
+
+test "fetch messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    let asked = try roundTrip(&mut out, 7, Message.Fetch { id: 1, doc: 2, nav: 0, kind: 3, credentials: 1, mode: 1, method: "POST", url: "https://a/x", referrer: "https://a/", top: "", headers: "X-A: 1", content_type: "text/plain", has_body: 1, body: "hi" })
+
+    match asked.message {
+        .Fetch { id, doc, kind, method, url, headers, has_body, body, .. } => {
+            @expectEqual(1, id)
+            @expectEqual(2, doc)
+            @expectEqual(3, kind)
+            @expectEqual("POST", method)
+            @expectEqual("https://a/x", url)
+            @expectEqual("X-A: 1", headers)
+            @expectEqual(1, has_body)
+            @expectEqual("hi", body)
+        }
+
+        _ => @expect(false)
+    }
+
+    let head = try roundTrip(&mut out, 7, Message.FetchHead { id: 1, doc: 0, status: 404, tainted: 1, mime: "text/html", charset: "utf-8", url: "", headers: "a: b" })
+
+    match head.message {
+        .FetchHead { status, tainted, mime, headers, .. } => {
+            @expectEqual(404, status)
+            @expectEqual(1, tainted)
+            @expectEqual("text/html", mime)
+            @expectEqual("a: b", headers)
+        }
+
+        _ => @expect(false)
+    }
+
+    let failed = try roundTrip(&mut out, 7, Message.FetchFail { id: 1, code: 18 })
+
+    match failed.message {
+        .FetchFail { code, .. } => @expectEqual(18, code)
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
+    @expect(!fromRenderer(Message.FetchHead { id: 0, doc: 0, status: 0, tainted: 0, mime: "", charset: "", url: "", headers: "" }) && !fromRenderer(Message.FetchBody { id: 0, chunk: "" }))
+    @expect(!fromRenderer(Message.FetchEnd { id: 0 }) && !fromRenderer(Message.FetchFail { id: 0, code: 0 }))
+}

@@ -7,15 +7,21 @@ fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) !void {
 
     if kind == 0 {
         try engine.hoverAt(p, x, y)
+        try hoverReport(r, p, x, y)
 
         if r.range != null { try dragRange(r, p, x) }
+        if (at.buttons & 1) != 0 { try dragSelect(r, p, x, y) }
 
         try pointerAt(r, p, "pointermove", 0, at)
 
         return
     }
 
-    if kind == 3 { return pointerAt(r, p, "pointerleave", 0, at) }
+    if kind == 3 {
+        try showHover(r, 0, "")
+
+        return pointerAt(r, p, "pointerleave", 0, at)
+    }
 
     if kind == 1 {
         try pointerAt(r, p, "pointerdown", button, at)
@@ -24,6 +30,7 @@ fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) !void {
         if button != 0 { return }
 
         try engine.pressAt(p, x, y, true)
+        r.select_el = null
         r.scroll_el = try engine.scrollerAt(p, x, y)
 
         return clickAt(r, p, x, y)
@@ -40,6 +47,7 @@ fn mouseInput(r: *mut TabRenderer, kind: u32, button: u32, at: MouseAt) !void {
     if button != 0 { return }
 
     try engine.pressAt(p, x, y, false)
+    r.select_el = null
 
     if r.range |el| {
         r.range = null
