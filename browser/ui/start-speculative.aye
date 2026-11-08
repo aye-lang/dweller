@@ -14,9 +14,7 @@ fn startSpeculative(ui: *mut Ui, slot: *mut TabSlot, old: *mut TabProcess) Alloc
     }
 
     let next = started.?
-    var href: []u8 = old.committed.bytes()
-
-    if res.url.len > 0 { href = res.url }
+    let href = old.swap_url.bytes()
 
     try writeSite(href, &mut next.site)
     try next.url.append(href)
@@ -29,4 +27,6 @@ fn startSpeculative(ui: *mut Ui, slot: *mut TabSlot, old: *mut TabProcess) Alloc
     next.push_on_commit = old.push_on_commit
     next.loading = true
     slot.speculative = next
+
+    if !old.loading { try carryAgent(old, next) }
 }

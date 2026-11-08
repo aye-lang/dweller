@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn navigateLine(alloc: Allocator, line: []u8, mcp: bool, href: []u8, out: *mut text.Builder) AllocError!void {
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var doc = Json.parse(alloc, line, &mut failure) catch |e| {
+        return
+    }
+
+    defer doc.deinit()
+
+    try out.append("{\"id\":")
+
+    if doc.get(doc.root(), "id") |i| { try doc.write(i, out) } else { try out.append("null") }
+
+    if mcp { try out.append(",\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"browser_navigate\",\"arguments\":{\"url\":") } else { try out.append(",\"cmd\":\"navigate\",\"url\":") }
+
+    try writeString(out, href)
+
+    if mcp { try out.append("}}") }
+
+    try out.append("}")
+}

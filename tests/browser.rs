@@ -2724,12 +2724,35 @@ fn agent_sessions_in_renderer() {
 /// Q2.3b: a renderer that answers a request id it was not sent is killed.
 #[test]
 fn agent_sessions_bad_reply() {
+    let out = relay_snapshot(&[("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")]);
+    assert!(!out.status.success(), "the relay goes on after a bad answer");
+    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("bad message: bad agent_reply "),
+        "no bad agent_reply: {}",
+        text(&out.stderr)
+    );
+}
+
+/// Q2.7b: a compromise hook without `DWELLER_TEST=1` does nothing: the
+/// renderer answers as it would without it.
+#[test]
+fn agent_sessions_hook_needs_test() {
+    let out = relay_snapshot(&[("DWELLER_TEST_EVIL", "agent")]);
+    assert!(out.status.success(), "{}: {}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).starts_with("{\"id\":1,"), "{}", text(&out.stdout));
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
+}
+
+// `dweller agent` with `DWELLER_PROCESS=tab` and `env`, asked one snapshot.
+fn relay_snapshot(env: &[(&str, &str)]) -> std::process::Output {
     use std::io::Write;
     let mut child = dweller_command()
         .current_dir(root())
         .arg("agent")
         .env("DWELLER_PROCESS", "tab")
-        .env("DWELLER_TEST_EVIL", "agent")
+        .env_remove("DWELLER_TEST")
+        .envs(env.iter().copied())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -2741,14 +2764,7 @@ fn agent_sessions_bad_reply() {
         .unwrap()
         .write_all(b"{\"id\":1,\"cmd\":\"snapshot\"}\n")
         .unwrap();
-    let out = child.wait_with_output().unwrap();
-    assert!(!out.status.success(), "the relay goes on after a bad answer");
-    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
-    assert!(
-        text(&out.stderr).contains("bad message: bad agent_reply "),
-        "no bad agent_reply: {}",
-        text(&out.stderr)
-    );
+    child.wait_with_output().unwrap()
 }
 
 fn agent_sessions_with(env: &[(&str, &str)]) {
@@ -10681,7 +10697,7 @@ fn window_renderer_lifecycle() {
     assert!(err.is_empty(), "{err}");
     assert_eq!(&renderer(&state)[2..], ["gone", "crashed"], "{state}");
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "malformed")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "malformed")];
     let (_, state, err) = run("renderer:gone", &evil);
     let r = renderer(&state);
     assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
@@ -10727,7 +10743,7 @@ fn window_renderer_net() {
     }
     let headers = format!("{}/net/request_headers.html", srv.base);
     let plain = login_window_with(&headers, "frame", None, &tab);
-    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "headers")]);
+    let evil = login_window_with(&headers, "frame", None, &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "headers")]);
     assert!(plain.contains(&format!("Referer: {headers}")) && !evil.contains("evil"), "{evil}");
     let page_only = |got: &str| got.lines().filter(|l| !l.starts_with("renderer")).collect::<Vec<_>>().join("\n");
     assert_eq!(page_only(&evil), page_only(&plain));
@@ -10735,6 +10751,7 @@ fn window_renderer_net() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
             .args([
                 &format!("{}/net/cors.html", srv.base),
@@ -10860,6 +10877,7 @@ fn window_renderer_storage() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
             .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
             .output()
@@ -11108,7 +11126,7 @@ fn window_renderer_frames() {
         golden.display()
     );
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "frame")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "frame")];
     let (state, err) = run(&tab, "renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11162,7 +11180,7 @@ fn window_renderer_sandbox() {
     };
     let golden = scratch().join("renderer_sandbox_in_process.png");
     let tab = scratch().join("renderer_sandbox_tab.png");
-    let probe = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
+    let probe = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
 
     let (_, err) = run(&golden, "loaded", &[]);
     assert!(err.is_empty(), "{err}");
@@ -11177,7 +11195,7 @@ fn window_renderer_sandbox() {
         golden.display()
     );
 
-    let open = [probe[0], probe[1], ("DWELLER_NO_SANDBOX", "1")];
+    let open = [probe[0], probe[1], probe[2], ("DWELLER_NO_SANDBOX", "1")];
     let (state, err) = run(&tab, "renderer:loaded renderer:frame", &open);
     assert!(err.starts_with("warning: DWELLER_NO_SANDBOX=1, the renderer runs without a sandbox\n"), "{err}");
     assert!(err.contains("sandbox-probe home=0 tmp=0 tcp=") && err.ends_with(" fork=0\n") && !err.contains("tcp=1 "), "{err}");
@@ -11240,7 +11258,7 @@ fn window_renderer_input() {
         );
     }
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "ack")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "ack")];
     let (state, err) = run(&shot, "renderer:loaded renderer:frame click:30,60 renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11338,7 +11356,7 @@ fn window_renderer_focus() {
     assert!(state.contains(" title Pushed\n"), "{state}");
     assert!(state.starts_with(&format!("url {pushed}\n")) && state.contains("\nhistory 2 of 2\n"), "{state}");
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "url")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "url")];
     let (state, err) = run(&shot, "renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11414,7 +11432,7 @@ fn window_renderer_history() {
     assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
     assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
 
-    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "pushstate")];
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "pushstate")];
     let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
     let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
     let pid = line.split(' ').nth(1).unwrap_or("");
@@ -11715,8 +11733,48 @@ fn window_renderer_agent() {
     assert_eq!(got, want, "{err}");
     let (bad, err) = session(
         &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
-        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "agent")],
+        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")],
     );
     assert!(err.contains("bad message: bad agent_reply "), "{err}");
     assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
+}
+
+/// Q2.7b: with `DWELLER_PROCESS=tab` an agent's navigation to another
+/// site (`127.0.0.1` and `localhost`) commits in a new renderer, as the
+/// user's do: one process of the window's tree ends and another starts at
+/// each swap, and the agent's next command is answered by the new page.
+#[test]
+fn window_renderer_agent_sites() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    fn tree(pid: &str) -> Vec<String> {
+        let out = Command::new("pgrep").args(["-P", pid]).output().unwrap();
+        let kids: Vec<String> = text(&out.stdout).lines().map(str::to_string).collect();
+        kids.iter().flat_map(|k| tree(k)).chain(kids.clone()).collect()
+    }
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let sock = format!("target/sockets/q27b-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &[], &[("DWELLER_PROCESS", "tab")]);
+    let mut conn = AgentConn::open(&sock);
+    let mut trees: Vec<std::collections::HashSet<String>> = Vec::new();
+    for (n, (to, host)) in [(&page, "127.0.0.1"), (&other, "localhost"), (&page, "127.0.0.1")].into_iter().enumerate() {
+        let went = conn.ask(&format!("{{\"id\":{n},\"cmd\":\"navigate\",\"url\":\"{to}\"}}")).0;
+        assert!(went.starts_with(&format!("{{\"id\":{n},\"ok\":true,")) && went.contains(&format!("\"url\":\"{to}\"")), "{went}");
+        let title = conn.ask("{\"id\":9,\"cmd\":\"eval\",\"expression\":\"document.title\"}").0;
+        assert!(title.contains(&format!("\"result\":\"{host}\"")), "{to}: {title}");
+        trees.push(tree(&window.id().to_string()).into_iter().collect());
+    }
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    for w in trees.windows(2) {
+        assert!(w[1].difference(&w[0]).count() == 1 && w[0].difference(&w[1]).count() == 1, "no swap: {trees:?}");
+    }
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
 }

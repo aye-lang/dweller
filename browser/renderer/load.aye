@@ -1,7 +1,6 @@
 import engine
 import ipc
 import net
-import std
 import std.text
 import url
 
@@ -36,14 +35,14 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
     try adoptPage(r, frame, p)
     try sharedHistory(r)
 
-    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "url") {
+    if evilTest("url") {
         r.href.clear()
         try r.href.append("https://evil.example/")
     }
 
     try send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: p.title, url: r.href.bytes() })
 
-    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "malformed") {
+    if evilTest("malformed") {
         var bad = @zeroed([16]u8)
 
         try r.conn.write(bad[..])
