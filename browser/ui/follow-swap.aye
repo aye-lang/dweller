@@ -1,0 +1,42 @@
+import agent
+import ipc
+import net
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc CommitPending
+fn followSwap(at: *mut *mut TabProcess, id: u32, out: *mut text.Builder) AllocError!?[]u8 {
+    let old = at.*
+    let alloc = old.url.alloc
+    var res = old.swap_to.?
+    let started = try startTabProcess(alloc, true, 0)
+
+    old.swap_to = null
+
+    if started == null {
+        res.deinit(alloc)
+        old.nav_failed = true
+        try ipc.encode(&mut old.outbox, 0, ipc.Message.FetchFail { id: old.fetches, code: net.fetchErrorCode(net.FetchError.Network) })
+
+        return null
+    }
+
+    var next = started.?
+    let href = old.swap_url.bytes()
+    var line = text.Builder.init(alloc)
+    defer line.deinit()
+
+    try writeSite(href, &mut next.site)
+    try next.url.append(href)
+    next.primed = res
+    next.next_ref = old.next_ref
+    try agent.navigateLine(alloc, old.agent_line.bytes(), old.agent_mcp, href, &mut line)
+
+    let why = try askRenderer(&mut next, id, old.agent_mcp, line.bytes(), out)
+
+    dropTabProcess(old, "swapped")
+    endTabProcess(alloc, old)
+    at.* = next
+
+    return why
+}

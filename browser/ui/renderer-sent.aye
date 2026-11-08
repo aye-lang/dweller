@@ -110,9 +110,10 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try tp.committed.append(url)
         }
 
-        .AgentReply { id, answer } => {
-            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id { return "bad agent_reply" }
+        .AgentReply { id, next_ref, answer } => {
+            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id || next_ref < tp.next_ref { return "bad agent_reply" }
 
+            tp.next_ref = next_ref
             tp.answer.clear()
             try tp.answer.append(answer)
             tp.agent_id = 0

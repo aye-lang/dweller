@@ -11778,3 +11778,120 @@ fn window_renderer_agent_sites() {
     }
     assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
 }
+
+// The ref of the element named `name` in a snapshot answer (`e7`).
+fn ref_named(snap: &str, name: &str) -> String {
+    let at = snap.find(&format!("{name}\\\" [e")).unwrap_or_else(|| panic!("no {name} in {snap}"));
+    let rest = &snap[at + name.len() + 4..];
+    rest[..rest.find(']').unwrap()].to_string()
+}
+
+/// Q2.7c: with `DWELLER_PROCESS=tab` a ref of a page the tab left is
+/// refused, as in a window without the flag, whether the navigation
+/// stayed in the renderer or swapped it; an `eval` whose script navigates
+/// to another site gets an answer.
+#[test]
+fn window_renderer_agent_refs() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let same = format!("{page}?same");
+    let sock = format!("target/sockets/q27c-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &[], &[("DWELLER_PROCESS", "tab")]);
+    let mut conn = AgentConn::open(&sock);
+    let mut n = 0;
+    let mut ask = |conn: &mut AgentConn, body: String| {
+        n += 1;
+        conn.ask(&format!("{{\"id\":{n},{body}}}")).0
+    };
+    let mut snapped = |conn: &mut AgentConn, to: &str| {
+        let went = ask(conn, format!("\"cmd\":\"navigate\",\"url\":\"{page}\""));
+        assert!(went.contains("\"ok\":true"), "{went}");
+        let old = ref_named(&ask(conn, "\"cmd\":\"snapshot\"".into()), "same site");
+        let went = ask(conn, format!("\"cmd\":\"navigate\",\"url\":\"{to}\""));
+        assert!(went.contains("\"ok\":true"), "{went}");
+        let clicked = ask(conn, format!("\"cmd\":\"click\",\"ref\":\"{old}\""));
+        assert!(clicked.contains(&format!("\"ok\":false,\"error\":\"unknown ref {old}:")), "{to}: {clicked}");
+        ask(conn, "\"cmd\":\"eval\",\"expression\":\"document.title\"".into())
+    };
+    let title = snapped(&mut conn, &same);
+    assert!(title.contains("\"result\":\"127.0.0.1?same\""), "same site: {title}");
+    let title = snapped(&mut conn, &other);
+    assert!(title.contains("\"result\":\"localhost\""), "other site: {title}");
+    drop(snapped);
+    let went = ask(&mut conn, format!("\"cmd\":\"navigate\",\"url\":\"{page}\""));
+    assert!(went.contains("\"ok\":true"), "{went}");
+    let old = ref_named(&ask(&mut conn, "\"cmd\":\"snapshot\"".into()), "same site");
+    let evaled = conn.ask(&format!("{{\"id\":99,\"cmd\":\"eval\",\"expression\":\"location.href = '{other}'\"}}")).0;
+    assert!(evaled.starts_with("{\"id\":99,"), "{evaled}");
+    let mut title = String::new();
+    for _ in 0..50 {
+        title = ask(&mut conn, "\"cmd\":\"eval\",\"expression\":\"document.title\"".into());
+        if title.contains("\"result\":\"localhost\"") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(title.contains("\"result\":\"localhost\""), "the eval did not navigate: {title}");
+    let clicked = ask(&mut conn, format!("\"cmd\":\"click\",\"ref\":\"{old}\""));
+    assert!(clicked.contains(&format!("unknown ref {old}:")), "after the eval: {clicked}");
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
+}
+
+/// Q2.7c: `dweller agent` with `DWELLER_PROCESS=tab` follows a
+/// navigation to another site into a new renderer, and the old page's
+/// refs are refused there.
+#[test]
+fn agent_sessions_relay_sites() {
+    use std::io::{BufRead, Write};
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/renderer_sites.html", srv.base);
+    let other = page.replace("127.0.0.1", "localhost");
+    let mut child = dweller_command()
+        .current_dir(root())
+        .arg("agent")
+        .env("DWELLER_PROCESS", "tab")
+        .env_remove("DWELLER_TEST")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let pid = child.id().to_string();
+    let mut ask = move |line: String| {
+        stdin.write_all(format!("{line}\n").as_bytes()).unwrap();
+        let mut got = String::new();
+        stdout.read_line(&mut got).unwrap();
+        got
+    };
+    let kids = || text(&Command::new("pgrep").args(["-P", &pid]).output().unwrap().stdout);
+    let went = ask(format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{page}\"}}"));
+    assert!(went.contains("\"ok\":true"), "{went}");
+    let before = kids();
+    let old = ref_named(&ask("{\"id\":2,\"cmd\":\"snapshot\"}".into()), "same site");
+    let went = ask(format!("{{\"id\":3,\"cmd\":\"navigate\",\"url\":\"{other}\"}}"));
+    assert!(went.starts_with("{\"id\":3,\"ok\":true,") && went.contains(&format!("\"url\":\"{other}\"")), "{went}");
+    let after = kids();
+    let clicked = ask(format!("{{\"id\":4,\"cmd\":\"click\",\"ref\":\"{old}\"}}"));
+    assert!(clicked.contains(&format!("\"ok\":false,\"error\":\"unknown ref {old}:")), "{clicked}");
+    let title = ask("{\"id\":5,\"cmd\":\"eval\",\"expression\":\"document.title\"}".into());
+    assert!(title.contains("\"result\":\"localhost\""), "{title}");
+    drop(ask);
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}: {}", out.status, text(&out.stderr));
+    assert!(!before.is_empty() && !after.is_empty() && before != after, "no swap: {before:?} {after:?}");
+}

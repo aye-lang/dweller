@@ -27,7 +27,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
-            .Agent { id, mcp, line } => try answerAgent(r, got.frame, id, mcp != 0, line)
+            .Agent { id, mcp, ref_base, line } => try answerAgent(r, got.frame, id, mcp != 0, ref_base, line)
             .StorageEvent { nulls, key, old, value, url } => try engine.storageEvent(r.alloc, url, unlessNull(key, nulls, 1), unlessNull(old, nulls, 2), unlessNull(value, nulls, 4))
 
             .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {

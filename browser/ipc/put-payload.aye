@@ -103,14 +103,16 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
 
         .TakeFocus { reverse } => try putU32(out, reverse)
         .Redirect { url } => try putBytes(out, url)
-        .Agent { id, mcp, line } => {
+        .Agent { id, mcp, ref_base, line } => {
             try putU32(out, id)
             try putU32(out, mcp)
+            try putU32(out, ref_base)
             try putBytes(out, line)
         }
 
-        .AgentReply { id, answer } => {
+        .AgentReply { id, next_ref, answer } => {
             try putU32(out, id)
+            try putU32(out, next_ref)
             try putBytes(out, answer)
         }
 

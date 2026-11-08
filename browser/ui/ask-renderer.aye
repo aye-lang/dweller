@@ -2,20 +2,24 @@ import ipc
 import std.mem.AllocError
 import std.text
 
-fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut text.Builder) AllocError![]u8 {
+fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut text.Builder) AllocError![]u8 {
+    let tp = at.*
     var flag: u32 = 0
 
     if mcp { flag = 1 }
 
-    try ipc.encode(&mut tp.outbox, 0, ipc.Message.Agent { id: id, mcp: flag, line: line })
+    try ipc.encode(&mut tp.outbox, 0, ipc.Message.Agent { id: id, mcp: flag, ref_base: tp.next_ref, line: line })
 
     if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
 
     tp.outbox.clear()
     tp.agent_id = id
     tp.agent_acts = true
+    tp.agent_mcp = mcp
+    tp.agent_line.clear()
+    try tp.agent_line.append(line)
 
-    defer tp.agent_id = 0
+    defer at.*.agent_id = 0
 
     var buf = @zeroed([65536]u8)
 
@@ -34,6 +38,10 @@ fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut te
 
                 ipc.consume(&mut tp.inbox, g.used)
 
+                if tp.swap_to != null && tp.tab == 0 {
+                    if try followSwap(at, id, out) |gone| { return gone }
+                }
+
                 if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
 
                 tp.outbox.clear()
@@ -43,8 +51,10 @@ fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut te
 
             if g.message is .AgentReply {
                 match g.message {
-                    .AgentReply { id: answered, answer: said } => {
-                        if answered != id || g.frame != 0 { return "bad agent_reply" }
+                    .AgentReply { id: answered, next_ref, answer: said } => {
+                        if answered != id || g.frame != 0 || next_ref < tp.next_ref { return "bad agent_reply" }
+
+                        tp.next_ref = next_ref
 
                         try out.append(said)
                     }
