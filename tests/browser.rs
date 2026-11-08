@@ -6509,6 +6509,41 @@ fn jsdom_fixtures_restyle_beside_shadow() {
     assert!(full <= 5, "{full} full cascades:\n{err}");
 }
 
+/// Q4.16b: in a rAF with a running CSS transition,
+/// `browser/tests/ui/transition_reads.html` writes a style and reads
+/// getBoundingClientRect 100 times: the reads see the frame's transition
+/// value (the value getComputedStyle gives), the transition walk
+/// (`transition_walk`) runs at most once more than with 1 read (99 more
+/// before), and a style change between two reads is seen by the second.
+#[test]
+fn geometry_reads_restyle_once() {
+    let run = |reads: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_TIMING", "1")
+            .args([
+                "dump",
+                "--text",
+                "--js",
+                &format!("browser/tests/ui/transition_reads.html?{reads}"),
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        let walks = err.matches("DWELLER_TIMING\ttransition_walk\t").count();
+        (text(&out.stdout), walks)
+    };
+    let (many, many_walks) = run("100");
+    let (one, one_walks) = run("1");
+    assert!(many.contains("1 true true 50 70"), "{many}");
+    assert_eq!(many, one);
+    assert!(
+        many_walks <= one_walks + 1,
+        "{many_walks} transition walks with 100 reads, {one_walks} with 1"
+    );
+}
+
 /// P4.75q: subtrees inserted on a page with `:has()` of any element and
 /// of siblings are styled again in place when no element in them (or
 /// beside them) has what the arguments look at: 3 of the 7 forced
