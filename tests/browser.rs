@@ -7205,6 +7205,36 @@ fn cors_preflight() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// `crossorigin` on script, img and link (Q3.3): a CORS-mode request
+/// that loads when the other origin sends ACAO and is a load error when
+/// it does not; a CORS image is readable by canvas, a no-cors one taints
+/// it. ORB in net: a no-cors script, image or fetch of a cross-origin
+/// JSON, HTML or nosniff text/plain response is blocked, a real script
+/// or image is not. (`browser/tests/net/crossorigin.html` must print
+/// `crossorigin.txt`.)
+#[test]
+fn crossorigin_orb() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/crossorigin.html", srv.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/crossorigin.txt"),
+        &text(&out.stdout),
+        "crossorigin_orb",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// An asynchronous XMLHttpRequest fires its events in the XHR standard's
 /// order (`browser/tests/net/xhr_events.html` must print
 /// `xhr_events.txt`): loadstart at send, then in a networking task
@@ -8034,7 +8064,7 @@ fn inserted_scripts() {
     );
     let port = srv.base.rsplit(':').next().unwrap();
     let missing = format!(
-        "[error] Failed to load script: {}/net/inserted_missing.js\n[error] Blocked a script of another origin served as HTML: http://localhost:{port}/log/inserted.html\n",
+        "[error] Failed to load script: {}/net/inserted_missing.js\n[error] Failed to load script: http://localhost:{port}/log/inserted.html\n",
         srv.base
     );
     let mut dumps = Vec::new();
@@ -10073,11 +10103,11 @@ fn window_renderer_frames() {
         println!("skipped: no SDL2");
         return;
     }
-    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+    let run_page = |page: &str, png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
         let out = dweller_command()
             .current_dir(root())
             .envs(envs.iter().copied())
-            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--save"])
+            .args([page, "--frames", "300", "--state", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -10085,6 +10115,7 @@ fn window_renderer_frames() {
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
         (text(&out.stdout), text(&out.stderr))
     };
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| run_page("browser/tests/ui/form.html", png, events, envs);
     let golden = scratch().join("renderer_frames_in_process.png");
     let tab = scratch().join("renderer_frames_tab.png");
 
@@ -10109,4 +10140,18 @@ fn window_renderer_frames() {
     assert!(line.ends_with(" gone wrong size"), "{state}");
     assert_eq!(err, format!("error: bad message: wrong size {pid}\n"));
     assert!(!state.contains("renderer-frame"), "{state}");
+
+    let page = "browser/tests/ui/renderer_damage.html";
+    let (_, err) = run_page(page, &golden, "loaded", &[]);
+    assert!(err.is_empty(), "{err}");
+    let (state, err) = run_page(page, &tab, "renderer:loaded renderer:frame", &[("DWELLER_PROCESS", "tab")]);
+    assert!(err.is_empty(), "{err}");
+    let line = state.lines().find(|l| l.starts_with("renderer-frame ")).unwrap_or("");
+    assert!(line.ends_with(" damage 59 29 101 51"), "{state}");
+    assert!(
+        std::fs::read(&tab).unwrap() == std::fs::read(&golden).unwrap(),
+        "the renderer's frame {} differs from the in-process window {}",
+        tab.display(),
+        golden.display()
+    );
 }

@@ -38,10 +38,11 @@ struct CachedImage {
     href: []mut u8
     bmp: ?*mut image.Bitmap
     pic: ?*mut svg.Picture
-    // Canvas reads are refused for cross-origin images, including redirects.
     tainted: bool
     encoded: []mut u8 = []mut u8{}
     used: u64 = 0
+    mode: net.Mode = net.Mode.NoCors
+    credentials: net.Credentials = net.Credentials.Include
 }
 
 pub struct ImageCache {
@@ -145,7 +146,7 @@ pub struct ImageCache {
     // Was `href` fetched already (decoded or not)?
     fn known(self: *Self, href: []u8) bool {
         for e in self.entries.items() {
-            if text.eql(e.href, href) {
+            if text.eql(e.href, href) && e.mode == net.Mode.NoCors {
                 return true
             }
         }
@@ -232,9 +233,10 @@ pub struct ImageCache {
     }
 
     /// The picture of `href` when it is a fetched SVG image.
-    fn pictureOf(self: *Self, href: []u8) ?*mut svg.Picture {
+    fn pictureOf(self: *Self, href: []u8, crossorigin: ?[]u8) ?*mut svg.Picture {
+        let wanted = self.imageRequest(crossorigin)
         for e in self.entries.items() {
-            if text.eql(e.href, href) {
+            if text.eql(e.href, href) && e.mode == wanted.mode && e.credentials == wanted.credentials {
                 return e.pic
             }
         }
@@ -242,10 +244,11 @@ pub struct ImageCache {
     }
 
     /// The bitmap of `href`, fetched and decoded the first time.
-    fn bitmapOf(self: *mut Self, href: []u8) AllocError!?*mut image.Bitmap {
+    fn bitmapOf(self: *mut Self, href: []u8, crossorigin: ?[]u8) AllocError!?*mut image.Bitmap {
+        let wanted = self.imageRequest(crossorigin)
         for i in 0..self.entries.len() {
             let e = &mut self.entries.items()[i]
-            if text.eql(e.href, href) {
+            if text.eql(e.href, href) && e.mode == wanted.mode && e.credentials == wanted.credentials {
                 try touchImage(self, e)
                 return e.bmp
             }
@@ -256,7 +259,7 @@ pub struct ImageCache {
         var pic: ?*mut svg.Picture = null
         var tainted = true
         var kept: []mut u8 = []mut u8{}
-        let decoded = fetchImage(self.alloc, href, self.referrer, &mut pic, &mut tainted, self.decode_later, &mut kept)
+        let decoded = fetchImage(self.alloc, href, wanted, &mut pic, &mut tainted, self.decode_later, &mut kept)
         if decoded |d| {
             bmp = self.alloc.create(d) catch |e| {
                 var lost = d
@@ -269,7 +272,7 @@ pub struct ImageCache {
                 return e
             }
         }
-        self.entries.append(CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted, encoded: kept }) catch |e| {
+        self.entries.append(CachedImage { href: owned, bmp: bmp, pic: pic, tainted: tainted, encoded: kept, mode: wanted.mode, credentials: wanted.credentials }) catch |e| {
             self.alloc.free(owned)
             if kept.len > 0 {
                 self.alloc.free(kept)
@@ -286,11 +289,12 @@ pub struct ImageCache {
         }
         return bmp
     }
+
+    fn imageRequest(self: *Self, crossorigin: ?[]u8) net.Request {
+        return corsRequest(crossorigin, net.Request { kind: net.Kind.Image, referrer: self.referrer, initiator: net.Initiator.Page { url: self.referrer } })
+    }
 }
 
-// Image responses do not yet implement CORS validation. A crossorigin
-// attribute alone must never grant access to pixels. Compare the final
-// response URL; a same-origin redirect may lead to another origin.
 fn imageOriginDiffers(alloc: Allocator, referrer: []u8, href: []u8) bool {
     let imageUrl = url.parse(alloc, href) catch |e| {
         return true
@@ -315,7 +319,7 @@ fn dropPicture(alloc: Allocator, pic: ?*mut svg.Picture) {
 
 // Fetches and decodes `href`; null when either fails. An SVG image
 // goes to `pic`, its bitmap is only its natural size.
-fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.Picture, tainted: *mut bool, later: bool, kept: *mut []mut u8) ?image.Bitmap {
+fn fetchImage(alloc: Allocator, href: []u8, req: net.Request, pic: *mut ?*mut svg.Picture, tainted: *mut bool, later: bool, kept: *mut []mut u8) ?image.Bitmap {
     let target = url.parse(alloc, href) catch |e| {
         return null
     }
@@ -324,7 +328,7 @@ fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.
     if net.loadFailed(target.withoutFragment()) {
         return null
     }
-    let res = net.request(alloc, &target, net.Request { kind: net.Kind.Image, referrer: referrer, initiator: net.Initiator.Page { url: referrer } }) catch |e| {
+    let res = net.request(alloc, &target, req) catch |e| {
         return null
     }
     defer res.deinit(alloc)
@@ -335,7 +339,7 @@ fn fetchImage(alloc: Allocator, href: []u8, referrer: []u8, pic: *mut ?*mut svg.
     if res.url.len > 0 {
         responseHref = res.url
     }
-    tainted.* = imageOriginDiffers(alloc, referrer, responseHref)
+    tainted.* = req.mode == net.Mode.NoCors && imageOriginDiffers(alloc, req.referrer, responseHref)
     let decode_began = perf.start()
     defer perf.end("image_decode", decode_began, href)
     if isSvg(res.mime, res.body) {
@@ -472,13 +476,14 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
     let target = url.resolve(cache.alloc, base, choice.url) catch return null
     errdefer target.deinit(cache.alloc)
     let href = target.withoutFragment()
-    if !cache.known(href) && net.loadHeld(href) {
+    let crossorigin = doc.attr(h, "crossorigin")
+    if crossorigin == null && !cache.known(href) && net.loadHeld(href) {
         // Rendering waits for the request that loads it.
         if fetch == ImageFetch.Now {
             return LoadedElementImage { target: target, bmp: null, density: choice.density, load: 0 }
         }
     }
-    if !cache.known(href) && fetch == ImageFetch.Background {
+    if crossorigin == null && !cache.known(href) && fetch == ImageFetch.Background {
         if waited == 0 || net.loadOf(href) != waited {
             let id = net.startLoad(href, net.Kind.Image, cache.referrer)
             if id != 0 {
@@ -486,9 +491,9 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
             }
         }
     }
-    let bmp = try cache.bitmapOf(target.withoutFragment())
+    let bmp = try cache.bitmapOf(target.withoutFragment(), crossorigin)
     if bmp |b| {
-        if cache.pictureOf(target.withoutFragment()) |pic| {
+        if cache.pictureOf(target.withoutFragment(), crossorigin) |pic| {
             try cache.nodes.putPicture(h, b, pic)
         } else {
             try cache.nodes.putScaled(h, b, choice.density)
@@ -573,14 +578,14 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
         if !cache.known(target.withoutFragment()) && net.loadHeld(target.withoutFragment()) {
             continue
         }
-        if try cache.bitmapOf(target.withoutFragment()) |bmp| {
+        if try cache.bitmapOf(target.withoutFragment(), null) |bmp| {
             let owned = try cache.alloc.alloc(0 as u8, key.len)
             std.mem.copy(owned, key)
             cache.keys.append(owned) catch |e| {
                 cache.alloc.free(owned)
                 return e
             }
-            try cache.nodes.putUrl(owned, bmp, cache.pictureOf(target.withoutFragment()))
+            try cache.nodes.putUrl(owned, bmp, cache.pictureOf(target.withoutFragment(), null))
         }
     }
     var cur: ?NodeId = doc.root
@@ -627,7 +632,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
         }
         defer target.deinit(cache.alloc)
         // A script's request loads it in the background.
-        if cache.known(target.withoutFragment()) || net.loadHeld(target.withoutFragment()) {
+        if doc.attr(h, "crossorigin") != null || cache.known(target.withoutFragment()) || net.loadHeld(target.withoutFragment()) {
             continue
         }
         try hrefs.append(target.withoutFragment())

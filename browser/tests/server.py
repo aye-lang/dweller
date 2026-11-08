@@ -56,6 +56,10 @@
 #                    has "nostore"
 #   /slow-peak       the most /slow/ requests that were in flight at
 #                    once, as text/plain
+#   /acao/NAME       the file NAME (as /slow/NAME, at once) with
+#                    Access-Control-Allow-Origin: the request's Origin (or
+#                    *) and Access-Control-Allow-Credentials: true
+#   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
 #   /held/NAME       as /slow/NAME, but answered once a /held-now
 #                    request counted it instead of after 0.3 s
 #   /after-fail/NAME as /slow/NAME, but answered once a /fail/ request
@@ -151,9 +155,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def reply_file(self, path):
+    def reply_file(self, path, extra=()):
         """The file `path` (the query ignored) of the directory when there
-        is one, else a small body of the type of its extension."""
+        is one, else a small body of the type of its extension, with the
+        `extra` headers."""
         name = urllib.parse.unquote(path.split("?", 1)[0])
         file = os.path.realpath(os.path.join(ROOT, name))
         if file.startswith(os.path.realpath(ROOT) + os.sep) and os.path.isfile(file):
@@ -162,7 +167,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
         else:
             ctype, data = BODIES.get(name[name.rfind("."):], ("text/plain", b"slow"))
-        headers = [("Content-Type", ctype)]
+        headers = [("Content-Type", ctype)] + list(extra)
         if "nostore" in name:
             headers.append(("Cache-Control", "no-store"))
         self.reply(200, headers, data)
@@ -226,6 +231,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with HELD_CHANGED:
                 HELD_CHANGED.wait_for(lambda: HELD["failed"] > 0, HOLD_LIMIT)
             self.reply_file(path[len("/after-fail/"):])
+        elif path.startswith("/acao/"):
+            origin = self.headers.get("Origin", "*")
+            self.reply_file(path[len("/acao/"):], [("Access-Control-Allow-Origin", origin), ("Access-Control-Allow-Credentials", "true")])
+        elif path.startswith("/nosniff/"):
+            self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
         elif path.startswith("/held/"):
             query = urllib.parse.urlsplit(path).query
             with HELD_CHANGED:

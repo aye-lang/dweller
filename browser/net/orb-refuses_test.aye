@@ -1,0 +1,19 @@
+import std
+
+test "ORB refuses only a cross-origin no-cors subresource of a page" {
+    let a = @testAllocator()
+    let page = Initiator.Page { url: "http://127.0.0.1:8000/page" }
+    let other = "http://localhost:8000/data.json"
+    let json = "{\"token\": 1}"
+    let body = try a.alloc(0 as u8, json.len)
+    std.mem.copy(body, json)
+    let res = try respond(a, "application/json", body)
+    defer res.deinit(a)
+
+    @expect(try orbRefuses(a, Request { kind: Kind.Image, initiator: page }, other, &res))
+    @expect(try orbRefuses(a, Request { kind: Kind.Other, initiator: page }, other, &res))
+    @expect(!(try orbRefuses(a, Request { kind: Kind.Image, initiator: page }, "http://127.0.0.1:8000/data.json", &res)))
+    @expect(!(try orbRefuses(a, Request { kind: Kind.Script, mode: Mode.Cors, initiator: page }, other, &res)))
+    @expect(!(try orbRefuses(a, Request { kind: Kind.Document, initiator: page }, other, &res)))
+    @expect(!(try orbRefuses(a, Request { kind: Kind.Image, initiator: Initiator.Browser }, other, &res)))
+}

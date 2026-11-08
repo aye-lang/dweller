@@ -998,6 +998,9 @@ fn prefetchScripts(p: *mut Page, els: []NodeId) AllocError!void {
 // external scripts of `els`.
 fn scriptHrefsOf(p: *mut Page, els: []NodeId, out: *mut text.Builder) AllocError!void {
     for el in els {
+        if p.doc.attr(el, "crossorigin") != null {
+            continue
+        }
         if p.doc.attr(el, "src") orelse p.doc.attr(el, "href") |src| {
             if p.resolve(p.alloc, src) |target| {
                 defer target.deinit(p.alloc)
@@ -1053,7 +1056,7 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
             return addConsole(s, "[error] Failed to load script: ", src)
         }
         defer target.deinit(s.alloc)
-        let res = net.request(s.alloc, &target, net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) }) catch |e| {
+        let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })) catch |e| {
             match e {
                 .OutOfMemory => {
                     return AllocError.OutOfMemory

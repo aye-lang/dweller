@@ -1,0 +1,21 @@
+import std.text
+
+// chromium: services/network/orb/orb_mimetypes.cc GetCanonicalMimeType
+fn orbMimeClass(mime: []u8) MimeClass {
+    let json = text.eql(mime, "application/json") || text.eql(mime, "text/json") || text.endsWith(mime, "+json")
+    let xml = text.eql(mime, "application/xml") || text.eql(mime, "text/xml") || text.endsWith(mime, "+xml")
+
+    if text.eql(mime, "text/css") || text.eql(mime, "image/svg+xml") || mediaMime(mime) {
+        return MimeClass.Safelisted
+    }
+
+    if neverSniffedMime(mime) {
+        return MimeClass.NeverSniffed
+    }
+
+    if json || xml || text.eql(mime, "text/html") || text.eql(mime, "text/plain") {
+        return MimeClass.Blocklisted
+    }
+
+    return MimeClass.Other
+}
