@@ -1,0 +1,34 @@
+import dom.NodeId
+import image
+
+test "a canvas drawn again with the same pixels keeps the version paint shows" {
+    let a = @testAllocator()
+    var cache = ImageCache.init(a)
+
+    defer cache.deinit()
+
+    let px = try a.alloc(0 as u8, 4)
+    let bmp = try a.create(image.Bitmap { width: 1, height: 1, pixels: px })
+
+    try cache.canvases.append(CanvasBitmap { node: NodeId { index: 1, generation: 0 }, bmp: bmp, epoch: 0, tainted: false })
+    @expectEqual(0 as u64, bmp.shown())
+
+    bmp.pixels[0] = 9
+    bmp.version += 1
+
+    @expect(bmp.shown() != 0)
+
+    try settleCanvases(&mut cache)
+    let first = bmp.shown()
+
+    bmp.version += 2
+    try settleCanvases(&mut cache)
+
+    @expectEqual(first, bmp.shown())
+
+    bmp.pixels[1] = 7
+    bmp.version += 1
+    try settleCanvases(&mut cache)
+
+    @expect(bmp.shown() != first)
+}
