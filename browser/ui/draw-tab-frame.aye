@@ -1,0 +1,22 @@
+import paint
+import std
+import std.math
+
+fn drawTabFrame(ui: *mut Ui, area: paint.IRect) {
+    let tp = ui.slots[ui.active].?.process orelse return
+    let b = &tp.buffers
+
+    if b.shown < b.first { return }
+
+    let map = tp.maps[b.shown - b.first] orelse return
+    let fw = b.width as usize
+    let w = math.minOf(usize, fw, (area.x1 - area.x0) as usize)
+    let h = math.minOf(usize, b.height as usize, (area.y1 - area.y0) as usize)
+
+    for y in 0..h {
+        let from = y * fw * 4
+        let to = ((area.y0 as usize + y) * ui.canvas.width + area.x0 as usize) * 4
+
+        std.mem.copy(ui.canvas.pixels[to..to + w * 4], map[from..from + w * 4])
+    }
+}

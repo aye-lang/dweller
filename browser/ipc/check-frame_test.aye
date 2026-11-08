@@ -1,0 +1,59 @@
+import std.text
+
+fn given() Buffers {
+    var b = Buffers {}
+
+    b.give(100, 50)
+    b.give(200, 80)
+    b.shown = 4
+
+    return b
+}
+
+fn rect(out: *mut text.Builder, x0: u32, y0: u32, x1: u32, y1: u32) []u8 {
+    out.clear()
+    putU32(out, x0) catch unreachable
+    putU32(out, y0) catch unreachable
+    putU32(out, x1) catch unreachable
+    putU32(out, y1) catch unreachable
+
+    return out.bytes()
+}
+
+test "give hands out two new buffer ids per size" {
+    let b = given()
+
+    @expectEqual(3, b.first)
+    @expectEqual(5, b.next)
+    @expectEqual(200, b.width)
+}
+
+test "a good frame passes" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    let b = given()
+
+    @expectEqual("", checkFrame(&b, 3, 200, 80, rect(&mut out, 0, 0, 200, 80)))
+    @expectEqual("", checkFrame(&b, 3, 200, 80, ""))
+}
+
+test "a frame for a buffer of an older size passes, unchecked" {
+    let b = given()
+
+    @expectEqual("", checkFrame(&b, 1, 7, 7, "x"))
+}
+
+test "the browser's frame checks reject each bad case" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    let b = given()
+
+    @expectEqual("unknown buffer", checkFrame(&b, 0, 200, 80, ""))
+    @expectEqual("unknown buffer", checkFrame(&b, 5, 200, 80, ""))
+    @expectEqual("buffer in use", checkFrame(&b, 4, 200, 80, ""))
+    @expectEqual("wrong size", checkFrame(&b, 3, 100, 50, ""))
+    @expectEqual("bad damage", checkFrame(&b, 3, 200, 80, "short"))
+    @expectEqual("damage outside", checkFrame(&b, 3, 200, 80, rect(&mut out, 0, 0, 201, 80)))
+    @expectEqual("damage outside", checkFrame(&b, 3, 200, 80, rect(&mut out, 0, 10, 200, 81)))
+    @expectEqual("damage outside", checkFrame(&b, 3, 200, 80, rect(&mut out, 5, 0, 5, 80)))
+}

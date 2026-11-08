@@ -1,0 +1,17 @@
+extern fn mmap(addr: ?[*]u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) ?[*]u8
+
+pub fn mapShared(fd: i32, size: usize, writable: bool) ?[*]u8 {
+    if fd < 0 { return null }
+
+    var prot: i32 = 1
+
+    if writable {
+        prot = 3
+    }
+
+    var p = mmap(null, size, prot, 1, fd, 0)
+
+    if @ptrCast(*i64, &p).* == -1 { return null }
+
+    return p
+}

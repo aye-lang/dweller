@@ -1,0 +1,18 @@
+import ipc
+import std.mem.AllocError
+
+fn showTabFrame(slot: *TabSlot, tp: *mut TabProcess, frame_id: u32, buffer: u32, width: u32, height: u32, damage: []u8) AllocError![]u8 {
+    let b = &mut tp.buffers
+    let why = ipc.checkFrame(b, buffer, width, height, damage)
+
+    if frame_id != slot.id { return "unexpected frame" }
+    if why.len > 0 || buffer < b.first { return why }
+
+    if b.shown != 0 {
+        try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.FrameAck { buffer: b.shown })
+    }
+
+    b.shown = buffer
+
+    return ""
+}

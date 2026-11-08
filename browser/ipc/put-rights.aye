@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+let SCM_RIGHTS: u32 = 1
+
+pub fn putRights(out: *mut text.Builder, fds: []i32) AllocError!void {
+    try putU32(out, (rightsHead() + fds.len * 4) as u32)
+
+    if rightsHead() == 16 {
+        try putU32(out, 0)
+    }
+
+    try putU32(out, solSocket())
+    try putU32(out, SCM_RIGHTS)
+
+    for fd in fds {
+        try putU32(out, fd as u32)
+    }
+}
+
+fn rightsHead() usize {
+    if @targetOs() is .macos { return 12 }
+
+    return 16
+}
+
+fn solSocket() u32 {
+    if @targetOs() is .macos { return 0xffff }
+
+    return 1
+}

@@ -1,0 +1,45 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn giveBuffers(ui: *mut Ui, slot: *TabSlot, tp: *mut TabProcess) AllocError!void {
+    let w = ui.page.canvas.width as u32
+    let h = ui.page.canvas.height as u32
+    let size = w as usize * h as usize * 4
+
+    if !tp.hello || tp.gone.len > 0 || tp.outbox.len() > 0 || size == 0 { return }
+    if w == tp.buffers.width && h == tp.buffers.height { return }
+
+    var fds = [2]i32{-1, -1}
+    var maps = [2]?[*]u8{null, null}
+
+    for k in 0..2 {
+        fds[k] = try ipc.makeShared(ui.alloc, size)
+        maps[k] = ipc.mapShared(fds[k], size, false)
+    }
+
+    var out = text.Builder.init(ui.alloc)
+    defer out.deinit()
+    var sent: isize = -1
+
+    try ipc.encode(&mut out, slot.id, ipc.Message.Resize { width: w, height: h, scale: ui.scale, buffer: tp.buffers.next })
+
+    if maps[0] != null && maps[1] != null {
+        sent = try ipc.sendFds(ui.alloc, tp.fd, out.bytes(), fds[..])
+    }
+
+    closeFd(fds[0])
+    closeFd(fds[1])
+
+    if sent <= 0 {
+        ipc.unmapShared(maps[0], size)
+        ipc.unmapShared(maps[1], size)
+
+        return
+    }
+
+    unmapBuffers(tp)
+    tp.maps = maps
+    tp.buffers.give(w, h)
+    try tp.outbox.append(out.bytes()[sent as usize..])
+}

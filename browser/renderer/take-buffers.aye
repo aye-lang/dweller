@@ -1,0 +1,25 @@
+import ipc
+
+fn takeBuffers(r: *mut TabRenderer, width: u32, height: u32, scale: f64, first: u32) bool {
+    if r.fds.len() < 2 { return false }
+
+    dropBuffers(r)
+
+    let size = width as usize * height as usize * 4
+
+    for k in 0..2 {
+        let fd = r.fds.orderedRemove(0)
+
+        r.maps[k] = ipc.mapShared(fd, size, true)
+        r.free[k] = true
+        close(fd)
+    }
+
+    r.first = first
+    r.width = width
+    r.height = height
+    r.scale = scale
+    r.due = true
+
+    return r.maps[0] != null && r.maps[1] != null
+}
