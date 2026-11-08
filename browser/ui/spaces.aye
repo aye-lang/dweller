@@ -416,25 +416,8 @@ fn spaceSlot(ui: *mut Ui) ?usize {
 // id, or 0. posix_spawn, not fork: the window's memory is not copied, so
 // starting a Space takes the window's loop about a millisecond.
 fn spawnProgram(tmp: Allocator, argv: [][]u8) AllocError!i32 {
-    var strs = text.Builder.init(tmp)
-    for arg in argv {
-        try strs.append(arg)
-        try strs.appendByte(0)
-    }
-    let none: ?[*]u8 = null
-    let ptrs = try tmp.alloc(none, argv.len + 1)
-    let all = strs.bytes()
-    var off: usize = 0
-    for k, arg in argv {
-        ptrs[k] = all[off..].ptr
-        off += arg.len + 1
-    }
-    var env: [*]?[*]u8 = ptrs.ptr
-    if @targetOs() is .macos {
-        env = _NSGetEnviron().*
-    } else {
-        env = (try linuxEnv(tmp)).ptr
-    }
+    let ptrs = try cArgs(tmp, argv)
+    let env = try processEnv(tmp)
     var pid: i32 = 0
     if posix_spawnp(&mut pid, ptrs[0].?, null, null, ptrs.ptr, env) != 0 {
         return 0

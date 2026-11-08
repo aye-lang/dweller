@@ -58,6 +58,7 @@ struct Load {
     credentials: Credentials = Credentials.Include
     initiator: []mut u8 = []mut u8{}
     key: []mut u8 = []mut u8{}
+    referrer_policy: ?ReferrerPolicy = null
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -159,6 +160,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         kind: kind,
         referrer: from,
         users: 1,
+        referrer_policy: req.referrer_policy,
         state: LoadState.Done,
         hops: 0,
         job: null,
@@ -375,6 +377,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         kind: req.kind,
         referrer: []mut u8{},
         users: 1,
+        referrer_policy: req.referrer_policy,
         state: LoadState.Running,
         hops: 0,
         job: null,
@@ -421,7 +424,7 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
+    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -456,7 +459,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
     }
     defer target.deinit(ld.alloc)
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
+    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
     if a.has_body {
         req.body = &body
     }
@@ -520,7 +523,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                     return failRequest(ld, l, FetchError.OutOfMemory)
                 }
             }
-            let cors = Request { kind: l.kind, referrer: l.referrer, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)
             }
@@ -537,7 +540,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     keepRequest(ld.alloc, l, job, status) catch |e| {
         return failRequest(ld, l, e)
     }
-    let checked = Request { kind: l.kind, referrer: l.referrer, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+    let checked = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
 
     var at: []u8 = l.href
 

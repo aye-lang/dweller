@@ -1,0 +1,11 @@
+import dom.Document
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://w3c.github.io/webappsec-referrer-policy/#integration-with-html
+fn notePageReferrerPolicy(alloc: Allocator, doc: *Document, res: *net.Response, page: []u8) AllocError!void {
+    let policy = metaReferrerPolicy(doc) orelse net.parseReferrerPolicy(net.requestHeaderValue(res.headers_raw, "Referrer-Policy")) orelse return
+
+    try net.noteReferrerPolicy(alloc, page, policy)
+}

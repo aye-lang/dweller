@@ -1,0 +1,21 @@
+fn snapshotSlot(it: *mut Interp, snap: *mut Obj, k: u32, key: u32) ?u32 {
+    let p = it.heap.obj(it.regexp_proto)
+    let i = snapU32(snap.elems[k + 1])
+
+    if i < p.nprops && p.props[i].key == key {
+        return i
+    }
+
+    let j = it.heap.findProp(it.regexp_proto, key) orelse return null
+
+    snap.elems[k + 1] = numVal(j as f64)
+
+    return j
+}
+
+fn snapU32(v: Value) u32 {
+    return match v {
+        .Num { n } => n as u32
+        _ => NONE
+    }
+}

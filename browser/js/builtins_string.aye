@@ -395,6 +395,10 @@ fn stringTrimEnd(it: *mut Interp, a: Args) JsError!Value {
 }
 
 fn stringSplit(it: *mut Interp, a: Args) JsError!Value {
+    if try regexpDispatch(it, a, it.sym_split, 2, null) |r| {
+        return r
+    }
+
     let s = try thisStr(it, a)
     let sepv = it.arg(a, 0)
     if it.hasClass(sepv, Class.RegExp) {
@@ -570,10 +574,18 @@ fn replaceCommon(it: *mut Interp, a: Args, all: bool) JsError!Value {
 }
 
 fn stringReplace(it: *mut Interp, a: Args) JsError!Value {
+    if try regexpDispatch(it, a, it.sym_replace, 2, null) |r| {
+        return r
+    }
+
     return replaceCommon(it, a, false)
 }
 
 fn stringReplaceAll(it: *mut Interp, a: Args) JsError!Value {
+    if try regexpDispatch(it, a, it.sym_replace, 2, "String.prototype.replaceAll") |r| {
+        return r
+    }
+
     return replaceCommon(it, a, true)
 }
 
@@ -686,16 +698,25 @@ fn stringLocaleCompare(it: *mut Interp, a: Args) JsError!Value {
 }
 
 fn stringMatch(it: *mut Interp, a: Args) JsError!Value {
-    let s = try thisStr(it, a)
-    return regexpMatch(it, s, it.arg(a, 0), false)
+    if try regexpDispatch(it, a, it.sym_match, 1, null) |r| {
+        return r
+    }
+
+    return regexpMatch(it, try thisStr(it, a), it.arg(a, 0), false)
 }
 
 fn stringMatchAll(it: *mut Interp, a: Args) JsError!Value {
-    let s = try thisStr(it, a)
-    return regexpMatch(it, s, it.arg(a, 0), true)
+    if try regexpDispatch(it, a, it.sym_match_all, 1, "String.prototype.matchAll") |r| {
+        return r
+    }
+
+    return regexpMatch(it, try thisStr(it, a), it.arg(a, 0), true)
 }
 
 fn stringSearch(it: *mut Interp, a: Args) JsError!Value {
-    let s = try thisStr(it, a)
-    return regexpSearch(it, s, it.arg(a, 0))
+    if try regexpDispatch(it, a, it.sym_search, 1, null) |r| {
+        return r
+    }
+
+    return regexpSearch(it, try thisStr(it, a), it.arg(a, 0))
 }

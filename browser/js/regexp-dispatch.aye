@@ -1,0 +1,39 @@
+// spec: https://tc39.es/ecma262/#sec-string.prototype.replace
+fn regexpDispatch(it: *mut Interp, a: Args, sym: u32, argc: usize, all: ?[]u8) JsError!?Value {
+    if isNullish(a.this) {
+        try it.typeError("String.prototype method called on null or undefined")
+    }
+
+    let rv = it.arg(a, 0)
+    let o = objectOf(rv)
+
+    if o == NONE {
+        return null
+    }
+
+    let plain = plainRegExp(it, o, sym == it.sym_split || sym == it.sym_match_all)
+
+    if all |name| {
+        try requireGlobalFlag(it, rv, plain, name)
+    }
+
+    if plain {
+        return null
+    }
+
+    let m = try it.getProp(rv, sym)
+
+    if isNullish(m) {
+        return null
+    }
+
+    if !it.isCallable(m) {
+        try it.typeError("Symbol method is not a function")
+    }
+
+    if argc == 1 {
+        return try it.call1(m, rv, a.this)
+    }
+
+    return try it.call2(m, rv, a.this, it.arg(a, 1))
+}
