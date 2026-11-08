@@ -69,6 +69,30 @@ test "the cursor, target URL, long task, take focus and redirect messages round-
         _ => @expect(false)
     }
 
+    let asked = try roundTrip(&mut out, 7, Message.Agent { id: 3, mcp: 1, line: "{}" })
+
+    match asked.message {
+        .Agent { id, mcp, line } => {
+            @expectEqual(3, id)
+            @expectEqual(1, mcp)
+            @expectEqual("{}", line)
+        }
+
+        _ => @expect(false)
+    }
+
+    let answered = try roundTrip(&mut out, 7, Message.AgentReply { id: 3, answer: "ok" })
+
+    match answered.message {
+        .AgentReply { id, answer } => {
+            @expectEqual(3, id)
+            @expectEqual("ok", answer)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(!fromRenderer(Message.Agent { id: 0, mcp: 0, line: "" }) && fromRenderer(Message.AgentReply { id: 0, answer: "" }))
     @expect(fromRenderer(Message.Cursor { shape: 0 }) && fromRenderer(Message.TargetUrl { url: "" }) && fromRenderer(Message.LongTask { on: 1, ms: 0 }))
     @expect(fromRenderer(Message.TakeFocus { reverse: 0 }) && fromRenderer(Message.Redirect { url: "" }))
 }

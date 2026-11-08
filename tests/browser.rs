@@ -2701,6 +2701,47 @@ fn agent_fixtures() {
 /// must be `X.out` (`X.mcp.out`).
 #[test]
 fn agent_sessions() {
+    agent_sessions_with(&[]);
+}
+
+/// Q2.3b: with `DWELLER_PROCESS=tab` the agent's commands are answered by
+/// a renderer process, with the same expected output.
+#[test]
+fn agent_sessions_in_renderer() {
+    agent_sessions_with(&[("DWELLER_PROCESS", "tab")]);
+}
+
+/// Q2.3b: a renderer that answers a request id it was not sent is killed.
+#[test]
+fn agent_sessions_bad_reply() {
+    use std::io::Write;
+    let mut child = dweller_command()
+        .current_dir(root())
+        .arg("agent")
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TEST_EVIL", "agent")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"id\":1,\"cmd\":\"snapshot\"}\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(!out.status.success(), "the relay goes on after a bad answer");
+    assert!(out.stdout.is_empty(), "a bad answer reached the agent: {}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("bad message: bad agent_reply "),
+        "no bad agent_reply: {}",
+        text(&out.stderr)
+    );
+}
+
+fn agent_sessions_with(env: &[(&str, &str)]) {
     use std::io::Write;
     let dir = root()
         .join("browser")
@@ -2729,6 +2770,7 @@ fn agent_sessions() {
         let mut child = dweller_command()
             .current_dir(root())
             .arg(mode)
+            .envs(env.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

@@ -1,0 +1,54 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn askRenderer(tp: *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut text.Builder) AllocError![]u8 {
+    var flag: u32 = 0
+
+    if mcp { flag = 1 }
+
+    tp.outbox.clear()
+    try ipc.encode(&mut tp.outbox, 0, ipc.Message.Agent { id: id, mcp: flag, line: line })
+
+    if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
+
+    var buf = @zeroed([65536]u8)
+
+    while true {
+        let got = ipc.nextMessage(tp.inbox.bytes()) catch |e| {
+            return @tagName(e)
+        }
+
+        if got |g| {
+            if !ipc.fromRenderer(g.message) { return "not from a renderer" }
+
+            if g.message is .AgentReply {
+                match g.message {
+                    .AgentReply { id: answered, answer: said } => {
+                        if answered != id || g.frame != 0 { return "bad agent_reply" }
+
+                        try out.append(said)
+                    }
+
+                    _ => {}
+                }
+
+                ipc.consume(&mut tp.inbox, g.used)
+
+                return ""
+            }
+
+            ipc.consume(&mut tp.inbox, g.used)
+
+            continue
+        }
+
+        let n = read(tp.fd, buf[..].ptr, buf.len)
+
+        if n <= 0 { return "renderer gone" }
+
+        try tp.inbox.append(buf[0..n as usize])
+    }
+
+    unreachable
+}

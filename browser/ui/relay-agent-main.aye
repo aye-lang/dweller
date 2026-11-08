@@ -1,0 +1,70 @@
+import engine
+import ipc
+import std
+import std.mem.Allocator
+import std.text
+
+pub fn relayAgentMain(alloc: Allocator, args: [][]u8, mcp: bool) i32 {
+    if args.len > 1 || (args.len == 1 && !text.eql(args[0], "--no-js")) {
+        std.log.err("usage with DWELLER_PROCESS=tab: dweller agent|mcp [--no-js]")
+
+        return 2
+    }
+
+    engine.setScripting(args.len == 0)
+
+    let started = startTabProcess(alloc, true) catch return 1
+    let tp = started orelse return 1
+
+    defer endTabProcess(alloc, tp)
+
+    var pending = text.Builder.init(alloc)
+    defer pending.deinit()
+    var reply = text.Builder.init(alloc)
+    defer reply.deinit()
+    var buf = @zeroed([4096]u8)
+    var id: u32 = 0
+    var eof = false
+
+    while !eof || pending.len() > 0 {
+        let bytes = pending.bytes()
+        let nl = std.mem.indexOf(bytes, '\n')
+
+        if nl == null && !eof {
+            let n = read(0, buf[..].ptr, buf.len)
+
+            if n <= 0 { eof = true } else { pending.append(buf[0..n as usize]) catch return 1 }
+
+            continue
+        }
+
+        let end = nl orelse bytes.len
+        var used = bytes.len
+        let line = text.trim(bytes[..end])
+
+        if nl |k| { used = k + 1 }
+
+        if line.len > 0 {
+            id += 1
+            reply.clear()
+
+            let why = askRenderer(tp, id, mcp, line, &mut reply) catch return 1
+
+            if why.len > 0 {
+                std.log.err("bad message: {} {}", why, tp.pid)
+                dropTabProcess(tp, why)
+
+                return 1
+            }
+
+            if reply.len() > 0 {
+                reply.appendByte('\n') catch return 1
+                std.fs.stdout().write(reply.bytes()) catch return 1
+            }
+        }
+
+        ipc.consume(&mut pending, used)
+    }
+
+    return 0
+}

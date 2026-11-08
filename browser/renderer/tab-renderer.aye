@@ -1,3 +1,4 @@
+import agent
 import dom.NodeId
 import engine
 import font
@@ -56,6 +57,7 @@ struct TabRenderer {
     blink_at: u64 = 0
     cursor: u32 = 0
     busy: bool = false
+    session: ?*mut agent.Session = null
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -78,6 +80,11 @@ struct TabRenderer {
 
     pub fn deinit(self: *mut Self) {
         if self.page |p| { p.destroy() }
+
+        if self.session |s| {
+            agent.freeSession(s)
+            self.alloc.destroy(s)
+        }
 
         dropBuffers(self)
 
