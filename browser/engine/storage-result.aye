@@ -1,0 +1,30 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+
+fn storageResult(it: *mut Interp, s: *mut Script, ask: StorageAsk, done: StorageDone, out: []u8) JsError!Value {
+    if ask.op == 0 || ask.op == 4 {
+        if done.found { return it.newString(out) }
+
+        return Value.Null
+    }
+
+    if ask.op == 5 { return js.numVal(done.count as f64) }
+
+    if done.refused { return js.boolVal(false) }
+
+    if !done.changed { return Value.Undefined }
+
+    if ask.op == 3 {
+        try storageChanged(s, ask.context, ask.session, null, null, null)
+    } else if ask.op == 2 {
+        try storageChanged(s, ask.context, ask.session, ask.key, out, null)
+    } else if done.found {
+        try storageChanged(s, ask.context, ask.session, ask.key, out, ask.value)
+    } else {
+        try storageChanged(s, ask.context, ask.session, ask.key, null, ask.value)
+    }
+
+    return Value.Undefined
+}

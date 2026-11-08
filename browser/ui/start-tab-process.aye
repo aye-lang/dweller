@@ -5,7 +5,7 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
-fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
+fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut TabProcess {
     var arena = Arena.init(alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -44,13 +44,15 @@ fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
         return null
     }
 
-    return try alloc.create(TabProcess {
+    let tp = try alloc.create(TabProcess {
         pid: pid,
         fd: sv[0],
         inbox: text.Builder.init(alloc),
         outbox: text.Builder.init(alloc),
         url: text.Builder.init(alloc),
         committed: text.Builder.init(alloc),
+        top: text.Builder.init(alloc),
+        nav_initiator: text.Builder.init(alloc),
         docs: text.Builder.init(alloc),
         popup: text.Builder.init(alloc),
         popup_off: text.Builder.init(alloc),
@@ -59,5 +61,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool) AllocError!?*mut TabProcess {
         answer: text.Builder.init(alloc),
         damage: text.Builder.init(alloc),
         last_damage: text.Builder.init(alloc),
+        next: tab_processes,
+        tab: tab,
     })
+
+    tab_processes = tp
+
+    return tp
 }

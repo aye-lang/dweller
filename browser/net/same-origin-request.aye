@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import url
+import url.Url
+
+// spec: https://fetch.spec.whatwg.org/#concept-http-network-or-cache-fetch (includeCredentials)
+fn sameOriginRequest(alloc: Allocator, req: Request, initiator: []u8, at: *Url) AllocError!bool {
+    let from = url.parse(alloc, requestOrigin(req, initiator)) catch |e| {
+        if e == url.UrlError.OutOfMemory {
+            return AllocError.OutOfMemory
+        }
+
+        return true
+    }
+
+    defer from.deinit(alloc)
+
+    return sameOrigin(&from, at)
+}

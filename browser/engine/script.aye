@@ -722,7 +722,7 @@ fn setUp(s: *mut Script) JsError!void {
     // On the window's clock import() loads in the background
     // (window_api.aye `moduleLoad`); `dump` keeps its synchronous loads.
     if s.real {
-        let f = try s.it.newNative("moduleLoad", 3, moduleLoad)
+        let f = try s.it.newNative("moduleLoad", 4, moduleLoad)
         try js.setBackgroundLoads(&mut s.it, js.objVal(f))
     }
 }
@@ -987,15 +987,6 @@ fn isClassicScript(p: *mut Page, el: NodeId) bool {
     return true
 }
 
-// Fetches the external scripts of `els` concurrently into the session's
-// cache (net.prefetch), before they run one by one.
-fn prefetchScripts(p: *mut Page, els: []NodeId) AllocError!void {
-    var hrefs = text.Builder.init(p.alloc)
-    defer hrefs.deinit()
-    try scriptHrefsOf(p, els, &mut hrefs)
-    net.prefetch(p.alloc, hrefs.bytes(), net.Kind.Script, p.url.href)
-}
-
 // Appends to `out` the URLs (without the fragment, one per line) of the
 // external scripts of `els`.
 fn scriptHrefsOf(p: *mut Page, els: []NodeId, out: *mut text.Builder) AllocError!void {
@@ -1051,31 +1042,13 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
         return
     }
     if isModuleScript(p, el) {
-        _ = try runModuleElement(s, el)
-
-        return
+        return fireScriptEvent(s, el, try runModuleElement(s, el))
     }
     if isScriptType(p, el, "importmap") {
         return addImportMap(s, el)
     }
     if p.doc.attr(el, "src") |src| {
-        let target = p.resolve(s.alloc, src) catch |e| {
-            return addConsole(s, "[error] Failed to load script: ", src)
-        }
-        defer target.deinit(s.alloc)
-        let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })) catch |e| {
-            match e {
-                .OutOfMemory => {
-                    return AllocError.OutOfMemory
-                }
-                _ => {}
-            }
-            return addConsole(s, "[error] Failed to load script: ", target.href)
-        }
-        defer res.deinit(s.alloc)
-        let code = try encoding.toUtf8(s.alloc, res.body, encoding.sniffOr(res.body, res.charset, p.encoding))
-        defer s.alloc.free(code)
-        return runSourceOf(s, el, code)
+        return fireScriptEvent(s, el, try runClassicElement(s, el, src))
     }
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
@@ -1109,6 +1082,9 @@ fn runCode(s: *mut Script, el: NodeId, code: []u8, parser: bool) AllocError!void
     var base = try s.page.currentBase(s.alloc)
     defer base.deinit(s.alloc)
     s.it.script_url = s.it.intern(base.href) catch return AllocError.OutOfMemory
+    let outer_include = s.it.script_include
+    s.it.script_include = text.eqlIgnoreCase(s.page.doc.attr(el, "crossorigin") orelse "", "use-credentials")
+    defer s.it.script_include = outer_include
     let began = perf.start()
     let source = s.page.doc.attr(el, "src") orelse "inline"
     defer perf.end("script", began, source)

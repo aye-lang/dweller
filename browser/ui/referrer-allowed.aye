@@ -1,0 +1,18 @@
+import net
+import std.mem.Allocator
+import std.text
+import url
+
+fn referrerAllowed(alloc: Allocator, doc: []u8, referrer: []u8) bool {
+    if referrer.len == 0 { return true }
+
+    let from = url.parse(alloc, referrer) catch return false
+    defer from.deinit(alloc)
+
+    if !text.eql(from.scheme, "http") && !text.eql(from.scheme, "https") { return true }
+
+    let at = url.parse(alloc, doc) catch return false
+    defer at.deinit(alloc)
+
+    return net.sameOrigin(&from, &at)
+}

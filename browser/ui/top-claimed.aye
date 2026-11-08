@@ -1,0 +1,14 @@
+import net
+import std.mem.Allocator
+import url
+
+fn topClaimed(alloc: Allocator, top: []u8, claimed: []u8) bool {
+    if claimed.len == 0 || commitMatches(alloc, top, claimed) { return true }
+
+    let have = url.parse(alloc, top) catch return false
+    defer have.deinit(alloc)
+    let said = url.parse(alloc, claimed) catch return false
+    defer said.deinit(alloc)
+
+    return net.sameSite(&have, &said)
+}

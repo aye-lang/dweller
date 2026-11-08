@@ -142,3 +142,53 @@ test "fetch messages round-trip and go the right way" {
     @expect(!fromRenderer(Message.FetchHead { id: 0, doc: 0, status: 0, tainted: 0, mime: "", charset: "", url: "", headers: "" }) && !fromRenderer(Message.FetchBody { id: 0, chunk: "" }))
     @expect(!fromRenderer(Message.FetchEnd { id: 0 }) && !fromRenderer(Message.FetchFail { id: 0, code: 0 }))
 }
+
+test "cookie and storage messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let set = try roundTrip(&mut out, 7, Message.CookieSet { doc: 2, line: "a=1; Path=/" })
+
+    match set.message {
+        .CookieSet { doc, line } => {
+            @expectEqual(2, doc)
+            @expectEqual("a=1; Path=/", line)
+        }
+
+        _ => @expect(false)
+    }
+
+    let asked = try roundTrip(&mut out, 7, Message.Storage { doc: 1, context: 3, session: 1, op: 4, index: 9, key: "k", value: "v" })
+
+    match asked.message {
+        .Storage { doc, context, session, op, index, key, value } => {
+            @expectEqual(1, doc)
+            @expectEqual(3, context)
+            @expectEqual(1, session)
+            @expectEqual(4, op)
+            @expectEqual(9, index)
+            @expectEqual("k", key)
+            @expectEqual("v", value)
+        }
+
+        _ => @expect(false)
+    }
+
+    let told = try roundTrip(&mut out, 7, Message.StorageEvent { nulls: 2, key: "k", old: "", value: "v", url: "http://a/" })
+
+    match told.message {
+        .StorageEvent { nulls, key, value, url, .. } => {
+            @expectEqual(2, nulls)
+            @expectEqual("k", key)
+            @expectEqual("v", value)
+            @expectEqual("http://a/", url)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.CookieGet { doc: 0 }) && fromRenderer(Message.CookieSet { doc: 0, line: "" }))
+    @expect(fromRenderer(Message.Storage { doc: 0, context: 0, session: 0, op: 0, index: 0, key: "", value: "" }))
+    @expect(!fromRenderer(Message.Cookies { cookies: "" }) && !fromRenderer(Message.StorageReply { found: 0, refused: 0, changed: 0, count: 0, value: "" }))
+    @expect(!fromRenderer(Message.StorageEvent { nulls: 0, key: "", old: "", value: "", url: "" }))
+}

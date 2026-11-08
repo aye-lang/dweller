@@ -1,0 +1,28 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+// chromium: services/network/restricted_cookie_manager.cc
+fn answerCookie(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    var out = text.Builder.init(tp.url.alloc)
+    defer out.deinit()
+
+    match m {
+        .CookieGet { doc } => {
+            if doc > docCount(tp) { return "bad cookie" }
+
+            try docCookies(tp, doc, null, &mut out)
+            try ipc.encode(&mut tp.outbox, on, ipc.Message.Cookies { cookies: out.bytes() })
+        }
+
+        .CookieSet { doc, line } => {
+            if doc > docCount(tp) { return "bad cookie" }
+
+            try docCookies(tp, doc, line, &mut out)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

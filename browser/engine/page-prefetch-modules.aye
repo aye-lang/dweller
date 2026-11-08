@@ -1,26 +1,25 @@
 import js.Interp
 import net
+import std.list.List
 import std.text
-import url
 
-fn pagePrefetchModules(it: *mut Interp, hrefs: []u8, referrer: []u8) {
-    let page = &originPage(scriptOf(it).page).url
-    var same = text.Builder.init(it.alloc)
-    defer same.deinit()
+fn pagePrefetchModules(it: *mut Interp, hrefs: []u8, referrer: []u8, include: bool) {
+    let req = moduleRequest(scriptOf(it).page, referrer, include)
+    var ids = List(u32).init(it.alloc)
+    defer ids.deinit()
 
     var lines = text.split(hrefs, "\n")
 
     while lines.next() |href| {
-        if url.parse(it.alloc, href) |target| {
-            defer target.deinit(it.alloc)
+        let id = net.startLoadAs(href, req)
 
-            if sameOriginUrl(page, &target) {
-                same.append(href) catch return
-                same.appendByte('\n') catch return
+        if id != 0 {
+            ids.append(id) catch {
+                net.releaseLoad(id)
+                break
             }
-        } else |e| {
         }
     }
 
-    net.prefetch(it.alloc, same.bytes(), net.Kind.Script, referrer)
+    net.awaitLoads(ids.items(), referrer)
 }

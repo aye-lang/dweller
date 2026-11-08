@@ -1,0 +1,12 @@
+import dom.NodeId
+import net
+
+fn scriptRequest(p: *mut Page, el: NodeId) net.Request {
+    var crossorigin = p.doc.attr(el, "crossorigin")
+
+    if crossorigin == null && (isModuleScript(p, el) || !p.doc.isElement(el, "script")) {
+        crossorigin = ""
+    }
+
+    return corsRequest(crossorigin, net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p) })
+}
