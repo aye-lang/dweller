@@ -1,0 +1,29 @@
+import net
+import std.mem.AllocError
+
+fn certClick(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    let p = certPage(ui) orelse return false
+    let bar = try certBarOf(ui, p)
+
+    if !inRect(bar.box, x, y) {
+        return false
+    }
+
+    if !inRect(bar.button, x, y) {
+        return true
+    }
+
+    ui.dirty = true
+
+    if !ui.cert_advanced {
+        ui.cert_advanced = true
+
+        return true
+    }
+
+    if try net.allowCert(p.url.host, p.cert.?) {
+        try ui.reload()
+    }
+
+    return true
+}

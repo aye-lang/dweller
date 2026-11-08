@@ -1,0 +1,24 @@
+fn relaxTls(curl: *mut Curl, code: i32, sink: *mut Sink) bool {
+    let s = session orelse return false
+
+    if sink.cert_host.len == 0 || sink.cert_relaxed >= 2 || (code != 51 && code != 60) {
+        return false
+    }
+
+    let kind = certKindOf(tlsError(curl, code, sink)) orelse return false
+
+    if !certAllowed(&s.certs, sink.cert_host, kind) {
+        return false
+    }
+
+    if kind == CertKind.WrongHost {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0 as i64)
+    } else {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0 as i64)
+    }
+
+    sink.cert_relaxed += 1
+    sink.error_text[0] = 0
+
+    return true
+}

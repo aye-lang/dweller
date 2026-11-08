@@ -1,0 +1,20 @@
+test "a certificate exception is for its host and its kind of error only" {
+    let a = @testAllocator()
+    var certs = CertExceptions.init(a)
+    defer certs.deinit()
+
+    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted)
+    try addCert(&mut certs, "127.0.0.1", CertKind.Untrusted)
+
+    @expect(certs.list.len() == 1)
+    @expect(certAllowed(&certs, "127.0.0.1", CertKind.Untrusted))
+    @expect(!certAllowed(&certs, "127.0.0.1", CertKind.Expired))
+    @expect(!certAllowed(&certs, "127.0.0.2", CertKind.Untrusted))
+}
+
+test "no bypass on HSTS hosts" {
+    @expect(!certBypassable("github.com"))
+    @expect(!certBypassable("gist.github.com"))
+    @expect(certBypassable("127.0.0.1"))
+    @expect(!(try allowCert("github.com", CertKind.Untrusted)))
+}

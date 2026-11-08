@@ -1,0 +1,13 @@
+fn retryRelaxed(ld: *mut Loader, easy: ?*mut Curl, result: i32) bool {
+    for l in ld.loads.items() {
+        if l.job |j| {
+            if easy == j.curl && relaxTls(j.curl, result, &mut j.sink) {
+                curl_multi_remove_handle(ld.multi, j.curl)
+
+                return curl_multi_add_handle(ld.multi, j.curl) == 0
+            }
+        }
+    }
+
+    return false
+}

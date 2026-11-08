@@ -1,0 +1,28 @@
+import engine
+import paint
+import std.mem.AllocError
+import std.text
+
+let CERT_H: f64 = 32.0
+let CERT_BUTTON_H: f64 = 24.0
+
+pub struct CertBar {
+    box: paint.Rect
+    button: paint.Rect
+}
+
+fn certBarOf(ui: *mut Ui, p: *engine.Page) AllocError!CertBar {
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+
+    try certLabel(ui, p, &mut b)
+
+    let bw = ui.measure.width(uiFont(13.0), b.bytes()) + 24.0
+    let y = ui.top()
+    let w = ui.win_w as f64
+
+    return CertBar {
+        box: paint.Rect { x: 0.0, y: y, w: w, h: CERT_H },
+        button: paint.Rect { x: w - PAD - bw, y: y + (CERT_H - CERT_BUTTON_H) / 2.0, w: bw, h: CERT_BUTTON_H },
+    }
+}

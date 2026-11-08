@@ -91,6 +91,8 @@ struct Sink {
     // How the jar's cookies go with the request (set by `prepare`).
     context: Context
     error_text: [256]u8
+    cert_host: []u8 = ""
+    cert_relaxed: u8 = 0
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -273,7 +275,10 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
             crossed = true
         }
         let sync_began = perf.start()
-        let code = performShared(curl)
+        var code = performShared(curl)
+        while code != 0 && relaxTls(curl, code, &mut sink) {
+            code = performShared(curl)
+        }
         perf.end("net_sync", sync_began, "request")
         if sink.out_of_memory {
             return FetchError.OutOfMemory
@@ -373,6 +378,8 @@ fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Req
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1 as i64)
     applyResolve(alloc, curl)
+    sink.cert_host = try bypassHost(alloc, req, at, s)
+    sink.cert_relaxed = 0
     setTls(curl, sink)
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, sink.limit as i64)
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, onBody)
