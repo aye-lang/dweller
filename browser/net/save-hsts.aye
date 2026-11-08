@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.text
+
+fn saveHsts(s: *mut Session) AllocError!void {
+    if s.profile.len == 0 || s.lock < 0 {
+        return
+    }
+
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+    try hstsText(&s.hsts, now(), &mut b)
+    let path = try joinPath(s.alloc, s.profile, "hsts")
+    defer s.alloc.free(path)
+    _ = try writeAtomic(s.alloc, path, b.bytes())
+}

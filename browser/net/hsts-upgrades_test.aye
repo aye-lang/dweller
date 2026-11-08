@@ -1,0 +1,21 @@
+test "HSTS hosts: exact, includeSubDomains, expiry, the preload list" {
+    let a = @testAllocator()
+    var h = Hsts.init(a)
+    defer h.deinit()
+    @expect(try hstsStore(&mut h, "sub.example", HstsPolicy { max_age: 100, subdomains: true }, 0))
+    @expect(try hstsStore(&mut h, "exact.example", HstsPolicy { max_age: 100, subdomains: false }, 0))
+
+    @expect(hstsUpgrades(&h, "sub.example", 50))
+    @expect(hstsUpgrades(&h, "a.b.sub.example", 50))
+    @expect(!hstsUpgrades(&h, "notsub.example", 50))
+    @expect(hstsUpgrades(&h, "exact.example", 50))
+    @expect(!hstsUpgrades(&h, "www.exact.example", 50))
+    @expect(!hstsUpgrades(&h, "sub.example", 100))
+
+    @expect(hstsUpgrades(&h, "github.com", 0))
+    @expect(hstsUpgrades(&h, "gist.github.com", 0))
+    @expect(hstsUpgrades(&h, "web.dev", 0))
+    @expect(hstsUpgrades(&h, "facebook.com", 0))
+    @expect(!hstsUpgrades(&h, "www.facebook.example", 0))
+    @expect(!hstsUpgrades(&h, "example.com", 0))
+}

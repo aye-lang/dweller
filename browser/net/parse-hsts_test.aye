@@ -1,0 +1,18 @@
+test "Strict-Transport-Security: max-age and includeSubDomains" {
+    let p = parseHsts("max-age=31536000; includeSubDomains").?
+    @expectEqual(31536000 as i64, p.max_age)
+    @expect(p.subdomains)
+
+    let q = parseHsts("  MAX-AGE=\"600\" ;preload; ").?
+    @expectEqual(600 as i64, q.max_age)
+    @expect(!q.subdomains)
+
+    @expectEqual(31536000 as i64, parseHsts("max-age=999999999999999").?.max_age)
+    @expectEqual(0 as i64, parseHsts("max-age=0").?.max_age)
+    @expect(parseHsts("includeSubDomains") == null)
+    @expect(parseHsts("max-age=1; max-age=2") == null)
+    @expect(parseHsts("max-age=-1") == null)
+    @expect(parseHsts("max-age=") == null)
+    @expect(parseHsts("max-age=10; includeSubDomains=yes") == null)
+    @expect(parseHsts("max-age=10; includeSubDomains; includeSubDomains") == null)
+}

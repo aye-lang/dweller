@@ -1,0 +1,18 @@
+import dom.Document
+import dom.NodeId
+import net
+import std.text
+
+fn metaUpgrades(doc: *Document) bool {
+    var cur: ?NodeId = doc.root
+
+    while cur |h| {
+        if doc.isElement(h, "meta") && text.eqlIgnoreCase(doc.attr(h, "http-equiv") orelse "", "content-security-policy") && net.upgradeDirective(doc.attr(h, "content") orelse "") {
+            return true
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+
+    return false
+}

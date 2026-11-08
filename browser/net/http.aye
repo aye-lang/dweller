@@ -286,6 +286,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
         }
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &mut status)
         try storeCookies(s, &at, &sink)
+        try noteHsts(s, &at, sink.headers_raw.bytes())
         if s != null && try afterAuth(&at, req.kind, req.headers, status, sink.challenged, sink.realm.bytes(), retried) {
             retried = true
             here.clear()
@@ -315,7 +316,11 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
             try method.appendByte(0)
         }
         here.clear()
-        try here.append(withoutHash(moved))
+
+        if !(try secureHref(alloc, req, withoutHash(moved), &mut here)) {
+            return blocked(req, withoutHash(moved))
+        }
+
         if try corsRedirect(alloc, cors, at.href, here.bytes(), sink.headers_raw.bytes()) {
             cors.initiator = Initiator.Page { url: "" }
             tainted = true

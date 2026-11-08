@@ -53,6 +53,8 @@ struct Session {
     // `noteFrame`: the documents shown in frames and their top-level
     // pages.
     frames: List(FrameTop)
+    hsts: Hsts
+    upgrading: List([]mut u8)
 }
 
 // A frame's page (its id), the URL of its document and of its
@@ -90,6 +92,8 @@ pub fn start(alloc: Allocator) AllocError!void {
         nav_target: []mut u8{},
         nav_referrer: []mut u8{},
         frames: List(FrameTop).init(alloc),
+        hsts: Hsts.init(alloc),
+        upgrading: List([]mut u8).init(alloc),
     }) catch |e| {
         release(alloc, file)
         return e
@@ -124,6 +128,7 @@ pub fn openProfile(dir: []u8) AllocError!void {
         return
     }
     s.lock = try lockProfile(s.alloc, dir)
+    try loadProfileHsts(s)
     if s.cookie_file.len > 0 {
         return
     }
@@ -195,6 +200,8 @@ pub fn stop() {
         saveCookies(s) catch |e| {
         }
     }
+    saveHsts(s) catch |e| {
+    }
     unlockProfile(s.lock)
     stopLoads()
     stopAuth()
@@ -211,6 +218,11 @@ pub fn stop() {
         release(s.alloc, f.top)
     }
     s.frames.deinit()
+    s.hsts.deinit()
+    for p in s.upgrading.items() {
+        release(s.alloc, p)
+    }
+    s.upgrading.deinit()
     s.cache.deinit()
     s.preflights.deinit()
     release(s.alloc, s.cookie_file)

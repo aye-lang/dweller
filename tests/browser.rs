@@ -6633,6 +6633,145 @@ fn tls_errors() {
     }
 }
 
+/// `browser/tests/hsts_server.py`: one TLS and one plain port on
+/// 127.0.0.1 with `site.test` (and `sub.site.test`) mapped to both
+/// through `DWELLER_RESOLVE`; runs `dweller args...` in `profile` when
+/// given.
+struct HstsSite {
+    _srv: Server,
+    tls: u16,
+    plain: u16,
+}
+
+impl HstsSite {
+    fn start() -> Option<HstsSite> {
+        use std::io::BufRead;
+        let mut child = Command::new("python3")
+            .arg("-I")
+            .arg(root().join("browser/tests/hsts_server.py"))
+            .arg(root().join("browser/tests/hsts"))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let mut line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let ports: Vec<u16> = line
+            .split_whitespace()
+            .map(|p| p.parse().unwrap())
+            .collect();
+        Some(HstsSite {
+            _srv: Server {
+                child,
+                base: String::new(),
+            },
+            tls: ports[0],
+            plain: ports[1],
+        })
+    }
+
+    fn run(&self, profile: Option<&Path>, args: &[&str]) -> Output {
+        let (t, p) = (self.tls, self.plain);
+        let mut c = dweller_command();
+        c.current_dir(root())
+            .env("DWELLER_TEST_CA", root().join("browser/tests/hsts/ca.pem"))
+            .env(
+                "DWELLER_RESOLVE",
+                format!("site.test:{t}:127.0.0.1,site.test:{p}:127.0.0.1,sub.site.test:{t}:127.0.0.1"),
+            )
+            .args(args);
+        if let Some(dir) = profile {
+            c.env("DWELLER_PROFILE", dir);
+        }
+        c.output().unwrap()
+    }
+}
+
+/// Q3.5: `Strict-Transport-Security` over https upgrades later http
+/// requests to the host (and its subdomains with includeSubDomains) to
+/// https on the same port, kept in the profile; max-age=0 clears it;
+/// the header over http and on an IP host is ignored. The http URL of
+/// the TLS port fails unless upgraded.
+#[test]
+fn hsts() {
+    let Some(site) = HstsSite::start() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let profile = scratch().join("hsts-profile");
+    let _ = std::fs::remove_dir_all(&profile);
+    std::fs::create_dir_all(&profile).unwrap();
+    let at = |scheme: &str, host: &str, path: &str| format!("{scheme}://{host}:{}{path}", site.tls);
+    let dump = |url: &str| {
+        let out = site.run(Some(&profile), &["dump", "--text", url]);
+        (out.status.code(), text(&out.stdout))
+    };
+    let upgraded = (Some(0), "https page\n".to_string());
+    let insecure = at("http", "site.test", "/");
+    let sub = at("http", "sub.site.test", "/");
+
+    assert_ne!(dump(&insecure), upgraded);
+    let plain_header = format!("http://site.test:{}/hsts", site.plain);
+    assert_eq!(dump(&plain_header).0, Some(0));
+    assert_ne!(dump(&insecure), upgraded, "the header over http is ignored");
+    assert_eq!(dump(&at("https", "127.0.0.1", "/hsts")), upgraded);
+    assert_ne!(dump(&at("http", "127.0.0.1", "/")), upgraded, "IP hosts are ignored");
+
+    assert_eq!(dump(&at("https", "site.test", "/hsts")), upgraded);
+    assert_eq!(dump(&insecure), upgraded);
+    assert_eq!(dump(&sub), upgraded);
+    let saved = std::fs::read_to_string(profile.join("hsts")).unwrap();
+    assert!(saved.starts_with("site.test ") && saved.ends_with(" *\n"), "{saved}");
+
+    assert_eq!(dump(&at("https", "site.test", "/hsts-clear")), upgraded);
+    assert_ne!(dump(&insecure), upgraded);
+    assert_ne!(dump(&sub), upgraded);
+}
+
+/// Q3.5: on an https page an http script, iframe and fetch are blocked
+/// and an http image is upgraded (the image URL is the TLS port, so it
+/// loads only when upgraded); on an http page all of them load as
+/// asked. `upgrade-insecure-requests` (CSP header or `<meta>`) upgrades
+/// the page's script and fetch.
+#[test]
+fn mixed_content() {
+    let Some(site) = HstsSite::start() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let (t, p) = (site.tls, site.plain);
+    for page in ["uir-header.html", "uir-meta.html"] {
+        let out = site.run(None, &["dump", "--text", "--js", &format!("https://site.test:{t}/{page}")]);
+        assert_eq!(
+            text(&out.stdout),
+            "script: https\nfetch: https data\ndone\n",
+            "{page}: {}",
+            text(&out.stderr)
+        );
+    }
+    if !has_sdl() {
+        println!("skipped the iframe and image cases: no SDL");
+        return;
+    }
+    let cases = [
+        (
+            format!("https://site.test:{t}/mixed.html?{t},{p}"),
+            "script: error\nfetch: TypeError\nimg: load\ndone\n",
+        ),
+        (
+            format!("http://site.test:{p}/mixed.html?{t},{p}"),
+            "script: http\niframe: http:\nfetch: http data\nimg: error\ndone\n",
+        ),
+    ];
+    for (page, want) in cases {
+        let out = site.run(None, &[&page, "--frames", "200", "--until-idle", "--text"]);
+        let shown = text(&out.stdout);
+        assert!(shown.starts_with(&format!("Mixed content\n{want}")), "{page}: {shown}\n{}", text(&out.stderr));
+    }
+}
+
 /// P10.21: SameSite (Lax by default), the third-party policy and
 /// fetch/XHR `credentials`, on the test server's two sites (`127.0.0.1`
 /// and `localhost` of one port; `/samesite/` in `server.py`), cookies

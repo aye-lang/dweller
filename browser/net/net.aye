@@ -133,6 +133,17 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
         return FetchError.Network
     }
 
+    var secured = text.Builder.init(alloc)
+    defer secured.deinit()
+
+    if !(try secureHref(alloc, req, target.href, &mut secured)) {
+        return blocked(req, target.href)
+    }
+
+    if !text.eql(secured.bytes(), target.href) {
+        return upgradedRequest(alloc, secured.bytes(), req)
+    }
+
     try preflight(alloc, req, target)
 
     let began = perf.start()

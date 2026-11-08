@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: net/http/transport_security_state.cc AddHSTSHeader
+fn hstsStore(h: *mut Hsts, host: []u8, policy: HstsPolicy, when: i64) AllocError!bool {
+    var had: ?bool = null
+    let kept = policy.max_age > 0
+
+    for i, e in h.hosts.items() {
+        if text.eql(e.host, host) {
+            had = e.subdomains
+            h.alloc.free(e.host)
+            _ = h.hosts.orderedRemove(i)
+            break
+        }
+    }
+
+    if kept {
+        let owned = try dup(h.alloc, host)
+
+        h.hosts.append(HstsHost { host: owned, expiry: when + policy.max_age, subdomains: policy.subdomains }) catch |e| {
+            h.alloc.free(owned)
+
+            return e
+        }
+    }
+
+    let before = had orelse return kept
+
+    return !kept || before != policy.subdomains
+}

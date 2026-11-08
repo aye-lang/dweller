@@ -1,0 +1,31 @@
+import std.text
+
+test "HSTS hosts are saved and loaded again" {
+    let a = @testAllocator()
+    var h = Hsts.init(a)
+    defer h.deinit()
+    @expect(try hstsStore(&mut h, "a.example", HstsPolicy { max_age: 600, subdomains: true }, 1000))
+    @expect(try hstsStore(&mut h, "b.example", HstsPolicy { max_age: 60, subdomains: false }, 1000))
+    @expect(!(try hstsStore(&mut h, "b.example", HstsPolicy { max_age: 120, subdomains: false }, 1000)))
+    @expect(try hstsStore(&mut h, "c.example", HstsPolicy { max_age: 5, subdomains: false }, 1000))
+    @expect(try hstsStore(&mut h, "c.example", HstsPolicy { max_age: 0, subdomains: false }, 1000))
+
+    var out = text.Builder.init(a)
+    defer out.deinit()
+    try hstsText(&h, 1000, &mut out)
+    @expectEqual("a.example 1600 *\nb.example 1120\n", out.bytes())
+
+    var back = Hsts.init(a)
+    defer back.deinit()
+    try loadHsts(&mut back, out.bytes(), 1100)
+    @expectEqual(2 as usize, back.hosts.len())
+    @expect(hstsUpgrades(&back, "x.a.example", 1100))
+    @expect(hstsUpgrades(&back, "b.example", 1100))
+    @expect(!hstsUpgrades(&back, "c.example", 1100))
+    @expect(!hstsUpgrades(&back, "b.example", 1200))
+
+    var again = text.Builder.init(a)
+    defer again.deinit()
+    try hstsText(&back, 1000, &mut again)
+    @expectEqual(out.bytes(), again.bytes())
+}
