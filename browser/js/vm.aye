@@ -233,7 +233,7 @@ fn vmEnter(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg
 // stack[argBase..argBase + argc]; gives its fp.
 fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this_reg: i32, func: u32, fobj: u32, penv: u32, thisv: Value, argBase: usize, argc: usize, newTarget: u32) JsError!usize {
     st.ncalls += 1
-    let mark = it.stack.len()
+    let mark = it.stack.count
     let np = code.nparams as usize
     if argBase + argc == mark && argc <= np {
         for _ in argc..np {
@@ -248,7 +248,7 @@ fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this
             }
         }
     }
-    let fp = it.stack.len()
+    let fp = it.stack.count
     for _ in 0..code.nregs {
         try it.push(Value.Undefined)
     }
@@ -259,7 +259,7 @@ fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this
         if !fi.strict && !fi.arrow && isNullish(thisv) {
             t = objVal(it.global)
         }
-        it.stack.items()[fp + this_reg as usize] = t
+        it.stack.buf[..it.stack.count][fp + this_reg as usize] = t
     }
     try it.frames.append(Frame { func: fobj, env: it.env, this_obj: it.derived_this, new_target: newTarget })
     it.derived_this = NONE
@@ -268,8 +268,8 @@ fn vmPushFrame(it: *mut Interp, st: *mut VmState, code: *mut BytecodeArray, this
 }
 
 fn vmPopFrame(it: *mut Interp) {
-    it.ctor_this = it.frames.items()[it.frames.len() - 1].this_obj
-    it.env = it.frames.items()[it.frames.len() - 1].env
+    it.ctor_this = it.frames.buf[it.frames.count - 1].this_obj
+    it.env = it.frames.buf[it.frames.count - 1].env
     it.frames.pop()
 }
 
@@ -463,19 +463,9 @@ fn vmSlowIncrement(it: *mut Interp, fp: usize, v: Value, inc: bool) JsError!Valu
 // case first).
 fn vmImm(bytes: []u8, at: usize, w: u8) i64 {
     if w == 1 {
-        let b = bytes[at] as i64
-        if b >= 128 {
-            return b - 256
-        }
-        return b
+        return ((bytes[at] as i64) ^ 128) -% 128
     }
-    if w == 2 {
-        let v = (bytes[at] as i64) | ((bytes[at + 1] as i64) << 8)
-        if v >= 0x8000 {
-            return v - 0x10000
-        }
-        return v
-    }
+
     return bcGet(bytes, at, w, true)
 }
 
@@ -536,7 +526,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
     var base = fp as i64
     var acc = f.acc
     // reloaded after anything that may call JS (the stack may move)
-    var regs = it.stack.items()
+    var regs = it.stack.buf[..it.stack.count]
     var pc = f.pc
 
     errdefer {
@@ -610,11 +600,11 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     }
                     .Atom { id } => {
                         acc = try it.atomValue(id)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                     .Big { atom } => {
                         acc = try bigLiteral(it, it.heap.atoms.name(atom))
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                     _ => unreachable
                 }
@@ -655,7 +645,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try it.add(lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             14 => {
                 // Sub r, [s]
@@ -675,7 +665,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             15 => {
                 // Mul r, [s]
@@ -695,7 +685,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             16 => {
                 // Div r, [s]
@@ -715,7 +705,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             17 => {
                 // Mod r, [s]
@@ -735,7 +725,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             18 => {
                 // Exp r, [s]
@@ -755,7 +745,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             19 => {
                 // BitwiseOr r, [s]
@@ -775,7 +765,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             20 => {
                 // BitwiseXor r, [s]
@@ -795,7 +785,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             21 => {
                 // BitwiseAnd r, [s]
@@ -815,7 +805,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             22 => {
                 // ShiftLeft r, [s]
@@ -835,7 +825,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             23 => {
                 // ShiftRight r, [s]
@@ -855,7 +845,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             24 => {
                 // ShiftRightLogical r, [s]
@@ -875,7 +865,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             25 => {
                 // AddSmi imm, [s]
@@ -888,7 +878,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try it.add(acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -903,7 +893,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -918,7 +908,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -933,7 +923,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -948,7 +938,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -963,7 +953,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -978,7 +968,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -993,7 +983,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1008,7 +998,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1023,7 +1013,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1038,7 +1028,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1053,7 +1043,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowBinary(it, op, acc, Value.Num { n: y })
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1067,7 +1057,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowIncrement(it, fp, acc, true)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1081,7 +1071,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowIncrement(it, fp, acc, false)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1095,7 +1085,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowUnary(it, fp, Op.Neg, acc)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1109,7 +1099,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowUnary(it, fp, Op.BitNot, acc)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1121,7 +1111,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try numericValue(it, acc)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1137,7 +1127,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // TypeOf
                 regs[fp] = acc
                 acc = try it.atomValue(try it.intern(it.typeOf(acc)))
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             45 => {
                 // TestEqual r, [s]
@@ -1157,7 +1147,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = Value.Bool { b: try it.looseEquals(lhs, acc) }
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             46 => {
                 // TestEqualStrict r, [s]
@@ -1183,7 +1173,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try it.binary(vmBinaryOp(op), lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             48 => {
                 // TestGreaterThan r, [s]: r op acc
@@ -1203,7 +1193,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try it.binary(vmBinaryOp(op), lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             49 => {
                 // TestLessThanOrEqual r, [s]: r op acc
@@ -1223,7 +1213,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try it.binary(vmBinaryOp(op), lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             50 => {
                 // TestGreaterThanOrEqual r, [s]: r op acc
@@ -1243,7 +1233,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 }
                 regs[fp] = acc
                 acc = try it.binary(vmBinaryOp(op), lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             54 => {
                 // Jump off
@@ -1425,10 +1415,10 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             }
             72 => {
                 // Return: from the entry frame, or to the saved caller
-                if st.saved.len() == depth {
+                if st.saved.count == depth {
                     return acc
                 }
-                let sv = st.saved.items()[st.saved.len() - 1]
+                let sv = st.saved.buf[st.saved.count - 1]
                 st.saved.pop()
                 vmPopFrame(it)
                 if sv.construct && !isObject(acc) {
@@ -1443,7 +1433,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc = sv.pc
                 argBase = sv.argBase
                 nargs = sv.argc
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             73 => {
                 // ToNumber [s]
@@ -1453,7 +1443,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     _ => {
                         regs[fp] = acc
                         acc = try vmSlowUnary(it, fp, Op.Plus, acc)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
             }
@@ -1463,7 +1453,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmLdaGlobal(it, id)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             75 => {
                 // GetNamedProperty r, [n]: property of Member node n, with
@@ -1478,7 +1468,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     regs[fp] = acc
                     acc = try vmLoadNamed(it, st, e, o, vmMemberName(it, id))
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                 }
             }
             76 => {
@@ -1493,7 +1483,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     regs[fp] = acc
                     try vmStoreNamed(it, st, e, o, vmMemberName(it, id), acc)
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                 }
             }
             77 => {
@@ -1507,7 +1497,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 if vmNativeCallee(it, regs[r], 77, id) |nid| {
                     regs[fp] = acc
                     acc = try vmCallNativeAt(it, nid, r, argc, regs[r + 1])
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                     continue
                 }
 
@@ -1526,7 +1516,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     acc = try vmCallOp(it, 77, top, argc, id)
                 }
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             78 => {
                 // CallUndefinedReceiver r, argc, [n]: as CallProperty with
@@ -1539,7 +1529,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 if vmNativeCallee(it, regs[r], 78, id) |nid| {
                     regs[fp] = acc
                     acc = try vmCallNativeAt(it, nid, r, argc, Value.Undefined)
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                     continue
                 }
 
@@ -1558,7 +1548,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     acc = try vmCallOp(it, 78, top, argc, id)
                 }
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             79 => {
                 // Construct r, argc, [n]: `new r(args)`, n the New node
@@ -1580,13 +1570,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     acc = try vmCallOp(it, 79, top, argc, id)
                 }
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             80 => {
                 // CreateArguments: the unmapped arguments object
                 regs[fp] = acc
                 acc = try vmArguments(it, argBase, nargs, 0, false)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             81 => {
                 // CreateRestParameter k: the arguments from k on
@@ -1594,7 +1584,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmArguments(it, argBase, nargs, k, true)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             82 => {
                 // v8: src/interpreter/interpreter-generator.cc (LdaContextSlot)
@@ -1607,7 +1597,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     regs[fp] = acc
                     acc = try vmLdaContextSlot(it, up, slot)
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                 }
             }
             83 => {
@@ -1619,7 +1609,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // v8: src/interpreter/interpreter-generator.cc (PushContext)
                 regs[fp] = acc
                 let saved = try vmPushContext(it, vmIdx(bytes, pc + w as usize, w))
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
                 regs[(base + vmImm(bytes, pc, w)) as usize] = saved
                 pc += 2 * w as usize
             }
@@ -1632,7 +1622,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // v8: src/interpreter/bytecode-generator.cc (VisitIterationBody)
                 regs[fp] = acc
                 try vmNewIterationContext(it)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             87 => {
                 // v8: src/interpreter/interpreter-generator.cc (ThrowReferenceErrorIfHole)
@@ -1646,14 +1636,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 regs[fp] = acc
                 acc = try it.makeClosure(vmIdx(bytes, pc, w) as u32)
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             89 => {
                 // v8: src/interpreter/interpreter-generator.cc (CreateFunctionContext)
                 regs[fp] = acc
                 try vmNewFunctionContext(it, vmIdx(bytes, pc, w))
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             90 => {
                 // v8: src/interpreter/bytecode-register.h (Register::function_closure)
@@ -1664,13 +1654,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 regs[fp] = acc
                 try vmStaGlobal(it, vmIdx(bytes, pc, w) as u32, acc)
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             92 => {
                 // v8: src/interpreter/interpreter-generator.cc (TypeOfGlobal)
                 acc = try vmTypeOfGlobal(it, vmIdx(bytes, pc, w) as u32)
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             93 => {
                 // v8: src/interpreter/interpreter-generator.cc (GetKeyedProperty)
@@ -1685,7 +1675,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else {
                     regs[fp] = acc
                     acc = try vmKeyedLoadSlow(it, e, o, acc)
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                 }
             }
             94 => {
@@ -1700,7 +1690,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 } else if !vmKeyedTypedStore(it, e, o, k, acc) {
                     regs[fp] = acc
                     try vmKeyedStoreSlow(it, e, o, k, acc)
-                    regs = it.stack.items()
+                    regs = it.stack.buf[..it.stack.count]
                 }
             }
             95 => {
@@ -1709,7 +1699,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmDeleteProperty(it, o, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             96 => {
                 // v8: src/interpreter/interpreter-generator.cc (TestIn)
@@ -1717,7 +1707,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             97 => {
                 // v8: src/interpreter/interpreter-generator.cc (TestInstanceOf)
@@ -1725,14 +1715,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmSlowBinary(it, op, lhs, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             98 => {
                 // v8: src/interpreter/interpreter-generator.cc (CreateObjectLiteral)
                 regs[fp] = acc
                 acc = try vmCreateObjectLiteral(it, vmIdx(bytes, pc, w) as u32)
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             99 => {
                 // v8: src/interpreter/interpreter-generator.cc (DefineNamedOwnProperty)
@@ -1740,13 +1730,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 regs[fp] = acc
                 try vmDefineNamedOwnProperty(it, o, vmIdx(bytes, pc + w as usize, w) as u32, vmIdx(bytes, pc + 2 * w as usize, w) as u32, acc)
                 pc += 3 * w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             100 => {
                 // v8: src/interpreter/interpreter-generator.cc (CreateArrayLiteral)
                 regs[fp] = acc
                 acc = objVal(try it.newArray(0))
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             101 => {
                 // v8: src/interpreter/interpreter-generator.cc (StaInArrayLiteral)
@@ -1754,14 +1744,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try it.heap.pushElem(o, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             102 => {
                 // v8: src/interpreter/interpreter-generator.cc (StaGlobal)
                 regs[fp] = acc
                 try it.assignIdent(vmIdx(bytes, pc, w) as u32, acc, true)
                 pc += w as usize
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             103 => {
                 // v8: src/interpreter/interpreter-generator.cc (Throw)
@@ -1786,7 +1776,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try vmGetIterator(it, at, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             106 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildIteratorNext)
@@ -1794,7 +1784,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmIteratorStep(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             107 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildIteratorClose)
@@ -1802,7 +1792,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try vmIteratorClose(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             108 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildDestructuringArrayAssignment)
@@ -1810,7 +1800,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmIteratorRest(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             109 => {
                 // v8: src/interpreter/interpreter-generator.cc (ForInPrepare)
@@ -1818,7 +1808,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try vmForInPrepare(it, at, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             110 => {
                 // v8: src/interpreter/interpreter-generator.cc (ForInNext)
@@ -1826,7 +1816,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmForInNext(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             111 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildFillArrayWithIterator)
@@ -1834,7 +1824,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try vmSpreadIntoArray(it, a, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             112 => {
                 // v8: src/interpreter/interpreter-generator.cc (CallWithSpread)
@@ -1843,7 +1833,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmCallWithSpread(it, at, id)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             113 => {
                 // v8: src/interpreter/interpreter-generator.cc (CopyDataProperties)
@@ -1851,7 +1841,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try it.copyDataProps(o, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             114 => {
                 // v8: src/interpreter/bytecode-generator.cc (VisitTemplateLiteral)
@@ -1860,7 +1850,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmTemplateString(it, at, id)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             115 => {
                 // v8: src/interpreter/interpreter-generator.cc (GetTemplateObject)
@@ -1868,7 +1858,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try templateObject(it, id, vmTemplateRaw(&it.ast, id))
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             116 => {
                 // v8: src/interpreter/interpreter-generator.cc (CreateRegExpLiteral)
@@ -1876,7 +1866,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmRegExpLiteral(it, id)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             117 => {
                 // v8: src/interpreter/interpreter-generator.cc (DefineKeyedOwnPropertyInLiteral)
@@ -1886,7 +1876,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 3 * w as usize
                 regs[fp] = acc
                 try vmDefineKeyedOwnProperty(it, o, id, k, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             118 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildDestructuringObjectAssignment)
@@ -1896,13 +1886,13 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 3 * w as usize
                 regs[fp] = acc
                 acc = try vmObjectRest(it, src, at, n)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             119 => {
                 // v8: src/interpreter/bytecode-generator.cc (VisitNewTargetExpression)
                 regs[fp] = acc
                 acc = try it.evalNewTarget()
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             120 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildClassLiteral)
@@ -1912,7 +1902,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 3 * w as usize
                 regs[fp] = acc
                 acc = try defineClass(it, c, at, named)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             121 => {
                 // v8: src/interpreter/bytecode-generator.cc (VisitSuperCallReference)
@@ -1922,7 +1912,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 3 * w as usize
                 regs[fp] = acc
                 acc = try vmSuperCall(it, at, argc, spread)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             122 => {
                 // v8: src/interpreter/bytecode-generator.cc (VisitNamedSuperPropertyLoad)
@@ -1931,7 +1921,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmGetSuperProperty(it, thisv, acc, id)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             123 => {
                 // v8: src/interpreter/interpreter-generator.cc (SwitchOnGeneratorState)
@@ -1945,7 +1935,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // v8: src/runtime/runtime-generator.cc (Runtime_CreateJSGeneratorObject)
                 regs[fp] = acc
                 acc = try vmCreateGenerator(it)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             125 => {
                 // v8: src/interpreter/interpreter-generator.cc (SuspendGenerator)
@@ -1969,7 +1959,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmYieldStarStep(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             128 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildGetIterator)
@@ -1977,7 +1967,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 try vmGetAsyncIterator(it, at, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             129 => {
                 // v8: src/interpreter/bytecode-generator.cc (BuildIteratorNext)
@@ -1986,7 +1976,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 regs[fp] = acc
                 it.setSlot(at + 2, Value.Bool { b: true })
                 acc = try it.call0(it.slot(at + 1), it.slot(at))
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             130 => {
                 // v8: src/interpreter/bytecode-generator.cc (VisitForOfStatement)
@@ -1994,7 +1984,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmIteratorResult(it, at, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             131 => {
                 // v8: src/interpreter/interpreter-generator.cc (CallRuntime)
@@ -2003,7 +1993,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 2 * w as usize
                 regs[fp] = acc
                 acc = try vmModuleRuntime(it, id, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             132 => {
                 // v8: src/interpreter/bytecode-generator.cc (ThrowConstAssignError)
@@ -2013,7 +2003,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 // v8: src/interpreter/interpreter-generator.cc (ToName)
                 regs[fp] = acc
                 acc = try vmToName(it, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             134 => {
                 let at = (base + vmImm(bytes, pc, w)) as usize
@@ -2024,7 +2014,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     }
                     _ => {
                         acc = try vmSlowIncrement(it, fp, regs[at], true)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
                 regs[at] = acc
@@ -2038,7 +2028,7 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                     }
                     _ => {
                         acc = try vmSlowIncrement(it, fp, regs[at], false)
-                        regs = it.stack.items()
+                        regs = it.stack.buf[..it.stack.count]
                     }
                 }
                 regs[at] = acc
@@ -2048,14 +2038,14 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmAsyncYieldStarCall(it, at)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             137 => {
                 let at = (base + vmImm(bytes, pc, w)) as usize
                 pc += w as usize
                 regs[fp] = acc
                 acc = try vmIteratorValue(it, at, acc)
-                regs = it.stack.items()
+                regs = it.stack.buf[..it.stack.count]
             }
             _ => {
                 // not emitted by the compiler yet (P4.64 and later)
