@@ -14,8 +14,11 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .Loaded { title, url } => {
-            if !tp.loading || got.frame != slot.id { return "unexpected loaded" }
-            if !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            let by_agent = !tp.loading && tp.agent_id != 0 && tp.agent_acts
+
+            if (!tp.loading && !by_agent) || got.frame != slot.id { return "unexpected loaded" }
+            if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
 
             try showCommitted(tp, title, url)
             tp.loading = false
@@ -92,6 +95,15 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.redirected = true
             tp.committed.clear()
             try tp.committed.append(url)
+        }
+
+        .AgentReply { id, answer } => {
+            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id { return "bad agent_reply" }
+
+            tp.answer.clear()
+            try tp.answer.append(answer)
+            tp.agent_id = 0
+            tp.answered = true
         }
 
         .InputAck { seq } => {

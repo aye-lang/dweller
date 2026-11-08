@@ -77,6 +77,9 @@ pub struct Conn {
     wait_idle: bool
     // The peer is gone: the connection is closed after this round.
     gone: bool
+    // A request its tab's renderer answers (Q2.3b), or one held until
+    // that renderer is ready.
+    asked: bool
     // With --spaces: the Space serving it (null: not started yet).
     space: ?*mut Space
     admitted: bool
@@ -285,6 +288,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             wait_end: 0,
             wait_idle: false,
             gone: false,
+            asked: false,
             space: null,
             admitted: false,
         })
@@ -319,6 +323,9 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         if c.waiting {
             try checkWait(ui, i)
         }
+        if c.asked {
+            try answerAsked(ui, i)
+        }
         if !c.gone && !c.waiting {
             let n = readSome(c.fd, buf[..])
             if n == 0 {
@@ -328,7 +335,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             }
         }
         try serveLines(ui, i)
-        if c.gone && !c.waiting && std.mem.indexOf(c.pending.bytes(), '\n') == null {
+        if c.gone && !c.waiting && !c.asked && std.mem.indexOf(c.pending.bytes(), '\n') == null {
             a.conns[i] = null
             if a.inside |me| {
                 // A Space: done, before its agent's connection closes.
@@ -360,7 +367,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
 fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[i].?
-    while !c.waiting && !ui.quit {
+    while !c.waiting && !c.asked && !ui.quit {
         let bytes = c.pending.bytes()
         var end = bytes.len
         var next = bytes.len
@@ -422,6 +429,20 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         }
     }
     let slot = connSlot(ui, c)
+    if ui.tab_processes {
+        if try askTabRenderer(ui, i, slot, tmp, line) |sent| {
+            if !sent {
+                // Held until its renderer is ready: served again then.
+                let rest = try tmp.alloc(0 as u8, c.pending.len())
+                std.mem.copy(rest, c.pending.bytes())
+                c.pending.clear()
+                try c.pending.append(line)
+                try c.pending.appendByte('\n')
+                try c.pending.append(rest)
+            }
+            return
+        }
+    }
     try syncSlot(ui, slot)
     let before = shownNow(ui)
     var out = text.Builder.init(tmp)
@@ -774,7 +795,7 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
         try w.key("id")
         try w.int(slot.id as i64)
         try w.key("url")
-        try w.string(slot.session.tab.href())
+        try w.string(slotUrl(slot))
         try w.key("title")
         try w.string(slotTitle(slot))
         // In a Space the user sees none of its tabs.
@@ -791,9 +812,9 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
         try detail.appendUint(slot.id as u64)
         try detail.append(": ")
         try detail.append(slotTitle(slot))
-        if slot.session.tab.href().len > 0 && !text.eql(slotTitle(slot), slot.session.tab.href()) {
+        if slotUrl(slot).len > 0 && !text.eql(slotTitle(slot), slotUrl(slot)) {
             try detail.append(" <")
-            try detail.append(slot.session.tab.href())
+            try detail.append(slotUrl(slot))
             try detail.appendByte('>')
         }
         if shown {

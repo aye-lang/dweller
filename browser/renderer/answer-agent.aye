@@ -1,26 +1,40 @@
 import agent
-import engine
 import ipc
 import std
 import std.heap.Arena
 import std.text
 
 fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, line: []u8) !void {
-    if r.session == null {
-        engine.setRealClock(false)
-        engine.setCanvasFixed(false)
-        r.session = try agent.headlessSession(r.alloc)
-    }
+    if r.session == null { r.session = try agentSession(r) }
 
+    let s = r.session.?
     var arena = Arena.init(r.alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
     var out = text.Builder.init(tmp)
     var answered = id
 
-    try agent.answerLine(r.session.?, tmp, line, mcp, &mut out)
+    if r.width > 0 {
+        let fresh = s.tab.page != r.page
+        var host = RendererHost { session: s }
+
+        s.tab.page = r.page
+        try agent.syncSession(s, r.width as f64 / r.scale, r.height as f64 / r.scale, fresh)
+        try agent.serveShared(&mut host, 0, mcp, tmp, line, &mut out)
+    } else {
+        try agent.answerLine(s, tmp, line, mcp, &mut out)
+    }
+
+    if s.tab.page |p| {
+        if r.width > 0 && s.tab.page != r.page {
+            try adoptPage(r, frame, p)
+            try send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: p.title, url: p.url.href })
+        }
+    }
 
     if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "agent") { answered += 1 }
+
+    r.due = true
 
     try send(r.alloc, r.conn, frame, ipc.Message.AgentReply { id: answered, answer: out.bytes() })
 }

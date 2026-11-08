@@ -10487,3 +10487,42 @@ fn window_renderer_status() {
     let state = window(&format!("{}/hops/25", srv.base), "renderer:loaded renderer:frame");
     assert!(!state.contains(" title Hops\n") && state.contains("\nrenderer-frame "), "{state}");
 }
+
+/// Q2.3b: with `DWELLER_PROCESS=tab` a window's agent commands are
+/// answered by the tab's renderer, byte for byte as by the window
+/// itself; a renderer that answers a request id it was not sent is
+/// killed.
+#[test]
+fn window_renderer_agent() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let requests = [
+        "{\"id\":1,\"cmd\":\"navigate\",\"url\":\"browser/tests/agent/site/todo.html\"}",
+        "{\"id\":2,\"cmd\":\"type\",\"ref\":\"e2\",\"text\":\"Buy milk\",\"submit\":true}",
+        "{\"id\":3,\"cmd\":\"snapshot\"}",
+        "{\"id\":4,\"cmd\":\"eval\",\"expression\":\"document.title\"}",
+        "{\"id\":5,\"cmd\":\"click\",\"ref\":\"e4\"}",
+        "{\"id\":6,\"cmd\":\"read\"}",
+        "{\"id\":7,\"cmd\":\"tabs\"}",
+    ];
+    let session = |sock: &str, env: &[(&str, &str)]| -> (Vec<String>, String) {
+        let window = spaces_window_env(sock, &[], env);
+        let mut conn = AgentConn::open(sock);
+        let got: Vec<String> = requests.iter().map(|r| conn.ask(r).0).collect();
+        drop(conn);
+        let out = window.wait_with_output().unwrap();
+        (got, text(&out.stderr))
+    };
+    let (want, _) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
+    let (got, err) = session(&format!("target/sockets/q23b-tab-{}.sock", std::process::id()), &[("DWELLER_PROCESS", "tab")]);
+    assert!(want[0].contains("\"ok\":true"), "{}", want[0]);
+    assert_eq!(got, want, "{err}");
+    let (bad, err) = session(
+        &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
+        &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "agent")],
+    );
+    assert!(err.contains("bad message: bad agent_reply "), "{err}");
+    assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
+}
