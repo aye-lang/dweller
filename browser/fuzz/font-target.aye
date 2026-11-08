@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import webfont
+
+let FONT_DICTIONARY = [_][]u8{
+    "wOFF", "wOF2", "OTTO", "\x00\x01\x00\x00", "true", "ttcf", "glyf", "loca", "head", "hhea", "hmtx", "maxp", "cmap",
+    "name", "OS/2", "post", "CFF ", "\x0a", "\x0b", "\x03", "\x3f", "\xca", "\x8b", "\xfd\xff\xff", "\xfe", "\xff",
+    "\x8f\xff\xff\xff\x7f", "\x80\x80", "\x00\x00\x00\x00", "\xff\xff\xff\xff", "\x7f\xff\xff\xff", "\x00\x00\xff\xff",
+    "\x00\x01", "\xff\xff", "\x78\x9c", "\x78\x01",
+}
+
+fn fontTarget() Target {
+    return Target { name: "font", dictionary: FONT_DICTIONARY[0..], run: fuzzFont }
+}
+
+// chromium: third_party/woff2/src/convert_woff2ttf_fuzzer.cc
+fn fuzzFont(alloc: Allocator, input: []u8) AllocError!void {
+    if try webfont.sfntOf(alloc, input) |sfnt| {
+        alloc.free(sfnt)
+    }
+}

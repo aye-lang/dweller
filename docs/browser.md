@@ -167,7 +167,13 @@ input in a fresh realm as a classic script and as a module
 (`Interp.parseCode`, which also resolves scopes) and compiles each that
 parses to bytecode (`compileScript` for the script, `compileFunction`
 for every function the parse made), without running it, as V8's
-`test/fuzzer/parser.cc` does.
+`test/fuzzer/parser.cc` does. `image` decodes the input as an `img`
+response is decoded (`image.headerSize` for a lazy image, then
+`image.decode`, which sniffs PNG, GIF, JPEG, WebP and ICO, with the
+page's size limits) and panics when the bitmap is not
+`width * height * 4` bytes. `font` turns the input into the file
+FreeType reads, as `@font-face` loading does (`webfont.sfntOf`: WOFF
+inflated, WOFF 2 through Brotli and the glyf/loca/hmtx transforms).
 
 `python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
 build (`target/dweller-fuzz`, built by `browser/build.sh` when
@@ -181,7 +187,8 @@ crash, 1 with one. Run it through `scripts/capped.sh`.
 A new target is one file in `fuzz/`: a dictionary, a function
 `fn(Allocator, []u8) AllocError!void` that parses the input, and a
 `Target` value, listed in `fuzz/targets.aye`; its seed corpus goes in
-`browser/tests/fuzz/<target>/` (files under 4 KB).
+`browser/tests/fuzz/<target>/` (text files under 4 KB; binary files
+under 64 KB, at most 50 and 1 MB per format).
 
 ## Milestones
 
