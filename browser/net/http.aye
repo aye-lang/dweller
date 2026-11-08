@@ -176,8 +176,10 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
     let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other
     if session |s| {
+        let key = try cacheKey(alloc, req, target.withoutFragment())
+        defer alloc.free(key)
         if cacheable {
-            if try s.cache.lookup(alloc, target.withoutFragment()) |hit| {
+            if try s.cache.lookup(alloc, key) |hit| {
                 return hit
             }
         }
@@ -189,7 +191,7 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
                 var keep = cacheable
                 var res = try transfer(alloc, curl, target, req, s, &mut keep)
                 if keep && !res.tainted && res.status >= 200 && res.status < 300 {
-                    s.cache.keep(target.withoutFragment(), &res, false) catch |e| {
+                    s.cache.keep(key, &res, false) catch |e| {
                         res.deinit(alloc)
                         return FetchError.OutOfMemory
                     }
@@ -424,7 +426,7 @@ fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Req
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.ptr)
     }
     if s |ses| {
-        if ses.share |sh| {
+        if try shareFor(alloc, ses, req, at.href) |sh| {
             curl_easy_setopt(curl, CURLOPT_SHARE, sh)
         }
     }
