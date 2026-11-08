@@ -10786,6 +10786,85 @@ fn window_renderer_samesite() {
     }
 }
 
+/// Q2.4b: with `DWELLER_PROCESS=tab` `document.cookie`, `localStorage`
+/// and `sessionStorage` live in the browser, and pages see what they see
+/// in the window's own process: an `HttpOnly` cookie set by the server
+/// is not in `document.cookie` (`login/details.html`), a script stores
+/// neither an `HttpOnly` nor a `Secure` cookie on http:, the popups of
+/// `storage/tabs.html` share localStorage and copy sessionStorage as in
+/// `storage_between_tabs`, and a write in one tab reaches another tab of
+/// the origin as a `storage` event (another renderer under the flag) but
+/// not a tab of another origin. A renderer that asks for the cookies or
+/// the storage of a document it was not given is killed.
+#[test]
+fn window_renderer_storage() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let tab = [("DWELLER_PROCESS", "tab")];
+    let write = format!("{base}/storage/write.html");
+    let other = format!("{}?other", write.replace("127.0.0.1", "localhost"));
+    let port = base.rsplit(':').next().unwrap();
+    for envs in [&[][..], &tab[..]] {
+        let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
+            assert!(
+                want.iter().all(|w| got.contains(w)) && !not.iter().any(|n| got.contains(n)),
+                "{what} {envs:?}: want {want:?}, not {not:?}, got:\n{got}"
+            );
+        };
+        let details = login_window_with(&format!("{base}/login/details.html"), "frame frame frame", None, envs);
+        has(&details, &["fetch 200 cookie tab=1", "xhr 200 cookie tab=1"], &["cookie sid", "; sid="], "HttpOnly");
+        let script = login_window_with(&format!("{base}/storage/script-cookies.html"), "frame", None, envs);
+        has(&script, &["script cookies: [js=1]"], &[], "script cookies");
+        let tabs = login_window_with(&format!("{base}/storage/tabs.html"), "frame frame frame key:cmd+1 frame frame", None, envs);
+        has(
+            &tabs,
+            &["copy=from the opener (old null, local, from child.html?copy) | fresh=null (old null, local, from child.html?fresh) | own session child: null | own length 1"],
+            &[],
+            "storage between popups",
+        );
+        let visits = format!("{base}/storage/visits.html");
+        let again = login_window_with(&visits, &format!("frame {}", go_to(&visits)), None, envs);
+        has(&again, &["visits 2"], &[], "sessionStorage across a navigation");
+        let (wait, then) = if envs.is_empty() { (" loaded", " loaded frame") } else { ("", "") };
+        let events = format!(
+            "frame key:cmd+t {} key:return{wait} key:cmd+t {} key:return{wait} key:cmd+1{then} frame frame",
+            typed(&write),
+            typed(&other)
+        );
+        let heard = login_window_with(&format!("{base}/storage/listen.html"), &events, None, envs);
+        has(
+            &heard,
+            &[&format!("heard written=127.0.0.1:{port} (old null, from write.html)")],
+            &["written?other"],
+            "storage events between tabs",
+        );
+    }
+    for (evil, page, why) in [("cookie", "storage/script-cookies.html", "bad cookie"), ("storage", "storage/write.html", "bad storage")] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TEST_EVIL", evil)
+            .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("{evil}: no renderer line in\n{state}"));
+        let r: Vec<&str> = line.splitn(4, ' ').collect();
+        assert_eq!(&r[2..], ["gone", why], "{evil}: {state}");
+        assert_eq!(text(&out.stderr), format!("error: bad message: {why} {}\n", r[1]), "{evil}");
+    }
+}
+
 /// Q2.2b: with `DWELLER_PROCESS=tab` the tab's pixels come from its
 /// renderer: the browser gives it two shared-memory buffers (`resize`
 /// with 2 fds), it paints the page into one and sends `frame`, and the

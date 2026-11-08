@@ -1,0 +1,23 @@
+import js
+import js.JsError
+import net
+import std.mem.Allocator
+import url
+
+pub fn storageEvent(alloc: Allocator, href: []u8, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
+    let t = bc_table orelse return
+    let at = url.parse(alloc, href) catch return
+    defer at.deinit(alloc)
+
+    for c in t.items.items() {
+        if c.page |p| { try heardAt(p, &at, href, key, old, new) }
+    }
+}
+
+fn heardAt(p: *mut Page, at: *url.Url, href: []u8, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
+    if p.script |ts| {
+        if ts.on_storage != js.NONE && !p.opaque && net.sameOrigin(&originPage(p).url, at) { try queueStorage(ts, href, false, key, old, new) }
+    }
+
+    for f in p.frames.items() { try heardAt(f.page, at, href, key, old, new) }
+}
