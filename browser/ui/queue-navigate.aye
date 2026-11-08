@@ -1,0 +1,14 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn queueNavigate(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    let href = slot.session.tab.href()
+
+    if !tp.hello || tp.loading || href.len == 0 || text.eql(href, tp.url.bytes()) { return }
+
+    tp.url.clear()
+    try tp.url.append(href)
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Navigate { url: href })
+    tp.loading = true
+}

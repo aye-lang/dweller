@@ -534,6 +534,9 @@ asks `/held-now` from the observer's first report, so the load is after
 that report on any machine; the frame budget (400) only has to be large.
 **Why:** the page's own state, not a clock, orders the two events.
 
+### Window tests count the page's ticks, not frames
+A window test's page stops its rAF or timer loop after a fixed number of ticks and the test runs `--frames <cap> --until-idle`; never require N ticks, relayouts or loads to fit in a fixed `--frames N`, because the load and a slow runner take frames from them (Q1.3).
+
 ### Let the test server wait for every request it must hold
 **Context:** `http_images_background` failed once on Linux CI (PR #7,
 a docs-only change): `error b` instead of `load b`, `true/0` at the

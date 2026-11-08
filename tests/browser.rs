@@ -1183,7 +1183,7 @@ fn errors() {
         &[],
         2,
         "",
-        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | agent | mcp | connect SOCKET\n",
+        "error: usage: dweller [open] FILE|URL | dump --tree|--text|--style|--layout|--a11y|--md ... FILE|URL | screenshot FILE|URL -o OUT.png | js [--print-bytecode|--test262] FILE | wpt FILE|URL [--timeout S] | gpu-smoke | fuzz TARGET [--seconds N] [--corpus DIR] [--seed S] | agent | mcp | connect SOCKET\n",
     );
     expect(&["dump", "--tree"], 2, "", usage);
     expect(
@@ -5042,7 +5042,8 @@ fn window_relayout_incremental() {
                 "--height",
                 "300",
                 "--frames",
-                "40",
+                "600",
+                "--until-idle",
                 "--text",
             ])
             .output()
@@ -5068,6 +5069,108 @@ fn window_relayout_incremental() {
     assert!(count("ui_relayout") >= 6, "too few relayouts:\n{stderr}");
     assert_eq!(count("cascade"), 1, "full cascades after the load:\n{stderr}");
     assert!(count("restyle") >= 5, "no subtree restyles:\n{stderr}");
+}
+
+/// Q4.6a: texts next to floats lay out again from the formatting root
+/// that holds the floats (`relayoutFrom`), up to the next root when that
+/// one changes size: no full layout after the first frame, the same
+/// boxes as a full layout (`DWELLER_LAYOUT_CHECK`).
+#[test]
+fn window_relayout_floats() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "browser/tests/ui/relayout_floats.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "300",
+            "--frames",
+            "600",
+            "--until-idle",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(!err.contains("CHECK"), "{err}");
+    let phases: Vec<&str> = err
+        .lines()
+        .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+        .map(|r| r.split('\t').next().unwrap())
+        .collect();
+    let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+    let after = &phases[first..];
+    let count = |name: &str| after.iter().filter(|p| **p == name).count();
+    assert_eq!(
+        count("layout_full") + count("layout"),
+        0,
+        "full layouts after the first frame:\n{err}"
+    );
+    assert!(
+        count("layout_dirty") >= 30,
+        "{} dirty relayouts:\n{err}",
+        count("layout_dirty")
+    );
+}
+
+/// Attribute changes are laid out again incrementally (Q4.6b): one that
+/// a selector names, presentational ones (`width` of an image,
+/// `hidden`) and ones layout reads (`colspan`, a canvas's `width`, `ol
+/// start`) relay out their boxes, with the same boxes as a full layout
+/// (`DWELLER_LAYOUT_CHECK`); ones that no selector names (`data-x`,
+/// `aria-label`) lay out nothing.
+#[test]
+fn window_relayout_attr() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let layouts = |page: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_LAYOUT_CHECK", "1")
+            .env("DWELLER_TIMING", "1")
+            .args([
+                page,
+                "--font",
+                "fixed",
+                "--width",
+                "400",
+                "--height",
+                "300",
+                "--frames",
+                "600",
+                "--until-idle",
+            ])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success(), "{}\n{err}", out.status);
+        assert!(!err.contains("CHECK"), "{err}");
+        let phases: Vec<&str> = err
+            .lines()
+            .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
+            .map(|r| r.split('\t').next().unwrap())
+            .collect();
+        let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+        let after = &phases[first..];
+        let count = |name: &str| after.iter().filter(|p| **p == name).count();
+        (count("layout_full") + count("layout"), count("layout_dirty"), err.clone())
+    };
+    let (full, dirty, err) = layouts("browser/tests/ui/relayout_attr.html");
+    assert_eq!(full, 0, "full layouts after the first frame:\n{err}");
+    assert!(dirty >= 30, "{dirty} dirty relayouts:\n{err}");
+    let (full, dirty, err) = layouts("browser/tests/ui/relayout_attr_unmatched.html");
+    assert_eq!(full + dirty, 0, "layouts after the first frame:\n{err}");
 }
 
 /// The window draws only what changed (P4.35, ui/pagedraw.aye): with
@@ -5218,7 +5321,8 @@ fn window_webgl() {
             "--height",
             "800",
             "--frames",
-            "300",
+            "1000",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -5452,7 +5556,8 @@ fn webgl_three_cube() {
             .env("DWELLER_TIMING", "1")
             .env("DWELLER_GL", "swiftshader")
             .args([
-                target, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "200",
+                target, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "600",
+                "--until-idle",
             ])
             .output()
             .unwrap();
@@ -5521,8 +5626,8 @@ fn window_container_queries() {
             .env(env, "1")
             .env_remove(without)
             .args([
-                &url, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "90",
-                "--text",
+                &url, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "600",
+                "--until-idle", "--text",
             ])
             .output()
             .unwrap();
@@ -5586,7 +5691,8 @@ fn window_transform_composite() {
             "--height",
             "400",
             "--frames",
-            "200",
+            "600",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -5622,7 +5728,10 @@ fn window_transform_composite() {
 /// A CSS-only animation (P10.51b): `browser/tests/ui/css_spinner.html`
 /// moves and fades a box twice with no script. The window starts it from
 /// the styles, composites its frames without layout, damages only the
-/// box's rect, and once it ended runs no more animation frames.
+/// box's rect, and once it ended runs no more animation frames. The
+/// animation runs on the wall clock (2 x 600 ms), so 15 composited frames
+/// fit at up to 80 ms a frame, and 300 frames leave 50 after its end at
+/// 10 ms a frame; `--until-idle` would end the run before those 50.
 #[test]
 fn window_css_animation() {
     if !has_sdl() {
@@ -5642,7 +5751,7 @@ fn window_css_animation() {
             "--height",
             "300",
             "--frames",
-            "150",
+            "300",
         ])
         .output()
         .unwrap();
@@ -5687,9 +5796,12 @@ fn window_css_animation() {
 }
 
 /// A CSS transition on `:hover` (P10.51d): `browser/tests/ui/hover_transition.html`
-/// moves the pointer over a box with `transition: background-color .3s,
-/// transform .3s`, with no script. Its frames damage only the box's rect,
-/// and once it ended no more animation frames run.
+/// moves the pointer over a box with `transition: background-color .6s,
+/// transform .6s`, with no script. Its frames damage only the box's rect,
+/// and once it ended no more animation frames run. As in
+/// `window_css_animation` the transition runs on the wall clock: 10
+/// frames fit in it at up to 60 ms a frame, and 300 frames leave 50 after
+/// it at 10 ms a frame.
 #[test]
 fn window_css_transition() {
     if !has_sdl() {
@@ -5709,7 +5821,7 @@ fn window_css_transition() {
             "--height",
             "300",
             "--frames",
-            "150",
+            "300",
             "--events",
             "painted move:120,160",
         ])
@@ -5827,7 +5939,8 @@ fn window_width_animation() {
             "--height",
             "400",
             "--frames",
-            "100",
+            "600",
+            "--until-idle",
         ])
         .output()
         .unwrap();
@@ -6230,16 +6343,13 @@ fn benchmark_date_follows_virtual_clock() {
 
 /// The DOM fixtures again with a collection at every allocation
 /// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
-/// `gc_wrappers` and `focus_freed` allocate too much for that.
-fn jsdom_gc_stress(part: usize) {
+#[test]
+fn jsdom_gc_stress() {
     let dir = root().join("browser").join("tests").join("jsdom");
-    const HEAVY: [&str; 2] = ["gc_wrappers.html", "focus_freed.html"];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.extension().is_some_and(|e| e == "html") && !HEAVY.iter().any(|h| p.ends_with(h))
-        })
+        .filter(|p| p.extension().is_some_and(|e| e == "html"))
         .collect();
     pages.sort();
     // The slowest pages first, so that they do not all run at the end.
@@ -6250,7 +6360,6 @@ fn jsdom_gc_stress(part: usize) {
         "layout_many_changes.html",
     ];
     pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
-    let pages: Vec<PathBuf> = pages.into_iter().skip(part).step_by(4).collect();
     // A page takes up to about 2 minutes here; one that hangs is killed.
     let limit = std::time::Duration::from_secs(600);
     dweller();
@@ -6283,9 +6392,6 @@ fn jsdom_gc_stress(part: usize) {
         failures.len(),
         failures.join("\n\n")
     );
-    if part != 3 {
-        return;
-    }
     // P9.8: code mode's realm calls into the page's realm and back.
     let run = root().join("browser/tests/agent/sessions/run.jsonl");
     // A run's 30 s default budget is wall time, which GC stress takes
@@ -6320,26 +6426,6 @@ fn jsdom_gc_stress(part: usize) {
         rooted(&text(&out.stdout)),
         "run.jsonl under GC stress"
     );
-}
-
-#[test]
-fn jsdom_gc_stress_0() {
-    jsdom_gc_stress(0);
-}
-
-#[test]
-fn jsdom_gc_stress_1() {
-    jsdom_gc_stress(1);
-}
-
-#[test]
-fn jsdom_gc_stress_2() {
-    jsdom_gc_stress(2);
-}
-
-#[test]
-fn jsdom_gc_stress_3() {
-    jsdom_gc_stress(3);
 }
 
 // ---- B8: net
@@ -6745,7 +6831,7 @@ fn xhr_methods() {
 /// the same port, XHR and fetch read a body only when the response's
 /// Access-Control-Allow-Origin allows the page (`*` not for a
 /// credentialed request); else XHR ends with status 0 and `error`, fetch
-/// rejects. A request that needs a preflight is not sent.
+/// rejects. A request whose preflight fails is not sent.
 /// (`browser/tests/net/cors.html` must print `cors.txt`.)
 #[test]
 fn cors_in_net() {
@@ -6770,6 +6856,40 @@ fn cors_in_net() {
         &root().join("browser/tests/net/cors.txt"),
         &text(&out.stdout),
         "cors_in_net",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// CORS preflight in net (Q3.2b): a cross-origin PUT with `x-test` is
+/// preceded by one OPTIONS, the same request within Max-Age by none; a
+/// denied preflight leaves the PUT unsent; a redirect to another URL is
+/// preflighted again, one to a URL with credentials fails. Both the
+/// background loader (fetch) and the synchronous path (sync XHR).
+/// (`browser/tests/net/cors-preflight.html` must print `cors-preflight.txt`.)
+#[test]
+fn cors_preflight() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/cors-preflight.html", srv.base),
+    ]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/cors-preflight.txt"),
+        &text(&out.stdout),
+        "cors_preflight",
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -7103,7 +7223,8 @@ fn window_raf_vsync() {
             "--height",
             "300",
             "--frames",
-            "600",
+            "1200",
+            "--until-idle",
             "--text",
         ])
         .spawn_drained();
@@ -7111,7 +7232,7 @@ fn window_raf_vsync() {
     while window.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(60) {
             let _ = window.kill();
-            panic!("the window did not draw 600 frames in 60 s");
+            panic!("the window did not end in 60 s");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -7228,6 +7349,43 @@ fn window_long_task() {
             || text(&out.stderr).contains("Script terminated: it ran too long"),
         "{got}"
     );
+}
+
+/// Q1.7: a click starts `try { while (1) {} } finally { ... }`
+/// (`browser/tests/ui/stuck.html`). After 5 s the window shows "This page
+/// is not responding"; Wait gives the script 5 s more, and the bar comes
+/// again; Stop ends it as V8's TerminateExecution does (no `catch` and no
+/// `finally` runs). A later click on the other button runs its handler.
+#[test]
+fn window_stuck_script() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let out = run_window(&[
+        "browser/tests/ui/stuck.html",
+        "--font",
+        "fixed",
+        "--width",
+        "400",
+        "--height",
+        "300",
+        "--frames",
+        "2",
+        "--state",
+        "--text",
+        "--events",
+        "click:50,65 click:288,56 frame click:360,56 frame click:50,115",
+    ]);
+    let got = text(&out.stdout);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    assert!(got.contains("\nunresponsive 2\n"), "{got}");
+    assert!(got.contains("\nstart hang after\n"), "{got}");
 }
 
 /// P4.33: the window paints a page once its document and its sheet are
@@ -7661,8 +7819,8 @@ fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
     }
     let out = c
         .args([
-            url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "40",
-            "--state", "--text", "--events", events,
+            url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
+            "--until-idle", "--state", "--text", "--events", events,
         ])
         .output()
         .unwrap();
@@ -8154,7 +8312,8 @@ fn window_login_basic_prompt() {
             "--height",
             "300",
             "--frames",
-            "40",
+            "400",
+            "--until-idle",
             "--events",
             "frame text:alice key:tab text:wonder",
             "--save",
@@ -8850,8 +9009,8 @@ fn no_file_from_web() {
     let goes = |dir: &str, how: &str, events: &str| {
         let out = run_window(&[
             &format!("{dir}go.html?{how}&{local}"),
-            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
-            "--events", events, "--state", "--text",
+            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+            "--until-idle", "--events", events, "--state", "--text",
         ]);
         assert!(
             out.status.success() && out.stderr.is_empty(),
@@ -8912,8 +9071,8 @@ fn window_login_popup() {
     let window = |page: &str, events: &str| {
         let url = format!("{base}/popup/{page}");
         let out = run_window(&[
-            &url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "30",
-            "--events", events, "--state", "--text",
+            &url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "300",
+            "--until-idle", "--events", events, "--state", "--text",
         ]);
         assert!(
             out.status.success() && out.stderr.is_empty(),
@@ -9534,4 +9693,60 @@ fn window_hover_local() {
             "{page}: restyled {restyled:?}"
         );
     }
+}
+
+/// Q2.2a: with `DWELLER_PROCESS=tab` each tab has a renderer process of
+/// its own (`dweller --renderer FD`, the binary IPC of
+/// docs/process-model.md §2). The tab's title comes from the renderer,
+/// whose pid is not the window's; a renderer that is killed is noted for
+/// its tab (`gone crashed`); one that sends a malformed message is
+/// killed (`bad message:` on stderr). Without the flag no renderer runs.
+#[test]
+fn window_renderer_lifecycle() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |events: &str, envs: &[(&str, &str)]| -> (u32, String, String) {
+        let child = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (pid, text(&out.stdout), text(&out.stderr))
+    };
+    let renderer = |state: &str| -> Vec<String> {
+        let line = state
+            .lines()
+            .find(|l| l.starts_with("renderer "))
+            .unwrap_or_else(|| panic!("no renderer line in\n{state}"));
+        line.splitn(4, ' ').map(String::from).collect()
+    };
+    let tab = [("DWELLER_PROCESS", "tab")];
+
+    let (window, state, err) = run("renderer:loaded", &tab);
+    let r = renderer(&state);
+    assert!(err.is_empty(), "{err}");
+    assert_ne!(r[1], window.to_string(), "the renderer is another process");
+    assert_eq!(&r[2..], ["title", "Form"], "{state}");
+
+    let (_, state, err) = run("renderer:loaded renderer:kill renderer:gone", &tab);
+    assert!(err.is_empty(), "{err}");
+    assert_eq!(&renderer(&state)[2..], ["gone", "crashed"], "{state}");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "malformed")];
+    let (_, state, err) = run("renderer:gone", &evil);
+    let r = renderer(&state);
+    assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
+    assert_eq!(err, format!("error: bad message: UnknownType {}\n", r[1]));
+
+    let (_, state, err) = run("", &[]);
+    assert!(err.is_empty(), "{err}");
+    assert!(!state.contains("renderer "), "{state}");
 }

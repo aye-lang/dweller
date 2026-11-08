@@ -1,0 +1,39 @@
+import html
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let HTML_DICTIONARY = [_][]u8{
+    "<", "</", ">", "/>", "=", "\"", "'", " ", "\n", "\r", "\0", ";",
+    "<!--", "-->", "--!>", "<!DOCTYPE html>", "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\">", "<?", "<![CDATA[", "]]>",
+    "&", "&#", "&#x", "&amp;", "&lt", "&notin;", "&#0;", "&#x110000;", "&#128;",
+    "<html>", "<head>", "<body>", "</body>", "</html>", "<frameset>", "<frame>",
+    "<script>", "</script>", "<!--<script>", "<style>", "</style>", "<title>", "<textarea>", "</textarea>",
+    "<xmp>", "<iframe>", "<noembed>", "<noframes>", "<noscript>", "<plaintext>",
+    "<table>", "</table>", "<caption>", "<colgroup>", "<col>", "<tbody>", "<tr>", "<td>", "<th>", "</tr>",
+    "<template>", "</template>", "<template shadowrootmode=open>", "<select>", "<option>", "<optgroup>",
+    "<svg>", "</svg>", "<math>", "</math>", "<foreignObject>", "<desc>", "<mi>", "<mtext>", "<annotation-xml encoding=\"text/html\">",
+    "<p>", "</p>", "<a href=x>", "</a>", "<b>", "</b>", "<i>", "<nobr>", "<li>", "<dd>", "<form>", "</form>",
+    "<button>", "<input type=hidden>", "<img>", "<br>", "</br>", "<hr>", "<pre>", "<listing>", "<marquee>", "<object>", "<image>",
+    " a=b", " a=\"b\"", " a='b'", " a", "<a a a>",
+}
+
+fn htmlTarget() Target {
+    return Target { name: "html", dictionary: HTML_DICTIONARY[0..], run: fuzzHtml }
+}
+
+fn fuzzHtml(alloc: Allocator, input: []u8) AllocError!void {
+    var doc = try html.parse(alloc, input)
+
+    doc.deinit()
+
+    var fragment = text.Builder.init(alloc)
+    defer fragment.deinit()
+
+    try fragment.append("<body>")
+    try fragment.append(input)
+
+    var inner = try html.parseWith(alloc, fragment.bytes(), false)
+
+    inner.deinit()
+}

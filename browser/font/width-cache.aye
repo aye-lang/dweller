@@ -1,0 +1,30 @@
+import std.list.List
+import std.mem.Allocator
+
+let WIDTH_CACHE_ENTRIES: usize = 32768
+let WIDTH_CACHE_BYTES: usize = 64
+
+// blink: platform/fonts/shaping/frame_shape_cache.cc
+pub struct WidthCache {
+    alloc: Allocator
+    fonts: List(FontWidths)
+    owned_keys: List([]mut u8)
+    owned_families: List([]mut u8)
+    last: usize
+    entries: usize
+
+    pub fn init(alloc: Allocator) WidthCache {
+        return WidthCache { alloc: alloc, fonts: List(FontWidths).init(alloc), owned_keys: List([]mut u8).init(alloc), owned_families: List([]mut u8).init(alloc), last: 0, entries: 0 }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.clear()
+        self.fonts.deinit()
+        self.owned_keys.deinit()
+        self.owned_families.deinit()
+    }
+
+    fn clear(self: *mut Self) {
+        clearWidthCache(self)
+    }
+}

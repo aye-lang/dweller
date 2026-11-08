@@ -1,0 +1,26 @@
+import ipc
+import std.mem.AllocError
+
+fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    if !ipc.fromRenderer(got.message) { return "not from a renderer" }
+
+    match got.message {
+        .Hello { version, pid } => {
+            if tp.hello || got.frame != 0 || version != ipc.VERSION || pid != tp.pid as u32 { return "unexpected hello" }
+
+            tp.hello = true
+        }
+
+        .Loaded { title, .. } => {
+            if !tp.loading || got.frame != slot.id { return "unexpected loaded" }
+
+            tp.title.clear()
+            try tp.title.append(title)
+            tp.loading = false
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

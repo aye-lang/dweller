@@ -1,0 +1,17 @@
+import std.text
+
+fn rendererWaits(ui: *Ui, word: []u8) bool {
+    if !text.startsWith(word, "renderer:") || text.eql(word, "renderer:kill") { return false }
+
+    let tp = ui.slots[ui.active].?.process orelse return true
+
+    if text.eql(word, "renderer:gone") { return tp.gone.len == 0 }
+
+    return tp.gone.len == 0 && (tp.loading || tp.url.len() == 0)
+}
+
+fn killRenderer(ui: *Ui) {
+    if ui.slots[ui.active].?.process |tp| {
+        kill(tp.pid, SIGKILL)
+    }
+}

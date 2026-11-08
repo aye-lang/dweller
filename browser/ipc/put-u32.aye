@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn putU32(out: *mut text.Builder, v: u32) AllocError!void {
+    try out.appendByte(byte(v, 0))
+    try out.appendByte(byte(v, 8))
+    try out.appendByte(byte(v, 16))
+    try out.appendByte(byte(v, 24))
+}
+
+fn putBytes(out: *mut text.Builder, b: []u8) AllocError!void {
+    try putU32(out, b.len as u32)
+    try out.append(b)
+}
+
+fn setU32(out: *mut text.Builder, at: usize, v: u32) {
+    out.buf[at] = byte(v, 0)
+    out.buf[at + 1] = byte(v, 8)
+    out.buf[at + 2] = byte(v, 16)
+    out.buf[at + 3] = byte(v, 24)
+}
+
+fn byte(v: u32, shift: u32) u8 {
+    return ((v >> shift) & 0xff) as u8
+}

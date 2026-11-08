@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn pollTabProcesses(ui: *mut Ui) AllocError!void {
+    if !ui.tab_processes { return }
+
+    for i in 0..ui.count {
+        let slot = ui.slots[i].?
+
+        if slot.process == null {
+            slot.process = try startTabProcess(ui.alloc)
+        }
+
+        if slot.process |tp| {
+            if try serviceTabProcess(slot, tp) { ui.dirty = true }
+        }
+    }
+}

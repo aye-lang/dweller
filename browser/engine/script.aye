@@ -238,6 +238,7 @@ pub struct Script {
     tag_protos: StrMap(u32)
     // The prototypes of SVG elements with interfaces of their own.
     svg_tag_protos: StrMap(u32)
+    selectors: StrMap(Selector)
     svg_proto: u32
     svg_svg_proto: u32
     mathml_proto: u32
@@ -269,6 +270,7 @@ pub struct Script {
     start_ms: u64
     real: bool
     task_began: u64 = 0
+    hang_at: u64 = 0
     vsync: bool = false
     hidden: bool = false
     throttled: bool = false
@@ -566,6 +568,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         shadow_proto: js.NONE,
         tag_protos: StrMap(u32).init(alloc),
         svg_tag_protos: StrMap(u32).init(alloc),
+        selectors: StrMap(Selector).init(alloc),
         svg_proto: js.NONE,
         svg_svg_proto: js.NONE,
         mathml_proto: js.NONE,
@@ -632,6 +635,9 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
     }
     s.it.host = s
     s.it.max_depth = PAGE_DEPTH
+    if s.real {
+        s.it.goes_on = pageGoesOn
+    }
     // The pages of a tab share one virtual clock.
     if rootPage(p).script |top| {
         if !s.real {
@@ -748,6 +754,7 @@ pub fn destroyScript(s: *mut Script) {
     s.free_lists.deinit()
     s.tag_protos.deinit()
     s.svg_tag_protos.deinit()
+    dropSelectors(s)
     s.written.deinit()
     dropComputed(s)
     s.transitions.deinit()
@@ -1280,6 +1287,7 @@ fn enter(s: *mut Script) {
         } else if s.real {
             s.it.startBudget(0, 0)
             s.task_began = time.monotonicMs()
+            s.hang_at = s.task_began + HANG_MS
         } else {
             s.it.startBudget(TASK_BACKSTOP_MS, TASK_STEPS)
         }
@@ -1673,7 +1681,11 @@ fn removeTimer(s: *mut Script, id: u32) {
 // After the browser ran scripts: the title follows the document.
 fn afterTask(s: *mut Script) AllocError!void {
     try runLayoutHook(s)
-    try runAnimationHook(s)
+
+    if !s.real {
+        try runAnimationHook(s)
+    }
+
     if s.title_version == s.version {
         return
     }

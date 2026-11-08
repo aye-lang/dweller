@@ -1168,3 +1168,188 @@ Each changed row of Q0.2 against 2026-10-17:
 | zol W8 | first paint 3013 → 30079 ms, now fails | live network: the document request runs into the 30 s (or 10 s connect) timeout of `http.aye`. Replay: 0.7–0.8 s with both binaries and both archives |
 
 2026-11-04 (Q0.4a): the react engine regression is 1021c3f (P10.30), not 922271a; split with 2–3 runs per point, 922271a reads 18–23 ms and its bad bisect step was one noisy run. P10.30's `decorateFrom` measured the font and scanned the line of every ancestor of every text fragment, twice per fragment (`paint_build` 47 ms per relayout on main). It now returns for a box without a decoration line: `paint_build` 4 ms, react on the old archive 19.4–29.5 ms (median 20.2; 23.3 rebased on 092213e) against main's 65.5–100.2 ms; `css/css-text-decor` 1027/1694 before and after.
+
+2026-11-04 (Q4.6a): `relayoutDirty` no longer refuses trees with floats; a change is laid out again from the nearest formatting root that holds the floats around it (`relayoutFrom`), and from the next one up when that root changes size. Replay, safe build, main 39781c6 against this branch: zol scroll `DWELLER_LAYOUT_WHY` `relayout:floats` 1304 → 0 (95 `relayout:dropped` now show: the tree mostly dropped boxes), full layouts with `DWELLER_LAYOUT_CHECK` 1430 → 179; zol W7 loop 11436 → 5200 ms, scroll p50/p95 235.7/9309.7 → 411.1/4249.6 ms, idle 18.3 → 13.0% (the p50 frame rose; the loop time of the whole run fell 54.2 → 36.4 s, full layouts 21.3 s → 2.8 s, dirty relayouts 0.01 → 4.6 s at 3.5 ms each); mistral idle `relayout:floats` 83 → 0, loop 1672 → 1523 ms, p95 454.4 → 412.4 ms, idle 99.1 → 99.5%. Both still fail W7.
+
+## Q4.1: where the W7 time goes (2026-11-04)
+
+Main f998dbf, the compiler at `AYE_REV`, the shipped build
+(`browser/build.sh`, `--mode safe`), Apple M2 Pro, 1024×768, the archives
+of `target/sites`. Every build and run went through `scripts/capped.sh`,
+one after the other, one run per site. `window_perf.py scroll` and `idle`
+as in the P4.41 report, with `DWELLER_TIMING=1 DWELLER_LAYOUT_WHY=1` and
+`--log`; a second scroll run with `DWELLER_JS_NATIVES=1` (bytecode and
+native time of the whole run); a macOS `sample` of the zol and mistral
+scroll runs and of 12 s of youtube-search idle. The split comes from the
+timing records of each loop iteration (each record is written when its
+phase ends; the columns do not overlap):
+
+- script: the `ui_timers`, `ui_raf` and `ui_events` steps minus every
+  record inside them. Net task: the part of it in tasks that waited for a
+  load (an `image_wait` record before their `timers` record).
+- forced other: `script_layout` minus the style, layout and parse records
+  inside it (the sample names `showTransitions`).
+- style full `style_full`; style partial `restyle`, `cascade_read`;
+  layout full `layout_full`, `layout`; layout partial `layout_dirty`;
+  paint `paint_build`, `paint_sig`; raster `ui_draw` minus the records
+  inside it; decode `image_decode`; GC `js_gc`; canvas `canvas_draw`;
+  network wait `requests`, `image_wait`, `prefetch`; parse `css_parse`,
+  `html`, `js_parse`, `js_compile`.
+
+"p95 frames" is the mean of the scroll frames at or over the p95 (2 of
+39). Idle is the 10 s that `idle` measures (its log offset kept), the busy
+ms by loop step. All numbers are ms.
+
+W7 of this build (the rows of `report --replay`):
+
+| Site | Longest loop | Scroll p50 / p95 | Idle CPU | W7 |
+|---|---:|---:|---:|---|
+| zol | 13584 | 442.5 / 8808.2 | 18.4% | FAIL loop, scroll, idle |
+| bbc | 640 | 43.1 / 533.1 | 0.2% | FAIL loop, scroll |
+| github | 1321 | 4.0 / 599.1 | 9.1% | FAIL loop, scroll, idle |
+| mistral | 1528 | 95.7 / 452.0 | 95.6% | FAIL loop, scroll, idle |
+| youtube | 429 | 0.6 / 320.0 | 5.1% | FAIL loop, scroll, idle |
+| youtube-search | 943 | 179.3 / 767.6 | 47.6% | FAIL loop, scroll, idle |
+| wikipedia-en | 259 | 2.5 / 228.9 | 0.1% | FAIL loop, scroll |
+| wikipedia (ja) | 207 | 2.7 / 202.1 | 0.3% | FAIL loop, scroll |
+| go-docs | 149 | 7.7 / 45.0 | 0.4% | FAIL loop, scroll |
+| react | 194 | 20.4 / 178.9 | 0.9% | FAIL loop, scroll |
+| go-docs with PR #259 | 138 | 6.3 / 24.7 | – | FAIL loop |
+| react with PR #259 | 142 | 21.4 / 58.0 | – | FAIL loop, scroll |
+
+PR #259 (Q0.4a, `decorateFrom`) was still open; its diff was built
+separately (`target/dweller-259`) for the last two rows. github fails idle
+again in the safe build (9.1%; Q0.2: 9.6% safe, 0.4% fast).
+
+The longest loop iteration, split:
+
+| Site | Total | Script | Net task | Forced other | Style full / partial | Layout full / partial | Paint | Raster | Decode | GC | Parse | Other |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| zol | 13584 | 6067 | 17 | 1666 | 0 / 15 | 5650 / 2 | 14 | 5 | 21 | 109 | 6 | 11 |
+| bbc | 640 | 575 | 0 | 0 | 9 / 0 | 7 / 0 | 3 | 6 | 0 | 23 | 14 | 3 |
+| github | 1321 | 305 | 0 | 2 | 310 / 452 | 129 / 0 | 54 | 1 | 0 | 17 | 46 | 5 |
+| mistral | 1528 | 13 | 1302 | 4 | 15 / 45 | 30 / 3 | 17 | 22 | 9 | 2 | 8 | 57 (canvas 53) |
+| youtube | 429 | 253 | 0 | 0 | 40 / 15 | 2 / 0 | 0 | 0 | 0 | 0 | 115 | 4 |
+| youtube-search | 943 | 654 | 0 | 1 | 20 / 94 | 14 / 0 | 1 | 0 | 0 | 34 | 118 | 8 |
+| wikipedia-en | 259 | 84 | 0 | 6 | 107 / 1 | 31 / 0 | 13 | 3 | 0 | 6 | 6 | 3 |
+| wikipedia (ja) | 207 | 36 | 0 | 8 | 102 / 1 | 31 / 0 | 10 | 9 | 0 | 0 | 7 | 3 |
+| go-docs | 149 | 38 | 3 | 0 | 1 / 3 | 45 / 0 | 24 | 1 | 3 | 0 | 29 | 2 |
+| react | 194 | 54 | 0 | 0 | 0 / 48 | 0 / 18 | 55 | 0 | 0 | 2 | 17 | 0 |
+
+The scroll frames at or over the p95, mean split:
+
+| Site | Total | Script | Net task | Forced other | Style full / partial | Layout full / partial | Paint | Raster | Decode | GC | Parse | Other |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| zol | 11196 | 4973 | 17 | 1357 | 0 / 12 | 4680 / 2 | 10 | 7 | 28 | 95 | 6 | 9 |
+| bbc | 566 | 479 | 0 | 0 | 9 / 6 | 25 / 0 | 3 | 3 | 0 | 21 | 18 | 2 |
+| github | 661 | 23 | 0 | 8 | 204 / 269 | 84 / 0 | 61 | 1 | 0 | 0 | 21 | 2 |
+| mistral | 455 | 68 | 10 | 2 | 27 / 45 | 23 / 3 | 18 | 31 | 198 | 0 | 7 | 23 (network wait 17) |
+| youtube | 375 | 202 | 0 | 0 | 20 / 35 | 1 / 0 | 0 | 2 | 0 | 0 | 110 | 5 |
+| youtube-search | 787 | 344 | 1 | 6 | 217 / 37 | 60 / 0 | 5 | 4 | 0 | 44 | 65 | 4 |
+| wikipedia-en | 244 | 75 | 3 | 3 | 104 / 1 | 28 / 0 | 13 | 2 | 2 | 4 | 7 | 2 |
+| wikipedia (ja) | 205 | 49 | 0 | 4 | 98 / 1 | 27 / 0 | 10 | 5 | 0 | 1 | 7 | 2 |
+| go-docs | 72 | 22 | 0 | 0 | 0 / 0 | 0 / 0 | 24 | 4 | 0 | 1 | 19 | 2 |
+| react | 182 | 15 | 0 | 0 | 0 / 20 | 0 / 5 | 116 | 20 | 0 | 2 | 0 | 4 |
+| go-docs, PR #259 | 53 | 22 | 0 | 0 | 0 / 0 | 0 / 0 | 3 | 4 | 0 | 1 | 19 | 4 |
+| react, PR #259 | 82 | 14 | 0 | 0 | 0 / 3 | 0 / 9 | 6 | 47 | 0 | 0 | 0 | 3 |
+
+Idle: the busy ms in the measured 10 s, by source. The other five sites
+are under 50 ms.
+
+| Site | Idle CPU | Timers and tasks | rAF | Draw | What the busy time is |
+|---|---:|---:|---:|---:|---|
+| mistral | 95.6% | 1238 | 6516 | 2410 | script 2239, raster 2193, layout full 1699, paint 1501, canvas 1268, forced other 647, decode 165 |
+| youtube-search | 47.6% | 2315 | 2817 | 85 | script 3214 (`animatedElements` is 1636 of the ~5500 busy samples), style partial 573, parse 462, layout full 405, style full 152, GC 91 |
+| zol | 18.4% | 240 | 1592 | 12 | a rAF callback forces a full layout each frame (`relayout:floats`): layout full 803, script 467, paint 324, forced other 232 |
+| github | 9.1% | 659 | 386 | 0 | 18 iterations: style partial 302, paint 208, style full 173, script 162, layout full 156 |
+| youtube | 5.1% | 13 | 501 | 0 | the page's rAF loop: script 513 (about 0.9 ms a frame) |
+
+### What the records and the samples show
+
+- **zol: forced full layouts next to floats.** The scroll handler (one
+  task of 0.4–13.6 s per frame) reads geometry 274–338 times per frame.
+  `relayoutDirty` refuses each time with `relayout:floats` (1378 times in
+  the run), so each read is a full layout of 17 ms. In the sample,
+  `layOut` is 7784 of the task's 18260 samples, and text shaping
+  (`shapeText`) is 3821 of those. The rest of the task is
+  `querySelectorAll` (`selectAll` 4345 samples: 14496 calls, 0.78 ms
+  each; each call parses its selector and walks the whole document),
+  `showTransitions` after each forced layout (2260 samples: the forced
+  other column, 5 ms per layout) and the window's named properties
+  (`isWindowNamed` 1070 samples: `getOwnPropertyDescriptor` on `window`
+  walks the document; 71744 calls, 70 µs each). Bytecode is 2814 ms of
+  the whole run.
+- **bbc: bytecode.** The long tasks are script with no layout in them
+  (bytecode 3330 ms of the run; each native under 250 ms). The ad and
+  consent scripts that P4.75d added run tasks of 0.5 s during the scroll.
+- **github**: full and partial restyles (`deps_whole_selector
+  has_sibling:data-selected`, shadow trees), as on 2026-10-15.
+- **mistral: decode in the image load tasks, and the animation.** The
+  longest iteration is one network task of 1.3 s: `akImageLoad` (951 of
+  7577 loop samples) decodes JPEG and PNG on the main thread
+  (`decodeJpeg` 683, `decodePng` 237). The slow scroll frames decode
+  images too (198 ms). Idle: the rAF animation draws canvases (1268 ms),
+  lays out the whole page (1699 ms; 94 `relayout:floats` and 110
+  `local:attr` refusals) and rasterizes layers (`blendLayerPixels`) in
+  every frame.
+- **youtube and youtube-search: script, CSS animation discovery, CSS
+  text parsing, GC.** `animatedElements` (the CSS animation hook after
+  each layout change: `geometry`, then a walk of the whole document)
+  takes 18–22 ms per call (youtube-search 2112 ms in 116 calls, youtube
+  418 ms in 19). Each slow iteration parses CSS text 2900–10514 times
+  (`css_parse` with no sheet URL: selectors and inline styles; 65–118
+  ms). `getComputedStyle` costs 0.6 ms per call on youtube (420 ms, 690
+  calls). GC pauses: youtube-search p95 87 ms, youtube 26 ms. youtube's
+  idle is the page's own rAF loop.
+- **wikipedia-en and wikipedia (ja): a whole-document restyle.** The
+  MediaWiki modules of the re-recorded archive change the DOM next to
+  `.mw-editsection-divider`, whose rule depends on its siblings
+  (`deps_whole_children structural:mw-editsection-divider`, 19–21 per
+  run). So the forced read restyles the whole document (98–107 ms), plus
+  the modules' own script (36–84 ms) and a full layout (27–31 ms). This is
+  what the 4.5 MB of scripts cost per frame.
+- **go-docs: the first run of the analytics scripts.** `gtag/js` (68 ms),
+  `gtm.js` (46 and 32 ms) and `analytics.js` (10 ms) run their top level
+  when they arrive, in the first scroll frames (with `js_parse` 14–25 ms).
+  The longest iteration also has a full layout (45 ms) and its display
+  list (24 ms). With PR #259 the display list is 3 ms and the scroll p95
+  is 24.7 ms (passes); the loop (138 ms) still fails on the scripts and
+  the layout.
+- **react**: PR #259 takes the p95 frames from 182 to 82 ms. What is left
+  is raster (47 ms: the gradient, SVG, shadow and layer pixels of
+  2026-10-15). The longest iteration has a partial restyle of 47 ms (2
+  roots) and 54 ms of script.
+- **GC** (every `js_gc` of both runs): p95 zol 27.9, youtube-search 87.0,
+  youtube 25.9, bbc 20.4, github 13.7, react 10.5 ms; the other sites
+  under 6 ms.
+
+### Causes ranked by ms, and the step for each
+
+"ms" is what the cause costs in the failing W7 number of each site (the
+longest iteration, the p95 frames, or the idle ms per 10 s). It is the
+most that a fix can gain there.
+
+| # | Cause | Step | Sites it moves | ms |
+|---:|---|---|---|---|
+| 1 | Forced reads lay out the whole page next to floats (`relayout:floats`); attribute changes other than class and style refuse the incremental layout (`local:attr`) | Q4.6 (with the `local:attr` exit of `localChanges`) | zol, mistral, youtube-search, bbc | zol 4680 p95 frame, 5650 loop, 803 idle/10 s; mistral 1699 idle; youtube-search 60 p95, 405 idle; bbc 25 |
+| 2 | Bytecode speed: long script tasks with no layout in them | new: JS interpreter speed (no Q4 step; the bounds-check card in the Aye repo is one part) | bbc, youtube-search, youtube, zol, wikipedia-en, go-docs | bbc 479–575; youtube-search 344–654, ~1600 idle; youtube 202–253, 513 idle; zol 2814 per run; wikipedia-en 75–84; go-docs 38–68 |
+| 3 | `querySelectorAll` parses its selector and walks the whole document on each call | new: a selector query cache and id, class and tag fast paths (Blink `SelectorQueryCache`, `SelectorQuery`) | zol, youtube-search, youtube | zol ~2700 of the p95 frame (24% of the task samples); youtube-search 282, youtube 60 per run |
+| 4 | Text shaping in each full layout | Q4.9 | zol (and every full layout) | zol ~2300 of the p95 frame (half of `layOut`); less after #1 |
+| 5 | CSS animations and transitions found by walking every element: `animatedElements` after each layout change, `showTransitions` after each forced layout | new: animations and transitions updated in the style recalc (Blink `CSSAnimations::CalculateAnimationUpdate`) | zol, youtube-search, youtube, wikipedia-en, mistral | zol 1357 p95 frame; youtube-search ~1600 idle/10 s (16% CPU); youtube 418, wikipedia-en 588, mistral 544 per run |
+| 6 | Image decode on the main thread, also inside image load tasks (`akImageLoad`) | Q4.10 | mistral, zol | mistral 1302 loop (the network task), 198 p95, 165 idle; zol 21–28 |
+| 7 | Whole-document restyle from sibling and structural dependencies | Q4.3 | wikipedia-en, wikipedia (ja), youtube-search | wikipedia-en 104–107; wikipedia 98–102; youtube-search 217 p95, 152 idle |
+| 8 | github's restyles: sibling `:has()` and shadow trees | Q4.4, Q4.2 | github | style full 204–310, partial 269–452; 475 idle |
+| 9 | Raster in every frame (gradients, SVG, shadows, layers) | new: raster and layer cache for animated and scrolled content (no Q4 step) | mistral, react | mistral 2193 idle/10 s; react 47 p95 (with #259) |
+| 10 | Canvas 2D drawing | P4.75h's leftovers (no Q4 step) | mistral | 1268 idle/10 s |
+| 11 | The window's named properties walk the document (`isWindowNamed`) | new: a named-item map per document (Blink `DocumentNameCollection`, the tree scope's id map) | zol | ~700 of the p95 frame (5067 per run) |
+| 12 | The cost of a partial restyle | Q4.8 | github, react, youtube-search | github 269–452; react 47 loop; youtube-search 37–94, 573 idle |
+| 13 | `decorateFrom` in the display list | PR #259 (Q0.4a), open | react, go-docs | react 110 p95; go-docs 21 p95 (go-docs scroll passes) |
+| 14 | CSS text parsed on each call (selectors, inline styles) | new, with #3: a cache of parsed selectors and declarations | youtube, youtube-search | youtube 108–115 per slow iteration; youtube-search 65–118, 462 idle |
+| 15 | GC pauses over 16 ms | Q4.11 | youtube-search, zol, youtube, bbc | youtube-search 44 p95 (pause p95 87); zol 95–109; youtube 26; bbc 21–23 |
+
+Q4.5 (sheet insertion invalidates by rule) and Q4.7 (layout result cache)
+move nothing measured here on their own: there are few `sheets`
+refusals, and #1 and #4 name the full layouts. Q4.12 is W8 (live) and is
+not measured here. After #1, #3 and #5, zol's frame is the bytecode and
+the layouts that are left. react and go-docs then fail only on their loop
+(script 38–68 ms with a layout or restyle in the same iteration).

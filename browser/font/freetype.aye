@@ -352,6 +352,7 @@ pub struct System {
     key: text.Builder
     runs: List(Run)
     hb_buffer: ?*mut HbBuffer
+    widths: WidthCache
 
     /// Loads the system fonts. `NoFont` when not even a regular
     /// sans-serif face is found.
@@ -385,6 +386,7 @@ pub struct System {
                     key: text.Builder.init(alloc),
                     runs: List(Run).init(alloc),
                     hb_buffer: null,
+                    widths: WidthCache.init(alloc),
                 }
                 var index = [12]usize{0, ..}
                 var ok = true
@@ -465,6 +467,7 @@ pub struct System {
         self.web.deinit()
         self.key.deinit()
         self.runs.deinit()
+        self.widths.deinit()
         FT_Done_FreeType(self.library)
     }
 
@@ -486,7 +489,7 @@ pub struct System {
     }
 
     pub fn width(self: *mut Self, f: Font, s: []u8) f64 {
-        return self.shapeText(f, s, null) catch |e| {
+        return cachedWidth(self, f, s) catch |e| {
             return 0.0
         }
     }
@@ -577,6 +580,7 @@ pub struct System {
                 fc.hi = d.weight_hi
             }
             self.clearChains()
+            self.widths.clear()
         }
         return true
     }

@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+pub fn encode(out: *mut text.Builder, frame: u32, m: Message) AllocError!void {
+    let start = out.len()
+
+    try putHeader(out, m.kind(), frame)
+    try putPayload(out, m)
+    setU32(out, start, (out.len() - start - HEADER_LEN) as u32)
+}
+
+fn putHeader(out: *mut text.Builder, kind: u16, frame: u32) AllocError!void {
+    try putU32(out, 0)
+    try putU32(out, kind as u32)
+    try putU32(out, frame)
+    try putU32(out, 0)
+}

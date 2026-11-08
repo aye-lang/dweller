@@ -162,15 +162,15 @@ can be stopped.
 | Step | What | Verify | Chromium |
 |---|---|---|---|
 | Q1.1 | The shipped build becomes `--mode safe`, and CI runs a smoke test on the shipped mode. Q0.2 measured the cost (loop +9.5%, jsbench +17.6%), and it is accepted: until Q2.8, a memory bug in an unsandboxed process exposes everything. Q4 wins the time back. A card in the Aye repo asks for bounds-check elimination in loops (navier-stokes 0.66×) | `build.sh` builds safe by default, and the smoke job is green | Chromium ships libc++ with its hardening checks on (`build/config/compiler/BUILD.gn`, `use_safe_libcxx` → `_LIBCPP_HARDENING_MODE_EXTENSIVE`) |
-| Q1.2 | Find and fix the `jsdom_gc_stress` divergence under GC stress (run 39080652106), then bring `focus_freed` back into the stress run | `DWELLER_JS_GC=stress` gives the same `run.jsonl` 20 times in a row | `v8/src/heap/` (handles across allocation points) |
-| Q1.3 | Find the root cause of the `window_spaces` flake (`browser.rs:2990`, `:3044`) and fix it | the test passes 50 times in a row (`--test-threads 1`, repeated) | – |
-| Q1.4 | The same for `window_spaces_watch`, `window_css_animation` and `agent_sessions` | 50 times in a row each | – |
-| Q1.5 | The same for `js_print_scopes` and `aye_unit_tests` | 50 times in a row each | – |
-| Q1.6 | `jsdom_gc_stress` comes back to one test under 10 min | one run under 10 min on CI | – |
+| Q1.2 | The `jsdom_gc_stress` divergence of run 39080652106: done 2026-11-04, no GC bug — the agent `run` hit its 30 s wall-clock budget under stress on a busy runner (fixed by 3261b7d); 30 runs under stress were identical | – | – |
+| Q1.3 | Window tests do not depend on how many frames fit in wall time: 63 tests use `--frames`, 18 were at risk and now stop their page loops after fixed ticks and run `--until-idle` (#267, #268, #273); the rule is in `docs/practices/browser.md` | the changed tests pass under 6 CPU hogs | – |
+| Q1.4 | Flaky tests: only when the TC5b record files a `flaky:` issue (none since 2026-10-21 in 38 `ci` runs; `window_spaces` and `window_css_animation` were last seen before Q1.3) | 50 runs in a row | – |
+| Q1.6 | `jsdom_gc_stress` comes back to one test under 10 min, with `focus_freed` shrunk to just above the GC threshold and back in the stress run | one run under 10 min on CI | – |
 | Q1.7 | Script interrupt: the VM checks a flag on back-edges and calls. After 5 s a bar says "page unresponsive" and offers Stop or Wait; Stop throws an uncatchable termination into the script | a page with `while(1){}` shows the bar, and Stop leaves the tab working | `chrome/browser/ui/hung_renderer/`, `v8/src/execution/stack-guard.cc` (`TerminateExecution`) |
 | Q1.8 | A JS heap limit in bytes, not values (`js/gc.aye:283`). Out of memory ends the tab's scripts with an error page, never the process | a page that allocates without end gets the error page, and the window lives | `gin/v8_initializer.cc`, `v8/src/heap/heap.cc` (`NearHeapLimitCallback`) |
 | Q1.9 | Session restore: tabs and their history come back after a quit or a crash | kill the window, start again, and the same tabs and URLs are there | `components/sessions/core/` |
 | Q1.10a | Fuzz harness: `dweller fuzz TARGET` (in process, coverage optional), a seed corpus, and the HTML parser target | a 10 min run finds no crash, or the crashes found are filed | `testing/libfuzzer/README.md`, `third_party/blink/renderer/platform/fuzzer/` |
+| Q1.10a2 | Coverage-guided fuzzing once Aye has edge counters (aye-lang/aye#26); until then the fuzzer is blind | the HTML target's corpus grows from new edges | `testing/libfuzzer/` |
 | Q1.10b | Fuzz targets for the CSS parser and the URL parser | the same | – |
 | Q1.10c | A fuzz target for the JS parser and bytecode | the same | `v8/test/fuzzer/` |
 | Q1.10d | Fuzz targets for the image decoders (PNG, JPEG, GIF, WebP) and fonts (WOFF/WOFF2) | the same | – |
@@ -196,7 +196,8 @@ How the steps run:
 |---|---|---|---|
 | Q2.1 | Design note `docs/process-model.md`, about one page: what the browser and the renderers own, the IPC messages (navigation, frames, input, network, storage, frames tree), the site definition, the process reuse policy, and how Spaces fit in. Compare with Chromium and Fission | the user reads it | `docs/process_model_and_site_isolation.md`, `content/browser/renderer_host/render_process_host_impl.cc`, `content/browser/site_instance_impl.cc` |
 | Q2.1b | Split `ui/window.aye` into the window and a page view, still in one process, along the boundary that the IPC will cut | the `window_*` tests pass with no golden change | – |
-| Q2.2 | Renderer skeleton: `dweller --renderer`, launched by `posix_spawn`, with a `socketpair` for IPC (the mechanism of `ui/spaces.aye`). It renders one tab, and its frames go through shared memory to the window. Behind `DWELLER_PROCESS=tab` | a window test loads a page in a renderer, and the pixels match the in-process golden | `content/renderer/render_thread_impl.cc`, `components/viz/service/surfaces/` (idea only) |
+| Q2.2a | The first half of Q2.2: `dweller --renderer FD`, `browser/ipc/` framing, lifecycle messages (`hello`, `navigate`, `loaded`, `shutdown`), the browser's checks on each message, crash noted (done, #263) | `window_renderer_lifecycle` | – |
+| Q2.2b | The second half of Q2.2: frames. Renderer skeleton: `dweller --renderer`, launched by `posix_spawn`, with a `socketpair` for IPC (the mechanism of `ui/spaces.aye`). It renders one tab, and its frames go through shared memory to the window. Behind `DWELLER_PROCESS=tab` | a window test loads a page in a renderer, and the pixels match the in-process golden | `content/renderer/render_thread_impl.cc`, `components/viz/service/surfaces/` (idea only) |
 | Q2.3 | Input and UI across the boundary: mouse, wheel, keys, text input, focus, selection, find, cursor, title, URL, status, and the long-task chip | the `window_*` tests pass with `DWELLER_PROCESS=tab` | `content/browser/renderer_host/render_widget_host_impl.cc`, `input/` |
 | Q2.3b | Agent commands routed to the tab's renderer; the browser renumbers agent refs, so the protocol stays the same | `agent_sessions` passes with `DWELLER_PROCESS=tab` | – |
 | Q2.4 | Network in the browser process: a renderer asks for loads over IPC. Cookies, the HTTP cache, `localStorage` and the profile stay in the browser. A renderer opens no profile file | `window_login` passes with the flag, and a test shows the renderer has no profile path or open jar | `services/network/url_loader.cc`, `services/network/public/mojom/url_loader_factory.mojom` |
@@ -227,6 +228,7 @@ with thresholds.
 | Q3.2b | Preflight with a cache, `Access-Control-Expose-Headers`, and redirects in CORS mode | WPT `fetch/api/cors`, `cors/` and `xhr` gain, and `conformance.py check` passes | `services/network/cors/preflight_controller.cc`, `preflight_cache.cc` |
 | Q3.3 | `crossorigin` on script, link and img, plus ORB (opaque responses that a no-cors fetch must not expose) | WPT `fetch/orb` and `html/cross-origin` subsets | `services/network/orb/` |
 | Q3.4 | TLS: set peer and host verification, TLS ≥ 1.2 and the system CA store explicitly. A bad certificate gets an interstitial with no bypass on HSTS hosts | a local server with expired, self-signed and wrong-host certificates; each is refused | `net/cert/`, `components/security_interstitials/` |
+| Q3.4b | A certificate-error bypass with a per-host exception store (none on HSTS hosts), and a wrong-clock hint on the expired page | a test proceeds past a self-signed cert once and is asked again in a new profile | `components/security_interstitials/core/` |
 | Q3.5 | HSTS (the header and the preload list), mixed content (active content blocked, passive content upgraded) and `upgrade-insecure-requests` | WPT `mixed-content`, `upgrade-insecure-requests`; an HSTS test | `net/http/transport_security_state.cc`, `core/loader/mixed_content_checker.cc` |
 | Q3.6 | X-Frame-Options and CSP `frame-ancestors` (after Q2.6a, because the check needs navigation in the browser) | WPT `x-frame-options`, `content-security-policy/frame-ancestors` | `content/browser/renderer_host/ancestor_throttle.cc` |
 | Q3.7 | CSP 1: parsing, `default-src` and `script-src` for external scripts, inline scripts with nonce and hash, and `eval` | WPT `content-security-policy/script-src` | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
@@ -239,13 +241,8 @@ with thresholds.
 ## Q4: interactivity (lane perf)
 
 Exit: W7 holds on all 20 sites, first in process and then again after
-Q2.14.
-
-Running order, from the Q4.1 profile (2026-11-04, `PERF.md` "Q4.1"):
-Q4.6, Q4.13, Q4.9, Q4.14, Q4.15, Q4.10, Q4.3, Q4.2 with Q4.4, Q4.11,
-Q4.16, Q4.17, Q4.12. Q4.5, Q4.7 and Q4.8 moved nothing measured on
-their own; they run only if a later profile shows them. Each step
-states the W7 sites it moves.
+Q2.14. Steps 2–9 each start from the Q4.1 profile and state the W7
+sites they move.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
@@ -256,17 +253,15 @@ states the W7 sites it moves.
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
 | Q4.6 | Why `relayoutDirty` refuses (mistral: 1301 times): fix the exits | the mistral refusals fall under 10 | `core/layout/layout_object.cc` (`MarkContainerChainForLayout`) |
+| Q4.6a | `relayout:floats`: lay out again from the nearest formatting root that holds floats (done, #268: zol refusals 1304 → 0, full layouts 1430 → 179) | `window_relayout_floats` | – |
+| Q4.6b | Attribute changes take the class/style path; `layoutReadsAttr` lists attributes layout reads (done, #271: `local:attr` 0 on mistral and zol) | `window_relayout_attr` | – |
+| Q4.6c | `relayout:dropped` (zol 84): class toggles inside a fixed-position widget rebuild the whole `body` | zol `relayout:dropped` under 10 | `core/layout/layout_object.cc` (`ObjectIsRelayoutBoundary`) |
 | Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 | Q4.9 | A shape cache by word (`layout/text-width.aye`) | the loop of wikipedia-en, rustdoc and mdn falls under 100 ms | `platform/fonts/shaping/caching_word_shaper.cc` |
 | Q4.10 | Image decode on a decode thread, with the pixels returned as a task, plus a decoded-image cache with a size budget | the bbc and zol loop falls, and `images` WPT does not drop | `platform/graphics/image_decoding_store.cc`, `cc/tiles/` (decode off the main thread) |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
-| Q4.13 | `querySelector(All)`, `getElementById`, `getElementsByClassName` and `window` named access use id, class and name indexes kept by the DOM, and a cache of parsed selectors (Q4.1: zol ~2700 ms in `querySelectorAll`, ~700 ms in named lookups) | zol's loop falls by those ms; `dom/nodes` WPT does not drop | `core/css/selector_query.cc` (fast paths, `SelectorQueryCache`), `core/dom/tree_ordered_map.cc`, `core/html/window_name_collection.cc` |
-| Q4.14 | CSS animation and transition checks visit only elements that have animations or transitions (Q4.1: zol, youtube-search, 1357 ms; ~16% idle CPU) | the idle CPU of those sites falls under 5% | `core/animation/document_animations.cc`, `core/animation/css/css_animations.cc` |
-| Q4.15 | No raster when a frame has no damage, and only the damaged rect otherwise (Q4.1: mistral 2193 ms idle, react 47 ms per frame) | mistral's and react's idle CPU and react's scroll p95 pass | `cc/trees/damage_tracker.cc`, `cc/scheduler/scheduler.cc` (no frame without damage) |
-| Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
-| Q4.17 | Canvas 2D drawing cost (Q4.1: mistral 1268 ms idle) | mistral's idle CPU passes | `modules/canvas/canvas2d/canvas_rendering_context_2d.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 

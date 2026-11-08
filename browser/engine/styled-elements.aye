@@ -1,4 +1,5 @@
 import css
+import dom
 import dom.NodeId
 import std.list.List
 import std.mem.AllocError
@@ -16,11 +17,23 @@ fn styledElements(s: *Script, styles: *css.Styles, local: bool, out: *mut List(N
         return
     }
 
-    let doc = &s.page.doc
-    var at: ?NodeId = doc.root
+    var transitioning = styles.transitioning.iterator()
 
-    while at |el| {
-        try out.append(el)
-        at = doc.following(el, doc.root)
+    while transitioning.next() |e| {
+        try out.append(e.value.*)
     }
+
+    var before = s.transitions.before.iterator()
+
+    while before.next() |e| {
+        try out.append(e.value.el)
+    }
+
+    var shown = s.transitions.shown.iterator()
+
+    while shown.next() |e| {
+        try out.append(e.value.el)
+    }
+
+    try dom.inTreeOrder(&s.page.doc, out)
 }

@@ -1,0 +1,43 @@
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+// spec: https://dom.spec.whatwg.org/#concept-tree-order
+pub fn inTreeOrder(doc: *Document, els: *mut List(NodeId)) AllocError!void {
+    var marks = IntMap(u32, bool).init(doc.alloc)
+    defer marks.deinit()
+
+    for el in els.items() {
+        if !doc.isLive(el) {
+            continue
+        }
+
+        try marks.put(el.index, true)
+        var up = doc.parent(el)
+
+        while up |p| {
+            if marks.contains(p.index) {
+                break
+            }
+
+            try marks.put(p.index, false)
+            up = doc.parent(p)
+        }
+    }
+
+    els.clear()
+    var at: ?NodeId = doc.root
+
+    while at |n| {
+        let mark = marks.get(n.index) orelse {
+            at = doc.followingSkip(n, doc.root)
+            continue
+        }
+
+        if mark {
+            try els.append(n)
+        }
+
+        at = doc.following(n, doc.root)
+    }
+}

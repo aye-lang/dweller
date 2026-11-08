@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn cachedWidth(sys: *mut System, f: Font, s: []u8) AllocError!f64 {
+    if s.len > WIDTH_CACHE_BYTES {
+        return sys.shapeText(f, s, null)
+    }
+
+    let widths = try widthsOf(&mut sys.widths, f)
+
+    if widths.get(s) |known| {
+        return known
+    }
+
+    let w = try sys.shapeText(f, s, null)
+
+    try putWidth(&mut sys.widths, f, s, w)
+
+    return w
+}

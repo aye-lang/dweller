@@ -1,7 +1,12 @@
 import std.mem.AllocError
 
+// spec: https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
 pub fn afterLayout(p: *mut Page) AllocError!void {
-    let s = p.script orelse return
+    if p.script |s| {
+        try runAnimationHook(s)
+    }
 
-    try runAnimationHook(s)
+    for f in p.frames.items() {
+        try afterLayout(f.page)
+    }
 }

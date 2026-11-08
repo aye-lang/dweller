@@ -1,0 +1,20 @@
+import ipc
+import std
+import std.mem.Allocator
+
+fn answerAll(alloc: Allocator, conn: std.fs.File, bytes: []u8) !?usize {
+    var used: usize = 0
+
+    while try ipc.nextMessage(bytes[used..]) |got| {
+        used += got.used
+
+        let href = match got.message {
+            .Navigate { url } => url
+            _ => return null
+        }
+
+        try load(alloc, conn, got.frame, href)
+    }
+
+    return used
+}

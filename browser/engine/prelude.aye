@@ -1029,11 +1029,6 @@ pub let PRELUDE =
     \\    return v >= 0 && v <= 4294967295 ? v : d;
     \\  }, function (v) { this.setAttribute(k, String(Number(v) >>> 0)); });
     \\}
-    \\hidden(DocumentFragment.prototype, 'getElementById', function (id) {
-    \\  id = String(id);
-    \\  for (const el of this.querySelectorAll('[id]')) if (el.id === id) return el;
-    \\  return null;
-    \\});
     \\
     \\// NodeList and HTMLCollection: `length`, `item` and the indices are
     \\// natives (live lists, engine/lists.aye).
@@ -3239,13 +3234,14 @@ pub let PRELUDE =
     \\    if (r.error !== undefined) {
     \\      this._sent = false;
     \\      this._state(4);
+    \\      if (!this._async) throw xhrError('send', "Failed to load '" + this._url + "'.", 'NetworkError');
     \\      this._fire('error');
     \\      this._fire('loadend');
     \\      return;
     \\    }
     \\    this.status = r.status;
     \\    this.statusText = r.status >= 200 && r.status < 300 ? 'OK' : '';
-    \\    this.responseURL = r.url;
+    \\    this.responseURL = (r.url || new URL(this._url, document.baseURI).href).split('#')[0];
     \\    this._type = r.type;
     \\    hidden(this, '_fetched', r);
     \\    this._state(2);
@@ -4045,10 +4041,6 @@ pub let PRELUDE =
     \\getter(ShadowRoot.prototype, 'serializable', function () { return false; });
     \\getter(ShadowRoot.prototype, 'activeElement', function () { return null; });
     \\hidden(ShadowRoot.prototype, 'getHTML', function () { return this.innerHTML; });
-    \\hidden(ShadowRoot.prototype, 'getElementById', function (id) {
-    \\  for (const el of this.querySelectorAll('[id]')) if (el.id === String(id)) return el;
-    \\  return null;
-    \\});
     \\Object.defineProperty(ShadowRoot.prototype, Symbol.toStringTag, { value: 'ShadowRoot', configurable: true });
     \\hidden(ElementP, 'getHTML', function () { return this.innerHTML; });
     \\getter(ElementP, 'slot', function () {

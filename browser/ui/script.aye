@@ -246,7 +246,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") {
             return false
         }
     }
@@ -301,6 +301,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if text.eql(w, "loaded") && ui.tab.early {
             return
         }
+        if rendererWaits(ui, w) {
+            return
+        }
         // Drop the word before handling it (handling may resume again).
         var next = end
         while next < all.len && all[next] == ' ' {
@@ -316,6 +319,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         }
         if text.eql(w, "overflow") {
             _ = overflowStack(0)
+        }
+        if text.eql(w, "renderer:kill") {
+            killRenderer(ui)
         }
         if text.eql(w, "frame") {
             // The rest waits for the next frame (`Ui.loop`).
@@ -367,6 +373,11 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
+    if ui.unresponsive > 0 {
+        try out.append("unresponsive ")
+        try out.appendUint(ui.unresponsive as u64)
+        try out.append("\n")
+    }
     if ui.auth.open {
         // The sign-in prompt (auth.aye): its realm and username.
         try out.append("auth ")
@@ -427,6 +438,7 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.appendUint(a.loop_max_ms)
         try out.append("\n")
     }
+    try writeTabProcess(ui, out)
     try writeFocus(ui, out)
 }
 

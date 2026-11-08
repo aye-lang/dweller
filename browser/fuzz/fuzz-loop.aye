@@ -1,0 +1,44 @@
+import std.fs
+import std.mem.Allocator
+import std.text
+import std.time
+
+fn fuzzLoop(alloc: Allocator, target: Target, corpus: [][]u8, current: []u8, seconds: u64, rng: *mut Rng) !u64 {
+    var input = text.Builder.init(alloc)
+    defer input.deinit()
+
+    var next = text.Builder.init(alloc)
+    defer next.deinit()
+
+    let end = time.monotonicMs() + seconds * 1000
+
+    for i in 0..corpus.len {
+        try runOne(alloc, target, current, corpus[i])
+    }
+
+    var runs = corpus.len as u64
+
+    while time.monotonicMs() < end {
+        input.clear()
+        try input.append(corpus[rng.below(corpus.len)])
+
+        for round in 0..rng.below(8) + 1 {
+            try mutate(rng, input.bytes(), corpus[rng.below(corpus.len)], target.dictionary, &mut next)
+            input.clear()
+            try input.append(next.bytes())
+        }
+
+        try runOne(alloc, target, current, input.bytes())
+        runs += 1
+    }
+
+    return runs
+}
+
+fn runOne(alloc: Allocator, target: Target, current: []u8, input: []u8) !void {
+    let f = try fs.create(current)
+
+    try f.write(input)
+    f.close()
+    try target.run(alloc, input)
+}
