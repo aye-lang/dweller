@@ -1,0 +1,18 @@
+import std
+import std.mem.Allocator
+import std.text
+
+extern("open") fn openPath(path: [*]u8, flags: i32, ...) i32
+
+fn probeSandbox(alloc: Allocator) {
+    if !text.eql(std.os.getenv("DWELLER_TEST_SANDBOX_PROBE") orelse "", "1") { return }
+
+    var path = text.Builder.init(alloc)
+
+    defer path.deinit()
+    path.append(std.os.getenv("HOME") orelse "") catch return
+    path.append("/.dweller") catch return
+    path.appendByte(0) catch return
+
+    std.log.line("sandbox-probe home={} tmp={} tcp={} fork={}", openErrno(openPath(path.bytes().ptr, 0)), probeWrite(), probeConnect(), probeFork())
+}

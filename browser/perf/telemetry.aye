@@ -40,12 +40,12 @@ extern struct DlInfo {
     saddr: usize
 }
 
-// O_WRONLY | O_CREAT | O_APPEND; O_CREAT differs between macOS and Linux.
+// O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC; O_CREAT and O_CLOEXEC differ between macOS and Linux.
 fn openAppend() i32 {
     if @targetOs() is .macos {
-        return 0x1 | 0x200 | 0x8
+        return 0x1 | 0x200 | 0x8 | 0x1000000
     }
-    return 0x441
+    return 0x80441
 }
 // SA_SIGINFO | SA_ONSTACK: the handler gets the signal's origin and runs
 // on Aye's alternate stack when there is one.

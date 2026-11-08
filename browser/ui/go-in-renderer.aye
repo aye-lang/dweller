@@ -1,8 +1,15 @@
 import std.mem.AllocError
 
 fn goInRenderer(ui: *mut Ui) AllocError!void {
-    if ui.slots[ui.active].?.process |tp| {
+    let slot = ui.slots[ui.active].?
+
+    if slot.process |tp| {
         tp.url.clear()
+
+        if tp.gone.len > 0 {
+            endTabProcess(ui.alloc, tp)
+            slot.process = null
+        }
     }
 
     try setAddress(ui)
