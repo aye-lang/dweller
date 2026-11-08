@@ -1,0 +1,24 @@
+import ipc
+import paint
+import std.mem.AllocError
+
+fn addTabDamage(ui: *mut Ui, all: paint.IRect) AllocError!void {
+    let tp = ui.slots[ui.active].?.process orelse return
+    var r = ipc.Reader { data: tp.damage.bytes() }
+
+    if tp.whole {
+        try ui.page.damage.add(all)
+    }
+
+    while r.at < r.data.len {
+        let x0 = r.readU32() catch unreachable
+        let y0 = r.readU32() catch unreachable
+        let x1 = r.readU32() catch unreachable
+        let y1 = r.readU32() catch unreachable
+
+        try ui.page.damage.add(paint.intersect(paint.IRect { x0: x0 as i64, y0: y0 as i64, x1: x1 as i64, y1: y1 as i64 }, all))
+    }
+
+    tp.damage.clear()
+    tp.whole = false
+}

@@ -1,0 +1,39 @@
+import std.list.List
+import std.text
+
+extern fn socketpair(domain: i32, kind: i32, protocol: i32, sv: [*]i32) i32
+
+test "two resizes sent back to back arrive with all four fds" {
+    var sv = [2]i32{-1, -1}
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    var fds = List(i32).init(@testAllocator())
+    defer fds.deinit()
+    var buf = @zeroed([4096]u8)
+
+    @expectEqual(0, socketpair(1, 1, 0, sv[..].ptr))
+
+    for first in [2]u32{1, 3} {
+        var two = [2]i32{try makeShared(@testAllocator(), 4096), try makeShared(@testAllocator(), 4096)}
+
+        out.clear()
+        try encode(&mut out, 1, Message.Resize { width: 32, height: 32, scale: 1.0, buffer: first })
+
+        @expectEqual(out.len() as isize, try sendFds(@testAllocator(), sv[0], out.bytes(), two[..]))
+
+        close(two[0])
+        close(two[1])
+    }
+
+    let n = try recvFds(sv[1], buf[..], &mut fds)
+    let got = (try nextMessage(buf[..n as usize])).?
+
+    @expectEqual(2 * out.len() as isize, n)
+    @expectEqual(4, fds.len())
+    @expect((try nextMessage(buf[got.used..n as usize])) != null)
+
+    for fd in fds.items() { close(fd) }
+
+    close(sv[0])
+    close(sv[1])
+}

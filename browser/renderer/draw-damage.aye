@@ -1,0 +1,29 @@
+import paint
+import std
+import std.list.List
+import std.mem.AllocError
+
+fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *paint.Damage) AllocError!void {
+    let size = r.width as usize * r.height as usize * 4
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.height as i64 }
+    let v = paint.View { scale: r.scale, dx: 0.0, dy: 0.0 }
+    let pixels = r.maps[k].?[0..size]
+
+    var canvas = paint.Canvas { alloc: r.alloc, width: r.width as usize, height: r.height as usize, pixels: pixels, clip: all, clips: List(paint.IRect).init(r.alloc), bound: all, bounds: List(paint.IRect).init(r.alloc) }
+    defer canvas.clips.deinit()
+    defer canvas.bounds.deinit()
+    var painter = paint.TextPainter.init(r.alloc, r.system)
+    defer painter.deinit()
+    var reuse = paint.Reuse { sigs: r.drawn.items(), cache: null }
+
+    if r.sent |j| {
+        std.mem.copy(pixels, r.maps[j].?[0..size])
+    }
+
+    for d in damage.rects.items() {
+        try canvas.pushDamage(d)
+        canvas.fillRect(d, list.background)
+        try paint.renderWith(list, &mut canvas, v, &mut painter, &mut reuse)
+        canvas.popClip()
+    }
+}

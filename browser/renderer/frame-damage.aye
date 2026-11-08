@@ -1,0 +1,20 @@
+import paint
+import std.mem.AllocError
+
+// chromium: components/viz/service/display/display.cc
+fn frameDamage(r: *TabRenderer, sigs: []paint.Sig, bg: paint.Rgba, out: *mut paint.Damage) AllocError!bool {
+    let v = paint.View { scale: r.scale, dx: 0.0, dy: 0.0 }
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.height as i64 }
+    let was = r.background
+    let whole = r.sent == null || bg.r != was.r || bg.g != was.g || bg.b != was.b || bg.a != was.a
+
+    if whole {
+        try out.add(all)
+    } else {
+        try paint.diff(r.drawn.items(), sigs, v, all, out)
+    }
+
+    _ = try paint.spreadLayers(sigs, v, all, out)
+
+    return whole
+}

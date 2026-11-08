@@ -1,5 +1,6 @@
 import engine
 import font
+import paint
 import std
 import std.list.List
 import std.mem.Allocator
@@ -12,6 +13,7 @@ struct TabRenderer {
     measure: dyn font.Measurer
     system: ?*mut font.System
     fds: List(i32)
+    drawn: List(paint.Sig)
     page: ?*mut engine.Page = null
     tab: u32 = 0
     first: u32 = 0
@@ -20,6 +22,8 @@ struct TabRenderer {
     scale: f64 = 1.0
     maps: [2]?[*]u8 = [2]?[*]u8{null, null}
     free: [2]bool = [2]bool{false, false}
+    sent: ?usize = null
+    background: paint.Rgba = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
     due: bool = false
 
     pub fn ack(self: *mut Self, buffer: u32) {
@@ -34,5 +38,6 @@ struct TabRenderer {
         for fd in self.fds.items() { close(fd) }
 
         self.fds.deinit()
+        self.drawn.deinit()
     }
 }
