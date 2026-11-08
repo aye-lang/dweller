@@ -1,0 +1,10 @@
+fn installConcat(it: *mut Interp, src: []u8) JsError!void {
+    if it.heap.findProp(it.array_ctor, it.sym_species) |i| {
+        let get = it.heap.obj(it.array_ctor).props[i].value
+
+        it.array_species_get = objectOf(get)
+        try it.addRoot(get)
+    }
+
+    it.concat_slow = try it.addRoot(try it.evalScript(src))
+}
