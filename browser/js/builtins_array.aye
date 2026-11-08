@@ -8,6 +8,7 @@ import std.text
 
 fn installArray(it: *mut Interp) JsError!void {
     let c = try makeConstructor(it, "Array", 1, arrayCtor, it.array_proto)
+    it.array_ctor = c
     try it.defineNative(c, "isArray", 1, arrayIsArray)
     try it.defineNative(c, "from", 1, arrayFrom)
     try it.defineNative(c, "of", 0, arrayOf)
@@ -399,6 +400,10 @@ fn arraySplice(it: *mut Interp, a: Args) JsError!Value {
 }
 
 fn arrayConcat(it: *mut Interp, a: Args) JsError!Value {
+    if !concatIsPlain(it, a) {
+        return concatSlow(it, a)
+    }
+
     let out = try it.newArray(0)
     try it.push(objVal(out))
     for i in 0..a.argc + 1 {
@@ -410,7 +415,7 @@ fn arrayConcat(it: *mut Interp, a: Args) JsError!Value {
             let src = objectOf(v)
             var j: u32 = 0
             while j < alen(it, src) {
-                try it.heap.pushElem(out, it.heap.obj(src).elems[j])
+                try it.heap.pushElem(out, try concatElem(it, src, j))
                 j += 1
             }
         } else {
