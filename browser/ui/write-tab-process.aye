@@ -1,3 +1,4 @@
+import ipc
 import std.mem.AllocError
 import std.text
 
@@ -22,6 +23,15 @@ fn writeTabProcess(ui: *Ui, out: *mut text.Builder) AllocError!void {
         try out.appendInt(tp.buffers.width as i64)
         try out.appendByte(' ')
         try out.appendInt(tp.buffers.height as i64)
+        try out.append(" damage")
+
+        var r = ipc.Reader { data: tp.last_damage.bytes() }
+
+        while r.at < r.data.len {
+            try out.appendByte(' ')
+            try out.appendInt((r.readU32() catch unreachable) as i64)
+        }
+
         try out.append("\n")
     }
 }

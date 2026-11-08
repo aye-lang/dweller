@@ -32,6 +32,7 @@ pub struct Dropdown {
     count: usize
     // The highlighted row.
     hover: usize
+    remote: bool = false
 }
 
 let DROPDOWN_FONT: f64 = 13.333
@@ -75,7 +76,7 @@ fn clickPage(ui: *mut Ui, x: f64, y: f64) AllocError!void {
         ui.dropdown = null
         ui.dirty = true
         if x >= dd.x && x < dd.x + dd.w && dy >= dd.y && dy < dd.y + dd.row * dd.count as f64 {
-            try chooseOption(ui, dd.sel, ((dy - dd.y) / dd.row) as usize)
+            try chooseRow(ui, dd, ((dy - dd.y) / dd.row) as usize)
         }
         return
     }
@@ -552,7 +553,7 @@ fn dropdownKey(ui: *mut Ui, sym: i32) AllocError!bool {
         ui.dropdown = dd
     } else if sym == SDLK_RETURN || sym == SDLK_KP_ENTER || sym == SDLK_SPACE {
         ui.dropdown = null
-        try chooseOption(ui, dd.sel, dd.hover)
+        try chooseRow(ui, dd, dd.hover)
     }
     ui.dirty = true
     return true
@@ -601,7 +602,9 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
 fn drawDropdown(ui: *mut Ui, p: *mut engine.Page, dd: Dropdown, v: paint.View) AllocError!void {
     var opts = List(NodeId).init(ui.alloc)
     defer opts.deinit()
-    try dom.options(&p.doc, dd.sel, &mut opts)
+    if !dd.remote {
+        try dom.options(&p.doc, dd.sel, &mut opts)
+    }
     let all = paint.Rect { x: dd.x, y: dd.y, w: dd.w, h: dd.row * dd.count as f64 }
     ui.canvas.fillRect(paint.deviceRect(paint.Rect { x: all.x + 2.0, y: all.y + 2.0, w: all.w, h: all.h }, v), Rgba { r: 0, g: 0, b: 0, a: 40 })
     ui.canvas.fillRect(paint.deviceRect(all, v), PAPER)
@@ -609,9 +612,14 @@ fn drawDropdown(ui: *mut Ui, p: *mut engine.Page, dd: Dropdown, v: paint.View) A
     let m = ui.measure.metrics(f)
     var opt_text = text.Builder.init(ui.alloc)
     defer opt_text.deinit()
-    for k, o in opts.items() {
-        if k >= dd.count {
-            break
+    for k in 0..dd.count {
+        var off = false
+        opt_text.clear()
+        if dd.remote {
+            off = try remoteRow(ui, k, &mut opt_text)
+        } else if k < opts.len() {
+            off = dom.isDisabled(&p.doc, opts.items()[k])
+            try dom.optionLabel(&p.doc, opts.items()[k], &mut opt_text)
         }
         let top = dd.y + dd.row * k as f64
         var ink = INK
@@ -619,11 +627,9 @@ fn drawDropdown(ui: *mut Ui, p: *mut engine.Page, dd: Dropdown, v: paint.View) A
             ui.canvas.fillRect(paint.deviceRect(paint.Rect { x: dd.x, y: top, w: dd.w, h: dd.row }, v), ROW_HOVER)
             ink = PAPER
         }
-        if dom.isDisabled(&p.doc, o) {
+        if off {
             ink = FADED
         }
-        opt_text.clear()
-        try dom.optionLabel(&p.doc, o, &mut opt_text)
         let base = math.floor(top + (dd.row + m.ascent - m.descent) / 2.0 + 0.5)
         try ui.painter.draw(&mut ui.canvas, (dd.x + 6.0) * v.scale + v.dx, base * v.scale + v.dy, opt_text.bytes(), f, v.scale, ink)
     }

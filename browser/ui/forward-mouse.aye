@@ -1,0 +1,57 @@
+import std.mem.AllocError
+
+fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool {
+    if ev.kind == SDL_MOUSEMOTION {
+        let me = &ev.motion
+        var mx = me.xrel as f64
+        var my = me.yrel as f64
+
+        if !inPage(ui, me.y as f64) || ui.locked { return false }
+
+        if me.state == SCRIPT_MOVE && ui.mouse_in {
+            mx = me.x as f64 - ui.mouse_x
+            my = me.y as f64 - ui.mouse_y
+        }
+
+        ui.mouse_in = true
+        ui.mouse_x = me.x as f64
+        ui.mouse_y = me.y as f64
+
+        try sendMouse(ui, tp, 0, 0, mx, my)
+
+        return true
+    }
+
+    let be = &ev.button
+    let bit = buttonBit(be.button)
+
+    if be.button != SDL_BUTTON_LEFT && be.button != SDL_BUTTON_MIDDLE && be.button != SDL_BUTTON_RIGHT { return false }
+
+    if ev.kind == SDL_MOUSEBUTTONUP {
+        if (tp.pressed & bit) == 0 { return false }
+
+        tp.pressed = tp.pressed & ~bit
+        ui.buttons = ui.buttons & ~bit
+        ui.clicks = be.clicks
+    } else {
+        if !inPage(ui, be.y as f64) { return false }
+
+        tp.pressed = tp.pressed | bit
+        ui.buttons = ui.buttons | bit
+        ui.clicks = be.clicks
+        ui.focus = Focus.Page
+        ui.dirty = true
+    }
+
+    ui.mouse_in = true
+    ui.mouse_x = be.x as f64
+    ui.mouse_y = be.y as f64
+
+    try sendMouse(ui, tp, 1 + (ev.kind == SDL_MOUSEBUTTONUP) as u32, buttonIndex(be.button), 0.0, 0.0)
+
+    return true
+}
+
+fn inPage(ui: *Ui, y: f64) bool {
+    return y >= ui.top() && y < ui.top() + ui.viewHeight()
+}

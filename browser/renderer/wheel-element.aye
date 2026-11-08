@@ -1,0 +1,22 @@
+import engine
+import std
+import std.mem.AllocError
+
+let LATCH_MS: u64 = 150
+
+// blink: core/input/scroll_manager.cc (scroll latching)
+fn wheelElement(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64, dx: f64, dy: f64, precise: bool) AllocError!bool {
+    let now = std.time.monotonicMs()
+
+    if !precise || now - r.wheel_at >= LATCH_MS {
+        r.wheel_el = try engine.wheelScrollTarget(p, x, y, dx, dy)
+    }
+
+    r.wheel_at = now
+
+    let el = r.wheel_el orelse return false
+
+    _ = try engine.scrollElementBy(p, el, dx, dy)
+
+    return true
+}

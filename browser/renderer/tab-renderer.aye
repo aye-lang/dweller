@@ -1,5 +1,8 @@
+import dom.NodeId
 import engine
 import font
+import pageview
+import paint
 import std
 import std.list.List
 import std.mem.Allocator
@@ -12,6 +15,7 @@ struct TabRenderer {
     measure: dyn font.Measurer
     system: ?*mut font.System
     fds: List(i32)
+    drawn: List(paint.Sig)
     page: ?*mut engine.Page = null
     tab: u32 = 0
     first: u32 = 0
@@ -20,10 +24,36 @@ struct TabRenderer {
     scale: f64 = 1.0
     maps: [2]?[*]u8 = [2]?[*]u8{null, null}
     free: [2]bool = [2]bool{false, false}
+    sent: ?usize = null
+    background: paint.Rgba = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
     due: bool = false
+    scroll_x: f64 = 0.0
+    scroll_y: f64 = 0.0
+    drawn_x: f64 = 0.0
+    drawn_y: f64 = 0.0
+    max_x: f64 = 0.0
+    max_y: f64 = 0.0
+    seq: u32 = 0
+    acked: u32 = 0
+    swallow: bool = false
+    wheel_el: ?NodeId = null
+    wheel_at: u64 = 0
+    scroll_el: ?NodeId = null
+    range: ?NodeId = null
+    space: ?NodeId = null
+    popup: ?NodeId = null
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
+    }
+
+    pub fn took(self: *mut Self, seq: u32) {
+        self.seq = seq
+        self.due = true
+    }
+
+    pub fn view(self: *Self) paint.View {
+        return paint.View { scale: self.scale, dx: -pageview.snappedScroll(self.scroll_x, self.scale) * self.scale, dy: -pageview.snappedScroll(self.scroll_y, self.scale) * self.scale }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -34,5 +64,6 @@ struct TabRenderer {
         for fd in self.fds.items() { close(fd) }
 
         self.fds.deinit()
+        self.drawn.deinit()
     }
 }

@@ -1,6 +1,7 @@
 import engine
 import font
 import ipc
+import paint
 import std
 import std.list.List
 import std.mem.Allocator
@@ -9,7 +10,7 @@ import std.text
 extern fn getpid() i32
 
 fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, system: ?*mut font.System) i32 {
-    var r = TabRenderer { alloc: alloc, conn: conn, measure: measure, system: system, fds: List(i32).init(alloc) }
+    var r = TabRenderer { alloc: alloc, conn: conn, measure: measure, system: system, fds: List(i32).init(alloc), drawn: List(paint.Sig).init(alloc) }
     defer r.deinit()
     var got = text.Builder.init(alloc)
     defer got.deinit()
@@ -19,6 +20,12 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
     send(alloc, conn, 0, ipc.Message.Hello { version: ipc.VERSION, pid: getpid() as u32 }) catch return 1
 
     while true {
+        if !waitReadable(conn.fd, timerWait(&mut r)) {
+            runTimers(&mut r) catch return 1
+
+            continue
+        }
+
         let n = ipc.recvFds(conn.fd, buf[..], &mut r.fds) catch return 1
 
         if n <= 0 { return 0 }

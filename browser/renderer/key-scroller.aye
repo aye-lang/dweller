@@ -1,0 +1,12 @@
+import engine
+import std.mem.AllocError
+
+fn keyScroller(r: *mut TabRenderer, p: *mut engine.Page, key: []u8, shift: bool) AllocError!bool {
+    let el = r.scroll_el orelse return false
+
+    if !p.doc.isLive(el) { return false }
+
+    let d = keyDelta(key, shift, try engine.clientHeightOf(p, el), 1.0e9) orelse return false
+
+    return engine.scrollElementBy(p, el, d[0], d[1])
+}

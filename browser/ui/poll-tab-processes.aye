@@ -7,13 +7,15 @@ fn pollTabProcesses(ui: *mut Ui) AllocError!void {
         let slot = ui.slots[i].?
 
         if slot.process == null {
-            slot.process = try startTabProcess(ui.alloc)
+            slot.process = try startTabProcess(ui.alloc, ui.painter.system == null)
         }
 
         if slot.process |tp| {
             try giveBuffers(ui, slot, tp)
 
             if try serviceTabProcess(slot, tp) { ui.dirty = true }
+            if tp.popup_new { try takePopup(ui, tp, i == ui.active) }
+            if i == ui.active && (tp.whole || tp.damage.len() > 0) { ui.repaint = true }
         }
     }
 }
