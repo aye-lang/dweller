@@ -18,6 +18,24 @@ pub struct Bitmap {
     version: u64 = 0
     look: u64 = 0
     looked_at: u64 = 0
+    natural_width: usize = 0
+    natural_height: usize = 0
+
+    pub fn naturalWidth(self: *Self) usize {
+        if self.natural_width > 0 {
+            return self.natural_width
+        }
+
+        return self.width
+    }
+
+    pub fn naturalHeight(self: *Self) usize {
+        if self.natural_height > 0 {
+            return self.natural_height
+        }
+
+        return self.height
+    }
 
     pub fn shown(self: *Self) u64 {
         if self.looked_at == self.version {
@@ -49,10 +67,9 @@ pub enum Format {
     Unknown
 }
 
-// Larger images are refused before anything is allocated: 40 million
-// pixels are 160 MB of RGBA already.
 let MAX_SIDE: usize = 16384
-let MAX_PIXELS: usize = 40000000
+// chromium: content/child/blink_platform_impl.cc MaxDecodedImageBytes
+let MAX_DECODED_BYTES: usize = 268435456
 
 /// The format of `data`, from its first bytes (the Content-Type of a
 /// response is often wrong, so browsers sniff images).
@@ -101,12 +118,8 @@ pub fn decode(alloc: Allocator, data: []u8) ImageError!Bitmap {
 
 // Zero sizes are malformed; huge ones are legal but refused.
 fn checkSize(width: usize, height: usize) ImageError!void {
-    if width == 0 || height == 0 {
-        return ImageError.Invalid
-    }
-    if width > MAX_SIDE || height > MAX_SIDE || width * height > MAX_PIXELS {
-        return ImageError.Unsupported
-    }
+    try checkSide(width, height)
+    try checkDecodeBytes(width * height * 4)
 }
 
 // A transparent black bitmap of a checked size.

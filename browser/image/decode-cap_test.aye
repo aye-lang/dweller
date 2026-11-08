@@ -1,0 +1,59 @@
+import std.mem.Allocator
+
+fn isRefused(a: Allocator, data: []u8) bool {
+    let bmp = decode(a, data) catch |e| {
+        return e == ImageError.Unsupported
+    }
+
+    bmp.deinit(a)
+
+    return false
+}
+
+test "an image whose pixels or coefficients pass the decode cap is refused from its header" {
+    let a = @testAllocator()
+    let wide = try readFixture(a, "cap_wide.png")
+
+    defer a.free(wide)
+
+    let progressive = try readFixture(a, "cap_progressive.jpg")
+
+    defer a.free(progressive)
+
+    @expect(headerSize(wide) == null)
+    @expect(isRefused(a, wide))
+    @expect(isRefused(a, progressive))
+}
+
+test "a JPEG past the decode cap decodes at a scale that fits and keeps its natural size" {
+    let a = @testAllocator()
+    let data = try readFixture(a, "cap_large.jpg")
+
+    defer a.free(data)
+
+    let bmp = try decode(a, data)
+
+    defer bmp.deinit(a)
+
+    let size = headerSize(data) orelse [2]usize{0, 0}
+
+    @expect(bmp.width == 3162 && bmp.height == 3162)
+    @expect(bmp.naturalWidth() == 6324 && bmp.naturalHeight() == 6324)
+    @expect(size[0] == 6324 && size[1] == 6324)
+    @expect(bmp.pixels[0] == 128 && bmp.pixels[3] == 255)
+}
+
+test "an image whose bitmap fits but whose working buffers pass the decode cap is refused" {
+    let a = @testAllocator()
+    let deep = try readFixture(a, "cap_deep.png")
+
+    defer a.free(deep)
+
+    let lossless = try readFixture(a, "cap_lossless.webp")
+
+    defer a.free(lossless)
+
+    @expect(headerSize(deep) != null && headerSize(lossless) != null)
+    @expect(isRefused(a, deep))
+    @expect(isRefused(a, lossless))
+}

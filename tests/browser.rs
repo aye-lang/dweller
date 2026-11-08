@@ -1974,6 +1974,22 @@ fn check_png(path: &Path) -> (u32, u32) {
     size
 }
 
+/// Q1.10d2: a JPEG whose decode passes the 256 MiB cap decodes at 1/2,
+/// but lays out, reports and draws at the size in its header.
+#[test]
+fn downscaled_jpeg_natural_size() {
+    let page = "browser/tests/image/cap_natural.html";
+    let out = run(&["dump", "--text", "--js", page]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let got = text(&out.stdout);
+    assert!(
+        got.contains("natural 6324x6324 width 6324x6324 box 6324x6324 drawn 128,128,128,255"),
+        "{got}"
+    );
+    let layout = text(&run(&["dump", "--layout", page]).stdout);
+    assert!(layout.contains("replaced <img id=\"i\" src=\"cap_large.jpg\"> (0, 0) 6324x6324"), "{layout}");
+}
+
 #[test]
 fn png_validity() {
     let out = scratch().join("valid.png");

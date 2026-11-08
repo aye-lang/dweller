@@ -1,0 +1,16 @@
+import std.math
+
+fn jpegStoreScaled(dec: *mut JpegDecoder, ci: usize, coef: []f32, bx: usize, by: usize) {
+    let c = &dec.comps[ci]
+    let s = dec.scale
+    let n = 8 / s
+    let base = c.offset + by * n * c.stride + bx * n
+
+    for y in 0..n {
+        for x in 0..n {
+            let v = jpegBox(coef, x * s, y * s, s) as f64 + 128.5
+
+            dec.plane[base + y * c.stride + x] = math.clamp(v, 0.0, 255.0) as u8
+        }
+    }
+}

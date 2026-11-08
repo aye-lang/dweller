@@ -6,9 +6,13 @@ fn jpegFrameSize(body: []u8, orientation: u8) ?[2]usize {
     let height = (body[1] as usize << 8) | body[2] as usize
     let width = (body[3] as usize << 8) | body[4] as usize
 
-    if orientation >= 5 {
-        return checkedSize(height, width)
+    checkSide(width, height) catch |e| {
+        return null
     }
 
-    return checkedSize(width, height)
+    if orientation >= 5 {
+        return [2]usize{height, width}
+    }
+
+    return [2]usize{width, height}
 }
