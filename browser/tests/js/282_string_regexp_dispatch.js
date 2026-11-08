@@ -30,3 +30,14 @@ RegExp.prototype.exec = saved;
 console.log('abc'.replace(/b/, 'x'), 'a1b2'.split(/\d/).join(','));
 try { 'a'.replaceAll(/a/, 'b'); } catch (e) { console.log(e instanceof TypeError); }
 console.log('x'.replace({ [Symbol.replace]: (s, r) => s + r }, '!'), 'x'.replace({ toString: () => 'x' }, 'y'));
+const test = RegExp.prototype.test;
+delete RegExp.prototype.test;
+RegExp.prototype.test = test;
+RegExp.prototype.exec = function (s) { return saved.call(this, s.toUpperCase()); };
+console.log('abc'.replace(/B/, 'x'));
+RegExp.prototype.exec = saved;
+const ctor = RegExp.prototype.constructor;
+RegExp.prototype.constructor = function () {};
+RegExp.prototype.constructor[Symbol.species] = function () { return /-/y; };
+console.log('abc'.replace(/b/, 'x'), 'a-b1c'.split(/\d/).join(','));
+RegExp.prototype.constructor = ctor;
