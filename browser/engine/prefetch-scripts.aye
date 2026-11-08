@@ -1,0 +1,28 @@
+import dom.NodeId
+import net
+import perf
+import std.list.List
+import std.mem.AllocError
+
+fn prefetchScripts(p: *mut Page, els: []NodeId) AllocError!void {
+    let began = perf.start()
+    defer perf.end("prefetch", began, p.url.href)
+    var ids = List(u32).init(p.alloc)
+    defer ids.deinit()
+
+    for el in els {
+        let src = p.doc.attr(el, "src") orelse p.doc.attr(el, "href") orelse continue
+        let target = p.resolve(p.alloc, src) catch continue
+        defer target.deinit(p.alloc)
+        let id = net.startLoadAs(target.withoutFragment(), scriptRequest(p, el))
+
+        if id != 0 {
+            ids.append(id) catch {
+                net.releaseLoad(id)
+                break
+            }
+        }
+    }
+
+    net.awaitLoads(ids.items(), p.url.href)
+}

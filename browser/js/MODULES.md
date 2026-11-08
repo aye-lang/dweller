@@ -52,12 +52,15 @@ none of these: `type="module"` scripts were skipped and `nomodule` ran.
 
 ## Limits
 
-- Module scripts inserted by a script (not the parser) do not run, as for
-  classic scripts; script elements fire no `load`/`error` events.
 - Modules are fetched in CORS mode (Q3.3b, `docs/plans/cards/Q3.3b.md`):
   credentials same-origin, or include for `crossorigin=use-credentials`
   (inherited by the graph). A failed fetch of a module script's graph is
-  an error event at an inserted element, not an uncaught error.
+  an error event at the element, not an uncaught error; an external
+  script that ran gets `load` (Q3.3c).
+- `import()` takes the credentials of its referencing script (Q3.3c):
+  the parser keeps them on the `ImportCall` node (`Interp.script_include`
+  while the script or module is parsed), as V8 keeps host-defined
+  options on the compiled script.
 - No integrity, or `import.meta` beyond `url` and
   `resolve`. Import attribute types other than `json` are TypeErrors.
 - `async` module scripts run like deferred ones.

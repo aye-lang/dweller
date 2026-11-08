@@ -1,0 +1,45 @@
+import engine
+import ipc
+import std.mem.AllocError
+import std.text
+import url
+
+// chromium: content/browser/dom_storage/dom_storage_context_wrapper.cc
+fn answerStorage(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .Storage { doc, context, session, op, index, key, value } => {
+            if doc > docCount(tp) || session > 1 || op > 7 || (op >= 6 && session == 0) { return "bad storage" }
+
+            let alloc = tp.url.alloc
+            var area = text.Builder.init(alloc)
+            defer area.deinit()
+            var out = text.Builder.init(alloc)
+            defer out.deinit()
+
+            if session == 1 { try tabArea(&mut area, tp.tab, context) }
+
+            if op >= 6 { return tabSessionChanged(&mut area, tp.tab, op, index) }
+
+            let href = fetchDoc(tp, doc)
+            let page = url.parse(alloc, href) catch |e| {
+                try ipc.encode(&mut tp.outbox, on, ipc.Message.StorageReply { found: 0, refused: 0, changed: 0, count: 0, value: "" })
+
+                return ""
+            }
+
+            defer page.deinit(alloc)
+            try engine.storageOrigin(&mut area, &page)
+
+            let ask = engine.StorageAsk { href: href, context: context, session: session == 1, op: op, index: index, key: key, value: value }
+            let done = try engine.applyStorage(alloc, area.bytes(), ask, &mut out)
+
+            try ipc.encode(&mut tp.outbox, on, ipc.Message.StorageReply { found: done.found as u32, refused: done.refused as u32, changed: done.changed as u32, count: done.count, value: out.bytes() })
+
+            if done.changed && session == 0 { try tellStorage(tp, &page, ask, done, out.bytes()) }
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

@@ -125,7 +125,7 @@ pub enum Node {
     NewTarget
     // `import(arg, options)`: the referrer URL atom is captured at parse
     // time, so later callbacks resolve against their own script.
-    ImportCall { arg: u32, options: u32, referrer: u32 }
+    ImportCall { arg: u32, options: u32, referrer: u32, include: bool }
     ImportMeta { referrer: u32, module_id: u32 }
     // A module's local exports: lists[list..list+n] are Prop nodes whose
     // key is the local name and whose value is its Ident. Evaluates to an
@@ -335,7 +335,7 @@ pub struct Ast {
     }
 
     pub fn node(self: *Self, i: u32) Node {
-        return self.nodes.items()[i]
+        return self.nodes.buf[..self.nodes.count][i]
     }
 
     pub fn item(self: *Self, list: u32, k: u32) u32 {

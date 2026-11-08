@@ -1,0 +1,35 @@
+import ipc
+import std
+
+fn awaitReply(r: *mut TabRenderer) ?ipc.Message {
+    var buf = @zeroed([65536]u8)
+
+    while true {
+        var at: usize = 0
+
+        while true {
+            let got = ipc.nextMessage(r.inbox.bytes()[at..]) catch return null
+            let g = got orelse break
+
+            if g.message is .Cookies || g.message is .StorageReply {
+                r.reply.clear()
+                r.reply.append(r.inbox.bytes()[at..at + g.used]) catch return null
+                cutOut(&mut r.inbox, at, g.used)
+
+                let mine = ipc.nextMessage(r.reply.bytes()) catch return null
+
+                return mine.?.message
+            }
+
+            at += g.used
+        }
+
+        let n = ipc.recvFds(r.conn.fd, buf[..], &mut r.fds) catch return null
+
+        if n <= 0 { return null }
+
+        r.inbox.append(buf[..n as usize]) catch return null
+    }
+
+    unreachable
+}

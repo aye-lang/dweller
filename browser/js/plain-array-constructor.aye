@@ -1,0 +1,10 @@
+fn plainArrayConstructor(it: *mut Interp) bool {
+    let ci = it.heap.findProp(it.array_proto, A_CONSTRUCTOR) orelse return false
+    let si = it.heap.findProp(it.array_ctor, it.sym_species) orelse return false
+    let c = it.heap.obj(it.array_proto).props[ci]
+    let s = it.heap.obj(it.array_ctor).props[si]
+    let ctor_is_array = c.flags & F_ACCESSOR == 0 && objectOf(c.value) == it.array_ctor
+    let species_is_original = s.flags & F_ACCESSOR != 0 && objectOf(s.value) == it.array_species_get
+
+    return ctor_is_array && species_is_original
+}

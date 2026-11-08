@@ -1,0 +1,22 @@
+import std.list.List
+import std.mem.Allocator
+
+// chromium: third_party/blink/renderer/platform/graphics/paint/paint_controller.cc
+pub struct FrameLists {
+    lists: List(FrameList)
+    builds: u64 = 0
+
+    pub fn init(alloc: Allocator) FrameLists {
+        return FrameLists { lists: List(FrameList).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.dropUnused()
+        self.dropUnused()
+        self.lists.deinit()
+    }
+
+    pub fn dropUnused(self: *mut Self) {
+        dropUnusedFrames(self)
+    }
+}

@@ -222,6 +222,8 @@ pub struct Interp {
     sym_has_instance: u32
     sym_to_primitive: u32
     sym_to_string_tag: u32
+    sym_species: u32 = NONE
+    sym_is_concat_spreadable: u32 = NONE
     // The function that Proxy.revocable's `revoke` binds (proxy.aye).
     proxy_revoke: u32
     // Generators and async functions (coroutine.aye).
@@ -232,6 +234,9 @@ pub struct Interp {
     async_gen_driver: u32
     // Root of lib.aye's takeUnhandled (see Interp.takeUnhandled).
     unhandled_fn: u32
+    array_ctor: u32 = NONE
+    array_species_get: u32 = NONE
+    concat_slow: u32 = NONE
     // Microtasks (queueMicrotask, promise reactions), in order from
     // jobs_head; the host runs them (takeJob).
     jobs: List(Value)
@@ -256,6 +261,7 @@ pub struct Interp {
     // Default referrer for classic scripts, and the root of the module
     // loader object (lib.aye).
     script_url: u32 = 0
+    script_include: bool = false
     import_driver: u32 = NONE
     // The native getter of module namespace properties (modules.aye).
     module_cell_get: u32 = NONE
@@ -689,11 +695,11 @@ pub struct Interp {
     }
 
     pub fn slot(self: *Self, i: usize) Value {
-        return self.stack.items()[i]
+        return self.stack.buf[..self.stack.count][i]
     }
 
     pub fn setSlot(self: *mut Self, i: usize, v: Value) {
-        self.stack.items()[i] = v
+        self.stack.buf[..self.stack.count][i] = v
     }
 
     /// Argument i of a native call (undefined when missing).
@@ -2801,6 +2807,7 @@ pub struct Interp {
             strict: false,
             floor: self.stackFloor(),
             referrer: referrer,
+            include: self.script_include,
             module: module,
             info: info,
         }

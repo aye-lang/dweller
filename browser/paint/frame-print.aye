@@ -1,0 +1,22 @@
+import layout.Tree
+
+fn framePrint(t: *Tree) u64 {
+    var h = hf(hf(hf(hu(0xcbf29ce484222325, t.serial), t.viewport_w), t.viewport_h), t.scroll_y)
+
+    for i in 0..t.boxes.len() {
+        let b = t.bx(i)
+
+        h = hu(hu(hu(h, @hash(b.style.ptr)), @hash(b.text.ptr)), b.text.len as u64)
+        h = hf(hf(hf(hf(h, b.ax), b.ay), b.w), b.h)
+    }
+
+    if t.images |imgs| {
+        h = hu(h, imagesPrint(imgs))
+    }
+
+    for fv in t.frames.items() {
+        h = hf(hu(hu(hu(h, @hash(fv.tree)), fv.stamp), framePrint(fv.tree)), fv.scroll)
+    }
+
+    return h
+}

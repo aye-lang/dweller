@@ -1,19 +1,22 @@
 import engine
+import std
 import std.mem.AllocError
 
 var stuck_ui: ?*mut Ui = null
+var stuck_headless = false
 
-fn watchStuck(ui: *mut Ui) {
+fn watchStuck(ui: *mut Ui, headless: bool) {
     stuck_ui = ui
+    stuck_headless = headless
     engine.setHangHook(stuckHook)
 }
 
-fn stuckHook() bool {
-    return askStuck(stuck_ui.?) catch return false
+fn stuckHook(busy_ms: u64) bool {
+    return askStuck(stuck_ui.?, busy_ms) catch return false
 }
 
 // chromium: chrome/browser/ui/views/hung_renderer_view.cc
-fn askStuck(ui: *mut Ui) AllocError!bool {
+fn askStuck(ui: *mut Ui, busy_ms: u64) AllocError!bool {
     var ev = @zeroed(SDL_Event)
 
     ui.stuck = true
@@ -24,7 +27,11 @@ fn askStuck(ui: *mut Ui) AllocError!bool {
     while ui.stuck {
         try resumeScript(ui)
 
-        if ui.stuck && SDL_WaitEventTimeout(&mut ev, 100) != 0 {
+        if ui.stuck && stuck_headless {
+            std.log.line("stuck: page busy {} ms, waiting", busy_ms)
+            ui.stuck = false
+            ui.wait = true
+        } else if ui.stuck && SDL_WaitEventTimeout(&mut ev, 100) != 0 {
             try ui.handle(&ev)
         }
     }
