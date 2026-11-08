@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn hstsText(h: *Hsts, now: i64, out: *mut text.Builder) AllocError!void {
+    for e in h.hosts.items() {
+        if e.expiry > now {
+            try out.append(e.host)
+            try out.appendByte(' ')
+            try out.appendInt(e.expiry)
+            try out.append(subdomainMark(e.subdomains))
+        }
+    }
+}
+
+fn subdomainMark(subdomains: bool) []u8 {
+    if subdomains {
+        return " *\n"
+    }
+
+    return "\n"
+}

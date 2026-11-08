@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+// https://www.w3.org/TR/mixed-content/#should-block-fetch
+fn secureHref(alloc: Allocator, req: Request, href: []u8, out: *mut text.Builder) AllocError!bool {
+    var at = url.parse(alloc, href) catch |e| {
+        try out.append(href)
+        return true
+    }
+    defer at.deinit(alloc)
+    let mixed = mixedContent(req, &at)
+
+    if mixed == Mixed.Block {
+        return false
+    }
+
+    if mixed == Mixed.Upgrade || (text.eql(at.scheme, "http") && hstsKnown(at.host)) {
+        try out.append("https")
+        try out.append(at.href[4..])
+        return true
+    }
+
+    try out.append(href)
+
+    return true
+}

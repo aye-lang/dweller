@@ -1,0 +1,18 @@
+import std
+import std.text
+
+let HSTS_PRELOAD = @embedFile("hsts-preload.txt")
+
+fn preloadedHsts(host: []u8) bool {
+    var lines = text.split(HSTS_PRELOAD, "\n")
+
+    while lines.next() |line| {
+        let name = line[..std.mem.indexOf(line, ' ') orelse line.len]
+
+        if text.eql(name, host) || (name.len < line.len && domainMatch(host, name)) {
+            return true
+        }
+    }
+
+    return false
+}

@@ -1,0 +1,17 @@
+import std.mem.Allocator
+import url
+
+fn upgradedRequest(alloc: Allocator, href: []u8, req: Request) FetchError!Response {
+    var up = url.parse(alloc, href) catch return FetchError.Invalid
+    defer up.deinit(alloc)
+    var res = try request(alloc, &up, req)
+
+    if res.url.len == 0 {
+        res.url = dup(alloc, up.withoutFragment()) catch |e| {
+            res.deinit(alloc)
+            return FetchError.OutOfMemory
+        }
+    }
+
+    return res
+}

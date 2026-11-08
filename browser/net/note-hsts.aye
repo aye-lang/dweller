@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+import url.Url
+
+// https://www.rfc-editor.org/rfc/rfc6797#section-8.1
+fn noteHsts(s: ?*mut Session, at: *Url, headers: []u8) AllocError!void {
+    let ses = s orelse return
+    let policy = parseHsts(requestHeaderValue(headers, "Strict-Transport-Security")) orelse return
+
+    if text.eql(at.scheme, "https") && !isIp(at.host) && try hstsStore(&mut ses.hsts, at.host, policy, now()) {
+        try saveHsts(ses)
+    }
+}

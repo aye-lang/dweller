@@ -1,0 +1,12 @@
+import std.text
+
+// chromium: net/http/transport_security_state.cc ShouldUpgradeToSSL
+fn hstsUpgrades(h: *Hsts, host: []u8, now: i64) bool {
+    for e in h.hosts.items() {
+        if e.expiry > now && (text.eql(e.host, host) || (e.subdomains && domainMatch(host, e.host))) {
+            return true
+        }
+    }
+
+    return preloadedHsts(host)
+}

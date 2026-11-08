@@ -1,0 +1,11 @@
+import std
+import std.mem.AllocError
+
+fn loadProfileHsts(s: *mut Session) AllocError!void {
+    let path = try joinPath(s.alloc, s.profile, "hsts")
+    defer s.alloc.free(path)
+    let saved = std.fs.readFile(s.alloc, path) catch return
+    defer s.alloc.free(saved)
+
+    try loadHsts(&mut s.hsts, saved, now())
+}

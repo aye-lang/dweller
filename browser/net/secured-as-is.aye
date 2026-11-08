@@ -1,0 +1,10 @@
+import std.mem.Allocator
+import std.text
+
+fn securedAsIs(alloc: Allocator, req: Request, href: []u8) bool {
+    var secured = text.Builder.init(alloc)
+    defer secured.deinit()
+    let ok = secureHref(alloc, req, href, &mut secured) catch false
+
+    return ok && text.eql(secured.bytes(), href)
+}

@@ -1,0 +1,26 @@
+import std.text
+import url.Url
+
+// chromium: third_party/blink/renderer/core/loader/mixed_content_checker.cc ShouldBlockFetch
+fn mixedContent(req: Request, at: *Url) Mixed {
+    let page = match req.initiator {
+        .Browser => ""
+        .Page { url } => url
+    }
+
+    let secure = text.startsWith(page, "https:") || text.startsWith(req.top, "https:")
+
+    if !text.eql(at.scheme, "http") || trustworthyHost(at.host) || (req.kind == Kind.Document && req.top.len == 0) {
+        return Mixed.None
+    }
+
+    if upgradesInsecure(page) || (secure && req.kind == Kind.Image) {
+        return Mixed.Upgrade
+    }
+
+    if secure {
+        return Mixed.Block
+    }
+
+    return Mixed.None
+}

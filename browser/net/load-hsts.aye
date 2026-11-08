@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+fn loadHsts(h: *mut Hsts, saved: []u8, now: i64) AllocError!void {
+    var lines = text.split(saved, "\n")
+
+    while lines.next() |line| {
+        var fields = text.split(line, " ")
+        let host = fields.next() orelse ""
+        let expiry = text.parseInt(fields.next() orelse "") catch 0
+        let subdomains = fields.next() != null
+
+        if host.len > 0 && expiry > now {
+            _ = try hstsStore(h, host, HstsPolicy { max_age: expiry - now, subdomains: subdomains }, now)
+        }
+    }
+}
