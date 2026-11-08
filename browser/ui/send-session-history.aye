@@ -1,0 +1,21 @@
+import ipc
+import std.mem.AllocError
+
+fn sendSessionHistory(slot: *TabSlot, tp: *mut TabProcess, index: usize, length: usize) AllocError!void {
+    let h = &slot.session.tab.history
+    var scroll = 0.0
+    var state: ?[]u8 = null
+
+    if index < h.len() {
+        let e = h.entries.items()[index]
+
+        scroll = e.scroll
+        state = e.state
+    }
+
+    var nulls: u32 = 0
+
+    if state == null { nulls = 1 }
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.SessionHistory { index: index as u32, length: length as u32, scroll: scroll, nulls: nulls, state: state orelse "" })
+}

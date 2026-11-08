@@ -11,7 +11,13 @@ fn takeFetched(r: *mut TabRenderer, m: ipc.Message, nav: bool, href: []u8, f: *m
             f.status = status as i64
             f.tainted = tainted != 0
 
-            if nav { r.docs.clear() }
+            if nav {
+                r.docs.clear()
+                r.top.clear()
+                try r.top.append(url)
+
+                if url.len == 0 { try r.top.append(href) }
+            }
 
             if doc > 0 {
                 try r.docs.appendUint(doc as u64)

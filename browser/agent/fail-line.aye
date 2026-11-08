@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn failLine(alloc: Allocator, line: []u8, mcp: bool, why: []u8, out: *mut text.Builder) AllocError!void {
+    var failure = ParseFailure { pos: 0, msg: "" }
+    var doc = Json.parse(alloc, line, &mut failure) catch |e| {
+        return
+    }
+
+    defer doc.deinit()
+
+    var id = text.Builder.init(alloc)
+    defer id.deinit()
+    var reply = newReply()
+
+    reply.ok = false
+    reply.message = why
+
+    if doc.get(doc.root(), "id") |i| { try doc.write(i, &mut id) } else { try id.append("null") }
+
+    try writeLater(mcp, alloc, id.bytes(), reply, out)
+}

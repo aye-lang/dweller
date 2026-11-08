@@ -1,0 +1,14 @@
+import agent
+import std.mem.AllocError
+
+fn carryAnswer(old: *TabProcess, next: *mut TabProcess) AllocError!void {
+    if (old.agent_id == 0 && !old.answered) || next.agent_id != 0 || next.answered { return }
+
+    next.agent_conn = old.agent_conn
+    next.answered = true
+    next.answer.clear()
+
+    if old.answered { return next.answer.append(old.answer.bytes()) }
+
+    try agent.failLine(next.url.alloc, old.agent_line.bytes(), old.agent_mcp, "the page navigated before the answer: take a new snapshot", &mut next.answer)
+}

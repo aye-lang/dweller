@@ -1,0 +1,16 @@
+import std.heap.Arena
+import std.text
+
+test "failLine answers the request's id with an error" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    let a = arena.allocator()
+    var lines = text.Builder.init(a)
+    var mcp = text.Builder.init(a)
+
+    try failLine(a, "{\"id\":\"q\",\"cmd\":\"eval\"}", false, "gone", &mut lines)
+    try failLine(a, "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\"}", true, "gone", &mut mcp)
+
+    @expectEqual("{\"id\":\"q\",\"ok\":false,\"error\":\"gone\"}", lines.bytes())
+    @expect(text.startsWith(mcp.bytes(), "{\"jsonrpc\":\"2.0\",\"id\":7,") && text.endsWith(mcp.bytes(), "\"isError\":true}}"))
+}

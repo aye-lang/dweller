@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+fn sameDocumentEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8, index: u32, nulls: u32, state: []u8) AllocError!bool {
+    let h = &mut slot.session.tab.history
+    let at = index as usize
+    var kept: ?[]u8 = state
+
+    if nulls == 1 { kept = null }
+
+    if h.len() == 0 { return false }
+
+    let doc = h.now().doc
+
+    if tp.traverse_to |asked| {
+        if index != asked { return false }
+
+        tp.traverse_to = null
+    }
+
+    if at == h.current + 1 {
+        try h.push(href, doc, kept, false)
+    } else if at == h.current {
+        try h.replace(href, kept)
+    } else if at < h.len() && h.entries.items()[at].doc == doc && text.eql(h.entries.items()[at].href, href) {
+        h.current = at
+    } else {
+        return false
+    }
+
+    tp.url.clear()
+    try tp.url.append(href)
+
+    return true
+}

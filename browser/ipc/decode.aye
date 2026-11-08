@@ -18,14 +18,14 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         15 => Message.PopupChoice { index: try r.readU32() }
         16 => Message.Focus { on: try r.readU32() }
         17 => Message.Title { title: try r.readBytes() }
-        18 => Message.SameDocument { url: try r.readBytes() }
+        18 => Message.SameDocument { url: try r.readBytes(), index: try r.readU32(), nulls: try r.readU32(), state: try r.readBytes() }
         19 => Message.Cursor { shape: try r.readU32() }
         20 => Message.TargetUrl { url: try r.readBytes() }
         21 => Message.LongTask { on: try r.readU32(), ms: try r.readU32() }
         22 => Message.TakeFocus { reverse: try r.readU32() }
         23 => Message.Redirect { url: try r.readBytes() }
-        24 => Message.Agent { id: try r.readU32(), mcp: try r.readU32(), line: try r.readBytes() }
-        25 => Message.AgentReply { id: try r.readU32(), answer: try r.readBytes() }
+        24 => Message.Agent { id: try r.readU32(), mcp: try r.readU32(), ref_base: try r.readU32(), line: try r.readBytes() }
+        25 => Message.AgentReply { id: try r.readU32(), next_ref: try r.readU32(), answer: try r.readBytes() }
         26 => Message.Fetch { id: try r.readU32(), doc: try r.readU32(), nav: try r.readU32(), kind: try r.readU32(), credentials: try r.readU32(), mode: try r.readU32(), method: try r.readBytes(), url: try r.readBytes(), referrer: try r.readBytes(), referrer_policy: try r.readBytes(), top: try r.readBytes(), headers: try r.readBytes(), content_type: try r.readBytes(), has_body: try r.readU32(), body: try r.readBytes() }
         27 => Message.FetchHead { id: try r.readU32(), doc: try r.readU32(), status: try r.readU32(), tainted: try r.readU32(), mime: try r.readBytes(), charset: try r.readBytes(), url: try r.readBytes(), headers: try r.readBytes() }
         28 => Message.FetchBody { id: try r.readU32(), chunk: try r.readBytes() }
@@ -39,7 +39,10 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         36 => Message.StorageEvent { nulls: try r.readU32(), key: try r.readBytes(), old: try r.readBytes(), value: try r.readBytes(), url: try r.readBytes() }
         37 => Message.Ping { n: try r.readU32() }
         38 => Message.Pong { n: try r.readU32() }
-        39 => Message.OutOfMemory
+        39 => Message.SessionHistory { index: try r.readU32(), length: try r.readU32(), scroll: try r.readF64(), nulls: try r.readU32(), state: try r.readBytes() }
+        40 => Message.HistoryGo { index: try r.readU32() }
+        41 => Message.Traverse { index: try r.readU32() }
+        42 => Message.OutOfMemory
         _ => return DecodeError.UnknownType
     }
 

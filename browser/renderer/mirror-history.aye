@@ -1,0 +1,22 @@
+import engine
+import std.mem.AllocError
+
+let LOADING_DOC: u32 = 4294967295
+
+// chromium: content/browser/renderer_host/navigation_request.cc (CommitNavigationParams current_history_list_offset, current_history_list_length)
+fn mirrorHistory(r: *mut TabRenderer) AllocError!void {
+    r.history.deinit()
+    r.history = engine.SessionHistory.init(r.alloc)
+
+    for i in 0..r.hist_length {
+        var doc: u32 = 0
+
+        if i == r.hist_index { doc = LOADING_DOC }
+
+        try r.history.push("", doc, null, false)
+    }
+
+    r.history.current = r.hist_index as usize
+
+    if !r.hist_null { try r.history.replace("", r.hist_state.bytes()) }
+}

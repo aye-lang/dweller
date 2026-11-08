@@ -91,7 +91,13 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .PopupChoice { index } => try putU32(out, index)
         .Focus { on } => try putU32(out, on)
         .Title { title } => try putBytes(out, title)
-        .SameDocument { url } => try putBytes(out, url)
+        .SameDocument { url, index, nulls, state } => {
+            try putBytes(out, url)
+            try putU32(out, index)
+            try putU32(out, nulls)
+            try putBytes(out, state)
+        }
+
         .Cursor { shape } => try putU32(out, shape)
         .TargetUrl { url } => try putBytes(out, url)
         .LongTask { on, ms } => {
@@ -101,14 +107,16 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
 
         .TakeFocus { reverse } => try putU32(out, reverse)
         .Redirect { url } => try putBytes(out, url)
-        .Agent { id, mcp, line } => {
+        .Agent { id, mcp, ref_base, line } => {
             try putU32(out, id)
             try putU32(out, mcp)
+            try putU32(out, ref_base)
             try putBytes(out, line)
         }
 
-        .AgentReply { id, answer } => {
+        .AgentReply { id, next_ref, answer } => {
             try putU32(out, id)
+            try putU32(out, next_ref)
             try putBytes(out, answer)
         }
 
@@ -175,6 +183,17 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
 
             for b in texts { try putBytes(out, b) }
         }
+
+        .SessionHistory { index, length, scroll, nulls, state } => {
+            try putU32(out, index)
+            try putU32(out, length)
+            try putF64(out, scroll)
+            try putU32(out, nulls)
+            try putBytes(out, state)
+        }
+
+        .HistoryGo { index } => try putU32(out, index)
+        .Traverse { index } => try putU32(out, index)
     }
 }
 

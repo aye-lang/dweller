@@ -1,10 +1,9 @@
 import agent
 import ipc
-import std
 import std.heap.Arena
 import std.text
 
-fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, line: []u8) !void {
+fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, ref_base: u32, line: []u8) !void {
     r.tab = frame
 
     if r.session == null { r.session = try agentSession(r) }
@@ -15,6 +14,8 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, line: []u8) 
     let tmp = arena.allocator()
     var out = text.Builder.init(tmp)
     var answered = id
+
+    agent.carryRefs(s, ref_base)
 
     if r.width > 0 {
         let fresh = s.tab.page != r.page
@@ -34,9 +35,9 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, line: []u8) 
         }
     }
 
-    if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "agent") { answered += 1 }
+    if evilTest("agent") { answered += 1 }
 
     r.due = true
 
-    try send(r.alloc, r.conn, frame, ipc.Message.AgentReply { id: answered, answer: out.bytes() })
+    try send(r.alloc, r.conn, frame, ipc.Message.AgentReply { id: answered, next_ref: s.next_ref, answer: out.bytes() })
 }

@@ -14,7 +14,7 @@ pub fn relayAgentMain(alloc: Allocator, args: [][]u8, mcp: bool) i32 {
     engine.setScripting(args.len == 0)
 
     let started = startTabProcess(alloc, true, 0) catch return 1
-    let tp = started orelse return 1
+    var tp = started orelse return 1
 
     defer endTabProcess(alloc, tp)
 
@@ -48,7 +48,7 @@ pub fn relayAgentMain(alloc: Allocator, args: [][]u8, mcp: bool) i32 {
             id += 1
             reply.clear()
 
-            let why = askRenderer(tp, id, mcp, line, &mut reply) catch return 1
+            let why = askRenderer(&mut tp, id, mcp, line, &mut reply) catch return 1
 
             if why.len > 0 {
                 std.log.err("bad message: {} {}", why, tp.pid)

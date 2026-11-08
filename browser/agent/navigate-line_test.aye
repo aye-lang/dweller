@@ -1,0 +1,16 @@
+import std.heap.Arena
+import std.text
+
+test "navigateLine asks for the URL with the request's id" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    let a = arena.allocator()
+    var lines = text.Builder.init(a)
+    var mcp = text.Builder.init(a)
+
+    try navigateLine(a, "{\"id\":\"q\",\"cmd\":\"click\",\"ref\":\"e2\"}", false, "http://b.test/\"", &mut lines)
+    try navigateLine(a, "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"browser_click\"}}", true, "http://b.test/", &mut mcp)
+
+    @expectEqual("{\"id\":\"q\",\"cmd\":\"navigate\",\"url\":\"http://b.test/\\\"\"}", lines.bytes())
+    @expectEqual("{\"id\":7,\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"browser_navigate\",\"arguments\":{\"url\":\"http://b.test/\"}}}", mcp.bytes())
+}

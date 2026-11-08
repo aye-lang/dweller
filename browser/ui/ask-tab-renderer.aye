@@ -20,17 +20,18 @@ fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, 
 
     if !tp.hello || tp.buffers.width == 0 || tp.agent_id != 0 || tp.answered { return false }
 
-    var flag: u32 = 0
-
-    if c.mode == 2 { flag = 1 }
-
     tp.next_agent += 1
     tp.agent_id = tp.next_agent
     tp.agent_conn = conn
     tp.agent_acts = agent.actsOnPage(cmd)
+    tp.agent_mcp = c.mode == 2
     tp.answered = false
+    tp.agent_line.clear()
+    try tp.agent_line.append(line)
 
-    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Agent { id: tp.agent_id, mcp: flag, line: line })
+    if tp.agent_acts && !tp.loading { tp.nav_failed = false }
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Agent { id: tp.agent_id, mcp: tp.agent_mcp as u32, ref_base: tp.next_ref, line: line })
 
     return true
 }

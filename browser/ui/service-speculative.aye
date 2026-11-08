@@ -1,0 +1,40 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc CommitPending
+fn serviceSpeculative(ui: *mut Ui, slot: *mut TabSlot) AllocError!void {
+    if slot.process == null {
+        endTabProcess(ui.alloc, slot.speculative)
+        slot.speculative = null
+
+        return
+    }
+
+    let old = slot.process.?
+
+    if slot.speculative == null && old.swap_to != null { return startSpeculative(ui, slot, old) }
+
+    let next = slot.speculative orelse return
+
+    try giveBuffers(ui, slot, next)
+
+    if next.hello && next.committed.len() == 0 { try navigateSpeculative(slot, next) }
+    if try serviceTabProcess(slot, next) { ui.dirty = true }
+
+    if next.gone.len > 0 {
+        endTabProcess(ui.alloc, next)
+        slot.speculative = null
+
+        return failSwap(slot, old)
+    }
+
+    if next.loading { return }
+
+    try carryAnswer(old, next)
+
+    if old.gone.len == 0 { dropTabProcess(old, "swapped") }
+
+    endTabProcess(ui.alloc, old)
+    slot.process = next
+    slot.speculative = null
+    ui.dirty = true
+}

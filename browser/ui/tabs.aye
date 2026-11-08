@@ -36,6 +36,7 @@ pub struct TabSlot {
     next_run_ns: u64 = 0
     process: ?*mut TabProcess = null
     unloaded: bool = false
+    speculative: ?*mut TabProcess = null
 }
 
 fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.System, id: u32) AllocError!*mut TabSlot {
@@ -46,6 +47,7 @@ fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.Syst
 
 fn freeSlot(alloc: Allocator, slot: *mut TabSlot) {
     endTabProcess(alloc, slot.process)
+    endTabProcess(alloc, slot.speculative)
     dropTabStorage(alloc, slot.id)
     agent.freeSession(&mut slot.session)
     alloc.destroy(slot)

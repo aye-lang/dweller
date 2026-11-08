@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+fn goByInRenderer(ui: *mut Ui, step: i64) AllocError!void {
+    let at = ui.tab.history.indexAt(step) orelse return
+    let slot = ui.slots[ui.active].?
+
+    if slot.process |tp| {
+        if tp.traverse_to != null { return }
+
+        if tp.gone.len == 0 && tp.hello && !tp.loading && (try goToEntry(slot, tp, at)) {
+            try setAddress(ui)
+            ui.dirty = true
+
+            return
+        }
+    }
+
+    ui.tab.history.current = at
+
+    return goInRenderer(ui)
+}
