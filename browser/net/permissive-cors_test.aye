@@ -1,0 +1,17 @@
+import std
+import url
+
+test "an old archive entry allows a CORS-mode module script from another origin" {
+    let a = @testAllocator()
+    let to = try url.parse(a, "https://cdn.example/module.js")
+    defer to.deinit(a)
+    let page = "https://www.example/news"
+
+    let cors = try permissiveCors(a, Request { kind: Kind.Script, mode: Mode.Cors, referrer: page, credentials: Credentials.SameOrigin, initiator: Initiator.Page { url: page } }, &to)
+    defer a.free(cors)
+    @expect(std.text.indexOf(cors, "Access-Control-Allow-Origin") != null)
+
+    let classic = try permissiveCors(a, Request { kind: Kind.Script, referrer: page, initiator: Initiator.Page { url: page } }, &to)
+    defer a.free(classic)
+    @expect(classic.len == 0)
+}

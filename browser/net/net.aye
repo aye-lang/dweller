@@ -113,6 +113,8 @@ pub struct Request {
     top: []u8 = ""
     credentials: Credentials = Credentials.Include
     mode: Mode = Mode.NoCors
+    referrer_policy: ?ReferrerPolicy = null
+    user_activated: bool = false
     initiator: Initiator
 }
 
@@ -215,6 +217,7 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     var r = req
     if r.referrer.len == 0 && text.eql(hint_target, target.withoutFragment()) {
         r.referrer = hint_referrer
+        r.user_activated = s.nav_user
     }
     return fetchHttp(alloc, target, r)
 }

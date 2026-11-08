@@ -1,0 +1,22 @@
+// spec: https://tc39.es/ecma262/#sec-string.prototype.replaceall
+fn requireGlobalFlag(it: *mut Interp, v: Value, plain: bool, name: []u8) JsError!void {
+    var global = true
+
+    if plain {
+        global = progOf(it, objectOf(v)).global
+    } else if try isRegExp(it, v) {
+        let flags = try it.getProp(v, A_FLAGS)
+
+        if isNullish(flags) {
+            try it.typeError("RegExp flags is null or undefined")
+        }
+
+        let fs = try it.toStringValue(flags)
+
+        global = findBytes(it.heap.bytes(strOf(fs)), "g", 0) != null
+    }
+
+    if !global {
+        try it.typeErrorAbout(name, "", " called with a non-global RegExp argument")
+    }
+}

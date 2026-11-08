@@ -1,6 +1,6 @@
 // The in-memory HTTP cache of the session: style sheets, images and
-// scripts fetched by GET with a 2xx status are kept by URL (without the
-// fragment), so laying out again, reloading or visiting another page of
+// scripts fetched by GET with a 2xx status are kept by `cacheKey`: the
+// network partition and the URL (without the fragment), so laying out again, reloading or visiting another page of
 // the site does not fetch them again. A response with `Cache-Control:
 // no-store` is not kept; nothing expires within a session. At most
 // MAX_CACHE_BYTES of bodies are kept (later responses are not). The
@@ -15,7 +15,7 @@ import std.mem.Allocator
 let MAX_CACHE_BYTES: usize = 128 << 20
 
 struct Cached {
-    href: []mut u8
+    key: []mut u8
     mime: []mut u8
     charset: []mut u8
     body: []mut u8
@@ -43,20 +43,20 @@ pub struct Cache {
         self.entries.deinit()
     }
 
-    /// Is there a response for `href`?
-    pub fn has(self: *Self, href: []u8) bool {
+    /// Is there a response for `key`?
+    pub fn has(self: *Self, key: []u8) bool {
         for e in self.entries.items() {
-            if std.mem.eql(e.href, href) {
+            if std.mem.eql(e.key, key) {
                 return true
             }
         }
         return false
     }
 
-    /// A copy (from `alloc`) of the response kept for `href`, or null.
-    pub fn lookup(self: *mut Self, alloc: Allocator, href: []u8) AllocError!?Response {
+    /// A copy (from `alloc`) of the response kept for `key`, or null.
+    pub fn lookup(self: *mut Self, alloc: Allocator, key: []u8) AllocError!?Response {
         for i, e in self.entries.items() {
-            if std.mem.eql(e.href, href) {
+            if std.mem.eql(e.key, key) {
                 let mime = try copyBytes(alloc, e.mime)
                 errdefer alloc.free(mime)
                 let charset = try copyBytes(alloc, e.charset)
@@ -76,15 +76,15 @@ pub struct Cache {
         return null
     }
 
-    /// Keeps a copy of `res`, the response for `href` (for one use only
+    /// Keeps a copy of `res`, the response for `key` (for one use only
     /// when `once`).
-    pub fn keep(self: *mut Self, href: []u8, res: *Response, once: bool) AllocError!void {
+    pub fn keep(self: *mut Self, key: []u8, res: *Response, once: bool) AllocError!void {
         if self.bytes + res.body.len > MAX_CACHE_BYTES {
             return
         }
         let a = self.alloc
         let e = Cached {
-            href: try dup(a, href),
+            key: try dup(a, key),
             mime: try dup(a, res.mime),
             charset: try dup(a, res.charset),
             body: try dup(a, res.body),
