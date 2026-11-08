@@ -1,0 +1,12 @@
+import net
+
+test "crossorigin chooses the CORS mode and credentials" {
+    let plain = net.Request { kind: net.Kind.Script, initiator: net.Initiator.Browser }
+    let anonymous = corsRequest("", plain)
+    let credentialed = corsRequest("USE-CREDENTIALS", plain)
+
+    @expect(corsRequest(null, plain).mode == net.Mode.NoCors)
+    @expect(anonymous.mode == net.Mode.Cors && anonymous.credentials == net.Credentials.SameOrigin)
+    @expect(corsRequest("bogus", plain).credentials == net.Credentials.SameOrigin)
+    @expect(credentialed.mode == net.Mode.Cors && credentialed.credentials == net.Credentials.Include)
+}

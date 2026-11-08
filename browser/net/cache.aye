@@ -22,6 +22,7 @@ struct Cached {
     status: i64
     // The URL after redirects, or empty.
     moved: []mut u8
+    headers: []mut u8
     // Served once, then dropped.
     once: bool
 }
@@ -62,15 +63,14 @@ pub struct Cache {
                 errdefer alloc.free(charset)
                 let body = try copyBytes(alloc, e.body)
                 errdefer alloc.free(body)
-                var moved = []mut u8{}
-                if e.moved.len > 0 {
-                    moved = try dup(alloc, e.moved)
-                }
+                let moved = try dup(alloc, e.moved)
+                errdefer release(alloc, moved)
+                let headers = try dup(alloc, e.headers)
                 if e.once {
                     self.bytes -= e.body.len
                     freeEntry(self.alloc, self.entries.orderedRemove(i))
                 }
-                return Response { mime: mime, charset: charset, body: body, status: e.status, url: moved, headers_raw: []mut u8{} }
+                return Response { mime: mime, charset: charset, body: body, status: e.status, url: moved, headers_raw: headers }
             }
         }
         return null
@@ -90,6 +90,7 @@ pub struct Cache {
             body: try dup(a, res.body),
             status: res.status,
             moved: try dup(a, res.url),
+            headers: try dup(a, res.headers_raw),
             once: once,
         }
         self.entries.append(e) catch |err| {
@@ -98,12 +99,4 @@ pub struct Cache {
         }
         self.bytes += res.body.len
     }
-}
-
-fn freeEntry(alloc: Allocator, e: Cached) {
-    release(alloc, e.href)
-    release(alloc, e.mime)
-    release(alloc, e.charset)
-    release(alloc, e.body)
-    release(alloc, e.moved)
 }

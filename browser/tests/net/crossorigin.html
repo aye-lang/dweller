@@ -1,0 +1,70 @@
+<!doctype html>
+<title>crossorigin and ORB</title>
+<pre id="out"></pre>
+<p id="probe">probe</p>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = location.origin.replace('127.0.0.1', 'localhost');
+const hits = [];
+function loaded(el, co) {
+  if (co !== undefined) el.setAttribute('crossorigin', co);
+  return new Promise(resolve => {
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+  });
+}
+function script(name, path, co) {
+  const el = document.createElement('script');
+  const ended = loaded(el, co);
+  const before = hits.length;
+  el.src = other + path;
+  document.head.appendChild(el);
+  return ended.then(ev => log(name + ': ' + ev + ', ran ' + (hits.length > before)));
+}
+function img(name, path, co) {
+  const el = new Image();
+  const ended = loaded(el, co);
+  el.src = other + path;
+  return ended.then(ev => {
+    if (ev !== 'load') return log(name + ': ' + ev);
+    const c = document.createElement('canvas').getContext('2d');
+    c.drawImage(el, 0, 0);
+    let read = 'readable';
+    try { c.getImageData(0, 0, 1, 1); } catch (e) { read = e.name; }
+    log(name + ': ' + ev + ', ' + read);
+  });
+}
+function sheet(name, path, co) {
+  const el = document.createElement('link');
+  el.rel = 'stylesheet';
+  if (co !== undefined) el.setAttribute('crossorigin', co);
+  el.href = other + path;
+  document.head.appendChild(el);
+  const color = getComputedStyle(document.getElementById('probe')).color;
+  el.remove();
+  log(name + ': ' + (color === 'rgb(0, 128, 0)' ? 'applied' : 'not applied'));
+}
+function get(name, path) {
+  return fetch(other + path, { mode: 'no-cors' }).then(r => log(name + ': ' + r.type), e => log(name + ': ' + e.name));
+}
+(async () => {
+  await script('script anonymous with ACAO', '/acao/net/co.js', 'anonymous');
+  await script('script anonymous without ACAO', '/net/co.js', '');
+  await script('script use-credentials with ACAO origin', '/acao/net/co.js', 'use-credentials');
+  await script('script no-cors', '/net/co.js');
+  await script('script no-cors of JSON', '/net/orb.json');
+  await script('script no-cors of HTML', '/net/orb.html');
+  await script('script no-cors of text/plain', '/net/co.txt');
+  await script('script no-cors of text/plain nosniff', '/nosniff/net/co.txt');
+  await img('img anonymous with ACAO', '/acao/paint/img/photo.png', 'anonymous');
+  await img('img anonymous without ACAO', '/paint/img/photo.png', 'anonymous');
+  await img('img no-cors', '/paint/img/photo.png');
+  await img('img no-cors of JSON', '/net/orb.json');
+  sheet('link anonymous with ACAO', '/acao/net/co.css', 'anonymous');
+  sheet('link anonymous without ACAO', '/net/co.css', 'anonymous');
+  sheet('link no-cors', '/net/co.css');
+  await get('fetch no-cors of JSON', '/net/orb.json');
+  await get('fetch no-cors of JS', '/net/co.js');
+})();
+</script>
