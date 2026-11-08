@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn headersWithoutCookies(raw: []u8, out: *mut text.Builder) AllocError!void {
+    var lines = text.split(raw, "\n")
+    var first = true
+
+    while lines.next() |line| {
+        let name = text.trim(line)
+
+        if name.len >= 11 && text.eqlIgnoreCase(name[..11], "set-cookie:") { continue }
+
+        if !first { try out.appendByte('\n') }
+
+        try out.append(line)
+        first = false
+    }
+}

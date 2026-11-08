@@ -1,0 +1,22 @@
+import engine
+
+// chromium: third_party/blink/renderer/core/page/focus_controller.cc SetFocused
+fn focusPage(r: *mut TabRenderer, on: bool) !void {
+    let was = r.focused
+
+    r.focused = on
+    r.due = true
+    r.wake()
+
+    if on == was { return }
+
+    let p = r.page orelse return
+    let t = p.doc.documentElement() orelse return
+    var what = "blur"
+
+    if on {
+        what = "focus"
+    }
+
+    _ = try engine.dispatchEvent(p, t, "__host", what)
+}

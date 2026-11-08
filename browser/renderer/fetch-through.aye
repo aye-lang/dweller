@@ -1,0 +1,20 @@
+import net
+import std.mem.Allocator
+import url.Url
+
+var fetch_renderer: ?*mut TabRenderer = null
+
+fn fetchThrough(r: *mut TabRenderer) {
+    fetch_renderer = r
+    net.setRemote(fetchRemote)
+}
+
+fn fetchRemote(alloc: Allocator, target: *Url, req: net.Request) net.FetchError!net.Response {
+    let r = fetch_renderer orelse return net.FetchError.Network
+    let nav = req.initiator is .Browser && req.kind == net.Kind.Document && req.top.len == 0
+
+    r.fetches += 1
+    askFetch(r, r.fetches, nav, target, req) catch return net.FetchError.Network
+
+    return awaitFetch(r, alloc, nav, target.href)
+}

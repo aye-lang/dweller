@@ -1,0 +1,9 @@
+import std.text
+
+test "the renderer gets the headers without Set-Cookie" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    try headersWithoutCookies("Content-Type: text/html\r\nset-cookie: a=1\r\nSET-COOKIE: b=2\r\nX-A: 1", &mut out)
+    @expectEqual("Content-Type: text/html\r\nX-A: 1", out.bytes())
+}

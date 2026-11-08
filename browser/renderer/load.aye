@@ -6,6 +6,8 @@ import std.text
 import url
 
 fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: []u8, data: []u8) !void {
+    r.tab = frame
+
     let target = try url.parse(r.alloc, href)
     defer target.deinit(r.alloc)
     var body = net.Body { content_type: content_type, data: data }
@@ -18,30 +20,12 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
     let p = try engine.loadWith(r.alloc, &target, sent, net.Initiator.Browser)
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {
-        try send(r.alloc, r.conn, frame, ipc.Message.BeginNavigation { url: p.url.href, post: 0, content_type: "", body: "" })
-        p.destroy()
-
-        return
+        try send(r.alloc, r.conn, frame, ipc.Message.Redirect { url: p.url.href })
     }
 
     if r.page |old| { old.destroy() }
 
-    r.page = p
-    r.tab = frame
-    r.due = true
-    r.scroll_x = 0.0
-    r.scroll_y = 0.0
-    r.wheel_el = null
-    r.scroll_el = null
-    r.range = null
-    r.space = null
-    r.popup = null
-    r.select_el = null
-    r.title.clear()
-    r.href.clear()
-
-    try r.title.append(p.title)
-    try r.href.append(p.url.href)
+    try adoptPage(r, frame, p)
 
     if text.eql(std.os.getenv("DWELLER_TEST_EVIL") orelse "", "url") {
         r.href.clear()
