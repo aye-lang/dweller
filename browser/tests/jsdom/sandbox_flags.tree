@@ -1,0 +1,31 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "Sandbox flags"
+      "\n"
+    <body>
+      <iframe sandbox="" srcdoc="<script>console.log('no allow-scripts: ran')</script>">
+      "\n"
+      <iframe sandbox="allow-scripts" srcdoc="<script>\nconsole.log('no allow-same-origin: origin', self.origin);\ntry { console.log('cookie', JSON.stringify(document.cookie)) } catch (e) { console.log('cookie', e.name) }\ntry { console.log('localStorage', localStorage.length) } catch (e) { console.log('localStorage', e.name) }\ntry { console.log('parent title', parent.document.title) } catch (e) { console.log('parent', e.name) }\n</script>">
+      "\n"
+      <iframe sandbox="allow-scripts allow-same-origin" srcdoc="<script>console.log('allow-same-origin: parent title', parent.document.title)</script>">
+      "\n"
+      <iframe sandbox="allow-scripts" srcdoc="<form action=about:blank onsubmit=\"console.log('no allow-forms: submit event')\"></form><script>document.forms[0].requestSubmit()</script>">
+      "\n"
+      <iframe sandbox="allow-scripts allow-forms" srcdoc="<form action=about:blank onsubmit=\"console.log('allow-forms: submit event'); return false\"></form><script>document.forms[0].requestSubmit()</script>">
+      "\n"
+      <iframe sandbox="allow-scripts" srcdoc="<script>console.log('no allow-top-navigation: open _top', window.open('about:blank', '_top'))</script>">
+      "\n"
+      <iframe sandbox="allow-scripts" srcdoc="<script>try { top.location.href = 'about:blank#moved'; console.log('no allow-top-navigation: navigated') } catch (e) { console.log('no allow-top-navigation:', e.name) }</script>">
+      "\n"
+      <iframe sandbox="allow-scripts" srcdoc="<script>alert('no allow-modals')</script>">
+      "\n"
+      <iframe sandbox="allow-scripts allow-modals" srcdoc="<script>alert('allow-modals')</script>">
+      "\n"
+      <iframe sandbox="allow-scripts allow-same-origin" srcdoc="<iframe srcdoc=\"<script>alert('nested without allow-modals'); document.forms</script>\"></iframe><iframe sandbox=allow-modals srcdoc=\"<script>console.log('nested without allow-scripts: ran')</script>\"></iframe>">
+      "\n"
+      <p id="out">
+        "parent"
+      "\n"

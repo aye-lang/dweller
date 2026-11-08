@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-11-08 at Dweller 645e7b5f. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-11-08 at Dweller 03bb21e9. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -11,7 +11,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `uievents` | 69 | 6 | 153/201 | 76.1 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2932/5398 | 54.3 | 60 | below | +0.0 |
 | `css/cssom` | 292 | 11 | 2129/3818 | 55.8 | - | baseline | +0.0 |
-| `fetch/api` | 191 | 0 | 1773/2428 | 73.0 | 50 | done | +6.6 |
+| `fetch/api` | 191 | 0 | 1773/2428 | 73.0 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 687/1233 | 55.7 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 6672/9998 | 66.7 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
@@ -36,8 +36,9 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/css-fonts` | 560 | 325 | 2736/8356 | 32.7 | 50 | below | +0.0 |
 | `images` | 714 | 269 | 4100/5348 | 76.7 | 60 | done | +0.0 |
 | `intersection-observer` | 144 | 10 | 178/355 | 50.1 | - | baseline | +0.0 |
-| `mixed-content` | 388 | 0 | 1216/2281 | 53.3 | 50 | done | new |
-| `upgrade-insecure-requests` | 197 | 0 | 281/1000 | 28.1 | 25 | done | new |
+| `mixed-content` | 388 | 0 | 1216/2281 | 53.3 | 50 | done | +0.0 |
+| `upgrade-insecure-requests` | 197 | 0 | 281/1000 | 28.1 | 25 | done | +0.0 |
+| `html/browsers/sandboxing` | 21 | 1 | 9/32 | 28.1 | 25 | done | new |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |

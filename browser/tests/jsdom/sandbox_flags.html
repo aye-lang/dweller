@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<title>Sandbox flags</title>
+<iframe sandbox srcdoc="<script>console.log('no allow-scripts: ran')</script>"></iframe>
+<iframe sandbox="allow-scripts" srcdoc="<script>
+console.log('no allow-same-origin: origin', self.origin);
+try { console.log('cookie', JSON.stringify(document.cookie)) } catch (e) { console.log('cookie', e.name) }
+try { console.log('localStorage', localStorage.length) } catch (e) { console.log('localStorage', e.name) }
+try { console.log('parent title', parent.document.title) } catch (e) { console.log('parent', e.name) }
+</script>"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin" srcdoc="<script>console.log('allow-same-origin: parent title', parent.document.title)</script>"></iframe>
+<iframe sandbox="allow-scripts" srcdoc="<form action=about:blank onsubmit=&quot;console.log('no allow-forms: submit event')&quot;></form><script>document.forms[0].requestSubmit()</script>"></iframe>
+<iframe sandbox="allow-scripts allow-forms" srcdoc="<form action=about:blank onsubmit=&quot;console.log('allow-forms: submit event'); return false&quot;></form><script>document.forms[0].requestSubmit()</script>"></iframe>
+<iframe sandbox="allow-scripts" srcdoc="<script>console.log('no allow-top-navigation: open _top', window.open('about:blank', '_top'))</script>"></iframe>
+<iframe sandbox="allow-scripts" srcdoc="<script>try { top.location.href = 'about:blank#moved'; console.log('no allow-top-navigation: navigated') } catch (e) { console.log('no allow-top-navigation:', e.name) }</script>"></iframe>
+<iframe sandbox="allow-scripts" srcdoc="<script>alert('no allow-modals')</script>"></iframe>
+<iframe sandbox="allow-scripts allow-modals" srcdoc="<script>alert('allow-modals')</script>"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin" srcdoc="<iframe srcdoc=&quot;<script>alert('nested without allow-modals'); document.forms</script>&quot;></iframe><iframe sandbox=allow-modals srcdoc=&quot;<script>console.log('nested without allow-scripts: ran')</script>&quot;></iframe>"></iframe>
+<p id="out">parent</p>

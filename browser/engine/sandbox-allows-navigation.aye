@@ -1,0 +1,22 @@
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#allowed-by-sandboxing-to-navigate
+fn sandboxAllowsNavigation(from: *mut Page, to: *mut Page, activated: bool) bool {
+    var up: ?*mut Page = to
+
+    while up |p| {
+        if p == from {
+            return true
+        }
+
+        up = p.parent
+    }
+
+    if to != rootPage(from) {
+        return from.sandbox & SB_NAVIGATION == 0
+    }
+
+    if activated {
+        return from.sandbox & SB_TOP_NAVIGATION_BY_ACTIVATION == 0
+    }
+
+    return from.sandbox & SB_TOP_NAVIGATION == 0
+}

@@ -522,6 +522,9 @@ fn akWinHref(it: *mut Interp, a: Args) JsError!Value {
 fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
     let page = (try argWindow(it, a)) orelse return Value.Undefined
+    if !sandboxAllowsNavigation(s.page, page, false) {
+        return domError(it, "SecurityError", "Failed to set the 'href' property on 'Location': the frame is sandboxed.")
+    }
     let ts = page.script orelse return Value.Undefined
     let b = try it.builder()
     defer it.release(b)
@@ -629,10 +632,16 @@ fn akOpenWindow(it: *mut Interp, a: Args) JsError!Value {
         }
     }
     if here |p| {
+        if !sandboxAllowsNavigation(s.page, p, false) {
+            return Value.Null
+        }
         if p.script |ts| {
             try setNavigation(ts, target.href)
         }
         return windowValue(s, p)
+    }
+    if s.page.sandbox & SB_AUXILIARY_NAVIGATION != 0 {
+        return Value.Null
     }
     let from = contextOfPage(s.page)
     if contextOf(from) == null {

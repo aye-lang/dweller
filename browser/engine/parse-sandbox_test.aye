@@ -1,0 +1,31 @@
+test "an empty sandbox sets every flag" {
+    @expectEqual(SB_ALL, parseSandbox(""))
+    @expectEqual(SB_ALL, parseSandbox("  \t\n"))
+}
+
+test "tokens are case-insensitive and split on ASCII whitespace" {
+    let flags = parseSandbox(" ALLOW-scripts\tallow-same-origin\nallow-forms ")
+
+    @expectEqual(0 as u32, flags & (SB_SCRIPTS | SB_AUTOMATIC_FEATURES | SB_ORIGIN | SB_FORMS))
+    @expect(flags & SB_AUXILIARY_NAVIGATION != 0)
+    @expect(flags & SB_NAVIGATION != 0)
+}
+
+test "unknown tokens are ignored" {
+    @expectEqual(SB_ALL, parseSandbox("allow-everything allow-scripts-please"))
+}
+
+test "top navigation by user activation keeps the other top navigation flag" {
+    let by_activation = parseSandbox("allow-top-navigation-by-user-activation")
+    let any = parseSandbox("allow-top-navigation")
+
+    @expect(by_activation & SB_TOP_NAVIGATION != 0)
+    @expectEqual(0 as u32, by_activation & SB_TOP_NAVIGATION_BY_ACTIVATION)
+    @expectEqual(0 as u32, any & (SB_TOP_NAVIGATION | SB_TOP_NAVIGATION_BY_ACTIVATION))
+}
+
+test "every allow token clears its flags" {
+    let flags = parseSandbox("allow-popups allow-popups-to-escape-sandbox allow-modals allow-pointer-lock allow-presentation allow-orientation-lock allow-downloads allow-top-navigation-to-custom-protocols allow-storage-access-by-user-activation")
+
+    @expectEqual(SB_ALL & ~(SB_AUXILIARY_NAVIGATION | SB_PROPAGATES_TO_POPUPS | SB_MODALS | SB_POINTER_LOCK | SB_PRESENTATION | SB_ORIENTATION_LOCK | SB_DOWNLOADS | SB_CUSTOM_PROTOCOLS | SB_STORAGE_ACCESS_BY_ACTIVATION), flags)
+}

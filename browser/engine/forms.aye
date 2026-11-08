@@ -408,6 +408,9 @@ pub let BOUNDARY = "----dwellerFormBoundary7MA4YWxkTrZu0gW"
 /// encoding. Null when it goes nowhere (a `javascript:` action, method
 /// `dialog`, an action that is not a URL).
 pub fn submitForm(page: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!?Submission {
+    if page.sandbox & SB_FORMS != 0 {
+        return null
+    }
     let doc = &page.doc
     let alloc = page.alloc
     var action = text.trim(doc.attr(form, "action") orelse "")

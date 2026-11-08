@@ -3,6 +3,10 @@ import std.mem.AllocError
 
 // spec: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 pub fn dispatchSubmit(p: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!bool {
+    if p.sandbox & SB_FORMS != 0 {
+        return false
+    }
+
     let s = p.script orelse return true
 
     s.submit_submitter = submitter
