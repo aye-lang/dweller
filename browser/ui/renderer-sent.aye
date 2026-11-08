@@ -11,12 +11,24 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.hello = true
         }
 
-        .Loaded { title, .. } => {
+        .Loaded { title, url } => {
             if !tp.loading || got.frame != slot.id { return "unexpected loaded" }
+            if !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
 
-            tp.title.clear()
-            try tp.title.append(title)
+            try showCommitted(tp, title, url)
             tp.loading = false
+        }
+
+        .Title { title } => {
+            if got.frame != slot.id || title.len > 4096 { return "bad title" }
+
+            try showCommitted(tp, title, tp.committed.bytes())
+        }
+
+        .SameDocument { url } => {
+            if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+
+            try showCommitted(tp, tp.title.bytes(), url)
         }
 
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {

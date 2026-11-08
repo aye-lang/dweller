@@ -10515,16 +10515,15 @@ fn window_renderer_input() {
     };
     let page = "browser/tests/ui/renderer_input.html";
     let run = |png: &Path, events: &str, envs: &[(&str, &str)]| run_page(page, png, events, envs);
-    let tab = [("DWELLER_PROCESS", "tab")];
+    let tab = [("DWELLER_PROCESS", "tab"), ("DWELLER_STEADY_CARET", "1")];
     let scroll = |state: &str| state.lines().find(|l| l.starts_with("scroll ")).unwrap_or("").to_string();
     let still = scratch().join("renderer_input_still.png");
     let golden = scratch().join("renderer_input_in_process.png");
     let shot = scratch().join("renderer_input_tab.png");
     let scroller = "browser/tests/ui/scroller.html";
-    // The in-process window draws a caret over the field; the renderer draws none yet (Q2.3c).
     let cases = [
         ("click", page, "click:30,60", 0),
-        ("typing", page, "click:30,112 text:hello", 2),
+        ("typing", page, "click:30,112 text:hello", 0),
         ("wheel", page, "wheel:-3", 0),
         ("inner scroller", scroller, "move:50,100 wheel:-1", 0),
     ];
@@ -10559,6 +10558,104 @@ fn window_renderer_input() {
     assert_eq!(err, format!("error: bad message: unexpected input_ack {pid}\n"));
 }
 
+/// Q2.3d: with `DWELLER_PROCESS=tab` the renderer owns the focus, the
+/// caret and the selection (`browser/tests/ui/renderer_focus.html`):
+/// Tab moves the focus ring across three fields, a drag and Shift+Left
+/// select text, each the same page area as the in-process window; the
+/// caret blinks with damage only its rect and hides when the window
+/// loses the focus; the toolbar shows the title and URL the renderer
+/// reports (pushState), and a reported URL of another origin than the
+/// browser navigated to kills the renderer.
+#[test]
+fn window_renderer_focus() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> (String, String) {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
+            .args(["--frames", "60", "--state", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        (text(&out.stdout), text(&out.stderr))
+    };
+    let page_area = |png: &Path| {
+        let (w, _, rgba) = png_rgba(&std::fs::read(png).unwrap());
+        (w, rgba[40 * w * 4..].to_vec())
+    };
+    let tab = [("DWELLER_PROCESS", "tab"), ("DWELLER_STEADY_CARET", "1")];
+    let still = scratch().join("renderer_focus_still.png");
+    let golden = scratch().join("renderer_focus_in_process.png");
+    let shot = scratch().join("renderer_focus_tab.png");
+    let cases = [
+        ("tab", "key:tab key:tab key:tab"),
+        ("shift tab", "key:tab key:tab key:tab key:shift+tab"),
+        ("drag", "click:20,62 move:60,62 move:90,62 release:90,62"),
+        ("shift left", "click:90,102 key:shift+left key:shift+left key:shift+left"),
+    ];
+    for (what, events) in cases {
+        let (_, err) = run(&still, "renderer:loaded renderer:frame", &tab);
+        assert!(err.is_empty(), "{err}");
+        let (_, err) = run(&golden, &format!("loaded {events}"), &[]);
+        assert!(err.is_empty(), "{what}: {err}");
+        let (state, err) = run(&shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
+        assert!(err.is_empty(), "{what}: {err}");
+        assert!(page_area(&shot) != page_area(&still), "{what}: no change in {}", shot.display());
+        assert!(
+            page_area(&shot) == page_area(&golden),
+            "{what}: the renderer's frame {} differs from the in-process window {}\n{state}",
+            shot.display(),
+            golden.display()
+        );
+    }
+
+    let (_, err) = run(&golden, "loaded click:90,102", &[]);
+    assert!(err.is_empty(), "{err}");
+    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input window:blur", &tab);
+    assert!(err.is_empty(), "{err}");
+    let (w, a) = page_area(&shot);
+    let (_, b) = page_area(&golden);
+    let columns: std::collections::BTreeSet<usize> =
+        (0..a.len() / 4).filter(|i| a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]).map(|i| i % w).collect();
+    assert!((1..=2).contains(&columns.len()), "window blur: the caret did not hide, columns {columns:?}\n{state}");
+
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .arg(&shot)
+        .args(["--events", "renderer:loaded renderer:frame click:90,102 renderer:input renderer:next renderer:next"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "blink: {}\n{}", out.status, text(&out.stderr));
+    let (state, err) = (text(&out.stdout), text(&out.stderr));
+    assert!(err.is_empty(), "{err}");
+    let line = state.lines().find(|l| l.starts_with("renderer-frame ")).unwrap_or("");
+    let rect: Vec<i64> = line.split(' ').skip(4).filter_map(|v| v.parse().ok()).collect();
+    assert!(rect.len() == 4 && rect[2] - rect[0] <= 3 && rect[3] - rect[1] <= 30, "blink: the last frame's damage is not the caret\n{state}");
+
+    let (state, err) = run(&shot, "renderer:loaded renderer:frame click:60,185 renderer:input", &tab);
+    assert!(err.is_empty(), "{err}");
+    let pushed = format!("file://{}/browser/tests/ui/renderer_focus.html?pushed", root().display());
+    assert!(state.contains(&format!("\naddress {pushed}\n")), "{state}");
+    assert!(state.contains(" title Pushed\n"), "{state}");
+    assert!(state.starts_with("url file://") && state.lines().next().unwrap().ends_with("renderer_focus.html"), "{state}");
+
+    let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST_EVIL", "url")];
+    let (state, err) = run(&shot, "renderer:gone", &evil);
+    let line = state.lines().find(|l| l.starts_with("renderer ")).unwrap_or("");
+    let pid = line.split(' ').nth(1).unwrap_or("");
+    assert!(line.ends_with(" gone bad url"), "{state}");
+    assert_eq!(err, format!("error: bad message: bad url {pid}\n"));
+}
+
 /// Q2.3c: with `DWELLER_PROCESS=tab` the renderer runs the default
 /// actions (`browser/tests/ui/renderer_actions.html`): a link click and
 /// a form POST are asked of the browser, which navigates the renderer,
@@ -10590,7 +10687,6 @@ fn window_renderer_input_actions() {
     };
     let secret = format!("file://{}/browser/tests/no-file/secret.html", root().display());
     let page = format!("{}/ui/renderer_actions.html?{secret}", srv.base);
-    // The toolbar still shows the window's own copy of the page (Q2.3d).
     let page_area = |png: &Path| {
         let (w, _, rgba) = png_rgba(&std::fs::read(png).unwrap());
         rgba[40 * w * 4..].to_vec()

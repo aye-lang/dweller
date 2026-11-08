@@ -1,0 +1,13 @@
+import dom
+import engine
+import std.mem.AllocError
+
+fn dragSelectPage(ui: *mut Ui, wx: f64, y: f64) AllocError!void {
+    let p = ui.tab.page orelse return
+    let f = p.doc.controls.focus orelse return
+
+    if !dom.isTextField(&p.doc, f) { return }
+
+    try dom.extendCaret(&mut p.doc, f, engine.offsetAt(p, f, wx + ui.tab.scroll_x, y - ui.top() + ui.tab.scroll))
+    ui.dirty = true
+}

@@ -1,0 +1,12 @@
+import ipc
+import std.mem.AllocError
+
+fn tellFocus(ui: *Ui, slot: *TabSlot, tp: *mut TabProcess, active: bool) AllocError!void {
+    let on = active && !ui.inactive && ui.focus == Focus.Page
+
+    if !tp.hello || tp.gone.len > 0 || on == tp.focused { return }
+
+    tp.focused = on
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Focus { on: on as u32 })
+}

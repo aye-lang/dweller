@@ -408,6 +408,8 @@ pub struct Ui {
     // The options of a `select`, open over the page.
     dropdown: ?Dropdown
     range_drag: bool
+    inactive: bool = false
+    frame_mark: ?u32 = null
     arrow_cursor: ?*mut SDL_Cursor
     hand_cursor: ?*mut SDL_Cursor
     ibeam_cursor: ?*mut SDL_Cursor
@@ -973,16 +975,7 @@ pub struct Ui {
     fn setTitle(self: *mut Self) AllocError!void {
         var b = text.Builder.init(self.alloc)
         defer b.deinit()
-        if self.tab.page |p| {
-            if p.title.len > 0 {
-                try b.append(p.title)
-            } else {
-                try b.append(self.tab.href())
-            }
-        }
-        if self.tab.page == null {
-            try b.append("New tab")
-        }
+        try b.append(slotTitle(self.slots[self.active].?))
         try b.append(" - Dweller")
         try b.appendByte(0)
         SDL_SetWindowTitle(self.window, b.bytes().ptr)
@@ -1123,7 +1116,10 @@ pub struct Ui {
                 self.mouse_in = false
                 hoverChips(self, -1.0, -1.0)
                 try self.clearHover(false)
+            } else if we.event == SDL_WINDOWEVENT_FOCUS_GAINED {
+                self.inactive = false
             } else if we.event == SDL_WINDOWEVENT_FOCUS_LOST {
+                self.inactive = true
                 if self.buttons != 0 {
                     // The pointer's gesture is over (a held button is lost).
                     self.buttons = 0
@@ -1476,6 +1472,9 @@ pub struct Ui {
         if self.range_drag {
             try dragRange(self, wx + self.tab.scroll_x)
         }
+        if (self.buttons & buttonBit(SDL_BUTTON_LEFT)) != 0 {
+            try dragSelectPage(self, wx, y)
+        }
         if hoverChips(self, wx, y) {
             // Over a chip's menu.
             return self.clearHover(false)
@@ -1823,7 +1822,7 @@ pub struct Ui {
             try self.setTitle()
         }
         // pushState, replaceState or a fragment navigation of the scripts.
-        if self.focus != Focus.Address && !addressShown(self) {
+        if self.focus != Focus.Address && !addressShown(self) && self.slots[self.active].?.process == null {
             try setAddress(self)
             self.dirty = true
         }

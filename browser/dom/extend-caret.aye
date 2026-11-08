@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+pub fn extendCaret(doc: *mut Document, el: NodeId, k: usize) AllocError!void {
+    let c = try editable(doc, el)
+    var at = k
+
+    if at > c.value.len {
+        at = c.value.len
+    }
+
+    while at > 0 && at < c.value.len && (c.value[at] & 0xC0) == 0x80 {
+        at -= 1
+    }
+
+    c.caret = at
+}
