@@ -1,0 +1,49 @@
+import agent
+import std
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+let TOKEN_LINE_MAX: usize = 256
+
+fn admitConn(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!bool {
+    let a = ui.agents.?
+    let c = a.conns[i].?
+
+    if c.admitted {
+        return true
+    }
+
+    let n = readSome(c.fd, buf)
+
+    if n == 0 {
+        c.gone = true
+    } else if n > 0 {
+        try c.pending.append(buf[0..n as usize])
+    }
+
+    let bytes = c.pending.bytes()
+
+    let nl = std.mem.indexOf(bytes, '\n') orelse {
+        if c.gone || bytes.len > TOKEN_LINE_MAX {
+            refuseConn(ui, i)
+        }
+
+        return false
+    }
+
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    if !agent.hasToken(arena.allocator(), text.trim(bytes[..nl]), a.token) {
+        refuseConn(ui, i)
+
+        return false
+    }
+
+    try dropFront(ui.alloc, &mut c.pending, nl + 1)
+    c.admitted = true
+    a.ever = true
+
+    return true
+}

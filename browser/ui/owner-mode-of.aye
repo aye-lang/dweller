@@ -1,0 +1,20 @@
+extern fn statx(dirfd: i32, path: [*]u8, flags: i32, mask: u32, st: *mut i64) i32
+extern fn aye_std_statbuf(path: [*]u8, follow: bool, st: *mut i64) i32
+
+fn ownerModeOf(path: [*]u8) ?OwnerMode {
+    var st = @zeroed([32]i64)
+
+    if @targetOs() is .linux {
+        if statx(-100, path, 0x100, 0x7ff, &mut st[0]) != 0 {
+            return null
+        }
+
+        return OwnerMode { uid: ((st[2] >> 32) & 0xffffffff) as u32, mode: ((st[3] >> 32) & 0xffff) as u32 }
+    }
+
+    if aye_std_statbuf(path, false, &mut st[0]) != 0 {
+        return null
+    }
+
+    return OwnerMode { uid: (st[2] & 0xffffffff) as u32, mode: ((st[0] >> 32) & 0xffff) as u32 }
+}
