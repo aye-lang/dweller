@@ -1,0 +1,20 @@
+// chromium: components/security_interstitials/content/stateful_ssl_host_state_delegate.cc
+import std.list.List
+import std.mem.Allocator
+
+pub struct CertExceptions {
+    alloc: Allocator
+    list: List(CertException)
+
+    pub fn init(alloc: Allocator) CertExceptions {
+        return CertExceptions { alloc: alloc, list: List(CertException).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for e in self.list.items() {
+            self.alloc.free(e.host)
+        }
+
+        self.list.deinit()
+    }
+}

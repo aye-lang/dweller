@@ -54,6 +54,7 @@ struct Session {
     // pages.
     frames: List(FrameTop)
     hsts: Hsts
+    certs: CertExceptions
     upgrading: List([]mut u8)
 }
 
@@ -93,6 +94,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         nav_referrer: []mut u8{},
         frames: List(FrameTop).init(alloc),
         hsts: Hsts.init(alloc),
+        certs: CertExceptions.init(alloc),
         upgrading: List([]mut u8).init(alloc),
     }) catch |e| {
         release(alloc, file)
@@ -219,6 +221,7 @@ pub fn stop() {
     }
     s.frames.deinit()
     s.hsts.deinit()
+    s.certs.deinit()
     for p in s.upgrading.items() {
         release(s.alloc, p)
     }

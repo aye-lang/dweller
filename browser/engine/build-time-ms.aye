@@ -1,0 +1,14 @@
+import std
+import std.mem.Allocator
+
+fn buildTimeMs(alloc: Allocator) ?i64 {
+    let args = std.os.args(alloc) catch |e| {
+        return null
+    }
+
+    defer alloc.free(args)
+
+    let ns = std.fs.mtime(args[0]) orelse return null
+
+    return ns / 1000000
+}
