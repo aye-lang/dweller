@@ -10153,6 +10153,46 @@ fn window_framesets() {
     );
 }
 
+/// Q3.9b: a person's click on a `target=_top` link or form in a
+/// sandboxed frame loads in the tab only with `allow-top-navigation` or
+/// `allow-top-navigation-by-user-activation`.
+#[test]
+fn window_sandbox_targets() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let ui = format!("file://{}/browser/tests/ui/", root().display());
+    let cases = [
+        ("click:10,60", "url sandbox_targets.html\n"),
+        ("click:10,100", "url other.html\n"),
+        ("click:10,140", "url sandbox_targets.html\n"),
+        ("click:10,180", "url other.html?\n"),
+    ];
+    let mut failures = Vec::new();
+    for (events, want) in cases {
+        let out = run_window(&[
+            "browser/tests/ui/sandbox_targets.html",
+            "--font",
+            "fixed",
+            "--width",
+            "400",
+            "--height",
+            "340",
+            "--frames",
+            "1",
+            "--state",
+            "--events",
+            events,
+        ]);
+        let got = text(&out.stdout).replace(&ui, "");
+        if !out.status.success() || !out.stderr.is_empty() || !got.starts_with(want) {
+            failures.push(format!("--events {events:?}: expected {want:?}:\n{got}{}", text(&out.stderr)));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// `browser/tests/fonts/bold.html`: bold text from a face of one weight
 /// gets synthetic bold, and from a variable face its `wght` axis, so the
 /// bold rows have more ink than the regular ones (and the variable bold

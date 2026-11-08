@@ -198,6 +198,9 @@ fn clickFrame(ui: *mut Ui, fp: engine.FramePoint) AllocError!void {
         }
         net.noteNavigationPolicy(engine.linkReferrerPolicy(&fp.page.doc, link.el))
         defer target.deinit(ui.alloc)
+        if !engine.sandboxAllowsTarget(fp.page, link.el, true) {
+            return ui.relayout()
+        }
         if engine.targetFrame(fp.page, engine.linkTarget(fp.page, link.el)) |slot| {
             try engine.navigateFrame(slot, &target, null, engine.initiatorOf(fp.page))
             return ui.relayout()
@@ -227,6 +230,9 @@ fn clickFrame(ui: *mut Ui, fp: engine.FramePoint) AllocError!void {
 fn submitInFrame(ui: *mut Ui, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) AllocError!void {
     let sub = (try engine.submitForm(p, form, submitter)) orelse return ui.relayout()
     defer sub.deinit(ui.alloc)
+    if !engine.sandboxAllowsTarget(p, form, true) {
+        return ui.relayout()
+    }
     if engine.targetFrame(p, engine.linkTarget(p, form)) |slot| {
         var body = net.Body { content_type: sub.content_type, data: sub.body }
         var post: ?*net.Body = null

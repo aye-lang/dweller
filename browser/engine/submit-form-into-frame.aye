@@ -3,6 +3,10 @@ import net
 import std.mem.AllocError
 
 fn submitFormIntoFrame(p: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!void {
+    if !sandboxAllowsTarget(p, form, false) {
+        return
+    }
+
     let slot = targetFrame(p, linkTarget(p, form)) orelse return
     let sub = (try submitForm(p, form, submitter)) orelse return
     defer sub.deinit(p.alloc)
