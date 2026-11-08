@@ -1,0 +1,43 @@
+import paint
+import perf
+import std.mem.AllocError
+import ui.pageview
+
+pub fn composeDamage(ui: *mut Ui, area: paint.IRect, v: paint.View, bottom: f64) AllocError!void {
+    let began = perf.start()
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+
+    for r in pd.damage.rects.items() {
+        let w = paint.IRect { x0: r.x0 + area.x0, y0: r.y0 + area.y0, x1: r.x1 + area.x0, y1: r.y1 + area.y0 }
+
+        for k in 0..2 {
+            ui.canvas.blit(&pd.canvas, ringPart(r, pd.ring, h, k), area.x0, area.y0 - ringOffset(pd.ring, h, k))
+        }
+
+        try ui.canvas.pushClip(w)
+
+        if pageview.hasFrame(ui.view()) {
+            try drawPageState(ui, v)
+        }
+
+        if ui.hover.len() > 0 {
+            try drawStatus(ui, bottom, ui.hover.bytes())
+        }
+
+        ui.canvas.popClip()
+
+        if ui.texture |t| {
+            uploadRect(t, &ui.canvas, w)
+        }
+    }
+
+    if ui.texture |t| {
+        SDL_RenderClear(ui.renderer)
+        SDL_RenderCopy(ui.renderer, t, null, null)
+        SDL_RenderPresent(ui.renderer)
+        notePresent(ui)
+    }
+
+    perf.end("ui_window_px", began, damageLabel(pd))
+}
