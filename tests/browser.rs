@@ -7758,7 +7758,8 @@ fn cache_partition() {
 /// headers in `/meta-log`. A plain http host that is not potentially
 /// trustworthy gets no `Sec-Fetch-*`. Q3.14b: `referrerpolicy` and
 /// `rel=noreferrer` on links, forms and frames, fetch's `referrerPolicy`,
-/// a redirect's `Referrer-Policy`, no `Origin` after a POST's 303.
+/// a redirect's `Referrer-Policy`, no `Origin` after a POST's 303,
+/// `referrerpolicy` on `img` and `link`.
 #[test]
 fn fetch_metadata() {
     use std::io::BufRead;
@@ -7816,6 +7817,9 @@ fn fetch_metadata() {
     meta("GET /meta/redirected.js", &format!("sec-fetch-dest=script | {none} | referer="));
     meta("GET /meta/fetch-noref", "referer=");
     meta("GET /meta/fetch-303", &format!("origin= | referer={policy}"));
+    meta("GET /meta/img-noref.png", &format!("sec-fetch-dest=image | {none} | referer="));
+    meta("GET /meta/img-unsafe.png", &format!("sec-fetch-dest=image | {none} | referer={policy}"));
+    meta("GET /meta/sheet-noref.css", &format!("sec-fetch-dest=style | {none} | referer="));
 
     if let Some(plain) = server() {
         let plain_port = plain.base.rsplit(':').next().unwrap().to_string();

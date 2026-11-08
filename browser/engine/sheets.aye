@@ -71,7 +71,7 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             }
             if !disabled {
                 if doc.attr(h, "href") |href| {
-                    try linkedSheet(alloc, base, address, href, media, sheet, doc.attr(h, "crossorigin"))
+                    try linkedSheet(alloc, base, address, href, media, sheet, doc.attr(h, "crossorigin"), net.parseReferrerPolicy(doc.attr(h, "referrerpolicy") orelse ""))
                 }
                 if scripted |ss| {
                     try scriptedRules(alloc, base, address, ss, media, sheet)
@@ -114,7 +114,7 @@ fn prefetchSheets(alloc: Allocator, doc: *Document, base: *Url, address: *Url, m
 pub fn sheetHrefs(alloc: Allocator, doc: *Document, base: *Url, media: css.Media, sheet: *mut css.Sheet, out: *mut text.Builder) AllocError!void {
     var cur: ?NodeId = doc.root
     while cur |h| {
-        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && doc.attr(h, "crossorigin") == null && (try mediaOk(doc, h, media, sheet)) {
+        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && doc.attr(h, "crossorigin") == null && doc.attr(h, "referrerpolicy") == null && (try mediaOk(doc, h, media, sheet)) {
             if doc.attr(h, "href") |href| {
                 if url.resolve(alloc, base, text.trim(href)) |target| {
                     defer target.deinit(alloc)
@@ -170,12 +170,12 @@ fn isStylesheetLink(doc: *Document, el: NodeId) bool {
     return found
 }
 
-fn linkedSheet(alloc: Allocator, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8) AllocError!void {
+fn linkedSheet(alloc: Allocator, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!void {
     let target = url.resolve(alloc, base, text.trim(href)) catch |e| {
         return
     }
     defer target.deinit(alloc)
-    let res = net.request(alloc, &target, corsRequest(crossorigin, net.Request { kind: net.Kind.Style, referrer: address.href, initiator: net.Initiator.Page { url: address.href } })) catch |e| {
+    let res = net.request(alloc, &target, corsRequest(crossorigin, net.Request { kind: net.Kind.Style, referrer: address.href, referrer_policy: policy, initiator: net.Initiator.Page { url: address.href } })) catch |e| {
         return
     }
     defer res.deinit(alloc)
@@ -216,7 +216,7 @@ fn parseWithImports(alloc: Allocator, base: *Url, address: *Url, src: []u8, medi
         let href = sheet.imports.items()[first_import + k]
         // The imported sheet's rules go into the layer of its `@import`.
         sheet.base_layer = sheet.import_layers.items()[first_import + k]
-        try linkedSheet(alloc, base, address, href, media, sheet, null)
+        try linkedSheet(alloc, base, address, href, media, sheet, null, null)
     }
     sheet.base_layer = outer_layer
     try sheet.moveRulesFirst(first_rule, mid)
