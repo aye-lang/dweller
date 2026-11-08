@@ -1,0 +1,38 @@
+<!doctype html>
+<title>transition reads</title>
+<style>
+body { margin: 0 }
+#box { width: 100px; height: 20px; transition: width 1s linear }
+#other { width: 50px; height: 20px }
+</style>
+<div id="box"></div>
+<div id="other"></div>
+<pre id="out"></pre>
+<script>
+const box = document.getElementById("box");
+const other = document.getElementById("other");
+const reads = Number(location.search.slice(1)) || 100;
+box.offsetWidth;
+box.style.width = "300px";
+box.offsetWidth;
+let frames = 0;
+function frame() {
+  frames += 1;
+  if (frames < 5) {
+    requestAnimationFrame(frame);
+    return;
+  }
+  const widths = new Set();
+  for (let i = 0; i < reads; i++) {
+    widths.add(box.getBoundingClientRect().width);
+  }
+  const w = [...widths][0];
+  const styled = parseFloat(getComputedStyle(box).width);
+  const before = other.getBoundingClientRect().width;
+  other.style.width = "70px";
+  const after = other.getBoundingClientRect().width;
+  const moving = w > 100 && w < 300;
+  document.getElementById("out").textContent = [widths.size, moving, w === styled, before, after].join(" ");
+}
+requestAnimationFrame(frame);
+</script>
