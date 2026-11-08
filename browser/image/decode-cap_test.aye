@@ -1,0 +1,43 @@
+import std.mem.Allocator
+
+fn isRefused(a: Allocator, data: []u8) bool {
+    let bmp = decode(a, data) catch |e| {
+        return e == ImageError.Unsupported
+    }
+
+    bmp.deinit(a)
+
+    return false
+}
+
+test "an image whose pixels or coefficients pass the decode cap is refused from its header" {
+    let a = @testAllocator()
+    let wide = try readFixture(a, "cap_wide.png")
+
+    defer a.free(wide)
+
+    let progressive = try readFixture(a, "cap_progressive.jpg")
+
+    defer a.free(progressive)
+
+    @expect(headerSize(wide) == null)
+    @expect(isRefused(a, wide))
+    @expect(isRefused(a, progressive))
+}
+
+test "a JPEG past the decode cap decodes at a scale that fits" {
+    let a = @testAllocator()
+    let data = try readFixture(a, "cap_large.jpg")
+
+    defer a.free(data)
+
+    let bmp = try decode(a, data)
+
+    defer bmp.deinit(a)
+
+    let size = headerSize(data) orelse [2]usize{0, 0}
+
+    @expect(bmp.width == 3000 && bmp.height == 2000)
+    @expect(size[0] == 3000 && size[1] == 2000)
+    @expect(bmp.pixels[0] == 128 && bmp.pixels[3] == 255)
+}

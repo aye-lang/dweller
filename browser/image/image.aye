@@ -49,10 +49,9 @@ pub enum Format {
     Unknown
 }
 
-// Larger images are refused before anything is allocated: 40 million
-// pixels are 160 MB of RGBA already.
 let MAX_SIDE: usize = 16384
-let MAX_PIXELS: usize = 40000000
+// chromium: content/child/blink_platform_impl.cc MaxDecodedImageBytes
+let MAX_DECODED_BYTES: usize = 67108864
 
 /// The format of `data`, from its first bytes (the Content-Type of a
 /// response is often wrong, so browsers sniff images).
@@ -104,7 +103,7 @@ fn checkSize(width: usize, height: usize) ImageError!void {
     if width == 0 || height == 0 {
         return ImageError.Invalid
     }
-    if width > MAX_SIDE || height > MAX_SIDE || width * height > MAX_PIXELS {
+    if width > MAX_SIDE || height > MAX_SIDE || width * height * 4 > MAX_DECODED_BYTES {
         return ImageError.Unsupported
     }
 }

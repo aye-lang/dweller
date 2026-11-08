@@ -1,0 +1,20 @@
+// chromium: third_party/blink/renderer/platform/image-decoders/jpeg/jpeg_image_decoder.cc DesiredScaleNumerator
+fn jpegScale(width: usize, height: usize) ImageError!usize {
+    var scale: usize = 1
+
+    while scale < 8 {
+        if checkedSize(jpegScaled(width, scale), jpegScaled(height, scale)) |size| {
+            return scale
+        }
+
+        scale *= 2
+    }
+
+    try checkSize(jpegScaled(width, scale), jpegScaled(height, scale))
+
+    return scale
+}
+
+fn jpegScaled(n: usize, scale: usize) usize {
+    return (n + scale - 1) / scale
+}
