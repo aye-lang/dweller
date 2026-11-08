@@ -30,6 +30,7 @@ struct CanvasBitmap {
     tainted: bool
     // Its WebGL context (webgl_api.aye), if it has one.
     gl: ?*mut gpu.Context = null
+    seen: []mut u8 = []mut u8{}
 }
 
 // A bounded allocation, also for detached and offscreen canvases. Keeping
@@ -88,6 +89,7 @@ fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
             i += 1
         } else {
             freeWebGL(p.alloc, old)
+            p.alloc.free(old.seen)
             old.bmp.deinit(p.alloc)
             p.alloc.destroy(old.bmp)
             cache.canvases.swapRemove(i)
@@ -134,7 +136,7 @@ fn resetCanvas(p: *mut Page, h: NodeId, key: []u8) AllocError!void {
             }
             let px = try p.alloc.alloc(0 as u8, size)
             p.alloc.free(c.bmp.pixels)
-            c.bmp.* = image.Bitmap { width: w, height: ht, pixels: px, version: c.bmp.version + 1 }
+            c.bmp.* = image.Bitmap { width: w, height: ht, pixels: px, version: c.bmp.version + 1, look: c.bmp.look }
             c.epoch += 1
             c.tainted = false
             resizeWebGL(c)
