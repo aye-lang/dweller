@@ -67,6 +67,56 @@ test "shutdown round-trips through the framing" {
     @expect(got.message is .Shutdown)
 }
 
+test "resize round-trips through the framing" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 7, Message.Resize { width: 800, height: 600, scale: 2.5, buffer: 3 })
+
+    match got.message {
+        .Resize { width, height, scale, buffer } => {
+            @expectEqual(800, width)
+            @expectEqual(600, height)
+            @expectEqual(2.5, scale)
+            @expectEqual(3, buffer)
+        }
+
+        _ => @expect(false)
+    }
+}
+
+test "frame round-trips through the framing" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 7, Message.Frame { buffer: 4, width: 8, height: 6, scroll_x: 0.0, scroll_y: 12.5, damage: "0123456789abcdef" })
+
+    match got.message {
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+            @expectEqual(4, buffer)
+            @expectEqual(8, width)
+            @expectEqual(6, height)
+            @expectEqual(0.0, scroll_x)
+            @expectEqual(12.5, scroll_y)
+            @expectEqual("0123456789abcdef", damage)
+        }
+
+        _ => @expect(false)
+    }
+}
+
+test "frame_ack round-trips through the framing" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 7, Message.FrameAck { buffer: 9 })
+
+    match got.message {
+        .FrameAck { buffer } => @expectEqual(9, buffer)
+        _ => @expect(false)
+    }
+}
+
 test "two messages in one buffer come one at a time" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
@@ -117,4 +167,7 @@ test "what a renderer may send" {
     @expect(fromRenderer(Message.Loaded { title: "", url: "" }))
     @expect(!fromRenderer(Message.Navigate { url: "" }))
     @expect(!fromRenderer(Message.Shutdown))
+    @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "" }))
+    @expect(!fromRenderer(Message.Resize { width: 1, height: 1, scale: 1.0, buffer: 1 }))
+    @expect(!fromRenderer(Message.FrameAck { buffer: 1 }))
 }

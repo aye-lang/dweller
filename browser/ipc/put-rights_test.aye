@@ -1,0 +1,21 @@
+import std.list.List
+import std.text
+
+test "fds round-trip through the control message" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    var fds = List(i32).init(@testAllocator())
+    defer fds.deinit()
+    var two = [2]i32{7, 9}
+
+    try putRights(&mut out, two[..])
+    try takeRights(out.bytes(), &mut fds)
+
+    @expectEqual(2, fds.len())
+    @expectEqual(7, fds.items()[0])
+    @expectEqual(9, fds.items()[1])
+
+    try takeRights(out.bytes()[..4], &mut fds)
+
+    @expectEqual(2, fds.len())
+}

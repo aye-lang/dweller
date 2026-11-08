@@ -1,0 +1,20 @@
+pub fn checkFrame(b: *Buffers, buffer: u32, width: u32, height: u32, damage: []u8) []u8 {
+    if buffer == 0 || buffer >= b.next { return "unknown buffer" }
+    if buffer < b.first { return "" }
+    if buffer == b.shown { return "buffer in use" }
+    if width != b.width || height != b.height { return "wrong size" }
+    if damage.len % 16 != 0 { return "bad damage" }
+
+    var r = Reader { data: damage }
+
+    while r.at < damage.len {
+        let x0 = r.readU32() catch unreachable
+        let y0 = r.readU32() catch unreachable
+        let x1 = r.readU32() catch unreachable
+        let y1 = r.readU32() catch unreachable
+
+        if x0 >= x1 || y0 >= y1 || x1 > width || y1 > height { return "damage outside" }
+    }
+
+    return ""
+}
