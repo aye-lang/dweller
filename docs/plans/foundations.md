@@ -116,7 +116,7 @@ card says done.
 - Q1 open: Q1.1 (safe shipped build), Q1.4, Q1.9b, Q1.10a2 (waits for aye-lang/aye#26), Q1.11 (soak).
 - Q2 open: Q2.3f, Q2.4e, Q2.8b, then Q2.9 to Q2.14 (out-of-process iframes, Spaces as renderers, limits, the default flip).
 - Q3 open: Q3.1b, Q3.6, Q3.7b, Q3.8, Q3.10.
-- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12, Q4.16 (Q4.21's ranked steps 3 and 5 to 11), Q4.20. No W7 row passes on bbc, zol, mistral or react (Q4.21).
+- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12 and Q4.16 (Q4.21's ranked steps 6 to 11). No W7 row passes on bbc, zol, mistral or react (Q4.21).
 - Q5 to Q7 have no done step; Q5 waits for Q2.14.
 
 ## Lanes and running order
@@ -317,7 +317,7 @@ states the W7 sites it moves.
 | Q4.17 | Canvas 2D drawing cost (Q4.1: mistral 1268 ms idle) (done, #294: a canvas with unchanged pixels is not damaged; mistral raster 3535 → 257 ms per 10 s) | mistral's idle CPU passes | `modules/canvas/canvas2d/canvas_rendering_context_2d.cc` |
 | Q4.18 | What relayouts mistral each frame (done, #297: a same-text `textContent` write; it cannot be skipped because MutationObservers watch it) | – | – |
 | Q4.19 | Unchanged frames reuse their display list (#301: mistral builds per frame 6 → 1, `paint_build` 4.0 → 1.8 ms) | `window_frame_lists_reused` | `platform/graphics/paint/paint_controller.cc` |
-| Q4.20 | Canvas draws (2D and WebGL) mark paint only, not the DOM version; measure first on a canvas-only page | a canvas-only rAF page runs no relayout | `core/html/canvas/html_canvas_element.cc` (`DidDraw`) |
+| Q4.20 | Canvas draws (2D and WebGL) mark paint only, not the DOM version: the window patches the changed canvas's image items (pixels referenced, `ver` = `Bitmap.shown()`), re-signs the list and damages only the canvas rect, also through an iframe (done, 2026-11-09; canvas-only page relayouts 158 → 1 in 300 frames, `idle_relayout_plain` 271 → 1 and `ui_raf` 7.9 → 1.5 ms; left: the whole list is re-signed (0.26 ms), an observed same-text write still relays out, the tab-process renderer has no list reuse) | `window_canvas_raf_no_relayout` | `core/html/canvas/html_canvas_element.cc` (`DidDraw`) |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
