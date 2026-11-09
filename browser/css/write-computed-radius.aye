@@ -1,0 +1,41 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#border-radius
+fn writeComputedRadius(values: []Value, out: *mut text.Builder) AllocError!void {
+    var horizontal = List([]u8).init(out.alloc)
+    defer horizontal.deinit()
+
+    var vertical = List([]u8).init(out.alloc)
+    defer vertical.deinit()
+
+    var same = true
+
+    for k in 0..4 {
+        var one = text.Builder.init(out.alloc)
+
+        try writeComputed(values, BORDER_TOP_LEFT_RADIUS + k, &mut one)
+
+        var h = one.bytes()
+        var v = h
+
+        if std.mem.indexOf(one.bytes(), ' ') |space| {
+            h = one.bytes()[..space]
+            v = one.bytes()[space + 1..]
+        }
+
+        same = same && text.eql(h, v)
+
+        try horizontal.append(h)
+        try vertical.append(v)
+    }
+
+    try writeQuad(horizontal.items(), out)
+
+    if !same {
+        try out.append(" / ")
+        try writeQuad(vertical.items(), out)
+    }
+}

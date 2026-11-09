@@ -1,0 +1,68 @@
+import css
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#concept-shorthand-property
+fn akExpand(it: *mut Interp, a: Args) JsError!Value {
+    let name = try it.builder()
+    defer it.release(name)
+    let value = try it.builder()
+    defer it.release(value)
+
+    try argText(it, a, 0, name)
+    try argText(it, a, 1, value)
+
+    if css.propertyIndex(name.bytes()) != null {
+        return Value.Null
+    }
+
+    var sheet = try css.Sheet.init(it.alloc)
+    defer sheet.deinit()
+
+    var src = text.Builder.init(it.alloc)
+    defer src.deinit()
+
+    try src.append(name.bytes())
+    try src.append(": ")
+    try src.append(value.bytes())
+
+    let r = try css.parseInline(&mut sheet, src.bytes())
+
+    if r.end == r.start {
+        return Value.Null
+    }
+
+    return pushDecls(it, &mut sheet, r)
+}
+
+fn pushDecls(it: *mut Interp, sheet: *mut css.Sheet, r: css.DeclRange) JsError!Value {
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    let b = try it.builder()
+    defer it.release(b)
+
+    for d in sheet.decls.items()[r.start..r.end] {
+        if d.prop == css.CUSTOM {
+            continue
+        }
+
+        b.clear()
+
+        if d.raw.len > 0 {
+            try css.writeTokens(d.raw, b)
+        } else {
+            try css.writeValue(d.value, b)
+        }
+
+        try it.heap.pushElem(arr, try it.newString(css.PROPERTIES[d.prop].name))
+        try it.heap.pushElem(arr, try it.newString(b.bytes()))
+    }
+
+    return it.pop()
+}

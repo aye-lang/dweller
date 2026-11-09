@@ -73,12 +73,18 @@ hidden(KeyframeEffect.prototype, '_valuesAt', function (progress) {
 
   const byName = new Map();
 
+  const add = (name, f, value) => {
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push({ offset: f.computed, easing: f.easing, value, composite: f.composite });
+  };
+
   for (const f of this._frames) {
     for (const p of Object.keys(f.props)) {
       const name = cssName(p);
+      const longhands = ak.expand(name, f.props[p]);
 
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name).push({ offset: f.computed, easing: f.easing, value: f.props[p], composite: f.composite });
+      if (longhands === null) add(name, f, f.props[p]);
+      else for (let i = 0; i < longhands.length; i += 2) add(longhands[i], f, longhands[i + 1]);
     }
   }
 

@@ -1,0 +1,76 @@
+// spec: https://drafts.csswg.org/css-backgrounds-3/#background-position
+fn validPosition(layer: []Comp) bool {
+    for c in layer {
+        if !isPositionPart(c) {
+            return false
+        }
+    }
+
+    if layer.len == 1 {
+        return isPositionPart(layer[0])
+    }
+
+    if layer.len == 2 {
+        return validPositionPair(layer[0], layer[1])
+    }
+
+    if layer.len > 4 {
+        return false
+    }
+
+    let first = edgeGroupLen(layer)
+
+    if first == 0 || first >= layer.len || edgeGroupLen(layer[first..]) != layer.len - first {
+        return false
+    }
+
+    let a = axisOf(layer[0])
+    let b = axisOf(layer[first])
+
+    return a == 'c' || b == 'c' || a != b
+}
+
+fn validPositionPair(a: Comp, b: Comp) bool {
+    let xa = axisOf(a)
+    let xb = axisOf(b)
+
+    if xa == 'l' && xb == 'l' {
+        return true
+    }
+
+    if xa == 'l' || xb == 'l' {
+        return (xa == 'l' && xb != 'x') || (xb == 'l' && xa != 'y')
+    }
+
+    return xa == 'c' || xb == 'c' || xa != xb
+}
+
+fn edgeGroupLen(layer: []Comp) usize {
+    let kw = axisOf(layer[0])
+
+    if kw == 'l' {
+        return 0
+    }
+
+    if kw != 'c' && layer.len > 1 && axisOf(layer[1]) == 'l' {
+        return 2
+    }
+
+    return 1
+}
+
+fn axisOf(c: Comp) u8 {
+    if isIdent(c, "left") || isIdent(c, "right") {
+        return 'x'
+    }
+
+    if isIdent(c, "top") || isIdent(c, "bottom") {
+        return 'y'
+    }
+
+    if isIdent(c, "center") {
+        return 'c'
+    }
+
+    return 'l'
+}

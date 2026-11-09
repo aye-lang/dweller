@@ -1,0 +1,44 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-declaration-block
+pub fn writeComputedShorthand(values: []Value, name: []u8, out: *mut text.Builder) AllocError!bool {
+    if text.eql(name, "border-radius") {
+        try writeComputedRadius(values, out)
+
+        return true
+    }
+
+    var first = BORDER_TOP_WIDTH
+
+    if text.eql(name, "border-style") {
+        first = BORDER_TOP_STYLE
+    } else if text.eql(name, "border-color") {
+        first = BORDER_TOP_COLOR
+    } else if text.eql(name, "margin") {
+        first = MARGIN_TOP
+    } else if text.eql(name, "padding") {
+        first = PADDING_TOP
+    } else if !text.eql(name, "border-width") {
+        return false
+    }
+
+    try writeComputedSides(values, first, out)
+
+    return true
+}
+
+fn writeComputedSides(values: []Value, first: usize, out: *mut text.Builder) AllocError!void {
+    var parts = List([]u8).init(out.alloc)
+    defer parts.deinit()
+
+    for k in 0..4 {
+        var one = text.Builder.init(out.alloc)
+
+        try writeComputed(values, first + k, &mut one)
+        try parts.append(try one.toOwned())
+    }
+
+    try writeQuad(parts.items(), out)
+}

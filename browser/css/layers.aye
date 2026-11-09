@@ -65,6 +65,12 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
     if prop == BOX_SHADOW {
         return boxShadowValue(sheet, comps)
     }
+    if prop >= BORDER_TOP_LEFT_RADIUS && prop <= BORDER_BOTTOM_LEFT_RADIUS && !validRadius(comps) {
+        return null
+    }
+    if hasLayerGrammar(prop) && !validLayers(prop, comps) {
+        return null
+    }
     if prop == BACKGROUND_IMAGE || prop == MASK_IMAGE {
         var n: usize = 0
         for c in comps {
@@ -505,10 +511,15 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
         return
     }
     var slash = comps.len
+    var slashes: usize = 0
     for k, c in comps {
         if isDelim(c, '/') {
             slash = k
+            slashes += 1
         }
+    }
+    if slashes > 1 {
+        return
     }
     let h = comps[..slash]
     var v = h
@@ -519,7 +530,7 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
         return
     }
     for c in comps {
-        if !isDelim(c, '/') && !isLength(c) {
+        if !isDelim(c, '/') && lengthValue(c, true, true) == null {
             return
         }
     }

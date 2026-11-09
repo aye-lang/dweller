@@ -1443,6 +1443,12 @@ pub let PRELUDE =
     \\getter(ComputedStyle.prototype, 'overflow', function () { return styleOf(this._el, 'overflow'); });
     \\for (const n of ['line-clamp', 'lineClamp', '-webkit-line-clamp', 'webkitLineClamp', 'WebkitLineClamp']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, /ebkit/.test(n) ? '-webkit-line-clamp' : 'line-clamp'); });
     \\for (const n of ['white-space', 'whiteSpace', 'text-wrap', 'textWrap']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('S', '-s').replace('W', '-w')); });
+    \\for (const n of ['margin', 'padding', 'border-width', 'border-style', 'border-color', 'border-radius']) {
+    \\  const get = function () { return styleOf(this._el, n); };
+    \\  getter(ComputedStyle.prototype, n, get);
+    \\  const camel = n.replace(/-([a-z])/g, (m, c) => c.toUpperCase());
+    \\  if (camel !== n) getter(ComputedStyle.prototype, camel, get);
+    \\}
     \\for (const n of ['flex', 'flex-flow', 'flexFlow']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('F', '-f')); });
     \\Object.setPrototypeOf(ComputedStyle.prototype, CSSStyleDeclaration.prototype);
     \\hidden(G, 'getComputedStyle', function getComputedStyle(el, pseudo) {
