@@ -3,5 +3,8 @@ import dom.NodeId
 import url.Url
 
 fn scriptUrlRefusal(p: *mut Page, el: NodeId, target: *Url, parser_inserted: bool) ?csp.Refusal {
-    return csp.scriptUrlRefusal(policyAt(p, el), target, &p.url, elementNonce(p, el), parser_inserted)
+    let nonce = elementNonce(p, el)
+    let enforced = csp.scriptUrlRefusal(policyAt(p, el), target, &p.url, nonce, parser_inserted)
+
+    return csp.orReport(enforced, csp.scriptUrlRefusal(p.report_csp, target, &p.url, nonce, parser_inserted))
 }

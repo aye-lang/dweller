@@ -71,7 +71,7 @@ fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
         return JsError.Thrown
     }
     if p.images == null {
-        p.images = try p.alloc.create(ImageCache.init(p.alloc))
+        p.images = try newImageCache(p)
     }
     let cache = p.images.?
     for i in 0..cache.canvases.len() {
@@ -229,7 +229,7 @@ fn canvasSource(it: *mut Interp, source: Value) JsError!?CanvasSource {
         return null
     }
     if p.images == null {
-        p.images = try p.alloc.create(ImageCache.init(p.alloc))
+        p.images = try newImageCache(p)
     }
     let cache = p.images.?
     if cache.referrer.len == 0 {
@@ -316,7 +316,7 @@ pub struct CanvasStroke {
 fn canvasStroke(it: *mut Interp, key: Value) JsError!CanvasStroke {
     let page = scriptOf(it).active
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     let cache = page.images.?
     let kv = try it.toStringValue(key)
@@ -1745,7 +1745,7 @@ fn akCanvasText(it: *mut Interp, a: Args) JsError!Value {
     let textBytes = it.heap.bytes(js.strOf(str))
     let page = scriptOf(it).page
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     let cache = page.images.?
     if !canvas_fixed && cache.canvas_fonts == null {

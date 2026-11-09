@@ -1,0 +1,13 @@
+import csp
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn requestRefusal(p: *Page, effective: []u8, target: *Url) ?csp.Refusal {
+    if p.csp.len == 0 && p.report_csp.len == 0 {
+        return null
+    }
+
+    let enforced = csp.urlRefusal(p.csp, effective, target, &p.url, "")
+
+    return csp.orReport(enforced, csp.urlRefusal(p.report_csp, effective, target, &p.url, ""))
+}

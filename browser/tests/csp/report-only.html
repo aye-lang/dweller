@@ -1,0 +1,21 @@
+<!doctype html>
+<title>CSP report-only</title>
+<style>#a { margin-left: 3px }</style>
+<div id="a" style="padding-left: 5px">x</div>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+document.addEventListener('securitypolicyviolation', e => log('violation ' + e.effectiveDirective + ' ' + e.blockedURI.replace(location.origin, '') + ' ' + e.disposition + ' ' + e.originalPolicy.split(' ')[0]));
+const a = document.getElementById('a');
+log('margin ' + getComputedStyle(a).marginLeft + ' padding ' + getComputedStyle(a).paddingLeft);
+const img = new Image();
+img.onload = () => log('image load');
+img.onerror = () => log('image error');
+img.src = 'data:image/gif;base64,R0lGODlhAQABAID/AMDAwAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+fetch('/csp/same.js').then(() => log('fetch ok'), () => log('fetch failed'));
+const s = document.createElement('script');
+s.src = '/csp/same.js';
+s.onload = () => log('script load');
+document.head.append(s);
+</script>

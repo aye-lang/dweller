@@ -1,0 +1,30 @@
+import csp
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#should-block-inline
+fn applyInlineStyle(p: *mut Page, h: NodeId, attribute: bool, report: bool) AllocError!void {
+    var code = text.Builder.init(p.alloc)
+    defer code.deinit()
+
+    var nonce: []u8 = ""
+
+    if attribute {
+        try code.append(p.doc.attr(h, "style") orelse "")
+    } else {
+        try p.doc.textContent(h, &mut code)
+        nonce = elementNonce(p, h)
+    }
+
+    var enforced: ?csp.Refusal = null
+    var reported: ?csp.Refusal = null
+
+    if !(attribute && dom.isCssomStyle(&p.doc, fnv32(code.bytes()))) {
+        enforced = try csp.styleInlineRefusal(p.alloc, policyAt(p, h), attribute, nonce, code.bytes())
+        reported = try csp.styleInlineRefusal(p.alloc, p.report_csp, attribute, nonce, code.bytes())
+    }
+
+    try applyStyleRefusal(p, h, attribute, csp.orReport(enforced, reported), fnv32(code.bytes()), "inline", report)
+}

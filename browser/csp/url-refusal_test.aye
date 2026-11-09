@@ -1,0 +1,57 @@
+import url
+
+test "request URLs follow the fallback list of their directive" {
+    let a = @testAllocator()
+    let page = try url.parse(a, "http://site.test:8000/p.html")
+    defer page.deinit(a)
+    let same = try url.parse(a, "http://site.test:8000/i.png")
+    defer same.deinit(a)
+    let other = try url.parse(a, "http://other.test:9000/i.png")
+    defer other.deinit(a)
+    let data = try url.parse(a, "data:image/gif;base64,AA==")
+    defer data.deinit(a)
+
+    @expect(urlRefusal("", "img-src", &other, &page, "") == null)
+    @expect(urlRefusal("img-src 'self'", "img-src", &same, &page, "") == null)
+    @expect(urlRefusal("img-src 'self'", "img-src", &other, &page, "") != null)
+    @expect(urlRefusal("default-src 'self'", "img-src", &other, &page, "") != null)
+    @expect(urlRefusal("default-src 'none'; img-src *", "img-src", &other, &page, "") == null)
+    @expect(urlRefusal("img-src *", "img-src", &data, &page, "") != null)
+    @expect(urlRefusal("img-src data:", "img-src", &data, &page, "") == null)
+    @expect(urlRefusal("default-src 'none'", "frame-src", &same, &page, "") != null)
+    @expect(urlRefusal("child-src 'self'; default-src 'none'", "frame-src", &same, &page, "") == null)
+    @expect(urlRefusal("frame-src 'none'; child-src *", "frame-src", &same, &page, "") != null)
+    @expect(urlRefusal("default-src 'none'", "form-action", &same, &page, "") == null)
+    @expect(urlRefusal("form-action 'self'", "form-action", &other, &page, "") != null)
+    @expect(urlRefusal("default-src 'none'", "base-uri", &same, &page, "") == null)
+    @expect(urlRefusal("style-src 'nonce-n'", "style-src-elem", &other, &page, "n") == null)
+    @expect(urlRefusal("style-src 'nonce-n'", "style-src-elem", &other, &page, "m") != null)
+    @expect(urlRefusal("style-src-elem *; style-src 'none'", "style-src-elem", &other, &page, "") == null)
+    @expect(urlRefusal("img-src 'self', img-src *", "img-src", &other, &page, "") != null)
+    @expect(urlRefusal("img-src 'none'\x01", "img-src", &other, &page, "") == null)
+    @expect(urlRefusal("img-src 'none'\x7f; media-src 'self'", "img-src", &other, &page, "") == null)
+}
+
+test "the refusal names the directive and the policy that refused" {
+    let a = @testAllocator()
+    let page = try url.parse(a, "http://site.test:8000/p.html")
+    defer page.deinit(a)
+    let other = try url.parse(a, "http://other.test:9000/i.png")
+    defer other.deinit(a)
+    let r = urlRefusal("script-src *, default-src 'self'", "connect-src", &other, &page, "") orelse return
+
+    @expectEqual("connect-src", r.effective)
+    @expectEqual("default-src 'self'", r.directive)
+    @expectEqual("default-src 'self'", r.policy)
+    @expect(!r.report)
+}
+
+test "a report-only refusal is marked and never wins over an enforced one" {
+    let enforced = Refusal { policy: "a", directive: "a", effective: "img-src" }
+    let reported = Refusal { policy: "b", directive: "b", effective: "img-src" }
+
+    @expectEqual("a", (orReport(enforced, reported) orelse return).policy)
+    @expect(!(orReport(enforced, reported) orelse return).report)
+    @expect((orReport(null, reported) orelse return).report)
+    @expect(orReport(null, null) == null)
+}

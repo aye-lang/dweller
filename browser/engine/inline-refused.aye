@@ -5,12 +5,14 @@ import std.mem.AllocError
 // https://w3c.github.io/webappsec-csp/#should-block-inline
 fn inlineRefused(s: *mut Script, el: NodeId, code: []u8, parser_inserted: bool) AllocError!bool {
     let p = s.page
-    let refusal = try csp.inlineRefusal(s.alloc, policyAt(p, el), csp.Inline.Script, elementNonce(p, el), parser_inserted, code)
+    let nonce = elementNonce(p, el)
+    let enforced = try csp.inlineRefusal(s.alloc, policyAt(p, el), csp.Inline.Script, nonce, parser_inserted, code)
+    let reported = try csp.inlineRefusal(s.alloc, p.report_csp, csp.Inline.Script, nonce, parser_inserted, code)
 
-    if refusal |r| {
+    if csp.orReport(enforced, reported) |r| {
         try refuseInline(s, el, r, "execute inline script", code)
 
-        return true
+        return !r.report
     }
 
     return false

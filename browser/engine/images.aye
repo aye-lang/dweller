@@ -83,6 +83,7 @@ pub struct ImageCache {
     element_loads: u64 = 0
     landings: u64 = 0
     filled: ?ImageFillStamp = null
+    page: ?*mut Page = null
 
     pub fn init(alloc: Allocator) ImageCache {
         return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), by_href: StrMap(usize).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc), shown: HashMap(NodeId, []mut u8).init(alloc), fingerprint: text.Builder.init(alloc) }
@@ -485,6 +486,9 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
     let target = url.resolve(cache.alloc, base, choice.url) catch return null
     errdefer target.deinit(cache.alloc)
     let href = target.withoutFragment()
+    if try imageRefused(cache, &target, h) {
+        return LoadedElementImage { target: target, bmp: null, density: choice.density, load: 0 }
+    }
     let crossorigin = doc.attr(h, "crossorigin")
     let policy = doc.attr(h, "referrerpolicy")
     if crossorigin == null && policy == null && !cache.known(href) && net.loadHeld(href) {
@@ -537,7 +541,7 @@ fn releaseImageLoad(p: *mut Page, id: u32) {
 /// (the viewport) picks among `srcset` candidates and `picture` sources.
 pub fn updateImages(page: *mut Page, media: css.Media) AllocError!void {
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     page.images.?.scripting = scriptingEnabled() && !page.no_scripts
     page.images.?.decode_later = decodesLater(page)
@@ -591,6 +595,9 @@ fn fillImagesWith(cache: *mut ImageCache, doc: *Document, address: *Url, styles:
             continue
         }
         defer target.deinit(cache.alloc)
+        if try imageRefused(cache, &target, null) {
+            continue
+        }
         // Still loading in the background.
         if !cache.known(target.withoutFragment()) && net.loadHeld(target.withoutFragment()) {
             continue
@@ -632,6 +639,9 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
             continue
         }
         defer target.deinit(cache.alloc)
+        if imageBlocked(cache, &target) {
+            continue
+        }
         if !cache.known(target.withoutFragment()) && !text.startsWith(target.href, "data:") {
             try hrefs.append(target.withoutFragment())
             try hrefs.appendByte('\n')
@@ -648,6 +658,9 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
             continue
         }
         defer target.deinit(cache.alloc)
+        if imageBlocked(cache, &target) {
+            continue
+        }
         // A script's request loads it in the background.
         if doc.attr(h, "crossorigin") != null || doc.attr(h, "referrerpolicy") != null || cache.known(target.withoutFragment()) || net.loadHeld(target.withoutFragment()) {
             continue
@@ -672,7 +685,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
 /// when to lay out again.
 pub fn preloadImages(page: *mut Page, media: css.Media) AllocError!void {
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     let cache = page.images.?
     cache.background = true

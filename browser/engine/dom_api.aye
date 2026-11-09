@@ -1635,7 +1635,7 @@ fn namedGet(s: *mut Script, o: u32, key: u32) JsError!Value {
     try kebab(name, "", b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(s.active.doc.attr(h, "style") orelse "", b.bytes(), v)
+    try styleValue(styleAttrOf(s.active, h), b.bytes(), v)
     return it.newString(v.bytes())
 }
 
@@ -1777,7 +1777,7 @@ fn thisStyleNode(it: *mut Interp, a: Args) JsError!NodeId {
 
 fn styleCssText(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisStyleNode(it, a)
-    return it.newString(docOf(it).attr(h, "style") orelse "")
+    return it.newString(styleAttrOf(scriptOf(it).active, h))
 }
 
 fn styleSetCssText(it: *mut Interp, a: Args) JsError!Value {
@@ -1786,6 +1786,8 @@ fn styleSetCssText(it: *mut Interp, a: Args) JsError!Value {
     defer it.release(b)
     try argText(it, a, 0, b)
     try docOf(it).setAttr(h, "style", b.bytes())
+    dom.clearStyleMark(docOf(it), h, dom.MARK_ATTR_BLOCKED)
+    try dom.setCssomStyle(docOf(it), fnv32(b.bytes()))
     try changedAt(it, h, "style")
     return Value.Undefined
 }
@@ -1793,7 +1795,7 @@ fn styleSetCssText(it: *mut Interp, a: Args) JsError!Value {
 fn styleLength(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisStyleNode(it, a)
     var n: usize = 0
-    var parts = text.split(docOf(it).attr(h, "style") orelse "", ";")
+    var parts = text.split(styleAttrOf(scriptOf(it).active, h), ";")
     while parts.next() |d| {
         if std.mem.indexOf(d, ':') != null {
             n += 1
@@ -1809,7 +1811,7 @@ fn styleGetPropertyValue(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(docOf(it).attr(h, "style") orelse "", b.bytes(), v)
+    try styleValue(styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
     return it.newString(v.bytes())
 }
 
@@ -1835,7 +1837,7 @@ fn styleRemoveProperty(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(docOf(it).attr(h, "style") orelse "", b.bytes(), v)
+    try styleValue(styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
     let old = try it.newString(v.bytes())
     // Mutation hooks allocate and may collect the string before we return.
     try it.push(old)

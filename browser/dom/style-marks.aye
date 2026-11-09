@@ -1,0 +1,30 @@
+import std.mem.AllocError
+
+pub let MARK_BLOCKED: u32 = 0
+pub let MARK_ATTR_BLOCKED: u32 = 1
+pub let MARK_REPORTED: u32 = 2
+pub let MARK_ATTR_REPORTED: u32 = 3
+
+pub fn styleMark(doc: *Document, h: NodeId, kind: u32) ?u32 {
+    return doc.style_marks.get(h.index * 8 + kind)
+}
+
+pub fn setStyleMark(doc: *mut Document, h: NodeId, kind: u32, value: u32) AllocError!void {
+    try doc.style_marks.put(h.index * 8 + kind, value)
+}
+
+pub fn clearStyleMark(doc: *mut Document, h: NodeId, kind: u32) {
+    _ = doc.style_marks.remove(h.index * 8 + kind)
+}
+
+pub fn styleBlocked(doc: *Document, h: NodeId, kind: u32) bool {
+    return doc.style_marks.contains(h.index * 8 + kind)
+}
+
+pub fn setCssomStyle(doc: *mut Document, hash: u32) AllocError!void {
+    try doc.style_marks.put(0x80000000 | (hash >> 1), 1)
+}
+
+pub fn isCssomStyle(doc: *Document, hash: u32) bool {
+    return doc.style_marks.contains(0x80000000 | (hash >> 1))
+}
