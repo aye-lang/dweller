@@ -1,0 +1,33 @@
+import std.coverage
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub struct Corpus {
+    inputs: List([]u8)
+    seen: []mut u8
+    dir: []u8
+    seed_count: usize
+
+    pub fn init(alloc: Allocator, seeds: [][]u8, dir: []u8) AllocError!Corpus {
+        var inputs = List([]u8).init(alloc)
+
+        for s in seeds {
+            try inputs.append(s)
+        }
+
+        return Corpus { inputs: inputs, seen: try alloc.alloc(0 as u8, coverage.counters().len), dir: dir, seed_count: seeds.len }
+    }
+
+    pub fn deinit(self: *mut Self, alloc: Allocator) {
+        freeCorpus(self, alloc)
+    }
+
+    pub fn len(self: *Self) usize {
+        return self.inputs.len()
+    }
+
+    pub fn pick(self: *mut Self, rng: *mut Rng) []u8 {
+        return self.inputs.items()[pickIndex(rng, self.len(), coverage.enabled())]
+    }
+}

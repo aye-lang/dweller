@@ -158,8 +158,16 @@ mutations of a corpus file: a bit flip, a random byte inserted, a range
 deleted, a splice with another corpus file, or a token from the
 target's dictionary inserted. Before each input the binary writes it to
 `target/fuzz/TARGET/current`, so a panic or a signal leaves the input
-behind. It is blind: Aye has no coverage hooks yet, so the corpus does
-not grow. With `--seconds 0` it only runs the corpus, which is how a
+behind. Built with `browser/build.sh --coverage --mode debug` (or
+`fuzz.py run TARGET --coverage`, which builds `target/dweller-fuzz-cov`)
+it is coverage-guided: it clears the edge counters of `std.coverage`
+before each input, ORs the counters (in 8 hit-count buckets) into a
+`seen` map after it, and keeps an input that sets a new bit in the
+in-memory corpus and as a file in the corpus directory (`--corpus`, else
+`target/fuzz/TARGET/corpus`; the file name is the FNV-1a of the bytes).
+Parents are drawn from the corpus with the newer of two draws, and every
+20 s a line `coverage TARGET: N s, corpus C, edges E/T` is printed.
+Without `--coverage` it is blind: the corpus is the seeds. With `--seconds 0` it only runs the corpus, which is how a
 single input is replayed.
 
 Targets: `html` parses the input as a document (`html.parse`) and as
@@ -183,8 +191,8 @@ page's size limits) and panics when the bitmap is not
 FreeType reads, as `@font-face` loading does (`webfont.sfntOf`: WOFF
 inflated, WOFF 2 through Brotli and the glyf/loca/hmtx transforms).
 
-`python3 browser/tools/fuzz.py run TARGET --minutes M` drives a safe
-build (`target/dweller-fuzz`, built by `browser/build.sh` when
+`python3 browser/tools/fuzz.py run TARGET --minutes M [--coverage]`
+drives a safe build (`target/dweller-fuzz`, built by `browser/build.sh` when
 missing): it restarts the binary after each crash, keeps the first
 input of each unique crash (by the panic's `file:line:col`, else the
 signal) as `target/fuzz/TARGET/crashes/<hash>` with `<hash>.txt` (the

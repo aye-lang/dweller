@@ -1,0 +1,29 @@
+test "a counter bucket seen for the first time is new, the same bucket is not" {
+    var seen = [_]u8{ 0, 0, 0 }
+    let first = [_]u8{ 0, 1, 5 }
+    let again = [_]u8{ 0, 1, 6 }
+    let hotter = [_]u8{ 0, 40, 6 }
+
+    @expect(mergeCoverage(seen[0..], first[0..]))
+    @expect(!mergeCoverage(seen[0..], again[0..]))
+    @expect(mergeCoverage(seen[0..], hotter[0..]))
+    @expectEqual(seen[0], 0)
+}
+
+test "newest corpus entries are picked more often only when guided" {
+    var rng = Rng { state: 7 }
+    var late: usize = 0
+    var late_guided: usize = 0
+
+    for i in 0..1000 {
+        if pickIndex(&mut rng, 10, false) >= 5 {
+            late += 1
+        }
+
+        if pickIndex(&mut rng, 10, true) >= 5 {
+            late_guided += 1
+        }
+    }
+
+    @expect(late_guided > late + 100)
+}

@@ -7,7 +7,7 @@
 # session scratchpad): another agent's build can replace your binary
 # before your tests run.
 #
-#     browser/build.sh [OUT] [--mode safe|fast|debug]
+#     browser/build.sh [OUT] [--mode safe|fast|debug] [--coverage]
 #
 # In the Aye repository it builds the compiler first and uses
 # target/release/aye. Anywhere else (the Dweller repository) it uses the
@@ -17,15 +17,20 @@
 # sha256): the timing tools (browser/tools/fast_build.py) refuse a binary
 # without one.
 #
+# `--coverage` adds the edge counters that `dweller fuzz` reads (aye build
+# --coverage; use it with `--mode debug`, where a branch stays a branch).
+#
 # `--mode fast` drops the checks: Q0.2 measured the safe build's longest
 # loop 9.5% and its jsbench time 17.6% over fast (browser/engine/PERF.md).
 set -e
 cd "$(dirname "$0")/.."
 out=target/dweller
 mode=safe
+coverage=
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) mode="$2"; shift 2 ;;
+        --coverage) coverage=--coverage; shift ;;
         *) out="$1"; shift ;;
     esac
 done
@@ -45,7 +50,7 @@ if [ -f "$wasmtime_pc/wasmtime.pc" ]; then
 fi
 mkdir -p "$(dirname "$out")"
 rm -f "$out.fast" "$out.safe"
-"$AYE" build browser -o "$out" --mode "$mode"
+"$AYE" build browser -o "$out" --mode "$mode" $coverage
 if [ "$mode" != debug ]; then
     shasum -a 256 "$out" | cut -d' ' -f1 > "$out.$mode"
 fi

@@ -67,9 +67,11 @@ def minimize(binary, target, work, data, key):
 
 
 def run(args):
+    args.binary = args.binary or ("target/dweller-fuzz-cov" if args.coverage else "target/dweller-fuzz")
     binary = ROOT / args.binary
     if not binary.exists():
-        subprocess.run([str(ROOT / "browser/build.sh"), args.binary], check=True)
+        build = [str(ROOT / "browser/build.sh"), args.binary]
+        subprocess.run(build + (["--coverage", "--mode", "debug"] if args.coverage else []), check=True)
     out = ROOT / "target/fuzz" / args.target
     crashes = out / "crashes"
     crashes.mkdir(parents=True, exist_ok=True)
@@ -115,7 +117,8 @@ def main():
     p = sub.add_parser("run")
     p.add_argument("target")
     p.add_argument("--minutes", type=float, default=10)
-    p.add_argument("--binary", default="target/dweller-fuzz")
+    p.add_argument("--coverage", action="store_true", help="builds the binary (when missing) with --coverage --mode debug: the corpus grows from new edges")
+    p.add_argument("--binary", help="default target/dweller-fuzz, or target/dweller-fuzz-cov with --coverage")
     p.add_argument("--corpus", help="default browser/tests/fuzz/TARGET")
     p.add_argument("--report", help="writes the unique crashes there as JSON")
     return run(parser.parse_args())

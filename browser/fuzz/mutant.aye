@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+fn mutant(rng: *mut Rng, corpus: *mut Corpus, target: Target, input: *mut text.Builder, next: *mut text.Builder) AllocError!void {
+    input.clear()
+    try input.append(corpus.pick(rng))
+
+    for round in 0..rng.below(8) + 1 {
+        try mutate(rng, input.bytes(), corpus.pick(rng), target.dictionary, next)
+        input.clear()
+        try input.append(next.bytes())
+    }
+}

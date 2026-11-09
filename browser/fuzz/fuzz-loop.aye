@@ -3,42 +3,46 @@ import std.mem.Allocator
 import std.text
 import std.time
 
-fn fuzzLoop(alloc: Allocator, target: Target, corpus: [][]u8, current: []u8, seconds: u64, rng: *mut Rng) !u64 {
+let REPORT_MS: u64 = 20000
+
+fn fuzzLoop(alloc: Allocator, target: Target, seeds: [][]u8, current: []u8, save_dir: []u8, seconds: u64, rng: *mut Rng) !u64 {
+    var corpus = try Corpus.init(alloc, seeds, save_dir)
+    defer corpus.deinit(alloc)
+
     var input = text.Builder.init(alloc)
     defer input.deinit()
 
     var next = text.Builder.init(alloc)
     defer next.deinit()
 
-    let end = time.monotonicMs() + seconds * 1000
+    let began = time.monotonicMs()
+    let end = began + seconds * 1000
+    var report_at = began + REPORT_MS
 
-    for i in 0..corpus.len {
-        try runOne(alloc, target, current, corpus[i])
+    for i in 0..seeds.len {
+        try runOne(alloc, target, current, seeds[i])
+        observeCoverage(&mut corpus)
     }
 
-    var runs = corpus.len as u64
+    var runs = seeds.len as u64
 
     while time.monotonicMs() < end {
-        input.clear()
-        try input.append(corpus[rng.below(corpus.len)])
+        try mutant(rng, &mut corpus, target, &mut input, &mut next)
+        try runOne(alloc, target, current, input.bytes())
 
-        for round in 0..rng.below(8) + 1 {
-            try mutate(rng, input.bytes(), corpus[rng.below(corpus.len)], target.dictionary, &mut next)
-            input.clear()
-            try input.append(next.bytes())
+        if observeCoverage(&mut corpus) {
+            try keepInput(alloc, &mut corpus, input.bytes())
         }
 
-        try runOne(alloc, target, current, input.bytes())
         runs += 1
+
+        if time.monotonicMs() >= report_at {
+            try reportCoverage(alloc, target.name, &corpus, time.monotonicMs() - began)
+            report_at += REPORT_MS
+        }
     }
 
+    try reportCoverage(alloc, target.name, &corpus, time.monotonicMs() - began)
+
     return runs
-}
-
-fn runOne(alloc: Allocator, target: Target, current: []u8, input: []u8) !void {
-    let f = try fs.create(current)
-
-    try f.write(input)
-    f.close()
-    try target.run(alloc, input)
 }

@@ -64,15 +64,17 @@ fn fuzzCommand(alloc: Allocator, args: [][]u8) !i32 {
     }
 
     let dir = try std.path.join(a, "target/fuzz", t.name)
-    let corpus = try loadCorpus(a, corpus_dir orelse try std.path.join(a, "browser/tests/fuzz", t.name))
+    let seeds = try loadCorpus(a, corpus_dir orelse try std.path.join(a, "browser/tests/fuzz", t.name))
+    let save_dir = corpus_dir orelse try std.path.join(a, dir, "corpus")
 
     fs.mkdir("target") catch |e| {}
     fs.mkdir("target/fuzz") catch |e| {}
     fs.mkdir(dir) catch |e| {}
+    fs.mkdir(save_dir) catch |e| {}
 
     var rng = Rng { state: seed }
     let began = time.monotonicMs()
-    let runs = try fuzzLoop(alloc, t, corpus, try std.path.join(a, dir, "current"), seconds as u64, &mut rng)
+    let runs = try fuzzLoop(alloc, t, seeds, try std.path.join(a, dir, "current"), save_dir, seconds as u64, &mut rng)
     let ms = time.monotonicMs() - began + 1
     var line = text.Builder.init(a)
 
