@@ -1,0 +1,14 @@
+// spec: https://url.spec.whatwg.org/#dom-url-search
+fn setSearch(p: *mut Parser, value: []u8) UrlError!void {
+    if value.len == 0 {
+        p.has_query = false
+        p.query.clear()
+
+        return stripOpaqueTrailingSpaces(p)
+    }
+
+    p.has_query = true
+    p.query.clear()
+
+    return runOverride(p, State.Query, withoutLeading(value, '?'))
+}

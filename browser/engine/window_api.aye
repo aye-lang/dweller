@@ -46,6 +46,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "url", 0, akUrl)
     try defMethod(it, o, "urlPart", 1, akUrlPart)
     try defMethod(it, o, "parseUrl", 2, akParseUrl)
+    try defMethod(it, o, "setUrlPart", 3, akSetUrlPart)
     try defMethod(it, o, "matchMedia", 1, akMatchMedia)
     try defMethod(it, o, "devicePixelRatio", 0, akDevicePixelRatio)
     try defMethod(it, o, "navigate", 2, akNavigate)
@@ -364,17 +365,8 @@ fn akParseUrl(it: *mut Interp, a: Args) JsError!Value {
     }
     let u = parsed orelse return Value.Null
     defer u.deinit(it.alloc)
-    let arr = try it.newArray(0)
-    try it.push(js.objVal(arr))
-    let b = try it.builder()
-    defer it.release(b)
-    for part in URL_PARTS {
-        b.clear()
-        try appendUrlPart(b, &u, part)
-        let v = try it.newString(b.bytes())
-        try it.heap.pushElem(arr, v)
-    }
-    return it.pop()
+
+    return urlPartsArray(it, &u)
 }
 
 // Appends a part of `u` as the URL class and `location` show it.

@@ -1,0 +1,19 @@
+// spec: https://url.spec.whatwg.org/#concept-basic-url-parser
+import std.text
+
+fn runOverride(p: *mut Parser, state: State, value: []u8) UrlError!void {
+    var clean = text.Builder.init(p.alloc)
+    defer clean.deinit()
+
+    try cleanInput(&mut clean, value, false)
+    p.input = clean.bytes()
+    p.pointer = 0
+    p.state = state
+    p.override = state
+
+    runParser(p) catch |e| {
+        if e == UrlError.OutOfMemory {
+            return UrlError.OutOfMemory
+        }
+    }
+}

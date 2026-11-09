@@ -1,0 +1,21 @@
+// spec: https://url.spec.whatwg.org/#potentially-strip-trailing-spaces-from-an-opaque-path
+import std.mem.AllocError
+import std.text
+
+fn stripOpaqueTrailingSpaces(p: *mut Parser) AllocError!void {
+    if !p.opaque || p.has_fragment || p.has_query {
+        return
+    }
+
+    var hi = p.path_bytes.len()
+
+    while hi > 0 && p.path_bytes.bytes()[hi - 1] == ' ' {
+        hi -= 1
+    }
+
+    var kept = text.Builder.init(p.alloc)
+    defer kept.deinit()
+
+    try kept.append(p.path_bytes.bytes()[..hi])
+    try p.setString(&mut p.path_bytes, kept.bytes())
+}

@@ -1,0 +1,12 @@
+// spec: https://url.spec.whatwg.org/#dom-url-protocol
+import std.text
+
+fn setProtocol(p: *mut Parser, value: []u8) UrlError!void {
+    var scheme = text.Builder.init(p.alloc)
+    defer scheme.deinit()
+
+    try scheme.append(value)
+    try scheme.appendByte(':')
+
+    return runOverride(p, State.SchemeStart, scheme.bytes())
+}
