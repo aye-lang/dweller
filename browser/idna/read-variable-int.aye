@@ -1,0 +1,30 @@
+fn readVariableInt(input: []u8, start: usize, bias: u32, i: *mut u64) IdnaError!usize {
+    var pos = start
+    var w: u64 = 1
+    var k = PUNY_BASE
+
+    while pos < input.len {
+        let digit = punyDigitValue(input[pos]) orelse return IdnaError.Invalid
+        let t = punyThreshold(k, bias)
+
+        pos += 1
+        i.* += digit as u64 * w
+
+        if i.* > 0xFFFFFFFF {
+            return IdnaError.Invalid
+        }
+
+        if digit < t {
+            return pos
+        }
+
+        w *= (PUNY_BASE - t) as u64
+        k += PUNY_BASE
+
+        if w > 0xFFFFFFFF {
+            return IdnaError.Invalid
+        }
+    }
+
+    return IdnaError.Invalid
+}

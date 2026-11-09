@@ -1,0 +1,69 @@
+<!doctype html>
+<title>Inline caches on DOM wrappers and primitives</title>
+<div class="a" id="d1"><span class="s">x</span><p class="p">y</p></div>
+<div class="b" id="d2"></div>
+<script>
+const els = [document.getElementById('d1'), document.getElementById('d2'), document.querySelector('span'), document.querySelector('p')];
+
+function classes() {
+  const out = [];
+  for (const e of els) out.push(e.className + ':' + e.nodeType + ':' + e.tagName + ':' + e.constructor.name);
+  return out.join(' ');
+}
+
+function warm(f) {
+  let r;
+  for (let i = 0; i < 20; i++) r = f();
+  return r;
+}
+
+console.log('before ' + warm(classes));
+const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'className');
+Object.defineProperty(Element.prototype, 'className', { get() { return 'redefined-' + desc.get.call(this); }, configurable: true });
+console.log('redefined ' + warm(classes));
+Object.defineProperty(els[2], 'className', { value: 'own', configurable: true });
+console.log('shadowed ' + warm(classes));
+delete els[2].className;
+Object.defineProperty(Element.prototype, 'className', desc);
+console.log('restored ' + warm(classes));
+Object.defineProperty(HTMLDivElement.prototype, 'nodeType', { value: 42, configurable: true });
+console.log('div nodeType ' + warm(classes));
+delete HTMLDivElement.prototype.nodeType;
+Object.setPrototypeOf(els[3], HTMLDivElement.prototype);
+console.log('reparented ' + warm(classes));
+
+function attrs() {
+  return els.map(e => e.getAttribute('class')).join(' ');
+}
+
+console.log('getAttribute ' + warm(attrs));
+const getAttribute = Element.prototype.getAttribute;
+Element.prototype.getAttribute = function (n) { return 'patched ' + n; };
+console.log('getAttribute patched ' + warm(attrs));
+Element.prototype.getAttribute = getAttribute;
+console.log('getAttribute restored ' + warm(attrs));
+
+function hash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+function strings() {
+  return [hash('abc'), hash('héllo'), (12).toFixed(1), true.toString(), 'x'.length, 'xy'[1]].join(' ');
+}
+
+console.log('strings ' + warm(strings));
+const charCodeAt = String.prototype.charCodeAt;
+String.prototype.charCodeAt = function (i) { return charCodeAt.call(this, i) + 1; };
+console.log('charCodeAt replaced ' + warm(strings));
+delete String.prototype.charCodeAt;
+Object.prototype.charCodeAt = function () { return 7; };
+console.log('charCodeAt from Object.prototype ' + warm(strings));
+String.prototype.charCodeAt = charCodeAt;
+delete Object.prototype.charCodeAt;
+Object.defineProperty(Number.prototype, 'toFixed', { get() { 'use strict'; return () => typeof this; }, configurable: true });
+console.log('toFixed getter ' + warm(strings));
+Object.defineProperty(String.prototype, 'size', { get() { 'use strict'; return typeof this + this.length; }, configurable: true });
+console.log('strict getter ' + warm(() => 'abcd'.size));
+</script>

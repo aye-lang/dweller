@@ -1,0 +1,28 @@
+// v8: src/ic/ic.cc (LoadIC::Load: an API object without interceptors keeps its map)
+
+fn cacheable(it: *Interp, o: u32, key: u32) bool {
+    let ob = it.heap.obj(o)
+
+    return ob.shape != NONE && (ob.class == Class.Object || ordinaryLookup(it, o, key))
+}
+
+fn ordinaryLookup(it: *Interp, o: u32, key: u32) bool {
+    let ob = it.heap.obj(o)
+
+    if ob.class == Class.Proxy || ob.class == Class.ModuleNamespace {
+        return false
+    }
+
+    if ob.class == Class.Host {
+        return match ob.data {
+            .Host { tag, .. } => (tag & HOST_NAMED) == 0
+            _ => false
+        }
+    }
+
+    if ob.class == Class.Array || ob.class == Class.Arguments || ob.class == Class.TypedArray || ob.class == Class.String {
+        return key != A_LENGTH && it.heap.atoms.indexOf(key) == NONE
+    }
+
+    return true
+}

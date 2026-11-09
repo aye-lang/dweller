@@ -2558,12 +2558,14 @@ pub let PRELUDE =
     \\hidden(G, 'URLSearchParams', URLSearchParams);
     \\
     \\const URL_PARTS = ['href', 'protocol', 'username', 'password', 'host', 'hostname', 'port', 'pathname', 'search', 'hash', 'origin'];
-    \\function parsedUrl(input, base) {
-    \\  const parts = base === undefined ? ak.parseUrl(String(input)) : ak.parseUrl(String(input), String(base));
-    \\  if (parts === null) return null;
+    \\function urlPartsOf(parts) {
     \\  const p = {};
     \\  URL_PARTS.forEach((k, i) => { p[k] = parts[i]; });
     \\  return p;
+    \\}
+    \\function parsedUrl(input, base) {
+    \\  const parts = base === undefined ? ak.parseUrl(String(input)) : ak.parseUrl(String(input), String(base));
+    \\  return parts === null ? null : urlPartsOf(parts);
     \\}
     \\class URL {
     \\  constructor(input, base) {
@@ -2585,16 +2587,11 @@ pub let PRELUDE =
     \\    if (p !== null) this._p = p;
     \\    if (this._params) this._params._parse(this._p.search);
     \\  }
-    \\  _setSearch(q) {
-    \\    const p = parsedUrl(this._rebuild({ search: q === '' ? '' : '?' + q }));
-    \\    if (p !== null) this._p = p;
+    \\  _setPart(part, value) {
+    \\    const parts = ak.setUrlPart(this._p.href, part, String(value));
+    \\    if (parts !== null) this._p = urlPartsOf(parts);
     \\  }
-    \\  _rebuild(change) {
-    \\    const p = Object.assign({}, this._p, change);
-    \\    const user = p.username === '' && p.password === '' ? '' : p.username + (p.password === '' ? '' : ':' + p.password) + '@';
-    \\    const slashes = p.host !== '' || p.protocol === 'file:' ? '//' : '';
-    \\    return p.protocol + slashes + user + p.host + p.pathname + p.search + p.hash;
-    \\  }
+    \\  _setSearch(q) { this._setPart('search', q); }
     \\  get href() { return this._p.href; }
     \\  set href(v) {
     \\    const p = parsedUrl(v);
@@ -2603,27 +2600,23 @@ pub let PRELUDE =
     \\  }
     \\  get origin() { return this._p.origin; }
     \\  get protocol() { return this._p.protocol; }
-    \\  set protocol(v) { this._set(this._rebuild({ protocol: String(v).replace(/:?$/, ':') })); }
+    \\  set protocol(v) { this._setPart('protocol', v); }
     \\  get username() { return this._p.username; }
-    \\  set username(v) { this._set(this._rebuild({ username: encodeURIComponent(String(v)) })); }
+    \\  set username(v) { this._setPart('username', v); }
     \\  get password() { return this._p.password; }
-    \\  set password(v) { this._set(this._rebuild({ password: encodeURIComponent(String(v)) })); }
+    \\  set password(v) { this._setPart('password', v); }
     \\  get host() { return this._p.host; }
-    \\  set host(v) { this._set(this._rebuild({ host: String(v) })); }
+    \\  set host(v) { this._setPart('host', v); }
     \\  get hostname() { return this._p.hostname; }
-    \\  set hostname(v) { this._set(this._rebuild({ host: String(v) + (this._p.port === '' ? '' : ':' + this._p.port) })); }
+    \\  set hostname(v) { this._setPart('hostname', v); }
     \\  get port() { return this._p.port; }
-    \\  set port(v) { this._set(this._rebuild({ host: this._p.hostname + (String(v) === '' ? '' : ':' + String(v)) })); }
+    \\  set port(v) { this._setPart('port', v); }
     \\  get pathname() { return this._p.pathname; }
-    \\  set pathname(v) {
-    \\    v = String(v);
-    \\    this._set(this._rebuild({ pathname: v[0] === '/' ? v : '/' + v }));
-    \\  }
+    \\  set pathname(v) { this._setPart('pathname', v); }
     \\  get search() { return this._p.search; }
     \\  set search(v) {
-    \\    v = String(v);
-    \\    if (v[0] === '?') v = v.slice(1);
-    \\    this._set(this._rebuild({ search: v === '' ? '' : '?' + v }));
+    \\    this._setPart('search', v);
+    \\    if (this._params) this._params._parse(this._p.search);
     \\  }
     \\  get searchParams() {
     \\    if (!this._params) {
@@ -2633,11 +2626,7 @@ pub let PRELUDE =
     \\    return this._params;
     \\  }
     \\  get hash() { return this._p.hash; }
-    \\  set hash(v) {
-    \\    v = String(v);
-    \\    if (v[0] === '#') v = v.slice(1);
-    \\    this._set(this._rebuild({ hash: v === '' ? '' : '#' + v }));
-    \\  }
+    \\  set hash(v) { this._setPart('hash', v); }
     \\  toString() { return this._p.href; }
     \\  toJSON() { return this._p.href; }
     \\}

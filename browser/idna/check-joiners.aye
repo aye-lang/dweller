@@ -1,0 +1,24 @@
+// https://www.unicode.org/reports/tr46/#Validity_Criteria
+let ZWNJ: u32 = 0x200C
+let ZWJ: u32 = 0x200D
+let VIRAMA: u32 = 9
+
+fn checkJoiners(label: []u32) IdnaError!void {
+    for i in 0..label.len {
+        let c = label[i]
+
+        if c != ZWNJ && c != ZWJ {
+            continue
+        }
+
+        if i > 0 && combiningClass(label[i - 1]) == VIRAMA {
+            continue
+        }
+
+        if c == ZWNJ && joinsBothSides(label, i) {
+            continue
+        }
+
+        return IdnaError.Invalid
+    }
+}

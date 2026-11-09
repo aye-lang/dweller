@@ -1,0 +1,22 @@
+import std.list.List
+import std.mem.Allocator
+
+fn decodeLabels(alloc: Allocator, domain: []u32, out: *mut List(u32)) IdnaError!bool {
+    var start: usize = 0
+    var retained = false
+    var more = true
+
+    while more {
+        let end = labelEnd(domain, start)
+
+        retained = try decodeLabel(alloc, domain[start..end], out) || retained
+        more = end < domain.len
+
+        if more {
+            try out.append('.' as u32)
+            start = end + 1
+        }
+    }
+
+    return retained
+}

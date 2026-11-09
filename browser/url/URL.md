@@ -10,9 +10,12 @@ and opaque hosts, ports, paths with `.` and `..` segments, Windows drive
 letters in file URLs, opaque paths, queries (in a document's encoding with
 `resolveIn`), fragments, and the percent-encode sets. The parser works on
 UTF-8 bytes; every byte at or above 0x80 is in every percent-encode set, so
-byte-wise encoding equals the spec's per-code-point encoding. Not yet:
-IDNA (`uts46ToAscii` only lower-cases ASCII) and the state override for the
-`URL` setters (`Parser.override` exists but nothing sets it).
+byte-wise encoding equals the spec's per-code-point encoding. The `URL`
+setters run the same states with a state override: `setComponent` copies
+a `Url` into a `Parser` (`parser-of-url.aye`), runs the component's state
+(`apply-component.aye`, `run-override.aye`) and serializes it again; a
+failure keeps what the parser had already set, as the spec does (`host`
+sets the host, then fails on a port above 65535).
 
 `Url.href` is the serialized URL, owned by the `Url` (`deinit` frees it);
 the other slices point into it:

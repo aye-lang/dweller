@@ -1,0 +1,29 @@
+// https://www.unicode.org/reports/tr46/#Validity_Criteria
+let JT_LEFT: u32 = 1
+let JT_RIGHT: u32 = 2
+let JT_DUAL: u32 = 3
+let JT_TRANSPARENT: u32 = 4
+
+fn joinsBothSides(label: []u32, at: usize) bool {
+    var left = at
+
+    while left > 0 && joiningType(label[left - 1]) == JT_TRANSPARENT {
+        left -= 1
+    }
+
+    var right = at + 1
+
+    while right < label.len && joiningType(label[right]) == JT_TRANSPARENT {
+        right += 1
+    }
+
+    return left > 0 && right < label.len && joinsRight(joiningType(label[left - 1])) && joinsLeft(joiningType(label[right]))
+}
+
+fn joinsRight(jt: u32) bool {
+    return jt == JT_LEFT || jt == JT_DUAL
+}
+
+fn joinsLeft(jt: u32) bool {
+    return jt == JT_RIGHT || jt == JT_DUAL
+}

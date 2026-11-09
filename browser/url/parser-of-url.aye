@@ -1,0 +1,16 @@
+import std.mem.Allocator
+import encoding.Encoding
+
+fn parserOfUrl(alloc: Allocator, u: *Url) UrlError!Parser {
+    var p = newParser(alloc, "", null, Encoding.Utf8)
+
+    errdefer freeParser(&mut p)
+
+    try p.setString(&mut p.scheme, u.scheme)
+    try copyAuthority(&mut p, u)
+    try copyPath(&mut p, u)
+    try copyQuery(&mut p, u)
+    try copyFragment(&mut p, u)
+
+    return p
+}

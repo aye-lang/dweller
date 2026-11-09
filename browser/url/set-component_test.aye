@@ -1,0 +1,48 @@
+import std.mem.Allocator
+
+fn expectSet(a: Allocator, href: []u8, name: []u8, value: []u8, want: []u8) !void {
+    let u = try parse(a, href)
+    defer u.deinit(a)
+    let changed = try setComponent(a, &u, name, value)
+    defer changed.deinit(a)
+    @expectEqual(want, changed.href)
+}
+
+test "protocol keeps the special class and the file rules" {
+    let a = @testAllocator()
+    try expectSet(a, "http://h/", "protocol", "https", "https://h/")
+    try expectSet(a, "http://h/", "protocol", "foo", "http://h/")
+    try expectSet(a, "foo://h/", "protocol", "http", "foo://h/")
+    try expectSet(a, "http://u@h/", "protocol", "file", "http://u@h/")
+    try expectSet(a, "https://h/", "protocol", "http", "http://h/")
+}
+
+test "host takes a port and stops at the path" {
+    let a = @testAllocator()
+    try expectSet(a, "http://h:8080/p", "host", "x.test:81/zzz", "http://x.test:81/p")
+    try expectSet(a, "http://h:8080/p", "host", "x.test:65536", "http://x.test:8080/p")
+    try expectSet(a, "http://h:8080/p", "hostname", "x.test:81", "http://h:8080/p")
+    try expectSet(a, "http://h/p", "host", "", "http://h/p")
+    try expectSet(a, "mailto:a@b", "host", "x", "mailto:a@b")
+}
+
+test "port, credentials and tab or newline" {
+    let a = @testAllocator()
+    try expectSet(a, "http://h/", "port", "8\t0\n80x", "http://h:8080/")
+    try expectSet(a, "http://h:81/", "port", "", "http://h/")
+    try expectSet(a, "file:///p", "port", "81", "file:///p")
+    try expectSet(a, "http://h/", "username", "a b@", "http://a%20b%40@h/")
+    try expectSet(a, "http://h/", "password", "p:q", "http://:p%3Aq@h/")
+    try expectSet(a, "file:///p", "username", "u", "file:///p")
+}
+
+test "pathname, search and hash" {
+    let a = @testAllocator()
+    try expectSet(a, "http://h/a?q#f", "pathname", "b c/../d", "http://h/d?q#f")
+    try expectSet(a, "http://h/a?q#f", "search", "?x y", "http://h/a?x%20y#f")
+    try expectSet(a, "http://h/a?q#f", "search", "", "http://h/a#f")
+    try expectSet(a, "http://h/a?q#f", "hash", "#g h", "http://h/a?q#g%20h")
+    try expectSet(a, "http://h/a?q#f", "hash", "", "http://h/a?q")
+    try expectSet(a, "data:a#f", "hash", "", "data:a")
+    try expectSet(a, "data:x", "pathname", "y", "data:x")
+}

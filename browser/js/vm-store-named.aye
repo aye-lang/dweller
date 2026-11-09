@@ -11,14 +11,14 @@ fn vmStoreNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, ke
 
     let shape = it.heap.obj(o).shape
 
-    if vmIcFind(st, e, shape, key, true) |c| {
+    if vmIcFind(st, e, shape, it.heap.obj(o).proto, key, true) |c| {
         if try vmIcStoreHit(it, c, v, o, key, value) {
             return
         }
     }
 
     if it.heap.findProp(o, key) |slot| {
-        vmIcRecord(st, e, key, true, IcCase { shape: shape, other: NONE, slot: slot, proto: NONE, epoch: NONE })
+        vmIcRecord(st, e, key, true, IcCase { shape: shape, other: NONE, slot: slot, proto: it.heap.obj(o).proto, epoch: NONE })
 
         return it.setProp(v, key, value)
     }

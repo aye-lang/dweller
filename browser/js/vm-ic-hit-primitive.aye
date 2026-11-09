@@ -1,0 +1,23 @@
+// v8: src/ic/accessor-assembler.cc (HandleLoadICHandlerCase on a primitive's wrapper map)
+
+fn vmIcHitPrimitive(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
+    let proto = vmPrimProto(it, v)
+    let n = e.n as usize
+    var i: usize = 0
+
+    while i < n && !icCaseFits(&e.cases[i], IC_SHAPE_PRIMITIVE, proto) {
+        i += 1
+    }
+
+    if i == n || e.cases[i].epoch != it.heap.proto_epoch {
+        return null
+    }
+
+    let p = &mut it.heap.objs.items()[e.cases[i].other].props[e.cases[i].slot]
+
+    if (p.flags & F_ACCESSOR) != 0 || p.value is .Empty {
+        return null
+    }
+
+    return p
+}

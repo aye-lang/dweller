@@ -1,0 +1,23 @@
+// https://www.unicode.org/reports/tr15/#Norm_Forms
+import std.list.List
+import std.mem.Allocator
+
+fn normalizeNfc(alloc: Allocator, input: []u32) IdnaError!List(u32) {
+    var out = List(u32).init(alloc)
+
+    errdefer out.deinit()
+
+    for c in input {
+        try decomposeChar(c, &mut out)
+    }
+
+    reorderMarks(out.items())
+
+    let n = composeInPlace(out.items())
+
+    while out.len() > n {
+        _ = out.pop()
+    }
+
+    return out
+}

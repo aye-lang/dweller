@@ -1,0 +1,20 @@
+import std.text
+
+fn appendVariableInt(out: *mut text.Builder, value: u32, bias: u32) IdnaError!void {
+    var q = value
+    var k = PUNY_BASE
+
+    while true {
+        let t = punyThreshold(k, bias)
+
+        if q < t {
+            break
+        }
+
+        try out.appendByte(punyDigit(t + (q - t) % (PUNY_BASE - t)))
+        q = (q - t) / (PUNY_BASE - t)
+        k += PUNY_BASE
+    }
+
+    try out.appendByte(punyDigit(q))
+}

@@ -3,8 +3,12 @@
 fn vmIcHitProp(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
     let o = objectOf(v)
 
-    if o == NONE || e.state == IC_MEGA {
+    if e.state == IC_MEGA {
         return null
+    }
+
+    if o == NONE {
+        return vmIcHitPrimitive(it, e, v)
     }
 
     let objs = it.heap.objs.items()
@@ -12,7 +16,7 @@ fn vmIcHitProp(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
     let n = e.n as usize
     var i: usize = 0
 
-    while i < n && e.cases[i].shape != ob.shape {
+    while i < n && !icCaseFits(&e.cases[i], ob.shape, ob.proto) {
         i += 1
     }
 
@@ -24,7 +28,7 @@ fn vmIcHitProp(it: *mut Interp, e: *IcEntry, v: Value) ?*mut Prop {
     var holder = ob
 
     if c.other != NONE {
-        if ob.proto != c.proto || c.epoch != it.heap.proto_epoch || (ob.class == Class.Function && (e.key == A_NAME || e.key == A_LENGTH)) {
+        if c.epoch != it.heap.proto_epoch || (ob.class == Class.Function && (e.key == A_NAME || e.key == A_LENGTH)) {
             return null
         }
 

@@ -1,0 +1,19 @@
+// https://www.unicode.org/reports/tr46/#ToASCII (IgnoreInvalidPunycode)
+fn checkRetainedAce(domain: []u32) IdnaError!void {
+    var start: usize = 0
+
+    while true {
+        let end = labelEnd(domain, start)
+        let label = domain[start..end]
+
+        if !hasAcePrefix(label) && !isAscii(label) {
+            return IdnaError.Invalid
+        }
+
+        if end >= domain.len {
+            return
+        }
+
+        start = end + 1
+    }
+}

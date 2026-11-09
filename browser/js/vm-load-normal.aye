@@ -1,0 +1,29 @@
+// v8: src/ic/handler-configuration.h (LoadHandler::kNormal; accessor-assembler.cc kArrayLength, typed array length)
+
+fn vmLoadNormal(it: *mut Interp, st: *mut VmState, v: Value, o: u32, key: u32) JsError!Value {
+    let ob = it.heap.obj(o)
+
+    if key == A_LENGTH && (ob.class == Class.Array || ob.class == Class.Arguments) {
+        vmProfSlow(st, key, 1)
+
+        return numVal(ob.nelems as f64)
+    }
+
+    if key == A_LENGTH && ob.class == Class.TypedArray {
+        vmProfSlow(st, key, 1)
+
+        return numVal(typedLen(it, o) as f64)
+    }
+
+    if ob.shape == NONE && ordinaryLookup(it, o, key) {
+        if it.heap.findProp(o, key) |slot| {
+            vmProfSlow(st, key, 1)
+
+            return vmIcRead(it, v, o, slot, key)
+        }
+    }
+
+    vmProfSlow(st, key, 6)
+
+    return it.getProp(v, key)
+}
