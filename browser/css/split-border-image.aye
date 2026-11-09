@@ -1,0 +1,33 @@
+fn splitBorderImage(comps: []Comp) ?BorderImageParts {
+    var p = BorderImageParts { source: comps[0..0], slice: comps[0..0], width: comps[0..0], outset: comps[0..0], repeat: comps[0..0] }
+    var i: usize = 0
+
+    while i < comps.len {
+        let c = comps[i]
+        var next = i + 1
+
+        if isIdent(c, "none") || isImage(c) {
+            if p.source.len > 0 {
+                return null
+            }
+
+            p.source = comps[i..next]
+        } else if isRepeatWord(c) {
+            next = runEnd(comps, i, 0)
+
+            if p.repeat.len > 0 {
+                return null
+            }
+
+            p.repeat = comps[i..next]
+        } else if isSlicePart(c) {
+            next = sliceGroup(comps, i, &mut p) orelse return null
+        } else {
+            return null
+        }
+
+        i = next
+    }
+
+    return p
+}

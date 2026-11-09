@@ -1,0 +1,27 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/web-animations-1/#effect-composition
+pub fn addText(alloc: Allocator, name: []u8, under: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    let prop = css.propertyIndex(name) orelse return false
+
+    if css.PROPERTIES[prop].kind == css.PKind.Color {
+        return false
+    }
+
+    if prop == css.BOX_SHADOW {
+        return addShadows(under, value, out)
+    }
+
+    var na = text.Builder.init(alloc)
+    defer na.deinit()
+
+    var nb = text.Builder.init(alloc)
+    defer nb.deinit()
+
+    try matchValues(alloc, prop, under, value, &mut na, &mut nb)
+
+    return mixNumbers(na.bytes(), nb.bytes(), 1.0, false, false, true, out)
+}

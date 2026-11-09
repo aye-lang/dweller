@@ -7,6 +7,12 @@ import std.text
 pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
     let prop = css.propertyIndex(name) orelse return false
 
+    if prop == css.BOX_SHADOW {
+        out.clear()
+
+        return mixShadows(alloc, a, b, p, out)
+    }
+
     var sheet = try css.Sheet.init(alloc)
     defer sheet.deinit()
 
@@ -28,5 +34,24 @@ pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, o
         return false
     }
 
-    return mixText(prop, a, b, p, isInteger(name), nonneg, out)
+    var na = text.Builder.init(alloc)
+    defer na.deinit()
+
+    var nb = text.Builder.init(alloc)
+    defer nb.deinit()
+
+    try matchValues(alloc, prop, a, b, &mut na, &mut nb)
+
+    if !(try mixText(prop, na.bytes(), nb.bytes(), p, isInteger(name), nonneg, out)) {
+        return false
+    }
+
+    if prop >= css.BORDER_IMAGE_SLICE && prop <= css.BORDER_IMAGE_OUTSET {
+        na.clear()
+        try collapseQuad(alloc, out.bytes(), &mut na)
+        out.clear()
+        try out.append(na.bytes())
+    }
+
+    return true
 }

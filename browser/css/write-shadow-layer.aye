@@ -1,0 +1,45 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#box-shadow
+fn writeShadowLayer(layer: []Comp, out: *mut text.Builder) AllocError!bool {
+    var lens = [4]Comp{Comp { toks: []Token{} }, Comp { toks: []Token{} }, Comp { toks: []Token{} }, Comp { toks: []Token{} }}
+    var color = Comp { toks: []Token{} }
+    var n: usize = 0
+    var inset = false
+    var after_length = false
+
+    for c in layer {
+        if isIdent(c, "inset") {
+            if inset {
+                return false
+            }
+
+            inset = true
+            after_length = false
+        } else if lengthValue(c, false, n == 2) != null {
+            if n == 4 || (n > 0 && !after_length) {
+                return false
+            }
+
+            lens[n] = c
+            n += 1
+            after_length = true
+        } else if colorValue(c) != null {
+            if color.toks.len > 0 {
+                return false
+            }
+
+            color = c
+            after_length = false
+        } else {
+            return false
+        }
+    }
+
+    if n < 2 {
+        return false
+    }
+
+    return writeShadowParts(color, lens[..n], inset, out)
+}

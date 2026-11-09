@@ -4,7 +4,7 @@ import std.mem.AllocError
 
 // spec: https://drafts.csswg.org/css-transitions-1/#application
 fn valueAt(t: *mut Transitions, r: Transition, now: f64) AllocError!css.Value {
-    let v = (try transitionMix(t, r.prop, r.from, r.to, progressAt(r, now))) orelse r.to
+    let v = (try transitionMix(t, r.prop, r.from, r.to, progressAt(r, now))) orelse flipped(r, now)
 
     return clampToRange(r.prop, v, try nonNegative(t.alloc, r.prop))
 }
@@ -21,4 +21,12 @@ fn progressAt(r: Transition, now: f64) f64 {
     }
 
     return easeAt(r.easing, math.min(local / r.duration_ms, 1.0))
+}
+
+fn flipped(r: Transition, now: f64) css.Value {
+    if progressAt(r, now) < 0.5 {
+        return r.from
+    }
+
+    return r.to
 }
