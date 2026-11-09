@@ -14,51 +14,6 @@ fn isRepeatWord(c: Comp) bool {
     return isIdent(c, "stretch") || isIdent(c, "repeat") || isIdent(c, "round") || isIdent(c, "space")
 }
 
-fn isSlicePart(c: Comp) bool {
-    if isIdent(c, "fill") || imageNumber(c) != null {
-        return true
-    }
-
-    if c.toks.len == 1 {
-        return c.toks[0].kind == Tok.Percentage
-    }
-
-    if !isMathFunction(c.toks[0]) {
-        return false
-    }
-
-    let v = calcValue(c.toks) orelse return false
-
-    return match v {
-        .Percent { v: n } => true
-        _ => false
-    }
-}
-
 fn isWidthPart(c: Comp) bool {
     return isIdent(c, "auto") || imageNumber(c) != null || isLength(c)
-}
-
-fn writeSidePart(c: Comp, percent: bool, auto: bool, out: *mut text.Builder) AllocError!bool {
-    if auto && isIdent(c, "auto") {
-        try out.append("auto")
-
-        return true
-    }
-
-    if imageNumber(c) |n| {
-        if n < 0.0 {
-            return false
-        }
-
-        try writeNumber(n, out)
-
-        return true
-    }
-
-    let v = lengthValue(c, percent, true) orelse return false
-
-    try writeLength(v, out)
-
-    return true
 }

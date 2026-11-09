@@ -14,35 +14,3 @@ fn repeatLayers(a: []u8, b: []u8, out_a: *mut text.Builder, out_b: *mut text.Bui
     try writeRepeated(a, lcm, out_a)
     try writeRepeated(b, lcm, out_b)
 }
-
-fn layerCount(s: []u8) usize {
-    var parts = text.split(s, ", ")
-    var n: usize = 0
-
-    while parts.next() |_| {
-        n += 1
-    }
-
-    return n
-}
-
-fn writeRepeated(s: []u8, n: usize, out: *mut text.Builder) AllocError!void {
-    let have = layerCount(s)
-
-    for k in 0..n {
-        var parts = text.split(s, ", ")
-        var i: usize = 0
-
-        while parts.next() |layer| {
-            if i == k % have {
-                if k > 0 {
-                    try out.append(", ")
-                }
-
-                try out.append(layer)
-            }
-
-            i += 1
-        }
-    }
-}

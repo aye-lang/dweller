@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+fn writeShadowParts(color: Comp, lens: []Comp, inset: bool, out: *mut text.Builder) AllocError!bool {
+    if color.toks.len > 0 {
+        if !(try writeComp(color, out)) {
+            return false
+        }
+
+        try out.appendByte(' ')
+    }
+
+    for k, c in lens {
+        if k > 0 {
+            try out.appendByte(' ')
+        }
+
+        let v = lengthValue(c, false, false) orelse return false
+
+        try writeLength(v, out)
+    }
+
+    if inset {
+        try out.append(" inset")
+    }
+
+    return true
+}
