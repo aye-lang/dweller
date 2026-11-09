@@ -3,13 +3,15 @@ import std.mem.AllocError
 import std.text
 import url.Url
 
-fn holdFetch(tp: *mut TabProcess, on: u32, id: u32, codes: [3]u32, target: *Url, req: net.Request) AllocError!bool {
+fn holdFetch(tp: *mut TabProcess, on: u32, id: u32, navigates: bool, codes: [3]u32, target: *Url, req: net.Request) AllocError!bool {
     if !net.liveRequest(target) { return false }
 
-    let ask = req.body != null || codes[0] == 0 || codes[0] == 4 || req.headers.len > 0 || (req.method.len > 0 && !text.eql(req.method, "GET"))
+    let ask = navigates || req.body != null || codes[0] == 0 || codes[0] == 4 || req.headers.len > 0 || (req.method.len > 0 && !text.eql(req.method, "GET"))
     var load: u32 = 0
 
-    if ask {
+    if navigates {
+        load = net.startNavigation(target, req)
+    } else if ask {
         load = net.startRequest(target, req)
     } else {
         load = net.startLoadAs(target.withoutFragment(), req)
@@ -24,7 +26,7 @@ fn holdFetch(tp: *mut TabProcess, on: u32, id: u32, codes: [3]u32, target: *Url,
     }
 
     let alloc = tp.url.alloc
-    let h = try alloc.create(HeldFetch { id: id, on: on, load: load, ask: ask, codes: codes, href: text.Builder.init(alloc), initiator: text.Builder.init(alloc), method: text.Builder.init(alloc), referrer: text.Builder.init(alloc), top: text.Builder.init(alloc), policy: req.referrer_policy })
+    let h = try alloc.create(HeldFetch { id: id, on: on, load: load, ask: ask, nav: navigates, codes: codes, href: text.Builder.init(alloc), initiator: text.Builder.init(alloc), method: text.Builder.init(alloc), referrer: text.Builder.init(alloc), top: text.Builder.init(alloc), policy: req.referrer_policy })
 
     errdefer h.deinit(alloc)
     try copyHeld(h, target, req)

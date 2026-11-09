@@ -84,7 +84,7 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
 // A request for `href` with `method` (NUL-terminated past its end
 // unless GET, POST or HEAD) and `post` (alive until the transfer ends)
 // added to `m`; null when it cannot be made.
-fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, req: Request, method: []u8, post: ?*Body) ?*mut Job {
+fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, req: Request, method: []u8, post: ?*Body, hop: *mut Hop) ?*mut Job {
     var secured = text.Builder.init(alloc)
     defer secured.deinit()
 
@@ -114,7 +114,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, r
         headers: null,
         sink: Sink {
             body: text.Builder.init(alloc),
-            limit: MAX_SUBRESOURCE,
+            limit: hop.limit,
             out_of_memory: false,
             too_large: false,
             cookies: text.Builder.init(alloc),
@@ -132,10 +132,12 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, r
         at.deinit(alloc)
         return null
     }
-    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, req.referrer, false, fetchSiteAt(alloc, requestOrigin(req, req.referrer), &job.at, FetchSite.SameOrigin), &mut job.sink) catch |e| {
+    hop.site = fetchSiteAt(alloc, requestOrigin(req, req.referrer), &job.at, hop.site)
+    job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, hop.from, hop.crossed, hop.site, &mut job.sink) catch |e| {
         freeJob(alloc, job)
         return null
     }
+    hop.crossed = hop.crossed || job.sink.context == Context.CrossSiteGet || job.sink.context == Context.CrossSitePost
     if curl_multi_add_handle(m, curl) != 0 {
         freeJob(alloc, job)
         return null

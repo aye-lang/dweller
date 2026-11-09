@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn navigationFrom(alloc: Allocator, req: Request, href: []u8) AllocError![]mut u8 {
+    if req.referrer.len > 0 { return dup(alloc, req.referrer) }
+
+    if initiatorPage(req.initiator) |page| { return dup(alloc, page) }
+
+    var secured = text.Builder.init(alloc)
+    defer secured.deinit()
+
+    if !(try secureHref(alloc, req, href, &mut secured)) { return dup(alloc, href) }
+
+    return dup(alloc, secured.bytes())
+}

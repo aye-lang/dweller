@@ -77,6 +77,10 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
         if tp.held.len() > 0 {
             try answerHeld(tp)
 
+            if tp.swap_to != null && tp.tab == 0 {
+                if try followSwap(at, id, out) |gone| { return gone }
+            }
+
             if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
 
             tp.outbox.clear()

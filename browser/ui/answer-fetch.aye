@@ -48,7 +48,7 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
 
             if has_body == 1 { req.body = &sent }
 
-            if !navigates && (try holdFetch(tp, on, id, [3]u32{kind, credentials, mode}, &target, req)) { return "" }
+            if try holdFetch(tp, on, id, navigates, [3]u32{kind, credentials, mode}, &target, req) { return "" }
 
             var res = net.request(alloc, &target, req) catch |e| {
                 if navigates { tp.nav_failed = true }
@@ -58,22 +58,14 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
                 return ""
             }
 
-            var final = target.href
-
-            if res.url.len > 0 { final = res.url }
-
-            if navigates && tp.embedder != null && (try framingRefused(tp, &res, final)) {
-                res.deinit(alloc)
-                tp.nav_failed = true
-                try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.AccessDenied) })
+            if navigates {
+                try sendNavigation(tp, on, id, target.href, res)
 
                 return ""
             }
 
-            if navigates && (try takesSwap(tp, res, final)) { return "" }
-
             defer res.deinit(alloc)
-            try sendFetched(tp, on, id, navigates, kind == 0, target.href, &res)
+            try sendFetched(tp, on, id, false, kind == 0, target.href, &res)
         }
 
         _ => {}
