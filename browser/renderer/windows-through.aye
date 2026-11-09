@@ -1,0 +1,17 @@
+import engine
+import ipc
+import std.mem.AllocError
+
+var windows_renderer: ?*mut TabRenderer = null
+
+fn windowsThrough(r: *mut TabRenderer) {
+    windows_renderer = r
+    engine.setRemoteWindows(postRemote, navigateRemote)
+}
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame.cc (Navigate: to the browser)
+fn navigateRemote(to: engine.RemoteRoute, href: []u8) AllocError!void {
+    let r = windows_renderer orelse return
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.ProxyNavigate { key: to.key, frame: to.frame, page: to.page, url: href }) catch return
+}

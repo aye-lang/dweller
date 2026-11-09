@@ -1,0 +1,21 @@
+fn postTarget(tp: *mut TabProcess, key: u32, id: u32) ?*mut TabProcess {
+    if key == 0 {
+        let hit = findFrame(topProcess(tp), id, 0, 0) orelse return null
+
+        if hit.tp == tp || !hit.tp.hello { return null }
+
+        return hit.tp
+    }
+
+    for c in tp.children.items() {
+        if c.key != key { continue }
+
+        let child = c.tp orelse return null
+
+        if child.gone.len > 0 || !child.hello { return null }
+
+        return child
+    }
+
+    return null
+}

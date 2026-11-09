@@ -1,0 +1,10 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (DidStopLoading: the embedder's owner element fires load)
+fn frameDone(tp: *mut TabProcess, c: *mut ChildFrame) AllocError!void {
+    if c.loaded { return }
+
+    c.loaded = true
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.FrameLoaded { key: c.key })
+}

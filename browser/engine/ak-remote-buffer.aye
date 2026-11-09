@@ -1,0 +1,36 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.mem
+
+fn akRemoteBuffer(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let id = try it.toNumber(it.arg(a, 0))
+    var i = try it.toNumber(it.arg(a, 1))
+
+    for b in s.remote_inbox.items() {
+        if b.id as f64 != id { continue }
+
+        var at: usize = 0
+
+        while at + 4 <= b.blob.len {
+            let n = b.blob[at] as usize | (b.blob[at + 1] as usize << 8) | (b.blob[at + 2] as usize << 16) | (b.blob[at + 3] as usize << 24)
+
+            if at + 4 + n > b.blob.len { break }
+
+            if i == 0.0 {
+                if !js.isUndef(it.arg(a, 2)) { mem.copy(try workers.bufferBytes(it, it.arg(a, 2)), b.blob[at + 4..at + 4 + n]) }
+
+                return js.numVal(n as f64)
+            }
+
+            at += 4 + n
+            i -= 1.0
+        }
+    }
+
+    return js.numVal(-1.0)
+}

@@ -51,6 +51,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `content-security-policy/connect-src` | 30 | 0 | 14/38 | 36.8 | 35 | done | new |
 | `content-security-policy/securitypolicyviolation` | 38 | 0 | 30/76 | 39.5 | 35 | done | new |
 | `content-security-policy` | 894 | 1 | 2323/4076 | 57.0 | 55 | done | new |
+| `html/browsers/origin` | 100 | 1 | 16/668 | 2.4 | 2 | done | new |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |

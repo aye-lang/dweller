@@ -19,12 +19,14 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
     defer r.deinit()
     defer engine.closeContexts()
     defer engine.dropOpenedContexts()
+    defer engine.dropFrameOwner(alloc)
     var buf = @zeroed([65536]u8)
 
     watchBusy(&mut r)
     fetchThrough(&mut r) catch return 1
     defer net.stopRemoteLoads()
     storeThrough(&mut r)
+    windowsThrough(&mut r)
 
     send(alloc, conn, 0, ipc.Message.Hello { version: ipc.VERSION, pid: getpid() as u32 }) catch return 1
 

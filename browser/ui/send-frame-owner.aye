@@ -1,0 +1,11 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (the child's parent and top proxies, its frame policy)
+fn sendFrameOwner(tp: *mut TabProcess, c: ChildFrame, child: *mut TabProcess) AllocError!void {
+    child.sandbox = c.sandbox
+
+    let m = ipc.Message.FrameOwner { parent_frame: tp.tab, parent_page: c.holder, top_frame: topProcess(tp).tab, sandbox: c.sandbox, name: c.name }
+
+    try ipc.encode(&mut child.outbox, child.tab, m)
+}

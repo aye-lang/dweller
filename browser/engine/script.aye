@@ -69,6 +69,7 @@ let TAG_LIST: u32 = 0x104
 // `index`); `w[0]` is its first frame.
 let TAG_WINDOW: u32 = 0x105
 let TAG_WINDOW_NAMED: u32 = 0x106
+let TAG_REMOTE_WINDOW: u32 = 0x107
 let TAG_KIND: u32 = 0xFFF
 let TAG_SLOT_SHIFT: u32 = 12
 
@@ -221,6 +222,10 @@ pub struct Script {
     // prelude's `hostMessage` (js.NONE before the prelude ran).
     window_proto: u32
     on_message: u32
+    on_remote_message: u32
+    remote_windows: List(RemoteStandIn)
+    remote_staged: text.Builder
+    remote_inbox: List(RemoteBuffers)
     // The prelude's `hostStorage` (storage.aye), js.NONE before it ran.
     on_storage: u32
     node_proto: u32
@@ -400,7 +405,7 @@ pub struct Script {
     // ---- js.Host
 
     fn finalize(self: *mut Self, tag: u32, index: u32, generation: u32) {
-        if tag == TAG_WINDOW || tag == TAG_WINDOW_NAMED {
+        if tag == TAG_WINDOW || tag == TAG_WINDOW_NAMED || tag == TAG_REMOTE_WINDOW {
             return
         }
         if tag == TAG_LIST {
@@ -559,6 +564,10 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         windows: IntMap(u32, u32).init(alloc),
         window_proto: js.NONE,
         on_message: js.NONE,
+        on_remote_message: js.NONE,
+        remote_windows: List(RemoteStandIn).init(alloc),
+        remote_staged: text.Builder.init(alloc),
+        remote_inbox: List(RemoteBuffers).init(alloc),
         on_storage: js.NONE,
         node_proto: js.NONE,
         element_proto: js.NONE,
@@ -694,6 +703,7 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(INPUT_VALUE_AS_PRELUDE)
     try s.it.runScript(INPUT_STEP_PRELUDE)
     try s.it.runScript(WINDOW_NAMED_PRELUDE)
+    try s.it.runScript(REMOTE_WINDOWS_PRELUDE)
     try s.it.runScript(FORM_CONTROLS_PRELUDE)
     try s.it.runScript(CONTROL_MEMBERS_PRELUDE)
     try s.it.runScript(WEBGL_PRELUDE)
@@ -750,6 +760,9 @@ pub fn destroyScript(s: *mut Script) {
     }
     s.foreign.deinit()
     s.windows.deinit()
+    s.remote_windows.deinit()
+    s.remote_staged.deinit()
+    dropRemoteInbox(s)
     for i in 0..s.lists.len() {
         let l = &mut s.lists.items()[i]
         if l.used {
@@ -928,6 +941,9 @@ fn firstDelaying(s: *mut Script) ?usize {
 
 // Has the load event of the page `p` fired, or will it never?
 fn pageLoaded(p: *mut Page) bool {
+    if p.remote {
+        return p.remote_loaded
+    }
     if p.script |s| {
         return !s.load_pending
     }

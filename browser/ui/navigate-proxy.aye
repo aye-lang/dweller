@@ -1,0 +1,39 @@
+import ipc
+import net
+import std
+import std.mem.AllocError
+import url
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (OpenURL: a remote frame's navigation, checked in the browser)
+fn navigateProxy(tp: *mut TabProcess, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .ProxyNavigate { key, frame: id, page, url: href } => {
+            if href.len > MAX_URL_CHARS { return "bad proxy_navigate" }
+
+            let to = postTarget(tp, key, id) orelse return ""
+
+            if !proxyNavigationAllowed(tp, to) { return "bad proxy_navigate" }
+            if page != 0 { return "" }
+
+            let target = url.parse(tp.url.alloc, href) catch return ""
+            defer target.deinit(tp.url.alloc)
+
+            if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) {
+                std.log.err("navigation refused: {}", target.href)
+
+                return ""
+            }
+
+            if to.embedder == null {
+                to.nav_request.clear()
+                try to.nav_request.append(target.href)
+            } else if !to.loading {
+                try navigateChild(to, target.href, tp.committed.bytes(), 0, "", "")
+            }
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

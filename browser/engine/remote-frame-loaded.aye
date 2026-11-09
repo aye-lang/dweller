@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// blink: core/frame/remote_frame.cc (DidStopLoading: the owner element's load event)
+pub fn remoteFrameLoaded(root: *mut Page, key: u32) AllocError!void {
+    let placeholder = findBelow(root, key) orelse return
+
+    if !placeholder.remote { return }
+
+    let slot = slotOf(placeholder) orelse return
+
+    placeholder.remote_loaded = true
+    slot.parent.frames.items()[slot.index].pending_load = true
+
+    var up: ?*mut Page = slot.parent
+
+    while up |p| {
+        try settleLoad(p)
+        up = p.parent
+    }
+}

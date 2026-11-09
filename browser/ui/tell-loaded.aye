@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn tellLoaded(child: *mut TabProcess) AllocError!void {
+    let up = child.embedder orelse return
+
+    for k in 0..up.children.len() {
+        let c = &mut up.children.items()[k]
+        let t = c.tp orelse continue
+
+        if t == child {
+            c.loaded = false
+
+            return frameDone(up, c)
+        }
+    }
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<title>C</title>
+<body style="margin: 0">
+<script>
+const q = location.search;
+const said = [];
+const log = (w) => { said.push(w); document.title = 'C ' + said.join(','); };
+const denied = (f) => { try { f(); return 'open'; } catch (e) { return e.name; } };
+const show = (d) => JSON.stringify(d, (k, v) => v instanceof Map ? [...v] : v instanceof Date ? 'date ' + v.getTime() : v);
+addEventListener('message', (e) => {
+  if (e.data === 'ping') return e.source.postMessage('state ' + document.readyState, e.origin);
+  if (e.data === 'gc') return log('gc ' + e.origin + ' ' + (e.source === frames[0]));
+  if (e.data === 'back') {
+    log('back ' + e.origin + ' ' + (e.source === top));
+    return top.postMessage('got back ' + (e.source === top), '*');
+  }
+  log('msg ' + show(e.data) + ' ' + e.origin + ' ' + (e.source === parent));
+  e.source.postMessage(new Uint8Array([7, 8, 9]), e.origin);
+});
+if (q === '?gc') {
+  parent.postMessage('gc', '*');
+  top.postMessage('gctop', '*');
+} else {
+  log('parent ' + (parent !== window) + ' top ' + (top === parent) + ' name ' + name + ' length ' + length + ' doc ' + denied(() => parent.document) + ' href ' + denied(() => parent.location.href) + ' closed ' + parent.closed);
+}
+if (q === '?moved') log('moved');
+if (q === '?evil') parent.postMessage('forged', '*');
+if (q === '?nested') {
+  const g = document.createElement('iframe');
+  g.src = 'http://' + (location.hostname === 'localhost' ? '127.0.0.1' : 'localhost') + ':' + location.port + '/ui/oopif-proxy-child.html?gc';
+  document.body.append(g);
+}
+if (q === '?top' || q === '?sandboxed') {
+  const back = 'http://' + (location.hostname === 'localhost' ? '127.0.0.1' : 'localhost') + ':' + location.port + '/ui/oopif-proxy.html?arrived';
+  log('nav ' + denied(() => { top.location = back; }));
+}
+</script>

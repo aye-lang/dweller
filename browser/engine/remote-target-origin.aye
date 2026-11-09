@@ -1,0 +1,26 @@
+import js.Interp
+import js.JsError
+import std.text
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/web-messaging.html#window-post-message-steps
+fn remoteTargetOrigin(it: *mut Interp, p: *mut Page, want: []u8, out: *mut text.Builder) JsError!bool {
+    if text.eql(want, "*") {
+        try out.append("*")
+
+        return true
+    }
+
+    if text.eql(want, "/") {
+        try appendOrigin(out, p)
+
+        return true
+    }
+
+    var u = url.parse(it.alloc, want) catch return false
+
+    defer u.deinit(it.alloc)
+    try appendUrlPart(out, &u, "origin")
+
+    return true
+}

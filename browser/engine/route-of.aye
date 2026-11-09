@@ -1,0 +1,23 @@
+import js
+import js.Interp
+import js.Value
+
+fn routeOf(it: *mut Interp, v: Value) ?RemoteRoute {
+    let o = js.objectOf(v)
+
+    if o == js.NONE { return null }
+
+    match it.heap.obj(o).data {
+        .Host { tag, index, generation } => {
+            if tag == TAG_REMOTE_WINDOW { return RemoteRoute { frame: index, page: generation } }
+        }
+
+        _ => {}
+    }
+
+    let p = winPage(it, v) orelse return null
+
+    if !p.remote { return null }
+
+    return RemoteRoute { key: p.id }
+}

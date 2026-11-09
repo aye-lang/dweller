@@ -1,0 +1,10 @@
+import dom.NodeId
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#determining-the-creation-sandboxing-flags
+pub fn ownerSandbox(p: *Page, el: NodeId) u32 {
+    let attr = p.doc.attr(el, "sandbox") orelse return p.sandbox
+
+    if !p.doc.isElement(el, "iframe") { return p.sandbox }
+
+    return p.sandbox | parseSandbox(attr)
+}

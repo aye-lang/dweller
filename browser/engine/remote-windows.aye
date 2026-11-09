@@ -1,0 +1,36 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+var remote_post: ?fn(RemotePost) AllocError!void = null
+var remote_navigate: ?fn(RemoteRoute, []u8) AllocError!void = null
+var frame_owner: ?FrameOwner = null
+var owner_name: ?[]mut u8 = null
+var owner_context: u32 = 0
+
+pub fn setRemoteWindows(post: fn(RemotePost) AllocError!void, navigate: fn(RemoteRoute, []u8) AllocError!void) {
+    remote_post = post
+    remote_navigate = navigate
+}
+
+pub fn setFrameOwner(alloc: Allocator, o: FrameOwner) AllocError!void {
+    let name = try alloc.alloc(0 as u8, o.name.len)
+
+    std.mem.copy(name, o.name)
+
+    if owner_name |old| { alloc.free(old) }
+
+    owner_name = name
+    frame_owner = FrameOwner { parent_frame: o.parent_frame, parent_page: o.parent_page, top_frame: o.top_frame, sandbox: o.sandbox, name: name }
+}
+
+pub fn dropFrameOwner(alloc: Allocator) {
+    if owner_name |old| { alloc.free(old) }
+
+    owner_name = null
+    frame_owner = null
+}
+
+pub fn embedded() bool {
+    return frame_owner != null
+}

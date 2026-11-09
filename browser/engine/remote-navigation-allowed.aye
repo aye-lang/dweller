@@ -1,0 +1,10 @@
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#allowed-by-sandboxing-to-navigate
+fn remoteNavigationAllowed(from: *mut Page, to: RemoteRoute) bool {
+    if to.key != 0 { return true }
+
+    let o = frameOwnerOf(from) orelse return true
+
+    if to.frame == o.top_frame && to.page == 0 { return from.sandbox & SB_TOP_NAVIGATION == 0 }
+
+    return from.sandbox & SB_NAVIGATION == 0
+}
