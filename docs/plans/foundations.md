@@ -114,7 +114,7 @@ card says done.
 
 - Q0 open: Q0.1 (weekly webgl job), Q0.3 (W2, W3 and the conformance table re-run).
 - Q1 open: Q1.1 (safe shipped build), Q1.4, Q1.11 (soak).
-- Q2 open: Q2.12 to Q2.14 (out-of-process iframes, Spaces as renderers, limits, the default flip).
+- Q2 open: Q2.12 to Q2.14 (Spaces as renderers, process limits, the default flip).
 - Q3 open: none of Q3.1–Q3.14 (Q3.1b, Q3.6–Q3.10c done 2026-11-09; their Left lists remain).
 - Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12 and Q4.16 (Q4.21's ranked steps 6 to 11). No W7 row passes on bbc, zol, mistral or react (Q4.21).
 - Q5 to Q7 have no done step; Q5 waits for Q2.14.
