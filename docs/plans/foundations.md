@@ -365,7 +365,7 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
-| Q6.1 | `css/backgrounds-borders` (30.1, 65) |
+| Q6.1 | `css/backgrounds-borders` (30.1 -> 65.4, threshold 65; done, 2026-11-09: `border-image` longhands and shorthand, `box-shadow` validation and interpolation, text-value and `allow-discrete` transitions for text-mixed properties, keyframe `composite` and `animation-composition`, setter validation of background and border values and shorthands, one longhand-through-shorthand read path shared with Q6.12; left: border-image painting, background-position-x/y longhands, corner-shape, tentative box-shadow-* longhands, `border` resetting `border-image` in the cascade) |
 | Q6.2 | `css/css-grid` (43.2, 60) |
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
 | Q6.4 | `css/box-sizing` (51.5, 70) |
