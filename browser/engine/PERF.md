@@ -1478,3 +1478,19 @@ tab. Per steady frame (medians): `ui_relayout` 5.0 ms (mean 7.5), of it
 same-text skip (`Node::setTextContent`) applies only without mutation
 observers, and mistral has `childList` + `subtree` observers on `BODY`, so
 no code change here; the next step is a partial display-list rebuild.
+
+## Q4.16c: canvas drawImage on rows (2026-11-09)
+
+`docs/plans/cards/Q4.16c.md`. Benchmark `browser/tests/perf/canvas_drawimage.html`
+(12 scaled `drawImage`s, two at `globalAlpha` 0.5, one rotated, 8 small paths
+a frame), `DWELLER_TIMING=1 target/dweller URL --frames 202` minus a 2-frame
+run, per frame. `browser/build.sh` (safe) builds of the parent and of the
+change, alternated, 3 runs each, SDL dummy driver, load 4 to 8 (shared
+machine). Medians: `canvas_draw` 21.6 -> 5.7 ms a frame (-74%), `ui_loop` 36.6
+-> 23.8 ms. The screenshot after 202 frames and a 17-draw coverage page are
+byte-identical; WPT `html/canvas/element` drawing-images, fill-and-stroke,
+compositing, shadows and transformations score the same per file. The cost was
+per-pixel work: the inverse matrix, `floor`/`clamp`, four `premul` and three
+`mix` calls through structs, and a mode if-chain in `canvasComposite`. The
+axis-aligned draw now maps each column and row once and blends rows from the
+tables; rotated draws and path fill are unchanged.

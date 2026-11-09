@@ -1,0 +1,57 @@
+import std.math
+
+// chromium: third_party/skia/src/core/SkBlitRow_D32.cpp
+fn compositeOver(dst: []mut u8, dst_width: usize, area: CanvasArea, src: []u8, alpha: f64) {
+    for y in 0..area.h {
+        var i = y * area.w * 4
+        var j = ((area.y as usize + y) * dst_width + area.x as usize) * 4
+
+        for x in 0..area.w {
+            let a = src[i + 3]
+
+            if a == 0 && src[i] == 0 && src[i + 1] == 0 && src[i + 2] == 0 {
+                i += 4
+                j += 4
+                continue
+            }
+
+            if a == 255 && alpha == 1.0 {
+                dst[j] = src[i]
+                dst[j + 1] = src[i + 1]
+                dst[j + 2] = src[i + 2]
+                dst[j + 3] = 255
+                i += 4
+                j += 4
+                continue
+            }
+
+            let sa = math.floor(a as f64 * alpha + 0.5) / 255.0
+            let da = dst[j + 3] as f64 / 255.0
+            let fd = 1.0 - sa
+            let outa = math.min(1.0, sa + da * fd)
+            let alpha_byte = math.floor(outa * 255.0 + 0.5) as u8
+
+            if alpha_byte == 0 {
+                dst[j] = 0
+                dst[j + 1] = 0
+                dst[j + 2] = 0
+                dst[j + 3] = 0
+                i += 4
+                j += 4
+                continue
+            }
+
+            for k in 0..3 {
+                let sc = math.floor(src[i + k] as f64 * alpha + 0.5) / 255.0
+                let dc = dst[j + k] as f64 / 255.0 * da
+                let out = math.min(1.0, sc + dc * fd)
+
+                dst[j + k] = math.floor(math.clamp(out / outa, 0.0, 1.0) * 255.0 + 0.5) as u8
+            }
+
+            dst[j + 3] = alpha_byte
+            i += 4
+            j += 4
+        }
+    }
+}

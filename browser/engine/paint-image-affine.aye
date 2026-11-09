@@ -1,0 +1,52 @@
+import paint
+import std.math
+import svg
+
+fn canvasPaintAffine(px: []mut u8, area: CanvasArea, inv: svg.Matrix, src: CanvasSource, smooth: bool, repeat_x: bool, repeat_y: bool) {
+    let img = src.bmp
+    let nw = img.width as f64 / src.scale_x
+    let nh = img.height as f64 / src.scale_y
+
+    for ay in 0..area.h {
+        for ax in 0..area.w {
+            let i = (ay * area.w + ax) * 4
+
+            if px[i + 3] == 0 {
+                for k in 0..4 {
+                    px[i + k] = 0
+                }
+
+                continue
+            }
+
+            let x = area.x + ax as i64
+            let y = area.y + ay as i64
+            var sx = inv.mapX(x as f64 + 0.5, y as f64 + 0.5)
+            var sy = inv.mapY(x as f64 + 0.5, y as f64 + 0.5)
+
+            if repeat_x {
+                sx -= math.floor(sx / nw) * nw
+            }
+
+            if repeat_y {
+                sy -= math.floor(sy / nh) * nh
+            }
+
+            if sx < 0.0 || sy < 0.0 || sx >= nw || sy >= nh {
+                for k in 0..4 {
+                    px[i + k] = 0
+                }
+
+                continue
+            }
+
+            let sample = paint.sampleImage(img.pixels, img.width, img.height, sx * src.scale_x, sy * src.scale_y, smooth)
+            let cover = px[i + 3] as u32
+
+            px[i] = ((sample.r * cover + 127) / 255) as u8
+            px[i + 1] = ((sample.g * cover + 127) / 255) as u8
+            px[i + 2] = ((sample.b * cover + 127) / 255) as u8
+            px[i + 3] = ((sample.a * cover + 127) / 255) as u8
+        }
+    }
+}

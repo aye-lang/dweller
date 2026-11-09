@@ -1,0 +1,71 @@
+// chromium: third_party/skia/src/core/SkBitmapProcState.cpp
+pub fn patternRow(px: []mut u8, start: usize, cols: []ImageTap, ty: ImageTap, img: []u8, w: usize) {
+    for ax in 0..cols.len {
+        let i = start + ax * 4
+        let tx = cols[ax]
+        let cover = px[i + 3] as u32
+
+        if cover == 0 || !tx.valid || !ty.valid {
+            px[i] = 0
+            px[i + 1] = 0
+            px[i + 2] = 0
+            px[i + 3] = 0
+            continue
+        }
+
+        let a00 = (ty.i0 * w + tx.i0) * 4
+        let a01 = (ty.i0 * w + tx.i1) * 4
+        let a10 = (ty.i1 * w + tx.i0) * 4
+        let a11 = (ty.i1 * w + tx.i1) * 4
+        let p00 = img[a00 + 3] as u32
+        let p01 = img[a01 + 3] as u32
+        let p10 = img[a10 + 3] as u32
+        let p11 = img[a11 + 3] as u32
+        let sx = 256 - tx.t
+        let sy = 256 - ty.t
+        var out = [4]u32{0, 0, 0, 0}
+
+        if tx.t == 0 && ty.t == 0 && p00 == 255 {
+            out[0] = img[a00] as u32
+            out[1] = img[a00 + 1] as u32
+            out[2] = img[a00 + 2] as u32
+            out[3] = 255
+        } else if (p00 & p01 & p10 & p11) == 255 {
+            for k in 0..3 {
+                let top = (img[a00 + k] as u32 * sx + img[a01 + k] as u32 * tx.t + 128) / 256
+                let bottom = (img[a10 + k] as u32 * sx + img[a11 + k] as u32 * tx.t + 128) / 256
+
+                out[k] = (top * sy + bottom * ty.t + 128) / 256
+            }
+
+            out[3] = 255
+        } else {
+            for k in 0..3 {
+                let c00 = (img[a00 + k] as u32 * p00 + 127) / 255
+                let c01 = (img[a01 + k] as u32 * p01 + 127) / 255
+                let c10 = (img[a10 + k] as u32 * p10 + 127) / 255
+                let c11 = (img[a11 + k] as u32 * p11 + 127) / 255
+                let top = (c00 * sx + c01 * tx.t + 128) / 256
+                let bottom = (c10 * sx + c11 * tx.t + 128) / 256
+
+                out[k] = (top * sy + bottom * ty.t + 128) / 256
+            }
+
+            let atop = (p00 * sx + p01 * tx.t + 128) / 256
+            let abottom = (p10 * sx + p11 * tx.t + 128) / 256
+
+            out[3] = (atop * sy + abottom * ty.t + 128) / 256
+        }
+
+        if cover != 255 {
+            for k in 0..4 {
+                out[k] = (out[k] * cover + 127) / 255
+            }
+        }
+
+        px[i] = out[0] as u8
+        px[i + 1] = out[1] as u8
+        px[i + 2] = out[2] as u8
+        px[i + 3] = out[3] as u8
+    }
+}
