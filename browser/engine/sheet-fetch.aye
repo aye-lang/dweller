@@ -1,0 +1,23 @@
+import dom.Document
+import dom.FetchedSheet
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+fn sheetFetch(alloc: Allocator, doc: *Document, target: *Url, address: *Url, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!?*FetchedSheet {
+    let mode = sheetMode(crossorigin)
+
+    if doc.fetched.find(target.withoutFragment(), mode) |known| {
+        return known
+    }
+
+    let req = corsRequest(crossorigin, net.Request { kind: net.Kind.Style, referrer: address.href, referrer_policy: policy, initiator: net.Initiator.Page { url: address.href } })
+    let res = net.request(alloc, target, req) catch |e| {
+        return null
+    }
+
+    defer res.deinit(alloc)
+
+    return try doc.fetched.add(target.withoutFragment(), mode, res.status, res.charset, res.body)
+}

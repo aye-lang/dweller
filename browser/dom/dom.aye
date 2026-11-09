@@ -143,6 +143,7 @@ pub struct Document {
     base_cache: *mut BaseCache
     sheet_version: u64
     sheet_key_cache: *mut SheetKeyCache
+    fetched: *mut FetchedSheets
     // The state of form controls and the focus (controls.aye).
     controls: Controls
     // Quirks mode (no doctype, or a legacy one): set by the HTML parser.
@@ -190,6 +191,12 @@ pub struct Document {
             alloc.destroy(strings)
             return e
         }
+        let fetched = alloc.create(FetchedSheets.init(alloc)) catch |e| {
+            alloc.destroy(sheet_key_cache)
+            alloc.destroy(cache)
+            alloc.destroy(strings)
+            return e
+        }
         return Document {
             alloc: alloc,
             nodes: nodes,
@@ -200,6 +207,7 @@ pub struct Document {
             base_cache: cache,
             sheet_version: 0,
             sheet_key_cache: sheet_key_cache,
+            fetched: fetched,
             controls: Controls.init(alloc),
             quirks: false,
             templates: List(NodeId).init(alloc),
@@ -222,6 +230,8 @@ pub struct Document {
         self.forgetBase()
         self.alloc.destroy(self.base_cache)
         self.alloc.destroy(self.sheet_key_cache)
+        self.fetched.deinit()
+        self.alloc.destroy(self.fetched)
         self.templates.deinit()
         self.sheets.deinit()
         self.shadows.deinit()
