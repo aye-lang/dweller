@@ -1,0 +1,30 @@
+import engine
+import paint
+import std.list.List
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+pub fn canvasesDrawn(view: *mut PageView) AllocError!void {
+    let p = view.tab.page orelse return
+    var now = List(paint.ShownBitmap).init(view.alloc)
+
+    try engine.canvasShown(p, &mut now)
+
+    if sameShown(view.shown.items(), now.items()) {
+        now.deinit()
+
+        return
+    }
+
+    view.shown.deinit()
+    view.shown = now
+
+    if view.list == null || p.tree == null {
+        return
+    }
+
+    if paint.refreshImages(&mut view.list.?, now.items()) {
+        try paint.signature(&view.list.?, p.tree.?, &mut view.sigs)
+        view.repaint = true
+    }
+}

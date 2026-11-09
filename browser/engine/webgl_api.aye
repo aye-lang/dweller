@@ -322,7 +322,6 @@ fn framebufferDrawn(it: *mut Interp, ctx: *mut gpu.Context) {
     ctx.gl().glGetIntegerv(0x8ca6, &mut bound)
     if bound as u32 == ctx.drawFbo() {
         ctx.dirty = true
-        canvasChanged(it)
     }
 }
 
@@ -1042,9 +1041,7 @@ fn akWebglSnapshot(it: *mut Interp, a: Args) JsError!Value {
 // last frame, mapped if it was not yet, or what it drew since.
 fn frameNow(it: *mut Interp, c: *mut CanvasBitmap) JsError!void {
     if c.gl |ctx| {
-        if try takeFrame(it.alloc, ctx, c.bmp) {
-            canvasChanged(it)
-        }
+        _ = try takeFrame(it.alloc, ctx, c.bmp)
         if ctx.dirty && c.bmp.pixels.len > 0 {
             let w = ctx.width as usize
             let h = ctx.height as usize
@@ -1220,13 +1217,6 @@ pub fn takeCanvasFrames(p: *mut Page) bool {
                     took = true
                 }
             }
-        }
-    }
-    if took {
-        if p.script |s| {
-            s.version += 1
-        } else {
-            p.mutations += 1
         }
     }
     for f in p.frames.items() {
