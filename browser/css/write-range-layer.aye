@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+let RANGE_NAMES = "cover contain entry exit entry-crossing exit-crossing"
+
+// spec: https://drafts.csswg.org/scroll-animations-1/#animation-range-start
+fn writeRangeLayer(item: []Comp, end: bool, out: *mut text.Builder) AllocError!bool {
+    if item.len == 0 || item.len > 2 {
+        return false
+    }
+
+    if item.len == 1 && isIdent(item[0], "normal") {
+        try out.append("normal")
+
+        return true
+    }
+
+    let name = identIn(item[0], RANGE_NAMES) orelse return writeRangeOffset(item, out)
+
+    try out.append(name)
+
+    if item.len == 1 {
+        return true
+    }
+
+    return writeNamedOffset(item[1], end, out)
+}

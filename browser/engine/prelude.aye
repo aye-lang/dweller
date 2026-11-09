@@ -1439,6 +1439,7 @@ pub let PRELUDE =
     \\for (const n of ['border-spacing', 'borderSpacing']) getter(ComputedStyle.prototype, n, function () { return ak.computedStyle(this._el, 'border-spacing'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
     \\getter(ComputedStyle.prototype, 'animation', function () { return styleOf(this._el, 'animation'); });
+    \\for (const n of ['animation-range', 'animationRange']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'animation-range'); });
     \\for (const n of ['text-decoration', 'textDecoration']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'text-decoration'); });
     \\getter(ComputedStyle.prototype, 'overflow', function () { return styleOf(this._el, 'overflow'); });
     \\for (const n of ['line-clamp', 'lineClamp', '-webkit-line-clamp', 'webkitLineClamp', 'WebkitLineClamp']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, /ebkit/.test(n) ? '-webkit-line-clamp' : 'line-clamp'); });
@@ -3943,7 +3944,13 @@ pub let PRELUDE =
     \\  }
     \\  return r;
     \\}
+    \\function validKeyframesName(n) {
+    \\  if (/^"(?:[^"\\\n]|\\.)+"$|^'(?:[^'\\\n]|\\.)+'$/.test(n)) return true;
+    \\  return /^(?:--|-?(?:[a-zA-Z_]|[^\x00-\x7f]|\\.))(?:[\w-]|[^\x00-\x7f]|\\.)*$/.test(n) && !/^(?:none|default|initial|inherit|unset|revert|revert-layer)$/i.test(n);
+    \\}
     \\function validRule(text) {
+    \\  const k = /^@(?:-webkit-)?keyframes\s+([^{]*)\{/i.exec(text);
+    \\  if (k) return validKeyframesName(k[1].trim());
     \\  return /^@/.test(text) || ak.selectorText(text.slice(0, text.indexOf('{'))) !== null;
     \\}
     \\let sheetIds = 0;
