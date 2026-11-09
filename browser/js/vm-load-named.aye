@@ -4,18 +4,14 @@ fn vmLoadNamed(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, key
     let o = objectOf(v)
 
     if o == NONE {
-        vmProfSlow(st, key, 0)
-
-        return it.getProp(v, key)
+        return vmLoadPrimitive(it, st, e, v, key)
     }
 
     if it.heap.obj(o).shape == NONE || !cacheable(it, o, key) {
-        vmProfSlow(st, key, 6)
-
-        return it.getProp(v, key)
+        return vmLoadNormal(it, st, v, o, key)
     }
 
-    if vmIcFind(st, e, it.heap.obj(o).shape, key, false) |c| {
+    if vmIcFind(st, e, it.heap.obj(o).shape, it.heap.obj(o).proto, key, false) |c| {
         let holder = vmIcLoadHolder(it, c, o, key)
 
         if holder != NONE {

@@ -1,0 +1,28 @@
+// v8: src/ic/ic.cc (LoadIC::ComputeHandler, a holder on the prototype chain)
+
+fn vmIcChainCase(it: *mut Interp, shape: u32, first: u32, key: u32) ?IcCase {
+    let virtual = key == A_NAME || key == A_LENGTH
+    var p = first
+
+    while p != NONE {
+        heapMakeFast(&mut it.heap, p)
+
+        if !cacheable(it, p, key) {
+            return null
+        }
+
+        it.heap.obj(p).used_as_proto = true
+
+        if it.heap.findProp(p, key) |slot| {
+            return IcCase { shape: shape, other: p, slot: slot, proto: first, epoch: it.heap.proto_epoch }
+        }
+
+        if virtual && it.heap.obj(p).class == Class.Function {
+            return null
+        }
+
+        p = it.heap.obj(p).proto
+    }
+
+    return null
+}

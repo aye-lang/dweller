@@ -1,0 +1,45 @@
+// v8: src/ic/ic.cc (LoadIC::Load: primitive receivers, the string length handler)
+
+fn vmLoadPrimitive(it: *mut Interp, st: *mut VmState, e: *mut IcEntry, v: Value, key: u32) JsError!Value {
+    if key == A_LENGTH {
+        match v {
+            .Str { s } => {
+                vmProfSlow(st, key, 1)
+
+                return numVal(it.heap.str(s).len16 as f64)
+            }
+
+            _ => {}
+        }
+    }
+
+    let proto = vmPrimProto(it, v)
+
+    if proto == NONE || (proto == it.string_proto && it.heap.atoms.indexOf(key) != NONE) {
+        vmProfSlow(st, key, 0)
+
+        return it.getProp(v, key)
+    }
+
+    if vmIcFind(st, e, IC_SHAPE_PRIMITIVE, proto, key, false) |c| {
+        if c.epoch == it.heap.proto_epoch {
+            vmProfSlow(st, key, 1)
+
+            return vmIcRead(it, v, c.other, c.slot, key)
+        }
+
+        vmProfSlow(st, key, 5)
+    } else if e.state == IC_MEGA {
+        vmProfSlow(st, key, 4)
+    } else {
+        vmProfSlow(st, key, 2)
+    }
+
+    if vmIcChainCase(it, IC_SHAPE_PRIMITIVE, proto, key) |c| {
+        vmIcRecord(st, e, key, false, c)
+
+        return vmIcRead(it, v, c.other, c.slot, key)
+    }
+
+    return it.getProp(v, key)
+}
