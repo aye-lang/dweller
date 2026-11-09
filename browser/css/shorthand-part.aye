@@ -1,0 +1,40 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let SIDE_SHORTHANDS = "margin padding border-width border-style border-color inset"
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
+pub fn shorthandPart(alloc: Allocator, shorthand: []u8, value: []u8, longhand: []u8, out: *mut text.Builder) AllocError!bool {
+    let target = propertyIndex(longhand) orelse return false
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let comps = try components(&mut sheet, toks.items())
+
+    if comps.len == 0 || comps.len > 4 {
+        return false
+    }
+
+    if inList(shorthand, SIDE_SHORTHANDS) == null {
+        return borderPart(&mut sheet, shorthand, comps, target, out)
+    }
+
+    var longhands = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    let n = shorthandLonghands(shorthand, longhands[..])
+
+    for k in 0..n {
+        if longhands[k] == target {
+            return writeComp(comps[cornerIndex(k, comps.len)], out)
+        }
+    }
+
+    return false
+}

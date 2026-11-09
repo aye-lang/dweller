@@ -1,0 +1,58 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#borders
+fn borderPart(sheet: *mut Sheet, shorthand: []u8, comps: []Comp, target: usize, out: *mut text.Builder) AllocError!bool {
+    if text.eql(shorthand, "border") && target >= BORDER_IMAGE_SOURCE && target <= BORDER_IMAGE_REPEAT {
+        try writeValue(PROPERTIES[target].initial, out)
+
+        return true
+    }
+
+    if inList(shorthand, "border border-top border-right border-bottom border-left") == null {
+        return false
+    }
+
+    var longhands = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    let n = shorthandLonghands(shorthand, longhands[..])
+
+    var parts = [3][]u8{"medium", "none", "currentcolor"}
+
+    for c in comps {
+        var one = text.Builder.init(sheet.arena.allocator())
+
+        if !(try writeComp(c, &mut one)) {
+            return false
+        }
+
+        if isIdent(c, "thin") || isIdent(c, "medium") || isIdent(c, "thick") || lengthValue(c, false, true) != null {
+            parts[0] = one.bytes()
+        } else if inList(one.bytes(), BORDER_STYLES) != null {
+            parts[1] = one.bytes()
+        } else if colorValue(c) != null {
+            parts[2] = one.bytes()
+        } else {
+            return false
+        }
+    }
+
+    for k in 0..n {
+        if longhands[k] == target {
+            return borderKind(shorthand, k, parts[..], out)
+        }
+    }
+
+    return false
+}
+
+fn borderKind(shorthand: []u8, k: usize, parts: [][]u8, out: *mut text.Builder) AllocError!bool {
+    var kind = k
+
+    if text.eql(shorthand, "border") {
+        kind = k / 4
+    }
+
+    try out.append(parts[kind])
+
+    return true
+}
