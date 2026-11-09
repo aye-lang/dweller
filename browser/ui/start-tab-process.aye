@@ -6,7 +6,7 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
-fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut TabProcess {
+fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) AllocError!?*mut TabProcess {
     var arena = Arena.init(alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -80,6 +80,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
         held: List(*mut HeldFetch).init(alloc),
         contexts: text.Builder.init(alloc),
         opened: List(Opened).init(alloc),
+        partition: partition,
     })
 
     try tp.pids.appendInt(pid as i64)

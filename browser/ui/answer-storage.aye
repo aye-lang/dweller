@@ -17,6 +17,7 @@ fn answerStorage(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             defer out.deinit()
 
             if session == 1 { try tabArea(&mut area, tp.tab, context) }
+            if session == 0 && tp.partition != 0 { try partitionArea(&mut area, tp.partition) }
 
             if op >= 6 { return tabSessionChanged(&mut area, tp.tab, op, index) }
 
@@ -33,7 +34,7 @@ fn answerStorage(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             defer page.deinit(alloc)
             try engine.storageOrigin(&mut area, &page)
 
-            let ask = engine.StorageAsk { href: href, context: context, session: session == 1, op: op, index: index, key: key, value: value }
+            let ask = engine.StorageAsk { href: href, context: context, session: session == 1 || tp.partition != 0, op: op, index: index, key: key, value: value }
             let done = try engine.applyStorage(alloc, area.bytes(), ask, &mut out)
 
             try ipc.encode(&mut tp.outbox, on, ipc.Message.StorageReply { found: done.found as u32, refused: done.refused as u32, changed: done.changed as u32, count: done.count, value: out.bytes() })

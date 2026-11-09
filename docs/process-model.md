@@ -410,7 +410,7 @@ the Space, and the cookie jar and `localStorage` are the browser's
 (Q2.4b), so nothing is copied. Watching draws the renderer's buffer of
 the Space's first tab in the page area, and input while it is shown
 goes to that renderer. Messages 70–73 (§2) carry the last action, the
-pause and a `run`'s window commands. Not yet: `isolated` Spaces still
+pause and a `run`'s window commands. Not yet (Q2.12c did the first and the last, below): `isolated` Spaces still
 get a Space process (one jar in the browser), openers do not reach
 across renderers, and a renderer crash fails the request with "the
 tab's renderer is gone". Without the switch the Space process of §0
@@ -428,6 +428,26 @@ process choice (`takesSwap`, COOP), then the reply; the commit's
 site-lock check is unchanged. So a slow server no longer stalls the
 window's loop. A `file:` or `data:` navigation, a replayed archive and
 a primed response (after a swap) are still answered at once.
+
+**Partitions and crashes (Q2.12c, 2026-11-09).** With the switch an
+`isolated` Space is hosted too, on a partition of its own: the window
+gives it a cookie jar (`net.openPartition`, keyed by the Space's id) and
+a `localStorage` area prefix (`#ID ORIGIN`) in the in-memory store that
+`sessionStorage` uses, so neither is ever saved to the profile. The
+partition is a field of each of the Space's tab processes
+(`TabProcess.partition`, given at `startTabProcess` and inherited by
+swaps, OOPIFs and popups) and is read from the browser's own record, never
+from a message: `answerFetch` puts it on the request (`Request.partition`,
+kept by the loader's loads and redirects), whose cookies come from and go
+to that jar, whose network partition key (cache, connection pool) starts
+with it, and which notes no HSTS; `answerCookie` and `answerStorage` use
+it; `storage` events go only to renderers of the same partition. The jar
+and the areas go when the Space is freed (`dropPartition`). A hosted
+tab whose renderer dies stays in its Space as `crashed` (`tabs`); the
+request on it and later page commands fail with "renderer crashed"
+(`failCrashed`), and `tab_close` frees it. Not yet: a sad tab while the
+person watches a crashed hosted tab, the Basic auth cache, the preflight
+cache and HSTS per partition.
 
 ## 9. Risks and open questions, ranked
 

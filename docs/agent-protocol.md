@@ -669,6 +669,21 @@ person's input or the window's frames.
   `crashed`; the window and the other Spaces go on. The window reaps
   its Spaces and, when it closes, kills those still running after a
   second.
+- **Hosted Spaces** (`DWELLER_SPACES=renderer`, Q2.12; the default
+  once the switch flips). The window serves the Space itself, each of
+  its tabs in a renderer of its own. A `shared` Space uses the person's
+  jar and `localStorage`; an `isolated` one gets a partition of its own
+  in the window (Q2.12c): a cookie jar, `localStorage` and the HTTP
+  cache and connections, in memory only, never written to the profile,
+  and dropped when the Space goes (`space_close`, stop, or replaced as
+  the oldest done one). `sessionStorage` is per tab either way. The
+  Space no longer crashes as a whole: when a tab's renderer dies, the
+  request on it and every later page command on that tab (`navigate`,
+  `snapshot`, `eval`, `wait`, ...) fail with `"renderer crashed"`
+  (`{"id":5,"ok":false,"error":"renderer crashed"}`; MCP: an error
+  result), `tabs` lists the tab with `"crashed":true` (MCP: `[crashed]`),
+  and the Space, its other tabs and the window go on; `tab_close`
+  closes the crashed tab, and `tab_new` opens a fresh one.
 
 The control connection (internal; both ways JSON lines, `{"ctl":...}`;
 the window never waits on it: what a Space's socket does not take is

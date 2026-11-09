@@ -1022,7 +1022,7 @@ fn akCookie(it: *mut Interp, a: Args) JsError!Value {
     if page.sandbox & SB_ORIGIN != 0 {
         return domError(it, "SecurityError", "Failed to read the 'cookie' property from 'Document': the document is sandboxed.")
     }
-    net.scriptCookies(&page.url, &rootPage(page).url, b) catch |e| {
+    net.scriptCookies(0, &page.url, &rootPage(page).url, b) catch |e| {
         return JsError.OutOfMemory
     }
     return it.newString(b.bytes())
@@ -1036,7 +1036,7 @@ fn akSetCookie(it: *mut Interp, a: Args) JsError!Value {
     if page.sandbox & SB_ORIGIN != 0 {
         return domError(it, "SecurityError", "Failed to set the 'cookie' property on 'Document': the document is sandboxed.")
     }
-    net.setScriptCookie(&page.url, &rootPage(page).url, b.bytes()) catch |e| {
+    net.setScriptCookie(0, &page.url, &rootPage(page).url, b.bytes()) catch |e| {
         return JsError.OutOfMemory
     }
     return Value.Undefined

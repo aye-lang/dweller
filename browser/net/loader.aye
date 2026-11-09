@@ -60,6 +60,7 @@ struct Load {
     key: []mut u8 = []mut u8{}
     referrer_policy: ?ReferrerPolicy = null
     top: []mut u8 = []mut u8{}
+    partition: u32 = 0
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -177,6 +178,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         credentials: req.credentials,
         initiator: page,
         key: key,
+        partition: req.partition,
     }) catch |e| {
         release(ld.alloc, key)
         release(ld.alloc, owned)
@@ -409,6 +411,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         hops: 0,
         job: null,
         ask: a,
+        partition: req.partition,
     }) catch |e| {
         ld.alloc.destroy(a)
         return e

@@ -141,6 +141,7 @@ pub struct Space {
     own_tabs: List(*mut TabSlot)
     next_tab: u32 = 1
     last_tab: u32 = 0
+    partition: u32 = 0
 }
 
 /// A Space's own side: what the window told it, and what it told the
@@ -255,8 +256,8 @@ fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool, shared: bool) Al
     let k = spaceSlot(ui) orelse {
         return failConn(ui.alloc, c, mcp, "too many Spaces (8)")
     }
-    if a.hosted && shared {
-        return startHosted(ui, c, k, name, mcp)
+    if a.hosted {
+        return startHosted(ui, c, k, name, mcp, shared)
     }
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
@@ -691,6 +692,7 @@ fn freeSpace(alloc: Allocator, sp: *mut Space) {
     for slot in sp.own_tabs.items() {
         freeSlot(alloc, slot)
     }
+    dropPartition(alloc, sp.partition)
     sp.own_tabs.deinit()
     sp.ctl_in.deinit()
     sp.ctl_out.deinit()

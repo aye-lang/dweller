@@ -27,6 +27,12 @@ fn listTabs(slots: []*mut TabSlot, mine: u32, shown: ?*TabSlot, tmp: Allocator, 
         try w.boolean(on)
         try w.key("agent")
         try w.boolean(id == mine)
+
+        if tabCrashed(slot) {
+            try w.key("crashed")
+            try w.boolean(true)
+        }
+
         try w.endObject()
 
         if i > 0 { try detail.appendByte('\n') }
@@ -44,6 +50,7 @@ fn listTabs(slots: []*mut TabSlot, mine: u32, shown: ?*TabSlot, tmp: Allocator, 
 
         if on { try detail.append(" [shown]") }
         if id == mine { try detail.append(" [agent]") }
+        if tabCrashed(slot) { try detail.append(" [crashed]") }
     }
 
     try w.endArray()
