@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+fn takeLanded(alloc: Allocator, target: *Url, req: Request) AllocError!?Response {
+    let rl = remote_loader orelse return null
+
+    if req.body != null || rl.landed.len() == 0 { return null }
+
+    let key = try cacheKey(rl.alloc, req, target.withoutFragment())
+    let at = landedAt(rl, key, requestCode(req))
+
+    rl.alloc.free(key)
+
+    let i = at orelse return null
+    let e = rl.landed.orderedRemove(i)
+
+    rl.landed_bytes -= e.res.body.len
+    defer freeLanded(rl.alloc, e)
+
+    return try copyResponse(alloc, &e.res)
+}

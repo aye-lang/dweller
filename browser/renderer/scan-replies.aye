@@ -1,0 +1,25 @@
+import ipc
+
+fn scanReplies(r: *mut TabRenderer, id: u32, nav: bool, href: []u8, f: ?*mut Fetched) !void {
+    var at: usize = 0
+
+    while try ipc.nextMessage(r.inbox.bytes()[at..]) |g| {
+        let used = g.used
+        let reply = fetchReplyId(g.message)
+        let pinged = try answerPing(r, g.message)
+
+        if reply == null && !pinged {
+            at += used
+
+            continue
+        }
+
+        if reply == id && f != null {
+            _ = try takeFetched(r, g.message, nav, href, f.?)
+        } else if !pinged {
+            try landFetched(r, g.message)
+        }
+
+        cutOut(&mut r.inbox, at, used)
+    }
+}

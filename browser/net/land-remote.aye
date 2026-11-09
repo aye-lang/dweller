@@ -1,0 +1,19 @@
+pub fn landRemote(wire: u32, res: Response) {
+    let rl = remote_loader orelse return
+    let l = remoteByWire(rl, wire) orelse {
+        res.deinit(rl.alloc)
+
+        return
+    }
+
+    l.state = LoadState.Done
+
+    if !l.joins {
+        l.res = res
+        l.has_res = true
+
+        return
+    }
+
+    keepLanded(rl, l.key, l.codes, res)
+}

@@ -1,0 +1,20 @@
+<!doctype html><title>Abort fetch</title>
+<p>A fetch aborted by its AbortController and a fetch of a frame that is
+removed, both while the server holds them: the browser closes both
+connections, and the aborted one's promise only rejects.</p>
+<pre id="log"></pre>
+<iframe id="frame" src="hang_frame.html"></iframe>
+<script>
+const lines = [];
+function note(s) {
+  lines.push(s);
+  document.getElementById('log').textContent = lines.join('\n');
+}
+const c = new AbortController();
+fetch('/hang/a', { signal: c.signal }).then(() => note('late answer a'), e => note('a: ' + e.name));
+fetch('/hang-started?a,f').then(r => r.text()).then(() => {
+  c.abort();
+  document.getElementById('frame').remove();
+  return fetch('/hang-closed?a,f');
+}).then(r => r.text()).then(t => note('server: ' + t.trim()));
+</script>

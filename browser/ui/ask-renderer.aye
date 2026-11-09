@@ -2,6 +2,8 @@ import ipc
 import std.mem.AllocError
 import std.text
 
+let HELD_POLL_MS: i32 = 2
+
 fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut text.Builder) AllocError![]u8 {
     let tp = at.*
     var flag: u32 = 0
@@ -70,6 +72,16 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
             ipc.consume(&mut tp.inbox, g.used)
 
             continue
+        }
+
+        if tp.held.len() > 0 {
+            try answerHeld(tp)
+
+            if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
+
+            tp.outbox.clear()
+
+            if !readableWithin(tp.fd, HELD_POLL_MS) { continue }
         }
 
         let n = read(tp.fd, buf[..].ptr, buf.len)

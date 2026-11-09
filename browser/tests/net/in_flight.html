@@ -1,0 +1,26 @@
+<!doctype html><title>In flight</title>
+<p>Three images, a fetch and an XHR that the server holds until all
+five are in flight at once (the sixth connection to the host asks): loads one at a time would never get there.</p>
+<pre id="log"></pre>
+<script>
+const lines = [];
+function note(s) {
+  lines.push(s);
+  document.getElementById('log').textContent = lines.sort().join('\n');
+}
+for (const n of ['a', 'b', 'c']) {
+  const img = new Image();
+  img.onload = () => note('image ' + n + ' ' + img.naturalWidth);
+  img.onerror = () => note('image ' + n + ' error');
+  img.src = '/held/paint/img/photo.png?' + n;
+}
+for (const n of ['d']) {
+  fetch('/held/flight.txt?' + n).then(r => r.text()).then(t => note('fetch ' + n + ' ' + t), e => note('fetch ' + n + ' ' + e.name));
+}
+const x = new XMLHttpRequest();
+x.open('GET', '/held/flight.txt?e');
+x.onload = () => note('xhr e ' + x.responseText);
+x.onerror = () => note('xhr e error');
+x.send();
+fetch('/held-now?a,b,c,d,e').then(r => r.text()).then(t => note('held at once: ' + t.trim()));
+</script>

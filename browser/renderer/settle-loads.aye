@@ -1,0 +1,17 @@
+import net
+import std
+
+let SETTLE_MS: u64 = 5000
+let SETTLE_POLL_MS: i32 = 100
+
+fn settleLoads(r: *mut TabRenderer) !void {
+    let end = std.time.monotonicMs() + SETTLE_MS
+
+    while (net.loadsRunning() || r.landed) && std.time.monotonicMs() < end {
+        if r.landed {
+            try runTimers(r)
+        } else if !pumpRemote(SETTLE_POLL_MS) {
+            return
+        }
+    }
+}

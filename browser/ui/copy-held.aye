@@ -1,0 +1,15 @@
+import net
+import std.mem.AllocError
+import url.Url
+
+fn copyHeld(h: *mut HeldFetch, target: *Url, req: net.Request) AllocError!void {
+    try h.href.append(target.href)
+    try h.method.append(req.method)
+    try h.referrer.append(req.referrer)
+    try h.top.append(req.top)
+
+    match req.initiator {
+        .Browser => {}
+        .Page { url } => try h.initiator.append(url)
+    }
+}
