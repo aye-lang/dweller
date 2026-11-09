@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+fn startHosted(ui: *mut Ui, c: *mut Conn, k: usize, name: []u8, mcp: bool) AllocError!void {
+    let a = ui.agents.?
+    let sp = try newSpace(ui, 0, -1, text.Builder.init(ui.alloc), mcp, true, name)
+
+    sp.hosted = true
+    sp.paused = a.paused
+    a.space_list[k] = sp
+    c.space = sp
+
+    if try hostTab(ui, sp) |slot| { c.tab = slot.in_space }
+
+    try listsChanged(ui)
+}

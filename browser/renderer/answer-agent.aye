@@ -16,16 +16,29 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, ref_base: u3
     let tmp = arena.allocator()
     var out = text.Builder.init(tmp)
     var answered = id
+    var acted = text.Builder.init(tmp)
 
     agent.carryRefs(s, ref_base)
 
     if r.width > 0 {
         let fresh = s.tab.page != r.page
-        var host = RendererHost { session: s }
+        var host = RendererHost { session: s, paused: r.agent_paused, acted: &mut acted, renderer: r }
 
         s.tab.page = r.page
+        s.tab.scroll = r.scroll_y
+        s.tab.scroll_x = r.scroll_x
+
+        if r.page |p| {
+            if s.tab.href().len == 0 { try s.tab.history.push(p.url.href, 0, null, false) }
+        }
+
         try agent.syncSession(s, r.width as f64 / r.scale, r.height as f64 / r.scale, fresh)
         try agent.serveShared(&mut host, 0, mcp, tmp, line, &mut out)
+
+        if r.page != null && s.tab.page == r.page {
+            r.scroll_x = s.tab.scroll_x
+            r.scroll_y = s.tab.scroll
+        }
     } else {
         try agent.answerLine(s, tmp, line, mcp, &mut out)
     }
@@ -40,6 +53,10 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, ref_base: u3
     if evilTest("agent") { answered += 1 }
 
     r.due = true
+
+    try sendContexts(r)
+
+    if acted.len() > 0 { try send(r.alloc, r.conn, frame, ipc.Message.AgentActed { what: acted.bytes() }) }
 
     try send(r.alloc, r.conn, frame, ipc.Message.AgentReply { id: answered, next_ref: s.next_ref, answer: out.bytes() })
 }

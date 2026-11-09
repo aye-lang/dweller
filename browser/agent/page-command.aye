@@ -1,34 +1,10 @@
 import html
-import std
 import std.mem.Allocator
-import std.text
 
 pub fn pageCommand(tmp: Allocator, line: []u8) ?[]u8 {
-    var failure = ParseFailure { pos: 0, msg: "" }
-    var doc = Json.parse(tmp, line, &mut failure) catch return null
-    defer doc.deinit()
-    let r = doc.root()
-
-    if doc.kind(r) != JKind.Object { return null }
-
-    var cmd = doc.getStr(r, "cmd") orelse ""
-
-    if doc.getStr(r, "method") |method| {
-        if !text.eql(method, "tools/call") { return null }
-
-        let params = doc.get(r, "params") orelse return null
-        let name = doc.getStr(params, "name") orelse return null
-
-        if !text.startsWith(name, "browser_") { return null }
-
-        cmd = name[8..]
-    }
+    let cmd = commandName(tmp, line) orelse return null
 
     if !html.isIn(cmd, PAGE_COMMANDS) || html.isIn(cmd, WINDOW_COMMANDS) { return null }
 
-    let copy = tmp.alloc(0 as u8, cmd.len) catch return null
-
-    std.mem.copy(copy, cmd)
-
-    return copy
+    return cmd
 }

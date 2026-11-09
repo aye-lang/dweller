@@ -1,0 +1,25 @@
+import std.heap.Arena
+import std.mem.AllocError
+
+fn stopHosted(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    let a = ui.agents.?
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    try spaceEvent(ui, sp, "stopped", try spaceField(arena.allocator(), sp.id))
+
+    for s in a.conns {
+        let c = s orelse continue
+
+        let own = c.space orelse continue
+
+        if own != sp { continue }
+
+        c.gone = true
+        c.asked = false
+        c.waiting = false
+        c.pending.clear()
+    }
+
+    if !sp.attached { removeSpace(ui, sp) }
+}

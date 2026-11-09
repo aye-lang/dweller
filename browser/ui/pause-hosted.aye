@@ -1,0 +1,18 @@
+import ipc
+import std.heap.Arena
+import std.mem.AllocError
+
+fn pauseHosted(ui: *mut Ui, sp: *mut Space, on: bool) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    for slot in sp.own_tabs.items() {
+        if slot.process |tp| { try ipc.encode(&mut tp.outbox, 0, ipc.Message.AgentPaused { on: on as u32 }) }
+    }
+
+    var name = "resumed"
+
+    if on { name = "paused" }
+
+    try spaceEvent(ui, sp, name, try spaceField(arena.allocator(), sp.id))
+}

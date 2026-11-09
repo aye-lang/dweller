@@ -1,0 +1,43 @@
+import std.text
+
+test "agent_acted goes from the renderer and agent_paused to it, both round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let acted = try roundTrip(&mut out, 3, Message.AgentActed { what: "click button \"OK\" [e3]" })
+
+    match acted.message {
+        .AgentActed { what } => @expect(text.eql(what, "click button \"OK\" [e3]"))
+        _ => @expect(false)
+    }
+
+    let paused = try roundTrip(&mut out, 0, Message.AgentPaused { on: 1 })
+
+    match paused.message {
+        .AgentPaused { on } => @expectEqual(1, on)
+        _ => @expect(false)
+    }
+
+    let asked = try roundTrip(&mut out, 3, Message.AgentWindow { line: "{\"cmd\":\"tabs\"}" })
+
+    match asked.message {
+        .AgentWindow { line } => @expect(text.eql(line, "{\"cmd\":\"tabs\"}"))
+        _ => @expect(false)
+    }
+
+    let told = try roundTrip(&mut out, 3, Message.AgentWindowReply { ok: 1, message: "1 tab", fields: "\"tabs\":[]", detail: "- tab 1" })
+
+    match told.message {
+        .AgentWindowReply { ok, message, fields, detail } => {
+            @expectEqual(1, ok)
+            @expect(text.eql(message, "1 tab") && text.eql(fields, "\"tabs\":[]") && text.eql(detail, "- tab 1"))
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.AgentActed { what: "" }) && !fromRenderer(Message.AgentPaused { on: 0 }))
+    @expect(fromRenderer(Message.AgentWindow { line: "" }) && !fromRenderer(Message.AgentWindowReply { ok: 0, message: "", fields: "", detail: "" }))
+    @expectEqual(70, Message.AgentActed { what: "" }.kind())
+    @expectEqual(71, Message.AgentPaused { on: 0 }.kind())
+}

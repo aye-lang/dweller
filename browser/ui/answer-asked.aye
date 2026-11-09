@@ -18,6 +18,7 @@ fn answerAsked(ui: *mut Ui, conn: usize) AllocError!void {
     }
 
     if tp.agent_id != 0 && tp.agent_conn == conn { return }
+    if tp.answered && tp.agent_conn == conn && opensPending(c, tp) { return }
 
     c.asked = false
 
@@ -25,11 +26,15 @@ fn answerAsked(ui: *mut Ui, conn: usize) AllocError!void {
 
     tp.answered = false
 
+    try hostedAnswered(ui, c, tp)
+
     if tp.answer.len() > 0 {
         try tp.answer.appendByte('\n')
 
         if !sendAll(c.fd, tp.answer.bytes()) { c.gone = true }
     }
+
+    if hostedSpace(c) != null { try resumeScript(ui) }
 
     ui.dirty = true
 }

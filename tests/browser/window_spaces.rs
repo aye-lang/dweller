@@ -2,7 +2,7 @@ use super::*;
 
 // Runs one session of `window_spaces`: what the agent got, then `--- window` and the
 // window's state without `loop_max_ms` (it varies).
-fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
+fn window_agent_session(input: &Path, n: usize, env: &[(&str, &str)]) -> Result<String, String> {
     use std::io::{Read, Write};
     use std::process::Stdio;
     use std::time::{Duration, Instant};
@@ -24,6 +24,7 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
     }
     let mut window = dweller_command()
         .current_dir(root())
+        .envs(env.iter().copied())
         .args(&args)
         .spawn_drained();
     let start = Instant::now();
@@ -103,17 +104,27 @@ fn window_agent_session(input: &Path, n: usize) -> Result<String, String> {
 }
 
 /// The Spaces the window `pid` started and that still run (`pgrep` on
-/// their sockets' directories, `/tmp/dweller-PID-*`).
+/// their sockets' directories, `/tmp/dweller-PID-*`), or with hosted
+/// Spaces (`HOSTED`) the window's renderers: each Space of these tests
+/// has one tab, and the person's tab has no renderer.
 fn spaces_of(pid: u32) -> Vec<u32> {
-    let out = Command::new("pgrep")
+    let processes = Command::new("pgrep")
         .args(["-f", &format!("/tmp/dweller-{pid}-")])
         .output()
         .unwrap();
-    text(&out.stdout)
+    let renderers = Command::new("pgrep")
+        .args(["-P", &pid.to_string(), "-f", " --renderer 3 "])
+        .output()
+        .unwrap();
+    text(&processes.stdout)
         .lines()
+        .chain(text(&renderers.stdout).lines())
         .filter_map(|l| l.trim().parse().ok())
         .collect()
 }
+
+// The environment of a window whose Spaces are hosted in it (Q2.12).
+const HOSTED: &[(&str, &str)] = &[("DWELLER_SPACES", "renderer")];
 
 /// After the window `pid` exited: none of its Spaces runs (within 5 s),
 /// and their sockets' directories are gone.
@@ -158,6 +169,20 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
 /// `wait` took.
 #[test]
 fn window_spaces() {
+    window_spaces_with(&[]);
+}
+
+/// Q2.12: with `DWELLER_SPACES=renderer` the window hosts each Space
+/// itself, as a group of tabs whose pages run in renderers (no `dweller
+/// space` process), and every session answers as with a Space process,
+/// but `popup`: a popup opens in a renderer of its own, where its
+/// `opener` is null until openers reach across renderers (Q2.12's card).
+#[test]
+fn window_spaces_in_renderer() {
+    window_spaces_with(&[("DWELLER_SPACES", "renderer")]);
+}
+
+fn window_spaces_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -171,6 +196,7 @@ fn window_spaces() {
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        .filter(|p| env.is_empty() || !p.ends_with("popup.jsonl"))
         .collect();
     inputs.sort();
     assert!(
@@ -181,7 +207,7 @@ fn window_spaces() {
     let mut failures = Vec::new();
     for (i, input) in inputs.iter().enumerate() {
         let name = input.file_name().unwrap().to_string_lossy().into_owned();
-        match window_agent_session(input, i) {
+        match window_agent_session(input, i + 100 * env.len(), env) {
             Ok(got) => check_golden(
                 &input.with_extension("out"),
                 &waited_n(&rooted(&got)),
@@ -504,12 +530,22 @@ fn wait_for_spaces(pid: u32, n: usize) {
 /// `space_close` ends the Space. No Space is left after the window.
 #[test]
 fn window_spaces_control() {
+    window_spaces_control_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_control_in_renderer() {
+    window_spaces_control_with(HOSTED);
+}
+
+fn window_spaces_control_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/sockets/spaces-control-{}.sock", std::process::id());
-    let window = spaces_window(
+    let sock = format!("target/sockets/spaces-control-{}-{}.sock", std::process::id(), env.len());
+    let window = spaces_window_env(
         &sock,
         &[
             "--spaces",
@@ -517,6 +553,7 @@ fn window_spaces_control() {
             "--events",
             "agents:2 pause:1 agents:5 resume:1 agents:7 stop:2",
         ],
+        env,
     );
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
@@ -656,6 +693,16 @@ fn answers(conn: &mut AgentConn, script: &[&str]) -> Vec<String> {
 /// and the person's tab strip still shows one tab.
 #[test]
 fn window_spaces_parallel() {
+    window_spaces_parallel_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_parallel_in_renderer() {
+    window_spaces_parallel_with(HOSTED);
+}
+
+fn window_spaces_parallel_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -664,8 +711,8 @@ fn window_spaces_parallel() {
         .iter()
         .enumerate()
         .map(|(i, (name, script))| {
-            let sock = format!("target/sockets/spaces-alone{i}-{}.sock", std::process::id());
-            let window = spaces_window(&sock, &[]);
+            let sock = format!("target/sockets/spaces-alone{i}-{}-{}.sock", std::process::id(), env.len());
+            let window = spaces_window_env(&sock, &[], env);
             let got = answers(&mut named_conn(&sock, name), script);
             let out = window.wait_with_output().unwrap();
             assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
@@ -673,8 +720,8 @@ fn window_spaces_parallel() {
             got
         })
         .collect();
-    let sock = format!("target/sockets/spaces-parallel-{}.sock", std::process::id());
-    let window = spaces_window(&sock, &["--state", "--events", "agents:9 pause:2"]);
+    let sock = format!("target/sockets/spaces-parallel-{}-{}.sock", std::process::id(), env.len());
+    let window = spaces_window_env(&sock, &["--state", "--events", "agents:9 pause:2"], env);
     let pid = window.id();
     let mut conns: Vec<AgentConn> = PARALLEL_SCRIPTS
         .iter()
@@ -717,6 +764,16 @@ fn window_spaces_parallel() {
 /// what it sets reaches Alpha and not Iso.
 #[test]
 fn window_spaces_logins() {
+    window_spaces_logins_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_logins_in_renderer() {
+    window_spaces_logins_with(HOSTED);
+}
+
+fn window_spaces_logins_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -726,15 +783,16 @@ fn window_spaces_logins() {
         return;
     };
     let base = &srv.base;
-    let sock = format!("target/sockets/spaces-logins-{}.sock", std::process::id());
+    let sock = format!("target/sockets/spaces-logins-{}-{}.sock", std::process::id(), env.len());
     let events = format!(
         "agents:8 key:cmd+l {} key:return",
         typed(&format!("{base}/login/shared.html"))
     );
     let start = format!("{base}/net/start");
-    let window = spaces_window(
+    let window = spaces_window_env(
         &sock,
         &["--spaces", "--state", "--text", "--events", &events, &start],
+        env,
     );
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
@@ -816,6 +874,16 @@ fn window_spaces_logins() {
 /// is `browser/tests/ui/spaces_chips.png` (`DWELLER_BLESS=1` rewrites it).
 #[test]
 fn window_spaces_chips() {
+    window_spaces_chips_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_chips_in_renderer() {
+    window_spaces_chips_with(HOSTED);
+}
+
+fn window_spaces_chips_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -837,15 +905,15 @@ fn window_spaces_chips() {
     // With --font fixed in 800 px, the chips are You 503-536, Alpha
     // 541-599, Beta 604-656, Gamma 661-719 (y 9-31); a menu's items are
     // 24 px from y 38, under its chip. Without Gamma, Beta is 667-719.
-    let sock = format!("target/sockets/spaces-chips-{}.sock", std::process::id());
-    let png = scratch().join("spaces_chips.png");
+    let sock = format!("target/sockets/spaces-chips-{}-{}.sock", std::process::id(), env.len());
+    let png = scratch().join(format!("spaces_chips{}.png", env.len()));
     let events = "wheel:-3 agents:3 click:570,20 click:560,50 \
                   agents:6 click:690,20 click:680,74 \
                   agents:8 move:690,20 key:cmd+q";
     let window = spaces_window_env(
         &sock,
         &["--spaces", "--state", "--save", png.to_str().unwrap(), "--events", events, &page],
-        &[("DWELLER_TIMING", "1")],
+        &[env, &[("DWELLER_TIMING", "1")]].concat(),
     );
     let pid = window.id();
     // The records are read as they come (`spaces_window`).
@@ -948,18 +1016,29 @@ fn window_spaces_chips() {
 /// on; handing back (`handback:1`) sends `handed_back` and Alpha acts again.
 #[test]
 fn window_spaces_takeover() {
+    window_spaces_takeover_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_takeover_in_renderer() {
+    window_spaces_takeover_with(HOSTED);
+}
+
+fn window_spaces_takeover_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/sockets/spaces-takeover-{}.sock", std::process::id());
-    let window = spaces_window(
+    let sock = format!("target/sockets/spaces-takeover-{}-{}.sock", std::process::id(), env.len());
+    let window = spaces_window_env(
         &sock,
         &[
             "--spaces",
             "--events",
             "agents:2 click:690,20 key:escape click:700,500 agents:5 handback:1",
         ],
+        env,
     );
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
@@ -1003,16 +1082,26 @@ fn window_spaces_takeover() {
 /// on the Space (`loop_max_ms` under 50).
 #[test]
 fn window_spaces_watch() {
+    window_spaces_watch_with(&[]);
+}
+
+/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
+#[test]
+fn window_spaces_watch_in_renderer() {
+    window_spaces_watch_with(HOSTED);
+}
+
+fn window_spaces_watch_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
     let green = scratch().join("green.html");
     std::fs::write(&green, "<body style=\"background:#00aa00\">green</body>").unwrap();
-    let sock = format!("target/sockets/spaces-watch-{}.sock", std::process::id());
-    let png = scratch().join("spaces_watch.png");
+    let sock = format!("target/sockets/spaces-watch-{}-{}.sock", std::process::id(), env.len());
+    let png = scratch().join(format!("spaces_watch{}.png", env.len()));
     // With --font fixed in 800 px, Alpha's chip is 661-719 (y 9-31).
-    let window = spaces_window(
+    let window = spaces_window_env(
         &sock,
         &[
             "--spaces",
@@ -1023,6 +1112,7 @@ fn window_spaces_watch() {
             "agents:1 click:690,20 key:escape agents:2 key:cmd+q",
             "browser/tests/ui/long.html",
         ],
+        env,
     );
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
@@ -1080,4 +1170,72 @@ print(raw[i], raw[i + 1], raw[i + 2])
     };
     assert!(py.status.success(), "{}", text(&py.stderr));
     assert_eq!(text(&py.stdout), "0 170 0\n", "the centre of the page area");
+}
+
+/// Q2.12: a hosted Space's page runs in a renderer like a tab's (Q2.4c,
+/// Q2.8b): with a profile, the window starts no `dweller space` process;
+/// the Space's renderer, which shows a page that uses `document.cookie`
+/// and `localStorage` over http, holds no file of the profile open and
+/// no regular file but the binary and system libraries; it runs under
+/// seccomp (Linux: `Seccomp: 2`), and its sandbox probe
+/// (`DWELLER_TEST_SANDBOX_PROBE=1`) finds the profile, /tmp, TCP and fork
+/// refused.
+#[test]
+fn window_spaces_renderer_sandboxed() {
+    if !has_sdl() || !cfg!(any(target_os = "macos", target_os = "linux")) {
+        println!("skipped: macOS or Linux with SDL2 only");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let home = profile("q212-home");
+    let dir = home.join(".dweller");
+    std::fs::create_dir_all(&dir).unwrap();
+    let dir_text = dir.canonicalize().unwrap().to_str().unwrap().to_string();
+    let sock = format!("target/sockets/q212-{}.sock", std::process::id());
+    let envs = [
+        HOSTED[0],
+        ("HOME", home.to_str().unwrap()),
+        ("DWELLER_PROFILE", dir.to_str().unwrap()),
+        ("DWELLER_TEST", "1"),
+        ("DWELLER_TEST_SANDBOX_PROBE", "1"),
+    ];
+    let window = spaces_window_env(&sock, &[], &envs);
+    let pid = window.id();
+    let mut conn = AgentConn::open(&sock);
+    let page = format!("{}/storage/script-cookies.html", srv.base);
+    let (got, _) = conn.ask(&format!("{{\"id\":1,\"cmd\":\"navigate\",\"url\":{}}}", serde_like(&page)));
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let used = "(localStorage.setItem('q212', 'kept'), localStorage.getItem('q212') + ' ' + document.cookie)";
+    let (got, _) = conn.ask(&format!("{{\"id\":2,\"cmd\":\"eval\",\"expression\":{}}}", serde_like(used)));
+    assert!(got.contains("kept js=1"), "{got}");
+    let processes = Command::new("pgrep").args(["-f", &format!("/tmp/dweller-{pid}-")]).output().unwrap();
+    assert!(text(&processes.stdout).is_empty(), "a Space process: {}", text(&processes.stdout));
+    let renderers: Vec<String> = spaces_of(pid).iter().map(|p| p.to_string()).collect();
+    assert!(!renderers.is_empty(), "no renderer for the Space");
+    let exe = dweller().canonicalize().unwrap();
+    let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
+    for r in &renderers {
+        let files = crate::window_renderer::open_files(r);
+        assert!(!files.is_empty(), "no open files listed for {r}");
+        for (fd, regular, name) in &files {
+            assert!(!name.starts_with(&dir_text), "renderer {r} holds {name} (fd {fd}) of the profile");
+            let allowed = !regular || fd == "txt" || Path::new(name) == exe || system.iter().any(|s| name.starts_with(s));
+            assert!(allowed, "renderer {r} holds the regular file {name} (fd {fd}): {files:?}");
+        }
+        if cfg!(target_os = "linux") {
+            let status = std::fs::read_to_string(format!("/proc/{r}/status")).unwrap();
+            assert!(status.contains("\nSeccomp:\t2\n"), "renderer {r} is not under seccomp:\n{status}");
+        }
+    }
+    drop(conn);
+    let out = window.wait_with_output().unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "the window: {}\n{err}", out.status);
+    let denied = ["sandbox-probe home=1 tmp=1 tcp=1 fork=1\n", "sandbox-probe home=13 tmp=1 tcp=1 fork=1\n"];
+    assert!(denied.iter().any(|d| err.contains(d)), "{err}");
+    assert!(dir.join("storage").exists() || dir.join("cookies").exists(), "the browser kept nothing in the profile");
+    no_spaces_left(pid).unwrap();
 }

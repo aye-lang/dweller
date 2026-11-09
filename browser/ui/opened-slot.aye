@@ -7,6 +7,20 @@ fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u
         for i in 0..ui.count {
             if ui.slots[i].?.id == o.tab { return ui.slots[i] }
         }
+
+        if spaceOfSlot(ui, opener) |sp| {
+            for t in sp.own_tabs.items() {
+                if t.id == o.tab { return t }
+            }
+        }
+    }
+
+    if spaceOfSlot(ui, opener) |sp| {
+        let hosted = (try hostTab(ui, sp)) orelse return null
+
+        try tp.opened.append(Opened { context: context, tab: hosted.id })
+
+        return hosted
     }
 
     let i = (try openTab(ui, !opener.agent)) orelse return null

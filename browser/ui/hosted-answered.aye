@@ -1,0 +1,13 @@
+import perf
+import std.mem.AllocError
+
+fn hostedAnswered(ui: *mut Ui, c: *mut Conn, tp: *mut TabProcess) AllocError!void {
+    let sp = hostedSpace(c) orelse return
+
+    if tp.acted.len() > 0 && !c.asked_wait { try spaceActed(ui, sp, tp.acted.bytes()) }
+
+    tp.acted.clear()
+    c.asked_wait = false
+    ui.agents.?.served += 1
+    perf.end("ui_space_answer", perf.start(), sp.name.bytes())
+}

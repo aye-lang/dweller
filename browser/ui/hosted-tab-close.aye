@@ -1,0 +1,39 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn hostedTabClose(ui: *mut Ui, c: *mut Conn, sp: *mut Space, tmp: Allocator, doc: *mut agent.Json, args: ?usize, reply: *mut agent.Reply) AllocError!bool {
+    var n = tabNumber(connSlot(ui, c))
+
+    if args |o| {
+        if doc.getNum(o, "tab") |v| {
+            if v < 1.0 || v > 4294967295.0 { return refuse(reply, "no such tab: see \"tabs\"") }
+
+            n = v as u32
+        }
+    }
+
+    let slot = spaceTab(sp, n) orelse return refuse(reply, "no such tab: see \"tabs\"")
+
+    if sp.own_tabs.len() <= 1 { return refuse(reply, "cannot close the last tab") }
+
+    for k, s in sp.own_tabs.items() {
+        if s == slot {
+            _ = sp.own_tabs.orderedRemove(k)
+
+            break
+        }
+    }
+
+    sp.tabs = sp.own_tabs.len() as u32
+
+    if c.tab == n { c.tab = 0 }
+
+    ui.agents.?.dropped = slot
+
+    try spaceActed(ui, sp, "closed a tab")
+
+    reply.message = try tabMessage(tmp, "closed tab ", n)
+
+    return true
+}
