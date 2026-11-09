@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#bcg-switch
+fn leaveGroup(c: *mut BrowsingContext) AllocError!void {
+    let table = bc_table orelse return
+
+    for i in 0..table.items.len() {
+        let other = &mut table.items.items()[i]
+
+        if other.opener == c.id {
+            other.opener = 0
+        }
+    }
+
+    c.opener = 0
+    c.epoch += 1
+    try setContextName(c.id, "")
+}

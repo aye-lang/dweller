@@ -873,6 +873,47 @@ fn window_renderer_sites() {
     }
 }
 
+/// Q3.10: with `DWELLER_PROCESS=tab`, a same-site navigation to a document
+/// whose Cross-Origin-Opener-Policy does not match the current one
+/// (`/coop/same-origin/...`) commits in a new renderer; the next one with
+/// the same policy and origin stays in it.
+#[test]
+fn window_renderer_coop() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/coop_nav.html", srv.base);
+    let run = |events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let pids = |state: &str| -> usize {
+        let line = state.lines().find(|l| l.starts_with("renderer-pids ")).unwrap_or("");
+        line.split(' ').skip(1).count()
+    };
+
+    let state = run("renderer:loaded click:50,62 renderer:input renderer:loaded");
+    assert!(state.contains(" title /coop/same-origin/ui/coop_nav.html\n"), "{state}");
+    assert_eq!(pids(&state), 2, "a COOP mismatch swaps the renderer:\n{state}");
+
+    let state = run("renderer:loaded click:50,62 renderer:input renderer:loaded click:50,62 renderer:input renderer:loaded");
+    assert!(state.contains(" title /coop/same-origin/ui/coop_nav.html?again\n"), "{state}");
+    assert_eq!(pids(&state), 2, "the same policy and origin keep the renderer:\n{state}");
+}
+
 /// Q2.7: with `DWELLER_PROCESS=tab` and `DWELLER_TEST=1`, the renderer
 /// of the second tab acts compromised (`DWELLER_TEST_EVIL`) and sends one
 /// forged message about another site: a cross-site frame's cookies

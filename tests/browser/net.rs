@@ -1367,3 +1367,34 @@ fn nosniff_script_style() {
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// A popup whose Cross-Origin-Opener-Policy does not match its opener's
+/// leaves the browsing context group (Q3.10): its `window.opener` is null
+/// and the opener's handle is closed. `/coop/POLICY/NAME` serves a file
+/// with the header; the opener page is loaded without one, with
+/// `same-origin` and with `same-origin-allow-popups`. (`coop-opener.html`
+/// must print `coop-none.txt`, `coop-same-origin.txt`,
+/// `coop-allow-popups.txt`.)
+#[test]
+fn coop_popups() {
+    let mut failures = Vec::new();
+    for (path, golden) in [
+        ("net/coop-opener.html", "coop-none.txt"),
+        ("coop/same-origin/net/coop-opener.html", "coop-same-origin.txt"),
+        ("coop/same-origin-allow-popups/net/coop-opener.html", "coop-allow-popups.txt"),
+    ] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let out = run(&["dump", "--text", "--js", &format!("{}/{path}", srv.base)]);
+        assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+        check_golden(
+            &root().join("browser/tests/net").join(golden),
+            &text(&out.stdout),
+            golden,
+            &mut failures,
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

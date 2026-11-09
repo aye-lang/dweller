@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies
+fn coopSwapsTab(tp: *mut TabProcess, res: *net.Response, href: []u8) AllocError!bool {
+    if tp.top.len() == 0 { return false }
+
+    let from = url.parse(tp.url.alloc, tp.top.bytes()) catch return false
+    defer from.deinit(tp.url.alloc)
+
+    let to = url.parse(tp.url.alloc, href) catch return false
+    defer to.deinit(tp.url.alloc)
+
+    return net.coopSwaps(tp.coop, net.sameOrigin(&from, &to), false, net.parseCoop(res.headers_raw))
+}

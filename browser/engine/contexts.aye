@@ -50,6 +50,7 @@ pub struct BrowsingContext {
     // Without a window: the tab the engine keeps it in (`pumpContexts`).
     own: ?*mut Tab
     popup_sandbox: u32
+    epoch: u32 = 0
 }
 
 /// What a request asks of the front end.
@@ -214,6 +215,7 @@ fn attachLoading(p: *mut Page) AllocError!void {
         id = try addContext(p.alloc, true)
     }
     let c = contextOf(id).?
+    try applyCoop(c, p)
     try resetWindowName(c, p)
     c.page = p
     p.context = id

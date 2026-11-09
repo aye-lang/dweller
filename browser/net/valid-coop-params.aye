@@ -1,0 +1,36 @@
+// https://httpwg.org/specs/rfc8941.html#parse-param
+fn validCoopParams(params: []u8) bool {
+    var rest = params
+
+    while rest.len > 0 {
+        if rest[0] != ';' {
+            return false
+        }
+
+        rest = rest[1..]
+
+        while rest.len > 0 && rest[0] == ' ' {
+            rest = rest[1..]
+        }
+
+        let key = paramKeyLength(rest)
+
+        if key == 0 {
+            return false
+        }
+
+        rest = rest[key..]
+
+        if rest.len > 0 && rest[0] == '=' {
+            let item = bareItemLength(rest[1..])
+
+            if item == 0 {
+                return false
+            }
+
+            rest = rest[1 + item..]
+        }
+    }
+
+    return true
+}
