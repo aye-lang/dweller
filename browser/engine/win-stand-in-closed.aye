@@ -1,0 +1,16 @@
+import js
+import js.Interp
+import js.Value
+
+fn standInClosed(it: *mut Interp, v: Value) bool {
+    let o = js.objectOf(v)
+
+    if o == js.NONE {
+        return false
+    }
+
+    return match it.heap.obj(o).data {
+        .Host { tag, index, generation } => tag == TAG_WINDOW && generation >= 1 && contextAt(index, generation) == null
+        _ => false
+    }
+}

@@ -9,7 +9,9 @@ fn takesSwap(tp: *mut TabProcess, res: net.Response, href: []u8) AllocError!bool
 
     try writeSite(href, &mut site)
 
-    if site.len() == 0 || text.eql(site.bytes(), tp.site.bytes()) { return false }
+    if site.len() == 0 { return false }
+
+    if tp.site.len() > 0 && text.eql(site.bytes(), tp.site.bytes()) && !(try coopSwapsTab(tp, &res, href)) { return false }
 
     if tp.site.len() == 0 {
         try tp.site.append(site.bytes())

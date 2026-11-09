@@ -105,6 +105,7 @@ pub struct Page {
     header_csp: []u8 = ""
     inherited_csp: usize = 0
     frame_options: net.FrameOptions = net.FrameOptions.Allow
+    coop: net.Coop = net.Coop.UnsafeNone
     opaque: bool
     sandbox: u32
     // Changes the scripts of other pages made to the document (through
@@ -700,6 +701,7 @@ fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding
     p.csp = policy
     p.header_csp = header_csp
     p.frame_options = net.parseFrameOptions(res.headers_raw)
+    p.coop = net.parseCoop(res.headers_raw)
     p.encoding = enc
     p.plain = text.eql(res.mime, "text/plain")
     return p

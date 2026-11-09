@@ -1,0 +1,38 @@
+<!doctype html>
+<title>nosniff</title>
+<pre id="out"></pre>
+<p id="probe">probe</p>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const hits = [];
+function script(name, path) {
+  const el = document.createElement('script');
+  const ended = new Promise(resolve => {
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+  });
+  const before = hits.length;
+  el.src = path;
+  document.head.appendChild(el);
+  return ended.then(ev => log(name + ': ' + ev + ', ran ' + (hits.length > before)));
+}
+function sheet(name, path) {
+  const el = document.createElement('link');
+  el.rel = 'stylesheet';
+  el.href = path;
+  document.head.appendChild(el);
+  const color = getComputedStyle(document.getElementById('probe')).color;
+  el.remove();
+  log(name + ': ' + (color === 'rgb(0, 128, 0)' ? 'applied' : 'not applied'));
+}
+(async () => {
+  await script('script nosniff JavaScript', '/nosniff/net/co.js');
+  await script('script nosniff text/plain', '/nosniff/net/co.txt');
+  await script('script nosniff text/html', '/nosniff/net/orb.html');
+  await script('script text/plain', '/net/co.txt');
+  sheet('sheet nosniff text/css', '/nosniff/net/co.css');
+  sheet('sheet nosniff text/plain', '/nosniff/net/nosniff-sheet.txt');
+  sheet('sheet text/plain', '/net/nosniff-sheet.txt');
+})();
+</script>

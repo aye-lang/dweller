@@ -77,6 +77,7 @@
 #                    one), each $OTHER replaced by URL, and the lines
 #                    "Name: value" of csp/NAME.headers as headers
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
+#   /coop/POLICY/NAME  the file NAME with Cross-Origin-Opener-Policy: POLICY
 #   /cookie-module?acao&acac  a JS module that records the request's
 #                    Cookie header; `acao` echoes Origin in
 #                    Access-Control-Allow-Origin, `acac` adds
@@ -287,6 +288,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.csp_page(path)
         elif path.startswith("/cookie-module?"):
             self.cookie_module()
+        elif path.startswith("/coop/"):
+            policy, _, name = path[len("/coop/"):].partition("/")
+            self.reply_file(name, [("Cross-Origin-Opener-Policy", policy)])
         elif path.startswith("/nosniff/"):
             self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
         elif path.startswith("/held/"):

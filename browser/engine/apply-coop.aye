@@ -1,0 +1,18 @@
+import net
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies
+fn applyCoop(c: *mut BrowsingContext, to: *mut Page) AllocError!void {
+    var from = c.page
+    let initial = from == null
+
+    if initial {
+        from = contextPage(c.opener)
+    }
+
+    let before = from orelse return
+
+    if net.coopSwaps(before.coop, sameOrigin(before, to), initial, to.coop) {
+        try leaveGroup(c)
+    }
+}

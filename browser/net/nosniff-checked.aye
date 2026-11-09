@@ -1,0 +1,12 @@
+import std.mem.Allocator
+import url.Url
+
+fn nosniffChecked(alloc: Allocator, req: Request, target: *Url, res: Response) FetchError!Response {
+    if !nosniffBlocked(req, &res) {
+        return res
+    }
+
+    res.deinit(alloc)
+
+    return blocked(req, target.href)
+}

@@ -198,16 +198,19 @@ fn contextValue(s: *mut Script, id: u32) JsError!Value {
             return js.objVal(it.global)
         }
     }
-    if s.windows.get(id | CONTEXT_KEY) |r| {
+    let epoch = (contextOf(id) orelse return Value.Null).epoch
+    let key = id | CONTEXT_KEY | (epoch << 24)
+
+    if s.windows.get(key) |r| {
         return it.roots.items()[r]
     }
     var proto = s.window_proto
     if proto == js.NONE {
         proto = it.object_proto
     }
-    let o = try it.newHostObject(proto, TAG_WINDOW, id, 1)
+    let o = try it.newHostObject(proto, TAG_WINDOW, id, epoch + 1)
     let r = try it.addRoot(js.objVal(o))
-    try s.windows.put(id | CONTEXT_KEY, r)
+    try s.windows.put(key, r)
     return js.objVal(o)
 }
 
@@ -232,8 +235,8 @@ fn winPage(it: *mut Interp, v: Value) ?*mut Page {
     match it.heap.obj(o).data {
         .Host { tag, index, generation } => {
             if tag == TAG_WINDOW {
-                if generation == 1 {
-                    return contextPage(index)
+                if generation >= 1 {
+                    return (contextAt(index, generation) orelse return null).page
                 }
                 return findPage(s.page, index)
             }
@@ -547,8 +550,8 @@ fn winContext(it: *mut Interp, v: Value) u32 {
     }
     match it.heap.obj(o).data {
         .Host { tag, index, generation } => {
-            if tag == TAG_WINDOW && generation == 1 {
-                return index
+            if tag == TAG_WINDOW && generation >= 1 {
+                return (contextAt(index, generation) orelse return 0).id
             }
         }
         _ => {}
@@ -562,6 +565,10 @@ fn winContext(it: *mut Interp, v: Value) u32 {
 }
 
 fn akWinClosed(it: *mut Interp, a: Args) JsError!Value {
+    if standInClosed(it, it.arg(a, 0)) {
+        return js.boolVal(true)
+    }
+
     let id = winContext(it, it.arg(a, 0))
     if id != 0 {
         return js.boolVal(contextOf(id) == null)

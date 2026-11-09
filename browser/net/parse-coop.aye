@@ -1,0 +1,21 @@
+import std.text
+
+// chromium: services/network/public/cpp/cross_origin_opener_policy_parser.cc ParseCrossOriginOpenerPolicy
+pub fn parseCoop(headers: []u8) Coop {
+    var lines = text.split(headers, "\n")
+    var value: ?[]u8 = null
+
+    while lines.next() |line| {
+        if !text.eqlIgnoreCase(headerName(line), "Cross-Origin-Opener-Policy") {
+            continue
+        }
+
+        if value != null {
+            return Coop.UnsafeNone
+        }
+
+        value = headerText(line)
+    }
+
+    return coopOfToken(value orelse return Coop.UnsafeNone)
+}

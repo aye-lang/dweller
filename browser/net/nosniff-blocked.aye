@@ -1,0 +1,15 @@
+import std.text
+
+// spec: https://fetch.spec.whatwg.org/#should-response-to-request-be-blocked-due-to-nosniff?
+fn nosniffBlocked(req: Request, res: *Response) bool {
+    if !nosniff(res.headers_raw) {
+        return false
+    }
+
+    return match req.kind {
+        .Script => !javascriptMime(res.mime)
+        .Worker => !javascriptMime(res.mime)
+        .Style => !text.eql(res.mime, "text/css")
+        _ => false
+    }
+}
