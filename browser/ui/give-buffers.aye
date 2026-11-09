@@ -2,9 +2,7 @@ import ipc
 import std.mem.AllocError
 import std.text
 
-fn giveBuffers(ui: *mut Ui, slot: *TabSlot, tp: *mut TabProcess) AllocError!void {
-    let w = ui.page.canvas.width as u32
-    let h = ui.page.canvas.height as u32
+fn giveBuffers(ui: *mut Ui, tp: *mut TabProcess, w: u32, h: u32) AllocError!void {
     let size = w as usize * h as usize * 4
 
     if !tp.hello || tp.gone.len > 0 || tp.outbox.len() > 0 || size == 0 { return }
@@ -22,7 +20,7 @@ fn giveBuffers(ui: *mut Ui, slot: *TabSlot, tp: *mut TabProcess) AllocError!void
     defer out.deinit()
     var sent: isize = -1
 
-    try ipc.encode(&mut out, slot.id, ipc.Message.Resize { width: w, height: h, scale: ui.scale, buffer: tp.buffers.next })
+    try ipc.encode(&mut out, tp.tab, ipc.Message.Resize { width: w, height: h, scale: ui.scale, buffer: tp.buffers.next })
 
     if maps[0] != null && maps[1] != null {
         sent = try ipc.sendFds(ui.alloc, tp.fd, out.bytes(), fds[..])

@@ -1,0 +1,22 @@
+import engine
+import ipc
+import pageview
+import std.text
+
+fn reportSubframes(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    var out = text.Builder.init(r.alloc)
+    defer out.deinit()
+    let all = [4]f64{0.0, 0.0, r.width as f64, r.height as f64}
+    let ox = -pageview.snappedScroll(r.scroll_x, r.scale) * r.scale
+    let oy = -pageview.snappedScroll(r.scroll_y, r.scale) * r.scale
+
+    try putRemoteFrames(r, &mut out, p, ox, oy, all)
+
+    if evilTest("subframes") { try ipc.putSubframe(&mut out, ipc.Subframe { key: 1, x: 0.0, y: 0.0, width: 1, height: 1, clip: [4]u32{0, 0, 0, 0}, url: r.href.bytes() }) }
+
+    if text.eql(out.bytes(), r.subframes.bytes()) { return }
+
+    r.subframes.clear()
+    try r.subframes.append(out.bytes())
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Subframes { frames: out.bytes() })
+}

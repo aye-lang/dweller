@@ -222,7 +222,7 @@ fn startFrameLoads(p: *mut Page) AllocError!void {
             continue
         }
         defer target.deinit(p.alloc)
-        if !net.liveRequest(&target) {
+        if !net.liveRequest(&target) || remoteFrame(p, &target) {
             continue
         }
         let href = try p.alloc.alloc(0 as u8, target.href.len)
@@ -308,7 +308,9 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
             child = try sourcePage(p, "about:blank", "")
         } else if p.resolve(p.alloc, src) |target| {
             defer target.deinit(p.alloc)
-            if takeFrameLoad(p, target.href) |id| {
+            if remoteFrame(p, &target) {
+                child = try remotePage(p, &target)
+            } else if takeFrameLoad(p, target.href) |id| {
                 defer net.releaseLoad(id)
                 if net.requestResponse(id) |res| {
                     child = try pageOf(p.alloc, &target, res, p.encoding)
@@ -350,6 +352,9 @@ fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
         if p.doc.attr(el, "sandbox") |v| {
             flags |= parseSandbox(v)
         }
+    }
+    if c.remote {
+        flags |= SB_ORIGIN | SB_SCRIPTS
     }
     setSandbox(c, flags)
 }
@@ -560,6 +565,9 @@ pub fn slotPage(slot: FrameSlot) *mut Page {
 /// the old document): lay the tab's page out again.
 pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator: net.Initiator) AllocError!void {
     let p = slot.parent
+    if remoteFrame(p, target) {
+        return showInFrame(slot, try remotePage(p, target), null)
+    }
     let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href, initiator)
     return showInFrame(slot, child, null)
 }

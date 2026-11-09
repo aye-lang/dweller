@@ -1,0 +1,18 @@
+fn killRenderer(ui: *Ui, child: bool) {
+    let tp = ui.slots[ui.active].?.process orelse return
+    var pid = tp.pid
+
+    if child {
+        let c = firstChild(tp) orelse return
+
+        pid = c.pid
+    }
+
+    kill(pid, SIGKILL)
+}
+
+fn firstChild(tp: *TabProcess) ?*mut TabProcess {
+    if tp.children.len() == 0 { return null }
+
+    return tp.children.items()[0].tp
+}

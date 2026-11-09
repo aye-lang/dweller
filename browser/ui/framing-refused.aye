@@ -1,0 +1,32 @@
+import csp
+import net
+import std.mem.AllocError
+import std.text
+import url
+
+// chromium: content/browser/renderer_host/ancestor_throttle.cc
+fn framingRefused(tp: *TabProcess, res: *net.Response, href: []u8) AllocError!bool {
+    let alloc = tp.url.alloc
+    let response = url.parse(alloc, href) catch return true
+    defer response.deinit(alloc)
+    var policy = text.Builder.init(alloc)
+    defer policy.deinit()
+
+    try net.appendHeaderValues(res.headers_raw, "Content-Security-Policy", &mut policy)
+
+    let options = net.parseFrameOptions(res.headers_raw)
+    let ancestors = csp.hasFrameAncestors(policy.bytes())
+    var up = tp.embedder
+
+    while up |e| {
+        up = e.embedder
+
+        let at = url.parse(alloc, e.committed.bytes()) catch return true
+        defer at.deinit(alloc)
+
+        if ancestors && csp.frameAncestorsRefusal(policy.bytes(), &at, false, &response) != null { return true }
+        if !ancestors && options == net.FrameOptions.SameOrigin && !net.sameOrigin(&at, &response) { return true }
+    }
+
+    return !ancestors && (options == net.FrameOptions.Deny || options == net.FrameOptions.Conflict)
+}

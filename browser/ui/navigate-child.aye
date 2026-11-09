@@ -1,0 +1,15 @@
+import ipc
+import std.mem.AllocError
+
+fn navigateChild(tp: *mut TabProcess, href: []u8, referrer: []u8, post: u32, content_type: []u8, body: []u8) AllocError!void {
+    tp.url.clear()
+    try tp.url.append(href)
+    tp.committed.clear()
+    try tp.committed.append(href)
+    tp.nav_initiator.clear()
+    try tp.nav_initiator.append(referrer)
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Navigate { url: href, post: post, content_type: content_type, body: body })
+    tp.loading = true
+    tp.redirected = false
+    tp.nav_failed = false
+}

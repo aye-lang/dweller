@@ -1,0 +1,19 @@
+import net
+import std.text
+import url.Url
+
+var site_frames: bool = false
+
+pub fn setSiteFrames(on: bool) {
+    site_frames = on
+}
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc (a cross-site subframe gets a RenderFrameProxyHost)
+fn remoteFrame(p: *mut Page, target: *Url) bool {
+    let top = &rootPage(p).url
+    let web = text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
+
+    if !site_frames || !web || target.host.len == 0 { return false }
+
+    return !text.eql(target.scheme, top.scheme) || !net.sameSite(top, target)
+}

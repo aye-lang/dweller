@@ -1,0 +1,30 @@
+import engine
+import ipc
+import std.math
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame_view.cc (PropagateFrameRectsInternal)
+fn putRemoteFrames(r: *TabRenderer, out: *mut text.Builder, p: *mut engine.Page, ox: f64, oy: f64, clip: [4]f64) AllocError!void {
+    for k in 0..p.frames.len() {
+        let f = p.frames.items()[k]
+        let at = engine.frameRect(p, k) orelse continue
+        let x = ox + math.floor(at.x * r.scale + 0.5)
+        let y = oy + math.floor(at.y * r.scale + 0.5)
+        let w = math.floor(at.w * r.scale + 0.5)
+        let h = math.floor(at.h * r.scale + 0.5)
+        let inner = [4]f64{math.max(clip[0], x), math.max(clip[1], y), math.min(clip[2], x + w), math.min(clip[3], y + h)}
+
+        if !f.page.remote {
+            try putRemoteFrames(r, out, f.page, x, y - math.floor(f.scroll * r.scale + 0.5), inner)
+        } else if w >= 1.0 && h >= 1.0 {
+            try ipc.putSubframe(out, ipc.Subframe { key: f.page.id, x: x, y: y, width: w as u32, height: h as u32, clip: shownClip(inner), url: f.page.url.href })
+        }
+    }
+}
+
+fn shownClip(c: [4]f64) [4]u32 {
+    if c[0] >= c[2] || c[1] >= c[3] { return [4]u32{0, 0, 0, 0} }
+
+    return [4]u32{c[0] as u32, c[1] as u32, c[2] as u32, c[3] as u32}
+}

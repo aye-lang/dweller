@@ -1,27 +1,11 @@
 import paint
-import std
-import std.math
 
 fn copyTabFrame(ui: *mut Ui, r: paint.IRect) {
     let tp = ui.slots[ui.active].?.process orelse return
-    let b = &tp.buffers
 
-    if b.shown < b.first { return }
+    copyShown(ui, tp, r, 0, 0)
 
-    let map = tp.maps[b.shown - b.first] orelse return
-    let pd = &mut ui.page
-    let h = pd.canvas.height as i64
-    let x1 = math.minOf(i64, r.x1, math.minOf(i64, b.width as i64, pd.canvas.width as i64))
-    let y1 = math.minOf(i64, r.y1, math.minOf(i64, b.height as i64, h))
+    let all = paint.IRect { x0: 0, y0: 0, x1: ui.page.canvas.width as i64, y1: ui.page.canvas.height as i64 }
 
-    if x1 <= r.x0 { return }
-
-    let n = (x1 - r.x0) as usize * 4
-
-    for y in r.y0..y1 {
-        let from = (y as usize * b.width as usize + r.x0 as usize) * 4
-        let to = (((y + pd.ring) % h) as usize * pd.canvas.width + r.x0 as usize) * 4
-
-        std.mem.copy(pd.canvas.pixels[to..to + n], map[from..from + n])
-    }
+    copyChildFrames(ui, tp, r, 0, 0, all)
 }
