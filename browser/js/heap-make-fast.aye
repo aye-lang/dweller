@@ -1,0 +1,32 @@
+// v8: src/objects/js-objects.cc (JSObject::MakePrototypesFast, JSObject::MigrateSlowToFast)
+
+let MAX_RESHAPES: u8 = 8
+
+fn heapMakeFast(h: *mut Heap, o: u32) {
+    let ob = h.obj(o)
+
+    if ob.shape != NONE || ob.reshapes >= MAX_RESHAPES || ob.nprops >= MAX_SHAPE_PROPS || ob.class == Class.Proxy {
+        return
+    }
+
+    ob.reshapes += 1
+    var shape: u32 = 0
+
+    for i in 0..ob.nprops {
+        shape = shapeTransition(h, shape, ob.props[i].key, i) catch |e| {
+            return
+        }
+
+        if shape == NONE {
+            return
+        }
+    }
+
+    if ob.index |ix| {
+        ix.deinit()
+        h.alloc.destroy(ix)
+        ob.index = null
+    }
+
+    ob.shape = shape
+}

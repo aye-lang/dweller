@@ -1,0 +1,19 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "Inline caches on DOM wrappers and primitives"
+      "\n"
+    <body>
+      <div class="a" id="d1">
+        <span class="s">
+          "x"
+        <p class="p">
+          "y"
+      "\n"
+      <div class="b" id="d2">
+      "\n"
+      <script>
+        "\nconst els = [document.getElementById('d1'), document.getElementById('d2'), document.querySelector('span'), document.querySelector('p')];\n\nfunction classes() {\n  const out = [];\n  for (const e of els) out.push(e.className + ':' + e.nodeType + ':' + e.tagName + ':' + e.constructor.name);\n  return out.join(' ');\n}\n\nfunction warm(f) {\n  let r;\n  for (let i = 0; i < 20; i++) r = f();\n  return r;\n}\n\nconsole.log('before ' + warm(classes));\nconst desc = Object.getOwnPropertyDescriptor(Element.prototype, 'className');\nObject.defineProperty(Element.prototype, 'className', { get() { return 'redefined-' + desc.get.call(this); }, configurable: true });\nconsole.log('redefined ' + warm(classes));\nObject.defineProperty(els[2], 'className', { value: 'own', configurable: true });\nconsole.log('shadowed ' + warm(classes));\ndelete els[2].className;\nObject.defineProperty(Element.prototype, 'className', desc);\nconsole.log('restored ' + warm(classes));\nObject.defineProperty(HTMLDivElement.prototype, 'nodeType', { value: 42, configurable: true });\nconsole.log('div nodeType ' + warm(classes));\ndelete HTMLDivElement.prototype.nodeType;\nObject.setPrototypeOf(els[3], HTMLDivElement.prototype);\nconsole.log('reparented ' + warm(classes));\n\nfunction attrs() {\n  return els.map(e => e.getAttribute('class')).join(' ');\n}\n\nconsole.log('getAttribute ' + warm(attrs));\nconst getAttribute = Element.prototype.getAttribute;\nElement.prototype.getAttribute = function (n) { return 'patched ' + n; };\nconsole.log('getAttribute patched ' + warm(attrs));\nElement.prototype.getAttribute = getAttribute;\nconsole.log('getAttribute restored ' + warm(attrs));\n\nfunction hash(s) {\n  let h = 0;\n  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;\n  return h;\n}\n\nfunction strings() {\n  return [hash('abc'), hash('héllo'), (12).toFixed(1), true.toString(), 'x'.length, 'xy'[1]].join(' ');\n}\n\nconsole.log('strings ' + warm(strings));\nconst charCodeAt = String.prototype.charCodeAt;\nString.prototype.charCodeAt = function (i) { return charCodeAt.call(this, i) + 1; };\nconsole.log('charCodeAt replaced ' + warm(strings));\ndelete String.prototype.charCodeAt;\nObject.prototype.charCodeAt = function () { return 7; };\nconsole.log('charCodeAt from Object.prototype ' + warm(strings));\nString.prototype.charCodeAt = charCodeAt;\ndelete Object.prototype.charCodeAt;\nObject.defineProperty(Number.prototype, 'toFixed', { get() { 'use strict'; return () => typeof this; }, configurable: true });\nconsole.log('toFixed getter ' + warm(strings));\nObject.defineProperty(String.prototype, 'size', { get() { 'use strict'; return typeof this + this.length; }, configurable: true });\nconsole.log('strict getter ' + warm(() => 'abcd'.size));\n"
+      "\n"
