@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
+pub fn shorthandLonghandText(alloc: Allocator, name: []u8, value: []u8, prop: []u8, out: *mut text.Builder) AllocError!bool {
+    let index = propertyIndex(prop) orelse return false
+    var ids = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    let n = shorthandLonghands(name, ids[..])
+
+    if !coversLonghand(ids[..n], index) {
+        return false
+    }
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let comps = try components(&mut sheet, toks.items())
+    let v = try shorthandValue(&mut sheet, name, comps, index) orelse return false
+
+    out.clear()
+    try writeValue(v, out)
+
+    return true
+}

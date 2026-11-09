@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn writeRangePair(item: []Comp, starts: *mut text.Builder, ends: *mut text.Builder) AllocError!bool {
+    let n = rangeStartLength(item)
+
+    if n == 0 || !(try writeRangeLayer(item[..n], false, starts)) {
+        return false
+    }
+
+    if n < item.len {
+        return writeRangeLayer(item[n..], true, ends)
+    }
+
+    try ends.append(identIn(item[0], RANGE_NAMES) orelse "normal")
+
+    return true
+}

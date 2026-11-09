@@ -339,8 +339,16 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         first = TRANSITION_PROPERTY
         n = 5
     } else if text.eql(name, "animation") {
-        first = ANIMATION_NAME
-        n = 8
+        for k in 0..8 {
+            out[k] = ANIMATION_NAME + k
+        }
+        out[8] = ANIMATION_TIMELINE
+        out[9] = ANIMATION_RANGE_START
+        out[10] = ANIMATION_RANGE_END
+        return 11
+    } else if text.eql(name, "animation-range") {
+        first = ANIMATION_RANGE_START
+        n = 2
     } else if text.eql(name, "border") {
         for k in 0..12 {
             out[k] = BORDER_TOP_WIDTH + k
@@ -481,6 +489,9 @@ struct Declarer {
         }
         if text.eql(name, "animation") {
             return addAnimation(self, comps)
+        }
+        if text.eql(name, "animation-range") {
+            return addAnimationRange(self, comps)
         }
         if text.eql(name, "margin") {
             return self.sides(MARGIN_TOP, comps)
@@ -1125,6 +1136,10 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
     if prop == BLOCK_ELLIPSIS {
         return blockEllipsisValue(sheet, comps)
+    }
+
+    if prop == ANIMATION_RANGE_START || prop == ANIMATION_RANGE_END {
+        return animationRangeValue(sheet, prop, comps)
     }
 
     if p.kind == PKind.Raw {

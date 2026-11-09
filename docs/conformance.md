@@ -19,7 +19,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/css-flexbox` | 1422 | 469 | 3653/5816 | 62.8 | 70 | below | +0.0 |
 | `css/css-transforms` | 711 | 156 | 2604/5196 | 50.1 | 50 | done | +0.0 |
 | `css/css-transitions` | 143 | 59 | 1473/3348 | 44.0 | - | baseline | +0.0 |
-| `css/css-animations` | 206 | 91 | 712/1398 | 50.9 | 60 | below | +0.0 |
+| `css/css-animations` | 206 | 91 | 971/1405 | 69.1 | 65 | done | +18.2 |
 | `html/syntax` | 98 | 0 | 2560/2732 | 93.7 | 90 | done | +0.0 |
 | `dom/api` | 467 | 109 | 61380/64996 | 94.4 | 75 | done | +0.0 |
 | `html/webappapis/timers` | 16 | 0 | 20/25 | 80.0 | 70 | done | +0.0 |

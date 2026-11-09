@@ -1,0 +1,34 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/scroll-animations-1/#propdef-animation-range
+fn addAnimationRange(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let props = [2]usize{ANIMATION_RANGE_START, ANIMATION_RANGE_END}
+    var starts = text.Builder.init(d.sheet.arena.allocator())
+    var ends = text.Builder.init(d.sheet.arena.allocator())
+    var start: usize = 0
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    for i in 0..comps.len + 1 {
+        if i < comps.len && !isComma(comps[i]) {
+            continue
+        }
+
+        if start > 0 {
+            try starts.append(", ")
+            try ends.append(", ")
+        }
+
+        if !(try writeRangePair(comps[start..i], &mut starts, &mut ends)) {
+            return
+        }
+
+        start = i + 1
+    }
+
+    try d.add(ANIMATION_RANGE_START, Value.Keyword { k: try starts.toOwned() })
+    try d.add(ANIMATION_RANGE_END, Value.Keyword { k: try ends.toOwned() })
+}
