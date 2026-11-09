@@ -1,0 +1,16 @@
+import std.list.List
+import std.mem.AllocError
+
+fn boxlessFrames(p: *mut Page, keys: *mut List(u32)) AllocError!void {
+    for k in 0..p.frames.len() {
+        let f = p.frames.items()[k]
+
+        if !f.page.remote {
+            try boxlessFrames(f.page, keys)
+        } else if !f.page.remote_loaded {
+            let at = frameRect(p, k) orelse FrameRect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }
+
+            if at.w <= 0.0 || at.h <= 0.0 { try keys.append(f.page.id) }
+        }
+    }
+}

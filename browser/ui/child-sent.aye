@@ -23,6 +23,14 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
             try showCommitted(tp, title, href)
             tp.loading = false
+            tp.stopped = false
+        }
+
+        .LoadStopped => {
+            if !tp.loading && !tp.stopped {
+                tp.stopped = true
+                try tellLoaded(tp)
+            }
         }
 
         .Title { title } => {
@@ -110,6 +118,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .CookieGet { .. }, .CookieSet { .. } => return answerCookie(tp, got.frame, got.message)
         .Storage { .. } => return answerStorage(tp, got.frame, got.message)
         .Subframes { frames } => return takeSubframes(tp, frames)
+        .PostMessage { .. } => return routePostMessage(tp, got.message)
+        .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {
             if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }

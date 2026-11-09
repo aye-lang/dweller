@@ -1,0 +1,23 @@
+import js
+import js.JsError
+import js.Value
+
+// blink: core/frame/remote_dom_window.cc
+fn remoteWindowValue(s: *mut Script, frame: u32, page: u32) JsError!Value {
+    let it = &mut s.it
+
+    for w in s.remote_windows.items() {
+        if w.frame == frame && w.page == page { return it.roots.items()[w.root] }
+    }
+
+    var proto = s.window_proto
+
+    if proto == js.NONE { proto = it.object_proto }
+
+    let o = try it.newHostObject(proto, TAG_REMOTE_WINDOW, frame, page)
+    let root = try it.addRoot(js.objVal(o))
+
+    try s.remote_windows.append(RemoteStandIn { frame: frame, page: page, root: root })
+
+    return js.objVal(o)
+}

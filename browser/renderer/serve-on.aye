@@ -18,12 +18,14 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
     var r = TabRenderer { alloc: alloc, conn: conn, measure: measure, system: system, fds: List(i32).init(alloc), drawn: List(paint.Sig).init(alloc), marks: List(Mark).init(alloc), title: text.Builder.init(alloc), href: text.Builder.init(alloc), target: text.Builder.init(alloc), inbox: text.Builder.init(alloc), current: text.Builder.init(alloc), reply: text.Builder.init(alloc), docs: text.Builder.init(alloc), top: text.Builder.init(alloc), pending: List(*mut PendingFetch).init(alloc), blink: blink, history: engine.SessionHistory.init(alloc), hist_state: text.Builder.init(alloc), said_state: text.Builder.init(alloc), subframes: text.Builder.init(alloc) }
     defer r.deinit()
     defer engine.closeContexts()
+    defer engine.dropFrameOwner(alloc)
     var buf = @zeroed([65536]u8)
 
     watchBusy(&mut r)
     fetchThrough(&mut r) catch return 1
     defer net.stopRemoteLoads()
     storeThrough(&mut r)
+    windowsThrough(&mut r)
 
     send(alloc, conn, 0, ipc.Message.Hello { version: ipc.VERSION, pid: getpid() as u32 }) catch return 1
 

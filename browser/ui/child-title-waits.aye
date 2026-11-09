@@ -1,16 +1,7 @@
 fn childTitleWaits(tp: *TabProcess, ending: []u8) bool {
     let c = firstChild(tp) orelse return true
-    let title = c.title.bytes()
 
     if c.gone.len > 0 { return false }
-    if ending.len > title.len { return true }
 
-    for k in 0..ending.len {
-        let want = ending[k]
-        let got = title[title.len - ending.len + k]
-
-        if got != want && !(want == '_' && got == ' ') { return true }
-    }
-
-    return false
+    return !titleEndsAs(c.title.bytes(), ending)
 }

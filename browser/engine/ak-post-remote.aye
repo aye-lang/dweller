@@ -1,0 +1,47 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+let MAX_REMOTE_MESSAGE: usize = 983040
+
+// blink: core/frame/remote_dom_window.cc (SchedulePostMessage)
+fn akPostRemote(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let to = routeOf(it, it.arg(a, 0)) orelse return Value.Undefined
+    let post = remote_post orelse return Value.Undefined
+    let data = try it.builder()
+    defer it.release(data)
+    let want = try it.builder()
+    defer it.release(want)
+    let target = try it.builder()
+    defer it.release(target)
+    let origin = try it.builder()
+    defer it.release(origin)
+
+    try argText(it, a, 1, data)
+    try argText(it, a, 2, want)
+    try appendOrigin(origin, s.page)
+
+    if !(try remoteTargetOrigin(it, s.page, text.trim(want.bytes()), target)) {
+        s.remote_staged.clear()
+
+        return domError(it, "SyntaxError", "Failed to execute 'postMessage' on 'Window': Invalid target origin in a call to 'postMessage'.")
+    }
+
+    if data.len() + s.remote_staged.len() > MAX_REMOTE_MESSAGE {
+        s.remote_staged.clear()
+
+        return domError(it, "DataCloneError", "Failed to execute 'postMessage' on 'Window': the message is too large.")
+    }
+
+    var source_page: u32 = 0
+
+    if s.page.parent != null { source_page = s.page.id }
+
+    try post(RemotePost { to: to, source_page: source_page, source_origin: origin.bytes(), target_origin: target.bytes(), data: data.bytes(), buffers: s.remote_staged.bytes() })
+    s.remote_staged.clear()
+
+    return Value.Undefined
+}

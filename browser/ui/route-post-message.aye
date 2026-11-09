@@ -1,0 +1,29 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (RouteMessageEvent)
+fn routePostMessage(tp: *mut TabProcess, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .PostMessage { key, frame: id, page, source_page, source_origin, target_origin, data, buffers } => {
+            if !(try originHosted(tp, source_origin)) { return "bad post_message" }
+            if ipc.badBuffers(buffers) || (!text.eql(target_origin, "*") && !(try isOrigin(tp.url.alloc, target_origin))) { return "bad post_message" }
+
+            let to = postTarget(tp, key, id) orelse return ""
+
+            if !(try targetOriginMatches(to, page, target_origin)) { return "" }
+
+            var from_key: u32 = 0
+
+            if source_page == 0 { from_key = childKey(to, tp) }
+
+            let out = ipc.Message.PostedMessage { page: page, from_key: from_key, from_frame: tp.tab, from_page: source_page, origin: source_origin, target_origin: target_origin, data: data, buffers: buffers }
+
+            try ipc.encode(&mut to.outbox, to.tab, out)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

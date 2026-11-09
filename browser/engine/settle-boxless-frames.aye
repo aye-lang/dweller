@@ -1,0 +1,11 @@
+import std.list.List
+import std.mem.AllocError
+
+pub fn settleBoxlessFrames(root: *mut Page) AllocError!void {
+    var keys = List(u32).init(root.alloc)
+    defer keys.deinit()
+
+    try boxlessFrames(root, &mut keys)
+
+    for key in keys.items() { try remoteFrameLoaded(root, key) }
+}

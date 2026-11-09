@@ -22,16 +22,20 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
         c.width = s.width
         c.height = s.height
         c.clip = clip
+        c.holder = s.holder
+        c.sandbox = s.sandbox
+
+        if !text.eql(c.name, s.name) {
+            alloc.free(c.name)
+            c.name = try copied(alloc, s.name)
+        }
 
         return true
     }
 
     if !(try childCrossSite(tp, s.url)) { return false }
 
-    let src = try alloc.alloc(0 as u8, s.url.len)
-
-    std.mem.copy(src, s.url)
-    try tp.children.append(ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: src })
+    try tp.children.append(ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: try copied(alloc, s.url), holder: s.holder, sandbox: s.sandbox, name: try copied(alloc, s.name) })
     tp.whole = true
 
     return true

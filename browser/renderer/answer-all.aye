@@ -50,6 +50,17 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
             .AdvanceFocus { key, reverse } => try advanceFocus(r, key, reverse != 0)
             .ViewportIntersection { x0, y0, x1, y1 } => try takeIntersection(r, [4]u32{x0, y0, x1, y1})
+            .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name } => try engine.setFrameOwner(r.alloc, engine.FrameOwner { parent_frame: parent_frame, parent_page: parent_page, top_frame: top_frame, sandbox: sandbox, name: name })
+            .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers } => {
+                let m = engine.RemoteMessage { page: page, from_key: from_key, from_frame: from_frame, from_page: from_page, origin: origin, target_origin: target_origin, data: data, buffers: buffers }
+
+                if r.page |p| { try engine.deliverRemoteMessage(p, m) }
+            }
+
+            .FrameLoaded { key } => {
+                if r.page |p| { try engine.remoteFrameLoaded(p, key) }
+            }
+
 
             .Key { seq, down, key, code, repeat, location, mods } => {
                 try keyInput(r, down != 0, key, code, repeat, location, mods)

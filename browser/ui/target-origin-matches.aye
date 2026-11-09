@@ -1,0 +1,19 @@
+import net
+import std.mem.AllocError
+import std.text
+
+let SB_ORIGIN: u32 = 32
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (RouteMessageEvent: the target's last committed origin)
+fn targetOriginMatches(to: *mut TabProcess, page: u32, want: []u8) AllocError!bool {
+    if text.eql(want, "*") { return true }
+    if page != 0 { return inSiteLock(to, want) }
+    if to.sandbox & SB_ORIGIN != 0 { return false }
+
+    var have = text.Builder.init(to.url.alloc)
+    defer have.deinit()
+
+    try net.hrefOrigin(to.url.alloc, to.committed.bytes(), &mut have)
+
+    return text.eql(have.bytes(), want)
+}

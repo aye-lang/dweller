@@ -66,6 +66,8 @@ mod window_renderer_loads;
 mod window_renderer_oopif;
 #[path = "browser/window_renderer_oopif_input.rs"]
 mod window_renderer_oopif_input;
+#[path = "browser/window_renderer_oopif_proxy.rs"]
+mod window_renderer_oopif_proxy;
 #[path = "browser/window_renderer_scroll.rs"]
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]

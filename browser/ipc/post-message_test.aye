@@ -1,0 +1,89 @@
+import std.text
+
+test "the window proxy messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let post = try roundTrip(&mut out, 7, Message.PostMessage { key: 0, frame: 9, page: 3, source_page: 0, source_origin: "http://a.test", target_origin: "*", data: "{\"t\":\"u\"}", buffers: "" })
+
+    match post.message {
+        .PostMessage { frame, page, source_origin, target_origin, data, .. } => {
+            @expectEqual(9, frame)
+            @expectEqual(3, page)
+            @expectEqual("http://a.test", source_origin)
+            @expectEqual("*", target_origin)
+            @expectEqual("{\"t\":\"u\"}", data)
+        }
+
+        _ => @expect(false)
+    }
+
+    let posted = try roundTrip(&mut out, 7, Message.PostedMessage { page: 0, from_key: 12, from_frame: 1, from_page: 0, origin: "http://b.test", target_origin: "http://a.test", data: "1", buffers: "\x01\x00\x00\x00x" })
+
+    match posted.message {
+        .PostedMessage { from_key, origin, buffers, .. } => {
+            @expectEqual(12, from_key)
+            @expectEqual("http://b.test", origin)
+            @expectEqual(5, buffers.len)
+        }
+
+        _ => @expect(false)
+    }
+
+    let owner = try roundTrip(&mut out, 7, Message.FrameOwner { parent_frame: 1, parent_page: 4, top_frame: 1, sandbox: 288, name: "f" })
+
+    match owner.message {
+        .FrameOwner { parent_page, sandbox, name, .. } => {
+            @expectEqual(4, parent_page)
+            @expectEqual(288, sandbox)
+            @expectEqual("f", name)
+        }
+
+        _ => @expect(false)
+    }
+
+    let nav = try roundTrip(&mut out, 7, Message.ProxyNavigate { key: 5, frame: 0, page: 0, url: "http://b.test/n" })
+
+    match nav.message {
+        .ProxyNavigate { key, url, .. } => {
+            @expectEqual(5, key)
+            @expectEqual("http://b.test/n", url)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.PostMessage { key: 0, frame: 0, page: 0, source_page: 0, source_origin: "", target_origin: "", data: "", buffers: "" }))
+    @expect(fromRenderer(Message.ProxyNavigate { key: 0, frame: 0, page: 0, url: "" }))
+    @expect(!fromRenderer(Message.PostedMessage { page: 0, from_key: 0, from_frame: 0, from_page: 0, origin: "", target_origin: "", data: "", buffers: "" }))
+    @expect(!fromRenderer(Message.FrameOwner { parent_frame: 0, parent_page: 0, top_frame: 0, sandbox: 0, name: "" }))
+    @expect(!fromRenderer(Message.FrameLoaded { key: 1 }))
+    @expect(fromRenderer(Message.LoadStopped))
+}
+
+test "a subframe record carries its holder, sandbox and name" {
+    var frames = text.Builder.init(@testAllocator())
+    defer frames.deinit()
+    let one = Subframe { key: 9, x: 0.0, y: 0.0, width: 20, height: 10, clip: [4]u32{0, 0, 20, 10}, url: "http://b.test/f", holder: 4, sandbox: 288, name: "kid" }
+
+    try putSubframe(&mut frames, one)
+
+    var r = Reader { data: frames.bytes() }
+    let back = try readSubframe(&mut r)
+    var bad = back
+
+    @expectEqual(4, back.holder)
+    @expectEqual(288, back.sandbox)
+    @expectEqual("kid", back.name)
+    @expect(!badSubframe(back))
+
+    bad.sandbox = 262144
+    @expect(badSubframe(bad))
+}
+
+test "a message's buffers are length-prefixed to the end or bad" {
+    @expect(!badBuffers(""))
+    @expect(!badBuffers("\x01\x00\x00\x00x\x00\x00\x00\x00"))
+    @expect(badBuffers("\x05\x00\x00\x00x"))
+    @expect(badBuffers("\x01\x00"))
+}

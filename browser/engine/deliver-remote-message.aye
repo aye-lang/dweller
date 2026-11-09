@@ -1,0 +1,25 @@
+import js
+import std.mem.AllocError
+import std.text
+
+// blink: core/frame/local_dom_window.cc (DispatchMessageEventWithOriginCheck)
+pub fn deliverRemoteMessage(root: *mut Page, m: RemoteMessage) AllocError!void {
+    var target = root
+
+    if m.page != 0 { target = findBelow(root, m.page) orelse return }
+
+    let ts = target.script orelse return
+
+    if ts.on_remote_message == js.NONE { return }
+
+    if !text.eql(m.target_origin, "*") {
+        var have = text.Builder.init(root.alloc)
+        defer have.deinit()
+
+        try appendOrigin(&mut have, target)
+
+        if !text.eql(have.bytes(), m.target_origin) { return }
+    }
+
+    queueRemoteMessage(ts, root, m) catch return AllocError.OutOfMemory
+}
