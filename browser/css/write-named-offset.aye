@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+fn writeNamedOffset(c: Comp, end: bool, out: *mut text.Builder) AllocError!bool {
+    var offset = text.Builder.init(out.alloc)
+    defer offset.deinit()
+
+    let alone = [1]Comp{c}
+
+    if !(try writeRangeOffset(alone[..], &mut offset)) {
+        return false
+    }
+
+    var default_offset = "0%"
+
+    if end {
+        default_offset = "100%"
+    }
+
+    if !text.eql(offset.bytes(), default_offset) {
+        try out.appendByte(' ')
+        try out.append(offset.bytes())
+    }
+
+    return true
+}

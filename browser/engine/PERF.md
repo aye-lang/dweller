@@ -1533,3 +1533,32 @@ Mistral has observers, so its relayout stays; what is left of
 `ui_relayout` is the display-list rebuild (`paint_build`) that the animating
 iframe canvas needs (a canvas draw moves the DOM version) and the observed
 `textContent` replace.
+
+## Q4.24: where safe mode's cost in the JS VM goes (2026-11-09)
+
+`docs/plans/cards/Q4.24.md`. Callgrind instruction counts of `dweller js`
+on `navier-stokes.js` and `richards.js` at `SMOKE=10`, builds of 7d53dba
+(aye c8f7909), Xeon 2.1 GHz VM with 4 cores shared with other agents (the
+counts do not depend on the load; the times do, a few percent):
+
+| | navier-stokes | richards | jsbench, 17 workloads, geomean of the wall minimum |
+| --- | ---: | ---: | ---: |
+| safe | 2,313.1 M | 592.6 M | 1 |
+| fast | 1,610.7 M | 417.3 M | 0.857 |
+| A: bytecode checked once per function (`bcValidate`), operand reads unchecked in `vmLoop` | 1,834.0 M | 479.6 M | 0.902 |
+| B: reads without cast or overflow checks, no trust | 2,374.1 M | 603.2 M | 1.027 |
+
+The 702 M that safe adds to navier-stokes (65.0 against 45.3 machine
+instructions per bytecode instruction) are mostly bounds checks of the
+operand and opcode reads of `vmLoop` (A removes 479 M of them, 68%;
+richards 64%), the rest checks and the lost inlining of the callees
+`vmKeyedDenseElem` (326 M outlined in safe), `Heap.obj`, `vmContextCell`,
+`vmEnvAt`. Cast and overflow checks of the same reads are worth about
+nothing (B). A decoder over 1024 bytes of C (`vmWide`: 4099) is never
+inlined across Aye's units, so each wide operand was a call. Thin LTO on
+the safe build does not help (navier-stokes +1%, richards -8%). On this
+VM navier-stokes's wall time follows its instructions little (fast 0.96 to
+1.00 of safe). Reproduce: `valgrind --tool=callgrind` on the two builds,
+`python3 browser/tools/callgrind_lines.py SAFE.out FAST.out` (the fast
+build with `--cflags -g` for line info), and
+`python3 browser/tools/jsbench_modes.py safe=BIN fast=BIN A=BIN`.

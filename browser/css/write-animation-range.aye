@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/scroll-animations-1/#propdef-animation-range
+fn writeRangeLists(starts: []u8, ends: []u8, out: *mut text.Builder) AllocError!void {
+    for i in 0..listLength(starts) {
+        let s = listItem(starts, i)
+        let e = listItem(ends, i % listLength(ends))
+
+        if i > 0 {
+            try out.append(", ")
+        }
+
+        try out.append(s)
+
+        if !rangeEndImplied(s, e) {
+            try out.appendByte(' ')
+            try out.append(e)
+        }
+    }
+}
+
+pub fn writeAnimationRange(values: []Value, out: *mut text.Builder) AllocError!void {
+    try writeRangeLists(keywordOf(values[ANIMATION_RANGE_START]), keywordOf(values[ANIMATION_RANGE_END]), out)
+}

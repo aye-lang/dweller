@@ -1725,9 +1725,13 @@ fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
     var parts = text.split(decls, ";")
     while parts.next() |d| {
         let colon = std.mem.indexOf(d, ':') orelse continue
-        if text.eqlIgnoreCase(text.trim(d[..colon]), prop) {
+        let name = text.trim(d[..colon])
+
+        if text.eqlIgnoreCase(name, prop) {
             out.clear()
             try out.append(text.trim(d[colon + 1..]))
+        } else {
+            _ = try css.shorthandLonghandText(out.alloc, name, text.trim(d[colon + 1..]), prop, out)
         }
     }
     if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {

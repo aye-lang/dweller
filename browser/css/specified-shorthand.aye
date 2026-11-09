@@ -1,0 +1,32 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-setproperty
+fn specifiedShorthand(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    if inList(prop, "animation transition animation-range") == null || keepsRaw(value) {
+        return writeRaw(value, out)
+    }
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+    try addDeclaration(&mut sheet, prop, toks.items(), false)
+
+    if sheet.decls.len() == 0 {
+        return false
+    }
+
+    if text.eql(prop, "animation-range") {
+        try writeRangeLists(keywordOf(sheet.decls.items()[0].value), keywordOf(sheet.decls.items()[1].value), out)
+
+        return true
+    }
+
+    return writeRaw(value, out)
+}
