@@ -1,0 +1,36 @@
+import std.mem.AllocError
+
+pub struct BorderImageParts {
+    source: []Comp
+    slice: []Comp
+    width: []Comp
+    outset: []Comp
+    repeat: []Comp
+}
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#border-image
+fn borderImageShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let all = [5]usize{BORDER_IMAGE_SOURCE, BORDER_IMAGE_SLICE, BORDER_IMAGE_WIDTH, BORDER_IMAGE_OUTSET, BORDER_IMAGE_REPEAT}
+
+    if try d.wide(comps, all[..]) {
+        return
+    }
+
+    let parts = splitBorderImage(comps) orelse return
+
+    let initial = [5]Value{Value.Keyword { k: "none" }, Value.Keyword { k: "100%" }, Value.Keyword { k: "1" }, Value.Keyword { k: "0" }, Value.Keyword { k: "stretch" }}
+    let given = [5][]Comp{parts.source, parts.slice, parts.width, parts.outset, parts.repeat}
+    var values = initial
+
+    for k in 0..5 {
+        if given[k].len == 0 {
+            continue
+        }
+
+        values[k] = try borderImageValue(d.sheet, all[k], given[k]) orelse return
+    }
+
+    for k in 0..5 {
+        try d.add(all[k], values[k])
+    }
+}

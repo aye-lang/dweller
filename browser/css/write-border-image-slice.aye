@@ -1,0 +1,43 @@
+import std.mem.AllocError
+import std.text
+
+fn writeBorderImageSlice(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    var count: usize = 0
+    var fill = false
+
+    for k, c in comps {
+        if !isSlicePart(c) {
+            return false
+        }
+
+        if isIdent(c, "fill") {
+            if fill || (k != 0 && k + 1 != comps.len) {
+                return false
+            }
+
+            fill = true
+
+            continue
+        }
+
+        if count > 0 {
+            try out.appendByte(' ')
+        }
+
+        count += 1
+
+        if !(try writeSidePart(c, true, false, out)) {
+            return false
+        }
+    }
+
+    if count == 0 || count > 4 {
+        return false
+    }
+
+    if fill {
+        try out.append(" fill")
+    }
+
+    return true
+}
