@@ -1,0 +1,28 @@
+test "inline styles by 'unsafe-inline', nonce and hash" {
+    let a = @testAllocator()
+    let code = "a { color: red }"
+
+    @expect((try styleInlineRefusal(a, "", false, "", code)) == null)
+    @expect((try styleInlineRefusal(a, "style-src 'self'", false, "", code)) != null)
+    @expect((try styleInlineRefusal(a, "style-src 'self' 'unsafe-inline'", false, "", code)) == null)
+    @expect((try styleInlineRefusal(a, "default-src 'self'", false, "", code)) != null)
+    @expect((try styleInlineRefusal(a, "style-src 'nonce-n'", false, "n", code)) == null)
+    @expect((try styleInlineRefusal(a, "style-src 'nonce-n'", false, "m", code)) != null)
+    @expect((try styleInlineRefusal(a, "style-src 'unsafe-inline' 'nonce-n'", false, "m", code)) != null)
+    @expect((try styleInlineRefusal(a, "script-src 'none'", false, "", code)) == null)
+}
+
+test "style attributes follow style-src-attr and need 'unsafe-hashes' for a hash" {
+    let a = @testAllocator()
+    let code = "color: red"
+
+    @expect((try styleInlineRefusal(a, "style-src 'none'", true, "", code)) != null)
+    @expect((try styleInlineRefusal(a, "style-src 'none'; style-src-attr 'unsafe-inline'", true, "", code)) == null)
+    @expect((try styleInlineRefusal(a, "style-src 'unsafe-inline'; style-src-attr 'none'", true, "", code)) != null)
+    @expect((try styleInlineRefusal(a, "style-src-elem 'none'", true, "", code)) == null)
+    @expect((try styleInlineRefusal(a, "style-src 'nonce-n'", true, "n", code)) != null)
+
+    let r = (try styleInlineRefusal(a, "style-src 'none'", true, "", code)) orelse return
+
+    @expectEqual("style-src-attr", r.effective)
+}

@@ -1,0 +1,17 @@
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+pub fn urlRefusal(policies: []u8, effective: []u8, target: *Url, page: *Url, nonce: []u8) ?Refusal {
+    var all = text.split(policies, ",")
+
+    while all.next() |policy| {
+        let d = fallbackDirective(policy, effective) orelse continue
+
+        if !listMatchesUrl(sourceList(d), target, page, nonce) {
+            return Refusal { policy: text.trim(policy), directive: d, effective: effective }
+        }
+    }
+
+    return null
+}

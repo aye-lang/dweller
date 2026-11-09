@@ -1385,7 +1385,7 @@ pub let PRELUDE =
     \\  get plugins() { return []; }
     \\  get mimeTypes() { return []; }
     \\  javaEnabled() { return false; }
-    \\  sendBeacon() { return true; }
+    \\  sendBeacon(url) { return !ak.cspRefused(String(url)); }
     \\  vibrate() { return false; }
     \\}
     \\hidden(G, 'Navigator', Navigator);
@@ -4022,13 +4022,13 @@ pub let PRELUDE =
     \\}
     \\getter(Document.prototype, 'styleSheets', function () {
     \\  const list = [];
-    \\  for (const el of this.querySelectorAll('style, link[rel~="stylesheet" i]')) list.push(ownedSheet(el));
+    \\  for (const el of this.querySelectorAll('style, link[rel~="stylesheet" i]')) if (!ak.styleBlocked(el)) list.push(ownedSheet(el));
     \\  hidden(list, 'item', i => list[i] || null);
     \\  return list;
     \\});
-    \\getter(HTMLStyleElement.prototype, 'sheet', function () { return this.isConnected ? ownedSheet(this) : null; });
+    \\getter(HTMLStyleElement.prototype, 'sheet', function () { return this.isConnected && !ak.styleBlocked(this) ? ownedSheet(this) : null; });
     \\getter(HTMLLinkElement.prototype, 'sheet', function () {
-    \\  return this.isConnected && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
+    \\  return this.isConnected && !ak.styleBlocked(this) && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
     \\});
     \\hidden(G, 'CSS', {
     \\  supports(a, b) { return b === undefined ? ak.supports(String(a)) || ak.supports('(' + String(a) + ')') : ak.supports('(' + String(a) + ': ' + String(b) + ')'); },

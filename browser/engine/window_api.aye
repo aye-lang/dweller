@@ -76,6 +76,8 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "supports", 1, akSupports)
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
     try defMethod(it, o, "selectorText", 1, akSelectorText)
+    try defMethod(it, o, "styleBlocked", 1, akStyleBlocked)
+    try defMethod(it, o, "cspRefused", 1, akCspRefused)
     try installFrames(s, o)
     try installHistory(s, o)
     try installGeometry(s, o)
@@ -603,6 +605,10 @@ fn akFetchTake(it: *mut Interp, a: Args) JsError!Value {
         try setField(it, r, "error", net.requestError(id))
         return it.pop()
     }
+    if try redirectBlocked(it, res) {
+        try setField(it, r, "error", "blocked by Content Security Policy")
+        return it.pop()
+    }
     try responseFields(it, r, res, "")
     return it.pop()
 }
@@ -616,6 +622,10 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     }
     defer target.deinit(it.alloc)
     let page = scriptOf(it).page
+    if try requestRefused(page, "connect-src", &target, null) {
+        try setField(it, r, "error", "blocked by Content Security Policy")
+        return fetchEnd(it, a, queue, 0)
+    }
     var req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, credentials: net.Credentials.SameOrigin, initiator: initiatorOf(page) }
     if !js.isUndef(it.arg(a, 4)) {
         let mode = try it.builder()
@@ -686,6 +696,10 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
         return fetchEnd(it, a, queue, 0)
     }
     defer res.deinit(it.alloc)
+    if try redirectBlocked(it, &res) {
+        try setField(it, r, "error", "blocked by Content Security Policy")
+        return fetchEnd(it, a, queue, 0)
+    }
     try responseFields(it, r, &res, target.href)
     return fetchEnd(it, a, queue, 0)
 }
@@ -973,6 +987,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
     try css.parseSheet(&mut ua, "noscript { display: none }", media)
     var author = try css.Sheet.init(p.alloc)
     errdefer author.deinit()
+    try markStyles(p, false)
     try authorSheets(p.alloc, &p.doc, &p.url, media, &mut author)
     var styles = try css.Styles.init(p.alloc)
     errdefer styles.deinit()

@@ -1,0 +1,19 @@
+import csp
+import dom.NodeId
+import std.mem.AllocError
+
+// https://w3c.github.io/webappsec-csp/#report-violation
+fn queueViolation(p: *mut Page, r: csp.Refusal, at: ?NodeId, blocked: []u8) AllocError!void {
+    var key = fnv32(blocked) ^ fnv32(r.effective)
+
+    if at |h| {
+        key ^= h.index *% 2654435761
+    }
+
+    if p.reported_requests.contains(key) {
+        return
+    }
+
+    try p.reported_requests.put(key, true)
+    try p.violations.append(QueuedViolation { refusal: r, blocked: try copyPolicy(p.alloc, blocked), at: at })
+}

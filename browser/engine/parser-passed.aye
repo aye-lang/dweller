@@ -1,0 +1,22 @@
+import dom
+import dom.NodeId
+
+fn parserPassed(p: *mut Page, at: ?NodeId) bool {
+    let h = at orelse return !parserStart(p)
+    let stop = parserStop(p) orelse return !parserStart(p)
+    var cur: ?NodeId = p.doc.root
+
+    while cur |n| {
+        if dom.same(n, h) {
+            return true
+        }
+
+        if dom.same(n, stop) {
+            return false
+        }
+
+        cur = p.doc.following(n, p.doc.root)
+    }
+
+    return true
+}

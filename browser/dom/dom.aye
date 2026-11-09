@@ -14,6 +14,7 @@
 
 import std.heap.Arena
 import std.list.List
+import std.map.IntMap
 import std.map.StrMap
 import std.mem.AllocError
 import std.mem.Allocator
@@ -170,6 +171,7 @@ pub struct Document {
     held: List(NodeId)
     ids: StrMap(List(NodeId))
     names: StrMap(List(NodeId))
+    style_marks: IntMap(u32, u32)
 
     /// An empty document: only the `Document` node.
     pub fn init(alloc: Allocator) AllocError!Document {
@@ -212,6 +214,7 @@ pub struct Document {
             held: List(NodeId).init(alloc),
             ids: StrMap(List(NodeId)).init(alloc),
             names: StrMap(List(NodeId)).init(alloc),
+            style_marks: IntMap(u32, u32).init(alloc),
         }
     }
 
@@ -229,6 +232,7 @@ pub struct Document {
         freeIndex(&mut self.ids)
         freeIndex(&mut self.names)
         self.controls.deinit()
+        self.style_marks.deinit()
         self.strings.deinit()
         self.alloc.destroy(self.strings)
         self.nodes.deinit()

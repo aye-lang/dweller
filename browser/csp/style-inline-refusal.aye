@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#should-block-inline
+pub fn styleInlineRefusal(alloc: Allocator, policies: []u8, attribute: bool, nonce: []u8, code: []u8) AllocError!?Refusal {
+    var effective: []u8 = "style-src-elem"
+    var kind = Inline.Script
+
+    if attribute {
+        effective = "style-src-attr"
+        kind = Inline.Attribute
+    }
+
+    var all = text.split(policies, ",")
+
+    while all.next() |policy| {
+        let d = fallbackDirective(policy, effective) orelse continue
+
+        if !(try listAllowsInline(alloc, sourceList(d), kind, nonce, true, code)) {
+            return Refusal { policy: text.trim(policy), directive: d, effective: effective }
+        }
+    }
+
+    return null
+}

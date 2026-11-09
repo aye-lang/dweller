@@ -26,6 +26,8 @@ mod common;
 mod agent;
 #[path = "browser/cli.rs"]
 mod cli;
+#[path = "browser/csp_directives.rs"]
+mod csp_directives;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
 #[path = "browser/fixtures.rs"]

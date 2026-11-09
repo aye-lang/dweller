@@ -1,0 +1,27 @@
+import csp
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn applyStyleRefusal(p: *mut Page, h: NodeId, attribute: bool, refusal: ?csp.Refusal, token: u32, blocked: []u8, report: bool) AllocError!void {
+    var kind = dom.MARK_BLOCKED
+    var seen = dom.MARK_REPORTED
+
+    if attribute {
+        kind = dom.MARK_ATTR_BLOCKED
+        seen = dom.MARK_ATTR_REPORTED
+    }
+
+    dom.clearStyleMark(&mut p.doc, h, kind)
+
+    let r = refusal orelse return dom.clearStyleMark(&mut p.doc, h, seen)
+
+    if !r.report {
+        try dom.setStyleMark(&mut p.doc, h, kind, token)
+    }
+
+    if report && dom.styleMark(&p.doc, h, seen) != token {
+        try dom.setStyleMark(&mut p.doc, h, seen, token)
+        try reportStyleRefusal(p, h, attribute, r, blocked)
+    }
+}
