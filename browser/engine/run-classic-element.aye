@@ -20,7 +20,7 @@ fn runClassicElement(s: *mut Script, el: NodeId, src: []u8) AllocError!bool {
 
     defer target.deinit(s.alloc)
 
-    if try urlRefused(s, el, &target) {
+    if try urlRefused(s, el, &target, true) {
         return false
     }
 
@@ -35,6 +35,10 @@ fn runClassicElement(s: *mut Script, el: NodeId, src: []u8) AllocError!bool {
     }
 
     defer res.deinit(s.alloc)
+
+    if try redirectRefused(s, el, &res, true) {
+        return false
+    }
 
     if res.status != 0 && (res.status < 200 || res.status > 299) {
         try addConsole(s, "[error] Failed to load script: ", target.href)

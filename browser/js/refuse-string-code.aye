@@ -1,7 +1,11 @@
 // https://w3c.github.io/webappsec-csp/#can-compile-strings
-pub fn refuseStringCode(it: *mut Interp) JsError!void {
+pub fn refuseStringCode(it: *mut Interp, code: []u8) JsError!void {
     if it.eval_refusal.len == 0 {
         return
+    }
+
+    if it.eval_report |report| {
+        report(it, code)
     }
 
     let b = try it.builder()

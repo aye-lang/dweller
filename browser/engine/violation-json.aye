@@ -1,0 +1,20 @@
+import csp
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#violation-events
+fn violationJson(b: *mut text.Builder, p: *mut Page, r: csp.Refusal, blocked: []u8, sample: []u8) AllocError!void {
+    try b.append("{\"documentURI\":")
+    try appendJsonString(b, p.url.withoutFragment())
+    try b.append(",\"blockedURI\":")
+    try appendJsonString(b, blocked)
+    try b.append(",\"effectiveDirective\":")
+    try appendJsonString(b, r.effective)
+    try b.append(",\"violatedDirective\":")
+    try appendJsonString(b, r.effective)
+    try b.append(",\"originalPolicy\":")
+    try appendJsonString(b, r.policy)
+    try b.append(",\"sample\":")
+    try appendJsonString(b, sample)
+    try b.append("}")
+}

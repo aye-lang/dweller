@@ -2,6 +2,16 @@ import js.Interp
 import net
 import url.Url
 
-fn pageModuleResponse(it: *mut Interp, target: *Url, referrer: []u8, credentials: net.Credentials) net.FetchError!net.Response {
-    return net.request(it.alloc, target, moduleRequest(scriptOf(it).page, referrer, credentials == net.Credentials.Include))
+fn pageModuleResponse(it: *mut Interp, target: *Url, referrer: []u8, credentials: net.Credentials, json: bool) net.FetchError!net.Response {
+    let s = scriptOf(it)
+
+    if !json {
+        if moduleUrlRefusal(s.page, target) |r| {
+            refuseScript(s, null, target.href, r) catch return net.FetchError.OutOfMemory
+
+            return net.FetchError.AccessDenied
+        }
+    }
+
+    return net.request(it.alloc, target, moduleRequest(s.page, referrer, credentials == net.Credentials.Include))
 }

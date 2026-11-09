@@ -1,0 +1,19 @@
+import dom.Document
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#initialize-document-csp
+fn sourcePolicy(alloc: Allocator, inherited: []u8, doc: *Document) AllocError![]u8 {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try b.append(inherited)
+    try appendMetaPolicies(&mut b, doc)
+
+    if b.len() == 0 {
+        return ""
+    }
+
+    return try b.toOwned()
+}

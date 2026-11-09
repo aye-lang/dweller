@@ -1,0 +1,49 @@
+import std.mem
+
+// https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+fn sha512(data: []u8, wide: bool) [64]u8 {
+    var state = IV512
+
+    if !wide {
+        state = IV384
+    }
+
+    var at: usize = 0
+
+    while data.len - at >= 128 {
+        sha512Block(&mut state, data[at..at + 128])
+        at += 128
+    }
+
+    var tail = [256]u8{0, ..}
+    let rest = data.len - at
+
+    mem.copy(tail[..], data[at..])
+    tail[rest] = 0x80
+
+    var blocks: usize = 1
+
+    if rest >= 112 {
+        blocks = 2
+    }
+
+    putLength(tail[..], blocks * 128, (data.len as u64) *% 8)
+
+    for b in 0..blocks {
+        sha512Block(&mut state, tail[b * 128..b * 128 + 128])
+    }
+
+    var out = [64]u8{0, ..}
+
+    for i in 0..64 {
+        out[i] = ((state[i / 8] >> ((7 - i % 8) * 8) as u64) & 255) as u8
+    }
+
+    return out
+}
+
+fn putLength(buf: []mut u8, end: usize, bits: u64) {
+    for i in 0..8 {
+        buf[end - 1 - i] = ((bits >> (i * 8) as u64) & 255) as u8
+    }
+}

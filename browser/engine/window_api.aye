@@ -162,6 +162,9 @@ fn akReport(it: *mut Interp, a: Args) JsError!Value {
 // An inline event handler: the attribute's code as the body of a
 // function of `event`.
 fn akCompile(it: *mut Interp, a: Args) JsError!Value {
+    if handlerRefused(it, a) {
+        return Value.Null
+    }
     let b = try it.builder()
     defer it.release(b)
     try b.append("(function (event) {\n")
@@ -551,7 +554,7 @@ fn moduleLoad(it: *mut Interp, a: Args) JsError!Value {
     let done = try js.callableArg(it, a, 2)
     let target = try argUrl(it, a) orelse return js.boolVal(false)
     defer target.deinit(it.alloc)
-    if !net.liveRequest(&target) {
+    if !net.liveRequest(&target) || moduleUrlRefusal(scriptOf(it).page, &target) != null {
         return js.boolVal(false)
     }
     let referrer = try it.builder()

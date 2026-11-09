@@ -445,6 +445,14 @@ def use_test_fonts(root):
     os.environ["DWELLER_FONT_DIRS"] = str(fonts)
 
 
+PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+
+
+def drop_proxies():
+    for name in PROXY_VARS:
+        os.environ.pop(name, None)
+
+
 def trust_test_ca(root):
     """Dweller trusts WPT's CA (tools/certs/cacert.pem) in these runs only:
     DWELLER_TEST_CA counts only together with DWELLER_TEST=1."""
@@ -458,6 +466,7 @@ def cmd_run(args):
         sys.exit(f"{dweller} not found (browser/build.sh)")
     use_test_fonts(args.wpt_root)
     trust_test_ca(args.wpt_root)
+    drop_proxies()
     areas = load_areas()
     results_dir = Path(args.results_dir)
     for target in args.targets:

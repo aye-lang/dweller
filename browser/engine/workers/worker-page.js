@@ -25,6 +25,11 @@
       this.onmessageerror = null;
       this.onerror = null;
       hidden(this, '_credentials', credentials);
+      if (h.refused(href)) {
+        hidden(this, '_id', 0);
+        setTimeout(() => fire(this, 'error', new Event('error')), 0);
+        return;
+      }
       hidden(this, '_id', h.start(href, module, source));
       workers.set(this._id, this);
     }

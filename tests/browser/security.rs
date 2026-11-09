@@ -74,6 +74,41 @@ fn csp_script_src() {
     }
 }
 
+/// Q3.7b: `securitypolicyviolation` events carry `blockedURI`,
+/// `effectiveDirective`, `violatedDirective`, `disposition`, `sample`
+/// (with `'report-sample'`) and `originalPolicy`; inline event handlers
+/// are `script-src-attr`; `'strict-dynamic'` trusts non-parser-inserted
+/// scripts and `import()`; module scripts and imports follow
+/// `script-src`; `worker-src` stops a worker (`error` event).
+#[test]
+fn csp_script_src_events() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let cases = [
+        (
+            "events",
+            "inline|script-src-elem|script-src-elem|enforce|\"log('blocked inline');\"|script-src\n\
+             hash ok\n\
+             /csp/same.js|script-src-elem|script-src-elem|enforce|\"\"|script-src\n\
+             inline|script-src-attr|script-src-attr|enforce|\"log('handler ran')\"|script-src\n\
+             done\n",
+        ),
+        ("strict", "parser: ran false\ninserted: ran true\nimport: ok\n"),
+        (
+            "module",
+            "module with nonce: ran\ninline script-src-elem\n/csp/same.js?module script-src-elem\nimport: refused\n",
+        ),
+        ("worker", "worker-src /csp/same.js\nworker: error\n"),
+    ];
+    for (page, want) in cases {
+        let out = run(&["dump", "--text", "--js", &format!("{}/csp/{page}.html", srv.base)]);
+        assert!(out.status.success(), "{page}: {}\n{}", out.status, text(&out.stderr));
+        assert_eq!(text(&out.stdout), want, "{page}: {}", text(&out.stderr));
+    }
+}
+
 /// Q3.6: a document refused by `X-Frame-Options` or CSP
 /// `frame-ancestors` shows an error document of an opaque origin (no
 /// `contentDocument`, the `load` event still fires) and logs a console

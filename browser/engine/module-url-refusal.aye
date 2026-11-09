@@ -1,0 +1,17 @@
+import csp
+import std.text
+import url.Url
+
+fn moduleUrlRefusal(p: *mut Page, target: *Url) ?csp.Refusal {
+    if text.eql(target.href, module_gate.entry) {
+        return null
+    }
+
+    var nonce: []u8 = ""
+
+    if module_gate.el |el| {
+        nonce = elementNonce(p, el)
+    }
+
+    return csp.scriptUrlRefusal(p.csp, target, &p.url, nonce, false)
+}

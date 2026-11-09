@@ -1,0 +1,30 @@
+import dom
+import dom.NodeId
+
+fn policyAt(p: *mut Page, el: NodeId) []u8 {
+    var end = p.header_csp.len + p.inherited_csp
+
+    if p.csp.len == end {
+        return p.csp
+    }
+
+    var cur: ?NodeId = p.doc.root
+
+    while cur |h| {
+        if dom.same(h, el) {
+            break
+        }
+
+        if isPolicyMeta(&p.doc, h) {
+            if end > 0 {
+                end += 1
+            }
+
+            end += (p.doc.attr(h, "content") orelse "").len
+        }
+
+        cur = p.doc.following(h, p.doc.root)
+    }
+
+    return p.csp[..end]
+}

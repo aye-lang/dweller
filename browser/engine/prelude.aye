@@ -222,7 +222,7 @@ pub let PRELUDE =
     \\  if (e && !e.prop && e.src === src) return e.fn;
     \\  let fn = null;
     \\  try {
-    \\    fn = ak.compile(src);
+    \\    fn = ak.compile(src, t === G ? document.body : t);
     \\  } catch (err) {
     \\    report(err);
     \\  }
@@ -479,6 +479,8 @@ pub let PRELUDE =
     \\    // An uncaught exception (script.aye fireErrorEvent): key is the
     \\    // message, x the value thrown.
     \\    ev = new ErrorEvent(type, { cancelable: true, message: key, error: x });
+    \\  } else if (type === 'securitypolicyviolation') {
+    \\    ev = new SecurityPolicyViolationEvent(type, Object.assign(JSON.parse(key), { bubbles: true, composed: true }));
     \\  } else if (type === 'submit') {
     \\    ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: ak.submitter() });
     \\  } else {
@@ -3320,6 +3322,7 @@ pub let PRELUDE =
     \\const PointerEvent = eventClass('PointerEvent', MouseEvent, { pointerId: 0, width: 1, height: 1, pressure: 0, tangentialPressure: 0, tiltX: 0, tiltY: 0, twist: 0, pointerType: '', isPrimary: false });
     \\eventClass('WheelEvent', MouseEvent, { deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0 });
     \\eventClass('DragEvent', MouseEvent, { dataTransfer: null });
+    \\eventClass('SecurityPolicyViolationEvent', Event, { documentURI: '', referrer: '', blockedURI: '', effectiveDirective: '', violatedDirective: '', originalPolicy: '', disposition: 'enforce', sourceFile: '', sample: '', statusCode: 0, lineNumber: 0, columnNumber: 0 });
     \\
     \\// Blob and File: the bytes are a string of code units 0..255 (UTF-8 for
     \\// string parts).

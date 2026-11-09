@@ -1,0 +1,15 @@
+import csp
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#report-violation
+fn refuseWorker(s: *mut Script, r: csp.Refusal, href: []u8) AllocError!void {
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+
+    try b.append("create a worker from '")
+    try b.append(href)
+    try b.append("'")
+    try reportRefusal(s, r, b.bytes())
+    try violationEvent(s, null, r, href, "")
+}

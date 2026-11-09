@@ -662,7 +662,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         }
     }
     s.it.script_url = s.it.intern(p.base.href) catch return AllocError.OutOfMemory
-    s.it.eval_refusal = csp.evalRefusal(p.csp) orelse ""
+    installEvalGate(s)
     return s
 }
 
@@ -1046,7 +1046,7 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
         return
     }
     if isModuleScript(p, el) {
-        return fireScriptEvent(s, el, try runModuleElement(s, el))
+        return fireScriptEvent(s, el, try runModuleElement(s, el, true))
     }
     if isScriptType(p, el, "importmap") {
         return addImportMap(s, el)
@@ -1057,7 +1057,7 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     try p.doc.textContent(el, &mut b)
-    if try inlineRefused(s, el, b.bytes()) {
+    if try inlineRefused(s, el, b.bytes(), true) {
         return
     }
     return runSourceOf(s, el, b.bytes())

@@ -1,14 +1,19 @@
 import url.Url
 
 // https://w3c.github.io/webappsec-csp/#script-pre-request
-fn listAllowsUrl(list: []u8, target: *Url, page: *Url, nonce: []u8) bool {
+fn listAllowsUrl(list: []u8, target: *Url, page: *Url, nonce: []u8, parser_inserted: bool) bool {
+    let dynamic = hasSource(list, "'strict-dynamic'")
     var at: usize = 0
 
     while nextWord(list, &mut at) |source| {
-        if nonceMatches(source, nonce) || sourceMatchesUrl(source, target, page) {
+        if nonceMatches(source, nonce) {
+            return true
+        }
+
+        if !dynamic && sourceMatchesUrl(source, target, page) {
             return true
         }
     }
 
-    return false
+    return dynamic && !parser_inserted
 }

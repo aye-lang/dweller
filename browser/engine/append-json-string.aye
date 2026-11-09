@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn appendJsonString(b: *mut text.Builder, s: []u8) AllocError!void {
+    try b.appendByte('"')
+
+    for c in s {
+        if c == '"' || c == '\\' {
+            try b.appendByte('\\')
+            try b.appendByte(c)
+        } else if c < 0x20 {
+            try b.append("\\u00")
+            try b.appendByte("0123456789abcdef"[(c >> 4) as usize])
+            try b.appendByte("0123456789abcdef"[(c & 15) as usize])
+        } else {
+            try b.appendByte(c)
+        }
+    }
+
+    try b.appendByte('"')
+}

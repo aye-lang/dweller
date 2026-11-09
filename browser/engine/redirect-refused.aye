@@ -1,0 +1,16 @@
+import dom.NodeId
+import net
+import std.mem.AllocError
+import url
+
+// https://w3c.github.io/webappsec-csp/#should-block-response
+fn redirectRefused(s: *mut Script, el: NodeId, res: *net.Response, parser_inserted: bool) AllocError!bool {
+    if res.url.len == 0 {
+        return false
+    }
+
+    let landed = url.parse(s.alloc, res.url) catch return false
+    defer landed.deinit(s.alloc)
+
+    return urlRefused(s, el, &landed, parser_inserted)
+}

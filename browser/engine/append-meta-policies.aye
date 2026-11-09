@@ -1,0 +1,16 @@
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn appendMetaPolicies(b: *mut text.Builder, doc: *Document) AllocError!void {
+    var cur: ?NodeId = doc.root
+
+    while cur |h| {
+        if isPolicyMeta(doc, h) {
+            try appendPolicy(b, doc.attr(h, "content") orelse "")
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+}
