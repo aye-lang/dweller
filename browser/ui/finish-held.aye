@@ -1,0 +1,26 @@
+import ipc
+import net
+import std.mem.AllocError
+import url
+
+fn finishHeld(tp: *mut TabProcess, h: *HeldFetch) AllocError!void {
+    let alloc = tp.url.alloc
+    let fail = ipc.Message.FetchFail { id: h.id, code: net.requestFailure(h.load) }
+
+    if h.ask {
+        let res = net.requestResponse(h.load) orelse return ipc.encode(&mut tp.outbox, h.on, fail)
+
+        return sendFetched(tp, h.on, h.id, false, h.codes[0] == 0, h.href.bytes(), res)
+    }
+
+    if net.failedHref(h.load) != null { return ipc.encode(&mut tp.outbox, h.on, fail) }
+
+    let target = url.parse(alloc, h.href.bytes()) catch return ipc.encode(&mut tp.outbox, h.on, fail)
+    defer target.deinit(alloc)
+    var res = net.request(alloc, &target, heldRequest(h)) catch |e| {
+        return ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchFail { id: h.id, code: net.fetchErrorCode(e) })
+    }
+
+    defer res.deinit(alloc)
+    try sendFetched(tp, h.on, h.id, false, false, h.href.bytes(), &res)
+}

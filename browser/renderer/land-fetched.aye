@@ -1,0 +1,21 @@
+import ipc
+import net
+
+fn landFetched(r: *mut TabRenderer, m: ipc.Message) !void {
+    let id = fetchReplyId(m) orelse return
+    let p = pendingOf(r, id) orelse return
+
+    _ = try takeFetched(r, m, p.nav, p.href.bytes(), &mut p.f)
+
+    if p.f.failed |code| {
+        dropPending(r, id)
+        net.failRemote(id, code)
+        r.landed = true
+    } else if p.f.ended {
+        let res = try fetchedResponse(r.alloc, &p.f)
+
+        dropPending(r, id)
+        net.landRemote(id, res)
+        r.landed = true
+    }
+}

@@ -1,0 +1,39 @@
+import url.Url
+
+fn remoteStart(rl: *mut RemoteLoader, target: *Url, req: Request, joins: bool) u32 {
+    let key = cacheKey(rl.alloc, req, target.withoutFragment()) catch return 0
+    let codes = requestCode(req)
+
+    if joins {
+        if remoteKeyed(rl, key, codes) |held| {
+            rl.alloc.free(key)
+            held.users += 1
+
+            return held.id
+        }
+    }
+
+    let l = newRemoteLoad(rl, target, key, codes, joins) orelse return 0
+
+    if joins && landedAt(rl, key, codes) != null {
+        l.state = LoadState.Done
+    } else {
+        l.wire = rl.start(target, req)
+    }
+
+    if l.state == LoadState.Running && l.wire == 0 {
+        freeRemoteLoad(rl.alloc, l)
+
+        return 0
+    }
+
+    rl.loads.append(l) catch |e| {
+        if l.state == LoadState.Running { rl.cancel(l.wire) }
+
+        freeRemoteLoad(rl.alloc, l)
+
+        return 0
+    }
+
+    return l.id
+}

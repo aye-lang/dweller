@@ -1,0 +1,24 @@
+import net
+import std.mem.AllocError
+
+fn answerHeld(tp: *mut TabProcess) AllocError!void {
+    if tp.held.len() == 0 { return }
+
+    net.pumpLoads()
+
+    var i: usize = 0
+
+    while i < tp.held.len() {
+        let h = tp.held.items()[i]
+
+        if net.loadState(h.load) == net.LoadState.Running {
+            i += 1
+
+            continue
+        }
+
+        _ = tp.held.orderedRemove(i)
+        defer h.deinit(tp.url.alloc)
+        try finishHeld(tp, h)
+    }
+}

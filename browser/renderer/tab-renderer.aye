@@ -30,6 +30,8 @@ struct TabRenderer {
     docs: text.Builder
     top: text.Builder
     fetches: u32 = 0
+    pending: List(*mut PendingFetch)
+    landed: bool = false
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
@@ -127,5 +129,9 @@ struct TabRenderer {
         self.hist_state.deinit()
         self.said_state.deinit()
         self.subframes.deinit()
+
+        for p in self.pending.items() { p.deinit(self.alloc) }
+
+        self.pending.deinit()
     }
 }

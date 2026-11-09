@@ -4,23 +4,13 @@ import std
 import std.mem.Allocator
 import std.text
 
-fn awaitFetch(r: *mut TabRenderer, alloc: Allocator, nav: bool, href: []u8) net.FetchError!net.Response {
+fn awaitFetch(r: *mut TabRenderer, alloc: Allocator, id: u32, nav: bool, href: []u8) net.FetchError!net.Response {
     var f = Fetched.init(alloc)
     defer f.deinit()
     var buf = @zeroed([65536]u8)
 
     while true {
-        var at: usize = 0
-
-        while true {
-            let got = ipc.nextMessage(r.inbox.bytes()[at..]) catch return net.FetchError.Network
-            let g = got orelse break
-            let used = g.used
-            let pinged = answerPing(r, g.message) catch return net.FetchError.Network
-            let took = pinged || (takeFetched(r, g.message, nav, href, &mut f) catch return net.FetchError.OutOfMemory)
-
-            if took { cutOut(&mut r.inbox, at, used) } else { at += used }
-        }
+        scanReplies(r, id, nav, href, &mut f) catch return net.FetchError.Network
 
         if f.failed |code| { return net.fetchErrorOf(code) }
 

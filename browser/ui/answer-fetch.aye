@@ -48,6 +48,8 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
 
             if has_body == 1 { req.body = &sent }
 
+            if !navigates && (try holdFetch(tp, on, id, [3]u32{kind, credentials, mode}, &target, req)) { return "" }
+
             var res = net.request(alloc, &target, req) catch |e| {
                 if navigates { tp.nav_failed = true }
 

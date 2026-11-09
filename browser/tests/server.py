@@ -93,6 +93,12 @@
 #   /held-now?A,B    as /held-now, but once the /held/ requests whose
 #                    queries are A and B are in flight (requests on
 #                    separate connections arrive in any order)
+#   /hang/NAME?KEY   never answered: holds the request until the client
+#                    closes the connection (or HOLD_LIMIT s) and records
+#                    that it was closed; KEY (or NAME) names it
+#   /hang-started?A,B  once the /hang/ requests A and B arrived, "started"
+#   /hang-closed?A,B "A closed B open": whether the client closed each
+#                    /hang/ request, waiting up to CLOSE_LIMIT s for all
 #   /samesite/...    (GET and POST) the SameSite fixture (P10.21), on the
 #                    hosts 127.0.0.1 and localhost of one port (two
 #                    sites): /set sets strict, lax, dflt (no SameSite)
@@ -113,6 +119,7 @@ import http.server
 import mimetypes
 import os
 import secrets
+import select
 import socket
 import ssl
 import sys
@@ -146,6 +153,12 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+
+# The /hang/ requests by key: "open" while held, "closed" once the client
+# closed the connection.
+HANGS = {}
+HANG_CHANGED = threading.Condition()
+CLOSE_LIMIT = 5
 
 # The login fixture: the accounts, the CSRF tokens handed out and the
 # signed-in sessions (sid -> user name).
@@ -289,6 +302,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.cookie_module()
         elif path.startswith("/nosniff/"):
             self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
+        elif path.startswith("/hang/"):
+            self.hang(path)
+        elif path.startswith("/hang-started?"):
+            names = urllib.parse.urlsplit(path).query.split(",")
+            with HANG_CHANGED:
+                HANG_CHANGED.wait_for(lambda: all(n in HANGS for n in names), HOLD_LIMIT)
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], b"started\n")
+        elif path.startswith("/hang-closed?"):
+            names = urllib.parse.urlsplit(path).query.split(",")
+            with HANG_CHANGED:
+                HANG_CHANGED.wait_for(lambda: all(HANGS.get(n) == "closed" for n in names), CLOSE_LIMIT)
+                said = " ".join("%s %s" % (n, HANGS.get(n, "never")) for n in names)
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], said.encode() + b"\n")
         elif path.startswith("/held/"):
             query = urllib.parse.urlsplit(path).query
             with HELD_CHANGED:
@@ -358,6 +384,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/html")], body)
         else:
             super().do_GET()
+
+    def hang(self, path):
+        parts = urllib.parse.urlsplit(path)
+        key = parts.query or parts.path[len("/hang/"):]
+        with HANG_CHANGED:
+            HANGS[key] = "open"
+            HANG_CHANGED.notify_all()
+        end = time.time() + HOLD_LIMIT
+        while time.time() < end:
+            ready, _, _ = select.select([self.connection], [], [], 0.05)
+            if ready and not self.connection.recv(1, socket.MSG_PEEK):
+                with HANG_CHANGED:
+                    HANGS[key] = "closed"
+                    HANG_CHANGED.notify_all()
+                break
+        self.close_connection = True
 
     def csp_page(self, path):
         parts = urllib.parse.urlsplit(path)

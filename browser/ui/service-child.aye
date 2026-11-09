@@ -2,6 +2,8 @@ import ipc
 import std.mem.AllocError
 
 fn serviceChild(tp: *mut TabProcess) AllocError!bool {
+    try answerHeld(tp)
+
     let sent = sendSome(tp.fd, tp.outbox.bytes())
 
     if sent > 0 { ipc.consume(&mut tp.outbox, sent as usize) }

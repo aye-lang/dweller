@@ -1,0 +1,17 @@
+fn remoteRelease(rl: *mut RemoteLoader, id: u32) {
+    for i, l in rl.loads.items() {
+        if l.id != id { continue }
+
+        l.users -= 1
+
+        if l.users > 0 { return }
+
+        _ = rl.loads.orderedRemove(i)
+
+        if l.state == LoadState.Running { rl.cancel(l.wire) }
+
+        freeRemoteLoad(rl.alloc, l)
+
+        return
+    }
+}
