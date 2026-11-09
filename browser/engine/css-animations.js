@@ -1,6 +1,6 @@
 globalThis.__cssAnimations = function (ak, Animation, KeyframeEffect, timeline, hidden) {
 // spec: https://drafts.csswg.org/css-animations-1/
-const NAMES = ['animation-name', 'animation-duration', 'animation-delay', 'animation-iteration-count', 'animation-direction', 'animation-fill-mode', 'animation-timing-function', 'animation-play-state', 'display'];
+const NAMES = ['animation-name', 'animation-duration', 'animation-delay', 'animation-iteration-count', 'animation-direction', 'animation-fill-mode', 'animation-timing-function', 'animation-play-state', 'animation-composition', 'display'];
 const running = new WeakMap();
 const seen = new WeakMap();
 const tracked = new Set();
@@ -62,6 +62,7 @@ function framesOf(name, easing) {
 
     if (!byOffset.has(offset)) byOffset.set(offset, { offset, easing });
     if (prop === 'animation-timing-function') byOffset.get(offset).easing = value;
+    else if (prop === 'animation-composition') byOffset.get(offset).composite = value;
     else if (!prop.startsWith('animation') && !prop.startsWith('transition')) byOffset.get(offset)[prop] = value;
   }
 
@@ -80,6 +81,7 @@ function timingAt(style, i) {
     fill: at('animation-fill-mode'),
     easing: at('animation-timing-function'),
     paused: at('animation-play-state') === 'paused',
+    composite: at('animation-composition'),
   };
 }
 
@@ -172,7 +174,7 @@ class CSSAnimation extends Animation {
 }
 
 function start(el, name, frames, timing) {
-  const effect = new KeyframeEffect(el, frames, { duration: timing.duration, delay: timing.delay, iterations: timing.iterations, direction: timing.direction, fill: timing.fill === 'none' ? 'auto' : timing.fill });
+  const effect = new KeyframeEffect(el, frames, { duration: timing.duration, delay: timing.delay, iterations: timing.iterations, direction: timing.direction, fill: timing.fill === 'none' ? 'auto' : timing.fill, composite: timing.composite });
   const a = new CSSAnimation(effect, timeline);
 
   hidden(effect, '_implicitEasing', timing.easing);
@@ -189,6 +191,7 @@ function start(el, name, frames, timing) {
 
 function retime(a, timing) {
   a._effect.updateTiming({ duration: timing.duration, delay: timing.delay, iterations: timing.iterations, direction: timing.direction, fill: timing.fill === 'none' ? 'auto' : timing.fill });
+  a._effect.composite = timing.composite;
 
   if (timing.paused && a.playState !== 'paused') a.pause();
   if (!timing.paused && a.playState === 'paused') a.play();

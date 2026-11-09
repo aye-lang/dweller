@@ -91,6 +91,9 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
     if !(try writeComps(comps, &mut out)) {
         return null
     }
+    if prop >= BORDER_TOP_LEFT_RADIUS && prop <= BORDER_BOTTOM_LEFT_RADIUS {
+        return Value.Keyword { k: collapsePair(out.bytes()) }
+    }
     return Value.Keyword { k: try out.toOwned() }
 }
 
@@ -523,9 +526,13 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
             return
         }
         if slash < comps.len {
-            try out.appendByte(' ')
-            if !(try writeComp(v[cornerIndex(corner, v.len)], &mut out)) {
+            var vert = text.Builder.init(d.sheet.arena.allocator())
+            if !(try writeComp(v[cornerIndex(corner, v.len)], &mut vert)) {
                 return
+            }
+            if !text.eql(out.bytes(), vert.bytes()) {
+                try out.appendByte(' ')
+                try out.append(vert.bytes())
             }
         }
         try d.add(BORDER_TOP_LEFT_RADIUS + corner, Value.Keyword { k: try out.toOwned() })

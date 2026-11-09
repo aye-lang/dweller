@@ -1,8 +1,9 @@
+import std.list.List
 import std.mem.AllocError
 import std.text
 
 fn writeBorderImageSlice(comps: []Comp, out: *mut text.Builder) AllocError!bool {
-    var count: usize = 0
+    var parts = List([]u8).init(out.alloc)
     var fill = false
 
     for k, c in comps {
@@ -20,20 +21,20 @@ fn writeBorderImageSlice(comps: []Comp, out: *mut text.Builder) AllocError!bool 
             continue
         }
 
-        if count > 0 {
-            try out.appendByte(' ')
-        }
+        var one = text.Builder.init(out.alloc)
 
-        count += 1
-
-        if !(try writeSidePart(c, true, false, out)) {
+        if !(try writeSidePart(c, true, false, &mut one)) {
             return false
         }
+
+        try parts.append(try one.toOwned())
     }
 
-    if count == 0 || count > 4 {
+    if parts.len() == 0 || parts.len() > 4 {
         return false
     }
+
+    try writeQuad(parts.items(), out)
 
     if fill {
         try out.append(" fill")

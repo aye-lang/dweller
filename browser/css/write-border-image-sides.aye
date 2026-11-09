@@ -1,3 +1,4 @@
+import std.list.List
 import std.mem.AllocError
 import std.text
 
@@ -6,15 +7,19 @@ fn writeBorderImageSides(comps: []Comp, percent: bool, auto: bool, out: *mut tex
         return false
     }
 
-    for k, c in comps {
-        if k > 0 {
-            try out.appendByte(' ')
-        }
+    var parts = List([]u8).init(out.alloc)
 
-        if !(try writeSidePart(c, percent, auto, out)) {
+    for c in comps {
+        var one = text.Builder.init(out.alloc)
+
+        if !(try writeSidePart(c, percent, auto, &mut one)) {
             return false
         }
+
+        try parts.append(try one.toOwned())
     }
+
+    try writeQuad(parts.items(), out)
 
     return true
 }
