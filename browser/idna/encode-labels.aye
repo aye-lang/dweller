@@ -1,0 +1,27 @@
+// https://www.unicode.org/reports/tr46/#ToASCII
+import std.text
+
+fn encodeLabels(domain: []u32, out: *mut text.Builder) IdnaError!void {
+    var start: usize = 0
+
+    while true {
+        let end = labelEnd(domain, start)
+        let label = domain[start..end]
+
+        if isAscii(label) {
+            for c in label {
+                try out.appendByte(c as u8)
+            }
+        } else {
+            try out.append("xn--")
+            try punycodeEncode(label, out)
+        }
+
+        if end >= domain.len {
+            return
+        }
+
+        try out.appendByte('.')
+        start = end + 1
+    }
+}

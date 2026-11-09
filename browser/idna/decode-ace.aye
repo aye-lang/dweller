@@ -1,0 +1,32 @@
+// https://www.unicode.org/reports/tr46/#Processing (IgnoreInvalidPunycode)
+import std.list.List
+import std.mem.Allocator
+
+fn decodeAce(alloc: Allocator, label: []u32, out: *mut List(u32)) bool {
+    var bytes = List(u8).init(alloc)
+    defer bytes.deinit()
+
+    for c in label {
+        bytes.append(c as u8) catch |e| {
+            return false
+        }
+    }
+
+    punycodeDecode(bytes.items(), out) catch |e| {
+        return false
+    }
+
+    if isAscii(out.items()) {
+        return false
+    }
+
+    checkLabel(alloc, out.items()) catch |e| {
+        return false
+    }
+
+    checkBidiOfLabel(out.items()) catch |e| {
+        return false
+    }
+
+    return true
+}

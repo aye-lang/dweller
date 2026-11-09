@@ -1,0 +1,36 @@
+// https://www.rfc-editor.org/rfc/rfc3492#section-6.2
+import std.list.List
+
+fn punycodeDecode(input: []u8, out: *mut List(u32)) IdnaError!void {
+    var n = PUNY_INITIAL_N as u64
+    var i: u64 = 0
+    var bias = PUNY_INITIAL_BIAS
+    var pos: usize = 0
+
+    if lastIndexOf(input, '-') |delimiter| {
+        for c in input[..delimiter] {
+            try out.append(c as u32)
+        }
+
+        pos = delimiter + 1
+    }
+
+    while pos < input.len {
+        let old = i as u32
+
+        pos = try readVariableInt(input, pos, bias, &mut i)
+
+        let count = out.len() as u64 + 1
+
+        bias = punyAdapt((i - old as u64) as u32, count as u32, old == 0)
+        n += i / count
+        i = i % count
+
+        if n > 0x10FFFF {
+            return IdnaError.Invalid
+        }
+
+        try out.insert(i as usize, n as u32)
+        i += 1
+    }
+}

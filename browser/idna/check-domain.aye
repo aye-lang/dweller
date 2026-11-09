@@ -1,0 +1,27 @@
+// https://www.unicode.org/reports/tr46/#Processing
+import std.mem.Allocator
+
+fn checkDomain(alloc: Allocator, domain: []u32) IdnaError!void {
+    var bidi = false
+    var start: usize = 0
+
+    while true {
+        let end = labelEnd(domain, start)
+
+        try checkLabel(alloc, domain[start..end])
+
+        for c in domain[start..end] {
+            bidi = bidi || triggersBidi(bidiClass(c))
+        }
+
+        if end >= domain.len {
+            break
+        }
+
+        start = end + 1
+    }
+
+    if bidi {
+        try checkBidiLabels(domain)
+    }
+}

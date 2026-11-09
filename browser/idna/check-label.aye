@@ -1,0 +1,22 @@
+// https://www.unicode.org/reports/tr46/#Validity_Criteria
+import std.mem.Allocator
+
+fn checkLabel(alloc: Allocator, label: []u32) IdnaError!void {
+    if label.len == 0 {
+        return
+    }
+
+    try checkNfc(alloc, label)
+
+    if isMark(label[0]) {
+        return IdnaError.Invalid
+    }
+
+    for c in label {
+        if !isValidChar(c) {
+            return IdnaError.Invalid
+        }
+    }
+
+    try checkJoiners(label)
+}

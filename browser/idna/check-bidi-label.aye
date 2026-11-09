@@ -1,0 +1,35 @@
+// https://www.rfc-editor.org/rfc/rfc5893#section-2
+fn checkBidiLabel(label: []u32) IdnaError!void {
+    if label.len == 0 {
+        return
+    }
+
+    let rtl = isRightToLeft(bidiClass(label[0]))
+
+    if !rtl && bidiClass(label[0]) != BIDI_L {
+        return IdnaError.Invalid
+    }
+
+    var has_en = false
+    var has_an = false
+    var last: u32 = 0
+
+    for c in label {
+        let cls = bidiClass(c)
+
+        if rtl && !allowedInRtl(cls) || !rtl && !allowedInLtr(cls) {
+            return IdnaError.Invalid
+        }
+
+        has_en = has_en || cls == BIDI_EN
+        has_an = has_an || cls == BIDI_AN
+
+        if cls != BIDI_NSM {
+            last = cls
+        }
+    }
+
+    if rtl && (has_en && has_an || !endsRtl(last)) || !rtl && !endsLtr(last) {
+        return IdnaError.Invalid
+    }
+}

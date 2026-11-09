@@ -1,0 +1,33 @@
+// https://www.unicode.org/reports/tr15/#Primary_Composite_Character
+fn composeInPlace(a: []mut u32) usize {
+    var w: usize = 0
+    var starter: usize = 0
+    var has_starter = false
+    var last: u32 = 0
+
+    for r in 0..a.len {
+        let c = a[r]
+        let cc = combiningClass(c)
+        var composite: u32 = 0
+
+        if has_starter && (last < cc || last == 0) {
+            composite = composePair(a[starter], c)
+        }
+
+        if composite != 0 {
+            a[starter] = composite
+            continue
+        }
+
+        if cc == 0 {
+            starter = w
+            has_starter = true
+        }
+
+        a[w] = c
+        w += 1
+        last = cc
+    }
+
+    return w
+}
