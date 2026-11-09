@@ -2,14 +2,23 @@ import std.crypto
 import std.mem
 
 fn digestOf(code: []u8, bytes: usize) [64]u8 {
-    if bytes != 32 {
-        return sha512(code, bytes == 64)
+    if bytes == 64 {
+        return crypto.sha512(code)
     }
 
     var out = [64]u8{0, ..}
-    let narrow = crypto.sha256(code)
 
-    mem.copy(out[..], narrow[..])
+    if bytes == 32 {
+        let narrow = crypto.sha256(code)
+
+        mem.copy(out[..], narrow[..])
+
+        return out
+    }
+
+    let wide = crypto.sha384(code)
+
+    mem.copy(out[..], wide[..])
 
     return out
 }
