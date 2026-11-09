@@ -372,6 +372,7 @@ check`. Chromium references come from the module map of
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.11 | `url` (66.7 -> 90.3, threshold 80 -> 88; done, 2026-11-09; UTS #46 in new `browser/idna/` from Unicode 18.0.0 tables via `gen_idna.py`; left: URL setters through a state-override parser (about 360 subtests), `failure.html` XHR/sendBeacon throws, urlencoded-parser BOM/surrogates, percent-encoding charsets) |
+| Q6.11b | WPT url, the URL setters: `url.setComponent` runs the basic URL parser with a state override over a Parser copied from the Url (`url-setters*.js` 0 -> 1156/1156, `a-element` setters included); `ak.setUrlPart` native behind the `URL` class setters; url 90.3 -> 93.9, threshold 88 -> 90 (done, 2026-11-09; left: `location` setters other than hash, `setComponent` in the url fuzz target) |
 | Q6.12 | `css/css-animations` (50.9, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
