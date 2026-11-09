@@ -30,7 +30,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/floats-tables` | 709 | 251 | 888/1601 | 55.5 | 65 | below | +0.0 |
 | `css/inline-text` | 2343 | 407 | 4897/8083 | 60.6 | 60 | done | +0.0 |
 | `css/overflow` | 939 | 189 | 1044/1921 | 54.3 | 60 | below | +0.0 |
-| `css/css-grid` | 2508 | 1085 | 7585/17578 | 43.2 | 60 | below | +0.0 |
+| `css/css-grid` | 2508 | 1085 | 8305/17578 | 47.2 | 60 | below | +4.1 |
 | `css/positioning` | 915 | 239 | 1425/2310 | 61.7 | 70 | below | +0.0 |
 | `css/backgrounds-borders` | 1041 | 295 | 2549/8473 | 30.1 | 65 | below | +0.0 |
 | `css/css-fonts` | 560 | 325 | 2736/8356 | 32.7 | 50 | below | +0.0 |

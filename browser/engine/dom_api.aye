@@ -26,6 +26,7 @@ import js.Value
 import std
 import std.list.List
 import std.mem.AllocError
+import std.mem.Allocator
 import std.text
 
 // ---- wrappers
@@ -1635,7 +1636,7 @@ fn namedGet(s: *mut Script, o: u32, key: u32) JsError!Value {
     try kebab(name, "", b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(styleAttrOf(s.active, h), b.bytes(), v)
+    try styleValue(s.alloc, styleAttrOf(s.active, h), b.bytes(), v)
     return it.newString(v.bytes())
 }
 
@@ -1721,7 +1722,7 @@ fn hostTag(it: *mut Interp, o: u32) u32 {
 }
 
 // The value of property `prop` in the declarations `decls` ("a: b; c: d").
-fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
+fn styleValue(alloc: Allocator, decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
     var parts = text.split(decls, ";")
     while parts.next() |d| {
         let colon = std.mem.indexOf(d, ':') orelse continue
@@ -1732,6 +1733,9 @@ fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
     }
     if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {
         try overflowOfDecls(decls, out)
+    }
+    if out.len() == 0 {
+        try css.longhandFromShorthands(alloc, decls, prop, out)
     }
 }
 
@@ -1811,7 +1815,7 @@ fn styleGetPropertyValue(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
+    try styleValue(scriptOf(it).alloc, styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
     return it.newString(v.bytes())
 }
 
@@ -1837,7 +1841,7 @@ fn styleRemoveProperty(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, b)
     let v = try it.builder()
     defer it.release(v)
-    try styleValue(styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
+    try styleValue(scriptOf(it).alloc, styleAttrOf(scriptOf(it).active, h), b.bytes(), v)
     let old = try it.newString(v.bytes())
     // Mutation hooks allocate and may collect the string before we return.
     try it.push(old)

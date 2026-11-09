@@ -1,0 +1,36 @@
+import std.mem.AllocError
+
+fn addGridAutoInitial(d: *mut Declarer) AllocError!void {
+    try d.add(GRID_AUTO_ROWS, Value.Keyword { k: "auto" })
+    try d.add(GRID_AUTO_COLUMNS, Value.Keyword { k: "auto" })
+    try d.add(GRID_AUTO_FLOW, Value.Keyword { k: "row" })
+}
+
+// spec: https://drafts.csswg.org/css-grid-2/#propdef-grid
+fn gridAutoSide(d: *mut Declarer, columns: bool, flow: []Comp, auto: []Comp, template: []Comp) AllocError!void {
+    var auto_prop = GRID_AUTO_ROWS
+    var template_prop = GRID_TEMPLATE_COLUMNS
+    var other_template = GRID_TEMPLATE_ROWS
+    var axis = "row"
+
+    if columns {
+        auto_prop = GRID_AUTO_COLUMNS
+        template_prop = GRID_TEMPLATE_ROWS
+        other_template = GRID_TEMPLATE_COLUMNS
+        axis = "column"
+    }
+
+    let sized = (try parseValue(d.sheet, template_prop, template)) orelse return
+    var sizes = Value.Keyword { k: "auto" }
+
+    if auto.len > 0 {
+        sizes = (try parseValue(d.sheet, auto_prop, auto)) orelse return
+    }
+
+    try addGridAutoInitial(d)
+    try d.add(template_prop, sized)
+    try d.add(other_template, Value.Keyword { k: "none" })
+    try d.add(GRID_TEMPLATE_AREAS, Value.Keyword { k: "none" })
+    try d.add(auto_prop, sizes)
+    try d.add(GRID_AUTO_FLOW, Value.Keyword { k: flowKeyword(axis, flow.len == 2) })
+}

@@ -1,0 +1,55 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#propdef-grid-template
+fn gridTemplateAreasForm(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let arena = d.sheet.arena.allocator()
+    var rows = text.Builder.init(arena)
+    var areas = text.Builder.init(arena)
+    var strings = List(Comp).init(arena)
+    var slash = comps.len
+    var k: usize = 0
+
+    for i, c in comps {
+        if isDelim(c, '/') && slash == comps.len {
+            slash = i
+        }
+    }
+
+    while k < slash {
+        let c = comps[k]
+
+        k += 1
+
+        if isLineNames(c) {
+            try appendComp(&mut rows, c)
+        } else if isStringComp(c) {
+            try strings.append(c)
+            try appendComp(&mut areas, c)
+
+            if k < slash && !isLineNames(comps[k]) && !isStringComp(comps[k]) {
+                try appendComp(&mut rows, comps[k])
+                k += 1
+            } else {
+                try appendWord(&mut rows, "auto")
+            }
+        } else {
+            return
+        }
+    }
+
+    var cols = Value.Keyword { k: "none" }
+
+    if slash + 1 < comps.len {
+        cols = (try parseValue(d.sheet, GRID_TEMPLATE_COLUMNS, comps[slash + 1..])) orelse return
+    }
+
+    if !isGridAreas(strings.items()) {
+        return
+    }
+
+    try d.add(GRID_TEMPLATE_ROWS, Value.Keyword { k: try rows.toOwned() })
+    try d.add(GRID_TEMPLATE_COLUMNS, cols)
+    try d.add(GRID_TEMPLATE_AREAS, Value.Keyword { k: try areas.toOwned() })
+}

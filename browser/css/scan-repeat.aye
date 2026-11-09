@@ -1,0 +1,26 @@
+import std.math
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-grid-2/#repeat-notation
+fn scanRepeat(sheet: *mut Sheet, c: Comp, scan: *mut TrackScan) AllocError!void {
+    let args = try gridArgs(sheet, c)
+
+    if args.len < 3 || !isComma(args[1]) {
+        scan.ok = false
+
+        return
+    }
+
+    let inner = try scanTracks(sheet, args[2..], true)
+    let count = args[0]
+    let auto = isIdent(count, "auto-fill") || isIdent(count, "auto-fit")
+    let integer = count.toks.len == 1 && count.toks[0].kind == Tok.Number && count.toks[0].num >= 1.0 && count.toks[0].num == math.floor(count.toks[0].num)
+
+    scan.ok = scan.ok && inner.ok && (auto || integer) && (!auto || inner.all_fixed)
+    scan.all_fixed = scan.all_fixed && inner.all_fixed
+    scan.tracks += inner.tracks
+
+    if auto {
+        scan.auto_repeats += 1
+    }
+}

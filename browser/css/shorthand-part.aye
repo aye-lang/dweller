@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn shorthandPart(alloc: Allocator, name: []u8, value: []u8, index: usize, out: *mut text.Builder) AllocError!void {
+    var longhands = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    let n = shorthandLonghands(name, longhands[..])
+
+    if inIndexes(longhands[0..n], index) {
+        var sheet = try Sheet.init(alloc)
+        defer sheet.deinit()
+
+        var toks = List(Token).init(alloc)
+        defer toks.deinit()
+
+        try tokenize(alloc, value, &mut toks)
+
+        let comps = try components(&mut sheet, toks.items())
+
+        if try shorthandValue(&mut sheet, name, comps, index) |v| {
+            try keywordInto(v, out)
+        }
+    }
+}

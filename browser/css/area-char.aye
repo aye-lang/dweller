@@ -1,0 +1,38 @@
+import std.mem.AllocError
+import std.text
+
+fn startAreaString(res: *mut text.Builder, closing: bool) AllocError!void {
+    if !closing && res.len() > 0 {
+        try res.appendByte(' ')
+    }
+
+    try res.appendByte('"')
+}
+
+fn areaChar(res: *mut text.Builder, c: u8, last: u8) AllocError!u8 {
+    if c == ' ' {
+        return 0
+    }
+
+    var kind: u8 = 1
+
+    if c == '.' {
+        kind = 2
+    }
+
+    if kind == last && kind == 2 {
+        return 2
+    }
+
+    if kind != last && res.bytes()[res.len() - 1] != '"' {
+        try res.appendByte(' ')
+    }
+
+    if kind == 2 {
+        try res.appendByte('.')
+    } else {
+        try res.appendByte(c)
+    }
+
+    return kind
+}

@@ -1,0 +1,16 @@
+import std.mem
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
+pub fn longhandFromShorthands(alloc: Allocator, decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
+    let index = propertyIndex(prop) orelse return
+    var parts = text.split(decls, ";")
+
+    while parts.next() |d| {
+        let colon = mem.indexOf(d, ':') orelse continue
+
+        try shorthandPart(alloc, text.trim(d[..colon]), text.trim(d[colon + 1..]), index, out)
+    }
+}
