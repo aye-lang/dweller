@@ -1,0 +1,28 @@
+let BPF_LD_W_ABS: u64 = 0x20
+let BPF_JEQ_K: u64 = 0x15
+let BPF_AND_K: u64 = 0x54
+let BPF_RET_K: u64 = 0x06
+
+fn bpfInsn(code: u64, jt: u64, jf: u64, k: u32) u64 {
+    return code | jt << 16 | jf << 24 | (k as u64) << 32
+}
+
+fn bpfLoad(offset: u32) u64 {
+    return bpfInsn(BPF_LD_W_ABS, 0, 0, offset)
+}
+
+fn bpfAnd(mask: u32) u64 {
+    return bpfInsn(BPF_AND_K, 0, 0, mask)
+}
+
+fn bpfJumpUnless(k: u32, skip: u64) u64 {
+    return bpfInsn(BPF_JEQ_K, 0, skip, k)
+}
+
+fn bpfSkipIf(k: u32, skip: u64) u64 {
+    return bpfInsn(BPF_JEQ_K, skip, 0, k)
+}
+
+fn bpfRet(k: u32) u64 {
+    return bpfInsn(BPF_RET_K, 0, 0, k)
+}

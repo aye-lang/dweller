@@ -526,16 +526,18 @@ fn window_renderer_frames() {
     );
 }
 
-/// Q2.8a: on macOS a renderer enters its seatbelt sandbox before it reads
-/// any page. With `DWELLER_TEST_SANDBOX_PROBE=1` it then tries to open
-/// the profile (`$HOME/.dweller`), to write in /tmp, to connect to
-/// 127.0.0.1 and to fork, and prints each errno: all are EPERM (1), and
-/// the page still matches the in-process window. With
-/// `DWELLER_NO_SANDBOX=1` it warns and the same probes succeed.
+/// Q2.8a, Q2.8b: a renderer enters its sandbox (macOS: seatbelt; Linux:
+/// Landlock and seccomp-bpf) before it reads any page. With
+/// `DWELLER_TEST_SANDBOX_PROBE=1` it then tries to open the profile
+/// (`$HOME/.dweller`), to write in /tmp, to connect to 127.0.0.1 and to
+/// fork, and prints each errno: all are EPERM (1), but Landlock refuses
+/// the profile with EACCES (13); and the page still matches the
+/// in-process window. With `DWELLER_NO_SANDBOX=1` it warns and the same
+/// probes succeed.
 #[test]
 fn window_renderer_sandbox() {
-    if !has_sdl() || !cfg!(target_os = "macos") {
-        println!("skipped: macOS with SDL2 only");
+    if !has_sdl() || !cfg!(any(target_os = "macos", target_os = "linux")) {
+        println!("skipped: macOS or Linux with SDL2 only");
         return;
     }
     let home = scratch().join("sandbox_home");
@@ -563,7 +565,8 @@ fn window_renderer_sandbox() {
     assert!(err.is_empty(), "{err}");
 
     let (state, err) = run(&tab, "renderer:loaded renderer:frame", &probe);
-    assert_eq!(err, "sandbox-probe home=1 tmp=1 tcp=1 fork=1\n");
+    let denied = ["sandbox-probe home=1 tmp=1 tcp=1 fork=1\n", "sandbox-probe home=13 tmp=1 tcp=1 fork=1\n"];
+    assert!(denied.contains(&err.as_str()), "{err}");
     assert!(state.contains("\nrenderer-frame "), "{state}");
     assert!(
         std::fs::read(&tab).unwrap() == std::fs::read(&golden).unwrap(),
