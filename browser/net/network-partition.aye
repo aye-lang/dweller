@@ -20,6 +20,12 @@ fn networkPartition(alloc: Allocator, req: Request, href: []u8) AllocError![]mut
     var out = text.Builder.init(alloc)
     defer out.deinit()
 
+    if req.partition != 0 {
+        try out.appendByte('#')
+        try out.appendUint(req.partition as u64)
+        try out.appendByte(' ')
+    }
+
     if try credentialed(alloc, req, href) {
         try out.append("1/_dk_")
     } else {

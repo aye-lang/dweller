@@ -34,6 +34,7 @@ struct Session {
     curl: ?*mut Curl
     shares: List(PartitionShare)
     jar: Jar
+    partitions: List(*mut PartitionJar)
     cache: Cache
     preflights: PreflightCache
     // DWELLER_COOKIE_FILE, `<profile>/cookies`, or empty.
@@ -86,6 +87,7 @@ pub fn start(alloc: Allocator) AllocError!void {
         curl: null,
         shares: List(PartitionShare).init(alloc),
         jar: Jar.init(alloc),
+        partitions: List(*mut PartitionJar).init(alloc),
         cache: Cache.init(alloc),
         preflights: PreflightCache.init(alloc),
         cookie_file: file,
@@ -221,6 +223,11 @@ pub fn stop() {
     }
     s.shares.deinit()
     s.jar.deinit()
+    for p in s.partitions.items() {
+        p.jar.deinit()
+        s.alloc.destroy(p)
+    }
+    s.partitions.deinit()
     for f in s.frames.items() {
         release(s.alloc, f.doc)
         release(s.alloc, f.top)
@@ -337,20 +344,20 @@ fn scriptContext(page: *Url, top: *Url) Context {
 
 /// Appends to `out` the cookies that a script of the page at `page`
 /// sees (`document.cookie`), its top-level page at `top`.
-pub fn scriptCookies(page: *Url, top: *Url, out: *mut text.Builder) AllocError!void {
+pub fn scriptCookies(partition: u32, page: *Url, top: *Url, out: *mut text.Builder) AllocError!void {
     if remote_cookies |hook| { return hook(page, out) }
-    let s = session orelse return
-    return s.jar.header(page, true, scriptContext(page, top), now(), out)
+    let jar = jarOf(session, partition) orelse return
+    return jar.header(page, true, scriptContext(page, top), now(), out)
 }
 
 /// Stores a cookie set by a script of the page at `page`, its top-level
 /// page at `top` (`document.cookie = line`); none in a third-party frame.
-pub fn setScriptCookie(page: *Url, top: *Url, line: []u8) AllocError!void {
+pub fn setScriptCookie(partition: u32, page: *Url, top: *Url, line: []u8) AllocError!void {
     if remote_cookie_set |hook| { return hook(page, line) }
-    let s = session orelse return
+    let jar = jarOf(session, partition) orelse return
     if !storesIn(scriptContext(page, top)) { return }
-    try s.jar.store(page, line, true, now())
-    try noteStored(page, line, true)
+    try jar.store(page, line, true, now())
+    if partition == 0 { try noteStored(page, line, true) }
 }
 
 fn withoutHash(href: []u8) []u8 {

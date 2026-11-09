@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+// chromium: content/browser/storage_partition_impl.cc (InitNetworkContext, is_in_memory)
+pub fn openPartition(partition: u32) AllocError!void {
+    let s = session orelse return
+
+    if partition == 0 || jarOf(s, partition) != null { return }
+
+    let p = try s.alloc.create(PartitionJar { id: partition, jar: Jar.init(s.alloc) })
+
+    s.partitions.append(p) catch |e| {
+        s.alloc.destroy(p)
+
+        return e
+    }
+}

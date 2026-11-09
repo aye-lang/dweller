@@ -13,8 +13,9 @@ fn hostTab(ui: *mut Ui, sp: *mut Space) AllocError!?*mut TabSlot {
     slot.in_space = sp.next_tab
     sp.next_tab += 1
     slot.agent = true
+    slot.partition = sp.partition
     engine.setContextAgent(slot.session.tab.context, true)
-    slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id)
+    slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition)
 
     if sp.paused {
         if slot.process |tp| { try ipc.encode(&mut tp.outbox, 0, ipc.Message.AgentPaused { on: 1 }) }

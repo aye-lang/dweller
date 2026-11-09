@@ -12,9 +12,15 @@ fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, 
 
     if agent.actsOnPage(cmd) && refusalOf(ui, conn, cmd).len > 0 { return null }
 
-    if slot.process == null { slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id) }
+    if slot.process == null { slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition) }
 
     let tp = slot.process orelse return null
+
+    if tp.gone.len > 0 && hosted != null {
+        try failCrashed(ui, c, line, c.mode == 2)
+
+        return true
+    }
 
     if tp.gone.len > 0 { return null }
 

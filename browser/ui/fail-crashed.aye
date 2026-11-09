@@ -1,0 +1,19 @@
+import agent
+import std.mem.AllocError
+import std.text
+
+let RENDERER_CRASHED = "renderer crashed"
+
+fn failCrashed(ui: *mut Ui, c: *mut Conn, line: []u8, mcp: bool) AllocError!void {
+    var out = text.Builder.init(ui.alloc)
+    defer out.deinit()
+
+    try agent.failLine(ui.alloc, line, mcp, RENDERER_CRASHED, &mut out)
+    try out.appendByte('\n')
+
+    c.asked = false
+    c.asked_wait = false
+    ui.agents.?.served += 1
+
+    if !sendAll(c.fd, out.bytes()) { c.gone = true }
+}
