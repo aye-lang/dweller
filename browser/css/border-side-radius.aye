@@ -1,0 +1,60 @@
+import std.mem.AllocError
+import std.text
+
+fn borderSideRadius(d: *mut Declarer, corners: [2]usize, comps: []Comp) AllocError!void {
+    if try d.wide(comps, corners[..]) {
+        return
+    }
+
+    var slash = comps.len
+    var slashes: usize = 0
+
+    for k, c in comps {
+        if isDelim(c, '/') {
+            slash = k
+            slashes += 1
+        }
+    }
+
+    if slashes > 1 {
+        return
+    }
+
+    let h = comps[..slash]
+    var v = h
+
+    if slash < comps.len {
+        v = comps[slash + 1..]
+    }
+
+    if h.len == 0 || h.len > 2 || v.len == 0 || v.len > 2 {
+        return
+    }
+
+    for c in comps {
+        if !isDelim(c, '/') && lengthValue(c, true, true) == null {
+            return
+        }
+    }
+
+    for k in 0..2 {
+        var out = text.Builder.init(d.sheet.arena.allocator())
+
+        if !(try writeComp(h[k % h.len], &mut out)) {
+            return
+        }
+
+        var vert = text.Builder.init(d.sheet.arena.allocator())
+
+        if !(try writeComp(v[k % v.len], &mut vert)) {
+            return
+        }
+
+        if !text.eql(out.bytes(), vert.bytes()) {
+            try out.appendByte(' ')
+            try out.append(vert.bytes())
+        }
+
+        try d.add(corners[k], Value.Keyword { k: try out.toOwned() })
+    }
+}

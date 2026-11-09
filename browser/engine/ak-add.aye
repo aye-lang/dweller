@@ -1,0 +1,27 @@
+import animation
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akAdd(it: *mut Interp, a: Args) JsError!Value {
+    let name = try it.builder()
+    defer it.release(name)
+    let under = try it.builder()
+    defer it.release(under)
+    let value = try it.builder()
+    defer it.release(value)
+    let out = try it.builder()
+    defer it.release(out)
+
+    try argText(it, a, 0, name)
+    try argText(it, a, 1, under)
+    try argText(it, a, 2, value)
+
+    if !try animation.addText(it.alloc, name.bytes(), under.bytes(), value.bytes(), out) {
+        return Value.Null
+    }
+
+    return it.newString(out.bytes())
+}

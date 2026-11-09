@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+fn writeSidePart(c: Comp, percent: bool, auto: bool, out: *mut text.Builder) AllocError!bool {
+    if auto && isIdent(c, "auto") {
+        try out.append("auto")
+
+        return true
+    }
+
+    if imageNumber(c) |n| {
+        if n < 0.0 {
+            return false
+        }
+
+        try writeNumber(n, out)
+
+        return true
+    }
+
+    let v = lengthValue(c, percent, true) orelse return false
+
+    try writeLength(v, out)
+
+    return true
+}

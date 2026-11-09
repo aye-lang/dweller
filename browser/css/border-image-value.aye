@@ -1,0 +1,35 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#border-image-slice
+fn isBorderImage(prop: usize) bool {
+    return prop >= BORDER_IMAGE_SOURCE && prop <= BORDER_IMAGE_REPEAT
+}
+
+fn borderImageValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Value {
+    var out = text.Builder.init(sheet.arena.allocator())
+
+    if comps.len == 0 {
+        return null
+    }
+
+    var ok = false
+
+    if prop == BORDER_IMAGE_SOURCE {
+        ok = try writeBorderImageSource(sheet, comps, &mut out)
+    } else if prop == BORDER_IMAGE_SLICE {
+        ok = try writeBorderImageSlice(comps, &mut out)
+    } else if prop == BORDER_IMAGE_WIDTH {
+        ok = try writeBorderImageSides(comps, true, true, &mut out)
+    } else if prop == BORDER_IMAGE_OUTSET {
+        ok = try writeBorderImageSides(comps, false, false, &mut out)
+    } else {
+        ok = try writeBorderImageRepeat(comps, &mut out)
+    }
+
+    if !ok {
+        return null
+    }
+
+    return Value.Keyword { k: try out.toOwned() }
+}

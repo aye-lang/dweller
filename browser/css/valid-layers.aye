@@ -1,0 +1,22 @@
+// spec: https://drafts.csswg.org/css-backgrounds-3/#backgrounds
+fn hasLayerGrammar(prop: usize) bool {
+    return (prop >= BACKGROUND_POSITION && prop <= BACKGROUND_ATTACHMENT) || prop == MASK_POSITION || prop == MASK_SIZE || prop == MASK_REPEAT
+}
+
+fn validLayers(prop: usize, comps: []Comp) bool {
+    var start: usize = 0
+
+    for k in 0..comps.len + 1 {
+        if k < comps.len && !isComma(comps[k]) {
+            continue
+        }
+
+        if !validLayer(prop, comps[start..k]) {
+            return false
+        }
+
+        start = k + 1
+    }
+
+    return true
+}

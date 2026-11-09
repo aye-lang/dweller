@@ -1,0 +1,35 @@
+import css
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn pushDecls(it: *mut Interp, sheet: *mut css.Sheet, r: css.DeclRange) JsError!Value {
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    let b = try it.builder()
+    defer it.release(b)
+
+    for d in sheet.decls.items()[r.start..r.end] {
+        if d.prop == css.CUSTOM {
+            continue
+        }
+
+        b.clear()
+
+        if d.raw.len > 0 {
+            try css.writeTokens(d.raw, b)
+        } else {
+            try css.writeValue(d.value, b)
+        }
+
+        try it.heap.pushElem(arr, try it.newString(css.PROPERTIES[d.prop].name))
+        try it.heap.pushElem(arr, try it.newString(b.bytes()))
+    }
+
+    return it.pop()
+}

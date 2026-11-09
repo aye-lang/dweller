@@ -27,18 +27,31 @@ function underlying(el, name) {
   return rec ? rec.base : el.style.getPropertyValue(name);
 }
 
+// spec: https://drafts.csswg.org/web-animations-1/#effect-composition
+function composed(el, name, frame, composite) {
+  const mode = frame.composite === 'auto' ? composite : frame.composite;
+
+  if (frame.value === null || mode === 'replace') return frame.value;
+
+  const r = ak.add(name, computedWith(el, name, underlying(el, name)), computedWith(el, name, frame.value));
+
+  return r === null ? frame.value : r;
+}
+
 // spec: https://drafts.csswg.org/web-animations-1/#the-effect-value-of-a-keyframe-animation-effect
-function valueAt(el, name, frames, progress, easing) {
-  if (frames[0].offset !== 0) frames.unshift({ offset: 0, easing, value: null });
-  if (frames[frames.length - 1].offset !== 1) frames.push({ offset: 1, easing, value: null });
+function valueAt(el, name, frames, progress, easing, composite) {
+  if (frames[0].offset !== 0) frames.unshift({ offset: 0, easing, value: null, composite: 'auto' });
+  if (frames[frames.length - 1].offset !== 1) frames.push({ offset: 1, easing, value: null, composite: 'auto' });
 
   let i = 0;
 
   while (i < frames.length - 2 && frames[i + 1].offset <= progress) i++;
 
   const a = frames[i], b = frames[i + 1];
-  const va = a.value === null ? underlying(el, name) : a.value;
-  const vb = b.value === null ? underlying(el, name) : b.value;
+  const ca = composed(el, name, a, composite);
+  const cb = composed(el, name, b, composite);
+  const va = ca === null ? underlying(el, name) : ca;
+  const vb = cb === null ? underlying(el, name) : cb;
   const span = b.offset - a.offset;
   const local = span === 0 ? 1 : ak.ease(a.easing, (progress - a.offset) / span);
 
@@ -60,18 +73,24 @@ hidden(KeyframeEffect.prototype, '_valuesAt', function (progress) {
 
   const byName = new Map();
 
+  const add = (name, f, value) => {
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push({ offset: f.computed, easing: f.easing, value, composite: f.composite });
+  };
+
   for (const f of this._frames) {
     for (const p of Object.keys(f.props)) {
       const name = cssName(p);
+      const longhands = ak.expand(name, f.props[p]);
 
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name).push({ offset: f.computed, easing: f.easing, value: f.props[p] });
+      if (longhands === null) add(name, f, f.props[p]);
+      else for (let i = 0; i < longhands.length; i += 2) add(longhands[i], f, longhands[i + 1]);
     }
   }
 
   const out = {};
 
-  for (const [name, frames] of byName) out[name] = valueAt(el, name, frames, progress, this._implicitEasing || 'linear');
+  for (const [name, frames] of byName) out[name] = valueAt(el, name, frames, progress, this._implicitEasing || 'linear', this.composite);
 
   return out;
 });

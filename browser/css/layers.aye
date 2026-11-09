@@ -59,6 +59,18 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
             return Value.Keyword { k: k }
         }
     }
+    if isBorderImage(prop) {
+        return borderImageValue(sheet, prop, comps)
+    }
+    if prop == BOX_SHADOW {
+        return boxShadowValue(sheet, comps)
+    }
+    if prop >= BORDER_TOP_LEFT_RADIUS && prop <= BORDER_BOTTOM_LEFT_RADIUS && !validRadius(comps) {
+        return null
+    }
+    if hasLayerGrammar(prop) && !validLayers(prop, comps) {
+        return null
+    }
     if prop == BACKGROUND_IMAGE || prop == MASK_IMAGE {
         var n: usize = 0
         for c in comps {
@@ -87,6 +99,9 @@ pub fn layersValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Va
     var out = text.Builder.init(sheet.arena.allocator())
     if !(try writeComps(comps, &mut out)) {
         return null
+    }
+    if prop >= BORDER_TOP_LEFT_RADIUS && prop <= BORDER_BOTTOM_LEFT_RADIUS {
+        return Value.Keyword { k: collapsePair(out.bytes()) }
     }
     return Value.Keyword { k: try out.toOwned() }
 }
@@ -496,10 +511,15 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
         return
     }
     var slash = comps.len
+    var slashes: usize = 0
     for k, c in comps {
         if isDelim(c, '/') {
             slash = k
+            slashes += 1
         }
+    }
+    if slashes > 1 {
+        return
     }
     let h = comps[..slash]
     var v = h
@@ -510,7 +530,7 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
         return
     }
     for c in comps {
-        if !isDelim(c, '/') && !isLength(c) {
+        if !isDelim(c, '/') && lengthValue(c, true, true) == null {
             return
         }
     }
@@ -520,9 +540,13 @@ fn borderRadius(d: *mut Declarer, comps: []Comp) AllocError!void {
             return
         }
         if slash < comps.len {
-            try out.appendByte(' ')
-            if !(try writeComp(v[cornerIndex(corner, v.len)], &mut out)) {
+            var vert = text.Builder.init(d.sheet.arena.allocator())
+            if !(try writeComp(v[cornerIndex(corner, v.len)], &mut vert)) {
                 return
+            }
+            if !text.eql(out.bytes(), vert.bytes()) {
+                try out.appendByte(' ')
+                try out.append(vert.bytes())
             }
         }
         try d.add(BORDER_TOP_LEFT_RADIUS + corner, Value.Keyword { k: try out.toOwned() })

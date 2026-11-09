@@ -1,0 +1,49 @@
+import css
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#box-shadow
+pub fn mixShadows(alloc: Allocator, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    var la = try shadowList(alloc, a) orelse return false
+    defer la.deinit()
+
+    var lb = try shadowList(alloc, b) orelse return false
+    defer lb.deinit()
+
+    var n = la.len()
+
+    if lb.len() > n {
+        n = lb.len()
+    }
+
+    for k in 0..n {
+        let sa = shadowAt(la.items(), lb.items(), k)
+        let sb = shadowAt(lb.items(), la.items(), k)
+
+        if sa.inset != sb.inset {
+            return false
+        }
+
+        if k > 0 {
+            try out.append(", ")
+        }
+
+        try css.writeShadow(mixShadow(sa, sb, p), css.Value.Initial, out)
+    }
+
+    if n == 0 {
+        try out.append("none")
+    }
+
+    return true
+}
+
+fn shadowAt(own: []css.Shadow, other: []css.Shadow, k: usize) css.Shadow {
+    if k < own.len {
+        return own[k]
+    }
+
+    return clearShadow(other[k].inset)
+}
