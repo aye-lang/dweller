@@ -59,8 +59,9 @@ fn window_history_api_in(envs: &[(&str, &str)]) {
 /// entries, back on the first, and a second tab, shown.
 const SESSION_EVENTS: &str = "key:cmd+l text:browser/tests/basic.html key:return loaded key:cmd+l text:browser/tests/article.html key:return loaded key:cmd+[ loaded key:cmd+t text:browser/tests/attributes.html key:return loaded";
 
-fn session_run(profile: &Path, restore: &str, events: &str) -> (String, String) {
+fn session_run(profile: &Path, restore: &str, events: &str, env: &[(&str, &str)]) -> (String, String) {
     let out = dweller_command()
+        .envs(env.iter().copied())
         .current_dir(root())
         .env("DWELLER_PROFILE", profile)
         .env("DWELLER_RESTORE", restore)
@@ -78,12 +79,12 @@ fn shows(got: &str, page: &str, history: &str, tabs: &str) -> bool {
 // The window started again on `profile` has the tabs of `SESSION_EVENTS`:
 // the second one shown; the first, loaded when shown, on its first entry
 // with the second ahead of it.
-fn session_restored(profile: &Path) {
-    let (got, err) = session_run(profile, "1", "frame");
+fn session_restored(profile: &Path, env: &[(&str, &str)]) {
+    let (got, err) = session_run(profile, "1", "frame", env);
     assert!(shows(&got, "attributes.html", "1 of 1", "2, showing 2") && err.is_empty(), "{got}\n{err}");
-    let (got, err) = session_run(profile, "1", "key:cmd+1 loaded");
+    let (got, err) = session_run(profile, "1", "key:cmd+1 loaded", env);
     assert!(shows(&got, "basic.html", "1 of 2", "2, showing 1") && err.is_empty(), "{got}\n{err}");
-    let (got, err) = session_run(profile, "1", "key:cmd+] loaded");
+    let (got, err) = session_run(profile, "1", "key:cmd+] loaded", env);
     assert!(shows(&got, "article.html", "2 of 2", "2, showing 1") && err.is_empty(), "{got}\n{err}");
 }
 
@@ -91,12 +92,24 @@ fn session_restored(profile: &Path) {
 /// a second after the last change) comes back with its tabs.
 #[test]
 fn window_session_restore_after_kill() {
+    session_restore_after_kill("session-kill", &[]);
+}
+
+/// Q1.9b: the same with `DWELLER_PROCESS=tab`: the entries come from the
+/// browser's history and each tab's renderer loads its current entry.
+#[test]
+fn window_session_restore_after_kill_tab() {
+    session_restore_after_kill("session-kill-tab", &[("DWELLER_PROCESS", "tab")]);
+}
+
+fn session_restore_after_kill(name: &str, env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let dir = profile("session-kill");
+    let dir = profile(name);
     let mut window = dweller_command()
+        .envs(env.iter().copied())
         .current_dir(root())
         .env("DWELLER_PROFILE", &dir)
         .env("DWELLER_RESTORE", "1")
@@ -116,7 +129,7 @@ fn window_session_restore_after_kill() {
     let status = Command::new("kill").args(["-9", &window.id().to_string()]).status().unwrap();
     assert!(status.success());
     window.wait().unwrap();
-    session_restored(&dir);
+    session_restored(&dir, env);
 }
 
 /// Q1.9: after a clean quit the tabs come back too. DWELLER_RESTORE=0
@@ -128,14 +141,14 @@ fn window_session_restore_after_quit() {
         return;
     }
     let dir = profile("session-quit");
-    let (_, err) = session_run(&dir, "1", SESSION_EVENTS);
+    let (_, err) = session_run(&dir, "1", SESSION_EVENTS, &[]);
     assert!(err.is_empty(), "{err}");
-    session_restored(&dir);
-    let (got, _) = session_run(&dir, "0", "frame");
+    session_restored(&dir, &[]);
+    let (got, _) = session_run(&dir, "0", "frame", &[]);
     assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
     let saved = std::fs::read(dir.join("session")).unwrap();
     std::fs::write(dir.join("session"), &saved[..saved.len() / 2]).unwrap();
-    let (got, err) = session_run(&dir, "1", "frame");
+    let (got, err) = session_run(&dir, "1", "frame", &[]);
     assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
     assert_eq!(err, "error: the saved session is unreadable: starting with a new tab\n");
 }
