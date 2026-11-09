@@ -1,0 +1,26 @@
+import dom
+import dom.NodeId
+import engine
+import ipc
+import std.text
+
+let MAX_COPY: usize = 524288
+
+// chromium: content/browser/renderer_host/clipboard_host_impl.cc (WriteText)
+fn copySelection(r: *mut TabRenderer, p: *mut engine.Page, f: NodeId) !bool {
+    let s = dom.selectedText(&p.doc, f)
+
+    if s.len == 0 || s.len > MAX_COPY || hasNul(s) || (p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "password")) { return false }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Clipboard { copied: s })
+
+    return true
+}
+
+fn hasNul(s: []u8) bool {
+    for b in s {
+        if b == 0 { return true }
+    }
+
+    return false
+}

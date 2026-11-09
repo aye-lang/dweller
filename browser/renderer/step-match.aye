@@ -1,0 +1,21 @@
+// chromium: third_party/blink/renderer/core/editing/finder/text_finder.cc (FindMatchRects, the active match)
+fn stepMatch(r: *mut TabRenderer, command: u32) !void {
+    let n = r.find_rects.len()
+
+    if n == 0 || command == 5 {
+        r.find_current = 0
+
+        return
+    }
+
+    if command == 1 {
+        r.find_current = firstMatchBelow(r)
+    } else if command == 3 {
+        r.find_current = (r.find_current + 1) % n
+    } else if command == 4 {
+        r.find_current = (r.find_current + n - 1) % n
+    }
+
+    if r.find_current >= n { r.find_current = 0 }
+    if command == 1 || command == 3 || command == 4 { try showMatch(r) }
+}

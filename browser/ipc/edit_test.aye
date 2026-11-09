@@ -1,0 +1,65 @@
+import std.text
+
+test "the edit, clipboard, find and context messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let edit = try roundTrip(&mut out, 7, Message.Edit { seq: 3, command: 3, typed: "pasted" })
+
+    match edit.message {
+        .Edit { seq, command, typed } => {
+            @expectEqual(3, seq)
+            @expectEqual(3, command)
+            @expect(text.eql(typed, "pasted"))
+        }
+
+        _ => @expect(false)
+    }
+
+    let written = try roundTrip(&mut out, 7, Message.Clipboard { copied: "copied" })
+
+    match written.message {
+        .Clipboard { copied } => @expect(text.eql(copied, "copied"))
+        _ => @expect(false)
+    }
+
+    let find = try roundTrip(&mut out, 7, Message.Find { id: 5, command: 2, query: "the" })
+
+    match find.message {
+        .Find { id, command, query } => {
+            @expectEqual(5, id)
+            @expectEqual(2, command)
+            @expect(text.eql(query, "the"))
+        }
+
+        _ => @expect(false)
+    }
+
+    let found = try roundTrip(&mut out, 7, Message.FindReply { id: 5, count: 3, active: 1 })
+
+    match found.message {
+        .FindReply { id, count, active } => {
+            @expectEqual(5, id)
+            @expectEqual(3, count)
+            @expectEqual(1, active)
+        }
+
+        _ => @expect(false)
+    }
+
+    let open = try roundTrip(&mut out, 7, Message.Context { ask: 1, context: 9, href: "http://a/", post: 1, content_type: "text/plain", body: "b=1" })
+
+    match open.message {
+        .Context { ask, context, href, post, content_type, body } => {
+            @expectEqual(1, ask)
+            @expectEqual(9, context)
+            @expectEqual(1, post)
+            @expect(text.eql(href, "http://a/") && text.eql(content_type, "text/plain") && text.eql(body, "b=1"))
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.Clipboard { copied: "" }) && fromRenderer(Message.FindReply { id: 0, count: 0, active: 0 }) && fromRenderer(Message.Context { ask: 0, context: 0, href: "", post: 0, content_type: "", body: "" }))
+    @expect(!fromRenderer(Message.Edit { seq: 0, command: 0, typed: "" }) && !fromRenderer(Message.Find { id: 0, command: 0, query: "" }))
+}

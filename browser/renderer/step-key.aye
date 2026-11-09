@@ -1,0 +1,29 @@
+import dom
+import dom.NodeId
+import engine
+import std.text
+
+// chromium: third_party/blink/renderer/core/html/forms/html_select_element.cc (DefaultEventHandler: arrow keys), range_input_type.cc (HandleKeydownEvent)
+fn stepKey(r: *mut TabRenderer, p: *mut engine.Page, f: NodeId, key: []u8) !bool {
+    let up = text.eql(key, "ArrowUp")
+    let down = text.eql(key, "ArrowDown")
+    let sideways = text.eql(key, "ArrowLeft") || text.eql(key, "ArrowRight")
+    let range = p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "range")
+
+    if !up && !down && !(range && sideways) { return false }
+
+    try engine.setFocusVisible(p, true)
+
+    if try dom.stepValue(&mut p.doc, f, up || text.eql(key, "ArrowRight")) {
+        try engine.dispatchEvent(p, f, "input", "")
+        try engine.dispatchEvent(p, f, "change", "")
+
+        return true
+    }
+
+    if !p.doc.isElement(f, "select") { return false }
+
+    try stepOption(r, p, f, down)
+
+    return true
+}

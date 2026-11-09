@@ -1,0 +1,18 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+let MATCH_INK = paint.Rgba { r: 255, g: 230, b: 0, a: 110 }
+let ACTIVE_INK = paint.Rgba { r: 255, g: 140, b: 0, a: 140 }
+
+fn findMarks(r: *TabRenderer, out: *mut List(Mark)) AllocError!void {
+    let v = r.view()
+
+    for i, m in r.find_rects.items() {
+        var ink = MATCH_INK
+
+        if i == r.find_current { ink = ACTIVE_INK }
+
+        try out.append(Mark { rect: paint.deviceRect(m, v), ink: ink })
+    }
+}

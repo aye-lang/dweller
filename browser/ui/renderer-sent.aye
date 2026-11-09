@@ -165,6 +165,24 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return focusFrame(tp, key, how)
         }
 
+        .Clipboard { copied } => {
+            if got.frame != slot.id { return "bad clipboard" }
+
+            return takeClipboard(tp, copied)
+        }
+
+        .FindReply { id, count, active } => {
+            if got.frame != slot.id { return "bad find_reply" }
+
+            return takeFindReply(tp, id, count, active)
+        }
+
+        .Context { .. } => {
+            if got.frame != slot.id { return "bad context" }
+
+            return takeContext(tp, got)
+        }
+
         .WheelUnused { .. } => return "unexpected wheel_unused"
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }

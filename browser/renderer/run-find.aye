@@ -1,0 +1,30 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/editing/finder/text_finder.cc (FindInternal, SetMarkerActive, ScrollToVisible)
+fn runFind(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let command = r.find_command
+
+    if !r.find_on && command == 0 { return }
+
+    r.find_command = 0
+    r.find_rects.clear()
+
+    if r.find_on {
+        if p.tree |t| { try engine.findText(t, r.find.bytes(), &mut r.find_rects) }
+    }
+
+    try stepMatch(r, command)
+
+    let said = [2]u32{r.find_rects.len() as u32, r.find_current as u32}
+
+    if command == 0 && said[0] == r.find_said[0] && said[1] == r.find_said[1] { return }
+
+    r.find_said = said
+
+    var id = r.find_id
+
+    if evilTest("find") { id += 1 }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.FindReply { id: id, count: said[0], active: said[1] })
+}

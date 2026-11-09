@@ -1,0 +1,29 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc (the browser reads the clipboard on the paste gesture and hands it over)
+fn forwardEdit(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool {
+    if ev.kind != SDL_KEYDOWN { return false }
+
+    let sym = ev.key.keysym.sym
+    let mods = ev.key.keysym.mods
+
+    if (mods & (KMOD_GUI | KMOD_CTRL)) == 0 || (mods & (KMOD_SHIFT | KMOD_ALT)) != 0 { return false }
+
+    let command = editCommandOf(sym) orelse return false
+    let to = focusedFrame(tp).tp
+
+    ui.swallow = true
+
+    if command == 1 || command == 2 { to.copy_seq = to.seq + 1 }
+
+    to.seq += 1
+
+    if command == 3 {
+        try pasteClipboard(to)
+    } else {
+        try ipc.encode(&mut to.outbox, to.tab, ipc.Message.Edit { seq: to.seq, command: command, typed: "" })
+    }
+
+    return true
+}

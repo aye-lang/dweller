@@ -1,0 +1,37 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+import url
+
+// chromium: content/browser/renderer_host/render_view_host_impl.cc (CreateNewWindow: the browser opens the tab and loads the URL there)
+fn openTarget(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32, href: []u8, post: bool, content_type: []u8, body: []u8) AllocError!void {
+    let target = url.parse(ui.alloc, href) catch |e| {
+        return
+    }
+
+    defer target.deinit(ui.alloc)
+
+    if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) || text.eql(target.scheme, "data") {
+        std.log.err("navigation refused: {}", target.href)
+
+        return
+    }
+
+    let slot = (try openedSlot(ui, opener, tp, context)) orelse return
+
+    slot.session.tab.history.push(target.href, 0, null, false) catch return
+
+    slot.post = post
+
+    slot.post_type.clear()
+    slot.post_body.clear()
+
+    if post {
+        try slot.post_type.append(content_type)
+        try slot.post_body.append(body)
+    }
+
+    if slot.process |p| { p.url.clear() }
+    if ui.slots[ui.active].? == slot { try goInRenderer(ui) }
+}

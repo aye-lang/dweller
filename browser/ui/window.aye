@@ -1090,6 +1090,10 @@ pub struct Ui {
     fn closeFind(self: *mut Self) AllocError!void {
         self.finding = false
         self.focus = Focus.Page
+        if try askFind(self, 4) {
+            self.dirty = true
+            return
+        }
         try pageview.find(self.view(), null, false)
         self.tab.clampScroll(self.maxScroll())
         self.dirty = true
@@ -1098,11 +1102,17 @@ pub struct Ui {
     // Finds the query again; with `jump`, scrolls to the first match at
     // or below the top of the view.
     fn findAll(self: *mut Self, jump: bool) AllocError!void {
+        if try askFind(self, (!jump) as u32) {
+            return
+        }
         try pageview.find(self.view(), self.findQuery(), jump)
         self.noteDamage()
     }
 
-    fn nextMatch(self: *mut Self, backwards: bool) {
+    fn nextMatch(self: *mut Self, backwards: bool) AllocError!void {
+        if try askFind(self, 2 + backwards as u32) {
+            return
+        }
         pageview.findNext(self.view(), backwards)
         self.noteDamage()
     }
@@ -1435,7 +1445,7 @@ pub struct Ui {
             if self.focus == Focus.Address {
                 try self.submitAddress()
             } else {
-                self.nextMatch(shift)
+                try self.nextMatch(shift)
             }
             return
         }

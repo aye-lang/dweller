@@ -1,0 +1,19 @@
+import ipc
+import std.mem.AllocError
+
+fn serveOpenRequests(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    while true {
+        let next = ipc.nextMessage(tp.contexts.bytes()) catch |e| {
+            return tp.contexts.clear()
+        }
+
+        let held = next orelse return
+
+        match held.message {
+            .Context { context, href, post, content_type, body, .. } => try openTarget(ui, opener, tp, context, href, post != 0, content_type, body)
+            _ => {}
+        }
+
+        ipc.consume(&mut tp.contexts, held.used)
+    }
+}

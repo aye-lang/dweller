@@ -9,6 +9,8 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
         let got = (try ipc.nextMessage(r.current.bytes())).?
 
+        engine.setTabHost(r.width > 0 && drivesInput(got.message))
+
         match got.message {
             .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
             .PopupChoice { index } => try choosePopup(r, index)
@@ -48,6 +50,19 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 r.took(seq)
             }
 
+            .Find { id, command, query } => {
+                if command > 4 { return false }
+
+                try takeFind(r, id, command, query)
+            }
+
+            .Edit { seq, command, typed } => {
+                if command > 3 { return false }
+
+                try editCommand(r, command, typed)
+                r.took(seq)
+            }
+
             .AdvanceFocus { key, reverse } => try advanceFocus(r, key, reverse != 0)
             .ViewportIntersection { x0, y0, x1, y1 } => try takeIntersection(r, [4]u32{x0, y0, x1, y1})
 
@@ -63,10 +78,15 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
             _ => return false
         }
+
+        if drivesInput(got.message) { try sendContexts(r) }
     }
 
     try paintFrame(r)
     try reportPage(r)
+
+    engine.setTabHost(false)
+
     try ackInput(r)
 
     return true

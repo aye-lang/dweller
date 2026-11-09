@@ -1,0 +1,19 @@
+import dom.NodeId
+import engine
+import net
+
+fn submitInFrame(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) !void {
+    let slot = engine.targetFrame(p, engine.linkTarget(p, form)) orelse return sendSubmission(r, p, form, submitter)
+    let sub = (try engine.submitForm(p, form, submitter)) orelse return
+
+    defer sub.deinit(r.alloc)
+
+    if !engine.sandboxAllowsTarget(p, form, true) { return }
+
+    var body = net.Body { content_type: sub.content_type, data: sub.body }
+    var post: ?*net.Body = null
+
+    if sub.post { post = &body }
+
+    try engine.navigateFrame(slot, &sub.target, post, engine.initiatorOf(p))
+}

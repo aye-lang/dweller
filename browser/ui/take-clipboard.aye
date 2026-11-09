@@ -1,0 +1,22 @@
+import std
+import std.mem.AllocError
+
+let MAX_CLIPBOARD: usize = 524288
+
+// chromium: content/browser/renderer_host/clipboard_host_impl.cc (a renderer writes the clipboard only for a copy or cut it was asked for)
+fn takeClipboard(tp: *mut TabProcess, copied: []u8) AllocError![]u8 {
+    if tp.copy_seq == 0 || tp.copy_seq <= tp.acked || copied.len > MAX_CLIPBOARD { return "bad clipboard" }
+
+    for b in copied {
+        if b == 0 { return "bad clipboard" }
+    }
+
+    let z = try tp.url.alloc.alloc(0 as u8, copied.len + 1)
+
+    defer tp.url.alloc.free(z)
+    std.mem.copy(z, copied)
+    SDL_SetClipboardText(z.ptr)
+    tp.copy_seq = 0
+
+    return ""
+}

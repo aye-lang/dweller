@@ -45,7 +45,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `content-security-policy/frame-ancestors` | 34 | 0 | 32/36 | 88.9 | 85 | done | +0.0 |
 | `x-frame-options` | 6 | 0 | 61/157 | 38.9 | 35 | done | +0.0 |
 | `fetch/nosniff` | 6 | 0 | 47/65 | 72.3 | 72 | done | new |
-| `html/cross-origin-opener-policy` | 116 | 0 | 9/615 | 1.5 | 1 | done | new |
+| `html/cross-origin-opener-policy` | 116 | 0 | 250/615 | 40.7 | 40 | done | +39.2 |
 | `content-security-policy/style-src` | 42 | 0 | 80/87 | 92.0 | 80 | done | new |
 | `content-security-policy/img-src` | 15 | 0 | 15/20 | 75.0 | 70 | done | new |
 | `content-security-policy/connect-src` | 30 | 0 | 14/38 | 36.8 | 35 | done | new |

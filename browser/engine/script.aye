@@ -1777,6 +1777,7 @@ pub fn runUntilIdle(p: *mut Page, max_ms: f64) AllocError!void {
 pub fn runUntilConsole(p: *mut Page, max_ms: f64, prefix: []u8, out: *mut text.Builder) AllocError!bool {
     let end = pageClock(p) + max_ms
     var n: usize = 0
+    var mark = time.monotonicMs()
     try pumpContexts()
     while true {
         if try findConsole(p, prefix, out) {
@@ -1787,6 +1788,14 @@ pub fn runUntilConsole(p: *mut Page, max_ms: f64, prefix: []u8, out: *mut text.B
             continue
         }
         try syncFrames(p)
+        if liveContexts() {
+            if !try waitLive(p, end, &mut mark) {
+                return false
+            }
+            try pumpContexts()
+            continue
+        }
+        mark = time.monotonicMs()
         if n >= MAX_TASKS || !try runNextTimer(p, end) {
             return false
         }

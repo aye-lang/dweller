@@ -4,6 +4,8 @@ import engine
 fn hoverReport(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) !void {
     let t = p.tree orelse return
 
+    if engine.frameAt(p, x, y) |fp| { return frameHover(r, fp) }
+
     if engine.linkAt(t, x, y) |link| {
         let target = p.resolve(r.alloc, link.href) catch return showHover(r, 1, link.href)
         defer target.deinit(r.alloc)

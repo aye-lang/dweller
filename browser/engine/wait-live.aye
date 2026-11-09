@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.time
+
+let LIVE_SLEEP_MS: u64 = 2
+
+pub fn waitLive(p: *mut Page, end: f64, mark: *mut u64) AllocError!bool {
+    let now = pageClock(p)
+
+    if now >= end {
+        return false
+    }
+
+    if try runNextTimer(p, now) {
+        return true
+    }
+
+    time.sleep(LIVE_SLEEP_MS)
+    let at = time.monotonicMs()
+    let later = now + (at - mark.*) as f64
+
+    mark.* = at
+    setPageClock(p, later)
+    syncContextClocks(later)
+
+    return true
+}
