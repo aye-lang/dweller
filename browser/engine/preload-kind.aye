@@ -1,0 +1,35 @@
+import net
+import std.text
+
+// https://fetch.spec.whatwg.org/#destination-table
+fn preloadKind(destination: []u8) ?net.Kind {
+    if text.eqlIgnoreCase(destination, "style") {
+        return net.Kind.Style
+    }
+
+    if text.eqlIgnoreCase(destination, "script") {
+        return net.Kind.Script
+    }
+
+    if text.eqlIgnoreCase(destination, "image") {
+        return net.Kind.Image
+    }
+
+    if text.eqlIgnoreCase(destination, "font") {
+        return net.Kind.Font
+    }
+
+    if text.eqlIgnoreCase(destination, "worker") {
+        return net.Kind.Worker
+    }
+
+    var words = text.split("fetch document audio video track object embed json", " ")
+
+    while words.next() |w| {
+        if text.eqlIgnoreCase(destination, w) {
+            return net.Kind.Other
+        }
+    }
+
+    return null
+}

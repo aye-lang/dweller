@@ -1,0 +1,26 @@
+import dom.NodeId
+import net
+
+// blink: third_party/blink/renderer/core/loader/link_loader.cc
+fn linkRequest(p: *mut Page, h: NodeId, rel: LinkRelation) ?net.Request {
+    var req = net.Request { kind: net.Kind.Style, referrer: p.url.href, referrer_policy: net.parseReferrerPolicy(p.doc.attr(h, "referrerpolicy") orelse ""), initiator: initiatorOf(p) }
+    var crossorigin = p.doc.attr(h, "crossorigin")
+
+    if rel == LinkRelation.ModulePreload {
+        return scriptRequest(p, h)
+    }
+
+    if rel == LinkRelation.Prefetch {
+        req.kind = net.Kind.Other
+    }
+
+    if rel == LinkRelation.Preload {
+        req.kind = preloadKind(p.doc.attr(h, "as") orelse "") orelse return null
+
+        if req.kind == net.Kind.Font && crossorigin == null {
+            crossorigin = ""
+        }
+    }
+
+    return corsRequest(crossorigin, req)
+}
