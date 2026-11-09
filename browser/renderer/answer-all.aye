@@ -38,9 +38,17 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .Wheel { seq, x, y, dx, dy, precise } => {
-                try wheelInput(r, x, y, dx, dy, precise != 0)
+                try wheelInput(r, seq, x, y, dx, dy, precise != 0)
                 r.took(seq)
             }
+
+            .ScrollBubble { seq, x, y, dx, dy } => {
+                try scrollBubble(r, seq, x, y, dx, dy)
+                r.took(seq)
+            }
+
+            .AdvanceFocus { key, reverse } => try advanceFocus(r, key, reverse != 0)
+            .ViewportIntersection { x0, y0, x1, y1 } => try takeIntersection(r, [4]u32{x0, y0, x1, y1})
 
             .Key { seq, down, key, code, repeat, location, mods } => {
                 try keyInput(r, down != 0, key, code, repeat, location, mods)

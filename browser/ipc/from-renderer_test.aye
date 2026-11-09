@@ -1,0 +1,68 @@
+import std.text
+
+test "the frame input messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let unused = try roundTrip(&mut out, 7, Message.WheelUnused { seq: 3, dx: 0.0, dy: -40.0 })
+
+    match unused.message {
+        .WheelUnused { seq, dx, dy } => {
+            @expectEqual(3, seq)
+            @expectEqual(0.0, dx)
+            @expectEqual(-40.0, dy)
+        }
+
+        _ => @expect(false)
+    }
+
+    let bubble = try roundTrip(&mut out, 7, Message.ScrollBubble { seq: 4, x: 12.5, y: 30.0, dx: 0.0, dy: 40.0 })
+
+    match bubble.message {
+        .ScrollBubble { seq, x, y, dy, .. } => {
+            @expectEqual(4, seq)
+            @expectEqual(12.5, x)
+            @expectEqual(30.0, y)
+            @expectEqual(40.0, dy)
+        }
+
+        _ => @expect(false)
+    }
+
+    let into = try roundTrip(&mut out, 7, Message.FocusFrame { key: 9, how: 2 })
+
+    match into.message {
+        .FocusFrame { key, how } => {
+            @expectEqual(9, key)
+            @expectEqual(2, how)
+        }
+
+        _ => @expect(false)
+    }
+
+    let on = try roundTrip(&mut out, 7, Message.AdvanceFocus { key: 9, reverse: 1 })
+
+    match on.message {
+        .AdvanceFocus { key, reverse } => {
+            @expectEqual(9, key)
+            @expectEqual(1, reverse)
+        }
+
+        _ => @expect(false)
+    }
+
+    let seen = try roundTrip(&mut out, 7, Message.ViewportIntersection { x0: 0, y0: 20, x1: 200, y1: 100 })
+
+    match seen.message {
+        .ViewportIntersection { y0, x1, .. } => {
+            @expectEqual(20, y0)
+            @expectEqual(200, x1)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.WheelUnused { seq: 0, dx: 0.0, dy: 0.0 }) && fromRenderer(Message.FocusFrame { key: 0, how: 0 }))
+    @expect(!fromRenderer(Message.ScrollBubble { seq: 0, x: 0.0, y: 0.0, dx: 0.0, dy: 0.0 }) && !fromRenderer(Message.AdvanceFocus { key: 0, reverse: 0 }))
+    @expect(!fromRenderer(Message.ViewportIntersection { x0: 0, y0: 0, x1: 0, y1: 0 }))
+}

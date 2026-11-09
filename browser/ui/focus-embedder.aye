@@ -1,0 +1,11 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame.cc (AdvanceFocus: Tab leaves a frame into its parent)
+fn focusEmbedder(tp: *mut TabProcess, c: ChildFrame) AllocError!void {
+    let child = c.tp.?
+
+    child.take_focus = false
+    topProcess(tp).focus_frame = tp.tab
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.AdvanceFocus { key: c.key, reverse: child.take_reverse as u32 })
+}

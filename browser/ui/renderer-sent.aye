@@ -153,6 +153,13 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return takeSubframes(tp, frames)
         }
 
+        .FocusFrame { key, how } => {
+            if got.frame != slot.id { return "bad focus_frame" }
+
+            return focusFrame(tp, key, how)
+        }
+
+        .WheelUnused { .. } => return "unexpected wheel_unused"
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 

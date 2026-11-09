@@ -1,0 +1,22 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/page/focus_controller.cc (AdvanceFocusAcrossFrames: from the frame's start or end, or onward from a remote child)
+fn advanceFocus(r: *mut TabRenderer, key: u32, reverse: bool) !void {
+    let p = r.page orelse return
+
+    r.focused = true
+    r.wake()
+    r.due = true
+
+    if key == 0 {
+        engine.setFocus(p, null)
+
+        if (try engine.nextFocus(p, !reverse)) == null { return send(r.alloc, r.conn, r.tab, ipc.Message.TakeFocus { reverse: reverse as u32 }) }
+    } else if engine.remoteFrameOwner(p, key) |el| {
+        engine.setFocus(p, el)
+        r.focus_said = key
+    }
+
+    try tabKey(r, p, reverse)
+}

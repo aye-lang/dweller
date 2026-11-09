@@ -1,3 +1,4 @@
+import engine
 import ipc
 import layout
 import pageview
@@ -9,6 +10,11 @@ import std.text
 fn paintFrame(r: *mut TabRenderer) !void {
     let p = r.page orelse return
     var k: usize = 0
+
+    if engine.takeScriptScroll(p) |y| {
+        r.scroll_y = y
+        r.due = true
+    }
 
     if !r.free[0] {
         k = 1

@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+pub fn setVisibleRect(p: *mut Page, rect: [4]f64) AllocError!void {
+    let s = p.script orelse return
+
+    if s.visible |v| {
+        if v[0] == rect[0] && v[1] == rect[1] && v[2] == rect[2] && v[3] == rect[3] { return }
+    }
+
+    s.visible = rect
+    s.geometry_changes += 1
+
+    try runLayoutHook(s)
+}

@@ -20,11 +20,12 @@ fn forwardKey(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool 
         ui.swallow = false
     }
 
+    let to = focusedFrame(tp).tp
     let key = domKey(sym, sc, (mods & KMOD_SHIFT) != 0)
-    let m = ipc.Message.Key { seq: tp.seq + 1, down: down as u32, key: key, code: domCode(sc), repeat: (ke.repeat != 0) as u32, location: keyLocation(sc) as u32, mods: modBits(mods) as u32 }
+    let m = ipc.Message.Key { seq: to.seq + 1, down: down as u32, key: key, code: domCode(sc), repeat: (ke.repeat != 0) as u32, location: keyLocation(sc) as u32, mods: modBits(mods) as u32 }
 
-    tp.seq += 1
-    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, m)
+    to.seq += 1
+    try ipc.encode(&mut to.outbox, to.tab, m)
 
     return true
 }

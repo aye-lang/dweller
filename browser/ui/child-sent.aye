@@ -77,7 +77,25 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .TakeFocus { reverse } => {
             if reverse > 1 { return "bad take_focus" }
+
+            tp.take_focus = true
+            tp.take_reverse = reverse == 1
         }
+
+        .InputAck { seq } => {
+            if seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
+
+            tp.acked = seq
+        }
+
+        .WheelUnused { seq, dx, dy } => {
+            if seq == 0 || seq != tp.wheel_seq || !unusedWithin(dx, tp.wheel_at[2]) || !unusedWithin(dy, tp.wheel_at[3]) { return "bad wheel_unused" }
+
+            tp.wheel_seq = 0
+            tp.unused = [2]f64{dx, dy}
+        }
+
+        .FocusFrame { key, how } => return focusFrame(tp, key, how)
 
         .Redirect { url: href } => {
             if !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), href) { return "bad redirect" }

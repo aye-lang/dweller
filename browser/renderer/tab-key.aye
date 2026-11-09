@@ -11,6 +11,13 @@ fn tabKey(r: *mut TabRenderer, p: *mut engine.Page, shift: bool) !void {
     try layOut(r, p)
 
     let el = next orelse return
+
+    if engine.remoteFrameKey(p, el) |key| {
+        r.focus_said = key
+
+        try send(r.alloc, r.conn, r.tab, ipc.Message.FocusFrame { key: key, how: 1 + shift as u32 })
+    }
+
     let box = engine.boxRect(p, el) orelse return
     let view = r.height as f64 / r.scale
 
