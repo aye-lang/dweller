@@ -1,0 +1,28 @@
+import paint
+import std
+import std.mem.AllocError
+import svg
+
+// chromium: third_party/skia/src/core/SkBitmapProcState.cpp
+fn canvasPaintImage(alloc: std.mem.Allocator, px: []mut u8, area: CanvasArea, inv: svg.Matrix, src: CanvasSource, smooth: bool, repeat_x: bool, repeat_y: bool) AllocError!void {
+    let img = src.bmp
+    let nw = img.width as f64 / src.scale_x
+    let nh = img.height as f64 / src.scale_y
+
+    if inv.b != 0.0 || inv.c != 0.0 {
+        canvasPaintAffine(px, area, inv, src, smooth, repeat_x, repeat_y)
+
+        return
+    }
+
+    let cols = try alloc.alloc(paint.ImageTap { valid: false, i0: 0, i1: 0, t: 0 }, area.w)
+    defer alloc.free(cols)
+    let rows = try alloc.alloc(paint.ImageTap { valid: false, i0: 0, i1: 0, t: 0 }, area.h)
+    defer alloc.free(rows)
+    paint.imageTaps(cols, paint.TapAxis { origin: area.x, m: inv.a, e: inv.e, nat: nw, scale: src.scale_x, size: img.width, smooth: smooth, repeat: repeat_x })
+    paint.imageTaps(rows, paint.TapAxis { origin: area.y, m: inv.d, e: inv.f, nat: nh, scale: src.scale_y, size: img.height, smooth: smooth, repeat: repeat_y })
+
+    for ay in 0..area.h {
+        paint.patternRow(px, ay * area.w * 4, cols, rows[ay], img.pixels, img.width)
+    }
+}
