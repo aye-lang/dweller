@@ -1,0 +1,29 @@
+import dom
+import dom.NodeId
+import engine
+import std.list.List
+
+fn stepOption(r: *mut TabRenderer, p: *mut engine.Page, sel: NodeId, down: bool) !void {
+    var opts = List(NodeId).init(r.alloc)
+    defer opts.deinit()
+
+    try dom.options(&p.doc, sel, &mut opts)
+
+    var i = try dom.selectedIndex(&p.doc, sel)
+
+    while true {
+        if down {
+            i += 1
+        } else {
+            i -= 1
+        }
+
+        if i < 0 || i >= opts.len() as i64 { return }
+        if !dom.isDisabled(&p.doc, opts.items()[i as usize]) { break }
+    }
+
+    try dom.selectOption(&mut p.doc, sel, opts.items()[i as usize])
+    try p.restyle()
+    try engine.dispatchEvent(p, sel, "input", "")
+    try engine.dispatchEvent(p, sel, "change", "")
+}

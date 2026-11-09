@@ -1,0 +1,26 @@
+import ipc
+import std
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc (CreateNewWindow: a popup needs a user gesture, and the browser checks the request)
+fn takeContext(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .Context { ask, href, post, .. } => {
+            if ask > 1 || post > 1 || href.len > MAX_URL_CHARS { return "bad context" }
+        }
+
+        _ => return "bad context"
+    }
+
+    if tp.acked == tp.seq || tp.seq as u64 == tp.open_key {
+        std.log.err("popup blocked: no user gesture")
+
+        return ""
+    }
+
+    tp.open_key = tp.seq as u64
+
+    try ipc.encode(&mut tp.contexts, got.frame, got.message)
+
+    return ""
+}

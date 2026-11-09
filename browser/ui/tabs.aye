@@ -18,6 +18,7 @@ import font
 import pageview
 import std.mem.AllocError
 import std.mem.Allocator
+import std.text
 import url
 
 /// A tab of the window.
@@ -37,17 +38,19 @@ pub struct TabSlot {
     process: ?*mut TabProcess = null
     unloaded: bool = false
     speculative: ?*mut TabProcess = null
+    post: bool = false
+    post_type: text.Builder
+    post_body: text.Builder
 }
 
 fn newSlot(alloc: Allocator, measure: dyn font.Measurer, system: ?*mut font.System, id: u32) AllocError!*mut TabSlot {
     var s = try agent.newWindowSession(alloc, measure, system, 800.0, 600.0)
     errdefer agent.freeSession(&mut s)
-    return alloc.create(TabSlot { id: id, session: s, shown: 0, seen: 0, agent: false })
+    return alloc.create(TabSlot { id: id, session: s, shown: 0, seen: 0, agent: false, post_type: text.Builder.init(alloc), post_body: text.Builder.init(alloc) })
 }
 
 fn freeSlot(alloc: Allocator, slot: *mut TabSlot) {
-    endTabProcess(alloc, slot.process)
-    endTabProcess(alloc, slot.speculative)
+    endSlot(alloc, slot)
     dropTabStorage(alloc, slot.id)
     agent.freeSession(&mut slot.session)
     alloc.destroy(slot)

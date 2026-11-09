@@ -1,0 +1,17 @@
+import engine
+import ipc
+import net
+
+fn followFrameLink(r: *mut TabRenderer, page: *mut engine.Page, link: engine.Link) !void {
+    let target = page.follow(r.alloc, link.href) catch return
+
+    defer target.deinit(r.alloc)
+    net.noteNavigationPolicy(engine.linkReferrerPolicy(&page.doc, link.el))
+
+    if !engine.sandboxAllowsTarget(page, link.el, true) { return }
+
+    if engine.targetFrame(page, engine.linkTarget(page, link.el)) |slot| { return engine.navigateFrame(slot, &target, null, engine.initiatorOf(page)) }
+    if try engine.openElsewhere(page, link.el, &target) { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: target.href, post: 0, content_type: "", body: "", referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy(page.url.href)) })
+}

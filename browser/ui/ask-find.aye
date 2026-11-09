@@ -1,0 +1,22 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/find_request_manager.cc (the browser sends the query and the renderer answers with its match count and the active match)
+fn askFind(ui: *mut Ui, command: u32) AllocError!bool {
+    if !ui.tab_processes { return false }
+
+    let tp = ui.slots[ui.active].?.process orelse return false
+
+    if !tp.hello || tp.gone.len > 0 { return false }
+
+    tp.find_id += 1
+
+    if command == 4 {
+        tp.find_count = 0
+        tp.find_active = 0
+    }
+
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Find { id: tp.find_id, command: command, query: ui.find.bytes() })
+
+    return true
+}

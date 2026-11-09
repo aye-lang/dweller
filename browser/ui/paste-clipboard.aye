@@ -1,0 +1,18 @@
+import ipc
+import std.mem.AllocError
+
+let MAX_PASTE: usize = 524288
+
+fn pasteClipboard(to: *mut TabProcess) AllocError!void {
+    let p = SDL_GetClipboardText()
+
+    defer SDL_free(p)
+
+    var typed: []u8 = ""
+
+    if p |s| {
+        if strlen(s) <= MAX_PASTE { typed = s[0..strlen(s)] }
+    }
+
+    try ipc.encode(&mut to.outbox, to.tab, ipc.Message.Edit { seq: to.seq, command: 3, typed: typed })
+}
