@@ -1,0 +1,27 @@
+import perf
+import url.Url
+
+// chromium: content/browser/loader/navigation_url_loader_impl.cc
+pub fn startNavigation(target: *Url, req: Request) u32 {
+    let s = session orelse return 0
+    let ld = loaderOf(s) orelse return 0
+
+    if !initiatorMayLoad(req.initiator, target) { return 0 }
+
+    let l = newRequest(ld, target, req) catch return 0
+    let a = l.ask.?
+    var site = FetchSite.SameOrigin
+
+    if requestOrigin(req, req.referrer).len == 0 { site = FetchSite.None }
+
+    a.nav = true
+    a.began = perf.start()
+    a.owned_from = navigationFrom(ld.alloc, req, l.href) catch []mut u8{}
+    a.hop = Hop { from: a.owned_from, limit: MAX_DOCUMENT, site: site }
+
+    if !startHop(ld, s, l, l.href) { failRequest(ld, l, FetchError.Network) }
+
+    pumpLoads()
+
+    return l.id
+}

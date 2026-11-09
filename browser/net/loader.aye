@@ -87,6 +87,11 @@ struct Ask {
     res: Response
     failure: []u8
     code: u32 = 18
+    user_activated: bool = false
+    nav: bool = false
+    owned_from: []mut u8 = []mut u8{}
+    hop: Hop = Hop { from: "", limit: MAX_SUBRESOURCE }
+    retried: bool = false
 }
 
 struct Loader {
@@ -190,7 +195,8 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
     }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(key) {
-        l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null)
+        var hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
+        l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null, &mut hop)
         l.state = LoadState.Running
         if l.job == null {
             l.state = LoadState.Failed
@@ -390,6 +396,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         has_res: false,
         res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{}, headers_raw: []mut u8{} },
         failure: "",
+        user_activated: req.user_activated,
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -444,15 +451,15 @@ fn askBody(a: *Ask) Body {
 fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
     let a = l.ask.?
     var body = askBody(a)
-    var req = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.verb[..a.verb.len - 1], headers: a.headers, top: a.top, credentials: a.credentials, initiator: Initiator.Page { url: l.referrer } }
-    if a.has_body {
-        req.body = &body
-    }
+    let req = hopRequest(l, &body)
     var post: ?*Body = null
     if a.post {
         post = &body
     }
-    l.job = startJob(ld.alloc, s, ld.multi, href, req, a.verb[..a.verb.len - 1], post)
+    if !a.nav {
+        a.hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
+    }
+    l.job = startJob(ld.alloc, s, ld.multi, href, req, a.verb[..a.verb.len - 1], post, &mut a.hop)
     if l.job == null {
         return false
     }
@@ -475,6 +482,9 @@ fn failRequest(ld: *mut Loader, l: *mut Load, e: FetchError) {
 fn endRequest(ld: *mut Loader, l: *mut Load) {
     let a = l.ask.?
     perf.end("background_requests", a.began, l.href)
+    if a.nav {
+        noteFailure(l.kind, a.res.status, l.href)
+    }
     let target = url.parse(ld.alloc, l.href) catch |e| {
         return
     }
@@ -516,6 +526,9 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     }
     var status: i64 = 0
     curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
+    if a.nav && retriesAuth(ld, s, l, job, status) {
+        return
+    }
     var location: ?[*]u8 = null
     curl_easy_getinfo(job.curl, CURLINFO_REDIRECT_URL, &mut location)
     if location |p| {
@@ -563,6 +576,11 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     }
     keepRequest(ld.alloc, l, job, status) catch |e| {
         return failRequest(ld, l, e)
+    }
+    if a.nav && job.sink.reached_public {
+        notePublicPage(job.at.href) catch |e| {
+            return failRequest(ld, l, FetchError.OutOfMemory)
+        }
     }
     let checked = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
 
@@ -781,7 +799,8 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
                 l.referrer_policy = policy
             }
             l.hops += 1
-            l.job = startJob(ld.alloc, s, ld.multi, moved, loadRequest(l), "GET", null)
+            var hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
+            l.job = startJob(ld.alloc, s, ld.multi, moved, loadRequest(l), "GET", null, &mut hop)
             if l.job != null {
                 l.state = LoadState.Running
             }
@@ -829,6 +848,7 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
         release(ld.alloc, a.content_type)
         release(ld.alloc, a.data)
         release(ld.alloc, a.verb)
+        release(ld.alloc, a.owned_from)
         if a.has_res {
             a.res.deinit(ld.alloc)
         }

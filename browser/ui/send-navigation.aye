@@ -1,0 +1,24 @@
+import ipc
+import net
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/navigation_request.cc OnResponseStarted
+fn sendNavigation(tp: *mut TabProcess, on: u32, id: u32, href: []u8, got: net.Response) AllocError!void {
+    let alloc = tp.url.alloc
+    var res = got
+    var final = href
+
+    if res.url.len > 0 { final = res.url }
+
+    if tp.embedder != null && (try framingRefused(tp, &res, final)) {
+        res.deinit(alloc)
+        tp.nav_failed = true
+
+        return ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.AccessDenied) })
+    }
+
+    if try takesSwap(tp, res, final) { return }
+
+    defer res.deinit(alloc)
+    try sendFetched(tp, on, id, true, true, href, &res)
+}

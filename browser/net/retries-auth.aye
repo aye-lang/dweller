@@ -1,0 +1,12 @@
+fn retriesAuth(ld: *mut Loader, s: *mut Session, l: *mut Load, job: *mut Job, status: i64) bool {
+    let a = l.ask.?
+    let again = afterAuth(&job.at, l.kind, a.headers, status, job.sink.challenged, job.sink.realm.bytes(), a.retried) catch false
+
+    if !again { return false }
+
+    a.retried = true
+
+    if !startHop(ld, s, l, job.at.withoutFragment()) { failRequest(ld, l, FetchError.Network) }
+
+    return true
+}

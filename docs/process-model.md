@@ -411,11 +411,23 @@ the Space, and the cookie jar and `localStorage` are the browser's
 the Space's first tab in the page area, and input while it is shown
 goes to that renderer. Messages 70–73 (§2) carry the last action, the
 pause and a `run`'s window commands. Not yet: `isolated` Spaces still
-get a Space process (one jar in the browser), a navigation's fetch
-still blocks the browser's loop (a slow server stalls the window),
-openers do not reach across renderers, and a renderer crash fails the
-request with "the tab's renderer is gone". Without the switch the
-Space process of §0 runs as before. The card `Q2.12` lists the rest.
+get a Space process (one jar in the browser), openers do not reach
+across renderers, and a renderer crash fails the request with "the
+tab's renderer is gone". Without the switch the Space process of §0
+runs as before. The card `Q2.12` lists the rest.
+
+**Navigation fetches (Q2.12b, 2026-11-09).** A renderer's navigation
+`fetch` (top-level or a frame's, a tab's or a hosted Space's) is a
+held fetch like a subresource's (Q2.4e): `net.startNavigation` runs it
+on the loader's multi handle with the synchronous path's semantics
+(redirects with the chain's SameSite and `Sec-Fetch-Site` state, Basic
+auth retries, the 32 MB document limit, `Sec-Fetch-User`), and the
+window polls it. When it lands, the browser does what it did after the
+blocking request: `X-Frame-Options`/`frame-ancestors` for a frame, the
+process choice (`takesSwap`, COOP), then the reply; the commit's
+site-lock check is unchanged. So a slow server no longer stalls the
+window's loop. A `file:` or `data:` navigation, a replayed archive and
+a primed response (after a swap) are still answered at once.
 
 ## 9. Risks and open questions, ranked
 
