@@ -1,0 +1,25 @@
+import css
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn shadowList(alloc: Allocator, s: []u8) AllocError!?List(css.Shadow) {
+    var layers = List([]css.Comp).init(alloc)
+    defer layers.deinit()
+
+    try css.readLayers(alloc, css.Value.Keyword { k: s }, &mut layers)
+
+    var list = List(css.Shadow).init(alloc)
+
+    for layer in layers.items() {
+        try list.append(css.readShadow(layer) orelse return null)
+    }
+
+    return list
+}
+
+fn clearShadow(inset: bool) css.Shadow {
+    let clear = css.Color { r: 0, g: 0, b: 0, a: 0.0 }
+
+    return css.Shadow { inset: inset, x: 0.0, y: 0.0, blur: 0.0, spread: 0.0, color: css.Value.Rgba { c: clear } }
+}

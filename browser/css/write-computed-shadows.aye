@@ -1,0 +1,26 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#shadow-serialization
+pub fn writeComputedShadows(alloc: Allocator, v: Value, current: Value, out: *mut text.Builder) AllocError!void {
+    var layers = List([]Comp).init(alloc)
+    defer layers.deinit()
+
+    try readLayers(alloc, v, &mut layers)
+
+    if layers.len() == 0 {
+        return writeValue(v, out)
+    }
+
+    for k, layer in layers.items() {
+        let s = readShadow(layer) orelse return writeValue(v, out)
+
+        if k > 0 {
+            try out.append(", ")
+        }
+
+        try writeShadow(s, current, out)
+    }
+}

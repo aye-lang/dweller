@@ -1,0 +1,25 @@
+import css
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#box-shadow
+fn mixShadow(a: css.Shadow, b: css.Shadow, p: f64) css.Shadow {
+    return css.Shadow {
+        inset: a.inset,
+        x: a.x + (b.x - a.x) * p,
+        y: a.y + (b.y - a.y) * p,
+        blur: a.blur + (b.blur - a.blur) * p,
+        spread: a.spread + (b.spread - a.spread) * p,
+        color: mixShadowColor(a.color, b.color, p),
+    }
+}
+
+fn mixShadowColor(a: css.Value, b: css.Value, p: f64) css.Value {
+    let pa = partsOf(a) orelse return a
+    let pb = partsOf(b) orelse return a
+    var mixed = pa
+
+    for k in 0..4 {
+        mixed.n[k] = pa.n[k] + (pb.n[k] - pa.n[k]) * p
+    }
+
+    return valueOfParts(mixed)
+}

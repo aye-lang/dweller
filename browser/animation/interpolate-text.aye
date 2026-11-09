@@ -7,6 +7,12 @@ import std.text
 pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
     let prop = css.propertyIndex(name) orelse return false
 
+    if prop == css.BOX_SHADOW {
+        out.clear()
+
+        return mixShadows(alloc, a, b, p, out)
+    }
+
     var sheet = try css.Sheet.init(alloc)
     defer sheet.deinit()
 
