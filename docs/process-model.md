@@ -289,29 +289,30 @@ profile has the shape of `sandbox/policy/mac/common.sb` and
   Q2.8 can try an empty mach list. Q2.8 also checks what wasmtime's
   machine code needs.
 
-**Linux.** Layer 1, required: seccomp-bpf after
-`prctl(PR_SET_NO_NEW_PRIVS)`.
-- Allowed: `read`, `write`, `readv`, `writev`, `recvmsg`, `sendmsg` on
-  open fds, `poll`, `close`, `fstat`, `lseek`, `mmap`, `munmap`,
-  `mprotect`, `madvise`, `brk`, `futex`, `clone` with thread flags
-  only, `exit`, `exit_group`, clocks and sleeps, `getpid`, `gettid`, signal masks and returns,
-  `sched_yield`, `getrandom`.
-- `open` and `openat` fail with `EPERM`, so a stray lazy open fails
-  softly. `socket`, `connect`, `execve`, `fork`, `ptrace` and `kill` of
-  another process kill the renderer (`SIGSYS`).
-- One syscall table each for x86_64 and aarch64.
-- `PROT_EXEC` stays allowed. The JS has no JIT, but WebAssembly runs on
-  wasmtime, which writes machine code.
-
-Layer 2, best effort: `unshare` of the user, net and IPC namespaces,
-and a chroot to an empty directory. Ubuntu 23.10 and later can forbid
-unprivileged user namespaces (AppArmor). Then the renderer runs with
-seccomp only and prints one warning. Chromium uses both layers
-(`sandbox/linux/seccomp-bpf/`, the namespace sandbox). Fonts: the
-renderer opens the fixed list of `font/freetype.aye` before it enters
-the sandbox. A fallback font that it needs later comes as an fd from the
-browser (`font_open`), as Chromium's font IPC does
-(`docs/linux/sandbox_ipc.md`).
+**Linux** (as built in Q2.8b, `browser/renderer/enter-linux-sandbox.aye`):
+`prctl(PR_SET_NO_NEW_PRIVS)`, then two layers.
+- Layer 1, Landlock (any kernel ≥ 5.13 that has it; ABI 7 here):
+  read-only access beneath `/usr` (libraries, `/usr/share/fonts`) and
+  the executable's directory, nothing writable, no TCP bind or connect
+  (ABI ≥ 4), no signals or abstract sockets outside the sandbox
+  (ABI ≥ 6). It replaces Chromium's broker and namespace chroot
+  (`sandbox/linux/syscall_broker/`, `sandbox/linux/services/credentials.cc`):
+  it confines paths unprivileged and in-process, while Ubuntu 23.10 and
+  later forbid unprivileged user namespaces (AppArmor).
+- Layer 2, seccomp-bpf (x86_64), with `SECCOMP_FILTER_FLAG_TSYNC`: an
+  allowlist in the shape of Chromium's baseline and renderer policies
+  (`read`, `write`, `recvmsg`, `sendmsg` on held fds, memory incl.
+  `PROT_EXEC` for wasmtime, `futex`, clocks and sleeps, signals on
+  itself, `getrandom`, `rseq`, exit); `open`/`openat` only without write
+  flags and only when Landlock is on; `clone` only with thread flags,
+  `clone3` ENOSYS (glibc falls back to `clone`); everything else
+  (`socket`, `connect`, `execve`, `fork`, `ptrace`, `kill`, writes by
+  path) fails with `EPERM`.
+- Fonts: the system faces are read before entry; fallback faces are
+  opened later by path under `/usr/share/fonts`, which Landlock allows.
+  Without Landlock seccomp refuses every open and those faces are
+  missing; a `font_open` from the browser (Chromium's font IPC,
+  `docs/linux/sandbox_ipc.md`) would bring them back.
 
 The utility process gets the same profile without the fonts.
 

@@ -1,0 +1,44 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+let SECCOMP_RET_KILL_PROCESS: u32 = 0x80000000
+let SECCOMP_RET_ALLOW: u32 = 0x7fff0000
+let SECCOMP_RET_EPERM: u32 = 0x00050001
+let SECCOMP_RET_ENOSYS: u32 = 0x00050026
+let SECCOMP_NR: u32 = 0
+let SECCOMP_ARCH: u32 = 4
+let AUDIT_ARCH_X86_64: u32 = 0xc000003e
+let OPEN_WRITE_FLAGS: u32 = 0x400643
+let CLONE_THREAD_FLAGS: u32 = 0x50f00
+let CLONE_NOT_TLS_OR_TID: u32 = 0xffc7ffff
+let ALL_BITS: u32 = 0xffffffff
+let TCGETS: u32 = 0x5401
+
+// chromium: sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+fn seccompProgram(alloc: Allocator, pid: u32, landlocked: bool) AllocError!List(u64) {
+    var prog = List(u64).init(alloc)
+
+    try prog.append(bpfLoad(SECCOMP_ARCH))
+    try prog.append(bpfSkipIf(AUDIT_ARCH_X86_64, 1))
+    try prog.append(bpfRet(SECCOMP_RET_KILL_PROCESS))
+    try prog.append(bpfLoad(SECCOMP_NR))
+
+    for nr in ALLOWED_SYSCALLS {
+        try answerSyscall(&mut prog, nr, SECCOMP_RET_ALLOW)
+    }
+
+    if landlocked {
+        try allowSyscallIf(&mut prog, SYS_OPENAT, 2, OPEN_WRITE_FLAGS, 0)
+        try allowSyscallIf(&mut prog, SYS_OPEN, 1, OPEN_WRITE_FLAGS, 0)
+    }
+
+    try allowSyscallIf(&mut prog, SYS_CLONE, 0, CLONE_NOT_TLS_OR_TID, CLONE_THREAD_FLAGS)
+    try allowSyscallIf(&mut prog, SYS_TGKILL, 0, ALL_BITS, pid)
+    try allowSyscallIf(&mut prog, SYS_PRLIMIT64, 0, ALL_BITS, 0)
+    try allowSyscallIf(&mut prog, SYS_IOCTL, 1, ALL_BITS, TCGETS)
+    try answerSyscall(&mut prog, SYS_CLONE3, SECCOMP_RET_ENOSYS)
+    try prog.append(bpfRet(SECCOMP_RET_EPERM))
+
+    return prog
+}
