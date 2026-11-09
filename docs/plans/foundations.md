@@ -109,13 +109,15 @@ Facts from four audits run on 2026-11-04; the details are in the steps.
 
 ## State on 2026-11-09 (`main` bd7c970)
 
-"Done since 11-04" means a step whose PR is after #246 (`main` 7de2c08 at 11-04), as the table notes it.
+Every PR up to #353 is merged. A step is open when neither its row nor its
+card says done.
 
-- Q0: one step done since 11-04 (Q0.5, #321). Open: Q0.1 to Q0.4.
-- Q1: 7 steps done (Q1.8, Q1.9, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e). Open: Q1.1, Q1.3, Q1.4, Q1.6, Q1.7, Q1.9b, Q1.10a, Q1.10a2, Q1.11.
-- Q2: 16 steps done, from Q2.2a to Q2.8a, including the sad tab (Q2.5), the navigation move (Q2.6a, Q2.6b) and the site-lock audit (Q2.7). Open: Q2.1, Q2.1b, Q2.2c, Q2.3, Q2.3f, Q2.4, Q2.4b, Q2.4d, Q2.4e, Q2.8b, Q2.9 to Q2.14.
-- Q3: 12 steps done, from Q3.1 to Q3.14c. Open: Q3.1b, Q3.2a, Q3.2b, Q3.4, Q3.6, Q3.7b, Q3.8, Q3.9, Q3.10, Q3.13.
-- Q4: 16 steps done, from Q4.6a to Q4.21. Q4.6c, Q4.16k, Q4.16n and Q4.21 were marked today. Open: Q0.4a, Q4.1 to Q4.8, Q4.11, Q4.12, Q4.15, Q4.16, Q4.19, Q4.20. Q5 to Q7 have no done step.
+- Q0 open: Q0.1 (weekly webgl job), Q0.3 (W2, W3 and the conformance table re-run).
+- Q1 open: Q1.1 (safe shipped build), Q1.4, Q1.9b, Q1.10a2 (waits for aye-lang/aye#26), Q1.11 (soak).
+- Q2 open: Q2.3f, Q2.4e, Q2.8b, then Q2.9 to Q2.14 (out-of-process iframes, Spaces as renderers, limits, the default flip).
+- Q3 open: Q3.1b, Q3.6, Q3.7b, Q3.8, Q3.10.
+- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12, Q4.16 (Q4.21's ranked steps 3 and 5 to 11), Q4.20. No W7 row passes on bbc, zol, mistral or react (Q4.21).
+- Q5 to Q7 have no done step; Q5 waits for Q2.14.
 
 ## Lanes and running order
 
@@ -261,7 +263,7 @@ with thresholds.
 | Q3.7 | CSP 1: parsing, `default-src` and `script-src` for external scripts, inline scripts with nonce and hash, and `eval` (done, #333: `content-security-policy/script-src` 31.6%; the rest is Q3.7b) | WPT `content-security-policy/script-src` | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
 | Q3.7b | Q3.7's rest: module scripts, `'strict-dynamic'`, sha384/512, inline handlers, `javascript:` URLs, workers and srcdoc frames, the violation event's fields, and `<meta>` applying only to later elements | WPT `content-security-policy/script-src` gains | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
 | Q3.8 | CSP 2: `style-src`, `img-src`, `connect-src`, `font-src`, `frame-src`, `base-uri`, `form-action` and report-only (no reports are sent) | WPT `content-security-policy` at threshold | the same |
-| Q3.9 | iframe `sandbox`: every token (`allow-top-navigation*`, `allow-popups*`, `allow-forms`, `allow-modals`, `allow-downloads`, and the others) | WPT `html/browsers/sandboxing` | `core/frame/sandbox_flags.cc` |
+| Q3.9 | iframe `sandbox`: every token (`allow-top-navigation*`, `allow-popups*`, `allow-forms`, `allow-modals`, `allow-downloads`, and the others) (done, #345, #346 as Q3.9b: WPT sandboxing 11/32; left: tab mode does not check the initiator's flags) | WPT `html/browsers/sandboxing` | `core/frame/sandbox_flags.cc` |
 | Q3.10 | `X-Content-Type-Options: nosniff`, and COOP (browsing-context-group switch, opener severed; after Q2.6b) | WPT `fetch/nosniff`, `html/cross-origin-opener-policy` subsets | `services/network/cross_origin_opener_policy.cc`, `content/browser/renderer_host/` (COOP) |
 | Q3.11 | Small leaks: `Authorization` is removed on a cross-origin redirect, `window.name` is cleared on a cross-site navigation, top-level `data:` navigation is blocked, and private network access is blocked (public to local) (done, #298; left: PNA preflight, and PNA for frames, workers and documents) | one test each | `services/network/private_network_access_checker.cc` |
 | Q3.12 | Agent socket: a `0700` directory, a `0600` socket and a token handshake. A process without the token is refused (done, #290; the socket moved to `~/.dweller/agent.sock`) | a test without the token is refused | – |
