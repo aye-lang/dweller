@@ -3037,13 +3037,22 @@ pub let PRELUDE =
     \\  if (el.ownerDocument !== document || !isConnected(el) || !LINK_RELS.test(el.getAttribute('rel') || '') || !(el.getAttribute('href') || '').trim()) return;
     \\  const state = { done: !!parsed };
     \\  hidden(el, '__linkRequest', state);
-    \\  ak.imageTask(() => {
+    \\  const attempt = (tries) => {
     \\    if (el.__linkRequest !== state) return;
-    \\    const how = ak.linkLoad(el);
+    \\    let how = ak.linkLoad(el, tries === 0);
+    \\    if (how === 4 && tries === 3) {
+    \\      G.getComputedStyle(document.documentElement).display;
+    \\      how = ak.linkLoad(el, false);
+    \\    }
+    \\    if (how === 4) {
+    \\      ak.setTimer(callableOf(() => attempt(tries - 1)), 50, false, [], false);
+    \\      return;
+    \\    }
     \\    state.done = true;
     \\    state.failed = how >= 2;
     \\    if (how === 1 || how === 2) hostEvent(el, how === 1 ? 'load' : 'error');
-    \\  }, 0);
+    \\  };
+    \\  ak.imageTask(() => attempt(3), ak.linkStart(el));
     \\}
     \\function linkDiscover(root, parsed) {
     \\  if (root instanceof HTMLLinkElement && !root.__linkRequest) linkUpdate(root, parsed);

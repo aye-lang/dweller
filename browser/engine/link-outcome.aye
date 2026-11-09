@@ -2,15 +2,15 @@ import dom
 import dom.NodeId
 import net
 import std.text
-import url
 
 let LINK_NONE: u32 = 0
 let LINK_LOADED: u32 = 1
 let LINK_FAILED: u32 = 2
 let LINK_REFUSED: u32 = 3
+let LINK_PENDING: u32 = 4
 
 // https://html.spec.whatwg.org/multipage/semantics.html#fetch-and-process-the-linked-resource
-fn linkOutcome(p: *mut Page, h: NodeId) u32 {
+fn linkOutcome(p: *mut Page, h: NodeId, last: bool) u32 {
     let rel = linkRelationOf(p.doc.attr(h, "rel") orelse "")
     let href = text.trim(p.doc.attr(h, "href") orelse "")
 
@@ -23,25 +23,18 @@ fn linkOutcome(p: *mut Page, h: NodeId) u32 {
     }
 
     let req = linkRequest(p, h, rel) orelse return LINK_FAILED
-    var base = documentBase(p.alloc, &p.doc, &p.url) catch |e| {
-        return LINK_FAILED
-    }
-
-    defer base.deinit(p.alloc)
-    let target = url.resolve(p.alloc, &base, href) catch |e| {
-        return LINK_FAILED
-    }
-
+    let target = linkHrefUrl(p, href) orelse return LINK_FAILED
     defer target.deinit(p.alloc)
-    let res = net.request(p.alloc, &target, req) catch |e| {
-        return LINK_FAILED
+
+    if rel == LinkRelation.Stylesheet {
+        if sheetResultOf(target.href, p.doc.attr(h, "crossorigin") != null) |known| {
+            return known
+        }
+
+        if !last {
+            return LINK_PENDING
+        }
     }
 
-    defer res.deinit(p.alloc)
-
-    if res.status < 200 || res.status > 299 {
-        return LINK_FAILED
-    }
-
-    return LINK_LOADED
+    return linkFetched(p, &target, req)
 }

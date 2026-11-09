@@ -1,0 +1,21 @@
+let SHEET_RESULTS: usize = 64
+
+var result_hashes = [64]u32{0, ..}
+var result_values = [64]u32{0, ..}
+var result_next: usize = 0
+
+fn sheetResultKey(href: []u8, cors: bool) u32 {
+    if cors {
+        return fnv32(href) ^ 0x9e3779b9
+    }
+
+    return fnv32(href)
+}
+
+fn noteSheetResult(href: []u8, cors: bool, value: u32) {
+    let at = result_next % SHEET_RESULTS
+
+    result_hashes[at] = sheetResultKey(href, cors)
+    result_values[at] = value
+    result_next += 1
+}
