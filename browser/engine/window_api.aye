@@ -627,6 +627,10 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
         try setField(it, r, "error", "blocked by Content Security Policy")
         return fetchEnd(it, a, queue, 0)
     }
+    if fileFetchRefused(page, &target) {
+        try setField(it, r, "error", "URL scheme \"file\" is not supported")
+        return fetchEnd(it, a, queue, 0)
+    }
     var req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, credentials: net.Credentials.SameOrigin, initiator: initiatorOf(page) }
     if !js.isUndef(it.arg(a, 4)) {
         let mode = try it.builder()

@@ -1,0 +1,22 @@
+<!doctype html>
+<p id=out></p>
+<iframe id=f src=b.html></iframe>
+<img id=i src=../image/gif_two_colors.gif>
+<script src=own.js></script>
+<script>
+const seen = new Set()
+const note = s => {
+  seen.add(s)
+  out.textContent = [...seen].sort().join(', ')
+}
+note('origin ' + location.origin)
+note('own script ' + window.ownScript)
+i.onload = () => note('img load')
+if (i.complete) note('img load')
+fetch('b.html').then(() => note('fetch read'), e => note('fetch ' + e.name))
+f.onload = () => {
+  note('contentDocument ' + f.contentDocument)
+  try { f.contentWindow.document; note('frame read') } catch (e) { note('frame ' + e.name) }
+  try { f.contentWindow.location.href; note('location read') } catch (e) { note('location ' + e.name) }
+}
+</script>
