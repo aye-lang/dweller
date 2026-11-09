@@ -1,0 +1,22 @@
+import engine
+
+// chromium: third_party/blink/renderer/core/input/mouse_event_manager.cc (a click goes to the frame under the point)
+fn clickFrame(r: *mut TabRenderer, fp: engine.FramePoint) !void {
+    let ft = fp.page.tree orelse return
+    let node = engine.nodeAt(ft, fp.x, fp.y) orelse return
+
+    if !(try engine.dispatchEvent(fp.page, node, "click", "")) { return }
+
+    if engine.linkAt(ft, fp.x, fp.y) |link| { return followFrameLink(r, fp.page, link) }
+
+    let act = try engine.activate(fp.page, node)
+
+    match act {
+        .Follow { target } => target.deinit(r.alloc)
+        .Submit { form, submitter } => {
+            if try engine.dispatchSubmit(fp.page, form, submitter) { try submitInFrame(r, fp.page, form, submitter) }
+        }
+
+        _ => {}
+    }
+}

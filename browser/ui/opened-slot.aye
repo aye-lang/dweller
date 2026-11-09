@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32) AllocError!?*mut TabSlot {
+    for o in tp.opened.items() {
+        if o.context != context { continue }
+
+        for i in 0..ui.count {
+            if ui.slots[i].?.id == o.tab { return ui.slots[i] }
+        }
+    }
+
+    let i = (try openTab(ui, !opener.agent)) orelse return null
+    let slot = ui.slots[i].?
+
+    slot.agent = opener.agent
+    try tp.opened.append(Opened { context: context, tab: slot.id })
+
+    return slot
+}

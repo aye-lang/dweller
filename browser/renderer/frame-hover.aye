@@ -1,0 +1,11 @@
+import engine
+
+fn frameHover(r: *mut TabRenderer, fp: engine.FramePoint) !void {
+    let ft = fp.page.tree orelse return showHover(r, 0, "")
+    let link = engine.linkAt(ft, fp.x, fp.y) orelse return showHover(r, 0, "")
+    let target = fp.page.resolve(r.alloc, link.href) catch return showHover(r, 1, link.href)
+
+    defer target.deinit(r.alloc)
+
+    try showHover(r, 1, target.href)
+}

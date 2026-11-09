@@ -1,0 +1,19 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/loader/frame_loader.cc (CreateWindow: the renderer asks the browser for the new window)
+fn sendContexts(r: *mut TabRenderer) !void {
+    if r.width == 0 { return }
+
+    while engine.takeContextRequest() |req| {
+        defer engine.freeContextRequest(req)
+
+        if req.ask is .Close { continue }
+
+        var ask = (req.ask is .Navigate) as u32
+
+        if evilTest("context") { ask = 2 }
+
+        try send(r.alloc, r.conn, r.tab, ipc.Message.Context { ask: ask, context: req.context, href: req.href, post: req.post as u32, content_type: req.content_type, body: req.body })
+    }
+}

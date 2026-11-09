@@ -69,6 +69,34 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             for v in at { try putU32(out, v) }
         }
 
+        .Edit { seq, command, typed } => {
+            try putU32(out, seq)
+            try putU32(out, command)
+            try putBytes(out, typed)
+        }
+
+        .Clipboard { copied } => try putBytes(out, copied)
+        .Find { id, command, query } => {
+            try putU32(out, id)
+            try putU32(out, command)
+            try putBytes(out, query)
+        }
+
+        .FindReply { id, count, active } => {
+            try putU32(out, id)
+            try putU32(out, count)
+            try putU32(out, active)
+        }
+
+        .Context { ask, context, href, post, content_type, body } => {
+            try putU32(out, ask)
+            try putU32(out, context)
+            try putBytes(out, href)
+            try putU32(out, post)
+            try putBytes(out, content_type)
+            try putBytes(out, body)
+        }
+
         .Ping { n } => try putU32(out, n)
         .Pong { n } => try putU32(out, n)
         .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {

@@ -96,6 +96,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         }
 
         .FocusFrame { key, how } => return focusFrame(tp, key, how)
+        .Clipboard { copied } => return takeClipboard(tp, copied)
+        .Context { .. } => {}
 
         .Redirect { url: href } => {
             if !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), href) { return "bad redirect" }
