@@ -1,0 +1,48 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn hostedSpacesReply(ui: *mut Ui, sp: *mut Space, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+    let a = ui.agents.?
+    var b = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut b)
+    var detail = text.Builder.init(tmp)
+    var n: u64 = 1
+    var state = "working"
+
+    if sp.paused { state = "paused" }
+
+    try w.beginObject()
+    try w.key("spaces")
+    try w.beginArray()
+    try spaceEntry(&mut w, sp.id, sp.name.bytes(), true, state, sp.last.bytes(), sp.tabs, sp.shared, a.watch.id == sp.id)
+    try spaceLine(&mut detail, sp.id, sp.name.bytes(), true, state, sp.last.bytes(), sp.tabs)
+
+    for s in spacesById(a) {
+        let o = s orelse continue
+
+        if o == sp { continue }
+
+        n += 1
+        try spaceEntry(&mut w, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs, o.shared, o.id == a.watch.id)
+        try spaceLine(&mut detail, o.id, o.name.bytes(), false, o.state.bytes(), o.last.bytes(), o.tabs)
+    }
+
+    try w.endArray()
+    try w.endObject()
+
+    var msg = text.Builder.init(tmp)
+
+    try msg.appendUint(n)
+
+    if n == 1 {
+        try msg.append(" space")
+    } else {
+        try msg.append(" spaces")
+    }
+
+    reply.message = msg.bytes()
+    reply.fields = members(&b)
+    reply.detail = detail.bytes()
+}

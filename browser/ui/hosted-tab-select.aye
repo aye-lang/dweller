@@ -1,0 +1,21 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn hostedTabSelect(c: *mut Conn, sp: *mut Space, tmp: Allocator, doc: *mut agent.Json, args: ?usize, reply: *mut agent.Reply) AllocError!bool {
+    if showAsked(doc, args) { return refuse(reply, NO_SHOW) }
+
+    var want: f64 = -1.0
+
+    if args |o| { want = doc.getNum(o, "tab") orelse -1.0 }
+
+    if want < 1.0 || want > 4294967295.0 { return refuse(reply, "missing argument \"tab\" (a tab's id, a number)") }
+
+    let slot = spaceTab(sp, want as u32) orelse return refuse(reply, "no such tab: see \"tabs\"")
+
+    c.tab = slot.in_space
+    reply.message = try tabMessage(tmp, "acting on tab ", slot.in_space)
+    reply.fields = try tabField(tmp, slot.in_space)
+
+    return true
+}

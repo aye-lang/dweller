@@ -1,0 +1,65 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn listTabs(slots: []*mut TabSlot, mine: u32, shown: ?*TabSlot, tmp: Allocator, reply: *mut agent.Reply) AllocError!void {
+    var b = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut b)
+    var detail = text.Builder.init(tmp)
+
+    try w.beginObject()
+    try w.key("tabs")
+    try w.beginArray()
+
+    for i, slot in slots {
+        let id = tabNumber(slot)
+        let on = shown != null && shown.? == slot
+
+        try w.beginObject()
+        try w.key("id")
+        try w.int(id as i64)
+        try w.key("url")
+        try w.string(slotUrl(slot))
+        try w.key("title")
+        try w.string(slotTitle(slot))
+        try w.key("shown")
+        try w.boolean(on)
+        try w.key("agent")
+        try w.boolean(id == mine)
+        try w.endObject()
+
+        if i > 0 { try detail.appendByte('\n') }
+
+        try detail.append("- tab ")
+        try detail.appendUint(id as u64)
+        try detail.append(": ")
+        try detail.append(slotTitle(slot))
+
+        if slotUrl(slot).len > 0 && !text.eql(slotTitle(slot), slotUrl(slot)) {
+            try detail.append(" <")
+            try detail.append(slotUrl(slot))
+            try detail.appendByte('>')
+        }
+
+        if on { try detail.append(" [shown]") }
+        if id == mine { try detail.append(" [agent]") }
+    }
+
+    try w.endArray()
+    try w.endObject()
+
+    var msg = text.Builder.init(tmp)
+
+    try msg.appendUint(slots.len as u64)
+    try msg.append(" tabs")
+
+    if slots.len == 1 {
+        msg.clear()
+        try msg.append("1 tab")
+    }
+
+    reply.message = msg.bytes()
+    reply.fields = members(&b)
+    reply.detail = detail.bytes()
+}

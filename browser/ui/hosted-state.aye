@@ -1,0 +1,16 @@
+fn hostedState(ui: *Ui, sp: *mut Space) []u8 {
+    if !sp.attached { return "done" }
+    if sp.paused { return "paused" }
+
+    for s in ui.agents.?.conns {
+        let c = s orelse continue
+
+        let own = c.space orelse continue
+
+        if own != sp { continue }
+        if c.asked && !c.asked_wait { return "working" }
+        if c.asked || c.waiting { return "waiting" }
+    }
+
+    return "idle"
+}

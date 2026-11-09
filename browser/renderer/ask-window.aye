@@ -1,0 +1,45 @@
+import agent
+import html
+import ipc
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let ASKED_OF_WINDOW = "tabs tab_new tab_select tab_close user_context spaces"
+
+fn askWindow(r: *mut TabRenderer, tmp: Allocator, cmd: []u8, doc: *mut agent.Json, args: ?usize, reply: *mut agent.Reply) AllocError!bool {
+    if !html.isIn(cmd, ASKED_OF_WINDOW) { return false }
+
+    var line = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut line)
+
+    try w.beginObject()
+    try w.key("cmd")
+    try w.string(cmd)
+
+    if args |o| {
+        var given = text.Builder.init(tmp)
+
+        try doc.write(o, &mut given)
+        try w.key("arguments")
+        try line.append(given.bytes())
+    }
+
+    try w.endObject()
+    send(r.alloc, r.conn, r.tab, ipc.Message.AgentWindow { line: line.bytes() }) catch return false
+
+    let got = awaitReply(r) orelse return false
+
+    match got {
+        .AgentWindowReply { ok, message, fields, detail } => {
+            reply.ok = ok != 0
+            reply.message = try agent.concatText(tmp, message, "")
+            reply.fields = try agent.concatText(tmp, fields, "")
+            reply.detail = try agent.concatText(tmp, detail, "")
+        }
+
+        _ => return false
+    }
+
+    return true
+}

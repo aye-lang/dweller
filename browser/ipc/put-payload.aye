@@ -39,37 +39,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
 
         .FrameAck { buffer } => try putU32(out, buffer)
         .FrameLoaded { key } => try putU32(out, key)
-        .PostMessage { key, frame, page, source_page, source_origin, target_origin, data, buffers } => {
-            let numbers = [4]u32{key, frame, page, source_page}
-            let texts = [4][]u8{source_origin, target_origin, data, buffers}
-
-            for v in numbers { try putU32(out, v) }
-            for b in texts { try putBytes(out, b) }
-        }
-
-        .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers } => {
-            let numbers = [4]u32{page, from_key, from_frame, from_page}
-            let texts = [4][]u8{origin, target_origin, data, buffers}
-
-            for v in numbers { try putU32(out, v) }
-            for b in texts { try putBytes(out, b) }
-        }
-
-        .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name } => {
-            let numbers = [4]u32{parent_frame, parent_page, top_frame, sandbox}
-
-            for v in numbers { try putU32(out, v) }
-
-            try putBytes(out, name)
-        }
-
-        .ProxyNavigate { key, frame, page, url } => {
-            let numbers = [3]u32{key, frame, page}
-
-            for v in numbers { try putU32(out, v) }
-
-            try putBytes(out, url)
-        }
+        .PostMessage { .. }, .PostedMessage { .. }, .FrameOwner { .. }, .ProxyNavigate { .. } => try putProxyPayload(out, m)
 
         .Subframes { frames } => try putBytes(out, frames)
         .WheelUnused { seq, dx, dy } => {
@@ -128,6 +98,16 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, post)
             try putBytes(out, content_type)
             try putBytes(out, body)
+        }
+
+        .AgentActed { what } => try putBytes(out, what)
+        .AgentPaused { on } => try putU32(out, on)
+        .AgentWindow { line } => try putBytes(out, line)
+        .AgentWindowReply { ok, message, fields, detail } => {
+            try putU32(out, ok)
+            try putBytes(out, message)
+            try putBytes(out, fields)
+            try putBytes(out, detail)
         }
 
         .Ping { n } => try putU32(out, n)

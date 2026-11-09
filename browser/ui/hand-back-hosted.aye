@@ -1,0 +1,23 @@
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn handBackHosted(ui: *mut Ui, sp: *mut Space) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    sp.taken = false
+
+    for slot in sp.own_tabs.items() {
+        if !slot.taken { continue }
+
+        slot.taken = false
+
+        var b = text.Builder.init(arena.allocator())
+
+        try b.append(try spaceField(arena.allocator(), sp.id))
+        try b.append(",\"tab\":")
+        try b.appendUint(slot.in_space as u64)
+        try spaceEvent(ui, sp, "handed_back", b.bytes())
+    }
+}

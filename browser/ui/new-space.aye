@@ -1,0 +1,52 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn newSpace(ui: *mut Ui, pid: i32, ctl: i32, path: text.Builder, mcp: bool, shared: bool, name: []u8) AllocError!*mut Space {
+    let a = ui.agents.?
+
+    a.next_space += 1
+
+    let sp = try ui.alloc.create(Space {
+        id: a.next_space,
+        pid: pid,
+        ctl: ctl,
+        ctl_in: text.Builder.init(ui.alloc),
+        ctl_out: text.Builder.init(ui.alloc),
+        lists_due: false,
+        ctx_due: false,
+        fd: -1,
+        path: path,
+        attached: true,
+        mcp: mcp,
+        started: std.time.monotonicMs(),
+        down: text.Builder.init(ui.alloc),
+        shut: false,
+        ended: false,
+        name: text.Builder.init(ui.alloc),
+        state: text.Builder.init(ui.alloc),
+        last: text.Builder.init(ui.alloc),
+        tabs: 1,
+        title: text.Builder.init(ui.alloc),
+        url: text.Builder.init(ui.alloc),
+        paused: false,
+        stopping: false,
+        stop_at: 0,
+        closing: false,
+        crashed: false,
+        shared: shared,
+        own_tabs: List(*mut TabSlot).init(ui.alloc),
+    })
+
+    if name.len > 0 {
+        try sp.name.append(name)
+    } else {
+        try sp.name.append("Agent ")
+        try sp.name.appendUint(sp.id as u64)
+    }
+
+    try sp.state.append("idle")
+
+    return sp
+}

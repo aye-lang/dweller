@@ -123,6 +123,19 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.answered = true
         }
 
+        .AgentActed { what } => {
+            if got.frame != slot.id || tp.agent_id == 0 || what.len > 4096 { return "bad agent_acted" }
+
+            tp.acted.clear()
+            try tp.acted.append(what)
+        }
+
+        .AgentWindow { line } => {
+            if got.frame != slot.id || tp.agent_id == 0 || tp.window_ask.len() > 0 || line.len > 65536 { return "bad agent_window" }
+
+            try tp.window_ask.append(line)
+        }
+
         .Fetch { .. } => {
             if got.frame != slot.id { return "bad fetch" }
 

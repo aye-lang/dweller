@@ -104,7 +104,7 @@ protocol.
 | cookies, storage | R→B (s) `cookie_get{frame, url}`; R→B `cookie_set{frame, url, line}`; R→B (s) `storage_open{frame, kind, origin}` returns every item; R→B `storage_set`, `storage_remove`, `storage_clear`; B→R `storage_event{origin, kind, key, old, new, url}` to the other renderers of the origin |
 | frame tree, proxies | R→B (s) `frame_created{parent, name, sandbox}` returns the id; R→B `frame_detached{frame}`; B→R `proxy_create{frame, parent, opener, origin, name, sandbox}`, `proxy_update`, `proxy_delete`; B→R `swap_out{frame}` (the frame now lives in another process: a proxy replaces it); R→B `post_message{from, to, source_origin, target_origin, data}`, B→R `message{to, from, origin, data}`; R→B `proxy_navigate{to, url}`, `proxy_focus`, `proxy_blur`, `proxy_close`, `opener_cleared`, `name_changed`; Q2.11 (with `DWELLER_PROCESS=site`) has: R→B `post_message{key, frame, page, source_page, source_origin, target_origin, data, buffers}` (51: to remote frame `key` of the sender, or to page `page` (0: the root) of the renderer of frame `frame`; `data` is the workers' structured-clone JSON (`engine/workers/wire.js`), `buffers` its ArrayBuffers), B→R `message{page, from_key, from_frame, from_page, origin, target_origin, data, buffers}` (52: `from_key` when the sender is the receiver's own remote child, so `event.source` is that iframe's `contentWindow`), B→R `frame_owner{parent_frame, parent_page, top_frame, sandbox, name}` (53: before a child's navigation: its `parent` and `top` proxies, the iframe's sandbox flags and name; the `subframes` record now carries the holder page, sandbox and name), B→R `frame_loaded{key}` (54: the owner element's `load`), R→B `proxy_navigate{key, frame, page, url}` (55: `location` set on a remote window), R→B `load_stopped` (56: a child's load event fired) |
 | dialogs, permissions | R→B (s) `dialog{frame, kind, text, default}` (alert, confirm, prompt, beforeunload); R→B `permission{frame, kind}`, B→R `permission_result`; R→B `file_chooser{frame, accept, multiple}`, the reply with read-only fds (Q5.5); R→B `download{frame, url}`; R→B `clipboard_write`, (s) `clipboard_read`; R→B (s) `font_open{name}` (Linux, §6) |
-| agent | B→R `agent{id, frame, request}`; R→B `agent_reply{id, json}`; R→B `agent_event{frame, json}` (loads, console, dialogs) |
+| agent | B→R `agent{id, frame, request}`; R→B `agent_reply{id, json}`; R→B `agent_event{frame, json}` (loads, console, dialogs); Q2.12: R→B `agent_acted{what}` (70: the action's text for the Space's last action, before `agent_reply`), B→R `agent_paused{on}` (71: the Space is paused; acting calls inside a `run` are refused too), R→B (s) `agent_window{line}` (72: a window command inside a `run`), B→R `agent_window_reply{ok, message, fields, detail}` (73) |
 
 Sync access between windows (`frames.length`, `parent`, `top`,
 `closed`, named access) is answered from the replica of the frame tree
@@ -392,6 +392,30 @@ What changes for agents (`docs/agent-protocol.md`):
   cross-site frame, as in a real page.
 - The internal `dweller space --control FD` command goes. The agent
   socket stays (its token: Q3.12).
+
+**In-process mode (decided in Q2.12).** Spaces always use renderers, in
+every `DWELLER_PROCESS` mode, also while the person's tabs run in the
+window's process. There is no in-process Space path: a request on the
+window's thread is what Spaces exist to avoid (the window never waits
+for an agent), and Chromium's `--single-process` is a debugging switch,
+not a mode it ships.
+
+**As built (Q2.12, first slice, 2026-11-09).** Behind
+`DWELLER_SPACES=renderer` the window hosts each `shared` Space itself:
+the `Space` keeps its tabs (`own_tabs`, numbered from 1 in the Space,
+frame ids from 2^29), each with a sandboxed renderer started at once
+and polled with the person's tabs in every mode; page commands and
+`wait` go to the tab's renderer, the window commands are answered from
+the Space, and the cookie jar and `localStorage` are the browser's
+(Q2.4b), so nothing is copied. Watching draws the renderer's buffer of
+the Space's first tab in the page area, and input while it is shown
+goes to that renderer. Messages 70–73 (§2) carry the last action, the
+pause and a `run`'s window commands. Not yet: `isolated` Spaces still
+get a Space process (one jar in the browser), a navigation's fetch
+still blocks the browser's loop (a slow server stalls the window),
+openers do not reach across renderers, and a renderer crash fails the
+request with "the tab's renderer is gone". Without the switch the
+Space process of §0 runs as before. The card `Q2.12` lists the rest.
 
 ## 9. Risks and open questions, ranked
 

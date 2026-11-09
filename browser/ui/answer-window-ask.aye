@@ -1,0 +1,31 @@
+import agent
+import ipc
+import std.heap.Arena
+import std.mem.AllocError
+
+fn answerWindowAsk(ui: *mut Ui, slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    var failure = agent.ParseFailure { pos: 0, msg: "" }
+    var reply = agent.newReply()
+    var done = false
+
+    var doc = agent.Json.parse(tmp, tp.window_ask.bytes(), &mut failure) catch |e| {
+        tp.window_ask.clear()
+
+        return
+    }
+
+    let r = doc.root()
+    let cmd = doc.getStr(r, "cmd") orelse ""
+
+    if ui.agents |a| {
+        if a.conns[tp.agent_conn] != null { done = try windowCommandOf(ui, tp.agent_conn, tmp, cmd, &mut doc, doc.get(r, "arguments"), "null", &mut reply) }
+    }
+
+    if !done { _ = refuse(&mut reply, "not available in a run here") }
+
+    tp.window_ask.clear()
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.AgentWindowReply { ok: reply.ok as u32, message: reply.message, fields: reply.fields, detail: reply.detail })
+}

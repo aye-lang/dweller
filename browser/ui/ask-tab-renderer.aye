@@ -1,10 +1,14 @@
 import agent
 import ipc
+import perf
+import std.text
 import std.mem.AllocError
 import std.mem.Allocator
 
 fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, line: []u8) AllocError!?bool {
-    let cmd = agent.pageCommand(tmp, line) orelse return null
+    let c = ui.agents.?.conns[conn].?
+    let hosted = hostedSpace(c)
+    let cmd = agent.pageCommand(tmp, line) orelse hostedWait(hosted, tmp, line) orelse return null
 
     if agent.actsOnPage(cmd) && refusalOf(ui, conn, cmd).len > 0 { return null }
 
@@ -14,8 +18,6 @@ fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, 
 
     if tp.gone.len > 0 { return null }
 
-    let c = ui.agents.?.conns[conn].?
-
     c.asked = true
 
     if !tp.hello || tp.buffers.width == 0 || tp.agent_id != 0 || tp.answered { return false }
@@ -23,13 +25,21 @@ fn askTabRenderer(ui: *mut Ui, conn: usize, slot: *mut TabSlot, tmp: Allocator, 
     tp.next_agent += 1
     tp.agent_id = tp.next_agent
     tp.agent_conn = conn
-    tp.agent_acts = agent.actsOnPage(cmd)
+    tp.agent_acts = agent.actsOnPage(cmd) || text.eql(cmd, "run")
     tp.agent_mcp = c.mode == 2
     tp.answered = false
     tp.agent_line.clear()
     try tp.agent_line.append(line)
 
     if tp.agent_acts && !tp.loading { tp.nav_failed = false }
+
+    if hosted |sp| {
+        c.asked_wait = text.eql(cmd, "wait")
+
+        if c.asked_wait { try spaceActed(ui, sp, "waiting") }
+
+        perf.end("ui_space_sent", perf.start(), sp.name.bytes())
+    }
 
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Agent { id: tp.agent_id, mcp: tp.agent_mcp as u32, ref_base: tp.next_ref, line: line })
 
