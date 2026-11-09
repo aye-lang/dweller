@@ -3,14 +3,15 @@ import std.mem.Allocator
 import std.text
 
 // https://w3c.github.io/webappsec-csp/#should-block-inline
-pub fn inlineRefusal(alloc: Allocator, policies: []u8, nonce: []u8, code: []u8) AllocError!?[]u8 {
+pub fn inlineRefusal(alloc: Allocator, policies: []u8, kind: Inline, nonce: []u8, code: []u8) AllocError!?Refusal {
+    let effective = inlineDirective(kind)
     var all = text.split(policies, ",")
 
     while all.next() |policy| {
-        let d = scriptDirective(policy, true) orelse continue
+        let d = scriptDirective(policy, effective) orelse continue
 
-        if !(try listAllowsInline(alloc, sourceList(d), nonce, code)) {
-            return d
+        if !(try listAllowsInline(alloc, sourceList(d), kind, nonce, code)) {
+            return Refusal { policy: text.trim(policy), directive: d, effective: effective }
         }
     }
 

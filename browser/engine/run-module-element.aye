@@ -4,7 +4,7 @@ import std.mem.AllocError
 import std.text
 
 // spec: https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-element
-fn runModuleElement(s: *mut Script, el: NodeId) AllocError!bool {
+fn runModuleElement(s: *mut Script, el: NodeId, parser_inserted: bool) AllocError!bool {
     let p = s.page
     let began = perf.start()
     let source = p.doc.attr(el, "src") orelse "inline module"
@@ -25,12 +25,20 @@ fn runModuleElement(s: *mut Script, el: NodeId) AllocError!bool {
 
         defer target.deinit(s.alloc)
 
-        return runModuleGraph(s, target.href, "", base.href, include)
+        if try urlRefused(s, el, &target, parser_inserted) {
+            return false
+        }
+
+        return runGatedGraph(s, el, target.href, "", base.href, include)
     }
 
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     try p.doc.textContent(el, &mut b)
 
-    return runModuleGraph(s, null, b.bytes(), base.href, include)
+    if try inlineRefused(s, el, b.bytes()) {
+        return false
+    }
+
+    return runGatedGraph(s, el, null, b.bytes(), base.href, include)
 }

@@ -1,0 +1,29 @@
+import dom.NodeId
+import js
+import js.Value
+import std.mem.AllocError
+
+// https://w3c.github.io/webappsec-csp/#report-violation
+fn fireViolation(s: *mut Script, target: ?NodeId, fields: []u8) AllocError!void {
+    if s.dispatcher == js.NONE {
+        return
+    }
+
+    let it = &mut s.it
+    let base = it.stack.len()
+    var at = s.page.doc.root
+
+    if target |el| {
+        if s.page.doc.isLive(el) {
+            at = el
+        }
+    }
+
+    try jsPush(s, it.roots.items()[s.dispatcher])
+    try jsPush(s, Value.Undefined)
+    try jsPush(s, try wrapFor(s, at))
+    try jsPush(s, try stringFor(s, "securitypolicyviolation"))
+    try jsPush(s, try stringFor(s, fields))
+    _ = try callReported(s, base, 3)
+    try runMicrotasks(s)
+}

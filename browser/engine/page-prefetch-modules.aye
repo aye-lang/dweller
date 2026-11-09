@@ -4,13 +4,18 @@ import std.list.List
 import std.text
 
 fn pagePrefetchModules(it: *mut Interp, hrefs: []u8, referrer: []u8, include: bool) {
-    let req = moduleRequest(scriptOf(it).page, referrer, include)
+    let page = scriptOf(it).page
+    let req = moduleRequest(page, referrer, include)
     var ids = List(u32).init(it.alloc)
     defer ids.deinit()
 
     var lines = text.split(hrefs, "\n")
 
     while lines.next() |href| {
+        if modulePrefetchRefused(page, href) {
+            continue
+        }
+
         let id = net.startLoadAs(href, req)
 
         if id != 0 {

@@ -1,0 +1,12 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn runGatedGraph(s: *mut Script, el: NodeId, href: ?[]u8, source: []u8, base: []u8, include: bool) AllocError!bool {
+    let outer = module_gate
+
+    defer module_gate = outer
+
+    module_gate = ModuleGate { el: el, entry: href orelse "" }
+
+    return runModuleGraph(s, href, source, base, include)
+}

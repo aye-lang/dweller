@@ -2,24 +2,41 @@ test "inline scripts by 'unsafe-inline', nonce and sha256 hash" {
     let a = @testAllocator()
     let code = "alert(1);"
 
-    @expect((try inlineRefusal(a, "", "", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'self'", "", code)) != null)
-    @expect((try inlineRefusal(a, "default-src 'unsafe-inline'", "", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'unsafe-inline' 'nonce-n1'", "", code)) != null)
-    @expect((try inlineRefusal(a, "script-src 'unsafe-inline' 'nonce-n1'", "n1", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'nonce-n1'", "n2", code)) != null)
-    @expect((try inlineRefusal(a, "script-src 'nonce-'", "", code)) != null)
-    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", "", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'SHA256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", "", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", "", "alert(2);")) != null)
-    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg_iCCBbxD8X1w-QvoOUepu4C2YA='", "", code)) == null)
-    @expect((try inlineRefusal(a, "script-src 'unsafe-inline', script-src 'nonce-n1'", "", code)) != null)
+    @expect((try inlineRefusal(a, "", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'self'", Inline.Script, "", code)) != null)
+    @expect((try inlineRefusal(a, "default-src 'unsafe-inline'", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-inline' 'nonce-n1'", Inline.Script, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-inline' 'nonce-n1'", Inline.Script, "n1", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'nonce-n1'", Inline.Script, "n2", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'nonce-'", Inline.Script, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'SHA256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg/iCCBbxD8X1w+QvoOUepu4C2YA='", Inline.Script, "", "alert(2);")) != null)
+    @expect((try inlineRefusal(a, "script-src 'sha256-5jFwrAK0UV47oFbVg_iCCBbxD8X1w-QvoOUepu4C2YA='", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-inline', script-src 'nonce-n1'", Inline.Script, "", code)) != null)
 }
 
 test "string compilation needs 'unsafe-eval'" {
     @expect(evalRefusal("img-src 'none'") == null)
-    @expectEqual("script-src 'self'", evalRefusal("script-src 'self'") orelse "")
+    @expectEqual("script-src 'self'", (evalRefusal("script-src 'self'") orelse return).directive)
     @expect(evalRefusal("default-src 'unsafe-eval'") == null)
     @expect(evalRefusal("script-src 'unsafe-eval', default-src 'none'") != null)
     @expect(directiveOf("  upgrade-insecure-requests ; script-src x", "upgrade-insecure-requests") != null)
+}
+
+test "sha384 and sha512 hashes, strict-dynamic and attribute hashes" {
+    let a = @testAllocator()
+    let code = "alert(1);"
+    @expect((try inlineRefusal(a, "script-src 'sha384-dnux3uAPxaf+IhCrFG1D/XVNzP1XLDNcn3Pe3jyxouEAoot5kfwC5u8rMwNhE5oi'", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha512-yth/AKDfYyamGdVY92SJHjP5YqBda8LtutursuX70OzxIztHmFivMqd2l3Hm/STWljOjS5/MGmJn2+NkmIDPnw=='", Inline.Script, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha512-pqdwEN2WlsI4MeZUneUXJN8zLCB1A5t1/P5sLm3kL708gO1AcyZ+AMjDIHEsPN2dZalvkKP+SlimtwoQO+COgw=='", Inline.Script, "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha384-BUHjSbbQZ0moUq4KaNtz+YYgh53mtbN0PX/KfdoPgdg7DKWW9xBULtND8bQhTVCM'", Inline.Script, "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha384-BUHjSbbQZ0moUq4KaNtz+YYgh53mtbN0PX/KfdoPgdg7DKWW9xBULtND8bQhTVCM'", Inline.Script, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-hashes' 'sha384-dnux3uAPxaf+IhCrFG1D/XVNzP1XLDNcn3Pe3jyxouEAoot5kfwC5u8rMwNhE5oi'", Inline.Attribute, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'sha384-dnux3uAPxaf+IhCrFG1D/XVNzP1XLDNcn3Pe3jyxouEAoot5kfwC5u8rMwNhE5oi'", Inline.Attribute, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-inline' 'strict-dynamic'", Inline.Script, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src 'unsafe-inline'", Inline.Attribute, "", code)) == null)
+    @expect((try inlineRefusal(a, "script-src 'self'", Inline.Attribute, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src-attr 'none'; script-src 'unsafe-inline'", Inline.Attribute, "", code)) != null)
+    @expect((try inlineRefusal(a, "script-src-attr 'none'; script-src 'unsafe-inline'", Inline.Script, "", code)) == null)
 }
