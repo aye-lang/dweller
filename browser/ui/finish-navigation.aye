@@ -1,0 +1,13 @@
+import ipc
+import net
+import std.mem.AllocError
+
+fn finishNavigation(tp: *mut TabProcess, h: *HeldFetch) AllocError!void {
+    let res = net.takeResponse(h.load) orelse {
+        tp.nav_failed = true
+
+        return ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchFail { id: h.id, code: net.requestFailure(h.load) })
+    }
+
+    return sendNavigation(tp, h.on, h.id, h.href.bytes(), res)
+}

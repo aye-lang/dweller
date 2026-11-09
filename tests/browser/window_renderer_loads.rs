@@ -55,3 +55,46 @@ fn window_renderer_loads_cancel() {
         assert!(renderer.contains(want) && !renderer.lines().any(|l| l.starts_with("late answer")), "{page}: {renderer}");
     }
 }
+
+/// Q2.12b: with `DWELLER_PROCESS=tab` the browser fetches a tab's
+/// navigation in the background: while the server waits 1 s before it
+/// answers (`/sleep?ms=1000`), the window's loop keeps running (no
+/// `ui_loop` record over 500 ms, and many of them while the page loads)
+/// and takes the typing into the address bar; the page then loads as
+/// before.
+#[test]
+fn window_renderer_loads_slow_navigation() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/sleep?ms=1000", srv.base);
+    let mut window = dweller_command();
+    window
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TIMING", "1")
+        .args([
+            &href, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000",
+            "--until-idle", "--state", "--text", "--events", "key:cmd+l text:abc renderer:loaded frame",
+        ]);
+    let began = std::time::Instant::now();
+    let out = window.output().unwrap();
+    let took = began.elapsed().as_millis();
+    let got = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let loops: Vec<u64> = text(&out.stderr)
+        .lines()
+        .filter_map(|l| l.strip_prefix("info: DWELLER_TIMING\tui_loop\t"))
+        .filter_map(|l| l.split('\t').next()?.parse::<u64>().ok())
+        .map(|ns| ns / 1_000_000)
+        .collect();
+    let longest = loops.iter().copied().max().unwrap_or(0);
+    assert!(took >= 1000 && got.contains("slept 1000 ms") && got.contains("\naddress abc\n"), "{took} ms:\n{got}");
+    assert!(longest < 500 && loops.len() >= 20, "longest iteration {longest} ms of {}:\n{got}", loops.len());
+    println!("longest iteration {longest} ms, {} iterations in {took} ms", loops.len());
+}

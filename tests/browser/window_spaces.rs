@@ -299,15 +299,16 @@ fn space_records(err: &str) -> (Vec<Record>, String) {
 // Agent A runs a 1500 ms `eval` loop and B loads a page whose server
 // waits 1500 ms; while both run, C asks for `tabs` and the user clicks
 // into a text field and types (`agents:4`: after C's answer).
-fn responsive_session(base: &str) -> Responsive {
-    let sock = format!("target/sockets/spaces-resp-{}.sock", std::process::id());
+fn responsive_session(base: &str, env: &[(&str, &str)]) -> Responsive {
+    let sock = format!("target/sockets/spaces-resp-{}-{}.sock", env.len(), std::process::id());
     let extra = vec![
         "--state",
         "--events",
         "agents:4 click:60,100 text:hello",
         "browser/tests/agent/site/notes.html",
     ];
-    let window = spaces_window_env(&sock, &extra, &[("DWELLER_TIMING", "1")]);
+    let envs: Vec<(&str, &str)> = [("DWELLER_TIMING", "1")].into_iter().chain(env.iter().copied()).collect();
+    let window = spaces_window_env(&sock, &extra, &envs);
     let window_pid = window.id();
     // The records are read as they come (`spaces_window`).
     let mut a = AgentConn::open(&sock);
@@ -368,6 +369,18 @@ fn responsive_session(base: &str) -> Responsive {
 /// of ms, a wait for A's Space stalls one for over a second).
 #[test]
 fn window_spaces_responsive() {
+    window_spaces_responsive_with(&[]);
+}
+
+/// Q2.12b: the same with the Spaces hosted in the window (`HOSTED`): B's
+/// navigation is fetched in the background, so no loop iteration waits
+/// for the server.
+#[test]
+fn window_spaces_responsive_in_renderer() {
+    window_spaces_responsive_with(HOSTED);
+}
+
+fn window_spaces_responsive_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -376,7 +389,7 @@ fn window_spaces_responsive() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let r = responsive_session(&srv.base);
+    let r = responsive_session(&srv.base, env);
     assert!(
         r.a.0.contains("\"result\":\"spun\"") && r.a.1 >= 1400,
         "A: {} ms: {}",
@@ -389,7 +402,9 @@ fn window_spaces_responsive() {
         r.b.1,
         r.b.0
     );
-    // The Spaces in the order their agents first asked: A, B, C.
+    // The Spaces in the order their agents first asked: A, B, C. A hosted
+    // Space's `tabs` is answered by the window (Q2.12), so C sends none.
+    let hosted = !env.is_empty();
     let mut names: Vec<&str> = Vec::new();
     for rec in &r.records {
         if let Record::Sent(name) = rec {
@@ -398,7 +413,7 @@ fn window_spaces_responsive() {
             }
         }
     }
-    assert_eq!(names.len(), 3, "{:?}", r.records);
+    assert_eq!(names.len(), if hosted { 2 } else { 3 }, "{:?}", r.records);
     // The index of the `n`th (from 0) record equal to `want`.
     let nth = |n: usize, want: Record| {
         r.records
@@ -409,21 +424,36 @@ fn window_spaces_responsive() {
             .map(|(i, _)| i)
             .unwrap_or_else(|| panic!("{want:?} {n} not found: {:?}", r.records))
     };
-    let (a_name, c_name) = (names[0].to_string(), names[2].to_string());
+    let loops = |from: usize, to: usize| {
+        r.records[from..to]
+            .iter()
+            .filter(|rec| matches!(rec, Record::Loop(_)))
+            .count()
+    };
+    let (a_name, b_name) = (names[0].to_string(), names[1].to_string());
     let a_sent = nth(1, Record::Sent(a_name.clone()));
     let a_answer = nth(1, Record::Answer(a_name));
-    let c_sent = nth(1, Record::Sent(c_name.clone()));
-    let c_answer = nth(1, Record::Answer(c_name));
-    let loops_between = r.records[a_sent..a_answer]
-        .iter()
-        .filter(|rec| matches!(rec, Record::Loop(_)))
-        .count();
+    // B's `navigate`, after its `tabs` (which a hosted Space does not send).
+    let b_at = if hosted { 0 } else { 1 };
+    let b_sent = nth(b_at, Record::Sent(b_name.clone()));
+    let b_answer = nth(b_at, Record::Answer(b_name));
+    let loops_between = loops(a_sent, a_answer);
     assert!(
-        a_sent < c_sent && c_answer < a_answer && loops_between >= 3,
+        loops_between >= 3 && b_sent < b_answer && loops(b_sent, b_answer) >= 3,
         "A's eval out at {a_sent}, back at {a_answer}, {loops_between} loop iterations between; \
-         C's tabs out at {c_sent}, back at {c_answer}: {:?}",
+         B's navigate out at {b_sent}, back at {b_answer}: {:?}",
         r.records
     );
+    if !hosted {
+        let c_name = names[2].to_string();
+        let c_sent = nth(1, Record::Sent(c_name.clone()));
+        let c_answer = nth(1, Record::Answer(c_name));
+        assert!(
+            a_sent < c_sent && c_answer < a_answer,
+            "A's eval out at {a_sent}, back at {a_answer}; C's tabs out at {c_sent}, back at {c_answer}: {:?}",
+            r.records
+        );
+    }
     let longest = r
         .records
         .iter()
