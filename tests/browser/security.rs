@@ -74,6 +74,55 @@ fn csp_script_src() {
     }
 }
 
+/// Q3.6: a document refused by `X-Frame-Options` or CSP
+/// `frame-ancestors` shows an error document of an opaque origin (no
+/// `contentDocument`, the `load` event still fires) and logs a console
+/// error; a cross-origin frame has no `contentDocument` either, so the
+/// log tells the refused ones from the allowed. `DENY`, `SAMEORIGIN` against every ancestor, conflicting
+/// values, `frame-ancestors` `'none'` and `'self'`, the CSP policy
+/// overriding XFO, a `<meta>` policy and a report-only one not blocking.
+#[test]
+fn csp_frame_ancestors() {
+    let (Some(srv), Some(other)) = (server(), server()) else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/csp/framing.html?other={}", srv.base, other.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut got: Vec<String> = text(&out.stdout).lines().map(String::from).collect();
+    got.sort();
+    let want = [
+        "conflict cross: no document",
+        "conflict same: no document",
+        "deny cross: no document",
+        "deny same: no document",
+        "meta cross: no document",
+        "meta same: document",
+        "none cross: no document",
+        "none same: no document",
+        "override cross: no document",
+        "override same: document",
+        "report cross: no document",
+        "report same: document",
+        "sameorigin cross: no document",
+        "sameorigin same: document",
+        "self cross: no document",
+        "self same: document",
+    ];
+    assert_eq!(got, want, "{}", text(&out.stderr));
+    let logged = |needle: &str| text(&out.stderr).lines().filter(|l| l.contains(needle)).count();
+    assert_eq!(logged("to 'deny'"), 2, "{}", text(&out.stderr));
+    assert_eq!(logged("to 'sameorigin'"), 1, "{}", text(&out.stderr));
+    assert_eq!(logged("conflicting values"), 2, "{}", text(&out.stderr));
+    assert_eq!(logged("directive: \"frame-ancestors 'none'\""), 2, "{}", text(&out.stderr));
+    assert_eq!(logged("directive: \"frame-ancestors 'self'\""), 2, "{}", text(&out.stderr));
+}
+
 /// Q3.9b: a person's click on a `target=_top` link or form in a
 /// sandboxed frame loads in the tab only with `allow-top-navigation` or
 /// `allow-top-navigation-by-user-activation`.

@@ -1,0 +1,20 @@
+<!doctype html>
+<title>Framing headers</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const other = new URLSearchParams(location.search).get('other');
+const cases = [];
+for (const name of ['deny', 'sameorigin', 'none', 'self', 'override', 'conflict', 'meta', 'report']) {
+  cases.push([name + ' same', '/csp/frame-' + name + '.html']);
+  cases.push([name + ' cross', other + '/csp/frame-' + name + '.html']);
+}
+for (const [label, src] of cases) {
+  const frame = document.createElement('iframe');
+  frame.onload = () => {
+    out.textContent += label + ': ' + (frame.contentDocument ? 'document' : 'no document') + '\n';
+  };
+  frame.src = src;
+  document.body.append(frame);
+}
+</script>

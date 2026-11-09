@@ -1,0 +1,12 @@
+import csp
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: content/browser/renderer_host/ancestor_throttle.cc
+fn framingRefusal(alloc: Allocator, p: *mut Page, c: *Page) AllocError!?[]mut u8 {
+    if csp.hasFrameAncestors(c.header_csp) {
+        return try ancestorsCspRefusal(alloc, p, c)
+    }
+
+    return try frameOptionsRefusal(alloc, p, c)
+}

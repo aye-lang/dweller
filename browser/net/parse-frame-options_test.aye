@@ -1,0 +1,13 @@
+test "X-Frame-Options values, repeated headers and lists" {
+    @expect(parseFrameOptions("Content-Type: text/html") == FrameOptions.Allow)
+    @expect(parseFrameOptions("X-Frame-Options: denY") == FrameOptions.Deny)
+    @expect(parseFrameOptions("x-frame-options:   SAMEORIGIN ") == FrameOptions.SameOrigin)
+    @expect(parseFrameOptions("X-Frame-Options: ALLOWALL") == FrameOptions.Allow)
+    @expect(parseFrameOptions("X-Frame-Options: \"DENY\"") == FrameOptions.Allow)
+    @expect(parseFrameOptions("X-Frame-Options: INVALID\nX-Frame-Options: INVALID") == FrameOptions.Allow)
+    @expect(parseFrameOptions("X-Frame-Options: SAMEORIGIN\nX-Frame-Options: sameorigin") == FrameOptions.SameOrigin)
+    @expect(parseFrameOptions("X-Frame-Options: SAMEORIGIN\nX-Frame-Options: DENY") == FrameOptions.Conflict)
+    @expect(parseFrameOptions("X-Frame-Options: DENY,INVALID") == FrameOptions.Conflict)
+    @expect(parseFrameOptions("X-Frame-Options: ,SAMEORIGIN,,DENY,") == FrameOptions.Conflict)
+    @expect(parseFrameOptions("X-Frame-Options: INVALID, ") == FrameOptions.Allow)
+}
