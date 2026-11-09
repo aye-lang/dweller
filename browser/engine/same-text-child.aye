@@ -1,0 +1,19 @@
+import dom.Document
+import dom.Kind
+import dom.NodeId
+import std.text
+
+// blink: third_party/blink/renderer/core/dom/node.cc (Node::setTextContent: identical text, no mutation observers)
+fn sameTextChild(doc: *Document, h: NodeId, data: []u8) bool {
+    if data.len == 0 || doc.observed {
+        return false
+    }
+
+    let first = doc.firstChild(h) orelse return false
+
+    if doc.node(first).kind != Kind.Text || doc.nextSibling(first) != null {
+        return false
+    }
+
+    return text.eql(doc.node(first).data, data)
+}

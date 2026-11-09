@@ -410,6 +410,27 @@ fn window_frame_lists_reused() {
     assert!(all <= 2, "{all} frames built every list: {builds:?}");
 }
 
+/// Q4.22: a rAF tick that writes the text an element already has, with
+/// no MutationObserver on the page, changes nothing: only the load and
+/// the tick that writes other text build the display list.
+#[test]
+fn window_same_text_write_builds_nothing() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let png = std::env::temp_dir().join(format!("dweller-q422-{}.png", std::process::id()));
+    let err = damage_window_run("browser/tests/ui/same_text.html", &png, "painted");
+    let _ = std::fs::remove_file(&png);
+    let builds: Vec<usize> = frame_records(&err)
+        .iter()
+        .map(|f| f.iter().filter(|(n, _)| n == "paint_build").count())
+        .collect();
+    let built = builds.iter().filter(|&&n| n > 0).count();
+    assert!(built >= 2, "{built} frames built a list: {builds:?}");
+    assert!(built <= 4, "{built} frames built a list: {builds:?}");
+}
+
 /// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed

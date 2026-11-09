@@ -1,0 +1,66 @@
+import std.text
+
+fn versionAfter(p: *mut Page, src: []u8, out: *mut text.Builder) !u64 {
+    out.clear()
+    @expect(try evalInPage(p, src, out))
+
+    return domVersion(p)
+}
+
+test "textContent with the text an element's only text child has changes nothing" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<p id=p>t</p>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let before = domVersion(p)
+    let same = try versionAfter(p, "document.getElementById('p').textContent = 't'", &mut out)
+
+    @expectEqual(before, same)
+
+    let other = try versionAfter(p, "document.getElementById('p').textContent = 'u'", &mut out)
+
+    @expect(other > same)
+}
+
+test "textContent with the same text replaces the node while a mutation observer exists" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<p id=p>t</p>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let before = try versionAfter(p, "new MutationObserver(function () {}).observe(document.body, { childList: true, subtree: true })", &mut out)
+    let after = try versionAfter(p, "document.getElementById('p').textContent = 't'", &mut out)
+
+    @expect(after > before)
+}
+
+test "a text write moves the version without moving the image-relevant version" {
+    let a = @testAllocator()
+    let p = try loadScripted(a, "data:text/html,<p id=p>t</p><img id=i>")
+
+    defer p.destroy()
+
+    var out = text.Builder.init(a)
+
+    defer out.deinit()
+
+    let s = p.script.?
+    let before = domVersion(p) - s.image_neutral
+    let text_write = try versionAfter(p, "document.getElementById('p').textContent = 'u'", &mut out)
+
+    @expect(text_write > before)
+    @expectEqual(before, text_write - s.image_neutral)
+
+    let attr = try versionAfter(p, "document.getElementById('i').setAttribute('src', 'x.png')", &mut out)
+
+    @expect(attr - s.image_neutral > before)
+}

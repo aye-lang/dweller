@@ -49,6 +49,7 @@ pub struct Styling {
     styles: css.Styles
     // `domVersion` of the document these styles are for.
     version: u64
+    fonts_settled: ?usize = null
 }
 
 pub struct Page {
@@ -314,7 +315,7 @@ pub struct Page {
             }
         }
         if self.styling |st| {
-            _ = try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads())
+            _ = try loadStyledWebFonts(self, st, measure)
         }
         let images_began = perf.start()
         try updateImages(self, css.Media { width: width, height: height })
@@ -367,7 +368,10 @@ pub struct Page {
             try syncFrames(self)
         }
         setViewport(self, width, height)
-        if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads()) {
+        let fonts_began = perf.start()
+        let fonts_added = try loadStyledWebFonts(self, st, measure)
+        perf.end("fonts", fonts_began, self.url.href)
+        if fonts_added {
             // Text measures differently: lay out again in full.
             s.layout_version += 1
         }
@@ -398,7 +402,9 @@ pub struct Page {
         g.tree.box_scrolls = &mut self.box_scrolls
         self.tree_borrowed = true
         self.doc.hold_frees = true
+        let frames_began = perf.start()
         try layoutFrames(self, measure)
+        perf.end("layout_frames", frames_began, self.url.href)
         return true
     }
 

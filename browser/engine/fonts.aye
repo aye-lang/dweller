@@ -49,10 +49,10 @@ struct Wanted {
 /// loads in the background, held there, and is left out of this layout
 /// (as `font-display: swap`); the layout after its load adds it.
 /// Whether it added any.
-fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer, held: ?*mut ImageCache) AllocError!bool {
+fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measure: dyn font.Measurer, held: ?*mut ImageCache) AllocError!FontLoad {
     let faces = author.font_faces.items()
     if faces.len == 0 {
-        return false
+        return FontLoad.Idle
     }
     var wanted = List(Wanted).init(alloc)
     defer {
@@ -91,7 +91,7 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         try hrefs.appendByte('\n')
     }
     if wanted.len() == 0 {
-        return false
+        return FontLoad.Idle
     }
     if held == null {
         net.prefetch(alloc, hrefs.bytes(), net.Kind.Font, referrer)
@@ -134,7 +134,10 @@ fn loadWebFonts(alloc: Allocator, author: *mut css.Sheet, referrer: []u8, measur
         }
         added = true
     }
-    return added
+    if added {
+        return FontLoad.Added
+    }
+    return FontLoad.Waiting
 }
 
 fn descOf(f: css.FontFace, href: []u8) font.FaceDesc {

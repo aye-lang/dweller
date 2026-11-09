@@ -81,6 +81,8 @@ pub struct ImageCache {
     shown: HashMap(NodeId, []mut u8)
     fingerprint: text.Builder
     element_loads: u64 = 0
+    landings: u64 = 0
+    filled: ?ImageFillStamp = null
 
     pub fn init(alloc: Allocator) ImageCache {
         return ImageCache { alloc: alloc, entries: List(CachedImage).init(alloc), by_href: StrMap(usize).init(alloc), nodes: layout.Images.init(alloc), canvases: List(CanvasBitmap).init(alloc), canvas_fonts: null, canvas_strokes: List(CanvasStroke).init(alloc), canvas_painter: null, canvas_masks: List(CanvasTextMask).init(alloc), canvas_mask_id: 0, referrer: alloc.alloc(0 as u8, 0) catch unreachable, keys: List([]mut u8).init(alloc), loads: List(u32).init(alloc), revealed: List(NodeId).init(alloc), decodes: List(*mut DecodeJob).init(alloc), shown: HashMap(NodeId, []mut u8).init(alloc), fingerprint: text.Builder.init(alloc) }
@@ -547,7 +549,13 @@ pub fn updateImages(page: *mut Page, media: css.Media) AllocError!void {
     if text.startsWith(page.url.href, "about:") {
         address = &page.base
     }
-    return fillImagesWith(page.images.?, &page.doc, address, styles, media)
+    let cache = page.images.?
+    if imagesAlreadyFilled(page, cache, media) {
+        return
+    }
+    cache.filled = null
+    try fillImagesWith(cache, &page.doc, address, styles, media)
+    cache.filled = imageFillStamp(page, cache, media)
 }
 
 /// Fetches the images of the elements of `doc` (whose URL is

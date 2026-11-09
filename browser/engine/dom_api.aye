@@ -769,15 +769,23 @@ fn nodeSetTextContent(it: *mut Interp, a: Args) JsError!Value {
     let kind = doc.node(h).kind
     if kind == Kind.Text || kind == Kind.Comment {
         try doc.setData(h, b.bytes())
-        try changedChildren(it, h)
+        try changedText(it, h)
         return Value.Undefined
     }
     if kind != Kind.Element && !doc.isFragment(h) {
         return Value.Undefined
     }
+    if sameTextChild(doc, h, b.bytes()) {
+        return Value.Undefined
+    }
+    let was_text = onlyTextChildren(doc, h)
     try noteChildren(scriptOf(it), h)
     removeChildren(doc, h)
     try doc.appendText(h, b.bytes())
+    if was_text {
+        try changedText(it, h)
+        return Value.Undefined
+    }
     try changedChildren(it, h)
     return Value.Undefined
 }
@@ -812,7 +820,7 @@ fn nodeSetValue(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 0, b)
     }
     try doc.setData(h, b.bytes())
-    try changedChildren(it, h)
+    try changedText(it, h)
     return Value.Undefined
 }
 

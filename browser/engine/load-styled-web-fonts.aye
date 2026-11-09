@@ -1,0 +1,21 @@
+import font
+import std.mem.AllocError
+
+// blink: third_party/blink/renderer/core/css/font_face_set_document.cc (a face that is not wanted is not looked at again)
+fn loadStyledWebFonts(p: *mut Page, st: *mut Styling, measure: dyn font.Measurer) AllocError!bool {
+    if st.fonts_settled |count| {
+        if count == measure.webFontCount() {
+            return false
+        }
+    }
+
+    let loaded = try loadWebFonts(p.alloc, &mut st.author, p.url.href, measure, p.heldLoads())
+
+    st.fonts_settled = null
+
+    if loaded == FontLoad.Idle {
+        st.fonts_settled = measure.webFontCount()
+    }
+
+    return loaded == FontLoad.Added
+}
