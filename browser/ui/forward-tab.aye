@@ -8,7 +8,8 @@ fn forwardTab(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
     if k == SDL_MOUSEMOTION || k == SDL_MOUSEBUTTONDOWN || k == SDL_MOUSEBUTTONUP { return forwardMouse(ui, tp, ev) }
 
     if k == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_LEAVE {
-        try sendMouse(ui, tp, 3, 0, 0.0, 0.0)
+        try sendMouse(ui, findFrame(tp, tp.mouse_frame, 0, 0) orelse FrameHit { tp: tp, ox: 0, oy: 0 }, 3, 0, 0.0, 0.0)
+        tp.mouse_frame = 0
 
         return false
     }
@@ -24,8 +25,10 @@ fn forwardTab(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
         n += 1
     }
 
-    tp.seq += 1
-    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, ipc.Message.Text { seq: tp.seq, typed: te.text[0..n] })
+    let to = focusedFrame(tp).tp
+
+    to.seq += 1
+    try ipc.encode(&mut to.outbox, to.tab, ipc.Message.Text { seq: to.seq, typed: te.text[0..n] })
 
     return true
 }

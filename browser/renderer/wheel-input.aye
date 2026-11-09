@@ -1,25 +1,16 @@
 import engine
 import std.mem.AllocError
 
-fn wheelInput(r: *mut TabRenderer, x: f64, y: f64, dx: f64, dy: f64, precise: bool) AllocError!void {
+fn wheelInput(r: *mut TabRenderer, seq: u32, x: f64, y: f64, dx: f64, dy: f64, precise: bool) !void {
     let p = r.page orelse return
     let px = x + r.scroll_x
     let py = y + r.scroll_y
-    let over = x >= 0.0 && y >= 0.0
 
-    if over && engine.hasScripts(p) {
+    if x >= 0.0 && y >= 0.0 && engine.hasScripts(p) {
         if engine.nodeAt(p.tree orelse return, px, py) |n| {
             if !(try engine.dispatchWheel(p, elementOf(p, n), x, y, dx, dy)) { return }
         }
     }
 
-    if over && try wheelElement(r, p, px, py, dx, dy, precise) { return }
-
-    var sy = dy
-
-    if dy != 0.0 && engine.scrollFrameAt(p, px, py, dy) {
-        sy = 0.0
-    }
-
-    try scrollPage(r, dx, sy)
+    try sayUnused(r, seq, try scrollChain(r, p, x, y, dx, dy, precise))
 }

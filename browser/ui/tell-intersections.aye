@@ -1,0 +1,33 @@
+import ipc
+import paint
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame_view.cc (UpdateViewportIntersection: the child's visible rect in the top's viewport)
+fn tellIntersections(tp: *mut TabProcess, ox: i64, oy: i64, bound: paint.IRect) AllocError!void {
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+        let shown = paint.intersect(movedRect(c.clip, ox, oy), bound)
+        let at = movedRect(shown, -(ox + c.x), -(oy + c.y))
+        var seen = [4]u32{0, 0, 0, 0}
+
+        if !child.hello || child.gone.len > 0 { continue }
+
+        if at.x1 > at.x0 && at.y1 > at.y0 {
+            seen = [4]u32{at.x0 as u32, at.y0 as u32, at.x1 as u32, at.y1 as u32}
+        }
+
+        if !sameSeen(child.seen, seen) {
+            child.seen = seen
+
+            try ipc.encode(&mut child.outbox, child.tab, ipc.Message.ViewportIntersection { x0: seen[0], y0: seen[1], x1: seen[2], y1: seen[3] })
+        }
+
+        try tellIntersections(child, ox + c.x, oy + c.y, shown)
+    }
+}
+
+fn sameSeen(was: ?[4]u32, now: [4]u32) bool {
+    let w = was orelse return false
+
+    return w[0] == now[0] && w[1] == now[1] && w[2] == now[2] && w[3] == now[3]
+}

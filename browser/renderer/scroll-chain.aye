@@ -1,0 +1,23 @@
+import engine
+import std.mem.AllocError
+
+// blink: core/input/scroll_manager.cc (RecomputeScrollChain: the scrollers at the point, then the frame, then the viewport)
+fn scrollChain(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64, dx: f64, dy: f64, precise: bool) AllocError![2]f64 {
+    let px = x + r.scroll_x
+    let py = y + r.scroll_y
+
+    if x >= 0.0 && y >= 0.0 && try wheelElement(r, p, px, py, dx, dy, precise) { return [2]f64{0.0, 0.0} }
+
+    var sy = dy
+
+    if dy != 0.0 && engine.scrollFrameAt(p, px, py, dy) {
+        sy = 0.0
+    }
+
+    let was_x = r.scroll_x
+    let was_y = r.scroll_y
+
+    try scrollPage(r, dx, sy)
+
+    return [2]f64{unusedPart(dx, r.scroll_x - was_x), unusedPart(sy, r.scroll_y - was_y)}
+}

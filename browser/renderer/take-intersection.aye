@@ -1,0 +1,19 @@
+import engine
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/frame/local_frame_view.cc (SetViewportIntersection)
+fn takeIntersection(r: *mut TabRenderer, seen: [4]u32) AllocError!void {
+    r.embedded = true
+    r.visible = seen
+
+    let p = r.page orelse return
+
+    try showIntersection(r, p)
+}
+
+fn showIntersection(r: *TabRenderer, p: *mut engine.Page) AllocError!void {
+    let v = r.visible
+    let s = r.scale
+
+    try engine.setVisibleRect(p, [4]f64{v[0] as f64 / s, v[1] as f64 / s, (v[2] - v[0]) as f64 / s, (v[3] - v[1]) as f64 / s})
+}

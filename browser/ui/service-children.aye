@@ -24,6 +24,13 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
             continue
         }
 
+        if child.unused |left| {
+            child.unused = null
+            try bubbleScroll(ui, tp, c.*, left)
+        }
+
+        if child.take_focus { try focusEmbedder(tp, c.*) }
+
         if child.swap_to != null {
             try swapChild(ui, tp, c)
         } else {

@@ -1,0 +1,23 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (AdvanceFocus, DidFocusFrame)
+fn focusFrame(tp: *mut TabProcess, key: u32, how: u32) AllocError![]u8 {
+    if how > 2 { return "bad focus_frame" }
+
+    for c in tp.children.items() {
+        if c.key != key { continue }
+
+        let child = c.tp orelse return ""
+
+        if child.gone.len > 0 { return "" }
+
+        topProcess(tp).focus_frame = child.tab
+
+        if how > 0 { try ipc.encode(&mut child.outbox, child.tab, ipc.Message.AdvanceFocus { key: 0, reverse: (how == 2) as u32 }) }
+
+        return ""
+    }
+
+    return "bad focus_frame"
+}

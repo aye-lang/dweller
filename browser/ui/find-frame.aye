@@ -1,0 +1,12 @@
+fn findFrame(tp: *mut TabProcess, id: u32, ox: i64, oy: i64) ?FrameHit {
+    if tp.tab == id { return FrameHit { tp: tp, ox: ox, oy: oy } }
+
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        if child.gone.len > 0 { continue }
+        if findFrame(child, id, ox + c.x, oy + c.y) |hit| { return hit }
+    }
+
+    return null
+}

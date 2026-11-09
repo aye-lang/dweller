@@ -1,0 +1,16 @@
+// chromium: components/input/render_widget_host_input_event_router.cc (FindViewAtLocation)
+fn hitFrame(tp: *mut TabProcess, x: i64, y: i64, ox: i64, oy: i64) FrameHit {
+    var k = tp.children.len()
+
+    while k > 0 {
+        k -= 1
+
+        let c = tp.children.items()[k]
+        let child = c.tp orelse continue
+        let live = child.hello && child.gone.len == 0 && child.buffers.shown != 0
+
+        if live && x >= ox + c.clip.x0 && x < ox + c.clip.x1 && y >= oy + c.clip.y0 && y < oy + c.clip.y1 { return hitFrame(child, x, y, ox + c.x, oy + c.y) }
+    }
+
+    return FrameHit { tp: tp, ox: ox, oy: oy }
+}
