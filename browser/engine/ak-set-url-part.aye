@@ -1,0 +1,33 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import url
+
+fn akSetUrlPart(it: *mut Interp, a: Args) JsError!Value {
+    let href = try it.builder()
+    defer it.release(href)
+    let part = try it.builder()
+    defer it.release(part)
+    let value = try it.builder()
+    defer it.release(value)
+
+    try argText(it, a, 0, href)
+    try argText(it, a, 1, part)
+    try argText(it, a, 2, value)
+
+    let u = url.parse(it.alloc, href.bytes()) catch |e| {
+        return Value.Null
+    }
+
+    defer u.deinit(it.alloc)
+
+    let updated = url.setComponent(it.alloc, &u, part.bytes(), value.bytes()) catch |e| {
+        return Value.Null
+    }
+
+    defer updated.deinit(it.alloc)
+
+    return urlPartsArray(it, &updated)
+}

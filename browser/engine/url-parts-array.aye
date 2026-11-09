@@ -1,0 +1,23 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+import url
+
+fn urlPartsArray(it: *mut Interp, u: *url.Url) JsError!Value {
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    let b = try it.builder()
+    defer it.release(b)
+
+    for part in URL_PARTS {
+        b.clear()
+        try appendUrlPart(b, u, part)
+        let v = try it.newString(b.bytes())
+
+        try it.heap.pushElem(arr, v)
+    }
+
+    return it.pop()
+}

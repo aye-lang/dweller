@@ -1,0 +1,12 @@
+// spec: https://url.spec.whatwg.org/#urlutils-members
+import std.mem.Allocator
+
+pub fn setComponent(alloc: Allocator, u: *Url, name: []u8, value: []u8) UrlError!Url {
+    let component = componentNamed(name) orelse return UrlError.Invalid
+    var p = try parserOfUrl(alloc, u)
+    defer freeParser(&mut p)
+
+    try applyComponent(&mut p, component, value)
+
+    return serializeUrl(alloc, &p)
+}
