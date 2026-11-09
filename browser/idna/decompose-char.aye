@@ -1,0 +1,18 @@
+// https://www.unicode.org/reports/tr15/#Hangul
+import std.list.List
+
+fn decomposeChar(c: u32, out: *mut List(u32)) IdnaError!void {
+    if isHangulSyllable(c) {
+        return decomposeHangul(c, out)
+    }
+
+    let offset = rangeValue(DECOMPOSITION, c)
+
+    if offset == 0 {
+        return out.append(c)
+    }
+
+    for i in 0..poolLength(DECOMPOSITION, offset) {
+        try out.append(poolItem(DECOMPOSITION, offset, i))
+    }
+}

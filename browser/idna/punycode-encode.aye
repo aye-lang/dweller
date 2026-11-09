@@ -1,0 +1,45 @@
+// https://www.rfc-editor.org/rfc/rfc3492#section-6.3
+import std.text
+
+fn punycodeEncode(label: []u32, out: *mut text.Builder) IdnaError!void {
+    var n = PUNY_INITIAL_N
+    var delta: u32 = 0
+    var bias = PUNY_INITIAL_BIAS
+    var handled: u32 = 0
+
+    for c in label {
+        if c < 0x80 {
+            try out.appendByte(c as u8)
+            handled += 1
+        }
+    }
+
+    let basic = handled
+
+    if basic > 0 {
+        try out.appendByte('-')
+    }
+
+    while handled < label.len as u32 {
+        let m = nextCodePoint(label, n)
+
+        delta += (m - n) * (handled + 1)
+        n = m
+
+        for c in label {
+            if c < n {
+                delta += 1
+            }
+
+            if c == n {
+                try appendVariableInt(out, delta, bias)
+                bias = punyAdapt(delta, handled + 1, handled == basic)
+                delta = 0
+                handled += 1
+            }
+        }
+
+        delta += 1
+        n += 1
+    }
+}

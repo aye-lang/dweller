@@ -1,0 +1,49 @@
+import std.mem.Allocator
+import std.text
+
+fn expectAscii(a: Allocator, input: []u8, want: []u8) !void {
+    var out = text.Builder.init(a)
+    defer out.deinit()
+
+    try toAscii(a, input, &mut out)
+    @expectEqual(want, out.bytes())
+}
+
+fn isInvalid(a: Allocator, input: []u8) bool {
+    var out = text.Builder.init(a)
+    defer out.deinit()
+
+    toAscii(a, input, &mut out) catch |e| {
+        return true
+    }
+
+    return false
+}
+
+test "mapping and punycode" {
+    let a = @testAllocator()
+    try expectAscii(a, "example.com", "example.com")
+    try expectAscii(a, "EXAMPLE.Com", "example.com")
+    try expectAscii(a, "fa\xC3\x9F.de", "xn--fa-hia.de")
+    try expectAscii(a, "xn--fa-hia.de", "xn--fa-hia.de")
+    try expectAscii(a, "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xBD\xA0\xE5\xA5\xBD", "xn--6qqa088eba")
+    try expectAscii(a, "www.foo\xE3\x80\x82bar.com", "www.foo.bar.com")
+    try expectAscii(a, "a\xCC\x80", "xn--0ca")
+    try expectAscii(a, "\xE1\x84\x80\xE1\x85\xA1", "xn--o39a")
+}
+
+test "punycode without basic" {
+    let a = @testAllocator()
+    try expectAscii(a, "xn--0ca", "xn--0ca")
+    try expectAscii(a, "xn--a", "xn--a")
+    try expectAscii(a, "xn--u-ccb", "xn--u-ccb")
+    try expectAscii(a, "xn--0ca.xn--ssa73l", "xn--0ca.xn--ssa73l")
+}
+
+test "invalid" {
+    let a = @testAllocator()
+    @expectEqual(true, isInvalid(a, "\xEF\xB7\x90zyx.com"))
+    @expectEqual(true, isInvalid(a, "\xCC\x80a"))
+    @expectEqual(true, isInvalid(a, "a\xE2\x80\x8Cb"))
+    @expectEqual(true, isInvalid(a, "\xD7\x90a"))
+}

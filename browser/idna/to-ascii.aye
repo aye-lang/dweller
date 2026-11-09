@@ -1,0 +1,24 @@
+// https://www.unicode.org/reports/tr46/#ToASCII
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+pub fn toAscii(alloc: Allocator, domain: []u8, out: *mut text.Builder) IdnaError!void {
+    var mapped = List(u32).init(alloc)
+    defer mapped.deinit()
+
+    try mapDomain(domain, &mut mapped)
+
+    var normal = try normalizeNfc(alloc, mapped.items())
+    defer normal.deinit()
+
+    var decoded = List(u32).init(alloc)
+    defer decoded.deinit()
+
+    if try decodeLabels(alloc, normal.items(), &mut decoded) {
+        try checkRetainedAce(normal.items())
+    }
+
+    try checkDomain(alloc, decoded.items())
+    try encodeLabels(decoded.items(), out)
+}

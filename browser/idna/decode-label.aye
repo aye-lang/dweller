@@ -1,0 +1,28 @@
+// https://www.unicode.org/reports/tr46/#Processing
+import std.list.List
+import std.mem.Allocator
+
+fn decodeLabel(alloc: Allocator, label: []u32, out: *mut List(u32)) IdnaError!bool {
+    if !hasAcePrefix(label) {
+        try appendAll(label, out)
+
+        return false
+    }
+
+    if !isAscii(label) {
+        return IdnaError.Invalid
+    }
+
+    var decoded = List(u32).init(alloc)
+    defer decoded.deinit()
+
+    if decodeAce(alloc, label[4..], &mut decoded) {
+        try appendAll(decoded.items(), out)
+
+        return false
+    }
+
+    try appendAll(label, out)
+
+    return true
+}

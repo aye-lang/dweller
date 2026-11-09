@@ -5,7 +5,7 @@ Reads the `import` lines of every .aye file under browser/ and checks them
 against the layer table below:
 
   platform   ui gpu audio font net perf sessions
-  core       animation css layout paint image svg webfont encoding url dom
+  core       animation css layout paint image svg webfont encoding idna url dom
   front end  html js wasm engine agent pageview renderer
 
 Rules: a core module, or a platform module other than `ui` (the window
@@ -21,7 +21,7 @@ import re
 import sys
 
 PLATFORM = {"ui", "gpu", "audio", "font", "net", "perf", "sessions"}
-CORE = {"animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "url", "dom"}
+CORE = {"animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "idna", "url", "dom"}
 FRONT = {"html", "js", "wasm", "engine", "agent", "pageview", "renderer"}
 
 # (path prefix relative to browser/, imported module): removed by card.

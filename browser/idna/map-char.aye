@@ -1,0 +1,25 @@
+// https://www.unicode.org/reports/tr46/#ProcessingStepMap
+import std.list.List
+
+fn mapChar(c: u32, out: *mut List(u32)) IdnaError!void {
+    let info = mappingInfo(c)
+    let status = mappingStatus(info)
+
+    if status == STATUS_VALID {
+        return out.append(c)
+    }
+
+    if status == STATUS_IGNORED {
+        return
+    }
+
+    if status != STATUS_MAPPED {
+        return IdnaError.Invalid
+    }
+
+    let offset = mappingOffset(info)
+
+    for i in 0..poolLength(IDNA_MAPPING, offset) {
+        try out.append(poolItem(IDNA_MAPPING, offset, i))
+    }
+}
