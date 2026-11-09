@@ -3032,6 +3032,29 @@ pub let PRELUDE =
     \\  const gone = !blob && el.src.startsWith('blob:');
     \\  hostEvent(el, !gone && ak.scriptRun(el, blob && new TextDecoder().decode(blob._array())) ? 'load' : 'error');
     \\}
+    \\const LINK_RELS = /(^|\s)(stylesheet|preload|modulepreload|prefetch)(\s|$)/i;
+    \\function linkUpdate(el, parsed) {
+    \\  if (el.ownerDocument !== document || !isConnected(el) || !LINK_RELS.test(el.getAttribute('rel') || '') || !(el.getAttribute('href') || '').trim()) return;
+    \\  const state = { done: !!parsed };
+    \\  hidden(el, '__linkRequest', state);
+    \\  ak.imageTask(() => {
+    \\    if (el.__linkRequest !== state) return;
+    \\    const how = ak.linkLoad(el);
+    \\    state.done = true;
+    \\    state.failed = how >= 2;
+    \\    if (how === 1 || how === 2) hostEvent(el, how === 1 ? 'load' : 'error');
+    \\  }, 0);
+    \\}
+    \\function linkDiscover(root, parsed) {
+    \\  if (root instanceof HTMLLinkElement && !root.__linkRequest) linkUpdate(root, parsed);
+    \\  if (root.querySelectorAll) for (const el of root.querySelectorAll('link')) {
+    \\    if (!el.__linkRequest) linkUpdate(el, parsed);
+    \\  }
+    \\}
+    \\function linkForget(root) {
+    \\  if (root instanceof HTMLLinkElement) root.__linkRequest = undefined;
+    \\  if (root.querySelectorAll) for (const el of root.querySelectorAll('link')) el.__linkRequest = undefined;
+    \\}
     \\function resourceMutations(recs) {
     \\  for (let i = 0; i < recs.length; i += 7) {
     \\    const kind = recs[i], target = recs[i + 1], node = recs[i + 2], name = recs[i + 5];
@@ -3046,7 +3069,10 @@ pub let PRELUDE =
     \\    // even when the content attribute is later removed without a getter.
     \\    if (kind === 1 && target instanceof HTMLScriptElement && name === 'async' && target.hasAttribute('async')) hidden(target, '__forceAsync', false);
     \\    if (kind === 1 && target instanceof HTMLImageElement && (['src', 'srcset', 'sizes', 'crossorigin', 'referrerpolicy'].includes(name) || (name === 'loading' && target.__imageRequest && target.__imageRequest.lazy))) imageUpdate(target);
+    \\    if (kind === 0 && node) linkForget(node);
+    \\    if (kind === 1 && target instanceof HTMLLinkElement && ['href', 'rel', 'crossorigin', 'as', 'referrerpolicy'].includes(name)) linkUpdate(target);
     \\    if (kind === 3 && node) {
+    \\      linkDiscover(node);
     \\      imageDiscover(node);
     \\      // Moving a loaded img out of a picture must reselect its own src.
     \\      if (node instanceof HTMLImageElement && node.__imageRequest) {
@@ -4030,7 +4056,8 @@ pub let PRELUDE =
     \\});
     \\getter(HTMLStyleElement.prototype, 'sheet', function () { return this.isConnected && !ak.styleBlocked(this) ? ownedSheet(this) : null; });
     \\getter(HTMLLinkElement.prototype, 'sheet', function () {
-    \\  return this.isConnected && !ak.styleBlocked(this) && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
+    \\  const request = this.__linkRequest;
+    \\  return this.isConnected && !ak.styleBlocked(this) && !(request && (!request.done || request.failed)) && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
     \\});
     \\hidden(G, 'CSS', {
     \\  supports(a, b) { return b === undefined ? ak.supports(String(a)) || ak.supports('(' + String(a) + ')') : ak.supports('(' + String(a) + ': ' + String(b) + ')'); },
@@ -4231,6 +4258,7 @@ pub let PRELUDE =
     \\// innerHTML and src property assignments cannot bypass image updates.
     \\ak.setRecording(true);
     \\imageDiscover(document);
+    \\linkDiscover(document, true);
     \\
     \\class MutationObserver {
     \\  constructor(callback) {

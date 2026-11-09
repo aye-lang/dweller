@@ -179,6 +179,9 @@ fn linkedSheet(alloc: Allocator, base: *Url, address: *Url, href: []u8, media: c
         return
     }
     defer res.deinit(alloc)
+    if res.status < 200 || res.status > 299 {
+        return
+    }
     let src = try encoding.toUtf8(alloc, res.body, encoding.sniff(res.body, res.charset))
     defer alloc.free(src)
     try parseWithImports(alloc, &target, &target, src, media, sheet, true)

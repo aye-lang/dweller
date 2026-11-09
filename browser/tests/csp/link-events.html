@@ -1,0 +1,22 @@
+<!doctype html>
+<title>CSP link events</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const other = new URLSearchParams(location.search).get('other');
+const log = s => { out.textContent += s + '\n'; };
+function run(name, href) {
+  return new Promise(resolve => {
+    const el = document.createElement('link');
+    el.rel = 'stylesheet';
+    el.onload = () => resolve(log(name + ': load, sheet ' + (el.sheet ? 'set' : 'null')));
+    el.onerror = () => resolve(log(name + ': error, sheet ' + (el.sheet ? 'set' : 'null')));
+    el.href = href;
+    document.head.appendChild(el);
+  });
+}
+(async () => {
+  await run('same origin', '/net/co.css');
+  await run('other origin', other + '/net/co.css');
+})();
+</script>

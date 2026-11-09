@@ -1,0 +1,47 @@
+import dom
+import dom.NodeId
+import net
+import std.text
+import url
+
+let LINK_NONE: u32 = 0
+let LINK_LOADED: u32 = 1
+let LINK_FAILED: u32 = 2
+let LINK_REFUSED: u32 = 3
+
+// https://html.spec.whatwg.org/multipage/semantics.html#fetch-and-process-the-linked-resource
+fn linkOutcome(p: *mut Page, h: NodeId) u32 {
+    let rel = linkRelationOf(p.doc.attr(h, "rel") orelse "")
+    let href = text.trim(p.doc.attr(h, "href") orelse "")
+
+    if rel == LinkRelation.None || href.len == 0 {
+        return LINK_NONE
+    }
+
+    if rel == LinkRelation.Stylesheet && dom.styleBlocked(&p.doc, h, dom.MARK_BLOCKED) {
+        return LINK_REFUSED
+    }
+
+    let req = linkRequest(p, h, rel) orelse return LINK_FAILED
+    var base = documentBase(p.alloc, &p.doc, &p.url) catch |e| {
+        return LINK_FAILED
+    }
+
+    defer base.deinit(p.alloc)
+    let target = url.resolve(p.alloc, &base, href) catch |e| {
+        return LINK_FAILED
+    }
+
+    defer target.deinit(p.alloc)
+    let res = net.request(p.alloc, &target, req) catch |e| {
+        return LINK_FAILED
+    }
+
+    defer res.deinit(p.alloc)
+
+    if res.status < 200 || res.status > 299 {
+        return LINK_FAILED
+    }
+
+    return LINK_LOADED
+}
