@@ -30,6 +30,14 @@
     h.latin1Into(u, s);
     return u;
   }
+  function loadScript(url) {
+    try {
+      return h.load(url);
+    } catch (e) {
+      const msg = "Failed to execute 'importScripts' on 'WorkerGlobalScope': The script at '" + url + "' failed to load.";
+      throw typeof G.DOMException === 'function' ? new G.DOMException(msg, 'NetworkError') : Object.assign(new Error(msg), { name: 'NetworkError' });
+    }
+  }
   class WorkerLocation {
     constructor(href) { this.href = href; }
     toString() { return this.href; }
@@ -53,7 +61,7 @@
   def('dispatchEvent', function (ev) { dispatch(ev); return true; });
   def('close', function close() { h.close(); });
   def('importScripts', function importScripts(...urls) {
-    for (const u of urls) (0, eval)(new TextDecoder().decode(bytes(h.load(String(u)))));
+    for (const u of urls) (0, eval)(new TextDecoder().decode(bytes(loadScript(String(u)))));
   });
   def('setTimeout', function setTimeout(f, ms, ...args) {
     const id = nextTimer++;

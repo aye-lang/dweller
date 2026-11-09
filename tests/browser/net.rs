@@ -1340,3 +1340,30 @@ fn net_basic_auth() {
         "",
     );
 }
+
+/// With `nosniff`, a script must have a JavaScript MIME type and a sheet
+/// `text/css`, else it is a load error (script error event, sheet not
+/// applied); without it any type loads. (`browser/tests/net/nosniff.html`
+/// must print `nosniff.txt`.)
+#[test]
+fn nosniff_script_style() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&[
+        "dump",
+        "--text",
+        "--js",
+        &format!("{}/net/nosniff.html", srv.base),
+    ]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/nosniff.txt"),
+        &text(&out.stdout),
+        "nosniff_script_style",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
