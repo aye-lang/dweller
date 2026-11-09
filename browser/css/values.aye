@@ -378,7 +378,15 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "flex-flow") {
         first = FLEX_DIRECTION
         n = 2
-    } else if text.eql(name, "grid-template") || text.eql(name, "grid") {
+    } else if text.eql(name, "grid") {
+        out[0] = GRID_TEMPLATE_ROWS
+        out[1] = GRID_TEMPLATE_COLUMNS
+        out[2] = GRID_TEMPLATE_AREAS
+        out[3] = GRID_AUTO_ROWS
+        out[4] = GRID_AUTO_COLUMNS
+        out[5] = GRID_AUTO_FLOW
+        return 6
+    } else if text.eql(name, "grid-template") {
         first = GRID_TEMPLATE_COLUMNS
         n = 3
     } else if text.eql(name, "flex") {
@@ -408,7 +416,13 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         out[2] = TEXT_DECORATION_COLOR
         out[3] = TEXT_DECORATION_THICKNESS
         return 4
-    } else if text.eql(name, "grid-column") || text.eql(name, "grid-row") || text.eql(name, "grid-area") {
+    } else if text.eql(name, "grid-column") {
+        first = GRID_COLUMN_START
+        n = 2
+    } else if text.eql(name, "grid-row") {
+        first = GRID_ROW_START
+        n = 2
+    } else if text.eql(name, "grid-area") {
         first = GRID_COLUMN_START
         n = 4
     } else if text.eql(name, "grid-gap") {
@@ -601,8 +615,11 @@ struct Declarer {
         if text.eql(name, "grid-area") {
             return self.gridLines(comps, GRID_COLUMN_START + 2, GRID_COLUMN_START, GRID_COLUMN_START + 3, GRID_COLUMN_START + 1)
         }
-        if text.eql(name, "grid-template") || text.eql(name, "grid") {
+        if text.eql(name, "grid-template") {
             return self.gridTemplate(comps)
+        }
+        if text.eql(name, "grid") {
+            return gridShorthand(self, comps)
         }
         if text.eql(name, "grid-gap") {
             return self.gap(comps)
@@ -662,7 +679,7 @@ struct Declarer {
             if k < comps.len && !isDelim(comps[k], '/') {
                 continue
             }
-            if count == n || k == start {
+            if count == n || k == start || !isGridLine(comps[start..k]) {
                 return
             }
             vals[count] = rawValue(self.sheet, comps[start..k]) orelse return
@@ -688,7 +705,6 @@ struct Declarer {
     }
 
     // `grid-template: none | rows / columns`; the areas become `none`.
-    // The form with area strings is dropped.
     fn gridTemplate(self: *mut Self, comps: []Comp) AllocError!void {
         let props = [3]usize{GRID_TEMPLATE_ROWS, GRID_TEMPLATE_COLUMNS, GRID_TEMPLATE_AREAS}
         if try self.wide(comps, props[..]) {
@@ -704,7 +720,7 @@ struct Declarer {
         var slash = comps.len
         for k, c in comps {
             if c.toks.len == 1 && c.toks[0].kind == Tok.String {
-                return
+                return gridTemplateAreasForm(self, comps)
             }
             if isDelim(c, '/') {
                 if slash < comps.len {
@@ -1152,6 +1168,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
 
     if p.kind == PKind.Raw {
+        if !(try isGridValue(sheet, prop, comps)) {
+            return null
+        }
         if comps.len == 1 && comps[0].toks[0].kind == Tok.Ident && comps[0].toks.len == 1 {
             if inList(comps[0].toks[0].text, p.keywords) |k| {
                 return Value.Keyword { k: k }

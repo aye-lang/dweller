@@ -22,6 +22,10 @@ pub fn specifiedValue(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
         return specifiedWhiteSpace(alloc, value, out)
     }
 
+    if checksGrid(prop) && text.trim(value).len > 0 && text.indexOf(value, "var(") == null && !(try parsesAs(alloc, prop, value)) {
+        return false
+    }
+
     let index = propertyIndex(logicalAlias(prop)) orelse return specifiedShorthand(alloc, prop, value, out)
 
     if (index == OVERFLOW_X || index == OVERFLOW_Y) && !keepsRaw(value) {

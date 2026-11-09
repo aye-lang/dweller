@@ -1,0 +1,37 @@
+import std.list.List
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#resolved-track-list
+pub fn writeResolvedTracks(alloc: Allocator, template: []u8, sizes: []f64, out: *mut text.Builder) AllocError!void {
+    var entries = List(TrackEntry).init(alloc)
+    defer entries.deinit()
+
+    try flattenTracks(template, autoRepeatCount(alloc, template, sizes.len), &mut entries)
+
+    var names = text.Builder.init(alloc)
+    defer names.deinit()
+
+    var next: usize = 0
+
+    out.clear()
+
+    for e in entries.items() {
+        if e.names {
+            try appendJoined(&mut names, e.text)
+        } else if next < sizes.len {
+            try flushNames(&mut names, out)
+            try appendTrack(out, sizes[next])
+            next += 1
+        }
+    }
+
+    try flushNames(&mut names, out)
+
+    while next < sizes.len {
+        try appendTrack(out, sizes[next])
+        next += 1
+    }
+}

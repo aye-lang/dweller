@@ -1,0 +1,29 @@
+import std.mem.AllocError
+
+struct TrackScan {
+    ok: bool
+    tracks: usize
+    all_fixed: bool
+    auto_repeats: usize
+}
+
+// spec: https://drafts.csswg.org/css-grid-2/#typedef-track-list
+fn scanTracks(sheet: *mut Sheet, comps: []Comp, nested: bool) AllocError!TrackScan {
+    var scan = TrackScan { ok: true, tracks: 0, all_fixed: true, auto_repeats: 0 }
+    var after_names = false
+
+    for c in comps {
+        if isLineNames(c) {
+            scan.ok = scan.ok && !after_names
+            after_names = true
+            continue
+        }
+
+        after_names = false
+        try scanTrack(sheet, c, nested, &mut scan)
+    }
+
+    scan.ok = scan.ok && scan.tracks > 0
+
+    return scan
+}

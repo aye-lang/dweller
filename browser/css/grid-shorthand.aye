@@ -1,0 +1,44 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-grid-2/#propdef-grid
+fn gridShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let all = [6]usize{GRID_TEMPLATE_ROWS, GRID_TEMPLATE_COLUMNS, GRID_TEMPLATE_AREAS, GRID_AUTO_ROWS, GRID_AUTO_COLUMNS, GRID_AUTO_FLOW}
+
+    if try d.wide(comps, all[..]) {
+        return
+    }
+
+    let before = d.sheet.decls.len()
+
+    try d.gridTemplate(comps)
+
+    if d.sheet.decls.len() > before {
+        return addGridAutoInitial(d)
+    }
+
+    var slash = comps.len
+
+    for k, c in comps {
+        if isDelim(c, '/') && slash == comps.len {
+            slash = k
+        }
+    }
+
+    if slash == 0 || slash + 1 >= comps.len {
+        return
+    }
+
+    let left = comps[..slash]
+    let right = comps[slash + 1..]
+    let after = autoFlowPrefix(right)
+
+    if after > 0 {
+        return gridAutoSide(d, true, right[..after], right[after..], left)
+    }
+
+    let before_slash = autoFlowPrefix(left)
+
+    if before_slash > 0 {
+        return gridAutoSide(d, false, left[..before_slash], left[before_slash..], right)
+    }
+}
