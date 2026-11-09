@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn isSlicePart(c: Comp) bool {
+    if isIdent(c, "fill") || imageNumber(c) != null {
+        return true
+    }
+
+    if c.toks.len == 1 {
+        return c.toks[0].kind == Tok.Percentage
+    }
+
+    if !isMathFunction(c.toks[0]) {
+        return false
+    }
+
+    let v = calcValue(c.toks) orelse return false
+
+    return match v {
+        .Percent { v: n } => true
+        _ => false
+    }
+}

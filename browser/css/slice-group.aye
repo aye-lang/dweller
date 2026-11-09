@@ -1,0 +1,36 @@
+fn sliceGroup(comps: []Comp, from: usize, p: *mut BorderImageParts) ?usize {
+    if p.slice.len > 0 {
+        return null
+    }
+
+    var j = runEnd(comps, from, 1)
+
+    p.slice = comps[from..j]
+
+    if j >= comps.len || !isDelim(comps[j], '/') {
+        return j
+    }
+
+    let w = runEnd(comps, j + 1, 2)
+
+    p.width = comps[j + 1..w]
+    j = w
+
+    if j < comps.len && isDelim(comps[j], '/') {
+        let o = runEnd(comps, j + 1, 2)
+
+        p.outset = comps[j + 1..o]
+
+        if p.outset.len == 0 {
+            return null
+        }
+
+        return o
+    }
+
+    if p.width.len == 0 {
+        return null
+    }
+
+    return j
+}

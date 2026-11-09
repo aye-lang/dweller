@@ -1,0 +1,31 @@
+// spec: https://drafts.csswg.org/css-backgrounds-3/#background-position
+fn validPosition(layer: []Comp) bool {
+    for c in layer {
+        if !isPositionPart(c) {
+            return false
+        }
+    }
+
+    if layer.len == 1 {
+        return isPositionPart(layer[0])
+    }
+
+    if layer.len == 2 {
+        return validPositionPair(layer[0], layer[1])
+    }
+
+    if layer.len > 4 {
+        return false
+    }
+
+    let first = edgeGroupLen(layer)
+
+    if first == 0 || first >= layer.len || edgeGroupLen(layer[first..]) != layer.len - first {
+        return false
+    }
+
+    let a = axisOf(layer[0])
+    let b = axisOf(layer[first])
+
+    return a == 'c' || b == 'c' || a != b
+}

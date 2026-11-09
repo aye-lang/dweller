@@ -107,17 +107,24 @@ Facts from four audits run on 2026-11-04; the details are in the steps.
 - **Correct.** 13 of 29 conformance areas are at threshold (2026-10-21).
   W3 was 8 of 20 sites (2026-10-15).
 
-## State on 2026-11-09 (`main` bd7c970)
+## State on 2026-11-09, at the stop (after #363)
 
-Every PR up to #353 is merged. A step is open when neither its row nor its
-card says done.
+Every PR up to #363 is merged; aye `main` is e758396 (O7.9) and `AYE_REV`
+points at it. A step is open when neither its row nor its card says done.
 
 - Q0 open: Q0.1 (weekly webgl job), Q0.3 (W2, W3 and the conformance table re-run).
 - Q1 open: Q1.1 (safe shipped build), Q1.4, Q1.11 (soak).
-- Q2 open: Q2.12 to Q2.14 (Spaces as renderers, process limits, the default flip).
-- Q3 open: none of Q3.1–Q3.14 (Q3.1b, Q3.6–Q3.10c done 2026-11-09; their Left lists remain).
-- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12 and Q4.16 (Q4.21's ranked steps 6 to 11). No W7 row passes on bbc, zol, mistral or react (Q4.21).
+- Q2 open: the Spaces flip (Q2.12's last part: hosted by default, the Space process path and `dweller space` removed, `window_spaces_crash` rewritten; before it: openers across renderers, Basic auth / preflight / cert exceptions per partition, a sad tab for a crashed hosted tab), Q2.13 (process limits), Q2.14 (the default flip). Q2.12, Q2.12b and Q2.12c are done.
+- Q3 open: none of Q3.1–Q3.14 (Q3.10d done 2026-11-09; the Left lists remain).
+- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12 and Q4.16 (Q4.21's ranked steps 6 to 11). Q4.23 and Q4.24 done. Q4.24b (bytecode validated once, unchecked operand reads in `vmLoop`: about 5% of jsbench wall time) waits for the owner's decision on the safety trade-off; O7.9 took the part with no trade-off (safe richards −7.1%, three −5.2% instructions).
 - Q5 to Q7 have no done step; Q5 waits for Q2.14.
+- Q6: Q6.1 (65.4), Q6.11 and Q6.11b (url 93.9), Q6.12 (69.1 → 69.5 after the Q6.1 merge) done; Q6.2 slice 1 (47.9); Q6.3 to Q6.10, Q6.13, Q6.14 open. Q6.14 (vertical writing modes) blocks about 1900 grid subtests.
+
+Follow-ups noted at the stop (not yet cards):
+- `location` setters other than `hash` through `ak.setUrlPart` (Q6.11b).
+- `text-decoration-inset`, CSSKeyframesRule in the CSSOM shim (Q6.12).
+- A css fuzz target debug-mode leak.
+- `@inline` in Aye (O7.9's Left: `always_inline` with the panic jump gave navier-stokes 2,160 M instead of 2,272 M).
 
 ## Lanes and running order
 
@@ -365,8 +372,8 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
-| Q6.1 | `css/backgrounds-borders` (30.1, 65) |
-| Q6.2 | `css/css-grid` (43.2, 60) |
+| Q6.1 | `css/backgrounds-borders` (30.1 -> 65.4, threshold 65; done, 2026-11-09: `border-image` longhands and shorthand, `box-shadow` validation and interpolation, text-value and `allow-discrete` transitions for text-mixed properties, keyframe `composite` and `animation-composition`, setter validation of background and border values and shorthands, one longhand-through-shorthand read path shared with Q6.12; left: border-image painting, background-position-x/y longhands, corner-shape, tentative box-shadow-* longhands, `border` resetting `border-image` in the cascade) |
+| Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
 | Q6.4 | `css/box-sizing` (51.5, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |

@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-backgrounds-3/#shadow-serialization
+pub fn writeShadow(s: Shadow, current: Value, out: *mut text.Builder) AllocError!void {
+    var color = s.color
+
+    if isCurrentColor(color) {
+        color = current
+    }
+
+    try writeValue(color, out)
+
+    for n in [4]f64{s.x, s.y, s.blur, s.spread} {
+        try out.appendByte(' ')
+        try writeNumber(n, out)
+        try out.append("px")
+    }
+
+    if s.inset {
+        try out.append(" inset")
+    }
+}

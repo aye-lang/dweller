@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-11-09 at Dweller 21a0944. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-11-09 at Dweller 4f8516d. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -10,14 +10,14 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `dom/events` | 180 | 8 | 669/877 | 76.3 | 70 | done | +0.0 |
 | `uievents` | 69 | 6 | 153/201 | 76.1 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2932/5398 | 54.3 | 60 | below | +0.0 |
-| `css/cssom` | 292 | 11 | 2134/3818 | 55.9 | - | baseline | +0.1 |
+| `css/cssom` | 292 | 11 | 2134/3818 | 55.9 | - | baseline | +0.0 |
 | `fetch/api` | 191 | 0 | 1836/2483 | 73.9 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 687/1233 | 55.7 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 9384/9998 | 93.9 | 90 | done | +3.6 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
 | `webaudio` | 247 | 63 | 1514/2385 | 63.5 | - | baseline | +0.0 |
 | `css/css-flexbox` | 1422 | 469 | 3653/5816 | 62.8 | 70 | below | +0.0 |
-| `css/css-transforms` | 711 | 156 | 2604/5196 | 50.1 | 50 | done | +0.0 |
+| `css/css-transforms` | 711 | 156 | 2840/5428 | 52.3 | 50 | done | +2.2 |
 | `css/css-transitions` | 143 | 59 | 1473/3348 | 44.0 | - | baseline | +0.0 |
 | `css/css-animations` | 206 | 91 | 971/1405 | 69.1 | 65 | done | +18.2 |
 | `html/syntax` | 98 | 0 | 2560/2732 | 93.7 | 90 | done | +0.0 |
@@ -26,15 +26,15 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `css/selectors` | 540 | 136 | 5104/6283 | 81.2 | 80 | done | +0.0 |
 | `css/cascade-variables` | 398 | 31 | 805/1436 | 56.1 | 75 | below | +0.0 |
 | `css/values-color` | 865 | 237 | 13543/23406 | 57.9 | 70 | below | +0.0 |
-| `css/box-sizing` | 1591 | 259 | 4398/8548 | 51.5 | 70 | below | +0.0 |
+| `css/box-sizing` | 1591 | 259 | 4806/8549 | 56.2 | 70 | below | +4.8 |
 | `css/floats-tables` | 709 | 251 | 888/1601 | 55.5 | 65 | below | +0.0 |
 | `css/inline-text` | 2343 | 407 | 4897/8083 | 60.6 | 60 | done | +0.0 |
 | `css/overflow` | 939 | 189 | 1044/1921 | 54.3 | 60 | below | +0.0 |
-| `css/css-grid` | 2508 | 1085 | 7585/17578 | 43.2 | 60 | below | +0.0 |
+| `css/css-grid` | 2508 | 1085 | 8305/17578 | 47.2 | 60 | below | +4.1 |
 | `css/positioning` | 915 | 239 | 1425/2310 | 61.7 | 70 | below | +0.0 |
-| `css/backgrounds-borders` | 1041 | 295 | 2549/8473 | 30.1 | 65 | below | +0.0 |
+| `css/backgrounds-borders` | 1041 | 295 | 5518/8473 | 65.1 | 65 | done | +35.0 |
 | `css/css-fonts` | 560 | 325 | 2736/8356 | 32.7 | 50 | below | +0.0 |
-| `images` | 714 | 269 | 4100/5348 | 76.7 | 60 | done | +0.0 |
+| `images` | 715 | 268 | 4621/5963 | 77.5 | 60 | done | +0.8 |
 | `intersection-observer` | 144 | 10 | 178/355 | 50.1 | - | baseline | +0.0 |
 | `mixed-content` | 388 | 0 | 1216/2281 | 53.3 | 50 | done | +0.0 |
 | `upgrade-insecure-requests` | 197 | 0 | 281/1000 | 28.1 | 25 | done | +0.0 |

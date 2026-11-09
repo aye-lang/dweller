@@ -1,0 +1,21 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/web-animations-1/#animation-types
+fn matchValues(alloc: Allocator, p: usize, a: []u8, b: []u8, out_a: *mut text.Builder, out_b: *mut text.Builder) AllocError!void {
+    if p >= css.BORDER_IMAGE_SLICE && p <= css.BORDER_IMAGE_OUTSET {
+        try padQuad(alloc, a, out_a)
+
+        return padQuad(alloc, b, out_b)
+    }
+
+    if (p >= css.BACKGROUND_POSITION && p <= css.BACKGROUND_ATTACHMENT) || (p >= css.MASK_POSITION && p <= css.MASK_REPEAT) {
+        return repeatLayers(a, b, out_a, out_b)
+    }
+
+    try out_a.append(a)
+
+    return out_b.append(b)
+}

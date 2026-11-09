@@ -1,0 +1,23 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-value
+fn collapseQuad(alloc: Allocator, s: []u8, out: *mut text.Builder) AllocError!void {
+    var parts = try quadParts(alloc, s)
+    defer parts.deinit()
+
+    var n = parts.len()
+    let fill = text.eql(parts.items()[n - 1], "fill")
+
+    if fill {
+        n -= 1
+    }
+
+    try css.writeQuad(parts.items()[..n], out)
+
+    if fill {
+        try out.append(" fill")
+    }
+}
