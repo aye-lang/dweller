@@ -1,0 +1,71 @@
+<!doctype html>
+<title>link events</title>
+<link id="parsed" rel="stylesheet" href="/net/co.css" onload="parsedEvent = 'load'" onerror="parsedEvent = 'error'">
+<link id="parsed-missing" rel="stylesheet" href="/net/missing.css" onload="parsedMissingEvent = 'load'" onerror="parsedMissingEvent = 'error'">
+<link id="icon" rel="icon" href="/net/co.css">
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const other = new URLSearchParams(location.search).get('other');
+const log = s => { out.textContent += s + '\n'; };
+const events = [];
+function link(rel, href, extra) {
+  const el = document.createElement('link');
+  el.rel = rel;
+  if (extra) for (const k in extra) el.setAttribute(k, extra[k]);
+  const ended = new Promise(resolve => {
+    el.onload = () => resolve('load');
+    el.onerror = () => resolve('error');
+  });
+  el.href = href;
+  return { el, ended };
+}
+async function run(name, rel, href, extra) {
+  const { el, ended } = link(rel, href, extra);
+  document.head.appendChild(el);
+  const before = el.sheet === null;
+  const ev = await ended;
+  log(name + ': ' + ev + (/stylesheet/.test(rel) ? ', sheet ' + (before ? 'null then ' : 'early ') + (el.sheet ? 'set' : 'null') : ''));
+  el.remove();
+}
+(async () => {
+  await new Promise(resolve => addEventListener('load', resolve));
+  log('parsed: ' + parsedEvent + ', missing: ' + parsedMissingEvent);
+  await run('inserted', 'stylesheet', '/net/co.css');
+  await run('inserted again (cached)', 'stylesheet', '/net/co.css');
+  await run('empty sheet', 'stylesheet', '/net/empty.css');
+  await run('404', 'stylesheet', '/net/missing.css');
+  await run('network error', 'stylesheet', '/fail/net.css');
+  await run('nosniff css', 'stylesheet', '/nosniff/net/co.css');
+  await run('nosniff text/plain', 'stylesheet', '/nosniff/net/nosniff-sheet.txt');
+  await run('cors failure', 'stylesheet', other + '/net/co.css', { crossorigin: 'anonymous' });
+  await run('cors success', 'stylesheet', other + '/acao/net/co.css', { crossorigin: 'anonymous' });
+  await run('alternate', 'alternate stylesheet', '/net/co.css');
+  await run('preload style', 'preload', '/net/co.css', { as: 'style' });
+  await run('preload script', 'preload', '/net/co.js', { as: 'script' });
+  await run('preload 404', 'preload', '/net/missing.js', { as: 'script' });
+  await run('preload without as', 'preload', '/net/co.css');
+  await run('modulepreload', 'modulepreload', '/net/dynamic_module.js');
+  await run('modulepreload 404', 'modulepreload', '/net/missing.js');
+  await run('prefetch', 'prefetch', '/net/co.css');
+  const icon = link('icon', '/net/co.css');
+  icon.el.onload = icon.el.onerror = () => events.push('icon');
+  document.head.appendChild(icon.el);
+  await run('after icon', 'stylesheet', '/net/co.css');
+  log('icon events: ' + events.length);
+  const moved = link('stylesheet', '/net/co.css');
+  document.head.appendChild(moved.el);
+  log('refire href: ' + await moved.ended);
+  let second = new Promise(resolve => { moved.el.onload = () => resolve('load'); moved.el.onerror = () => resolve('error'); });
+  moved.el.href = '/net/missing.css';
+  log('refire href: ' + await second);
+  second = new Promise(resolve => { moved.el.onload = () => resolve('load'); moved.el.onerror = () => resolve('error'); });
+  moved.el.remove();
+  document.head.appendChild(moved.el);
+  log('refire insert: ' + await second);
+  const late = link('stylesheet', '/net/co.css');
+  late.el.onload = () => log('detached: load');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  log('detached: no event');
+})();
+</script>

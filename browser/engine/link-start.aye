@@ -1,0 +1,18 @@
+import dom.NodeId
+import net
+import std.text
+
+fn linkStart(p: *mut Page, h: NodeId) u32 {
+    let rel = linkRelationOf(p.doc.attr(h, "rel") orelse "")
+    let href = text.trim(p.doc.attr(h, "href") orelse "")
+
+    if rel == LinkRelation.None || rel == LinkRelation.Stylesheet || href.len == 0 {
+        return 0
+    }
+
+    let req = linkRequest(p, h, rel) orelse return 0
+    let target = linkHrefUrl(p, href) orelse return 0
+    defer target.deinit(p.alloc)
+
+    return net.startLoadAs(target.withoutFragment(), req)
+}

@@ -225,11 +225,11 @@ fn no_file_from_web() {
     };
     assert_eq!(
         loads(&web),
-        "fetch TypeError, iframe load, img error, script error, style rgb(0, 0, 0), xhr error"
+        "fetch TypeError, iframe load, img error, link error, script error, style rgb(0, 0, 0), xhr error"
     );
     assert_eq!(
         loads(&local),
-        "fetch read secret = 'LOCAL SECRET', framed LOCAL SECRET, iframe load, img load, script load, style rgb(255, 0, 0), xhr read secret = 'LOCAL SECRET'"
+        "fetch read secret = 'LOCAL SECRET', framed LOCAL SECRET, iframe load, img load, link load, script load, style rgb(255, 0, 0), xhr read secret = 'LOCAL SECRET'"
     );
     let goes = |dir: &str, how: &str, events: &str| {
         let out = run_window(&[

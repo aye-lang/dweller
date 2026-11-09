@@ -1,0 +1,16 @@
+import net
+import url.Url
+
+fn linkFetched(p: *mut Page, target: *Url, req: net.Request) u32 {
+    let res = net.request(p.alloc, target, req) catch |e| {
+        return LINK_FAILED
+    }
+
+    defer res.deinit(p.alloc)
+
+    if res.status < 200 || res.status > 299 {
+        return LINK_FAILED
+    }
+
+    return LINK_LOADED
+}
