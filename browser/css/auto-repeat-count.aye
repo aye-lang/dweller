@@ -1,0 +1,23 @@
+import std.list.List
+import std.math
+import std.mem.Allocator
+
+fn autoRepeatCount(alloc: Allocator, template: []u8, tracks: usize) usize {
+    var zero = List(TrackEntry).init(alloc)
+    defer zero.deinit()
+
+    var one = List(TrackEntry).init(alloc)
+    defer one.deinit()
+
+    flattenTracks(template, 0, &mut zero) catch return 1
+    flattenTracks(template, 1, &mut one) catch return 1
+
+    let fixed = trackCount(zero.items())
+    let body = trackCount(one.items()) - fixed
+
+    if body == 0 || tracks <= fixed {
+        return 1
+    }
+
+    return math.max(1.0, ((tracks - fixed) / body) as f64) as usize
+}

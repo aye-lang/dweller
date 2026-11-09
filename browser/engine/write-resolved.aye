@@ -1,5 +1,6 @@
 import css
 import dom.NodeId
+import std.list.List
 import std.mem.AllocError
 import std.text
 
@@ -14,11 +15,11 @@ fn writeResolved(s: *mut Script, h: NodeId, values: []css.Value, i: usize, out: 
         }
     }
 
-    if i != css.GRID_TEMPLATE_COLUMNS && i != css.GRID_TEMPLATE_ROWS {
-        return
+    if i == css.GRID_TEMPLATE_AREAS {
+        return css.canonicalAreas(s.alloc, out)
     }
 
-    if text.eql(out.bytes(), "none") || text.indexOf(out.bytes(), "[") != null {
+    if i != css.GRID_TEMPLATE_COLUMNS && i != css.GRID_TEMPLATE_ROWS {
         return
     }
 
@@ -37,13 +38,18 @@ fn writeResolved(s: *mut Script, h: NodeId, values: []css.Value, i: usize, out: 
         return
     }
 
-    out.clear()
+    var sizes = List(f64).init(s.alloc)
+    defer sizes.deinit()
 
     for n in 0..starts.len {
-        if n > 0 {
-            try out.appendByte(' ')
-        }
-
-        try css.writeValue(css.Value.Px { v: ends[n] - starts[n] }, out)
+        try sizes.append(ends[n] - starts[n])
     }
+
+    var res = text.Builder.init(s.alloc)
+    defer res.deinit()
+
+    try css.writeResolvedTracks(s.alloc, out.bytes(), sizes.items(), &mut res)
+
+    out.clear()
+    try out.append(res.bytes())
 }

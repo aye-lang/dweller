@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.text
+
+fn scanTrack(sheet: *mut Sheet, c: Comp, nested: bool, scan: *mut TrackScan) AllocError!void {
+    if c.toks[0].kind == Tok.Function && text.eqlIgnoreCase(c.toks[0].text, "repeat") {
+        scan.ok = scan.ok && !nested
+
+        return scanRepeat(sheet, c, scan)
+    }
+
+    scan.tracks += 1
+
+    if try isTrackSize(sheet, c, true) {
+        return
+    }
+
+    scan.all_fixed = false
+    scan.ok = scan.ok && (try isTrackSize(sheet, c, false))
+}

@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-grid-2/#track-sizing
+fn isTrackList(sheet: *mut Sheet, comps: []Comp) AllocError!bool {
+    if comps.len == 1 && isIdent(comps[0], "none") {
+        return true
+    }
+
+    if isIdent(comps[0], "subgrid") {
+        return true
+    }
+
+    let scan = try scanTracks(sheet, comps, false)
+
+    return scan.ok && (scan.auto_repeats == 0 || (scan.auto_repeats == 1 && scan.all_fixed))
+}

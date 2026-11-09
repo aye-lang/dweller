@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#typedef-track-size
+fn isTrackSize(sheet: *mut Sheet, c: Comp, fixed: bool) AllocError!bool {
+    if c.toks[0].kind != Tok.Function || isMathFunction(c.toks[0]) {
+        if fixed {
+            return isLengthPercentage(c)
+        }
+
+        return isTrackBreadth(c, true)
+    }
+
+    let args = try gridArgs(sheet, c)
+
+    if text.eqlIgnoreCase(c.toks[0].text, "minmax") {
+        return isMinmax(args, fixed)
+    }
+
+    return !fixed && text.eqlIgnoreCase(c.toks[0].text, "fit-content") && args.len == 1 && isLengthPercentage(args[0])
+}

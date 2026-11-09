@@ -1,0 +1,33 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+struct TrackEntry {
+    names: bool
+    text: []u8
+}
+
+// spec: https://drafts.csswg.org/css-grid-2/#resolved-track-list
+fn flattenTracks(s: []u8, auto_n: usize, out: *mut List(TrackEntry)) AllocError!void {
+    var k: usize = 0
+
+    while k < s.len {
+        if s[k] == ' ' {
+            k += 1
+            continue
+        }
+
+        let e = trackItemEnd(s, k)
+        let item = s[k..e]
+
+        k = e
+
+        if text.startsWith(item, "repeat(") && text.endsWith(item, ")") {
+            try flattenRepeat(item[7..item.len - 1], auto_n, out)
+        } else if item[0] == '[' && item.len >= 2 {
+            try out.append(TrackEntry { names: true, text: item[1..item.len - 1] })
+        } else {
+            try out.append(TrackEntry { names: false, text: item })
+        }
+    }
+}

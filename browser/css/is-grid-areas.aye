@@ -1,0 +1,26 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#propdef-grid-template-areas
+fn isGridAreas(comps: []Comp) bool {
+    if comps.len == 1 && isIdent(comps[0], "none") {
+        return true
+    }
+
+    var columns: usize = 0
+
+    for c in comps {
+        if c.toks.len != 1 || c.toks[0].kind != Tok.String {
+            return false
+        }
+
+        let cells = cellCount(c.toks[0].text)
+
+        if cells == 0 || (columns != 0 && cells != columns) {
+            return false
+        }
+
+        columns = cells
+    }
+
+    return comps.len > 0
+}

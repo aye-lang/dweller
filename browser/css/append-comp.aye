@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn appendComp(out: *mut text.Builder, c: Comp) AllocError!void {
+    try appendWord(out, "")
+
+    for t in c.toks {
+        try writeToken(t, out)
+    }
+}
+
+fn appendWord(out: *mut text.Builder, word: []u8) AllocError!void {
+    if out.len() > 0 {
+        try out.append(" ")
+    }
+
+    try out.append(word)
+}
+
+fn isStringComp(c: Comp) bool {
+    return c.toks.len == 1 && c.toks[0].kind == Tok.String
+}
