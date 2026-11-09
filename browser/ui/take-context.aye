@@ -12,13 +12,17 @@ fn takeContext(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         _ => return "bad context"
     }
 
-    if tp.acked == tp.seq || tp.seq as u64 == tp.open_key {
+    var key = tp.seq as u64
+
+    if tp.agent_id != 0 && tp.agent_acts { key = 4294967296 + tp.agent_id as u64 }
+
+    if (tp.acked == tp.seq && key == tp.seq as u64) || key == tp.open_key {
         std.log.err("popup blocked: no user gesture")
 
         return ""
     }
 
-    tp.open_key = tp.seq as u64
+    tp.open_key = key
 
     try ipc.encode(&mut tp.contexts, got.frame, got.message)
 

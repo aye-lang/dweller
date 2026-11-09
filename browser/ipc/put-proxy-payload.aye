@@ -1,0 +1,40 @@
+import std.mem.AllocError
+import std.text
+
+fn putProxyPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .PostMessage { key, frame, page, source_page, source_origin, target_origin, data, buffers } => {
+            let numbers = [4]u32{key, frame, page, source_page}
+            let texts = [4][]u8{source_origin, target_origin, data, buffers}
+
+            for v in numbers { try putU32(out, v) }
+            for b in texts { try putBytes(out, b) }
+        }
+
+        .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers } => {
+            let numbers = [4]u32{page, from_key, from_frame, from_page}
+            let texts = [4][]u8{origin, target_origin, data, buffers}
+
+            for v in numbers { try putU32(out, v) }
+            for b in texts { try putBytes(out, b) }
+        }
+
+        .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name } => {
+            let numbers = [4]u32{parent_frame, parent_page, top_frame, sandbox}
+
+            for v in numbers { try putU32(out, v) }
+
+            try putBytes(out, name)
+        }
+
+        .ProxyNavigate { key, frame, page, url } => {
+            let numbers = [3]u32{key, frame, page}
+
+            for v in numbers { try putU32(out, v) }
+
+            try putBytes(out, url)
+        }
+
+        _ => {}
+    }
+}

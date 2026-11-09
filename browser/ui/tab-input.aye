@@ -1,4 +1,12 @@
 fn tabInput(ui: *Ui) ?*mut TabProcess {
+    if watchedTab(ui) |slot| {
+        let tp = slot.process orelse return null
+
+        if ui.auth.open || ui.agents.?.menu != 0 || !tp.hello || tp.gone.len > 0 { return null }
+
+        return tp
+    }
+
     if !ui.tab_processes || ui.auth.open || ui.dropdown != null { return null }
 
     if ui.agents |a| {

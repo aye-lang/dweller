@@ -1,0 +1,23 @@
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn takeHosted(ui: *mut Ui, slot: *mut TabSlot) AllocError!void {
+    let a = ui.agents.?
+    let sp = spaceOf(a, a.watch.id) orelse return
+
+    if slot.taken { return }
+
+    slot.taken = true
+    sp.taken = true
+
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    var b = text.Builder.init(arena.allocator())
+
+    try b.append(try spaceField(arena.allocator(), sp.id))
+    try b.append(",\"tab\":")
+    try b.appendUint(slot.in_space as u64)
+    try spaceEvent(ui, sp, "taken_over", b.bytes())
+}

@@ -9,7 +9,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
         let got = (try ipc.nextMessage(r.current.bytes())).?
 
-        engine.setTabHost(r.width > 0 && drivesInput(got.message))
+        engine.setTabHost(r.width > 0 && (drivesInput(got.message) || got.message is .Agent))
 
         match got.message {
             .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
@@ -30,6 +30,10 @@ fn answerAll(r: *mut TabRenderer) !bool {
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
+            .AgentPaused { on } => {
+                r.agent_paused = on != 0
+            }
+
             .Agent { id, mcp, ref_base, line } => try answerAgent(r, got.frame, id, mcp != 0, ref_base, line)
             .StorageEvent { nulls, key, old, value, url } => try engine.storageEvent(r.alloc, url, unlessNull(key, nulls, 1), unlessNull(old, nulls, 2), unlessNull(value, nulls, 4))
 

@@ -1,0 +1,37 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn hostedCommand(ui: *mut Ui, c: *mut Conn, sp: *mut Space, tmp: Allocator, cmd: []u8, doc: *mut agent.Json, args: ?usize, reply: *mut agent.Reply) AllocError!bool {
+    if text.eql(cmd, "tabs") {
+        try listTabs(sp.own_tabs.items(), c.tab, null, tmp, reply)
+
+        return true
+    }
+
+    if text.eql(cmd, "tab_new") { return hostedTabNew(ui, c, sp, tmp, doc, args, reply) }
+    if text.eql(cmd, "tab_select") { return hostedTabSelect(c, sp, tmp, doc, args, reply) }
+    if text.eql(cmd, "tab_close") { return hostedTabClose(ui, c, sp, tmp, doc, args, reply) }
+
+    if text.eql(cmd, "user_context") {
+        try contextReply(ui, tmp, reply, false)
+
+        return true
+    }
+
+    if text.eql(cmd, "spaces") {
+        try hostedSpacesReply(ui, sp, tmp, reply)
+
+        return true
+    }
+
+    if text.eql(cmd, "space_close") {
+        sp.closing = true
+        reply.message = try spaceMessage(tmp, "closing Space ", sp.id, "")
+
+        return true
+    }
+
+    return false
+}

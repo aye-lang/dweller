@@ -434,7 +434,7 @@ fn window_renderer_hang() {
 }
 
 /// The open files of process `pid`: (fd, is a regular file, path).
-fn open_files(pid: &str) -> Vec<(String, bool, String)> {
+pub(crate) fn open_files(pid: &str) -> Vec<(String, bool, String)> {
     if cfg!(target_os = "macos") {
         let out = Command::new("lsof").args(["-n", "-P", "-F", "ftn", "-p", pid]).output().unwrap();
         let mut files: Vec<(String, bool, String)> = Vec::new();

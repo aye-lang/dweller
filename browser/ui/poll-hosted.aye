@@ -1,0 +1,31 @@
+import std.mem.AllocError
+
+fn pollHosted(ui: *mut Ui) AllocError!void {
+    let a = ui.agents.?
+
+    for s in a.space_list {
+        let sp = s orelse continue
+
+        if !sp.hosted { continue }
+
+        var k: usize = 0
+
+        while k < sp.own_tabs.len() {
+            try pollTabSlot(ui, sp.own_tabs.items()[k], false)
+            k += 1
+        }
+
+        if try setText(&mut sp.state, hostedState(ui, sp)) { ui.dirty = true }
+
+        if watchedTab(ui) |slot| {
+            if slot.process |tp| {
+                if tp.whole || tp.damage.len() > 0 { ui.dirty = true }
+
+                tp.whole = false
+                tp.damage.clear()
+            }
+        }
+    }
+
+    try resumeScript(ui)
+}

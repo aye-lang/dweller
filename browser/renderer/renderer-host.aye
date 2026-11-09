@@ -1,23 +1,31 @@
 import agent
 import std.mem.AllocError
 import std.mem.Allocator
+import std.text
 
 struct RendererHost {
     session: *mut agent.Session
+    paused: bool
+    acted: *mut text.Builder
+    renderer: *mut TabRenderer
 
     pub fn agentSession(self: *mut Self, conn: usize) ?*mut agent.Session {
         return self.session
     }
 
     pub fn agentRefusal(self: *mut Self, conn: usize, cmd: []u8) []u8 {
+        if self.paused { return "paused by user" }
+
         return ""
     }
 
     pub fn windowCommand(self: *mut Self, conn: usize, tmp: Allocator, cmd: []u8, doc: *mut agent.Json, args: ?usize, id: []u8, reply: *mut agent.Reply) AllocError!bool {
-        return false
+        return askWindow(self.renderer, tmp, cmd, doc, args, reply)
     }
 
     pub fn agentActs(self: *mut Self, conn: usize, s: *mut agent.Session, tmp: Allocator, what: []u8, node: ?agent.RefNode) AllocError!void {
+        self.acted.clear()
+        try self.acted.append(what)
     }
 
     pub fn agentGoesOn(self: *mut Self, conn: usize) bool {

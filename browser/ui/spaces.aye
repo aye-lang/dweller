@@ -137,6 +137,10 @@ pub struct Space {
     // It ended unasked.
     crashed: bool
     shared: bool
+    hosted: bool = false
+    own_tabs: List(*mut TabSlot)
+    next_tab: u32 = 1
+    last_tab: u32 = 0
 }
 
 /// A Space's own side: what the window told it, and what it told the
@@ -176,6 +180,7 @@ fn setUpSpaces(ui: *mut Ui, o: UiOptions) AllocError!bool {
     let a = ui.agents orelse return true
     if o.control < 0 {
         a.spaces = true
+        a.hosted = text.eql(std.os.getenv("DWELLER_SPACES") orelse "", "renderer")
         a.space_font = o.face
         a.space_js = o.js
         try net.shareCookies()
@@ -250,6 +255,9 @@ fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool, shared: bool) Al
     let k = spaceSlot(ui) orelse {
         return failConn(ui.alloc, c, mcp, "too many Spaces (8)")
     }
+    if a.hosted && shared {
+        return startHosted(ui, c, k, name, mcp)
+    }
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -300,43 +308,7 @@ fn startSpace(ui: *mut Ui, c: *mut Conn, name: []u8, mcp: bool, shared: bool) Al
         return failConn(ui.alloc, c, mcp, CRASHED)
     }
     closeFd(sv[1])
-    a.next_space += 1
-    let sp = try ui.alloc.create(Space {
-        id: a.next_space,
-        pid: pid,
-        ctl: sv[0],
-        ctl_in: text.Builder.init(ui.alloc),
-        ctl_out: text.Builder.init(ui.alloc),
-        lists_due: false,
-        ctx_due: false,
-        fd: -1,
-        path: path,
-        attached: true,
-        mcp: mcp,
-        started: std.time.monotonicMs(),
-        down: text.Builder.init(ui.alloc),
-        shut: false,
-        ended: false,
-        name: text.Builder.init(ui.alloc),
-        state: text.Builder.init(ui.alloc),
-        last: text.Builder.init(ui.alloc),
-        tabs: 1,
-        title: text.Builder.init(ui.alloc),
-        url: text.Builder.init(ui.alloc),
-        paused: false,
-        stopping: false,
-        stop_at: 0,
-        closing: false,
-        crashed: false,
-        shared: shared,
-    })
-    if name.len > 0 {
-        try sp.name.append(name)
-    } else {
-        try sp.name.append("Agent ")
-        try sp.name.appendUint(sp.id as u64)
-    }
-    try sp.state.append("idle")
+    let sp = try newSpace(ui, pid, sv[0], path, mcp, shared, name)
     a.space_list[k] = sp
     c.space = sp
     if shared {
@@ -375,6 +347,7 @@ fn attachSpace(ui: *mut Ui, c: *mut Conn, tmp: Allocator, id: u32, name: []u8, m
     sp.attached = true
     sp.fd = -1
     sp.mcp = mcp
+    c.tab = sp.last_tab
     sp.started = std.time.monotonicMs()
     sp.down.clear()
     sp.shut = false
@@ -506,6 +479,9 @@ fn relay(ui: *mut Ui, i: usize, buf: []mut u8) AllocError!void {
         }
     }
     let sp = c.space.?
+    if sp.hosted {
+        return
+    }
     // What the Space told the window comes before what it tells its agent.
     try serviceCtl(ui, sp)
     if sp.fd < 0 {
@@ -712,6 +688,10 @@ fn releaseSpace(a: *mut Agents, sp: *mut Space) {
 }
 
 fn freeSpace(alloc: Allocator, sp: *mut Space) {
+    for slot in sp.own_tabs.items() {
+        freeSlot(alloc, slot)
+    }
+    sp.own_tabs.deinit()
     sp.ctl_in.deinit()
     sp.ctl_out.deinit()
     sp.path.deinit()
@@ -735,6 +715,9 @@ fn pollSpaces(ui: *mut Ui) AllocError!void {
     }
     for k in 0..MAX_AGENTS {
         let sp = a.space_list[k] orelse continue
+        if sp.hosted {
+            continue
+        }
         if sp.ctl >= 0 {
             try serviceCtl(ui, sp)
         }
@@ -1095,6 +1078,14 @@ fn setPaused(ui: *mut Ui, sp: *mut Space, on: bool) AllocError!void {
     }
     sp.paused = on
     ui.dirty = true
+    if sp.hosted {
+        var what = " resumed"
+        if on {
+            what = " paused"
+        }
+        try spaceActivity(ui, sp, what)
+        return pauseHosted(ui, sp, on)
+    }
     if on {
         try spaceActivity(ui, sp, " paused")
         return toSpace(ui, sp, "{\"ctl\":\"pause\"}\n")
@@ -1131,6 +1122,9 @@ fn stopSpace(ui: *mut Ui, sp: *mut Space) AllocError!void {
     sp.stop_at = std.time.monotonicMs()
     ui.dirty = true
     try spaceActivity(ui, sp, " stopped")
+    if sp.hosted {
+        return stopHosted(ui, sp)
+    }
     if sp.ctl < 0 {
         // A crashed one: it goes from the list.
         if !sp.attached {

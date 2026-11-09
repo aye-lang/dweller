@@ -1,0 +1,18 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn hostedTabNew(ui: *mut Ui, c: *mut Conn, sp: *mut Space, tmp: Allocator, doc: *mut agent.Json, args: ?usize, reply: *mut agent.Reply) AllocError!bool {
+    if showAsked(doc, args) { return refuse(reply, NO_SHOW) }
+
+    let slot = (try hostTab(ui, sp)) orelse return refuse(reply, "too many tabs (16)")
+
+    c.tab = slot.in_space
+
+    try spaceActed(ui, sp, "opened a tab")
+
+    reply.message = try tabMessage(tmp, "opened tab ", slot.in_space)
+    reply.fields = try tabField(tmp, slot.in_space)
+
+    return true
+}

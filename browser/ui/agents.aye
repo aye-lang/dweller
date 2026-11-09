@@ -81,6 +81,8 @@ pub struct Conn {
     // With --spaces: the Space serving it (null: not started yet).
     space: ?*mut Space
     admitted: bool
+    asked_wait: bool = false
+    held_at: u64 = 0
 }
 
 /// The agents' side of a window.
@@ -143,6 +145,7 @@ pub struct Agents {
     menu: u32
     chip_text: text.Builder
     watch: Watch
+    hosted: bool = false
 }
 
 /// Starts listening at `path`; null (after a message) when it cannot.
@@ -314,9 +317,11 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         if !(try admitConn(ui, i, buf[..])) {
             continue
         }
-        if a.spaces {
+        if a.spaces && hostedSpace(c) == null {
             try relay(ui, i, buf[..])
-            continue
+            if a.conns[i] == null || hostedSpace(c) == null {
+                continue
+            }
         }
         if c.waiting {
             try checkWait(ui, i)
@@ -334,6 +339,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         }
         try serveLines(ui, i)
         if c.gone && !c.waiting && !c.asked && std.mem.indexOf(c.pending.bytes(), '\n') == null {
+            try leaveHosted(ui, c)
             a.conns[i] = null
             if a.inside |me| {
                 // A Space: done, before its agent's connection closes.
@@ -354,6 +360,9 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
     }
     if a.spaces {
         reapSpaces(a)
+    }
+    if a.hosted {
+        try pollHosted(ui)
     }
     if a.exit_when_idle && a.ever && agentCount(ui) == 0 {
         ui.quit = true
@@ -417,6 +426,13 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
             c.mode = 2
         }
     }
+    if hostedSpace(c) |sp| {
+        if connTab(ui, c) == null && agent.needsPage(tmp, line) {
+            if try hostTab(ui, sp) |slot| {
+                c.tab = slot.in_space
+            }
+        }
+    }
     if connTab(ui, c) == null && agent.needsPage(tmp, line) {
         // Its own tab, in the background, on its first command that
         // needs a page.
@@ -427,7 +443,7 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         }
     }
     let slot = connSlot(ui, c)
-    if ui.tab_processes {
+    if ui.tab_processes || hostedSpace(c) != null {
         if try askTabRenderer(ui, i, slot, tmp, line) |sent| {
             if !sent {
                 let rest = try tmp.alloc(0 as u8, c.pending.len())
@@ -449,7 +465,9 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     }
     try agent.serveShared(ui, i, c.mode == 2, tmp, line, &mut out)
     let touched = slot == ui.slots[ui.active].?
-    a.served += 1
+    if hostedSpace(c) == null || out.len() > 0 {
+        a.served += 1
+    }
     if a.inside |me| {
         // The window learns the new status before the agent its answer.
         me.serving = false
@@ -471,6 +489,12 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
         try serveContexts(ui)
     }
     afterSpaceRequest(ui)
+    if hostedSpace(c) |sp| {
+        if sp.closing {
+            c.gone = true
+            c.pending.clear()
+        }
+    }
     try afterAgent(ui, before, touched)
     try resumeScript(ui)
 }
@@ -478,6 +502,9 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
 /// The tab connection `c` opened or selected; null when it has none (or
 /// its tab was closed).
 fn connTab(ui: *Ui, c: *Conn) ?*mut TabSlot {
+    if hostedSpace(c) |sp| {
+        return spaceTab(sp, c.tab)
+    }
     if c.tab != 0 {
         if slotIndex(ui, c.tab) |k| {
             return ui.slots[k].?
@@ -488,7 +515,7 @@ fn connTab(ui: *Ui, c: *Conn) ?*mut TabSlot {
 
 /// The tab of connection `c`: its own, else the shown one (to look at).
 fn connSlot(ui: *Ui, c: *Conn) *mut TabSlot {
-    return connTab(ui, c) orelse ui.slots[ui.active].?
+    return connTab(ui, c) orelse fallbackSlot(ui, c)
 }
 
 /// Makes the session of `slot` ready for a request: the window's
@@ -565,12 +592,16 @@ fn sessionOf(ui: *mut Ui, conn: usize) ?*mut agent.Session {
 
 fn refusalOf(ui: *mut Ui, conn: usize, cmd: []u8) []u8 {
     let a = ui.agents orelse return ""
-    if a.paused {
+    let c = a.conns[conn] orelse return ""
+    if hostedSpace(c) |sp| {
+        if sp.paused {
+            return "paused by user"
+        }
+    } else if a.paused {
         return "paused by user"
     }
-    let c = a.conns[conn] orelse return ""
     if connSlot(ui, c).taken {
-        return takenMessage(connSlot(ui, c).id)
+        return takenMessage(tabNumber(connSlot(ui, c)))
     }
     if agent.actsOnPage(cmd) && !connSlot(ui, c).agent {
         return USER_TAB
@@ -629,6 +660,11 @@ fn flashRect(ui: *mut Ui, slot: *TabSlot, r: paint.Rect, tag: []u8) AllocError!v
 fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mut agent.Json, args: ?usize, id: []u8, reply: *mut agent.Reply) AllocError!bool {
     let a = ui.agents orelse return false
     let c = a.conns[conn] orelse return false
+    if hostedSpace(c) |sp| {
+        if try hostedCommand(ui, c, sp, tmp, cmd, doc, args, reply) {
+            return true
+        }
+    }
     if text.eql(cmd, "tabs") {
         try tabsReply(ui, c, tmp, reply)
         return true
@@ -780,59 +816,16 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
     if connTab(ui, c) |t| {
         mine = t.id
     }
-    var b = text.Builder.init(tmp)
-    var w = agent.Writer.init(&mut b)
-    var detail = text.Builder.init(tmp)
-    try w.beginObject()
-    try w.key("tabs")
-    try w.beginArray()
+    var slots = List(*mut TabSlot).init(tmp)
     for i in 0..ui.count {
-        let slot = ui.slots[i].?
-        try w.beginObject()
-        try w.key("id")
-        try w.int(slot.id as i64)
-        try w.key("url")
-        try w.string(slotUrl(slot))
-        try w.key("title")
-        try w.string(slotTitle(slot))
-        // In a Space the user sees none of its tabs.
-        let shown = i == ui.active && a.control < 0
-        try w.key("shown")
-        try w.boolean(shown)
-        try w.key("agent")
-        try w.boolean(slot.id == mine)
-        try w.endObject()
-        if i > 0 {
-            try detail.appendByte('\n')
-        }
-        try detail.append("- tab ")
-        try detail.appendUint(slot.id as u64)
-        try detail.append(": ")
-        try detail.append(slotTitle(slot))
-        if slotUrl(slot).len > 0 && !text.eql(slotTitle(slot), slotUrl(slot)) {
-            try detail.append(" <")
-            try detail.append(slotUrl(slot))
-            try detail.appendByte('>')
-        }
-        if shown {
-            try detail.append(" [shown]")
-        }
-        if slot.id == mine {
-            try detail.append(" [agent]")
-        }
+        try slots.append(ui.slots[i].?)
     }
-    try w.endArray()
-    try w.endObject()
-    var msg = text.Builder.init(tmp)
-    try msg.appendUint(ui.count as u64)
-    try msg.append(" tabs")
-    if ui.count == 1 {
-        msg.clear()
-        try msg.append("1 tab")
+    // In a Space the user sees none of its tabs.
+    var shown: ?*TabSlot = null
+    if a.control < 0 {
+        shown = ui.slots[ui.active].?
     }
-    reply.message = msg.bytes()
-    reply.fields = members(&b)
-    reply.detail = detail.bytes()
+    return listTabs(slots.items(), mine, shown, tmp, reply)
 }
 
 // ---- the user's context

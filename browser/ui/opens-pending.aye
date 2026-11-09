@@ -1,0 +1,25 @@
+import std
+import std.text
+
+let OPEN_HOLD_MS: u64 = 5000
+
+fn opensPending(c: *mut Conn, answering: *TabProcess) bool {
+    let sp = hostedSpace(c) orelse return false
+    let now = std.time.monotonicMs()
+
+    if c.held_at == 0 { c.held_at = now }
+
+    if now - c.held_at < OPEN_HOLD_MS {
+        for slot in sp.own_tabs.items() {
+            let tp = slot.process orelse continue
+            let href = slot.session.tab.href()
+
+            if tp == answering || tp.gone.len > 0 { continue }
+            if tp.loading || (href.len > 0 && !text.eql(href, tp.url.bytes())) { return true }
+        }
+    }
+
+    c.held_at = 0
+
+    return false
+}

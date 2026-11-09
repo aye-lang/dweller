@@ -1,0 +1,27 @@
+import engine
+import ipc
+import std.mem.AllocError
+
+var next_space_tab: u32 = 536870912
+
+fn hostTab(ui: *mut Ui, sp: *mut Space) AllocError!?*mut TabSlot {
+    if sp.own_tabs.len() >= MAX_TABS { return null }
+
+    let slot = try newSlot(ui.alloc, ui.measure, ui.painter.system, next_space_tab)
+
+    next_space_tab += 1
+    slot.in_space = sp.next_tab
+    sp.next_tab += 1
+    slot.agent = true
+    engine.setContextAgent(slot.session.tab.context, true)
+    slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id)
+
+    if sp.paused {
+        if slot.process |tp| { try ipc.encode(&mut tp.outbox, 0, ipc.Message.AgentPaused { on: 1 }) }
+    }
+
+    try sp.own_tabs.append(slot)
+    sp.tabs = sp.own_tabs.len() as u32
+
+    return slot
+}

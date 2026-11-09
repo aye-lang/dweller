@@ -1,0 +1,27 @@
+import agent
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn spaceEvent(ui: *mut Ui, sp: *mut Space, name: []u8, fields: []u8) AllocError!void {
+    let a = ui.agents.?
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+
+    for s in a.conns {
+        let c = s orelse continue
+
+        let own = c.space orelse continue
+
+        if own != sp || c.mode == 0 { continue }
+
+        var out = text.Builder.init(arena.allocator())
+
+        try agent.writeEvent(c.mode == 2, name, fields, &mut out)
+        try out.appendByte('\n')
+
+        if !sendAll(c.fd, out.bytes()) { c.gone = true }
+
+        a.served += 1
+    }
+}

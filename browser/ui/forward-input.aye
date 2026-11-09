@@ -15,6 +15,16 @@ fn forwardInput(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
         ui.focus = Focus.Page
     }
 
+    if watchedTab(ui) |slot| {
+        try takeHosted(ui, slot)
+
+        if ev.kind == SDL_MOUSEWHEEL { return false }
+
+        _ = try forwardTab(ui, ev)
+
+        return true
+    }
+
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
 
