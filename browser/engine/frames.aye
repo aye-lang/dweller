@@ -366,6 +366,11 @@ fn sourcePage(p: *mut Page, address: []u8, src: []u8) AllocError!*mut Page {
     errdefer located.deinit(p.alloc)
     let c = try newPage(p.alloc, located, 200, "", doc)
     c.encoding = p.encoding
+    c.csp = sourcePolicy(p.alloc, p.csp, &c.doc) catch |e| {
+        c.destroy()
+        return AllocError.OutOfMemory
+    }
+    c.inherited_csp = p.csp.len
     if text.eql(c.base.href, address) {
         let base = p.currentBase(p.alloc) catch |e| {
             c.destroy()

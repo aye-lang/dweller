@@ -182,7 +182,7 @@ fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
         var b = text.Builder.init(s.alloc)
         defer b.deinit()
         try p.doc.textContent(el, &mut b)
-        if try inlineRefused(s, el, b.bytes()) {
+        if try inlineRefused(s, el, b.bytes(), false) {
             return js.numVal(1.0)
         }
         try runCode(s, el, b.bytes(), false)
@@ -295,6 +295,9 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer res.deinit(s.alloc)
+    if try redirectRefused(s, el, &res, false) {
+        return js.boolVal(false)
+    }
     if res.status != 0 && (res.status < 200 || res.status > 299) {
         try addConsole(s, "[error] Failed to load script: ", target.href)
         return js.boolVal(false)

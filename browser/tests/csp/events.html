@@ -1,0 +1,18 @@
+<!doctype html>
+<title>CSP events</title>
+<pre id="out"></pre>
+<script nonce="r">
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+document.addEventListener('securitypolicyviolation', e => {
+  log([e.blockedURI.replace(location.origin, ''), e.effectiveDirective, e.violatedDirective, e.disposition, JSON.stringify(e.sample), e.originalPolicy.split(' ')[0]].join('|'));
+});
+</script>
+<script>log('blocked inline');</script>
+<script>log('hash ok');</script>
+<script src="same.js"></script>
+<div id="b" hidden onclick="log('handler ran')"></div>
+<script nonce="r">
+document.getElementById('b').click();
+log('done');
+</script>

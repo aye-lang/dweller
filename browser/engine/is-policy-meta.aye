@@ -1,0 +1,16 @@
+import dom.Document
+import dom.NodeId
+import std.text
+
+// https://html.spec.whatwg.org/multipage/semantics.html#attr-meta-http-equiv-content-security-policy
+fn isPolicyMeta(doc: *Document, h: NodeId) bool {
+    if !doc.isElement(h, "meta") || !text.eqlIgnoreCase(doc.attr(h, "http-equiv") orelse "", "content-security-policy") {
+        return false
+    }
+
+    if doc.parent(h) |parent| {
+        return doc.isElement(parent, "head")
+    }
+
+    return false
+}

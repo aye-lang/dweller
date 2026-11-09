@@ -1,0 +1,13 @@
+<!doctype html>
+<title>CSP module</title>
+<pre id="out"></pre>
+<script nonce="r">
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+document.addEventListener('securitypolicyviolation', e => {
+  log(e.blockedURI.replace(location.origin, '') + ' ' + e.effectiveDirective);
+});
+addEventListener('load', () => import('./same.js?module').then(() => log('import: ok'), () => log('import: refused')));
+</script>
+<script type="module" nonce="r">log('module with nonce: ran');</script>
+<script type="module">log('module without nonce: ran');</script>

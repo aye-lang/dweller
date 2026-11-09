@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-11-09 at Dweller bd7c970. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-11-09 at Dweller 6475926. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -11,7 +11,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `uievents` | 69 | 6 | 153/201 | 76.1 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2932/5398 | 54.3 | 60 | below | +0.0 |
 | `css/cssom` | 292 | 11 | 2129/3818 | 55.8 | - | baseline | +0.0 |
-| `fetch/api` | 191 | 0 | 1773/2428 | 73.0 | 50 | done | +0.0 |
+| `fetch/api` | 191 | 0 | 1836/2483 | 73.9 | 50 | done | +0.9 |
 | `xhr` | 329 | 3 | 687/1233 | 55.7 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 6672/9998 | 66.7 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
@@ -41,9 +41,9 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `html/browsers/sandboxing` | 21 | 1 | 11/32 | 34.4 | 30 | done | +0.0 |
 | `fetch/metadata` | 87 | 0 | 541/1828 | 29.6 | 25 | done | +0.0 |
 | `referrer-policy` | 1392 | 0 | 4166/8465 | 49.2 | 45 | done | +0.0 |
-| `content-security-policy/script-src` | 97 | 0 | 68/215 | 31.6 | 30 | done | +0.0 |
-| `content-security-policy/frame-ancestors` | 34 | 0 | 32/36 | 88.9 | 85 | done | new |
-| `x-frame-options` | 6 | 0 | 61/157 | 38.9 | 35 | done | new |
+| `content-security-policy/script-src` | 97 | 0 | 126/217 | 58.1 | 55 | done | +26.4 |
+| `content-security-policy/frame-ancestors` | 34 | 0 | 32/36 | 88.9 | 85 | done | +0.0 |
+| `x-frame-options` | 6 | 0 | 61/157 | 38.9 | 35 | done | +0.0 |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |

@@ -2,7 +2,11 @@ import std.mem.AllocError
 import std.mem.Allocator
 
 // https://w3c.github.io/webappsec-csp/#match-element-to-source-list
-fn listAllowsInline(alloc: Allocator, list: []u8, kind: Inline, nonce: []u8, code: []u8) AllocError!bool {
+fn listAllowsInline(alloc: Allocator, list: []u8, kind: Inline, nonce: []u8, parser_inserted: bool, code: []u8) AllocError!bool {
+    if kind == Inline.Script && !parser_inserted && hasSource(list, "'strict-dynamic'") {
+        return true
+    }
+
     if allowsAllInline(list) {
         return true
     }
