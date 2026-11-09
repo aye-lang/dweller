@@ -1,0 +1,42 @@
+import ipc
+import paint
+import std
+import std.mem.AllocError
+import std.text
+
+fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
+    let alloc = tp.url.alloc
+    let clip = paint.IRect { x0: s.clip[0] as i64, y0: s.clip[1] as i64, x1: s.clip[2] as i64, y1: s.clip[3] as i64 }
+    let x = s.x as i64
+    let y = s.y as i64
+
+    for k in 0..tp.children.len() {
+        let c = &mut tp.children.items()[k]
+
+        if c.key != s.key { continue }
+        if !text.eql(c.src, s.url) { return false }
+
+        tp.whole = tp.whole || c.x != x || c.y != y || c.width != s.width || c.height != s.height || !sameIRect(c.clip, clip)
+        c.x = x
+        c.y = y
+        c.width = s.width
+        c.height = s.height
+        c.clip = clip
+
+        return true
+    }
+
+    if !(try childCrossSite(tp, s.url)) { return false }
+
+    let src = try alloc.alloc(0 as u8, s.url.len)
+
+    std.mem.copy(src, s.url)
+    try tp.children.append(ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: src })
+    tp.whole = true
+
+    return true
+}
+
+fn sameIRect(a: paint.IRect, b: paint.IRect) bool {
+    return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1
+}

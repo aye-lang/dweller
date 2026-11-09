@@ -1,0 +1,16 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn markStyleElement(p: *mut Page, h: NodeId, report: bool) AllocError!void {
+    if p.doc.isElement(h, "style") {
+        try applyInlineStyle(p, h, false, report)
+    } else if p.doc.isElement(h, "base") {
+        try applyBaseUri(p, h, report)
+    } else if p.doc.isElement(h, "link") && isStylesheetLink(&p.doc, h) {
+        try applyLinkStyle(p, h, report)
+    }
+
+    if p.doc.attr(h, "style") != null {
+        try applyInlineStyle(p, h, true, report)
+    }
+}

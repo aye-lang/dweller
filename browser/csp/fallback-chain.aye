@@ -1,0 +1,30 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#directive-fallback-list
+fn fallbackChain(effective: []u8) []u8 {
+    if text.eql(effective, "script-src-elem") || text.eql(effective, "script-src-attr") {
+        return "script-src default-src"
+    }
+
+    if text.eql(effective, "style-src-elem") || text.eql(effective, "style-src-attr") {
+        return "style-src default-src"
+    }
+
+    if text.eql(effective, "worker-src") {
+        return "child-src script-src default-src"
+    }
+
+    if text.eql(effective, "frame-src") {
+        return "child-src default-src"
+    }
+
+    if isFetchDirective(effective) {
+        return "default-src"
+    }
+
+    return ""
+}
+
+fn isFetchDirective(name: []u8) bool {
+    return text.eql(name, "img-src") || text.eql(name, "font-src") || text.eql(name, "connect-src") || text.eql(name, "media-src") || text.eql(name, "object-src") || text.eql(name, "manifest-src") || text.eql(name, "child-src") || text.eql(name, "script-src") || text.eql(name, "style-src")
+}

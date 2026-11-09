@@ -17,7 +17,10 @@ fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!boo
         ui.mouse_x = me.x as f64
         ui.mouse_y = me.y as f64
 
-        try sendMouse(ui, tp, 0, 0, mx, my)
+        let hit = mouseTarget(ui, tp)
+
+        try leaveFrame(ui, tp, hit.tp.tab)
+        try sendMouse(ui, hit, 0, 0, mx, my)
 
         return true
     }
@@ -47,7 +50,23 @@ fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!boo
     ui.mouse_x = be.x as f64
     ui.mouse_y = be.y as f64
 
-    try sendMouse(ui, tp, 1 + (ev.kind == SDL_MOUSEBUTTONUP) as u32, buttonIndex(be.button), 0.0, 0.0)
+    let hit = mouseTarget(ui, tp)
+
+    if ev.kind == SDL_MOUSEBUTTONDOWN {
+        let moved = hit.tp != focusedFrame(tp).tp
+
+        tp.capture_frame = hit.tp.tab
+        tp.focus_frame = hit.tp.tab
+
+        if moved { try tellFrameFocus(tp, hit.tp, !ui.inactive) }
+    }
+
+    try leaveFrame(ui, tp, hit.tp.tab)
+    try sendMouse(ui, hit, 1 + (ev.kind == SDL_MOUSEBUTTONUP) as u32, buttonIndex(be.button), 0.0, 0.0)
+
+    if tp.pressed == 0 {
+        tp.capture_frame = 0
+    }
 
     return true
 }

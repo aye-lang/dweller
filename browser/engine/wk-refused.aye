@@ -1,0 +1,24 @@
+import csp
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+import url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn wkRefused(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let href = try it.toStringValue(it.arg(a, 0))
+    let target = url.parse(it.alloc, it.heap.bytes(js.strOf(href))) catch return js.boolVal(false)
+    defer target.deinit(it.alloc)
+
+    if csp.workerUrlRefusal(s.page.csp, &target, &s.page.url) |r| {
+        try refuseWorker(s, r, target.href)
+
+        return js.boolVal(true)
+    }
+
+    return js.boolVal(false)
+}

@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+fn writeChildProcesses(tp: *TabProcess, out: *mut text.Builder) AllocError!void {
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        try out.append("renderer-child ")
+        try out.appendInt(child.pid as i64)
+        try out.appendByte(' ')
+        try out.append(child.site.bytes())
+
+        if child.gone.len > 0 {
+            try out.append(" gone ")
+            try out.append(child.gone)
+        } else {
+            try out.append(" frame ")
+            try out.appendInt(child.buffers.width as i64)
+            try out.appendByte(' ')
+            try out.appendInt(child.buffers.height as i64)
+            try out.append(" at ")
+            try out.appendInt(c.x)
+            try out.appendByte(' ')
+            try out.appendInt(c.y)
+            try out.append(" title ")
+            try out.append(child.title.bytes())
+        }
+
+        try out.append("\n")
+        try writeChildProcesses(child, out)
+    }
+}

@@ -175,14 +175,14 @@ fn akScriptPrepare(it: *mut Interp, a: Args) JsError!Value {
     let outer = s.current
     defer s.current = outer
     if module {
-        if !(try runModuleElement(s, el)) {
+        if !(try runModuleElement(s, el, false)) {
             return js.numVal(3.0)
         }
     } else {
         var b = text.Builder.init(s.alloc)
         defer b.deinit()
         try p.doc.textContent(el, &mut b)
-        if try inlineRefused(s, el, b.bytes()) {
+        if try inlineRefused(s, el, b.bytes(), false) {
             return js.numVal(1.0)
         }
         try runCode(s, el, b.bytes(), false)
@@ -220,7 +220,7 @@ fn akScriptFetch(it: *mut Interp, a: Args) JsError!Value {
     if p.doc.attr(el, "src") |src| {
         if p.resolve(s.alloc, src) |target| {
             defer target.deinit(s.alloc)
-            if net.liveRequest(&target) {
+            if net.liveRequest(&target) && scriptUrlRefusal(p, el, &target, false) == null {
                 waits = net.startLoadAs(target.withoutFragment(), scriptRequest(p, el))
                 if waits != 0 && net.loadState(waits) != net.LoadState.Running {
                     net.releaseLoad(waits)
@@ -271,7 +271,7 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
     s.writes_ignored += 1
     defer s.writes_ignored -= 1
     if isModuleScript(p, el) {
-        return js.boolVal(try runModuleElement(s, el))
+        return js.boolVal(try runModuleElement(s, el, false))
     }
     if js.isStr(it.arg(a, 1)) {
         return runBlobScript(it, s, el, a)
@@ -281,7 +281,7 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer target.deinit(s.alloc)
-    if try urlRefused(s, el, &target) {
+    if try urlRefused(s, el, &target, false) {
         return js.boolVal(false)
     }
     let res = net.request(s.alloc, &target, corsRequest(p.doc.attr(el, "crossorigin"), net.Request { kind: net.Kind.Script, referrer: p.url.href, referrer_policy: net.parseReferrerPolicy(p.doc.attr(el, "referrerpolicy") orelse ""), initiator: initiatorOf(p) })) catch |e| {
@@ -295,6 +295,9 @@ fn akScriptRun(it: *mut Interp, a: Args) JsError!Value {
         return js.boolVal(false)
     }
     defer res.deinit(s.alloc)
+    if try redirectRefused(s, el, &res, false) {
+        return js.boolVal(false)
+    }
     if res.status != 0 && (res.status < 200 || res.status > 299) {
         try addConsole(s, "[error] Failed to load script: ", target.href)
         return js.boolVal(false)

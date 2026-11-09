@@ -4,13 +4,11 @@ import std.mem.AllocError
 import url.Url
 
 // https://w3c.github.io/webappsec-csp/#should-block-request
-fn urlRefused(s: *mut Script, el: NodeId, target: *Url) AllocError!bool {
-    let p = s.page
+fn urlRefused(s: *mut Script, el: NodeId, target: *Url, parser_inserted: bool) AllocError!bool {
+    if scriptUrlRefusal(s.page, el, target, parser_inserted) |r| {
+        try refuseScript(s, el, target.href, r)
 
-    if csp.scriptUrlRefusal(p.csp, target, &p.url, p.doc.attr(el, "nonce") orelse "") |d| {
-        try refuseScript(s, el, target.href, d)
-
-        return true
+        return !r.report
     }
 
     return false

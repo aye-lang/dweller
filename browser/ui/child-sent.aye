@@ -1,0 +1,127 @@
+import ipc
+import net
+import std
+import std.mem.AllocError
+import url
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc (a subframe's host: BeginNavigation, DidCommitNavigation)
+fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    if !ipc.fromRenderer(got.message) { return "not from a renderer" }
+    if got.frame != tp.tab && !(got.message is .Hello || got.message is .Pong) { return "unexpected frame id" }
+
+    match got.message {
+        .Hello { version, pid } => {
+            if tp.hello || got.frame != 0 || version != ipc.VERSION || pid != tp.pid as u32 { return "unexpected hello" }
+
+            tp.hello = true
+        }
+
+        .Loaded { title, url: href } => {
+            if !tp.loading { return "unexpected loaded" }
+            if !commitMatches(tp.url.alloc, tp.committed.bytes(), href) { return "bad url" }
+            if !tp.nav_failed && !(try inSiteLock(tp, href)) { return "commit outside site lock" }
+
+            try showCommitted(tp, title, href)
+            tp.loading = false
+        }
+
+        .Title { title } => {
+            if title.len > 4096 { return "bad title" }
+
+            try showCommitted(tp, title, tp.committed.bytes())
+        }
+
+        .SameDocument { url: href, nulls, .. } => {
+            if tp.loading || nulls > 1 || !commitMatches(tp.url.alloc, tp.committed.bytes(), href) { return "bad url" }
+
+            try showCommitted(tp, tp.title.bytes(), href)
+        }
+
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+            if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
+
+            return showTabFrame(tp.tab, tp, got.frame, buffer, width, height, damage)
+        }
+
+        .BeginNavigation { url: href, post, content_type, body, referrer_policy } => {
+            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
+            let target = url.parse(tp.url.alloc, href) catch return ""
+            defer target.deinit(tp.url.alloc)
+
+            if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) {
+                std.log.err("navigation refused: {}", target.href)
+
+                return ""
+            }
+
+            if !tp.loading {
+                tp.nav_policy = policy
+                try navigateChild(tp, target.href, topOf(tp), (post != 0) as u32, content_type, body)
+            }
+        }
+
+        .HistoryGo { .. }, .Popup { .. } => {}
+        .Cursor { shape } => {
+            if shape > 2 { return "bad cursor" }
+        }
+
+        .TargetUrl { url: href } => {
+            if href.len > MAX_URL_CHARS { return "bad target_url" }
+        }
+
+        .LongTask { on, ms } => {
+            if on > 1 || (on == 1) == tp.busy { return "bad long_task" }
+
+            tp.busy = on == 1
+        }
+
+        .TakeFocus { reverse } => {
+            if reverse > 1 { return "bad take_focus" }
+
+            tp.take_focus = true
+            tp.take_reverse = reverse == 1
+        }
+
+        .InputAck { seq } => {
+            if seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
+
+            tp.acked = seq
+        }
+
+        .WheelUnused { seq, dx, dy } => {
+            if seq == 0 || seq != tp.wheel_seq || !unusedWithin(dx, tp.wheel_at[2]) || !unusedWithin(dy, tp.wheel_at[3]) { return "bad wheel_unused" }
+
+            tp.wheel_seq = 0
+            tp.unused = [2]f64{dx, dy}
+        }
+
+        .FocusFrame { key, how } => return focusFrame(tp, key, how)
+
+        .Redirect { url: href } => {
+            if !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), href) { return "bad redirect" }
+
+            tp.redirected = true
+            tp.committed.clear()
+            try tp.committed.append(href)
+        }
+
+        .Fetch { .. } => return answerFetch(tp, got.frame, got.message)
+        .FetchCancel { id } => return cancelFetch(tp, id)
+        .CookieGet { .. }, .CookieSet { .. } => return answerCookie(tp, got.frame, got.message)
+        .Storage { .. } => return answerStorage(tp, got.frame, got.message)
+        .Subframes { frames } => return takeSubframes(tp, frames)
+        .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
+        .Pong { n } => {
+            if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }
+
+            tp.ping_at = 0
+            tp.pong_at = std.time.monotonicMs()
+            tp.hung = false
+            tp.hang_seen = false
+        }
+
+        _ => return "unexpected in a frame"
+    }
+
+    return ""
+}

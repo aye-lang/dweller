@@ -45,7 +45,7 @@ pub fn authorSheets(alloc: Allocator, doc: *Document, address: *Url, media: css.
 fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, address: *Url, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
     var cur: ?NodeId = root
     while cur |h| {
-        if doc.isElement(h, "style") && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
+        if doc.isElement(h, "style") && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             var src = text.Builder.init(alloc)
             defer src.deinit()
             try doc.textContent(h, &mut src)
@@ -63,7 +63,7 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             sheet.scope_root = doc.parent(h)
             try parseWithImports(alloc, base, address, src.bytes(), media, sheet, false)
             sheet.scope_root = null
-        } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
+        } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             let scripted = doc.sheets.ofOwner(h)
             var disabled = false
             if scripted |ss| {
@@ -114,7 +114,7 @@ fn prefetchSheets(alloc: Allocator, doc: *Document, base: *Url, address: *Url, m
 pub fn sheetHrefs(alloc: Allocator, doc: *Document, base: *Url, media: css.Media, sheet: *mut css.Sheet, out: *mut text.Builder) AllocError!void {
     var cur: ?NodeId = doc.root
     while cur |h| {
-        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !inNoscript(doc, h) && doc.attr(h, "crossorigin") == null && doc.attr(h, "referrerpolicy") == null && (try mediaOk(doc, h, media, sheet)) {
+        if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && doc.attr(h, "crossorigin") == null && doc.attr(h, "referrerpolicy") == null && (try mediaOk(doc, h, media, sheet)) {
             if doc.attr(h, "href") |href| {
                 if url.resolve(alloc, base, text.trim(href)) |target| {
                     defer target.deinit(alloc)

@@ -1,0 +1,14 @@
+import ipc
+import std.mem.AllocError
+
+fn takeChildMessages(tp: *mut TabProcess) AllocError!void {
+    while tp.gone.len == 0 {
+        let got = ipc.nextMessage(tp.inbox.bytes()) catch |e| { return badMessage(tp, @tagName(e)) }
+        let g = got orelse return
+        let why = try childSent(tp, g)
+
+        if why.len > 0 { return badMessage(tp, why) }
+
+        ipc.consume(&mut tp.inbox, g.used)
+    }
+}

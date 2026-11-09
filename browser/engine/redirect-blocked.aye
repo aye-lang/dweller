@@ -1,0 +1,16 @@
+import js.Interp
+import js.JsError
+import net
+import url
+
+// https://w3c.github.io/webappsec-csp/#should-block-response
+fn redirectBlocked(it: *mut Interp, res: *net.Response) JsError!bool {
+    if res.url.len == 0 {
+        return false
+    }
+
+    let landed = url.parse(it.alloc, res.url) catch return false
+    defer landed.deinit(it.alloc)
+
+    return requestRefused(scriptOf(it).page, "connect-src", &landed, null)
+}

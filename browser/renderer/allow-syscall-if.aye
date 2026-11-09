@@ -1,0 +1,18 @@
+import std.list.List
+import std.mem.AllocError
+
+let SECCOMP_ARGS: u32 = 16
+
+fn allowSyscallIf(prog: *mut List(u64), nr: u32, arg: u32, mask: u32, value: u32) AllocError!void {
+    try prog.append(bpfJumpUnless(nr, 5))
+    try prog.append(bpfLoad(SECCOMP_ARGS + 8 * arg))
+    try prog.append(bpfAnd(mask))
+    try prog.append(bpfJumpUnless(value, 1))
+    try prog.append(bpfRet(SECCOMP_RET_ALLOW))
+    try prog.append(bpfRet(SECCOMP_RET_EPERM))
+}
+
+fn answerSyscall(prog: *mut List(u64), nr: u32, ret: u32) AllocError!void {
+    try prog.append(bpfJumpUnless(nr, 1))
+    try prog.append(bpfRet(ret))
+}

@@ -1,3 +1,4 @@
+import paint
 import std.mem.AllocError
 
 fn pollTabProcesses(ui: *mut Ui) AllocError!void {
@@ -11,16 +12,18 @@ fn pollTabProcesses(ui: *mut Ui) AllocError!void {
         }
 
         if slot.process |tp| {
-            try giveBuffers(ui, slot, tp)
+            try giveBuffers(ui, tp, ui.page.canvas.width as u32, ui.page.canvas.height as u32)
             try tellFocus(ui, slot, tp, i == ui.active)
 
             if try serviceTabProcess(slot, tp) { ui.dirty = true }
+            if tp.gone.len == 0 { try serviceChildren(ui, tp) }
+            if tp.gone.len == 0 { try tellIntersections(tp, 0, 0, paint.IRect { x0: 0, y0: 0, x1: tp.buffers.width as i64, y1: tp.buffers.height as i64 }) }
             if tp.hung && tp.gone.len == 0 { answerHang(ui, tp) }
             if tp.popup_new { try takePopup(ui, tp, i == ui.active) }
             if tp.shown_new && i == ui.active { try showToolbar(ui, tp) }
             if tp.status_new && i == ui.active { try showStatus(ui, tp) }
             if tp.take_focus { takeFocusBack(ui, tp, i == ui.active) }
-            if i == ui.active && (tp.whole || tp.damage.len() > 0) { ui.repaint = true }
+            if i == ui.active && (tp.whole || tp.damage.len() > 0 || childDamaged(tp)) { ui.repaint = true }
         }
 
         try serviceSpeculative(ui, slot)

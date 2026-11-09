@@ -1,6 +1,6 @@
 # Conformance
 
-Measured 2026-11-08 at Dweller 5be5141d. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
+Measured 2026-11-09 at Dweller 20f2f7e. WPT `e58225abb9`, test262 `d53ebc8b19`, WebGL `193020cd37`.
 Score is passed over total subtests (WPT, WebGL) or tests (test262), skipped files excluded.
 Change is in points since the previous table. Regenerate with `conformance.py run`, then `table`.
 
@@ -11,7 +11,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `uievents` | 69 | 6 | 153/201 | 76.1 | 70 | done | +0.0 |
 | `html/semantics/forms` | 685 | 173 | 2932/5398 | 54.3 | 60 | below | +0.0 |
 | `css/cssom` | 292 | 11 | 2129/3818 | 55.8 | - | baseline | +0.0 |
-| `fetch/api` | 191 | 0 | 1773/2428 | 73.0 | 50 | done | +0.0 |
+| `fetch/api` | 191 | 0 | 1836/2483 | 73.9 | 50 | done | +0.0 |
 | `xhr` | 329 | 3 | 687/1233 | 55.7 | 50 | done | +0.0 |
 | `url` | 34 | 0 | 6672/9998 | 66.7 | 80 | below | +0.0 |
 | `encoding` | 157 | 5 | 1138861/1139871 | 99.9 | 80 | done | +0.0 |
@@ -38,10 +38,19 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `intersection-observer` | 144 | 10 | 178/355 | 50.1 | - | baseline | +0.0 |
 | `mixed-content` | 388 | 0 | 1216/2281 | 53.3 | 50 | done | +0.0 |
 | `upgrade-insecure-requests` | 197 | 0 | 281/1000 | 28.1 | 25 | done | +0.0 |
-| `html/browsers/sandboxing` | 21 | 1 | 11/32 | 34.4 | 30 | done | +6.3 |
-| `fetch/metadata` | 87 | 0 | 541/1828 | 29.6 | 25 | done | new |
-| `referrer-policy` | 1392 | 0 | 4166/8465 | 49.2 | 45 | done | new |
-| `content-security-policy/script-src` | 97 | 0 | 68/215 | 31.6 | 30 | done | new |
+| `html/browsers/sandboxing` | 21 | 1 | 11/32 | 34.4 | 30 | done | +0.0 |
+| `fetch/metadata` | 87 | 0 | 541/1828 | 29.6 | 25 | done | +0.0 |
+| `referrer-policy` | 1392 | 0 | 4166/8465 | 49.2 | 45 | done | +0.0 |
+| `content-security-policy/script-src` | 97 | 0 | 127/217 | 58.5 | 55 | done | +0.5 |
+| `content-security-policy/frame-ancestors` | 34 | 0 | 32/36 | 88.9 | 85 | done | +0.0 |
+| `x-frame-options` | 6 | 0 | 61/157 | 38.9 | 35 | done | +0.0 |
+| `fetch/nosniff` | 6 | 0 | 47/65 | 72.3 | 72 | done | new |
+| `html/cross-origin-opener-policy` | 116 | 0 | 9/615 | 1.5 | 1 | done | new |
+| `content-security-policy/style-src` | 42 | 0 | 80/87 | 92.0 | 80 | done | new |
+| `content-security-policy/img-src` | 15 | 0 | 15/20 | 75.0 | 70 | done | new |
+| `content-security-policy/connect-src` | 30 | 0 | 14/38 | 36.8 | 35 | done | new |
+| `content-security-policy/securitypolicyviolation` | 38 | 0 | 30/76 | 39.5 | 35 | done | new |
+| `content-security-policy` | 894 | 1 | 2323/4076 | 57.0 | 55 | done | new |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |

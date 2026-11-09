@@ -1,6 +1,7 @@
 import engine
 import std
 import std.heap.Arena
+import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -17,7 +18,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [7][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", ""}
+    var argv = [8][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -26,6 +27,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
 
     if !engine.scriptingEnabled() {
         argv[n] = "--no-js"
+        n += 1
+    }
+
+    if text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "site") {
+        argv[n] = "--site-frames"
         n += 1
     }
 
@@ -67,6 +73,8 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32) AllocError!?*mut Tab
         site: text.Builder.init(alloc),
         pids: text.Builder.init(alloc),
         swap_url: text.Builder.init(alloc),
+        children: List(ChildFrame).init(alloc),
+        held: List(*mut HeldFetch).init(alloc),
     })
 
     try tp.pids.appendInt(pid as i64)

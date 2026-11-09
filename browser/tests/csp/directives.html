@@ -1,0 +1,33 @@
+<!doctype html>
+<title>CSP directives</title>
+<pre id="out"></pre>
+<style nonce="s">#a { margin-left: 3px }</style>
+<style>#a { margin-right: 4px }</style>
+<div id="a" style="padding-left: 5px">x</div>
+<script>
+const out = document.getElementById('out');
+const other = new URLSearchParams(location.search).get('other');
+const log = s => { out.textContent += s + '\n'; };
+const short = u => u.replace(location.origin, '').replace(other, 'OTHER');
+document.addEventListener('securitypolicyviolation', e => log('violation ' + e.effectiveDirective + ' ' + short(e.blockedURI) + ' ' + e.disposition));
+const a = document.getElementById('a');
+const margins = () => getComputedStyle(a).marginLeft + ' ' + getComputedStyle(a).marginRight + ' ' + getComputedStyle(a).paddingLeft;
+log('sheets ' + document.styleSheets.length + ' margins ' + margins());
+a.style.paddingRight = '6px';
+log('cssom ' + getComputedStyle(a).paddingRight);
+const base = document.createElement('base');
+base.href = other + '/';
+document.head.append(base);
+log('base ' + short(document.baseURI));
+const img = new Image();
+img.onerror = () => log('image error');
+img.onload = () => log('image load');
+img.src = other + '/csp/cross.js';
+const frame = document.createElement('iframe');
+frame.onload = () => log('frame load ' + (frame.contentDocument ? 'document' : 'no document'));
+frame.src = other + '/csp/frame-none.html';
+document.body.append(frame);
+fetch(other + '/csp/cross.js').then(() => log('fetch ok'), () => log('fetch failed'));
+fetch('/csp/same.js').then(() => log('same fetch ok'), () => log('same fetch failed'));
+log('beacon ' + navigator.sendBeacon(other + '/beacon', 'x'));
+</script>

@@ -59,6 +59,7 @@ struct Load {
     initiator: []mut u8 = []mut u8{}
     key: []mut u8 = []mut u8{}
     referrer_policy: ?ReferrerPolicy = null
+    top: []mut u8 = []mut u8{}
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -85,6 +86,7 @@ struct Ask {
     has_res: bool
     res: Response
     failure: []u8
+    code: u32 = 18
 }
 
 struct Loader {
@@ -124,6 +126,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
     if !text.startsWith(href, "http://") && !text.startsWith(href, "https://") {
         return 0
     }
+    if remote_loader |rl| { return startRemoteLoad(rl, href, req) }
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
 
@@ -180,6 +183,11 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         freeLoad(ld, l)
         return 0
     }
+    l.top = dup(ld.alloc, req.top) catch |e| {
+        _ = ld.loads.pop()
+        freeLoad(ld, l)
+        return 0
+    }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(key) {
         l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null)
@@ -194,6 +202,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
 
 /// The state of the load `id`; Failed when there is none.
 pub fn loadState(id: u32) LoadState {
+    if remote_loader |rl| { return remoteState(rl, id) }
     let ld = loader orelse return LoadState.Failed
     let l = loadById(ld, id) orelse return LoadState.Failed
     return l.state
@@ -202,12 +211,14 @@ pub fn loadState(id: u32) LoadState {
 /// Is a load of `href` (without the fragment) still held by a request,
 /// running or not?
 pub fn loadHeld(href: []u8) bool {
+    if remote_loader |rl| { return remoteByHref(rl, href) != null }
     let ld = loader orelse return false
     return findLoad(ld, href) != null
 }
 
 /// The id of the load of `href` that is held; 0 when there is none.
 pub fn loadOf(href: []u8) u32 {
+    if remote_loader |rl| { return remoteIdOf(rl, href) }
     let ld = loader orelse return 0
     let l = findLoad(ld, href) orelse return 0
     return l.id
@@ -216,6 +227,7 @@ pub fn loadOf(href: []u8) u32 {
 /// Did the load of `href` that is held fail? The request that follows
 /// must not fetch it again.
 pub fn loadFailed(href: []u8) bool {
+    if remote_loader |rl| { return remoteHrefFailed(rl, href) }
     let ld = loader orelse return false
     let l = findLoad(ld, href) orelse return false
     return l.state == LoadState.Failed
@@ -224,6 +236,7 @@ pub fn loadFailed(href: []u8) bool {
 /// The URL (without the fragment) of the load `id` when it failed;
 /// null when it did not, or there is none.
 pub fn failedHref(id: u32) ?[]u8 {
+    if remote_loader |rl| { return remoteFailedHref(rl, id) }
     let ld = loader orelse return null
     let l = loadById(ld, id) orelse return null
     if l.state != LoadState.Failed {
@@ -234,6 +247,7 @@ pub fn failedHref(id: u32) ?[]u8 {
 
 /// Is any load running?
 pub fn loadsRunning() bool {
+    if remote_loader |rl| { return remoteRunning(rl) }
     let ld = loader orelse return false
     return anyRunning(ld)
 }
@@ -241,6 +255,7 @@ pub fn loadsRunning() bool {
 /// Lets the transfers progress, without waiting: data that arrived is
 /// read, finished loads are kept.
 pub fn pumpLoads() {
+    if remote_loader |rl| { return remotePump(rl, 0) }
     let ld = loader orelse return
     extendForStall(ld)
     if !anyRunning(ld) {
@@ -257,6 +272,7 @@ pub fn pumpLoads() {
 /// Waits until the load `id` is no longer running (libcurl's timeouts
 /// bound it: 10 s to connect, 30 s in all per hop).
 pub fn waitLoad(id: u32) {
+    if remote_loader |rl| { return remoteWait(rl, id) }
     let ld = loader orelse return
     extendForStall(ld)
     while true {
@@ -279,6 +295,7 @@ pub fn waitLoad(id: u32) {
 
 /// A request no longer needs the load `id`: the last one ends it.
 pub fn releaseLoad(id: u32) {
+    if remote_loader |rl| { return remoteRelease(rl, id) }
     let ld = loader orelse return
     for i, l in ld.loads.items() {
         if l.id != id {
@@ -298,7 +315,7 @@ pub fn releaseLoad(id: u32) {
 /// archive answers at once), nor for a URL other than http or https:
 /// those are made with `request`.
 pub fn liveRequest(target: *Url) bool {
-    if session == null || archiveReplay() {
+    if (session == null && remote_loader == null) || archiveReplay() {
         return false
     }
     return text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
@@ -310,6 +327,7 @@ pub fn liveRequest(target: *Url) bool {
 /// no longer running, `requestResponse` or `requestError` tells what it
 /// got; `releaseLoad` ends it.
 pub fn startRequest(target: *Url, req: Request) u32 {
+    if remote_loader |rl| { return remoteStart(rl, target, req, false) }
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
     var sendable = true
@@ -331,6 +349,7 @@ pub fn startRequest(target: *Url, req: Request) u32 {
 /// The response of the script's request `id` once it is done; null
 /// while it runs, when it failed, or when there is none.
 pub fn requestResponse(id: u32) ?*Response {
+    if remote_loader |rl| { return remoteResponse(rl, id) }
     let ld = loader orelse return null
     let l = loadById(ld, id) orelse return null
     let a = l.ask orelse return null
@@ -343,6 +362,7 @@ pub fn requestResponse(id: u32) ?*Response {
 /// Why the script's request `id` failed (`describe`); "" when it did
 /// not.
 pub fn requestError(id: u32) []u8 {
+    if remote_loader |rl| { return remoteError(rl, id) }
     let ld = loader orelse return "network error"
     let l = loadById(ld, id) orelse return "network error"
     let a = l.ask orelse return ""
@@ -445,6 +465,7 @@ fn failRequest(ld: *mut Loader, l: *mut Load, e: FetchError) {
     let a = l.ask orelse return
     l.state = LoadState.Failed
     a.failure = describe(e)
+    a.code = fetchErrorCode(e)
     endRequest(ld, l)
 }
 
@@ -817,5 +838,6 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
     release(ld.alloc, l.referrer)
     release(ld.alloc, l.initiator)
     release(ld.alloc, l.key)
+    release(ld.alloc, l.top)
     ld.alloc.destroy(l)
 }

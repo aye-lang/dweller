@@ -1,0 +1,24 @@
+import std.mem.Allocator
+import std.text
+
+let NR_LANDLOCK_ADD_RULE: i64 = 445
+let LANDLOCK_RULE_PATH_BENEATH: u64 = 1
+let LANDLOCK_READ_FILE_AND_DIR: u64 = 0xc
+let O_PATH_CLOEXEC: i32 = 0x280000
+
+fn allowReads(alloc: Allocator, ruleset: i64, dir: []u8) {
+    var path = text.Builder.init(alloc)
+
+    defer path.deinit()
+    path.append(dir) catch return
+    path.appendByte(0) catch return
+
+    let parent = openPath(path.bytes().ptr, O_PATH_CLOEXEC)
+
+    if parent < 0 { return }
+
+    var rule = [2]u64{LANDLOCK_READ_FILE_AND_DIR, parent as u64}
+
+    syscall(NR_LANDLOCK_ADD_RULE, ruleset, LANDLOCK_RULE_PATH_BENEATH, rule[..].ptr, 0 as u64)
+    close(parent)
+}

@@ -410,6 +410,55 @@ fn window_frame_lists_reused() {
     assert!(all <= 2, "{all} frames built every list: {builds:?}");
 }
 
+/// Q4.22: a rAF tick that writes the text an element already has, with
+/// no MutationObserver on the page, changes nothing: only the load and
+/// the tick that writes other text build the display list.
+#[test]
+fn window_same_text_write_builds_nothing() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let png = std::env::temp_dir().join(format!("dweller-q422-{}.png", std::process::id()));
+    let err = damage_window_run("browser/tests/ui/same_text.html", &png, "painted");
+    let _ = std::fs::remove_file(&png);
+    let builds: Vec<usize> = frame_records(&err)
+        .iter()
+        .map(|f| f.iter().filter(|(n, _)| n == "paint_build").count())
+        .collect();
+    let built = builds.iter().filter(|&&n| n > 0).count();
+    assert!(built >= 2, "{built} frames built a list: {builds:?}");
+    assert!(built <= 4, "{built} frames built a list: {builds:?}");
+}
+
+/// Q4.20: a page whose only change is canvas draws (one in the page, one
+/// in an iframe, 40 rAF ticks) lays out and builds its display list only
+/// for the load, yet every tick draws the canvas's rect, and the last
+/// frame equals the final page drawn from the start.
+#[test]
+fn window_canvas_raf_no_relayout() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = std::env::temp_dir();
+    let id = std::process::id();
+    let changed = dir.join(format!("dweller-q420-changed-{id}.png"));
+    let whole = dir.join(format!("dweller-q420-whole-{id}.png"));
+    let err = damage_window_run("browser/tests/ui/canvas_raf.html", &changed, "painted");
+    damage_window_run("browser/tests/ui/canvas_raf_final.html", &whole, "painted");
+    let (a, b) = (std::fs::read(&changed).unwrap(), std::fs::read(&whole).unwrap());
+    let _ = std::fs::remove_file(&changed);
+    let _ = std::fs::remove_file(&whole);
+    assert!(a == b, "the window differs from the final page drawn whole");
+    let frames = frame_records(&err);
+    let count = |name: &str| frames.iter().flatten().filter(|(n, _)| n == name).count();
+    let drawn = frames.iter().filter(|f| f.iter().any(|(n, _)| n == "raster_px")).count();
+    assert!(count("ui_relayout") <= 3, "{} relayouts", count("ui_relayout"));
+    assert!(count("paint_build") <= 8, "{} display-list builds", count("paint_build"));
+    assert!(drawn >= 40, "{drawn} frames drew pixels");
+}
+
 /// A trackpad scrolls by fractions of a device pixel (P4.36b): the window
 /// draws the page at its scroll offset snapped to device pixels, so such a
 /// frame moves the last frame's pixels and draws the band, the fixed

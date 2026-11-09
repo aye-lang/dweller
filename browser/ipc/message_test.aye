@@ -162,6 +162,15 @@ test "fetch messages round-trip and go the right way" {
     @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", referrer_policy: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
     @expect(!fromRenderer(Message.FetchHead { id: 0, doc: 0, status: 0, tainted: 0, mime: "", charset: "", url: "", headers: "" }) && !fromRenderer(Message.FetchBody { id: 0, chunk: "" }))
     @expect(!fromRenderer(Message.FetchEnd { id: 0 }) && !fromRenderer(Message.FetchFail { id: 0, code: 0 }))
+
+    let cancel = try roundTrip(&mut out, 7, Message.FetchCancel { id: 9 })
+
+    match cancel.message {
+        .FetchCancel { id } => @expectEqual(9, id)
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.FetchCancel { id: 9 }))
 }
 
 test "cookie and storage messages round-trip and go the right way" {

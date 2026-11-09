@@ -1,0 +1,40 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+// https://w3c.github.io/webappsec-csp/#should-block-inline
+fn markStyles(p: *mut Page, report: bool) AllocError!void {
+    if !mentionsStyle(p) {
+        return
+    }
+
+    let version = domVersion(p)
+    let parsing = report && parserStop(p) != null
+
+    if p.styles_marked == version && (!report || p.styles_reported == version) && !parsing {
+        return
+    }
+
+    if report && parserStart(p) {
+        return
+    }
+
+    if !parsing {
+        p.styles_marked = version
+    }
+
+    if report && !parsing {
+        p.styles_reported = version
+    }
+
+    var cur: ?NodeId = p.doc.root
+
+    while cur |h| {
+        if parsing && dom.isSame(parserStop(p), h) {
+            break
+        }
+
+        try markStyleElement(p, h, report)
+        cur = p.doc.following(h, p.doc.root)
+    }
+}

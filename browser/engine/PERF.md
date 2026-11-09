@@ -1478,3 +1478,58 @@ tab. Per steady frame (medians): `ui_relayout` 5.0 ms (mean 7.5), of it
 same-text skip (`Node::setTextContent`) applies only without mutation
 observers, and mistral has `childList` + `subtree` observers on `BODY`, so
 no code change here; the next step is a partial display-list rebuild.
+
+## Q4.16c: canvas drawImage on rows (2026-11-09)
+
+`docs/plans/cards/Q4.16c.md`. Benchmark `browser/tests/perf/canvas_drawimage.html`
+(12 scaled `drawImage`s, two at `globalAlpha` 0.5, one rotated, 8 small paths
+a frame), `DWELLER_TIMING=1 target/dweller URL --frames 202` minus a 2-frame
+run, per frame. `browser/build.sh` (safe) builds of the parent and of the
+change, alternated, 3 runs each, SDL dummy driver, load 4 to 8 (shared
+machine). Medians: `canvas_draw` 21.6 -> 5.7 ms a frame (-74%), `ui_loop` 36.6
+-> 23.8 ms. The screenshot after 202 frames and a 17-draw coverage page are
+byte-identical; WPT `html/canvas/element` drawing-images, fill-and-stroke,
+compositing, shadows and transformations score the same per file. The cost was
+per-pixel work: the inverse matrix, `floor`/`clamp`, four `premul` and three
+`mix` calls through structs, and a mode if-chain in `canvasComposite`. The
+axis-aligned draw now maps each column and row once and blends rows from the
+tables; rotated draws and path fill are unchanged.
+
+## Q4.22: the idle relayout of an animating page (2026-11-09)
+
+`docs/plans/cards/Q4.22.md`. Pages `browser/tests/perf/idle_relayout.html`
+(a `MutationObserver` on `BODY` like mistral's) and `idle_relayout_plain.html`
+(none): 14 `@font-face` rules over 4 local font files, 36 images, 1500 rows, a
+2000-rule sheet, a rAF loop drawing on a canvas and writing `textContent = "0%"`,
+5 iframes (one with a rAF canvas). `DWELLER_TIMING=1 target/dweller PAGE
+--frames 300`, SDL dummy driver, `browser/build.sh` builds of the parent
+(with `fonts` and `layout_frames` timing records) and of the change,
+interleaved A B A B A B, load 2 to 3. Medians of 3, ms per `ui_relayout`
+(`fonts`, `images`, `layout_frames` and `paint_build` are summed over the
+tab's 6 documents):
+
+| | observer, before | observer, after | plain, before | plain, after |
+| --- | ---: | ---: | ---: | ---: |
+| relayouts in 300 frames | 290 | 276 | 290 | 266 |
+| `ui_relayout` | 9.16 | 7.18 | 9.24 | 6.45 |
+| `fonts` (`loadWebFonts`) | 1.26 | 0.01 | 1.33 | 0.01 |
+| `images` (`fillImagesWith`) | 1.36 | 0.01 | 1.39 | 0.01 |
+| `layout_frames` | 0.20 | 0.11 | 0.27 | 0.14 |
+| `layout_dirty` | 0.72 | 0.73 | 0.76 | 0.00 |
+| `restyle` | 0.09 | 0.07 | 0.08 | 0.00 |
+| `paint_build` | 4.75 | 5.32 | 4.70 | 5.43 |
+
+`layoutShared` ran `loadWebFonts` (a URL parse and resolve per unused face,
+`familyUsed` over every declaration) and `fillImagesWith` on each relayout
+though nothing they read had changed. Now a styling remembers the measurer's
+web-font count when no face is wanted (`Styling.fonts_settled`), and an image
+cache remembers a stamp of the DOM version minus the text and canvas writes,
+the script image version, the node changes, the decode landings, the style
+sheet key and the viewport (`ImageCache.filled`); a text write or a canvas
+draw does not move the image-relevant version. `textContent` with the text the
+element's only Text child already has returns at once when no
+`MutationObserver` was ever registered in the document (Blink does the same).
+Mistral has observers, so its relayout stays; what is left of
+`ui_relayout` is the display-list rebuild (`paint_build`) that the animating
+iframe canvas needs (a canvas draw moves the DOM version) and the observed
+`textContent` replace.

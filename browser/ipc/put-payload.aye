@@ -38,6 +38,37 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .FrameAck { buffer } => try putU32(out, buffer)
+        .Subframes { frames } => try putBytes(out, frames)
+        .WheelUnused { seq, dx, dy } => {
+            try putU32(out, seq)
+            try putF64(out, dx)
+            try putF64(out, dy)
+        }
+
+        .ScrollBubble { seq, x, y, dx, dy } => {
+            let at = [4]f64{x, y, dx, dy}
+
+            try putU32(out, seq)
+
+            for v in at { try putF64(out, v) }
+        }
+
+        .FocusFrame { key, how } => {
+            try putU32(out, key)
+            try putU32(out, how)
+        }
+
+        .AdvanceFocus { key, reverse } => {
+            try putU32(out, key)
+            try putU32(out, reverse)
+        }
+
+        .ViewportIntersection { x0, y0, x1, y1 } => {
+            let at = [4]u32{x0, y0, x1, y1}
+
+            for v in at { try putU32(out, v) }
+        }
+
         .Ping { n } => try putU32(out, n)
         .Pong { n } => try putU32(out, n)
         .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
@@ -147,6 +178,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .FetchEnd { id } => try putU32(out, id)
+        .FetchCancel { id } => try putU32(out, id)
         .FetchFail { id, code } => {
             try putU32(out, id)
             try putU32(out, code)

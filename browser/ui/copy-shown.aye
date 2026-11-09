@@ -1,0 +1,28 @@
+import paint
+import std
+import std.math
+
+fn copyShown(ui: *mut Ui, tp: *TabProcess, r: paint.IRect, at_x: i64, at_y: i64) {
+    let b = &tp.buffers
+
+    if b.shown < b.first { return }
+
+    let map = tp.maps[b.shown - b.first] orelse return
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+    let x0 = math.maxOf(i64, r.x0, at_x)
+    let y0 = math.maxOf(i64, r.y0, math.maxOf(i64, at_y, 0))
+    let x1 = math.minOf(i64, r.x1, math.minOf(i64, at_x + b.width as i64, pd.canvas.width as i64))
+    let y1 = math.minOf(i64, r.y1, math.minOf(i64, at_y + b.height as i64, h))
+
+    if x1 <= x0 || y1 <= y0 || x0 < 0 { return }
+
+    let n = (x1 - x0) as usize * 4
+
+    for y in y0..y1 {
+        let from = ((y - at_y) as usize * b.width as usize + (x0 - at_x) as usize) * 4
+        let to = (((y + pd.ring) % h) as usize * pd.canvas.width + x0 as usize) * 4
+
+        std.mem.copy(pd.canvas.pixels[to..to + n], map[from..from + n])
+    }
+}

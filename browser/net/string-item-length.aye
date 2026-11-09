@@ -1,0 +1,26 @@
+// https://httpwg.org/specs/rfc8941.html#parse-string
+fn stringItemLength(s: []u8) usize {
+    var n: usize = 1
+
+    while n < s.len {
+        if s[n] == '"' {
+            return n + 1
+        }
+
+        if s[n] < 0x20 || s[n] > 0x7e {
+            return 0
+        }
+
+        if s[n] == '\\' {
+            if n + 1 >= s.len || (s[n + 1] != '"' && s[n + 1] != '\\') {
+                return 0
+            }
+
+            n += 1
+        }
+
+        n += 1
+    }
+
+    return 0
+}

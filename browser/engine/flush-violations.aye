@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+// https://w3c.github.io/webappsec-csp/#report-violation
+fn flushViolations(s: *mut Script) AllocError!void {
+    let p = s.page
+    var i: usize = 0
+
+    while i < p.violations.len() {
+        if !parserPassed(p, p.violations.items()[i].at) {
+            i += 1
+            continue
+        }
+
+        let q = p.violations.orderedRemove(i)
+        defer freePolicy(p.alloc, q.blocked)
+
+        try refuseRequest(p, null, q.refusal, q.blocked)
+    }
+}

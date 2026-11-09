@@ -30,6 +30,8 @@ struct TabRenderer {
     docs: text.Builder
     top: text.Builder
     fetches: u32 = 0
+    pending: List(*mut PendingFetch)
+    landed: bool = false
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
@@ -75,6 +77,10 @@ struct TabRenderer {
     hist_null: bool = true
     said_state: text.Builder
     said_null: bool = true
+    subframes: text.Builder
+    embedded: bool = false
+    visible: [4]u32 = [4]u32{0, 0, 0, 0}
+    focus_said: u32 = 0
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -125,5 +131,10 @@ struct TabRenderer {
         self.history.deinit()
         self.hist_state.deinit()
         self.said_state.deinit()
+        self.subframes.deinit()
+
+        for p in self.pending.items() { p.deinit(self.alloc) }
+
+        self.pending.deinit()
     }
 }

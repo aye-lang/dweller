@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn copyResponse(alloc: Allocator, res: *Response) AllocError!Response {
+    let mime = try copyBytes(alloc, res.mime)
+
+    errdefer alloc.free(mime)
+    let charset = try copyBytes(alloc, res.charset)
+
+    errdefer alloc.free(charset)
+    let body = try copyBytes(alloc, res.body)
+
+    errdefer alloc.free(body)
+    let moved = try dup(alloc, res.url)
+
+    errdefer release(alloc, moved)
+    let headers = try dup(alloc, res.headers_raw)
+
+    return Response { mime: mime, charset: charset, body: body, status: res.status, url: moved, headers_raw: headers, tainted: res.tainted }
+}

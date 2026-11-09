@@ -1,0 +1,48 @@
+import std.math
+
+pub struct ImageTap {
+    valid: bool
+    i0: usize
+    i1: usize
+    t: u32
+}
+
+pub struct TapAxis {
+    origin: i64
+    m: f64
+    e: f64
+    nat: f64
+    scale: f64
+    size: usize
+    smooth: bool
+    repeat: bool
+}
+
+fn tapAt(ax: TapAxis, k: usize) ImageTap {
+    var s = ax.m * ((ax.origin + k as i64) as f64 + 0.5) + ax.e
+
+    if ax.repeat {
+        s -= math.floor(s / ax.nat) * ax.nat
+    }
+
+    if s < 0.0 || s >= ax.nat {
+        return ImageTap { valid: false, i0: 0, i1: 0, t: 0 }
+    }
+
+    let p = s * ax.scale
+
+    if !ax.smooth {
+        return ImageTap { valid: true, i0: p as usize, i1: p as usize, t: 0 }
+    }
+
+    let f = math.clamp(p - 0.5, 0.0, (ax.size - 1) as f64)
+    let i0 = math.floor(f) as usize
+
+    return ImageTap { valid: true, i0: i0, i1: math.minOf(usize, i0 + 1, ax.size - 1), t: ((f - i0 as f64) * 256.0) as u32 }
+}
+
+pub fn imageTaps(taps: []mut ImageTap, ax: TapAxis) {
+    for k in 0..taps.len {
+        taps[k] = tapAt(ax, k)
+    }
+}

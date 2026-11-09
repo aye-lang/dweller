@@ -1,0 +1,40 @@
+import std
+import std.mem.Allocator
+
+extern fn syscall(nr: i64, ...) i64
+
+let NR_LANDLOCK_CREATE_RULESET: i64 = 444
+let NR_LANDLOCK_RESTRICT_SELF: i64 = 446
+let LANDLOCK_CREATE_RULESET_VERSION: u64 = 1
+let LANDLOCK_TCP_BIND_AND_CONNECT: u64 = 3
+let LANDLOCK_SCOPE_UNIX_AND_SIGNAL: u64 = 3
+let HANDLED_FS_BY_ABI = [6]u64{0, 0x1fff, 0x3fff, 0x7fff, 0x7fff, 0xffff}
+let RULESET_SIZE_BY_ABI = [7]u64{0, 8, 8, 8, 16, 16, 24}
+
+// https://docs.kernel.org/userspace-api/landlock.html
+fn restrictPaths(alloc: Allocator) bool {
+    let abi = syscall(NR_LANDLOCK_CREATE_RULESET, 0 as u64, 0 as u64, LANDLOCK_CREATE_RULESET_VERSION)
+
+    if abi < 1 { return false }
+
+    var ruleset = [3]u64{HANDLED_FS_BY_ABI[upTo(abi, 5)], LANDLOCK_TCP_BIND_AND_CONNECT, LANDLOCK_SCOPE_UNIX_AND_SIGNAL}
+    let fd = syscall(NR_LANDLOCK_CREATE_RULESET, ruleset[..].ptr, RULESET_SIZE_BY_ABI[upTo(abi, 6)], 0 as u64)
+
+    if fd < 0 { return false }
+
+    defer close(fd as i32)
+    allowReads(alloc, fd, "/usr")
+
+    if std.fs.readLink(alloc, "/proc/self/exe") |exe| {
+        defer alloc.free(exe)
+        allowReads(alloc, fd, std.path.dirname(exe))
+    } else |e| {}
+
+    return syscall(NR_LANDLOCK_RESTRICT_SELF, fd, 0 as u64) == 0
+}
+
+fn upTo(abi: i64, last: i64) usize {
+    if abi > last { return last as usize }
+
+    return abi as usize
+}

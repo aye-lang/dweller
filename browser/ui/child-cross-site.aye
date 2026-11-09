@@ -1,0 +1,11 @@
+import std.mem.AllocError
+import std.text
+
+fn childCrossSite(tp: *TabProcess, href: []u8) AllocError!bool {
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+
+    try writeSite(href, &mut site)
+
+    return text.startsWith(site.bytes(), "http") && !text.eql(site.bytes(), tp.site.bytes())
+}

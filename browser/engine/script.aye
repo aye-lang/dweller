@@ -326,6 +326,7 @@ pub struct Script {
     // Counts the images that requests decoded, which the page's layout
     // shows (`treeVersion`).
     image_version: u64 = 0
+    image_neutral: u64 = 0
     current: ?NodeId
     width: f64
     height: f64
@@ -369,6 +370,7 @@ pub struct Script {
     // Counts the changes to geometry that are not changes to the
     // document: scroll offsets and the viewport.
     geometry_changes: u64
+    visible: ?[4]f64 = null
     // The prelude's rendering-update hook (IntersectionObserver; NONE
     // until it set one), called after a task when the document or its
     // geometry changed since the last call (`hook_stamp`).
@@ -661,7 +663,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         }
     }
     s.it.script_url = s.it.intern(p.base.href) catch return AllocError.OutOfMemory
-    s.it.eval_refusal = csp.evalRefusal(p.csp) orelse ""
+    installEvalGate(s)
     return s
 }
 
@@ -1045,7 +1047,7 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
         return
     }
     if isModuleScript(p, el) {
-        return fireScriptEvent(s, el, try runModuleElement(s, el))
+        return fireScriptEvent(s, el, try runModuleElement(s, el, true))
     }
     if isScriptType(p, el, "importmap") {
         return addImportMap(s, el)
@@ -1056,7 +1058,7 @@ fn runScriptElement(s: *mut Script, el: NodeId) AllocError!void {
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     try p.doc.textContent(el, &mut b)
-    if try inlineRefused(s, el, b.bytes()) {
+    if try inlineRefused(s, el, b.bytes(), true) {
         return
     }
     return runSourceOf(s, el, b.bytes())
@@ -1375,6 +1377,8 @@ fn runMicrotasks(s: *mut Script) AllocError!void {
     // Changes the browser made (default actions, the parser of
     // document.write) reach the observers too.
     try flushReported(s)
+    try markStyles(s.page, true)
+    try flushViolations(s)
     var head: usize = 0
     let started_work = s.work
     var late = false

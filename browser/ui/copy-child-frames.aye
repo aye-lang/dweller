@@ -1,0 +1,21 @@
+import paint
+
+// chromium: components/viz/service/display/surface_aggregator.cc (EmitSurfaceContent, EmitDefaultBackgroundColorQuad)
+fn copyChildFrames(ui: *mut Ui, tp: *TabProcess, r: paint.IRect, ox: i64, oy: i64, bound: paint.IRect) {
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+        let clip = paint.intersect(movedRect(c.clip, ox, oy), bound)
+        let area = paint.intersect(clip, r)
+
+        if area.x1 <= area.x0 || area.y1 <= area.y0 { continue }
+
+        if child.gone.len > 0 {
+            fillSadFrame(ui, area)
+
+            continue
+        }
+
+        copyShown(ui, child, area, ox + c.x, oy + c.y)
+        copyChildFrames(ui, child, r, ox + c.x, oy + c.y, clip)
+    }
+}

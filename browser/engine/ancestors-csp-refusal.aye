@@ -1,0 +1,23 @@
+import csp
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://w3c.github.io/webappsec-csp/#frame-ancestors-navigation-response
+fn ancestorsCspRefusal(alloc: Allocator, p: *mut Page, c: *Page) AllocError!?[]mut u8 {
+    var cur: ?*mut Page = p
+
+    while cur |a| {
+        let at = originPage(a)
+
+        if csp.frameAncestorsRefusal(c.header_csp, &at.url, a.opaque, &c.url) |directive| {
+            let tail = try refusalMessage(alloc, "' because an ancestor violates the following Content Security Policy directive: \"", directive, "\".")
+            defer alloc.free(tail)
+
+            return try refusalMessage(alloc, "Refused to frame '", c.url.href, tail)
+        }
+
+        cur = a.parent
+    }
+
+    return null
+}

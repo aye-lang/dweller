@@ -1,0 +1,13 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn akCspRefused(it: *mut Interp, a: Args) JsError!Value {
+    let target = try argUrl(it, a) orelse return js.boolVal(false)
+    defer target.deinit(it.alloc)
+
+    return js.boolVal(try requestRefused(scriptOf(it).page, "connect-src", &target, null))
+}

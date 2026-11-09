@@ -1,3 +1,4 @@
+import dom
 import dom.NodeId
 import std
 import std.mem.AllocError
@@ -6,7 +7,7 @@ import std.text
 // spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-setproperty
 fn putStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!void {
     let doc = &mut s.active.doc
-    let old = doc.attr(el, "style") orelse ""
+    let old = styleAttrOf(s.active, el)
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     var done = false
@@ -33,4 +34,6 @@ fn putStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!
     }
 
     try doc.setAttr(el, "style", b.bytes())
+    dom.clearStyleMark(doc, el, dom.MARK_ATTR_BLOCKED)
+    try dom.setCssomStyle(doc, fnv32(b.bytes()))
 }

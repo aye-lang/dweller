@@ -1,0 +1,30 @@
+import std.text
+
+// https://httpwg.org/specs/rfc8941.html#parse-item
+fn coopOfToken(value: []u8) Coop {
+    var token = value
+    var params: []u8 = ""
+
+    if text.indexOf(value, ";") |semi| {
+        token = value[..semi]
+        params = value[semi..]
+    }
+
+    if !isStructuredToken(token) || !validCoopParams(params) {
+        return Coop.UnsafeNone
+    }
+
+    if text.eql(token, "same-origin") {
+        return Coop.SameOrigin
+    }
+
+    if text.eql(token, "same-origin-allow-popups") {
+        return Coop.SameOriginAllowPopups
+    }
+
+    if text.eql(token, "noopener-allow-popups") {
+        return Coop.NoopenerAllowPopups
+    }
+
+    return Coop.UnsafeNone
+}

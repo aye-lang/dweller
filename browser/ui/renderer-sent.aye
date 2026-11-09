@@ -47,7 +47,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
             if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
 
-            return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+            return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
 
         .HistoryGo { index } => {
@@ -129,6 +129,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerFetch(tp, got.frame, got.message)
         }
 
+        .FetchCancel { id } => {
+            if got.frame != slot.id { return "bad fetch_cancel" }
+
+            return cancelFetch(tp, id)
+        }
+
         .OutOfMemory => {
             if got.frame != slot.id { return "bad out_of_memory" }
 
@@ -147,6 +153,19 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerStorage(tp, got.frame, got.message)
         }
 
+        .Subframes { frames } => {
+            if got.frame != slot.id { return "bad subframes" }
+
+            return takeSubframes(tp, frames)
+        }
+
+        .FocusFrame { key, how } => {
+            if got.frame != slot.id { return "bad focus_frame" }
+
+            return focusFrame(tp, key, how)
+        }
+
+        .WheelUnused { .. } => return "unexpected wheel_unused"
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 

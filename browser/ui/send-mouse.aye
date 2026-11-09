@@ -1,9 +1,12 @@
 import ipc
 import std.mem.AllocError
 
-fn sendMouse(ui: *mut Ui, tp: *mut TabProcess, kind: u32, button: u32, mx: f64, my: f64) AllocError!void {
-    let m = ipc.Message.Mouse { seq: tp.seq + 1, kind: kind, x: ui.mouse_x, y: ui.mouse_y - ui.top(), mx: mx, my: my, button: button, buttons: ui.buttons, mods: modBits(SDL_GetModState()) as u32, clicks: ui.clicks as u32 }
+fn sendMouse(ui: *mut Ui, hit: FrameHit, kind: u32, button: u32, mx: f64, my: f64) AllocError!void {
+    let tp = hit.tp
+    let x = ui.mouse_x - hit.ox as f64 / ui.scale
+    let y = ui.mouse_y - ui.top() - hit.oy as f64 / ui.scale
+    let m = ipc.Message.Mouse { seq: tp.seq + 1, kind: kind, x: x, y: y, mx: mx, my: my, button: button, buttons: ui.buttons, mods: modBits(SDL_GetModState()) as u32, clicks: ui.clicks as u32 }
 
     tp.seq += 1
-    try ipc.encode(&mut tp.outbox, ui.slots[ui.active].?.id, m)
+    try ipc.encode(&mut tp.outbox, tp.tab, m)
 }

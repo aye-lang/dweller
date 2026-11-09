@@ -1,0 +1,29 @@
+import std
+import std.mem.Allocator
+import std.text
+
+extern fn prctl(option: i32, ...) i32
+extern fn uname(out: [*]u8) i32
+
+let PR_SET_NO_NEW_PRIVS: i32 = 38
+let UTS_MACHINE: usize = 260
+
+fn enterLinuxSandbox(alloc: Allocator) bool {
+    if prctl(PR_SET_NO_NEW_PRIVS, 1 as u64, 0 as u64, 0 as u64, 0 as u64) != 0 {
+        std.log.err("sandbox: no_new_privs failed ({})", errno())
+
+        return false
+    }
+
+    let landlocked = restrictPaths(alloc)
+
+    if !onX86_64() { return landlocked }
+
+    return installSeccomp(alloc, landlocked)
+}
+
+fn onX86_64() bool {
+    var uts = @zeroed([390]u8)
+
+    return uname(uts[..].ptr) == 0 && text.eql(uts[UTS_MACHINE..UTS_MACHINE + 7], "x86_64\x00")
+}

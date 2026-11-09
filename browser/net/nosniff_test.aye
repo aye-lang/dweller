@@ -1,0 +1,56 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn nosniffResponse(a: Allocator, mime: []u8) AllocError!Response {
+    let headers = "X-Content-Type-Options: nosniff"
+    var res = try respond(a, mime, try a.alloc(0 as u8, 0))
+
+    res.headers_raw = try a.alloc(0 as u8, headers.len)
+    std.mem.copy(res.headers_raw, headers)
+
+    return res
+}
+
+test "nosniff is the first value of the first X-Content-Type-Options header, any case" {
+    @expect(nosniff("X-Content-Type-Options: nosniff"))
+    @expect(nosniff("x-content-type-options: NOSNIFF"))
+    @expect(nosniff("X-Content-Type-Options: nosniff,,@#$"))
+    @expect(nosniff("X-Content-Type-Options: nosniff\nX-Content-Type-Options: no"))
+    @expect(!nosniff("X-Content-Type-Options: @#$,nosniff"))
+    @expect(!nosniff("X-Content-Type-Options: no\nX-Content-Type-Options: nosniff"))
+    @expect(!nosniff("X-Content-Type-Options: nosniff2"))
+    @expect(!nosniff(""))
+}
+
+test "javascript MIME types are the essence match list" {
+    @expect(javascriptMime("text/javascript"))
+    @expect(javascriptMime("text/javascript1.0"))
+    @expect(javascriptMime("application/x-ecmascript"))
+    @expect(!javascriptMime("text/json"))
+    @expect(!javascriptMime(""))
+    @expect(!javascriptMime("text/html"))
+}
+
+test "nosniff blocks a script that is not JavaScript and a sheet that is not CSS" {
+    let a = @testAllocator()
+    let script = Request { kind: Kind.Script, initiator: Initiator.Browser }
+    let style = Request { kind: Kind.Style, initiator: Initiator.Browser }
+    let image = Request { kind: Kind.Image, initiator: Initiator.Browser }
+    var html = try nosniffResponse(a, "text/html")
+    var js = try nosniffResponse(a, "text/javascript")
+    var css = try nosniffResponse(a, "text/css")
+    var none = try nosniffResponse(a, "")
+    defer html.deinit(a)
+    defer js.deinit(a)
+    defer css.deinit(a)
+    defer none.deinit(a)
+
+    @expect(nosniffBlocked(script, &html))
+    @expect(nosniffBlocked(script, &none))
+    @expect(!nosniffBlocked(script, &js))
+    @expect(nosniffBlocked(style, &html))
+    @expect(nosniffBlocked(style, &none))
+    @expect(!nosniffBlocked(style, &css))
+    @expect(!nosniffBlocked(image, &html))
+}

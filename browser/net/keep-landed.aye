@@ -1,0 +1,25 @@
+let LANDED_BYTES: usize = 64 << 20
+
+fn keepLanded(rl: *mut RemoteLoader, key: []u8, codes: [3]u32, res: Response) {
+    while rl.landed.len() > 0 && rl.landed_bytes + res.body.len > LANDED_BYTES {
+        let old = rl.landed.orderedRemove(0)
+
+        rl.landed_bytes -= old.res.body.len
+        freeLanded(rl.alloc, old)
+    }
+
+    let owned = dup(rl.alloc, key) catch |e| {
+        res.deinit(rl.alloc)
+
+        return
+    }
+
+    rl.landed.append(Landed { key: owned, codes: codes, res: res }) catch |e| {
+        release(rl.alloc, owned)
+        res.deinit(rl.alloc)
+
+        return
+    }
+
+    rl.landed_bytes += res.body.len
+}

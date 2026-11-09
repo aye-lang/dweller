@@ -1,0 +1,20 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// blink: core/intersection_observer/intersection_geometry.cc (an OOPIF's implicit root: the frame's rect in the top's viewport)
+fn akVisibleRect(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let v = s.visible orelse return Value.Null
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+
+    if v[2] > 0.0 && v[3] > 0.0 {
+        for n in v { try it.heap.pushElem(arr, js.numVal(n)) }
+    }
+
+    return it.pop()
+}

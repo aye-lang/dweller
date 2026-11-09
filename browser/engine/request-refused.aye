@@ -1,0 +1,23 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn requestRefused(p: *mut Page, effective: []u8, target: *Url, el: ?NodeId) AllocError!bool {
+    if requestRefusal(p, effective, target) |r| {
+        try queueViolation(p, r, el, reportedUri(target))
+
+        return !r.report
+    }
+
+    return false
+}
+
+fn reportedUri(target: *Url) []u8 {
+    if text.eql(target.scheme, "data") || text.eql(target.scheme, "blob") || text.eql(target.scheme, "filesystem") {
+        return target.scheme
+    }
+
+    return target.withoutFragment()
+}

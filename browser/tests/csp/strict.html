@@ -1,0 +1,26 @@
+<!doctype html>
+<title>CSP strict-dynamic</title>
+<pre id="out"></pre>
+<script nonce="r">
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+</script>
+<script src="same.js"></script>
+<script nonce="r">
+(async () => {
+  log('parser: ran ' + !!self.same);
+  const el = document.createElement('script');
+  el.src = 'same.js?dynamic';
+  await new Promise(resolve => {
+    el.onload = resolve;
+    document.head.appendChild(el);
+  });
+  log('inserted: ran ' + !!self.same);
+  try {
+    await import('./same.js?module');
+    log('import: ok');
+  } catch (e) {
+    log('import: refused');
+  }
+})();
+</script>

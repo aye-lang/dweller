@@ -1,0 +1,14 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: components/input/render_widget_host_input_event_router.cc (BubbleScrollEvent)
+fn bubbleScroll(ui: *Ui, tp: *mut TabProcess, c: ChildFrame, left: [2]f64) AllocError!void {
+    let child = c.tp.?
+    let x = child.wheel_at[0] + c.x as f64 / ui.scale
+    let y = child.wheel_at[1] + c.y as f64 / ui.scale
+
+    tp.seq += 1
+    tp.wheel_seq = tp.seq
+    tp.wheel_at = [4]f64{x, y, left[0], left[1]}
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ScrollBubble { seq: tp.seq, x: x, y: y, dx: left[0], dy: left[1] })
+}

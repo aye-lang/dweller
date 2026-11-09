@@ -1,0 +1,24 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn placeChecked(p: *mut Page, el: NodeId, c: *mut Page) AllocError!*mut Page {
+    let message = (try framingRefusal(p.alloc, p, c)) orelse {
+        placeFrame(p, el, c)
+
+        return c
+    }
+
+    defer p.alloc.free(message)
+
+    if p.script |s| {
+        try addConsole(s, "[error] ", message)
+    }
+
+    let shown = try errorPage(p.alloc, &c.url, "This content is blocked.")
+
+    c.destroy()
+    placeFrame(p, el, shown)
+    setSandbox(shown, shown.sandbox | SB_ORIGIN | SB_SCRIPTS)
+
+    return shown
+}

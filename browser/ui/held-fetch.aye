@@ -1,0 +1,27 @@
+import net
+import std.mem.Allocator
+import std.text
+
+struct HeldFetch {
+    id: u32
+    on: u32
+    load: u32
+    ask: bool
+    codes: [3]u32
+    href: text.Builder
+    initiator: text.Builder
+    method: text.Builder
+    referrer: text.Builder
+    top: text.Builder
+    policy: ?net.ReferrerPolicy = null
+
+    pub fn deinit(self: *mut Self, alloc: Allocator) {
+        net.releaseLoad(self.load)
+        self.href.deinit()
+        self.initiator.deinit()
+        self.method.deinit()
+        self.referrer.deinit()
+        self.top.deinit()
+        alloc.destroy(self)
+    }
+}

@@ -1,0 +1,25 @@
+import ipc
+
+let PUMP_READS: u32 = 64
+
+fn pumpRemote(ms: i32) bool {
+    let r = fetch_renderer orelse return false
+    var buf = @zeroed([65536]u8)
+    var wait = ms
+    var reads: u32 = 0
+
+    scanReplies(r, 0, false, "", null) catch return false
+
+    while reads < PUMP_READS && waitReadable(r.conn.fd, wait) {
+        let n = ipc.recvFds(r.conn.fd, buf[..], &mut r.fds) catch return false
+
+        if n <= 0 { return false }
+
+        r.inbox.append(buf[..n as usize]) catch return false
+        scanReplies(r, 0, false, "", null) catch return false
+        wait = 0
+        reads += 1
+    }
+
+    return true
+}

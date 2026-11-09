@@ -222,7 +222,7 @@ pub let PRELUDE =
     \\  if (e && !e.prop && e.src === src) return e.fn;
     \\  let fn = null;
     \\  try {
-    \\    fn = ak.compile(src);
+    \\    fn = ak.compile(src, t === G ? document.body : t);
     \\  } catch (err) {
     \\    report(err);
     \\  }
@@ -479,6 +479,8 @@ pub let PRELUDE =
     \\    // An uncaught exception (script.aye fireErrorEvent): key is the
     \\    // message, x the value thrown.
     \\    ev = new ErrorEvent(type, { cancelable: true, message: key, error: x });
+    \\  } else if (type === 'securitypolicyviolation') {
+    \\    ev = new SecurityPolicyViolationEvent(type, Object.assign(JSON.parse(key), { bubbles: true, composed: true }));
     \\  } else if (type === 'submit') {
     \\    ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: ak.submitter() });
     \\  } else {
@@ -1383,7 +1385,7 @@ pub let PRELUDE =
     \\  get plugins() { return []; }
     \\  get mimeTypes() { return []; }
     \\  javaEnabled() { return false; }
-    \\  sendBeacon() { return true; }
+    \\  sendBeacon(url) { return !ak.cspRefused(String(url)); }
     \\  vibrate() { return false; }
     \\}
     \\hidden(G, 'Navigator', Navigator);
@@ -2783,6 +2785,8 @@ pub let PRELUDE =
     \\    const box = target.getBoundingClientRect();
     \\    const rendered = target.getClientRects().length > 0 && (!root || (root !== target && root.contains(target)));
     \\    let cut = rendered ? cutRect([box.x, box.y, box.width, box.height], bounds) : null;
+    \\    const seen = root ? null : ak.visibleRect();
+    \\    if (cut && seen) cut = seen.length ? cutRect(cut, seen) : null;
     \\    // The scroll containers between the target and the root clip it.
     \\    for (let c = target.parentElement; cut && c && c !== root && c !== document.documentElement; c = c.parentElement) {
     \\      if (ak.metric(c, 12)) cut = cutRect(cut, scrollClip(c, this.scrollMargin));
@@ -3320,6 +3324,7 @@ pub let PRELUDE =
     \\const PointerEvent = eventClass('PointerEvent', MouseEvent, { pointerId: 0, width: 1, height: 1, pressure: 0, tangentialPressure: 0, tiltX: 0, tiltY: 0, twist: 0, pointerType: '', isPrimary: false });
     \\eventClass('WheelEvent', MouseEvent, { deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0 });
     \\eventClass('DragEvent', MouseEvent, { dataTransfer: null });
+    \\eventClass('SecurityPolicyViolationEvent', Event, { documentURI: '', referrer: '', blockedURI: '', effectiveDirective: '', violatedDirective: '', originalPolicy: '', disposition: 'enforce', sourceFile: '', sample: '', statusCode: 0, lineNumber: 0, columnNumber: 0 });
     \\
     \\// Blob and File: the bytes are a string of code units 0..255 (UTF-8 for
     \\// string parts).
@@ -4019,13 +4024,13 @@ pub let PRELUDE =
     \\}
     \\getter(Document.prototype, 'styleSheets', function () {
     \\  const list = [];
-    \\  for (const el of this.querySelectorAll('style, link[rel~="stylesheet" i]')) list.push(ownedSheet(el));
+    \\  for (const el of this.querySelectorAll('style, link[rel~="stylesheet" i]')) if (!ak.styleBlocked(el)) list.push(ownedSheet(el));
     \\  hidden(list, 'item', i => list[i] || null);
     \\  return list;
     \\});
-    \\getter(HTMLStyleElement.prototype, 'sheet', function () { return this.isConnected ? ownedSheet(this) : null; });
+    \\getter(HTMLStyleElement.prototype, 'sheet', function () { return this.isConnected && !ak.styleBlocked(this) ? ownedSheet(this) : null; });
     \\getter(HTMLLinkElement.prototype, 'sheet', function () {
-    \\  return this.isConnected && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
+    \\  return this.isConnected && !ak.styleBlocked(this) && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
     \\});
     \\hidden(G, 'CSS', {
     \\  supports(a, b) { return b === undefined ? ak.supports(String(a)) || ak.supports('(' + String(a) + ')') : ak.supports('(' + String(a) + ': ' + String(b) + ')'); },
@@ -4264,6 +4269,7 @@ pub let PRELUDE =
     \\      this._nodes.push(target);
     \\    }
     \\    ak.setRecording(true);
+    \\    ak.setObserved();
     \\  }
     \\  disconnect() {
     \\    for (const n of this._nodes) {

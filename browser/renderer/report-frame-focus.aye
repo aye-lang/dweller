@@ -1,0 +1,21 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame.cc (DidFocus: a script focused the remote frame's owner)
+fn reportFrameFocus(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    var key: u32 = 0
+
+    if engine.scriptFocus(p) |f| {
+        key = engine.remoteFrameKey(p, f) orelse 0
+    }
+
+    if evilTest("focus-frame") {
+        key = 0x7fffffff
+    }
+
+    if key == r.focus_said { return }
+
+    r.focus_said = key
+
+    if key != 0 { try send(r.alloc, r.conn, r.tab, ipc.Message.FocusFrame { key: key, how: 0 }) }
+}

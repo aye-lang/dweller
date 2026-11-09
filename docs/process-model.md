@@ -98,8 +98,8 @@ protocol.
 |---|---|
 | lifecycle | R→B `hello{version, pid}` (the first message, frame 0; the browser checks the version and that the pid is the one it spawned); Q2.2a only, until Q2.6 brings the navigation group: B→R `navigate{url}` (frame = the tab), R→B `loaded{title, url}` (the renderer loads the page itself and runs its scripts and timers); `font` and `js` of `init` go as spawn arguments for now (`--font fixed|system`, `--no-js`, Q2.2c); B→R `init{lock, partition, scale, font, js, flags}`; B→R `shutdown` (SIGKILL after 1 s, as for Spaces); B→R `visible{frame, on}` (hidden: timers throttled, no frames); B→R `memory_pressure`; Q2.5: B→R `ping{n}` (frame 0, at most once a second, one open at a time), R→B `pong{n}` (the same `n`, else `bad pong`) |
 | navigation | R→B `begin_navigation{frame, url, method, body, referrer, target, gesture, replace}` (links, forms, `location`, `window.open`); B→R `commit_navigation{frame, nav, url, origin, status, headers, entry}`, then `body_data{nav, bytes}` and `body_done{nav}`; R→B `did_commit{frame, nav, url, origin}`; R→B `same_document{frame, url, state, replace}` (pushState, fragments); B→R `navigate{frame, entry}` (back, forward, reload); B→R `before_unload` and `unload{frame}`, with replies; R→B `loading{frame, state}`, `title{frame, text}`; Q2.3d has R→B `title{text}` and `same_document{url}`, and the browser kills a renderer whose `loaded` or `same_document` URL is not the one it navigated to, the same document, or the same origin (`bad url`) |
-| frames | B→R `buffers{frame, w, h}` with 2 fds; R→B `frame{frame, buffer, seq, damage[], children[], over?}` (§5); B→R `frame_ack{frame, buffer}`; B→R `resize{frame, w, h, scale}`; R→B `child_size{child, w, h}`; B→R `viewport_intersection{frame, rect}` |
-| input | Q2.3a: B→R `mouse{seq, kind (0 move, 1 down, 2 up, 3 leave), x, y, mx, my, button, buttons, mods, clicks}`, `wheel{seq, x, y, dx, dy, precise}` (CSS px, coalesced per loop iteration; x = y = -1 when the mouse is not over the page), `key{seq, down, key, code, repeat, location, mods}` (DOM `key` and `code`), `text{seq, text}`, all in the tab's viewport coordinates; R→B `input_ack{seq}` (every input up to `seq` handled and its frame sent; later `consumed, dx, dy` for scroll that bubbles up); Q2.3d: B→R `focus{on}` (the page has the window's focus or not: the window lost it, or the toolbar took it; the renderer hides the caret and stops its blink); Tab, the focus ring, the caret and the selection of text fields are the renderer's; R→B `cursor`, `status_url`, `focus_changed{frame}`, `advance_focus{frame, dir}`; B→R `focus{frame, dir}`; B→R `hit_test{frame, x, y}`, R→B its reply; B→R `find{text, dir}`, R→B `find_reply{count, active, rects}`; B→R `edit{copy, paste, select_all}`; R→B `popup{frame, rect, items}`, B→R `popup_choice`; R→B `long_task{ms}` |
+| frames | B→R `buffers{frame, w, h}` with 2 fds; R→B `frame{frame, buffer, seq, damage[], children[], over?}` (§5); B→R `frame_ack{frame, buffer}`; B→R `resize{frame, w, h, scale}`; R→B `child_size{child, w, h}`; B→R `viewport_intersection{frame, rect}`; Q2.9 has R→B `subframes{frames}` (43: per remote frame its key, rect, clip in the parent's buffer and URL; the browser starts, resizes and ends the child renderers from it), and a child renderer gets the existing `navigate`, `resize`, `frame_ack` on a frame id of its own |
+| input | Q2.3a: B→R `mouse{seq, kind (0 move, 1 down, 2 up, 3 leave), x, y, mx, my, button, buttons, mods, clicks}`, `wheel{seq, x, y, dx, dy, precise}` (CSS px, coalesced per loop iteration; x = y = -1 when the mouse is not over the page), `key{seq, down, key, code, repeat, location, mods}` (DOM `key` and `code`), `text{seq, text}`, all in the tab's viewport coordinates; R→B `input_ack{seq}` (every input up to `seq` handled and its frame sent; later `consumed, dx, dy` for scroll that bubbles up); Q2.3d: B→R `focus{on}` (the page has the window's focus or not: the window lost it, or the toolbar took it; the renderer hides the caret and stops its blink); Tab, the focus ring, the caret and the selection of text fields are the renderer's; Q2.10 (with `DWELLER_PROCESS=site`): the browser routes mouse and wheel input by the children's rects and clips from `subframes` (top-most child at the point, recursively, in the child's coordinates; a mouse down captures its frame until the last button is up) and keys and text to the focused frame; R→B `wheel_unused{seq, dx, dy}` (44: the part of a wheel or bubbled scroll the child did not use; the browser kills a child that claims more than it was sent) becomes B→R `scroll_bubble{seq, x, y, dx, dy}` (45) to the embedder, which scrolls from that point without a wheel event; R→B `focus_frame{key, how}` (46: Tab or Shift+Tab into a remote frame, or its owner's `focus()`), B→R `advance_focus{key, reverse}` (47: Tab into the frame from its start or end, or onward from remote child `key`, which sent `take_focus`); B→R `viewport_intersection{x0, y0, x1, y1}` (48: the child's visible rect in the top's viewport, its own device px; IntersectionObserver's implicit root clips by it); R→B `cursor`, `status_url`, `focus_changed{frame}`, `advance_focus{frame, dir}`; B→R `focus{frame, dir}`; B→R `hit_test{frame, x, y}`, R→B its reply; B→R `find{text, dir}`, R→B `find_reply{count, active, rects}`; B→R `edit{copy, paste, select_all}`; R→B `popup{frame, rect, items}`, B→R `popup_choice`; R→B `long_task{ms}` |
 | network | R→B `load{id, frame, url, method, headers, body, kind, mode, credentials, initiator}`; B→R `load_response{id, status, url, mime, charset, headers}`, `load_data{id, bytes}`, `load_done{id, error}`; R→B `load_cancel{id}`; R→B (s) `load_sync{...}` (sync XHR, and today's blocking `net.request` callers until they become async) |
 | cookies, storage | R→B (s) `cookie_get{frame, url}`; R→B `cookie_set{frame, url, line}`; R→B (s) `storage_open{frame, kind, origin}` returns every item; R→B `storage_set`, `storage_remove`, `storage_clear`; B→R `storage_event{origin, kind, key, old, new, url}` to the other renderers of the origin |
 | frame tree, proxies | R→B (s) `frame_created{parent, name, sandbox}` returns the id; R→B `frame_detached{frame}`; B→R `proxy_create{frame, parent, opener, origin, name, sandbox}`, `proxy_update`, `proxy_delete`; B→R `swap_out{frame}` (the frame now lives in another process: a proxy replaces it); R→B `post_message{from, to, source_origin, target_origin, data}`, B→R `message{to, from, origin, data}`; R→B `proxy_navigate{to, url}`, `proxy_focus`, `proxy_blur`, `proxy_close`, `opener_cleared`, `name_changed` |
@@ -289,29 +289,30 @@ profile has the shape of `sandbox/policy/mac/common.sb` and
   Q2.8 can try an empty mach list. Q2.8 also checks what wasmtime's
   machine code needs.
 
-**Linux.** Layer 1, required: seccomp-bpf after
-`prctl(PR_SET_NO_NEW_PRIVS)`.
-- Allowed: `read`, `write`, `readv`, `writev`, `recvmsg`, `sendmsg` on
-  open fds, `poll`, `close`, `fstat`, `lseek`, `mmap`, `munmap`,
-  `mprotect`, `madvise`, `brk`, `futex`, `clone` with thread flags
-  only, `exit`, `exit_group`, clocks and sleeps, `getpid`, `gettid`, signal masks and returns,
-  `sched_yield`, `getrandom`.
-- `open` and `openat` fail with `EPERM`, so a stray lazy open fails
-  softly. `socket`, `connect`, `execve`, `fork`, `ptrace` and `kill` of
-  another process kill the renderer (`SIGSYS`).
-- One syscall table each for x86_64 and aarch64.
-- `PROT_EXEC` stays allowed. The JS has no JIT, but WebAssembly runs on
-  wasmtime, which writes machine code.
-
-Layer 2, best effort: `unshare` of the user, net and IPC namespaces,
-and a chroot to an empty directory. Ubuntu 23.10 and later can forbid
-unprivileged user namespaces (AppArmor). Then the renderer runs with
-seccomp only and prints one warning. Chromium uses both layers
-(`sandbox/linux/seccomp-bpf/`, the namespace sandbox). Fonts: the
-renderer opens the fixed list of `font/freetype.aye` before it enters
-the sandbox. A fallback font that it needs later comes as an fd from the
-browser (`font_open`), as Chromium's font IPC does
-(`docs/linux/sandbox_ipc.md`).
+**Linux** (as built in Q2.8b, `browser/renderer/enter-linux-sandbox.aye`):
+`prctl(PR_SET_NO_NEW_PRIVS)`, then two layers.
+- Layer 1, Landlock (any kernel ≥ 5.13 that has it; ABI 7 here):
+  read-only access beneath `/usr` (libraries, `/usr/share/fonts`) and
+  the executable's directory, nothing writable, no TCP bind or connect
+  (ABI ≥ 4), no signals or abstract sockets outside the sandbox
+  (ABI ≥ 6). It replaces Chromium's broker and namespace chroot
+  (`sandbox/linux/syscall_broker/`, `sandbox/linux/services/credentials.cc`):
+  it confines paths unprivileged and in-process, while Ubuntu 23.10 and
+  later forbid unprivileged user namespaces (AppArmor).
+- Layer 2, seccomp-bpf (x86_64), with `SECCOMP_FILTER_FLAG_TSYNC`: an
+  allowlist in the shape of Chromium's baseline and renderer policies
+  (`read`, `write`, `recvmsg`, `sendmsg` on held fds, memory incl.
+  `PROT_EXEC` for wasmtime, `futex`, clocks and sleeps, signals on
+  itself, `getrandom`, `rseq`, exit); `open`/`openat` only without write
+  flags and only when Landlock is on; `clone` only with thread flags,
+  `clone3` ENOSYS (glibc falls back to `clone`); everything else
+  (`socket`, `connect`, `execve`, `fork`, `ptrace`, `kill`, writes by
+  path) fails with `EPERM`.
+- Fonts: the system faces are read before entry; fallback faces are
+  opened later by path under `/usr/share/fonts`, which Landlock allows.
+  Without Landlock seccomp refuses every open and those faces are
+  missing; a `font_open` from the browser (Chromium's font IPC,
+  `docs/linux/sandbox_ipc.md`) would bring them back.
 
 The utility process gets the same profile without the fonts.
 

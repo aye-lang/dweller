@@ -49,6 +49,7 @@ pub struct Styling {
     styles: css.Styles
     // `domVersion` of the document these styles are for.
     version: u64
+    fonts_settled: ?usize = null
 }
 
 pub struct Page {
@@ -87,6 +88,8 @@ pub struct Page {
     // The documents of its `frame` and `iframe` elements (frames.aye).
     frames: List(Frame)
     box_scrolls: IntMap(u32, layout.BoxScroll)
+    violations: List(QueuedViolation)
+    reported_requests: IntMap(u32, bool)
     // Live frame-element lookups, invalidated by Document.tree_version.
     frame_elements: FrameElementIndex
     // Unique among the pages of the process (`findPage`).
@@ -101,6 +104,13 @@ pub struct Page {
     // origin of its own (without `allow-same-origin`).
     no_scripts: bool
     csp: []u8 = ""
+    header_csp: []u8 = ""
+    report_csp: []u8 = ""
+    styles_marked: u64 = 0xFFFFFFFFFFFFFFFF
+    styles_reported: u64 = 0xFFFFFFFFFFFFFFFF
+    inherited_csp: usize = 0
+    frame_options: net.FrameOptions = net.FrameOptions.Allow
+    coop: net.Coop = net.Coop.UnsafeNone
     opaque: bool
     sandbox: u32
     // Changes the scripts of other pages made to the document (through
@@ -128,6 +138,7 @@ pub struct Page {
     // scripts, 2 loading the frames' documents (`frame_loads`).
     load_step: u8 = 0
     frame_loads: List(FrameLoad)
+    remote: bool = false
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
@@ -158,12 +169,16 @@ pub struct Page {
         }
         self.frames.deinit()
         self.box_scrolls.deinit()
+        dropViolations(self)
+        self.reported_requests.deinit()
         dropFrameLoads(self)
         self.frame_loads.deinit()
         self.frame_elements.nodes.deinit()
         self.history.deinit()
         self.doc.deinit()
         freePolicy(alloc, self.csp)
+        freePolicy(alloc, self.header_csp)
+        freePolicy(alloc, self.report_csp)
         alloc.free(self.title)
         self.url.deinit(alloc)
         self.base.deinit(alloc)
@@ -185,18 +200,19 @@ pub struct Page {
     /// document's URL; else the document's URL. A `base` a script
     /// added, changed or removed counts. about:blank and about:srcdoc
     /// documents keep the one they got from their parent (`base`).
-    pub fn currentBase(self: *Self, alloc: Allocator) AllocError!Url {
+    pub fn currentBase(self: *mut Self, alloc: Allocator) AllocError!Url {
         if text.startsWith(self.url.href, "about:") {
             return url.parse(alloc, self.base.href) catch |e| {
                 return AllocError.OutOfMemory
             }
         }
+        markStyles(self, false) catch |e| {}
         return documentBase(alloc, &self.doc, &self.url)
     }
 
     /// Resolves `href`, a URL of the document, against its current base
     /// URL.
-    pub fn resolve(self: *Self, alloc: Allocator, href: []u8) url.UrlError!Url {
+    pub fn resolve(self: *mut Self, alloc: Allocator, href: []u8) url.UrlError!Url {
         var base = self.currentBase(alloc) catch |e| {
             return url.UrlError.OutOfMemory
         }
@@ -207,7 +223,7 @@ pub struct Page {
     /// Resolves `href`, the URL of a link (or form) of the document that
     /// the user follows: the next load of it sends the document's URL as
     /// the Referer.
-    pub fn follow(self: *Self, alloc: Allocator, href: []u8) url.UrlError!Url {
+    pub fn follow(self: *mut Self, alloc: Allocator, href: []u8) url.UrlError!Url {
         let target = try self.resolve(alloc, href)
         net.noteNavigation(target.href, self.url.href, hasTransientActivation(self)) catch |e| {
             target.deinit(alloc)
@@ -311,7 +327,7 @@ pub struct Page {
             }
         }
         if self.styling |st| {
-            _ = try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads())
+            _ = try loadStyledWebFonts(self, st, measure)
         }
         let images_began = perf.start()
         try updateImages(self, css.Media { width: width, height: height })
@@ -364,7 +380,10 @@ pub struct Page {
             try syncFrames(self)
         }
         setViewport(self, width, height)
-        if try loadWebFonts(self.alloc, &mut st.author, self.url.href, measure, self.heldLoads()) {
+        let fonts_began = perf.start()
+        let fonts_added = try loadStyledWebFonts(self, st, measure)
+        perf.end("fonts", fonts_began, self.url.href)
+        if fonts_added {
             // Text measures differently: lay out again in full.
             s.layout_version += 1
         }
@@ -395,7 +414,9 @@ pub struct Page {
         g.tree.box_scrolls = &mut self.box_scrolls
         self.tree_borrowed = true
         self.doc.hold_frees = true
+        let frames_began = perf.start()
         try layoutFrames(self, measure)
+        perf.end("layout_frames", frames_began, self.url.href)
         return true
     }
 
@@ -449,6 +470,7 @@ pub struct Page {
         var author = try css.Sheet.init(self.alloc)
         errdefer author.deinit()
         let sheets_began = perf.start()
+        try markStyles(self, false)
         try authorSheets(self.alloc, &self.doc, &self.url, media, &mut author)
         perf.end("sheets", sheets_began, self.url.href)
         var styles = try css.Styles.init(self.alloc)
@@ -681,10 +703,18 @@ fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding
     errdefer doc.deinit()
     let policy = try pagePolicy(alloc, &doc, res)
     errdefer freePolicy(alloc, policy)
+    let header_csp = try headerPolicy(alloc, res, "Content-Security-Policy")
+    errdefer freePolicy(alloc, header_csp)
+    let report_csp = try headerPolicy(alloc, res, "Content-Security-Policy-Report-Only")
+    errdefer freePolicy(alloc, report_csp)
     try notePageUpgrades(policy, located.href)
     try notePageReferrerPolicy(alloc, &doc, res, located.href)
     let p = try newPage(alloc, located, res.status, "", doc)
     p.csp = policy
+    p.header_csp = header_csp
+    p.report_csp = report_csp
+    p.frame_options = net.parseFrameOptions(res.headers_raw)
+    p.coop = net.parseCoop(res.headers_raw)
     p.encoding = enc
     p.plain = text.eql(res.mime, "text/plain")
     return p
@@ -747,6 +777,8 @@ fn newPage(alloc: Allocator, located: Url, status: i64, failure: []u8, doc: Docu
         images: null,
         frames: List(Frame).init(alloc),
         box_scrolls: IntMap(u32, layout.BoxScroll).init(alloc),
+        violations: List(QueuedViolation).init(alloc),
+        reported_requests: IntMap(u32, bool).init(alloc),
         frame_loads: List(FrameLoad).init(alloc),
         frame_elements: FrameElementIndex.init(alloc),
         id: id,
@@ -778,7 +810,7 @@ pub fn documentBase(alloc: Allocator, doc: *Document, address: *Url) AllocError!
 fn findBase(alloc: Allocator, doc: *Document, address: *Url) AllocError!Url {
     var cur: ?NodeId = doc.root
     while cur |h| {
-        if doc.isElement(h, "base") {
+        if doc.isElement(h, "base") && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) {
             if doc.attr(h, "href") |href| {
                 if url.resolve(alloc, address, text.trim(href)) |b| {
                     return b

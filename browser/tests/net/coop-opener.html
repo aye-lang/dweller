@@ -1,0 +1,24 @@
+<!doctype html>
+<title>coop opener</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const other = location.origin.replace('127.0.0.1', 'localhost');
+const cases = [
+  ['plain', '/net/coop-popup.html'],
+  ['same-origin', '/coop/same-origin/net/coop-popup.html'],
+  ['allow-popups', '/coop/same-origin-allow-popups/net/coop-popup.html'],
+  ['unsafe-none', '/coop/unsafe-none/net/coop-popup.html'],
+  ['cross-origin', other + '/coop/same-origin/net/coop-popup.html'],
+  ['cross-allow-popups', other + '/coop/same-origin-allow-popups/net/coop-popup.html'],
+];
+const popups = cases.map(([n, u]) => [n, window.open(u + '?n=' + n)]);
+setTimeout(async () => {
+  const logged = await (await fetch('/log')).text();
+  for (const [n, w] of popups) {
+    const seen = logged.split('\n').filter(l => l.startsWith('GET /log/coop-' + n + '-')).map(l => l.split(' ')[1].split('-opener-')[1]);
+    log(n + ': opener handle closed=' + w.closed + ', popup sees opener=' + seen.join());
+  }
+}, 1500);
+</script>

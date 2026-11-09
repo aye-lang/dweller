@@ -1,5 +1,4 @@
 import dom.Document
-import dom.NodeId
 import net
 import std.mem.AllocError
 import std.mem.Allocator
@@ -10,15 +9,7 @@ fn pagePolicy(alloc: Allocator, doc: *Document, res: *net.Response) AllocError![
     var b = text.Builder.init(alloc)
     defer b.deinit()
     try net.appendHeaderValues(res.headers_raw, "Content-Security-Policy", &mut b)
-    var cur: ?NodeId = doc.root
-
-    while cur |h| {
-        if doc.isElement(h, "meta") && text.eqlIgnoreCase(doc.attr(h, "http-equiv") orelse "", "content-security-policy") {
-            try appendPolicy(&mut b, doc.attr(h, "content") orelse "")
-        }
-
-        cur = doc.following(h, doc.root)
-    }
+    try appendMetaPolicies(&mut b, doc)
 
     if b.len() == 0 {
         return ""

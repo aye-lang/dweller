@@ -26,6 +26,8 @@ mod common;
 mod agent;
 #[path = "browser/cli.rs"]
 mod cli;
+#[path = "browser/csp_directives.rs"]
+mod csp_directives;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
 #[path = "browser/fixtures.rs"]
@@ -60,6 +62,14 @@ mod webgl;
 mod window_login;
 #[path = "browser/window_renderer.rs"]
 mod window_renderer;
+#[path = "browser/window_renderer_loads.rs"]
+mod window_renderer_loads;
+#[path = "browser/window_renderer_oopif.rs"]
+mod window_renderer_oopif;
+#[path = "browser/window_renderer_oopif_input.rs"]
+mod window_renderer_oopif_input;
+#[path = "browser/window_renderer_scroll.rs"]
+mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
 mod window_spaces;
 #[path = "browser/wpt.rs"]

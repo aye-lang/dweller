@@ -1,0 +1,20 @@
+import url.Url
+
+fn newRemoteLoad(rl: *mut RemoteLoader, target: *Url, key: []mut u8, codes: [3]u32, joins: bool) ?*mut RemoteLoad {
+    let href = dup(rl.alloc, target.withoutFragment()) catch |e| {
+        rl.alloc.free(key)
+
+        return null
+    }
+
+    let l = rl.alloc.create(RemoteLoad { id: rl.next_id, href: href, key: key, codes: codes, joins: joins, res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{}, headers_raw: []mut u8{} } }) catch |e| {
+        release(rl.alloc, href)
+        rl.alloc.free(key)
+
+        return null
+    }
+
+    rl.next_id += 1
+
+    return l
+}

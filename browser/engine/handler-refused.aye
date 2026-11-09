@@ -1,0 +1,23 @@
+import csp
+import js.Args
+import js.Interp
+
+// https://w3c.github.io/webappsec-csp/#should-block-inline
+fn handlerRefused(it: *mut Interp, a: Args) bool {
+    let s = scriptOf(it)
+    let el = handleOf(it, it.arg(a, 1), TAG_NODE) orelse return false
+    let b = it.builder() catch return false
+    defer it.release(b)
+
+    argText(it, a, 0, b) catch return false
+
+    let refusal = csp.inlineRefusal(s.alloc, s.page.csp, csp.Inline.Attribute, "", true, b.bytes()) catch return false
+
+    if refusal |r| {
+        refuseInline(s, el, r, "execute inline event handler", b.bytes()) catch return true
+
+        return true
+    }
+
+    return false
+}

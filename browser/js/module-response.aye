@@ -1,12 +1,12 @@
 import net
 import url.Url
 
-pub let ModuleLoader = fn(*mut Interp, *Url, []u8, net.Credentials) net.FetchError!net.Response
+pub let ModuleLoader = fn(*mut Interp, *Url, []u8, net.Credentials, bool) net.FetchError!net.Response
 
 // spec: https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-fn moduleResponse(it: *mut Interp, target: *Url, referrer: []u8, credentials: net.Credentials) net.FetchError!net.Response {
+fn moduleResponse(it: *mut Interp, target: *Url, referrer: []u8, credentials: net.Credentials, json: bool) net.FetchError!net.Response {
     if it.module_loader |load| {
-        return load(it, target, referrer, credentials)
+        return load(it, target, referrer, credentials, json)
     }
 
     return net.request(it.alloc, target, net.Request { kind: net.Kind.Script, referrer: referrer, credentials: credentials, mode: net.Mode.Cors, initiator: net.Initiator.Page { url: referrer } })

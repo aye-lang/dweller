@@ -1,0 +1,14 @@
+import ipc
+
+// chromium: content/browser/renderer_host/render_widget_host_view_child_frame.cc (GestureEventAck: the scroll a child did not use bubbles)
+fn sayUnused(r: *mut TabRenderer, seq: u32, left: [2]f64) !void {
+    var dy = left[1]
+
+    if evilTest("wheel") {
+        dy = -1.0e6
+    }
+
+    if !r.embedded || (left[0] == 0.0 && dy == 0.0) { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.WheelUnused { seq: seq, dx: left[0], dy: dy })
+}

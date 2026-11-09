@@ -309,7 +309,7 @@ pub fn focusables(page: *Page, out: *mut List(NodeId)) AllocError!void {
     var cur: ?NodeId = doc.root
     var seq: usize = 0
     while cur |h| {
-        if focusableElement(doc, h) && boxed.contains(h.index) && !(doc.attr(h, "tabindex") != null && tabIndex(doc, h) < 0) {
+        if (focusableElement(doc, h) || remoteFrameKey(page, h) != null) && boxed.contains(h.index) && !(doc.attr(h, "tabindex") != null && tabIndex(doc, h) < 0) {
             let ti = tabIndex(doc, h)
             if ti > 0 {
                 try first.append(Ordered { el: h, tab: ti, seq: seq })
@@ -324,7 +324,7 @@ pub fn focusables(page: *Page, out: *mut List(NodeId)) AllocError!void {
     }
     cur = doc.root
     while cur |h| {
-        if focusableElement(doc, h) && boxed.contains(h.index) && tabIndex(doc, h) == 0 {
+        if (focusableElement(doc, h) || remoteFrameKey(page, h) != null) && boxed.contains(h.index) && tabIndex(doc, h) == 0 {
             try out.append(h)
         }
         cur = doc.following(h, doc.root)
@@ -441,7 +441,7 @@ pub fn submitForm(page: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!
     var target = page.resolve(alloc, action) catch |e| {
         return null
     }
-    if text.eql(target.scheme, "javascript") {
+    if text.eql(target.scheme, "javascript") || (try requestRefused(page, "form-action", &target, form)) {
         target.deinit(alloc)
         return null
     }

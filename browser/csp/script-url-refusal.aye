@@ -2,14 +2,14 @@ import std.text
 import url.Url
 
 // https://w3c.github.io/webappsec-csp/#should-block-request
-pub fn scriptUrlRefusal(policies: []u8, target: *Url, page: *Url, nonce: []u8) ?[]u8 {
+pub fn scriptUrlRefusal(policies: []u8, target: *Url, page: *Url, nonce: []u8, parser_inserted: bool) ?Refusal {
     var all = text.split(policies, ",")
 
     while all.next() |policy| {
-        let d = scriptDirective(policy, true) orelse continue
+        let d = scriptDirective(policy, "script-src-elem") orelse continue
 
-        if !listAllowsUrl(sourceList(d), target, page, nonce) {
-            return d
+        if !listAllowsUrl(sourceList(d), target, page, nonce, parser_inserted) {
+            return Refusal { policy: text.trim(policy), directive: d, effective: "script-src-elem" }
         }
     }
 

@@ -1,0 +1,12 @@
+fn inputWaits(tp: *TabProcess) bool {
+    if tp.gone.len > 0 { return false }
+    if tp.acked != tp.seq || tp.unused != null { return true }
+
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        if inputWaits(child) { return true }
+    }
+
+    return false
+}

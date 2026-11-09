@@ -1,0 +1,17 @@
+// https://w3c.github.io/webappsec-csp/#effective-directive-for-request
+fn fallbackDirective(policy: []u8, effective: []u8) ?[]u8 {
+    if directiveOf(policy, effective) |d| {
+        return d
+    }
+
+    var at: usize = 0
+    let chain = fallbackChain(effective)
+
+    while nextWord(chain, &mut at) |name| {
+        if directiveOf(policy, name) |d| {
+            return d
+        }
+    }
+
+    return null
+}

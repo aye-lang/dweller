@@ -16,7 +16,7 @@ fn installGlobalExtras(it: *mut Interp) JsError!void {
 // new Function(p1, ..., body): the source
 // "(function anonymous(p1,...\n) {\nbody\n})" run as a script.
 fn functionCtor(it: *mut Interp, a: Args) JsError!Value {
-    try refuseStringCode(it)
+    try refuseStringCode(it, "")
     let b = try it.builder()
     defer it.release(b)
     try b.append("(function anonymous(")
@@ -43,7 +43,7 @@ fn globalEval(it: *mut Interp, a: Args) JsError!Value {
     if !isStr(v) {
         return v
     }
-    try refuseStringCode(it)
+    try refuseStringCode(it, it.heap.bytes(strOf(v)))
     let scope = it.ast.scopes.len() as u32
     try it.ast.scopes.append(ScopeInfo { nslots: 0, closures: false, funcs: 0, nfuncs: 0, kind: SCOPE_SCRIPT })
     return runEval(it, v, scope * 2)

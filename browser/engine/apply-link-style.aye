@@ -1,0 +1,20 @@
+import csp
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+import url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn applyLinkStyle(p: *mut Page, h: NodeId, report: bool) AllocError!void {
+    let href = text.trim(p.doc.attr(h, "href") orelse return)
+    let base = try p.currentBase(p.alloc)
+    defer base.deinit(p.alloc)
+    let target = url.resolve(p.alloc, &base, href) catch return
+    defer target.deinit(p.alloc)
+
+    let nonce = elementNonce(p, h)
+    let enforced = csp.urlRefusal(policyAt(p, h), "style-src-elem", &target, &p.url, nonce)
+    let reported = csp.urlRefusal(p.report_csp, "style-src-elem", &target, &p.url, nonce)
+
+    try applyStyleRefusal(p, h, false, csp.orReport(enforced, reported), fnv32(target.href), target.href, report)
+}

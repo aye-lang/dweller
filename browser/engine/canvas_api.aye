@@ -71,7 +71,7 @@ fn canvasBitmap(it: *mut Interp, v: Value) JsError!*mut CanvasBitmap {
         return JsError.Thrown
     }
     if p.images == null {
-        p.images = try p.alloc.create(ImageCache.init(p.alloc))
+        p.images = try newImageCache(p)
     }
     let cache = p.images.?
     for i in 0..cache.canvases.len() {
@@ -142,18 +142,6 @@ fn resetCanvas(p: *mut Page, h: NodeId, key: []u8) AllocError!void {
             resizeWebGL(c)
             return
         }
-    }
-}
-
-fn canvasChanged(it: *mut Interp) {
-    if workerBitmapsOf(it) != null {
-        return
-    }
-    let s = scriptOf(it)
-    if s.active == s.page {
-        s.version += 1
-    } else {
-        s.active.mutations += 1
     }
 }
 
@@ -241,7 +229,7 @@ fn canvasSource(it: *mut Interp, source: Value) JsError!?CanvasSource {
         return null
     }
     if p.images == null {
-        p.images = try p.alloc.create(ImageCache.init(p.alloc))
+        p.images = try newImageCache(p)
     }
     let cache = p.images.?
     if cache.referrer.len == 0 {
@@ -328,7 +316,7 @@ pub struct CanvasStroke {
 fn canvasStroke(it: *mut Interp, key: Value) JsError!CanvasStroke {
     let page = scriptOf(it).active
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     let cache = page.images.?
     let kv = try it.toStringValue(key)
@@ -757,6 +745,10 @@ fn modeOf(mode: []u8) u8 {
 // are.
 fn canvasComposite(dst: []mut u8, dst_width: usize, area: CanvasArea, src: []u8, clip: ?[]u8, alpha: f64, mode_name: []u8) {
     let mode = modeOf(mode_name)
+    if mode == MODE_OVER && clip == null {
+        compositeOver(dst, dst_width, area, src, alpha)
+        return
+    }
     // A transparent source pixel leaves the destination as it is: a
     // round trip through these formulas gives back its bytes (a
     // transparent destination pixel is 0,0,0,0 already).
@@ -907,44 +899,7 @@ fn canvasPaint(it: *mut Interp, style: Value, area: CanvasArea, px: []mut u8) Js
             }
             return
         }
-        // Source coordinates are in the image's natural (CSS) pixels.
-        let nw = img.width as f64 / src.scale_x
-        let nh = img.height as f64 / src.scale_y
-        for ay in 0..area.h {
-            for ax in 0..area.w {
-                let i = (ay * area.w + ax) * 4
-                // Paint times no coverage is nothing (the color bytes
-                // may hold coverage from before a shadow's blur).
-                if px[i + 3] == 0 {
-                    for k in 0..4 {
-                        px[i + k] = 0
-                    }
-                    continue
-                }
-                let x = area.x + ax as i64
-                let y = area.y + ay as i64
-                var sx = inv.mapX(x as f64 + 0.5, y as f64 + 0.5)
-                var sy = inv.mapY(x as f64 + 0.5, y as f64 + 0.5)
-                if repeatX {
-                    sx -= math.floor(sx / nw) * nw
-                }
-                if repeatY {
-                    sy -= math.floor(sy / nh) * nh
-                }
-                if sx < 0.0 || sy < 0.0 || sx >= nw || sy >= nh {
-                    for k in 0..4 {
-                        px[i + k] = 0
-                    }
-                    continue
-                }
-                let sample = paint.sampleImage(img.pixels, img.width, img.height, sx * src.scale_x, sy * src.scale_y, smooth)
-                let cover = px[i + 3] as u32
-                px[i] = ((sample.r * cover + 127) / 255) as u8
-                px[i + 1] = ((sample.g * cover + 127) / 255) as u8
-                px[i + 2] = ((sample.b * cover + 127) / 255) as u8
-                px[i + 3] = ((sample.a * cover + 127) / 255) as u8
-            }
-        }
+        try canvasPaintImage(it.alloc, px, area, inv, src, smooth, repeatX, repeatY)
         return
     }
     let coords = try canvasProp(it, style, "coords")
@@ -1114,7 +1069,6 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
         clearCanvasRect(bmp, rect.?)
         bmp.version += 1
         scriptOf(it).active = page
-        canvasChanged(it)
         return Value.Undefined
     }
     let px = try it.alloc.alloc(0 as u8, area.w * area.h * 4)
@@ -1166,7 +1120,6 @@ fn akCanvasDraw(it: *mut Interp, a: Args) JsError!Value {
         canvasComposite(bmp.pixels, bmp.width, area, px, clip, alpha, it.heap.bytes(js.strOf(mode)))
         bmp.version += 1
         scriptOf(it).active = page
-        canvasChanged(it)
     }
     canvasDrawNote(it.alloc, began, bmp, area, kind, pic, it.heap.bytes(js.strOf(mode)))
     return Value.Undefined
@@ -1289,7 +1242,6 @@ fn akCanvasPixels(it: *mut Interp, a: Args) JsError!Value {
     if putting {
         bmp.version += 1
         scriptOf(it).active = page
-        canvasChanged(it)
         return Value.Undefined
     }
     return js.objVal(arr)
@@ -1374,7 +1326,6 @@ fn akCanvasDecode(it: *mut Interp, a: Args) JsError!Value {
     }
     std.mem.copy(c.bmp.pixels, bmp.pixels)
     c.bmp.version += 1
-    canvasChanged(it)
     let arr = try it.newArray(0)
     try it.push(js.objVal(arr))
     defer it.pop()
@@ -1794,7 +1745,7 @@ fn akCanvasText(it: *mut Interp, a: Args) JsError!Value {
     let textBytes = it.heap.bytes(js.strOf(str))
     let page = scriptOf(it).page
     if page.images == null {
-        page.images = try page.alloc.create(ImageCache.init(page.alloc))
+        page.images = try newImageCache(page)
     }
     let cache = page.images.?
     if !canvas_fixed && cache.canvas_fonts == null {

@@ -1,0 +1,19 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/frame_tree.cc (SetFocusedFrame: the other frames' processes lose the focus)
+fn tellFrameFocus(tp: *mut TabProcess, focused: *TabProcess, on: bool) AllocError!void {
+    let want = on && tp == focused
+
+    if tp.hello && tp.gone.len == 0 && want != tp.focused {
+        tp.focused = want
+
+        try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Focus { on: want as u32 })
+    }
+
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        try tellFrameFocus(child, focused, on)
+    }
+}
