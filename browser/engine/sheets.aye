@@ -53,7 +53,7 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
                 if text.eql(scripted.source, src.bytes()) {
                     // Scripts changed its rules since it had this text.
                     if !scripted.disabled {
-                        try scriptedRules(alloc, base, address, scripted, media, sheet)
+                        try scriptedRules(alloc, doc, base, address, scripted, media, sheet)
                     }
                     cur = doc.following(h, root)
                     continue
@@ -61,7 +61,7 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             }
             // `@scope` without a prelude scopes to the element's parent.
             sheet.scope_root = doc.parent(h)
-            try parseWithImports(alloc, base, address, src.bytes(), media, sheet, false)
+            try parseWithImports(alloc, doc, base, address, src.bytes(), media, sheet, false)
             sheet.scope_root = null
         } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             let scripted = doc.sheets.ofOwner(h)
@@ -71,10 +71,10 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             }
             if !disabled {
                 if doc.attr(h, "href") |href| {
-                    try linkedSheet(alloc, base, address, href, media, sheet, doc.attr(h, "crossorigin"), net.parseReferrerPolicy(doc.attr(h, "referrerpolicy") orelse ""))
+                    try linkedSheet(alloc, doc, base, address, href, media, sheet, doc.attr(h, "crossorigin"), net.parseReferrerPolicy(doc.attr(h, "referrerpolicy") orelse ""))
                 }
                 if scripted |ss| {
-                    try scriptedRules(alloc, base, address, ss, media, sheet)
+                    try scriptedRules(alloc, doc, base, address, ss, media, sheet)
                 }
             }
         }
@@ -89,14 +89,14 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
 
 // The rules a script gave a sheet (`dom.ScriptSheets`), parsed as one
 // sheet in the document.
-fn scriptedRules(alloc: Allocator, base: *Url, address: *Url, ss: *dom.ScriptSheet, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
+fn scriptedRules(alloc: Allocator, doc: *Document, base: *Url, address: *Url, ss: *dom.ScriptSheet, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
     var src = text.Builder.init(alloc)
     defer src.deinit()
     for r in ss.rules.items() {
         try src.append(r)
         try src.appendByte('\n')
     }
-    try parseWithImports(alloc, base, address, src.bytes(), media, sheet, false)
+    try parseWithImports(alloc, doc, base, address, src.bytes(), media, sheet, false)
 }
 
 // Fetches the linked sheets concurrently into the session's cache
@@ -118,8 +118,10 @@ pub fn sheetHrefs(alloc: Allocator, doc: *Document, base: *Url, media: css.Media
             if doc.attr(h, "href") |href| {
                 if url.resolve(alloc, base, text.trim(href)) |target| {
                     defer target.deinit(alloc)
-                    try out.append(target.withoutFragment())
-                    try out.appendByte('\n')
+                    if doc.fetched.find(target.withoutFragment(), 0) == null {
+                        try out.append(target.withoutFragment())
+                        try out.appendByte('\n')
+                    }
                 } else |e| {
                 }
             }
@@ -170,24 +172,27 @@ fn isStylesheetLink(doc: *Document, el: NodeId) bool {
     return found
 }
 
-fn linkedSheet(alloc: Allocator, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!void {
+fn linkedSheet(alloc: Allocator, doc: *Document, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!void {
     let target = url.resolve(alloc, base, text.trim(href)) catch |e| {
         return
     }
     defer target.deinit(alloc)
-    let res = net.request(alloc, &target, corsRequest(crossorigin, net.Request { kind: net.Kind.Style, referrer: address.href, referrer_policy: policy, initiator: net.Initiator.Page { url: address.href } })) catch |e| {
-        noteSheetResult(target.href, crossorigin != null, LINK_FAILED)
+    let res = (try sheetFetch(alloc, doc, &target, address, crossorigin, policy)) orelse {
+        noteFailedSheet(target.href, crossorigin != null)
         return
     }
-    defer res.deinit(alloc)
     if res.status < 200 || res.status > 299 {
-        noteSheetResult(target.href, crossorigin != null, LINK_FAILED)
+        noteFailedSheet(target.href, crossorigin != null)
         return
     }
     noteSheetResult(target.href, crossorigin != null, LINK_LOADED)
     let src = try encoding.toUtf8(alloc, res.body, encoding.sniff(res.body, res.charset))
     defer alloc.free(src)
-    try parseWithImports(alloc, &target, &target, src, media, sheet, true)
+    let failed_before = failed_sheets
+    try parseWithImports(alloc, doc, &target, &target, src, media, sheet, true)
+    if failed_sheets != failed_before {
+        noteSheetResult(target.href, crossorigin != null, LINK_FAILED)
+    }
 }
 
 let MAX_IMPORT_DEPTH: usize = 4
@@ -197,7 +202,7 @@ var import_depth: usize = 0
 // with the sheets it imports before its rules. A fetched sheet
 // (`fetched`) has its `url()`s made absolute; those of a `style` element
 // stay relative to the document.
-fn parseWithImports(alloc: Allocator, base: *Url, address: *Url, src: []u8, media: css.Media, sheet: *mut css.Sheet, fetched: bool) AllocError!void {
+fn parseWithImports(alloc: Allocator, doc: *Document, base: *Url, address: *Url, src: []u8, media: css.Media, sheet: *mut css.Sheet, fetched: bool) AllocError!void {
     let first_rule = sheet.rules.len()
     let first_import = sheet.imports.len()
     let first_face = sheet.font_faces.len()
@@ -222,7 +227,7 @@ fn parseWithImports(alloc: Allocator, base: *Url, address: *Url, src: []u8, medi
         let href = sheet.imports.items()[first_import + k]
         // The imported sheet's rules go into the layer of its `@import`.
         sheet.base_layer = sheet.import_layers.items()[first_import + k]
-        try linkedSheet(alloc, base, address, href, media, sheet, null, null)
+        try linkedSheet(alloc, doc, base, address, href, media, sheet, null, null)
     }
     sheet.base_layer = outer_layer
     try sheet.moveRulesFirst(first_rule, mid)

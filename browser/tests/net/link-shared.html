@@ -1,0 +1,22 @@
+<!doctype html>
+<title>shared sheet fetches</title>
+<link rel="stylesheet" href="/log/nostore.css">
+<link rel="stylesheet" href="/log/nostore.css">
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const counted = async () => (await (await fetch('/log')).text()).split('\n').filter(l => l.includes('/log/nostore.css')).length;
+addEventListener('load', async () => {
+  const third = document.createElement('link');
+  third.rel = 'stylesheet';
+  third.href = '/log/nostore.css';
+  const loaded = new Promise(resolve => { third.onload = resolve; });
+  document.head.appendChild(third);
+  await loaded;
+  document.body.className = 'again';
+  getComputedStyle(document.body).color;
+  log('nostore.css requests: ' + await counted());
+  document.title = 'shared done';
+});
+</script>

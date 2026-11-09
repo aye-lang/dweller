@@ -26,8 +26,18 @@ fn link_events() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Q3.10d: two links and an inserted one to one `no-store` sheet, and a
+/// second style pass, fetch it once. (`net/link-shared.html` must print
+/// `net/link-shared.txt`.)
+#[test]
+fn link_sheets_shared() {
+    let failures = dump_link_page("net/link-shared.html", "net/link-shared.txt");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Q3.10c: the same events with `DWELLER_PROCESS=tab`, where the sheet
-/// loads cross IPC.
+/// loads cross IPC. Q3.10d: the window waits for the page to set its
+/// title to `... done` instead of for a number of frames.
 #[test]
 fn link_events_in_renderer() {
     if !has_sdl() {
@@ -40,8 +50,8 @@ fn link_events_in_renderer() {
     };
     let href = format!("{}/net/link-events.html?other={}", srv.base, other.base);
     let want = std::fs::read_to_string(root().join("browser/tests/net/link-events.txt")).unwrap();
-    for envs in [&[][..], &[("DWELLER_PROCESS", "tab")][..]] {
-        let got = login_window_with(&href, &"frame ".repeat(150), None, envs);
+    for (events, envs) in [("", &[][..]), ("renderer:title:done", &[("DWELLER_PROCESS", "tab")][..])] {
+        let got = login_window_with(&href, events, None, envs);
         for line in want.lines().filter(|l| l.contains(": ")) {
             assert!(got.contains(line), "{envs:?}: missing {line:?} in\n{got}");
         }

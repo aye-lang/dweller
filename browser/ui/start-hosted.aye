@@ -1,11 +1,18 @@
+import net
 import std.mem.AllocError
 import std.text
 
-fn startHosted(ui: *mut Ui, c: *mut Conn, k: usize, name: []u8, mcp: bool) AllocError!void {
+fn startHosted(ui: *mut Ui, c: *mut Conn, k: usize, name: []u8, mcp: bool, shared: bool) AllocError!void {
     let a = ui.agents.?
-    let sp = try newSpace(ui, 0, -1, text.Builder.init(ui.alloc), mcp, true, name)
+    let sp = try newSpace(ui, 0, -1, text.Builder.init(ui.alloc), mcp, shared, name)
 
     sp.hosted = true
+
+    if !shared {
+        sp.partition = sp.id
+        try net.openPartition(sp.partition)
+    }
+
     sp.paused = a.paused
     a.space_list[k] = sp
     c.space = sp

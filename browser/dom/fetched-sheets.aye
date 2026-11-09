@@ -1,0 +1,52 @@
+import std.list.List
+import std.mem
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub struct FetchedSheet {
+    href: []mut u8
+    mode: u8
+    status: i64
+    charset: []mut u8
+    body: []mut u8
+}
+
+pub struct FetchedSheets {
+    alloc: Allocator
+    sheets: List(FetchedSheet)
+
+    pub fn init(alloc: Allocator) FetchedSheets {
+        return FetchedSheets { alloc: alloc, sheets: List(FetchedSheet).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for s in self.sheets.items() {
+            self.alloc.free(s.href)
+            self.alloc.free(s.charset)
+            self.alloc.free(s.body)
+        }
+
+        self.sheets.deinit()
+    }
+
+    pub fn find(self: *Self, href: []u8, mode: u8) ?*FetchedSheet {
+        return findFetchedSheet(self, href, mode)
+    }
+
+    pub fn add(self: *mut Self, href: []u8, mode: u8, status: i64, charset: []u8, body: []u8) AllocError!*FetchedSheet {
+        let owned = FetchedSheet { href: try self.copy(href), mode: mode, status: status, charset: try self.copy(charset), body: try self.copy(body) }
+
+        try self.sheets.append(owned)
+
+        return &self.sheets.items()[self.sheets.len() - 1]
+    }
+
+    fn copy(self: *mut Self, s: []u8) AllocError![]mut u8 {
+        let out = try self.alloc.alloc(0 as u8, s.len)
+
+        mem.copy(out, s)
+
+        return out
+    }
+}

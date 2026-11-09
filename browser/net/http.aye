@@ -99,6 +99,7 @@ struct Sink {
     cert_kind: ?CertKind = null
     public_only: bool = false
     reached_public: bool = false
+    partition: u32 = 0
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -404,6 +405,7 @@ fn transfer(alloc: Allocator, curl: *mut Curl, target: *Url, req: Request, s: ?*
 // after the transfer.
 fn prepare(alloc: Allocator, curl: *mut Curl, address: [*]u8, at: *Url, req: Request, method: []u8, post: ?*Body, s: ?*mut Session, initiator: []u8, crossed: bool, site: FetchSite, sink: *mut Sink) FetchError!?*mut CurlList {
     sink.context = try contextOf(alloc, req, at, method, initiator, crossed)
+    sink.partition = req.partition
     let headers = try requestHeaders(alloc, at, req, post, s, sink.context, site)
     curl_easy_setopt(curl, CURLOPT_URL, address)
     curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT.ptr)
@@ -451,11 +453,12 @@ fn storeCookies(s: ?*mut Session, at: *Url, sink: *Sink) AllocError!void {
     if !storesIn(sink.context) {
         return
     }
+    let jar = jarOf(ses, sink.partition) orelse return
     var lines = text.split(sink.cookies.bytes(), "\n")
     while lines.next() |line| {
         if line.len > 0 {
-            try ses.jar.store(at, line, false, now())
-            try noteStored(at, line, false)
+            try jar.store(at, line, false, now())
+            if sink.partition == 0 { try noteStored(at, line, false) }
         }
     }
 }
@@ -493,10 +496,10 @@ fn requestHeaders(alloc: Allocator, at: *Url, req: Request, post: ?*Body, s: ?*m
         list = try addHeader(list, &mut h)
     }
     h.clear()
-    if s |ses| {
+    if jarOf(s, req.partition) |jar| {
         try h.append("Cookie: ")
         let mark = h.len()
-        try ses.jar.header(at, false, context, now(), &mut h)
+        try jar.header(at, false, context, now(), &mut h)
         if h.len() > mark {
             list = try addHeader(list, &mut h)
         }

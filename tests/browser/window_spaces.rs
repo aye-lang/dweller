@@ -535,6 +535,189 @@ fn window_spaces_crash() {
     no_spaces_left(window.id()).unwrap();
 }
 
+/// Q2.12c: with hosted Spaces a renderer that dies takes only its tab.
+/// Agent A has two tabs, B one; A's first tab's renderer is killed while
+/// A's `eval` runs in it: that request and every later page command on
+/// the tab fail with "renderer crashed", `tabs` lists the tab as
+/// `crashed`, A's other tab, B and the Space go on, and `tab_close`
+/// closes the crashed tab.
+#[test]
+fn window_spaces_crash_in_renderer() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let sock = format!("target/sockets/spaces-crash-r-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &["--spaces"], HOSTED);
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let first = spaces_of(pid);
+    assert_eq!(first.len(), 1, "{first:?}");
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"tab_new"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":3,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":4,"cmd":"tab_select","tab":1}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let mut b = AgentConn::open(&sock);
+    let (got, _) = b.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    assert_eq!(spaces_of(pid).len(), 3);
+    a.send(r#"{"id":5,"cmd":"eval","expression":"(function () { var t = Date.now(); while (Date.now() - t < 5000) {} return 1 })()"}"#);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let status = Command::new("kill").args(["-9", &first[0].to_string()]).status().unwrap();
+    assert!(status.success());
+    let crashed = |id: u32| format!("{{\"id\":{id},\"ok\":false,\"error\":\"renderer crashed\"}}\n");
+    assert_eq!(a.line(), crashed(5));
+    let (got, _) = a.ask(r#"{"id":6,"cmd":"snapshot"}"#);
+    assert_eq!(got, crashed(6));
+    let (got, _) = a.ask(r#"{"id":7,"cmd":"wait","ms":10}"#);
+    assert_eq!(got, crashed(7));
+    let (got, _) = a.ask(r#"{"id":8,"cmd":"tabs"}"#);
+    assert!(got.contains("\"agent\":true,\"crashed\":true}"), "{got}");
+    assert_eq!(got.matches("\"crashed\"").count(), 1, "{got}");
+    let (got, _) = a.ask(r#"{"id":9,"cmd":"spaces"}"#);
+    assert!(got.contains("\"mine\":true,\"state\":\"working\"") && !got.contains("crashed"), "{got}");
+    let (got, _) = a.ask(r#"{"id":10,"cmd":"tab_select","tab":2}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":11,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"title\":\"Site home\""), "{got}");
+    let (got, _) = b.ask(r#"{"id":2,"cmd":"snapshot"}"#);
+    assert!(got.contains("\"title\":\"Site home\""), "{got}");
+    let (got, _) = a.ask(r#"{"id":12,"cmd":"tab_close","tab":1}"#);
+    assert!(got.contains("\"ok\":true") && got.contains("closed tab 1"), "{got}");
+    let (got, _) = a.ask(r#"{"id":13,"cmd":"tabs"}"#);
+    assert!(got.contains("1 tab") && !got.contains("crashed"), "{got}");
+    assert_eq!(spaces_of(pid).len(), 2);
+    for c in [&mut a, &mut b] {
+        c.stream.shutdown(std::net::Shutdown::Write).unwrap();
+        assert_eq!(c.line(), "");
+    }
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    no_spaces_left(pid).unwrap();
+}
+
+/// Q2.12c: an `isolated` Space is hosted in the window too, on a
+/// partition of its own: a cookie jar and `localStorage` in memory.
+/// Iso's cookies (from script and from the network) and storage are
+/// seen neither by the shared Space Alpha nor by the person's tab, nor
+/// by a second isolated Space; what Alpha and the person set is not
+/// seen by Iso. No Space process starts, and nothing of Iso's reaches
+/// the profile directory (its cookies, its `localStorage`, an origin
+/// only Iso visited).
+#[test]
+fn window_spaces_isolated_in_renderer() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let base = &srv.base;
+    let alias = base.replace("127.0.0.1", "localhost");
+    let dir = profile("q212c-profile");
+    let sock = format!("target/sockets/spaces-iso-{}.sock", std::process::id());
+    let events = format!("agents:14 key:cmd+l {} key:return", typed(&format!("{base}/login/shared.html")));
+    let start = format!("{base}/net/start");
+    let envs = [HOSTED[0], ("DWELLER_PROFILE", dir.to_str().unwrap())];
+    let window = spaces_window_env(&sock, &["--spaces", "--state", "--text", "--events", &events, &start], &envs);
+    let pid = window.id();
+    let ok = |got: &str| assert!(got.contains("\"ok\":true"), "{got}");
+    let go = |id: u32, at: &str| format!(r#"{{"id":{id},"cmd":"navigate","url":"{at}"}}"#);
+    let eval = |id: u32, js: &str| format!("{{\"id\":{id},\"cmd\":\"eval\",\"expression\":{}}}", serde_like(js));
+    let read = r#"{"id":0,"cmd":"read"}"#;
+    let mut a = AgentConn::open(&sock);
+    a.send(r#"{"name":"Alpha"}"#);
+    ok(&a.ask(&go(1, &format!("{base}/login/read.html"))).0);
+    let (got, _) = a.ask(&eval(2, "document.cookie = 'shared=1; Path=/'; localStorage.setItem('token', 'from-shared'); sessionStorage.setItem('tab', 'alpha'); document.cookie"));
+    assert!(got.contains("shared=1\""), "{got}");
+    let mut b = AgentConn::open(&sock);
+    b.send(r#"{"name":"Iso","profile":"isolated"}"#);
+    ok(&b.ask(&go(3, &format!("{base}/login/read.html"))).0);
+    let set = "var seen = localStorage.getItem('token') + '|' + document.cookie + '|' + sessionStorage.getItem('tab'); document.cookie = 'iso=1; Path=/'; localStorage.setItem('iso', '1'); sessionStorage.setItem('tab', 'iso'); seen + '/' + document.cookie + '|' + localStorage.getItem('iso') + '|' + sessionStorage.getItem('tab')";
+    let (got, _) = b.ask(&eval(4, set));
+    assert!(got.contains("\"null||null/iso=1|1|iso\""), "{got}");
+    ok(&b.ask(&go(5, &format!("{base}/headers"))).0);
+    let (got, _) = b.ask(read);
+    assert!(got.contains("Cookie: iso=1") && !got.contains("shared=1"), "Iso's /headers: {got}");
+    ok(&b.ask(&go(7, &format!("{alias}/login/read.html"))).0);
+    let (got, _) = b.ask(&eval(8, "document.cookie = 'isohost=1; Path=/'; localStorage.setItem('isohost', '1'); document.cookie"));
+    assert!(got.contains("\"isohost=1\""), "{got}");
+    let mut c = AgentConn::open(&sock);
+    c.send(r#"{"name":"Iso2","profile":"isolated"}"#);
+    ok(&c.ask(&go(9, &format!("{base}/login/read.html"))).0);
+    let (got, _) = c.ask(&eval(10, "localStorage.getItem('iso') + '|' + localStorage.getItem('token') + '|' + document.cookie"));
+    assert!(got.contains("\"null|null|\""), "Iso2 sees another partition: {got}");
+    let (got, _) = a.ask(&eval(11, "document.cookie + '|' + localStorage.getItem('iso') + '|' + sessionStorage.getItem('tab')"));
+    assert!(got.contains("shared=1|null|alpha\"") && !got.contains("iso"), "Alpha sees Iso's: {got}");
+    ok(&a.ask(&go(12, &format!("{base}/headers"))).0);
+    let (got, _) = a.ask(read);
+    assert!(got.contains("shared=1") && !got.contains("iso"), "Alpha's /headers: {got}");
+    let (got, _) = a.ask(r#"{"id":14,"cmd":"tabs"}"#);
+    ok(&got);
+    let processes = Command::new("pgrep").args(["-f", &format!("/tmp/dweller-{pid}-")]).output().unwrap();
+    assert!(text(&processes.stdout).is_empty(), "a Space process: {}", text(&processes.stdout));
+    assert_eq!(spaces_of(pid).len(), 3, "one renderer per Space");
+    let begun = std::time::Instant::now();
+    loop {
+        let (got, _) = a.ask(r#"{"id":15,"cmd":"user_context"}"#);
+        if got.contains("\"title\":\"Shared done\"") {
+            break;
+        }
+        assert!(begun.elapsed().as_secs() < 20, "the person's page did not finish: {got}");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    ok(&b.ask(&go(16, &format!("{base}/login/read.html"))).0);
+    let (got, _) = b.ask(&eval(16, "document.cookie + '|' + localStorage.getItem('from') + '|' + localStorage.getItem('token')"));
+    assert!(got.contains("\"iso=1|null|null\""), "Iso sees the person's: {got}");
+    let (got, _) = b.ask(r#"{"id":17,"cmd":"spaces"}"#);
+    assert!(got.contains("\"name\":\"Iso\",\"mine\":true") && got.contains("\"profile\":\"isolated\""), "{got}");
+    let (got, _) = b.ask(r#"{"id":18,"cmd":"space_close"}"#);
+    assert!(got.contains("closing Space 2"), "{got}");
+    assert_eq!(b.line(), "");
+    for conn in [&mut a, &mut c] {
+        conn.stream.shutdown(std::net::Shutdown::Write).unwrap();
+        assert_eq!(conn.line(), "");
+    }
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let page = text(&out.stdout);
+    assert!(page.contains("token: from-shared; cookie: ") && page.contains("shared=1"), "{page}");
+    assert!(!page.contains("iso"), "the person sees Iso's: {page}");
+    let sent = page.lines().find(|l| l.starts_with("Cookie: ")).unwrap_or("");
+    assert!(sent.contains("shared=1") && sent.contains("person=1"), "the person's /headers: {page}");
+    let mut files = vec![dir.clone()];
+    let mut seen = Vec::new();
+    while let Some(p) = files.pop() {
+        if p.is_dir() {
+            files.extend(std::fs::read_dir(&p).unwrap().map(|e| e.unwrap().path()));
+            continue;
+        }
+        let name = p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned();
+        let bytes = String::from_utf8_lossy(&std::fs::read(&p).unwrap()).into_owned();
+        assert!(!name.contains("localhost") && !bytes.contains("localhost"), "the profile has Iso's origin: {name}: {bytes}");
+        assert!(!bytes.contains("iso"), "the profile has Iso's: {name}: {bytes}");
+        seen.push(name);
+    }
+    assert!(seen.iter().any(|n| n == "cookies") && seen.iter().any(|n| n.starts_with("storage/")), "{seen:?}");
+    no_spaces_left(pid).unwrap();
+}
+
 // Waits (at most 5 s) until the window `pid` runs `n` Spaces.
 fn wait_for_spaces(pid: u32, n: usize) {
     let start = std::time::Instant::now();

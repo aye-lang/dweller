@@ -18,6 +18,8 @@ test "the partition is the top-level site, the frame site and the credentials" {
     defer a.free(same)
     let navigation = try networkPartition(a, Request { referrer: "http://b.test/page", initiator: other }, "http://www.a.test/")
     defer a.free(navigation)
+    let isolated = try networkPartition(a, Request { kind: Kind.Script, referrer: "http://www.a.test:8000/page", initiator: page, partition: 3 }, r)
+    defer a.free(isolated)
 
     @expectEqual("1/_dk_http://a.test http://a.test", script)
     @expectEqual("1/_dk_http://b.test http://b.test", elsewhere)
@@ -26,6 +28,7 @@ test "the partition is the top-level site, the frame site and the credentials" {
     @expectEqual("0/_dk_http://a.test http://a.test", cross)
     @expectEqual("1/_dk_http://a.test http://a.test", same)
     @expectEqual("1/_dk_http://a.test http://a.test", navigation)
+    @expectEqual("#3 1/_dk_http://a.test http://a.test", isolated)
 }
 
 test "the cache key is the partition and the URL" {
