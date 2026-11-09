@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+var next_child_frame: u32 = 1073741824
+
+fn startChild(ui: *mut Ui, parent: *mut TabProcess) AllocError!?*mut TabProcess {
+    next_child_frame += 1
+
+    let child = (try startTabProcess(ui.alloc, ui.painter.system == null, next_child_frame)) orelse return null
+
+    child.embedder = parent
+
+    return child
+}

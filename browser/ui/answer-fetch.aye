@@ -44,7 +44,7 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
                 req.referrer_policy = tp.nav_policy
             }
 
-            if !navigates { req.top = topOf(tp) }
+            if !navigates || tp.embedder != null { req.top = contextTop(tp) }
 
             if has_body == 1 { req.body = &sent }
 
@@ -59,6 +59,14 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             var final = target.href
 
             if res.url.len > 0 { final = res.url }
+
+            if navigates && tp.embedder != null && (try framingRefused(tp, &res, final)) {
+                res.deinit(alloc)
+                tp.nav_failed = true
+                try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.AccessDenied) })
+
+                return ""
+            }
 
             if navigates && (try takesSwap(tp, res, final)) { return "" }
 

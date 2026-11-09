@@ -1,0 +1,30 @@
+import std
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc (a subframe's cross-site navigation commits in another process)
+fn swapChild(ui: *mut Ui, parent: *mut TabProcess, c: *mut ChildFrame) AllocError!void {
+    let old = c.tp.?
+    var res = old.swap_to.?
+    let href = old.swap_url.bytes()
+    let src = try ui.alloc.alloc(0 as u8, href.len)
+
+    std.mem.copy(src, href)
+    old.swap_to = null
+
+    let next = try startChild(ui, parent)
+
+    if next |n| {
+        try writeSite(href, &mut n.site)
+        n.primed = res
+    } else {
+        res.deinit(ui.alloc)
+    }
+
+    dropTabProcess(old, "swapped")
+    endTabProcess(ui.alloc, old)
+    ui.alloc.free(c.src)
+    c.src = src
+    c.tp = next
+    c.sent = false
+    parent.whole = true
+}

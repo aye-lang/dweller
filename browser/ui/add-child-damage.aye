@@ -1,0 +1,32 @@
+import ipc
+import paint
+import std.mem.AllocError
+
+// chromium: components/viz/service/display/surface_aggregator.cc (TransformRectToDestRootTargetSpace)
+fn addChildDamage(out: *mut paint.Damage, tp: *mut TabProcess, ox: i64, oy: i64, bound: paint.IRect) AllocError!void {
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+        let clip = paint.intersect(movedRect(c.clip, ox, oy), bound)
+        var r = ipc.Reader { data: child.damage.bytes() }
+
+        if child.whole { try out.add(clip) }
+
+        while r.at < r.data.len {
+            let x0 = r.readU32() catch unreachable
+            let y0 = r.readU32() catch unreachable
+            let x1 = r.readU32() catch unreachable
+            let y1 = r.readU32() catch unreachable
+            let d = paint.IRect { x0: x0 as i64, y0: y0 as i64, x1: x1 as i64, y1: y1 as i64 }
+
+            try out.add(paint.intersect(movedRect(d, ox + c.x, oy + c.y), clip))
+        }
+
+        child.damage.clear()
+        child.whole = false
+        try addChildDamage(out, child, ox + c.x, oy + c.y, clip)
+    }
+}
+
+fn movedRect(r: paint.IRect, dx: i64, dy: i64) paint.IRect {
+    return paint.IRect { x0: r.x0 + dx, y0: r.y0 + dy, x1: r.x1 + dx, y1: r.y1 + dy }
+}

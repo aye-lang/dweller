@@ -1,0 +1,19 @@
+fn childWaits(tp: *TabProcess) bool {
+    if tp.children.len() == 0 { return true }
+
+    for c in tp.children.items() {
+        let child = c.tp orelse return true
+
+        if child.gone.len > 0 { continue }
+        if !child.hello || child.loading || child.buffers.shown == 0 || child.buffers.width != c.width || child.buffers.height != c.height { return true }
+        if childWaits(child) && child.children.len() > 0 { return true }
+    }
+
+    return false
+}
+
+fn firstChildGone(tp: *TabProcess) bool {
+    let c = firstChild(tp) orelse return false
+
+    return c.gone.len > 0
+}

@@ -47,7 +47,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
             if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
 
-            return showTabFrame(slot, tp, got.frame, buffer, width, height, damage)
+            return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
 
         .HistoryGo { index } => {
@@ -145,6 +145,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id { return "bad storage" }
 
             return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Subframes { frames } => {
+            if got.frame != slot.id { return "bad subframes" }
+
+            return takeSubframes(tp, frames)
         }
 
         .InputAck { seq } => {

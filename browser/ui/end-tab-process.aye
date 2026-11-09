@@ -25,6 +25,9 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
         closeFd(tp.fd)
     }
 
+    while tp.children.pop() |c| { endChild(alloc, c) }
+
+    tp.children.deinit()
     forgetTabProcess(tp)
     unmapBuffers(tp)
     tp.inbox.deinit()

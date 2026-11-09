@@ -1,0 +1,33 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/frame_tree_node.cc (each subframe's current host, in its own process when cross-site)
+fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
+    for k in 0..tp.children.len() {
+        let c = &mut tp.children.items()[k]
+
+        if c.tp == null { c.tp = try startChild(ui, tp) }
+
+        let child = c.tp orelse continue
+
+        if child.gone.len > 0 { continue }
+
+        try giveBuffers(ui, child, c.width, c.height)
+
+        if child.hello && !c.sent {
+            try navigateChild(child, c.src, tp.committed.bytes(), 0, "", "")
+            c.sent = true
+        }
+
+        if !(try serviceChild(child)) {
+            tp.whole = true
+
+            continue
+        }
+
+        if child.swap_to != null {
+            try swapChild(ui, tp, c)
+        } else {
+            try serviceChildren(ui, child)
+        }
+    }
+}

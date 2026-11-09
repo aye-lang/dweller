@@ -1,0 +1,22 @@
+import html
+import std.mem.AllocError
+import url
+import url.Url
+
+// blink: core/frame/remote_frame.cc
+fn remotePage(p: *mut Page, target: *Url) AllocError!*mut Page {
+    var located = url.parse(p.alloc, target.href) catch return AllocError.OutOfMemory
+
+    errdefer located.deinit(p.alloc)
+
+    var doc = try html.parse(p.alloc, "")
+
+    errdefer doc.deinit()
+
+    let c = try newPage(p.alloc, located, 200, "", doc)
+
+    c.remote = true
+    c.encoding = p.encoding
+
+    return c
+}

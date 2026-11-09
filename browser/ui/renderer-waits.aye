@@ -1,7 +1,7 @@
 import std.text
 
 fn rendererWaits(ui: *mut Ui, word: []u8) bool {
-    if !text.startsWith(word, "renderer:") || text.eql(word, "renderer:kill") { return false }
+    if !text.startsWith(word, "renderer:") || text.eql(word, "renderer:kill") || text.eql(word, "renderer:kill-child") { return false }
 
     let tp = ui.slots[ui.active].?.process orelse return true
 
@@ -11,12 +11,8 @@ fn rendererWaits(ui: *mut Ui, word: []u8) bool {
     if text.eql(word, "renderer:busy") { return tp.gone.len == 0 && !tp.busy }
     if text.eql(word, "renderer:frame") { return tp.gone.len == 0 && tp.buffers.shown == 0 }
     if text.eql(word, "renderer:next") { return nextFrameWaits(ui, tp) }
+    if text.eql(word, "renderer:child") { return tp.gone.len == 0 && childWaits(tp) }
+    if text.eql(word, "renderer:child-gone") { return tp.gone.len == 0 && !firstChildGone(tp) }
 
     return tp.gone.len == 0 && (tp.loading || tp.url.len() == 0 || tp.traverse_to != null)
-}
-
-fn killRenderer(ui: *Ui) {
-    if ui.slots[ui.active].?.process |tp| {
-        kill(tp.pid, SIGKILL)
-    }
 }

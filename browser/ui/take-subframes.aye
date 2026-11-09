@@ -1,0 +1,36 @@
+import ipc
+import std.list.List
+import std.mem.AllocError
+
+let MAX_CHILD_FRAMES: usize = 16
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (SynchronizeVisualProperties, Detach)
+fn takeSubframes(tp: *mut TabProcess, frames: []u8) AllocError![]u8 {
+    var said = List(ipc.Subframe).init(tp.url.alloc)
+    defer said.deinit()
+    var r = ipc.Reader { data: frames }
+
+    while r.at < frames.len {
+        let s = ipc.readSubframe(&mut r) catch return "bad subframes"
+
+        if said.len() >= MAX_CHILD_FRAMES || ipc.badSubframe(s) || saidKey(said.items(), s.key) { return "bad subframes" }
+
+        try said.append(s)
+    }
+
+    dropRemovedChildren(tp, said.items())
+
+    for s in said.items() {
+        if !(try placeChild(tp, s)) { return "bad subframes" }
+    }
+
+    return ""
+}
+
+fn saidKey(said: []ipc.Subframe, key: u32) bool {
+    for s in said {
+        if s.key == key { return true }
+    }
+
+    return false
+}
