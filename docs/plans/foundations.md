@@ -320,6 +320,7 @@ states the W7 sites it moves.
 | Q4.18 | What relayouts mistral each frame (done, #297: a same-text `textContent` write; it cannot be skipped because MutationObservers watch it) | – | – |
 | Q4.19 | Unchanged frames reuse their display list (#301: mistral builds per frame 6 → 1, `paint_build` 4.0 → 1.8 ms) | `window_frame_lists_reused` | `platform/graphics/paint/paint_controller.cc` |
 | Q4.20 | Canvas draws (2D and WebGL) mark paint only, not the DOM version: the window patches the changed canvas's image items (pixels referenced, `ver` = `Bitmap.shown()`), re-signs the list and damages only the canvas rect, also through an iframe (done, 2026-11-09; canvas-only page relayouts 158 → 1 in 300 frames, `idle_relayout_plain` 271 → 1 and `ui_raf` 7.9 → 1.5 ms; left: the whole list is re-signed (0.26 ms), an observed same-text write still relays out, the tab-process renderer has no list reuse) | `window_canvas_raf_no_relayout` | `core/html/canvas/html_canvas_element.cc` (`DidDraw`) |
+| Q4.23 | An inline cache for DOM wrapper and primitive property loads: host objects without `HOST_NAMED` are cacheable, IC cases keyed by (shape, prototype), shapeless prototypes made fast again on an IC walk (V8 `MakePrototypesFast`), primitive receivers through their wrapper's prototype, string/array/typed-array `length` handlers, own properties of dictionary-mode receivers (done, 2026-11-09: `browser/tests/perf/host_ic.html` loads leaving the IC 4.08M → 16k, DOM walk −17%, string hash −17%, instructions −8.8%; jsbench instructions unchanged; test262 String/Object/property-accessors 4149/4844 before and after; left: accessor hits still call the getter through `call0`, megamorphic hits outside the inline path, one global `proto_epoch`, zol and bbc not measured) |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -370,7 +371,7 @@ check`. Chromium references come from the module map of
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
-| Q6.11 | `url` (66.7, 80) |
+| Q6.11 | `url` (66.7 -> 90.3, threshold 80 -> 88; done, 2026-11-09; UTS #46 in new `browser/idna/` from Unicode 18.0.0 tables via `gen_idna.py`; left: URL setters through a state-override parser (about 360 subtests), `failure.html` XHR/sendBeacon throws, urlencoded-parser BOM/surrogates, percent-encoding charsets) |
 | Q6.12 | `css/css-animations` (50.9, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
