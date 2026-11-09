@@ -1,0 +1,24 @@
+import url
+
+test "frame-ancestors against 'self', 'none', hosts and paths" {
+    let a = @testAllocator()
+    let response = try url.parse(a, "http://site.test:8000/framed.html")
+    defer response.deinit(a)
+    let same = try url.parse(a, "http://site.test:8000/page.html")
+    defer same.deinit(a)
+    let other = try url.parse(a, "http://other.test:9000/page.html")
+    defer other.deinit(a)
+
+    @expect(frameAncestorsRefusal("frame-ancestors 'self'", &same, false, &response) == null)
+    @expect(frameAncestorsRefusal("frame-ancestors 'self'", &same, true, &response) != null)
+    @expect(frameAncestorsRefusal("frame-ancestors 'self'", &other, false, &response) != null)
+    @expect(frameAncestorsRefusal("frame-ancestors 'none'", &same, false, &response) != null)
+    @expect(frameAncestorsRefusal("frame-ancestors *", &other, false, &response) == null)
+    @expect(frameAncestorsRefusal("frame-ancestors other.test:9000", &other, false, &response) == null)
+    @expect(frameAncestorsRefusal("frame-ancestors http://other.test:9000", &other, false, &response) == null)
+    @expect(frameAncestorsRefusal("frame-ancestors http://other.test:9000/page.html", &other, false, &response) != null)
+    @expect(frameAncestorsRefusal("img-src 'none'", &other, false, &response) == null)
+    @expect(frameAncestorsRefusal("frame-ancestors 'self', frame-ancestors other.test:9000", &other, false, &response) != null)
+    @expect(hasFrameAncestors("img-src *; Frame-Ancestors 'none'"))
+    @expect(!hasFrameAncestors("default-src 'none'"))
+}

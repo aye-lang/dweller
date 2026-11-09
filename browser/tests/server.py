@@ -74,7 +74,8 @@
 #                    replaced by URL (a page that names another origin)
 #   /csp/NAME?other=URL  the file csp/NAME with one Content-Security-Policy
 #                    header per line of csp/NAME.policy (when there is
-#                    one), each $OTHER replaced by URL
+#                    one), each $OTHER replaced by URL, and the lines
+#                    "Name: value" of csp/NAME.headers as headers
 #   /nosniff/NAME    the file NAME with X-Content-Type-Options: nosniff
 #   /cookie-module?acao&acac  a JS module that records the request's
 #                    Cookie header; `acao` echoes Origin in
@@ -368,6 +369,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if os.path.isfile(file + ".policy"):
             with open(file + ".policy") as f:
                 headers += [("Content-Security-Policy", line.replace("$OTHER", other)) for line in f.read().splitlines()]
+        if os.path.isfile(file + ".headers"):
+            with open(file + ".headers") as f:
+                headers += [tuple(line.split(": ", 1)) for line in f.read().splitlines()]
         self.reply(200, headers, data)
 
     def log_request_line(self, method, body=b""):

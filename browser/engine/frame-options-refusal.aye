@@ -1,0 +1,26 @@
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://html.spec.whatwg.org/multipage/document-lifecycle.html#check-a-navigation-response's-adherence-to-x-frame-options
+fn frameOptionsRefusal(alloc: Allocator, p: *mut Page, c: *Page) AllocError!?[]mut u8 {
+    var tail: []u8 = "' in a frame because it set 'X-Frame-Options' to 'deny'."
+
+    if c.frame_options == net.FrameOptions.Allow {
+        return null
+    }
+
+    if c.frame_options == net.FrameOptions.SameOrigin {
+        if !ancestorOtherOrigin(p, &c.url) {
+            return null
+        }
+
+        tail = "' in a frame because it set 'X-Frame-Options' to 'sameorigin'."
+    }
+
+    if c.frame_options == net.FrameOptions.Conflict {
+        tail = "' in a frame because it set multiple 'X-Frame-Options' headers with conflicting values."
+    }
+
+    return try refusalMessage(alloc, "Refused to display '", c.url.href, tail)
+}

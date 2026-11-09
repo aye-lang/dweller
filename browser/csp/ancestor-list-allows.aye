@@ -1,0 +1,21 @@
+import std.text
+import url.Url
+
+fn ancestorListAllows(list: []u8, ancestor: *Url, opaque: bool, response: *Url) bool {
+    var at: usize = 0
+    var origin = ancestor.*
+
+    origin.path = ""
+
+    while nextWord(list, &mut at) |source| {
+        if opaque && text.eqlIgnoreCase(source, "'self'") {
+            continue
+        }
+
+        if sourceMatchesUrl(source, &origin, response) {
+            return true
+        }
+    }
+
+    return false
+}

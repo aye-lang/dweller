@@ -333,9 +333,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
             child = try sourcePage(p, "about:blank", "")
         }
     }
-    let c = child.?
-    placeFrame(p, el, c)
-    return c
+    return try placeChecked(p, el, child.?)
 }
 
 // Gives the page `c`, shown by the frame element `el` of `p`, its place:
@@ -565,13 +563,13 @@ pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator:
 fn showInFrame(slot: FrameSlot, child: *mut Page, at: ?usize) AllocError!void {
     let p = slot.parent
     let el = p.frames.items()[slot.index].el
-    placeFrame(p, el, child)
+    let shown = try placeChecked(p, el, child)
     var up: ?*mut Page = p
     while up |q| {
         q.dropTree()
         up = q.parent
     }
-    try replaceFrame(p, slot.index, child, at)
+    try replaceFrame(p, slot.index, shown, at)
     return fireFrameLoads(p)
 }
 

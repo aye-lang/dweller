@@ -1,0 +1,17 @@
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#frame-ancestors-navigation-response
+pub fn frameAncestorsRefusal(policies: []u8, ancestor: *Url, opaque: bool, response: *Url) ?[]u8 {
+    var all = text.split(policies, ",")
+
+    while all.next() |policy| {
+        let d = directiveOf(policy, "frame-ancestors") orelse continue
+
+        if !ancestorListAllows(sourceList(d), ancestor, opaque, response) {
+            return d
+        }
+    }
+
+    return null
+}

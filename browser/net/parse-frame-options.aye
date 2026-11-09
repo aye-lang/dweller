@@ -1,0 +1,49 @@
+import std.text
+
+// https://html.spec.whatwg.org/multipage/document-lifecycle.html#check-a-navigation-response's-adherence-to-x-frame-options
+pub fn parseFrameOptions(headers: []u8) FrameOptions {
+    var first: ?[]u8 = null
+    var several = false
+    var keyword = false
+    var lines = text.split(headers, "\n")
+
+    while lines.next() |line| {
+        if !text.eqlIgnoreCase(headerName(line), "X-Frame-Options") {
+            continue
+        }
+
+        var values = text.split(headerText(line), ",")
+
+        while values.next() |raw| {
+            let value = text.trim(raw)
+
+            keyword = keyword || isFrameKeyword(value)
+
+            if first |f| {
+                several = several || !text.eqlIgnoreCase(f, value)
+            } else {
+                first = value
+            }
+        }
+    }
+
+    if several {
+        if keyword {
+            return FrameOptions.Conflict
+        }
+
+        return FrameOptions.Allow
+    }
+
+    let only = first orelse return FrameOptions.Allow
+
+    if text.eqlIgnoreCase(only, "deny") {
+        return FrameOptions.Deny
+    }
+
+    if text.eqlIgnoreCase(only, "sameorigin") {
+        return FrameOptions.SameOrigin
+    }
+
+    return FrameOptions.Allow
+}
