@@ -6,6 +6,17 @@ import std.text
 // spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
 pub fn shorthandLonghandText(alloc: Allocator, name: []u8, value: []u8, prop: []u8, out: *mut text.Builder) AllocError!bool {
     let index = propertyIndex(prop) orelse return false
+
+    var part = text.Builder.init(alloc)
+    defer part.deinit()
+
+    if try shorthandPart(alloc, name, value, prop, &mut part) {
+        out.clear()
+        try out.append(part.bytes())
+
+        return true
+    }
+
     var ids = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
     let n = shorthandLonghands(name, ids[..])
 
