@@ -1,0 +1,15 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+pub fn canvasShown(p: *Page, out: *mut List(paint.ShownBitmap)) AllocError!void {
+    if p.images |cache| {
+        for c in cache.canvases.items() {
+            try out.append(paint.ShownBitmap { pixels: c.bmp.pixels, ver: c.bmp.shown() })
+        }
+    }
+
+    for f in p.frames.items() {
+        try canvasShown(f.page, out)
+    }
+}
