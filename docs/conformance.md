@@ -46,6 +46,7 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `x-frame-options` | 6 | 0 | 61/157 | 38.9 | 35 | done | +0.0 |
 | `fetch/nosniff` | 6 | 0 | 47/65 | 72.3 | 72 | done | new |
 | `html/cross-origin-opener-policy` | 116 | 0 | 9/615 | 1.5 | 1 | done | new |
+| `html/browsers/origin` | 100 | 1 | 16/668 | 2.4 | 2 | done | new |
 | `test262/built-ins` | 18373 | 5450 | 13352/18373 | 72.7 | 80 | below | +0.0 |
 | `test262/language` | 23210 | 516 | 17032/23210 | 73.4 | 80 | below | +0.0 |
 | `test262/annexB` | 1044 | 42 | 431/1044 | 41.3 | 80 | below | +0.0 |
