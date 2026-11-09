@@ -434,7 +434,7 @@ fn storageChanged(s: *mut Script, ctx: u32, session: bool, key: ?[]u8, old: ?[]u
 }
 
 fn storageTo(s: *mut Script, p: *mut Page, session: bool, key: ?[]u8, old: ?[]u8, new: ?[]u8) JsError!void {
-    if p != s.page && !p.opaque && sameOrigin(s.page, p) {
+    if p != s.page && !p.opaque && sharesStorage(s.page, p) {
         if p.script |ts| {
             if ts.on_storage != js.NONE {
                 try queueStorage(ts, s.page.url.href, session, key, old, new)
