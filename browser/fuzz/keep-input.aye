@@ -1,0 +1,27 @@
+import std.fs
+import std.mem
+import std.mem.AllocError
+import std.mem.Allocator
+import std.path
+import std.text
+
+// chromium: llvm compiler-rt/lib/fuzzer/FuzzerLoop.cpp (AddToCorpus)
+fn keepInput(alloc: Allocator, corpus: *mut Corpus, input: []u8) !void {
+    let copy = try alloc.alloc(0 as u8, input.len)
+
+    mem.copy(copy, input)
+    try corpus.inputs.append(copy)
+
+    var name = text.Builder.init(alloc)
+    defer name.deinit()
+
+    try name.appendUint(fnv1a(input))
+
+    let file = try path.join(alloc, corpus.dir, name.bytes())
+    defer alloc.free(file)
+
+    let f = try fs.create(file)
+
+    try f.write(input)
+    f.close()
+}
