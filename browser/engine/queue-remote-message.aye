@@ -1,0 +1,32 @@
+import js
+import js.JsError
+import js.Value
+import std
+
+fn queueRemoteMessage(ts: *mut Script, root: *mut Page, m: RemoteMessage) JsError!void {
+    let it = &mut ts.it
+    let base = it.stack.len()
+    defer it.truncate(base)
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    tick(ts)
+
+    let id = ts.next_timer
+    let blob = try ts.alloc.alloc(0 as u8, m.buffers.len)
+
+    std.mem.copy(blob, m.buffers)
+    try ts.remote_inbox.append(RemoteBuffers { id: id, blob: blob })
+
+    try it.heap.pushElem(arr, it.roots.items()[ts.on_remote_message])
+    try it.heap.pushElem(arr, try it.newString(m.data))
+    try it.heap.pushElem(arr, try it.newString(m.origin))
+    try it.heap.pushElem(arr, try remoteSource(ts, root, m))
+    try it.heap.pushElem(arr, js.numVal(id as f64))
+
+    let root_arr = try it.addRoot(js.objVal(arr))
+
+    ts.next_timer += 1
+    try ts.timers.append(Timer { id: id, due: ts.now, interval: 0.0, repeat: false, raf: false, root: root_arr, seq: ts.seq })
+    ts.seq += 1
+}

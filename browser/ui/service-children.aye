@@ -7,13 +7,22 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
 
         if c.tp == null { c.tp = try startChild(ui, tp) }
 
-        let child = c.tp orelse continue
+        let child = c.tp orelse {
+            try frameDone(tp, c)
 
-        if child.gone.len > 0 { continue }
+            continue
+        }
+
+        if child.gone.len > 0 {
+            try frameDone(tp, c)
+
+            continue
+        }
 
         try giveBuffers(ui, child, c.width, c.height)
 
         if child.hello && !c.sent {
+            try sendFrameOwner(tp, c.*, child)
             try navigateChild(child, c.src, tp.committed.bytes(), 0, "", "")
             c.sent = true
         }

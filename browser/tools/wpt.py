@@ -9,13 +9,15 @@
   wpt.py serve [--port N] [--wpt-root DIR] [--upstream]
       A static server on 127.0.0.1 for the checkout (see Server below), or
       with --upstream the checkout's own `wpt serve` (wpt_upstream.py).
-  wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR] [--upstream]
+  wpt.py run AREA|PATH... [-j N] [--wpt-root DIR] [--results-dir DIR] [--upstream] [--process tab|site]
       Runs `dweller wpt URL` for each testharness test of an area (a key
       of wpt_areas.json) or of a path (a directory or file under the
       root), and writes target/wpt-results/<area>.json. Reftests and
       crashtests (wpt_reftest.py) are screenshot comparisons and loads.
       `.https.` tests load from https://web-platform.test with the
       checkout's tools/certs, whose CA Dweller trusts only in these runs.
+      With --process, testharness tests run in the window with
+      DWELLER_PROCESS set (wpt_window.py); reftests stay in process.
 """
 import argparse
 import concurrent.futures
@@ -36,6 +38,7 @@ from urllib.parse import unquote, urlsplit
 import wpt_handler
 import wpt_reftest
 import wpt_upstream
+import wpt_window
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -43,6 +46,7 @@ AREAS_FILE = HERE / "wpt_areas.json"
 REPORT_JS = HERE / "wpt" / "testharnessreport.js"
 VENDOR_JS = HERE / "wpt" / "testdriver-vendor.js"
 WPT_URL = "https://github.com/web-platform-tests/wpt.git"
+PROCESS = ""
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
 EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/reference", "tools", "docs"]
@@ -371,6 +375,8 @@ def run_test(dweller, root, base_url, test):
 
 
 def run_harness_test(dweller, base_url, test):
+    if PROCESS:
+        return wpt_window.run_window_test(dweller, base_url + test["url"], test["timeout"], PROCESS)
     cmd = [str(dweller), "wpt", base_url + test["url"], "--timeout", str(test["timeout"])]
     wall = test["timeout"] * 6 + 30
     try:
@@ -461,6 +467,8 @@ def trust_test_ca(root):
 
 
 def cmd_run(args):
+    global PROCESS
+    PROCESS = args.process or ""
     dweller = Path(args.dweller) if args.dweller else REPO / "target" / "dweller"
     if not dweller.exists():
         sys.exit(f"{dweller} not found (browser/build.sh)")
@@ -497,6 +505,7 @@ def main():
     r.add_argument("--results-dir", default=str(REPO / "target" / "wpt-results"))
     r.add_argument("--dweller")
     r.add_argument("--upstream", action="store_true")
+    r.add_argument("--process", choices=["tab", "site"])
     args = ap.parse_args()
     {"fetch": cmd_fetch, "serve": cmd_serve, "run": cmd_run}[args.cmd](args)
 

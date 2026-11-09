@@ -1,0 +1,24 @@
+import std.coverage
+import std.mem.Allocator
+import std.text
+
+fn reportCoverage(alloc: Allocator, name: []u8, corpus: *Corpus, ms: u64) !void {
+    if !coverage.enabled() {
+        return
+    }
+
+    var line = text.Builder.init(alloc)
+    defer line.deinit()
+
+    try line.append("coverage ")
+    try line.append(name)
+    try line.append(": ")
+    try line.appendUint(ms / 1000)
+    try line.append(" s, corpus ")
+    try line.appendUint(corpus.len() as u64)
+    try line.append(", edges ")
+    try line.appendUint(seenCount(corpus.seen) as u64)
+    try line.append("/")
+    try line.appendUint(coverage.edgeCount() as u64)
+    @println(line.bytes())
+}

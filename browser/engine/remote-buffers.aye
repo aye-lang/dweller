@@ -1,0 +1,30 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+struct RemoteBuffers {
+    id: u32
+    blob: []mut u8
+}
+
+fn dropRemoteInbox(s: *mut Script) {
+    for b in s.remote_inbox.items() { s.alloc.free(b.blob) }
+
+    s.remote_inbox.deinit()
+}
+
+fn akDropRemoteBuffers(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let id = try it.toNumber(it.arg(a, 0))
+
+    for k, b in s.remote_inbox.items() {
+        if b.id as f64 == id {
+            s.alloc.free(s.remote_inbox.orderedRemove(k).blob)
+
+            return Value.Undefined
+        }
+    }
+
+    return Value.Undefined
+}

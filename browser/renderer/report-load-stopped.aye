@@ -1,0 +1,10 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/frame/local_frame.cc (DidStopLoading: the browser tells the embedder's owner element)
+fn reportLoadStopped(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    if !engine.embedded() || r.load_said == p.id || !engine.loadFinished(p) { return }
+
+    r.load_said = p.id
+    try send(r.alloc, r.conn, r.tab, ipc.Message.LoadStopped)
+}

@@ -22,6 +22,7 @@ fn jsdom_case(
     let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_LAYOUT_CHECK", "1")
+        .env("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")
         .args(&all)
         .output()
         .unwrap();
@@ -258,6 +259,7 @@ fn jsdom_gc_stress() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_JS_GC", "stress")
+            .env("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")
             .args(["dump", "--tree", "--js", &rel])
             .spawn_drained()
             .wait_with_output_within(limit)

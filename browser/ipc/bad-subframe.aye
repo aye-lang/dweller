@@ -3,6 +3,8 @@ import std.math
 let MAX_SUBFRAME_PX: u32 = 16384
 let MAX_SUBFRAME_AT: f64 = 16777216.0
 let MAX_SUBFRAME_URL: usize = 2097152
+let MAX_SUBFRAME_NAME: usize = 4096
+let ALL_SANDBOX_FLAGS: u32 = 262143
 
 pub fn badSubframe(s: Subframe) bool {
     let c = s.clip
@@ -12,6 +14,7 @@ pub fn badSubframe(s: Subframe) bool {
     let inside = c[0] as f64 >= s.x && c[1] as f64 >= s.y && c[2] as f64 <= s.x + s.width as f64 && c[3] as f64 <= s.y + s.height as f64
 
     if s.key == 0 || !at_ok || !size_ok || s.url.len == 0 || s.url.len > MAX_SUBFRAME_URL { return true }
+    if s.sandbox > ALL_SANDBOX_FLAGS || s.name.len > MAX_SUBFRAME_NAME { return true }
     if c[0] > c[2] || c[1] > c[3] || c[2] > MAX_SUBFRAME_PX || c[3] > MAX_SUBFRAME_PX { return true }
 
     return !empty && !inside

@@ -183,7 +183,20 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return takeContext(tp, got)
         }
 
+        .PostMessage { .. } => {
+            if got.frame != slot.id { return "bad post_message" }
+
+            return routePostMessage(tp, got.message)
+        }
+
+        .ProxyNavigate { .. } => {
+            if got.frame != slot.id { return "bad proxy_navigate" }
+
+            return navigateProxy(tp, got.message)
+        }
+
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 

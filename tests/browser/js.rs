@@ -17,7 +17,12 @@ fn wasm_api() {
     for name in ["api"] {
         let page = format!("browser/tests/wasm/{name}.html");
         let golden = root().join(format!("browser/tests/wasm/{name}.txt"));
-        let out = run(&["dump", "--text", "--js", &page]);
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")
+            .args(["dump", "--text", "--js", &page])
+            .output()
+            .unwrap();
         let got = text(&out.stdout);
         if bless && present {
             std::fs::write(&golden, &got).unwrap();
@@ -39,7 +44,8 @@ fn wasm_api() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller: the
+/// loop.wasm (browser/tests/wasm/loop.rs, built from Rust) in Dweller (the
+/// page fetches it from `file:`, so file access from files is on): the
 /// checksum must be node's; the median time of 20M steps is printed (with
 /// node's when `node` is installed) for comparison, not checked.
 #[test]
@@ -48,7 +54,12 @@ fn wasm_loop_bench() {
         println!("skipped: no libwasmtime (browser/wasm/fetch_wasmtime.sh)");
         return;
     }
-    let out = run(&["dump", "--text", "--js", "browser/tests/wasm/bench.html"]);
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")
+        .args(["dump", "--text", "--js", "browser/tests/wasm/bench.html"])
+        .output()
+        .unwrap();
     let got = text(&out.stdout);
     assert!(
         out.status.success() && out.stderr.is_empty(),

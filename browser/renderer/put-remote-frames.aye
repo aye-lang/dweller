@@ -18,7 +18,13 @@ fn putRemoteFrames(r: *TabRenderer, out: *mut text.Builder, p: *mut engine.Page,
         if !f.page.remote {
             try putRemoteFrames(r, out, f.page, x, y - math.floor(f.scroll * r.scale + 0.5), inner)
         } else if w >= 1.0 && h >= 1.0 {
-            try ipc.putSubframe(out, ipc.Subframe { key: f.page.id, x: x, y: y, width: w as u32, height: h as u32, clip: shownClip(inner), url: f.page.url.href })
+            var holder = p.id
+
+            if p.parent == null { holder = 0 }
+
+            let s = ipc.Subframe { key: f.page.id, x: x, y: y, width: w as u32, height: h as u32, clip: shownClip(inner), url: f.page.url.href, holder: holder, sandbox: engine.ownerSandbox(p, f.el), name: p.doc.attr(f.el, "name") orelse "" }
+
+            try ipc.putSubframe(out, s)
         }
     }
 }

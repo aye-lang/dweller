@@ -1,0 +1,17 @@
+let SB_NAVIGATION: u32 = 1
+let SB_TOP_NAVIGATION: u32 = 4
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#allowed-by-sandboxing-to-navigate
+fn proxyNavigationAllowed(from: *mut TabProcess, to: *mut TabProcess) bool {
+    var up = to.embedder
+
+    while up |p| {
+        if p == from { return true }
+
+        up = p.embedder
+    }
+
+    if to.embedder == null { return from.sandbox & SB_TOP_NAVIGATION == 0 }
+
+    return from.sandbox & SB_NAVIGATION == 0
+}

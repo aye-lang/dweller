@@ -1,0 +1,15 @@
+import engine
+import ipc
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame.cc (ForwardPostMessage: to the browser's RouteMessageEvent)
+fn postRemote(m: engine.RemotePost) AllocError!void {
+    let r = windows_renderer orelse return
+    var origin = m.source_origin
+
+    if evilTest("post-message") { origin = "http://evil.example" }
+
+    let out = ipc.Message.PostMessage { key: m.to.key, frame: m.to.frame, page: m.to.page, source_page: m.source_page, source_origin: origin, target_origin: m.target_origin, data: m.data, buffers: m.buffers }
+
+    send(r.alloc, r.conn, r.tab, out) catch return
+}

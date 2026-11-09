@@ -69,6 +69,7 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "closeWindow", 0, akCloseWindow)
     try defMethod(it, o, "winClose", 1, akWinClose)
     try defMethod(it, o, "setWindowName", 1, akSetWindowName)
+    try installRemoteWindows(it, o)
 }
 
 // ---- wrappers of other documents
@@ -141,8 +142,8 @@ pub fn sameOrigin(a: *mut Page, b: *mut Page) bool {
     }
     let u = &x.url
     let v = &y.url
-    if text.eql(u.scheme, "file") && text.eql(v.scheme, "file") {
-        return true
+    if text.eql(u.scheme, "file") || text.eql(v.scheme, "file") {
+        return fileAccessFromFiles() && text.eql(u.scheme, v.scheme)
     }
     if text.eql(u.scheme, "about") || text.eql(v.scheme, "about") {
         return false
@@ -298,12 +299,18 @@ fn akFrameWindow(it: *mut Interp, a: Args) JsError!Value {
 // The window of the parent page; null for a tab's page.
 fn akParentWindow(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
+    if s.page.parent == null && frameOwnerOf(s.page) != null {
+        return parentValue(s, s.page)
+    }
     return windowOpt(s, s.page.parent)
 }
 
 // The window of the tab's page; null when it is this one.
 fn akTopWindow(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
+    if frameOwnerOf(s.page) != null {
+        return tabTopValue(s, s.page)
+    }
     let top = rootPage(s.page)
     if top == s.page {
         return Value.Null
@@ -328,6 +335,9 @@ fn akFrameElement(it: *mut Interp, a: Args) JsError!Value {
 fn akWindowName(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
     if s.page.parent == null {
+        if frameOwnerOf(s.page) |o| {
+            return it.newString(o.name)
+        }
         if contextOf(s.page.context) |c| {
             return it.newString(c.name)
         }
@@ -485,7 +495,7 @@ fn queueMessage(ts: *mut Script, data: ?[]u8, origin: []u8, from: *mut Page) JsE
 
 fn akWinDocument(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return Value.Undefined
+    let page = (try argWindow(it, a)) orelse return remoteCrossOrigin(it, a, "the document", Value.Undefined)
     if !sameOrigin(s.page, page) {
         return crossOrigin(it, "the document")
     }
@@ -496,17 +506,14 @@ fn akWinDocument(it: *mut Interp, a: Args) JsError!Value {
 // The parent's window (the window itself for a tab's page).
 fn akWinParent(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return Value.Null
-    if page.parent |up| {
-        return windowValue(s, up)
-    }
-    return windowValue(s, page)
+    let page = (try argWindow(it, a)) orelse return remoteTop(it, a)
+    return parentValue(s, page)
 }
 
 fn akWinTop(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return Value.Null
-    return windowValue(s, rootPage(page))
+    let page = (try argWindow(it, a)) orelse return remoteTop(it, a)
+    return tabTopValue(s, page)
 }
 
 fn akWinLength(it: *mut Interp, a: Args) JsError!Value {
@@ -516,7 +523,7 @@ fn akWinLength(it: *mut Interp, a: Args) JsError!Value {
 
 fn akWinHref(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return it.newString("about:blank")
+    let page = (try argWindow(it, a)) orelse return remoteCrossOrigin(it, a, "the location", try it.newString("about:blank"))
     if !sameOrigin(s.page, page) {
         return crossOrigin(it, "the location")
     }
@@ -527,7 +534,10 @@ fn akWinHref(it: *mut Interp, a: Args) JsError!Value {
 // against this page) once the script returned.
 fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return Value.Undefined
+    let page = (try argWindow(it, a)) orelse return navigateRemote(it, a)
+    if page.remote {
+        return navigateRemote(it, a)
+    }
     if !sandboxAllowsNavigation(s.page, page, false) {
         return domError(it, "SecurityError", "Failed to set the 'href' property on 'Location': the frame is sandboxed.")
     }
@@ -567,6 +577,11 @@ fn winContext(it: *mut Interp, v: Value) u32 {
 }
 
 fn akWinClosed(it: *mut Interp, a: Args) JsError!Value {
+    if routeOf(it, it.arg(a, 0)) |r| {
+        if r.key == 0 {
+            return js.boolVal(false)
+        }
+    }
     if standInClosed(it, it.arg(a, 0)) {
         return js.boolVal(true)
     }

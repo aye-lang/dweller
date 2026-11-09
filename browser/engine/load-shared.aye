@@ -14,6 +14,12 @@ pub fn loadShared(alloc: Allocator, target: *Url, body: ?*net.Body, initiator: n
     try h.adoptAt(h.current, &mut p.history)
     p.shared = h
     try attachLoading(p)
+
+    if frame_owner |o| {
+        setSandbox(p, p.sandbox | o.sandbox)
+        owner_context = p.context
+    }
+
     try runDocument(p, scriptingEnabled())
 
     return p

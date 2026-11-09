@@ -1,0 +1,12 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn takeNavRequest(slot: *TabSlot, tp: *mut TabProcess) AllocError!void {
+    var href = tp.nav_request
+
+    tp.nav_request = text.Builder.init(tp.url.alloc)
+    defer href.deinit()
+
+    try beginNavigation(slot, tp, href.bytes(), 0, "", "", net.ReferrerPolicy.StrictOriginWhenCrossOrigin)
+}

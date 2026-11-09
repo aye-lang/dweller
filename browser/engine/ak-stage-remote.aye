@@ -1,0 +1,22 @@
+import engine.workers
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akStageRemote(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let bytes = try workers.bufferBytes(it, it.arg(a, 0))
+    var len = [4]u8{0, 0, 0, 0}
+
+    putLittle(len[..], 0, bytes.len as u32, 4)
+    try s.remote_staged.append(len[..])
+    try s.remote_staged.append(bytes)
+
+    return Value.Undefined
+}
+
+fn akWinRemote(it: *mut Interp, a: Args) JsError!Value {
+    return js.boolVal(routeOf(it, it.arg(a, 0)) != null)
+}

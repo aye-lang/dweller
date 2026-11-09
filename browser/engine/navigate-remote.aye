@@ -1,0 +1,29 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// blink: core/frame/remote_frame.cc (Navigate)
+fn navigateRemote(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let to = routeOf(it, it.arg(a, 0)) orelse return Value.Undefined
+
+    if !remoteNavigationAllowed(s.page, to) {
+        return domError(it, "SecurityError", "Failed to set the 'href' property on 'Location': the frame is sandboxed.")
+    }
+
+    let b = try it.builder()
+    defer it.release(b)
+
+    try argText(it, a, 1, b)
+
+    let target = s.page.resolve(it.alloc, b.bytes()) catch |e| {
+        return domError(it, "SyntaxError", "Failed to set the 'href' property on 'Location': not a valid URL.")
+    }
+
+    defer target.deinit(it.alloc)
+
+    if remote_navigate |go| { try go(to, target.href) }
+
+    return Value.Undefined
+}

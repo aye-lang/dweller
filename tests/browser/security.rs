@@ -203,7 +203,8 @@ fn window_sandbox_targets() {
 /// page, fetch, XHR, img, script, a style sheet and an iframe of a
 /// `file:` URL fail as network errors, and `location`, `window.open` and
 /// a link click to one show no byte of it. The same pages as `file:`
-/// pages load and show it all, and the browser opens a `file:` URL it
+/// pages load and show it (Q3.1b: all but fetch and XHR, which a `file:`
+/// page cannot use on a `file:` URL), and the browser opens a `file:` URL it
 /// is given.
 #[test]
 fn no_file_from_web() {
@@ -229,7 +230,7 @@ fn no_file_from_web() {
     );
     assert_eq!(
         loads(&local),
-        "fetch read secret = 'LOCAL SECRET', framed LOCAL SECRET, iframe load, img load, link load, script load, style rgb(255, 0, 0), xhr read secret = 'LOCAL SECRET'"
+        "fetch TypeError, framed LOCAL SECRET, iframe load, img load, link load, script load, style rgb(255, 0, 0), xhr error"
     );
     let goes = |dir: &str, how: &str, events: &str| {
         let out = run_window(&[
@@ -258,4 +259,34 @@ fn no_file_from_web() {
             "{how} from a file:\n{got}"
         );
     }
+}
+
+/// Q3.1b: each `file:` document has its own origin
+/// (`browser/tests/file-origin/`, engine/windows.aye `sameOrigin`). In
+/// `a.html`, the iframe of `b.html` is cross-origin (`contentDocument` is null, `contentWindow.document`
+/// and `location` throw SecurityError), `fetch` of it fails, and
+/// `location.origin` is "null"; the page's own `<script src>` and
+/// `<img>` still load. `DWELLER_ALLOW_FILE_ACCESS_FROM_FILES=1` (Chromium's
+/// allow_file_access_from_file_urls) gives the old shared origin back.
+#[test]
+fn file_documents_are_cross_origin() {
+    let page = "browser/tests/file-origin/a.html";
+    let first = |envs: &[(&str, &str)]| {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .args(["dump", "--js", "--text", page])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        text(&out.stdout).lines().next().unwrap_or("").to_string()
+    };
+    assert_eq!(
+        first(&[]),
+        "contentDocument null, fetch TypeError, frame SecurityError, img load, location SecurityError, origin null, own script loaded"
+    );
+    assert_eq!(
+        first(&[("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")]),
+        "contentDocument [object HTMLDocument], fetch read, frame read, img load, location read, origin null, own script loaded"
+    );
 }

@@ -1,0 +1,20 @@
+import engine
+import std
+import std.text
+
+fn wptTimeout(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let ms = std.os.getenv("DWELLER_WPT_TIMEOUT_MS") orelse return
+    let n = text.parseInt(ms) catch 0
+
+    if !text.eql(std.os.getenv("DWELLER_TEST") orelse "", "1") || engine.embedded() || n <= 0 { return }
+
+    var src = text.Builder.init(r.alloc)
+    defer src.deinit()
+    var ignored = text.Builder.init(r.alloc)
+    defer ignored.deinit()
+
+    try src.append("setTimeout(() => typeof timeout === 'function' && timeout(), ")
+    try src.appendInt(n)
+    try src.append(")")
+    _ = try engine.evalInPage(p, src.bytes(), &mut ignored)
+}
