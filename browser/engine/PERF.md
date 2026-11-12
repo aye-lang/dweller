@@ -1562,3 +1562,71 @@ VM navier-stokes's wall time follows its instructions little (fast 0.96 to
 `python3 browser/tools/callgrind_lines.py SAFE.out FAST.out` (the fast
 build with `--cflags -g` for line info), and
 `python3 browser/tools/jsbench_modes.py safe=BIN fast=BIN A=BIN`.
+
+## Q4.25: W7 with a renderer per site (2026-11-12)
+
+`docs/plans/cards/Q4.25.md`. Main bd2e1695, `browser/build.sh` (safe), compiler
+`aye/target/release/aye`, Apple M2 Pro, the archives of `target/sites`. One
+`scripts/capped.sh` job ran the whole series (nice 10, QoS clamp), 3 runs, each
+run per site: in process scroll, in process click, site scroll, site click.
+The machine was not quiet (BTLEServer holds a core, other agents' jobs between
+ours): 1-minute load 6.0 to 26.3 (each row below). `window_perf.py scroll` now
+also prints `longest_task_ms` (the longest `timers`, `scripts` or `ui_raf`
+record: in site mode only the renderers write these, the window writes the `ui_`
+loop records), `input_to_present_n_p50_p95` (each wheel or click to the
+window's next present) and, for later cards, `step_ms_n_p50_p95_max`; `--step`
+replaces the wheel word and the run then closes the tab (`key:cmd+w`).
+
+```
+A=$PWD/target/sites; P="python3 browser/tools/window_perf.py scroll"
+# in process (the Q4.21 scroll, same as report --replay):
+DWELLER_REPLAY=$A/$S $P $URL --log L
+DWELLER_REPLAY=$A/$S $P $URL --frames 10 --step "click:6,500 release:6,500" --run-frames 400 --log L
+# a renderer per site:
+DWELLER_PROCESS=site DWELLER_REPLAY=$A/$S $P $URL --step "renderer:loaded wheel:-3 renderer:input" --run-frames 8000 --log L
+DWELLER_PROCESS=site DWELLER_REPLAY=$A/$S $P $URL --frames 10 --step "renderer:loaded click:6,500 release:6,500 renderer:input" --run-frames 8000 --log L
+```
+
+Medians of 3 (min–max), ms. "Window loop" is the longest `ui_loop`; "renderer
+task" the longest `timers`/`scripts`/`ui_raf` record (a lower bound of the
+renderer's task: layout and paint after it are not in one record); "present
+after input" is `input_to_present` p95 of the scroll run (40 wheels).
+
+| Site | In process: longest loop | Site: window's longest loop | Site: renderer's longest task | Scroll p95 as seen | Click to next frame | Passes 100 ms? |
+|---|---:|---:|---:|---|---|---|
+| bbc | 553 (397–2070) | 50 (45–55); click runs 201 (28–258) | 4133 (3540–5094) | in process 403 (305–1806); site: not measured (note 1), the window presents in 22 ms but the scroll waits for tasks up to 5094 ms | in process 147 / 295 (p50/p95); site: not measured (note 2) | in process no; site window yes on scroll, no on click (2 of 3) |
+| zol | 726 (699–767) | scroll: hangs (note 3); click runs 18 (12–22) | 1531 (1511–1551), click runs | in process 341 (332–347); site: hangs | in process 3.3 / 168; site: not measured (note 2) | in process no; site window yes (click runs) |
+| mistral | 1176 (1157–1423) | 1415 (668–1516) | 1335 (1135–1411) | in process 283 (273–321); site: not measured (note 1) | in process 140 / 160; site: not measured (note 2) | no, in both (note 4) |
+| react | 138 (123–162) | 20 (19–33); click runs 40 (30–110) | 407 (365–441) | in process 71 (61–81); site: not measured (note 1) | in process 610 / 838 (note 5); site: not measured (note 2) | in process no; site window yes (1 click run 110) |
+
+1-minute load per run (in process scroll / site scroll): bbc 7.1, 12.1, 9.3 /
+7.0, 12.7, 14.0; zol 8.1, 6.0, 25.8 / 10.2, 6.6, 26.3; mistral 11.6, 7.0, 19.6
+/ 11.1, 6.6, 17.4; react 10.1, 6.6, 15.6 / 13.0, 6.6, 16.3. The in process
+loops are above Q4.21's (load 2.0–3.6): bbc 376, zol 687, mistral 1190, react
+105.
+
+1. Not measured. In site mode `input_to_present` ends at the window's next
+   present, which comes 14–22 ms after the wheel (p95) but shows the old
+   pixels: between two wheels the window waited up to 503 iterations for the
+   renderer's `input_ack` while the renderer ran tasks up to 5094 ms (bbc;
+   mistral 1411, react 407). The time from a wheel to the renderer's frame
+   has no record; the tool's `step_ms` (time between two steps' presents as
+   they reach the tool) is that number, but its runs were cancelled to free
+   the machine lock.
+2. Not measured, as note 1: the window's present follows a click in 2–5 ms
+   (p95) on every site, with the old pixels.
+3. Hangs: 3 of 3 runs hit the tool's 600 s timeout, window and renderer at 0%
+   CPU, no log kept (the tool then still wrote the log only at exit; it keeps
+   it now). `DWELLER_PROCESS=site DWELLER_REPLAY=$A/zol python3
+   browser/tools/window_perf.py scroll https://www.zol.com.cn/ --step
+   "renderer:loaded wheel:-3 renderer:input" --run-frames 8000`. The click
+   run (same `renderer:loaded`, then `renderer:input`) ends, so the wait
+   that does not end is the wheel's `renderer:input`.
+4. Mistral's window loop is 668–1516 ms in site mode: in that iteration the
+   window's own records are `ui_draw` 2 ms and `ui_events` 0 ms; the rest of
+   the 1.5 s has no window record (the iteration's stderr holds the
+   renderers' `timers` 1104 ms and `image_decode`). Something in the window's
+   loop outside its records (`pollTabProcesses`, `sendFrame`, the fetches it
+   serves) waits on a renderer. Not diagnosed here.
+5. React in process: each click at (6, 500) costs two `restyle` `subtrees`
+   of 293 ms (inside `script_layout`), not script.
