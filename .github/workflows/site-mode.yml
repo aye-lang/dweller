@@ -1,0 +1,104 @@
+name: site-mode
+
+# Flip readiness as a number (Q2.14a): the whole browser suite with
+# DWELLER_PROCESS=site, passed over total and the failing names. Not a
+# required check. Failing tests are the measurement: the run is red only
+# when the build breaks or a shard does not finish.
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SHARDS: 4
+
+jobs:
+  shard:
+    name: site (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages (Ubuntu)
+        run: sh scripts/setup-ubuntu.sh
+
+      - name: Cache ANGLE
+        uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+
+      - name: Fetch ANGLE
+        run: |
+          if grep -q '^[0-9a-f]\{64\}  ' browser/gpu/angle.lock; then
+            browser/gpu/fetch_angle.sh
+          else
+            echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
+          fi
+
+      - name: Cache wasmtime
+        uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
+
+      - name: Fetch wasmtime
+        run: |
+          pc="$(browser/wasm/fetch_wasmtime.sh)"
+          echo "PKG_CONFIG_PATH=$pc" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the pinned aye
+        id: aye-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/aye
+          key: aye-${{ runner.os }}-${{ hashFiles('AYE_REV') }}
+
+      - name: Install the pinned aye
+        if: steps.aye-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
+
+      - name: cargo test --release --test browser, DWELLER_PROCESS=site
+        env:
+          DWELLER_PROCESS: site
+        run: .github/scripts/site-mode-shard.sh run ${{ matrix.shard }} "$SHARDS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-mode-${{ matrix.shard }}
+          path: |
+            target/site-mode/ok.txt
+            target/site-mode/failed.txt
+          retention-days: 30
+
+  count:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: site-mode-*
+          path: target/site-mode-shards
+
+      - name: Passed over total
+        run: .github/scripts/site-mode-shard.sh summary "$SHARDS" target/site-mode-shards | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Every shard finished
+        env:
+          RESULT: ${{ needs.shard.result }}
+        run: test "$RESULT" = success
