@@ -2,14 +2,11 @@ use super::*;
 
 /// Runs `browser/tests/ui/oopif.html` (a `localhost` iframe and a same-site
 /// one in a `127.0.0.1` page) with `query`, in the window's own process
-/// when `mode` is empty, else with `DWELLER_PROCESS=mode`; saves the PNG
-/// and gives the `--state` text.
+/// (`IN_PROCESS`) when `mode` is empty, else with `DWELLER_PROCESS=mode`;
+/// saves the PNG and gives the `--state` text.
 fn run_oopif(base: &str, query: &str, mode: &str, png: &Path, events: &str, envs: &[(&str, &str)]) -> String {
-    let mut command = dweller_command();
-    if !mode.is_empty() {
-        command.env("DWELLER_PROCESS", mode);
-    }
-    let out = command
+    let out = dweller_command()
+        .env("DWELLER_PROCESS", if mode.is_empty() { IN_PROCESS.1 } else { mode })
         .current_dir(root())
         .envs(envs.iter().copied())
         .arg(format!("{base}/ui/oopif.html{query}"))

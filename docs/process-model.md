@@ -168,6 +168,12 @@ now). Firefox instead allows a few processes per site
 **Stages.** `tab`: one unlocked process per BCG, no OOPIF, partition
 checked. `site`: locks, rules 1 and 3. OOPIF: rule 2.
 
+**Modes.** `DWELLER_PROCESS` picks one: `tab` and `site` as above, and
+`single`, the page in the window's own process (what `--single-process`
+selects after Q2.14). Unset, or any other value, is `single` until Q2.14
+makes `site` the default. A test arm that means the window's own process
+sets `single` (Q2.14c), so it keeps that meaning after the flip.
+
 ## 4. The site-lock checks
 
 The browser knows each frame's committed origin from its own

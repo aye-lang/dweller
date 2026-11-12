@@ -50,7 +50,7 @@ fn link_events_in_renderer() {
     };
     let href = format!("{}/net/link-events.html?other={}", srv.base, other.base);
     let want = std::fs::read_to_string(root().join("browser/tests/net/link-events.txt")).unwrap();
-    for (events, envs) in [("", &[][..]), ("renderer:title:done", &[("DWELLER_PROCESS", "tab")][..])] {
+    for (events, envs) in [("", &[IN_PROCESS][..]), ("renderer:title:done", &[("DWELLER_PROCESS", "tab")][..])] {
         let got = login_window_with(&href, events, None, envs);
         for line in want.lines().filter(|l| l.contains(": ")) {
             assert!(got.contains(line), "{envs:?}: missing {line:?} in\n{got}");

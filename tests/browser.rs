@@ -754,15 +754,25 @@ fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
     login_window_with(url, events, profile, &[])
 }
 
-/// With `envs` (`DWELLER_PROCESS=tab`) the page loads in a renderer, so
-/// the script first waits for it, and after each Enter for the input to
-/// be handled and the navigation it started to load.
+/// The arm of a test that means the window's own process: it says so, so
+/// that it keeps that meaning whatever `DWELLER_PROCESS` the run has.
+const IN_PROCESS: (&str, &str) = ("DWELLER_PROCESS", "single");
+
+/// Whether `envs` (`DWELLER_PROCESS=tab` or `site`, not `IN_PROCESS`)
+/// loads the page in a renderer.
+fn in_renderer(envs: &[(&str, &str)]) -> bool {
+    !envs.is_empty() && !envs.contains(&IN_PROCESS)
+}
+
+/// With `envs` `in_renderer` the page loads in a renderer, so the
+/// script first waits for it, and after each Enter for the input to be
+/// handled and the navigation it started to load.
 fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&str, &str)]) -> String {
     let waited = format!(
         "renderer:loaded {}",
         events.replace("key:return", "key:return renderer:input renderer:loaded")
     );
-    let events = if envs.is_empty() { events } else { &waited };
+    let events = if in_renderer(envs) { &waited } else { events };
     let mut c = dweller_command();
     c.current_dir(root()).envs(envs.iter().copied());
     if let Some(p) = profile {
