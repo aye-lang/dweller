@@ -1,8 +1,16 @@
 import ipc
 
-fn cancelRemote(wire: u32) {
+fn cancelRemote(load_id: u32) {
     let r = fetch_renderer orelse return
 
-    dropPending(r, wire)
-    send(r.alloc, r.conn, r.tab, ipc.Message.FetchCancel { id: wire }) catch {}
+    for p in r.pending.items() {
+        if p.load_id != load_id { continue }
+
+        let wire = p.id
+
+        dropPending(r, wire)
+        send(r.alloc, r.conn, r.tab, ipc.Message.FetchCancel { id: wire }) catch {}
+
+        return
+    }
 }
