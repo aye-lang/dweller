@@ -18,7 +18,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [8][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", ""}
+    var argv = [9][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -32,6 +32,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     if text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "site") {
         argv[n] = "--site-frames"
+        n += 1
+    }
+
+    if engine.consoleEchoed() {
+        argv[n] = "--console"
         n += 1
     }
 

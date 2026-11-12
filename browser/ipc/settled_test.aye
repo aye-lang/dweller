@@ -1,0 +1,16 @@
+import std.text
+
+test "settled goes from the renderer and round-trips" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 3, Message.Settled { on: 1 })
+
+    match got.message {
+        .Settled { on } => @expectEqual(1, on)
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(Message.Settled { on: 0 }))
+    @expectEqual(78, Message.Settled { on: 0 }.kind())
+}
