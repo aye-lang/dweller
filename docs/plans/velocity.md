@@ -199,10 +199,11 @@ These replace "one card and one PR" in `foundations.md`.
 
 | Step | What | Depends on | Status |
 |---|---|---|---|
-| DV1 | `ci` asks for macOS only where it decides: one macOS run per landing, not three | – | open |
-| DV2 | The macOS shards are balanced again and under 9 minutes | – | open |
-| DV3 | A docs-only change passes the required checks in under a minute | DV1 | open |
-| DV4 | `check_plan.py`: the plan's one-home rule, checked in CI | – | open |
+| DV1 | `ci` asks for macOS only where it decides: one macOS run per landing, not three | – | in progress (landed 2026-11-12; counted over the next 30 landings) |
+| DV2 | The macOS shards are balanced again and under 9 minutes | – | in progress (2026-11-12: every test has a measured time and the shards are balanced, but each takes about 15 minutes; the rest is DV2b) |
+| DV2b | The macOS-only wait in the slowest tests is found and removed: six tests take 71 to 75 s and `link_events` 140 s on macOS, and under 10 s on Ubuntu (DV2's card). Needs the Mac | DV2 | open |
+| DV3 | A docs-only change passes the required checks in under a minute | DV1 | in progress (landed 2026-11-12; checked on the next docs-only PR) |
+| DV4 | `check_plan.py`: the plan's one-home rule, checked in CI | – | done |
 | DV5 | The site archives are readable off the Mac; W2 and W7 by replay run in the cloud | the owner (decision 6) | open |
 | DV6 | One scheduled run fills the CI cells of the scoreboard | Q0.1, Q2.14a | open |
 | DV7 | S1 is counted: consecutive green merge-queue runs | DV6 | open |

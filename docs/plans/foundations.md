@@ -37,6 +37,7 @@ that decides who can close it.
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
 | S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
+| Flip readiness (Q2.14a) | 151 of 249 tests pass with `DWELLER_PROCESS=site` | 2026-11-12 | CI (the daily `site-mode` job) | Q2.14b to Q2.14h (about 50 of the 98 are test or harness artefacts, 7 are product gaps, the rest have no known cause yet), then Q2.14 |
 | S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
 | S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
@@ -47,7 +48,7 @@ that decides who can close it.
 | W8 first paint, 20 sites | 19 of 20 (zol's live load times out) | 2026-11-04 | the Mac only (live, Chrome) | never measured with site isolation; Q4.12 |
 | M1 memory per tab | no budget | – | the Mac | Q2.13 |
 | F1 basic features | 0 of 18 | – | per row | Q5 |
-| W9 conformance | 32 areas at threshold, 13 below; 12 of the 32 are within 3.5 points of their floor | 2026-11-09 | cloud; the weekly CI job has not passed on its schedule | Q6, Q0.1 |
+| W9 conformance | 32 areas at threshold, 13 below; 12 of the 32 are within 3.5 points of their floor | 2026-11-09 | cloud; the weekly CI job is red on real drops since 2026-11-09 (Q0.1's card: Q1.12, Q6.15) | Q6, Q0.1 |
 | W2 sites load and agents work | passed | 2026-10-15 | the Mac (archives) | Q0.3 |
 | W3 sites look right | 8 of 20 | 2026-10-15 | the Mac and the owner's eyes | Q0.3 |
 
@@ -115,10 +116,10 @@ sitting clears it (`velocity.md`, "Rules", 6):
 
 | Lane | Next | Then |
 |---|---|---|
-| base | Q2.14a, Q0.1, DV1, DV2 | DV3, DV4, Q0.3b |
-| proc | Q2.12 (the Spaces flip) | the Q2 readiness list, Q2.13, Q2.14 |
+| base | Q1.12, Q0.1, DV2b | Q0.3b; DV1 to DV3 are counted over the next landings |
+| proc | Q2.12 (Q2.12d, then the Spaces flip); Q2.14b to Q2.14d (in flight), then Q2.14e to Q2.14h | the rest of the Q2 readiness list, Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
-| perf | Q4.25, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
+| perf | Q4.25, then Q6.15, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
 
 ## Decisions (2026-11-04)
@@ -209,7 +210,7 @@ and the weekly workflow is green.
 | Step | What | Verify | Chromium |
 |---|---|---|---|
 | Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
-| Q0.3 | Re-run W2, W3 and the conformance table on `main` | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
+| Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 | Q0.3b | (proposed, decision 3) A "Target" column in `docs/conformance.md` for the X2 areas and the Q6 areas, beside the floor that `conformance.py check` enforces. Each target names where it comes from: the features the 20 sites and the daily sites use, or the score of the subtests that do not need a deferred feature. X2 and W9 then read "at target" | the table has the column, every X2 and Q6 area has a target with one line of reason, and `conformance.py check` still enforces only the floor | – |
 
 Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5.
@@ -223,6 +224,7 @@ can be stopped.
 |---|---|---|---|
 | Q1.4 | Flaky tests: only when the TC5b record files a `flaky:` issue (none since 2026-10-21 in 38 `ci` runs; `window_spaces` and `window_css_animation` were last seen before Q1.3) | 50 runs in a row | – |
 | Q1.11 | Soak: 1 h of scripted browsing over the archives, with RSS sampled and `--leak-check` at exit | RSS growth stays under the budget, with no leak | – |
+| Q1.12 | Crashes the weekly conformance run of 2026-11-09 found (Q0.1's card): SIGSEGV on three webaudio `audiobuffersource` pages and twelve WebGL 2 wasm-memory pages, abort on two WebGL 2 pages. Suspect: AYE_REV 2c95915 (bounds-check elimination) | the cause is in the card with its evidence, and the pages run without a crash in the weekly run | – |
 
 Q1.1 was listed as open at the stop, but its verify holds on `main`
 (`browser/build.sh` builds `--mode safe` by default, and the required
@@ -248,12 +250,18 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q2.14a | (proposed) Flip readiness as a number: a scheduled CI job, not required, runs the whole browser suite with `DWELLER_PROCESS=site` in the environment and prints passed over total and the failing names. A test that sets the variable itself is not changed. The count is the flip's burn-down, and each failing group becomes a row of the readiness list below | the job's summary shows the count on `main`; the count is in the scoreboard | – |
-| Q2.12 | Spaces become renderers: an agent's Space uses the same renderer processes, and the second copy of the engine in `ui/spaces.aye` goes away. Shared logins go through the browser's jar (first slice done, 2026-11-09: behind `DWELLER_SPACES=renderer` the window hosts each shared Space as renderer-backed tabs, with no Space process; messages 70–73; Spaces always use renderers in every mode; left: navigation fetches block the browser's loop, `isolated` Spaces still use a process, no openers across renderers, crash semantics, then the flip and the removal of the process path) | the `window_spaces*` tests pass | `content/browser/renderer_host/render_frame_host_impl.cc` (`CreateNewWindow`), `content/browser/devtools/protocol/target_handler.cc` (`CreateTarget`) |
+| Q2.14b | The headless `--events` and `--frames` run waits for the renderer by itself under the flag (22 tests; causes 1 and 5 of Q2.14a's card) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14c | The in-process arm of a two-arm test says that it is in process, so it keeps its meaning after the flip (21 tests; causes 4, 7 and 8) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14d | A renderer's `DWELLER_TIMING` records and the page's `[log]` lines reach the test (11 tests; causes 6 and 10) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14h | The 20 failures without a known cause (causes 3, 11, 15 and 19 to 23): read them from the first daily run after Q2.14b to Q2.14d, with shard 0's failure report kept whole, and give each a row | every failing test of the daily run has a cause in a card | – |
+| Q2.12 | Spaces become renderers: an agent's Space uses the same renderer processes, and the second copy of the engine in `ui/spaces.aye` goes away. Shared logins go through the browser's jar (slices Q2.12, Q2.12b and Q2.12c are done behind `DWELLER_SPACES=renderer`; next: Q2.12d, a popup's `opener`, then the flip and the removal of the process path; the status and the Left lists are in the cards) | the `window_spaces*` tests pass | `render_frame_host_impl.cc` (`CreateNewWindow`), `target_handler.cc` (`CreateTarget`) |
 | Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 
@@ -330,7 +338,7 @@ states the W7 sites it moves.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q4.25 | (proposed, decision 2) Measurement only: W7 at the window with `DWELLER_PROCESS=site`, on bbc, zol, mistral and react. While the renderer runs its longest task: the window's longest loop iteration, the scroll frame p95 the person sees, and the delay from a click to the next frame. Then one page on what W7 should measure with a renderer per site, and which open Q4 rows still move it. Chromium scrolls on the compositor thread from tiles it already has; the note says what the window would need to do the same from a renderer's last frame (the texture offset of P4.36c) | a table in `PERF.md` and the note in the card; the owner answers decision 2 | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` (scroll on the compositor thread), `docs/threaded_compositing.md` |
+| Q4.25 | (proposed, decision 2) Measurement only: W7 at the window with `DWELLER_PROCESS=site` on bbc, zol, mistral and react: the window's longest loop, the scroll frame p95 the person sees and the click-to-frame delay, while the renderer runs its longest task. Then one page on what W7 should measure with a renderer per site and which open Q4 rows still move it (detail in the card) | a table in `PERF.md` and the note in the card; the owner answers decision 2 | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc`, `docs/threaded_compositing.md` |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
@@ -409,6 +417,7 @@ check`. Chromium references come from the module map of
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
+| Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
 
 Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12.
 
