@@ -35,9 +35,9 @@ import sys
 PLANS = "docs/plans"
 OPEN, DONE, VELOCITY = f"{PLANS}/foundations.md", f"{PLANS}/foundations-done.md", f"{PLANS}/velocity.md"
 MAX_ROW = 600
-STEP_ID = r"(?:Q\d+\.\d+[a-z0-9]*|DV\d+)"
+STEP_ID = r"(?:Q\d+\.\d+[a-z0-9]*|DV\d+[a-z]?)"
 Q_ROW = re.compile(r"^\| (Q\d+\.\d+[a-z0-9]*) \|")
-DV_ROW = re.compile(r"^\| (DV\d+) \|.*\| ([^|]*) \|\s*$")
+DV_ROW = re.compile(r"^\| (DV\d+[a-z]?) \|.*\| ([^|]*) \|\s*$")
 STATUS = re.compile(r"^## Status:\s*(.*)")
 LEFT = re.compile(r"^(\s*)(?:(?:- )?left\b[^:]*:|## left\s*$)\s*(.*)$", re.IGNORECASE)
 MENTION = re.compile(rf"\b({STEP_ID})\b")

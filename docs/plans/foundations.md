@@ -37,6 +37,7 @@ that decides who can close it.
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
 | S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
+| Flip readiness (Q2.14a) | 151 of 249 tests pass with `DWELLER_PROCESS=site` | 2026-11-12 | CI (the daily `site-mode` job) | the 98 failures by cause (Q2.14a's card), then Q2.14 |
 | S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
 | S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
@@ -115,7 +116,7 @@ sitting clears it (`velocity.md`, "Rules", 6):
 
 | Lane | Next | Then |
 |---|---|---|
-| base | Q2.14a (the first count), Q1.12, Q0.1, DV2 | DV3, Q0.3b; DV1 is counted over its next 30 landings |
+| base | Q2.14a (the 98 failures by cause), Q1.12, Q0.1, DV2b | Q0.3b; DV1 to DV3 are counted over the next landings |
 | proc | Q2.12 (the Spaces flip) | the Q2 readiness list, Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
 | perf | Q4.25, then Q6.15, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
