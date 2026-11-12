@@ -37,7 +37,7 @@ that decides who can close it.
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
 | S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
-| Flip readiness (Q2.14a) | 151 of 249 tests pass with `DWELLER_PROCESS=site` | 2026-11-12 | CI (the daily `site-mode` job) | the 98 failures by cause (Q2.14a's card), then Q2.14 |
+| Flip readiness (Q2.14a) | 151 of 249 tests pass with `DWELLER_PROCESS=site` | 2026-11-12 | CI (the daily `site-mode` job) | Q2.14b to Q2.14h (about 50 of the 98 are test or harness artefacts, 7 are product gaps, the rest have no known cause yet), then Q2.14 |
 | S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
 | S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
@@ -116,8 +116,8 @@ sitting clears it (`velocity.md`, "Rules", 6):
 
 | Lane | Next | Then |
 |---|---|---|
-| base | Q2.14a (the 98 failures by cause), Q1.12, Q0.1, DV2b | Q0.3b; DV1 to DV3 are counted over the next landings |
-| proc | Q2.12 (the Spaces flip) | the Q2 readiness list, Q2.13, Q2.14 |
+| base | Q1.12, Q0.1, DV2b | Q0.3b; DV1 to DV3 are counted over the next landings |
+| proc | Q2.12 (Q2.12d, then the Spaces flip); Q2.14b to Q2.14d (in flight), then Q2.14e to Q2.14h | the rest of the Q2 readiness list, Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
 | perf | Q4.25, then Q6.15, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
@@ -250,12 +250,18 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q2.14a | (proposed) Flip readiness as a number: a scheduled CI job, not required, runs the whole browser suite with `DWELLER_PROCESS=site` in the environment and prints passed over total and the failing names. A test that sets the variable itself is not changed. The count is the flip's burn-down, and each failing group becomes a row of the readiness list below | the job's summary shows the count on `main`; the count is in the scoreboard | – |
+| Q2.14b | The headless `--events` and `--frames` run waits for the renderer by itself under the flag (22 tests; causes 1 and 5 of Q2.14a's card) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14c | The in-process arm of a two-arm test says that it is in process, so it keeps its meaning after the flip (21 tests; causes 4, 7 and 8) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14d | A renderer's `DWELLER_TIMING` records and the page's `[log]` lines reach the test (11 tests; causes 6 and 10) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14h | The 20 failures without a known cause (causes 3, 11, 15 and 19 to 23): read them from the first daily run after Q2.14b to Q2.14d, with shard 0's failure report kept whole, and give each a row | every failing test of the daily run has a cause in a card | – |
 | Q2.12 | Spaces become renderers: an agent's Space uses the same renderer processes, and the second copy of the engine in `ui/spaces.aye` goes away. Shared logins go through the browser's jar (slices Q2.12, Q2.12b and Q2.12c are done behind `DWELLER_SPACES=renderer`; next: Q2.12d, a popup's `opener`, then the flip and the removal of the process path; the status and the Left lists are in the cards) | the `window_spaces*` tests pass | `render_frame_host_impl.cc` (`CreateNewWindow`), `target_handler.cc` (`CreateTarget`) |
 | Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 
