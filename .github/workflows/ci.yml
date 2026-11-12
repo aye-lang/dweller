@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `labeled` so that adding the `macos` label starts a run with the
+    # macOS shards and `perf` (DV1). Any label starts a new run.
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
 
 concurrency:
@@ -11,18 +14,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # DV1: macOS runs only where it decides. A pull request runs the four
+  # Ubuntu shards; the two macOS shards run in the merge queue, or on a pull
+  # request with the label `macos`. A push to main runs only `caches`: the
+  # merge queue already tested that tree.
   browser-shard:
     name: browser (${{ matrix.os }}, ${{ matrix.part }})
+    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: macos-latest, shard: 0, shards: 2, part: 1/2 }
-          - { os: macos-latest, shard: 1, shards: 2, part: 2/2 }
-          - { os: ubuntu-24.04, shard: 0, shards: 4, part: 1/4 }
-          - { os: ubuntu-24.04, shard: 1, shards: 4, part: 2/4 }
-          - { os: ubuntu-24.04, shard: 2, shards: 4, part: 3/4 }
-          - { os: ubuntu-24.04, shard: 3, shards: 4, part: 4/4 }
+        include: >-
+          ${{ fromJSON(format('[{0}{1}]',
+          (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'macos')) &&
+          '{"os":"macos-latest","shard":0,"shards":2,"part":"1/2"},
+          {"os":"macos-latest","shard":1,"shards":2,"part":"2/2"},' || '',
+          '{"os":"ubuntu-24.04","shard":0,"shards":4,"part":"1/4"},
+          {"os":"ubuntu-24.04","shard":1,"shards":4,"part":"2/4"},
+          {"os":"ubuntu-24.04","shard":2,"shards":4,"part":"3/4"},
+          {"os":"ubuntu-24.04","shard":3,"shards":4,"part":"4/4"}')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
@@ -133,13 +143,16 @@ jobs:
 
   browser:
     needs: browser-shard
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: ubuntu-24.04
     steps:
       - name: Every browser shard passed
         run: test "${{ needs.browser-shard.result }}" = success
 
+  # A job skipped by its `if` reports success, so the required check `perf`
+  # passes on a pull request without the `macos` label.
   perf:
+    if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'macos')
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -191,3 +204,62 @@ jobs:
 
       - name: Perf gate
         run: python3 browser/tools/window_perf.py gate browser/tests/perf/budgets.json --binary target/dweller
+
+  # On a push to main, only fill the caches that pull requests and the merge
+  # queue restore: a run can restore caches of its own branch and of main,
+  # and caches saved by a merge-queue run stay on its temporary branch.
+  # On a cache hit every step is a no-op.
+  caches:
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the pinned aye
+        id: aye-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/aye
+          key: aye-${{ runner.os }}-${{ hashFiles('AYE_REV') }}
+
+      - name: Install system packages (Ubuntu)
+        if: runner.os == 'Linux' && steps.aye-cache.outputs.cache-hit != 'true'
+        run: sh scripts/setup-ubuntu.sh
+
+      - name: Install system packages (macOS)
+        if: runner.os == 'macOS' && steps.aye-cache.outputs.cache-hit != 'true'
+        run: brew install sdl2 freetype harfbuzz brotli pkgconf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install the pinned aye
+        if: steps.aye-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
+
+      - name: Cache ANGLE
+        uses: actions/cache@v4
+        with:
+          path: target/angle
+          key: angle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/gpu/angle.lock') }}
+
+      - name: Fetch ANGLE
+        run: |
+          if grep -q '^[0-9a-f]\{64\}  ' browser/gpu/angle.lock; then
+            browser/gpu/fetch_angle.sh
+          else
+            echo "::notice::browser/gpu/angle.lock has no hashes yet; ANGLE not fetched"
+          fi
+
+      - name: Cache wasmtime
+        uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
+
+      - name: Fetch wasmtime
+        run: browser/wasm/fetch_wasmtime.sh
