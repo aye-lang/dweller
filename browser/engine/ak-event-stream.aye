@@ -1,0 +1,59 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akEventStream(it: *mut Interp, a: Args) JsError!Value {
+    let input = try it.builder()
+    defer it.release(input)
+    let id = try it.builder()
+    defer it.release(id)
+
+    try argText(it, a, 0, input)
+    try argText(it, a, 1, id)
+
+    var es = EventStream.init(it.alloc)
+    defer es.deinit()
+
+    try es.id.append(id.bytes())
+    es.crlf = it.toBoolean(it.arg(a, 2))
+
+    let bytes = input.bytes()
+    var used: usize = 0
+    var split_crlf = es.crlf
+    var dispatched = false
+
+    if it.toBoolean(it.arg(a, 3)) {
+        used = streamStart(bytes)
+    }
+
+    let events = try it.newArray(0)
+
+    try it.push(js.objVal(events))
+
+    while try nextStreamEvent(&mut es, bytes, used) |end| {
+        used = end
+        split_crlf = es.crlf
+        dispatched = true
+        id.clear()
+        try id.append(es.id.bytes())
+        try pushStreamEvent(it, events, &es)
+    }
+
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+    try it.heap.pushElem(out, try it.newString(bytes[used..]))
+    try it.heap.pushElem(out, try it.newString(id.bytes()))
+    try it.heap.pushElem(out, js.boolVal(split_crlf))
+    try it.heap.pushElem(out, js.numVal(es.retry as f64))
+    try it.heap.pushElem(out, js.boolVal(dispatched))
+    try it.heap.pushElem(out, js.objVal(events))
+
+    let result = it.pop()
+
+    it.pop()
+
+    return result
+}

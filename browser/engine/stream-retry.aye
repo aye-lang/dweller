@@ -1,0 +1,20 @@
+import std.text
+
+let EVENT_STREAM_DEFAULT_RETRY: i64 = 3000
+
+// chromium: third_party/blink/renderer/modules/eventsource/event_source_parser.cc
+fn streamRetry(value: []u8) ?i64 {
+    if value.len == 0 {
+        return EVENT_STREAM_DEFAULT_RETRY
+    }
+
+    for c in value {
+        if c < '0' || c > '9' {
+            return null
+        }
+    }
+
+    let n = text.parseInt(value) catch return null
+
+    return n
+}

@@ -1,0 +1,21 @@
+import js
+import js.Interp
+import js.JsError
+
+fn pushStreamEvent(it: *mut Interp, events: u32, es: *EventStream) JsError!void {
+    let data = es.data.bytes()
+
+    if data.len == 0 {
+        return
+    }
+
+    var kind: []u8 = "message"
+
+    if es.kind.len() > 0 {
+        kind = es.kind.bytes()
+    }
+
+    try it.heap.pushElem(events, try it.newString(kind))
+    try it.heap.pushElem(events, try it.newString(data[0..data.len - 1]))
+    try it.heap.pushElem(events, try it.newString(es.id.bytes()))
+}
