@@ -14,13 +14,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # DV3: lists the changed files. `code` is false only when every changed
+  # file is under docs/ or ends in .md; then the shards and `perf` are
+  # skipped and the required checks `browser` and `perf` still report. If
+  # this job fails, `browser` fails (and `perf` where it runs), and an unset
+  # `code` counts as true (fail closed). The plan check runs here, so a
+  # docs-only change is still checked.
+  changes:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      # On pull_request the checkout is the test merge commit: its first
+      # parent is the base it was merged onto, so depth 2 is enough. On
+      # merge_group the base of the queue entry is fetched by its sha.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: List the changed files
+        env:
+          EVENT: ${{ github.event_name }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          case "$EVENT" in
+            pull_request)
+              test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 3
+              base=HEAD^1 head=HEAD ;;
+            merge_group)
+              git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+              base="$QUEUE_BASE" head="$QUEUE_HEAD" ;;
+            *)
+              exit 1 ;;
+          esac
+          git diff --no-renames --name-only "$base" "$head" > "$RUNNER_TEMP/changed-files.txt"
+          cat "$RUNNER_TEMP/changed-files.txt"
+
+      - name: Classify
+        id: classify
+        run: |
+          code="$(awk '!/^docs\// && !/\.md$/ { code = 1 } END { print ((NR == 0 || code) ? "true" : "false") }' "$RUNNER_TEMP/changed-files.txt")"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "code=$code"
+
+      - name: Plan one-home rule
+        run: python3 browser/tools/check_plan.py
+
   # DV1: macOS runs only where it decides. A pull request runs the four
   # Ubuntu shards; the two macOS shards run in the merge queue, or on a pull
   # request with the label `macos`. A push to main runs only `caches`: the
   # merge queue already tested that tree.
   browser-shard:
     name: browser (${{ matrix.os }}, ${{ matrix.part }})
-    if: github.event_name != 'push'
+    needs: changes
+    # `!cancelled()` so that the shards still run when `changes` failed after
+    # it set `code` (the plan check), or before (`code` empty).
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.changes.outputs.code != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,10 +98,6 @@ jobs:
       - name: Code taste
         if: runner.os == 'Linux' && matrix.shard == 0
         run: python3 browser/tools/check_taste.py
-
-      - name: Plan one-home rule
-        if: runner.os == 'Linux' && matrix.shard == 0
-        run: python3 browser/tools/check_plan.py
 
       - name: CSS property ids
         if: runner.os == 'Linux' && matrix.shard == 0
@@ -146,20 +196,40 @@ jobs:
           done
 
   browser:
-    needs: browser-shard
+    needs: [changes, browser-shard]
     if: always() && github.event_name != 'push'
     runs-on: ubuntu-24.04
     steps:
+      # The shards may be skipped only when `changes` passed and said the
+      # change is docs only.
       - name: Every browser shard passed
-        run: test "${{ needs.browser-shard.result }}" = success
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          SHARDS: ${{ needs.browser-shard.result }}
+        run: |
+          echo "changes=$CHANGES code=$CODE shards=$SHARDS"
+          test "$CHANGES" = success
+          if [ "$CODE" = false ]; then test "$SHARDS" = skipped; else test "$SHARDS" = success; fi
 
   # A job skipped by its `if` reports success, so the required check `perf`
-  # passes on a pull request without the `macos` label.
+  # passes on a pull request without the `macos` label, and on a docs-only
+  # change (DV3). If `changes` failed, `perf` (in the queue, or with the label)
+  # runs and fails at its first step.
   perf:
-    if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'macos')
+    needs: changes
+    if: >-
+      ${{ !cancelled() &&
+      (github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'macos')) &&
+      (needs.changes.result != 'success' || needs.changes.outputs.code != 'false') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
+      - name: The change list passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+        run: test "$CHANGES" = success
+
       - uses: actions/checkout@v4
 
       - name: Install system packages
