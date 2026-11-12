@@ -1,0 +1,17 @@
+import std.text
+
+test "attach_tab goes to the renderer and round-trips" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 7, Message.AttachTab { context: 3 })
+
+    match got.message {
+        .AttachTab { context } => @expectEqual(3, context)
+        _ => @expect(false)
+    }
+
+    @expectEqual(7, got.frame)
+    @expectEqual(74, Message.AttachTab { context: 0 }.kind())
+    @expect(!fromRenderer(Message.AttachTab { context: 0 }))
+}

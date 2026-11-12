@@ -1,0 +1,25 @@
+import ipc
+import std.list.List
+import std.mem.AllocError
+
+fn pollTabs(tabs: *List(*mut TabRenderer)) AllocError!?usize {
+    var fds = List(ipc.PollFd).init(tabs.items()[0].alloc)
+    defer fds.deinit()
+    var wait: i32 = -1
+
+    for t in tabs.items() {
+        let w = timerWait(t)
+
+        try fds.append(ipc.PollFd { fd: t.conn.fd, events: 1, revents: 0 })
+
+        if w >= 0 && (wait < 0 || w < wait) { wait = w }
+    }
+
+    if ipc.poll(fds.items().ptr, fds.len() as u64, wait) <= 0 { return null }
+
+    for i, p in fds.items() {
+        if p.revents != 0 { return i }
+    }
+
+    return null
+}
