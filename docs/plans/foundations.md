@@ -82,8 +82,14 @@ reaches it.
    four worst sites by 11 to 44% and none passes (Q4.21); bbc, zol and
    mistral are still 4 to 12 times over the loop budget, and there is no
    JIT by decision. With a renderer per site the window's
-   loop no longer runs the script. Default: Q4.25 measures first, and Q4
-   takes no new script-speed step until it reports.
+   loop no longer runs the script. Q4.25 reported on 2026-11-12 (its card): with a renderer per
+   site the window's loop passes on bbc and react, but the page's real
+   frame waits for the renderer's task. Proposed criterion: the window's
+   longest loop under 100 ms, and the time from a wheel to the renderer's
+   frame under 33 ms p95 (a click under 100 ms p95). Default until the
+   owner answers: the perf lane works to the proposed criterion (Q4.25a
+   to Q4.25e), keeps Q4.2 to Q4.8, Q4.11 and Q4.16, and takes Q4.12 out
+   of W7.
 3. **Floors and targets in `docs/conformance.md`** (proposed). A
    threshold set just under the first score stops a fall; it does not say
    the area is ready. Default: the column stays as the floor, and a
@@ -116,10 +122,10 @@ sitting clears it (`velocity.md`, "Rules", 6):
 
 | Lane | Next | Then |
 |---|---|---|
-| base | Q1.12, Q0.1, DV2b | Q0.3b; DV1 to DV3 are counted over the next landings |
+| base | Q1.12 (the panic report in aye, then the audio times), Q0.1, DV2b | Q0.3b; DV1 is counted over its next landings |
 | proc | Q2.12 (Q2.12d, then the Spaces flip); Q2.14b to Q2.14d (in flight), then Q2.14e to Q2.14h | the rest of the Q2 readiness list, Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
-| perf | Q4.25, then Q6.15, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
+| perf | Q4.25a, Q4.25c, Q6.15 | Q4.25b, Q4.25d, Q4.25e; Q4.3 first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
 
 ## Decisions (2026-11-04)
@@ -224,7 +230,7 @@ can be stopped.
 |---|---|---|---|
 | Q1.4 | Flaky tests: only when the TC5b record files a `flaky:` issue (none since 2026-10-21 in 38 `ci` runs; `window_spaces` and `window_css_animation` were last seen before Q1.3) | 50 runs in a row | – |
 | Q1.11 | Soak: 1 h of scripted browsing over the archives, with RSS sampled and `--leak-check` at exit | RSS growth stays under the budget, with no leak | – |
-| Q1.12 | Crashes the weekly conformance run of 2026-11-09 found (Q0.1's card): SIGSEGV on three webaudio `audiobuffersource` pages and twelve WebGL 2 wasm-memory pages, abort on two WebGL 2 pages. Suspect: AYE_REV 2c95915 (bounds-check elimination) | the cause is in the card with its evidence, and the pages run without a crash in the weekly run | – |
+| Q1.12 | Crashes the weekly conformance run of 2026-11-09 found (Q0.1's card): SIGSEGV on three webaudio `audiobuffersource` pages and twelve WebGL 2 wasm-memory pages, abort on two WebGL 2 pages. Reproduced on the Mac in the safe build; likely cause (card): a safe-mode check fires on `start(Infinity)` and the panic report of aye O7.9 reads an unset message pointer | the cause is in the card with its evidence, and the pages run without a crash in the weekly run | – |
 
 Q1.1 was listed as open at the stop, but its verify holds on `main`
 (`browser/build.sh` builds `--mode safe` by default, and the required
@@ -338,7 +344,11 @@ states the W7 sites it moves.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q4.25 | (proposed, decision 2) Measurement only: W7 at the window with `DWELLER_PROCESS=site` on bbc, zol, mistral and react: the window's longest loop, the scroll frame p95 the person sees and the click-to-frame delay, while the renderer runs its longest task. Then one page on what W7 should measure with a renderer per site and which open Q4 rows still move it (detail in the card) | a table in `PERF.md` and the note in the card; the owner answers decision 2 | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc`, `docs/threaded_compositing.md` |
+| Q4.25a | With `DWELLER_PROCESS=site`, a wheel on zol never gets `renderer:input`: 3 of 3 runs hung to the tool's 600 s timeout with the window and the renderer at 0% CPU (Q4.25's card has the command) | the zol scroll row of `window_perf.py` finishes with the flag | – |
+| Q4.25b | What the window waits on for 0.7 to 1.5 s on mistral with the flag: the wait has no window record | the wait has a record and a cause in the card | – |
+| Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
+| Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
+| Q4.25e | The window scrolls from the renderer's last frame while the renderer is busy (the texture offset of P4.36c) | the wheel-to-frame p95 of bbc with the flag is under 33 ms while a renderer task runs | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
@@ -350,7 +360,7 @@ states the W7 sites it moves.
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
 | Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids (measured by Q4.16a, #303: mistral is natives and forced restyle, bbc is calls and inline-cache misses; the ranked cards Q4.16b–l are in its card) | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25.
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 

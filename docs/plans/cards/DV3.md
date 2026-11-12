@@ -56,7 +56,9 @@ Cost for a code change: the shards and `perf` now wait for `changes` (a depth-2 
 - `python3 browser/tools/check_plan.py; echo $?`: 0.
 - The card's CI verify (a docs-only PR lands in under 5 minutes; a PR with one `.aye` and one `.md` file runs every shard) is for the integrator on the real runs.
 
-## Status: in progress, 2026-11-12
+## Status: done, 2026-11-12
+
+Checked on #367 (docs only): opened 13:26:25, merged 13:28:03. On the pull request and in the queue only `changes` and `browser` ran; the shards, `perf` and `caches` were skipped. #366 (a code change) ran all six shards and `perf` in the queue.
 
 Built and checked locally; waiting for the first real docs-only PR and the first code PR.
 

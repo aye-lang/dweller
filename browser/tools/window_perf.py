@@ -3,10 +3,20 @@
 "Window"). Standard library only.
 
     window_perf.py scroll URL [--binary B] [--frames N] [--wheel D] [--real-window]
+                       [--step WORDS] [--run-frames M]
         Headless window (--frames): the load, then N frames that each
         turn the wheel 3 notches (`wheel:-3 frame`; `--wheel -0.37` is a
         trackpad's 3.7 px a frame). Prints the first
-        paint, the scroll frames' p50/p95 and the longest loop iteration.
+        paint, the scroll frames' p50/p95 and the longest loop iteration,
+        the delay from each wheel or click to the next present
+        (`input_to_present`) and the longest script task (`timers`,
+        `scripts` or `ui_raf` record; with DWELLER_PROCESS=site these come
+        from the renderers, the `ui_` loop records from the window).
+        --step replaces `wheel:D` in each frame (Q4.25, with a renderer:
+        `renderer:loaded wheel:-3 renderer:input`, or a click
+        `renderer:loaded click:X,Y release:X,Y renderer:input`), then
+        closes the tab; the window runs at most M iterations (--run-frames,
+        default N + 10).
     window_perf.py idle URL [--binary B] [--real-window] [--minimize] [--settle S]
         A window, no input: the CPU% of the 10 s that start 5 s
         after the first frame (--settle S: S s), and what the loop did
@@ -41,6 +51,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
 import fast_build
@@ -76,11 +87,28 @@ def total(it, phase):
 
 
 def scroll(a):
-    events = " ".join(["frame"] * 3 + [f"wheel:{a.wheel} frame"] * a.frames)
+    step = a.step or f"wheel:{a.wheel}"
+    # After the --step frames the window closes its tab (and quits), so
+    # that --run-frames is only a cap.
+    events = " ".join(["frame"] * 3 + [f"{step} frame"] * a.frames + (["key:cmd+w"] if a.step else []))
     env = window_env(a.real_window, DWELLER_TIMING="1")
-    cmd = [a.binary, a.url, "--frames", str(a.frames + 10), "--events", events, "--state"]
-    r = subprocess.run(cmd, capture_output=True, env=env, timeout=600)
-    err = r.stderr.decode("utf-8", "replace")
+    cmd = [a.binary, a.url, "--frames", str(a.run_frames or a.frames + 10), "--events", events, "--state"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    timer = threading.Timer(600, p.kill)
+    timer.start()
+    # When each step's first present reached us. With a renderer the window
+    # presents before the renderer's frame, and the next step waits for the
+    # renderer's ack (`renderer:input`): the time between two of them is a
+    # step as the person sees it, to one window iteration.
+    lines, shown_at = [], []
+    for line in p.stderr:
+        lines.append(line)
+        if b"\tinput_to_present\t" in line:
+            shown_at.append(time.monotonic())
+    state = p.stdout.read().decode("utf-8", "replace")
+    p.wait()
+    timer.cancel()
+    err = b"".join(lines).decode("utf-8", "replace")
     if a.log:
         open(a.log, "w").write(err)
     recs = records(err)
@@ -98,10 +126,16 @@ def scroll(a):
         "first_relayout_ms": round(first.get("ui_relayout", 0)),
         "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),
         "longest_loop_ms": round(max((total(it, "ui_loop") for it in its), default=0)),
+        "longest_task_ms": round(max((v for k, v, _ in recs if k in ("timers", "scripts", "ui_raf")), default=0)),
+        "state": state.split("\n", 1)[0],
     }
     for phase in ("ui_loop", "ui_draw", "ui_timers", "ui_relayout"):
         xs = [total(it, phase) for it in frames]
         out[phase + "_p50_p95"] = [round(pct(xs, 0.5), 1), round(pct(xs, 0.95), 1)]
+    shown = [v for k, v, _ in recs if k == "input_to_present"]
+    out["input_to_present_n_p50_p95"] = [len(shown), round(pct(shown, 0.5), 1), round(pct(shown, 0.95), 1)]
+    steps = [1000 * (b - a) for a, b in zip(shown_at, shown_at[1:])]
+    out["step_ms_n_p50_p95_max"] = [len(steps), round(pct(steps, 0.5), 1), round(pct(steps, 0.95), 1), round(max(steps, default=0), 1)]
     print(json.dumps(out))
 
 
@@ -174,6 +208,8 @@ def main():
     ap.add_argument("--allow-debug", action="store_true", help="time a binary that browser/build.sh did not build")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--wheel", default="-3")
+    ap.add_argument("--step", help="scroll: the words of each frame instead of `wheel:D`")
+    ap.add_argument("--run-frames", type=int, help="scroll: the window's iterations (default --frames + 10)")
     ap.add_argument("--real-window", action="store_true", help="open a real window, without taking the focus")
     ap.add_argument("--minimize", action="store_true", help="idle: the window is minimized after its first frame")
     ap.add_argument("--settle", type=int, default=5, help="idle: seconds between the first frame and the measure")
