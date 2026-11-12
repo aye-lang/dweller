@@ -12,6 +12,7 @@
 - files: `.github/workflows/ci.yml`, `docs/plans/cards/TC5a.md` (new)
 - verify: `ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml")'` and `python3 browser/tools/check_taste.py` pass; a second PR lands through the queue with `--auto`, a `merge_group` run of `ci` passes, and the PR lands as a merge commit.
 
-## Status: in progress, 2026-11-01
+## Status: done, 2026-11-01 (closed in the card 2026-11-11)
 
 - `ci.yml` runs on `merge_group`.
+- 2026-11-11: closed. Dweller #244 landed as 055b2e7, the ruleset is active, and #245 was the first PR through the queue (merge-group run 41255683726), as `docs/plans/toolchain.md` of aye-lang/aye records.

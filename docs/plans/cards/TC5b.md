@@ -10,6 +10,7 @@
 - files: `.github/workflows/ci.yml`, `.github/scripts/browser-shard.sh` (new), `docs/plans/cards/TC5b.md` (new)
 - verify: `ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml")'` and `python3 browser/tools/check_taste.py` pass. The script with a fake `cargo` on `PATH`: (a) one test fails, then passes: exit 0, warning printed, names file and summary line written; (b) fails twice: exit 101; (c) cargo fails with no `... FAILED` line: exit 1, no re-run. The issue step with a fake `gh`: a comment on the existing issue for one name, a new issue for the other. On CI: the PR's `ci` run is green and it lands through the merge queue.
 
-## Status: in progress, 2026-11-01
+## Status: done, 2026-11-01 (closed in the card 2026-11-11)
 
 - script, workflow steps and local fake-`cargo`/fake-`gh` checks done; PR open with `--auto`.
+- 2026-11-11: closed. Dweller #246 landed through the queue as 7de2c08. From 2026-11-04 to 11-09, 4 of 1 817 green shard jobs used the re-run (`docs/plans/velocity.md`).

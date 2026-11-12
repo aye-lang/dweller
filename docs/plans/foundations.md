@@ -14,6 +14,113 @@ Reference: the Chromium checkout at
 `/Users/solemnis/Documents/chromium/src` (M148, 2026-07-10, read-only).
 Paths below are relative to it.
 
+## Start here (2026-11-11)
+
+How to read this plan:
+- This file holds the open steps only. A done step's row is in
+  `foundations-done.md`, and its done note and Left list are in its card
+  (`cards/<id>.md`). The two "State" sections of 2026-11-04 and
+  2026-11-09 are in `foundations-done.md` too.
+- A step's status has one home: its card once it has one, else its row
+  here. Nothing else repeats it.
+- How work lands, how a step is sized, and the cards that make the loop
+  faster are in `velocity.md`.
+- The items marked "proposed" below come from the review of 2026-11-11
+  (`velocity.md`). They are not decided until the owner answers the
+  matching line of "Waiting on the owner".
+
+### Scoreboard
+
+One row per done criterion. "Where" says which machine can measure it:
+that decides who can close it.
+
+| Criterion | Now | Measured | Where | What is missing |
+|---|---|---|---|---|
+| S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
+| S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
+| S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
+| S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
+| X1 a compromised renderer reads nothing | holds behind the flag (Q2.7, Q2.8a, Q2.8b tests) | 2026-11-09 | CI | Q2.14 and the readiness list in Q2 |
+| X2 web security areas at threshold | `conformance.py check` passes, but the thresholds are floors set under the first score: `html/browsers/origin` 2.4% (floor 2), `html/browsers/sandboxing` 34.4% (30), `x-frame-options` 38.9% (35) | 2026-11-09 | CI, cloud | targets (decision 3) |
+| X3 bad TLS refused | holds (Q3.4, Q3.4b tests) | 2026-11-08 | CI | – |
+| W7 interactivity, 20 sites | 9 of 20 with the fast build, 8 of 20 with the safe build that ships; the 4 worst re-measured 2026-11-08: none passes, 1.05× (react) to 12× (mistral) over the loop budget | 2026-11-04 | the Mac only | never measured with site isolation; decision 2 |
+| W8 first paint, 20 sites | 19 of 20 (zol's live load times out) | 2026-11-04 | the Mac only (live, Chrome) | never measured with site isolation; Q4.12 |
+| M1 memory per tab | no budget | – | the Mac | Q2.13 |
+| F1 basic features | 0 of 18 | – | per row | Q5 |
+| W9 conformance | 32 areas at threshold, 13 below; 12 of the 32 are within 3.5 points of their floor | 2026-11-09 | cloud; the weekly CI job has not passed on its schedule | Q6, Q0.1 |
+| W2 sites load and agents work | passed | 2026-10-15 | the Mac (archives) | Q0.3 |
+| W3 sites look right | 8 of 20 | 2026-10-15 | the Mac and the owner's eyes | Q0.3 |
+
+### Critical path
+
+1. **Q2.14, the default flip.** S2, X1, M1 and the final W7 and W8
+   numbers hold only after it, and all of Q5 waits for it. Nothing
+   measured in one process counts as done.
+2. Before the flip, in this order: Q2.14a (measure how much of the suite
+   passes with the flag), the rest of Q2.12 (Spaces), the readiness list
+   of Q2, Q2.13.
+3. Beside it, with no Mac: Q6 areas and the Q5 rows that live inside the
+   renderer (decision 4).
+4. The perf lane takes only work that survives the flip (style, layout
+   and script inside a renderer) until decision 2 says what W7 means with
+   a renderer per site.
+5. Last: Q7 on the Mac.
+
+### Waiting on the owner
+
+Each line has a default, taken if there is no answer when the lane
+reaches it.
+
+1. **T1 review** (`taste.md`, waiting since 2026-10-21). It blocks T1b,
+   T2 and every T3 card. Default: T1 stands as the template and T1b
+   starts.
+2. **What W7 means with a renderer per site** (proposed). In one process
+   the page's script runs on the window's loop, so W7's "longest loop
+   under 100 ms" asks for script speed: bbc's longest loop is one 326 ms
+   timer task of the page. The ten perf steps of 2026-11-08 moved the
+   four worst sites by 11 to 44% and none passes (Q4.21); bbc, zol and
+   mistral are still 4 to 12 times over the loop budget, and there is no
+   JIT by decision. With a renderer per site the window's
+   loop no longer runs the script. Default: Q4.25 measures first, and Q4
+   takes no new script-speed step until it reports.
+3. **Floors and targets in `docs/conformance.md`** (proposed). A
+   threshold set just under the first score stops a fall; it does not say
+   the area is ready. Default: the column stays as the floor, and a
+   "Target" column is added for the X2 areas and the Q6 areas, set from
+   what the 20 sites and the daily sites use (Q0.3b).
+4. **Q5 before the flip** (proposed). Site mode exists behind the flag
+   and its tests run in CI, so a Q5 row can be built for site mode now.
+   What blocks it is not the flip but two lanes editing `ui/` and `ipc/`
+   at once. Default: rows inside the renderer (Q5.2, Q5.8, Q5.10) start
+   now; rows that add IPC messages run one at a time in the proc lane,
+   after the Spaces flip.
+5. **Q4.24b**: bytecode validated once, operand reads unchecked in
+   `vmLoop` (about 5% of jsbench). Default: not done.
+6. **The site archives off the Mac** (`velocity.md` DV5): a private
+   place the cloud sessions and one weekly CI job can read. Needs the
+   owner's account. Default: W2, W7 and the soak stay Mac-only.
+
+### The Mac queue
+
+Work only the owner's Mac can verify, kept in one list so that one
+sitting clears it (`velocity.md`, "Rules", 6):
+- Q0.3: W2 and W3 on the current `main` (W3 is 27 days old).
+- W7 and W8 on all 20 sites, in process and with `DWELLER_PROCESS=site`
+  (last full run 2026-11-04).
+- Q2.13: memory per tab against Chromium.
+- Q1.11: the soak.
+- macOS sandbox Left items (Q2.8a) and Q5.4 (IME) when they come up.
+
+### Next, per lane
+
+| Lane | Next | Then |
+|---|---|---|
+| base | Q2.14a, Q0.1, DV1, DV2 | DV3, DV4, Q0.3b |
+| proc | Q2.12 (the Spaces flip) | the Q2 readiness list, Q2.13, Q2.14 |
+| sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
+| perf | Q4.25, then Q6.3 to Q6.10 | Q4.2 to Q4.4 if Q4.25 keeps them |
+| feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
+
 ## Decisions (2026-11-04)
 
 - **Full site isolation, as in Chromium and Firefox (Fission).** This
@@ -57,75 +164,6 @@ Each axis has a command that exits 0. The W criteria are those of
 | Complete | F1: every row of the basic-feature table (Q5) is "yes" | the per-step tests |
 | Correct | W9 (every conformance area at threshold), W2, W3 | `conformance.py check`, `page_load.py check --agent` |
 
-## State on 2026-11-04 (`main` 7de2c08)
-
-Facts from four audits run on 2026-11-04; the details are in the steps.
-
-- **Stable.**
-  - CI: in the month to 11-01, 20% of `ci` runs failed and 12 of 92
-    failures were flaky. Since 11-01 a failed test is re-run once.
-  - Flaky tests: `window_spaces` (`tests/browser.rs:2990`, `:3044`) and
-    `jsdom_gc_stress`, which once gave a different `run.jsonl` under GC
-    stress (run 39080652106). Also `window_spaces_watch`,
-    `window_css_animation`, `agent_sessions`, `js_print_scopes` and
-    `aye_unit_tests`.
-  - The weekly `conformance` workflow has been red for three weeks. Only
-    its webgl job fails: the 2/4/16 GB wasm-memory tests.
-  - A tab crash ends the whole window. There is no watchdog for a
-    runaway script and no session restore.
-  - The shipped build is `--mode fast` (no bounds checks, `build.sh:2`).
-  - There is no fuzzing.
-- **Secure.**
-  - The CORS check runs only in page JS (`engine/fetch-api.js`), so a
-    compromised renderer skips it, and XHR reads the body of any
-    origin (it filters only headers). `net/permissive-cors.aye` only
-    fills headers for archived responses that lack them (corrected by
-    Q3.2a; the first audit overstated it).
-  - `fetchWith` (`engine/window_api.aye:611`) lets an http page request
-    a `file:` URL. It checks only the method.
-  - TLS runs on libcurl defaults (`net/http.aye:44`). There is no HSTS,
-    no mixed-content check and no certificate interstitial.
-  - There is no CSP, X-Frame-Options, nosniff or COOP.
-  - iframe `sandbox` has only `allow-scripts` and `allow-same-origin`.
-  - The agent socket has no permission mode and no token.
-  - Already right: script-level same-origin checks
-    (`engine/windows.aye:129`) and the cookie rules (`net/cookies.aye`).
-- **Fast.**
-  - W8 passes on 20 of 20 sites. W7 passes on 9 of 20 (2026-10-17).
-    Q0.2 and Q0.4 (2026-11-04): same count; the rows that changed come
-    from the archives re-recorded on 2026-10-18 (more scripts), one
-    engine regression (react, 922271a) and zol's live load hitting the
-    30 s timeout.
-  - The main causes: restyle falls back to the whole document for shadow
-    trees, `:has()` and sheet changes, and relayout is refused
-    (`relayoutDirty` 1301 times on mistral). zol and bbc are not
-    profiled.
-- **Complete.** Missing: zoom, dark mode, downloads, the file picker,
-  `prompt`, WebSocket, EventSource, IndexedDB, Service Worker,
-  `<video>`/`<audio>` playback, contenteditable, async clipboard, IME
-  composition, permissions, bookmarks and print.
-- **Correct.** 13 of 29 conformance areas are at threshold (2026-10-21).
-  W3 was 8 of 20 sites (2026-10-15).
-
-## State on 2026-11-09, at the stop (after #363)
-
-Every PR up to #363 is merged; aye `main` is e758396 (O7.9) and `AYE_REV`
-points at it. A step is open when neither its row nor its card says done.
-
-- Q0 open: Q0.1 (weekly webgl job), Q0.3 (W2, W3 and the conformance table re-run).
-- Q1 open: Q1.1 (safe shipped build), Q1.4, Q1.11 (soak).
-- Q2 open: the Spaces flip (Q2.12's last part: hosted by default, the Space process path and `dweller space` removed, `window_spaces_crash` rewritten; before it: openers across renderers, Basic auth / preflight / cert exceptions per partition, a sad tab for a crashed hosted tab), Q2.13 (process limits), Q2.14 (the default flip). Q2.12, Q2.12b and Q2.12c are done.
-- Q3 open: none of Q3.1–Q3.14 (Q3.10d done 2026-11-09; the Left lists remain).
-- Q4 open: Q4.2 to Q4.8, Q4.11, Q4.12 and Q4.16 (Q4.21's ranked steps 6 to 11). Q4.23 and Q4.24 done. Q4.24b (bytecode validated once, unchecked operand reads in `vmLoop`: about 5% of jsbench wall time) waits for the owner's decision on the safety trade-off; O7.9 took the part with no trade-off (safe richards −7.1%, three −5.2% instructions).
-- Q5 to Q7 have no done step; Q5 waits for Q2.14.
-- Q6: Q6.1 (65.4), Q6.11 and Q6.11b (url 93.9), Q6.12 (69.1 → 69.5 after the Q6.1 merge) done; Q6.2 slice 1 (47.9); Q6.3 to Q6.10, Q6.13, Q6.14 open. Q6.14 (vertical writing modes) blocks about 1900 grid subtests.
-
-Follow-ups noted at the stop (not yet cards):
-- `location` setters other than `hash` through `ak.setUrlPart` (Q6.11b).
-- `text-decoration-inset`, CSSKeyframesRule in the CSSOM shim (Q6.12).
-- A css fuzz target debug-mode leak.
-- `@inline` in Aye (O7.9's Left: `always_inline` with the panic jump gave navier-stokes 2,160 M instead of 2,272 M).
-
 ## Lanes and running order
 
 | Lane | Files | Phases |
@@ -145,13 +183,15 @@ The order:
      the browser process.
    - Q3.6 and later come after Q2.4.
 4. Q5 starts after Q2.14, so the features are built on the new process
-   model.
+   model (decision 4 of "Start here" proposes to start part of it
+   earlier, for site mode only).
 5. Q6 follows Q4 in the perf lane.
 6. Q7 runs last of the foundations.
 7. Q8 runs after Q7.
 
 Common to every step:
-- It is one card and one PR.
+- It is one card. Cards land in batches (`velocity.md`, "Rules", 1),
+  not one PR each.
 - It runs only the tests that its verify names. It never runs two
   browser test runs at once.
 - Logs go under `target/`.
@@ -163,16 +203,16 @@ Common to every step:
 
 ## Q0: measure the truth (lane base)
 
-Exit: every number of "State" above is re-measured on the current
-`main`, and the weekly workflow is green.
+Exit: every "Now" of the scoreboard is measured on the current `main`,
+and the weekly workflow is green.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
 | Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
-| Q0.2 | W7 and W8, plus `jsbench`, with a fast and with a safe build. A dated table goes in `PERF.md`, with the cost of safe mode | `window_perf.py report --replay` runs for both builds and the table is committed | – |
 | Q0.3 | Re-run W2, W3 and the conformance table on `main` | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
-| Q0.4 | Find why results changed since 2026-10-17 (Q0.2). zol's first paint went from 3013 to 30079 ms. The scroll p95 of wikipedia-en, wikipedia (ja), react and go-docs went from about 17 to about 225 ms. bbc's idle CPU rose to 10.7%. First decide whether the cause is the measurement (the `--until-idle` change 2c25b94, `window_perf.py` history) or the engine, by measuring the affected sites at 7de2c08 and at c0a6fa2. Then bisect. This step only finds the cause and files a card for it | each changed row is explained, naming a commit or a measurement artifact | – |
-| Q0.5 | bbc under replay ran 64 of its scripts, not 91, since Q3.3b: old archive entries gave CORS-mode module scripts no `Access-Control-Allow-Origin`, and `permissiveCors` now adds it for `Mode.Cors` too (done, #321) | `permissive-cors_test.aye`, `module_cors`; bbc's replay dump runs 96 scripts and 204 requests | – |
+| Q0.3b | (proposed, decision 3) A "Target" column in `docs/conformance.md` for the X2 areas and the Q6 areas, beside the floor that `conformance.py check` enforces. Each target names where it comes from: the features the 20 sites and the daily sites use, or the score of the subtests that do not need a deferred feature. X2 and W9 then read "at target" | the table has the column, every X2 and Q6 area has a target with one line of reason, and `conformance.py check` still enforces only the floor | – |
+
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5.
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -181,23 +221,15 @@ can be stopped.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q1.1 | The shipped build becomes `--mode safe`, and CI runs a smoke test on the shipped mode. Q0.2 measured the cost (loop +9.5%, jsbench +17.6%), and it is accepted: until Q2.8, a memory bug in an unsandboxed process exposes everything. Q4 wins the time back. A card in the Aye repo asks for bounds-check elimination in loops (navier-stokes 0.66×) | `build.sh` builds safe by default, and the smoke job is green | Chromium ships libc++ with its hardening checks on (`build/config/compiler/BUILD.gn`, `use_safe_libcxx` → `_LIBCPP_HARDENING_MODE_EXTENSIVE`) |
-| Q1.2 | The `jsdom_gc_stress` divergence of run 39080652106: done 2026-11-04, no GC bug — the agent `run` hit its 30 s wall-clock budget under stress on a busy runner (fixed by 3261b7d); 30 runs under stress were identical | – | – |
-| Q1.3 | Window tests do not depend on how many frames fit in wall time: 63 tests use `--frames`, 18 were at risk and now stop their page loops after fixed ticks and run `--until-idle` (#267, #268, #273); the rule is in `docs/practices/browser.md` | the changed tests pass under 6 CPU hogs | – |
 | Q1.4 | Flaky tests: only when the TC5b record files a `flaky:` issue (none since 2026-10-21 in 38 `ci` runs; `window_spaces` and `window_css_animation` were last seen before Q1.3) | 50 runs in a row | – |
-| Q1.6 | `jsdom_gc_stress` comes back to one test under 10 min, with `focus_freed` shrunk to just above the GC threshold and back in the stress run | one run under 10 min on CI | – |
-| Q1.7 | Script interrupt: the VM checks a flag on back-edges and calls. After 5 s a bar says "page unresponsive" and offers Stop or Wait; Stop throws an uncatchable termination into the script | a page with `while(1){}` shows the bar, and Stop leaves the tab working | `chrome/browser/ui/hung_renderer/`, `v8/src/execution/stack-guard.cc` (`TerminateExecution`) |
-| Q1.8 | A JS heap limit in bytes, not values (`js/gc.aye:283`). Out of memory ends the tab's scripts with an error page, never the process (done, #315; left: a frame or worker that runs out gets no error page, and native memory (DOM, layout, images) does not count) | a page that allocates without end gets the error page, and the window lives | `gin/v8_initializer.cc`, `v8/src/heap/heap.cc` (`NearHeapLimitCallback`) |
-| Q1.9 | Session restore: tabs and their history come back after a quit or a crash (done, #339; `DWELLER_PROCESS=tab` is Q1.9b) | kill the window, start again, and the same tabs and URLs are there | `components/sessions/core/` |
-| Q1.9b | Session restore for `DWELLER_PROCESS=tab`: the browser builds a `SavedWindow` from its history model and fills the tabs from `decodeSession` (done, 2026-11-09, no `site` run; left: see card) | `window_session_restore_after_kill` passes with `DWELLER_PROCESS=tab` | `components/sessions/core/` |
-| Q1.10a | Fuzz harness: `dweller fuzz TARGET` (in process, coverage optional), a seed corpus, and the HTML parser target | a 10 min run finds no crash, or the crashes found are filed | `testing/libfuzzer/README.md`, `third_party/blink/renderer/platform/fuzzer/` |
-| Q1.10a2 | coverage-guided fuzzing: the loop resets `std.coverage` before each input, merges the counters into a seen bitmap and keeps inputs that reach new edges, parents drawn newest-weighted; `browser/build.sh --coverage`, `fuzz.py --coverage`, the nightly job builds with coverage (done, 2026-11-09; html 120 s: corpus 86 → 969, 1240 edges; css 60 s: 1630; js 60 s: 476; left: no corpus minimization, a debug build is ~4× slower, no pc-table or trace-cmp, the css target leaks in debug (`toOwned`, std/text/text.aye:487)) | the HTML target's corpus grows from new edges | `testing/libfuzzer/` |
-| Q1.10b | Fuzz targets for the CSS parser and the URL parser (done, #330; left: nested rules are not serialized through `selectorText`, and the `url` target uses one base) | the same | – |
-| Q1.10c | A fuzz target for the JS parser and bytecode (done, #332; left: about 50 times slower than the html target, the byte-blind mutator mostly stops in the lexer, and direct `eval` is not fuzzed) | the same | `v8/test/fuzzer/` |
-| Q1.10d | Fuzz targets for the image decoders (PNG, JPEG, GIF, WebP) and fonts (WOFF/WOFF2) (done, #340; the 705 MB image peak is Q1.10d2; the `font` target stops before FreeType) | the same | – |
-| Q1.10d2 | A 256 MiB cap on the memory one image decode may use, checked from the header and the working buffers; a JPEG past it decodes downscaled and keeps its natural size (done, #343; left: PNG inflates all rows before unfiltering, so a very large PNG is refused where the reference streams it) | `downscaled_jpeg_natural_size`; the `image` fuzz peak falls from 705 to 297 MB; WPT `images` unchanged | `platform/image-decoders/image_decoder.cc` (`max_decoded_bytes_`), `jpeg/jpeg_image_decoder.cc` (`DesiredScaleNumerator`) |
-| Q1.10e | A nightly CI job that runs each target for 10 min. It keeps the corpus and files issues (done, #320; left: each matrix job builds its own binary) | the job is green, and a planted crash is filed | – |
 | Q1.11 | Soak: 1 h of scripted browsing over the archives, with RSS sampled and `--leak-check` at exit | RSS growth stays under the budget, with no leak | – |
+
+Q1.1 was listed as open at the stop, but its verify holds on `main`
+(`browser/build.sh` builds `--mode safe` by default, and the required
+`browser` job runs "Smoke the shipped build"); closed 2026-11-11 in its
+card.
+
+Done (rows in `foundations-done.md`, notes in `cards/`): Q1.1, Q1.2, Q1.3, Q1.6, Q1.7, Q1.8, Q1.9, Q1.9b, Q1.10a, Q1.10a2, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e.
 
 ## Q2: process model and site isolation (lane proc)
 
@@ -216,73 +248,74 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q2.1 | Design note `docs/process-model.md`, about one page: what the browser and the renderers own, the IPC messages (navigation, frames, input, network, storage, frames tree), the site definition, the process reuse policy, and how Spaces fit in. Compare with Chromium and Fission | the user reads it | `docs/process_model_and_site_isolation.md`, `content/browser/renderer_host/render_process_host_impl.cc`, `content/browser/site_instance_impl.cc` |
-| Q2.1b | Split `ui/window.aye` into the window and a page view, still in one process, along the boundary that the IPC will cut | the `window_*` tests pass with no golden change | – |
-| Q2.2a | The first half of Q2.2: `dweller --renderer FD`, `browser/ipc/` framing, lifecycle messages (`hello`, `navigate`, `loaded`, `shutdown`), the browser's checks on each message, crash noted (done, #263) | `window_renderer_lifecycle` | – |
-| Q2.2b | The second half of Q2.2: frames. Renderer skeleton: `dweller --renderer`, launched by `posix_spawn`, with a `socketpair` for IPC (the mechanism of `ui/spaces.aye`). It renders one tab, and its frames go through shared memory to the window. Behind `DWELLER_PROCESS=tab` (done, #281) | a window test loads a page in a renderer, and the pixels match the in-process golden | `content/renderer/render_thread_impl.cc`, `components/viz/service/surfaces/` (idea only) |
-| Q2.2c | Q2.2b's rest: every queued message and fd read, `--font` and the script setting passed to the renderer, frames carry only damaged rects (#284) | `window_renderer_frames` | `mojo/core/channel_posix.cc` |
-| Q2.3 | Input and UI across the boundary, in the parts below: mouse, wheel, keys, text input, focus, selection, find, cursor, title, URL, status, and the long-task chip | the `window_*` tests pass with `DWELLER_PROCESS=tab` | `content/browser/renderer_host/render_widget_host_impl.cc`, `input/` |
-| Q2.3a | Mouse, wheel, keys and text input go to the renderer; it scrolls and paints at the offset; the window does not act on what it forwards (#285) (done, #285) | `window_renderer_input` | `content/browser/renderer_host/render_widget_host_impl.cc` |
-| Q2.3c | Default actions in the renderer: link clicks and form submit ask the browser to navigate, which checks them; button keys, Escape, key scrolling, range drag; `select` popups asked of the browser (done, #289) | `window_renderer_input` with links, POST, `file:` refused, select | `content/browser/renderer_host/render_frame_host_impl.cc` (`BeginNavigation`) |
-| Q2.3d | Focus traversal and the focus ring, caret, selection and the clipboard, find (done, #292; the clipboard and find move to Q2.3f) | the focus, selection and find `window_*` tests pass with the flag | `content/browser/renderer_host/render_widget_host_impl.cc` |
-| Q2.3e | Cursor, title, URL, status and the long-task chip from the renderer; the window's own copy of the page goes away (done, #295) | the `window_*` tests pass with `DWELLER_PROCESS=tab` | – |
-| Q2.3b | Agent commands routed to the tab's renderer; the browser renumbers agent refs, so the protocol stays the same (done, #299; refs needed no renumbering: one agent session per renderer) | `agent_sessions` passes with `DWELLER_PROCESS=tab` | – |
-| Q2.3f | clipboard (the window owns it and reads it only on the paste gesture; the renderer serves the selection and takes a paste as typed input), find (the window's bar; the renderer finds, scrolls, paints, replies count and active match), link and form `target` through a checked `context` request that needs an input in flight, arrow keys on select/range/number, clicks and hovers in same-site frames (done, 2026-11-09; IPC 60–64; left: `wait` and the agent highlight, popup openers across tabs, named targets across renderers, targets from out-of-process frames, clipboard outside text fields, find in frames) | the `window_*` tests that Q2.3e lists as not running under the flag pass with it | – |
-| Q2.4 | Network in the browser process, in the parts below: a renderer asks for loads over IPC. Cookies, the HTTP cache, `localStorage` and the profile stay in the browser. A renderer opens no profile file | `window_login` passes with the flag, and a test shows the renderer has no profile path or open jar | `services/network/url_loader.cc`, `services/network/public/mojom/url_loader_factory.mojom` |
-| Q2.4a | A renderer's loads (documents, subresources, fetch/XHR, modules, workers' scripts) go to the browser's one `net` session over IPC; the browser picks the initiator from its own record (done, #302) | `window_login_in_renderer`, `window_renderer_net` | `services/network/url_loader.cc` |
-| Q2.4d | The browser derives `top`, the referrer, the method and the headers of a renderer's request; forbidden headers and methods never pass | compromised-renderer hooks in `window_renderer_net` | `services/network/cors/cors_url_loader_factory.cc` (`IsValidRequest`) |
-| Q2.4b | `document.cookie`, `localStorage` and `sessionStorage` over IPC to the browser's stores, each checked against the renderer's site | `storage_between_tabs` and the cookie tests pass with the flag | `content/browser/dom_storage/`, `services/network/restricted_cookie_manager.cc` |
-| Q2.4e | Loads in the background: the renderer does not block on a load over IPC, and a load can be cancelled (done, 2026-11-09: images, fetch/XHR, modules, sheets, scripts and frame documents load concurrently over IPC, `fetch_cancel` (IPC 50) closes the transfer; local `many_loads.html` 0.88 s in process, 0.96 s with the flag (was 5.50 s); left: the renderer's own navigation still blocks during its document fetch and the browser fetches that document synchronously, no body streaming, no cancel on an `img.src` change, workers' scripts load in the renderer, the browser polls held fetches every 2 ms) | page load time with the flag within 10% of without; `window_renderer_loads_in_flight`, `window_renderer_loads_cancel` | `services/network/url_loader.cc` |
-| Q2.4c | Proof: a renderer opens no profile file and holds no cookie jar (done, #322; left: `HOME` stays in the renderer's environment; close-on-exec by default comes with aye 5180d0c (O2.9), #335) | a test lists the renderer's open files | – |
-| Q2.5 | Crash and hang: a dead renderer shows a sad-tab page with Reload, and the other tabs go on. A renderer that does not answer for 10 s gets "page unresponsive", and Stop kills it (done, #324; left: Stop loses the page, and no rule stops reloads of a site that keeps crashing) | tests kill a renderer, and hang one with `while(1){}` | `chrome/browser/ui/sad_tab.cc`, `chrome/browser/ui/hung_renderer/` |
-| Q2.8a | OS sandbox for renderers on macOS: a seatbelt profile with no file reads outside the bundle and no network (done, #327; left: wasmtime's code in the sandbox is untested, and `HOME` is still read for fonts) | a renderer that tries to open `~/.dweller` or a socket fails | `sandbox/mac/`, `sandbox/policy/mac/renderer.sb` |
-| Q2.8b | OS sandbox for renderers on Linux: seccomp-bpf and namespaces. Executable memory stays allowed only for wasmtime (Q8) (done, 2026-11-09: Landlock read-only on `/usr` and the executable's dir instead of namespaces, plus a seccomp-bpf allowlist with thread-only `clone` and no sockets, exec or write opens; left: no seccomp table for aarch64, seccomp alone loses the lazily opened fallback fonts, wasmtime untested) | the same test on Ubuntu | `sandbox/linux/seccomp-bpf/`, `sandbox/policy/linux/` |
-| Q2.6a | Navigation and session history move to the browser. The renderer asks, and the browser decides and commits (done, #331; left: `location.replace()` pushes an entry, and an agent's same-site navigation commits without a history entry) | the `window_*` history and navigation tests pass with the flag | `content/browser/renderer_host/navigation_request.cc`, `navigation_controller_impl.cc` |
-| Q2.6b | Process per site on navigation: a cross-site navigation swaps the renderer, and a same-site one reuses it. The site is scheme plus eTLD+1 (`net/psl.aye`) (done, #334; left: `window.open` children and frames are dropped with the old renderer on a swap) | a test goes a → b → a and checks pids and history | `content/browser/renderer_host/render_frame_host_manager.cc`, `content/browser/site_instance_impl.cc` |
-| Q2.7 | Site-lock audit: every IPC message is checked against the renderer's site (cookies, storage, `file:`, `postMessage` origin, navigation targets). A violation kills the renderer. The checks were added by each step; this step lists them, closes the gaps and adds the tests (done, #338 into #334's branch; left: a cross-site frame in its parent's renderer gets no cookies or storage until Q2.9, and `blob:` documents have no site) | a test hook acts as a compromised renderer: it asks for another site's cookies and is killed | `content/browser/child_process_security_policy_impl.cc` (`CanAccessDataForOrigin`) |
-| Q2.7b | An agent's cross-site navigation (navigate, click, submit, back, forward, reload) commits in a new renderer, and every renderer test hook needs `DWELLER_TEST=1` (done, #341 into #334's branch) | `window_renderer_agent_sites` | `content/browser/renderer_host/navigation_request.cc` (`OnResponseStarted`), `content/browser/renderer_host/render_frame_host_manager.cc` (`GetFrameHostForNavigation`) |
-| Q2.7c | An agent's ref from before a navigation is refused after it, a request outstanding across a renderer swap gets an answer, and `dweller agent` follows a cross-site navigation into a new renderer (done, #342; left: `carryAnswer` has no test, and a cross-site eval or click is answered as a `navigate`) | `window_renderer_agent_refs` | `content/browser/devtools/protocol/dom_handler.cc` (idea only), `content/browser/renderer_host/render_frame_host_manager.cc` (`CommitPending`) |
-| Q2.9 | Out-of-process iframes 1: a cross-site iframe gets its own renderer. The parent lays out a remote-frame placeholder, and the window composites the child's frame at its rect, clip and scroll (done, 2026-11-09, behind `DWELLER_PROCESS=site`: resize, removal, the child's own navigations, the sad frame, and XFO/`frame-ancestors` checked in the browser; IPC 43 `subframes`; left: input (Q2.10), window proxies and the child's `load` event (Q2.11), no process reuse, the clip ignores overflow/transform/opacity, the child's history entries, the decision uses the URL before redirects) | `window_renderer_oopif_pixels`, `_process`, `_crash` | `third_party/blink/renderer/core/frame/remote_frame.cc`, `content/browser/renderer_host/render_frame_proxy_host.cc` |
-| Q2.10 | OOPIF 2: hit testing sends input to the right process. Also focus traversal, nested scrolling, `IntersectionObserver` across processes, and resize (done, 2026-11-09, behind `DWELLER_PROCESS=site`: mouse and wheel by the children's rects with capture, keys to the focused frame, Tab across the boundary and `iframe.focus()`, a child's unused scroll bubbles to its parent, the child's visible rect feeds its IntersectionObserver; IPC 44–48; in tab mode a script's `scrollTo` now scrolls the renderer's page; left: no hit-test slow path (content above the frame, `pointer-events`, transforms), no trackpad latching or `overscroll-behavior` across frames, the focus ring on the iframe, `rootBounds`/`rootMargin`, throttling of hidden children) | `window_renderer_oopif_input_{mouse,keys,tab,wheel,intersection,checks}`, `window_renderer_scroll_to` | `components/input/render_widget_host_input_event_router.cc`, `third_party/blink/renderer/core/frame/remote_frame_view.cc` |
-| Q2.11 | OOPIF 3: cross-process window proxies (done, 2026-11-09, behind `DWELLER_PROCESS=site`: `postMessage` both ways with the workers' structured clone, the source origin checked against the sender's lock (kill) and `targetOrigin` against the target's committed origin (drop), `event.source` proxies that answer, `parent`/`top`/`name`/`closed` in the child, `frames` in the parent, `location` set through the browser with the sandbox checks (the child now gets its iframe's sandbox flags), `focus()`, `SecurityError` on cross-origin `document`/`location`, the iframe's `load` after the child's; IPC 51–56, host tag 0x107; `wpt.py run --process tab|site`; left: `opener` across renderers, the proxy is one level deep, in-process `postMessage` still clones by JSON, no `MessagePort` transfer across processes, no process reuse) | WPT `html/browsers/origin` and the `postMessage` subsets are at threshold | `third_party/blink/renderer/core/frame/remote_dom_window.cc` |
+| Q2.14a | (proposed) Flip readiness as a number: a scheduled CI job, not required, runs the whole browser suite with `DWELLER_PROCESS=site` in the environment and prints passed over total and the failing names. A test that sets the variable itself is not changed. The count is the flip's burn-down, and each failing group becomes a row of the readiness list below | the job's summary shows the count on `main`; the count is in the scoreboard | – |
 | Q2.12 | Spaces become renderers: an agent's Space uses the same renderer processes, and the second copy of the engine in `ui/spaces.aye` goes away. Shared logins go through the browser's jar (first slice done, 2026-11-09: behind `DWELLER_SPACES=renderer` the window hosts each shared Space as renderer-backed tabs, with no Space process; messages 70–73; Spaces always use renderers in every mode; left: navigation fetches block the browser's loop, `isolated` Spaces still use a process, no openers across renderers, crash semantics, then the flip and the removal of the process path) | the `window_spaces*` tests pass | `content/browser/renderer_host/render_frame_host_impl.cc` (`CreateNewWindow`), `content/browser/devtools/protocol/target_handler.cc` (`CreateTarget`) |
-| Q2.12b | Navigation fetches stop blocking the browser's window loop: a renderer's navigation fetch (tab, frame, hosted Space) is a held fetch polled from the loop (`net.startNavigation`, with the synchronous path's redirect, SameSite, Sec-Fetch, auth and size semantics); framing checks, process swap and reply run when it lands (done, 2026-11-09: longest loop iteration during a 1 s navigation 1019 ms → under 10 ms; hosted Spaces 1502 ms → 7 ms; left: the renderer still blocks on its navigation document, so Stop or a typed URL waits for it; no body streaming; 2 ms polling) | `window_renderer_loads_slow_navigation` and `window_spaces_responsive_in_renderer` pass (no loop iteration waits for a 1 s server) | `content/browser/loader/navigation_url_loader_impl.cc`, `content/browser/renderer_host/navigation_request.cc` |
-| Q2.12c | Isolated Spaces on renderers and crash semantics of hosted tabs: with `DWELLER_SPACES=renderer` an `isolated` Space is hosted with no Space process, on a partition of its own in the browser (cookie jar, `localStorage`, network partition key for cache and connections), in memory only, never written to the profile and dropped when the Space goes; each hosted tab's cookie, storage and network requests use its Space's partition, chosen from the browser's record. A dead hosted renderer fails that tab's requests with "renderer crashed", `tabs` lists it `crashed`, `tab_close` closes it, and the Space and its other tabs go on (done, 2026-11-09; no new IPC codes; left: Basic auth, preflight cache, cert exceptions still shared and no HSTS per partition; no sad tab or reload for a crashed hosted tab; then the flip to hosted by default and the removal of the Space process path) | `window_spaces_isolated_in_renderer` and `window_spaces_crash_in_renderer` pass, with the `window_spaces*`, `window_renderer*`, `agent_sessions*` and `storage` tests | `content/browser/storage_partition_impl.cc` (`Initialize`, `InitNetworkContext`, `is_in_memory`) |
 | Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
+
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c.
+
+### Readiness list for Q2.14 (proposed 2026-11-11)
+
+The done steps of Q2 and Q3 carry about 85 Left items in their rows
+(counted by clause). None was a step, so the flip looked three steps
+away. The items below are the ones a person, a login or criterion X1
+meets once the flag is the default; the step that left each is in
+brackets. Each is one slice unless Q2.14a
+shows more. The proc lane takes them in this order after the Spaces
+flip.
+
+Security (X1):
+- The choice of process for a frame uses the URL before redirects, so a
+  frame that redirects to another site stays in the wrong renderer
+  [Q2.9].
+- `blob:` documents have no site [Q2.7].
+- Tab and site mode do not check the initiator's sandbox flags [Q3.9].
+
+Logins and popups (the goal says "logged in"):
+- `window.open` children and frames are dropped with the old renderer
+  when a navigation swaps it [Q2.6b].
+- `opener`, named targets and popup openers across renderers [Q2.3f,
+  Q2.11, Q2.12].
+- No `MessagePort` transfer across processes, and the window proxy is
+  one level deep [Q2.11].
+
+What a person sees:
+- An out-of-process frame's clip ignores overflow, transform and
+  opacity [Q2.9].
+- No hit-test slow path: content above a frame, `pointer-events` and
+  transforms send the click to the wrong process [Q2.10].
+- `location.replace()` pushes a history entry [Q2.6a].
+- On Linux the sandbox loses the fallback fonts that are opened late
+  [Q2.8b].
+
+Speed with the flag (W7, W8):
+- The renderer blocks while its navigation document loads, and a
+  document's body is not streamed, so the first paint waits for the
+  whole document [Q2.4e, Q2.12b].
+- The browser polls held fetches every 2 ms [Q2.4e].
+- A renderer does not reuse its display list [Q4.20].
+- Hidden child frames are not throttled, and no process is reused
+  [Q2.9, Q2.10]; these go with Q2.13.
+
+Tests:
+- Session restore has no `site` run [Q1.9b].
+- 48 tests name `DWELLER_PROCESS=tab` and 2 name `site`; the other 180
+  or so run in one process. Q2.14a measures them.
+
+Not needed for the flip (they stay Left items of their cards): trackpad
+latching and `overscroll-behavior` across frames, `rootBounds`, a child
+frame's history entries, a rule for a site that keeps crashing, `HOME`
+in the renderer's environment, a seccomp table for aarch64, wasmtime in
+the sandbox (Q8), the agent highlight, find in frames, the clipboard
+outside text fields.
 
 ## Q3: web security (lane sec)
 
 Exit: X2 and X3 hold. The new WPT areas are in `docs/conformance.md`
 with thresholds.
 
-| Step | What | Verify | Chromium |
-|---|---|---|---|
-| Q3.1 | `file:`: a test first shows that an http page cannot fetch, iframe, navigate to or load a `file:` URL. Then the fix: the initiator scheme rule (done, #253) | the test passes | `content/browser/child_process_security_policy_impl.cc` (`CanRequestURL`) |
-| Q3.1c | `net.Request.initiator` is an `Initiator` (`Browser` or `Page`) with no default, so every request names who asked (done, #254) | `aye check browser` | – |
-| Q3.1b | each `file:` document is cross-origin to every other, as in Chromium (scripting and `fetch`/XHR of `file:` from `file:` blocked, `location.origin` null; `localStorage` stays one shared area; one `file:` site lock); `DWELLER_ALLOW_FILE_ACCESS_FROM_FILES=1` restores the old behaviour (done, 2026-11-09; left: `document.cookie` on `file:`, the `sameOriginUrl` HTML-script check) | those tests and `no_file_from_web` pass | `url/origin.cc` (file URLs are opaque) |
-| Q3.2a | CORS enforced in `net/` for fetch and XHR, keyed on the initiator: a failed check is a network error, and page JS only types and filters. Non-simple cross-origin requests fail until Q3.2b | a two-origin test; WPT `fetch/api`, `xhr` do not drop | `services/network/cors/cors_url_loader.cc`, `services/network/public/cpp/cors/cors.cc` |
-| Q3.2b | Preflight with a cache, `Access-Control-Expose-Headers`, and redirects in CORS mode | WPT `fetch/api/cors`, `cors/` and `xhr` gain, and `conformance.py check` passes | `services/network/cors/preflight_controller.cc`, `preflight_cache.cc` |
-| Q3.3 | `crossorigin` on script, link and img, plus ORB (opaque responses that a no-cors fetch must not expose) (done, #286; module scripts in Q3.3b, #288; script events and `import()` credentials in Q3.3c, #304) | WPT `fetch/orb` and `html/cross-origin` subsets | `services/network/orb/` |
-| Q3.4 | TLS: set peer and host verification, TLS ≥ 1.2 and the system CA store explicitly. A bad certificate gets an interstitial with no bypass on HSTS hosts | a local server with expired, self-signed and wrong-host certificates; each is refused | `net/cert/`, `components/security_interstitials/` |
-| Q3.4b | A certificate-error bypass with a per-host exception store (none on HSTS hosts), and a wrong-clock hint on the expired page (done, #293; exceptions pinned to the accepted key and no HSTS over a bypass in Q3.4c, #296) | a test proceeds past a self-signed cert once and is asked again in a new profile | `components/security_interstitials/core/` |
-| Q3.5 | HSTS (the header and the preload list), mixed content (active content blocked, passive content upgraded) and `upgrade-insecure-requests` (done, #282; the preload list is a 560-entry subset of the Chrome list) | WPT `mixed-content`, `upgrade-insecure-requests`; an HSTS test | `net/http/transport_security_state.cc`, `core/loader/mixed_content_checker.cc` |
-| Q3.5b | Q3.5's rest: the WPT runner serves https so `mixed-content` and `upgrade-insecure-requests` are measured; `upgrade-insecure-requests` for the page's navigations and its frames; audio and video upgraded, not blocked (done, #300: `mixed-content` 53.3%, `upgrade-insecure-requests` 28.1%) | the two WPT areas in `docs/conformance.md` with thresholds | `core/loader/mixed_content_checker.cc` |
-| Q3.6 | X-Frame-Options and CSP `frame-ancestors` (done, 2026-11-09; `content-security-policy/frame-ancestors` 58.3% -> 88.9%, `x-frame-options` 30.6% -> 38.9%, both measured areas; checked where the engine commits a frame, which in tab mode is the renderer too; left: the engine's 16-frame cap stops `multiple.html` and `invalid.html`, violation reports are Q3.8, no browser-side check) | WPT `x-frame-options`, `content-security-policy/frame-ancestors` | `content/browser/renderer_host/ancestor_throttle.cc` |
-| Q3.7 | CSP 1: parsing, `default-src` and `script-src` for external scripts, inline scripts with nonce and hash, and `eval` (done, #333: `content-security-policy/script-src` 31.6%; the rest is Q3.7b) | WPT `content-security-policy/script-src` | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
-| Q3.7b | Q3.7's rest: module scripts, imports and `import()`, `'strict-dynamic'`, sha384/512, inline handlers (`script-src-attr`, `'unsafe-hashes'`), the `securitypolicyviolation` fields, `worker-src` on `new Worker`, srcdoc and about:blank inheritance, `<meta>` for later elements only (done, 2026-11-09: `script-src` 68/215 → 126/217, threshold 55; `wpt.py run` drops the proxy variables, which had turned `.https.` files into crashes; left: `javascript:` URLs, a policy inside workers, `integrity` allowance, the event's line and file, per-hop redirect checks, nonce hiding) | WPT `content-security-policy/script-src` gains | `services/network/public/cpp/content_security_policy/`, `core/frame/csp/` |
-| Q3.8 | CSP 2: `style-src`, `img-src`, `connect-src`, `frame-src`, `base-uri`, `form-action` and report-only (no reports are sent) (done, 2026-11-09: the whole `content-security-policy` dir 54.1% → 57.0%; new areas `style-src` 92.0%, `img-src` 75.0%, `connect-src` 36.8%, `securitypolicyviolation` 39.5%; left: `font-src`, `media-src`, `object-src` and EventSource/WebSocket have no gate yet, workers use no policy, redirects checked on the first URL only, report-only for eval, modules and workers, no `report-uri` requests) | WPT `content-security-policy` at threshold | the same |
-| Q3.9 | iframe `sandbox`: every token (`allow-top-navigation*`, `allow-popups*`, `allow-forms`, `allow-modals`, `allow-downloads`, and the others) (done, #345, #346 as Q3.9b: WPT sandboxing 11/32; left: tab mode does not check the initiator's flags) | WPT `html/browsers/sandboxing` | `core/frame/sandbox_flags.cc` |
-| Q3.10 | `X-Content-Type-Options: nosniff`, and COOP (browsing-context-group switch, opener severed; after Q2.6b) (done, 2026-11-09: nosniff blocks scripts, workers and sheets of the wrong MIME type, `importScripts` throws `NetworkError`; COOP parses and matches as Chromium, severs the opener, clears the name, closes the opener's handle, and forces a new renderer in tab mode; left: `runUntilConsole` waiting in real time while a popup is open (most COOP WPT files time out on it), COEP, COOP reporting, `noopener-allow-popups` popup rules, real browsing-context groups) | WPT `fetch/nosniff` 44.6% → 72.3%, `html/cross-origin-opener-policy` 1.5% | `services/network/cross_origin_opener_policy.cc`, `content/browser/renderer_host/` (COOP) |
-| Q3.10b | `dweller wpt` waits in real time while another browsing context is live; popup clocks follow the opener's (done, 2026-11-09; WPT `html/cross-origin-opener-policy` 9/615 → 250/615 (40.7%), threshold 40; left: 25 files still time out: the Reporting API (13), `blob:`/`javascript:`/document.write/about:blank popup navigations (5), COEP and sandbox with COOP (3), four others; `dump` and the agent pump popups without moving their clocks) | see card | – |
-| Q3.10c | `<link>` elements fire `load` and `error` (stylesheet, preload, modulepreload, prefetch; inserted links and `href` changes refire; `link.sheet` is null until load), and a non-2xx sheet is no longer applied (done, 2026-11-09; WPT `fetch/nosniff` 47/65 → 65/65, threshold 95; left: the style pass fetches the sheet again, so a non-cacheable sheet is fetched twice; preload and prefetch ignore media, type and integrity; a failing `@import` fires no `error`; links in shadow trees and templates fire nothing) | `link_events`, `link_events_in_renderer` | `third_party/blink/renderer/core/html/link_style.cc` |
-| Q3.10d | `<link>` events without polling (the task reads the style pass's result, forcing one pass if needed; the test waits for the page's title), one fetch per sheet URL and request mode per document (`Document.fetched`; a `no-store` sheet is fetched once, `agent_forms_http` `nostore.css` 6 → 3), and a failing `@import` fires `error` on the link (done, 2026-11-09; WPT `fetch/nosniff` 65/65; left: the memo ignores `referrerpolicy` and lives as long as the document; a link whose `@import` failed has `sheet` null (Chromium keeps it); a link no style pass reads is fetched by its task; preload and prefetch ignore media, type and integrity; links in shadow trees and templates fire nothing; the card's Chromium references were not re-read) | `link_events`, `link_events_in_renderer`, `link_sheets_shared` | `third_party/blink/renderer/core/html/link_style.cc`, `third_party/blink/renderer/core/css/style_sheet_contents.cc` |
-| Q3.11 | Small leaks: `Authorization` is removed on a cross-origin redirect, `window.name` is cleared on a cross-site navigation, top-level `data:` navigation is blocked, and private network access is blocked (public to local) (done, #298; left: PNA preflight, and PNA for frames, workers and documents) | one test each | `services/network/private_network_access_checker.cc` |
-| Q3.12 | Agent socket: a `0700` directory, a `0600` socket and a token handshake. A process without the token is refused (done, #290; the socket moved to `~/.dweller/agent.sock`) | a test without the token is refused | – |
-| Q3.13 | The HTTP cache keyed by the top-level site and the frame site (Chrome's network isolation key), and by credentials mode; the same for the connection pool | a test shows site B gets no cache hit for a response site A loaded | `net/http/http_cache.cc` (`GenerateCacheKey`), `net/base/network_isolation_key.h` |
-| Q3.14 | Fetch Metadata (`Sec-Fetch-Site`, `-Mode`, `-Dest`, `-User`) on requests to potentially trustworthy URLs, `Origin` on POST navigations, and the page's referrer policy applied in `net/` (done, #313) | `fetch_metadata` | `services/network/sec_header_helpers.cc`, `net/url_request/referrer_policy.h` |
-| Q3.14b | `referrerpolicy` on `a`, `area`, `iframe` and `script`, `rel=noreferrer`, `fetch(url, {referrerPolicy})`, a redirect's `Referrer-Policy`, and no `Origin` after a 303 (done, #319; left: the image cache does not key on the policy) | `fetch_metadata` | `core/html/html_anchor_element.cc`, `net/url_request/redirect_util.cc` |
-| Q3.14c | `Sec-Fetch-Dest` for every destination (fonts, workers), `Sec-Fetch-User` only with transient activation, and WPT `fetch/metadata` (29.6%) and `referrer-policy` (49.2%) measured (done, #325; left: fonts load `no-cors`, not `cors`; activation is per page; in the tab process a frame's and a `_blank` tab's document fetch carry no referrer) | `fetch_metadata`; the two WPT areas in `docs/conformance.md` with thresholds | `services/network/sec_header_helpers.cc` (`SetSecFetchDestHeader`, `SetSecFetchUserHeader`), `third_party/blink/public/common/frame/user_activation_state.h` |
+No open step. Done (rows in `foundations-done.md`, notes in `cards/`): Q3.1, Q3.1c, Q3.1b, Q3.2a, Q3.2b, Q3.3, Q3.4, Q3.4b, Q3.5, Q3.5b, Q3.6, Q3.7, Q3.7b, Q3.8, Q3.9, Q3.10, Q3.10b, Q3.10c, Q3.10d, Q3.11, Q3.12, Q3.13, Q3.14, Q3.14b, Q3.14c.
 
 ## Q4: interactivity (lane perf)
 
@@ -297,46 +330,39 @@ states the W7 sites it moves.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q0.4a | The react scroll regression of 922271a (train-1: P10.36b with P4.74 or P10.26): split it and fix it | react scroll p95 under 25 ms on `target/sites-old-20261017/react` | – |
-| Q4.1 | Profile zol and bbc (`DWELLER_TIMING`, `DWELLER_LAYOUT_WHY`), and confirm the causes on github, mistral and youtube-search. Also profile the extra scripts of the re-recorded archives (Q0.4b: wikipedia-en and wikipedia (ja) scroll p95 under 33 ms; Q0.4c: go-docs's W7 row ok). This step only measures; it ends with cards ranked by ms | a table in `PERF.md` | – |
+| Q4.25 | (proposed, decision 2) Measurement only: W7 at the window with `DWELLER_PROCESS=site`, on bbc, zol, mistral and react. While the renderer runs its longest task: the window's longest loop iteration, the scroll frame p95 the person sees, and the delay from a click to the next frame. Then one page on what W7 should measure with a renderer per site, and which open Q4 rows still move it. Chromium scrolls on the compositor thread from tiles it already has; the note says what the window would need to do the same from a renderer's last frame (the texture offset of P4.36c) | a table in `PERF.md` and the note in the card; the owner answers decision 2 | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` (scroll on the compositor thread), `docs/threaded_compositing.md` |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
 | Q4.6 | Why `relayoutDirty` refuses (mistral: 1301 times): fix the exits | the mistral refusals fall under 10 | `core/layout/layout_object.cc` (`MarkContainerChainForLayout`) |
-| Q4.6a | `relayout:floats`: lay out again from the nearest formatting root that holds floats (done, #268: zol refusals 1304 → 0, full layouts 1430 → 179) | `window_relayout_floats` | – |
-| Q4.6b | Attribute changes take the class/style path; `layoutReadsAttr` lists attributes layout reads (done, #271: `local:attr` 0 on mistral and zol) | `window_relayout_attr` | – |
-| Q4.6c | `relayout:dropped` (zol 84): class toggles inside a fixed-position widget rebuild the whole `body` (done, #353; left: a fixed box whose content comes out with another size, or one with a shrink-to-fit width, is still a full layout) | zol `relayout:dropped` under 10 | `core/layout/layout_object.cc` (`ObjectIsRelayoutBoundary`) |
 | Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
-| Q4.9 | A shape cache by word (`layout/text-width.aye`; done, #276) | the loop of wikipedia-en, rustdoc and mdn falls under 100 ms | `platform/fonts/shaping/caching_word_shaper.cc` |
-| Q4.10 | Image decode on a decode thread, with the pixels returned as a task, plus a decoded-image cache with a size budget (done, #279: two decode threads, 256 MB budget per document; the W7 measurement is left) | the bbc and zol loop falls, and `images` WPT does not drop | `platform/graphics/image_decoding_store.cc`, `cc/tiles/` (decode off the main thread) |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
-| Q4.13 | `querySelector(All)`, `getElementById`, `getElementsByClassName` and `window` named access use id, class and name indexes kept by the DOM, and a cache of parsed selectors (Q4.1: zol ~2700 ms in `querySelectorAll`, ~700 ms in named lookups; done, #270) | zol's loop falls by those ms; `dom/nodes` WPT does not drop | `core/css/selector_query.cc` (fast paths, `SelectorQueryCache`), `core/dom/tree_ordered_map.cc`, `core/html/window_name_collection.cc` |
-| Q4.14 | CSS animation and transition checks visit only elements that have animations or transitions (Q4.1: zol, youtube-search, 1357 ms; ~16% idle CPU; done, #275, and Q4.14b runs the hook once per rendering update, #277) | the idle CPU of those sites falls under 5% | `core/animation/document_animations.cc`, `core/animation/css/css_animations.cc` |
-| Q4.15 | No raster when a frame has no damage, and only the damaged rect otherwise (Q4.1: mistral 2193 ms idle, react 47 ms per frame; #283: the window redraws only damaged rects and nothing without damage; scroll and the other overlays still redraw it all) | mistral's and react's idle CPU and react's scroll p95 pass | `cc/trees/damage_tracker.cc`, `cc/scheduler/scheduler.cc` (no frame without damage) |
-| Q4.15b | Measure Q4.10 and Q4.15 together: bbc, zol, mistral and react W7 on main before and after; whether the idle raster of mistral was the window redraw or its canvas (done, #291: no W7 row moved; the idle raster of mistral is its canvas) | the numbers in `PERF.md` | – |
 | Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids (measured by Q4.16a, #303: mistral is natives and forced restyle, bbc is calls and inline-cache misses; the ranked cards Q4.16b–l are in its card) | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
-| Q4.16c | Canvas 2D `drawImage` and image patterns sample per column and row, not per pixel (`patternRow` on `ImageTap` tables; the old loop stays for rotation and skew), and a plain source-over composite runs in a mode-free loop (done, 2026-11-09: own benchmark `browser/tests/perf/canvas_drawimage.html`, `canvas_draw` 21.6 -> 5.7 ms a frame, pixels and WPT `html/canvas/element` per-file results unchanged; left: premultiplied copy cached per image, path fill, rotated draws, the page raster of the canvas, mistral numbers, see Q4.21 cost 2) | `canvas_draw` ms a frame on the benchmark falls by half; canvas pixels and WPT results unchanged | `third_party/skia/src/core/SkBitmapProcState.cpp`, `SkBlitRow_D32.cpp` |
-| Q4.16e | `Function.prototype.call` and `apply` on a bytecode function stay in the dispatch loop, with no VM re-entry (done, #329: bbc saves ~10 ms, not 250, see Q4.21; left: bound `call` and `CallUndefinedReceiver` still take the native path) | test262 `Function/prototype/call` and `apply` unchanged; jsbench 0.995 | `v8/src/builtins/arm64/builtins-arm64.cc` (`Generate_FunctionPrototypeCall`, `Generate_FunctionPrototypeApply`) |
-| Q4.16g | Spec-correct `String.prototype.{match,replace,search,split}` and RegExp symbol methods with named groups, with a native fast path for a plain RegExp, so core-js keeps the natives on bbc; Q4.16g2 keeps the fast path when core-js moves `test` or swaps `constructor` (done, #314) | test262 574 → 599/669, none that passed fails; bbc's core-js polyfills 5 → 0 | `v8/src/builtins/builtins-regexp-gen.cc` (`BranchIfFastRegExp`), `v8/src/builtins/string-replace.tq` |
-| Q4.16m | `RegExp(re)` returns `re` and `RegExp.prototype.test` calls `exec`, so core-js leaves `RegExp` alone on bbc (done, #326; bbc's longest loop did not move, 407 → 406 ms) | test262 RegExp and String folders 1191 → 1205/1343, none that passed fails | `v8/src/builtins/builtins-regexp-gen.cc` (`RegExpConstructor`), `v8/src/builtins/regexp-test.tq` |
-| Q4.16k | `Array.prototype.sort` with no comparator converts each element to a string once, not on each compare, so `formatNumber` runs once per element (done, #352; left: `formatNumber` still runs its `snprintf`/`strtod` loop per element; Grisu for it is the open follow-up) | test262 `built-ins/Array/prototype/sort` 27/54 before and after; `js_conformance` with the new case; mistral `ui_raf` median −384 ms over 200 frames | `third_party/v8/builtins/array-sort.tq` (`SortCompareDefault`) |
-| Q4.16n | `ImageCache` finds entries by a hash map from URL, and a fill skips image elements whose fingerprint (URL, density, `crossorigin`, `referrerpolicy`) did not change (done, #351; left: `styleUrls` walks every element's style on each layout, about 100 ms per 10 s on zol; `imageAvailable` and `canvas_api.aye` still scan `entries` linearly) | `shown-unchanged_test.aye`; zol `images` phase 18.3 → 2.2 ms a layout; WPT `images` unchanged at 76.7% | – |
-| Q4.21 | Re-measure W7 on bbc, zol, mistral and react after Q4.16b/d/e/f/g/m and the aye inline bump (c43a9c6, O7.6, #323), and re-profile before choosing the next Q4.16 step: Q4.16e saved ~10 ms instead of the estimated 250 ms because core-js no longer replaces built-ins, so Q4.16a's estimates are stale (done, #350; left: ranked steps 3 and 5–11 of its card) | a dated W7 table and a ranked profile in `PERF.md` | – |
-| Q4.22 | Mistral's idle relayout (Q4.21 step 5): `layoutShared` skips `loadWebFonts` and `fillImagesWith` when no font face, image, sheet or non-text DOM write changed, and a same-text `textContent` is a no-op without MutationObservers, as Blink's `HasOneTextChild` path (done, 2026-11-09; test page relayout 9.2 → 7.2 ms with observers, 9.2 → 6.5 ms without; left: canvas draws still move the DOM version and rebuild the display list (Q4.20), an observed same-text write still relays out its parent) | `fonts` and `images` per relayout fall to ~0 on `browser/tests/perf/idle_relayout*.html`; `window_same_text_write_builds_nothing` | `core/dom/node.cc` (`setTextContent`) |
-| Q4.17 | Canvas 2D drawing cost (Q4.1: mistral 1268 ms idle) (done, #294: a canvas with unchanged pixels is not damaged; mistral raster 3535 → 257 ms per 10 s) | mistral's idle CPU passes | `modules/canvas/canvas2d/canvas_rendering_context_2d.cc` |
-| Q4.18 | What relayouts mistral each frame (done, #297: a same-text `textContent` write; it cannot be skipped because MutationObservers watch it) | – | – |
-| Q4.19 | Unchanged frames reuse their display list (#301: mistral builds per frame 6 → 1, `paint_build` 4.0 → 1.8 ms) | `window_frame_lists_reused` | `platform/graphics/paint/paint_controller.cc` |
-| Q4.20 | Canvas draws (2D and WebGL) mark paint only, not the DOM version: the window patches the changed canvas's image items (pixels referenced, `ver` = `Bitmap.shown()`), re-signs the list and damages only the canvas rect, also through an iframe (done, 2026-11-09; canvas-only page relayouts 158 → 1 in 300 frames, `idle_relayout_plain` 271 → 1 and `ui_raf` 7.9 → 1.5 ms; left: the whole list is re-signed (0.26 ms), an observed same-text write still relays out, the tab-process renderer has no list reuse) | `window_canvas_raf_no_relayout` | `core/html/canvas/html_canvas_element.cc` (`DidDraw`) |
-| Q4.23 | An inline cache for DOM wrapper and primitive property loads: host objects without `HOST_NAMED` are cacheable, IC cases keyed by (shape, prototype), shapeless prototypes made fast again on an IC walk (V8 `MakePrototypesFast`), primitive receivers through their wrapper's prototype, string/array/typed-array `length` handlers, own properties of dictionary-mode receivers (done, 2026-11-09: `browser/tests/perf/host_ic.html` loads leaving the IC 4.08M → 16k, DOM walk −17%, string hash −17%, instructions −8.8%; jsbench instructions unchanged; test262 String/Object/property-accessors 4149/4844 before and after; left: accessor hits still call the getter through `call0`, megamorphic hits outside the inline path, one global `proto_epoch`, zol and bbc not measured) |
-| Q4.24 | Measure where safe mode's cost in the JS VM goes and what it takes to win it back: callgrind per-line diff of safe and fast on navier-stokes and richards, prototype A (bytecode checked once per function by `bcValidate`, operand reads unchecked in `vmLoop`) and B (reads without cast or overflow checks) (done, 2026-11-09, measurement only: safe is 1.44x/1.42x fast in instructions; A recovers 68%/64% of the gap and about 69% of the suite's wall gap (geomean 0.902 against fast 0.857); B recovers nothing; bounds checks on operand reads and non-inlined decoders and callees are the cost, cast/overflow checks are not; prototypes on local branches `q4-24-proto`, `q4-24-proto-b`; left: Q4.24b A for real with a fuzz oracle (needs the user's decision: unchecked reads after validation), unchecked or provable `Heap.obj`/`vmKeyedDenseElem`, re-measure on macOS) | a card with per-line numbers, a safe/fast/A/B table, the security argument and a recommendation | `v8/src/sandbox/bytecode-verifier.cc`, `v8/src/flags/flag-definitions.h` |
+
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24.
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
 Each step is one feature, with its WPT subset or a window test.
 Ordered by daily use.
+
+Size (estimate of 2026-11-11, `velocity.md` "What the history says"):
+the started phases went from 53 planned rows to 111 in five days, a
+factor of 2.1. By that factor these 18 rows are about 40 slices; by what
+each row names they are 40 to 60: one for Q5.8, two or three for most,
+five or more each for Q5.9a, Q5.10 and Q5.14a. A row gets a card that
+lists its slices before any of it is dispatched.
+
+Where a row can be verified:
+- In the cloud, by WPT or a headless window test: Q5.2, Q5.3, Q5.6,
+  Q5.7, Q5.8, Q5.10, Q5.11a, Q5.11b, Q5.12, Q5.14a, Q5.14b.
+- Only on the Mac, by the owner: Q5.1 (the keys and the look), Q5.4
+  (a real input method), Q5.5 (the system picker), Q5.9a and Q5.9b
+  (the system decoders, sound), Q5.13, Q5.15. These go to the Mac queue
+  with a checklist line each.
 
 | Step | Feature | Chromium |
 |---|---|---|
@@ -372,7 +398,6 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
-| Q6.1 | `css/backgrounds-borders` (30.1 -> 65.4, threshold 65; done, 2026-11-09: `border-image` longhands and shorthand, `box-shadow` validation and interpolation, text-value and `allow-discrete` transitions for text-mixed properties, keyframe `composite` and `animation-composition`, setter validation of background and border values and shorthands, one longhand-through-shorthand read path shared with Q6.12; left: border-image painting, background-position-x/y longhands, corner-shape, tentative box-shadow-* longhands, `border` resetting `border-image` in the cascade) |
 | Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
 | Q6.4 | `css/box-sizing` (51.5, 70) |
@@ -382,14 +407,21 @@ check`. Chromium references come from the module map of
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
-| Q6.11 | `url` (66.7 -> 90.3, threshold 80 -> 88; done, 2026-11-09; UTS #46 in new `browser/idna/` from Unicode 18.0.0 tables via `gen_idna.py`; left: URL setters through a state-override parser (about 360 subtests), `failure.html` XHR/sendBeacon throws, urlencoded-parser BOM/surrogates, percent-encoding charsets) |
-| Q6.11b | WPT url, the URL setters: `url.setComponent` runs the basic URL parser with a state override over a Parser copied from the Url (`url-setters*.js` 0 -> 1156/1156, `a-element` setters included); `ak.setUrlPart` native behind the `URL` class setters; url 90.3 -> 93.9, threshold 88 -> 90 (done, 2026-11-09; left: `location` setters other than hash, `setComponent` in the url fuzz target) |
-| Q6.12 | `css/css-animations` (50.9 -> 69.1, threshold 60 -> 65; done, 2026-11-09; inline validation of animation-*/transition-*, animation-timeline and animation-range-*, shorthand longhand reads, @keyframes name validity; left: `text-decoration-inset` 84, expanding a shorthand when one longhand is cleared, CSSKeyframesRule in the CSSOM, `animation-duration: auto`, `animation-composition`) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12.
+
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.
+
+Two notes of 2026-11-11:
+- The thresholds here are floors (decision 3). Q6.1 closed at 65.1
+  against 65, so an unrelated change can reopen it; a step that closes an
+  area leaves at least 2 points of room or says why it cannot.
+- Q6.2 is blocked by Q6.14 for about 1 900 of the 2 200 subtests it
+  still needs, so Q6.14 runs before the next Q6.2 slice. Every area here
+  is measured in the cloud; none needs the Mac.
 
 ## Q7: acceptance and release (lane sites)
 
