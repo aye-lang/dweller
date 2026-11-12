@@ -1,0 +1,7 @@
+fn rendererBehind(ui: *mut Ui) bool {
+    if !ui.auto_waits || ui.unresponsive > 0 { return false }
+
+    let tp = ui.slots[ui.active].?.process orelse return false
+
+    return !tp.hung && (rendererWaits(ui, "renderer:loaded") || inputWaits(tp))
+}

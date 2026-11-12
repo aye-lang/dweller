@@ -480,6 +480,7 @@ pub struct Ui {
     hidden: bool = false
     input_ns: u64 = 0
     tab_processes: bool
+    auto_waits: bool = false
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
         var slots = @zeroed([16]?*mut TabSlot)
@@ -621,6 +622,7 @@ pub struct Ui {
     fn script(self: *mut Self, events: []u8) AllocError!void {
         self.rest.clear()
         try self.rest.append(events)
+        self.auto_waits = self.tab_processes && text.indexOf(events, "renderer:") == null
         return resumeScript(self)
     }
 
@@ -647,7 +649,9 @@ pub struct Ui {
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 self.repaint = false
-                drawn += 1
+                if !rendererBehind(self) {
+                    drawn += 1
+                }
                 if self.paint_began != 0 && pageview.hasFrame(self.view()) {
                     perf.end("ui_first_paint", self.paint_began, self.tab.href())
                     self.paint_began = 0
