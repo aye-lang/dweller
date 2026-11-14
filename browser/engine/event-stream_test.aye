@@ -1,0 +1,117 @@
+import std.mem.Allocator
+import std.text
+
+fn streamEvents(alloc: Allocator, chunks: []u8, out: *mut text.Builder) !i64 {
+    var es = EventStream.init(alloc)
+    defer es.deinit()
+    var buf = text.Builder.init(alloc)
+    defer buf.deinit()
+    var left = text.Builder.init(alloc)
+    defer left.deinit()
+    var first = true
+    var split_crlf = false
+    var parts = text.split(chunks, "\x01")
+
+    while parts.next() |chunk| {
+        try buf.append(chunk)
+
+        let input = buf.bytes()
+        var used: usize = 0
+
+        if first {
+            used = streamStart(input)
+        }
+
+        first = first && input.len == 0
+        es.crlf = split_crlf
+
+        while try nextStreamEvent(&mut es, input, used) |end| {
+            used = end
+            split_crlf = es.crlf
+            try writeStreamEvent(&es, out)
+        }
+
+        left.clear()
+        try left.append(input[used..])
+        buf.clear()
+        try buf.append(left.bytes())
+    }
+
+    return es.retry
+}
+
+fn writeStreamEvent(es: *EventStream, out: *mut text.Builder) !void {
+    if es.data.len() == 0 {
+        return
+    }
+
+    try out.append(es.kind.bytes())
+    try out.append("|")
+    try out.append(es.data.bytes()[0..es.data.len() - 1])
+    try out.append("|")
+    try out.append(es.id.bytes())
+    try out.append(";")
+}
+
+fn expectStream(alloc: Allocator, chunks: []u8, want: []u8) !void {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    _ = try streamEvents(alloc, chunks, &mut out)
+
+    @expectEqual(want, out.bytes())
+}
+
+test "event stream fields, comments and the space after the colon" {
+    try expectStream(@testAllocator(), ": hi\nevent: ping\ndata:a\ndata: b\nid: 7\nfoo: x\n\ndata\n\n", "ping|a\nb|7;||7;")
+}
+
+test "event stream lines end with CR, LF or CRLF" {
+    try expectStream(@testAllocator(), "data:a\rdata:b\r\ndata:c\n\r\n", "|a\nb\nc|;")
+    try expectStream(@testAllocator(), "data:test\r\ndata\ndata:test\r\n\r", "|test\n\ntest|;")
+}
+
+test "event stream chunks split anywhere" {
+    let alloc = @testAllocator()
+    let whole = "event: e\r\ndata: one\r\n\r\nid: 2\ndata: two\n\n"
+    var chunks = text.Builder.init(alloc)
+    defer chunks.deinit()
+    var i: usize = 0
+
+    while i <= whole.len {
+        chunks.clear()
+        try chunks.append(whole[0..i])
+        try chunks.append("\x01")
+        try chunks.append(whole[i..])
+        try expectStream(alloc, chunks.bytes(), "e|one|;|two|2;")
+        i += 1
+    }
+}
+
+test "event stream: a CR at a chunk's end and its LF in the next" {
+    try expectStream(@testAllocator(), "event: e\r\x01\ndata: x\r\x01\n\r\x01\ndata: y\n\n", "e|x|;|y|;")
+}
+
+test "event stream: one leading BOM is dropped" {
+    try expectStream(@testAllocator(), "\xEF\xBB\xBFdata:1\n\n", "|1|;")
+    try expectStream(@testAllocator(), "\x01\xEF\xBB\xBFdata:1\n\n", "|1|;")
+    try expectStream(@testAllocator(), "\xEF\xBB\xBF\xEF\xBB\xBFdata:1\n\ndata:2\n\n", "|2|;")
+}
+
+test "event stream: an id with NUL is ignored and the id persists" {
+    try expectStream(@testAllocator(), "id: a\n\nid: b\x00c\ndata: x\n\ndata: y\n\n", "|x|a;|y|a;")
+}
+
+test "event stream: retry takes only digits; empty is the default" {
+    let alloc = @testAllocator()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    @expectEqual(1000, try streamEvents(alloc, "retry: 1000\n", &mut out))
+    @expectEqual(-1, try streamEvents(alloc, "retry: 10x\nretry: -1\n", &mut out))
+    @expectEqual(3000, try streamEvents(alloc, "retry: 5\nretry\n", &mut out))
+}
+
+test "event stream: an unfinished event is not dispatched" {
+    try expectStream(@testAllocator(), "data: a\n\ndata: b\n", "|a|;")
+}

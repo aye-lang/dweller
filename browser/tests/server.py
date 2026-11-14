@@ -233,6 +233,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             back = query.get("redirect_uri", ["/"])[0]
             extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
             self.reply(302, [("Location", back + "?" + extra)])
+        elif path == "/event-stream":
+            last = self.headers.get("Last-Event-ID")
+            body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"
+            self.reply(200, [("Content-Type", "text/event-stream"), ("Cache-Control", "no-store")], body)
+        elif path == "/event-stream-html":
+            self.reply(200, [("Content-Type", "text/html")], b"data: x\n\n")
         elif path == "/agent":
             agent = self.headers.get("User-Agent", "")
             self.reply(200, [("Content-Type", "text/plain")], agent.encode() + b"\n")
