@@ -1,0 +1,36 @@
+import std
+import std.text
+
+pub struct ServeOptions {
+    width: f64 = 800.0
+    height: f64 = 600.0
+    js: bool = true
+}
+
+pub fn serveOptions(args: [][]u8) ?ServeOptions {
+    var o = ServeOptions {}
+    var i: usize = 0
+
+    while i < args.len {
+        let sized = (text.eql(args[i], "--width") || text.eql(args[i], "--height")) && i + 1 < args.len
+
+        if text.eql(args[i], "--no-js") {
+            o.js = false
+            i += 1
+        } else if sized && sizeOption(args[i + 1]) > 0.0 {
+            if text.eql(args[i], "--width") { o.width = sizeOption(args[i + 1]) } else { o.height = sizeOption(args[i + 1]) }
+
+            i += 2
+        } else {
+            std.log.err(SERVE_USAGE)
+
+            return null
+        }
+    }
+
+    return o
+}
+
+fn sizeOption(arg: []u8) f64 {
+    return text.parseFloat(arg) catch 0.0
+}
