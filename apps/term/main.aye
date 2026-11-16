@@ -3,7 +3,7 @@ import std.mem.Allocator
 import std.text
 import vt
 
-let USAGE = "usage: term dump FILE [--cols N] [--rows N]"
+let USAGE = "usage: term [--exec COMMAND] [--type KEYS] [--save OUT.png] [--dump] | term dump FILE [--cols N] [--rows N] | term shot FILE OUT.png [--font system]"
 
 pub fn main() {
     var gpa = std.heap.General.init()
@@ -24,7 +24,9 @@ fn run(alloc: Allocator) i32 {
         return dumpStream(alloc, args[2..]) catch 1
     }
 
-    std.log.err(USAGE)
+    if args.len >= 4 && text.eql(args[1], "shot") {
+        return shot(alloc, args[2..]) catch 1
+    }
 
-    return 2
+    return runWindow(alloc, args[1..])
 }
