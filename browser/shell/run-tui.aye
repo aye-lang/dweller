@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import tui
+
+fn runTui(alloc: Allocator, o: Options, style_source: []u8, build: fn(*mut App) AllocError!void) i32 {
+    var cells = tui.CellMeasurer.init()
+    var cols = 80.0
+    var rows = 24.0
+
+    if o.sized {
+        cols = o.width as f64
+        rows = o.height as f64
+    }
+
+    let app = openApp(alloc, style_source, &mut cells, cols, rows) catch |e| {
+        return outOfMemory()
+    }
+
+    defer closeApp(app)
+
+    showTui(app, o, build) catch |e| {
+        return outOfMemory()
+    }
+
+    return 0
+}
