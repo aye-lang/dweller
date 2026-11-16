@@ -1,0 +1,16 @@
+import dweller.font
+import dweller.paint
+import std.mem.Allocator
+import vt
+
+fn shoot(alloc: Allocator, term: *mut vt.Term, measure: dyn font.Measurer, system: ?*mut font.System, path: []u8) !i32 {
+    var view = View { canvas: try paint.Canvas.init(alloc, 0, 0), painter: paint.TextPainter.init(alloc, system), measure: measure }
+    defer closeView(&mut view)
+
+    measureCells(&mut view)
+    try sizeView(alloc, &mut view, term)
+    _ = try drawRows(&mut view, term)
+    try saveView(alloc, &view, path)
+
+    return 0
+}

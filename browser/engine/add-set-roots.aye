@@ -1,0 +1,28 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn addSetRoots(doc: *Document, set: *css.KeySet, el: NodeId, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    try addSetDescendants(doc, el, &set.descendants, set.all_descendants, out, shallow, found)
+
+    var left = set.sibling_distance
+    var cur = doc.nextSibling(el)
+
+    while cur |c| {
+        if left == 0 { break }
+
+        cur = doc.nextSibling(c)
+
+        if doc.node(c).kind != dom.Kind.Element { continue }
+
+        if left != css.ANY_DISTANCE { left -= 1 }
+
+        if set.all_siblings || css.inFeatures(doc, c, &set.siblings) { try addRoot(out, shallow, found, c, true) }
+
+        try addSetDescendants(doc, c, &set.sibling_descendants, set.all_sibling_descendants, out, shallow, found)
+    }
+}

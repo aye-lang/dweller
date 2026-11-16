@@ -1,0 +1,39 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: content/browser/loader/navigation_url_loader_impl.cc OnReceiveResponse
+pub fn navigationHead(alloc: Allocator, id: u32) AllocError!?Response {
+    let ld = loader orelse return null
+    let l = loadById(ld, id) orelse return null
+    let a = l.ask orelse return null
+    let job = l.job orelse return null
+    var status: i64 = 0
+    var content_type: ?[*]u8 = null
+    var ct: []u8 = typeOfPath(job.at.path)
+
+    if !a.nav || l.state != LoadState.Running || job.sink.body.len() == 0 || job.sink.challenged { return null }
+
+    curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
+    curl_easy_getinfo(job.curl, CURLINFO_CONTENT_TYPE, &mut content_type)
+
+    if status < 200 || status > 299 { return null }
+
+    if content_type |p| {
+        ct = p[0..strlen(p)]
+    }
+
+    var res = try respond(alloc, ct, try alloc.alloc(0 as u8, 0))
+
+    errdefer res.deinit(alloc)
+    res.status = status
+    res.headers_raw = try dup(alloc, job.sink.headers_raw.bytes())
+
+    if !text.eql(job.at.href, l.href) {
+        res.url = try dup(alloc, job.at.href)
+    }
+
+    try storeHead(job)
+
+    return res
+}

@@ -1,0 +1,24 @@
+// https://tc39.es/ecma262/#sec-web-compat-functiondeclarationinstantiation
+
+import std.mem.AllocError
+
+fn annexResolve(r: *mut Resolver, annex: u32) AllocError!void {
+    if annex == 0 {
+        return
+    }
+
+    var below = r.scopes.len()
+
+    while below > 1 && !annexVarScope(r.scopes.items()[below - 1]) {
+        below -= 1
+    }
+
+    match r.ast.node(annex) {
+        .Ident { name, .. } => try r.lookupBelow(annex, name, below)
+        _ => {}
+    }
+}
+
+fn annexVarScope(s: RScope) bool {
+    return s.is_func || s.top
+}

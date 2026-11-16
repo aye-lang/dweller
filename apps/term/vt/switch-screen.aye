@@ -1,0 +1,23 @@
+fn switchScreen(t: *mut Term, alternate: bool, with_cursor: bool) {
+    if alternate == t.on_alternate {
+        return
+    }
+
+    if alternate && with_cursor {
+        saveCursor(t)
+    }
+
+    t.on_alternate = alternate
+
+    if alternate {
+        t.alternate.top = 0
+        t.alternate.bottom = t.rows - 1
+        erase(t, true, 2)
+    } else if with_cursor {
+        restoreCursor(t)
+    }
+
+    for y in 0..t.rows {
+        t.dirty[y] = true
+    }
+}

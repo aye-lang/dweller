@@ -6,7 +6,7 @@ fn runTimers(r: *mut TabRenderer) !void {
 
     let p = r.page orelse return
 
-    if try engine.runDueTimersUntil(p, null) {
+    if !(r.staged.stepping && !engine.scriptsRan(p)) && try engine.runDueTimersUntil(p, null) {
         r.due = true
     }
 
@@ -16,6 +16,7 @@ fn runTimers(r: *mut TabRenderer) !void {
         r.due = true
     }
 
+    try advanceStaged(r, false)
     try paintFrame(r)
     try reportPage(r)
 }

@@ -1,0 +1,21 @@
+fn erase(t: *mut Term, display: bool, mode: u32) {
+    let s = t.screen()
+
+    if mode == 0 {
+        blankCells(t, s.y, s.x, t.cols)
+    } else if mode == 1 {
+        blankCells(t, s.y, 0, s.x + 1)
+    } else if mode == 2 || (mode == 3 && display) {
+        blankCells(t, s.y, 0, t.cols)
+    }
+
+    if !display || mode > 3 {
+        return
+    }
+
+    for y in 0..t.rows {
+        if (mode == 0 && y > s.y) || (mode == 1 && y < s.y) || mode >= 2 {
+            blankCells(t, y, 0, t.cols)
+        }
+    }
+}
