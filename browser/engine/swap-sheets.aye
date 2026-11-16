@@ -9,7 +9,7 @@ let MAX_KEPT_SHEETS: usize = 8
 fn swapSheets(s: *mut Script, g: *mut Geometry, st: *mut Styling) AllocError!bool {
     let p = s.page
 
-    if p.kept_sheets.len() >= MAX_KEPT_SHEETS {
+    if keptSheets(st) >= MAX_KEPT_SHEETS {
         noteFullLayout(s, "sheet:kept")
 
         return false
@@ -31,7 +31,7 @@ fn swapSheets(s: *mut Script, g: *mut Geometry, st: *mut Styling) AllocError!boo
         return false
     }
 
-    p.kept_sheets.append(st.author) catch |e| {
+    keepSheet(p.alloc, st, st.author) catch |e| {
         author.deinit()
 
         return e
