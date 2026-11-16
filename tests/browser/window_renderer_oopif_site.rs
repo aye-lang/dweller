@@ -287,8 +287,11 @@ fn window_renderer_oopif_site_replace() {
     let shot = scratch().join("oopif_site_replace.png");
     let far = srv.base.replace("127.0.0.1", "localhost");
     for mode in ["", "tab", "site"] {
-        let wait = if mode.is_empty() { "loaded frame frame" } else { "renderer:loaded frame frame" };
-        let back = if mode.is_empty() { "key:cmd+[ painted loaded frame" } else { "key:cmd+[ renderer:loaded frame" };
+        let (wait, back, landed) = if mode.is_empty() {
+            ("loaded frame frame", "key:cmd+[ painted loaded frame", "loaded frame frame")
+        } else {
+            ("renderer:loaded renderer:title:?third_2 frame", "key:cmd+[ renderer:loaded renderer:title:Replace_2 frame", "renderer:loaded renderer:title:?landed_2 frame")
+        };
 
         let state = run_site(&srv.base, "replace.html", mode, &shot, wait);
         assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html?third", srv.base), "{mode}:\n{state}");
@@ -298,7 +301,7 @@ fn window_renderer_oopif_site_replace() {
         assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html", srv.base), "{mode}: Back skips the replaced entry\n{state}");
         assert_eq!(line(&state, "history "), "history 1 of 2", "{mode}:\n{state}");
 
-        let state = run_site(&srv.base, "replace.html?go", mode, &shot, wait);
+        let state = run_site(&srv.base, "replace.html?go", mode, &shot, landed);
         assert_eq!(line(&state, "url "), format!("url {far}/ui/replace.html?landed"), "{mode}:\n{state}");
         assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}: the entry of ?far was replaced\n{state}");
     }

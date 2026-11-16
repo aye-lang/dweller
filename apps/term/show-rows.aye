@@ -1,0 +1,20 @@
+import dweller.sdl
+import std.mem.AllocError
+
+let IDLE_WAIT_MS: i32 = 10
+
+fn showRows(w: *mut TermWindow) AllocError!void {
+    if !(try drawRows(&mut w.view, &mut w.term)) {
+        return
+    }
+
+    for y in 0..w.term.rows {
+        w.term.dirty[y] = false
+    }
+
+    let t = w.texture orelse return
+
+    _ = sdl.SDL_UpdateTexture(t, null, w.view.canvas.pixels.ptr, (w.view.canvas.width * 4) as i32)
+    _ = sdl.SDL_RenderCopy(w.renderer, t, null, null)
+    sdl.SDL_RenderPresent(w.renderer)
+}

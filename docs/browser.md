@@ -104,8 +104,9 @@ engine's module-level state (B9) makes any other split a rewrite.
 - **Image decode and raster** stay on the window thread. They move to
   helper threads only when a measurement shows the need (raster draws
   only the damage since P4.35).
-- **Spaces** are processes, not threads (B9: "Threading model: a process
-  per Space").
+- **Spaces** are tabs of the window whose pages run in renderer
+  processes (Q2.12e; B9's "a process per Space" was the design until
+  2026-11-16).
 
 ## Telemetry
 
@@ -623,7 +624,7 @@ on (`--no-js` turns it off), `dump` with `--js`.
   `screenshot`, `wait` (for load or a selector), `tabs`.
 - `dweller mcp`: the same commands as MCP tools over stdio JSON-RPC.
 - `dweller --agent-socket PATH` with the window: each agent works in a
-  Space of its own (a process apart from the window, at most 8) and
+  Space of its own (tabs in renderer processes, at most 8) and
   the person watches, pauses, stops or takes over a Space.
   `dweller connect PATH [--mcp]` bridges stdio to that socket, so an
   MCP client can drive the window a person sees.
@@ -732,10 +733,9 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `DWELLER_PROFILE=DIR` names another (made with mode 0700 if
     missing). `dump`, `screenshot`, `agent`, `mcp`, headless windows
     (`--frames`, `--exit-when-idle`, so the tests) use none unless
-    `DWELLER_PROFILE` is set, and a Space (`dweller space`) never does:
-    a `shared` Space gets the window's jar and changes over the control
-    connection (P9.7) and reads `localStorage` files of the window's
-    profile without writing them. Layout:
+    `DWELLER_PROFILE` is set. A `shared` Space uses the window's jar and
+    `localStorage` through the window; an `isolated` one has a partition
+    in memory (Q2.12c). Layout:
     `cookies` (the jar) and `lock`. The jar is loaded at the start and
     written after any change, at most once a second (the window's loop),
     and at exit, so a killed window loses at most a second of cookies.
@@ -1119,6 +1119,13 @@ cards say which):
 - R7: one `run` request navigates, types, clicks, waits and reads, and
   returns a JSON value, its log and the number of calls; an error names
   the failing call.
+
+**Since Q2.12e (2026-11-16) a Space is a group of the window's tabs in
+renderer processes** (`docs/process-model.md` §8, `docs/agent-protocol.md`
+"Spaces"); the Space process, its control connection, the copied
+cookies and storage and the frame file described from here to the end
+of this section are the design of P9 as it was built and are gone from
+the code. R1 to R7 hold with the same tests.
 
 **Threading model: a process per Space.** R2 fails because the window
 runs agent work on its own thread. Three ways out were weighed:

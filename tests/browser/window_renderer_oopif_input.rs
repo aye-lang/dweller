@@ -122,7 +122,7 @@ fn window_renderer_oopif_input_intersection() {
     let Some(srv) = skip() else { return };
     let state = run_input(&srv.base, "?io", "renderer:child-title:io_false", &[]);
     assert_eq!(child_title(&state), "C io false", "{state}");
-    let state = run_input(&srv.base, "?io", "move:300,300 wheel:-5 renderer:input renderer:child-title:io_true", &[]);
+    let state = run_input(&srv.base, "?io", "renderer:child-title:io_false move:300,300 wheel:-5 renderer:input renderer:child-title:io_true", &[]);
     assert_eq!(child_title(&state), "C io false,io true", "{state}");
 }
 

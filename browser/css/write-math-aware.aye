@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn writeMathAware(toks: []Token, i: usize, out: *mut text.Builder) AllocError!usize {
+    if !isMathFunction(toks[i]) {
+        try writeToken(toks[i], out)
+
+        return i + 1
+    }
+
+    let end = skipComponent(toks, i)
+
+    if isAbsoluteMath(toks[i..end]) && (try writeSimplifiedMath(toks[i..end], out)) {
+        return end
+    }
+
+    for t in toks[i..end] {
+        try writeToken(t, out)
+    }
+
+    return end
+}

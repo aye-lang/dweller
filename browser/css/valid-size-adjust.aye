@@ -1,0 +1,20 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+fn validSizeAdjust(layer: []Comp) bool {
+    var value = layer[layer.len - 1]
+
+    if layer.len > 2 {
+        return false
+    }
+
+    if layer.len == 2 && (layer[0].toks[0].kind != Tok.Ident || inList(layer[0].toks[0].text, "ex-height cap-height ch-width ic-width ic-height") == null) {
+        return false
+    }
+
+    if isIdent(value, "from-font") || (layer.len == 1 && isIdent(value, "none")) {
+        return true
+    }
+
+    return isMathFunction(value.toks[0]) || (value.toks.len == 1 && value.toks[0].kind == Tok.Number && value.toks[0].num >= 0.0)
+}

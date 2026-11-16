@@ -60,6 +60,8 @@ mod scripts;
 mod security;
 #[path = "browser/storage.rs"]
 mod storage;
+#[path = "browser/term.rs"]
+mod term;
 #[path = "browser/webgl.rs"]
 mod webgl;
 #[path = "browser/websocket.rs"]
@@ -70,6 +72,8 @@ mod window_login;
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]
 mod window_renderer_edit;
+#[path = "browser/window_renderer_list.rs"]
+mod window_renderer_list;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]

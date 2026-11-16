@@ -7,8 +7,11 @@ fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!v
     tp.url.clear()
     try tp.url.append(href)
 
-    if tp.push_on_commit || h.len() == 0 {
+    let moved = tp.replaced_on_commit && h.current != tp.replace_at
+
+    if tp.push_on_commit || h.len() == 0 || moved {
         tp.push_on_commit = false
+        tp.replaced_on_commit = false
 
         return h.push(href, tp.doc_seq, null, false)
     }

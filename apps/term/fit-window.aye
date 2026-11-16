@@ -1,0 +1,42 @@
+import dweller.sdl
+import std.mem.AllocError
+import vt
+
+fn fitWindow(w: *mut TermWindow) AllocError!void {
+    var out_w: i32 = 0
+    var out_h: i32 = 0
+    var win_w: i32 = 0
+    var win_h: i32 = 0
+
+    sdl.SDL_GetWindowSize(w.window, &mut win_w, &mut win_h)
+
+    if sdl.SDL_GetRendererOutputSize(w.renderer, &mut out_w, &mut out_h) != 0 || out_w < 1 || win_w < 1 {
+        return
+    }
+
+    w.view.scale = out_w as f64 / win_w as f64
+    measureCells(&mut w.view)
+
+    let cols = atLeastOne(out_w as i64 / w.view.cell_w)
+    let rows = atLeastOne(out_h as i64 / w.view.cell_h)
+
+    try vt.resize(&mut w.term, cols, rows)
+    resizePty(&mut w.pty, cols, rows)
+    try sizeView(w.alloc, &mut w.view, &w.term)
+
+    if w.texture |t| {
+        sdl.SDL_DestroyTexture(t)
+    }
+
+    w.texture = sdl.SDL_CreateTexture(w.renderer, sdl.SDL_PIXELFORMAT_ABGR8888, sdl.SDL_TEXTUREACCESS_STREAMING, w.view.canvas.width as i32, w.view.canvas.height as i32)
+    w.view.offset = 0
+    w.changed = true
+}
+
+fn atLeastOne(n: i64) usize {
+    if n < 1 {
+        return 1
+    }
+
+    return n as usize
+}
