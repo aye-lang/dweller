@@ -1,6 +1,5 @@
 import net
 import std.mem.AllocError
-import std.text
 import url.Url
 
 fn noteChallenge(r: *mut TabRenderer, target: *Url, req: net.Request, res: *net.Response) AllocError!void {
@@ -14,13 +13,4 @@ fn noteChallenge(r: *mut TabRenderer, target: *Url, req: net.Request, res: *net.
     if res.status != 401 || !(try net.basicRealmIn(res.headers_raw, &mut n.realm)) { return }
 
     try n.challenged.append(target.withoutFragment())
-}
-
-fn keptRealm(href: []u8) ?[]u8 {
-    let r = fetch_renderer orelse return null
-    let n = r.notes orelse return null
-
-    if n.challenged.len() == 0 || !text.eql(n.challenged.bytes(), href) { return null }
-
-    return n.realm.bytes()
 }
