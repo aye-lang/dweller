@@ -230,23 +230,8 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     if req.kind != Kind.Document {
         return fetchHttp(alloc, target, req)
     }
-    // A navigation from a page (noteNavigation) sends the page's URL.
-    let s = session orelse return fetchHttp(alloc, target, req)
-    let hint_target = s.nav_target
-    let hint_referrer = s.nav_referrer
-    s.nav_target = []mut u8{}
-    s.nav_referrer = []mut u8{}
-    defer release(s.alloc, hint_target)
-    defer release(s.alloc, hint_referrer)
-    var r = req
-    if r.referrer.len == 0 && text.eql(hint_target, target.withoutFragment()) {
-        r.referrer = hint_referrer
-        r.user_activated = s.nav_user
-        if r.referrer_policy == null {
-            r.referrer_policy = nav_policy
-        }
-    }
-    return fetchHttp(alloc, target, r)
+    defer forgetNavigation()
+    return fetchHttp(alloc, target, navigationHinted(target, req))
 }
 
 /// A message for a fetch error, for the command line.

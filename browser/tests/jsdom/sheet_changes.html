@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<title>style sheet changes restyle the subjects of the changed rules</title>
+<style id="base">.cell { display: inline-block; width: 10px; height: 10px } .title { color: rgb(1, 1, 1) }</style>
+<div id="main"></div>
+<pre id="out"></pre>
+<script>
+const main = document.getElementById('main');
+let html = '';
+for (let i = 0; i < 200; i++) html += '<div class="row"><span class="title">t</span><span class="note">n</span><span class="cell"></span><span><b>x</b></span></div>';
+main.innerHTML = html;
+const out = [];
+const cs = (el, p) => getComputedStyle(el)[p];
+const row = (i) => main.children[i];
+const read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };
+read('start', () => cs(row(3).children[0], 'color'));
+const st = document.createElement('style');
+st.textContent = '.note { color: rgb(2, 2, 2) }';
+document.head.appendChild(st);
+read('append', () => cs(row(3).children[1], 'color'));
+st.textContent = '.note { color: rgb(3, 3, 3) } .cell { width: 12px }';
+read('text', () => cs(row(3).children[1], 'color') + ' ' + cs(row(3).children[2], 'width'));
+st.sheet.insertRule('.title { color: rgb(4, 4, 4) }', 0);
+read('insertRule', () => cs(row(3).children[0], 'color'));
+st.sheet.deleteRule(0);
+read('deleteRule', () => cs(row(3).children[0], 'color'));
+st.sheet.cssRules[0].style.color = 'rgb(5, 5, 5)';
+read('ruleStyle', () => cs(row(3).children[1], 'color'));
+const sheet = new CSSStyleSheet();
+sheet.replaceSync('b { color: rgb(6, 6, 6) }');
+document.adoptedStyleSheets = [sheet];
+read('adopt', () => cs(row(3).children[3].firstChild, 'color'));
+sheet.replaceSync('b { color: rgb(7, 7, 7) }');
+read('replaceSync', () => cs(row(3).children[3].firstChild, 'color'));
+st.sheet.disabled = true;
+read('disable', () => cs(row(3).children[1], 'color'));
+st.remove();
+read('remove', () => cs(row(3).children[1], 'color'));
+const st3 = document.createElement('style');
+st3.textContent = '@media (min-width: 100px) { .note { color: rgb(8, 8, 8) } } .row .title:hover, .row .title { color: rgb(9, 9, 9) }';
+document.head.insertBefore(st3, document.getElementById('base'));
+read('media', () => cs(row(3).children[1], 'color') + ' ' + cs(row(3).children[0], 'color'));
+for (let i = 0; i < 6; i++) {
+  sheet.insertRule('.r' + i + ' .cell, .cell.k' + i + ' { height: ' + (11 + i) + 'px }', 0);
+  row(i).classList.add('r' + i);
+  read('css-in-js ' + i, () => cs(row(i).children[2], 'height') + ' ' + cs(row(i + 1).children[2], 'height'));
+}
+const st2 = document.createElement('style');
+st2.textContent = '* { outline-width: 1px } .row > span { margin-left: 1px }';
+document.body.appendChild(st2);
+read('universal', () => cs(row(3).children[1], 'marginLeft'));
+document.getElementById('out').textContent = out.join('\n');
+main.textContent = '';
+</script>

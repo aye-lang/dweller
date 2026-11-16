@@ -132,34 +132,9 @@ fn dumpViews(alloc: Allocator, args: [][]u8) !i32 {
 
 /// `dweller agent` (`mcp` false) or `dweller mcp`; the exit status.
 pub fn serveMain(alloc: Allocator, args: [][]u8, mcp: bool) i32 {
-    var width = 800.0
-    var height = 600.0
-    var i: usize = 0
-    engine.setScripting(true)
-    while i < args.len {
-        if text.eql(args[i], "--no-js") {
-            engine.setScripting(false)
-            i += 1
-            continue
-        }
-        if (text.eql(args[i], "--width") || text.eql(args[i], "--height")) && i + 1 < args.len {
-            let v = text.parseFloat(args[i + 1]) catch 0.0
-            if v <= 0.0 {
-                std.log.err(SERVE_USAGE)
-                return 2
-            }
-            if text.eql(args[i], "--width") {
-                width = v
-            } else {
-                height = v
-            }
-            i += 2
-            continue
-        }
-        std.log.err(SERVE_USAGE)
-        return 2
-    }
-    var s = newSession(alloc, width, height) catch |e| {
+    let o = serveOptions(args) orelse return 2
+    engine.setScripting(o.js)
+    var s = newSession(alloc, o.width, o.height) catch |e| {
         std.log.err("out of memory")
         return 1
     }

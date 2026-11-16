@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+import url.Url
+
+fn noteChallenge(r: *mut TabRenderer, target: *Url, req: net.Request, res: *net.Response) AllocError!void {
+    if req.kind != net.Kind.Document { return }
+
+    let n = try notesOf(r)
+
+    n.challenged.clear()
+    n.realm.clear()
+
+    if res.status != 401 || !(try net.basicRealmIn(res.headers_raw, &mut n.realm)) { return }
+
+    try n.challenged.append(target.withoutFragment())
+}

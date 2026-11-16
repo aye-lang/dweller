@@ -76,6 +76,8 @@ mod window_login;
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]
 mod window_renderer_edit;
+#[path = "browser/window_renderer_list.rs"]
+mod window_renderer_list;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]
@@ -408,7 +410,7 @@ fn check_png(path: &Path) -> (u32, u32) {
     size
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state [--processes]] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -795,7 +797,7 @@ fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&
     let out = c
         .args([
             url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
-            "--until-idle", "--state", "--text", "--events", events,
+            "--until-idle", "--state", "--processes", "--text", "--events", events,
         ])
         .output()
         .unwrap();

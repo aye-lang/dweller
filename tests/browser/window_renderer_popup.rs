@@ -12,7 +12,7 @@ fn popup_window_in(mode: &str, base: &str, events: &str) -> String {
         .current_dir(root())
         .env("DWELLER_PROCESS", mode)
         .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--events", events])
         .output()
         .unwrap();
     assert!(out.status.success(), "{mode} {events}: {}\n{}", out.status, text(&out.stderr));

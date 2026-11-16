@@ -50,6 +50,7 @@ pub struct NativeEntry {
     f: NativeFn
     name: u32
     length: u32
+    constructs: bool = false
 }
 
 pub struct Frame {
@@ -2176,6 +2177,9 @@ pub struct Interp {
                 return self.slot(base + 1)
             }
             .Native { id } => {
+                if !isConstructor(self, f) {
+                    return self.notA(f, "a constructor")
+                }
                 let a = Args { this: Value.Undefined, base: base + 2, argc: argc, callee: o, new_target: newTarget }
                 return callNative(self, id, a)
             }
