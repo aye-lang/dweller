@@ -4,10 +4,14 @@ import std.mem.AllocError
 
 fn finishNavigation(tp: *mut TabProcess, h: *HeldFetch) AllocError!void {
     let res = net.takeResponse(h.load) orelse {
+        if h.streamed { return ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchEnd { id: h.id }) }
+
         tp.nav_failed = true
 
         return ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchFail { id: h.id, code: net.requestFailure(h.load) })
     }
+
+    if h.streamed { return endStreamed(tp, h, res) }
 
     return sendNavigation(tp, h.on, h.id, h.href.bytes(), res)
 }

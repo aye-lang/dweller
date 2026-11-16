@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+let ATTR_NAMES = [8][]u8{"bold", "dim", "italic", "underline", "blink", "inverse", "hidden", "strike"}
+
+fn dumpRun(cell: Cell, y: usize, from: usize, to: usize, more: bool, out: *mut text.Builder) AllocError!void {
+    if !more {
+        try out.append("style ")
+        try out.appendUint(y as u64)
+        try out.appendByte(':')
+    }
+
+    try out.appendByte(' ')
+    try out.appendUint(from as u64)
+    try out.appendByte('-')
+    try out.appendUint(to as u64)
+    try dumpColor(out, " fg=", cell.fg)
+    try dumpColor(out, " bg=", cell.bg)
+
+    for i, name in ATTR_NAMES {
+        if cell.attrs & ((1 as u8) << i as u8) != 0 {
+            try out.appendByte(' ')
+            try out.append(name)
+        }
+    }
+
+    try out.appendByte(';')
+}

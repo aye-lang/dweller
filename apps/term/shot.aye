@@ -1,0 +1,27 @@
+import dweller.font
+import dweller.paint
+import std
+import std.mem.Allocator
+import std.text
+import vt
+
+fn shot(alloc: Allocator, args: [][]u8) !i32 {
+    let bytes = try std.fs.readFile(alloc, args[0])
+    defer alloc.free(bytes)
+
+    var term = try vt.Term.init(alloc, 80, 24)
+    defer term.deinit()
+
+    try term.feed(bytes)
+
+    if args.len > 2 {
+        var sys = try font.System.init(alloc)
+        defer sys.deinit()
+
+        return shoot(alloc, &mut term, &mut sys, &mut sys, args[1])
+    }
+
+    var fixed = font.Fixed.init()
+
+    return shoot(alloc, &mut term, &mut fixed, null, args[1])
+}

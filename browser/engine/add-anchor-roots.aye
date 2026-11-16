@@ -1,0 +1,27 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+// blink: core/css/style_engine.cc (InvalidateAncestorsOrSiblingsAffectedByHas)
+fn addAnchorRoots(doc: *Document, g: *Geometry, el: NodeId, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    var cur: ?NodeId = el
+
+    if g.deps.has_sibling { cur = doc.lastChild(el) orelse el }
+
+    while cur |c| {
+        let kind = doc.node(c).kind
+
+        if kind == dom.Kind.Document { break }
+
+        if kind == dom.Kind.Element { try addAnchorRoot(doc, g, c, out, shallow, found) }
+
+        cur = doc.parent(c)
+
+        if g.deps.has_sibling {
+            cur = doc.prevSibling(c) orelse cur
+        }
+    }
+}

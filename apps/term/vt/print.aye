@@ -1,0 +1,27 @@
+import dweller.font
+import std.mem.AllocError
+
+fn print(t: *mut Term, typed: u32) AllocError!void {
+    let code = drawn(t, typed)
+    let width = font.columns(code) as usize
+    var s = t.screen()
+
+    if width == 0 || width > t.cols {
+        return
+    }
+
+    if (s.wrap_next || s.x + width > t.cols) && t.autowrap {
+        s.x = 0
+        s.wrap_next = false
+        try index(t)
+    }
+
+    s = t.screen()
+    s.x = minOf(s.x, t.cols - width)
+
+    if t.insert {
+        shiftRight(t, s.y, s.x, width)
+    }
+
+    put(t, code, width)
+}

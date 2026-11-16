@@ -1,0 +1,26 @@
+// https://tc39.es/ecma262/#sec-block-level-function-declarations-web-legacy-compatibility-semantics
+
+fn annexPass(r: *mut Resolver, s: *mut RScope, list: u32, n: u32) SyntaxErr!void {
+    if r.strict {
+        return
+    }
+
+    let eval_code = s.func != NONE && r.ast.func(s.func).eval_code
+
+    for k in 0..n {
+        let st = r.ast.item(list, k)
+
+        match r.ast.node(st) {
+            .FuncDecl { .. } => {}
+            .Block { list: inner, n: count, .. } => {
+                if eval_code {
+                    try annexEvalRoot(r, s, inner, count)
+                } else {
+                    try annexCollect(r, s, st)
+                }
+            }
+
+            _ => try annexCollect(r, s, st)
+        }
+    }
+}

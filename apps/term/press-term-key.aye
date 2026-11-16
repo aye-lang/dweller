@@ -1,0 +1,26 @@
+import dweller.sdl
+import std.mem.AllocError
+import std.text
+
+fn pressTermKey(w: *mut TermWindow, sym: i32, mods: u16) AllocError!void {
+    let paging = sym == sdl.SDLK_PAGEUP || sym == sdl.SDLK_PAGEDOWN
+
+    if paging && mods & sdl.KMOD_SHIFT != 0 {
+        let half = (w.term.rows / 2) as i64
+
+        if sym == sdl.SDLK_PAGEUP {
+            return scrollView(w, half)
+        }
+
+        return scrollView(w, -half)
+    }
+
+    var out = text.Builder.init(w.alloc)
+    defer out.deinit()
+
+    try keyBytes(sym, mods, w.term.app_cursor, &mut out)
+
+    if out.len() > 0 {
+        sendInput(w, out.bytes())
+    }
+}

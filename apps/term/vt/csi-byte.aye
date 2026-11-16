@@ -1,0 +1,28 @@
+import std.mem.AllocError
+
+fn csiByte(t: *mut Term, b: u8) AllocError!void {
+    let p = &mut t.parser
+
+    if b >= 0x40 {
+        let ignored = p.state == State.CsiIgnore
+
+        p.state = State.Ground
+
+        if !ignored {
+            try csiDispatch(t, b)
+        }
+    } else if p.state == State.CsiIgnore {
+        return
+    } else if b >= 0x3C && p.state == State.CsiEntry {
+        p.marker = b
+        p.state = State.CsiParam
+    } else if b >= 0x30 && b <= 0x3B && p.state != State.CsiIntermediate {
+        csiParam(p, b)
+        p.state = State.CsiParam
+    } else if b < 0x30 {
+        p.intermediate = b
+        p.state = State.CsiIntermediate
+    } else {
+        p.state = State.CsiIgnore
+    }
+}

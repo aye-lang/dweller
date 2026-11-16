@@ -50,6 +50,7 @@ pub struct Styling {
     // `domVersion` of the document these styles are for.
     version: u64
     fonts_settled: ?usize = null
+    kept: ?*mut List(css.Sheet) = null
 }
 
 pub struct Page {
@@ -76,7 +77,6 @@ pub struct Page {
     styling: ?*mut Styling
     // The stylesheet source fingerprint for styling (sheet_cache.aye).
     sheet_key: u64
-    kept_sheets: List(css.Sheet)
     tree: ?*mut layout.Tree
     // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
     // which owns it.
@@ -134,6 +134,7 @@ pub struct Page {
     // Where the window scrolled it before its scripts ran: their
     // scrollY to begin with.
     early_scroll: f64 = 0.0
+    layouts: u64 = 0
     // How far `stepPageScripts` is: 0 not begun, 1 running the
     // scripts, 2 loading the frames' documents (`frame_loads`).
     load_step: u8 = 0
@@ -161,7 +162,6 @@ pub struct Page {
         }
         self.dropTree()
         self.dropStyling()
-        dropKeptSheets(self)
         if self.images |imgs| {
             imgs.deinit()
             alloc.destroy(imgs)
@@ -243,6 +243,7 @@ pub struct Page {
                 // The frames' trees may go before the next layout.
                 t.frames.clear()
             } else {
+                self.layouts += 1
                 t.deinit()
                 self.alloc.destroy(t)
             }
@@ -269,6 +270,7 @@ pub struct Page {
         self.unshareStyles()
         if self.styling |st| {
             st.styles.deinit()
+            dropKeptSheets(self.alloc, st)
             st.author.deinit()
             st.ua.deinit()
             self.alloc.destroy(st)
@@ -782,7 +784,6 @@ fn newPage(alloc: Allocator, located: Url, status: i64, failure: []u8, doc: Docu
         title: title,
         styling: null,
         sheet_key: 0,
-        kept_sheets: List(css.Sheet).init(alloc),
         tree: null,
         script: null,
         images: null,

@@ -1,0 +1,24 @@
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn rootOrder(doc: *Document, roots: []NodeId, out: *mut List(usize)) AllocError!void {
+    var depths = List(usize).init(out.alloc)
+    defer depths.deinit()
+    var deepest: usize = 0
+
+    for r in roots {
+        let depth = styleDepth(doc, r)
+
+        try depths.append(depth)
+
+        if depth > deepest { deepest = depth }
+    }
+
+    for depth in 0..deepest + 1 {
+        for i in 0..roots.len {
+            if depths.items()[i] == depth { try out.append(i) }
+        }
+    }
+}

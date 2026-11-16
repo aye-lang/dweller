@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn dumpColor(out: *mut text.Builder, label: []u8, color: u32) AllocError!void {
+    if color == DEFAULT_COLOR {
+        return
+    }
+
+    try out.append(label)
+
+    if color & RGB_COLOR != 0 {
+        try out.appendByte('#')
+
+        for shift in [6]u32{20, 16, 12, 8, 4, 0} {
+            try out.appendByte("0123456789abcdef"[((color >> shift) & 15) as usize])
+        }
+    } else {
+        try out.appendUint((color & 0xFF) as u64)
+    }
+}

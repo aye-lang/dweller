@@ -1,0 +1,14 @@
+fn resizePty(p: *mut Pty, cols: usize, rows: usize) {
+    var size = Winsize { rows: rows as u16, cols: cols as u16, xpixel: 0, ypixel: 0 }
+
+    if @targetOs() is .macos {
+        _ = ioctl(p.fd, 0x80087467, &size)
+    } else {
+        _ = ioctl(p.fd, 0x5414, &size)
+    }
+}
+
+fn closePty(p: *mut Pty) {
+    _ = close(p.fd)
+    _ = waitpid(p.pid, null, 0)
+}

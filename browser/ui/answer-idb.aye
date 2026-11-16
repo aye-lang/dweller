@@ -29,7 +29,16 @@ fn answerIdb(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
                 call = IdbCall { href: call.request[3..end], client: call.client, request: call.request[end + 1..], worker: true }
             }
 
-            if !text.eql(call.request, "drop") && !(try inSiteLock(tp, call.href)) { return "idb outside site lock" }
+            let locked = text.eql(call.request, "drop") || (tp.sandbox & SB_ORIGIN == 0 && try inSiteLock(tp, call.href))
+
+            if !locked && call.worker {
+                try replyIdb(tp, on, "!SecurityError")
+
+                return ""
+            }
+
+            if !locked && tp.sandbox & SB_ORIGIN != 0 { return "idb in a sandboxed origin" }
+            if !locked { return "idb outside site lock" }
 
             try applyIdb(tp, on, call)
         }

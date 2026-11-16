@@ -1,0 +1,10 @@
+import std.mem.AllocError
+
+fn keySetAt(sets: *mut KeySets, key: u64) AllocError!*mut KeySet {
+    if sets.index.get(key) |i| { return &mut sets.sets.items()[i] }
+
+    try sets.index.put(key, sets.sets.len())
+    try sets.sets.append(KeySet.init(sets.sets.alloc))
+
+    return &mut sets.sets.items()[sets.sets.len() - 1]
+}

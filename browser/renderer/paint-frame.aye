@@ -12,6 +12,8 @@ fn paintFrame(r: *mut TabRenderer) !void {
     let p = r.page orelse return
     var k: usize = 0
 
+    imagesIn(r, p)
+
     if engine.takeScriptScroll(p) |y| {
         r.scroll_y = y
         r.due = true
@@ -21,7 +23,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
         k = 1
     }
 
-    if !r.due || !r.free[k] { return }
+    if !r.due || !r.free[k] || paintWaits(r, p) { return }
 
     let t_relayout = perf.start()
 
@@ -30,46 +32,40 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     let t = p.tree.?
 
-    _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
+    try keepList(r, p, t, layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale)))
+    perf.end("ui_relayout", t_relayout, "")
 
-    var list = try paint.build(r.alloc, t)
-    defer list.deinit()
-    var sigs = List(paint.Sig).init(r.alloc)
-    defer sigs.deinit()
     var damage = paint.Damage.init(r.alloc)
     defer damage.deinit()
 
-    try paint.signature(&list, t, &mut sigs)
-    perf.end("ui_relayout", t_relayout, "")
-
-    r.max_x = math.max(0.0, list.width - r.width as f64 / r.scale)
-    r.max_y = math.max(0.0, list.height - r.height as f64 / r.scale)
+    r.max_x = math.max(0.0, r.list.?.width - r.width as f64 / r.scale)
+    r.max_y = math.max(0.0, r.list.?.height - r.height as f64 / r.scale)
 
     if r.scroll_x > r.max_x || r.scroll_y > r.max_y {
         try scrollPage(r, 0.0, 0.0)
         _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
-        list.deinit()
-        list = try paint.build(r.alloc, t)
-        sigs.clear()
-        try paint.signature(&list, t, &mut sigs)
+        try keepList(r, p, t, true)
     }
+
+    let list = &r.list.?
 
     var marks = List(Mark).init(r.alloc)
     defer marks.deinit()
 
     try findMarks(r, &mut marks)
     try fieldMarks(r, p, &mut marks)
-    try reportSubframes(r, &list, p)
+    try reportSubframes(r, list, p)
 
-    let whole = try frameDamage(r, sigs.items(), list.background, &mut damage)
+    let whole = try frameDamage(r, r.sigs.items(), list.background, &mut damage)
 
     if !whole && !sameMarks(r.marks.items(), marks.items()) { try addMarks(r, &mut damage, marks.items()) }
 
-    let old = r.drawn
     let old_marks = r.marks
 
-    r.drawn = sigs
-    sigs = old
+    r.drawn.clear()
+
+    for g in r.sigs.items() { try r.drawn.append(g) }
+
     r.marks = marks
     marks = old_marks
     r.background = list.background
@@ -79,7 +75,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     if damage.isEmpty() { return }
 
-    try drawDamage(r, k, &list, &damage)
+    try drawDamage(r, k, list, &damage)
     r.free[k] = false
     r.sent = k
 

@@ -313,15 +313,10 @@ fn window_renderer_no_profile_files() {
         })
         .map(|pid| (pid.clone(), open_files(pid)))
         .collect();
-    let lock = format!("{dir_text}/lock");
-    let space_files: Vec<(String, Vec<(String, bool, String)>)> = spaces.iter().filter(|pid| !listed.iter().any(|(r, _)| r == *pid)).map(|pid| (pid.clone(), open_files(pid))).collect();
     drop(conn);
     let out = window.wait_with_output().unwrap();
     assert!(out.status.success(), "the window: {}\n{}", out.status, text(&out.stderr));
-    assert!(!space_files.is_empty(), "want the agent's Space: {spaces:?}");
-    for (pid, files) in &space_files {
-        assert!(files.iter().all(|(_, _, name)| *name != lock), "Space {pid} inherited the profile's lock: {files:?}");
-    }
+    assert_eq!(listed.len(), spaces.len(), "every child of the window is a renderer: {spaces:?}");
     let exe = dweller().canonicalize().unwrap();
     let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
     assert!(listed.len() >= 2, "want the window's renderer and its Space's: {listed:?}");
@@ -1149,16 +1144,16 @@ fn window_renderer_agent() {
         let out = window.wait_with_output().unwrap();
         (got, text(&out.stderr))
     };
-    let (want, _) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
+    let (want, want_err) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
     let (got, err) = session(&format!("target/sockets/q23b-tab-{}.sock", std::process::id()), &[("DWELLER_PROCESS", "tab")]);
-    assert!(want[0].contains("\"ok\":true"), "{}", want[0]);
+    assert!(want[0].contains("\"ok\":true"), "{}\n{want_err}", want[0]);
     assert_eq!(got, want, "{err}");
     let (bad, err) = session(
         &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
         &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")],
     );
     assert!(err.contains("bad message: bad agent_reply "), "{err}");
-    assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
+    assert!(bad[0].contains("renderer crashed"), "{}", bad[0]);
 }
 
 /// Q2.7b: with `DWELLER_PROCESS=tab` an agent's navigation to another
