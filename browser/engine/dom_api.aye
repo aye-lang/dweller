@@ -1461,7 +1461,10 @@ fn controlSetValue(it: *mut Interp, a: Args) JsError!Value {
     let doc = docOf(it)
     let clean = try it.builder()
     defer it.release(clean)
-    if doc.isElement(h, "input") {
+    if defaultModeInput(doc, h) {
+        try doc.setAttr(h, "value", b.bytes())
+        (try doc.controls.ensure(h)).dirty = false
+    } else if doc.isElement(h, "input") {
         try dom.setValue(doc, h, try sanitizedInput(dom.inputType(doc, h), b.bytes(), clean))
     } else if dom.isControl(doc, h) || doc.isElement(h, "output") {
         try dom.setValue(doc, h, b.bytes())
