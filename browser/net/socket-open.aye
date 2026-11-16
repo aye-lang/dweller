@@ -1,0 +1,43 @@
+import std.text
+import url.Url
+
+// https://websockets.spec.whatwg.org/#concept-websocket-establish
+pub fn socketOpen(target: *Url, req: Request, protocols: []u8) u32 {
+    if remote_sockets |hooks| { return openRemoteSocket(hooks, target, req, protocols) }
+
+    let s = session orelse return 0
+    let ld = loaderOf(s) orelse return 0
+    let all = socketsOf(ld.alloc) orelse return 0
+
+    var origin = text.Builder.init(ld.alloc)
+    defer origin.deinit()
+
+    var href = text.Builder.init(ld.alloc)
+    defer href.deinit()
+
+    hrefOrigin(ld.alloc, requestOrigin(req, req.referrer), &mut origin) catch |e| {
+        return 0
+    }
+
+    socketHref(target, &mut href) catch |e| {
+        return 0
+    }
+
+    let k = newSocket(all, protocols, origin.bytes()) catch |e| {
+        return 0
+    }
+
+    var hop = Hop { from: req.referrer, limit: SOCKET_MESSAGE_LIMIT }
+
+    k.job = startJob(ld.alloc, s, ld.multi, href.bytes(), req, "GET", null, &mut hop)
+
+    if k.job |job| {
+        curl_easy_setopt(job.curl, CURLOPT_CONNECT_ONLY, 1 as i64)
+        curl_easy_setopt(job.curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1)
+        pumpLoads()
+    } else {
+        failSocket(k)
+    }
+
+    return k.id
+}

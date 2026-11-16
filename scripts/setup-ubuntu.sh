@@ -22,5 +22,5 @@ $SUDO apt-get install -y --no-install-recommends \
     clang lld libclang-dev libclang-rt-18-dev \
     libcurl4-openssl-dev libfreetype-dev libsdl2-dev \
     fonts-dejavu-core python3 apache2-utils golang-go \
-    libharfbuzz-dev libbrotli-dev
+    libharfbuzz-dev libbrotli-dev zstd
 echo "setup-ubuntu: done"

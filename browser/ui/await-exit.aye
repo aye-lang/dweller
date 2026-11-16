@@ -1,0 +1,14 @@
+import std
+
+fn awaitExit(pid: i32) {
+    var st: i32 = 0
+    let end = std.time.monotonicMs() + END_MS
+
+    while waitpid(pid, &mut st, WNOHANG) == 0 {
+        if std.time.monotonicMs() > end {
+            kill(pid, SIGKILL)
+        }
+
+        std.time.sleep(2)
+    }
+}

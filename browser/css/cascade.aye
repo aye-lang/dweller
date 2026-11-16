@@ -530,6 +530,7 @@ fn stylePseudos(c: *mut Computer, ua: *Sheet, ua_pseudo: []usize, h: NodeId) All
         for i in 0..c.wins.len {
             c.wins[i].set = false
         }
+        clearRollback(c)
         c.clearCustoms()
         setShadowHost(null)
         var any = try c.considerPseudo(ua, c.picked_ua.items(), h, L_UA, which as u8)
@@ -805,6 +806,7 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     for i in 0..c.wins.len {
         c.wins[i].set = false
     }
+    clearRollback(c)
     c.clearCustoms()
     c.out.matched.start()
     c.el = h
@@ -824,6 +826,7 @@ fn styleElement(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     let hints_key = nameKey("", hints.bytes())
     if !(try shareStyle(c, ua, author, h, hints_key)) {
         try matchElement(c, ua, author, hints.bytes(), h)
+        try matchWithRollback(c, ua, author, hints.bytes(), h)
     }
     try c.compute(h)
     try noteShared(c, author, h, hints_key)
@@ -848,6 +851,9 @@ struct Computer {
     media: Media
     out: *mut Styles
     wins: []mut Win
+    rollback: bool = false
+    wants_rollback: bool = false
+    under: []mut Win = []mut Win{}
     // The font size of the root element, for `rem`.
     root_font: f64
     // The elements that align their block children to the center.
@@ -1142,6 +1148,11 @@ struct Computer {
         if d.prop == CUSTOM {
             return self.offerCustom(d, level, spec)
         }
+        if self.rollback {
+            trackRollback(self, d, level, spec)
+        } else if d.reverts {
+            self.wants_rollback = true
+        }
         let w = self.wins[d.prop]
         if !w.set || level > w.level || (level == w.level && spec >= w.spec) {
             self.wins[d.prop] = Win { set: true, level: level, spec: spec, d: d }
@@ -1151,8 +1162,7 @@ struct Computer {
     fn offerCustom(self: *mut Self, d: Decl, level: u8, spec: u64) AllocError!void {
         let win = CustomWin { name: d.name, raw: d.raw, level: level, spec: spec }
         if self.custom_index.get(d.name) |i| {
-            let w = self.custom_wins.items()[i]
-            if level > w.level || (level == w.level && spec >= w.spec) {
+            if customBeats(win, self.custom_wins.items()[i]) {
                 self.custom_wins.items()[i] = win
             }
             return
@@ -1377,6 +1387,9 @@ struct Computer {
                 v = try self.pending(p, d)
             } else {
                 v = d.value
+            }
+            if d.reverts || d.raw.len > 0 {
+                v = try rolledBack(self, p, v)
             }
         }
         let inherited = PROPERTIES[p].inherited

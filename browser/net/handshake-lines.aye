@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: net/websockets/websocket_stream.cc
+fn handshakeLines(k: *Socket, job: *Job, out: *mut text.Builder) AllocError!void {
+    try out.append("Origin: ")
+    try out.append(k.owned_origin)
+    try out.append("\nPragma: no-cache\nCache-Control: no-cache\nUser-Agent: ")
+    try out.append(USER_AGENT)
+    try out.appendByte('\n')
+
+    var next = job.headers
+
+    while next |node| {
+        let line = node.data[0..strlen(node.data)]
+
+        if !handshakeSkips(headerName(line)) {
+            try out.append(line)
+            try out.appendByte('\n')
+        }
+
+        next = node.next
+    }
+}
+
+fn handshakeSkips(name: []u8) bool {
+    return text.eqlIgnoreCase(name, "origin") || text.eqlIgnoreCase(name, "accept") || text.eqlIgnoreCase(name, "referer")
+}
