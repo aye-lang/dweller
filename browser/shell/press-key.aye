@@ -1,0 +1,26 @@
+import dom
+import sdl
+import std.mem.AllocError
+
+fn pressKey(app: *mut App, sym: i32) AllocError!void {
+    let el = app.doc.controls.focus orelse return
+    let doc = &mut app.doc
+
+    if sym == sdl.SDLK_BACKSPACE {
+        try dom.deleteBackward(doc, el)
+    } else if sym == sdl.SDLK_DELETE {
+        try dom.deleteForward(doc, el)
+    } else if sym == sdl.SDLK_LEFT {
+        try dom.moveCaret(doc, el, dom.Motion.Left, false)
+    } else if sym == sdl.SDLK_RIGHT {
+        try dom.moveCaret(doc, el, dom.Motion.Right, false)
+    } else if sym == sdl.SDLK_HOME {
+        try dom.moveCaret(doc, el, dom.Motion.Home, false)
+    } else if sym == sdl.SDLK_END {
+        try dom.moveCaret(doc, el, dom.Motion.End, false)
+    } else {
+        return
+    }
+
+    try markDirty(app, el)
+}
