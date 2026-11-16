@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-5.3
+fn putFrame(out: *mut text.Builder, opcode: u8, payload: []u8, mask: [4]u8) AllocError!void {
+    try out.appendByte(0x80 | opcode)
+
+    if payload.len < 126 {
+        try out.appendByte(0x80 | payload.len as u8)
+    } else if payload.len < 65536 {
+        try out.appendByte(0x80 | 126)
+        try putFrameLength(out, payload.len as u64, 2)
+    } else {
+        try out.appendByte(0x80 | 127)
+        try putFrameLength(out, payload.len as u64, 8)
+    }
+
+    for m in mask {
+        try out.appendByte(m)
+    }
+
+    for i, b in payload {
+        try out.appendByte(b ^ mask[i & 3])
+    }
+}
