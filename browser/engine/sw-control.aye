@@ -1,0 +1,19 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn swControl(p: *mut Page, version: u32) AllocError!void {
+    var ask = text.Builder.init(p.alloc)
+    defer ask.deinit()
+    var out = text.Builder.init(p.alloc)
+    defer out.deinit()
+
+    p.controller = version
+    (try swStateOf(p.alloc)).seen = true
+    net.setInterceptor(swIntercept, swClaims)
+    try ask.append("sw\ncontrol\n")
+    try ask.appendUint(version as u64)
+    try ask.appendByte('\n')
+    try ask.append(p.url.href)
+    try askStore(p.alloc, IdbAsk { href: p.url.href, page: p.id, request: ask.bytes() }, &mut out)
+}

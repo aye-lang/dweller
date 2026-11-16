@@ -1,0 +1,27 @@
+<!doctype html>
+<title>Service worker: fetch events</title>
+<pre id="log"></pre>
+<script src="../indexeddb/harness.js"></script>
+<script>
+async function run() {
+  const sw = navigator.serviceWorker;
+  if (!sw.controller) {
+    for (const old of await sw.getRegistrations()) await old.unregister();
+    await sw.register('worker.js');
+    await new Promise(r => { sw.oncontrollerchange = r; });
+    log('claimed');
+  } else log('controlled at load');
+  const made = await fetch('made.txt', { method: 'POST', body: 'x' });
+  log('made ' + made.status + ' ' + made.headers.get('x-from') + ' ' + await made.text());
+  log(await (await fetch('proxied.txt')).text());
+  log('plain ' + (await (await fetch('plain.txt')).text()).trim());
+  log('broken ' + await fetch('broken.txt').then(r => r.status, e => e.name));
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', 'made.txt', false);
+  xhr.send();
+  log('xhr ' + xhr.status + ' ' + xhr.responseText);
+  sw.onmessage = e => done('clients ' + e.data.clients);
+  sw.controller.postMessage({ ask: 'clients' });
+}
+run().catch(e => done('failed ' + e));
+</script>

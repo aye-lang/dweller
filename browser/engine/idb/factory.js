@@ -123,6 +123,8 @@ function settled(req, f) {
   I.fire([req], I.event('error', true, true));
 }
 function onEvent(line) {
+  if (line.startsWith('sw\n')) return I.ak.swEvent(line.slice(3).split('\n'));
+
   const f = line.split('\n');
 
   if (f[0] === 'versionchange') return versionChange(f);
@@ -147,6 +149,8 @@ function onEvent(line) {
   settled(req, f);
 }
 
+I.ak.serialize = I.serialize;
+I.ak.deserialize = I.deserialize;
 I.ak.idbHandler(onEvent, I.cleanup);
 delete G.__idb;
 })(globalThis.__idb);

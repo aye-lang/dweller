@@ -135,6 +135,11 @@ pub fn fetchWith(alloc: Allocator, target: *Url, body: ?*Body) FetchError!Respon
 
 /// Fetches `target` for `req`.
 pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
+    if interceptor |hook| {
+        if try hook(alloc, target, req) |res| {
+            return res
+        }
+    }
     if remote |hook| {
         if try takeLanded(alloc, target, req) |res| {
             return res

@@ -140,6 +140,10 @@ pub struct Page {
     frame_loads: List(FrameLoad)
     remote: bool = false
     remote_loaded: bool = false
+    controller: u32 = 0
+    worker: u32 = 0
+    worker_boot: []u8 = ""
+    worker_broken: bool = false
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
@@ -664,7 +668,8 @@ pub fn scriptsRan(p: *Page) bool {
 // Its scripts have not run (`runDocument`).
 fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encoding.Encoding, top: []u8, initiator: net.Initiator) AllocError!*mut Page {
     let fetch_began = perf.start()
-    let res = net.request(alloc, target, net.Request { body: body, top: top, initiator: initiator }) catch |e| {
+    let worker = try swNavigation(alloc, target)
+    let res = navigationResponse(alloc, target, net.Request { body: body, top: top, initiator: initiator }, worker) catch |e| {
         perf.end("fetch", fetch_began, target.href)
         match e {
             .OutOfMemory => {
@@ -681,7 +686,11 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
     }
     perf.end("fetch", fetch_began, target.href)
     defer res.deinit(alloc)
-    return pageOf(alloc, target, &res, fallback)
+    let p = try pageOf(alloc, target, &res, fallback)
+
+    if worker != 0 { try swControl(p, worker) }
+
+    return p
 }
 
 // The page of `res`, the response to a request for `target`, parsed as

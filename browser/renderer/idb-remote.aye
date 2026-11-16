@@ -10,16 +10,18 @@ let IDB_CHUNK: usize = 262144
 fn idbRemote(ask: engine.IdbAsk, out: *mut text.Builder) AllocError!void {
     let r = store_renderer orelse return out.append("!UnknownError")
     var doc: u32 = 0
-    var rest = ask.request
+    var whole = text.Builder.init(r.alloc)
+    defer whole.deinit()
 
-    if !text.eql(ask.request, "drop") { doc = storeDoc(r, ask.href, "idb") orelse return out.append("!SecurityError") }
+    if text.startsWith(ask.request, "sw\n") {
+        try whole.append("sw\n")
+        try whole.append(ask.href)
+        try whole.append(ask.request[2..])
+    } else {
+        try whole.append(ask.request)
 
-    while rest.len > IDB_CHUNK {
-        send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: ask.page, more: 1, request: rest[..IDB_CHUNK] }) catch return out.append("!UnknownError")
-        rest = rest[IDB_CHUNK..]
+        if !text.eql(ask.request, "drop") { doc = storeDoc(r, ask.href, "idb") orelse return out.append("!SecurityError") }
     }
 
-    send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: ask.page, more: 0, request: rest }) catch return out.append("!UnknownError")
-
-    try awaitIdbReply(r, out)
+    try sendIdb(r, doc, ask.page, whole.bytes(), out)
 }
