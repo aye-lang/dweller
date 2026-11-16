@@ -1759,11 +1759,11 @@ pub fn colorValue(c: Comp) ?Value {
         return null
     }
     if text.eqlIgnoreCase(t.text, "rgb") || text.eqlIgnoreCase(t.text, "rgba") {
-        if rgbFunction(args) |col| {
+        if legacyFunction(false, args) |col| {
             return Value.Rgba { c: col }
         }
     } else if text.eqlIgnoreCase(t.text, "hsl") || text.eqlIgnoreCase(t.text, "hsla") {
-        if hslFunction(args) |col| {
+        if legacyFunction(true, args) |col| {
             return Value.Rgba { c: col }
         }
     } else if text.eqlIgnoreCase(t.text, "light-dark") {
@@ -1979,5 +1979,5 @@ fn channel(v: f64) u8 {
     if math.isNan(v) {
         return 0
     }
-    return math.round(math.clamp(v, 0.0, 255.0)) as u8
+    return math.round(math.clamp(v, 0.0, 255.0) + 0.0000001) as u8
 }

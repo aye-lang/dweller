@@ -3,12 +3,13 @@ import std.text
 
 // spec: https://drafts.csswg.org/css-values-4/#calc-serialize
 fn writeSimplifiedMath(toks: []Token, out: *mut text.Builder) AllocError!bool {
-    if calcValue(toks) |v| {
-        try out.append("calc(")
-        try writeValue(v, out)
-        try out.append(")")
+    let saved = calc_ctx
+    defer calc_ctx = saved
 
-        return true
+    calc_ctx.percent_of = -1.0
+
+    if calcValue(toks) |v| {
+        return writeCalcValue(v, out)
     }
 
     if calcTyped(toks, 'a') |deg| {

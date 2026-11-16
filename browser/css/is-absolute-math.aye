@@ -1,11 +1,17 @@
 import std.text
 
 fn isAbsoluteMath(toks: []Token) bool {
+    var percents = false
+    var commas = false
+
     for t in toks {
-        if t.kind == Tok.Percentage || t.kind == Tok.Ident || (t.kind == Tok.Dimension && inList(t.text, "px cm mm q in pt pc deg grad rad turn s ms") == null) {
+        if t.kind == Tok.Ident || (t.kind == Tok.Dimension && inList(t.text, "px cm mm q in pt pc deg grad rad turn s ms") == null) {
             return false
         }
+
+        percents = percents || t.kind == Tok.Percentage
+        commas = commas || t.kind == Tok.Comma
     }
 
-    return true
+    return !percents || !commas
 }
