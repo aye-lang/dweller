@@ -758,6 +758,8 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                     // Custom properties and `rem` reach any descendant,
                     // and so does what query container is the nearest.
                     styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
+                } else if doc.node(h).shadow != null && !sameValues(old.items(), values) {
+                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
                 } else if !sameValues(old.items(), values) || text.eql(keywordText(values[TEXT_ALIGN]), "center") {
                     var child = doc.firstChild(h)
                     while child |ch| {
@@ -1643,7 +1645,7 @@ fn restyleBelow(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     let doc = c.doc
     let out = c.out
     var styled: usize = 0
-    var cur = doc.following(top, top)
+    var cur = dom.shadowIncludingFollowing(doc, top, top)
     while cur |h| {
         if doc.node(h).kind == Kind.Element {
             _ = out.customs.remove(h.index)
@@ -1653,7 +1655,7 @@ fn restyleBelow(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
             try notePseudos(out, h, pseudos)
             styled += 1
         }
-        cur = doc.following(h, top)
+        cur = dom.shadowIncludingFollowing(doc, h, top)
     }
     return styled
 }
