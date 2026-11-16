@@ -1,0 +1,12 @@
+fn stopWaker() {
+    let w = io_waker orelse return
+
+    io_waker = null
+    w.stopped.store(1)
+    _ = write(w.pipe[1], "s".ptr, 1)
+
+    if w.thread |t| { t.join() }
+
+    closeFd(w.pipe[0])
+    closeFd(w.pipe[1])
+}

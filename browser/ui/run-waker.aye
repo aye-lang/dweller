@@ -1,0 +1,34 @@
+import ipc
+
+let WAKE_EVENT: u32 = 0x8000
+
+fn runWaker(w: *mut IoWaker) {
+    var set = @zeroed([97]ipc.PollFd)
+    var n: usize = 0
+    var timeout: i32 = -1
+
+    while true {
+        set[0] = ipc.PollFd { fd: w.pipe[0], events: 1, revents: 0 }
+        _ = ipc.poll(set[..].ptr, (1 + n) as u64, timeout)
+
+        if w.stopped.load() != 0 { return }
+
+        if set[0].revents != 0 {
+            n = takeWakerSet(w, &mut set, &mut timeout)
+
+            continue
+        }
+
+        n = 0
+        timeout = -1
+        w.fired.store(1)
+        pushWake()
+    }
+}
+
+fn pushWake() {
+    var ev = @zeroed(SDL_Event)
+
+    ev.kind = WAKE_EVENT
+    _ = SDL_PushEvent(&mut ev)
+}

@@ -175,3 +175,32 @@ fn window_renderer_loads_images_settle() {
     assert!(text(&out.stdout).contains("title Many loads"), "{}", text(&out.stdout));
     assert!(began.elapsed() < std::time::Duration::from_secs(20), "the page never went idle");
 }
+
+/// Q2.16b: the window does not poll a held fetch every 2 ms: while a
+/// navigation's server waits 2 s (`/sleep?ms=2000`) the loop runs at the
+/// frame rate of `--frames` (10 ms: about 200 iterations; with the 2 ms
+/// poll about 800), woken by libcurl's sockets, and the page still loads.
+#[test]
+fn window_renderer_loads_held_not_polled() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/sleep?ms=2000", srv.base);
+    let mut window = dweller_command();
+    window.current_dir(root()).env("DWELLER_PROCESS", "tab").env("DWELLER_TIMING", "1").args([
+        &href, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000",
+        "--until-idle", "--text", "--events", "renderer:loaded frame",
+    ]);
+    let out = window.output().unwrap();
+    let got = text(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let loops = text(&out.stderr).lines().filter(|l| l.starts_with("info: DWELLER_TIMING\tui_loop\t")).count();
+    assert!(got.contains("slept 2000 ms"), "{got}");
+    assert!(loops < 450, "{loops} loop iterations while one fetch was held for 2 s");
+    println!("{loops} iterations");
+}

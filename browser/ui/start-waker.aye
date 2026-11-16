@@ -1,0 +1,23 @@
+import std.mem.Allocator
+import std.sync.Atomic
+import std.sync.Mutex
+import std.thread
+
+extern fn pipe(fds: *mut [2]i32) i32
+
+// chromium: content/browser/browser_thread_impl.cc (the IO thread)
+fn startWaker(alloc: Allocator) {
+    var ends = [2]i32{-1, -1}
+
+    if io_waker != null || pipe(&mut ends) != 0 { return }
+
+    let w = alloc.create(IoWaker { lock: Mutex.init(), pipe: ends, told: Atomic(u32).init(0), fired: Atomic(u32).init(1), stopped: Atomic(u32).init(0) }) catch return
+
+    w.thread = thread.spawn(IoWaker, runWaker, w) catch {
+        alloc.destroy(w)
+
+        return
+    }
+
+    io_waker = w
+}
