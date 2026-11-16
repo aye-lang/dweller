@@ -143,7 +143,7 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
 }
 
 /// The window (B9 R2, ui/spaces.aye): each connection is served by a
-/// Space, a process of its own, and the window copies the bytes.
+/// Space, tabs of its own whose pages run in renderers (Q2.12e).
 /// `browser/tests/agent/spaces/X.jsonl` is sent over the window's socket
 /// (through `dweller connect --mcp` for `X.mcp.jsonl`) while the window
 /// runs headless with the scripted events of `X.events` (`agents:N`
