@@ -118,13 +118,10 @@ struct UiOptions {
     // `--frames`.
     socket: []u8
     exit_when_idle: bool
-    // This is a Space (`dweller space`): the control connection to its
-    // window; -1 for a window.
-    control: i32
 }
 
 fn uiOptions(args: [][]u8) ?UiOptions {
-    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, until_idle: false, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, control: -1 }
+    var o = UiOptions { target: "", width: 1024, height: 768, face: "", frames: 0, until_idle: false, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false }
     var i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -190,7 +187,7 @@ fn uiOptions(args: [][]u8) ?UiOptions {
 /// `dweller [open] FILE|URL ...`: opens a window on the page; returns
 /// the exit status.
 pub fn run(alloc: Allocator, args: [][]u8) i32 {
-    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, until_idle: false, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false, control: -1 }
+    var o = UiOptions { target: "", width: 0, height: 0, face: "", frames: 0, until_idle: false, events: "", state: false, save: "", js: true, show_text: false, socket: "", exit_when_idle: false }
     if uiOptions(args) |parsed| {
         o = parsed
     } else {
@@ -260,7 +257,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
     engine.setConsoleEcho((o.frames == 0 && !o.exit_when_idle) || std.os.getenv("DWELLER_CONSOLE") != null)
     // Telemetry (perf/telemetry.aye): the person's window, its Spaces, or
     // a run with DWELLER_PROFILE set.
-    perf.telemetryStart(o.frames == 0 && !o.exit_when_idle && o.events.len == 0 && o.control < 0)
+    perf.telemetryStart(o.frames == 0 && !o.exit_when_idle && o.events.len == 0)
     defer perf.telemetryStop()
     applyBackgroundHint()
     if SDL_Init(SDL_INIT_VIDEO) != 0 {
@@ -302,13 +299,6 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                     return 1
                 }
                 if !listening {
-                    return 1
-                }
-                let spaced = setUpSpaces(&mut ui, o) catch |e| {
-                    std.log.err("out of memory")
-                    return 1
-                }
-                if !spaced {
                     return 1
                 }
             }
@@ -644,7 +634,6 @@ pub struct Ui {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
                 try self.draw()
-                try sendFrame(self, true)
                 perf.noteFrame(std.time.monotonicMs() - drew)
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
@@ -686,7 +675,6 @@ pub struct Ui {
                     self.from_timers = true
                     defer self.from_timers = false
                     try self.afterScripts()
-                    contextMayChange(self)
                 }
                 perf.end("ui_timers", t_timers, "")
             }
@@ -737,15 +725,7 @@ pub struct Ui {
             }
             let before = std.time.monotonicMs()
             let before_ns = perf.start()
-            if isSpace(self) {
-                // No person: wait for the agent (and the window) instead.
-                waitInSpace(self, timeout)
-                waited = std.time.monotonicMs() - before
-                waited_ns = perf.start() - before_ns
-                while SDL_PollEvent(&mut ev) != 0 {
-                    try self.handle(&ev)
-                }
-            } else if SDL_WaitEventTimeout(&mut ev, timeout) != 0 {
+            if SDL_WaitEventTimeout(&mut ev, timeout) != 0 {
                 waited = std.time.monotonicMs() - before
                 waited_ns = perf.start() - before_ns
                 let t_events = perf.start()
@@ -753,8 +733,6 @@ pub struct Ui {
                 while SDL_PollEvent(&mut ev) != 0 {
                     try self.handle(&ev)
                 }
-                // The Spaces get the person's new context.
-                contextMayChange(self)
                 perf.end("ui_events", t_events, "")
             } else {
                 waited = std.time.monotonicMs() - before
@@ -762,8 +740,6 @@ pub struct Ui {
             }
             // All the wheel events of this iteration scroll once.
             try self.flushWheel()
-            try runSpaceTimers(self)
-            try sendFrame(self, false)
             try pollAgents(self)
             try pollTabProcesses(self)
             if engine.hasContextRequests() {
@@ -787,13 +763,7 @@ pub struct Ui {
                 perf.loopEnd(busy)
             }
             if t_loop != 0 {
-                // A Space's iterations apart from the window's (they share
-                // stderr).
-                var who: []u8 = ""
-                if isSpace(self) {
-                    who = "space"
-                }
-                perf.end("ui_loop", t_loop + waited_ns, who)
+                perf.end("ui_loop", t_loop + waited_ns, "")
             }
         }
     }
@@ -1898,7 +1868,7 @@ pub struct Ui {
     }
 
     pub fn agentGoesOn(self: *mut Self, conn: usize) bool {
-        return agentGoesOnIn(self)
+        return !self.quit
     }
 
     // ---- drawing
