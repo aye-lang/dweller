@@ -11,10 +11,17 @@ fn specifiedMath(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocErr
     try tokenize(alloc, text.trim(value), &mut toks)
 
     let all = toks.items()
+    var i: usize = 0
 
-    if all.len == 0 || !isMathFunction(all[0]) || blockEnd(all, 0) != all.len - 1 || !isAbsoluteMath(all) {
-        return writeRaw(text.trim(value), out)
+    for t in all {
+        if t.kind == Tok.Url || t.kind == Tok.BadUrl || t.kind == Tok.AtKeyword {
+            return writeRaw(text.trim(value), out)
+        }
     }
 
-    return writeSimplifiedMath(all, text.trim(value), out)
+    while i < all.len {
+        i = try writeMathAware(all, i, out)
+    }
+
+    return true
 }

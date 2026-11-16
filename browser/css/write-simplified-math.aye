@@ -1,11 +1,31 @@
 import std.mem.AllocError
 import std.text
 
-fn writeSimplifiedMath(toks: []Token, raw: []u8, out: *mut text.Builder) AllocError!bool {
-    let v = calcValue(toks) orelse return writeRaw(raw, out)
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeSimplifiedMath(toks: []Token, out: *mut text.Builder) AllocError!bool {
+    if calcValue(toks) |v| {
+        try out.append("calc(")
+        try writeValue(v, out)
+        try out.append(")")
 
+        return true
+    }
+
+    if calcTyped(toks, 'a') |deg| {
+        return writeCalcUnit(deg, "deg", out)
+    }
+
+    if calcTyped(toks, 't') |seconds| {
+        return writeCalcUnit(seconds, "s", out)
+    }
+
+    return false
+}
+
+fn writeCalcUnit(n: f64, unit: []u8, out: *mut text.Builder) AllocError!bool {
     try out.append("calc(")
-    try writeValue(v, out)
+    try writeNumber(n, out)
+    try out.append(unit)
     try out.append(")")
 
     return true

@@ -93,7 +93,7 @@ struct Quantity {
     num: f64
     px: f64
     pct: f64
-    angle: bool = false
+    kind: u8 = 0
 }
 
 fn numberQ(n: f64) Quantity {
@@ -110,7 +110,7 @@ fn lengthQ(px: f64, pct: f64) Quantity {
 pub fn calcValue(toks: []Token) ?Value {
     var p = CalcParser { toks: toks, i: 0 }
     let q = finiteQuantity(p.term() orelse return null)
-    if skipWhitespace(toks, p.i) < toks.len || q.angle {
+    if skipWhitespace(toks, p.i) < toks.len || q.kind != 0 {
         return null
     }
     if q.number {
@@ -151,10 +151,10 @@ struct CalcParser {
             if t.delim == '-' {
                 sign = -1.0
             }
-            if a.number != b.number || a.angle != b.angle {
+            if a.number != b.number || a.kind != b.kind {
                 return null
             }
-            a = Quantity { number: a.number, num: a.num + sign * b.num, px: a.px + sign * b.px, pct: a.pct + sign * b.pct, angle: a.angle }
+            a = Quantity { number: a.number, num: a.num + sign * b.num, px: a.px + sign * b.px, pct: a.pct + sign * b.pct, kind: a.kind }
         }
         return a
     }
@@ -222,6 +222,9 @@ struct CalcParser {
             if angleDegrees(t) |deg| {
                 return angleQ(deg)
             }
+            if timeSeconds(Comp { toks: self.toks[self.i - 1..self.i] }) |s| {
+                return timeQ(s)
+            }
             return null
         }
         if t.kind == Tok.Ident {
@@ -275,7 +278,7 @@ struct CalcParser {
                 picked = q
                 have = true
             } else {
-                if picked.number != q.number {
+                if picked.number != q.number || picked.kind != q.kind {
                     return null
                 }
                 let smaller = less(q, picked)
@@ -300,7 +303,7 @@ struct CalcParser {
             return plainMath(name, args[..n])
         }
         if text.eqlIgnoreCase(name, "clamp") {
-            if n != 3 || args[0].number != args[1].number || args[1].number != args[2].number {
+            if n != 3 || args[0].number != args[1].number || args[1].number != args[2].number || args[0].kind != args[1].kind || args[1].kind != args[2].kind {
                 return null
             }
             // max(lo, min(value, hi))
@@ -318,13 +321,13 @@ struct CalcParser {
 }
 
 fn scaled(q: Quantity, k: f64) Quantity {
-    return Quantity { number: q.number, num: q.num * k, px: q.px * k, pct: q.pct * k, angle: q.angle }
+    return Quantity { number: q.number, num: q.num * k, px: q.px * k, pct: q.pct * k, kind: q.kind }
 }
 
 // Is `a` less than `b`? Percentages are taken of the reference length,
 // or of the viewport width when it is not known yet.
 fn less(a: Quantity, b: Quantity) bool {
-    if a.number {
+    if a.number || a.kind != 0 {
         return a.num < b.num
     }
     var base = calc_ctx.percent_of
