@@ -1720,25 +1720,6 @@ fn hostTag(it: *mut Interp, o: u32) u32 {
     }
 }
 
-// The value of property `prop` in the declarations `decls` ("a: b; c: d").
-fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
-    var parts = text.split(decls, ";")
-    while parts.next() |d| {
-        let colon = std.mem.indexOf(d, ':') orelse continue
-        let name = text.trim(d[..colon])
-
-        if text.eqlIgnoreCase(name, prop) {
-            out.clear()
-            try out.append(text.trim(d[colon + 1..]))
-        } else {
-            _ = try css.shorthandLonghandText(out.alloc, name, text.trim(d[colon + 1..]), prop, out)
-        }
-    }
-    if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {
-        try overflowOfDecls(decls, out)
-    }
-}
-
 // Sets (or, for an empty value, removes) the declaration of `prop` in
 // the style attribute of `el`.
 fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!void {

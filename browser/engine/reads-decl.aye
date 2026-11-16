@@ -1,0 +1,21 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-variables-2/#pending-substitution-value
+fn readsDecl(d: StyleDecl, prop: []u8, out: *mut text.Builder) AllocError!bool {
+    if namesProperty(d.name, prop) {
+        out.clear()
+        try out.append(d.value)
+
+        return true
+    }
+
+    if text.indexOf(d.value, "var(") != null && css.shorthandCovers(d.name, prop) {
+        out.clear()
+
+        return true
+    }
+
+    return css.shorthandLonghandText(out.alloc, d.name, d.value, prop, out)
+}
