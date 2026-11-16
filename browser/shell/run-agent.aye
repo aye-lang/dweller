@@ -1,0 +1,22 @@
+import font
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn runAgent(alloc: Allocator, o: Options, style_source: []u8, build: fn(*mut App) AllocError!void) i32 {
+    var fixed = font.Fixed.init()
+    let app = openApp(alloc, style_source, &mut fixed, o.width as f64, o.height as f64) catch |e| {
+        return outOfMemory()
+    }
+
+    defer closeApp(app)
+
+    build(app) catch |e| {
+        return outOfMemory()
+    }
+
+    serveAgent(app) catch |e| {
+        return outOfMemory()
+    }
+
+    return 0
+}

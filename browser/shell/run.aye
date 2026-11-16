@@ -1,0 +1,41 @@
+import font
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+let USAGE = "usage: APP [--width W] [--height H] [--font fixed|system] [--frames N] [--events WORDS] [--save OUT.png] [--dump] [--timing] [--full-layout] | APP --agent [--width W] [--height H]"
+
+pub fn run(alloc: Allocator, style_source: []u8, build: fn(*mut App) AllocError!void) i32 {
+    let began = std.time.monotonicMs()
+    let args = std.os.args(alloc) catch |e| {
+        return 1
+    }
+
+    defer alloc.free(args)
+
+    let o = readOptions(args) orelse {
+        std.log.err(USAGE)
+
+        return 2
+    }
+
+    if o.agent {
+        return runAgent(alloc, o, style_source, build)
+    }
+
+    if o.fixed_font {
+        var fixed = font.Fixed.init()
+
+        return runWithFonts(alloc, o, style_source, build, &mut fixed, null, began)
+    }
+
+    var sys = font.System.init(alloc) catch |e| {
+        var fixed = font.Fixed.init()
+
+        return runWithFonts(alloc, o, style_source, build, &mut fixed, null, began)
+    }
+
+    defer sys.deinit()
+
+    return runWithFonts(alloc, o, style_source, build, &mut sys, &mut sys, began)
+}

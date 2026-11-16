@@ -690,7 +690,7 @@ pub struct Parser {
             }
             let target = try self.ident(local, nameTok)
             let f = try self.functionRestFlags(name, fstart, false, isAsync, isGen)
-            try self.push(try self.mk(Node.FuncDecl { f: f, target: target }, fstart))
+            try self.push(try self.mk(Node.FuncDecl { f: f, target: target, annex: 0 }, fstart))
             try info.locals.append(LocalExport { name: try self.intern("default"), local: local })
             return
         }
@@ -797,10 +797,10 @@ pub struct Parser {
             try self.expect(Tok.LParen)
             let cond = try self.expression(false)
             try self.expect(Tok.RParen)
-            let cons = try parseSubStatement(self)
+            let cons = try parseIfClause(self)
             var alt: u32 = 0
             if self.eat(Tok.KwElse) {
-                alt = try parseSubStatement(self)
+                alt = try parseIfClause(self)
             }
             return self.mk(Node.If { cond: cond, cons: cons, alt: alt }, start)
         }
@@ -873,6 +873,10 @@ pub struct Parser {
         if k == Tok.Ident && self.kindAt(1) == Tok.Colon {
             let label = try self.intern(self.tokText(self.tok()))
             self.pos += 2
+            if self.at(Tok.KwFunction) && !self.strict && self.kindAt(1) != Tok.Star {
+                let body = try self.statement()
+                return self.mk(Node.Labeled { label: label, body: body }, start)
+            }
             let body = try parseSubStatement(self)
             return self.mk(Node.Labeled { label: label, body: body }, start)
         }
@@ -965,7 +969,7 @@ pub struct Parser {
         self.pos += 1
         let target = try self.ident(name, nameTok)
         let f = try self.functionRestFlags(name, start, false, isAsync, isGen)
-        return self.mk(Node.FuncDecl { f: f, target: target }, start)
+        return self.mk(Node.FuncDecl { f: f, target: target, annex: 0 }, start)
     }
 
     fn forStatement(self: *mut Self) SyntaxErr!u32 {
@@ -1685,6 +1689,9 @@ pub struct Parser {
             let plen = t.num as usize
             let pattern = try self.intern(all[..plen])
             let flags = try self.intern(all[plen..])
+            if !(try regexpLiteralValid(self.alloc, self.atoms, pattern, flags)) {
+                return self.fail("Invalid regular expression")
+            }
             return self.mk(Node.Regex { pattern: pattern, flags: flags }, start)
         }
         if k == Tok.Ident && self.isWord("async") && self.kindAt(1) == Tok.KwFunction && !self.tokAt(1).nl {

@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc (CreateNewWindow: a popup that keeps its opener stays in the opener's SiteInstance)
+fn attachSource(tp: *mut TabProcess, ask: OpenAsk, href: []u8) AllocError!AttachFrom {
+    var from = AttachFrom { context: ask.context }
+
+    if !ask.keeps || tp.gone.len > 0 || tp.embedder != null { return from }
+
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+    var own = text.Builder.init(tp.url.alloc)
+    defer own.deinit()
+
+    try writeSite(href, &mut site)
+    try writeSite(tp.committed.bytes(), &mut own)
+
+    if site.len() > 0 && text.eql(site.bytes(), own.bytes()) { from.process = tp }
+
+    return from
+}

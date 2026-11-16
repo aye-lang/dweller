@@ -1,0 +1,17 @@
+import ipc
+import std.mem.AllocError
+
+let CHUNK: usize = 262144
+
+fn sendBody(tp: *mut TabProcess, on: u32, id: u32, bytes: []u8) AllocError!void {
+    var at: usize = 0
+
+    while at < bytes.len {
+        var end = at + CHUNK
+
+        if end > bytes.len { end = bytes.len }
+
+        try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchBody { id: id, chunk: bytes[at..end] })
+        at = end
+    }
+}

@@ -1,0 +1,33 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        ":has() changes restyle the elements :has() was tested on"
+      "\n"
+      <style>
+        "\n:has(> .mark) { color: rgb(255, 0, 0) }\n.row:has(.note.on) .cell { width: 30px }\nli:has(+ .sel) { font-weight: 700 }\nli:has(~ .far b) { font-style: italic }\n.group:has(.row:first-child .note.on) { letter-spacing: 2px }\n:not(:has(.mark)) > .tail { text-decoration: underline }\n.cell { display: inline-block; width: 10px; height: 10px }\n"
+      "\n"
+    <body>
+      <div id="main" class="group">
+      "\n"
+      <ul id="list">
+        <li id="l0">
+          "a"
+        <li id="l1">
+          "b"
+        <li id="l2" class="sel far">
+        <li id="l3">
+          "d"
+      "\n"
+      <div id="box">
+        <span id="tail" class="tail">
+          "tail"
+        <i class="mark">
+      "\n"
+      <pre id="out">
+        "start: rgb(0, 0, 0) 10px underline\nmark: rgb(255, 0, 0) rgb(255, 0, 0) rgb(0, 0, 0)\non: 30px 10px normal\nfirst: 30px 2px 2px\noff: 10px normal\nsel: 400 700 400\nfar: italic italic normal\ngone: normal normal\nboxed: rgb(255, 0, 0) none\nunmarked: rgb(0, 0, 0) rgb(0, 0, 0)"
+      "\n"
+      <script>
+        "\nconst main = document.getElementById('main');\nlet html = '';\nfor (let i = 0; i < 200; i++) {\n  html += '<div class=\"row\"><span class=\"title\">t</span><span class=\"note\">n</span><span class=\"cell\"></span><span><b>x</b></span></div>';\n}\nmain.innerHTML = html;\nconst out = [];\nconst $ = (id) => document.getElementById(id);\nconst cs = (el, p) => getComputedStyle(el)[p];\nconst row = (i) => main.children[i];\nconst read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };\nread('start', () => cs(row(5), 'color') + ' ' + cs(row(5).children[2], 'width') + ' ' + cs($('tail'), 'textDecorationLine'));\nrow(5).children[0].classList.add('mark');\nread('mark', () => cs(row(5), 'color') + ' ' + cs(row(5).children[0], 'color') + ' ' + cs(row(6), 'color'));\nrow(5).children[1].classList.add('on');\nread('on', () => cs(row(5).children[2], 'width') + ' ' + cs(row(6).children[2], 'width') + ' ' + cs(main, 'letterSpacing'));\nrow(0).children[1].classList.add('on');\nread('first', () => cs(row(0).children[2], 'width') + ' ' + cs(main, 'letterSpacing') + ' ' + cs(row(9).children[0], 'letterSpacing'));\nrow(0).children[1].className = 'note';\nrow(5).children[1].className = 'note';\nread('off', () => cs(row(5).children[2], 'width') + ' ' + cs(main, 'letterSpacing'));\n$('l2').classList.add('sel');\nread('sel', () => cs($('l0'), 'fontWeight') + ' ' + cs($('l1'), 'fontWeight') + ' ' + cs($('l2'), 'fontWeight'));\n$('l2').classList.add('far');\nread('far', () => cs($('l0'), 'fontStyle') + ' ' + cs($('l1'), 'fontStyle') + ' ' + cs($('l3'), 'fontStyle'));\n$('b2').remove();\nread('gone', () => cs($('l0'), 'fontStyle') + ' ' + cs($('l1'), 'fontStyle'));\nconst mark = document.createElement('i');\nmark.className = 'mark';\n$('box').appendChild(mark);\nread('boxed', () => cs($('box'), 'color') + ' ' + cs($('tail'), 'textDecorationLine'));\nrow(5).children[0].remove();\nread('unmarked', () => cs(row(5), 'color') + ' ' + cs(row(5).children[0], 'color'));\n$('out').textContent = out.join('\\n');\nmain.textContent = '';\n"
+      "\n"

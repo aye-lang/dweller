@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn writeTiming(app: *mut App, w: *mut Window, out: *mut text.Builder) AllocError!void {
+    try timingLine(out, "first-frame-ms", w.first_frame_ms)
+    try timingLine(out, "frames", w.frames)
+    try timingLine(out, "frame-us-mean", w.frame_us_total / w.frames)
+    try timingLine(out, "frame-us-max-after-first", w.frame_us_max)
+    try timingLine(out, "full-layouts", app.full_layouts as u64)
+    try timingLine(out, "partial-layouts", app.partial_layouts as u64)
+}
+
+fn timingLine(out: *mut text.Builder, name: []u8, value: u64) AllocError!void {
+    try out.append(name)
+    try out.appendByte(' ')
+    try out.appendInt(value as i64)
+    try out.appendByte('\n')
+}

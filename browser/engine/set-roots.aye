@@ -1,0 +1,19 @@
+import css
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+// blink: core/css/style_engine.cc
+fn setRoots(doc: *Document, deps: *css.RestyleDeps, el: NodeId, change: css.StyleChange, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!bool {
+    if !css.followsSets(deps, change) { return false }
+
+    try addRoot(out, shallow, found, el, true)
+
+    if css.keySetOf(deps, change) |set| { try addSetRoots(doc, set, el, out, shallow, found) }
+
+    if css.classKeySet(deps, change) |set| { try addSetRoots(doc, set, el, out, shallow, found) }
+
+    return true
+}

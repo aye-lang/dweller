@@ -1,0 +1,25 @@
+// https://tc39.es/ecma262/#sec-web-compat-functiondeclarationinstantiation
+
+fn annexNameTaken(r: *mut Resolver, s: *mut RScope, name: u32) bool {
+    for blocked in r.annex_blocked.items() {
+        if blocked == name {
+            return true
+        }
+    }
+
+    if s.top {
+        return r.globals.map.contains(name)
+    }
+
+    if name == A_ARGUMENTS && !s.arrow {
+        return true
+    }
+
+    for k, b in s.bindings.items() {
+        if b.name == name && (b.lexical || k < s.param_bindings as usize) {
+            return true
+        }
+    }
+
+    return false
+}

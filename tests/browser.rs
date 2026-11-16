@@ -44,6 +44,8 @@ mod js;
 mod jsdom;
 #[path = "browser/media.rs"]
 mod media;
+#[path = "browser/native.rs"]
+mod native;
 #[path = "browser/net.rs"]
 mod net;
 #[path = "browser/paint.rs"]
@@ -58,8 +60,12 @@ mod scripts;
 mod security;
 #[path = "browser/storage.rs"]
 mod storage;
+#[path = "browser/term.rs"]
+mod term;
 #[path = "browser/webgl.rs"]
 mod webgl;
+#[path = "browser/websocket.rs"]
+mod websocket;
 #[path = "browser/window_login.rs"]
 mod window_login;
 #[path = "browser/window_renderer.rs"]
@@ -74,6 +80,10 @@ mod window_renderer_oopif;
 mod window_renderer_oopif_input;
 #[path = "browser/window_renderer_oopif_proxy.rs"]
 mod window_renderer_oopif_proxy;
+#[path = "browser/window_renderer_oopif_site.rs"]
+mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_popup.rs"]
+mod window_renderer_popup;
 #[path = "browser/window_renderer_scroll.rs"]
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]

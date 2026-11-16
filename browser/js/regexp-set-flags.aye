@@ -1,0 +1,32 @@
+// https://tc39.es/ecma262/#sec-regexpinitialize
+
+fn regexpSetFlags(rp: *mut RParser, flags: []u8) bool {
+    let prog = rp.prog
+    var seen: u32 = 0
+
+    for c in flags {
+        if c < 'a' || c > 'z' || (seen & (1 << (c - 'a') as u32)) != 0 {
+            return false
+        }
+
+        seen |= 1 << (c - 'a') as u32
+
+        if c == 'g' {
+            prog.global = true
+        } else if c == 'i' {
+            prog.icase = true
+        } else if c == 'm' {
+            prog.multiline = true
+        } else if c == 's' {
+            prog.dotall = true
+        } else if c == 'y' {
+            prog.sticky = true
+        } else if c == 'u' {
+            rp.unicode = true
+        } else if c != 'd' {
+            return false
+        }
+    }
+
+    return true
+}

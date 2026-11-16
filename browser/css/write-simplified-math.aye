@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeSimplifiedMath(toks: []Token, out: *mut text.Builder) AllocError!bool {
+    let saved = calc_ctx
+    defer calc_ctx = saved
+
+    calc_ctx.percent_of = -1.0
+
+    if calcValue(toks) |v| {
+        return writeCalcValue(v, out)
+    }
+
+    if calcTyped(toks, 'a') |deg| {
+        return writeCalcUnit(deg, "deg", out)
+    }
+
+    if calcTyped(toks, 't') |seconds| {
+        return writeCalcUnit(seconds, "s", out)
+    }
+
+    return false
+}

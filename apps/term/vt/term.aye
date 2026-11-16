@@ -1,0 +1,55 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub let SCROLLBACK_ROWS: usize = 10000
+
+pub struct Term {
+    alloc: Allocator
+    cols: usize
+    rows: usize
+    primary: Screen
+    alternate: Screen
+    on_alternate: bool = false
+    parser: Parser
+    pen: Pen = Pen {}
+    title: text.Builder
+    reply: text.Builder
+    scrollback: List([]mut Cell)
+    dirty: []mut bool
+    app_cursor: bool = false
+    autowrap: bool = true
+    origin: bool = false
+    insert: bool = false
+    cursor_visible: bool = true
+    bracketed_paste: bool = false
+    graphics: [2]bool = [2]bool{false, false}
+    shifted: usize = 0
+
+    pub fn init(alloc: Allocator, cols: usize, rows: usize) AllocError!Term {
+        return openTerm(alloc, cols, rows)
+    }
+
+    pub fn deinit(self: *mut Self) {
+        closeTerm(self)
+    }
+
+    pub fn feed(self: *mut Self, bytes: []u8) AllocError!void {
+        for b in bytes {
+            try step(self, b)
+        }
+    }
+
+    pub fn screen(self: *mut Self) *mut Screen {
+        if self.on_alternate {
+            return &mut self.alternate
+        }
+
+        return &mut self.primary
+    }
+
+    pub fn row(self: *mut Self, y: usize) []mut Cell {
+        return self.screen().cells[y * self.cols..(y + 1) * self.cols]
+    }
+}

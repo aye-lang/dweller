@@ -6,7 +6,7 @@ fn convertChannels(c: Color, space: u8) [4]f64 {
     var src = c.ch
 
     if c.space == 0 {
-        src = [3]f64{c.r as f64 / 255.0, c.g as f64 / 255.0, c.b as f64 / 255.0}
+        src = legacyChannels(c)
     }
 
     for i in 0..3 {
@@ -21,7 +21,7 @@ fn convertChannels(c: Color, space: u8) [4]f64 {
         ch = fromXyz(space, toXyz(c.space, src))
     }
 
-    if c.space <= 1 && space >= 13 {
+    if c.space <= 1 && isLegacyPolar(space) {
         ch = fromSrgb(space, src)
     }
 
@@ -33,12 +33,20 @@ fn convertChannels(c: Color, space: u8) [4]f64 {
         }
     }
 
+    if !same {
+        carryMissing(c, space, &mut out)
+    }
+
     if c.none & 8 != 0 {
         out[3] = math.nan()
     }
 
     if !same && space != 14 && hueIndex(space) < 3 && math.abs(ch[1]) < channelRef(space)[1] * 0.000001 {
         out[hueIndex(space)] = math.nan()
+    }
+
+    if !same && space == 14 && ch[1] + ch[2] >= 99.9999 {
+        out[0] = math.nan()
     }
 
     return out

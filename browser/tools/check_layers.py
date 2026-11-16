@@ -4,7 +4,7 @@
 Reads the `import` lines of every .aye file under browser/ and checks them
 against the layer table below:
 
-  platform   ui gpu audio font net perf sessions
+  platform   ui gpu audio font net perf sessions shell sdl
   core       animation css layout paint image svg webfont encoding idna url dom
   front end  html js wasm engine agent pageview renderer
 
@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-PLATFORM = {"ui", "gpu", "audio", "font", "net", "perf", "sessions"}
+PLATFORM = {"ui", "gpu", "audio", "font", "net", "perf", "sessions", "shell", "sdl"}
 CORE = {"animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "idna", "url", "dom"}
 FRONT = {"html", "js", "wasm", "engine", "agent", "pageview", "renderer"}
 

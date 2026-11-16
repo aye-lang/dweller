@@ -1,6 +1,10 @@
 // v8: src/parsing/parser-base.h (ParseExpressionOrLabelledStatement, Token::LET)
 
 fn parseSubStatement(p: *mut Parser) SyntaxErr!u32 {
+    if p.at(Tok.KwFunction) || p.at(Tok.KwClass) {
+        return p.fail("Declaration cannot appear in a single-statement context")
+    }
+
     if !p.at(Tok.KwLet) {
         return p.statement()
     }

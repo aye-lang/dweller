@@ -1,8 +1,8 @@
 import std.mem.AllocError
 
-fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32) AllocError!?*mut TabSlot {
+fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, from: AttachFrom) AllocError!?*mut TabSlot {
     for o in tp.opened.items() {
-        if o.context != context { continue }
+        if o.context != from.context { continue }
 
         for i in 0..ui.count {
             if ui.slots[i].?.id == o.tab { return ui.slots[i] }
@@ -16,9 +16,9 @@ fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u
     }
 
     if spaceOfSlot(ui, opener) |sp| {
-        let hosted = (try hostTab(ui, sp)) orelse return null
+        let hosted = (try hostTab(ui, sp, from)) orelse return null
 
-        try tp.opened.append(Opened { context: context, tab: hosted.id })
+        try tp.opened.append(Opened { context: from.context, tab: hosted.id })
 
         return hosted
     }
@@ -27,7 +27,8 @@ fn openedSlot(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u
     let slot = ui.slots[i].?
 
     slot.agent = opener.agent
-    try tp.opened.append(Opened { context: context, tab: slot.id })
+    try attachSlot(slot, from)
+    try tp.opened.append(Opened { context: from.context, tab: slot.id })
 
     return slot
 }

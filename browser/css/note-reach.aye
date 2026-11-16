@@ -1,0 +1,22 @@
+import std.map.IntMap
+import std.mem.AllocError
+
+fn noteReach(set: *mut KeySet, reach: Reach, target: u64) AllocError!void {
+    if reach.kind == ReachKind.Whole { set.whole = true }
+
+    if reach.kind == ReachKind.Descendant { set.all_descendants = try noteTarget(&mut set.descendants, set.all_descendants, target) }
+
+    if reach.kind == ReachKind.Sibling { set.all_siblings = try noteTarget(&mut set.siblings, set.all_siblings, target) }
+
+    if reach.kind == ReachKind.SiblingDescendant { set.all_sibling_descendants = try noteTarget(&mut set.sibling_descendants, set.all_sibling_descendants, target) }
+
+    if reach.distance > set.sibling_distance { set.sibling_distance = reach.distance }
+}
+
+fn noteTarget(features: *mut IntMap(u64, bool), all: bool, target: u64) AllocError!bool {
+    if target == 0 { return true }
+
+    try features.put(target, true)
+
+    return all
+}

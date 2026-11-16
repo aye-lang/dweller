@@ -1,7 +1,6 @@
 import engine
 import std
 import std.heap.Arena
-import std.list.List
 import std.mem.AllocError
 import std.mem.Allocator
 import std.text
@@ -55,41 +54,10 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
         return null
     }
 
-    let tp = try alloc.create(TabProcess {
-        pid: pid,
-        fd: sv[0],
-        inbox: text.Builder.init(alloc),
-        outbox: text.Builder.init(alloc),
-        url: text.Builder.init(alloc),
-        committed: text.Builder.init(alloc),
-        top: text.Builder.init(alloc),
-        nav_initiator: text.Builder.init(alloc),
-        docs: text.Builder.init(alloc),
-        popup: text.Builder.init(alloc),
-        popup_off: text.Builder.init(alloc),
-        title: text.Builder.init(alloc),
-        target: text.Builder.init(alloc),
-        agent_line: text.Builder.init(alloc),
-        answer: text.Builder.init(alloc),
-        acted: text.Builder.init(alloc),
-        window_ask: text.Builder.init(alloc),
-        damage: text.Builder.init(alloc),
-        last_damage: text.Builder.init(alloc),
-        next: tab_processes,
-        tab: tab,
-        site: text.Builder.init(alloc),
-        pids: text.Builder.init(alloc),
-        swap_url: text.Builder.init(alloc),
-        nav_request: text.Builder.init(alloc),
-        children: List(ChildFrame).init(alloc),
-        held: List(*mut HeldFetch).init(alloc),
-        contexts: text.Builder.init(alloc),
-        opened: List(Opened).init(alloc),
-        partition: partition,
-    })
+    let tp = try newTabProcess(alloc, pid, sv[0], tab, partition)
 
-    try tp.pids.appendInt(pid as i64)
-    tab_processes = tp
+    process_serials += 1
+    tp.serial = process_serials
 
     return tp
 }

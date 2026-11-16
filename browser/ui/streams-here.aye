@@ -1,0 +1,22 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn streamsHere(tp: *mut TabProcess, res: *net.Response, href: []u8) AllocError!bool {
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+
+    if tp.embedder != null && (try framingRefused(tp, res, href)) { return false }
+
+    try writeSite(href, &mut site)
+
+    if site.len() == 0 { return true }
+
+    if tp.site.len() == 0 {
+        try tp.site.append(site.bytes())
+
+        return true
+    }
+
+    return text.eql(site.bytes(), tp.site.bytes()) && !(try coopSwapsTab(tp, res, href))
+}

@@ -1,0 +1,22 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#position-serialization
+fn writeComputedPosition(alloc: Allocator, v: Value, out: *mut text.Builder) AllocError!void {
+    var layers = List([]Comp).init(alloc)
+    defer layers.deinit()
+
+    try readLayers(alloc, v, &mut layers)
+
+    if layers.len() != 1 {
+        return writeValue(v, out)
+    }
+
+    let p = readPosition(layers.items()[0])
+
+    try writeLenPct(p.x, out)
+    try out.appendByte(' ')
+    try writeLenPct(p.y, out)
+}

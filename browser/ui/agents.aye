@@ -115,26 +115,10 @@ pub struct Agents {
     pointed_text: text.Builder
     // A tab an agent closed, freed once its request is answered.
     dropped: ?*mut TabSlot
-    // --spaces (spaces.aye): Spaces serve the connections; how to start
-    // one (the window's font and scripts), and the Spaces that ended and
-    // are not reaped yet.
-    spaces: bool
-    space_font: []u8
-    space_js: bool
-    reap: List(i32)
     // The Spaces (window side, spaces.aye), and the id of the last one
     // started.
     space_list: [8]?*mut Space
     next_space: u32
-    // The person's context as last sent to the Spaces (a `context`
-    // line), whether it may have changed since, and when it was made.
-    ctx_msg: text.Builder
-    ctx_due: bool
-    ctx_at: u64
-    // In a Space: the control connection to its window (-1: none), and
-    // what the window told it.
-    control: i32
-    inside: ?*mut Inside
     // The longest iteration of the window's loop while an agent was
     // connected, without its wait for events, in ms.
     loop_max_ms: u64
@@ -145,7 +129,6 @@ pub struct Agents {
     menu: u32
     chip_text: text.Builder
     watch: Watch
-    hosted: bool = false
 }
 
 /// Starts listening at `path`; null (after a message) when it cannot.
@@ -184,17 +167,8 @@ fn startAgents(ui: *mut Ui, path: []u8, exit_when_idle: bool) AllocError!bool {
         pointed: text.Builder.init(ui.alloc),
         pointed_text: text.Builder.init(ui.alloc),
         dropped: null,
-        spaces: false,
-        space_font: "",
-        space_js: true,
-        reap: List(i32).init(ui.alloc),
         space_list: @zeroed([8]?*mut Space),
         next_space: 0,
-        ctx_msg: text.Builder.init(ui.alloc),
-        ctx_due: false,
-        ctx_at: 0,
-        control: -1,
-        inside: null,
         loop_max_ms: 0,
         chip_hover: 0,
         menu: 0,
@@ -220,8 +194,6 @@ fn stopAgents(ui: *mut Ui) {
     closeFd(a.fd)
     removeSocket(a.path)
     ui.alloc.free(a.token)
-    leaveSpace(ui)
-    a.reap.deinit()
     if a.dropped |slot| {
         freeSlot(ui.alloc, slot)
     }
@@ -229,7 +201,6 @@ fn stopAgents(ui: *mut Ui) {
     a.flash_label.deinit()
     a.pointed.deinit()
     a.pointed_text.deinit()
-    a.ctx_msg.deinit()
     a.chip_text.deinit()
     ui.alloc.destroy(a)
     ui.agents = null
@@ -293,33 +264,17 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             space: null,
             admitted: false,
         })
-        if a.inside |me| {
-            // A Space: its agent acts on its first tab, or on the tab
-            // its last agent acted on.
-            a.conns[i].?.tab = ui.slots[0].?.id
-            if slotIndex(ui, me.last_tab) != null {
-                a.conns[i].?.tab = me.last_tab
-            }
-            try spaceStatus(ui)
-        }
         ui.dirty = true
     }
     var buf = @zeroed([16384]u8)
-    if a.control >= 0 {
-        try watchControl(ui, buf[..])
-    }
-    try sendShared(ui)
-    if a.spaces {
-        try pollSpaces(ui)
-    }
     for i in 0..MAX_AGENTS {
         let c = a.conns[i] orelse continue
         if !(try admitConn(ui, i, buf[..])) {
             continue
         }
-        if a.spaces && hostedSpace(c) == null {
+        if c.space == null {
             try relay(ui, i, buf[..])
-            if a.conns[i] == null || hostedSpace(c) == null {
+            if a.conns[i] == null || c.space == null {
                 continue
             }
         }
@@ -341,13 +296,6 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
         if c.gone && !c.waiting && !c.asked && std.mem.indexOf(c.pending.bytes(), '\n') == null {
             try leaveHosted(ui, c)
             a.conns[i] = null
-            if a.inside |me| {
-                // A Space: done, before its agent's connection closes.
-                if c.tab != 0 {
-                    me.last_tab = c.tab
-                }
-                try spaceStatus(ui)
-            }
             dropConn(ui.alloc, c)
             ui.dirty = true
         }
@@ -358,12 +306,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             a.flash = false
         }
     }
-    if a.spaces {
-        reapSpaces(a)
-    }
-    if a.hosted {
-        try pollHosted(ui)
-    }
+    try pollHosted(ui)
     if a.exit_when_idle && a.ever && agentCount(ui) == 0 {
         ui.quit = true
     }
@@ -393,15 +336,6 @@ fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
         std.mem.copy(rest, bytes[next..])
         c.pending.clear()
         try c.pending.append(rest)
-        if a.control >= 0 {
-            // A Space: the person's pause or stop counts from the next
-            // request on.
-            var buf = @zeroed([4096]u8)
-            try watchControl(ui, buf[..])
-            if ui.quit {
-                return
-            }
-        }
         try serveLine(ui, i, tmp, text.trim(line))
     }
 }
@@ -428,7 +362,7 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     }
     if hostedSpace(c) |sp| {
         if connTab(ui, c) == null && agent.needsPage(tmp, line) {
-            if try hostTab(ui, sp) |slot| {
+            if try hostTab(ui, sp, AttachFrom { context: 0 }) |slot| {
                 c.tab = slot.in_space
             }
         }
@@ -459,19 +393,10 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     try syncSlot(ui, slot)
     let before = shownNow(ui)
     var out = text.Builder.init(tmp)
-    if a.inside |me| {
-        me.serving = true
-        try spaceStatus(ui)
-    }
     try agent.serveShared(ui, i, c.mode == 2, tmp, line, &mut out)
     let touched = slot == ui.slots[ui.active].?
     if hostedSpace(c) == null || out.len() > 0 {
         a.served += 1
-    }
-    if a.inside |me| {
-        // The window learns the new status before the agent its answer.
-        me.serving = false
-        try spaceStatus(ui)
     }
     if out.len() > 0 {
         try out.appendByte('\n')
@@ -488,7 +413,6 @@ fn serveLine(ui: *mut Ui, i: usize, tmp: Allocator, line: []u8) AllocError!void 
     if engine.hasContextRequests() {
         try serveContexts(ui)
     }
-    afterSpaceRequest(ui)
     if hostedSpace(c) |sp| {
         if sp.closing {
             c.gone = true
@@ -735,25 +659,7 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
         return true
     }
     if text.eql(cmd, "user_context") {
-        if a.inside |me| {
-            // As the window sent it last.
-            if !me.has_context {
-                return refuse(reply, NO_CONTEXT)
-            }
-            reply.message = "the user's context"
-            reply.fields = me.context.bytes()
-            reply.detail = me.context_text.bytes()
-            return true
-        }
         try contextReply(ui, tmp, reply, true)
-        return true
-    }
-    if text.eql(cmd, "spaces") {
-        try spacesReply(ui, tmp, reply)
-        return true
-    }
-    if text.eql(cmd, "space_close") {
-        try closeOwnSpace(ui, tmp, reply)
         return true
     }
     if text.eql(cmd, "wait") {
@@ -820,12 +726,7 @@ fn tabsReply(ui: *mut Ui, c: *Conn, tmp: Allocator, reply: *mut agent.Reply) All
     for i in 0..ui.count {
         try slots.append(ui.slots[i].?)
     }
-    // In a Space the user sees none of its tabs.
-    var shown: ?*TabSlot = null
-    if a.control < 0 {
-        shown = ui.slots[ui.active].?
-    }
-    return listTabs(slots.items(), mine, shown, tmp, reply)
+    return listTabs(slots.items(), mine, ui.slots[ui.active].?, tmp, reply)
 }
 
 // ---- the user's context
@@ -1046,9 +947,6 @@ fn pointAt(ui: *mut Ui) AllocError!void {
             try flashRect(ui, slot, paint.Rect { x: r.x, y: r.y, w: r.w, h: r.h }, name)
         }
     }
-    if a.spaces {
-        try pointSpaces(ui, members(&b))
-    }
     for c in a.conns {
         if c |conn| {
             if conn.mode == 0 {
@@ -1205,7 +1103,6 @@ fn answerWait(ui: *mut Ui, conn: usize, tmp: Allocator, slot: *mut TabSlot, repl
         try w.endObject()
         r.fields = members(&b)
     }
-    try spaceStatus(ui)
     var out = text.Builder.init(tmp)
     try agent.writeLater(c.mode == 2, tmp, c.wait_id.bytes(), r, &mut out)
     try out.appendByte('\n')
@@ -1267,23 +1164,12 @@ fn agentStatus(ui: *Ui) []u8 {
     return a.activity.bytes()
 }
 
-/// The "AI" badge (while an agent is connected; with Spaces, "You" and
-/// a chip per Space instead) and the pause button, at the right end of
-/// the toolbar.
+/// "You" and a chip per Space, and the pause button, at the right end
+/// of the toolbar.
 fn drawAgentChrome(ui: *mut Ui) AllocError!void {
     let a = ui.agents orelse return
     let f = uiFont(12.0)
-    let bx = ui.win_w as f64 - AGENT_CHROME + 4.0
-    if a.spaces {
-        try drawChips(ui)
-    } else if agentCount(ui) > 0 {
-        var ink = AGENT_INK
-        if a.paused {
-            ink = PAUSED_INK
-        }
-        fill(ui, bx, 10.0, 26.0, 20.0, ink)
-        try label(ui, bx + 6.0, centered(ui, 10.0, 20.0, f), "AI", f, Rgba { r: 255, g: 255, b: 255, a: 255 })
-    }
+    try drawChips(ui)
     let r = pauseRect(ui)
     fill(ui, r.x, r.y, r.w, r.h, PAPER)
     frame(ui, r, 1.0, LINE)
@@ -1299,7 +1185,6 @@ fn drawAgentChrome(ui: *mut Ui) AllocError!void {
 let CHIP_HOVER = Rgba { r: 232, g: 232, b: 232, a: 255 }
 let SHOWN_BG = Rgba { r: 224, g: 224, b: 224, a: 255 }
 let IDLE_INK = Rgba { r: 183, g: 160, b: 245, a: 255 }
-let CRASHED_INK = Rgba { r: 220, g: 38, b: 38, a: 255 }
 
 /// The Space with id `id`, if it is in the list.
 fn spaceOf(a: *Agents, id: u32) ?*mut Space {
@@ -1317,9 +1202,6 @@ fn spaceOf(a: *Agents, id: u32) ?*mut Space {
 /// works or waits, light purple when it is idle, amber when paused,
 /// grey when done (or being stopped), red when it crashed.
 fn stateInk(sp: *Space) Rgba {
-    if sp.crashed {
-        return CRASHED_INK
-    }
     if sp.stopping || sp.closing || !sp.attached {
         return FADED
     }
@@ -1336,7 +1218,7 @@ fn stateInk(sp: *Space) Rgba {
 /// The number of items in Space `sp`'s menu: Pause (or Resume) and Stop
 /// while an agent is attached; Close for a done or crashed one.
 fn menuItems(sp: *Space) usize {
-    if sp.attached && !sp.crashed {
+    if sp.attached {
         return 2 + menuExtra(sp)
     }
     return 1
@@ -1446,9 +1328,6 @@ fn chipStatus(ui: *mut Ui) []u8 {
 /// over the open menu (then it is neither over the page nor the toolbar).
 fn hoverChips(ui: *mut Ui, x: f64, y: f64) bool {
     let a = ui.agents orelse return false
-    if !a.spaces {
-        return false
-    }
     var over: u32 = 0
     if y < TOOLBAR {
         over = chipAt(ui, x, y) orelse 0

@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+
+// chromium: content/browser/loader/navigation_url_loader_impl.cc OnReceiveResponse
+fn streamNavigation(tp: *mut TabProcess, h: *mut HeldFetch) AllocError!void {
+    if !h.nav || h.whole { return }
+
+    if !h.streamed && !(try startStreamed(tp, h)) { return }
+
+    let body = net.navigationBody(h.load)
+
+    if body.len <= h.sent { return }
+
+    try sendBody(tp, h.on, h.id, body[h.sent..])
+    h.sent = body.len
+}

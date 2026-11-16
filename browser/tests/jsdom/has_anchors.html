@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<title>:has() changes restyle the elements :has() was tested on</title>
+<style>
+:has(> .mark) { color: rgb(255, 0, 0) }
+.row:has(.note.on) .cell { width: 30px }
+li:has(+ .sel) { font-weight: 700 }
+li:has(~ .far b) { font-style: italic }
+.group:has(.row:first-child .note.on) { letter-spacing: 2px }
+:not(:has(.mark)) > .tail { text-decoration: underline }
+.cell { display: inline-block; width: 10px; height: 10px }
+</style>
+<div id="main" class="group"></div>
+<ul id="list"><li id="l0">a</li><li id="l1">b</li><li id="l2"><b id="b2">c</b></li><li id="l3">d</li></ul>
+<div id="box"><span id="tail" class="tail">tail</span></div>
+<pre id="out"></pre>
+<script>
+const main = document.getElementById('main');
+let html = '';
+for (let i = 0; i < 200; i++) {
+  html += '<div class="row"><span class="title">t</span><span class="note">n</span><span class="cell"></span><span><b>x</b></span></div>';
+}
+main.innerHTML = html;
+const out = [];
+const $ = (id) => document.getElementById(id);
+const cs = (el, p) => getComputedStyle(el)[p];
+const row = (i) => main.children[i];
+const read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };
+read('start', () => cs(row(5), 'color') + ' ' + cs(row(5).children[2], 'width') + ' ' + cs($('tail'), 'textDecorationLine'));
+row(5).children[0].classList.add('mark');
+read('mark', () => cs(row(5), 'color') + ' ' + cs(row(5).children[0], 'color') + ' ' + cs(row(6), 'color'));
+row(5).children[1].classList.add('on');
+read('on', () => cs(row(5).children[2], 'width') + ' ' + cs(row(6).children[2], 'width') + ' ' + cs(main, 'letterSpacing'));
+row(0).children[1].classList.add('on');
+read('first', () => cs(row(0).children[2], 'width') + ' ' + cs(main, 'letterSpacing') + ' ' + cs(row(9).children[0], 'letterSpacing'));
+row(0).children[1].className = 'note';
+row(5).children[1].className = 'note';
+read('off', () => cs(row(5).children[2], 'width') + ' ' + cs(main, 'letterSpacing'));
+$('l2').classList.add('sel');
+read('sel', () => cs($('l0'), 'fontWeight') + ' ' + cs($('l1'), 'fontWeight') + ' ' + cs($('l2'), 'fontWeight'));
+$('l2').classList.add('far');
+read('far', () => cs($('l0'), 'fontStyle') + ' ' + cs($('l1'), 'fontStyle') + ' ' + cs($('l3'), 'fontStyle'));
+$('b2').remove();
+read('gone', () => cs($('l0'), 'fontStyle') + ' ' + cs($('l1'), 'fontStyle'));
+const mark = document.createElement('i');
+mark.className = 'mark';
+$('box').appendChild(mark);
+read('boxed', () => cs($('box'), 'color') + ' ' + cs($('tail'), 'textDecorationLine'));
+row(5).children[0].remove();
+read('unmarked', () => cs(row(5), 'color') + ' ' + cs(row(5).children[0], 'color'));
+$('out').textContent = out.join('\n');
+main.textContent = '';
+</script>

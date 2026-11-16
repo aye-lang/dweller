@@ -1,0 +1,21 @@
+import std
+
+fn pumpSockets() bool {
+    let all = sockets orelse return false
+    var connecting = false
+
+    for k in all.all.items() {
+        if k.phase == SocketPhase.Connecting {
+            connecting = true
+        } else if k.phase != SocketPhase.Closed {
+            flushSocket(k)
+            readSocket(k)
+        }
+
+        if k.phase == SocketPhase.Closing && std.time.monotonicMs() - k.closing_since > SOCKET_CLOSE_MS {
+            failSocket(k)
+        }
+    }
+
+    return connecting
+}
