@@ -1,0 +1,25 @@
+import paint
+import std.math
+import std.mem.AllocError
+
+extern fn aye_std_monotonic_ns() u64
+
+fn drawFrame(app: *mut App, w: *mut Window) AllocError!void {
+    let start = aye_std_monotonic_ns()
+
+    try sizeCanvas(app, w)
+    try update(app)
+
+    if app.list == null {
+        app.list = try paint.build(app.alloc, app.tree.?)
+    }
+
+    let list = &app.list.?
+
+    clampScroll(app, list.height)
+    w.canvas.clear(list.background)
+    try paint.render(list, &mut w.canvas, paint.View { scale: w.scale, dx: 0.0, dy: -math.round(app.scroll * w.scale) }, &mut w.painter)
+    present(w)
+    app.redraw = false
+    noteFrame(w, (aye_std_monotonic_ns() - start) / 1000)
+}

@@ -348,6 +348,20 @@ tab's page clock, as in `dweller agent`, also in a window.
 {"id":1,"ok":true,"result":"ran 6 calls","value":{"checked":true,"name":"Ada"},"log":[],"calls":6,"url":"file:///.../form.html","title":"Sign up"}
 ```
 
+## Native apps
+
+An app built on the engine without the browser (`browser/shell/`,
+`examples/native/counter`) serves the JSON lines above on its own stdio:
+`APP --agent [--width PX] [--height PX]`. The commands are `snapshot`,
+`click`, `type`, `press` and `scroll`, with the same response fields; `url`
+is the app's address (`app:counter`) and `title` its title. The snapshot
+has the roles the shell knows: `heading`, `paragraph`, `button`,
+`textbox`, `list`, `listitem`, `text`, and `generic` for another element
+with a click handler. `click` runs the app's handler, as a click in its
+window does. The other commands answer `unknown command`. The test
+`native_counter_agent` sends one session to the counter app and to
+`dweller agent` on the same app as a page, and the answers are equal.
+
 ## MCP
 
 `dweller mcp` is an MCP server over stdio: JSON-RPC 2.0 messages, one

@@ -7,6 +7,9 @@
   as Chrome's `OfflineAudioContext` rendered them; the test compares
   Dweller's lines with it within 1e-3 (NaN must be NaN). `effects.txt` is the
   other lines, also from Chrome.
+- `times.html`, `times.txt`: Q1.12 (`webaudio_source_times`). The expected
+  lines are the values WPT's `audiobuffersource-basic.html` and
+  `audiobuffersource-playbackrate-negative.html` assert.
 
 To make them again, open the page in Chrome and take the text of `#out`:
 

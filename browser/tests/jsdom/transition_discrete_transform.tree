@@ -1,0 +1,18 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "transition-behavior: allow-discrete on a transform that cannot interpolate"
+      "\n"
+    <body>
+      <div id="plain" style="transition: transform 100s linear -30s; transform: matrix(3, 0, 0, 3, 0, 0); transition-behavior: normal;">
+      "\n"
+      <div id="discrete" style="transition: transform 100s linear -60s; transform: matrix(3, 0, 0, 3, 0, 0); transition-behavior: allow-discrete;">
+      "\n"
+      <pre id="out">
+        "normal matrix(3, 0, 0, 3, 0, 0)\nallow-discrete 0.3 matrix3d(2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)\nallow-discrete 0.6 matrix(3, 0, 0, 3, 0, 0)\n"
+      "\n"
+      <script>
+        "\nfunction log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\\n'; }\nconst singular = 'matrix3d(2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)';\n\nfunction at(id, behavior, delay) {\n  const el = document.getElementById(id);\n  el.style.transition = 'none';\n  el.style.transform = singular;\n  getComputedStyle(el).transform;\n  el.style.transition = 'transform 100s linear ' + delay;\n  el.style.transitionBehavior = behavior;\n  el.style.transform = 'matrix(3, 0, 0, 3, 0, 0)';\n  return getComputedStyle(el).transform;\n}\n\nlog('normal', at('plain', 'normal', '-30s'));\nlog('allow-discrete 0.3', at('discrete', 'allow-discrete', '-30s'));\nlog('allow-discrete 0.6', at('discrete', 'allow-discrete', '-60s'));\n"
+      "\n"

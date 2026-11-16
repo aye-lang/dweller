@@ -1,0 +1,23 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn sendAttaches(tp: *mut TabProcess) AllocError!void {
+    var out = text.Builder.init(tp.url.alloc)
+    defer out.deinit()
+
+    while tp.gone.len == 0 && tp.outbox.len() == 0 && tp.attaches.len() > 0 {
+        var fds = [1]i32{tp.attaches.items()[0].fd}
+
+        out.clear()
+        try ipc.encode(&mut out, tp.tab, ipc.Message.AttachTab { context: tp.attaches.items()[0].context })
+
+        let sent = try ipc.sendFds(tp.url.alloc, tp.fd, out.bytes(), fds[..])
+
+        if sent <= 0 { return }
+
+        closeFd(fds[0])
+        _ = tp.attaches.orderedRemove(0)
+        try tp.outbox.append(out.bytes()[sent as usize..])
+    }
+}

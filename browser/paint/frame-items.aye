@@ -1,11 +1,17 @@
+import layout
 import std.mem.AllocError
 
-fn frameItems(b: *mut Builder, inner: *DisplayList, scroll: f64, r: Rect) AllocError!void {
+fn frameItems(b: *mut Builder, inner: *DisplayList, fv: layout.FrameView, r: Rect) AllocError!void {
+    let at = b.list.items.len()
+
+    try b.list.frames.append(FramePlace { at: at, tree: fv.tree })
     try b.add(Item.Clip { r: r })
     try b.add(Item.Fill { r: r, c: inner.background })
 
+    for f in inner.frames.items() { try b.list.frames.append(FramePlace { at: at + 2 + f.at, tree: f.tree }) }
+
     for it in inner.items.items() {
-        try b.add(moved(it, r.x, r.y - scroll))
+        try b.add(moved(it, r.x, r.y - fv.scroll))
     }
 
     try b.add(Item.Unclip)

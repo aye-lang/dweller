@@ -6,7 +6,7 @@ let FIRST_SPACE_TAB: u32 = 536870912
 
 var next_space_tab: u32 = FIRST_SPACE_TAB
 
-fn hostTab(ui: *mut Ui, sp: *mut Space) AllocError!?*mut TabSlot {
+fn hostTab(ui: *mut Ui, sp: *mut Space, from: AttachFrom) AllocError!?*mut TabSlot {
     if sp.own_tabs.len() >= MAX_TABS { return null }
 
     let slot = try newSlot(ui.alloc, ui.measure, ui.painter.system, next_space_tab)
@@ -17,7 +17,11 @@ fn hostTab(ui: *mut Ui, sp: *mut Space) AllocError!?*mut TabSlot {
     slot.agent = true
     slot.partition = sp.partition
     engine.setContextAgent(slot.session.tab.context, true)
-    slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition)
+    slot.process = try attachTabProcess(from, slot.id)
+
+    if slot.process == null {
+        slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition)
+    }
 
     if sp.paused {
         if slot.process |tp| { try ipc.encode(&mut tp.outbox, 0, ipc.Message.AgentPaused { on: 1 }) }

@@ -1,0 +1,22 @@
+fn readSocket(k: *mut Socket) {
+    var chunk = @zeroed([16384]u8)
+
+    while k.job |job| {
+        var got: usize = 0
+        let code = curl_easy_recv(job.curl, chunk[..].ptr, chunk.len, &mut got)
+
+        if code == CURLE_AGAIN {
+            return
+        }
+
+        if code != 0 || got == 0 {
+            return failSocket(k)
+        }
+
+        k.incoming.append(chunk[..got]) catch |e| {
+            return failSocket(k)
+        }
+
+        takeIncoming(k)
+    }
+}

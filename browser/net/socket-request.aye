@@ -1,0 +1,43 @@
+import std.mem.AllocError
+import std.text
+import url.Url
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-4.1
+fn socketRequest(out: *mut text.Builder, at: *Url, key: []u8, protocols: []u8, lines: []u8) AllocError!void {
+    try out.append("GET ")
+    try out.append(at.path)
+
+    if at.has_query {
+        try out.appendByte('?')
+        try out.append(at.query)
+    }
+
+    try out.append(" HTTP/1.1\r\nHost: ")
+    try out.append(at.host)
+
+    if at.port.len > 0 {
+        try out.appendByte(':')
+        try out.append(at.port)
+    }
+
+    try out.append("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ")
+    try out.append(key)
+    try out.append("\r\n")
+
+    if protocols.len > 0 {
+        try out.append("Sec-WebSocket-Protocol: ")
+        try out.append(protocols)
+        try out.append("\r\n")
+    }
+
+    var more = text.split(lines, "\n")
+
+    while more.next() |line| {
+        if line.len > 0 {
+            try out.append(line)
+            try out.append("\r\n")
+        }
+    }
+
+    try out.append("\r\n")
+}

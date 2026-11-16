@@ -1,0 +1,17 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+fn restyleRoots(app: *mut App, roots: *mut List(NodeId), shallow: *mut List(bool)) AllocError!void {
+    for el in app.dirty.items() {
+        try roots.append(el)
+        try shallow.append(false)
+    }
+
+    for el in app.restyle.items() {
+        if app.doc.isLive(el) && app.doc.isConnected(el) {
+            try roots.append(el)
+            try shallow.append(true)
+        }
+    }
+}

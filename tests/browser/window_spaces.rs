@@ -175,9 +175,9 @@ fn window_spaces() {
 
 /// Q2.12: with `DWELLER_SPACES=renderer` the window hosts each Space
 /// itself, as a group of tabs whose pages run in renderers (no `dweller
-/// space` process), and every session answers as with a Space process,
-/// but `popup`: a popup opens in a renderer of its own, where its
-/// `opener` is null until openers reach across renderers (Q2.12's card).
+/// space` process), and every session answers as with a Space process;
+/// a same-site popup runs in its opener's renderer (Q2.12d), so `popup`
+/// sees its `opener`.
 #[test]
 fn window_spaces_in_renderer() {
     window_spaces_with(&[("DWELLER_SPACES", "renderer")]);
@@ -197,7 +197,6 @@ fn window_spaces_with(env: &[(&str, &str)]) {
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .filter(|p| env.is_empty() || !p.ends_with("popup.jsonl"))
         .collect();
     inputs.sort();
     assert!(
@@ -596,6 +595,56 @@ fn window_spaces_crash_in_renderer() {
         c.stream.shutdown(std::net::Shutdown::Write).unwrap();
         assert_eq!(c.line(), "");
     }
+    let out = window.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "the window: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    no_spaces_left(pid).unwrap();
+}
+
+/// Q2.12d: a hosted Space's popup that keeps its opener shares the
+/// opener's renderer (one process for the Space's two tabs). When that
+/// process dies, the request that was out and every later page command
+/// on either tab fail with "renderer crashed", `tabs` lists both as
+/// `crashed`, and the Space and the window go on.
+#[test]
+fn window_spaces_popup_crash_in_renderer() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let sock = format!("target/sockets/spaces-popup-crash-{}.sock", std::process::id());
+    let window = spaces_window_env(&sock, &["--spaces"], HOSTED);
+    let pid = window.id();
+    let mut a = AgentConn::open(&sock);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/popup/links.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":2,"cmd":"click","ref":"e3"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":3,"cmd":"tabs"}"#);
+    assert!(got.contains("2 tabs"), "{got}");
+    let shared = spaces_of(pid);
+    assert_eq!(shared.len(), 1, "the popup shares its opener's renderer: {shared:?}");
+    a.send(r#"{"id":4,"cmd":"eval","expression":"(function () { var t = Date.now(); while (Date.now() - t < 5000) {} return 1 })()"}"#);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let status = Command::new("kill").args(["-9", &shared[0].to_string()]).status().unwrap();
+    assert!(status.success());
+    let crashed = |id: u32| format!("{{\"id\":{id},\"ok\":false,\"error\":\"renderer crashed\"}}\n");
+    assert_eq!(a.line(), crashed(4));
+    let (got, _) = a.ask(r#"{"id":5,"cmd":"tabs"}"#);
+    assert_eq!(got.matches("\"crashed\":true").count(), 2, "{got}");
+    let (got, _) = a.ask(r#"{"id":6,"cmd":"tab_select","tab":2}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let (got, _) = a.ask(r#"{"id":7,"cmd":"snapshot"}"#);
+    assert_eq!(got, crashed(7));
+    let (got, _) = a.ask(r#"{"id":8,"cmd":"spaces"}"#);
+    assert!(got.contains("\"mine\":true") && !got.contains("crashed"), "{got}");
+    assert_eq!(spaces_of(pid).len(), 0);
+    a.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(a.line(), "");
     let out = window.wait_with_output().unwrap();
     assert!(
         out.status.success() && out.stderr.is_empty(),

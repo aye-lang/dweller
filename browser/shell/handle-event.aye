@@ -1,0 +1,27 @@
+import sdl
+import std.mem.AllocError
+import std.text
+
+fn handleEvent(app: *mut App, w: *mut Window, ev: *sdl.SDL_Event) AllocError!void {
+    if ev.kind == sdl.SDL_QUIT {
+        w.quit = true
+    } else if ev.kind == sdl.SDL_MOUSEBUTTONDOWN && ev.button.button == sdl.SDL_BUTTON_LEFT {
+        try clickAt(app, ev.button.x as f64, ev.button.y as f64)
+    } else if ev.kind == sdl.SDL_MOUSEWHEEL {
+        scrollBy(app, -(ev.wheel.precise_y as f64) * WHEEL_STEP)
+    } else if ev.kind == sdl.SDL_TEXTINPUT {
+        try typeText(app, typedOf(&ev.text))
+    } else if ev.kind == sdl.SDL_KEYDOWN {
+        try pressKey(app, ev.key.keysym.sym)
+    } else if ev.kind == sdl.SDL_WINDOWEVENT && ev.window.event == sdl.SDL_WINDOWEVENT_SIZE_CHANGED {
+        try resize(app, ev.window.data1 as f64, ev.window.data2 as f64)
+    } else if ev.kind == sdl.SDL_WINDOWEVENT && ev.window.event == sdl.SDL_WINDOWEVENT_EXPOSED {
+        app.redraw = true
+    }
+}
+
+fn typedOf(te: *sdl.SDL_TextInputEvent) []u8 {
+    let end = text.indexOf(te.text[..], "\x00") orelse te.text.len
+
+    return te.text[0..end]
+}

@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn clickAt(app: *mut App, x: f64, y: f64) AllocError!void {
+    try update(app)
+
+    let t = app.tree.?
+    let root = t.root orelse return
+    let hit = boxAt(t, root, x, y + app.scroll) orelse return
+    let el = t.bx(hit).node orelse return
+
+    try clickNode(app, el)
+}
