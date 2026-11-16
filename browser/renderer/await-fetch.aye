@@ -8,6 +8,13 @@ fn awaitFetch(r: *mut TabRenderer, alloc: Allocator, id: u32, nav: bool, href: [
     var f = Fetched.init(alloc)
     defer f.deinit()
     var buf = @zeroed([65536]u8)
+    let outer = r.outer
+
+    if nav && r.preview.on {
+        r.outer = id
+    }
+
+    defer r.outer = outer
 
     while true {
         scanReplies(r, id, nav, href, &mut f) catch return net.FetchError.Network
@@ -15,6 +22,12 @@ fn awaitFetch(r: *mut TabRenderer, alloc: Allocator, id: u32, nav: bool, href: [
         if f.failed |code| { return net.fetchErrorOf(code) }
 
         if f.ended { return fetchedResponse(alloc, &f) catch return net.FetchError.OutOfMemory }
+
+        if r.outer == id {
+            previewArrived(r, href, &mut f) catch return net.FetchError.OutOfMemory
+
+            if !waitReadable(r.conn.fd, previewWait(r)) { continue }
+        }
 
         let n = ipc.recvFds(r.conn.fd, buf[..], &mut r.fds) catch return net.FetchError.Network
 

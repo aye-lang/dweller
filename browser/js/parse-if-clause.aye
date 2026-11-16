@@ -1,0 +1,22 @@
+// https://tc39.es/ecma262/#sec-functiondeclarations-in-ifstatement-statement-clauses
+
+fn parseIfClause(p: *mut Parser) SyntaxErr!u32 {
+    if !p.at(Tok.KwFunction) {
+        return parseSubStatement(p)
+    }
+
+    if p.strict || p.kindAt(1) == Tok.Star {
+        return p.fail("In strict mode code, functions can only be declared at top level or inside a block.")
+    }
+
+    let start = p.pos
+    let m = p.mark()
+
+    try p.push(try p.functionDecl(false))
+
+    let n = p.count(m)
+    let l = try p.list(m)
+    let scope = try p.newScope()
+
+    return p.mk(Node.Block { list: l, n: n, scope: scope }, start)
+}

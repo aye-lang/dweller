@@ -1,0 +1,16 @@
+import std.text
+
+test "context_closed goes to the renderer and round-trips" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let closed = try roundTrip(&mut out, 7, Message.ContextClosed { context: 5 })
+
+    match closed.message {
+        .ContextClosed { context } => @expectEqual(5, context)
+        _ => @expect(false)
+    }
+
+    @expectEqual(90, Message.ContextClosed { context: 0 }.kind())
+    @expect(!fromRenderer(Message.ContextClosed { context: 0 }))
+}

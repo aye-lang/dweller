@@ -1,0 +1,33 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#exponent-funcs
+fn exponentialValue(name: []u8, args: []Quantity) ?Quantity {
+    for q in args {
+        if !q.number {
+            return null
+        }
+    }
+
+    if args.len == 2 && text.eqlIgnoreCase(name, "pow") {
+        return numberQ(math.pow(args[0].num, args[1].num))
+    }
+
+    if args.len == 2 && text.eqlIgnoreCase(name, "log") {
+        return numberQ(math.log(args[0].num) / math.log(args[1].num))
+    }
+
+    if args.len != 1 || text.eqlIgnoreCase(name, "pow") {
+        return null
+    }
+
+    if text.eqlIgnoreCase(name, "sqrt") {
+        return numberQ(math.sqrt(args[0].num))
+    }
+
+    if text.eqlIgnoreCase(name, "exp") {
+        return numberQ(math.exp(args[0].num))
+    }
+
+    return numberQ(math.log(args[0].num))
+}

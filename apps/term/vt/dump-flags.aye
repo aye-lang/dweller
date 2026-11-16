@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+fn dumpFlags(t: *mut Term, out: *mut text.Builder) AllocError!void {
+    if !t.cursor_visible {
+        try out.append(" hidden")
+    }
+
+    if t.on_alternate {
+        try out.append(" alternate")
+    }
+
+    if t.app_cursor {
+        try out.append(" app-cursor")
+    }
+
+    try out.append(" scrollback ")
+    try out.appendUint(t.scrollback.len() as u64)
+
+    if t.title.len() > 0 {
+        try out.append(" title \"")
+        try out.append(t.title.bytes())
+        try out.appendByte('"')
+    }
+
+    if t.reply.len() > 0 {
+        try out.append(" reply ")
+        try dumpReply(t.reply.bytes(), out)
+    }
+
+    try out.appendByte('\n')
+}

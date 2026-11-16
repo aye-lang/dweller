@@ -1,0 +1,31 @@
+import std
+import std.mem.Allocator
+import std.text
+import vt
+
+fn dumpStream(alloc: Allocator, args: [][]u8) !i32 {
+    let bytes = try std.fs.readFile(alloc, args[0])
+    defer alloc.free(bytes)
+
+    var term = try vt.Term.init(alloc, sizeArg(args, "--cols", 80), sizeArg(args, "--rows", 24))
+    defer term.deinit()
+
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try term.feed(bytes)
+    try vt.dump(&mut term, &mut out)
+    @print(out.bytes())
+
+    return 0
+}
+
+fn sizeArg(args: [][]u8, name: []u8, fallback: usize) usize {
+    for i in 1..args.len {
+        if text.eql(args[i - 1], name) {
+            return (text.parseInt(args[i]) catch fallback as i64) as usize
+        }
+    }
+
+    return fallback
+}

@@ -1,0 +1,13 @@
+import dweller.paint
+import std
+import std.mem.Allocator
+
+fn saveView(alloc: Allocator, v: *View, path: []u8) !void {
+    let png = try paint.encodePng(alloc, v.canvas.width, v.canvas.height, v.canvas.pixels)
+    defer alloc.free(png)
+
+    let f = try std.fs.create(path)
+    defer f.close()
+
+    try f.write(png)
+}

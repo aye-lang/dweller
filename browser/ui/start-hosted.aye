@@ -1,12 +1,9 @@
 import net
 import std.mem.AllocError
-import std.text
 
 fn startHosted(ui: *mut Ui, c: *mut Conn, k: usize, name: []u8, mcp: bool, shared: bool) AllocError!void {
     let a = ui.agents.?
-    let sp = try newSpace(ui, 0, -1, text.Builder.init(ui.alloc), mcp, shared, name)
-
-    sp.hosted = true
+    let sp = try newSpace(ui, shared, name)
 
     if !shared {
         sp.partition = sp.id
@@ -18,6 +15,4 @@ fn startHosted(ui: *mut Ui, c: *mut Conn, k: usize, name: []u8, mcp: bool, share
     c.space = sp
 
     if try hostTab(ui, sp, AttachFrom { context: 0 }) |slot| { c.tab = slot.in_space }
-
-    try listsChanged(ui)
 }
