@@ -1,0 +1,23 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn usesMath(alloc: Allocator, value: []u8) AllocError!bool {
+    if std.mem.indexOf(value, '(') == null {
+        return false
+    }
+
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    for t in toks.items() {
+        if isMathFunction(t) {
+            return true
+        }
+    }
+
+    return false
+}

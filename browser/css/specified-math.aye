@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn specifiedMath(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let all = toks.items()
+
+    if all.len == 0 || !isMathFunction(all[0]) || blockEnd(all, 0) != all.len - 1 || !isAbsoluteMath(all) {
+        return writeRaw(text.trim(value), out)
+    }
+
+    return writeSimplifiedMath(all, text.trim(value), out)
+}

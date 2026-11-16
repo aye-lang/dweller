@@ -10,6 +10,16 @@ pub fn specifiedValue(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
         return false
     }
 
+    if text.indexOf(value, "var(") == null && (try usesMath(alloc, value)) {
+        if !(try parsesAs(alloc, prop, value)) {
+            return false
+        }
+
+        if !isColorProperty(prop) {
+            return specifiedMath(alloc, value, out)
+        }
+    }
+
     if text.eql(prop, "all") && !isWideOrEmpty(value) && text.indexOf(value, "var(") == null {
         return false
     }
