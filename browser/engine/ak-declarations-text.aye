@@ -1,0 +1,19 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn akDeclarationsText(it: *mut Interp, a: Args) JsError!Value {
+    let b = try it.builder()
+    defer it.release(b)
+
+    try argText(it, a, 0, b)
+
+    var out = text.Builder.init(it.alloc)
+    defer out.deinit()
+
+    try declarationsText(it.alloc, b.bytes(), &mut out)
+
+    return it.newString(out.bytes())
+}

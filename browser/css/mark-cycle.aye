@@ -1,0 +1,20 @@
+let VAR_RESOLVING: u8 = 1
+let VAR_DONE: u8 = 2
+let VAR_INVALID: u8 = 3
+let VAR_IN_CYCLE: u8 = 4
+
+var resolving_top: ?*mut CustomVar = null
+
+fn markCycle(member: *mut CustomVar) {
+    var cur = resolving_top
+
+    while cur |cv| {
+        cv.state = VAR_IN_CYCLE
+
+        if cv == member {
+            return
+        }
+
+        cur = cv.below
+    }
+}

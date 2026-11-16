@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn snapshot(app: *mut App, alloc: Allocator) AllocError![]u8 {
+    let sem = try buildSem(app, alloc)
+    var out = text.Builder.init(alloc)
+
+    for c in sem.at(0).children.items() {
+        try writeSem(&sem, c, 0, &mut out)
+    }
+
+    return out.bytes()
+}

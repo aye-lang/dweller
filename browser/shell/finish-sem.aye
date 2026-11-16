@@ -1,0 +1,32 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn finishSem(sem: *mut Sem, i: usize) AllocError!void {
+    var kept = List(usize).init(sem.alloc)
+
+    for c in sem.at(i).children.items() {
+        try finishSem(sem, c)
+
+        if text.eql(sem.at(c).role, "text") {
+            sem.at(c).name = try collapsed(sem.alloc, sem.at(c).name)
+        }
+
+        if !isEmptySem(sem, c) {
+            try kept.append(c)
+        }
+    }
+
+    sem.at(i).children = kept
+
+    if i != 0 && kept.len() == 1 && text.eql(sem.at(kept.items()[0]).role, "text") {
+        sem.at(i).inline = sem.at(kept.items()[0]).name
+        sem.at(i).children = List(usize).init(sem.alloc)
+    }
+}
+
+fn isEmptySem(sem: *Sem, i: usize) bool {
+    let n = sem.at(i)
+
+    return n.ref == 0 && n.name.len == 0 && n.inline.len == 0 && n.children.len() == 0
+}
