@@ -268,7 +268,9 @@ fn jsdom_sheet_changes_restyle_by_rule() {
 /// beside 200 rows. A class on `body` that a selector looks at restyles
 /// the elements its set names (202), not the document because a host is
 /// below (1222 before); a class on a slotted child or under one restyles
-/// that element, not its host's subtree (1 to 3 elements, 10 before).
+/// that element, not its host's subtree (2 to 4 elements, 10 before); a
+/// class inside a shadow tree restyles what its tree's sheet names (2, 7
+/// before), and the host's subtree only when a slot's values change.
 #[test]
 fn jsdom_shadow_restyle_keeps_roots_shallow() {
     let out = dweller_command()
@@ -290,7 +292,7 @@ fn jsdom_shadow_restyle_keeps_roots_shallow() {
         .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
         .collect();
     assert!(
-        counts.len() >= 9 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 8,
+        counts.len() >= 11 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 12 && counts[8] <= 3,
         "{counts:?}"
     );
 }
