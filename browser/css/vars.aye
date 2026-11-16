@@ -137,19 +137,16 @@ pub fn substituteVars(alloc: Allocator, toks: []Token, level: ?*mut CustomLevel,
             args = toks[i + 1..close]
         }
         i = close + 1
-        let j = skipWhitespace(args, 0)
-        if j >= args.len || args[j].kind != Tok.Ident || !text.startsWith(args[j].text, "--") {
-            return null
-        }
-        let k = skipWhitespace(args, j + 1)
+        let comma = topComma(args)
         var fallback: ?[]Token = null
-        if k < args.len {
-            if args[k].kind != Tok.Comma {
-                return null
-            }
-            fallback = args[k + 1..]
+        if comma < args.len {
+            fallback = args[comma + 1..]
         }
-        if try lookupVar(alloc, level, args[j].text, depth) |v| {
+        var found: ?[]Token = null
+        if try varName(alloc, args[..comma], level, depth) |name| {
+            found = try lookupVar(alloc, level, name, depth)
+        }
+        if found |v| {
             for x in v {
                 try out.append(x)
             }
