@@ -1,0 +1,36 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+// https://html.spec.whatwg.org/multipage/links.html#downloading-resources
+pub fn downloadName(alloc: Allocator, disposition: []u8, suggested: []u8, at: *Url, out: *mut text.Builder) AllocError!void {
+    var raw = text.Builder.init(alloc)
+    defer raw.deinit()
+
+    try dispositionName(alloc, disposition, &mut raw)
+
+    if raw.len() == 0 {
+        try raw.append(suggested)
+    }
+
+    if raw.len() == 0 {
+        let segment = try url.percentDecode(alloc, lastSegment(at.path))
+        defer alloc.free(segment)
+
+        if frameTextValid(segment) { try raw.append(segment) }
+    }
+
+    try safeFileName(raw.bytes(), out)
+}
+
+fn lastSegment(path: []u8) []u8 {
+    var from: usize = 0
+
+    for i, c in path {
+        if c == '/' { from = i + 1 }
+    }
+
+    return path[from..]
+}
