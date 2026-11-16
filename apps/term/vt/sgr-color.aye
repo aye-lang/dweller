@@ -1,0 +1,26 @@
+fn sgrColor(t: *mut Term, at: usize) usize {
+    let p = &t.parser
+    let kind = p.param(at + 1, 0)
+    var color = DEFAULT_COLOR
+    var last = at + 2
+
+    if kind == 5 {
+        color = PALETTE_COLOR | (p.param(at + 2, 0) & 0xFF)
+    } else if kind == 2 {
+        let colon = (p.colons >> at as u32) & 1 == 1 && p.count >= at + 6
+        let first = at + 2 + colon as usize
+
+        color = RGB_COLOR | (p.param(first, 0) & 0xFF) << 16 | (p.param(first + 1, 0) & 0xFF) << 8 | (p.param(first + 2, 0) & 0xFF)
+        last = first + 2
+    } else {
+        return p.count
+    }
+
+    if p.params[at] == 38 {
+        t.pen.fg = color
+    } else {
+        t.pen.bg = color
+    }
+
+    return last
+}

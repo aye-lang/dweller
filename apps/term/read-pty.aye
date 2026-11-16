@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import vt
+
+fn readPty(p: *mut Pty, t: *mut vt.Term, wait_ms: i32) AllocError!bool {
+    var chunk = @zeroed([16384]u8)
+    var fed = false
+    var wait = wait_ms
+
+    for _ in 0..16 {
+        var fds = [1]PollFd{PollFd { fd: p.fd, events: 1, revents: 0 }}
+
+        if p.closed || poll(fds[..].ptr, 1, wait) <= 0 {
+            break
+        }
+
+        let n = read(p.fd, chunk[..].ptr, chunk.len)
+
+        if n <= 0 {
+            p.closed = true
+            break
+        }
+
+        try t.feed(chunk[0..n as usize])
+        fed = true
+        wait = 0
+    }
+
+    writePty(p, t.reply.bytes())
+    t.reply.clear()
+
+    return fed
+}

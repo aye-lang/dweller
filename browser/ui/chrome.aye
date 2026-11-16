@@ -62,18 +62,14 @@ fn uiFont(size: f64) font.Font {
 
 pub fn addressRect(ui: *mut Ui) paint.Rect {
     var w = ui.win_w as f64 - ADDRESS_X - PAD
-    if ui.agents |a| {
-        if a.spaces {
-            // It ends before the chips, or the pause button.
-            let c = chipsOf(ui)
-            var left = pauseRect(ui).x
-            if c.n > 0 {
-                left = c.x[0]
-            }
-            w = left - PAD - ADDRESS_X
-        } else {
-            w -= AGENT_CHROME
+    if ui.agents != null {
+        // It ends before the chips, or the pause button.
+        let c = chipsOf(ui)
+        var left = pauseRect(ui).x
+        if c.n > 0 {
+            left = c.x[0]
         }
+        w = left - PAD - ADDRESS_X
     }
     if w < 20.0 {
         w = 20.0
@@ -132,9 +128,6 @@ struct Chips {
 fn chipsOf(ui: *mut Ui) Chips {
     var c = Chips { n: 0, id: @zeroed([9]u32), x: @zeroed([9]f64), w: @zeroed([9]f64), name_w: CHIP_NAME }
     let a = ui.agents orelse return c
-    if !a.spaces {
-        return c
-    }
     let list = spacesById(a)
     var count: usize = 0
     for s in list {

@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#serial-relative-color
+fn writeUnresolvedRelative(toks: []Token, out: *mut text.Builder) AllocError!bool {
+    let start = skipWhitespace(toks, skipWhitespace(toks, 1) + 1)
+    let end = skipComponent(toks, start)
+
+    try writeColorFunctionName(toks[0].text, out)
+    try out.append("(from ")
+
+    if end == start + 1 && toks[start].kind == Tok.Ident {
+        try writeColorFunctionName(toks[start].text, out)
+    } else {
+        try writeTokens(toks[start..end], out)
+    }
+
+    try writeRelativeRest(toks[end..], out)
+
+    return true
+}

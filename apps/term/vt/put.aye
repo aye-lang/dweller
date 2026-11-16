@@ -1,0 +1,19 @@
+fn put(t: *mut Term, code: u32, width: usize) {
+    let s = t.screen()
+    let line = t.row(s.y)
+
+    line[s.x] = Cell { code: code, fg: t.pen.fg, bg: t.pen.bg, attrs: t.pen.attrs }
+
+    if width == 2 {
+        line[s.x].wide = WIDE_HEAD
+        line[s.x + 1] = Cell { code: ' ', fg: t.pen.fg, bg: t.pen.bg, attrs: t.pen.attrs, wide: WIDE_TAIL }
+    }
+
+    t.dirty[s.y] = true
+    s.x += width
+
+    if s.x >= t.cols {
+        s.x = t.cols - 1
+        s.wrap_next = true
+    }
+}

@@ -1,0 +1,16 @@
+import encoding
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+// blink: core/html/parser/html_document_parser.cc
+pub fn previewPage(alloc: Allocator, target: *Url, res: *net.Response) AllocError!*mut Page {
+    let p = try pageOf(alloc, target, res, encoding.Encoding.Windows1252)
+
+    p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
+
+    if p.scripts_pending { useStorage(alloc) }
+
+    return p
+}

@@ -1,0 +1,17 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-values-5/#progress-func
+fn progressValue(args: []Quantity) ?Quantity {
+    if args.len != 3 {
+        return null
+    }
+
+    let from = scalarsOf(args[0], args[1]) orelse return null
+    let to = scalarsOf(args[0], args[2]) orelse return null
+
+    if from.unit != to.unit || to.b == from.b {
+        return numberQ(0.0)
+    }
+
+    return numberQ(math.clamp((from.a - from.b) / (to.b - from.b), 0.0, 1.0))
+}

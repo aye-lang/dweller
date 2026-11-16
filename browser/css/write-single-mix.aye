@@ -1,0 +1,30 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#serial-color-mix
+fn writeSingleMix(toks: []Token, comma: ?usize, out: *mut text.Builder) AllocError!bool {
+    var a = skipWhitespace(toks, 1)
+
+    try out.append("color-mix(")
+
+    if comma |at| {
+        try writeMixMethod(toks[a..at], out)
+        a = at + 1
+    }
+
+    let part = mixParts(toks[a..toks.len - 1]) orelse return false
+
+    if !(try writeSpecifiedColor(part.color, out)) {
+        return false
+    }
+
+    if part.pct >= 0.0 {
+        try out.appendByte(' ')
+        try writeNumber(part.pct, out)
+        try out.appendByte('%')
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

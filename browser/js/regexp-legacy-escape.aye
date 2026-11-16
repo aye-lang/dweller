@@ -1,0 +1,22 @@
+// https://tc39.es/ecma262/#prod-annexB-LegacyOctalEscapeSequence
+
+fn regexpLegacyEscape(rp: *mut RParser) u32 {
+    let first = rp.peek()
+
+    if first >= '8' {
+        rp.pos += 1
+
+        return first as u32
+    }
+
+    var value: u32 = 0
+    var digits: u32 = 0
+
+    while digits < 3 && rp.more() && rp.peek() >= '0' && rp.peek() <= '7' && value * 8 + (rp.peek() - '0') as u32 <= 0xFF {
+        value = value * 8 + (rp.peek() - '0') as u32
+        rp.pos += 1
+        digits += 1
+    }
+
+    return value
+}

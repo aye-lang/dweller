@@ -1,0 +1,23 @@
+import ipc
+import std.mem.Allocator
+import std.sync.Atomic
+import std.sync.Mutex
+import std.thread.Thread
+
+let WAKER_FDS: usize = 96
+
+struct IoWaker {
+    alloc: Allocator
+    lock: Mutex
+    fds: [96]ipc.PollFd = @zeroed([96]ipc.PollFd)
+    count: usize = 0
+    timeout: i32 = -1
+    deadline: u64 = 0
+    pipe: [2]i32
+    told: Atomic(u32)
+    fired: Atomic(u32)
+    stopped: Atomic(u32)
+    thread: ?Thread = null
+}
+
+var io_waker: ?*mut IoWaker = null

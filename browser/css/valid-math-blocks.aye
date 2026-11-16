@@ -1,0 +1,27 @@
+// spec: https://drafts.csswg.org/css-values-4/#calc-syntax
+fn validMathBlocks(toks: []Token) bool {
+    var i: usize = 0
+
+    while i < toks.len {
+        if !isMathFunction(toks[i]) {
+            i += 1
+            continue
+        }
+
+        let end = skipComponent(toks, i)
+
+        if !mathParses(toks[i..end]) {
+            return false
+        }
+
+        i = end
+    }
+
+    return true
+}
+
+fn mathParses(toks: []Token) bool {
+    var p = CalcParser { toks: toks, i: 0 }
+
+    return p.term() != null && skipWhitespace(toks, p.i) >= toks.len
+}

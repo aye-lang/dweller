@@ -1,0 +1,26 @@
+// spec: https://drafts.csswg.org/css-color-4/#rgb-functions
+fn legacyFunction(hsl: bool, args: []Token) ?Color {
+    var buf = [64]Token{token(Tok.Number), ..}
+    var n: usize = 0
+    var i: usize = 0
+
+    while i < args.len && n < 64 {
+        let end = skipComponent(args, i)
+
+        if isMathFunction(args[i]) {
+            buf[n] = mathToken(args[i..end]) orelse return null
+            i = end
+        } else {
+            buf[n] = args[i]
+            i += 1
+        }
+
+        n += 1
+    }
+
+    if hsl {
+        return hslFunction(buf[..n])
+    }
+
+    return rgbFunction(buf[..n])
+}

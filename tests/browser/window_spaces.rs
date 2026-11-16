@@ -103,28 +103,16 @@ fn window_agent_session(input: &Path, n: usize, env: &[(&str, &str)]) -> Result<
     Ok(got)
 }
 
-/// The Spaces the window `pid` started and that still run (`pgrep` on
-/// their sockets' directories, `/tmp/dweller-PID-*`), or with hosted
-/// Spaces (`HOSTED`) the window's renderers: each Space of these tests
-/// has one tab, and the person's tab has no renderer.
+/// The renderers of the window `pid` that still run: each Space of
+/// these tests has one tab unless the test opens more, and the person's
+/// tab has no renderer.
 fn spaces_of(pid: u32) -> Vec<u32> {
-    let processes = Command::new("pgrep")
-        .args(["-f", &format!("/tmp/dweller-{pid}-")])
-        .output()
-        .unwrap();
     let renderers = Command::new("pgrep")
         .args(["-P", &pid.to_string(), "-f", " --renderer 3 "])
         .output()
         .unwrap();
-    text(&processes.stdout)
-        .lines()
-        .chain(text(&renderers.stdout).lines())
-        .filter_map(|l| l.trim().parse().ok())
-        .collect()
+    text(&renderers.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()
 }
-
-// The environment of a window whose Spaces are hosted in it (Q2.12).
-const HOSTED: &[(&str, &str)] = &[("DWELLER_SPACES", "renderer")];
 
 /// After the window `pid` exited: none of its Spaces runs (within 5 s),
 /// and their sockets' directories are gone.
@@ -155,7 +143,7 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
 }
 
 /// The window (B9 R2, ui/spaces.aye): each connection is served by a
-/// Space, a process of its own, and the window copies the bytes.
+/// Space, tabs of its own whose pages run in renderers (Q2.12e).
 /// `browser/tests/agent/spaces/X.jsonl` is sent over the window's socket
 /// (through `dweller connect --mcp` for `X.mcp.jsonl`) while the window
 /// runs headless with the scripted events of `X.events` (`agents:N`
@@ -170,16 +158,6 @@ fn no_spaces_left(pid: u32) -> Result<(), String> {
 #[test]
 fn window_spaces() {
     window_spaces_with(&[]);
-}
-
-/// Q2.12: with `DWELLER_SPACES=renderer` the window hosts each Space
-/// itself, as a group of tabs whose pages run in renderers (no `dweller
-/// space` process), and every session answers as with a Space process;
-/// a same-site popup runs in its opener's renderer (Q2.12d), so `popup`
-/// sees its `opener`.
-#[test]
-fn window_spaces_in_renderer() {
-    window_spaces_with(&[("DWELLER_SPACES", "renderer")]);
 }
 
 fn window_spaces_with(env: &[(&str, &str)]) {
@@ -371,14 +349,6 @@ fn window_spaces_responsive() {
     window_spaces_responsive_with(&[]);
 }
 
-/// Q2.12b: the same with the Spaces hosted in the window (`HOSTED`): B's
-/// navigation is fetched in the background, so no loop iteration waits
-/// for the server.
-#[test]
-fn window_spaces_responsive_in_renderer() {
-    window_spaces_responsive_with(HOSTED);
-}
-
 fn window_spaces_responsive_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -401,9 +371,8 @@ fn window_spaces_responsive_with(env: &[(&str, &str)]) {
         r.b.1,
         r.b.0
     );
-    // The Spaces in the order their agents first asked: A, B, C. A hosted
-    // Space's `tabs` is answered by the window (Q2.12), so C sends none.
-    let hosted = !env.is_empty();
+    // The Spaces in the order their agents first asked: A, B. A Space's
+    // `tabs` is answered by the window (Q2.12), so C sends none.
     let mut names: Vec<&str> = Vec::new();
     for rec in &r.records {
         if let Record::Sent(name) = rec {
@@ -412,7 +381,7 @@ fn window_spaces_responsive_with(env: &[(&str, &str)]) {
             }
         }
     }
-    assert_eq!(names.len(), if hosted { 2 } else { 3 }, "{:?}", r.records);
+    assert_eq!(names.len(), 2, "{:?}", r.records);
     // The index of the `n`th (from 0) record equal to `want`.
     let nth = |n: usize, want: Record| {
         r.records
@@ -432,10 +401,9 @@ fn window_spaces_responsive_with(env: &[(&str, &str)]) {
     let (a_name, b_name) = (names[0].to_string(), names[1].to_string());
     let a_sent = nth(1, Record::Sent(a_name.clone()));
     let a_answer = nth(1, Record::Answer(a_name));
-    // B's `navigate`, after its `tabs` (which a hosted Space does not send).
-    let b_at = if hosted { 0 } else { 1 };
-    let b_sent = nth(b_at, Record::Sent(b_name.clone()));
-    let b_answer = nth(b_at, Record::Answer(b_name));
+    // B's `navigate` (its `tabs` is answered by the window).
+    let b_sent = nth(0, Record::Sent(b_name.clone()));
+    let b_answer = nth(0, Record::Answer(b_name));
     let loops_between = loops(a_sent, a_answer);
     assert!(
         loops_between >= 3 && b_sent < b_answer && loops(b_sent, b_answer) >= 3,
@@ -443,16 +411,6 @@ fn window_spaces_responsive_with(env: &[(&str, &str)]) {
          B's navigate out at {b_sent}, back at {b_answer}: {:?}",
         r.records
     );
-    if !hosted {
-        let c_name = names[2].to_string();
-        let c_sent = nth(1, Record::Sent(c_name.clone()));
-        let c_answer = nth(1, Record::Answer(c_name));
-        assert!(
-            a_sent < c_sent && c_answer < a_answer,
-            "A's eval out at {a_sent}, back at {a_answer}; C's tabs out at {c_sent}, back at {c_answer}: {:?}",
-            r.records
-        );
-    }
     let longest = r
         .records
         .iter()
@@ -475,79 +433,21 @@ fn window_spaces_responsive_with(env: &[(&str, &str)]) {
     );
 }
 
-/// A Space that crashes (SIGKILL) ends only its own agent's connection,
-/// with `{"id":null,"ok":false,"error":"the Space crashed"}`; the window
-/// and the other agents go on. A Space whose window is killed exits (the
-/// end of file on its control connection) and removes its directory.
+/// Q2.12c: a renderer that dies takes only its tab, not its Space.
+/// Agent A has two tabs, B one; A's first tab's renderer is killed while
+/// A's `eval` runs in it: that request and every later page command on
+/// the tab fail with "renderer crashed", `tabs` lists the tab as
+/// `crashed`, A's other tab, B and the Space go on, and `tab_close`
+/// closes the crashed tab. A Space's renderer whose window is killed
+/// exits (the end of file on its connection).
 #[test]
 fn window_spaces_crash() {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let sock = format!("target/sockets/spaces-crash-{}.sock", std::process::id());
-    let mut window = spaces_window(&sock, &["--spaces"]);
-    let mut a = AgentConn::open(&sock);
-    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
-    assert!(got.contains("\"ok\":true"), "{got}");
-    let first = spaces_of(window.id());
-    assert_eq!(first.len(), 1, "{first:?}");
-    let mut b = AgentConn::open(&sock);
-    let (got, _) = b.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/index.html"}"#);
-    assert!(got.contains("\"ok\":true"), "{got}");
-    assert_eq!(spaces_of(window.id()).len(), 2);
-    let status = Command::new("kill")
-        .args(["-9", &first[0].to_string()])
-        .status()
-        .unwrap();
-    assert!(status.success());
-    assert_eq!(
-        a.line(),
-        "{\"id\":null,\"ok\":false,\"error\":\"the Space crashed\"}\n"
-    );
-    assert_eq!(a.line(), "", "the connection ends");
-    assert!(window.try_wait().unwrap().is_none(), "the window goes on");
-    let (got, _) = b.ask(r#"{"id":2,"cmd":"snapshot"}"#);
-    assert!(got.contains("\"title\":\"Site home\""), "{got}");
-    b.stream.shutdown(std::net::Shutdown::Write).unwrap();
-    assert_eq!(b.line(), "");
-    let window_pid = window.id();
-    let out = window.wait_with_output().unwrap();
-    assert!(
-        out.status.success() && out.stderr.is_empty(),
-        "the window: {}\n{}",
-        out.status,
-        text(&out.stderr)
-    );
-    no_spaces_left(window_pid).unwrap();
-
-    // The window killed: its Space exits by itself.
-    let sock = format!("target/sockets/spaces-kill-{}.sock", std::process::id());
-    let mut window = spaces_window(&sock, &["--spaces"]);
-    let mut a = AgentConn::open(&sock);
-    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
-    assert!(got.contains("\"ok\":true"), "{got}");
-    assert_eq!(spaces_of(window.id()).len(), 1);
-    window.kill().unwrap();
-    window.wait().unwrap();
-    let _ = std::fs::remove_file(root().join(&sock));
-    no_spaces_left(window.id()).unwrap();
-}
-
-/// Q2.12c: with hosted Spaces a renderer that dies takes only its tab.
-/// Agent A has two tabs, B one; A's first tab's renderer is killed while
-/// A's `eval` runs in it: that request and every later page command on
-/// the tab fail with "renderer crashed", `tabs` lists the tab as
-/// `crashed`, A's other tab, B and the Space go on, and `tab_close`
-/// closes the crashed tab.
-#[test]
-fn window_spaces_crash_in_renderer() {
-    if !has_sdl() {
-        println!("skipped: no SDL2");
-        return;
-    }
     let sock = format!("target/sockets/spaces-crash-r-{}.sock", std::process::id());
-    let window = spaces_window_env(&sock, &["--spaces"], HOSTED);
+    let window = spaces_window(&sock, &["--spaces"]);
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
     let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
@@ -602,6 +502,24 @@ fn window_spaces_crash_in_renderer() {
         text(&out.stderr)
     );
     no_spaces_left(pid).unwrap();
+
+    // The window killed: its Space's renderer exits by itself.
+    let sock = format!("target/sockets/spaces-kill-{}.sock", std::process::id());
+    let mut window = spaces_window(&sock, &["--spaces"]);
+    let mut a = AgentConn::open(&sock);
+    let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/agent/site/form.html"}"#);
+    assert!(got.contains("\"ok\":true"), "{got}");
+    let renderers = spaces_of(window.id());
+    assert_eq!(renderers.len(), 1);
+    window.kill().unwrap();
+    window.wait().unwrap();
+    let _ = std::fs::remove_file(root().join(&sock));
+    let start = std::time::Instant::now();
+    let runs = |pid: u32| Command::new("kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().unwrap().success();
+    while runs(renderers[0]) {
+        assert!(start.elapsed() < std::time::Duration::from_secs(5), "renderer {} outlives its window", renderers[0]);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
 
 /// Q2.12d: a hosted Space's popup that keeps its opener shares the
@@ -610,13 +528,13 @@ fn window_spaces_crash_in_renderer() {
 /// on either tab fail with "renderer crashed", `tabs` lists both as
 /// `crashed`, and the Space and the window go on.
 #[test]
-fn window_spaces_popup_crash_in_renderer() {
+fn window_spaces_popup_crash() {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
     let sock = format!("target/sockets/spaces-popup-crash-{}.sock", std::process::id());
-    let window = spaces_window_env(&sock, &["--spaces"], HOSTED);
+    let window = spaces_window(&sock, &["--spaces"]);
     let pid = window.id();
     let mut a = AgentConn::open(&sock);
     let (got, _) = a.ask(r#"{"id":1,"cmd":"navigate","url":"browser/tests/popup/links.html"}"#);
@@ -663,7 +581,7 @@ fn window_spaces_popup_crash_in_renderer() {
 /// the profile directory (its cookies, its `localStorage`, an origin
 /// only Iso visited).
 #[test]
-fn window_spaces_isolated_in_renderer() {
+fn window_spaces_isolated() {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
@@ -678,7 +596,7 @@ fn window_spaces_isolated_in_renderer() {
     let sock = format!("target/sockets/spaces-iso-{}.sock", std::process::id());
     let events = format!("agents:14 key:cmd+l {} key:return", typed(&format!("{base}/login/shared.html")));
     let start = format!("{base}/net/start");
-    let envs = [HOSTED[0], ("DWELLER_PROFILE", dir.to_str().unwrap())];
+    let envs = [("DWELLER_PROFILE", dir.to_str().unwrap())];
     let window = spaces_window_env(&sock, &["--spaces", "--state", "--text", "--events", &events, &start], &envs);
     let pid = window.id();
     let ok = |got: &str| assert!(got.contains("\"ok\":true"), "{got}");
@@ -793,12 +711,6 @@ fn wait_for_spaces(pid: u32, n: usize) {
 #[test]
 fn window_spaces_control() {
     window_spaces_control_with(&[]);
-}
-
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_control_in_renderer() {
-    window_spaces_control_with(HOSTED);
 }
 
 fn window_spaces_control_with(env: &[(&str, &str)]) {
@@ -958,12 +870,6 @@ fn window_spaces_parallel() {
     window_spaces_parallel_with(&[]);
 }
 
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_parallel_in_renderer() {
-    window_spaces_parallel_with(HOSTED);
-}
-
 fn window_spaces_parallel_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -1027,12 +933,6 @@ fn window_spaces_parallel_with(env: &[(&str, &str)]) {
 #[test]
 fn window_spaces_logins() {
     window_spaces_logins_with(&[]);
-}
-
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_logins_in_renderer() {
-    window_spaces_logins_with(HOSTED);
 }
 
 fn window_spaces_logins_with(env: &[(&str, &str)]) {
@@ -1137,12 +1037,6 @@ fn window_spaces_logins_with(env: &[(&str, &str)]) {
 #[test]
 fn window_spaces_chips() {
     window_spaces_chips_with(&[]);
-}
-
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_chips_in_renderer() {
-    window_spaces_chips_with(HOSTED);
 }
 
 fn window_spaces_chips_with(env: &[(&str, &str)]) {
@@ -1285,12 +1179,6 @@ fn window_spaces_takeover() {
     window_spaces_takeover_with(&[]);
 }
 
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_takeover_in_renderer() {
-    window_spaces_takeover_with(HOSTED);
-}
-
 fn window_spaces_takeover_with(env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -1349,12 +1237,6 @@ fn window_spaces_takeover_with(env: &[(&str, &str)]) {
 #[test]
 fn window_spaces_watch() {
     window_spaces_watch_with(&[]);
-}
-
-/// Q2.12: the same with the Spaces hosted in the window (`HOSTED`).
-#[test]
-fn window_spaces_watch_in_renderer() {
-    window_spaces_watch_with(HOSTED);
 }
 
 fn window_spaces_watch_with(env: &[(&str, &str)]) {
@@ -1462,7 +1344,6 @@ fn window_spaces_renderer_sandboxed() {
     let dir_text = dir.canonicalize().unwrap().to_str().unwrap().to_string();
     let sock = format!("target/sockets/q212-{}.sock", std::process::id());
     let envs = [
-        HOSTED[0],
         ("HOME", home.to_str().unwrap()),
         ("DWELLER_PROFILE", dir.to_str().unwrap()),
         ("DWELLER_TEST", "1"),

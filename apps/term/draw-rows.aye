@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import vt
+
+fn drawRows(v: *mut View, t: *mut vt.Term) AllocError!bool {
+    let s = t.screen()
+    let moved = v.offset != v.drawn_offset
+    var any = false
+
+    t.dirty[v.cursor_row] = true
+    t.dirty[s.y] = true
+
+    for y in 0..t.rows {
+        if t.dirty[y] || moved {
+            try drawRow(v, t, y)
+            any = true
+        }
+    }
+
+    v.cursor_row = s.y
+    v.drawn_offset = v.offset
+
+    return any
+}

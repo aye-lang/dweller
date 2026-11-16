@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn openPty(alloc: Allocator, command: []u8, cols: usize, rows: usize) AllocError!?Pty {
+    var c_command = text.Builder.init(alloc)
+    defer c_command.deinit()
+
+    try c_command.append(command)
+    try c_command.appendByte(0)
+
+    var size = Winsize { rows: rows as u16, cols: cols as u16, xpixel: 0, ypixel: 0 }
+    var fd: i32 = -1
+    let pid = forkpty(&mut fd, null, null, &size)
+
+    if pid == 0 {
+        runChild(c_command.bytes())
+    }
+
+    if pid < 0 {
+        return null
+    }
+
+    return Pty { fd: fd, pid: pid }
+}
