@@ -1,0 +1,27 @@
+import dweller.sdl
+import std.mem.AllocError
+
+fn windowLoop(w: *mut TermWindow) AllocError!void {
+    var wait: i32 = 0
+
+    while !w.quit && !w.pty.closed {
+        var ev = @zeroed(sdl.SDL_Event)
+
+        w.changed = (try readPty(&mut w.pty, &mut w.term, wait)) || w.changed
+
+        while sdl.SDL_PollEvent(&mut ev) != 0 {
+            try handleTermEvent(w, &ev)
+        }
+
+        wait = IDLE_WAIT_MS
+
+        if w.changed {
+            try showRows(w)
+            wait = 0
+        }
+
+        w.changed = false
+    }
+
+    try showRows(w)
+}

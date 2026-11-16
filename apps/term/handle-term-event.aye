@@ -1,0 +1,26 @@
+import dweller.sdl
+import std.mem.AllocError
+import std.text
+
+fn handleTermEvent(w: *mut TermWindow, ev: *sdl.SDL_Event) AllocError!void {
+    if ev.kind == sdl.SDL_QUIT {
+        w.quit = true
+    } else if ev.kind == sdl.SDL_TEXTINPUT {
+        let end = text.indexOf(ev.text.text[..], "\x00") orelse ev.text.text.len
+
+        sendInput(w, ev.text.text[0..end])
+    } else if ev.kind == sdl.SDL_KEYDOWN {
+        try pressTermKey(w, ev.key.keysym.sym, ev.key.keysym.mods)
+    } else if ev.kind == sdl.SDL_MOUSEWHEEL {
+        scrollView(w, (ev.wheel.precise_y * 3.0) as i64)
+    } else if ev.kind == sdl.SDL_WINDOWEVENT && ev.window.event == sdl.SDL_WINDOWEVENT_SIZE_CHANGED {
+        try fitWindow(w)
+    } else if ev.kind == sdl.SDL_WINDOWEVENT && ev.window.event == sdl.SDL_WINDOWEVENT_EXPOSED {
+        scrollView(w, 0)
+    }
+}
+
+fn sendInput(w: *mut TermWindow, bytes: []u8) {
+    writePty(&mut w.pty, bytes)
+    scrollView(w, -(w.view.offset as i64))
+}

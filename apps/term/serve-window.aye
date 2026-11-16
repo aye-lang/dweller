@@ -1,0 +1,33 @@
+import dweller.sdl
+import std.mem.Allocator
+import std.text
+import vt
+
+fn serveWindow(alloc: Allocator, o: TermOptions, view: View, window: *mut sdl.SDL_Window, renderer: *mut sdl.SDL_Renderer) !i32 {
+    var term = try vt.Term.init(alloc, 80, 24)
+    let pty = (try openPty(alloc, o.command, 80, 24)) orelse {
+        term.deinit()
+
+        return failed("cannot start the shell")
+    }
+
+    var w = TermWindow { alloc: alloc, term: term, view: view, pty: pty, window: window, renderer: renderer }
+    defer closeWindow(&mut w)
+
+    sdl.SDL_StartTextInput()
+    try fitWindow(&mut w)
+    try typeKeys(&mut w, o.typed)
+    try windowLoop(&mut w)
+
+    return reportWindow(&mut w, o)
+}
+
+fn closeWindow(w: *mut TermWindow) {
+    closePty(&mut w.pty)
+    closeView(&mut w.view)
+    w.term.deinit()
+
+    if w.texture |t| {
+        sdl.SDL_DestroyTexture(t)
+    }
+}

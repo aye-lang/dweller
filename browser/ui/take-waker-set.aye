@@ -1,0 +1,18 @@
+import ipc
+
+fn takeWakerSet(w: *mut IoWaker, set: *mut [97]ipc.PollFd, timeout: *mut i32) usize {
+    var drained = @zeroed([8]u8)
+
+    _ = read(w.pipe[0], drained[..].ptr, drained.len)
+    w.told.store(0)
+    w.lock.lock()
+    defer w.lock.unlock()
+
+    for i in 0..w.count {
+        set[1 + i] = w.fds[i]
+    }
+
+    timeout.* = w.timeout
+
+    return w.count
+}

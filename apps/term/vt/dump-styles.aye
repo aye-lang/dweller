@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+fn dumpStyles(line: []Cell, y: usize, out: *mut text.Builder) AllocError!void {
+    var start: usize = 0
+    var any = false
+
+    for x in 1..line.len + 1 {
+        if x < line.len && sameStyle(line[x], line[start]) {
+            continue
+        }
+
+        if line[start].fg != 0 || line[start].bg != 0 || line[start].attrs != 0 {
+            try dumpRun(line[start], y, start, x, any, out)
+            any = true
+        }
+
+        start = x
+    }
+
+    if any {
+        try out.appendByte('\n')
+    }
+}
+
+fn sameStyle(a: Cell, b: Cell) bool {
+    return a.fg == b.fg && a.bg == b.bg && a.attrs == b.attrs
+}

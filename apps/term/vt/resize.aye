@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+pub fn resize(t: *mut Term, cols: usize, rows: usize) AllocError!void {
+    if cols == t.cols && rows == t.rows || cols == 0 || rows == 0 {
+        return
+    }
+
+    let dirty = try t.alloc.alloc(true, rows)
+
+    try resizeScreen(t, &mut t.primary, cols, rows)
+    try resizeScreen(t, &mut t.alternate, cols, rows)
+    t.alloc.free(t.dirty)
+    t.dirty = dirty
+    t.cols = cols
+    t.rows = rows
+}

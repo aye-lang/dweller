@@ -1,0 +1,27 @@
+import dweller.font
+import std
+import std.mem.Allocator
+
+fn runWindow(alloc: Allocator, args: [][]u8) i32 {
+    let o = readTermOptions(args) orelse {
+        std.log.err(USAGE)
+
+        return 2
+    }
+
+    if !o.fixed_font {
+        var sys = font.System.init(alloc) catch |e| {
+            var fixed = font.Fixed.init()
+
+            return openWindow(alloc, o, &mut fixed, null)
+        }
+
+        defer sys.deinit()
+
+        return openWindow(alloc, o, &mut sys, &mut sys)
+    }
+
+    var fixed = font.Fixed.init()
+
+    return openWindow(alloc, o, &mut fixed, null)
+}

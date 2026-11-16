@@ -1,0 +1,25 @@
+import dweller.paint.Rgba
+import vt
+
+let BASE = [16]u32{0x000000, 0xCD0000, 0x00CD00, 0xCDCD00, 0x0000EE, 0xCD00CD, 0x00CDCD, 0xE5E5E5, 0x7F7F7F, 0xFF0000, 0x00FF00, 0xFFFF00, 0x5C5CFF, 0xFF00FF, 0x00FFFF, 0xFFFFFF}
+let CUBE = [6]u32{0, 95, 135, 175, 215, 255}
+
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+fn rgbOf(color: u32, fallback: Rgba) Rgba {
+    if color == vt.DEFAULT_COLOR {
+        return fallback
+    }
+
+    var rgb = color & 0xFFFFFF
+    let n = color & 0xFF
+
+    if color & vt.RGB_COLOR == 0 && n < 16 {
+        rgb = BASE[n as usize]
+    } else if color & vt.RGB_COLOR == 0 && n < 232 {
+        rgb = CUBE[((n - 16) / 36) as usize] << 16 | CUBE[((n - 16) / 6 % 6) as usize] << 8 | CUBE[((n - 16) % 6) as usize]
+    } else if color & vt.RGB_COLOR == 0 {
+        rgb = (8 + (n - 232) * 10) * 0x010101
+    }
+
+    return Rgba { r: (rgb >> 16) as u8, g: (rgb >> 8 & 0xFF) as u8, b: (rgb & 0xFF) as u8, a: 255 }
+}

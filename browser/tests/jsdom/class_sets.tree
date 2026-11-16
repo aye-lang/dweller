@@ -1,0 +1,49 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "class, id and attribute changes restyle what their selectors reach"
+      "\n"
+      <style>
+        "\n.dark .title { color: rgb(255, 0, 0) }\n.dark .row > .note { font-style: italic }\n#main.wide .cell { width: 50px }\n[data-mode=compact] .cell { height: 5px }\n.open + .panel { color: rgb(0, 128, 0) }\n.on ~ .item span { font-weight: 700 }\n:is(.pick .row) .title { text-decoration: underline }\n.row:not(.dark .skip) .note { letter-spacing: 1px }\n.flag + .next + .third { color: rgb(0, 0, 255) }\n#solo .title { margin-left: 3px }\n.cell { display: inline-block; width: 10px; height: 10px }\n"
+      "\n"
+    <body class="">
+      <div id="solo" class="wide pick" data-mode="roomy">
+      "\n"
+      <div id="head" class="tab">
+        "tab"
+      "\n"
+      <div id="panel" class="panel">
+        <p id="ptext">
+          "panel"
+      "\n"
+      <div id="after" class="panel">
+        "after"
+      "\n"
+      <ul id="list">
+        <li id="i0" class="item">
+          <span id="s0">
+            "a"
+        <li id="i1" class="item on">
+          <span id="s1">
+            "b"
+        <li id="i2" class="item">
+          <span id="s2">
+            "c"
+      "\n"
+      <div id="f0" class="flag">
+        "f0"
+      <div id="f1" class="next">
+        "f1"
+      <div id="f2" class="third">
+        "f2"
+      <div id="f3" class="third">
+        "f3"
+      "\n"
+      <pre id="out">
+        "start: rgb(0, 0, 0) normal\ndark: rgb(255, 0, 0) italic normal 1px\nlight: rgb(0, 0, 0) normal 1px\nwide: 50px\ncompact: 5px\nroomy: 10px\nopen: rgb(0, 128, 0) rgb(0, 128, 0) rgb(0, 0, 0)\nclosed: rgb(0, 0, 0) rgb(0, 0, 0)\non: 400 700 700\nmoved: 400 400 700\npick: underline\nflag: rgb(0, 0, 255) rgb(0, 0, 0)\nsolo: 3px 10px"
+      "\n"
+      <script>
+        "\nconst main = document.getElementById('main');\nlet html = '';\nfor (let i = 0; i < 200; i++) {\n  html += '<div class=\"row' + (i % 50 == 0 ? ' skip' : '') + '\"><span class=\"title\">t</span><span class=\"note\">n</span><span class=\"cell\"></span><span><b>x</b></span></div>';\n}\nmain.innerHTML = html;\nconst out = [];\nconst $ = (id) => document.getElementById(id);\nconst cs = (el, p) => getComputedStyle(el)[p];\nconst row = (i) => main.children[i];\nconst read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };\nread('start', () => cs(row(3).children[0], 'color') + ' ' + cs(row(3).children[1], 'fontStyle'));\ndocument.body.classList.add('dark');\nread('dark', () => cs(row(3).children[0], 'color') + ' ' + cs(row(3).children[1], 'fontStyle') + ' ' + cs(row(0).children[1], 'letterSpacing') + ' ' + cs(row(3).children[1], 'letterSpacing'));\ndocument.body.classList.remove('dark');\nread('light', () => cs(row(199).children[0], 'color') + ' ' + cs(row(199).children[1], 'fontStyle') + ' ' + cs(row(0).children[1], 'letterSpacing'));\nmain.classList.add('wide');\nread('wide', () => cs(row(7).children[2], 'width'));\nmain.setAttribute('data-mode', 'compact');\nread('compact', () => cs(row(7).children[2], 'height'));\nmain.setAttribute('data-mode', 'roomy');\nread('roomy', () => cs(row(7).children[2], 'height'));\n$('head').classList.add('open');\nread('open', () => cs($('panel'), 'color') + ' ' + cs($('ptext'), 'color') + ' ' + cs($('after'), 'color'));\n$('head').className = 'tab';\nread('closed', () => cs($('panel'), 'color') + ' ' + cs($('ptext'), 'color'));\n$('i0').classList.add('on');\nread('on', () => cs($('s0'), 'fontWeight') + ' ' + cs($('s1'), 'fontWeight') + ' ' + cs($('s2'), 'fontWeight'));\n$('i0').classList.remove('on');\n$('i1').classList.add('on');\nread('moved', () => cs($('s0'), 'fontWeight') + ' ' + cs($('s1'), 'fontWeight') + ' ' + cs($('s2'), 'fontWeight'));\nmain.classList.add('pick');\nread('pick', () => cs(row(9).children[0], 'textDecorationLine'));\n$('f0').classList.add('flag');\nread('flag', () => cs($('f2'), 'color') + ' ' + cs($('f3'), 'color'));\nmain.id = 'solo';\nread('solo', () => cs(row(9).children[0], 'marginLeft') + ' ' + cs(row(9).children[2], 'width'));\n$('out').textContent = out.join('\\n');\nmain.textContent = '';\n"
+      "\n"

@@ -76,6 +76,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if r.page |p| { try engine.deliverRemoteMessage(p, m) }
             }
 
+            .ContextClosed { context } => closeContext(r, context)
             .AttachTab { context } => {
                 if r.fds.len() == 0 { return false }
 
@@ -107,6 +108,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
         if drivesInput(got.message) { try sendContexts(r) }
     }
 
+    try advanceStaged(r, false)
     try paintFrame(r)
     try reportPage(r)
 

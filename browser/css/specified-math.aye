@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn specifiedMath(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(value), &mut toks)
+
+    let all = toks.items()
+    var i: usize = 0
+
+    for t in all {
+        if t.kind == Tok.Url || t.kind == Tok.BadUrl || t.kind == Tok.AtKeyword {
+            return writeRaw(text.trim(value), out)
+        }
+    }
+
+    while i < all.len {
+        i = try writeMathAware(all, i, out)
+    }
+
+    return true
+}

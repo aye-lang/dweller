@@ -1,0 +1,12 @@
+import engine
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc (CommitPending: a frame that left its process stays there as a proxy)
+fn leaveContext(r: *mut TabRenderer) {
+    if r.context == 0 { return }
+
+    if engine.contextOf(r.context) |c| {
+        if c.opener != 0 && !r.closed { return }
+    }
+
+    engine.tabContextGone(r.context)
+}
