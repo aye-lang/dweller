@@ -1,0 +1,17 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn takeRemote(wire: u32, out: *mut text.Builder) AllocError!?net.StreamPart {
+    let r = fetch_renderer orelse return null
+    let p = pendingOf(r, wire) orelse return null
+    var landed = p.href.bytes()
+
+    if p.f.url.len() > 0 { landed = p.f.url.bytes() }
+
+    try out.append(p.f.body.bytes())
+    p.f.body.clear()
+    p.taken = true
+
+    return net.StreamPart { status: p.f.status, content_type: p.f.mime.bytes(), url: landed }
+}

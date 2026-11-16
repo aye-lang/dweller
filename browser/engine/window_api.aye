@@ -59,6 +59,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "fetch", 1, akFetch)
     try defMethod(it, o, "fetchStart", 7, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
+    try defMethod(it, o, "fetchPart", 1, akFetchPart)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
@@ -647,6 +648,7 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     defer it.release(policy)
     try argText(it, a, 7, policy)
     req.referrer_policy = net.parseReferrerPolicy(policy.bytes())
+    req.stream = queue && it.toBoolean(it.arg(a, 8))
 
     if !text.eql(mode.bytes(), "no-cors") {
         req.mode = net.Mode.Cors
@@ -762,7 +764,7 @@ fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     tick(s)
     let id = s.next_timer
     s.next_timer += 1
-    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0 }) catch |e| {
+    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0, stream: waits != 0 && it.toBoolean(it.arg(a, 8)) }) catch |e| {
         it.removeRoot(root)
         net.releaseLoad(waits)
         return e
