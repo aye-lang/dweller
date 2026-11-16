@@ -1,0 +1,24 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+let MAX_DIALOG_BYTES: usize = 65536
+
+fn takeDialog(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .Dialog { kind, message, preset } => {
+            if kind > 2 || tp.asked != null || message.len > MAX_DIALOG_BYTES || preset.len > MAX_DIALOG_BYTES { return "bad dialog" }
+
+            let alloc = tp.url.alloc
+            let a = try alloc.create(AskedDialog { kind: kind as u8, on: on, message: text.Builder.init(alloc), preset: text.Builder.init(alloc) })
+
+            tp.asked = a
+            try a.message.append(message)
+            try a.preset.append(preset)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

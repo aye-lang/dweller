@@ -1,0 +1,24 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc RunJavaScriptDialog
+fn settleAsked(ui: *mut Ui, slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    let mine = ui.dialog.remote && ui.dialog.owner == slot.id
+    let owner = askedIn(tp) orelse {
+        if mine && ui.dialog.open { closeDialog(ui, false) }
+
+        return
+    }
+
+    let a = owner.asked.?
+
+    if !a.shown && !ui.dialog.open && !isSpace(ui) { return showAskedDialog(ui, slot, tp, owner) }
+
+    if a.shown && mine { dismissUnanswered(ui) }
+
+    if (a.shown && mine && !ui.dialog.open) || (!a.shown && isSpace(ui)) {
+        try ipc.encode(&mut owner.outbox, a.on, ipc.Message.DialogReply { accepted: (a.shown && ui.dialog.accepted) as u32, typed: ui.dialog.input.bytes() })
+        ui.dialog.remote = false
+        dropAsked(owner)
+    }
+}

@@ -246,7 +246,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") && !text.eql(w, "dialog:keep") {
             return false
         }
     }
@@ -329,6 +329,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if text.eql(w, "renderer:kill") || text.eql(w, "renderer:kill-child") {
             killRenderer(ui, text.eql(w, "renderer:kill-child"))
         }
+        if text.eql(w, "dialog:keep") {
+            keepDialog()
+        }
         if text.eql(w, "stuck:stop") && ui.stuck {
             ui.stuck = false
             ui.wait = false
@@ -394,6 +397,9 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.append("unresponsive ")
         try out.appendUint(ui.unresponsive as u64)
         try out.append("\n")
+    }
+    if ui.dialog.open {
+        try writeDialogState(ui, out)
     }
     if ui.auth.open {
         // The sign-in prompt (auth.aye): its realm and username.

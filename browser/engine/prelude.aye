@@ -1569,9 +1569,16 @@ pub let PRELUDE =
     \\function messageOf(m) {
     \\  return m === undefined ? '' : String(m);
     \\}
-    \\hidden(G, 'alert', function (m) { ak.alert('alert', messageOf(m)); });
-    \\hidden(G, 'confirm', function (m) { ak.alert('confirm', messageOf(m)); return false; });
-    \\hidden(G, 'prompt', function (m) { ak.alert('prompt', messageOf(m)); return null; });
+    \\function askPerson(kind, name, message, preset) {
+    \\  ak.alert(name, message);
+    \\  return ak.dialog(kind, message, preset);
+    \\}
+    \\hidden(G, 'alert', function (m) { askPerson(0, 'alert', messageOf(m), ''); });
+    \\hidden(G, 'confirm', function (m) { return askPerson(1, 'confirm', messageOf(m), '') === true; });
+    \\hidden(G, 'prompt', function (m, d) {
+    \\  const typed = askPerson(2, 'prompt', messageOf(m), messageOf(d));
+    \\  return typeof typed === 'string' ? typed : null;
+    \\});
     \\
     \\// ---- frames and the windows of other pages (engine/windows.aye)
     \\

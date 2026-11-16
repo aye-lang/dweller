@@ -285,6 +285,7 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             var ui = Ui.init(alloc, window, renderer, measure, system, first_tab)
             defer ui.deinit()
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
+            watchDialogs(&mut ui, o.frames > 0 || o.exit_when_idle)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -413,6 +414,7 @@ pub struct Ui {
     find: Field
     // The sign-in prompt of a 401 (auth.aye).
     auth: AuthPrompt
+    dialog: JsDialog
     // The URL of the link under the mouse (resolved), for the status
     // line; empty for none.
     hover: text.Builder
@@ -510,6 +512,7 @@ pub struct Ui {
             finding: false,
             find: Field.init(alloc),
             auth: AuthPrompt.init(alloc),
+            dialog: JsDialog.init(alloc),
             hover: text.Builder.init(alloc),
             hand: false,
             dropdown: null,
@@ -563,6 +566,7 @@ pub struct Ui {
         self.address.deinit()
         self.find.deinit()
         self.auth.deinit()
+        self.dialog.deinit()
         self.hover.deinit()
     }
 
@@ -1126,6 +1130,9 @@ pub struct Ui {
     fn handle(self: *mut Self, ev: *SDL_Event) AllocError!void {
         if self.stuck {
             return stuckInput(self, ev)
+        }
+        if self.dialog.open {
+            return dialogInput(self, ev)
         }
         if hungInput(self, ev) || (try sadTabInput(self, ev)) {
             return
@@ -1963,6 +1970,9 @@ pub struct Ui {
         }
         if certPage(self) |p| {
             try drawCertBar(self, p)
+        }
+        if self.dialog.open {
+            try drawDialog(self)
         }
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
