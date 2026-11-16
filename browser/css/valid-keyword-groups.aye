@@ -1,0 +1,36 @@
+import std.text
+
+fn validKeywordGroups(groups: []u8, layer: []Comp) bool {
+    var used: u32 = 0
+
+    for c in layer {
+        if c.toks.len != 1 || c.toks[0].kind != Tok.Ident {
+            return false
+        }
+
+        let g = keywordGroup(groups, c.toks[0].text) orelse return false
+
+        if used & (1 << g) as u32 != 0 || (g < 2 && layer.len > 1) {
+            return false
+        }
+
+        used |= (1 << g) as u32
+    }
+
+    return true
+}
+
+fn keywordGroup(groups: []u8, word: []u8) ?usize {
+    var parts = text.split(groups, "|")
+    var g: usize = 0
+
+    while parts.next() |alternatives| {
+        if inList(word, alternatives) != null {
+            return g
+        }
+
+        g += 1
+    }
+
+    return null
+}
