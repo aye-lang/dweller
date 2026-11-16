@@ -20,7 +20,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putBytes(out, url)
         }
 
-        .Shutdown, .OutOfMemory, .LoadStopped => {}
+        .Shutdown, .OutOfMemory, .LoadStopped, .ClipboardRead => {}
         .Resize { width, height, scale, buffer } => {
             try putU32(out, width)
             try putU32(out, height)
@@ -109,6 +109,12 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, kind)
             try putBytes(out, message)
             try putBytes(out, preset)
+        }
+
+        .ClipboardWrite { copied } => try putBytes(out, copied)
+        .ClipboardText { ok, pasted } => {
+            try putU32(out, ok)
+            try putBytes(out, pasted)
         }
 
         .DialogReply { accepted, typed } => {
