@@ -1,0 +1,28 @@
+import js
+import net
+import std.mem.AllocError
+
+fn queueSocketTask(s: *mut Script, k: PageSocket, note: net.SocketNote) AllocError!void {
+    let it = &mut s.it
+    let arr = it.newArray(0) catch return AllocError.OutOfMemory
+
+    try jsPush(s, js.objVal(arr))
+    try it.heap.pushElem(arr, it.roots.items()[k.root])
+    try it.heap.pushElem(arr, js.numVal(note.kind as f64))
+    try it.heap.pushElem(arr, try socketText(s, note))
+    try it.heap.pushElem(arr, js.boolVal(note.clean))
+    try it.heap.pushElem(arr, js.numVal(note.code as f64))
+
+    let root = it.addRoot(js.objVal(arr)) catch return AllocError.OutOfMemory
+
+    it.pop()
+    tick(s)
+    s.timers.append(Timer { id: s.next_timer, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq }) catch |e| {
+        it.removeRoot(root)
+
+        return e
+    }
+
+    s.next_timer += 1
+    s.seq += 1
+}

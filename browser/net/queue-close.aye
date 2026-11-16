@@ -1,0 +1,15 @@
+import std.text
+
+fn queueClose(k: *mut Socket, code: u16, reason: []u8) {
+    let all = sockets orelse return
+    var payload = text.Builder.init(all.alloc)
+    defer payload.deinit()
+
+    if code != CLOSE_NO_STATUS {
+        payload.appendByte((code >> 8) as u8) catch |e| {}
+        payload.appendByte((code & 0xff) as u8) catch |e| {}
+        payload.append(reason) catch |e| {}
+    }
+
+    queueFrame(k, FRAME_CLOSE, payload.bytes())
+}

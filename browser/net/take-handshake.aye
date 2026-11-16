@@ -1,0 +1,20 @@
+import std.text
+
+fn takeHandshake(k: *mut Socket, head: []u8) bool {
+    let job = k.job orelse return false
+    let protocol = socketResponse(head, k.owned_accept, k.owned_protocols) orelse return false
+    var lines = text.split(head, "\r\n")
+
+    while lines.next() |line| {
+        if text.eqlIgnoreCase(headerName(line), "set-cookie") {
+            job.sink.cookies.append(headerText(line)) catch |e| {}
+            job.sink.cookies.appendByte('\n') catch |e| {}
+        }
+    }
+
+    storeCookies(session, &job.at, &job.sink) catch |e| {}
+    k.phase = SocketPhase.Open
+    noteSocket(k, SOCKET_OPENED, false, 0, protocol)
+
+    return true
+}

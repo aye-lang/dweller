@@ -1,0 +1,87 @@
+<!doctype html>
+<title>WebSocket</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const base = 'ws://' + location.host;
+const hex = b => Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(' ');
+
+function open(path, protocols) {
+  return new Promise(resolve => {
+    const ws = protocols === undefined ? new WebSocket(base + path) : new WebSocket(base + path, protocols);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => resolve(ws);
+    ws.onerror = () => log('error ' + path + ' state=' + ws.readyState);
+    ws.onclose = e => {
+      log('close ' + path + ' clean=' + e.wasClean + ' code=' + e.code + ' reason=' + JSON.stringify(e.reason) + ' state=' + ws.readyState);
+      resolve(null);
+      if (ws.closed) ws.closed();
+    };
+  });
+}
+const next = ws => new Promise(resolve => { ws.onmessage = e => resolve(e); });
+const closed = ws => new Promise(resolve => { ws.closed = resolve; });
+function thrown(f) {
+  try { f(); return 'no error'; } catch (e) { return e.name; }
+}
+
+(async () => {
+  log('constructor: ' + [thrown(() => new WebSocket('ftp://x/')), thrown(() => new WebSocket(base + '/ws/echo#f')), thrown(() => new WebSocket(base + '/ws/echo', ['a', 'a'])), thrown(() => new WebSocket(base + '/ws/echo', 'a b'))].join(', '));
+
+  const first = new WebSocket('/ws/echo');
+  log('url: ' + first.url.replace(location.host, 'HOST') + ' state=' + first.readyState + ' send: ' + thrown(() => first.send('x')));
+  first.close();
+  log('closing: state=' + first.readyState);
+  await closed(Object.assign(first, { onclose: e => { log('close while connecting: clean=' + e.wasClean + ' code=' + e.code); first.closed(); }, onerror: () => log('error while connecting') }));
+
+  const ws = await open('/ws/echo?setcookie=7', ['soap', 'chat']);
+  log('open: state=' + ws.readyState + ' protocol=' + ws.protocol + ' extensions=' + JSON.stringify(ws.extensions) + ' cookie=' + document.cookie);
+  ws.send('héllo €');
+  let e = await next(ws);
+  log('text: ' + e.data + ' origin=' + e.origin.replace(location.host, 'HOST') + ' type=' + e.constructor.name + ' trusted=' + e.isTrusted);
+  ws.send(new Uint8Array([0, 1, 127, 128, 255]));
+  e = await next(ws);
+  log('binary: ' + hex(e.data) + ' ' + (e.data instanceof ArrayBuffer));
+  ws.binaryType = 'blob';
+  ws.send(new Blob(['bl', new Uint8Array([195, 40])]));
+  e = await next(ws);
+  log('blob: ' + (e.data instanceof Blob) + ' ' + hex(await e.data.arrayBuffer()));
+  ws.send(new Uint8Array(70000).fill(7).buffer);
+  e = await next(ws);
+  log('long: ' + e.data.size);
+  ws.send('big:200000');
+  e = await next(ws);
+  const big = new Uint8Array(await e.data.arrayBuffer());
+  log('big: ' + big.length + ' ' + big[255] + ' ' + big[199999]);
+  ws.send('fragments');
+  log('fragments: ' + (await next(ws)).data);
+  ws.send('header:origin');
+  log('origin header: ' + (await next(ws)).data.replace(location.host, 'HOST'));
+  ws.send('header:cookie');
+  log('cookie header: ' + (await next(ws)).data);
+  log('close arguments: ' + [thrown(() => ws.close(999)), thrown(() => ws.close(1001)), thrown(() => ws.close(3000, 'x'.repeat(124)))].join(', '));
+  ws.close(3001, 'bye');
+  log('closing: state=' + ws.readyState);
+  await closed(ws);
+
+  const again = await open('/ws/echo');
+  again.send('header:cookie');
+  log('cookie header after Set-Cookie: ' + (await next(again)).data);
+  again.send('close:4001:server says');
+  await closed(again);
+
+  const reserved = await open('/ws/echo');
+  reserved.send('reserved');
+  await closed(reserved);
+
+  const dropped = await open('/ws/echo');
+  dropped.send('drop');
+  await closed(dropped);
+
+  await open('/ws/refuse');
+  await open('/ws/echo?badaccept');
+  await open('/ws/echo?protocol=other', 'chat');
+  log('done');
+})();
+</script>
