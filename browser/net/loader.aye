@@ -264,9 +264,10 @@ pub fn loadsRunning() bool {
 /// read, finished loads are kept.
 pub fn pumpLoads() {
     if remote_loader |rl| { return remotePump(rl, 0) }
+    pumpSockets()
     let ld = loader orelse return
     extendForStall(ld)
-    if !pumpSockets() && !anyRunning(ld) {
+    if !anyRunning(ld) {
         return
     }
     var running: i32 = 0
@@ -660,8 +661,8 @@ fn performShared(curl: *mut Curl) i32 {
 
 /// Ends every load (when the session stops).
 fn stopLoads() {
-    let ld = loader orelse return
     stopSockets()
+    let ld = loader orelse return
     loader = null
     for l in ld.loads.items() {
         freeLoad(ld, l)
@@ -744,7 +745,7 @@ fn harvest(ld: *mut Loader) {
         // The message does not outlive the removal of its handle.
         let easy = msg.easy
         let result = msg.result
-        if retryRelaxed(ld, easy, result) || socketConnected(easy, result) {
+        if retryRelaxed(ld, easy, result) {
             continue
         }
         if ld.waiting |w| {

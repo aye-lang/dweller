@@ -18,6 +18,7 @@ HOSTS = [
     "xn--n8j6ds53lwwkrqhv28a.web-platform.test",
     "xn--lve-6lad.web-platform.test",
     "not-web-platform.test",
+    "www.not-web-platform.test",
 ]
 HTTP_PORTS = (8000, 8001)
 HTTPS_PORTS = (8443, 8444)
@@ -89,7 +90,7 @@ class Upstream:
             start_new_session=True)
         atexit.register(self.stop)
         deadline = time.time() + START_WAIT
-        while not (listening(HTTP_PORTS[-1]) and listening(HTTPS_PORTS[-1])):
+        while not all(listening(p) for p in (HTTP_PORTS[-1], HTTPS_PORTS[-1]) + WS_PORTS + WSS_PORTS):
             if self.proc.poll() is not None or time.time() > deadline:
                 self.stop()
                 sys.exit(f"wpt serve did not start (see {self.root}/_dweller_serve.log)")

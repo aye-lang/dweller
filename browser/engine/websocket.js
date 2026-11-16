@@ -28,6 +28,7 @@ function socketUrl(url) {
 
 function offered(protocols) {
   if (protocols === undefined) return [];
+  if (protocols !== null && typeof protocols === 'object' && typeof protocols[Symbol.iterator] !== 'function') return offered(protocols.protocols);
 
   const list = typeof protocols === 'string' || protocols === null || typeof protocols[Symbol.iterator] !== 'function' ? [String(protocols)] : Array.from(protocols, String);
 
@@ -37,6 +38,18 @@ function offered(protocols) {
   }
 
   return list;
+}
+
+function wellFormed(s) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    const paired = c >= 0xd800 && c < 0xdc00 && s.charCodeAt(i + 1) >= 0xdc00 && s.charCodeAt(i + 1) < 0xe000;
+    if (paired) out += s[i] + s[++i];
+    else out += c >= 0xd800 && c < 0xe000 ? '\ufffd' : s[i];
+  }
+
+  return out;
 }
 
 function binaryString(data) {
@@ -87,23 +100,23 @@ class WebSocket extends EventTarget {
     if (this._state === CONNECTING) throw fail("execute 'send' on 'WebSocket': Still in CONNECTING state.", 'InvalidStateError');
 
     const binary = binaryString(data);
-    const text = binary === null ? String(data).toWellFormed() : binary;
+    const text = binary === null ? wellFormed(String(data)) : binary;
+    const size = binary === null ? new TextEncoder().encode(text).length : binary.length;
 
-    if (this._state !== OPEN) {
-      this._unsent += binary === null ? new TextEncoder().encode(text).length : binary.length;
-      return;
-    }
+    this._unsent += size;
+    if (this._state !== OPEN) return;
 
     ak.socketSend(this._id, text, binary !== null);
+    ak.setTimer(() => { this._unsent -= size; }, 0, false, [], false);
   }
 
   close(code, reason) {
     if (code !== undefined) {
-      code = Number(code) & 0xffff;
+      code = Math.min(Math.max(Math.trunc(Number(code)) || 0, 0), 65535);
       if (code !== 1000 && (code < 3000 || code > 4999)) throw fail("execute 'close' on 'WebSocket': The close code must be either 1000, or between 3000 and 4999. " + code + " is neither.", 'InvalidAccessError');
     }
 
-    reason = reason === undefined ? '' : String(reason).toWellFormed();
+    reason = reason === undefined ? '' : wellFormed(String(reason));
     if (new TextEncoder().encode(reason).length > 123) throw fail("execute 'close' on 'WebSocket': The close reason must not be greater than 123 UTF-8 bytes.", 'SyntaxError');
     if (this._state === CLOSING || this._state === CLOSED) return;
 
@@ -145,8 +158,8 @@ for (const type of ['open', 'message', 'error', 'close']) {
     enumerable: true,
     get() { return this._handlers[type] || null; },
     set(f) {
-      if (!(type in this._handlers)) this.addEventListener(type, e => this._handlers[type] && this._handlers[type].call(this, e));
-      this._handlers[type] = typeof f === 'function' ? f : null;
+      if (!(type in this._handlers)) this.addEventListener(type, e => typeof this._handlers[type] === 'function' && this._handlers[type].call(this, e));
+      this._handlers[type] = typeof f === 'function' || (typeof f === 'object' && f !== null) ? f : null;
     },
   });
 }

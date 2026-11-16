@@ -1,0 +1,11 @@
+fn connectSocket(all: *mut Sockets, m: *mut CurlMulti, k: *mut Socket) {
+    let job = k.job orelse return
+
+    if endpointBusy(all, job) { return }
+
+    if curl_multi_add_handle(m, job.curl) != 0 {
+        return failSocket(k)
+    }
+
+    k.phase = SocketPhase.Connecting
+}
