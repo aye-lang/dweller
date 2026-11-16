@@ -4,6 +4,8 @@ const OPEN: &str = "state pending | upgrade 0->2 done versionchange | stores not
 const STORE: &str = "order -Infinity -0.5 3 date5 \"\" \"a\" \"b\" bytes2 bytes2.1 [] [1,[0]] | range -0.5 3 date5 \"\" | count 7 cmp 101 | made 1 2 10.7 11 k 12 | path 1 7 {\"name\":\"gen\",\"a\":{\"b\":1}} a.b | inject DataError | inline DataError | pair [1,\"a\"] [1,\"b\"] 2 | value 86400000 true 1.2.255 x+gi 12345678901234567890 3hole NaN true true {\"list\":[true,null]} | clone DataCloneError | after delete 8 get undefined key \"a\" | cleared 0 all 0 | complete";
 const TRANSACTION: &str = "first complete TransactionInactiveError InvalidStateError | inside undone | aborted abort null InvalidStateError | readonly ReadOnlyError NotFoundError NotFoundError InvalidAccessError TypeError readonly a,b | rolled back kept/0 | promise none | timeout TransactionInactiveError complete | unhandled abort ConstraintError | order other,one,two,read two | commit TransactionInactiveError InvalidStateError complete | final kept!,two,committed";
 const VERSIONS: &str = "versionchange 1->2 | closed | upgrader: blocked 1->2, upgrade 1->2, read from the opener | reopened v2 added,notes from the upgrader";
+const INDEX: &str = "made by mail,by name,by tag ConstraintError SyntaxError InvalidAccessError | index by name name false true true NotFoundError | unique ConstraintError | get 2 key 1 count 2/4 | all 2,4 keys 1,3 prev 4,2,3,1 unique 1,2,4 | tags 1,2 math 1 count 3 | records code:1:Ada,code:2:Bob | after 3,4,2 tags art:2 mail 2 | abort null | rolled back 1,2 2 | renamed folk by mail,by tag,named,one kind | duplicate keys abort ConstraintError | kept v1 people by mail,by name,by tag";
+const CURSOR: &str = "next a0,b1,c2,d3,e4 | prev d,c,b | keys a,b,c,d,e | index xa,xc,yb,yd,ze | nextunique xa,yb,ze | prevunique ze,yb,xa | index prev a,c,b,d | advance a,c,e | continue to a,d,e | primary xa,yd,ze | errors DataError TypeError InvalidAccessError InvalidStateError next true pending | update a,b,c,d,dd,e | after wb10,xa0,xdd11,yd3,ze4 | readonly ReadOnlyError ReadOnlyError | late TransactionInactiveError";
 
 fn dumped(page: &str, want: &str, stderr: &str) {
     expect(&["dump", "--text", "--js", &format!("browser/tests/indexeddb/{page}")], 0, &format!("{want}\n"), stderr);
@@ -36,6 +38,25 @@ fn indexeddb_store() {
 fn indexeddb_transaction() {
     dumped("transaction.html", TRANSACTION, "");
     dumped("throws.html", "throw abort AbortError | left 0", "[error] Uncaught Error: in a handler\n");
+}
+
+/// Q5.11b: an index finds records by its key path (one entry per item
+/// with `multiEntry`), a unique index refuses a second holder of a key,
+/// index entries follow the store's writes and their rollback, a store
+/// and an index are renamed in an upgrade, and an index made unique
+/// over duplicates aborts the upgrade with ConstraintError.
+#[test]
+fn indexeddb_index() {
+    dumped("index.html", INDEX, "");
+}
+
+/// Q5.11b: cursors walk a store or an index in the four directions,
+/// `advance`, `continue(key)` and `continuePrimaryKey` jump, `update`
+/// and `delete` write through the cursor and the walk sees the writes,
+/// and the calls throw in the order the specification gives.
+#[test]
+fn indexeddb_cursor() {
+    dumped("cursor.html", CURSOR, "");
 }
 
 /// Q5.11a: a second tab's open with a higher version fires
@@ -84,7 +105,7 @@ fn window_renderer_indexeddb() {
     for mode in ["tab", "site"] {
         let envs = [("DWELLER_PROCESS", mode)];
         let shown = |page: &str, events: &str, dir: Option<&Path>| login_window_with(&format!("{base}/indexeddb/{page}"), events, dir, &envs);
-        for (page, want) in [("open.html", OPEN), ("store.html", STORE), ("transaction.html", TRANSACTION)] {
+        for (page, want) in [("open.html", OPEN), ("store.html", STORE), ("transaction.html", TRANSACTION), ("index.html", INDEX), ("cursor.html", CURSOR)] {
             let got = shown(page, "renderer:title:done", None);
             assert!(got.contains(want), "{mode} {page}: want {want}, got:\n{got}");
         }

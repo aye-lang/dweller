@@ -138,7 +138,7 @@ I.expose('IDBCursor', IDBCursor);
 
 class IDBCursorWithValue extends IDBCursor {
   get value() {
-    if (!(this._seen & 4) && this._got) this._value = I.deserialize(this._v);
+    if (!(this._seen & 4) && this._v !== undefined) this._value = I.deserialize(this._v);
 
     this._seen |= 4;
 

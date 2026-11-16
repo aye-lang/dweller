@@ -29,7 +29,7 @@ I.cloneFor = function (tx, value, meta) {
   try {
     const text = I.serialize(value);
 
-    return { text, copy: meta.keyPath === null && meta.indexes.length === 0 ? null : I.deserialize(text) };
+    return { text, copy: meta.keyPath === null && meta.indexes.length + meta.dropping.length === 0 ? null : I.deserialize(text) };
   } finally {
     tx._state = 'active';
   }
@@ -51,12 +51,12 @@ function keysFor(x, value) {
 I.indexKeys = function (meta, copy) {
   const out = [];
 
-  for (const x of meta.indexes) for (const key of keysFor(x, copy)) out.push(x.id + ' ' + key);
+  for (const x of meta.indexes.concat(meta.dropping)) if (x.ready) for (const key of keysFor(x, copy)) out.push(x.id + ' ' + key);
 
   return out.join(' ');
 };
 I.putRecord = function (tx, meta, key, w, overwrite) {
-  I.ask('put', tx._id, meta.id, overwrite ? 1 : 0, key, meta.indexes.length ? I.indexKeys(meta, w.copy) : '', w.text);
+  I.ask('put', tx._id, meta.id, overwrite ? 1 : 0, key, w.copy === null ? '' : I.indexKeys(meta, w.copy), w.text);
 
   return I.decodeKey(key);
 };
@@ -65,14 +65,12 @@ function generated(tx, meta, w) {
 
   if (next > MAX_GENERATED) throw I.error('ConstraintError', 'The key generator has reached its maximum value.');
 
-  I.ask('set-generator', tx._id, meta.id, String(next + 1n));
-
   if (meta.keyPath !== null) {
     I.inject(w.copy, meta.keyPath, Number(next));
     w.text = I.serialize(w.copy);
   }
 
-  return I.encodeKey(Number(next));
+  return next;
 }
 function raiseGenerator(tx, meta, key) {
   const n = I.decodeKey(key);
@@ -103,10 +101,13 @@ function write(store, name, args, overwrite) {
   }
 
   return I.request(store, tx, () => {
-    if (key === undefined) key = generated(tx, meta, w);
+    const made = key === undefined ? generated(tx, meta, w) : null;
+    const result = I.putRecord(tx, meta, made === null ? key : I.encodeKey(Number(made)), w, overwrite);
+
+    if (made !== null) I.ask('set-generator', tx._id, meta.id, String(made + 1n));
     else if (meta.autoIncrement && key[0] === 'b') raiseGenerator(tx, meta, key);
 
-    return I.putRecord(tx, meta, key, w, overwrite);
+    return result;
   });
 }
 const from = store => ({ tx: store._tx, store: store._meta.id, index: 0 });
@@ -123,7 +124,7 @@ class IDBObjectStore {
 
     return this._path;
   }
-  get indexNames() { return I.names(this._meta.indexes.map(x => x.name)); }
+  get indexNames() { return I.names(this._meta.deleted ? [] : this._meta.indexes.map(x => x.name)); }
   get transaction() { return this._tx; }
   get autoIncrement() { return this._meta.autoIncrement; }
   put(value, key) { return write(this, 'put', arguments, true); }
@@ -199,7 +200,15 @@ class IDBObjectStore {
 
     if (!x) throw I.error('NotFoundError', what('deleteIndex') + 'The specified index was not found.');
 
-    I.ask('delete-index', tx._id, this._meta.id, x.id);
+    const store = this._meta.id;
+
+    const meta = this._meta;
+
+    meta.dropping.push(x);
+    I.internal(tx, () => {
+      meta.dropping.splice(meta.dropping.indexOf(x), 1);
+      I.ask('delete-index', tx._id, store, x.id);
+    });
     x.deleted = true;
     this._meta.indexes.splice(this._meta.indexes.indexOf(x), 1);
     this._indexes.delete(x);

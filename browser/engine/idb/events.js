@@ -111,6 +111,7 @@ I.fireAtRequest = function (req, ev) {
 
   I.fire([req, tx, tx._db], ev);
 
+  if (tx._state === 'committing' && ev.type === 'error' && !ev.defaultPrevented) I.abortTransaction(tx, req._error);
   if (tx._state !== 'active') return ev;
 
   tx._state = 'inactive';

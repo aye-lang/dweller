@@ -87,6 +87,11 @@ I.request = function (source, tx, op, reused) {
   return req;
 };
 
+I.internal = function (tx, step) {
+  tx._queue.push({ _internal: step });
+  I.schedule(tx);
+};
+
 function finish(tx) {
   tx._state = 'finished';
   tx._db._txs.delete(tx);
@@ -119,6 +124,16 @@ function pump(tx) {
 
   if (!req) return commit(tx);
 
+  if (req._internal) {
+    try {
+      req._internal();
+    } catch (e) {
+      return I.abortTransaction(tx, e);
+    }
+
+    return I.schedule(tx);
+  }
+
   let ev = null;
 
   try {
@@ -145,7 +160,7 @@ I.abortTransaction = function (tx, error) {
     error = error || e;
   }
 
-  const pending = tx._queue.splice(0);
+  const pending = tx._queue.splice(0).filter(req => !req._internal);
 
   finish(tx);
   tx._error = error;

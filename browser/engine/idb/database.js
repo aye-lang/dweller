@@ -50,7 +50,7 @@ class IDBDatabase extends G.EventTarget {
     if (autoIncrement && (keyPath === '' || Array.isArray(keyPath))) throw I.error('InvalidAccessError', what('createObjectStore') + 'The autoIncrement option was set but the keyPath option was empty or an array.');
 
     const id = Number(I.ask('create-store', tx._id, autoIncrement ? 1 : 0, I.nameText(name), I.nameText(keyPath)));
-    const meta = { id, name, keyPath, autoIncrement, indexes: [], deleted: false };
+    const meta = { id, name, keyPath, autoIncrement, indexes: [], dropping: [], deleted: false };
 
     this._stores.set(name, meta);
 
@@ -64,7 +64,7 @@ class IDBDatabase extends G.EventTarget {
 
     if (!meta) throw I.error('NotFoundError', what('deleteObjectStore') + 'The specified object store was not found.');
 
-    I.ask('delete-store', tx._id, meta.id);
+    I.internal(tx, () => void I.ask('delete-store', tx._id, meta.id));
     meta.deleted = true;
     this._stores.delete(meta.name);
     tx._handles.delete(meta);
@@ -111,12 +111,12 @@ I.openDatabase = function (name, lines) {
 
   for (let i = 2; i < lines.length; i += lines[i] === 'store' ? 5 : 7) {
     if (lines[i] === 'index') {
-      byId.get(lines[i + 1]).indexes.push({ id: Number(lines[i + 2]), name: JSON.parse(lines[i + 5]), keyPath: JSON.parse(lines[i + 6]), unique: lines[i + 3] === '1', multiEntry: lines[i + 4] === '1', deleted: false });
+      byId.get(lines[i + 1]).indexes.push({ id: Number(lines[i + 2]), name: JSON.parse(lines[i + 5]), keyPath: JSON.parse(lines[i + 6]), unique: lines[i + 3] === '1', multiEntry: lines[i + 4] === '1', deleted: false, ready: true });
 
       continue;
     }
 
-    const meta = { id: Number(lines[i + 1]), name: JSON.parse(lines[i + 3]), keyPath: JSON.parse(lines[i + 4]), autoIncrement: lines[i + 2] === '1', indexes: [], deleted: false };
+    const meta = { id: Number(lines[i + 1]), name: JSON.parse(lines[i + 3]), keyPath: JSON.parse(lines[i + 4]), autoIncrement: lines[i + 2] === '1', indexes: [], dropping: [], deleted: false };
 
     stores.set(meta.name, meta);
     byId.set(lines[i + 1], meta);

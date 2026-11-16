@@ -80,11 +80,7 @@ function renameIndex(index, name) {
 function fill(tx, store) {
   const t = I.walk({ tx, store: store._meta.id, index: 0 }, { lo: '', hi: '', flags: 0 }, 0, 0);
 
-  try {
-    for (let i = 0; i < t.length; i += 3) I.ask('set-index-keys', tx._id, store._meta.id, t[i], I.indexKeys(store._meta, I.deserialize(t[i + 2])));
-  } catch (e) {
-    I.task(() => I.abortTransaction(tx, e));
-  }
+  for (let i = 0; i < t.length; i += 3) I.ask('set-index-keys', tx._id, store._meta.id, t[i], I.indexKeys(store._meta, I.deserialize(t[i + 2])));
 }
 // spec: https://w3c.github.io/IndexedDB/#dom-idbobjectstore-createindex
 I.createIndex = function (store, args) {
@@ -103,8 +99,13 @@ I.createIndex = function (store, args) {
 
   const id = Number(I.ask('create-index', tx._id, store._meta.id, unique ? 1 : 0, multiEntry ? 1 : 0, I.nameText(name), I.nameText(keyPath)));
 
-  store._meta.indexes.push({ id, name, keyPath, unique, multiEntry, deleted: false });
-  fill(tx, store);
+  const x = { id, name, keyPath, unique, multiEntry, deleted: false, ready: false };
+
+  store._meta.indexes.push(x);
+  I.internal(tx, () => {
+    x.ready = true;
+    fill(tx, store);
+  });
 
   return store.index(name);
 };
