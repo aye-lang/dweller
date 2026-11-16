@@ -1,0 +1,111 @@
+extern fn dom_create(tag: [*]u8, len: usize) i32
+extern fn dom_append(parent: i32, child: i32)
+extern fn dom_set_attr(el: i32, name: [*]u8, name_len: usize, value: [*]u8, value_len: usize)
+extern fn dom_set_text(el: i32, s: [*]u8, len: usize)
+extern fn dom_on(el: i32, name: [*]u8, len: usize, id: i32)
+extern fn dom_value(el: i32, out: [*]mut u8, capacity: usize) usize
+extern fn dom_set_value(el: i32, s: [*]u8, len: usize)
+
+let ROWS: i64 = 1000
+let INCREMENT: i32 = 1
+let RESET: i32 = 2
+let ADD: i32 = 3
+
+var count: i64 = 0
+var shown: i32 = 0
+var field: i32 = 0
+var list: i32 = 0
+
+pub extern fn mount(root: i32, props: [*]u8, len: usize) {
+    _ = element(root, "h1", "", "Counter")
+    shown = element(root, "p", "", "")
+    attr(shown, "id", "count")
+    show()
+    button(root, "+1", INCREMENT)
+    button(root, "Reset", RESET)
+
+    let add = element(root, "div", "add", "")
+
+    field = element(add, "input", "", "")
+    attr(field, "id", "name")
+    button(add, "Add", ADD)
+    list = element(root, "div", "", "")
+    attr(list, "id", "list")
+
+    for i in 0..ROWS {
+        var label = [32]u8{'R', 'o', 'w', ' ', 0, ..}
+        let n = 4 + digits(i + 1, label[4..])
+
+        _ = element(list, "div", "row", label[0..n])
+    }
+}
+
+pub extern fn event(id: i32) {
+    if id == INCREMENT {
+        count += 1
+        show()
+    } else if id == RESET {
+        count = 0
+        show()
+    } else if id == ADD {
+        addRow()
+    }
+}
+
+fn addRow() {
+    var typed = @zeroed([256]u8)
+    let n = dom_value(field, typed[..].ptr, typed.len)
+    let added = element(list, "div", "row", typed[0..n])
+
+    attr(added, "class", "row added")
+    dom_set_value(field, "".ptr, 0)
+}
+
+fn show() {
+    var text = @zeroed([32]u8)
+    let n = digits(count, text[..])
+
+    dom_set_text(shown, text[..].ptr, n)
+}
+
+fn element(parent: i32, tag: []u8, class: []u8, label: []u8) i32 {
+    let el = dom_create(tag.ptr, tag.len)
+
+    if class.len > 0 {
+        attr(el, "class", class)
+    }
+
+    if label.len > 0 {
+        dom_set_text(el, label.ptr, label.len)
+    }
+
+    dom_append(parent, el)
+
+    return el
+}
+
+fn attr(el: i32, name: []u8, value: []u8) {
+    dom_set_attr(el, name.ptr, name.len, value.ptr, value.len)
+}
+
+fn button(parent: i32, label: []u8, id: i32) {
+    dom_on(element(parent, "button", "", label), "click".ptr, 5, id)
+}
+
+fn digits(value: i64, out: []mut u8) usize {
+    var reversed = @zeroed([20]u8)
+    var rest = value
+    var n: usize = 0
+
+    while rest > 0 || n == 0 {
+        reversed[n] = '0' + (rest % 10) as u8
+        rest = rest / 10
+        n += 1
+    }
+
+    for i in 0..n {
+        out[i] = reversed[n - 1 - i]
+    }
+
+    return n
+}
