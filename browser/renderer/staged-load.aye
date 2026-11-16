@@ -1,0 +1,29 @@
+import engine
+import std.list.List
+import std.mem.Allocator
+
+struct StagedLoad {
+    sheets: List(u32)
+    scripts: List(u32)
+    on: bool = false
+    painted: bool = false
+    stepping: bool = false
+
+    pub fn init(alloc: Allocator) StagedLoad {
+        return StagedLoad { sheets: List(u32).init(alloc), scripts: List(u32).init(alloc) }
+    }
+
+    pub fn drop(self: *mut Self) {
+        engine.releaseLoads(&mut self.sheets)
+        engine.releaseLoads(&mut self.scripts)
+        self.on = false
+        self.painted = false
+        self.stepping = false
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.drop()
+        self.sheets.deinit()
+        self.scripts.deinit()
+    }
+}
