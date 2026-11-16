@@ -949,7 +949,7 @@ struct Declarer {
                 }
             }
             if !seen[2] {
-                if colorValue(c) |v| {
+                if schemeColorValue(c) |v| {
                     color = v
                     seen[2] = true
                     continue
@@ -1171,6 +1171,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
         return animationRangeValue(sheet, prop, comps)
     }
 
+    if prop == COLOR_SCHEME && !(comps.len == 1 && isIdent(comps[0], "normal")) {
+        return colorSchemeValue(sheet, comps)
+    }
     if p.kind == PKind.Raw {
         if !(try isGridValue(sheet, prop, comps)) {
             return null
@@ -1219,7 +1222,7 @@ fn single(p: Property, c: Comp) ?Value {
             return fitContentValue(p, c) orelse lengthValue(c, true, true)
         }
         .Color => {
-            return colorValue(c)
+            return schemeColorValue(c)
         }
         .FontSize => {
             return fontSize(c)
