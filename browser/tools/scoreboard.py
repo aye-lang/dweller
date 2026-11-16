@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 import conformance
+import conformance_targets
 
 NEAR_FLOOR = 0.035
 REPO_API = "repos/{owner}/{repo}"
@@ -53,7 +54,16 @@ def conformance_lines():
     lines += [f"- below: `{m['area']}` {m['score'] * 100:.1f} (floor {m['threshold'] * 100:.0f})" for m in below]
     lines += [f"- near: `{m['area']}` {m['score'] * 100:.1f} (floor {m['threshold'] * 100:.0f})" for m in near]
 
+    lines += ["", target_line(areas)]
+
     return lines + ["", "Fell against the baseline:" if fell else "No area fell against its baseline.", *fell]
+
+
+def target_line(areas):
+    targets = {a: e["target"] for a, e in conformance_targets.read()["areas"].items() if "target" in e}
+    reached = [m["area"] for m in areas if m["area"] in targets and m["score"] * 100 >= targets[m["area"]]]
+    names = ": " + ", ".join(f"`{a}`" for a in reached) if reached else ""
+    return f"{len(reached)} of the {len(targets)} areas with a target (X2, Q6) are at it{names}."
 
 
 def count_lines(directory, name):
