@@ -9,9 +9,10 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .Navigate { url, post, content_type, body } => try putNavigation(out, url, post, content_type, body)
-        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
             try putNavigation(out, url, post, content_type, body)
             try putU32(out, referrer_policy)
+            try putU32(out, user)
         }
 
 
@@ -105,6 +106,11 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .AgentPaused { on } => try putU32(out, on)
         .Settled { on } => try putU32(out, on)
         .AskState { with_text } => try putU32(out, with_text)
+        .AgentViewport { width, height } => {
+            try putF64(out, width)
+            try putF64(out, height)
+        }
+
         .State { scroll, frames, focus, content } => {
             try putF64(out, scroll)
             try putBytes(out, frames)
