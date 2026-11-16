@@ -1,0 +1,22 @@
+// https://www.rfc-editor.org/rfc/rfc6455#section-5.5.1
+fn closeOf(payload: []u8) Taken {
+    if payload.len == 0 {
+        return Taken.Close { code: CLOSE_NO_STATUS, reason: "" }
+    }
+
+    if payload.len == 1 {
+        return Taken.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    let code = (payload[0] as u16) << 8 | payload[1] as u16
+
+    if !closeCodeValid(code) {
+        return Taken.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    if !frameTextValid(payload[2..]) {
+        return Taken.Bad { code: CLOSE_BAD_DATA }
+    }
+
+    return Taken.Close { code: code, reason: payload[2..] }
+}
