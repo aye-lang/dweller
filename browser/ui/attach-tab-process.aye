@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc (CreateNewWindow: the new main frame is created for the opener's renderer)
+fn attachTabProcess(from: AttachFrom, tab: u32) AllocError!?*mut TabProcess {
+    let opener = from.process orelse return null
+    var sv = [2]i32{-1, -1}
+
+    if socketpair(AF_UNIX, SOCK_STREAM, 0, sv[..].ptr) != 0 { return null }
+
+    cloexec(sv[0])
+    cloexec(sv[1])
+    noSigpipe(sv[0])
+
+    let tp = try newTabProcess(opener.url.alloc, opener.pid, sv[0], tab, opener.partition)
+
+    try tp.site.append(opener.site.bytes())
+    try opener.attaches.append(PendingAttach { context: from.context, fd: sv[1] })
+    try sendAttaches(opener)
+
+    return tp
+}
