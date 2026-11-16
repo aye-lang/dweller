@@ -5223,6 +5223,16 @@ pub let PRELUDE =
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
     \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\// https://html.spec.whatwg.org/multipage/input.html#dom-input-showpicker
+    \\const READONLY_TYPES = /^(?:text|search|url|tel|email|password|date|month|week|time|datetime-local|number)$/;
+    \\function showPicker() {
+    \\  const fixed = this.disabled || (this instanceof HTMLInputElement && this.readOnly && READONLY_TYPES.test(this.type));
+    \\  if (fixed) throw new DOMException("Failed to execute 'showPicker': the element is not mutable.", 'InvalidStateError');
+    \\  if (!hasActivation()) throw new DOMException("Failed to execute 'showPicker': it requires a user gesture.", 'NotAllowedError');
+    \\  actUntil = 0;
+    \\}
+    \\hidden(HTMLInputElement.prototype, 'showPicker', showPicker);
+    \\hidden(HTMLSelectElement.prototype, 'showPicker', showPicker);
     \\const cssAnimations = G.__cssAnimations(ak, Animation, KeyframeEffect, documentTimeline, hidden);
     \\delete G.__cssAnimations;
     \\hidden(G, 'CSSAnimation', cssAnimations.CSSAnimation);
