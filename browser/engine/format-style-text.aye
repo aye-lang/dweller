@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-declaration-block
+fn formatStyleText(decls: []u8, out: *mut text.Builder) AllocError!void {
+    var pos: usize = 0
+
+    while nextStyleDecl(decls, &mut pos) |d| {
+        if !overriddenLater(decls, pos, d) {
+            try appendFormattedDecl(d, out)
+        }
+    }
+}
