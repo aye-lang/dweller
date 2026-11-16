@@ -1,9 +1,15 @@
-fn dropKeptSheets(p: *mut Page) {
-    while p.kept_sheets.pop() |sheet| {
-        var kept = sheet
+import std.mem.Allocator
 
-        kept.deinit()
+fn dropKeptSheets(alloc: Allocator, st: *mut Styling) {
+    let kept = st.kept orelse return
+
+    while kept.pop() |sheet| {
+        var old = sheet
+
+        old.deinit()
     }
 
-    p.kept_sheets.deinit()
+    kept.deinit()
+    alloc.destroy(kept)
+    st.kept = null
 }

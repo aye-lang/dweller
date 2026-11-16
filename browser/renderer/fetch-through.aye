@@ -34,21 +34,22 @@ fn fetchNavigates(r: *TabRenderer, req: net.Request) bool {
 }
 
 fn hintedByPage(r: *mut TabRenderer, target: *Url, req: net.Request) net.Request {
+    let n = r.notes orelse return req
     var hinted = req
 
-    if req.kind != net.Kind.Document || req.referrer.len > 0 || (r.width > 0 && req.initiator is .Browser) || !text.eql(r.nav_target.bytes(), target.withoutFragment()) { return req }
+    if req.kind != net.Kind.Document || req.referrer.len > 0 || (r.width > 0 && req.initiator is .Browser) || !text.eql(n.nav_target.bytes(), target.withoutFragment()) { return req }
 
-    r.nav_target.clear()
-    hinted.referrer = r.nav_referrer.bytes()
+    n.nav_target.clear()
+    hinted.referrer = n.nav_referrer.bytes()
 
     return hinted
 }
 
 fn noteRemoteNavigation(target: []u8, referrer: []u8) AllocError!void {
-    let r = fetch_renderer orelse return
+    let n = try notesOf(fetch_renderer orelse return)
 
-    r.nav_target.clear()
-    try r.nav_target.append(target)
-    r.nav_referrer.clear()
-    try r.nav_referrer.append(referrer)
+    n.nav_target.clear()
+    try n.nav_target.append(target)
+    n.nav_referrer.clear()
+    try n.nav_referrer.append(referrer)
 }
