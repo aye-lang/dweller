@@ -1,0 +1,37 @@
+import std.mem.AllocError
+import std.text
+
+fn putSocketPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .SocketOpen { id, doc, url, protocols } => {
+            try putU32(out, id)
+            try putU32(out, doc)
+            try putBytes(out, url)
+            try putBytes(out, protocols)
+        }
+
+        .SocketSend { id, binary, more, data } => {
+            try putU32(out, id)
+            try putU32(out, binary)
+            try putU32(out, more)
+            try putBytes(out, data)
+        }
+
+        .SocketClose { id, code, reason } => {
+            try putU32(out, id)
+            try putU32(out, code)
+            try putBytes(out, reason)
+        }
+
+        .SocketNote { id, kind, clean, code, more, data } => {
+            try putU32(out, id)
+            try putU32(out, kind)
+            try putU32(out, clean)
+            try putU32(out, code)
+            try putU32(out, more)
+            try putBytes(out, data)
+        }
+
+        _ => {}
+    }
+}

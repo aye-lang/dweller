@@ -27,6 +27,10 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. } => try landFetched(r, got.message)
+            .SocketNote { .. } => {
+                if !(try landSocketNote(r, got.message)) { return false }
+            }
+
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)

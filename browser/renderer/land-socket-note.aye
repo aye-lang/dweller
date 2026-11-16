@@ -1,0 +1,22 @@
+import ipc
+import net
+
+fn landSocketNote(r: *mut TabRenderer, m: ipc.Message) !bool {
+    match m {
+        .SocketNote { id, kind, clean, code, more, data } => {
+            if kind > 3 || clean > 1 || more > 1 || code > 65535 { return false }
+
+            try r.socket_staged.append(data)
+
+            if more == 1 { return true }
+
+            net.landSocket(id, kind as u8, clean == 1, code as u16, r.socket_staged.bytes())
+            r.socket_staged.clear()
+            r.landed = true
+        }
+
+        _ => {}
+    }
+
+    return true
+}

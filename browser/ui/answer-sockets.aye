@@ -1,0 +1,28 @@
+import net
+import std.mem.AllocError
+
+fn answerSockets(tp: *mut TabProcess) AllocError!void {
+    let all = tab_sockets orelse return
+    var i: usize = 0
+
+    if ownedTabSockets(tp) == 0 { return }
+
+    net.pumpLoads()
+
+    while i < all.len() {
+        let k = all.items()[i]
+
+        i += 1
+
+        if k.owner != tp { continue }
+
+        while net.socketNext(k.socket) |note| {
+            try sendSocketNote(tp, k, note)
+        }
+
+        if !net.socketAlive(k.socket) {
+            i -= 1
+            dropTabSocket(i)
+        }
+    }
+}

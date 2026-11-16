@@ -1,0 +1,26 @@
+import ipc
+import net
+import url.Url
+
+let SOCKET_CHUNK: usize = 262144
+
+var socket_renderer: ?*mut TabRenderer = null
+
+fn socketsThrough(r: *mut TabRenderer) {
+    socket_renderer = r
+    net.setRemoteSockets(net.RemoteSockets { alloc: r.alloc, open: openSocketRemote, send: sendSocketRemote, close: closeSocketRemote })
+}
+
+fn openSocketRemote(id: u32, target: *Url, req: net.Request, protocols: []u8) bool {
+    let r = socket_renderer orelse return false
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.SocketOpen { id: id, doc: docOf(r, req.referrer), url: target.href, protocols: protocols }) catch return false
+
+    return true
+}
+
+fn closeSocketRemote(id: u32, code: u16, reason: []u8) {
+    let r = socket_renderer orelse return
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.SocketClose { id: id, code: code as u32, reason: reason }) catch return
+}
