@@ -1,0 +1,26 @@
+import dom
+import std.mem.AllocError
+import std.text
+
+fn writeSem(sem: *Sem, i: usize, depth: usize, out: *mut text.Builder) AllocError!void {
+    let n = sem.at(i)
+
+    for _ in 0..depth {
+        try out.append("  ")
+    }
+
+    try out.append("- ")
+
+    if text.eql(n.role, "text") {
+        try out.append("text: ")
+        try out.append(n.name)
+    } else {
+        try writeSemParts(sem, i, out)
+    }
+
+    try out.appendByte('\n')
+
+    for c in n.children.items() {
+        try writeSem(sem, c, depth + 1, out)
+    }
+}

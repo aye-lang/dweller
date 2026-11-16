@@ -91,3 +91,53 @@ fn native_counter() {
 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+fn native_agent_session(mut command: Command, requests: &str) -> String {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = command
+        .current_dir(root())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(requests.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    text(&out.stdout)
+}
+
+/// V5: the JSON lines of `docs/agent-protocol.md` on a native app
+/// (`counter --agent`). The same requests to `dweller agent` on the same
+/// app as a page (`counter.html`) get the same answers, but for the URL.
+#[test]
+fn native_counter_agent() {
+    let dir = root().join("examples/native/counter");
+    let requests = std::fs::read_to_string(dir.join("expected/agent.jsonl")).unwrap();
+
+    let mut app = Command::new(native_counter_exe());
+    app.arg("--agent");
+    let got = native_agent_session(app, &requests);
+    let mut failures = Vec::new();
+    check_golden(&dir.join("expected/agent.out"), &got, "native counter agent", &mut failures);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+
+    let page = dir.join("counter.html");
+    let navigate = format!("{{\"cmd\":\"navigate\",\"url\":\"{}\"}}\n", page.display());
+    let mut browser = dweller_command();
+    browser.arg("agent");
+    let web = native_agent_session(browser, &format!("{navigate}{requests}"));
+    let address = format!("\"url\":\"file://{}\"", page.display());
+    let web: String = web
+        .lines()
+        .skip(1)
+        .map(|l| l.replace(&address, "\"url\":\"app:counter\"") + "\n")
+        .collect();
+    assert!(got == web, "the app's answers:\n{got}\nthe page's answers:\n{web}");
+}
