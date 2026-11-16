@@ -49,7 +49,7 @@ class IDBDatabase extends G.EventTarget {
     if (this._stores.has(name)) throw I.error('ConstraintError', what('createObjectStore') + 'An object store with the specified name already exists.');
     if (autoIncrement && (keyPath === '' || Array.isArray(keyPath))) throw I.error('InvalidAccessError', what('createObjectStore') + 'The autoIncrement option was set but the keyPath option was empty or an array.');
 
-    const id = Number(I.ask('create-store', tx._id, autoIncrement ? 1 : 0, JSON.stringify(name), JSON.stringify(keyPath)));
+    const id = Number(I.ask('create-store', tx._id, autoIncrement ? 1 : 0, I.nameText(name), I.nameText(keyPath)));
     const meta = { id, name, keyPath, autoIncrement, indexes: [], deleted: false };
 
     this._stores.set(name, meta);

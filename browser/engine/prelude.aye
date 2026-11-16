@@ -280,6 +280,7 @@ pub let PRELUDE =
     \\function invokeType(t, ev, capture) {
     \\  let found = false;
     \\  ev.currentTarget = t;
+    \\  const ls = t.__listeners && t.__listeners.length > 0 ? t.__listeners.slice() : null;
     \\  if (!capture) {
     \\    const h = handlerOf(t, ev.type);
     \\    if (h) {
@@ -288,9 +289,8 @@ pub let PRELUDE =
     \\    }
     \\    if (ev._stopNow) return found;
     \\  }
-    \\  const ls = t.__listeners;
-    \\  if (!ls || ls.length === 0) return found;
-    \\  for (const l of ls.slice()) {
+    \\  if (!ls) return found;
+    \\  for (const l of ls) {
     \\    if (l.removed || l.type !== ev.type || l.capture !== capture) continue;
     \\    found = true;
     \\    if (l.once) removeListener(t, l.type, l.fn, l.capture);
@@ -3421,6 +3421,8 @@ pub let PRELUDE =
     \\  get name() { return this._name; }
     \\  get lastModified() { return this._modified; }
     \\}
+    \\Object.defineProperty(Blob.prototype, Symbol.toStringTag, { value: 'Blob', configurable: true });
+    \\Object.defineProperty(File.prototype, Symbol.toStringTag, { value: 'File', configurable: true });
     \\hidden(G, 'Blob', Blob);
     \\hidden(G, 'File', File);
     \\class FileReader extends EventTarget {

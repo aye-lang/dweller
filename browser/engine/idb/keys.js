@@ -6,7 +6,7 @@ Object.defineProperty(G, '__idb', { value: I, configurable: true });
 const ak = I.ak = G.__canvasHost;
 const DOMException = G.DOMException;
 const HEX = '0123456789abcdef';
-const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k) || (Array.isArray(o) && Reflect.ownKeys(o).includes(String(k)));
 const tagOf = v => Object.prototype.toString.call(v);
 
 I.TOKEN = {};
@@ -34,6 +34,8 @@ function unhex(s, from, to) {
 
   return out;
 }
+I.ascii = s => s.replace(/[\u0080-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+I.nameText = name => I.ascii(JSON.stringify(name));
 I.hexOf = hexOf;
 I.unhex = unhex;
 

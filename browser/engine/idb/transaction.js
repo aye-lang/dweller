@@ -68,6 +68,7 @@ I.cleanup = function () {
   }
 };
 I.schedule = function (tx) {
+  if (tx._state === 'inactive' && tx._queue.length === 0) tx._state = 'committing';
   if (tx._scheduled) return;
 
   tx._scheduled = true;
@@ -90,8 +91,6 @@ function finish(tx) {
   tx._state = 'finished';
   tx._db._txs.delete(tx);
   I.waiting.delete(tx._id);
-
-  if (tx._db._upgrade === tx) tx._db._upgrade = null;
 }
 // spec: https://w3c.github.io/IndexedDB/#commit-a-transaction
 function commit(tx) {
@@ -104,9 +103,11 @@ function commit(tx) {
   }
 
   finish(tx);
-  I.fire([tx, tx._db], I.event('complete', false, false));
+  tx._db._upgrade = null;
 
   if (tx._openRequest) I.upgradeEnded(tx, true);
+
+  I.fire([tx, tx._db], I.event('complete', false, false));
 }
 // spec: https://w3c.github.io/IndexedDB/#asynchronously-execute-a-request
 function pump(tx) {
@@ -152,6 +153,8 @@ I.abortTransaction = function (tx, error) {
   if (tx._mode === 'versionchange') I.revertUpgrade(tx);
 
   I.task(() => {
+    tx._db._upgrade = null;
+
     for (const req of pending) {
       req._done = true;
       req._result = undefined;
@@ -159,9 +162,9 @@ I.abortTransaction = function (tx, error) {
       I.fire([req, tx, tx._db], I.event('error', true, true));
     }
 
-    I.fire([tx, tx._db], I.event('abort', true, false));
-
     if (tx._openRequest) I.upgradeEnded(tx, false);
+
+    I.fire([tx, tx._db], I.event('abort', true, false));
   });
 };
 })(globalThis.__idb);

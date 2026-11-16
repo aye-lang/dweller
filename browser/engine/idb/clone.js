@@ -8,7 +8,7 @@ I.serialize = function (value) {
 
   for (const b of wire.buffers) out += I.hexOf(new Uint8Array(b)) + ',';
 
-  return out + ';' + wire.json;
+  return out + ';' + I.ascii(wire.json);
 };
 I.deserialize = function (s) {
   const at = s.indexOf(';');

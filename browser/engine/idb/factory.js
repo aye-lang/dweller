@@ -25,7 +25,7 @@ class IDBFactory {
     if (version !== undefined) version = I.enforceRange(version);
     if (version === 0) throw new TypeError("Failed to execute 'open' on 'IDBFactory': The version provided must not be 0.");
 
-    I.ask('open', req._n, version || 0, JSON.stringify(req._name));
+    I.ask('open', req._n, version || 0, I.nameText(req._name));
     opens.set(req._n, req);
 
     return req;
@@ -35,7 +35,7 @@ class IDBFactory {
 
     const req = openRequest(String(name));
 
-    I.ask('delete-database', req._n, JSON.stringify(req._name));
+    I.ask('delete-database', req._n, I.nameText(req._name));
     opens.set(req._n, req);
 
     return req;
@@ -82,18 +82,19 @@ I.upgradeEnded = function (tx, committed) {
   const req = tx._openRequest;
   const db = tx._db;
 
-  req._tx = null;
-
   if (!committed) db.close();
 
   I.task(() => {
+    req._tx = null;
     opens.delete(req._n);
 
-    if (committed && !db._closePending) return I.fire([req], I.event('success', false, false));
+    if (!committed || db._closePending) {
+      req._result = undefined;
+      req._error = I.error('AbortError', 'The connection was closed or the version change transaction was aborted.');
+    }
 
-    req._result = undefined;
-    req._error = I.error('AbortError', 'The connection was closed or the version change transaction was aborted.');
-    I.fire([req], I.event('error', true, true));
+    I.fire([req], req._error ? I.event('error', true, true) : I.event('success', false, false));
+    I.ask('opened', req._n);
   });
 };
 
