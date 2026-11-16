@@ -1,0 +1,30 @@
+import indexeddb
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: content/browser/service_worker/service_worker_registry.cc
+pub fn apply(alloc: Allocator, area: []u8, client: u64, request: []u8, out: *mut text.Builder) AllocError!void {
+    var f = indexeddb.Fields { rest: request }
+    let op = f.next()
+    let a = Ask { r: try registryOf(alloc), area: area, client: client, f: &mut f, out: out }
+
+    try out.append("ok")
+    try knowClient(a)
+
+    if text.eql(op, "register") { return register(a) }
+    if text.eql(op, "installed") { return setInstalled(a) }
+    if text.eql(op, "activated") { return setActivated(a) }
+    if text.eql(op, "skip-waiting") { return skipWaiting(a) }
+    if text.eql(op, "unregister") { return unregister(a) }
+    if text.eql(op, "registration") { return bestFor(a, false) }
+    if text.eql(op, "match") { return bestFor(a, true) }
+    if text.eql(op, "registrations") { return listRegistrations(a) }
+    if text.eql(op, "source") { return writeSource(a) }
+    if text.eql(op, "control") { return control(a) }
+    if text.eql(op, "claim") { return claim(a) }
+    if text.eql(op, "clients") { return listClients(a) }
+    if text.eql(op, "post") { return postToClient(a) }
+
+    return refuse(a, "UnknownError")
+}

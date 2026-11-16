@@ -1,0 +1,58 @@
+import indexeddb
+import std.mem.Allocator
+import std.text
+
+struct Asker {
+    alloc: Allocator
+    reply: text.Builder
+}
+
+fn asked(k: *mut Asker, client: u64, request: []u8) []u8 {
+    k.reply.clear()
+    apply(k.alloc, "http://127.0.0.1:8", client, request, &mut k.reply) catch unreachable
+
+    return k.reply.bytes()
+}
+
+fn expectEvent(client: u64, line: []u8) {
+    let e = indexeddb.nextEvent().?
+
+    @expectEqual(client, e.client)
+    @expectEqual(line, e.line)
+    indexeddb.freeEvent(e)
+}
+
+test "a worker installs, activates, and a second version waits for the first one's client" {
+    var k = Asker { alloc: @testAllocator(), reply: text.Builder.init(@testAllocator()) }
+    defer indexeddb.closeBackend()
+    defer closeRegistry()
+    defer k.reply.deinit()
+
+    @expectEqual("!SecurityError", asked(&mut k, 1, "register\nhttp://other/\nhttp://127.0.0.1:8/sw.js\nA"))
+    @expectEqual("ok\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n2\n1\n0\n0\n0\n0\n1", asked(&mut k, 1, "register\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\nA"))
+    expectEvent(1, "sw\nregistration\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n2\n1\n0\n0\n0\n0")
+    @expectEqual("ok", asked(&mut k, 1, "match\nhttp://127.0.0.1:8/app/page"))
+    @expectEqual("ok", asked(&mut k, 1, "installed\n2\n1"))
+    expectEvent(1, "sw\nregistration\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n2\n2\n0\n0")
+    expectEvent(1, "sw\nregistration\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n2\n3")
+    expectEvent(1, "sw\nactivate\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n2\n3")
+    @expectEqual("ok", asked(&mut k, 1, "activated\n2"))
+    expectEvent(1, "sw\nregistration\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n2\n4")
+    @expectEqual("ok\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n2\n4", asked(&mut k, 2, "match\nhttp://127.0.0.1:8/app/page"))
+    @expectEqual("ok\nA", asked(&mut k, 2, "source\n2"))
+    @expectEqual("ok", asked(&mut k, 2, "control\n2\nhttp://127.0.0.1:8/app/page"))
+    @expectEqual("ok\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n2\n4\n0", asked(&mut k, 1, "register\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\nA"))
+    _ = asked(&mut k, 1, "register\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\nB")
+    _ = asked(&mut k, 1, "installed\n3\n1")
+
+    while indexeddb.nextEvent() |e| { indexeddb.freeEvent(e) }
+
+    @expectEqual("ok\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n3\n2\n2\n4", asked(&mut k, 1, "registration\nhttp://127.0.0.1:8/app/x"))
+    @expectEqual("ok\n2\n1\nhttp://127.0.0.1:8/app/page", asked(&mut k, 1, "clients\n2\n0"))
+
+    try dropClient(2)
+    expectEvent(1, "sw\nregistration\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n3\n3")
+    expectEvent(1, "sw\nactivate\n1\nhttp://127.0.0.1:8/app/\nhttp://127.0.0.1:8/sw.js\n0\n0\n0\n0\n3\n3")
+    @expectEqual("ok\n1", asked(&mut k, 1, "unregister\n1"))
+    @expectEqual("ok", asked(&mut k, 1, "registrations"))
+}

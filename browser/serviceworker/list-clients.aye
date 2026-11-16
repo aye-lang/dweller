@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/ServiceWorker/#clients-matchall
+fn listClients(a: Ask) AllocError!void {
+    let version = a.f.int() as u32
+    let all = a.f.int() == 1
+
+    for c in a.r.clients.items() {
+        if !text.eql(c.area, a.area) || c.url.len == 0 || (c.controller != version && !all) { continue }
+
+        try number(a.out, c.client)
+        try number(a.out, (c.controller == version) as u64)
+        try a.out.appendByte('\n')
+        try a.out.append(c.url)
+    }
+}

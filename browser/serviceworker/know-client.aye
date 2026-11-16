@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn findClient(r: *mut Registry, client: u64) ?*mut Client {
+    for i in 0..r.clients.len() {
+        if r.clients.items()[i].client == client { return &mut r.clients.items()[i] }
+    }
+
+    return null
+}
+
+fn knowClient(a: Ask) AllocError!void {
+    if findClient(a.r, a.client) != null { return }
+
+    try a.r.clients.append(Client { client: a.client, area: try dupe(a, a.area), url: try dupe(a, "") })
+}

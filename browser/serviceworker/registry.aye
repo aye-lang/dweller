@@ -1,0 +1,42 @@
+import std.list.List
+import std.mem.Allocator
+
+let INSTALLING: u8 = 1
+let INSTALLED: u8 = 2
+let ACTIVATING: u8 = 3
+let ACTIVATED: u8 = 4
+
+struct Version {
+    id: u32
+    script: []mut u8
+    state: u8 = INSTALLING
+    skip: bool = false
+    installer: u64
+}
+
+struct Registration {
+    id: u32
+    area: []mut u8
+    scope: []mut u8
+    script_url: []mut u8
+    installing: ?*mut Version = null
+    waiting: ?*mut Version = null
+    active: ?*mut Version = null
+}
+
+struct Client {
+    client: u64
+    area: []mut u8
+    url: []mut u8
+    controller: u32 = 0
+}
+
+struct Registry {
+    alloc: Allocator
+    regs: List(*mut Registration)
+    clients: List(Client)
+    next_id: u32 = 1
+    changed: bool = false
+}
+
+var the_registry: ?*mut Registry = null

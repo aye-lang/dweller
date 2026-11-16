@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn writeSource(a: Ask) AllocError!void {
+    let id = a.f.int()
+
+    for reg in a.r.regs.items() {
+        let v = versionOf(reg, id) orelse continue
+
+        if !text.eql(reg.area, a.area) { continue }
+
+        try a.out.appendByte('\n')
+
+        return a.out.append(v.script)
+    }
+
+    return refuse(a, "NotFoundError")
+}
