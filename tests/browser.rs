@@ -791,7 +791,7 @@ fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&
     let out = c
         .args([
             url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
-            "--until-idle", "--state", "--text", "--events", events,
+            "--until-idle", "--state", "--processes", "--text", "--events", events,
         ])
         .output()
         .unwrap();
