@@ -3,7 +3,7 @@ extern fn dom_append(parent: i32, child: i32)
 extern fn dom_set_attr(el: i32, name: [*]u8, name_len: usize, value: [*]u8, value_len: usize)
 extern fn dom_set_text(el: i32, s: [*]u8, len: usize)
 extern fn dom_on(el: i32, name: [*]u8, len: usize, id: i32)
-extern fn dom_value(el: i32, out: [*]mut u8, capacity: usize) usize
+extern fn dom_value(el: i32, out: [*]u8, capacity: usize) usize
 extern fn dom_set_value(el: i32, s: [*]u8, len: usize)
 
 let ROWS: i64 = 1000
@@ -33,7 +33,13 @@ pub extern fn mount(root: i32, props: [*]u8, len: usize) {
     attr(list, "id", "list")
 
     for i in 0..ROWS {
-        var label = [32]u8{'R', 'o', 'w', ' ', 0, ..}
+        var label = @zeroed([32]u8)
+
+        label[0] = 'R'
+        label[1] = 'o'
+        label[2] = 'w'
+        label[3] = ' '
+
         let n = 4 + digits(i + 1, label[4..])
 
         _ = element(list, "div", "row", label[0..n])
