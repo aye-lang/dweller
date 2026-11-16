@@ -3,6 +3,10 @@ import std.text
 
 fn unparsedColor(toks: []Token, value: []u8, out: *mut text.Builder) AllocError!bool {
     for t in toks {
+        if t.kind == Tok.Ident && text.eqlIgnoreCase(t.text, "currentcolor") && toks[0].kind == Tok.Function && isRelative(toks) {
+            return writeUnresolvedRelative(toks, out)
+        }
+
         if t.kind == Tok.Ident && text.eqlIgnoreCase(t.text, "currentcolor") {
             return writeRaw(value, out)
         }
