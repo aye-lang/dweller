@@ -15,7 +15,7 @@ const SIGN_IN: &str = "key:tab text:alice key:tab text:wonderland key:return fra
 /// P10.22) and popups (`window_login_popup`, P4.52).
 #[test]
 fn window_login() {
-    window_login_in(&[]);
+    window_login_in(&[IN_PROCESS]);
 }
 
 /// Q2.4a: the same sign-in runs with `DWELLER_PROCESS=tab`, every load
@@ -41,7 +41,7 @@ fn window_login_in(envs: &[(&str, &str)]) {
     // the window's own page).
     let has = |got: &str, want: &[&str], not: &[&str], what: &str| {
         let committed = |w: &&str| match w.strip_prefix("url ") {
-            Some(rest) if !envs.is_empty() => got.contains(&format!("address {rest}")),
+            Some(rest) if in_renderer(envs) => got.contains(&format!("address {rest}")),
             _ => got.contains(w),
         };
         assert!(

@@ -1,0 +1,15 @@
+import engine
+import ipc
+
+fn reportSettled(r: *mut TabRenderer) !void {
+    let settled = !r.due && (r.page == null || pageIdle(r.page.?))
+
+    if engine.embedded() || settled == r.settled_said { return }
+
+    r.settled_said = settled
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Settled { on: settled as u32 })
+}
+
+fn pageIdle(p: *mut engine.Page) bool {
+    return !engine.imagesLoading(p) && !engine.decodesPending(p) && !engine.canvasFramesPending(p) && !engine.navigationPending(p) && engine.msUntilNextTimer(p) == null && !engine.animationFrameRequested(p)
+}
