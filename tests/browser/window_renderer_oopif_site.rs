@@ -265,3 +265,41 @@ fn window_renderer_oopif_site_hit_test() {
     assert!(renderer.ends_with(" gone unexpected hit_test_reply"), "{state}");
     assert_eq!(err, format!("error: bad message: unexpected hit_test_reply {}\n", pid(renderer)));
 }
+
+/// Q2.15f: `location.replace()` to another document replaces the current
+/// session history entry. `replace.html` goes to `?second` (a new
+/// entry), which replaces itself by `?third`: two entries, and Back
+/// (`cmd+[`) shows the first page, not `?second`. A
+/// replace that crosses sites (`?go` goes to `?far`, which replaces
+/// itself by a page of another site: a renderer swap with
+/// `DWELLER_PROCESS=site`) keeps the count too. The same in the window's
+/// own process.
+#[test]
+fn window_renderer_oopif_site_replace() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let shot = scratch().join("oopif_site_replace.png");
+    let far = srv.base.replace("127.0.0.1", "localhost");
+    for mode in ["", "tab", "site"] {
+        let wait = if mode.is_empty() { "loaded frame frame" } else { "renderer:loaded frame frame" };
+        let back = if mode.is_empty() { "key:cmd+[ painted loaded frame" } else { "key:cmd+[ renderer:loaded frame" };
+
+        let state = run_site(&srv.base, "replace.html", mode, &shot, wait);
+        assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html?third", srv.base), "{mode}:\n{state}");
+        assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}:\n{state}");
+
+        let state = run_site(&srv.base, "replace.html", mode, &shot, &format!("{wait} {back}"));
+        assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html", srv.base), "{mode}: Back skips the replaced entry\n{state}");
+        assert_eq!(line(&state, "history "), "history 1 of 2", "{mode}:\n{state}");
+
+        let state = run_site(&srv.base, "replace.html?go", mode, &shot, wait);
+        assert_eq!(line(&state, "url "), format!("url {far}/ui/replace.html?landed"), "{mode}:\n{state}");
+        assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}: the entry of ?far was replaced\n{state}");
+    }
+}

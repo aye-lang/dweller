@@ -505,6 +505,9 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
+            if nav.replace {
+                return replaceInFrame(FrameSlot { parent: p, index: k }, &target, initiatorOf(c))
+            }
             return navigateFrame(FrameSlot { parent: p, index: k }, &target, null, initiatorOf(c))
         }
         .Reload => {

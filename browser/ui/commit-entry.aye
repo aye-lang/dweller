@@ -13,6 +13,11 @@ fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!v
         return h.push(href, tp.doc_seq, null, false)
     }
 
-    try h.replace(href, h.now().state)
+    var state = h.now().state
+
+    if tp.replaced_on_commit { state = null }
+
+    tp.replaced_on_commit = false
+    try h.replace(href, state)
     h.now().doc = tp.doc_seq
 }
