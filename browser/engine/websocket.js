@@ -33,7 +33,7 @@ function offered(protocols) {
 
   for (const [i, p] of list.entries()) {
     if (!TOKEN.test(p)) throw fail("construct 'WebSocket': The subprotocol '" + p + "' is invalid.", 'SyntaxError');
-    if (list.indexOf(p) !== i) throw fail("construct 'WebSocket': The subprotocol '" + p + "' is duplicated.", 'SyntaxError');
+    if (list.findIndex(q => q.toLowerCase() === p.toLowerCase()) !== i) throw fail("construct 'WebSocket': The subprotocol '" + p + "' is duplicated.", 'SyntaxError');
   }
 
   return list;

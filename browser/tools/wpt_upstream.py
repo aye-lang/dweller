@@ -21,11 +21,13 @@ HOSTS = [
 ]
 HTTP_PORTS = (8000, 8001)
 HTTPS_PORTS = (8443, 8444)
+WS_PORTS = (8666,)
+WSS_PORTS = (8667,)
 START_WAIT = 90
 
 
 def resolve_setting():
-    return ",".join(f"{h}:{p}:127.0.0.1" for h in HOSTS for p in HTTP_PORTS + HTTPS_PORTS)
+    return ",".join(f"{h}:{p}:127.0.0.1" for h in HOSTS for p in HTTP_PORTS + HTTPS_PORTS + WS_PORTS + WSS_PORTS)
 
 
 def listening(port):
@@ -73,7 +75,7 @@ class Upstream:
         path.write_text(json.dumps({
             "server_host": "127.0.0.1",
             "check_subdomains": False,
-            "ports": {"http": list(HTTP_PORTS), "https": list(HTTPS_PORTS)},
+            "ports": {"http": list(HTTP_PORTS), "https": list(HTTPS_PORTS), "ws": list(WS_PORTS), "wss": list(WSS_PORTS)},
         }))
         return path
 

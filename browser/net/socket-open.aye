@@ -29,7 +29,9 @@ pub fn socketOpen(target: *Url, req: Request, protocols: []u8) u32 {
 
     var hop = Hop { from: req.referrer, limit: SOCKET_MESSAGE_LIMIT }
 
-    k.job = startJob(ld.alloc, s, ld.multi, href.bytes(), req, "GET", null, &mut hop)
+    if !badPort(target.port) {
+        k.job = startJob(ld.alloc, s, ld.multi, href.bytes(), req, "GET", null, &mut hop)
+    }
 
     if k.job |job| {
         curl_easy_setopt(job.curl, CURLOPT_CONNECT_ONLY, 1 as i64)
