@@ -4,6 +4,11 @@
   conformance.py run [-j N] [AREA...]   run wpt.py / test262.py per area
   conformance.py table                  write docs/conformance.md and the per-area baselines
   conformance.py check                  exit 1 when an area fell more than 0.5 points
+
+check counts subtests that the files of the baseline passed and no longer
+pass (net of the ones those files gained) over the baseline's total. Files
+and subtests that the baseline does not have change the score but are not
+a fall: the table shows them, the next `table` takes them into the baseline.
 """
 import argparse
 import csv
@@ -179,18 +184,27 @@ def cmd_table(args):
 
 
 def regressions(old, new):
-    return [t for t, (p, n) in old["tests"].items() if p == n and new["tests"].get(t, [0, 1])[0] < n]
+    return [t for t, (p, _) in old["tests"].items() if new["tests"].get(t, [0, 0])[0] < p]
+
+
+def lost_subtests(old, new):
+    return sum(p - new["tests"].get(t, [0, 0])[0] for t, (p, _) in old["tests"].items())
 
 
 def check_area(area):
     old = read_baseline(area)
-    if old is None or not available(area):
+
+    if old is None or not available(area) or not old["total"]:
         return []
+
     new = measure(area)
-    if old["score"] - new["score"] <= TOLERANCE:
+    lost = lost_subtests(old, new)
+
+    if lost / old["total"] <= TOLERANCE:
         return []
-    drop = (old["score"] - new["score"]) * 100
-    return [f"{area}: {old['score'] * 100:.1f} -> {new['score'] * 100:.1f} (-{drop:.1f} points)"] + \
+
+    return [f"{area}: the baseline's files lost {lost} of {old['total']} subtests (-{lost / old['total'] * 100:.1f} points); "
+            f"score {old['score'] * 100:.1f} -> {new['score'] * 100:.1f}"] + \
            [f"  {t}" for t in regressions(old, new)]
 
 
