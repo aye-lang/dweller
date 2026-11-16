@@ -1,0 +1,15 @@
+// https://tc39.es/ecma262/#sec-primary-expression-regular-expression-literals-static-semantics-early-errors
+
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn regexpLiteralValid(alloc: Allocator, atoms: *mut Atoms, pattern: u32, flags: u32) AllocError!bool {
+    let prog = try regexpParse(alloc, atoms, pattern, flags) orelse {
+        return false
+    }
+
+    prog.deinit()
+    alloc.destroy(prog)
+
+    return true
+}

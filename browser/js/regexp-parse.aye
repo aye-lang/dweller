@@ -1,0 +1,46 @@
+// https://tc39.es/ecma262/#sec-parsepattern
+
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn regexpParse(alloc: Allocator, atoms: *mut Atoms, pattern: u32, flags: u32) AllocError!?*mut RegexProg {
+    let prog = try alloc.create(RegexProg {
+        alloc: alloc,
+        insts: List(RInst).init(alloc),
+        ranges: List(CRange).init(alloc),
+        sets: List(CSet).init(alloc),
+        nodes: List(RNode).init(alloc),
+        lists: List(u32).init(alloc),
+        names: List(u32).init(alloc),
+        ngroups: 0,
+        nregs: 0,
+        global: false,
+        icase: false,
+        multiline: false,
+        dotall: false,
+        sticky: false,
+        source: pattern,
+        flags: flags,
+    })
+    var rp = RParser { prog: prog, atoms: atoms, p: atoms.name(pattern), pos: 0, tmp: List(u32).init(alloc), nesting: 0 }
+    defer rp.tmp.deinit()
+
+    if regexpSetFlags(&mut rp, atoms.name(flags)) {
+        let root = rp.alt() catch |e| NONE
+
+        if root != NONE && rp.pos == rp.p.len {
+            try emit(prog, RInst.Save { n: 0 })
+            try compileNode(prog, root)
+            try emit(prog, RInst.Save { n: 1 })
+            try emit(prog, RInst.Match)
+
+            return prog
+        }
+    }
+
+    prog.deinit()
+    alloc.destroy(prog)
+
+    return null
+}
