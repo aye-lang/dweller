@@ -67,6 +67,12 @@ function insertText(t, data) {
   t.range.deleteContents();
 
   const c = t.range.startContainer, o = t.range.startOffset;
+  if (c.nodeType === 1 && c.childNodes.length === 1 && c.firstChild.localName === 'br') {
+    c.removeChild(c.firstChild);
+    t.sel.collapse(c, 0);
+    t.range = t.sel.getRangeAt(0);
+  }
+
   if (c.nodeType !== 3) return insertNodes(t, document.createTextNode(data));
 
   c.insertData(o, data);
@@ -74,9 +80,14 @@ function insertText(t, data) {
 }
 
 function textBeside(t, forward) {
+  const c = t.range.startContainer, at = c.nodeType === 1 ? c.childNodes[t.range.startOffset] : null;
   const walker = document.createTreeWalker(t.host, 4);
-  walker.currentNode = t.range.startContainer;
-  if (t.range.startContainer.nodeType === 1 && !forward) walker.currentNode = t.range.startContainer.childNodes[t.range.startOffset] || t.range.startContainer;
+  let from = c;
+  if (c.nodeType === 1 && !at) while (from.lastChild) from = from.lastChild;
+  if (at) from = at;
+  if (from.nodeType === 3 && from !== c && from.data.length > 0 && forward === (from === at)) return from;
+
+  walker.currentNode = from;
 
   let n = forward ? walker.nextNode() : walker.previousNode();
   while (n && n.data.length === 0) n = forward ? walker.nextNode() : walker.previousNode();
@@ -105,9 +116,13 @@ function deleteOne(t, forward) {
     o = forward ? 0 : c.data.length;
   }
 
-  const n = unitAt(c.data, o, forward);
+  const n = unitAt(c.data, o, forward), block = c.parentNode;
   c.deleteData(forward ? o : o - n, n);
   t.sel.collapse(c, forward ? o : o - n);
+  if (c.data.length > 0 || block === t.host || block.childNodes.length > 1) return;
+
+  block.replaceChild(document.createElement('br'), c);
+  t.sel.collapse(block, 0);
 }
 
 function insertParagraph(t) {
@@ -199,6 +214,15 @@ hidden(Document.prototype, 'execCommand', function execCommand(name, showUI, val
   editEvent('input', t.host, command, text, false);
 
   return true;
+});
+hidden(G, '__hostEdit', function (host, line) {
+  const at = line.indexOf('\n'), t = target();
+  if (!t || t.host !== host) {
+    getSelection().selectAllChildren(host);
+    getSelection().collapseToEnd();
+  }
+
+  document.execCommand(line.slice(0, at), false, line.slice(at + 1));
 });
 hidden(Document.prototype, 'queryCommandSupported', function queryCommandSupported(name) {
   const command = String(name).toLowerCase();

@@ -337,6 +337,9 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
     if cmd {
         return false
     }
+    if try hostKey(ui, p, sym, shift) {
+        return true
+    }
     let enter = sym == SDLK_RETURN || sym == SDLK_KP_ENTER
     if sym == SDLK_ESCAPE {
         try blur(ui)
@@ -440,6 +443,10 @@ fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, sh
 fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     let p = ui.tab.page orelse return false
     let f = p.doc.controls.focus orelse return false
+    if try engine.editHost(p, "inserttext", s) {
+        try ui.relayout()
+        return true
+    }
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
     }

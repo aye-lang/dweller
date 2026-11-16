@@ -1,0 +1,18 @@
+import engine
+import std.mem.AllocError
+
+fn hostKey(ui: *mut Ui, p: *mut engine.Page, sym: i32, shift: bool) AllocError!bool {
+    var key: []u8 = ""
+
+    if sym == SDLK_BACKSPACE { key = "Backspace" }
+    if sym == SDLK_DELETE { key = "Delete" }
+    if sym == SDLK_RETURN || sym == SDLK_KP_ENTER { key = "Enter" }
+
+    let command = engine.keyEditCommand(key, shift)
+
+    if command.len == 0 || !(try engine.editHost(p, command, "")) { return false }
+
+    try ui.relayout()
+
+    return true
+}
