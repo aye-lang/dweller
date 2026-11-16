@@ -1,0 +1,22 @@
+import engine
+import layout
+import paint
+
+// blink: core/paint/paint_controller.cc (the cached display item list)
+fn keepList(r: *mut TabRenderer, p: *mut engine.Page, t: *mut layout.Tree, moved: bool) !void {
+    let version = engine.treeVersion(p)
+    let laid = engine.layoutGeneration(p)
+
+    if r.list != null && !r.relist && !moved && r.list_tree == t && r.list_version == version && r.list_laid == laid { return canvasesDrawn(r, p, t) }
+
+    dropList(r)
+    r.list = try paint.build(r.alloc, t)
+    r.sigs.clear()
+    try paint.signature(&r.list.?, t, &mut r.sigs)
+    r.shown.clear()
+    try engine.canvasShown(p, &mut r.shown)
+    r.list_tree = t
+    r.list_version = version
+    r.list_laid = laid
+    r.relist = false
+}
