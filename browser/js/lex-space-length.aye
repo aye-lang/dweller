@@ -1,0 +1,31 @@
+// https://tc39.es/ecma262/#sec-white-space
+
+fn lexSpaceLength(src: []u8, pos: usize) usize {
+    if pos + 1 >= src.len {
+        return 0
+    }
+
+    let a = src[pos]
+    let b = src[pos + 1]
+
+    if a == 0xC2 && b == 0xA0 {
+        return 2
+    }
+
+    if pos + 2 >= src.len {
+        return 0
+    }
+
+    let c = src[pos + 2]
+    let ogham = a == 0xE1 && b == 0x9A && c == 0x80
+    let general = a == 0xE2 && b == 0x80 && ((c >= 0x80 && c <= 0x8A) || c == 0xAF)
+    let math = a == 0xE2 && b == 0x81 && c == 0x9F
+    let ideographic = a == 0xE3 && b == 0x80 && c == 0x80
+    let bom = a == 0xEF && b == 0xBB && c == 0xBF
+
+    if ogham || general || math || ideographic || bom {
+        return 3
+    }
+
+    return 0
+}

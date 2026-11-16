@@ -1,0 +1,22 @@
+import ipc
+import paint
+import std.math
+
+fn placeShown(r: *TabRenderer, s: *mut ipc.Subframe, shown: paint.FrameShown, origin: [2]f64) {
+    let c = shown.clip
+
+    s.x = origin[0] + devicePx(r, shown.r.x)
+    s.y = origin[1] + devicePx(r, shown.r.y)
+    s.opacity = shown.alpha as u32
+
+    let x0 = math.max(math.max(0.0, s.x), origin[0] + devicePx(r, c.x))
+    let y0 = math.max(math.max(0.0, s.y), origin[1] + devicePx(r, c.y))
+    let x1 = math.min(math.min(r.width as f64, s.x + s.width as f64), origin[0] + devicePx(r, c.x + c.w))
+    let y1 = math.min(math.min(r.height as f64, s.y + s.height as f64), origin[1] + devicePx(r, c.y + c.h))
+
+    if x0 < x1 && y0 < y1 { s.clip = [4]u32{x0 as u32, y0 as u32, x1 as u32, y1 as u32} }
+}
+
+fn devicePx(r: *TabRenderer, v: f64) f64 {
+    return math.floor(v * r.scale + 0.5)
+}

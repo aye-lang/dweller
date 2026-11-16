@@ -121,3 +121,99 @@ fn window_renderer_oopif_site_blob() {
     assert_eq!(err, format!("error: bad message: commit outside site lock {}\n", pid(renderer)));
     assert!(line(&state, "url ").ends_with("/ui/blob-away.html"), "the forged commit is not shown\n{state}");
 }
+
+fn run_state(page: &str, mode: &str, events: &str, evil: &str) -> (String, String) {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", mode)
+        .env("DWELLER_TEST", "1")
+        .env("DWELLER_TEST_EVIL", evil)
+        .arg(page)
+        .args(["--font", "fixed", "--width", "400", "--height", "340"])
+        .args(["--frames", "600", "--until-idle", "--state", "--events", events])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{page} {events}: {}\n{}", out.status, text(&out.stderr));
+    (text(&out.stdout), text(&out.stderr))
+}
+
+/// Q2.15c: the initiator's sandbox flags in tab and site mode. The
+/// renderer runs "allowed by sandboxing to navigate" for a person's
+/// click on a `target=_top` link or form of a sandboxed frame, as the
+/// in-process window does (`window_sandbox_targets`). And the browser
+/// holds a sandboxed cross-site frame's renderer to the flags it sent
+/// it: a POST navigation without `allow-forms`, and a cookie or storage
+/// request without `allow-same-origin`, kill that renderer only.
+#[test]
+fn window_renderer_oopif_site_sandbox() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let targets = [("click:10,60", "sandbox_targets.html"), ("click:10,100", "other.html"), ("click:10,140", "sandbox_targets.html"), ("click:10,180", "other.html?")];
+    for mode in ["tab", "site"] {
+        for (click, want) in targets {
+            let events = format!("renderer:loaded {click} renderer:input frame frame frame");
+            let (state, err) = run_state("browser/tests/ui/sandbox_targets.html", mode, &events, "");
+            assert!(err.is_empty(), "{mode} {click}: {err}");
+            assert!(line(&state, "url ").ends_with(&format!("/browser/tests/ui/{want}")), "{mode} {click}: wanted {want}\n{state}");
+        }
+    }
+
+    let page = format!("{}/ui/oopif-sandbox.html", srv.base);
+    let (state, err) = run_state(&page, "site", "renderer:loaded renderer:child frame", "");
+    assert!(err.is_empty(), "{err}");
+    let children = kids(&state);
+    assert_eq!(children.len(), 1, "{state}");
+    assert!(children[0].ends_with(" title Sandboxed cookie SecurityError storage SecurityError"), "the form is not submitted, the origin is opaque\n{state}");
+
+    let forged = [("sandbox-form", "form in a sandboxed frame"), ("sandbox-cookie", "cookie in a sandboxed origin"), ("sandbox-storage", "storage in a sandboxed origin")];
+    for (evil, why) in forged {
+        let (state, err) = run_state(&page, "site", "renderer:loaded renderer:child-gone frame", evil);
+        let children = kids(&state);
+        assert!(children.len() == 1 && children[0].ends_with(&format!(" http://localhost gone {why}")), "{evil}:\n{state}");
+        assert_eq!(err, format!("error: bad message: {why} {}\n", pid(children[0])), "{evil}");
+        assert!(line(&state, "renderer ").ends_with(" title Parent"), "{evil}: the parent lives\n{state}");
+    }
+}
+
+fn far_pixels(a: &Path, b: &Path, by: u8) -> usize {
+    let (w, h, got) = png_rgba(&std::fs::read(a).unwrap());
+    let (gw, gh, want) = png_rgba(&std::fs::read(b).unwrap());
+    assert_eq!((w, h), (gw, gh));
+    got.chunks(4).zip(want.chunks(4)).filter(|(p, q)| p.iter().zip(q.iter()).any(|(x, y)| x.abs_diff(*y) > by)).count()
+}
+
+/// Q2.15d: the window shows a cross-site frame as its parent's paint
+/// places it: clipped by an ancestor's `overflow: hidden`, moved and
+/// clipped by an ancestor scroll container's scroll offset, moved by an
+/// ancestor's `transform: translate()` (all byte-equal to the in-process
+/// window), and blended at an ancestor's `opacity` (each channel within 1
+/// of the in-process window, which rounds once where the two processes
+/// round twice).
+#[test]
+fn window_renderer_oopif_site_effects() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let golden = scratch().join("oopif_site_effects_in_process.png");
+    let shot = scratch().join("oopif_site_effects.png");
+    let cases = [("?hidden", "at 20 40 ", 0u8), ("?scrolled", "at 20 -5 ", 0), ("?moved", "at 50 60 ", 0), ("?faded", "at 20 40 ", 1)];
+    for (query, at, by) in cases {
+        let page = format!("oopif-effects.html{query}");
+        run_site(&srv.base, &page, "", &golden, "loaded frame frame");
+        let state = run_site(&srv.base, &page, "site", &shot, "renderer:loaded renderer:child frame");
+        let children = kids(&state);
+        assert!(children.len() == 1 && children[0].contains(" frame 200 100 ") && children[0].contains(at), "{query}:\n{state}");
+        assert_eq!(far_pixels(&shot, &golden, by), 0, "{query}: {} differs from the in-process window {}", shot.display(), golden.display());
+    }
+}

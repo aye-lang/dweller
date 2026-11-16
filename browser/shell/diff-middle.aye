@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn diffMiddle(tmp: Allocator, xs: [][]u8, ys: [][]u8) AllocError![]u8 {
+    let w = ys.len + 1
+    let lcs = try lcsTable(tmp, xs, ys)
+    var out = text.Builder.init(tmp)
+    var p: usize = 0
+    var q: usize = 0
+
+    while p < xs.len || q < ys.len {
+        if p < xs.len && q < ys.len && text.eql(xs[p], ys[q]) {
+            p += 1
+            q += 1
+        } else if p < xs.len && (q == ys.len || lcs[(p + 1) * w + q] >= lcs[p * w + q + 1]) {
+            try diffLine(&mut out, "- ", xs[p])
+            p += 1
+        } else {
+            try diffLine(&mut out, "+ ", ys[q])
+            q += 1
+        }
+    }
+
+    return out.bytes()
+}
+
+fn diffLine(out: *mut text.Builder, mark: []u8, line: []u8) AllocError!void {
+    try out.append(mark)
+    try out.append(line)
+    try out.appendByte('\n')
+}
