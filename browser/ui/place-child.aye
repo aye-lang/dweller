@@ -33,9 +33,19 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
         return true
     }
 
-    if !(try childCrossSite(tp, s.url)) { return false }
+    let kept = takeKept(tp, s.url)
 
-    try tp.children.append(ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: try ownedCopy(alloc, s.url), holder: s.holder, sandbox: s.sandbox, name: try ownedCopy(alloc, s.name) })
+    if kept == null && !(try childCrossSite(tp, s.url)) { return false }
+
+    var fresh = ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: try ownedCopy(alloc, s.url), holder: s.holder, sandbox: s.sandbox, name: try ownedCopy(alloc, s.name) }
+
+    if kept |k| {
+        alloc.free(k.src)
+        fresh.href = k.href
+        fresh.primed = k.res
+    }
+
+    try tp.children.append(fresh)
     tp.whole = true
 
     return true
