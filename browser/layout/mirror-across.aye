@@ -1,0 +1,26 @@
+import css
+import std.math
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#cross-start
+fn mirrorAcross(t: *mut Tree, i: usize, all: []Item, row: bool, cw: f64) {
+    let s = t.bx(i).style
+    var width = cw
+
+    if row || !isKeyword(s[css.DIRECTION], "rtl") {
+        return
+    }
+
+    for it in all {
+        let b = t.bx(it.box)
+
+        if isKeyword(s[css.FLEX_WRAP], "wrap-reverse") {
+            width = math.max(width, b.x + b.w + b.margin[1])
+        }
+    }
+
+    for it in all {
+        let b = t.bx(it.box)
+
+        b.x = width - b.x - b.w - b.margin[1] + b.margin[3]
+    }
+}
