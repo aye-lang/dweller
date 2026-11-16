@@ -1,0 +1,31 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#trig-funcs
+fn inverseTrigValue(name: []u8, args: []Quantity) ?Quantity {
+    let to_deg = 180.0 / math.pi
+
+    if text.eqlIgnoreCase(name, "atan2") {
+        if args.len != 2 || args[0].angle != args[1].angle {
+            return null
+        }
+
+        let s = scalarsOf(args[0], args[1]) orelse return null
+
+        return angleQ(math.atan2(s.a, s.b) * to_deg)
+    }
+
+    if args.len != 1 || !args[0].number {
+        return null
+    }
+
+    if text.eqlIgnoreCase(name, "asin") {
+        return angleQ(math.asin(args[0].num) * to_deg)
+    }
+
+    if text.eqlIgnoreCase(name, "acos") {
+        return angleQ(math.acos(args[0].num) * to_deg)
+    }
+
+    return angleQ(math.atan(args[0].num) * to_deg)
+}

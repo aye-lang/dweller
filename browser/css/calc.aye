@@ -83,7 +83,7 @@ pub fn isMathFunction(t: Token) bool {
     if t.kind != Tok.Function {
         return false
     }
-    return text.eqlIgnoreCase(t.text, "calc") || text.eqlIgnoreCase(t.text, "min") || text.eqlIgnoreCase(t.text, "max") || text.eqlIgnoreCase(t.text, "clamp") || isSteppedFunction(t.text)
+    return text.eqlIgnoreCase(t.text, "calc") || text.eqlIgnoreCase(t.text, "min") || text.eqlIgnoreCase(t.text, "max") || text.eqlIgnoreCase(t.text, "clamp") || isSteppedFunction(t.text) || isPlainMath(t.text)
 }
 
 // A value during the evaluation: a number, or a length of `px` pixels
@@ -93,6 +93,7 @@ struct Quantity {
     num: f64
     px: f64
     pct: f64
+    angle: bool = false
 }
 
 fn numberQ(n: f64) Quantity {
@@ -109,7 +110,7 @@ fn lengthQ(px: f64, pct: f64) Quantity {
 pub fn calcValue(toks: []Token) ?Value {
     var p = CalcParser { toks: toks, i: 0 }
     let q = finiteQuantity(p.term() orelse return null)
-    if skipWhitespace(toks, p.i) < toks.len {
+    if skipWhitespace(toks, p.i) < toks.len || q.angle {
         return null
     }
     if q.number {
@@ -150,10 +151,10 @@ struct CalcParser {
             if t.delim == '-' {
                 sign = -1.0
             }
-            if a.number != b.number {
+            if a.number != b.number || a.angle != b.angle {
                 return null
             }
-            a = Quantity { number: a.number, num: a.num + sign * b.num, px: a.px + sign * b.px, pct: a.pct + sign * b.pct }
+            a = Quantity { number: a.number, num: a.num + sign * b.num, px: a.px + sign * b.px, pct: a.pct + sign * b.pct, angle: a.angle }
         }
         return a
     }
@@ -218,6 +219,9 @@ struct CalcParser {
             if unitPx(t.num, t.text) |px| {
                 return lengthQ(px, 0.0)
             }
+            if angleDegrees(t) |deg| {
+                return angleQ(deg)
+            }
             return null
         }
         if t.kind == Tok.Ident {
@@ -262,7 +266,7 @@ struct CalcParser {
             if text.eqlIgnoreCase(name, "calc") {
                 picked = q
                 have = true
-            } else if text.eqlIgnoreCase(name, "clamp") || isSteppedFunction(name) {
+            } else if text.eqlIgnoreCase(name, "clamp") || isSteppedFunction(name) || isPlainMath(name) {
                 if n >= 3 {
                     return null
                 }
@@ -292,6 +296,9 @@ struct CalcParser {
         if isSteppedFunction(name) {
             return steppedValue(name, mode.kind, args[..n])
         }
+        if isPlainMath(name) {
+            return plainMath(name, args[..n])
+        }
         if text.eqlIgnoreCase(name, "clamp") {
             if n != 3 || args[0].number != args[1].number || args[1].number != args[2].number {
                 return null
@@ -311,7 +318,7 @@ struct CalcParser {
 }
 
 fn scaled(q: Quantity, k: f64) Quantity {
-    return Quantity { number: q.number, num: q.num * k, px: q.px * k, pct: q.pct * k }
+    return Quantity { number: q.number, num: q.num * k, px: q.px * k, pct: q.pct * k, angle: q.angle }
 }
 
 // Is `a` less than `b`? Percentages are taken of the reference length,
