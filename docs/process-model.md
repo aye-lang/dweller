@@ -327,9 +327,10 @@ profile has the shape of `sandbox/policy/mac/common.sb` and
   path) fails with `EPERM`.
 - Fonts: the system faces are read before entry; fallback faces are
   opened later by path under `/usr/share/fonts`, which Landlock allows.
-  Without Landlock seccomp refuses every open and those faces are
-  missing; a `font_open` from the browser (Chromium's font IPC,
-  `docs/linux/sandbox_ipc.md`) would bring them back.
+  Since Q2.15g the renderer maps every font file of its lists before
+  entry (`font.keepFontFiles`) and makes the late faces from the
+  mappings, so they need no open and are there without Landlock too;
+  no `font_open` message is needed while the files are a fixed list.
 
 The utility process gets the same profile without the fonts.
 

@@ -303,3 +303,53 @@ fn window_renderer_oopif_site_replace() {
         assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}: the entry of ?far was replaced\n{state}");
     }
 }
+
+/// Q2.15g: on Linux without Landlock, seccomp refuses every open after
+/// the renderer entered its sandbox, and the fonts opened late (fallback
+/// faces for CJK, Arabic, Hebrew and symbols, bold italic serif, the
+/// canvas's own system faces) were missing. The renderer now maps the
+/// font files before it enters. With Landlock turned off for the test
+/// (the probe's refusals are all EPERM, none is Landlock's EACCES) the
+/// page with `DWELLER_PROCESS=site` is byte-equal to the in-process
+/// window's, as it is with Landlock.
+#[test]
+fn window_renderer_oopif_site_late_fonts() {
+    if !has_sdl() || !cfg!(target_os = "linux") {
+        println!("skipped: Linux with SDL2 only");
+        return;
+    }
+    let home = scratch().join("late_fonts_home");
+    let profile = home.join(".dweller");
+    std::fs::create_dir_all(&profile).unwrap();
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env_remove("DWELLER_PROCESS")
+            .env("HOME", &home)
+            .env("DWELLER_PROFILE", &profile)
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/late-fonts.html", "--width", "400", "--height", "300"])
+            .args(["--frames", "600", "--until-idle", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        text(&out.stderr)
+    };
+    let golden = scratch().join("late_fonts_in_process.png");
+    let shot = scratch().join("late_fonts_site.png");
+    let site = [("DWELLER_PROCESS", "site"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
+    let seccomp_only = [site[0], site[1], site[2], ("DWELLER_TEST_NO_LANDLOCK", "1")];
+
+    let err = run(&golden, "loaded frame", &[]);
+    assert!(err.is_empty(), "{err}");
+
+    let err = run(&shot, "renderer:loaded renderer:frame frame", &seccomp_only);
+    assert_eq!(err, "sandbox-probe home=1 tmp=1 tcp=1 fork=1\n", "seccomp alone refuses with EPERM");
+    assert!(std::fs::read(&shot).unwrap() == std::fs::read(&golden).unwrap(), "without Landlock: {} differs from {}", shot.display(), golden.display());
+
+    let err = run(&shot, "renderer:loaded renderer:frame frame", &site);
+    assert!(err.starts_with("sandbox-probe home="), "{err}");
+    assert!(std::fs::read(&shot).unwrap() == std::fs::read(&golden).unwrap(), "with Landlock: {} differs from {}", shot.display(), golden.display());
+}
