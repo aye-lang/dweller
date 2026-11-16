@@ -1,0 +1,16 @@
+import css
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn computedCustom(s: *mut Script, h: NodeId, name: []u8, out: *mut text.Builder) AllocError!void {
+    if layoutStyles(s, h) != null {
+        let g = s.geom orelse return
+
+        return css.customText(g.styles, &g.styling.author, h, name, out)
+    }
+
+    let st = try computedStyling(s)
+
+    try css.customText(&mut st.styles, &st.author, h, name, out)
+}

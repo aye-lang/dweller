@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<title>transition-behavior: allow-discrete on a transform that cannot interpolate</title>
+<div id="plain"></div>
+<div id="discrete"></div>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\n'; }
+const singular = 'matrix3d(2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)';
+
+function at(id, behavior, delay) {
+  const el = document.getElementById(id);
+  el.style.transition = 'none';
+  el.style.transform = singular;
+  getComputedStyle(el).transform;
+  el.style.transition = 'transform 100s linear ' + delay;
+  el.style.transitionBehavior = behavior;
+  el.style.transform = 'matrix(3, 0, 0, 3, 0, 0)';
+  return getComputedStyle(el).transform;
+}
+
+log('normal', at('plain', 'normal', '-30s'));
+log('allow-discrete 0.3', at('discrete', 'allow-discrete', '-30s'));
+log('allow-discrete 0.6', at('discrete', 'allow-discrete', '-60s'));
+</script>

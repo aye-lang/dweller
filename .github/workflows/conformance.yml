@@ -72,3 +72,29 @@ jobs:
         with:
           name: webgl-conformance-results
           path: target/webgl-results
+
+  # DV6: the CI cells of the scoreboard in the run summary. It pushes nothing.
+  scoreboard:
+    needs: [conformance, webgl]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: conformance-results
+          path: target
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: webgl-conformance-results
+          path: target/webgl-results
+      - run: python3 browser/tools/scoreboard.py summary >> "$GITHUB_STEP_SUMMARY"

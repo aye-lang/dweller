@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<title>Web Audio source times</title>
+<pre id="out"></pre>
+<script>
+const lines = [];
+function log(...a) {
+  lines.push(a.join(' '));
+  document.getElementById('out').textContent = lines.join('\n');
+}
+function err(f) {
+  try {
+    f();
+    return 'no error';
+  } catch (e) {
+    return e.name;
+  }
+}
+async function render(frames, bufferFrames, setup) {
+  const cx = new OfflineAudioContext(1, frames, 44100);
+  const buffer = new AudioBuffer({ numberOfChannels: 1, length: bufferFrames, sampleRate: 44100 });
+  buffer.getChannelData(0).set(Array.from({ length: bufferFrames }, (_, i) => i + 1));
+  const source = new AudioBufferSourceNode(cx, { buffer });
+  source.connect(cx.destination);
+  setup(source);
+  const out = await cx.startRendering();
+  return Array.from(out.getChannelData(0)).join(',');
+}
+function source() {
+  return new OfflineAudioContext(1, 128, 44100).createBufferSource();
+}
+(async () => {
+  log('non-finite start', err(() => source().start(Infinity)), err(() => source().start(NaN)),
+      err(() => source().start(0, Infinity)), err(() => source().start(0, 0, -Infinity)));
+  log('non-finite stop', err(() => { const s = source(); s.start(); s.stop(Infinity); }));
+  log('start never', await render(4, 4, s => s.start(1e300)));
+  log('stop never', await render(4, 4, s => { s.start(); s.stop(1e300); }));
+  log('offset never', await render(4, 4, s => s.start(0, 1e300)));
+  log('backwards', await render(4, 4, s => { s.playbackRate.value = -1; s.start(0, 3 / 44100); }));
+  log('backwards fast', await render(4, 8, s => { s.playbackRate.value = -5; s.start(0, 7 / 44100); }));
+  log('backwards between frames', await render(4, 4, s => { s.playbackRate.value = -1; s.start(0, 2.5 / 44100); }));
+  log('backwards from the end', await render(4, 4, s => { s.playbackRate.value = -1; s.start(0, 10 / 44100); }));
+  log('backwards loop', await render(6, 8, s => {
+    s.loop = true;
+    s.loopStart = 2 / 44100;
+    s.loopEnd = 4 / 44100;
+    s.playbackRate.value = -1;
+    s.start(0, 6 / 44100);
+  }));
+  log('backwards whole loop', await render(8, 4, s => { s.loop = true; s.playbackRate.value = -1; s.start(0, 3 / 44100); }));
+})();
+</script>

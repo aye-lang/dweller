@@ -11,7 +11,7 @@ fn startWaker(alloc: Allocator) {
 
     if io_waker != null || pipe(&mut ends) != 0 { return }
 
-    let w = alloc.create(IoWaker { lock: Mutex.init(), pipe: ends, told: Atomic(u32).init(0), fired: Atomic(u32).init(1), stopped: Atomic(u32).init(0) }) catch return
+    let w = alloc.create(IoWaker { alloc: alloc, lock: Mutex.init(), pipe: ends, told: Atomic(u32).init(0), fired: Atomic(u32).init(1), stopped: Atomic(u32).init(0) }) catch return
 
     w.thread = thread.spawn(IoWaker, runWaker, w) catch {
         alloc.destroy(w)

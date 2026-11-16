@@ -1,0 +1,23 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-getpropertyvalue
+fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
+    var pos: usize = 0
+    var kept_important = false
+
+    while nextStyleDecl(decls, &mut pos) |d| {
+        if (kept_important && !d.important) || !(try css.validVarText(out.alloc, d.value)) {
+            continue
+        }
+
+        if try readsDecl(d, prop, out) {
+            kept_important = d.important
+        }
+    }
+
+    if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {
+        try overflowOfDecls(decls, out)
+    }
+}

@@ -8,7 +8,7 @@ fn keyframesRule(p: *mut Parser, prelude: []Token, lo: usize, hi: usize) AllocEr
     var i = lo
 
     p.sheet.keyframe_rules += 1
-    try p.sheet.keyframes.append(Keyframe { name: name, rule: rule, offset: 0.0, decls: DeclRange { start: 0, end: 0 } })
+    try p.sheet.keyframes.append(Keyframe { name: name, rule: rule, offset: 0.0, decls: DeclRange { start: 0, end: 0 }, layer: p.layer })
 
     while i < hi {
         var open = i
@@ -25,7 +25,7 @@ fn keyframesRule(p: *mut Parser, prelude: []Token, lo: usize, hi: usize) AllocEr
         let start = p.sheet.decls.len()
 
         try p.declarations(open + 1, close)
-        try addKeyframes(p.sheet, name, rule, p.toks[i..open], DeclRange { start: start, end: p.sheet.decls.len() })
+        try addKeyframes(p.sheet, name, rule, p.layer, p.toks[i..open], DeclRange { start: start, end: p.sheet.decls.len() })
         i = close + 1
     }
 }

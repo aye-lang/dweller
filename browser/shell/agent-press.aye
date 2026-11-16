@@ -1,0 +1,31 @@
+import dom
+import sdl
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn agentPress(app: *mut App, tmp: Allocator, key: []u8) AllocError!Outcome {
+    let el = focusedField(app) orelse return agentScrollKey(app, tmp, key)
+    let who = try describe(app, tmp, el)
+    let sym = keyOf(key)
+
+    if sym != 0 {
+        try pressKey(app, sym)
+    }
+
+    if sym == sdl.SDLK_BACKSPACE || sym == sdl.SDLK_DELETE {
+        return done(try joined(tmp, "deleted a character in ", who, ""))
+    }
+
+    if sym != 0 {
+        return done(try joined(tmp, "moved the caret in ", who, ""))
+    }
+
+    if text.decode(key).len != key.len {
+        return agentScrollKey(app, tmp, key)
+    }
+
+    try typeText(app, key)
+
+    return done(try joined(tmp, try joined(tmp, "typed ", key, " into "), who, ""))
+}
