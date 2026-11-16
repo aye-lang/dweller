@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+fn report(t: *mut Term, b: u8) AllocError!void {
+    let s = t.screen()
+
+    if b == 'c' {
+        return t.reply.append("\x1b[?62;22c")
+    }
+
+    if t.parser.param(0, 0) == 5 {
+        return t.reply.append("\x1b[0n")
+    }
+
+    if t.parser.param(0, 0) == 6 {
+        try t.reply.append("\x1b[")
+        try t.reply.appendUint((s.y + 1) as u64)
+        try t.reply.appendByte(';')
+        try t.reply.appendUint((s.x + 1) as u64)
+        try t.reply.appendByte('R')
+    }
+}

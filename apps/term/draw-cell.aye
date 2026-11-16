@@ -1,0 +1,38 @@
+import dweller.font
+import dweller.paint
+import std.mem.AllocError
+import std.text
+import vt
+
+fn drawCell(v: *mut View, cell: vt.Cell, x: usize, y: usize) AllocError!void {
+    let inverse = cell.attrs & vt.INVERSE != 0
+    var fg = rgbOf(cell.fg, FOREGROUND)
+    var bg = rgbOf(cell.bg, BACKGROUND)
+
+    if inverse {
+        fg = rgbOf(cell.bg, BACKGROUND)
+        bg = rgbOf(cell.fg, FOREGROUND)
+    }
+
+    if cell.attrs & vt.DIM != 0 {
+        fg.a = 150
+    }
+
+    let x0 = x as i64 * v.cell_w
+    let y0 = y as i64 * v.cell_h
+
+    if cell.wide != vt.WIDE_TAIL {
+        v.canvas.fillRect(paint.IRect { x0: x0, y0: y0, x1: x0 + v.cell_w * (1 + cell.wide as i64), y1: y0 + v.cell_h }, bg)
+    }
+
+    if cell.code == ' ' || cell.wide == vt.WIDE_TAIL || cell.attrs & vt.HIDDEN != 0 {
+        return
+    }
+
+    var utf8 = [4]u8{0, 0, 0, 0}
+    let n = text.encode(cell.code, utf8[..])
+    let f = font.Font { size: v.font_size, bold: cell.attrs & vt.BOLD != 0, italic: cell.attrs & vt.ITALIC != 0, mono: true }
+
+    try v.painter.draw(&mut v.canvas, x0 as f64, (y0 + v.ascent) as f64, utf8[0..n], f, v.scale, fg)
+    drawLines(v, cell, x0, y0, fg)
+}

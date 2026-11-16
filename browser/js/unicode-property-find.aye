@@ -1,0 +1,28 @@
+// https://tc39.es/ecma262/#sec-static-semantics-unicodematchpropertyvalue
+
+fn unicodePropertyFind(kind: u8, name: []u8) ?UnicodePropertySet {
+    var lo: usize = 0
+    var hi: usize = UNICODE_PROPERTY_NAMES.len
+
+    while lo < hi {
+        let mid = (lo + hi) / 2
+        let entry = UNICODE_PROPERTY_NAMES[mid]
+        var order = compareBytes(entry.name, name)
+
+        if entry.kind != kind {
+            order = entry.kind as i32 - kind as i32
+        }
+
+        if order == 0 {
+            return UNICODE_PROPERTY_SETS[entry.set as usize]
+        }
+
+        if order < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+
+    return null
+}

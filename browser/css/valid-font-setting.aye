@@ -1,0 +1,26 @@
+// spec: https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop
+fn validFontSetting(feature: bool, layer: []Comp) bool {
+    if layer.len == 1 && isIdent(layer[0], "normal") {
+        return true
+    }
+
+    if layer[0].toks.len != 1 || layer[0].toks[0].kind != Tok.String || layer[0].toks[0].text.len != 4 || layer.len > 2 {
+        return false
+    }
+
+    if layer.len == 1 {
+        return feature
+    }
+
+    let value = layer[1]
+
+    if feature && (isIdent(value, "on") || isIdent(value, "off")) {
+        return true
+    }
+
+    if isMathFunction(value.toks[0]) {
+        return true
+    }
+
+    return value.toks.len == 1 && value.toks[0].kind == Tok.Number && (!feature || (value.toks[0].flag && value.toks[0].num >= 0.0))
+}

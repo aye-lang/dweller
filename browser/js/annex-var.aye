@@ -1,0 +1,24 @@
+// https://tc39.es/ecma262/#sec-web-compat-functiondeclarationinstantiation
+
+fn annexVar(r: *mut Resolver, s: *mut RScope, st: u32) SyntaxErr!void {
+    match r.ast.node(st) {
+        .FuncDecl { f, target, .. } => {
+            let fi = r.ast.func(f)
+            let name = fi.name
+
+            if fi.generator || fi.is_async || annexNameTaken(r, s, name) {
+                return
+            }
+
+            _ = try r.declareIn(s, name, 0, false)
+
+            let annex = r.ast.nodes.len() as u32
+
+            try r.ast.nodes.append(Node.Ident { name: name, depth: 0, slot: 0, flags: 0 })
+            try r.ast.spans.append(r.ast.spans.items()[target])
+            r.ast.nodes.items()[st] = Node.FuncDecl { f: f, target: target, annex: annex }
+        }
+
+        _ => {}
+    }
+}

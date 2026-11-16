@@ -1,0 +1,19 @@
+fn validKeywordGroups(groups: []u8, layer: []Comp) bool {
+    var used: u32 = 0
+
+    for c in layer {
+        if c.toks.len != 1 || c.toks[0].kind != Tok.Ident {
+            return false
+        }
+
+        let g = keywordGroup(groups, c.toks[0].text) orelse return false
+
+        if used & (1 << g) as u32 != 0 || (g < 2 && layer.len > 1) {
+            return false
+        }
+
+        used |= (1 << g) as u32
+    }
+
+    return true
+}
