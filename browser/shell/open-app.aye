@@ -1,0 +1,34 @@
+import css
+import dom
+import font
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn openApp(alloc: Allocator, style_source: []u8, measure: dyn font.Measurer, width: f64, height: f64) AllocError!*mut App {
+    var doc = try dom.Document.init(alloc)
+    let none = [0]dom.Attr{}
+    let html = try doc.createElement("html", none[..])
+    let body = try doc.createElement("body", none[..])
+
+    doc.appendChild(doc.root, html)
+    doc.appendChild(html, body)
+
+    let app = try alloc.create(App {
+        alloc: alloc,
+        doc: doc,
+        body: body,
+        style_source: style_source,
+        media: css.Media { width: width, height: height },
+        ua: try css.Sheet.init(alloc),
+        author: try css.Sheet.init(alloc),
+        styles: try css.Styles.init(alloc),
+        measure: measure,
+        handlers: List(Handler).init(alloc),
+        dirty: List(dom.NodeId).init(alloc),
+    })
+
+    try parseSheets(app)
+
+    return app
+}

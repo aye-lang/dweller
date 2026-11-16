@@ -1,0 +1,35 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn focus(app: *mut App, target: ?NodeId) AllocError!void {
+    var next: ?NodeId = null
+
+    if target |el| {
+        if app.doc.node(el).kind == dom.Kind.Element && dom.isTextField(&app.doc, el) {
+            next = el
+        }
+    }
+
+    if sameFocus(app.doc.controls.focus, next) {
+        return
+    }
+
+    if app.doc.controls.focus |old| {
+        try markDirty(app, old)
+    }
+
+    app.doc.controls.focus = next
+
+    if next |el| {
+        try markDirty(app, el)
+    }
+}
+
+fn sameFocus(a: ?NodeId, b: ?NodeId) bool {
+    if b |x| {
+        return dom.isSame(a, x)
+    }
+
+    return a == null
+}

@@ -1,0 +1,12 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn replaceText(app: *mut App, el: NodeId, s: []u8) AllocError!void {
+    while app.doc.firstChild(el) |child| {
+        app.doc.detach(child)
+        _ = app.doc.releaseIfUnused(child)
+    }
+
+    try app.doc.appendText(el, s)
+    try markDirty(app, el)
+}

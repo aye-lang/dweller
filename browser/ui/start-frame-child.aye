@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn startFrameChild(ui: *mut Ui, parent: *mut TabProcess, c: *mut ChildFrame) AllocError!?*mut TabProcess {
+    let child = (try startChild(ui, parent)) orelse return null
+    let res = c.primed orelse return child
+
+    c.primed = null
+    child.primed = res
+    try writeSite(c.href, &mut child.site)
+
+    return child
+}

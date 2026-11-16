@@ -13,6 +13,7 @@ fn finishHeld(tp: *mut TabProcess, h: *HeldFetch) AllocError!void {
         let res = net.requestResponse(h.load) orelse return ipc.encode(&mut tp.outbox, h.on, fail)
 
         if h.headed { return sendStreamEnd(tp, h, res.body) }
+        if try frameLeaves(tp, h.framed, h.href.bytes(), res) { return keepFrame(tp, h.on, h.id, h.href.bytes(), net.takeResponse(h.load).?) }
 
         return sendFetched(tp, h.on, h.id, false, h.codes[0] == 0, h.href.bytes(), res)
     }
