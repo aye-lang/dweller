@@ -1,0 +1,20 @@
+// https://tc39.es/ecma262/#sec-built-in-function-objects
+
+fn engineMethod(it: *mut Interp, a: Args) JsError!Value {
+    let f = it.arg(a, 0)
+    let o = objectOf(f)
+
+    if o == NONE {
+        return f
+    }
+
+    match it.heap.obj(o).data {
+        .Closure { func, .. } => {
+            it.ast.funcs.items()[func].method = true
+        }
+
+        _ => {}
+    }
+
+    return f
+}

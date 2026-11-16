@@ -1,0 +1,47 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "changes around shadow hosts restyle what they reach"
+      "\n"
+      <style>
+        "\n.dark .title { color: rgb(255, 0, 0) }\n.tint { color: rgb(0, 0, 255) }\n.wide { --gap: 7px }\n.cell { display: inline-block; width: 10px; height: 10px }\n.pick > .cell { width: 20px }\nx-card { display: block }\n"
+      "\n"
+    <body class="dark">
+      <div id="main" class="tint">
+      "\n"
+      <div id="wrap" class="tint wide">
+        <x-card id="c0" class="on">
+          #shadow-root (open)
+            <style>
+              ":host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px }"
+            <div class="frame open">
+              <span class="label">
+                "label"
+              <slot name="lead">
+              <slot>
+          <span id="lead" slot="lead" class="sel">
+            "lead"
+          <p id="body0" class="row pick" slot="lead">
+            <span id="deep" class="title">
+              "deep"
+            <span class="cell">
+        <x-card id="c1">
+          #shadow-root (open)
+            <style>
+              ":host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px }"
+            <div class="frame">
+              <span class="label">
+                "label"
+              <slot name="lead">
+              <slot>
+          <p id="body1">
+            "one"
+      "\n"
+      <pre id="out">
+        "start: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0)\ndark: rgb(255, 0, 0) rgb(255, 0, 0) rgb(0, 0, 0)\ntint: rgb(0, 0, 255) rgb(0, 0, 255) rgb(255, 0, 0) rgb(0, 0, 0)\nwide: 7px 7px\non: 700 400\nsel: italic normal\npick: 20px\nslot: 1px 1px\nopen: 3px 3px 1px\nmain: rgb(0, 0, 255)"
+      "\n"
+      <script>
+        "\nconst main = document.getElementById('main');\nlet html = '';\nfor (let i = 0; i < 200; i++) {\n  html += '<div class=\"row\"><span class=\"title\">t</span><span class=\"note\">n</span><span class=\"cell\"></span><span><b>x</b></span></div>';\n}\nmain.innerHTML = html;\nconst $ = (id) => document.getElementById(id);\nfor (const id of ['c0', 'c1']) {\n  $(id).attachShadow({ mode: 'open' }).innerHTML = '<style>:host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px }</style><div class=\"frame\"><span class=\"label\">label</span><slot name=\"lead\"></slot><slot></slot></div>';\n}\nconst out = [];\nconst cs = (el, p) => getComputedStyle(el)[p];\nconst inner = (id, sel) => $(id).shadowRoot.querySelector(sel);\nconst row = (i) => main.children[i];\nconst read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };\nread('start', () => cs(row(3).children[0], 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(inner('c0', '.label'), 'color'));\ndocument.body.classList.add('dark');\nread('dark', () => cs(row(3).children[0], 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(inner('c0', '.label'), 'color'));\n$('wrap').classList.add('tint');\nread('tint', () => cs(inner('c0', '.label'), 'color') + ' ' + cs($('body1'), 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(row(3).children[1], 'color'));\n$('wrap').classList.add('wide');\nread('wide', () => cs(inner('c0', '.label'), 'marginLeft') + ' ' + cs(inner('c1', '.label'), 'marginLeft'));\n$('c0').classList.add('on');\nread('on', () => cs(inner('c0', '.label'), 'fontWeight') + ' ' + cs(inner('c1', '.label'), 'fontWeight'));\n$('lead').classList.add('sel');\nread('sel', () => cs($('lead'), 'fontStyle') + ' ' + cs($('body0'), 'fontStyle'));\n$('body0').classList.add('pick');\nread('pick', () => cs($('body0').children[1], 'width'));\n$('body0').setAttribute('slot', 'lead');\nread('slot', () => cs($('body0'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing'));\ninner('c0', '.frame').classList.add('open');\nread('open', () => cs($('lead'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing') + ' ' + cs($('body1'), 'letterSpacing'));\nmain.classList.add('tint');\nread('main', () => cs(row(9).children[1], 'color'));\n$('out').textContent = out.join('\\n');\nmain.textContent = '';\n"
+      "\n"

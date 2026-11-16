@@ -200,6 +200,74 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(full <= 1 && restyles >= 6, "{full} full, {restyles} restyles:\n{err}");
 }
 
+/// Q4.5: `browser/tests/jsdom/sheet_changes.html` changes the sheets 17
+/// times after the first layout: style elements added, rewritten and
+/// removed, `insertRule`, `deleteRule`, a rule's `style`,
+/// `adoptedStyleSheets`, `replaceSync`, `disabled`. Each takes the rule
+/// diff (`swapSheets`) and restyles the elements the changed rules
+/// match: 3 full cascades (the first, one when a styling has kept 8 old
+/// sheets, one for a `*` rule; 14 before, every CSSOM change among them)
+/// and 2 elements for a rule that matches one (201 before Q4.5's match
+/// of the whole selector).
+#[test]
+fn jsdom_sheet_changes_restyle_by_rule() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_LAYOUT_WHY", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/sheet_changes.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_LAYOUT_WHY\tSTYLE_FULL\t").count();
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        full <= 3 && counts.len() >= 15 && counts[9..15].iter().all(|&n| n <= 4),
+        "{full} full, {counts:?}"
+    );
+}
+
+/// Q4.2: `browser/tests/jsdom/shadow_restyle.html` has two shadow hosts
+/// beside 200 rows. A class on `body` that a selector looks at restyles
+/// the elements its set names (202), not the document because a host is
+/// below (1222 before); a class on a slotted child or under one restyles
+/// that element, not its host's subtree (1 to 3 elements, 10 before).
+#[test]
+fn jsdom_shadow_restyle_keeps_roots_shallow() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/shadow_restyle.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        counts.len() >= 9 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 8,
+        "{counts:?}"
+    );
+}
+
 /// Q4.4: `browser/tests/jsdom/has_anchors.html` changes what `:has()`
 /// arguments look at (a class, an inserted and a removed element) under
 /// rules whose `:has()` has no key, looks at siblings or is not in the

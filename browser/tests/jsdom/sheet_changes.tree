@@ -1,0 +1,23 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "style sheet changes restyle the subjects of the changed rules"
+      "\n"
+      <style>
+        "@media (min-width: 100px) { .note { color: rgb(8, 8, 8) } } .row .title:hover, .row .title { color: rgb(9, 9, 9) }"
+      <style id="base">
+        ".cell { display: inline-block; width: 10px; height: 10px } .title { color: rgb(1, 1, 1) }"
+      "\n"
+    <body>
+      <div id="main">
+      "\n"
+      <pre id="out">
+        "start: rgb(1, 1, 1)\nappend: rgb(2, 2, 2)\ntext: rgb(3, 3, 3) 12px\ninsertRule: rgb(4, 4, 4)\ndeleteRule: rgb(1, 1, 1)\nruleStyle: rgb(5, 5, 5)\nadopt: rgb(6, 6, 6)\nreplaceSync: rgb(7, 7, 7)\ndisable: rgb(0, 0, 0)\nremove: rgb(0, 0, 0)\nmedia: rgb(8, 8, 8) rgb(9, 9, 9)\ncss-in-js 0: 11px 10px\ncss-in-js 1: 12px 10px\ncss-in-js 2: 13px 10px\ncss-in-js 3: 14px 10px\ncss-in-js 4: 15px 10px\ncss-in-js 5: 16px 10px\nuniversal: 1px"
+      "\n"
+      <script>
+        "\nconst main = document.getElementById('main');\nlet html = '';\nfor (let i = 0; i < 200; i++) html += '<div class=\"row\"><span class=\"title\">t</span><span class=\"note\">n</span><span class=\"cell\"></span><span><b>x</b></span></div>';\nmain.innerHTML = html;\nconst out = [];\nconst cs = (el, p) => getComputedStyle(el)[p];\nconst row = (i) => main.children[i];\nconst read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };\nread('start', () => cs(row(3).children[0], 'color'));\nconst st = document.createElement('style');\nst.textContent = '.note { color: rgb(2, 2, 2) }';\ndocument.head.appendChild(st);\nread('append', () => cs(row(3).children[1], 'color'));\nst.textContent = '.note { color: rgb(3, 3, 3) } .cell { width: 12px }';\nread('text', () => cs(row(3).children[1], 'color') + ' ' + cs(row(3).children[2], 'width'));\nst.sheet.insertRule('.title { color: rgb(4, 4, 4) }', 0);\nread('insertRule', () => cs(row(3).children[0], 'color'));\nst.sheet.deleteRule(0);\nread('deleteRule', () => cs(row(3).children[0], 'color'));\nst.sheet.cssRules[0].style.color = 'rgb(5, 5, 5)';\nread('ruleStyle', () => cs(row(3).children[1], 'color'));\nconst sheet = new CSSStyleSheet();\nsheet.replaceSync('b { color: rgb(6, 6, 6) }');\ndocument.adoptedStyleSheets = [sheet];\nread('adopt', () => cs(row(3).children[3].firstChild, 'color'));\nsheet.replaceSync('b { color: rgb(7, 7, 7) }');\nread('replaceSync', () => cs(row(3).children[3].firstChild, 'color'));\nst.sheet.disabled = true;\nread('disable', () => cs(row(3).children[1], 'color'));\nst.remove();\nread('remove', () => cs(row(3).children[1], 'color'));\nconst st3 = document.createElement('style');\nst3.textContent = '@media (min-width: 100px) { .note { color: rgb(8, 8, 8) } } .row .title:hover, .row .title { color: rgb(9, 9, 9) }';\ndocument.head.insertBefore(st3, document.getElementById('base'));\nread('media', () => cs(row(3).children[1], 'color') + ' ' + cs(row(3).children[0], 'color'));\nfor (let i = 0; i < 6; i++) {\n  sheet.insertRule('.r' + i + ' .cell, .cell.k' + i + ' { height: ' + (11 + i) + 'px }', 0);\n  row(i).classList.add('r' + i);\n  read('css-in-js ' + i, () => cs(row(i).children[2], 'height') + ' ' + cs(row(i + 1).children[2], 'height'));\n}\nconst st2 = document.createElement('style');\nst2.textContent = '* { outline-width: 1px } .row > span { margin-left: 1px }';\ndocument.body.appendChild(st2);\nread('universal', () => cs(row(3).children[1], 'marginLeft'));\ndocument.getElementById('out').textContent = out.join('\\n');\nmain.textContent = '';\n"
+      "\n"
+      <style>
+        "* { outline-width: 1px } .row > span { margin-left: 1px }"

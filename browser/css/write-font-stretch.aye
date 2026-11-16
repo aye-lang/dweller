@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
+fn writeFontStretch(v: Value, out: *mut text.Builder) AllocError!void {
+    let names = [9][]u8{"ultra-condensed", "extra-condensed", "condensed", "semi-condensed", "normal", "semi-expanded", "expanded", "extra-expanded", "ultra-expanded"}
+    let percents = [9][]u8{"50%", "62.5%", "75%", "87.5%", "100%", "112.5%", "125%", "150%", "200%"}
+
+    for i, n in names {
+        if text.eqlIgnoreCase(keywordText(v), n) {
+            return out.append(percents[i])
+        }
+    }
+
+    try writeValue(v, out)
+}
