@@ -1260,3 +1260,53 @@ fn window_renderer_agent_refs() {
     let out = window.wait_with_output().unwrap();
     assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
 }
+
+/// Q2.12d: with `DWELLER_PROCESS=tab`, a `window.open` popup that keeps
+/// its opener and is same-site with it runs in its opener's renderer
+/// process (one pid for both tabs): it sees `opener`, reads and sets
+/// `opener.document.title` and reads the new one back, all in its own
+/// script's turn, and has the name its opener gave it. A
+/// `noopener` popup and a cross-site one each get a renderer of their
+/// own, where `opener` is null (and the cross-site one's name `w2` does
+/// not reach its renderer yet: names across renderers are Q2.12d's Left).
+#[test]
+fn window_renderer_popup_opener() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/popup_opener.html", srv.base);
+    let run = |events: &str| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let pids = |state: &str| -> Vec<String> {
+        let line = state.lines().find(|l| l.starts_with("renderer-tabs ")).unwrap_or("");
+        line.split(' ').skip(1).map(String::from).collect()
+    };
+
+    let state = run("renderer:loaded click:50,62 renderer:input renderer:title:?same");
+    let p = pids(&state);
+    assert!(state.contains("\ntabs 2, showing 2\n"), "{state}");
+    assert!(state.contains(&format!("\nrenderer {} title opener Opener>set-by?same name w1 ?same\n", p[0])), "{state}");
+    assert!(p.len() == 2 && p[0] == p[1] && p[0] != "0", "a same-site popup shares its opener's process: {p:?}\n{state}");
+
+    for (y, query, name) in [(106, "?none", "name"), (146, "?cross", "name")] {
+        let state = run(&format!("renderer:loaded click:50,{y} renderer:input renderer:title:{query}"));
+        let p = pids(&state);
+        assert!(state.contains(&format!("\nrenderer {} title opener null {name} {query}\n", p[1])), "{query}:\n{state}");
+        assert!(p.len() == 2 && p[0] != p[1] && p[0] != "0" && p[1] != "0", "{query}: a renderer of its own: {p:?}\n{state}");
+    }
+}

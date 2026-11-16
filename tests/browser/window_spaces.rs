@@ -174,9 +174,9 @@ fn window_spaces() {
 
 /// Q2.12: with `DWELLER_SPACES=renderer` the window hosts each Space
 /// itself, as a group of tabs whose pages run in renderers (no `dweller
-/// space` process), and every session answers as with a Space process,
-/// but `popup`: a popup opens in a renderer of its own, where its
-/// `opener` is null until openers reach across renderers (Q2.12's card).
+/// space` process), and every session answers as with a Space process;
+/// a same-site popup runs in its opener's renderer (Q2.12d), so `popup`
+/// sees its `opener`.
 #[test]
 fn window_spaces_in_renderer() {
     window_spaces_with(&[("DWELLER_SPACES", "renderer")]);
@@ -196,7 +196,6 @@ fn window_spaces_with(env: &[(&str, &str)]) {
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .filter(|p| env.is_empty() || !p.ends_with("popup.jsonl"))
         .collect();
     inputs.sort();
     assert!(

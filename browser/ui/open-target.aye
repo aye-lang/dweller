@@ -5,7 +5,7 @@ import std.text
 import url
 
 // chromium: content/browser/renderer_host/render_view_host_impl.cc (CreateNewWindow: the browser opens the tab and loads the URL there)
-fn openTarget(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32, href: []u8, post: bool, content_type: []u8, body: []u8) AllocError!void {
+fn openTarget(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, ask: OpenAsk, href: []u8, post: bool, content_type: []u8, body: []u8) AllocError!void {
     let target = url.parse(ui.alloc, href) catch |e| {
         return
     }
@@ -18,7 +18,8 @@ fn openTarget(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u
         return
     }
 
-    let slot = (try openedSlot(ui, opener, tp, context)) orelse return
+    let from = try attachSource(tp, ask, target.href)
+    let slot = (try openedSlot(ui, opener, tp, from)) orelse return
 
     slot.session.tab.history.push(target.href, 0, null, false) catch return
 
