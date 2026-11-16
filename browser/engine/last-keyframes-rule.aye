@@ -1,12 +1,17 @@
 import css
 import std.text
 
+// spec: https://drafts.csswg.org/css-cascade-5/#layer-ordering
 fn lastKeyframesRule(sheet: *css.Sheet, name: []u8) ?u32 {
     var rule: ?u32 = null
+    var rank: u32 = 0
 
     for k in sheet.keyframes.items() {
-        if text.eql(k.name, name) {
+        let now = sheet.layers.items()[k.layer].rank
+
+        if text.eql(k.name, name) && (rule == null || now >= rank) {
             rule = k.rule
+            rank = now
         }
     }
 

@@ -97,10 +97,11 @@ struct Tokenizer {
     fn next(self: *mut Self) AllocError!Token {
         let c = self.src[self.pos]
         if isWhitespace(c) {
+            let start = self.pos
             while self.pos < self.src.len && isWhitespace(self.src[self.pos]) {
                 self.pos += 1
             }
-            return token(Tok.Whitespace)
+            return Token { kind: Tok.Whitespace, text: self.src[start..self.pos], num: 0.0, delim: 0, flag: false }
         }
         if c == '"' || c == '\'' {
             self.pos += 1

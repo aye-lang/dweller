@@ -1,0 +1,10 @@
+fn noteSocket(k: *mut Socket, kind: u8, clean: bool, code: u16, data: []u8) {
+    let all = sockets orelse return
+    let owned = dup(all.alloc, data) catch |e| {
+        return
+    }
+
+    k.notes.append(SocketNote { kind: kind, clean: clean, code: code, owned_data: owned }) catch |e| {
+        release(all.alloc, owned)
+    }
+}

@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+fn writeHandshake(all: *mut Sockets, k: *mut Socket, job: *mut Job) AllocError!void {
+    let key = try socketKey(all.alloc)
+    defer all.alloc.free(key)
+
+    var lines = text.Builder.init(all.alloc)
+    defer lines.deinit()
+
+    try handshakeLines(k, job, &mut lines)
+    k.owned_accept = try socketAccept(all.alloc, key)
+    try socketRequest(&mut k.outgoing, &job.at, key, k.owned_protocols, lines.bytes())
+}

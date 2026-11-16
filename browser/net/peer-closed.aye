@@ -1,0 +1,13 @@
+// https://www.rfc-editor.org/rfc/rfc6455#section-7.1.5
+fn peerClosed(k: *mut Socket, code: u16, reason: []u8) {
+    if k.phase == SocketPhase.Open {
+        queueClose(k, code, "")
+    }
+
+    if k.phase == SocketPhase.Closed {
+        return
+    }
+
+    noteSocket(k, SOCKET_CLOSED, true, code, reason)
+    dropSocket(k)
+}
