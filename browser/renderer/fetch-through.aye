@@ -1,6 +1,7 @@
 import net
 import std.mem.AllocError
 import std.mem.Allocator
+import std.text
 import url.Url
 
 var fetch_renderer: ?*mut TabRenderer = null
@@ -8,6 +9,8 @@ var fetch_renderer: ?*mut TabRenderer = null
 fn fetchThrough(r: *mut TabRenderer) AllocError!void {
     fetch_renderer = r
     net.setRemote(fetchRemote)
+    net.setNavigationNoter(noteRemoteNavigation)
+    net.setRealmKeeper(keptRealm)
 
     try net.setRemoteLoads(r.alloc, startRemote, cancelRemote, pumpRemote)
 }
@@ -17,11 +20,35 @@ fn fetchRemote(alloc: Allocator, target: *Url, req: net.Request) net.FetchError!
     let nav = fetchNavigates(r, req)
 
     r.fetches += 1
-    askFetch(r, r.fetches, nav, target, req) catch return net.FetchError.Network
+    askFetch(r, r.fetches, nav, target, hintedByPage(r, target, req)) catch return net.FetchError.Network
 
-    return awaitFetch(r, alloc, r.fetches, nav, target.href)
+    let res = try awaitFetch(r, alloc, r.fetches, nav, target.href)
+
+    noteChallenge(r, target, req, &res) catch return net.FetchError.OutOfMemory
+
+    return res
 }
 
 fn fetchNavigates(r: *TabRenderer, req: net.Request) bool {
     return (req.initiator is .Browser || tabLoads(r)) && req.kind == net.Kind.Document && req.top.len == 0
+}
+
+fn hintedByPage(r: *mut TabRenderer, target: *Url, req: net.Request) net.Request {
+    var hinted = req
+
+    if req.kind != net.Kind.Document || req.referrer.len > 0 || (r.width > 0 && req.initiator is .Browser) || !text.eql(r.nav_target.bytes(), target.withoutFragment()) { return req }
+
+    r.nav_target.clear()
+    hinted.referrer = r.nav_referrer.bytes()
+
+    return hinted
+}
+
+fn noteRemoteNavigation(target: []u8, referrer: []u8) AllocError!void {
+    let r = fetch_renderer orelse return
+
+    r.nav_target.clear()
+    try r.nav_target.append(target)
+    r.nav_referrer.clear()
+    try r.nav_referrer.append(referrer)
 }

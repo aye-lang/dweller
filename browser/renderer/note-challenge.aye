@@ -1,0 +1,23 @@
+import net
+import std.mem.AllocError
+import std.text
+import url.Url
+
+fn noteChallenge(r: *mut TabRenderer, target: *Url, req: net.Request, res: *net.Response) AllocError!void {
+    if req.kind != net.Kind.Document { return }
+
+    r.challenged.clear()
+    r.realm.clear()
+
+    if res.status != 401 || !(try net.basicRealmIn(res.headers_raw, &mut r.realm)) { return }
+
+    try r.challenged.append(target.withoutFragment())
+}
+
+fn keptRealm(href: []u8) ?[]u8 {
+    let r = fetch_renderer orelse return null
+
+    if r.challenged.len() == 0 || !text.eql(r.challenged.bytes(), href) { return null }
+
+    return r.realm.bytes()
+}
