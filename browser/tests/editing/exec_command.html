@@ -1,0 +1,36 @@
+<!doctype html>
+<title>contenteditable and execCommand</title>
+<div id="host" contenteditable>one two</div>
+<p id="plain">plain <span id="inner" contenteditable="false">no</span></p>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const host = document.getElementById('host');
+const sel = getSelection();
+const types = [];
+host.addEventListener('beforeinput', e => types.push('before:' + e.inputType + (e.data === null ? '' : '=' + e.data)));
+host.addEventListener('input', e => types.push(e.inputType));
+const show = what => log(what + ': ' + host.innerHTML + ' | ' + sel.anchorNode.nodeName + ' ' + sel.anchorOffset);
+log('editable ' + host.isContentEditable + ' ' + host.contentEditable + ' ' + document.getElementById('plain').isContentEditable + ' ' + document.getElementById('plain').contentEditable + ' ' + document.getElementById('inner').contentEditable);
+log('no selection ' + document.execCommand('insertText', false, 'x') + ' ' + document.queryCommandEnabled('insertText') + ' ' + document.queryCommandSupported('insertText') + ' ' + document.queryCommandSupported('frobnicate'));
+sel.collapse(host.firstChild, 3);
+log('insertText ' + document.execCommand('insertText', false, ', 1.5,')); show('typed');
+document.execCommand('delete'); show('delete');
+document.execCommand('forwardDelete'); show('forwardDelete');
+sel.setBaseAndExtent(host.firstChild, 0, host.firstChild, 3);
+document.execCommand('bold'); show('bold'); log('state ' + document.queryCommandState('bold') + ' ' + document.queryCommandState('italic'));
+document.execCommand('bold'); show('unbold');
+sel.collapse(host.firstChild, 3);
+document.execCommand('insertParagraph'); show('paragraph');
+document.execCommand('insertLineBreak'); show('break');
+document.execCommand('insertHTML', false, '<i>it</i>!'); show('html');
+document.execCommand('selectAll'); log('selectAll ' + JSON.stringify(sel.toString()));
+document.execCommand('delete'); log('emptied: ' + JSON.stringify(host.innerHTML));
+sel.collapse(document.getElementById('plain').firstChild, 1);
+log('outside a host ' + document.execCommand('insertText', false, 'x') + ' ' + document.getElementById('plain').textContent);
+host.addEventListener('beforeinput', e => e.preventDefault());
+sel.collapse(host, 0);
+log('canceled ' + document.execCommand('insertText', false, 'never') + ' ' + JSON.stringify(host.innerHTML));
+log(types.join(' '));
+</script>

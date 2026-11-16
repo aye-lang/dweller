@@ -379,7 +379,9 @@ fn clickNode(s: *mut Session, tmp: Allocator, p: *mut Page, el: NodeId) AllocErr
 
 // A click with no default action: the scripts had it.
 fn clickedOnly(s: *mut Session, tmp: Allocator, p: *mut Page, el: NodeId, who: []u8) AllocError!Outcome {
-    try recordOn(s, tmp, p, "click on", el)
+    if p.doc.isLive(el) {
+        try recordOn(s, tmp, p, "click on", el)
+    }
     if engine.hasScripts(p) {
         return done(try concat(tmp, "clicked ", who, ""))
     }
