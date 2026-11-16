@@ -105,15 +105,16 @@ fn window_agent_session(input: &Path, n: usize, env: &[(&str, &str)]) -> Result<
 
 /// The Spaces the window `pid` started and that still run (`pgrep` on
 /// their sockets' directories, `/tmp/dweller-PID-*`), or with hosted
-/// Spaces (`HOSTED`) the window's renderers: each Space of these tests
-/// has one tab, and the person's tab has no renderer.
+/// Spaces (`HOSTED`) the window's renderers of a Space's tab
+/// (`--space-tab`; the person's tab may have a renderer too): each Space
+/// of these tests has one tab.
 fn spaces_of(pid: u32) -> Vec<u32> {
     let processes = Command::new("pgrep")
         .args(["-f", &format!("/tmp/dweller-{pid}-")])
         .output()
         .unwrap();
     let renderers = Command::new("pgrep")
-        .args(["-P", &pid.to_string(), "-f", " --renderer 3 "])
+        .args(["-P", &pid.to_string(), "-f", " --renderer 3 .* --space-tab"])
         .output()
         .unwrap();
     text(&processes.stdout)

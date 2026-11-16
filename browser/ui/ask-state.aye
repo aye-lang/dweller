@@ -1,0 +1,59 @@
+import ipc
+import std.mem.AllocError
+
+let MAX_STATE_LINES: usize = 65536
+
+fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
+    let slot = ui.slots[ui.active] orelse return
+    let tp = slot.process orelse return
+
+    if !tp.hello || tp.gone.len > 0 { return }
+
+    try ipc.encode(&mut tp.outbox, 0, ipc.Message.AskState { with_text: with_text as u32 })
+
+    var buf = @zeroed([65536]u8)
+
+    while true {
+        if !sendAll(tp.fd, tp.outbox.bytes()) { return }
+
+        tp.outbox.clear()
+
+        let got = ipc.nextMessage(tp.inbox.bytes()) catch return
+
+        if got |g| {
+            if asksBrowser(g.message) && (try answerBrowserAsk(tp, 0, g.message)).len > 0 { return }
+
+            match g.message {
+                .State { scroll, frames, focus, content } => {
+                    if g.frame != 0 || ipc.badScroll(0.0, scroll) || frames.len > MAX_STATE_LINES || focus.len > MAX_STATE_LINES { return }
+
+                    out.said = true
+                    out.scroll = scroll
+                    try out.frames.append(frames)
+                    try out.focus.append(focus)
+                    try out.content.append(content)
+
+                    return
+                }
+
+                _ => {}
+            }
+
+            ipc.consume(&mut tp.inbox, g.used)
+
+            continue
+        }
+
+        if tp.held.len() > 0 {
+            try answerHeld(tp)
+
+            if !readableWithin(tp.fd, HELD_POLL_MS) { continue }
+        }
+
+        let n = read(tp.fd, buf[..].ptr, buf.len)
+
+        if n <= 0 { return }
+
+        try tp.inbox.append(buf[0..n as usize])
+    }
+}

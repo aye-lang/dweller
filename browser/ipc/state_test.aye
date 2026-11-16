@@ -1,0 +1,31 @@
+import std.text
+
+test "state is asked by the browser and answered by the renderer" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let asked = try roundTrip(&mut out, 0, Message.AskState { with_text: 1 })
+
+    match asked.message {
+        .AskState { with_text } => @expectEqual(1, with_text)
+        _ => @expect(false)
+    }
+
+    let got = try roundTrip(&mut out, 0, Message.State { scroll: 80.0, frames: "frames 0\n", focus: "element a\n", content: "hi" })
+
+    match got.message {
+        .State { scroll, frames, focus, content } => {
+            @expectEqual(80.0, scroll)
+            @expect(text.eql(frames, "frames 0\n"))
+            @expect(text.eql(focus, "element a\n"))
+            @expect(text.eql(content, "hi"))
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(!fromRenderer(Message.AskState { with_text: 0 }))
+    @expect(fromRenderer(Message.State { scroll: 0.0, frames: "", focus: "", content: "" }))
+    @expectEqual(80, Message.AskState { with_text: 0 }.kind())
+    @expectEqual(81, Message.State { scroll: 0.0, frames: "", focus: "", content: "" }.kind())
+}

@@ -10,7 +10,7 @@ fn run_input(base: &str, query: &str, events: &str, envs: &[(&str, &str)]) -> St
         .envs(envs.iter().copied())
         .arg(format!("{base}/ui/oopif-input.html{query}"))
         .args(["--font", "fixed", "--width", "400", "--height", "400"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
         .arg(scratch().join("oopif_input.png"))
         .args(["--events", &format!("renderer:loaded renderer:child {events}")])
         .output()

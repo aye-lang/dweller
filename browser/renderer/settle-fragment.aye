@@ -1,0 +1,21 @@
+import engine
+import std.mem.AllocError
+import std.text
+
+// html: https://html.spec.whatwg.org/multipage/browsing-the-web.html#scroll-to-the-fragment-identifier
+fn settleFragment(r: *mut TabRenderer, p: *mut engine.Page) AllocError!void {
+    if !r.to_fragment { return }
+
+    r.to_fragment = false
+
+    let t = p.tree orelse return
+    let name = r.fragment.bytes()
+    var y = engine.fragmentY(t, name)
+
+    if y == null && (name.len == 0 || text.eqlIgnoreCase(name, "top")) { y = 0.0 }
+
+    if y |top| {
+        r.scroll_y = top
+        try engine.setScriptScroll(p, top)
+    }
+}
