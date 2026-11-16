@@ -107,12 +107,19 @@ I.expose('IDBDatabase', IDBDatabase);
 I.openDatabase = function (name, lines) {
   const stores = new Map();
 
-  for (let i = 2; i + 4 < lines.length; i += 5) {
-    if (lines[i] !== 'store') continue;
+  const byId = new Map();
+
+  for (let i = 2; i < lines.length; i += lines[i] === 'store' ? 5 : 7) {
+    if (lines[i] === 'index') {
+      byId.get(lines[i + 1]).indexes.push({ id: Number(lines[i + 2]), name: JSON.parse(lines[i + 5]), keyPath: JSON.parse(lines[i + 6]), unique: lines[i + 3] === '1', multiEntry: lines[i + 4] === '1', deleted: false });
+
+      continue;
+    }
 
     const meta = { id: Number(lines[i + 1]), name: JSON.parse(lines[i + 3]), keyPath: JSON.parse(lines[i + 4]), autoIncrement: lines[i + 2] === '1', indexes: [], deleted: false };
 
     stores.set(meta.name, meta);
+    byId.set(lines[i + 1], meta);
   }
 
   const db = new IDBDatabase(I.TOKEN, Number(lines[0]), name, Number(lines[1]), stores);
@@ -128,7 +135,11 @@ I.keepUpgradeStart = function (tx, oldVersion) {
 I.revertUpgrade = function (tx) {
   const db = tx._db;
 
-  for (const meta of db._stores.values()) meta.deleted = true;
+  for (const meta of db._stores.values()) {
+    meta.deleted = true;
+
+    for (const x of meta.indexes) x.deleted = true;
+  }
 
   db._stores = new Map();
   db._version = tx._before.version;

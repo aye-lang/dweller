@@ -16,30 +16,50 @@ I.writable = function (store, name) {
 
   return tx;
 };
-I.countOf = function (count) {
-  if (count === undefined) return 0;
+I.upgrading = function (store, name) {
+  if (store._meta.deleted) throw I.error('InvalidStateError', what(name) + 'The object store has been deleted.');
+  if (store._tx._mode !== 'versionchange') throw I.error('InvalidStateError', what(name) + 'The database is not running a version change transaction.');
+  if (store._tx._state !== 'active') throw I.error('TransactionInactiveError', what(name) + 'The transaction is not active.');
 
-  const n = I.enforceRange(count);
-
-  if (n > 4294967295) throw new TypeError('Value is outside the range of unsigned long.');
-
-  return n;
+  return store._tx;
 };
-I.pairs = function (reply) {
-  return reply === '' ? [] : reply.split('\n');
-};
-
-function cloneFor(tx, value, path) {
+I.cloneFor = function (tx, value, meta) {
   tx._state = 'inactive';
 
   try {
     const text = I.serialize(value);
 
-    return { text, copy: path === null ? null : I.deserialize(text) };
+    return { text, copy: meta.keyPath === null && meta.indexes.length === 0 ? null : I.deserialize(text) };
   } finally {
     tx._state = 'active';
   }
+};
+// spec: https://w3c.github.io/IndexedDB/#store-a-record-into-an-object-store
+function keysFor(x, value) {
+  if (!x.multiEntry) {
+    const key = I.extractKey(value, x.keyPath);
+
+    return typeof key === 'string' ? [key] : [];
+  }
+
+  const found = I.evaluate(value, x.keyPath);
+
+  if (!Array.isArray(found)) return found === I.NOT_FOUND || I.encodeKey(found) === null ? [] : [I.encodeKey(found)];
+
+  return Array.from(new Set(found.map(I.encodeKey).filter(k => k !== null)));
 }
+I.indexKeys = function (meta, copy) {
+  const out = [];
+
+  for (const x of meta.indexes) for (const key of keysFor(x, copy)) out.push(x.id + ' ' + key);
+
+  return out.join(' ');
+};
+I.putRecord = function (tx, meta, key, w, overwrite) {
+  I.ask('put', tx._id, meta.id, overwrite ? 1 : 0, key, meta.indexes.length ? I.indexKeys(meta, w.copy) : '', w.text);
+
+  return I.decodeKey(key);
+};
 function generated(tx, meta, w) {
   const next = BigInt(I.ask('generator', tx._id, meta.id));
 
@@ -72,7 +92,7 @@ function write(store, name, args, overwrite) {
   if (path === null && !meta.autoIncrement && key === undefined) throw I.error('DataError', what(name) + 'The object store uses out-of-line keys and has no key generator and the key parameter was not provided.');
   if (key !== undefined) key = I.toKey(key);
 
-  const w = cloneFor(tx, args[0], path);
+  const w = I.cloneFor(tx, args[0], meta);
 
   if (path !== null) {
     key = I.extractKey(w.copy, path);
@@ -86,19 +106,10 @@ function write(store, name, args, overwrite) {
     if (key === undefined) key = generated(tx, meta, w);
     else if (meta.autoIncrement && key[0] === 'b') raiseGenerator(tx, meta, key);
 
-    I.ask('put', tx._id, meta.id, overwrite ? 1 : 0, key, I.indexKeys ? I.indexKeys(meta, w, key) : '', w.text);
-
-    return I.decodeKey(key);
+    return I.putRecord(tx, meta, key, w, overwrite);
   });
 }
-function read(store, name, r, limit, map) {
-  const tx = store._tx;
-  const id = store._meta.id;
-
-  return I.request(store, tx, () => map(I.pairs(I.ask(limit === 1 ? 'get' : 'get-all', tx._id, id, r.lo, r.hi, r.flags, limit))));
-}
-const values = pairs => pairs.filter((_, i) => i % 2 === 1).map(I.deserialize);
-const keys = pairs => pairs.filter((_, i) => i % 2 === 0).map(I.decodeKey);
+const from = store => ({ tx: store._tx, store: store._meta.id, index: 0 });
 
 class IDBObjectStore {
   constructor(token, tx, meta) {
@@ -136,31 +147,78 @@ class IDBObjectStore {
     I.need(arguments, 1, "'get' on 'IDBObjectStore'");
     I.readable(this, 'get');
 
-    return read(this, 'get', I.rangeOf(query, false), 1, pairs => values(pairs)[0]);
+    return I.readOne(this, from(this), I.rangeOf(query, false), I.picks.value);
   }
   getKey(query) {
     I.need(arguments, 1, "'getKey' on 'IDBObjectStore'");
     I.readable(this, 'getKey');
 
-    return read(this, 'getKey', I.rangeOf(query, false), 1, pairs => keys(pairs)[0]);
+    return I.readOne(this, from(this), I.rangeOf(query, false), I.picks.primary);
   }
   getAll(query, count) {
     I.readable(this, 'getAll');
 
-    return read(this, 'getAll', I.rangeOf(query, true), I.countOf(count), values);
+    return I.readAll(this, from(this), I.allArgs(query, count), I.picks.value);
   }
   getAllKeys(query, count) {
     I.readable(this, 'getAllKeys');
 
-    return read(this, 'getAllKeys', I.rangeOf(query, true), I.countOf(count), keys);
+    return I.readAll(this, from(this), I.allArgs(query, count), I.picks.primary);
+  }
+  getAllRecords(options) {
+    I.readable(this, 'getAllRecords');
+
+    return I.readAll(this, from(this), I.allArgs(options === undefined ? {} : options), I.picks.record);
   }
   count(query) {
-    const tx = I.readable(this, 'count');
-    const r = I.rangeOf(query, true);
-    const id = this._meta.id;
+    I.readable(this, 'count');
 
-    return I.request(this, tx, () => Number(I.ask('count', tx._id, id, r.lo, r.hi, r.flags)));
+    return I.count(this, from(this), I.rangeOf(query, true));
+  }
+  openCursor(query, direction) { return I.openCursor(this, from(this), I.readable, 'openCursor', query, direction, false); }
+  openKeyCursor(query, direction) { return I.openCursor(this, from(this), I.readable, 'openKeyCursor', query, direction, true); }
+  index(name) {
+    I.need(arguments, 1, "'index' on 'IDBObjectStore'");
+
+    if (this._meta.deleted) throw I.error('InvalidStateError', what('index') + 'The object store has been deleted.');
+    if (this._tx._state === 'finished') throw I.error('InvalidStateError', what('index') + 'The transaction has finished.');
+
+    const x = this._meta.indexes.find(x => x.name === String(name));
+
+    if (!x) throw I.error('NotFoundError', what('index') + 'The specified index was not found.');
+    if (!this._indexes.has(x)) this._indexes.set(x, new globalThis.IDBIndex(I.TOKEN, this, x));
+
+    return this._indexes.get(x);
+  }
+  createIndex(name, keyPath, options) { return I.createIndex(this, arguments); }
+  deleteIndex(name) {
+    I.need(arguments, 1, "'deleteIndex' on 'IDBObjectStore'");
+
+    const tx = I.upgrading(this, 'deleteIndex');
+    const x = this._meta.indexes.find(x => x.name === String(name));
+
+    if (!x) throw I.error('NotFoundError', what('deleteIndex') + 'The specified index was not found.');
+
+    I.ask('delete-index', tx._id, this._meta.id, x.id);
+    x.deleted = true;
+    this._meta.indexes.splice(this._meta.indexes.indexOf(x), 1);
+    this._indexes.delete(x);
   }
 }
 I.expose('IDBObjectStore', IDBObjectStore);
+
+// spec: https://w3c.github.io/IndexedDB/#dom-idbobjectstore-name
+I.renameStore = function (store, name) {
+  const tx = I.upgrading(store, 'name');
+  const meta = store._meta;
+  const stores = tx._db._stores;
+
+  if (meta.name === name) return;
+  if (stores.has(name)) throw I.error('ConstraintError', "Failed to set the 'name' property on 'IDBObjectStore': An object store with the specified name already exists.");
+
+  I.ask('rename-store', tx._id, meta.id, I.nameText(name));
+  stores.delete(meta.name);
+  meta.name = name;
+  stores.set(name, meta);
+};
 })(globalThis.__idb);

@@ -195,6 +195,8 @@ function evaluate(value, path) {
   return value;
 }
 // A key, undefined when the path finds nothing, null when what it finds is not a key.
+I.NOT_FOUND = NOT_FOUND;
+I.evaluate = evaluate;
 I.extractKey = function (value, path) {
   if (typeof path === 'string') {
     const found = evaluate(value, path);

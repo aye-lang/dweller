@@ -1,5 +1,3 @@
-import std.text
-
 fn rollBack(b: *mut Backend, tx: *mut Transaction) {
     while tx.undo.pop() |u| {
         let s = findStore(tx.db, u.store) orelse unreachable
@@ -12,11 +10,4 @@ fn rollBack(b: *mut Backend, tx: *mut Transaction) {
 
         b.alloc.free(u.key)
     }
-}
-
-fn putBack(b: *mut Backend, s: *mut Store, u: Undo) {
-    let i = lowerBound(s, u.key)
-
-    if i < s.records.len() && text.eql(s.records.items()[i].key, u.key) { freeRecord(b.alloc, s.records.orderedRemove(i)) }
-    if u.old |r| { s.records.insert(i, r) catch unreachable }
 }

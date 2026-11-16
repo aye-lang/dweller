@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn createIndex(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let unique = a.f.int() == 1
+    let multi = a.f.int() == 1
+    let name = a.f.next()
+    let key_path = a.f.tail()
+    let id = t.store.next_index
+
+    for x in t.store.indexes.items() {
+        if text.eql(x.name, name) { return refuse(a, "ConstraintError") }
+    }
+
+    if a.f.bad || t.tx.mode != VERSION_CHANGE { return refuse(a, "InvalidStateError") }
+
+    t.store.next_index += 1
+    try t.store.indexes.append(try newIndex(a.b.alloc, id, name, key_path, unique, multi))
+    try appendNumber(a.out, id as u64)
+}

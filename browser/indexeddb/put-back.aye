@@ -1,0 +1,15 @@
+import std.text
+
+fn putBack(b: *mut Backend, s: *mut Store, u: Undo) {
+    let i = lowerBound(s, u.key)
+
+    if i < s.records.len() && text.eql(s.records.items()[i].key, u.key) {
+        unlinkRecord(s, s.records.items()[i])
+        freeRecord(b.alloc, s.records.orderedRemove(i))
+    }
+
+    if u.old |r| {
+        s.records.insert(i, r) catch unreachable
+        linkRecord(s, r) catch unreachable
+    }
+}

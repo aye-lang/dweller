@@ -10,10 +10,17 @@ fn copyStore(alloc: Allocator, s: *Store) AllocError!*mut Store {
         auto_increment: s.auto_increment,
         generator: s.generator,
         records: List(*mut Record).init(alloc),
+        indexes: List(*mut Index).init(alloc),
+        next_index: s.next_index,
     })
 
+    for x in s.indexes.items() { try copy.indexes.append(try newIndex(alloc, x.id, x.name, x.key_path, x.unique, x.multi)) }
+
     for r in s.records.items() {
-        try copy.records.append(try alloc.create(Record { key: try dupe(alloc, r.key), value: try dupe(alloc, r.value), index_keys: try dupe(alloc, r.index_keys) }))
+        let made = try alloc.create(Record { key: try dupe(alloc, r.key), value: try dupe(alloc, r.value), index_keys: try dupe(alloc, r.index_keys) })
+
+        try copy.records.append(made)
+        try linkRecord(copy, made)
     }
 
     return copy
