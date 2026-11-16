@@ -792,6 +792,7 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
     // Element index to whether a `:has()` of any depth may be its.
     var anchors = IntMap(u32, bool).init(s.alloc)
     defer anchors.deinit()
+    let anchored = (deps.whole || deps.hasAny()) && css.anchorsFollow(deps)
     for change in s.restyle.items() {
         let at = change.at
         if !doc.isLive(at) || !doc.isConnected(at) {
@@ -804,8 +805,11 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
                 return false
             }
         }
+        if anchored && anchorsSee(s, g, change.what) {
+            try addAnchorRoots(doc, g, el, out, shallow, &mut found)
+        }
         var top = el
-        if deps.hasAny() {
+        if deps.hasAny() && !anchored {
             var distance: usize = 0
             var cur: ?NodeId = el
             while cur |c| {
@@ -831,6 +835,9 @@ fn restyleRoots(s: *mut Script, g: *Geometry, st: *Styling, out: *mut List(NodeI
         }
         if dom.same(top, el) && !deps.isDeep(change.what) {
             try addRoot(out, shallow, &mut found, el, change.what.token || change.what.what != css.CHILDREN_CHANGED.what)
+            continue
+        }
+        if dom.same(top, el) && !deps.of_selector && (try setRoots(doc, deps, el, change.what, out, shallow, &mut found)) {
             continue
         }
         if dom.same(top, el) && !deps.of_selector && !deps.reachesSiblings(change.what) {

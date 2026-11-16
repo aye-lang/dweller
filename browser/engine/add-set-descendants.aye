@@ -1,0 +1,21 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn addSetDescendants(doc: *Document, top: NodeId, features: *IntMap(u64, bool), all: bool, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    if all { return addRoot(out, shallow, found, top, false) }
+
+    if features.len() == 0 { return }
+
+    var cur = doc.following(top, top)
+
+    while cur |c| {
+        if doc.node(c).kind == dom.Kind.Element && css.inFeatures(doc, c, features) { try addRoot(out, shallow, found, c, true) }
+
+        cur = doc.following(c, top)
+    }
+}

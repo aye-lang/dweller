@@ -222,9 +222,11 @@ pub struct RestyleDeps {
     active: bool
     focus: bool
     states: List(StateUse)
+    sets: KeySets
+    has_sibling: bool
 
     pub fn init(alloc: Allocator) RestyleDeps {
-        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_has: WholeHas.init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false, hover: false, active: false, focus: false, states: List(StateUse).init(alloc) }
+        return RestyleDeps { keys: List(usize).init(alloc), names: List(u64).init(alloc), uses: List(HasUse).init(alloc), deep: IntMap(u64, bool).init(alloc), deep_any: false, of_selector: false, whole: false, whole_has: WholeHas.init(alloc), whole_any: false, whole_kind: "", whole_name: "", style_attr: false, hover: false, active: false, focus: false, states: List(StateUse).init(alloc), sets: KeySets.init(alloc), has_sibling: false }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -238,6 +240,7 @@ pub struct RestyleDeps {
     fn deinitUses(self: *mut Self) {
         self.whole_has.deinit()
         self.states.deinit()
+        self.sets.deinit()
     }
 
     /// Reads the selectors of the author sheet `author` (its `:has()`,
@@ -259,6 +262,7 @@ pub struct RestyleDeps {
             try self.deep.put(nameKey("", ALWAYS_DEEP[start..end]), true)
             start = end + 1
         }
+        try buildKeySets(&mut self.sets, author, ua, quirks)
         try self.addDeep(author)
         try self.addDeep(ua)
         if quirks |q| {
@@ -354,6 +358,7 @@ pub struct RestyleDeps {
             self.whole = true
             self.whole_any = true
             self.whole_kind = "nesting"
+            self.whole_has.outside = true
             self.whole_has.why = "nesting"
             return
         }
