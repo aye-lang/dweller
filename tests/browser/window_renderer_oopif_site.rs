@@ -80,3 +80,44 @@ fn window_renderer_oopif_site_redirect() {
     assert!(line(&state, "renderer ").ends_with(" title Parent"), "{state}");
     assert!(children.len() == 1 && children[0].contains(" http://127.0.0.1 frame 260 130 at 22 40 "), "{state}");
 }
+
+/// Q2.15b: a `blob:` URL has the site of its inner origin. A page of
+/// `127.0.0.1` navigates to a `blob:http://localhost...` URL: the honest
+/// renderer shows the error page (no such blob), and a renderer that
+/// commits a document at that URL (`DWELLER_TEST_EVIL=blob`) is killed,
+/// as for any commit outside its site lock.
+#[test]
+fn window_renderer_oopif_site_blob() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let run = |evil: &str, events: &str| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "site")
+            .env("DWELLER_TEST", "1")
+            .env("DWELLER_TEST_EVIL", evil)
+            .arg(format!("{}/ui/blob-away.html", srv.base))
+            .args(["--font", "fixed", "--frames", "300", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+        (text(&out.stdout), text(&out.stderr))
+    };
+
+    let (state, err) = run("", "renderer:loaded frame frame frame");
+    assert!(err.is_empty(), "{err}");
+    assert!(line(&state, "url ").starts_with("url blob:http://localhost:"), "{state}");
+    assert!(line(&state, "renderer ").ends_with(" title Cannot load page"), "{state}");
+    assert!(state.contains("\nrenderer-site http://127.0.0.1\n"), "{state}");
+
+    let (state, err) = run("blob", "renderer:gone");
+    let renderer = line(&state, "renderer ");
+    assert!(renderer.ends_with(" gone commit outside site lock"), "{state}");
+    assert_eq!(err, format!("error: bad message: commit outside site lock {}\n", pid(renderer)));
+    assert!(line(&state, "url ").ends_with("/ui/blob-away.html"), "the forged commit is not shown\n{state}");
+}
