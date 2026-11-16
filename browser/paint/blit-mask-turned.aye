@@ -1,0 +1,10 @@
+fn blitMaskTurned(canvas: *mut Canvas, at: IRect, w: usize, mask: []u8, c: Rgba) {
+    for k, cover in mask {
+        let px = at.x0 - at.y1 - (k / w) as i64 - 1
+        let py = at.y0 + at.x1 + (k % w) as i64
+
+        if cover > 0 && px >= canvas.clip.x0 && px < canvas.clip.x1 && py >= canvas.clip.y0 && py < canvas.clip.y1 {
+            canvas.blend((py as usize * canvas.width + px as usize) * 4, c, (cover as u32 * c.a as u32 + 127) / 255)
+        }
+    }
+}

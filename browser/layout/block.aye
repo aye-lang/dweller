@@ -149,7 +149,7 @@ fn relOffsets(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) {
 fn layoutRoot(t: *mut Tree, r: usize) AllocError!void {
     try layoutBlockLevel(t, r, t.viewport_w, t.viewport_h)
     let b = t.bx(r)
-    b.x = b.margin[3]
+    b.x = rootLeft(t, b)
     b.y = b.margin[0]
 }
 
@@ -157,6 +157,9 @@ fn layoutRoot(t: *mut Tree, r: usize) AllocError!void {
 // margins do not collapse with its children's)?
 fn isFormattingRoot(t: *Tree, i: usize) bool {
     let b = t.bx(i)
+    if b.inner != null {
+        return true
+    }
     if b.parent |p| {
         let pk = t.bx(p).kind
         if pk == BoxKind.Flex || pk == BoxKind.Grid || pk == BoxKind.Table {
@@ -178,6 +181,11 @@ fn isFormattingRoot(t: *Tree, i: usize) bool {
 /// (and `cb_h` high, or -1): its size, margins and content; its parent
 /// sets its position.
 fn layoutBlockLevel(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) AllocError!void {
+    if turns(t, i) {
+        try layoutTurned(t, i, cb_w, cb_h)
+        horizontalMargins(t, i, cb_w)
+        return
+    }
     if keepsLayout(t, i, cb_w, cb_h) {
         return
     }
@@ -225,6 +233,9 @@ fn keepsLayout(t: *Tree, i: usize, cb_w: f64, cb_h: f64) bool {
 /// Lays out an atomic inline (inline-block, image, inline table or
 /// flex) in a line `avail` px wide: shrink-to-fit width, auto margins 0.
 fn layoutAtomic(t: *mut Tree, i: usize, avail: f64) AllocError!void {
+    if turns(t, i) {
+        return layoutTurned(t, i, avail, -1.0)
+    }
     let kind = t.bx(i).kind
     resolveEdges(t, i, avail)
     let b = t.bx(i)
@@ -501,6 +512,9 @@ fn defaultRatio(t: *Tree, i: usize) ?f64 {
 /// whose width, edges and margins are set; sets its height, its
 /// collapsed margins and its baselines.
 fn layoutContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
+    if turns(t, i) {
+        return layoutTurnedContents(t, i, cb_h)
+    }
     let b = t.bx(i)
     let cw = math.max(0.0, b.w - hEdges(b))
     var ch = definiteContentHeight(t, i, cb_h)

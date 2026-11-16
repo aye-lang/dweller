@@ -804,6 +804,9 @@ struct Builder {
                 if !isVisible(b.style) || f.end <= f.start {
                     return
                 }
+                if f.turned {
+                    return turnedText(self, f, cx, cy)
+                }
                 let m = layout.textMetrics(self.t, b.style)
                 let x = cx + f.x
                 let base = cy + f.y + m.ascent
@@ -1355,6 +1358,9 @@ fn itemBounds(it: Item, t: *mut Tree) ?Rect {
         }
         .Text { x, y, s, face, c } => {
             let em = face.size
+            if face.turned {
+                return Rect { x: x - 2.0 * em, y: y - em, w: 3.0 * em, h: t.measure.width(face, s) + 2.0 * em }
+            }
             return Rect { x: x - em, y: y - 2.0 * em, w: t.measure.width(face, s) + 2.0 * em, h: 3.0 * em }
         }
         .Image { r, w, h, pixels, ver } => {
@@ -1513,7 +1519,7 @@ pub fn renderWith(list: *DisplayList, target: *mut Canvas, view: View, painter: 
                 .Text { x, y, s, face, c } => {
                     let base = y * v.scale + v.dy
                     let em = face.size * v.scale
-                    if base + em >= canvas.clip.y0 as f64 && base - 2.0 * em <= canvas.clip.y1 as f64 {
+                    if face.turned || (base + em >= canvas.clip.y0 as f64 && base - 2.0 * em <= canvas.clip.y1 as f64) {
                         try painter.draw(canvas, x * v.scale + v.dx, base, s, face, v.scale, c)
                     }
                 }

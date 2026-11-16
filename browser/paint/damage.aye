@@ -243,6 +243,10 @@ pub fn signature(list: *DisplayList, t: *mut Tree, out: *mut List(Sig)) AllocErr
                 // advance.
                 let em = face.size
                 s.b = Rect { x: x - 2.0 * em, y: y - 2.0 * em, w: (str.len as f64 * 1.5 + 4.0) * em, h: 3.0 * em }
+
+                if face.turned {
+                    s.b = Rect { x: s.b.y - y + x, y: s.b.x - x + y, w: s.b.h, h: s.b.w }
+                }
             }
             _ => {
                 if itemBounds(it, t) |b| {
@@ -601,7 +605,7 @@ fn hmatrix(h: u64, m: svg.Matrix) u64 {
 
 fn hface(h: u64, f: font.Font) u64 {
     var x = hf(h, f.size)
-    x = hu(x, bit(f.bold) | bit(f.italic) << 1 | bit(f.mono) << 2 | bit(f.serif) << 3 | bit(f.rtl) << 4)
+    x = hu(x, bit(f.bold) | bit(f.italic) << 1 | bit(f.mono) << 2 | bit(f.serif) << 3 | bit(f.rtl) << 4 | bit(f.turned) << 5)
     x = hf(x, f.weight)
     return hbytes(x, f.family)
 }

@@ -46,6 +46,7 @@ pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: b
         buf[i] = lowerAscii(c)
     }
     let prop = unprefixed(logicalAlias(buf[0..name.len]))
+    d.logical = text.indexOf(buf[0..name.len], "inline") != null || text.indexOf(buf[0..name.len], "block") != null
     if needsComputing(toks) || layersNeedComputing(prop, toks) {
         // Without `var()`, an invalid math function drops the declaration
         // now (its validity does not depend on the element).
@@ -491,14 +492,15 @@ pub fn components(sheet: *mut Sheet, toks: []Token) AllocError![]Comp {
 struct Declarer {
     sheet: *mut Sheet
     important: bool
+    logical: bool = false
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
+        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "", logical: self.logical })
     }
 
     // A declaration parsed at computed-value time (or a custom property).
     fn addRaw(self: *mut Self, prop: usize, toks: []Token, name: []u8) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name })
+        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name, logical: self.logical })
     }
 
     fn shorthand(self: *mut Self, name: []u8, comps: []Comp) AllocError!void {
