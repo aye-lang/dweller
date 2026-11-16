@@ -128,7 +128,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | base | Q1.12 (the panic report in aye, then the audio times), Q0.1, DV2b | Q0.3b; DV1 is counted over its next landings |
 | proc | Q2.12 (Q2.12d, then the Spaces flip); Q2.14b, Q2.14c, then Q2.14e to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
-| perf | Q4.25a, Q4.25c, Q6.15 | Q4.25b, Q4.25d, Q4.25e; Q4.3 first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
+| perf | Q4.25a, Q4.25c | Q4.25b, Q4.25d, Q4.25e; Q4.3 first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
 
 ## Decisions (2026-11-04)
@@ -431,9 +431,8 @@ check`. Chromium references come from the module map of
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
-| Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.

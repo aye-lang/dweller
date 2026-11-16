@@ -213,6 +213,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.11 | `url` (66.7 -> 90.3, threshold 80 -> 88; done, 2026-11-09; UTS #46 in new `browser/idna/` from Unicode 18.0.0 tables via `gen_idna.py`; left: URL setters through a state-override parser (about 360 subtests), `failure.html` XHR/sendBeacon throws, urlencoded-parser BOM/surrogates, percent-encoding charsets) |
 | Q6.11b | WPT url, the URL setters: `url.setComponent` runs the basic URL parser with a state override over a Parser copied from the Url (`url-setters*.js` 0 -> 1156/1156, `a-element` setters included); `ak.setUrlPart` native behind the `URL` class setters; url 90.3 -> 93.9, threshold 88 -> 90 (done, 2026-11-09; left: `location` setters other than hash, `setComponent` in the url fuzz target) |
 | Q6.12 | `css/css-animations` (50.9 -> 69.1, threshold 60 -> 65; done, 2026-11-09; inline validation of animation-*/transition-*, animation-timeline and animation-range-*, shorthand longhand reads, @keyframes name validity; left: `text-decoration-inset` 84, expanding a shorthand when one longhand is cleared, CSSKeyframesRule in the CSSOM, `animation-duration: auto`, `animation-composition`) |
+| Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
 
 ## Q7: acceptance and release (lane sites)
 
