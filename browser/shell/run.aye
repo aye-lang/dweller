@@ -3,7 +3,7 @@ import std
 import std.mem.AllocError
 import std.mem.Allocator
 
-let USAGE = "usage: APP [--width W] [--height H] [--font fixed|system] [--frames N] [--events WORDS] [--save OUT.png] [--dump] [--timing] [--full-layout]"
+let USAGE = "usage: APP [--width W] [--height H] [--font fixed|system] [--frames N] [--events WORDS] [--save OUT.png] [--dump] [--timing] [--full-layout] | APP --agent [--width W] [--height H]"
 
 pub fn run(alloc: Allocator, style_source: []u8, build: fn(*mut App) AllocError!void) i32 {
     let began = std.time.monotonicMs()
@@ -17,6 +17,10 @@ pub fn run(alloc: Allocator, style_source: []u8, build: fn(*mut App) AllocError!
         std.log.err(USAGE)
 
         return 2
+    }
+
+    if o.agent {
+        return runAgent(alloc, o, style_source, build)
     }
 
     if o.fixed_font {

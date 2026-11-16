@@ -205,8 +205,8 @@ These replace "one card and one PR" in `foundations.md`.
 | DV3 | A docs-only change passes the required checks in under a minute | DV1 | done |
 | DV4 | `check_plan.py`: the plan's one-home rule, checked in CI | – | done |
 | DV5 | The site archives are readable off the Mac; W2 and W7 by replay run in the cloud | the owner (decision 6) | open |
-| DV6 | One scheduled run fills the CI cells of the scoreboard | Q0.1, Q2.14a | open |
-| DV7 | S1 is counted: consecutive green merge-queue runs | DV6 | open |
+| DV6 | One scheduled run fills the CI cells of the scoreboard | Q0.1, Q2.14a | done |
+| DV7 | S1 is counted: consecutive green merge-queue runs | DV6 | done |
 | DV8 | A wave can start without a session | DV1, DV4; the owner | open |
 
 Q2.14a (the suite with `DWELLER_PROCESS=site`), Q0.3b (targets beside

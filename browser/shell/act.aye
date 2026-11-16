@@ -1,0 +1,27 @@
+import std.json
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn act(app: *mut App, tmp: Allocator, cmd: []u8, request: *json.Value) AllocError!Outcome {
+    if text.eql(cmd, "press") {
+        return agentPress(app, tmp, stringArg(request, "key") orelse return failed("missing argument \"key\" (a string)"))
+    }
+
+    if text.eql(cmd, "scroll") {
+        return agentScroll(app, tmp, request)
+    }
+
+    if !text.eql(cmd, "click") && !text.eql(cmd, "type") {
+        return failed(try joined(tmp, "unknown command \"", cmd, "\""))
+    }
+
+    let ref = stringArg(request, "ref") orelse return failed("missing argument \"ref\" (a string)")
+    let el = nodeOfRef(app, ref) orelse return failed(try joined(tmp, "unknown ref ", ref, ": take a new snapshot (refs belong to one document)"))
+
+    if text.eql(cmd, "click") {
+        return agentClick(app, tmp, el)
+    }
+
+    return agentType(app, tmp, el, stringArg(request, "text") orelse return failed("missing argument \"text\" (a string)"))
+}

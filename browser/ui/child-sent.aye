@@ -62,6 +62,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
                 return ""
             }
 
+            if post != 0 && tp.sandbox & SB_FORMS != 0 { return "form in a sandboxed frame" }
+
             if !tp.loading {
                 tp.nav_policy = policy
                 try navigateChild(tp, target.href, topOf(tp), (post != 0) as u32, content_type, body)
@@ -117,9 +119,24 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .Fetch { .. } => return answerFetch(tp, got.frame, got.message)
         .FetchCancel { id } => return cancelFetch(tp, id)
-        .CookieGet { .. }, .CookieSet { .. } => return answerCookie(tp, got.frame, got.message)
-        .Storage { .. } => return answerStorage(tp, got.frame, got.message)
-        .Dialog { .. } => return takeDialog(tp, got.frame, got.message)
+        .CookieGet { .. }, .CookieSet { .. } => {
+            if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
+
+            return answerCookie(tp, got.frame, got.message)
+        }
+
+        .Storage { op, .. } => {
+            if op < STORAGE_TAB_OPS && tp.sandbox & SB_ORIGIN != 0 { return "storage in a sandboxed origin" }
+
+            return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Dialog { .. } => {
+            if tp.sandbox & SB_MODALS != 0 { return "dialog in a frame sandboxed without allow-modals" }
+
+            return takeDialog(tp, got.frame, got.message)
+        }
+
         .Subframes { frames } => return takeSubframes(tp, frames)
         .PostMessage { .. } => return routePostMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)

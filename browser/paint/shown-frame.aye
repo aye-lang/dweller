@@ -1,0 +1,15 @@
+import layout.Tree
+
+// chromium: third_party/blink/renderer/core/frame/remote_frame_view.cc (UpdateCompositingRect, the frame's rect and clip in the local root)
+pub fn shownFrame(list: *DisplayList, tree: *Tree) ?FrameShown {
+    for f in list.frames.items() {
+        if f.tree != tree { continue }
+
+        match list.items.items()[f.at] {
+            .Clip { r } => return FrameShown { r: r, clip: clipAround(list.items.items(), f.at, r), alpha: alphaAround(list.items.items(), f.at) }
+            _ => return null
+        }
+    }
+
+    return null
+}

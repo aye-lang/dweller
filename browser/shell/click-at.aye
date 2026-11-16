@@ -1,5 +1,3 @@
-import dom
-import dom.NodeId
 import std.mem.AllocError
 
 fn clickAt(app: *mut App, x: f64, y: f64) AllocError!void {
@@ -8,17 +6,7 @@ fn clickAt(app: *mut App, x: f64, y: f64) AllocError!void {
     let t = app.tree.?
     let root = t.root orelse return
     let hit = boxAt(t, root, x, y + app.scroll) orelse return
-    var cur: ?NodeId = t.bx(hit).node
+    let el = t.bx(hit).node orelse return
 
-    try focus(app, cur)
-
-    while cur |el| {
-        for h in app.handlers.items() {
-            if dom.same(h.node, el) {
-                return h.call(app, el)
-            }
-        }
-
-        cur = app.doc.parent(el)
-    }
+    try clickNode(app, el)
 }

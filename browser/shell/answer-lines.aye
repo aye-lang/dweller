@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn answerLines(app: *mut App, pending: *mut text.Builder) AllocError!void {
+    var start: usize = 0
+
+    while text.indexOf(pending.bytes()[start..], "\n") |nl| {
+        try answerLine(app, pending.bytes()[start..start + nl])
+        start += nl + 1
+    }
+
+    var rest = text.Builder.init(app.alloc)
+    defer rest.deinit()
+
+    try rest.append(pending.bytes()[start..])
+    pending.clear()
+    try pending.append(rest.bytes())
+}
