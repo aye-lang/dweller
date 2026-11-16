@@ -200,6 +200,33 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(full <= 1 && restyles >= 6, "{full} full, {restyles} restyles:\n{err}");
 }
 
+/// Q4.8: the matched-properties cache picks its slot from a mixed hash
+/// and has two places per key. `browser/tests/perf/feed.html` has 7
+/// different sets of matched rules, parent values and custom properties:
+/// 442 hits and 7 misses (224 and 225 before: the slot came from the low
+/// bits of the hash, which the rule numbers do not reach, so the keys
+/// took each other's slot).
+#[test]
+fn matched_cache_keeps_feed_keys() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args(["dump", "--style", "--js", "browser/tests/perf/feed.html"])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let last = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\tmatched_cache\t"))
+        .last()
+        .expect("a matched_cache record");
+    let mut counts = last.rsplit('\t').next().unwrap().split(' ');
+    let hits: usize = counts.next().unwrap().parse().unwrap();
+    let misses: usize = counts.next().unwrap().parse().unwrap();
+    assert!(hits >= 400 && misses <= 20, "{hits} hits, {misses} misses");
+}
+
 /// Q4.5: `browser/tests/jsdom/sheet_changes.html` changes the sheets 17
 /// times after the first layout: style elements added, rewritten and
 /// removed, `insertRule`, `deleteRule`, a rule's `style`,

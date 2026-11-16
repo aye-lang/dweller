@@ -32,11 +32,18 @@ fn matchedValues(c: *mut Computer, parent: []Value, inherited: ?*mut CustomLevel
     }
 
     let slots = try m.table()
-    let e = &mut slots[(h % slots.len as u64) as usize]
+    let first = &mut slots[matchedSlot(h, slots.len)]
+    let second = &mut slots[matchedSlot(h ^ 0x9E3779B97F4A7C15, slots.len)]
+    var e = first
 
-    if e.used && e.hash == h && e.inherited == inherited && sameContext(e.context, context) && sameWords(e, m) && sameInherited(e.owned_parent, parent) {
+    if !sameEntry(first, m, h, context, parent, inherited) { e = second }
+
+    m.clock += 1
+
+    if sameEntry(e, m, h, context, parent, inherited) {
         m.hits += 1
         m.hit = e
+        e.stamp = m.clock
         c.level = e.level
         let values = c.out.scratch
 
@@ -47,6 +54,8 @@ fn matchedValues(c: *mut Computer, parent: []Value, inherited: ?*mut CustomLevel
         return values
     }
 
+    e = matchedVictim(first, second)
+    e.stamp = m.clock
     m.misses += 1
     try c.customLevel(inherited)
     try fillMatched(c, e, h, context, parent, inherited)
