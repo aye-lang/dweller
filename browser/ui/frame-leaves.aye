@@ -1,0 +1,21 @@
+import net
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc GetFrameHostForNavigation (the process is chosen for the URL after redirects)
+fn frameLeaves(tp: *TabProcess, framed: bool, href: []u8, res: *net.Response) AllocError!bool {
+    if !framed || !siteFrames() || tp.site.len() == 0 { return false }
+
+    var site = text.Builder.init(tp.url.alloc)
+    defer site.deinit()
+
+    try writeSite(finalHref(href, res), &mut site)
+
+    return text.startsWith(site.bytes(), "http") && !text.eql(site.bytes(), tp.site.bytes())
+}
+
+fn finalHref(href: []u8, res: *net.Response) []u8 {
+    if res.url.len > 0 { return res.url }
+
+    return href
+}

@@ -1,0 +1,31 @@
+import ipc
+import net
+import std.mem.AllocError
+
+let MAX_KEPT_FRAMES: usize = 16
+
+// chromium: content/browser/renderer_host/navigation_request.cc OnResponseStarted (a response for another site is committed in that site's process, never in the initiator's)
+fn keepFrame(tp: *mut TabProcess, on: u32, id: u32, href: []u8, got: net.Response) AllocError!void {
+    let alloc = tp.url.alloc
+    var res = got
+
+    errdefer res.deinit(alloc)
+
+    if try framingRefusedBy(tp, &res, finalHref(href, &res)) {
+        res.deinit(alloc)
+
+        return ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.AccessDenied) })
+    }
+
+    if tp.kept.len() >= MAX_KEPT_FRAMES { tp.kept.orderedRemove(0).deinit(alloc) }
+
+    let src = try ownedCopy(alloc, href)
+
+    errdefer alloc.free(src)
+
+    let final = try ownedCopy(alloc, finalHref(href, &res))
+
+    errdefer alloc.free(final)
+    try tp.kept.append(KeptFrame { src: src, href: final, res: res })
+    try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchRemote { id: id })
+}

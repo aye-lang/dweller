@@ -1,0 +1,13 @@
+fn dropIncoming(k: *mut Socket, n: usize) {
+    let all = sockets orelse return
+    let rest = dup(all.alloc, k.incoming.bytes()[n..]) catch |e| {
+        return failSocket(k)
+    }
+
+    defer release(all.alloc, rest)
+
+    k.incoming.clear()
+    k.incoming.append(rest) catch |e| {
+        failSocket(k)
+    }
+}
