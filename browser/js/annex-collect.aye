@@ -1,0 +1,38 @@
+// v8: src/parsing/parser.cc (InsertSloppyBlockFunctionVarBindings)
+
+fn annexCollect(r: *mut Resolver, s: *mut RScope, st: u32) SyntaxErr!void {
+    let mark = r.annex_blocked.len()
+
+    defer r.annex_blocked.count = mark
+
+    match r.ast.node(st) {
+        .Block { list, n, .. } => try annexList(r, s, list, n)
+        .If { cons, alt, .. } => {
+            try annexCollect(r, s, cons)
+            try annexCollect(r, s, alt)
+        }
+
+        .For { init, body, .. } => {
+            try annexBlockNames(r, init)
+            try annexCollect(r, s, body)
+        }
+
+        .ForIn { left, body, .. } => {
+            try annexBlockNames(r, left)
+            try annexCollect(r, s, body)
+        }
+
+        .While { body, .. } => try annexCollect(r, s, body)
+        .DoWhile { body, .. } => try annexCollect(r, s, body)
+        .Labeled { body, .. } => try annexCollect(r, s, body)
+        .Try { block, param, handler, finalizer, .. } => {
+            try annexCollect(r, s, block)
+            try annexCollect(r, s, finalizer)
+            try annexCatchNames(r, param)
+            try annexCollect(r, s, handler)
+        }
+
+        .Switch { list, n, .. } => try annexCases(r, s, list, n)
+        _ => {}
+    }
+}

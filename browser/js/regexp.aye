@@ -322,8 +322,16 @@ struct RParser {
                 return self.node(RNode.WordB { neg: e == 'B' })
             }
             if e >= '1' && e <= '9' {
+                let digits = self.pos
                 if self.number() |n| {
-                    return self.node(RNode.BackRef { n: n })
+                    if n <= regexpCountGroups(self.p) {
+                        return self.node(RNode.BackRef { n: n })
+                    }
+                    if self.unicode {
+                        return SyntaxErr.Syntax
+                    }
+                    self.pos = digits
+                    return self.node(RNode.Char { c: regexpLegacyEscape(self) })
                 }
             }
             if e == 'k' && self.pos + 1 < self.p.len && self.p[self.pos + 1] == '<' {

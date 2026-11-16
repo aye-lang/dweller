@@ -1,0 +1,21 @@
+// https://tc39.es/ecma262/#sec-static-semantics-lexicallydeclarednames
+
+fn annexBlockNames(r: *mut Resolver, st: u32) SyntaxErr!void {
+    match r.ast.node(st) {
+        .VarDecl { kind, list, n } => {
+            if kind == DECL_VAR {
+                return
+            }
+
+            for k in 0..n {
+                match r.ast.node(r.ast.item(list, k)) {
+                    .Declarator { target, .. } => try annexPatternNames(r, target)
+                    _ => {}
+                }
+            }
+        }
+
+        .ClassDecl { target, .. } => try annexPatternNames(r, target)
+        _ => {}
+    }
+}
