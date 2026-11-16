@@ -1,0 +1,12 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serialize-a-css-declaration-block
+fn declarationsText(alloc: Allocator, decls: []u8, out: *mut text.Builder) AllocError!void {
+    var pos: usize = 0
+
+    while nextStyleDecl(decls, &mut pos) |d| {
+        try appendCanonicalDecl(alloc, d, out)
+    }
+}

@@ -3925,30 +3925,14 @@ pub let PRELUDE =
     \\  }
     \\  return rules;
     \\}
-    \\const RULE_TYPES = { media: 4, import: 3, 'font-face': 5, page: 6, keyframes: 7, '-webkit-keyframes': 7, namespace: 10, supports: 12, layer: 18, container: 0, property: 0 };
-    \\function ruleObject(sheet, text) {
-    \\  const m = /^@([-\w]+)/.exec(text);
-    \\  const r = { cssText: text, parentStyleSheet: sheet, parentRule: null };
-    \\  if (m) {
-    \\    r.type = RULE_TYPES[m[1].toLowerCase()] || 0;
-    \\    if (r.type === 4) r.media = { mediaText: text.slice(m[0].length, text.indexOf('{')).trim() };
-    \\    if (r.type === 7) r.name = text.slice(m[0].length, text.indexOf('{')).trim();
-    \\  } else {
-    \\    r.type = 1;
-    \\    const sel = text.slice(0, text.indexOf('{')).trim();
-    \\    r.selectorText = ak.selectorText(sel) ?? sel;
-    \\  }
-    \\  return r;
-    \\}
     \\function validKeyframesName(n) {
     \\  if (/^"(?:[^"\\\n]|\\.)+"$|^'(?:[^'\\\n]|\\.)+'$/.test(n)) return true;
     \\  return /^(?:--|-?(?:[a-zA-Z_]|[^\x00-\x7f]|\\.))(?:[\w-]|[^\x00-\x7f]|\\.)*$/.test(n) && !/^(?:none|default|initial|inherit|unset|revert|revert-layer)$/i.test(n);
     \\}
-    \\function validRule(text) {
-    \\  const k = /^@(?:-webkit-)?keyframes\s+([^{]*)\{/i.exec(text);
-    \\  if (k) return validKeyframesName(k[1].trim());
-    \\  return /^@/.test(text) || ak.selectorText(text.slice(0, text.indexOf('{'))) !== null;
-    \\}
+    \\const cssomRules = G.__cssomRules(ak, hidden, G.__cssomSyntax(ak, validKeyframesName));
+    \\delete G.__cssomRules;
+    \\delete G.__cssomSyntax;
+    \\const validRule = cssomRules.validRule;
     \\let sheetIds = 0;
     \\class CSSStyleSheet {
     \\  constructor(options) {
@@ -3965,7 +3949,10 @@ pub let PRELUDE =
     \\    this.media = { mediaText: options && options.media ? String(options.media) : '', length: 0 };
     \\  }
     \\  get _rules() {
-    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
+    \\    if (!this._list) {
+    \\      this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
+    \\      hidden(this, '_objects', []);
+    \\    }
     \\    return this._list;
     \\  }
     \\  // The sheet of an element: the browser takes its rules over from the
@@ -3984,13 +3971,28 @@ pub let PRELUDE =
     \\    for (const owner of this._adopters) pushAdopted(owner);
     \\  }
     \\  get cssRules() {
-    \\    if (!this._ruleList) hidden(this, '_ruleList', []);
+    \\    if (!this._ruleList) hidden(this, '_ruleList', cssomRules.ruleList([]));
     \\    return this._syncRules();
     \\  }
     \\  _syncRules() {
     \\    const list = this._ruleList;
-    \\    if (list) list.splice(0, list.length, ...this._rules.map(t => ruleObject(this, t)));
+    \\    const rules = this._rules;
+    \\    const objects = this._objects;
+    \\    if (list) list.splice(0, list.length, ...rules.map((t, i) => objects[i] || (objects[i] = cssomRules.ruleObject(this, t))));
     \\    return list;
+    \\  }
+    \\  _ruleChanged(rule) {
+    \\    const i = this._rules && this._objects.indexOf(rule);
+    \\    if (i < 0) return;
+    \\    const text = rule._source();
+    \\    if (!this._owner) {
+    \\      this._rules[i] = text;
+    \\      return this._changed(null);
+    \\    }
+    \\    this._hand();
+    \\    this._rules[i] = text;
+    \\    ak.sheetDelete(this._id, i);
+    \\    ak.sheetInsert(this._id, i, text);
     \\  }
     \\  get rules() { return this.cssRules; }
     \\  get ownerNode() { return this._owner; }
@@ -4015,12 +4017,14 @@ pub let PRELUDE =
     \\    if (rule.indexOf('{') < 0 && !/^@/.test(rule) || !validRule(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 0, rule);
+    \\      this._objects.splice(index, 0, undefined);
     \\      this._changed(null);
     \\      this._syncRules();
     \\      return index;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 0, rule);
+    \\    this._objects.splice(index, 0, undefined);
     \\    ak.sheetInsert(this._id, index, rule);
     \\    this._syncRules();
     \\    return index;
@@ -4031,12 +4035,14 @@ pub let PRELUDE =
     \\    if (index >= rules.length) throw new DOMException("Failed to execute 'deleteRule' on 'CSSStyleSheet': The index provided (" + index + ") is larger than the maximum index (" + (rules.length - 1) + ").", 'IndexSizeError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 1);
+    \\      this._objects.splice(index, 1);
     \\      this._changed(null);
     \\      this._syncRules();
     \\      return;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 1);
+    \\    this._objects.splice(index, 1);
     \\    ak.sheetDelete(this._id, index);
     \\    this._syncRules();
     \\  }
@@ -4044,6 +4050,7 @@ pub let PRELUDE =
     \\  removeRule(index) { this.deleteRule(index === undefined ? 0 : index); }
     \\  replaceSync(text) {
     \\    this._list = splitRules(String(text)).filter(r => !/^@import/i.test(r));
+    \\    hidden(this, '_objects', []);
     \\    if (!this._owner) return this._changed(null);
     \\    this._handed = false;
     \\    this._hand();
