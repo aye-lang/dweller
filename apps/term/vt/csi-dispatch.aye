@@ -1,0 +1,34 @@
+import std.mem.AllocError
+
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+fn csiDispatch(t: *mut Term, b: u8) AllocError!void {
+    let p = &t.parser
+
+    if p.intermediate != 0 {
+        return
+    }
+
+    if b == 'h' || b == 'l' {
+        return setModes(t, b == 'h')
+    }
+
+    if p.marker != 0 {
+        return csiPrivate(t, b)
+    }
+
+    if b == 'm' {
+        sgr(t)
+    } else if b == 'r' {
+        setRegion(t, p.param(0, 1) as usize, p.param(1, t.rows as u32) as usize)
+    } else if b == 'n' || b == 'c' {
+        try report(t, b)
+    } else if b == 's' {
+        saveCursor(t)
+    } else if b == 'u' {
+        restoreCursor(t)
+    } else if b == 'J' || b == 'K' || b == 'L' || b == 'M' || b == 'P' || b == '@' || b == 'X' || b == 'S' || b == 'T' || b == 'b' {
+        try csiEdit(t, b, p.param(0, 1) as usize)
+    } else {
+        csiCursor(t, b, p.param(0, 1) as usize)
+    }
+}

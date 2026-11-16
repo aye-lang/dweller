@@ -176,7 +176,8 @@ fn geometry_reads_restyle_once() {
 /// P4.75q: subtrees inserted on a page with `:has()` of any element and
 /// of siblings are styled again in place when no element in them (or
 /// beside them) has what the arguments look at: 3 of the 7 forced
-/// layouts restyle (none before); the others match a full one
+/// layouts restyle (none before); the others match a full one. Q4.4:
+/// the other 3 restyle too, from the elements `:has()` was tested on
 /// (`has_insert.tree`, `DWELLER_LAYOUT_CHECK` in `jsdom_fixtures`).
 #[test]
 fn jsdom_has_insert_restyles_partially() {
@@ -196,7 +197,110 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(out.status.success(), "{}\n{err}", out.status);
     let full = err.matches("DWELLER_LAYOUT_WHY\tSTYLE_FULL\t").count();
     let restyles = err.matches("DWELLER_TIMING\trestyle\t").count();
-    assert!(full <= 4 && restyles >= 3, "{full} full, {restyles} restyles:\n{err}");
+    assert!(full <= 1 && restyles >= 6, "{full} full, {restyles} restyles:\n{err}");
+}
+
+/// Q4.2: `browser/tests/jsdom/shadow_restyle.html` has two shadow hosts
+/// beside 200 rows. A class on `body` that a selector looks at restyles
+/// the elements its set names (202), not the document because a host is
+/// below (1222 before); a class on a slotted child or under one restyles
+/// that element, not its host's subtree (1 to 3 elements, 10 before).
+#[test]
+fn jsdom_shadow_restyle_keeps_roots_shallow() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/shadow_restyle.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        counts.len() >= 9 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 8,
+        "{counts:?}"
+    );
+}
+
+/// Q4.4: `browser/tests/jsdom/has_anchors.html` changes what `:has()`
+/// arguments look at (a class, an inserted and a removed element) under
+/// rules whose `:has()` has no key, looks at siblings or is not in the
+/// subject, over 200 rows. Each forced read restyles from the elements
+/// `:has()` was tested on (`Styles.has_anchors`), not the whole sheet:
+/// 1 full cascade, the first (8 before), and 2521 elements in 9 restyles,
+/// 2428 of them for a value all of the rows inherit.
+#[test]
+fn jsdom_has_anchors_restyle_partially() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .env("DWELLER_LAYOUT_WHY", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/has_anchors.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_LAYOUT_WHY\tSTYLE_FULL\t").count();
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    let total: usize = counts.iter().sum();
+    assert!(
+        full <= 1 && counts.len() >= 9 && total <= 3000,
+        "{full} full, {} restyles, {total} elements: {counts:?}",
+        counts.len()
+    );
+}
+
+/// Q4.3: `browser/tests/jsdom/class_sets.html` toggles classes, an id and
+/// an attribute that selectors look at on an ancestor or a preceding
+/// sibling, over 200 rows of 6 elements. The restyles compute again the
+/// changed element and the elements its invalidation set names (the
+/// subjects of those selectors), not its whole subtree and following
+/// siblings: 2029 elements in 12 restyles (8512 in 11 and one refused
+/// before). The values are in `class_sets.tree` (`jsdom_fixtures`).
+#[test]
+fn jsdom_class_sets_restyle_reached_elements() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/class_sets.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    let total: usize = counts.iter().sum();
+    assert!(
+        counts.len() >= 12 && total <= 2500,
+        "{} restyles, {total} elements: {counts:?}",
+        counts.len()
+    );
 }
 
 /// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual

@@ -1,0 +1,35 @@
+// v8: src/regexp/regexp-compiler-tonode.cc (CharacterRange::Canonicalize)
+
+import std.mem.AllocError
+import std.sort
+
+fn regexpCanonicalSet(prog: *mut RegexProg, start: u32) AllocError!u32 {
+    let all = prog.ranges.items()
+
+    sort.sort(CRange, all[start as usize..], regexpRangeBefore)
+
+    var n = start as usize
+
+    for k in start as usize..all.len {
+        if n > start as usize && all[k].lo <= all[n - 1].hi + 1 {
+            if all[k].hi > all[n - 1].hi {
+                all[n - 1].hi = all[k].hi
+            }
+        } else {
+            all[n] = all[k]
+            n += 1
+        }
+    }
+
+    prog.ranges.count = n
+
+    let id = prog.sets.len() as u32
+
+    try prog.sets.append(CSet { start: start, count: n as u32 - start })
+
+    return id
+}
+
+fn regexpRangeBefore(a: CRange, b: CRange) bool {
+    return a.lo < b.lo
+}

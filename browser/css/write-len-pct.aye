@@ -1,14 +1,28 @@
+import std.math
 import std.mem.AllocError
 import std.text
 
-fn writeLenPct(l: LenPct, out: *mut text.Builder) AllocError!void {
-    if l.px == 0.0 {
-        try writeNumber(l.pct, out)
-        try out.appendByte('%')
-    } else if l.pct == 0.0 {
-        try writeNumber(l.px, out)
-        try out.append("px")
-    } else {
-        try writeLength(Value.Calc { pct: l.pct, px: l.px }, out)
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeLenPct(v: LenPct, out: *mut text.Builder) AllocError!void {
+    if v.px == 0.0 || v.pct == 0.0 {
+        try writeNumber(v.px + v.pct, out)
+
+        if v.px != 0.0 {
+            return out.append("px")
+        }
+
+        return out.appendByte('%')
     }
+
+    try out.append("calc(")
+    try writeNumber(v.pct, out)
+
+    if v.px < 0.0 {
+        try out.append("% - ")
+    } else {
+        try out.append("% + ")
+    }
+
+    try writeNumber(math.abs(v.px), out)
+    try out.append("px)")
 }

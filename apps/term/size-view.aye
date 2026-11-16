@@ -1,0 +1,26 @@
+import dweller.paint
+import std.mem.AllocError
+import std.mem.Allocator
+import vt
+
+fn sizeView(alloc: Allocator, v: *mut View, t: *vt.Term) AllocError!void {
+    let w = (t.cols as i64 * v.cell_w) as usize
+    let h = (t.rows as i64 * v.cell_h) as usize
+
+    if v.canvas.width == w && v.canvas.height == h {
+        return
+    }
+
+    v.canvas.deinit()
+    v.canvas = try paint.Canvas.init(alloc, w, h)
+    v.canvas.clear(BACKGROUND)
+
+    for y in 0..t.rows {
+        t.dirty[y] = true
+    }
+}
+
+fn closeView(v: *mut View) {
+    v.painter.deinit()
+    v.canvas.deinit()
+}

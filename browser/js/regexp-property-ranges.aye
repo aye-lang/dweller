@@ -1,0 +1,39 @@
+// https://tc39.es/ecma262/#prod-CharacterClassEscape
+
+fn regexpPropertyRanges(rp: *mut RParser, negated: bool) SyntaxErr!void {
+    rp.pos += 1
+    let start = rp.pos
+
+    while rp.more() && rp.peek() != '}' {
+        rp.pos += 1
+    }
+
+    if !rp.more() {
+        return SyntaxErr.Syntax
+    }
+
+    let set = unicodePropertyLookup(rp.p[start..rp.pos]) orelse {
+        return SyntaxErr.Syntax
+    }
+
+    let ranges = UNICODE_PROPERTY_RANGES[set.start as usize * 2..(set.start + set.count) as usize * 2]
+    var next: u32 = 0
+    var k: usize = 0
+
+    rp.pos += 1
+
+    while k < ranges.len {
+        if !negated {
+            try rp.addRange(ranges[k], ranges[k + 1])
+        } else if ranges[k] > next {
+            try rp.addRange(next, ranges[k] - 1)
+        }
+
+        next = ranges[k + 1] + 1
+        k += 2
+    }
+
+    if negated && next <= 0x10FFFF {
+        try rp.addRange(next, 0x10FFFF)
+    }
+}

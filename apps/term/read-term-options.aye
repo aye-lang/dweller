@@ -1,0 +1,37 @@
+import std.text
+
+fn readTermOptions(args: [][]u8) ?TermOptions {
+    var o = TermOptions {}
+    var i: usize = 0
+
+    while i < args.len {
+        let a = args[i]
+        var value: []u8 = ""
+
+        if i + 1 < args.len {
+            value = args[i + 1]
+        }
+
+        if text.eql(a, "--dump") {
+            o.dump = true
+            i += 1
+            continue
+        }
+
+        if text.eql(a, "--exec") {
+            o.command = value
+        } else if text.eql(a, "--type") {
+            o.typed = value
+        } else if text.eql(a, "--save") {
+            o.save = value
+        } else if text.eql(a, "--font") && text.eql(value, "fixed") {
+            o.fixed_font = true
+        } else {
+            return null
+        }
+
+        i += 2
+    }
+
+    return o
+}

@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+pub fn dump(t: *mut Term, out: *mut text.Builder) AllocError!void {
+    let s = t.screen()
+
+    try out.append("size ")
+    try out.appendUint(t.cols as u64)
+    try out.appendByte('x')
+    try out.appendUint(t.rows as u64)
+    try out.append(" cursor ")
+    try out.appendUint(s.y as u64)
+    try out.appendByte(',')
+    try out.appendUint(s.x as u64)
+    try dumpFlags(t, out)
+
+    for y in 0..t.rows {
+        try dumpText(t.row(y), out)
+    }
+
+    for y in 0..t.rows {
+        try dumpStyles(t.row(y), y, out)
+    }
+}
