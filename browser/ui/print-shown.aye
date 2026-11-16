@@ -1,0 +1,34 @@
+import ipc
+import print
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: components/printing/renderer/print_render_frame_helper.cc (PrintRequestedPages)
+fn printShown(ui: *mut Ui) AllocError!void {
+    let slot = ui.slots[ui.active].?
+    let paper = std.os.getenv("DWELLER_PAPER") orelse "a4"
+    var pdf = text.Builder.init(ui.alloc)
+    defer pdf.deinit()
+
+    if slot.in_space != 0 || print.paperNamed(paper) == null { return }
+
+    if slot.process |tp| {
+        if tp.print_job != null || !tp.hello || tp.gone.len > 0 || tp.loading { return }
+
+        tp.print_job = try ui.alloc.create(PrintJob { bytes: text.Builder.init(ui.alloc), owned_path: try printPath(ui, slotTitle(slot)) })
+
+        return ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Print { paper: paper })
+    }
+
+    let page = ui.tab.page orelse return
+    let on_screen = [2]f64{pageX(ui, ui.win_w as f64), ui.layoutHeight() / ui.page_zoom}
+    let pages = try print.printDocument(ui.alloc, page, ui.measure, ui.painter.system, print.paperNamed(paper).?, on_screen, &mut pdf)
+    let path = try printPath(ui, slotTitle(slot))
+    defer ui.alloc.free(path)
+
+    ui.dropList()
+    try ui.relayout()
+    try ui.afterScripts()
+    try savePrinted(ui, path, pdf.bytes(), pages)
+}

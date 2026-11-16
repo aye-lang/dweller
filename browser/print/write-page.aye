@@ -1,0 +1,34 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
+fn writePage(alloc: Allocator, w: *mut PdfWriter, paper: Paper, tree: usize, face: usize, number: usize, page: *PrintedPage) AllocError!void {
+    var content = text.Builder.init(alloc)
+    defer content.deinit()
+    var image = text.Builder.init(alloc)
+    defer image.deinit()
+
+    try w.begin(number)
+    try w.out.append("<< /Type /Page /Parent ")
+    try w.ref(tree)
+    try w.out.append(" /MediaBox [0 0 ")
+    try w.out.appendFloat(paper.width_pt)
+    try w.out.append(" ")
+    try w.out.appendFloat(paper.height_pt)
+    try w.out.append("] /Resources << /XObject << /Im0 ")
+    try w.ref(number + 2)
+    try w.out.append(" >> /Font << /F1 ")
+    try w.ref(face)
+    try w.out.append(" >> >> /Contents ")
+    try w.ref(number + 1)
+    try w.out.append(" >>")
+    try w.end()
+    try pageContent(&mut content, paper, page)
+    try writeStream(alloc, w, number + 1, "", content.bytes())
+    try image.append("/Type /XObject /Subtype /Image /ColorSpace /DeviceRGB /BitsPerComponent 8 /Width ")
+    try image.appendUint(page.width as u64)
+    try image.append(" /Height ")
+    try image.appendUint(page.height as u64)
+    try writeStream(alloc, w, number + 2, image.bytes(), page.owned_rgb)
+}

@@ -1,0 +1,17 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+let TEXT_ASCENT: f64 = 0.8
+let TEXT_DESCENT: f64 = 0.2
+
+fn itemSpans(list: *paint.DisplayList, out: *mut List(Span)) AllocError!void {
+    for item in list.items.items() {
+        match item {
+            .Text { y, face, .. } => try out.append(Span { top: y - face.size * TEXT_ASCENT, bottom: y + face.size * TEXT_DESCENT })
+            .Image { r, .. } => try out.append(Span { top: r.y, bottom: r.y + r.h })
+            .Svg { r, .. } => try out.append(Span { top: r.y, bottom: r.y + r.h })
+            _ => {}
+        }
+    }
+}

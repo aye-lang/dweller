@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn writeInfo(w: *mut PdfWriter, info: usize, title: []u8) AllocError!void {
+    try w.begin(info)
+    try w.out.append("<< /Producer (Dweller)")
+
+    if latin1Only(title) {
+        try w.out.append(" /Title ")
+        try pdfString(w.out, title)
+    }
+
+    try w.out.append(" >>")
+    try w.end()
+}

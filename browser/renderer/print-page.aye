@@ -1,0 +1,34 @@
+import ipc
+import print
+import std.math
+import std.text
+
+let PRINT_CHUNK: usize = 262144
+
+// chromium: components/printing/renderer/print_render_frame_helper.cc (PrintPages: the renderer makes the document)
+fn printPage(r: *mut TabRenderer, paper_name: []u8) !bool {
+    let paper = print.paperNamed(paper_name) orelse return false
+    let page = r.page orelse {
+        try send(r.alloc, r.conn, r.tab, ipc.Message.PrintedEnd { pages: 0 })
+
+        return true
+    }
+
+    var pdf = text.Builder.init(r.alloc)
+    defer pdf.deinit()
+    let screen = [2]f64{r.width as f64 / r.scale, r.height as f64 / r.scale}
+    let pages = try print.printDocument(r.alloc, page, r.measure, r.system, paper, screen, &mut pdf)
+    var sent: usize = 0
+
+    while sent < pdf.len() {
+        let end = math.minOf(usize, pdf.len(), sent + PRINT_CHUNK)
+
+        try send(r.alloc, r.conn, r.tab, ipc.Message.Printed { chunk: pdf.bytes()[sent..end] })
+        sent = end
+    }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.PrintedEnd { pages: pages as u32 })
+    r.due = true
+
+    return true
+}

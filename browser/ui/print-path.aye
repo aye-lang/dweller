@@ -1,0 +1,33 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: chrome/browser/printing/print_view_manager_base.cc; the downloads directory is where a "Save as PDF" lands
+fn printPath(ui: *mut Ui, title: []u8) AllocError![]mut u8 {
+    var name = text.Builder.init(ui.alloc)
+    defer name.deinit()
+    var dir = text.Builder.init(ui.alloc)
+    defer dir.deinit()
+
+    if std.os.getenv("DWELLER_PRINT_TO") |fixed| { return ownedCopy(ui.alloc, fixed) }
+
+    try dir.append(std.os.getenv("HOME") orelse ".")
+    try dir.append("/Downloads")
+
+    if !std.fs.exists(dir.bytes()) { dir.clear() }
+    if dir.len() == 0 { try dir.append(std.os.getenv("HOME") orelse ".") }
+
+    for k in 1..100 {
+        name.clear()
+        try fileName(&mut name, title, k)
+
+        let path = try net.joinPath(ui.alloc, dir.bytes(), name.bytes())
+
+        if !std.fs.exists(path) || k == 99 { return path }
+
+        ui.alloc.free(path)
+    }
+
+    return ownedCopy(ui.alloc, "print.pdf")
+}

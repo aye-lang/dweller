@@ -1,0 +1,27 @@
+import std.math
+import std.text
+
+pub let PRINT_SCALE: f64 = 2.0
+let PT_PER_PX: f64 = 0.75
+
+pub struct Paper {
+    width_pt: f64
+    height_pt: f64
+    margin_pt: f64
+
+    pub fn contentWidth(self: Self) f64 {
+        return math.floor((self.width_pt - 2.0 * self.margin_pt) / PT_PER_PX)
+    }
+
+    pub fn contentHeight(self: Self) f64 {
+        return math.floor((self.height_pt - 2.0 * self.margin_pt) / PT_PER_PX)
+    }
+}
+
+// chromium: printing/units.h, printing/print_settings.cc (the 10 mm default margin is 28.35 pt)
+pub fn paperNamed(name: []u8) ?Paper {
+    if text.eqlIgnoreCase(name, "a4") || name.len == 0 { return Paper { width_pt: 595.0, height_pt: 842.0, margin_pt: 28.0 } }
+    if text.eqlIgnoreCase(name, "letter") { return Paper { width_pt: 612.0, height_pt: 792.0, margin_pt: 28.0 } }
+
+    return null
+}

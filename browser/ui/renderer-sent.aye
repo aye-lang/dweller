@@ -185,6 +185,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .ChooseFiles { multiple, accept: accepted } => return takeFileAsk(tp, multiple, accepted)
+        .Printed { chunk } => return takePrinted(tp, chunk, false, 0)
+        .PrintedEnd { pages } => return takePrinted(tp, "", true, pages)
+        .PrintAsk => {
+            tp.print_asked = true
+        }
+
         .Clipboard { copied } => {
             if got.frame != slot.id { return "bad clipboard" }
 

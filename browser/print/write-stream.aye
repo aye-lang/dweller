@@ -1,0 +1,20 @@
+import paint
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn writeStream(alloc: Allocator, w: *mut PdfWriter, number: usize, dict: []u8, data: []u8) AllocError!void {
+    var packed = text.Builder.init(alloc)
+    defer packed.deinit()
+
+    try paint.zlib(alloc, data, &mut packed)
+    try w.begin(number)
+    try w.out.append("<< ")
+    try w.out.append(dict)
+    try w.out.append(" /Filter /FlateDecode /Length ")
+    try w.out.appendUint(packed.len() as u64)
+    try w.out.append(" >>\nstream\n")
+    try w.out.append(packed.bytes())
+    try w.out.append("\nendstream")
+    try w.end()
+}

@@ -54,6 +54,8 @@ mod paint;
 mod perf;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
+#[path = "browser/print.rs"]
+mod print;
 #[path = "browser/scripts.rs"]
 mod scripts;
 #[path = "browser/security.rs"]
@@ -72,6 +74,8 @@ mod window_file;
 mod window_login;
 #[path = "browser/window_places.rs"]
 mod window_places;
+#[path = "browser/window_print.rs"]
+mod window_print;
 #[path = "browser/window_renderer.rs"]
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]

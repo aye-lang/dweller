@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+fn pdfByte(out: *mut text.Builder, c: u8) AllocError!void {
+    if c == '(' || c == ')' || c == '\\' { try out.appendByte('\\') }
+
+    if c < 0x80 { return out.appendByte(c) }
+
+    try out.appendByte('\\')
+    try out.appendByte('0' + (c >> 6))
+    try out.appendByte('0' + ((c >> 3) & 7))
+    try out.appendByte('0' + (c & 7))
+}

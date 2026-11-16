@@ -1,0 +1,45 @@
+import engine
+import font
+import print
+import std
+import std.mem.Allocator
+import std.text
+
+let PRINT_USAGE = "usage: dweller print FILE|URL -o OUT.pdf [--paper a4|letter] [--font fixed|system]"
+
+struct PrintOptions {
+    target: []u8 = ""
+    out: []u8 = ""
+    paper: []u8 = "a4"
+    face: []u8 = ""
+}
+
+fn printOptions(args: [][]u8) ?PrintOptions {
+    var o = PrintOptions {}
+    var i: usize = 0
+
+    while i < args.len {
+        let more = i + 1 < args.len
+
+        if text.eql(args[i], "-o") && more {
+            o.out = args[i + 1]
+            i += 1
+        } else if text.eql(args[i], "--paper") && more {
+            o.paper = args[i + 1]
+            i += 1
+        } else if text.eql(args[i], "--font") && more {
+            o.face = args[i + 1]
+            i += 1
+        } else if o.target.len == 0 && !text.startsWith(args[i], "-") {
+            o.target = args[i]
+        } else {
+            return null
+        }
+
+        i += 1
+    }
+
+    if o.target.len == 0 || o.out.len == 0 || print.paperNamed(o.paper) == null { return null }
+
+    return o
+}
