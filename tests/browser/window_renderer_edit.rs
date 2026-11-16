@@ -23,7 +23,7 @@ fn same_pixels(page: &str, events: &str, wait: &str, name: &str) -> String {
     let golden = scratch().join(format!("{name}_in_process.png"));
     let shot = scratch().join(format!("{name}_tab.png"));
     let tab = [("DWELLER_PROCESS", "tab"), ("DWELLER_STEADY_CARET", "1")];
-    let (_, err) = shoot(page, &golden, &format!("loaded {}", events.replace('~', "")), &[("DWELLER_STEADY_CARET", "1")]);
+    let (_, err) = shoot(page, &golden, &format!("loaded {}", events.replace('~', "")), &[IN_PROCESS, ("DWELLER_STEADY_CARET", "1")]);
     assert!(err.is_empty(), "{events}: {err}");
     let renderer = format!("renderer:loaded renderer:frame {} {wait}", events.replace('~', wait));
     let (state, err) = shoot(page, &shot, &renderer, &tab);
@@ -40,7 +40,7 @@ fn same_pixels(page: &str, events: &str, wait: &str, name: &str) -> String {
 /// The page's own picture without any input.
 fn still(page: &str, name: &str) -> Vec<u8> {
     let png = scratch().join(format!("{name}_still.png"));
-    let (_, err) = shoot(page, &png, "loaded", &[("DWELLER_STEADY_CARET", "1")]);
+    let (_, err) = shoot(page, &png, "loaded", &[IN_PROCESS, ("DWELLER_STEADY_CARET", "1")]);
     assert!(err.is_empty(), "{err}");
     std::fs::read(&png).unwrap()
 }
@@ -182,7 +182,7 @@ fn window_renderer_targets() {
         ),
     ];
     for (name, events, tabs, url) in cases {
-        let (in_process, err) = shoot(page, &png, &format!("loaded {}", events.replace('~', "frame frame")), &[]);
+        let (in_process, err) = shoot(page, &png, &format!("loaded {}", events.replace('~', "frame frame")), &[IN_PROCESS]);
         assert!(err.is_empty(), "{name}: {err}");
         let tab_events = format!("renderer:loaded renderer:frame {}", events.replace('~', "renderer:input renderer:loaded"));
         let (tab, err) = shoot(page, &png, &tab_events, &[("DWELLER_PROCESS", "tab")]);
