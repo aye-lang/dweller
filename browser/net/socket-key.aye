@@ -1,0 +1,13 @@
+import std.crypto
+import std.encoding
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-4.1
+fn socketKey(alloc: Allocator) AllocError![]mut u8 {
+    var nonce = @zeroed([16]u8)
+
+    crypto.randomBytes(nonce[..]) catch |e| {}
+
+    return encoding.base64Encode(alloc, nonce[..])
+}

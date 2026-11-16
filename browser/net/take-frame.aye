@@ -1,0 +1,44 @@
+import std.mem.AllocError
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-5.4
+fn takeFrame(a: *mut Assembly, f: Frame, limit: usize) AllocError!Taken {
+    if f.opcode == FRAME_PING {
+        return Taken.Ping
+    }
+
+    if f.opcode == FRAME_PONG {
+        return Taken.Pong
+    }
+
+    if f.opcode == FRAME_CLOSE {
+        return closeOf(f.payload)
+    }
+
+    if (f.opcode == FRAME_CONTINUATION) != a.open {
+        return Taken.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    if !a.open {
+        a.open = true
+        a.opcode = f.opcode
+        a.data.clear()
+    }
+
+    if a.data.len() + f.payload.len > limit {
+        return Taken.Bad { code: CLOSE_TOO_BIG }
+    }
+
+    try a.data.append(f.payload)
+
+    if !f.fin {
+        return Taken.Nothing
+    }
+
+    a.open = false
+
+    if a.opcode == FRAME_TEXT && !frameTextValid(a.data.bytes()) {
+        return Taken.Bad { code: CLOSE_BAD_DATA }
+    }
+
+    return Taken.Message { binary: a.opcode == FRAME_BINARY }
+}

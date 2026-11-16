@@ -5,7 +5,7 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
     for k in 0..tp.children.len() {
         let c = &mut tp.children.items()[k]
 
-        if c.tp == null { c.tp = try startChild(ui, tp) }
+        if c.tp == null { c.tp = try startFrameChild(ui, tp, c) }
 
         let child = c.tp orelse {
             try frameDone(tp, c)
@@ -23,7 +23,7 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
 
         if child.hello && !c.sent {
             try sendFrameOwner(tp, c.*, child)
-            try navigateChild(child, c.src, tp.committed.bytes(), 0, "", "")
+            try navigateChild(child, childHref(c), tp.committed.bytes(), 0, "", "")
             c.sent = true
         }
 
