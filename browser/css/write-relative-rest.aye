@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-4/#predefined-xyz
+fn writeRelativeRest(rest: []Token, out: *mut text.Builder) AllocError!void {
+    let first = skipWhitespace(rest, 0)
+
+    if first >= rest.len || rest[first].kind != Tok.Ident || !text.eqlIgnoreCase(rest[first].text, "xyz") {
+        return writeTokens(rest, out)
+    }
+
+    try out.append(" xyz-d65")
+    try writeTokens(rest[first + 1..], out)
+}

@@ -1,0 +1,13 @@
+// https://tc39.es/ecma262/#sec-evaldeclarationinstantiation
+
+fn annexIsEvalRoot(r: *Resolver) bool {
+    let n = r.scopes.len()
+
+    if r.strict || n < 2 {
+        return false
+    }
+
+    let outer = r.scopes.items()[n - 2]
+
+    return outer.is_func && outer.func != NONE && r.ast.func(outer.func).eval_code
+}

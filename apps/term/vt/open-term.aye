@@ -1,0 +1,19 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn openTerm(alloc: Allocator, cols: usize, rows: usize) AllocError!Term {
+    return Term {
+        alloc: alloc,
+        cols: cols,
+        rows: rows,
+        primary: Screen { cells: try alloc.alloc(Cell {}, cols * rows), bottom: rows - 1 },
+        alternate: Screen { cells: try alloc.alloc(Cell {}, cols * rows), bottom: rows - 1 },
+        parser: Parser { string: text.Builder.init(alloc) },
+        title: text.Builder.init(alloc),
+        reply: text.Builder.init(alloc),
+        scrollback: List([]mut Cell).init(alloc),
+        dirty: try alloc.alloc(true, rows),
+    }
+}

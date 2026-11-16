@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#serial-color-mix
+fn writeMixMethod(source: []Token, out: *mut text.Builder) AllocError!void {
+    let method = withoutShorterHue(source)
+    let space = skipWhitespace(method, skipWhitespace(method, 0) + 1)
+
+    if space >= method.len || (space == method.len - 1 && text.eqlIgnoreCase(method[space].text, "oklab")) {
+        return
+    }
+
+    try out.append("in ")
+
+    if text.eqlIgnoreCase(method[space].text, "xyz") {
+        try out.append("xyz-d65")
+    } else {
+        try writeColorFunctionName(method[space].text, out)
+    }
+
+    try writeTokens(method[space + 1..], out)
+    try out.append(", ")
+}

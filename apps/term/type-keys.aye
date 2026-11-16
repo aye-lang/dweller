@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn typeKeys(w: *mut TermWindow, typed: []u8) AllocError!void {
+    var keys = text.Builder.init(w.alloc)
+    defer keys.deinit()
+
+    var i: usize = 0
+
+    while i < typed.len {
+        if typed[i] == '\\' && i + 1 < typed.len && typed[i + 1] == 'r' {
+            try keys.appendByte('\r')
+            i += 1
+        } else {
+            try keys.appendByte(typed[i])
+        }
+
+        i += 1
+    }
+
+    writePty(&mut w.pty, keys.bytes())
+}

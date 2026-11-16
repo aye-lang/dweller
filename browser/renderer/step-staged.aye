@@ -1,0 +1,26 @@
+import engine
+import std
+import std.mem.AllocError
+
+let SCRIPTS_MS: u64 = 50
+
+fn stepStaged(r: *mut TabRenderer, p: *mut engine.Page, at_once: bool) AllocError!bool {
+    let began = std.time.monotonicMs()
+
+    if !r.staged.stepping {
+        engine.releaseLoads(&mut r.staged.sheets)
+        engine.releaseLoads(&mut r.staged.scripts)
+        r.staged.stepping = true
+        p.early_scroll = r.scroll_y
+    }
+
+    while true {
+        if try engine.stepPageScripts(p) { return true }
+
+        if engine.scriptsRan(p) { return engine.stepPageScripts(p) }
+
+        if !at_once && std.time.monotonicMs() - began >= SCRIPTS_MS { return false }
+    }
+
+    return false
+}

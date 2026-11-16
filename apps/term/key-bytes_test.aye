@@ -1,0 +1,32 @@
+import dweller.sdl
+import std.mem.Allocator
+import std.text
+
+fn keyed(alloc: Allocator, sym: i32, mods: u16, app_cursor: bool, want: []u8) !void {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try keyBytes(sym, mods, app_cursor, &mut out)
+    @expect(text.eql(out.bytes(), want))
+}
+
+test "keys are encoded as xterm does" {
+    let alloc = @testAllocator()
+
+    try keyed(alloc, sdl.SDLK_RETURN, 0, false, "\r")
+    try keyed(alloc, sdl.SDLK_BACKSPACE, 0, false, "\x7f")
+    try keyed(alloc, sdl.SDLK_TAB, 0, false, "\t")
+    try keyed(alloc, sdl.SDLK_TAB, sdl.KMOD_SHIFT, false, "\x1b[Z")
+    try keyed(alloc, sdl.SDLK_ESCAPE, 0, false, "\x1b")
+    try keyed(alloc, 'c', sdl.KMOD_CTRL, false, "\x03")
+    try keyed(alloc, '[', sdl.KMOD_CTRL, false, "\x1b")
+    try keyed(alloc, sdl.SDLK_UP, 0, false, "\x1b[A")
+    try keyed(alloc, sdl.SDLK_UP, 0, true, "\x1bOA")
+    try keyed(alloc, sdl.SDLK_LEFT, 0, false, "\x1b[D")
+    try keyed(alloc, sdl.SDLK_HOME, 0, true, "\x1bOH")
+    try keyed(alloc, sdl.SDLK_END, 0, false, "\x1b[F")
+    try keyed(alloc, sdl.SDLK_DELETE, 0, false, "\x1b[3~")
+    try keyed(alloc, sdl.SDLK_PAGEUP, 0, true, "\x1b[5~")
+    try keyed(alloc, sdl.SDLK_PAGEDOWN, 0, false, "\x1b[6~")
+    try keyed(alloc, 'a', 0, false, "")
+}

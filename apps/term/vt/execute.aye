@@ -1,0 +1,30 @@
+import std.mem.AllocError
+
+fn execute(t: *mut Term, b: u8) AllocError!void {
+    let s = t.screen()
+
+    if b == 0x08 {
+        if s.x > 0 {
+            s.x -= 1
+        }
+
+        s.wrap_next = false
+    } else if b == 0x09 {
+        s.x = minOf((s.x / 8 + 1) * 8, t.cols - 1)
+    } else if b == 0x0A || b == 0x0B || b == 0x0C {
+        try index(t)
+    } else if b == 0x0D {
+        s.x = 0
+        s.wrap_next = false
+    } else if b == 0x0E || b == 0x0F {
+        t.shifted = (0x0F - b) as usize
+    }
+}
+
+fn minOf(a: usize, b: usize) usize {
+    if a < b {
+        return a
+    }
+
+    return b
+}

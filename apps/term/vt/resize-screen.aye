@@ -1,0 +1,24 @@
+import std.mem.AllocError
+
+fn resizeScreen(t: *mut Term, s: *mut Screen, cols: usize, rows: usize) AllocError!void {
+    let cells = try t.alloc.alloc(Cell {}, cols * rows)
+    var skipped: usize = 0
+
+    if s.y >= rows {
+        skipped = s.y + 1 - rows
+    }
+
+    for y in 0..minOf(rows, t.rows - skipped) {
+        for x in 0..minOf(cols, t.cols) {
+            cells[y * cols + x] = s.cells[(y + skipped) * t.cols + x]
+        }
+    }
+
+    t.alloc.free(s.cells)
+    s.cells = cells
+    s.x = minOf(s.x, cols - 1)
+    s.y = s.y - skipped
+    s.wrap_next = false
+    s.top = 0
+    s.bottom = rows - 1
+}

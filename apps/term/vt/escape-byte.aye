@@ -1,0 +1,36 @@
+import std.mem.AllocError
+
+fn escapeByte(t: *mut Term, b: u8) AllocError!void {
+    let p = &mut t.parser
+
+    if b < 0x30 {
+        p.intermediate = b
+        p.state = State.EscapeIntermediate
+
+        return
+    }
+
+    p.state = State.Ground
+
+    if p.intermediate != 0 {
+        return designate(t, p.intermediate, b)
+    }
+
+    if b == '[' {
+        p.state = State.CsiEntry
+    } else if b == ']' {
+        p.state = State.OscString
+    } else if b == 'P' || b == 'X' || b == '^' || b == '_' {
+        p.state = State.IgnoredString
+    } else {
+        try escDispatch(t, b)
+    }
+}
+
+fn designate(t: *mut Term, set: u8, charset: u8) {
+    if set == '(' {
+        t.graphics[0] = charset == '0'
+    } else if set == ')' {
+        t.graphics[1] = charset == '0'
+    }
+}

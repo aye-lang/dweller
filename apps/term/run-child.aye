@@ -1,0 +1,20 @@
+fn runChild(c_command: []u8) {
+    var shell: [*]u8 = "/bin/sh".ptr
+
+    _ = setenv("TERM".ptr, "xterm-256color".ptr, 1)
+
+    if c_command.len > 1 {
+        var argv = [4]?[*]u8{shell, "-c".ptr, c_command.ptr, null}
+
+        _ = execvp(shell, argv[..].ptr)
+    }
+
+    if getenv("SHELL".ptr) |named| {
+        shell = named
+    }
+
+    var argv = [2]?[*]u8{shell, null}
+
+    _ = execvp(shell, argv[..].ptr)
+    _exit(127)
+}

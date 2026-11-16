@@ -1,0 +1,26 @@
+import std.mem.AllocError
+
+fn csiEdit(t: *mut Term, b: u8, n: usize) AllocError!void {
+    let s = t.screen()
+    let inside = s.y >= s.top && s.y <= s.bottom
+
+    if b == 'J' || b == 'K' {
+        erase(t, b == 'J', t.parser.param(0, 0))
+    } else if b == 'L' && inside {
+        scrollDown(t, s.y, n)
+    } else if b == 'M' && inside {
+        shiftRowsUp(t, s.y, n)
+    } else if b == 'P' {
+        shiftLeft(t, s.y, s.x, n)
+    } else if b == '@' {
+        shiftRight(t, s.y, s.x, n)
+    } else if b == 'X' {
+        blankCells(t, s.y, s.x, s.x + n)
+    } else if b == 'S' {
+        try scrollUp(t, s.top, n)
+    } else if b == 'T' {
+        scrollDown(t, s.top, n)
+    } else if b == 'b' {
+        try repeatLast(t, n)
+    }
+}

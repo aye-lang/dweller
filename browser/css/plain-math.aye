@@ -1,0 +1,26 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#math
+fn isPlainMath(name: []u8) bool {
+    return inList(name, "sin cos tan asin acos atan atan2 pow sqrt hypot log exp progress") != null
+}
+
+fn plainMath(name: []u8, args: []Quantity) ?Quantity {
+    if inList(name, "sin cos tan") != null {
+        return trigValue(name, args)
+    }
+
+    if inList(name, "asin acos atan atan2") != null {
+        return inverseTrigValue(name, args)
+    }
+
+    if text.eqlIgnoreCase(name, "progress") {
+        return progressValue(args)
+    }
+
+    if text.eqlIgnoreCase(name, "hypot") {
+        return hypotValue(args)
+    }
+
+    return exponentialValue(name, args)
+}

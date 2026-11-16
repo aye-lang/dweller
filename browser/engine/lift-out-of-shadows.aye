@@ -1,22 +1,25 @@
+import css
 import dom
 import dom.NodeId
 import std.list.List
 
 // blink: core/dom/element.cc (AttachShadowRoot: kSubtreeStyleChange on the host)
-fn liftOutOfShadows(doc: *dom.Document, roots: *mut List(NodeId), shallow: *mut List(bool)) bool {
+fn liftOutOfShadows(doc: *dom.Document, deps: *css.RestyleDeps, roots: *mut List(NodeId), shallow: *mut List(bool)) bool {
     if doc.shadows.len() == 0 { return true }
 
     for i in 0..roots.len() {
-        if topHost(doc, roots.items()[i]) |h| {
-            roots.items()[i] = h
-            shallow.items()[i] = false
+        if deps.scoped_has || !dom.same(doc.treeRoot(roots.items()[i]), doc.root) {
+            if topHost(doc, roots.items()[i]) |h| {
+                roots.items()[i] = h
+                shallow.items()[i] = false
+            }
         }
 
         let r = roots.items()[i]
 
         if !dom.same(doc.treeRoot(r), doc.root) { return false }
 
-        if aroundHost(doc, r) {
+        if doc.node(r).shadow != null || ((deps.scoped_has || deps.host_context) && aroundHost(doc, r)) {
             shallow.items()[i] = false
         }
     }

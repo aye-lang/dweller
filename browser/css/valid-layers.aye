@@ -1,10 +1,14 @@
 // spec: https://drafts.csswg.org/css-backgrounds-3/#backgrounds
 fn hasLayerGrammar(prop: usize) bool {
-    return (prop >= BACKGROUND_POSITION && prop <= BACKGROUND_ATTACHMENT) || prop == MASK_POSITION || prop == MASK_SIZE || prop == MASK_REPEAT
+    return (prop >= BACKGROUND_POSITION && prop <= BACKGROUND_ATTACHMENT) || prop == MASK_POSITION || prop == OBJECT_POSITION || prop == MASK_SIZE || prop == MASK_REPEAT || isFontLayered(prop)
 }
 
 fn validLayers(prop: usize, comps: []Comp) bool {
     var start: usize = 0
+
+    if !fontListAllowed(prop, comps) {
+        return false
+    }
 
     for k in 0..comps.len + 1 {
         if k < comps.len && !isComma(comps[k]) {

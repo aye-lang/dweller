@@ -1,0 +1,13 @@
+import dom.NodeId
+import std.mem.AllocError
+
+var mounted: ?*mut App = null
+
+pub fn mount(app: *mut App, root: NodeId, start: fn(i32, [*]u8, usize), on_event: fn(i32), props: []u8) AllocError!void {
+    mounted = app
+    app.on_event = on_event
+    app.handles.clear()
+    app.listeners.clear()
+    try app.handles.append(root)
+    start(1, props.ptr, props.len)
+}

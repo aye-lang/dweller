@@ -1,0 +1,38 @@
+import ipc
+import net
+import std
+
+let WAKER_SLACK_MS: u64 = 2
+
+fn armWaker(ui: *mut Ui) {
+    if !ui.tab_processes { return }
+
+    if io_waker == null { startWaker(ui.alloc) }
+
+    let w = io_waker orelse return
+    var set = @zeroed([96]ipc.PollFd)
+    var timeout: i32 = -1
+    let n = wakerFds(ui, &mut set, &mut timeout)
+    let now = std.time.monotonicMs()
+    var deadline: u64 = 0
+
+    if timeout >= 0 {
+        deadline = now + timeout as u64
+    }
+
+    if w.fired.load() == 0 && sameWakerSet(w, set[..n]) && (deadline == 0 || (w.deadline != 0 && deadline + WAKER_SLACK_MS >= w.deadline)) { return }
+
+    w.lock.lock()
+
+    for i in 0..n {
+        w.fds[i] = set[i]
+    }
+
+    w.count = n
+    w.timeout = timeout
+    w.deadline = deadline
+    w.lock.unlock()
+    w.fired.store(0)
+
+    if w.told.compareSwap(0, 1) { _ = write(w.pipe[1], "w".ptr, 1) }
+}

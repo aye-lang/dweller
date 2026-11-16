@@ -1,0 +1,16 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-color-4/#interpolation-missing
+fn carryMissing(c: Color, space: u8, out: *mut [4]f64) {
+    for i in 0..3 {
+        if c.none & (1 << i) as u8 == 0 {
+            continue
+        }
+
+        for j in 0..3 {
+            if componentKind(space, j) != '-' && componentKind(space, j) == componentKind(c.space, i) {
+                out.*[j] = math.nan()
+            }
+        }
+    }
+}

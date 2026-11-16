@@ -1,0 +1,26 @@
+import engine
+import ipc
+
+fn sayLoaded(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    try wptTimeout(r, p)
+    try sharedHistory(r)
+    r.title.clear()
+    try r.title.append(p.title)
+    r.href.clear()
+    try r.href.append(p.url.href)
+
+    if evilTest("url") {
+        r.href.clear()
+        try r.href.append("https://evil.example/")
+    }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Loaded { title: p.title, url: r.href.bytes() })
+
+    if engine.embedded() { try sendSandboxEvil(r, r.tab) }
+
+    if evilTest("malformed") {
+        var bad = @zeroed([16]u8)
+
+        try r.conn.write(bad[..])
+    }
+}

@@ -11,12 +11,13 @@ fn settleAsked(ui: *mut Ui, slot: *mut TabSlot, tp: *mut TabProcess) AllocError!
     }
 
     let a = owner.asked.?
+    let agents = spaceOfSlot(ui, slot) != null
 
-    if !a.shown && !ui.dialog.open && !isSpace(ui) { return showAskedDialog(ui, slot, tp, owner) }
+    if !a.shown && !ui.dialog.open && !agents { return showAskedDialog(ui, slot, tp, owner) }
 
     if a.shown && mine { dismissUnanswered(ui) }
 
-    if (a.shown && mine && !ui.dialog.open) || (!a.shown && isSpace(ui)) {
+    if (a.shown && mine && !ui.dialog.open) || (!a.shown && agents) {
         try ipc.encode(&mut owner.outbox, a.on, ipc.Message.DialogReply { accepted: (a.shown && ui.dialog.accepted) as u32, typed: ui.dialog.input.bytes() })
         ui.dialog.remote = false
         dropAsked(owner)
