@@ -222,6 +222,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
 | Q6.6 | `css/cascade-variables` (56.1, 75) |
 | Q6.7 | `css/values-color` (57.9, 70) |
+| Q6.5 | `css/css-fonts` (32.7, 50) |
 
 ## Q7: acceptance and release (lane sites)
 
