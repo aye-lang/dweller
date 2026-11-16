@@ -151,6 +151,7 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             } else {
                 let content_h = b.h
                 b.h = it.target
+                ratioWidth(t, it.box, cw)
                 try relayoutAt(t, it.box, content_h, cw, ch)
                 let cb = t.bx(it.box)
                 line_cross = math.max(line_cross, cb.w + cb.margin[1] + cb.margin[3])
@@ -288,6 +289,10 @@ fn flexItem(t: *mut Tree, c: usize, row: bool, cw: f64, ch: f64) AllocError!Item
             it.basis = fb
         } else if spec |w| {
             it.basis = w
+        } else if stretchedRatioBasis(t, c, ch) |rb| {
+            it.basis = rb
+        } else if b.kind == BoxKind.Image {
+            it.basis = imageBasis(t, c, cw, ch)
         } else {
             it.basis = mm.max
         }
@@ -354,6 +359,7 @@ fn itemContents(t: *mut Tree, c: usize, cw: f64, ch: f64) AllocError!void {
         let w = t.bx(c).w
         replacedSize(t, c, cw, ch)
         t.bx(c).w = w
+        ratioHeight(t, c, ch)
     } else if kind == BoxKind.Table {
         try layoutTable(t, c, t.bx(c).w)
     } else {
