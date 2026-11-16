@@ -76,6 +76,12 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if r.page |p| { try engine.deliverRemoteMessage(p, m) }
             }
 
+            .AttachTab { context } => {
+                if r.fds.len() == 0 { return false }
+
+                try r.attaching.append(Attach { context: context, fd: r.fds.orderedRemove(0) })
+            }
+
             .FrameLoaded { key } => {
                 if r.page |p| { try engine.remoteFrameLoaded(p, key) }
             }

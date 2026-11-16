@@ -2,11 +2,9 @@ import engine
 import font
 import ipc
 import net
-import paint
 import std
 import std.list.List
 import std.mem.Allocator
-import std.text
 
 extern fn getpid() i32
 
@@ -15,40 +13,21 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
 
     probeSandbox(alloc)
 
-    var r = TabRenderer { alloc: alloc, conn: conn, measure: measure, system: system, fds: List(i32).init(alloc), drawn: List(paint.Sig).init(alloc), marks: List(Mark).init(alloc), title: text.Builder.init(alloc), href: text.Builder.init(alloc), target: text.Builder.init(alloc), inbox: text.Builder.init(alloc), current: text.Builder.init(alloc), reply: text.Builder.init(alloc), docs: text.Builder.init(alloc), top: text.Builder.init(alloc), pending: List(*mut PendingFetch).init(alloc), blink: blink, history: engine.SessionHistory.init(alloc), hist_state: text.Builder.init(alloc), said_state: text.Builder.init(alloc), subframes: text.Builder.init(alloc), find: text.Builder.init(alloc), find_rects: List(paint.Rect).init(alloc) }
-    defer r.deinit()
+    var tabs = List(*mut TabRenderer).init(alloc)
+    defer endTabs(&mut tabs)
     defer engine.closeContexts()
     defer engine.dropOpenedContexts()
     defer engine.dropFrameOwner(alloc)
-    var buf = @zeroed([65536]u8)
+    let r = newTabRenderer(alloc, conn, measure, system, blink) catch return 1
 
-    watchBusy(&mut r)
-    fetchThrough(&mut r) catch return 1
+    tabs.append(r) catch return 1
+    watchBusy(r)
+    fetchThrough(r) catch return 1
     defer net.stopRemoteLoads()
-    storeThrough(&mut r)
-    windowsThrough(&mut r)
+    storeThrough(r)
+    windowsThrough(r)
 
     send(alloc, conn, 0, ipc.Message.Hello { version: ipc.VERSION, pid: getpid() as u32 }) catch return 1
 
-    while true {
-        let held = ipc.nextMessage(r.inbox.bytes()) catch return 1
-
-        if held == null {
-            if !waitReadable(conn.fd, timerWait(&mut r)) {
-                runTimers(&mut r) catch return 1
-
-                continue
-            }
-
-            let n = ipc.recvFds(conn.fd, buf[..], &mut r.fds) catch return 1
-
-            if n <= 0 { return 0 }
-
-            r.inbox.append(buf[..n as usize]) catch return 1
-        }
-
-        if !(answerAll(&mut r) catch return 1) { return 0 }
-    }
-
-    unreachable
+    return serveTabs(&mut tabs)
 }

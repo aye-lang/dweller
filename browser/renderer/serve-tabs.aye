@@ -1,0 +1,60 @@
+import ipc
+import std.list.List
+
+fn serveTabs(tabs: *mut List(*mut TabRenderer)) i32 {
+    var buf = @zeroed([65536]u8)
+
+    while tabs.len() > 0 {
+        var at = waitingTab(tabs) catch return 1
+
+        if at == null {
+            at = pollTabs(tabs) catch return 1
+
+            if at == null {
+                runAllTimers(tabs) catch return 1
+
+                continue
+            }
+
+            let polled = tabs.items()[at.?]
+            let n = ipc.recvFds(polled.conn.fd, buf[..], &mut polled.fds) catch return 1
+
+            if n <= 0 {
+                endTab(tabs, at.?)
+
+                continue
+            }
+
+            polled.inbox.append(buf[..n as usize]) catch return 1
+        }
+
+        let r = tabs.items()[at.?]
+
+        serveAs(r)
+
+        if !(answerAll(r) catch return 1) {
+            endTab(tabs, at.?)
+
+            continue
+        }
+
+        adoptAttached(tabs, r) catch return 1
+    }
+
+    return 0
+}
+
+fn waitingTab(tabs: *List(*mut TabRenderer)) !?usize {
+    for i, t in tabs.items() {
+        if (try ipc.nextMessage(t.inbox.bytes())) != null { return i }
+    }
+
+    return null
+}
+
+fn runAllTimers(tabs: *List(*mut TabRenderer)) !void {
+    for t in tabs.items() {
+        serveAs(t)
+        try runTimers(t)
+    }
+}
