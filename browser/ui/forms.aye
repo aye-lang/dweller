@@ -71,7 +71,7 @@ fn afterEdit(ui: *mut Ui) AllocError!void {
 
 /// A click at the window point (`x`, `y`) of the page area.
 fn clickPage(ui: *mut Ui, x: f64, y: f64) AllocError!void {
-    let dy = y - ui.top() + ui.tab.scroll
+    let dy = pageY(ui, y) + ui.tab.scroll
     if ui.dropdown |dd| {
         ui.dropdown = null
         ui.dirty = true
@@ -502,7 +502,7 @@ fn stepOption(ui: *mut Ui, p: *mut engine.Page, sel: NodeId, down: bool) AllocEr
 fn showElement(ui: *mut Ui, el: NodeId) {
     let p = ui.tab.page orelse return
     let r = engine.boxRect(p, el) orelse return
-    let view = ui.viewHeight()
+    let view = ui.viewHeight() / ui.page_zoom
     if r.y < ui.tab.scroll {
         ui.scrollTo(r.y - 8.0)
     } else if r.y + r.h > ui.tab.scroll + view {
@@ -660,7 +660,7 @@ fn drawDropdown(ui: *mut Ui, p: ?*mut engine.Page, dd: Dropdown, v: paint.View) 
 fn overTextField(ui: *mut Ui, x: f64, y: f64) bool {
     let p = ui.tab.page orelse return false
     let t = p.tree orelse return false
-    let n = engine.nodeAt(t, x, y - ui.top() + ui.tab.scroll) orelse return false
+    let n = engine.nodeAt(t, x, pageY(ui, y) + ui.tab.scroll) orelse return false
     return dom.isTextField(&p.doc, n)
 }
 

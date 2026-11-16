@@ -1,0 +1,17 @@
+import css
+import std.mem.AllocError
+
+fn syncZoom(ui: *mut Ui) AllocError!void {
+    let factor = slotZoom(ui.slots[ui.active].?)
+
+    if factor == ui.page_zoom { return }
+
+    ui.page_zoom = factor
+    ui.page.valid = false
+    ui.dirty = true
+
+    if ui.tab_processes { return }
+
+    css.setDevicePixelRatio(pageScale(ui))
+    try ui.relayout()
+}

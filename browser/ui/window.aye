@@ -40,6 +40,7 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 import url
+import zoom
 
 let UI_USAGE = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
 
@@ -215,6 +216,9 @@ pub fn run(alloc: Allocator, args: [][]u8) i32 {
     sessions.openSessionFile(alloc, o.frames == 0 && !o.exit_when_idle) catch |e| {
     }
     defer sessions.closeSessionFile()
+    zoom.openZoom(alloc) catch |e| {
+    }
+    defer zoom.closeZoom()
     return runWith(alloc, o)
 }
 
@@ -392,6 +396,7 @@ pub struct Ui {
     px_w: i32
     px_h: i32
     scale: f64
+    page_zoom: f64 = 1.0
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -567,7 +572,7 @@ pub struct Ui {
     }
 
     fn view(self: *mut Self) *mut pageview.PageView {
-        pageview.resize(&mut self.page_view, self.win_w as f64, self.layoutHeight(), self.viewHeight(), self.scale)
+        pageview.resize(&mut self.page_view, pageX(self, self.win_w as f64), self.layoutHeight() / self.page_zoom, self.viewHeight() / self.page_zoom, pageScale(self))
         return &mut self.page_view
     }
 
@@ -772,6 +777,7 @@ pub struct Ui {
             net.saveCookiesIfDue()
             engine.saveStorageIfDue()
             try saveTabs(self, false)
+            try syncZoom(self)
             if self.resized {
                 self.resized = false
                 if try self.resize() {
@@ -823,7 +829,7 @@ pub struct Ui {
         self.px_w = pw
         self.px_h = ph
         self.scale = pw as f64 / w as f64
-        css.setDevicePixelRatio(self.scale)
+        css.setDevicePixelRatio(pageScale(self))
         self.frame_ns = displayPeriodNs(self.window)
         self.canvas.deinit()
         self.canvas = try paint.Canvas.init(self.alloc, pw as usize, ph as usize)
@@ -898,7 +904,8 @@ pub struct Ui {
             return goInRenderer(self)
         }
         let t_go = perf.start()
-        let loaded = try self.tab.navigateEarly(target, self.win_w as f64, self.layoutHeight(), initiator)
+        aimZoom(self, target.href)
+        let loaded = try self.tab.navigateEarly(target, pageX(self, self.win_w as f64), self.layoutHeight() / self.page_zoom, initiator)
         perf.end("ui_navigate", t_go, "")
         if !loaded {
             return self.navigated(false)
@@ -1041,7 +1048,8 @@ pub struct Ui {
             return goByInRenderer(self, step)
         }
         let t_go = perf.start()
-        let moved = try engine.traverseEarly(self.tab, step, self.win_w as f64, self.layoutHeight())
+        aimZoom(self, self.tab.hrefAt(step))
+        let moved = try engine.traverseEarly(self.tab, step, pageX(self, self.win_w as f64), self.layoutHeight() / self.page_zoom)
         perf.end("ui_navigate", t_go, "")
         match moved {
             .None => {}
@@ -1078,7 +1086,7 @@ pub struct Ui {
         if !self.mouse_in || self.mouse_y < self.top() {
             return false
         }
-        let scrolled = try pageview.scrollFrame(self.view(), self.mouse_x, self.mouse_y - self.top(), dy)
+        let scrolled = try pageview.scrollFrame(self.view(), pageX(self, self.mouse_x), pageY(self, self.mouse_y), dy)
         self.noteDamage()
         return scrolled
     }
@@ -1214,7 +1222,7 @@ pub struct Ui {
                 return
             }
             try self.mouseMoved(me.x as f64, me.y as f64)
-            try pageview.inputHover(self.view(), me.x as f64, me.y as f64 - self.top())
+            try pageview.inputHover(self.view(), pageX(self, me.x as f64), pageY(self, me.y as f64))
             try self.pointerEvent("pointermove", 0, me.x as f64, me.y as f64, mx, my)
         } else if kind == SDL_MOUSEBUTTONDOWN {
             let be = &ev.button
@@ -1360,7 +1368,7 @@ pub struct Ui {
             self.swallow = true
             return
         }
-        if cmd && try windowKey(self, sym, shift) {
+        if cmd && ((try zoomShortcut(self, sym)) || try windowKey(self, sym, shift)) {
             self.swallow = true
             return
         }
@@ -1424,7 +1432,7 @@ pub struct Ui {
             return
         }
         if self.focus == Focus.Page {
-            let view = self.viewHeight()
+            let view = self.viewHeight() / self.page_zoom
             if sym == SDLK_DOWN {
                 self.scrollBy(LINE_STEP)
             } else if sym == SDLK_UP {
@@ -1513,7 +1521,7 @@ pub struct Ui {
         self.mouse_x = wx
         self.mouse_y = y
         if self.range_drag {
-            try dragRange(self, wx + self.tab.scroll_x)
+            try dragRange(self, pageX(self, wx) + self.tab.scroll_x)
         }
         if (self.buttons & buttonBit(SDL_BUTTON_LEFT)) != 0 {
             try dragSelectPage(self, wx, y)
@@ -1533,9 +1541,9 @@ pub struct Ui {
             return
         }
         // In the page's coordinates.
-        let x = wx + self.tab.scroll_x
+        let x = pageX(self, wx) + self.tab.scroll_x
         if self.tab.page |p| {
-            if engine.frameAt(p, x, y - self.top() + self.tab.scroll) |fp| {
+            if engine.frameAt(p, x, pageY(self, y) + self.tab.scroll) |fp| {
                 // A link in a frame's document, resolved there.
                 if fp.page.tree |ft| {
                     if engine.linkAt(ft, fp.x, fp.y) |link| {
@@ -1573,7 +1581,7 @@ pub struct Ui {
 
     // Clears the status line and sets the arrow (or I-beam) cursor.
     fn press(self: *mut Self, x: f64, y: f64, down: bool) AllocError!void {
-        return pageview.inputPress(self.view(), x, y - self.top(), down)
+        return pageview.inputPress(self.view(), pageX(self, x), pageY(self, y), down)
     }
 
     fn clearHover(self: *mut Self, ibeam: bool) AllocError!void {
@@ -1597,7 +1605,7 @@ pub struct Ui {
 
     // The link at a window point in the content area.
     fn linkAt(self: *mut Self, x: f64, y: f64) ?engine.Link {
-        return pageview.linkAt(self.view(), x, y - self.top())
+        return pageview.linkAt(self.view(), x, pageY(self, y))
     }
 
     fn click(self: *mut Self, x: f64, y: f64) AllocError!void {
@@ -1612,6 +1620,9 @@ pub struct Ui {
         }
         if y >= TOOLBAR && y < self.top() {
             return clickTabStrip(self, x)
+        }
+        if y < TOOLBAR && try clickZoomChip(self, x, y) {
+            return
         }
         if y < TOOLBAR {
             match buttonAt(self, x, y) {
@@ -1653,7 +1664,7 @@ pub struct Ui {
             self.focus = Focus.Page
             self.dirty = true
         }
-        let px = x + self.tab.scroll_x
+        let px = pageX(self, x) + self.tab.scroll_x
         if !(try self.clickScripts(px, y)) {
             return self.afterScripts()
         }
@@ -1672,7 +1683,7 @@ pub struct Ui {
         if self.dropdown != null {
             return true
         }
-        let ran = try pageview.inputClick(self.view(), x, y - self.top())
+        let ran = try pageview.inputClick(self.view(), x, pageY(self, y))
         let go_on = ran orelse return true
         if pageview.needsLayout(self.view()) {
             try self.relayout()
@@ -1688,7 +1699,7 @@ pub struct Ui {
         if !self.mouse_in || self.mouse_y < self.top() {
             return true
         }
-        return pageview.inputWheel(self.view(), self.mouse_x, self.mouse_y - self.top(), dx, dy)
+        return pageview.inputWheel(self.view(), pageX(self, self.mouse_x), pageY(self, self.mouse_y), dx, dy)
     }
 
     // A key goes up: `keyup` for the page's scripts, as for a game.
@@ -1757,7 +1768,7 @@ pub struct Ui {
         try b.appendInt(modBits(SDL_GetModState()) as i64)
         try b.append("\n")
         try b.appendInt(self.clicks as i64)
-        let on = try pageview.inputPointer(self.view(), kind, b.bytes(), x, y - self.top(), mx, my)
+        let on = try pageview.inputPointer(self.view(), kind, b.bytes(), pageX(self, x), pageY(self, y), mx, my)
         if on |go_on| {
             self.pointer_on = go_on
             try self.afterScripts()
@@ -1905,12 +1916,12 @@ pub struct Ui {
 
     fn draw(self: *mut Self) AllocError!void {
         try pageview.frame(self.view())
-        let s = self.scale
+        let s = pageScale(self)
         let top = self.top()
         let bottom = self.win_h as f64
         let content = paint.Rect { x: 0.0, y: top, w: self.win_w as f64, h: self.viewHeight() }
-        let v = paint.View { scale: s, dx: -pageview.snappedScroll(self.tab.scroll_x, s) * s, dy: (top - pageview.snappedScroll(self.tab.scroll, s)) * s }
-        let flat = paint.View { scale: s, dx: 0.0, dy: 0.0 }
+        let v = paint.View { scale: s, dx: -pageview.snappedScroll(self.tab.scroll_x, s) * s, dy: top * self.scale - pageview.snappedScroll(self.tab.scroll, s) * s }
+        let flat = screen(self)
         let area = paint.deviceRect(content, flat)
         // The page's pixels, then the window: all of it when something
         // else changed or an overlay is over the page, else only what the
@@ -1945,6 +1956,7 @@ pub struct Ui {
         self.canvas.popClip()
         drawWatched(self, area)
         try drawToolbar(self)
+        try drawZoomChip(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)
         }

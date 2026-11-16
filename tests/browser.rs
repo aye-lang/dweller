@@ -84,6 +84,8 @@ mod window_renderer_oopif_site;
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
 mod window_spaces;
+#[path = "browser/window_zoom.rs"]
+mod window_zoom;
 #[path = "browser/wpt.rs"]
 mod wpt;
 
