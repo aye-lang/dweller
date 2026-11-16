@@ -1,0 +1,26 @@
+fn alphaAround(items: []Item, at: usize) u8 {
+    var alpha: u32 = 255
+    var open: usize = 0
+
+    for k in at..items.len {
+        match items[k] {
+            .Clip { .. }, .Layer { .. } => {
+                open += 1
+            }
+
+            .Unclip => {
+                open = closedAfterOpen(open)
+            }
+
+            .EndLayer { alpha: a, .. } => {
+                if open == 0 { alpha = (alpha * a as u32 + 127) / 255 }
+
+                open = closedAfterOpen(open)
+            }
+
+            _ => {}
+        }
+    }
+
+    return alpha as u8
+}

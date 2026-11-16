@@ -109,8 +109,11 @@ def run_page(dweller, base, page, timeout=TIMEOUT):
         return {"status": "FAIL" if fails else "PASS", "passed": passed, "total": passed + len(fails),
                 "message": fails[0][:300] if fails else None, "error": error}
 
+    panics = [line for line in lines if ": panic: " in line]
+    ended = "; ".join([status] + panics[:1])
+
     return {"status": "TIMEOUT" if status == "timeout" else "CRASH", "passed": 0,
-            "total": len(fails) + 1, "message": (fails or [status])[0][:300], "error": error}
+            "total": len(fails) + 1, "message": (fails or [ended])[0][:300], "error": error}
 
 
 def targets(names):
@@ -138,6 +141,10 @@ def write_group(area, rows, skipped):
     (RESULTS / f"{conformance.file_key(area)}.json").write_text(json.dumps(out, indent=1) + "\n")
     good = sum(f["status"] == "PASS" for f in files)
     print(f"{area}: {good}/{len(files)} pages, {passed}/{total} tests", flush=True)
+
+    for f in files:
+        if f["status"] == "CRASH":
+            print(f"  {f['path']}: CRASH {f['message']}", flush=True)
 
 
 def cmd_run(args):

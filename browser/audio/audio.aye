@@ -464,14 +464,6 @@ pub fn stop(cx: *mut Context, n: *mut Node, when: f64) {
     n.stop_frame = frameAt(cx, when)
 }
 
-fn frameAt(cx: *Context, t: f64) u64 {
-    let f = math.ceil(t * cx.rate - 1e-9)
-    if f <= cx.frame as f64 {
-        return cx.frame
-    }
-    return f as u64
-}
-
 // The loop's bounds in buffer frames (the spec's actualLoopStart and
 // actualLoopEnd).
 fn loopBounds(n: *Node) [2]f64 {
@@ -487,10 +479,10 @@ fn loopBounds(n: *Node) [2]f64 {
 
 fn sampleAt(n: *Node, ch: usize, pos: f64, loop_start: f64, loop_end: f64) f32 {
     let d = n.data.items()[ch]
-    let i0 = pos as usize
-    if i0 >= d.len {
+    if !(pos >= 0.0 && pos < d.len as f64) {
         return 0.0
     }
+    let i0 = pos as usize
     let frac = pos - i0 as f64
     if frac == 0.0 {
         return d[i0]
@@ -541,14 +533,23 @@ fn renderSource(cx: *mut Context, id: u32, n: *mut Node, q0: u64) AllocError!voi
         }
         if n.play == 1 {
             n.play = 2
-            n.pos = n.offset * n.buf_rate
-            if n.looping && n.pos >= lb[1] {
+            n.pos = math.min(n.offset * n.buf_rate, n.buf_len as f64)
+            if n.looping && step >= 0.0 && n.pos >= lb[1] {
                 n.pos = lb[0] + math.fmod(n.pos - lb[0], lb[1] - lb[0])
             }
         }
-        if n.looping {
+        if n.looping && step < 0.0 {
+            if n.pos < lb[0] {
+                n.pos = lb[1] - math.fmod(lb[0] - n.pos, lb[1] - lb[0])
+            }
+        } else if n.looping {
             if n.pos >= lb[1] && lb[1] > lb[0] {
                 n.pos = lb[0] + math.fmod(n.pos - lb[0], lb[1] - lb[0])
+            }
+        } else if step < 0.0 {
+            if n.pos < 0.0 {
+                n.play = 3
+                break
             }
         } else if n.pos >= n.buf_len as f64 || n.pos < 0.0 {
             n.play = 3

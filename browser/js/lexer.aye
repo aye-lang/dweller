@@ -259,12 +259,13 @@ struct Lexer {
                 self.nl = true
                 self.line += 1
                 self.pos += 1
-            } else if c == ' ' || c == '\t' || c == '\r' || c == 0x0B || c == 0x0C {
+            } else if c == '\r' {
+                self.nl = true
                 self.pos += 1
-            } else if c == 0xC2 && self.peekAt(1) == 0xA0 {
-                self.pos += 2
-            } else if c == 0xEF && self.peekAt(1) == 0xBB && self.peekAt(2) == 0xBF {
-                self.pos += 3
+            } else if c == ' ' || c == '\t' || c == 0x0B || c == 0x0C {
+                self.pos += 1
+            } else if lexSpaceLength(self.src, self.pos) > 0 {
+                self.pos += lexSpaceLength(self.src, self.pos)
             } else if c == 0xE2 && self.peekAt(1) == 0x80 && (self.peekAt(2) == 0xA8 || self.peekAt(2) == 0xA9) {
                 self.nl = true
                 self.line += 1
@@ -311,47 +312,8 @@ struct Lexer {
     fn token(self: *mut Self) SyntaxErr!void {
         let start = self.pos
         let c = self.src[self.pos]
-        if isIdStart(c) || c == '\\' {
-            // An identifier with `\uXXXX` escapes (`a.ɵprov`) is an
-            // identifier (never a keyword) whose name is cooked.
-            let off = self.out.cooked.len()
-            var escaped = false
-            var plain = start
-            while self.pos < self.src.len {
-                let ch = self.src[self.pos]
-                if isIdPart(ch) {
-                    self.pos += 1
-                } else if ch == '\\' && self.peekAt(1) == 'u' {
-                    try self.out.cooked.append(self.src[plain..self.pos])
-                    self.pos += 2
-                    try appendWtf8(&mut self.out.cooked, try self.unicodeEscape())
-                    escaped = true
-                    plain = self.pos
-                } else {
-                    break
-                }
-            }
-            if self.pos == start {
-                return self.fail("Invalid or unexpected token")
-            }
-            if escaped {
-                try self.out.cooked.append(self.src[plain..self.pos])
-                return self.emit(Tok.Ident, start, 0.0, off, self.out.cooked.len() - off)
-            }
-            let word = keyword(self.src[start..self.pos])
-            if word == Tok.KwFunction && self.startsStatement() {
-                self.fn_decl = true
-                self.fn_parens = self.parens.len()
-            }
-            return self.emit(word, start, 0.0, 0, 0)
-        }
-        if c == '#' && isIdStart(self.peekAt(1)) {
-            // A private name `#x`: an identifier whose text keeps the `#`.
-            self.pos += 1
-            while self.pos < self.src.len && isIdPart(self.src[self.pos]) {
-                self.pos += 1
-            }
-            return self.emit(Tok.Ident, start, 0.0, 0, 0)
+        if isIdStart(c) || c == '\\' || (c == '#' && lexStartsName(self.peekAt(1))) {
+            return lexWord(self, start)
         }
         if c == '#' && self.peekAt(1) == '!' && start == 0 {
             while self.pos < self.src.len && self.src[self.pos] != '\n' {
@@ -474,7 +436,7 @@ struct Lexer {
             self.pos += 1
             kind = Tok.BigInt
         }
-        if self.pos < self.src.len && isIdStart(self.src[self.pos]) {
+        if self.pos < self.src.len && isIdStart(self.src[self.pos]) && !lexAtSeparator(self.src, self.pos) {
             return self.fail("Invalid or unexpected token")
         }
         return self.emit(kind, start, value, 0, 0)
@@ -921,6 +883,10 @@ pub fn tokenize(alloc: Allocator, src: []u8, out: *mut Lexed) SyntaxErr!void {
 
 fn isIdStart(c: u8) bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$' || c >= 0x80
+}
+
+fn lexStartsName(c: u8) bool {
+    return isIdStart(c) || c == '\\'
 }
 
 fn isIdPart(c: u8) bool {
