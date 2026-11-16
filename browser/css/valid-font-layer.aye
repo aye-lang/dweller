@@ -1,0 +1,30 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-rend-props
+fn isFontLayered(prop: usize) bool {
+    return prop >= FONT_STRETCH && prop <= FONT_PALETTE
+}
+
+fn validFontLayer(prop: usize, layer: []Comp) bool {
+    if prop == FONT_STRETCH {
+        return layer.len == 1 && (isStretch(layer[0]) || isIdent(layer[0], "normal") || nonNegativePercent(layer[0]))
+    }
+
+    if prop == FONT_SIZE_ADJUST {
+        return validSizeAdjust(layer)
+    }
+
+    if prop == FONT_VARIATION_SETTINGS || prop == FONT_FEATURE_SETTINGS {
+        return validFontSetting(prop == FONT_FEATURE_SETTINGS, layer)
+    }
+
+    if prop == FONT_PALETTE {
+        return layer.len == 1 && layer[0].toks.len == 1 && layer[0].toks[0].kind == Tok.Ident && (inList(layer[0].toks[0].text, "normal light dark") != null || text.startsWith(layer[0].toks[0].text, "--"))
+    }
+
+    if prop == FONT_VARIANT_ALTERNATES {
+        return validAlternates(layer)
+    }
+
+    return validKeywordGroups(fontVariantGroups(prop), layer)
+}
