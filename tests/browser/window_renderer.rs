@@ -624,9 +624,9 @@ fn window_renderer_input() {
         let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{err}");
         assert!(state.contains("\nrenderer-frame "), "{state}");
-        assert_eq!(scroll(&state), "scroll 0", "{what}: the window scrolled its own copy\n{state}");
+        assert_eq!(scroll(&state), scroll(&in_process), "{what}: the renderer's scroll is not the in-process window's\n{state}");
         assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
-        assert!(!state.contains("value hello"), "{what}: the window typed into its own copy\n{state}");
+        assert_eq!(state.contains("value hello"), in_process.contains("value hello"), "{what}: the renderer's field is not the in-process window's\n{state}");
         let (w, _, a) = png_rgba(&std::fs::read(&shot).unwrap());
         let (_, _, b) = png_rgba(&std::fs::read(&golden).unwrap());
         let columns: std::collections::BTreeSet<usize> =
