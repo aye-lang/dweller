@@ -32,13 +32,38 @@ def measure(a, mode, url, *extra, **env):
     return json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
 
 
+RENDERER_STEP = "renderer:loaded wheel:-3 renderer:input"
+
+
 def replay_row(a, name):
     archive = str((Path(a.archives) / name).resolve())
     url = archive_url(a, name)
-    scroll = measure(a, "scroll", url, DWELLER_REPLAY=archive)
-    idle = measure(a, "idle", url, DWELLER_REPLAY=archive)
+    if a.process:
+        env = {"DWELLER_REPLAY": archive, "DWELLER_PROCESS": a.process}
+        scroll = measure(a, "scroll", url, "--step", RENDERER_STEP, "--run-frames", "8000", **env)
+        idle = measure(a, "idle", url, **env)
+    else:
+        scroll = measure(a, "scroll", url, DWELLER_REPLAY=archive)
+        idle = measure(a, "idle", url, DWELLER_REPLAY=archive)
 
     return name, scroll, idle
+
+
+def renderer_line(name, scroll, idle):
+    """Q4.25's criterion with a renderer per site: the window's longest
+    loop, a wheel to the renderer's frame (p95), idle CPU of all."""
+    if not scroll or not idle:
+        return f"{name:<14} {'-':>8} {'-':>14} {'-':>6} {'-':>8}  FAIL no measurement", False
+    n, p50, p95 = scroll["input_to_frame_n_p50_p95"]
+    checks = [
+        (scroll["longest_loop_ms"] >= LOOP_MS, f"loop {scroll['longest_loop_ms']} ms"),
+        (n == 0 or p95 >= SCROLL_P95_MS, f"wheel to frame p95 {p95} ms of {n}"),
+        (idle["idle_cpu_pct"] >= IDLE_CPU_PCT, f"idle {idle['idle_cpu_pct']}%"),
+    ]
+    bad = [why for failed, why in checks if failed]
+    cells = f"{name:<14} {scroll['longest_loop_ms']:>8} {p50:>6}/{p95:<7} {idle['idle_cpu_pct']:>6} {scroll['renderer_longest_task_ms']:>8}"
+
+    return f"{cells}  {'FAIL ' + ', '.join(bad) if bad else 'ok'}", not bad
 
 
 def replay_failures(scroll, idle):
@@ -65,10 +90,13 @@ def replay_line(name, scroll, idle):
 
 
 def report_replay(a):
-    print(f"{'site':<14} {'loop ms':>8} {'scroll p50/p95':>14} {'idle %':>6}  W7", flush=True)
+    if a.process:
+        print(f"{'site':<14} {'loop ms':>8} {'wheel p50/p95':>14} {'idle %':>6} {'task ms':>8}  W7 ({a.process})", flush=True)
+    else:
+        print(f"{'site':<14} {'loop ms':>8} {'scroll p50/p95':>14} {'idle %':>6}  W7", flush=True)
     results = []
     for name in sites(a):
-        line, ok = replay_line(*replay_row(a, name))
+        line, ok = (renderer_line if a.process else replay_line)(*replay_row(a, name))
         print(line, flush=True)
         results.append(ok)
 

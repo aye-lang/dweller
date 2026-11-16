@@ -1,4 +1,5 @@
 import ipc
+import perf
 import std.list.List
 
 fn serveTabs(tabs: *mut List(*mut TabRenderer)) i32 {
@@ -11,7 +12,10 @@ fn serveTabs(tabs: *mut List(*mut TabRenderer)) i32 {
             at = pollTabs(tabs) catch return 1
 
             if at == null {
+                let began = perf.start()
+
                 runAllTimers(tabs)
+                noteTask(began)
 
                 continue
             }
@@ -30,6 +34,8 @@ fn serveTabs(tabs: *mut List(*mut TabRenderer)) i32 {
 
         let r = tabs.items()[at.?]
 
+        let began = perf.start()
+
         serveAs(r)
 
         if !(answerAll(r) catch false) {
@@ -37,6 +43,8 @@ fn serveTabs(tabs: *mut List(*mut TabRenderer)) i32 {
 
             continue
         }
+
+        noteTask(began)
 
         reportOthers(tabs, r)
         adoptAttached(tabs, r) catch return 1
