@@ -1,0 +1,17 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#serial-relative-color
+fn writeColorFunctionName(name: []u8, out: *mut text.Builder) AllocError!void {
+    if text.eqlIgnoreCase(name, "rgba") {
+        return out.append("rgb")
+    }
+
+    if text.eqlIgnoreCase(name, "hsla") {
+        return out.append("hsl")
+    }
+
+    for ch in name {
+        try out.appendByte(ch | 0x20)
+    }
+}

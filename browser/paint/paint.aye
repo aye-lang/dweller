@@ -117,10 +117,12 @@ pub struct DisplayList {
     height: f64
     // The window's promoted layers (`buildPromoted`).
     layers: List(Promoted)
+    frames: List(FramePlace)
     unpinned: bool = false
 
     pub fn deinit(self: *mut Self) {
         self.items.deinit()
+        self.frames.deinit()
         self.layers.deinit()
     }
 
@@ -186,7 +188,7 @@ fn buildWith(alloc: Allocator, t: *mut Tree, window: bool, promote: []dom.NodeId
     defer perf.end("paint_build", began, "document")
     var b = Builder {
         t: t,
-        list: DisplayList { items: List(Item).init(alloc), background: WHITE, width: t.viewport_w, height: t.viewport_h, layers: List(Promoted).init(alloc) },
+        list: DisplayList { items: List(Item).init(alloc), background: WHITE, width: t.viewport_w, height: t.viewport_h, layers: List(Promoted).init(alloc), frames: List(FramePlace).init(alloc) },
         skip_bg: null,
         painting: null,
         m: layout.Affine.identity(),
@@ -1043,11 +1045,11 @@ struct Builder {
             return
         }
         if self.frames |c| {
-            return frameItems(self, try cachedFrame(c, fv), fv.scroll, Rect { x: x, y: y, w: w, h: h })
+            return frameItems(self, try cachedFrame(c, fv), fv, Rect { x: x, y: y, w: w, h: h })
         }
         var inner = try build(self.t.backing, fv.tree)
         defer inner.deinit()
-        return frameItems(self, &inner, fv.scroll, Rect { x: x, y: y, w: w, h: h })
+        return frameItems(self, &inner, fv, Rect { x: x, y: y, w: w, h: h })
     }
 
 

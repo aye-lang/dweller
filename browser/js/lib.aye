@@ -391,6 +391,7 @@ pub let LIB =
     \\// which).
     \\const kindOf = G.__engine.kindOf;
     \\const engineConstruct = G.__engine.construct;
+    \\const method = G.__engine.method;
     \\const engineDefineProperty = G.__engine.defineProperty;
     \\const engineDeleteProperty = G.__engine.deleteProperty;
     \\const engineSetPrototypeOf = G.__engine.setPrototypeOf;
@@ -1313,7 +1314,7 @@ pub let LIB =
     \\    return ret.call(w.o);
     \\  },
     \\});
-    \\hidden(Iterator, 'from', function from(o) {
+    \\hidden(Iterator, 'from', method(function from(o) {
     \\  let it;
     \\  if (typeof o === 'string') it = o[Symbol.iterator]();
     \\  else it = flattenable(o);
@@ -1321,11 +1322,11 @@ pub let LIB =
     \\  const w = Object.create(WrapForValidIteratorPrototype);
     \\  wrapped.set(w, { o: it, next: it.next });
     \\  return w;
-    \\});
+    \\}));
     \\
     \\// ---- legacy escape / unescape
     \\
-    \\hidden(G, 'escape', function escape(s) {
+    \\hidden(G, 'escape', method(function escape(s) {
     \\  s = String(s);
     \\  let out = '';
     \\  for (let i = 0; i < s.length; i++) {
@@ -1335,10 +1336,10 @@ pub let LIB =
     \\    else out += '%u' + ('000' + c.toString(16).toUpperCase()).slice(-4);
     \\  }
     \\  return out;
-    \\});
-    \\hidden(G, 'unescape', function unescape(s) {
+    \\}));
+    \\hidden(G, 'unescape', method(function unescape(s) {
     \\  return String(s).replace(/%u([0-9a-fA-F]{4})|%([0-9a-fA-F]{2})/g, (m, u, b) => String.fromCharCode(parseInt(u || b, 16)));
-    \\});
+    \\}));
     \\
     \\// ---- Date: setters and more formats (local time is UTC)
     \\
@@ -1347,12 +1348,12 @@ pub let LIB =
     \\  return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()];
     \\}
     \\function setter(first, count) {
-    \\  return function (...args) {
+    \\  return method(function (...args) {
     \\    const p = dateParts(this);
     \\    for (let i = 0; i < count && i < args.length; i++) p[first + i] = Number(args[i]);
     \\    if (args.length === 0) p[first] = NaN;
     \\    return this.setTime(Date.UTC(p[0], p[1], p[2], p[3], p[4], p[5], p[6]));
-    \\  };
+    \\  });
     \\}
     \\const setters = { FullYear: [0, 3], Month: [1, 2], Date: [2, 1], Hours: [3, 4], Minutes: [4, 3], Seconds: [5, 2], Milliseconds: [6, 1] };
     \\for (const k of Object.keys(setters)) {
@@ -1401,9 +1402,9 @@ pub let LIB =
     \\  },
     \\});
     \\hidden(DP, 'toGMTString', DP.toUTCString);
-    \\hidden(DP, Symbol.toPrimitive, function (hint) {
+    \\hidden(DP, Symbol.toPrimitive, method(function (hint) {
     \\  return hint === 'number' ? this.getTime() : this.toString();
-    \\});
+    \\}));
     \\
     \\// ---- Object.prototype.__proto__ (Annex B): the prototype as an accessor
     \\
@@ -1547,7 +1548,7 @@ pub let LIB =
     \\      return { value: kind === 0 ? k : kind === 1 ? a[k] : [k, a[k]], done: false };
     \\    },
     \\  };
-    \\  hidden(it, Symbol.iterator, function () { return this; });
+    \\  hidden(it, Symbol.iterator, method(function () { return this; }));
     \\  return it;
     \\}
     \\class TypedArray {
@@ -1700,19 +1701,19 @@ pub let LIB =
     \\KINDS.forEach((name, kind) => {
     \\  if (name === 'Uint8Clamped') return;
     \\  const size = SIZES[kind];
-    \\  hidden(DataView.prototype, 'get' + name, function (i, le) {
+    \\  hidden(DataView.prototype, 'get' + name, method(function (i, le) {
     \\    i = Math.trunc(Number(i)) || 0;
     \\    liveBuffer(this.buffer, 'DataView.prototype.get' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
     \\    return viewGet(this.buffer, this.byteOffset + i, kind, !!le);
-    \\  });
-    \\  hidden(DataView.prototype, 'set' + name, function (i, v, le) {
+    \\  }));
+    \\  hidden(DataView.prototype, 'set' + name, method(function (i, v, le) {
     \\    i = Math.trunc(Number(i)) || 0;
     \\    v = kind >= 9 ? BigInt(v) : Number(v);
     \\    liveBuffer(this.buffer, 'DataView.prototype.set' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
     \\    viewSet(this.buffer, this.byteOffset + i, kind, v, !!le);
-    \\  });
+    \\  }));
     \\});
     \\hidden(G, 'DataView', DataView);
     \\
@@ -1824,13 +1825,13 @@ pub let LIB =
     \\  supportedValuesOf() { return []; },
     \\};
     \\hidden(G, 'Intl', Intl);
-    \\hidden(Number.prototype, 'toLocaleString', function (locale, o) { return numberFormat(Number(this), o); });
+    \\hidden(Number.prototype, 'toLocaleString', method(function (locale, o) { return numberFormat(Number(this), o); }));
     \\
     \\// ---- structuredClone: plain data, arrays, Date, RegExp, Map, Set, errors,
     \\// wrapped primitives and typed arrays; cycles and shared parts are kept;
     \\// a class instance becomes a plain object
     \\const cloneErrors = { Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError };
-    \\hidden(G, 'structuredClone', function structuredClone(value, options) {
+    \\hidden(G, 'structuredClone', method(function structuredClone(value, options) {
     \\  if (arguments.length === 0) throw new TypeError("Failed to execute 'structuredClone' on 'Window': 1 argument required, but only 0 present.");
     \\  const seen = new Map();
     \\  function fail(v) {
@@ -1869,5 +1870,5 @@ pub let LIB =
     \\    for (const b of list) if (!seen.has(b)) seen.set(b, b.transfer());
     \\  }
     \\  return clone(value);
-    \\});
+    \\}));
     \\})();

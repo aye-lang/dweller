@@ -1,0 +1,24 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn dumpOpening(app: *mut App, h: NodeId, out: *mut text.Builder) AllocError!void {
+    let n = app.doc.node(h)
+
+    if n.kind != dom.Kind.Element {
+        return out.append("#document\n")
+    }
+
+    try out.appendByte('<')
+    try out.append(n.name)
+
+    for a in n.attrs {
+        try out.appendByte(' ')
+        try out.append(a.name)
+        try out.appendByte('=')
+        try dumpQuoted(out, a.value)
+    }
+
+    try out.append(">\n")
+}

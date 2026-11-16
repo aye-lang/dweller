@@ -1023,7 +1023,12 @@ struct Compiler {
                 try self.visitList(list, n)
                 try vmExitScope(self, scope)
             }
-            .FuncDecl { .. } => {}
+            .FuncDecl { target, annex, .. } => {
+                if annex != 0 {
+                    try self.visit(target)
+                    try vmStoreIdent(self, annex, NONE)
+                }
+            }
             .ClassDecl { c, target } => {
                 try vmVisitClass(self, c)
                 try vmStoreIdent(self, target, DECL_LET)

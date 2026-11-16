@@ -1,0 +1,22 @@
+import dweller.shell
+import dweller.shell.App
+import std
+import std.mem.AllocError
+import widget
+
+let STYLE = @embedFile("counter.css")
+
+pub fn main() {
+    var gpa = std.heap.General.init()
+    let status = shell.run(gpa.allocator(), STYLE, build)
+
+    gpa.deinit()
+    std.os.exit(status)
+}
+
+fn build(app: *mut App) AllocError!void {
+    app.title = "Counter"
+    app.address = "app:counter"
+
+    try shell.mount(app, app.body, widget.mount, widget.event, "")
+}

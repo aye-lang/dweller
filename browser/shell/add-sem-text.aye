@@ -1,0 +1,33 @@
+import std.mem.AllocError
+import std.text
+
+fn addSemText(sem: *mut Sem, parent: usize, s: []u8) AllocError!void {
+    let kids = sem.at(parent).children.items()
+
+    if kids.len > 0 && text.eql(sem.at(kids[kids.len - 1]).role, "text") && !sem.at(kids[kids.len - 1]).closed {
+        let last = sem.at(kids[kids.len - 1])
+        var both = text.Builder.init(sem.alloc)
+
+        try both.append(last.name)
+        try both.append(s)
+        last.name = both.bytes()
+
+        return
+    }
+
+    if (try collapsed(sem.alloc, s)).len == 0 {
+        return
+    }
+
+    let t = try sem.add(parent, "text", null)
+
+    sem.at(t).name = s
+}
+
+fn sealSemText(sem: *mut Sem, parent: usize) {
+    let kids = sem.at(parent).children.items()
+
+    if kids.len > 0 {
+        sem.at(kids[kids.len - 1]).closed = true
+    }
+}

@@ -1,0 +1,32 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn walkSem(sem: *mut Sem, h: NodeId, parent: usize) AllocError!void {
+    let app = sem.app
+    let n = app.doc.node(h)
+
+    if n.kind == dom.Kind.Text {
+        return addSemText(sem, parent, n.data)
+    }
+
+    if n.kind != dom.Kind.Element || isHidden(app, h) {
+        return
+    }
+
+    let role = semRole(app, h)
+
+    if role.len == 0 {
+        return walkPlain(sem, h, parent)
+    }
+
+    sealSemText(sem, parent)
+
+    let i = try sem.add(parent, role, h)
+
+    try describeSem(sem, i, h)
+
+    if !isNamedByContent(role) && !isLeafRole(role) {
+        try walkSemChildren(sem, h, i)
+    }
+}

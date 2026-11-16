@@ -1,0 +1,32 @@
+import dweller.sdl
+import std.mem.AllocError
+import std.text
+
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
+fn keyBytes(sym: i32, mods: u16, app_cursor: bool, out: *mut text.Builder) AllocError!void {
+    if mods & sdl.KMOD_CTRL != 0 && sym >= 0x40 && sym < 0x80 {
+        return out.appendByte((sym & 0x1F) as u8)
+    }
+
+    if sym == sdl.SDLK_RETURN {
+        return out.appendByte('\r')
+    }
+
+    if sym == sdl.SDLK_BACKSPACE {
+        return out.appendByte(0x7F)
+    }
+
+    if sym == sdl.SDLK_TAB && mods & sdl.KMOD_SHIFT != 0 {
+        return out.append("\x1b[Z")
+    }
+
+    if sym == sdl.SDLK_TAB || sym == sdl.SDLK_ESCAPE {
+        return out.appendByte(sym as u8)
+    }
+
+    for k in 0..KEY_FINALS.len {
+        if sym == KEY_SYMS[k] {
+            return keySequence(KEY_FINALS[k], app_cursor, out)
+        }
+    }
+}

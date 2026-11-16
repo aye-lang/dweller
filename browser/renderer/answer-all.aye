@@ -9,6 +9,10 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
         let got = (try ipc.nextMessage(r.current.bytes())).?
 
+        if !keepsList(got.message) {
+            r.relist = true
+        }
+
         engine.setTabHost(r.width > 0 && (drivesInput(got.message) || got.message is .Agent))
 
         match got.message {
@@ -26,7 +30,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if !(try traverseTo(r, index)) { return false }
             }
 
-            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. } => try landFetched(r, got.message)
+            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. }, .FetchRemote { .. } => try landFetched(r, got.message)
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
@@ -76,6 +80,13 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if r.page |p| { try engine.deliverRemoteMessage(p, m) }
             }
 
+            .ContextClosed { context } => closeContext(r, context)
+            .AttachTab { context } => {
+                if r.fds.len() == 0 { return false }
+
+                try r.attaching.append(Attach { context: context, fd: r.fds.orderedRemove(0) })
+            }
+
             .FrameLoaded { key } => {
                 if r.page |p| { try engine.remoteFrameLoaded(p, key) }
             }
@@ -97,6 +108,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
         if drivesInput(got.message) { try sendContexts(r) }
     }
 
+    try advanceStaged(r, false)
     try paintFrame(r)
     try reportPage(r)
 

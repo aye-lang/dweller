@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn keepRows(t: *mut Term, n: usize) AllocError!void {
+    for y in 0..n {
+        let kept = try t.alloc.alloc(Cell {}, t.cols)
+
+        copyCells(kept, t.row(y))
+        try t.scrollback.append(kept)
+    }
+
+    while t.scrollback.len() > SCROLLBACK_ROWS {
+        t.alloc.free(t.scrollback.orderedRemove(0))
+    }
+}

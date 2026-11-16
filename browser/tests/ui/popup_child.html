@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<title>child</title>
+<body style="margin: 0">
+<button id="away" style="display: block; width: 300px; height: 40px; margin: 0">other site</button>
+<button id="alive" style="display: block; width: 300px; height: 40px; margin: 0">alive</button>
+<button id="more" style="display: block; width: 300px; height: 40px; margin: 0">open another</button>
+<script>
+const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+let saw = 'opener null';
+try {
+  if (window.opener) {
+    saw = 'opener ' + opener.document.title;
+    opener.document.title = 'set-by' + location.search;
+    saw += '>' + opener.document.title;
+  }
+} catch (e) {
+  saw = 'opener ' + e.name;
+}
+document.title = saw + ' name ' + window.name + ' ' + location.search;
+away.onclick = () => { location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html' + (location.search === '?away' ? '?back' : '?away'); };
+alive.onclick = () => { document.title = 'popup-alive'; };
+more.onclick = () => { window.open('popup_child.html?third', 'w3'); };
+</script>

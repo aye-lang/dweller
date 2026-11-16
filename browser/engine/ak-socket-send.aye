@@ -1,0 +1,26 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+fn akSocketSend(it: *mut Interp, a: Args) JsError!Value {
+    let id = try socketArg(it, a)
+    let binary = it.toBoolean(it.arg(a, 2))
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 1, given)
+
+    if binary {
+        try binaryBytes(given.bytes(), bytes)
+        net.socketSend(id, true, bytes.bytes())
+    } else {
+        net.socketSend(id, false, given.bytes())
+    }
+
+    return Value.Undefined
+}

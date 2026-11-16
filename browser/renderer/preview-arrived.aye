@@ -1,0 +1,22 @@
+import engine
+import std
+import std.text
+
+let PREVIEW_AFTER_MS: u64 = 100
+
+fn previewArrived(r: *mut TabRenderer, href: []u8, f: *mut Fetched) !void {
+    let v = &mut r.preview
+    let now = std.time.monotonicMs()
+
+    if !v.on || f.status == 0 || !text.eql(f.mime.bytes(), "text/html") { return }
+
+    if v.due == 0 {
+        v.due = now + PREVIEW_AFTER_MS
+
+        return
+    }
+
+    if (v.page == null || v.shown) && f.body.len() > v.len && now >= v.due { try buildPreview(r, href, f) }
+
+    if v.page != null && !v.shown && engine.loadsIn(v.loads.sheets.items()) { try showPreview(r) }
+}

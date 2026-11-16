@@ -91,18 +91,22 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, active)
         }
 
-        .Context { ask, context, href, post, content_type, body } => {
+        .Context { ask, context, href, post, content_type, body, keeps } => {
             try putU32(out, ask)
             try putU32(out, context)
             try putBytes(out, href)
             try putU32(out, post)
             try putBytes(out, content_type)
             try putBytes(out, body)
+            try putU32(out, keeps)
         }
 
         .AgentActed { what } => try putBytes(out, what)
         .AgentPaused { on } => try putU32(out, on)
+        .Settled { on } => try putU32(out, on)
         .AgentWindow { line } => try putBytes(out, line)
+        .AttachTab { context } => try putU32(out, context)
+        .ContextClosed { context } => try putU32(out, context)
         .AgentWindowReply { ok, message, fields, detail } => {
             try putU32(out, ok)
             try putBytes(out, message)
@@ -219,6 +223,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .FetchEnd { id } => try putU32(out, id)
+        .FetchRemote { id } => try putU32(out, id)
         .FetchCancel { id } => try putU32(out, id)
         .FetchFail { id, code } => {
             try putU32(out, id)

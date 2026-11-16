@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn scriptWord(app: *mut App, word: []u8) AllocError!void {
+    if text.startsWith(word, "click:") {
+        let at = pairOf(word[6..]) orelse return
+
+        try clickAt(app, at[0], at[1])
+    } else if text.startsWith(word, "wheel:") {
+        let notches = text.parseFloat(word[6..]) catch |e| {
+            return
+        }
+
+        scrollBy(app, -notches * WHEEL_STEP)
+    } else if text.startsWith(word, "text:") {
+        try typeWord(app, word[5..])
+    } else if text.startsWith(word, "key:") {
+        try pressKey(app, keyOf(word[4..]))
+    }
+}

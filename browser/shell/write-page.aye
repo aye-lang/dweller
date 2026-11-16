@@ -1,0 +1,26 @@
+import std.json
+import std.mem.AllocError
+import std.text
+
+fn writePage(app: *mut App, out: *mut text.Builder) AllocError!void {
+    try out.append(",\"ok\":true")
+    try writePageFields(app, out)
+}
+
+fn writePageFields(app: *mut App, out: *mut text.Builder) AllocError!void {
+    try jsonField(out, "url", app.address)
+    try jsonField(out, "title", app.title)
+}
+
+fn writeFailure(out: *mut text.Builder, why: []u8) AllocError!void {
+    try out.append(",\"ok\":false")
+    try jsonField(out, "error", why)
+}
+
+fn writeRequestId(request: *json.Value, out: *mut text.Builder) AllocError!void {
+    if request.get("id") |id| {
+        return json.write(out, id)
+    }
+
+    try out.append("null")
+}

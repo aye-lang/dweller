@@ -1,0 +1,20 @@
+import engine
+import std.list.List
+
+var served_tabs: ?*mut List(*mut TabRenderer) = null
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (the proxies of a closed window go from the other processes)
+fn closeContext(r: *mut TabRenderer, context: u32) {
+    let tabs = served_tabs orelse return
+
+    for i, t in tabs.items() {
+        if t.context != context || t == r { continue }
+
+        t.closed = true
+        endTab(tabs, i)
+
+        return serveAs(r)
+    }
+
+    if attachable(tabs, context) { engine.tabContextGone(context) }
+}

@@ -16,11 +16,12 @@ fn mixColors(space: u8, method: u8, first: MixItem, second: MixItem) ?Color {
 
     let sum = p1 + p2
 
-    if sum == 0.0 {
-        return null
+    var w = 0.5
+
+    if sum != 0.0 {
+        w = p2 / sum
     }
 
-    let w = p2 / sum
     var a = convertChannels(first.color, space)
     var b = convertChannels(second.color, space)
     var none: u8 = 0
@@ -60,7 +61,7 @@ fn mixColors(space: u8, method: u8, first: MixItem, second: MixItem) ?Color {
         }
     }
 
-    if space >= 13 {
+    if isLegacyPolar(space) && none & 7 == 0 {
         let rgb = srgbOf(space, [3]f64{out[0], out[1], out[2]})
 
         return paintColor(1, rgb, out[3], none & 8)

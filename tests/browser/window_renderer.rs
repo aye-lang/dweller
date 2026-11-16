@@ -34,7 +34,8 @@ fn window_renderer_out_of_memory() {
 /// docs/process-model.md §2). The tab's title comes from the renderer,
 /// whose pid is not the window's; a renderer that is killed is noted for
 /// its tab (`gone crashed`); one that sends a malformed message is
-/// killed (`bad message:` on stderr). Without the flag no renderer runs.
+/// killed (`bad message:` on stderr). With `DWELLER_PROCESS=single` no
+/// renderer runs.
 #[test]
 fn window_renderer_lifecycle() {
     if !has_sdl() {
@@ -80,7 +81,7 @@ fn window_renderer_lifecycle() {
     assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
     assert_eq!(err, format!("error: bad message: UnknownType {}\n", r[1]));
 
-    let (_, state, err) = run("", &[]);
+    let (_, state, err) = run("", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     assert!(!state.lines().any(|l| l.starts_with("renderer ")), "{state}");
 }
@@ -175,8 +176,8 @@ fn window_renderer_samesite() {
     assert_eq!(text(&out.stdout), "set\n", "{}", text(&out.stderr));
     let show = format!("{other}/samesite/show");
     let tab = [("DWELLER_PROCESS", "tab")];
-    for envs in [&[][..], &tab[..]] {
-        let (wait, then) = if envs.is_empty() { ("loaded ", " loaded") } else { ("", " renderer:input renderer:loaded") };
+    for envs in [&[IN_PROCESS][..], &tab[..]] {
+        let (wait, then) = if in_renderer(envs) { ("", " renderer:input renderer:loaded") } else { ("loaded ", " loaded") };
         for (what, from, click, want) in [
             ("cross-site link", &site, "click:80,65", "GET cookies: lax=1; dflt=1"),
             ("cross-site post", &site, "click:60,115", "POST cookies:"),
@@ -312,15 +313,10 @@ fn window_renderer_no_profile_files() {
         })
         .map(|pid| (pid.clone(), open_files(pid)))
         .collect();
-    let lock = format!("{dir_text}/lock");
-    let space_files: Vec<(String, Vec<(String, bool, String)>)> = spaces.iter().filter(|pid| !listed.iter().any(|(r, _)| r == *pid)).map(|pid| (pid.clone(), open_files(pid))).collect();
     drop(conn);
     let out = window.wait_with_output().unwrap();
     assert!(out.status.success(), "the window: {}\n{}", out.status, text(&out.stderr));
-    assert!(!space_files.is_empty(), "want the agent's Space: {spaces:?}");
-    for (pid, files) in &space_files {
-        assert!(files.iter().all(|(_, _, name)| *name != lock), "Space {pid} inherited the profile's lock: {files:?}");
-    }
+    assert_eq!(listed.len(), spaces.len(), "every child of the window is a renderer: {spaces:?}");
     let exe = dweller().canonicalize().unwrap();
     let system = ["/System/", "/usr/", "/Library/Fonts/", "/dev/"];
     assert!(listed.len() >= 2, "want the window's renderer and its Space's: {listed:?}");
@@ -618,7 +614,7 @@ fn window_renderer_input() {
     for (what, page, events, caret) in cases {
         let (_, err) = run_page(page, &still, "renderer:loaded renderer:frame", &tab);
         assert!(err.is_empty(), "{err}");
-        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[]);
+        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[IN_PROCESS]);
         assert!(err.is_empty(), "{err}");
         let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{err}");
@@ -690,7 +686,7 @@ fn window_renderer_focus() {
     for (what, events) in cases {
         let (_, err) = run(&still, "renderer:loaded renderer:frame", &tab);
         assert!(err.is_empty(), "{err}");
-        let (_, err) = run(&golden, &format!("loaded {events}"), &[]);
+        let (_, err) = run(&golden, &format!("loaded {events}"), &[IN_PROCESS]);
         assert!(err.is_empty(), "{what}: {err}");
         let (state, err) = run(&shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{what}: {err}");
@@ -703,7 +699,7 @@ fn window_renderer_focus() {
         );
     }
 
-    let (_, err) = run(&golden, "loaded click:90,102", &[]);
+    let (_, err) = run(&golden, "loaded click:90,102", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input window:blur renderer:next", &tab);
     assert!(err.is_empty(), "{err}");
@@ -1148,16 +1144,16 @@ fn window_renderer_agent() {
         let out = window.wait_with_output().unwrap();
         (got, text(&out.stderr))
     };
-    let (want, _) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
+    let (want, want_err) = session(&format!("target/sockets/q23b-in-{}.sock", std::process::id()), &[]);
     let (got, err) = session(&format!("target/sockets/q23b-tab-{}.sock", std::process::id()), &[("DWELLER_PROCESS", "tab")]);
-    assert!(want[0].contains("\"ok\":true"), "{}", want[0]);
+    assert!(want[0].contains("\"ok\":true"), "{}\n{want_err}", want[0]);
     assert_eq!(got, want, "{err}");
     let (bad, err) = session(
         &format!("target/sockets/q23b-evil-{}.sock", std::process::id()),
         &[("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "agent")],
     );
     assert!(err.contains("bad message: bad agent_reply "), "{err}");
-    assert!(bad[0].contains("the tab's renderer is gone"), "{}", bad[0]);
+    assert!(bad[0].contains("renderer crashed"), "{}", bad[0]);
 }
 
 /// Q2.7b: with `DWELLER_PROCESS=tab` an agent's navigation to another

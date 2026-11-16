@@ -1,0 +1,71 @@
+import css
+import dom
+import dom.NodeId
+import font
+import layout
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub struct App {
+    alloc: Allocator
+    doc: dom.Document
+    body: NodeId
+    style_source: []u8
+    media: css.Media
+    ua: css.Sheet
+    author: css.Sheet
+    styles: css.Styles
+    measure: dyn font.Measurer
+    tree: ?*mut layout.Tree = null
+    list: ?paint.DisplayList = null
+    handlers: List(Handler)
+    dirty: List(NodeId)
+    restyle: List(NodeId)
+    scroll: f64 = 0.0
+    built_boxes: usize = 0
+    full_layouts: usize = 0
+    partial_layouts: usize = 0
+    redraw: bool = true
+    always_full: bool = false
+    refs: List(NodeId)
+    handles: List(NodeId)
+    listeners: List(Listener)
+    on_event: ?fn(i32) = null
+    title: []u8 = ""
+    address: []u8 = "app:"
+
+    pub fn element(self: *mut Self, parent: NodeId, tag: []u8) AllocError!NodeId {
+        return addElement(self, parent, tag)
+    }
+
+    pub fn setAttr(self: *mut Self, el: NodeId, name: []u8, value: []u8) AllocError!void {
+        try self.doc.setAttr(el, name, value)
+        try markDirty(self, el)
+    }
+
+    pub fn setText(self: *mut Self, el: NodeId, s: []u8) AllocError!void {
+        return replaceText(self, el, s)
+    }
+
+    pub fn onClick(self: *mut Self, el: NodeId, call: fn(*mut App, NodeId) AllocError!void) AllocError!void {
+        try self.handlers.append(Handler { node: el, call: call })
+    }
+
+    pub fn click(self: *mut Self, x: f64, y: f64) AllocError!void {
+        return clickAt(self, x, y)
+    }
+
+    pub fn settle(self: *mut Self) AllocError!void {
+        return update(self)
+    }
+
+    pub fn close(self: *mut Self) {
+        closeApp(self)
+    }
+
+    pub fn byId(self: *Self, id: []u8) NodeId {
+        return self.doc.getElementById(id).?
+    }
+}

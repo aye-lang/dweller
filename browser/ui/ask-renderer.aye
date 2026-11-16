@@ -1,8 +1,10 @@
 import ipc
+import net
 import std.mem.AllocError
 import std.text
 
 let HELD_POLL_MS: i32 = 2
+let HELD_WAIT_MS: i32 = 100
 
 fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *mut text.Builder) AllocError![]u8 {
     let tp = at.*
@@ -85,7 +87,9 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
 
             tp.outbox.clear()
 
-            if !readableWithin(tp.fd, HELD_POLL_MS) { continue }
+            net.waitLoadsOr(tp.fd, HELD_WAIT_MS)
+
+            if !readableWithin(tp.fd, 0) { continue }
         }
 
         let n = read(tp.fd, buf[..].ptr, buf.len)

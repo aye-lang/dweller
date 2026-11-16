@@ -1,0 +1,14 @@
+import sdl
+import std.mem.AllocError
+
+fn takeEvents(app: *mut App, w: *mut Window, wait: bool) AllocError!void {
+    var ev = @zeroed(sdl.SDL_Event)
+
+    if wait && sdl.SDL_WaitEvent(&mut ev) != 0 {
+        try handleEvent(app, w, &ev)
+    }
+
+    while sdl.SDL_PollEvent(&mut ev) != 0 {
+        try handleEvent(app, w, &ev)
+    }
+}

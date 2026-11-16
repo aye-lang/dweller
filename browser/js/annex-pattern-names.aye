@@ -1,0 +1,23 @@
+// https://tc39.es/ecma262/#sec-static-semantics-boundnames
+
+fn annexPatternNames(r: *mut Resolver, p: u32) SyntaxErr!void {
+    match r.ast.node(p) {
+        .Ident { name, .. } => try r.annex_blocked.append(name)
+        .ArrayPat { list, n } => {
+            for k in 0..n {
+                try annexPatternNames(r, r.ast.item(list, k))
+            }
+        }
+
+        .ObjectPat { list, n } => {
+            for k in 0..n {
+                try annexPatternNames(r, r.ast.item(list, k))
+            }
+        }
+
+        .PatProp { value, .. } => try annexPatternNames(r, value)
+        .Default { target, .. } => try annexPatternNames(r, target)
+        .Rest { target } => try annexPatternNames(r, target)
+        _ => {}
+    }
+}

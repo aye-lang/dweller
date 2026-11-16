@@ -11,19 +11,14 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
 
         _ = sendSome(tp.fd, tp.outbox.bytes())
 
-        var st: i32 = 0
-        let end = std.time.monotonicMs() + END_MS
-
-        while waitpid(tp.pid, &mut st, WNOHANG) == 0 {
-            if std.time.monotonicMs() > end {
-                kill(tp.pid, SIGKILL)
-            }
-
-            std.time.sleep(2)
-        }
+        if !sharesProcess(tp) { awaitExit(tp.pid) }
 
         closeFd(tp.fd)
     }
+
+    for a in tp.attaches.items() { closeFd(a.fd) }
+
+    tp.attaches.deinit()
 
     while tp.children.pop() |c| { endChild(alloc, c) }
 
@@ -32,6 +27,10 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
     for h in tp.held.items() { h.deinit(alloc) }
 
     tp.held.deinit()
+
+    for k in tp.kept.items() { k.deinit(alloc) }
+
+    tp.kept.deinit()
     forgetTabProcess(tp)
     unmapBuffers(tp)
     tp.inbox.deinit()
