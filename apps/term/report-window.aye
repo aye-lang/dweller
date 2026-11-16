@@ -1,0 +1,19 @@
+import std
+import std.text
+import vt
+
+fn reportWindow(w: *mut TermWindow, o: TermOptions) !i32 {
+    if o.save.len > 0 {
+        try saveView(w.alloc, &w.view, o.save)
+    }
+
+    if o.dump {
+        var out = text.Builder.init(w.alloc)
+        defer out.deinit()
+
+        try vt.dump(&mut w.term, &mut out)
+        @print(out.bytes())
+    }
+
+    return 0
+}

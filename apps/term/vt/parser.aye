@@ -1,0 +1,44 @@
+import std.text
+
+pub enum State {
+    Ground
+    Escape
+    EscapeIntermediate
+    CsiEntry
+    CsiParam
+    CsiIntermediate
+    CsiIgnore
+    OscString
+    IgnoredString
+}
+
+pub let MAX_PARAMS: usize = 16
+
+pub struct Parser {
+    state: State = State.Ground
+    params: [16]u32 = [16]u32{0, ..}
+    count: usize = 0
+    colons: u32 = 0
+    marker: u8 = 0
+    intermediate: u8 = 0
+    string: text.Builder
+    string_escape: bool = false
+    utf8_left: u8 = 0
+    utf8_code: u32 = 0
+
+    fn clear(self: *mut Self) {
+        self.params = [16]u32{0, ..}
+        self.count = 0
+        self.colons = 0
+        self.marker = 0
+        self.intermediate = 0
+    }
+
+    fn param(self: *Self, i: usize, fallback: u32) u32 {
+        if i < self.count && self.params[i] != 0 {
+            return self.params[i]
+        }
+
+        return fallback
+    }
+}
