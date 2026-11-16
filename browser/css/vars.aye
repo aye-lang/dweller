@@ -20,10 +20,9 @@ pub struct CustomLevel {
 
 pub struct CustomVar {
     raw: []Token
-    // 0: not substituted yet, 1: being substituted, 2: `value` is done,
-    // 3: invalid.
     state: u8
     value: []Token
+    below: ?*mut CustomVar = null
 }
 
 // While the cascade runs: the initial values of the custom properties
@@ -48,15 +47,22 @@ pub fn hasVar(toks: []Token) bool {
     return false
 }
 
-/// The tokens of the custom property `name` as seen from `level`; null
-/// when it is not defined or invalid.
+// spec: https://drafts.csswg.org/css-variables-2/#guaranteed-invalid
 fn lookupVar(alloc: Allocator, level: ?*mut CustomLevel, name: []u8, depth: usize) AllocError!?[]Token {
     var cur = level
     while cur |l| {
-        if l.vars.getPtr(name) |cv| {
-            return resolveVar(alloc, l, cv, depth)
-        }
         cur = l.parent
+        let cv = l.vars.getPtr(name) orelse continue
+        let v = (try resolveVar(alloc, l, cv, depth)) orelse return null
+        let keyword = customKeyword(trimmedTokens(v))
+
+        if keyword == CUSTOM_VALUE {
+            return v
+        }
+
+        if keyword == CUSTOM_INITIAL {
+            break
+        }
     }
     if registered_values |m| {
         if m.get(name) |initial| {
@@ -68,31 +74,39 @@ fn lookupVar(alloc: Allocator, level: ?*mut CustomLevel, name: []u8, depth: usiz
     return null
 }
 
+// spec: https://drafts.csswg.org/css-variables-2/#cycles
 fn resolveVar(alloc: Allocator, l: *mut CustomLevel, cv: *mut CustomVar, depth: usize) AllocError!?[]Token {
-    if cv.state == 2 {
+    if cv.state == VAR_DONE {
         return cv.value
     }
-    if cv.state != 0 {
-        // Invalid, or a cycle.
-        cv.state = 3
+    if cv.state == VAR_RESOLVING || cv.state == VAR_IN_CYCLE {
+        markCycle(cv)
+        return null
+    }
+    if cv.state == VAR_INVALID {
         return null
     }
     if !hasVar(cv.raw) {
         cv.value = cv.raw
-        cv.state = 2
+        cv.state = VAR_DONE
         return cv.raw
     }
-    cv.state = 1
-    if try substituteVars(alloc, cv.raw, l, depth + 1) |out| {
-        // A cycle may have marked it invalid meanwhile.
-        if cv.state == 3 {
-            return null
-        }
-        cv.value = out
-        cv.state = 2
-        return out
+    cv.state = VAR_RESOLVING
+    cv.below = resolving_top
+    resolving_top = cv
+    let out = substituteVars(alloc, cv.raw, l, depth + 1) catch |e| {
+        resolving_top = cv.below
+        return e
     }
-    cv.state = 3
+    resolving_top = cv.below
+    if cv.state == VAR_RESOLVING {
+        if out |o| {
+            cv.value = o
+            cv.state = VAR_DONE
+            return o
+        }
+    }
+    cv.state = VAR_INVALID
     return null
 }
 
@@ -139,6 +153,7 @@ pub fn substituteVars(alloc: Allocator, toks: []Token, level: ?*mut CustomLevel,
             for x in v {
                 try out.append(x)
             }
+            try visitFallback(alloc, fallback, level, depth)
         } else if fallback |f| {
             let sub = (try substituteVars(alloc, f, level, depth + 1)) orelse return null
             for x in sub {

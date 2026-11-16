@@ -811,6 +811,15 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     if one {
         try argText(it, a, 1, b)
 
+        if text.startsWith(b.bytes(), "--") {
+            let custom = try it.builder()
+            defer it.release(custom)
+
+            try computedCustom(s, h, b.bytes(), custom)
+
+            return it.newString(custom.bytes())
+        }
+
         if text.eql(b.bytes(), "outline") {
             b.clear()
             try css.writeOutline(values, b)

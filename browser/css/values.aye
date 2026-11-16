@@ -35,6 +35,9 @@ pub struct Comp {
 /// Unknown properties and invalid values are ignored.
 pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: bool) AllocError!void {
     var d = Declarer { sheet: sheet, important: important }
+    if text.eql(name, "--") {
+        return
+    }
     if text.startsWith(name, "--") {
         return d.addRaw(CUSTOM, toks, try dupText(sheet, name))
     }
@@ -1367,7 +1370,7 @@ fn writeToken(t: Token, out: *mut text.Builder) AllocError!void {
             try out.append(t.text)
         }
         .Whitespace => {
-            try out.appendByte(' ')
+            try writeSpace(t, out)
         }
         .Colon => {
             try out.appendByte(':')
