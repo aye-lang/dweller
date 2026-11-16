@@ -1,0 +1,15 @@
+pub fn socketNext(id: u32) ?SocketNote {
+    let all = sockets orelse return null
+    let k = socketById(id) orelse return null
+
+    if k.notes.len() == 0 {
+        return null
+    }
+
+    let note = k.notes.orderedRemove(0)
+
+    release(all.alloc, k.owned_taken)
+    k.owned_taken = note.owned_data
+
+    return note
+}

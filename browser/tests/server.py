@@ -4,6 +4,15 @@
 # routes that a file server cannot produce:
 #
 #   /redirect        302 to /basic.html
+#   /ws/NAME         a WebSocket that echoes each message (the last
+#                    subprotocol offered, or ?protocol=P; ?setcookie=V
+#                    sets the cookie ws=V; ?badaccept answers a wrong
+#                    Sec-WebSocket-Accept). Text commands: "close:CODE:REASON"
+#                    (the server closes), "header:cookie", "header:origin"
+#                    (the handshake's header), "fragments" ("Hello" in two
+#                    frames around a ping), "reserved" (a frame with RSV1),
+#                    "drop" (the connection ends without a Close frame),
+#                    "big:N" (N bytes, binary). /ws/refuse answers 403
 #   /redirect-style  302 to /style/link.html (relative URLs resolve
 #                    against the final URL)
 #   /redirect-loop   302 to itself
@@ -113,7 +122,9 @@
 #                    with each credentials mode (and XHR with and without
 #                    withCredentials); /nav?method=M&to=U a page whose
 #                    script submits a form to U by M
+import base64
 import gzip
+import hashlib
 import html
 import json
 import http.server
@@ -211,7 +222,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path
-        if path.startswith("/fetch-"):
+        if path.startswith("/ws/"):
+            self.web_socket(path)
+        elif path.startswith("/fetch-"):
             self.fetch_route()
         elif path == "/redirect":
             self.reply(302, [("Location", "/basic.html")])
@@ -388,6 +401,106 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/html")], body)
         else:
             super().do_GET()
+
+    def web_socket(self, path):
+        key = self.headers.get("Sec-WebSocket-Key")
+        if path.startswith("/ws/refuse") or self.headers.get("Upgrade", "").lower() != "websocket" or not key:
+            self.reply(403, [("Content-Type", "text/plain")], b"refused")
+            return
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query, keep_blank_values=True))
+        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        offered = [p.strip() for p in self.headers.get("Sec-WebSocket-Protocol", "").split(",") if p.strip()]
+        self.protocol_version = "HTTP/1.1"
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", "wrong" if "badaccept" in query else accept)
+        if "protocol" in query or offered:
+            self.send_header("Sec-WebSocket-Protocol", query.get("protocol") or offered[-1])
+        if "setcookie" in query:
+            self.send_header("Set-Cookie", "ws=" + query["setcookie"] + "; Path=/")
+        self.end_headers()
+        self.close_connection = True
+        self.connection.settimeout(HOLD_LIMIT)
+        try:
+            self.web_socket_echo()
+        except (OSError, EOFError):
+            pass
+
+    def ws_send(self, opcode, payload, fin=True, first=None):
+        head = bytes([(0x80 if fin else 0) | opcode]) if first is None else bytes([first])
+        n = len(payload)
+        if n < 126:
+            head += bytes([n])
+        elif n < 65536:
+            head += bytes([126]) + n.to_bytes(2, "big")
+        else:
+            head += bytes([127]) + n.to_bytes(8, "big")
+        self.wfile.write(head + payload)
+        self.wfile.flush()
+
+    def ws_read(self, n):
+        data = self.rfile.read(n)
+        if len(data) < n:
+            raise EOFError
+        return data
+
+    def ws_frame(self):
+        b0, b1 = self.ws_read(2)
+        n = b1 & 0x7F
+        if n == 126:
+            n = int.from_bytes(self.ws_read(2), "big")
+        elif n == 127:
+            n = int.from_bytes(self.ws_read(8), "big")
+        mask = self.ws_read(4) if b1 & 0x80 else b"\0\0\0\0"
+        data = bytes(c ^ mask[i & 3] for i, c in enumerate(self.ws_read(n)))
+        return b0 & 0x80 != 0, b0 & 0x0F, bool(b1 & 0x80), data
+
+    def web_socket_echo(self):
+        """Echoes each message; the text messages below are commands."""
+        parts = b""
+        kind = 0
+        while True:
+            fin, opcode, masked, data = self.ws_frame()
+            if not masked:
+                self.ws_send(8, (1002).to_bytes(2, "big"))
+                return
+            if opcode == 8:
+                self.ws_send(8, data[:2])
+                return
+            if opcode == 9:
+                self.ws_send(10, data)
+                continue
+            if opcode == 10:
+                continue
+            if opcode != 0:
+                kind = opcode
+                parts = b""
+            parts += data
+            if not fin:
+                continue
+            text = parts.decode("utf-8", "replace") if kind == 1 else ""
+            if text.startswith("close:"):
+                _, code, reason = text.split(":", 2)
+                self.ws_send(8, int(code).to_bytes(2, "big") + reason.encode())
+                self.ws_frame()
+                return
+            if text == "header:cookie":
+                self.ws_send(1, self.headers.get("Cookie", "-").encode())
+            elif text == "header:origin":
+                self.ws_send(1, self.headers.get("Origin", "-").encode())
+            elif text == "fragments":
+                self.ws_send(1, b"Hel", fin=False)
+                self.ws_send(9, b"ping")
+                self.ws_send(0, b"lo")
+            elif text == "reserved":
+                self.ws_send(1, b"x", first=0xC1)
+            elif text == "drop":
+                return
+            elif text.startswith("big:"):
+                self.ws_send(2, bytes(i & 0xFF for i in range(int(text[4:]))))
+            else:
+                self.ws_send(kind, parts)
 
     def hang(self, path):
         parts = urllib.parse.urlsplit(path)
