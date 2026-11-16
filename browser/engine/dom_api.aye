@@ -1762,7 +1762,10 @@ fn thisStyleNode(it: *mut Interp, a: Args) JsError!NodeId {
 
 fn styleCssText(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisStyleNode(it, a)
-    return it.newString(styleAttrOf(scriptOf(it).active, h))
+    let b = try it.builder()
+    defer it.release(b)
+    try formatStyleText(styleAttrOf(scriptOf(it).active, h), b)
+    return it.newString(b.bytes())
 }
 
 fn styleSetCssText(it: *mut Interp, a: Args) JsError!Value {

@@ -1,7 +1,7 @@
 import std.mem.AllocError
 
 // spec: https://drafts.csswg.org/css-animations-1/#typedef-keyframe-selector
-fn addKeyframes(sheet: *mut Sheet, name: []u8, rule: u32, selectors: []Token, decls: DeclRange) AllocError!void {
+fn addKeyframes(sheet: *mut Sheet, name: []u8, rule: u32, layer: u32, selectors: []Token, decls: DeclRange) AllocError!void {
     for t in selectors {
         if t.kind != Tok.Whitespace && t.kind != Tok.Comma && keyframeOffset(t) == null {
             return
@@ -10,7 +10,7 @@ fn addKeyframes(sheet: *mut Sheet, name: []u8, rule: u32, selectors: []Token, de
 
     for t in selectors {
         if keyframeOffset(t) |offset| {
-            try sheet.keyframes.append(Keyframe { name: name, rule: rule, offset: offset, decls: decls })
+            try sheet.keyframes.append(Keyframe { name: name, rule: rule, offset: offset, decls: decls, layer: layer })
         }
     }
 }

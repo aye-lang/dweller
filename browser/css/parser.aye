@@ -724,8 +724,9 @@ struct Supports {
         }
         let t = self.toks[self.i]
         if t.kind == Tok.Function {
+            let open = self.i
             self.i = skipComponent(self.toks[..end], self.i)
-            return text.eqlIgnoreCase(t.text, "selector")
+            return supportsFunction(t.text, self.toks[open + 1..blockEnd(self.toks[..end], open)])
         }
         if t.kind != Tok.LParen {
             self.i = end + 1
@@ -747,7 +748,8 @@ struct Supports {
     }
 
     // `name: value`: does it make a declaration?
-    fn declarationTest(self: *mut Self, toks: []Token) AllocError!bool {
+    fn declarationTest(self: *mut Self, whole: []Token) AllocError!bool {
+        let toks = withoutImportant(whole)
         let k = skipWhitespace(toks, 0)
         if k >= toks.len || toks[k].kind != Tok.Ident {
             return false
