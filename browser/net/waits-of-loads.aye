@@ -1,0 +1,50 @@
+extern fn curl_multi_fdset(m: *mut CurlMulti, reads: [*]u8, writes: [*]u8, errors: [*]u8, max_fd: *mut i32) i32
+extern fn curl_multi_timeout(m: *mut CurlMulti, ms: *mut i64) i32
+
+let NO_SOCKET_MS: i64 = 50
+let STALL_CHECK_MS: i64 = 1000
+
+// chromium: net/socket/socket_posix.cc (the IO thread watches the sockets; here libcurl names them)
+pub fn waitsOfLoads() LoadWaits {
+    var w = LoadWaits {}
+    let ld = loader orelse return w
+    var sets = @zeroed([3][128]u8)
+    var max: i32 = -1
+    var ms: i64 = -1
+
+    if !anyRunning(ld) { return w }
+
+    curl_multi_fdset(ld.multi, sets[0][..].ptr, sets[1][..].ptr, sets[2][..].ptr, &mut max)
+    curl_multi_timeout(ld.multi, &mut ms)
+
+    if ms < 0 || ms > STALL_CHECK_MS {
+        ms = STALL_CHECK_MS
+    }
+
+    if max < 0 && ms > NO_SOCKET_MS {
+        ms = NO_SOCKET_MS
+    }
+
+    w.timeout_ms = ms as i32
+
+    var fd: i32 = 0
+
+    while fd <= max && w.count < w.fds.len {
+        let reads = fdIn(sets[0][..], fd)
+        let writes = fdIn(sets[1][..], fd)
+
+        if reads || writes {
+            w.fds[w.count] = fd
+            w.writes[w.count] = writes
+            w.count += 1
+        }
+
+        fd += 1
+    }
+
+    return w
+}
+
+fn fdIn(set: []u8, fd: i32) bool {
+    return (set[(fd / 8) as usize] >> ((fd % 8) as u8)) & 1 == 1
+}

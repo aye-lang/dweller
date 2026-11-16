@@ -1,0 +1,23 @@
+import net
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/site_instance_impl.cc (GetRelatedSiteInstance: a site has one process in a browsing instance)
+fn rejoinHome(slot: *mut TabSlot, old: *mut TabProcess, res: *net.Response) AllocError!?*mut TabProcess {
+    let home = slot.home orelse return null
+
+    if old.serial == home.serial || !(net.parseCoop(res.headers_raw) is .UnsafeNone) { return null }
+
+    let hp = homeProcess(home, null) orelse return null
+    var site = text.Builder.init(old.url.alloc)
+    defer site.deinit()
+    var own = text.Builder.init(old.url.alloc)
+    defer own.deinit()
+
+    try writeSite(old.swap_url.bytes(), &mut site)
+    try writeSite(hp.committed.bytes(), &mut own)
+
+    if site.len() == 0 || !text.eql(site.bytes(), own.bytes()) { return null }
+
+    return attachTabProcess(AttachFrom { context: home.context, process: hp }, slot.id)
+}

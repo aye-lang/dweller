@@ -118,6 +118,7 @@ pub struct Styles {
     // take the new ones (geometry.aye, P4.56). Beyond `MAX_MOVED`, they
     // count as moved.
     restyled: List(Restyled)
+    has_anchors: IntMap(u32, u64)
     matched: MatchedCache
     animating: IntMap(u32, NodeId)
     transitioning: IntMap(u32, NodeId)
@@ -176,6 +177,7 @@ pub struct Styles {
             class_infos: List(*ClassInfo).init(alloc),
             moved_els: List(NodeId).init(alloc),
             restyled: List(Restyled).init(alloc),
+            has_anchors: IntMap(u32, u64).init(alloc),
             matched: MatchedCache.init(alloc),
             animating: IntMap(u32, NodeId).init(alloc),
             transitioning: IntMap(u32, NodeId).init(alloc),
@@ -213,6 +215,7 @@ pub struct Styles {
     pub fn deinit(self: *mut Self) {
         self.moved_els.deinit()
         self.restyled.deinit()
+        self.has_anchors.deinit()
         self.matched.deinit()
         self.animating.deinit()
         self.transitioning.deinit()
@@ -478,6 +481,8 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
     defer has_results.deinit()
     setHasCache(&mut has_results)
     defer setHasCache(null)
+    setHasAnchors(&mut out.has_anchors)
+    defer setHasAnchors(null)
     setRegistered(&author.registered)
     defer setRegistered(null)
     defer setShadowHost(null)
@@ -675,6 +680,8 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     defer has_results.deinit()
     setHasCache(&mut has_results)
     defer setHasCache(null)
+    setHasAnchors(&mut out.has_anchors)
+    defer setHasAnchors(null)
     setRegistered(&author.registered)
     defer setRegistered(null)
     defer setShadowHost(null)
@@ -691,7 +698,11 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     for r in roots {
         try root_set.put(r.index, true)
     }
-    for ri, r in roots {
+    var order = List(usize).init(out.alloc)
+    defer order.deinit()
+    try rootOrder(doc, roots, &mut order)
+    for ri in order.items() {
+        let r = roots[ri]
         let parent = styleParent(doc, r)
         // The custom properties the root inherited (styling the parent
         // again makes new ones).
@@ -712,6 +723,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 styled += chain.len() - shared
             }
         }
+        _ = root_set.remove(r.index)
         if shallow[ri] {
             // Down from the root while what the elements inherit changes.
             pending.clear()
@@ -742,9 +754,11 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 try notePseudos(out, h, pseudos)
                 styled += 1
                 let values = out.map.get(h.index) orelse old.items()
-                if !had || had_own_customs || own_customs || styleParent(doc, h) == null || !sameContainer(old.items(), values) {
+                if !had || had_own_customs || own_customs || (styleParent(doc, h) == null && !sameRootUnits(old.items(), values)) || !sameContainer(old.items(), values) {
                     // Custom properties and `rem` reach any descendant,
                     // and so does what query container is the nearest.
+                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
+                } else if doc.node(h).shadow != null && !sameValues(old.items(), values) {
                     styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
                 } else if !sameValues(old.items(), values) || text.eql(keywordText(values[TEXT_ALIGN]), "center") {
                     var child = doc.firstChild(h)
@@ -1631,7 +1645,7 @@ fn restyleBelow(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
     let doc = c.doc
     let out = c.out
     var styled: usize = 0
-    var cur = doc.following(top, top)
+    var cur = dom.shadowIncludingFollowing(doc, top, top)
     while cur |h| {
         if doc.node(h).kind == Kind.Element {
             _ = out.customs.remove(h.index)
@@ -1641,7 +1655,7 @@ fn restyleBelow(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: *mut text.B
             try notePseudos(out, h, pseudos)
             styled += 1
         }
-        cur = doc.following(h, top)
+        cur = dom.shadowIncludingFollowing(doc, h, top)
     }
     return styled
 }

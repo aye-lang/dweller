@@ -1,0 +1,17 @@
+import engine
+import std
+
+let IMAGE_LAYOUT_MS: u64 = 100
+
+fn imagesIn(r: *mut TabRenderer, p: *mut engine.Page) {
+    let now = std.time.monotonicMs()
+
+    if engine.decodesLanded(p, false) {
+        r.due = true
+    }
+
+    if now - r.images_at < IMAGE_LAYOUT_MS || !engine.imagesArrived(p) { return }
+
+    r.due = true
+    r.images_at = now
+}

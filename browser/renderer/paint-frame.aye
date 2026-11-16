@@ -12,6 +12,8 @@ fn paintFrame(r: *mut TabRenderer) !void {
     let p = r.page orelse return
     var k: usize = 0
 
+    imagesIn(r, p)
+
     if engine.takeScriptScroll(p) |y| {
         r.scroll_y = y
         r.due = true
@@ -21,7 +23,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
         k = 1
     }
 
-    if !r.due || !r.free[k] { return }
+    if !r.due || !r.free[k] || paintWaits(r, p) { return }
 
     let t_relayout = perf.start()
 

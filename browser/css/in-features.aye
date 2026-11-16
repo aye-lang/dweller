@@ -1,0 +1,20 @@
+import dom.Document
+import dom.NodeId
+import std.map.IntMap
+import std.text
+
+pub fn inFeatures(doc: *Document, el: NodeId, features: *IntMap(u64, bool)) bool {
+    let n = doc.node(el)
+
+    if features.contains(featureKey(1, n.name)) { return true }
+
+    for a in n.attrs {
+        if features.contains(featureKey(2, a.name)) { return true }
+
+        if text.eqlIgnoreCase(a.name, "id") && features.contains(featureKey(4, a.value)) { return true }
+
+        if text.eqlIgnoreCase(a.name, "class") && anyClassIn(a.value, features) { return true }
+    }
+
+    return false
+}

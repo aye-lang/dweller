@@ -1,0 +1,46 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-4/#serializing-color-values
+fn writeCalcChannels(toks: []Token, v: Value, out: *mut text.Builder) AllocError!bool {
+    var canon = text.Builder.init(out.alloc)
+    defer canon.deinit()
+
+    try writeValue(v, &mut canon)
+
+    var resolved = List(Token).init(out.alloc)
+    defer resolved.deinit()
+
+    try tokenize(out.alloc, canon.bytes(), &mut resolved)
+
+    let have = resolved.items()
+    var j: usize = 1
+    var i = skipWhitespace(toks, 1)
+
+    try writeToken(have[0], out)
+
+    while i < toks.len - 1 {
+        let end = skipComponent(toks, i)
+        let from = skipWhitespace(have, j)
+
+        if out.bytes()[out.len() - 1] != '(' {
+            try out.appendByte(' ')
+        }
+
+        if isMathFunction(toks[i]) {
+            _ = try writeMathAware(toks, i, out)
+        } else if from < have.len - 1 {
+            try writeToken(have[from], out)
+        } else {
+            try writeToken(toks[i], out)
+        }
+
+        j = skipComponent(have, from)
+        i = skipWhitespace(toks, end)
+    }
+
+    try out.appendByte(')')
+
+    return true
+}
