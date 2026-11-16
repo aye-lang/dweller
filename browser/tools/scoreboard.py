@@ -141,7 +141,7 @@ def flaky_lines():
 
 
 def cmd_summary(args):
-    sections = [["## Scoreboard, the CI cells", ""], conformance_lines(), site_mode_lines(), issue_lines(),
+    sections = [["## Scoreboard, the CI cells"], conformance_lines(), site_mode_lines(), issue_lines(),
                 ["### S1 no flaky test in 50 runs", "", *flaky_lines()],
                 ["### W2 and W7", "", "Not measured on CI: the site archives are on the owner's Mac (DV5)."]]
     print("\n\n".join("\n".join(s) for s in sections))

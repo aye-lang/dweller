@@ -36,3 +36,11 @@ SDL_VIDEODRIVER=dummy target/counter --font fixed --frames 8 \
 `--dump` prints the document, `--timing` the time to the first frame, the
 frame times and how many layouts were full or partial, and
 `--full-layout` turns the partial layout off (the test compares the two).
+
+An agent uses the app as it uses a page (`docs/agent-protocol.md`,
+"Native apps"): `target/counter --agent` answers `snapshot`, `click`,
+`type`, `press` and `scroll` as JSON lines on stdio.
+
+```
+printf '%s\n' '{"id":1,"cmd":"snapshot"}' '{"id":2,"cmd":"click","ref":"e2"}' | target/counter --agent
+```
