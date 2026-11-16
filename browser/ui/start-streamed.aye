@@ -1,0 +1,22 @@
+import net
+import std.mem.AllocError
+
+fn startStreamed(tp: *mut TabProcess, h: *mut HeldFetch) AllocError!bool {
+    let alloc = tp.url.alloc
+    var res = (try net.navigationHead(alloc, h.load)) orelse return false
+    defer res.deinit(alloc)
+    var final = h.href.bytes()
+
+    if res.url.len > 0 { final = res.url }
+
+    if !(try streamsHere(tp, &res, final)) {
+        h.whole = true
+
+        return false
+    }
+
+    try sendHead(tp, h.on, h.id, true, true, h.href.bytes(), &res)
+    h.streamed = true
+
+    return true
+}

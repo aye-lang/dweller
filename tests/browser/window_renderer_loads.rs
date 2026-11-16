@@ -123,3 +123,28 @@ fn window_renderer_loads_staged() {
     assert!(began.elapsed() < std::time::Duration::from_secs(20), "the script waited for the server's limit");
     assert_eq!(page_lines(&renderer), page_lines(&own));
 }
+
+/// Q2.16a: with `DWELLER_PROCESS=tab` the browser sends a navigation's
+/// body as it arrives and the renderer shows what it has: the server
+/// sends the rest of `browser/tests/net/parts.html` only once its first
+/// part was laid out (a background image asks). The window's own process
+/// waits for the whole document, so it is not compared.
+#[test]
+fn window_renderer_loads_parts() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/parts/net/parts.html?p", srv.base);
+    let began = std::time::Instant::now();
+    let renderer = login_window_with(&href, "frame", None, &[("DWELLER_PROCESS", "tab")]);
+    assert!(
+        renderer.contains("the rest arrived after the first part was shown") && renderer.contains("title Parts whole"),
+        "{renderer}"
+    );
+    assert!(began.elapsed() < std::time::Duration::from_secs(20), "the rest waited for the server's limit");
+}
