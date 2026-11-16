@@ -1,0 +1,22 @@
+import layout
+
+fn boxAt(t: *layout.Tree, i: usize, x: f64, y: f64) ?usize {
+    let kids = t.children(i)
+    var k = kids.len
+
+    while k > 0 {
+        k -= 1
+
+        if boxAt(t, kids[k], x, y) |hit| {
+            return hit
+        }
+    }
+
+    let b = t.bx(i)
+
+    if b.node != null && x >= b.ax && x < b.ax + b.w && y >= b.ay && y < b.ay + b.h {
+        return i
+    }
+
+    return null
+}

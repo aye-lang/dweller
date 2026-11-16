@@ -1,0 +1,32 @@
+import paint
+import sdl
+import std.mem.AllocError
+
+fn sizeCanvas(app: *mut App, w: *mut Window) AllocError!void {
+    var out_w: i32 = 0
+    var out_h: i32 = 0
+    var win_w: i32 = 0
+    var win_h: i32 = 0
+
+    sdl.SDL_GetWindowSize(w.window, &mut win_w, &mut win_h)
+
+    if sdl.SDL_GetRendererOutputSize(w.renderer, &mut out_w, &mut out_h) != 0 || out_w < 1 || win_w < 1 {
+        out_w = app.media.width as i32
+        out_h = app.media.height as i32
+        win_w = out_w
+    }
+
+    if w.canvas.width == out_w as usize && w.canvas.height == out_h as usize {
+        return
+    }
+
+    w.scale = out_w as f64 / win_w as f64
+    w.canvas.deinit()
+    w.canvas = try paint.Canvas.init(app.alloc, out_w as usize, out_h as usize)
+
+    if w.texture |t| {
+        sdl.SDL_DestroyTexture(t)
+    }
+
+    w.texture = sdl.SDL_CreateTexture(w.renderer, sdl.SDL_PIXELFORMAT_ABGR8888, sdl.SDL_TEXTUREACCESS_STREAMING, out_w, out_h)
+}

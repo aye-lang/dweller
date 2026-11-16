@@ -56,6 +56,45 @@ Gaps 49 to 56 were fixed or declined by 2026-10-14 (aye criterion O3).
 - **Hit by:** gpu (P11.2).
 - **Status:** open; not blocking (the workaround is ABI-exact).
 
+#### 58. No library boundary for the engine: a package on top of a package, and a module the program does not import
+
+- **Need:** a native app (V2, `examples/native/counter`) uses the
+  engine as a library: `dom`, `css`, `layout`, `paint`, `font` and the
+  native shell (`browser/shell`), without `html`, `js` or `engine`.
+- **What works:** a path dependency on the browser's directory
+  (`dweller = { path = "../../../browser" }`), then `import
+  dweller.shell` and `import dweller.dom`. The app's binary has only the
+  modules it reaches.
+- **What hurt:**
+  1. The dependency's root is a program (`import dweller` would be
+     `main.aye`), and every module of it is importable: the engine has no
+     public surface.
+  2. The shell is a library on top of the engine, but a dependency with
+     `[deps]` of its own is E0123, so it cannot be a package beside the
+     browser; it is a module inside `browser/`.
+  3. `aye test browser` makes every directory with `.aye` files a root.
+     A module the browser does not import (the shell) is then compiled
+     alone and its imports (`css`, `dom`) are looked up under its own
+     directory: E0081, and `aye test browser` fails.
+  4. Importing it from the root puts `ui` and `shell` in one program,
+     and two modules that declare the same C function over their own
+     `extern struct` for an opaque C type are E0096 (`fn(*mut
+     ui.SDL_Window)` and `fn(*mut shell.SDL_Window)`).
+- **Repro (3):** a directory `app/` with `main.aye`, `app/a/a.aye` and
+  `app/b/b.aye`, where `b.aye` has `import a` and nothing imports `b`:
+  `aye build app` works, `aye test app` fails with E0081 in `b`.
+- **Workaround:** `browser/shell_test.aye` (a root file) imports the
+  shell and tests it; `browser/sdl/` holds SDL's types, `ui/sdl.aye`
+  names them with aliases (`pub let SDL_Window = sdl.SDL_Window`).
+- **Proposed fix (aye):** dependencies of a path dependency (the lock of
+  the app holds them all, as `docs/decisions.md` (e) plans), so the
+  engine, the shell and an app are three packages; `aye test DIR`
+  compiles a directory nothing reaches with `DIR` as the base of its
+  imports (the E0081 message already names that base); a manifest line
+  that lists a package's public modules.
+- **Hit by:** shell (V2).
+- **Status:** open; not blocking (the workarounds are small).
+
 ## Declined by design
 
 #### 5. A local cannot start uninitialized; `@zeroed` makes only C structs

@@ -1,0 +1,20 @@
+import dom
+import dom.NodeId
+import layout
+
+fn rebuildableBox(app: *mut App, el: NodeId) ?usize {
+    let t = app.tree.?
+    var cur: ?NodeId = el
+
+    while cur |c| {
+        for i in 0..t.boxes.len() {
+            if dom.isSame(t.bx(i).node, c) && layout.canRebuild(t, i) {
+                return i
+            }
+        }
+
+        cur = app.doc.parent(c)
+    }
+
+    return null
+}

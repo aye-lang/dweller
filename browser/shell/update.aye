@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn update(app: *mut App) AllocError!void {
+    if app.tree != null && app.dirty.len() == 0 {
+        return
+    }
+
+    if app.tree == null || app.always_full || !(try relayoutDirty(app)) {
+        try layOut(app)
+    }
+
+    app.dirty.clear()
+    dropList(app)
+}
