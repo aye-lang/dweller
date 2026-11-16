@@ -1,0 +1,27 @@
+import dom
+import std.mem.AllocError
+import std.text
+
+fn writeSemParts(sem: *Sem, i: usize, out: *mut text.Builder) AllocError!void {
+    let n = sem.at(i)
+
+    try writeDescription(n, out)
+
+    if n.el != null && dom.isSame(sem.app.doc.controls.focus, n.el.?) {
+        try out.append(" [focused]")
+    }
+
+    if n.value.len > 0 {
+        try out.append(" value=")
+        try quoteSem(out, n.value)
+    }
+
+    if n.ref > 0 && isOffscreen(sem.app, n.el.?) {
+        try out.append(" [offscreen]")
+    }
+
+    if n.inline.len > 0 {
+        try out.append(": ")
+        try out.append(n.inline)
+    }
+}

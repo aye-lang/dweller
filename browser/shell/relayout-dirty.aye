@@ -11,14 +11,15 @@ fn relayoutDirty(app: *mut App) AllocError!bool {
         return false
     }
 
+    var roots = List(NodeId).init(app.alloc)
+    defer roots.deinit()
+
     var shallow = List(bool).init(app.alloc)
     defer shallow.deinit()
 
-    for _ in app.dirty.items() {
-        try shallow.append(false)
-    }
+    try restyleRoots(app, &mut roots, &mut shallow)
 
-    _ = try css.restyleSubtrees(&app.doc, &app.ua, &app.author, app.media, app.dirty.items(), shallow.items(), true, &mut app.styles)
+    _ = try css.restyleSubtrees(&app.doc, &app.ua, &app.author, app.media, roots.items(), shallow.items(), true, &mut app.styles)
 
     if app.styles.moved_many {
         return false

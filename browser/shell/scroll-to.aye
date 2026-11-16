@@ -1,0 +1,29 @@
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn scrollTo(app: *mut App, tmp: Allocator, y: f64, what: []u8) AllocError!Outcome {
+    try update(app)
+
+    var height = documentHeight(app)
+    var b = text.Builder.init(tmp)
+
+    if height < app.media.height {
+        height = app.media.height
+    }
+
+    app.scroll = y
+    clampScroll(app, height)
+    app.redraw = true
+
+    try b.append(what)
+    try b.append("; the viewport shows y ")
+    try b.appendInt(math.round(app.scroll) as i64)
+    try b.append(" to ")
+    try b.appendInt(math.round(app.scroll + app.media.height) as i64)
+    try b.append(" of ")
+    try b.appendInt(math.round(height) as i64)
+
+    return done(b.bytes())
+}

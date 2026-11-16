@@ -1,0 +1,19 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn clickNode(app: *mut App, target: NodeId) AllocError!void {
+    var cur: ?NodeId = target
+
+    try focus(app, focusable(app, target))
+
+    while cur |el| {
+        for h in app.handlers.items() {
+            if dom.same(h.node, el) {
+                return h.call(app, el)
+            }
+        }
+
+        cur = app.doc.parent(el)
+    }
+}

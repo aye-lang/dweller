@@ -1,0 +1,11 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+// spec: https://drafts.csswg.org/css-variables-2/#cycles
+fn visitFallback(alloc: Allocator, fallback: ?[]Token, level: ?*mut CustomLevel, depth: usize) AllocError!void {
+    let unused = fallback orelse return
+
+    if hasVar(unused) {
+        _ = try substituteVars(alloc, unused, level, depth + 1)
+    }
+}
