@@ -54,6 +54,8 @@ mod net;
 mod paint;
 #[path = "browser/perf.rs"]
 mod perf;
+#[path = "browser/permissions.rs"]
+mod permissions;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
 #[path = "browser/scripts.rs"]

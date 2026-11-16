@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+
+fn permissionClick(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    let bar = permissionBarOf(ui) orelse return false
+
+    if !inRect(bar.box, x, y) { return false }
+
+    if inRect(bar.allow, x, y) {
+        try answerPermissionAsk(ui, 0, net.PERMISSION_GRANTED)
+    } else if inRect(bar.block, x, y) {
+        try answerPermissionAsk(ui, 0, net.PERMISSION_DENIED)
+    }
+
+    return true
+}

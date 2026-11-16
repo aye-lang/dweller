@@ -27,6 +27,13 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. }, .FetchRemote { .. } => try landFetched(r, got.message)
+            .PermissionAnswer { id, state } => {
+                if state > 2 { return false }
+
+                try engine.answerPermission(id, state as u8)
+                r.landed = true
+            }
+
             .SocketNote { .. } => {
                 if !(try landSocketNote(r, got.message)) { return false }
             }

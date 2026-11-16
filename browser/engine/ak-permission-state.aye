@@ -1,0 +1,16 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+fn akPermissionState(it: *mut Interp, a: Args) JsError!Value {
+    let kind = try it.toNumber(it.arg(a, 0))
+
+    if !(kind >= 0.0 && kind < net.PERMISSION_KINDS as f64) {
+        return js.numVal(net.PERMISSION_DENIED as f64)
+    }
+
+    return js.numVal(net.permissionOf(permissionHref(scriptOf(it).page), kind as u8) as f64)
+}
