@@ -131,6 +131,7 @@ cookies are scoped by site.
 | `about:blank`, `about:srcdoc` | the creator's process (inherited origin) | the same |
 | `data:` | the creator's process (opaque origin, the creator as precursor); top-level `data:` from the web is blocked (Q3.11) | the same |
 | `blob:` | the site of the creator's origin | the same |
+| a frame's URL that redirects | the site of the URL after redirects (Q2.15a: the browser keeps a response that left the asking renderer's site, answers `fetch_remote{id}` (100), and commits it in a renderer of the final site) | the same |
 | sandboxed iframe without `allow-same-origin` | the parent's process in v1 | its own process on desktop since M127 |
 | the browser's pages (error, sad tab, interstitial) | drawn by the browser | an error-page process |
 

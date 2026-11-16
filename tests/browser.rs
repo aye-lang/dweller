@@ -74,6 +74,8 @@ mod window_renderer_oopif;
 mod window_renderer_oopif_input;
 #[path = "browser/window_renderer_oopif_proxy.rs"]
 mod window_renderer_oopif_proxy;
+#[path = "browser/window_renderer_oopif_site.rs"]
+mod window_renderer_oopif_site;
 #[path = "browser/window_renderer_scroll.rs"]
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
