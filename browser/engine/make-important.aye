@@ -1,0 +1,18 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-setproperty
+fn makeImportant(s: *mut Script, h: NodeId, prop: []u8) AllocError!void {
+    var v = text.Builder.init(s.alloc)
+    defer v.deinit()
+
+    try styleValue(styleAttrOf(s.active, h), prop, &mut v)
+
+    if text.trim(v.bytes()).len == 0 {
+        return
+    }
+
+    try v.append(" !important")
+    try putStyleDecl(s, h, prop, v.bytes())
+}

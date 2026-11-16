@@ -568,6 +568,8 @@ fn installDom(s: *mut Script) JsError!void {
     try accessor(it, s.style_proto, "cssText", styleCssText, styleSetCssText)
     try accessor(it, s.style_proto, "length", styleLength, null)
     try defMethod(it, s.style_proto, "getPropertyValue", 1, styleGetPropertyValue)
+    try defMethod(it, s.style_proto, "getPropertyPriority", 1, styleGetPropertyPriority)
+    try defMethod(it, s.style_proto, "item", 1, styleItem)
     try defMethod(it, s.style_proto, "setProperty", 2, styleSetProperty)
     try defMethod(it, s.style_proto, "removeProperty", 1, styleRemoveProperty)
 
@@ -1814,6 +1816,14 @@ fn styleSetProperty(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 1, v)
     }
     try setStyleDecl(scriptOf(it), h, b.bytes(), v.bytes())
+    let priority = try it.builder()
+    defer it.release(priority)
+    if !js.isNullish(it.arg(a, 2)) {
+        try argText(it, a, 2, priority)
+    }
+    if text.eqlIgnoreCase(priority.bytes(), "important") {
+        try makeImportant(scriptOf(it), h, b.bytes())
+    }
     try changedAt(it, h, "style")
     return Value.Undefined
 }
