@@ -1,13 +1,17 @@
 import ipc
+import std
 import std.mem.AllocError
 
 let MAX_STATE_LINES: usize = 65536
+let STATE_WAIT_MS: u64 = 5000
 
 fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
     let slot = ui.slots[ui.active] orelse return
     let tp = slot.process orelse return
 
-    if !tp.hello || tp.gone.len > 0 { return }
+    if !tp.hello || tp.gone.len > 0 || tp.hung { return }
+
+    let end = std.time.monotonicMs() + STATE_WAIT_MS
 
     try ipc.encode(&mut tp.outbox, 0, ipc.Message.AskState { with_text: with_text as u32 })
 
@@ -49,6 +53,8 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
 
             if !readableWithin(tp.fd, HELD_POLL_MS) { continue }
         }
+
+        if std.time.monotonicMs() >= end || !readableWithin(tp.fd, (end - std.time.monotonicMs()) as i32) { return }
 
         let n = read(tp.fd, buf[..].ptr, buf.len)
 

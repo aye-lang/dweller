@@ -659,7 +659,7 @@ pub struct Ui {
             if self.script_held {
                 try resumeScript(self)
             }
-            if self.dirty || self.repaint || frames > 0 {
+            if self.dirty || self.repaint || (frames > 0 && !scriptBehind(self)) {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
                 try self.draw()
@@ -1186,6 +1186,7 @@ pub struct Ui {
                     // The pointer's gesture is over (a held button is lost).
                     self.buttons = 0
                     try self.pointerEvent("pointercancel", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
+                    try cancelPointer(self)
                 }
             } else if we.event == SDL_WINDOWEVENT_MINIMIZED || we.event == SDL_WINDOWEVENT_HIDDEN {
                 self.hidden = windowGone(self.window, we.window)
