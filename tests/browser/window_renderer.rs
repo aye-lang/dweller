@@ -34,7 +34,8 @@ fn window_renderer_out_of_memory() {
 /// docs/process-model.md §2). The tab's title comes from the renderer,
 /// whose pid is not the window's; a renderer that is killed is noted for
 /// its tab (`gone crashed`); one that sends a malformed message is
-/// killed (`bad message:` on stderr). Without the flag no renderer runs.
+/// killed (`bad message:` on stderr). With `DWELLER_PROCESS=single` no
+/// renderer runs.
 #[test]
 fn window_renderer_lifecycle() {
     if !has_sdl() {
@@ -80,7 +81,7 @@ fn window_renderer_lifecycle() {
     assert_eq!(&r[2..], ["gone", "UnknownType"], "{state}");
     assert_eq!(err, format!("error: bad message: UnknownType {}\n", r[1]));
 
-    let (_, state, err) = run("", &[]);
+    let (_, state, err) = run("", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     assert!(!state.lines().any(|l| l.starts_with("renderer ")), "{state}");
 }
@@ -175,8 +176,8 @@ fn window_renderer_samesite() {
     assert_eq!(text(&out.stdout), "set\n", "{}", text(&out.stderr));
     let show = format!("{other}/samesite/show");
     let tab = [("DWELLER_PROCESS", "tab")];
-    for envs in [&[][..], &tab[..]] {
-        let (wait, then) = if envs.is_empty() { ("loaded ", " loaded") } else { ("", " renderer:input renderer:loaded") };
+    for envs in [&[IN_PROCESS][..], &tab[..]] {
+        let (wait, then) = if in_renderer(envs) { ("", " renderer:input renderer:loaded") } else { ("loaded ", " loaded") };
         for (what, from, click, want) in [
             ("cross-site link", &site, "click:80,65", "GET cookies: lax=1; dflt=1"),
             ("cross-site post", &site, "click:60,115", "POST cookies:"),
@@ -618,7 +619,7 @@ fn window_renderer_input() {
     for (what, page, events, caret) in cases {
         let (_, err) = run_page(page, &still, "renderer:loaded renderer:frame", &tab);
         assert!(err.is_empty(), "{err}");
-        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[]);
+        let (in_process, err) = run_page(page, &golden, &format!("loaded {events}"), &[IN_PROCESS]);
         assert!(err.is_empty(), "{err}");
         let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{err}");
@@ -690,7 +691,7 @@ fn window_renderer_focus() {
     for (what, events) in cases {
         let (_, err) = run(&still, "renderer:loaded renderer:frame", &tab);
         assert!(err.is_empty(), "{err}");
-        let (_, err) = run(&golden, &format!("loaded {events}"), &[]);
+        let (_, err) = run(&golden, &format!("loaded {events}"), &[IN_PROCESS]);
         assert!(err.is_empty(), "{what}: {err}");
         let (state, err) = run(&shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{what}: {err}");
@@ -703,7 +704,7 @@ fn window_renderer_focus() {
         );
     }
 
-    let (_, err) = run(&golden, "loaded click:90,102", &[]);
+    let (_, err) = run(&golden, "loaded click:90,102", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     let (state, err) = run(&shot, "renderer:loaded renderer:frame click:90,102 renderer:input window:blur renderer:next", &tab);
     assert!(err.is_empty(), "{err}");
