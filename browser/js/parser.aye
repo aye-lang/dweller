@@ -1685,6 +1685,9 @@ pub struct Parser {
             let plen = t.num as usize
             let pattern = try self.intern(all[..plen])
             let flags = try self.intern(all[plen..])
+            if !(try regexpLiteralValid(self.alloc, self.atoms, pattern, flags)) {
+                return self.fail("Invalid regular expression")
+            }
             return self.mk(Node.Regex { pattern: pattern, flags: flags }, start)
         }
         if k == Tok.Ident && self.isWord("async") && self.kindAt(1) == Tok.KwFunction && !self.tokAt(1).nl {

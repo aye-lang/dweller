@@ -4,8 +4,8 @@
 // flags). Supported: literals, `.`, classes with ranges and \d \w \s,
 // anchors, \b, groups (capturing, named, non-capturing), alternation,
 // greedy and lazy quantifiers ({n,m} too), backreferences, lookahead and
-// lookbehind, and \p{...} for a few Unicode properties (approximated).
-// Flags g i m s y (u is accepted). Positions are byte offsets in the
+// lookbehind, and \p{...} with the `u` flag (unicode-property-table.aye).
+// Flags g i m s y u. Positions are byte offsets in the
 // WTF-8 subject; the API converts them to UTF-16 indices.
 
 import std.list.List
@@ -106,6 +106,7 @@ struct RParser {
     // Open groups (a pattern nested deeper than MAX_NESTING is refused:
     // parsing and compiling recurse on the C stack).
     nesting: u32
+    unicode: bool = false
 
     fn node(self: *mut Self, n: RNode) AllocError!u32 {
         let id = self.prog.nodes.len() as u32
@@ -366,13 +367,11 @@ struct RParser {
     // After `\`: d D w W s S as a new set (its index), else NONE.
     fn escapeClass(self: *mut Self) SyntaxErr!u32 {
         let e = self.peek()
-        if (e == 'p' || e == 'P') && self.pos + 1 < self.p.len && self.p[self.pos + 1] == '{' {
+        if self.unicode && (e == 'p' || e == 'P') && self.pos + 1 < self.p.len && self.p[self.pos + 1] == '{' {
             self.pos += 1
             let pstart = self.prog.ranges.len() as u32
-            try self.propertyRanges(e == 'P')
-            let pid = self.prog.sets.len() as u32
-            try self.prog.sets.append(CSet { start: pstart, count: self.prog.ranges.len() as u32 - pstart })
-            return pid
+            try regexpPropertyRanges(self, e == 'P')
+            return regexpCanonicalSet(self.prog, pstart)
         }
         if e != 'd' && e != 'D' && e != 'w' && e != 'W' && e != 's' && e != 'S' {
             return NONE
@@ -380,50 +379,7 @@ struct RParser {
         self.pos += 1
         let start = self.prog.ranges.len() as u32
         try self.classRanges(e | 0x20, e < 'a')
-        let id = self.prog.sets.len() as u32
-        try self.prog.sets.append(CSet { start: start, count: self.prog.ranges.len() as u32 - start })
-        return id
-    }
-
-    // After `\p` or `\P`: `{Name}` (or `{Script=Name}`), adding the
-    // property's ranges (complemented for \P). The ranges approximate
-    // the Unicode tables: the main blocks of each property.
-    fn propertyRanges(self: *mut Self, neg: bool) SyntaxErr!void {
-        self.pos += 1
-        let start = self.pos
-        while self.more() && self.peek() != '}' {
-            self.pos += 1
-        }
-        if !self.more() {
-            return SyntaxErr.Syntax
-        }
-        var name = self.p[start..self.pos]
-        self.pos += 1
-        for i, c in name {
-            if c == '=' {
-                name = name[i + 1..]
-                break
-            }
-        }
-        var buf = @zeroed([64]u32)
-        let n = unicodeProperty(name, buf[..])
-        var i: usize = 0
-        if !neg {
-            while i < n {
-                try self.addRange(buf[i], buf[i + 1])
-                i += 2
-            }
-            return
-        }
-        var lo: u32 = 0
-        while i < n {
-            if buf[i] > lo {
-                try self.addRange(lo, buf[i] - 1)
-            }
-            lo = buf[i + 1] + 1
-            i += 2
-        }
-        try self.addRange(lo, 0x10FFFF)
+        return regexpCanonicalSet(self.prog, start)
     }
 
     // Adds the ranges of \d, \w or \s (complemented for \D \W \S).
@@ -572,9 +528,9 @@ struct RParser {
                     try self.classRanges(e | 0x20, e < 'a')
                     continue
                 }
-                if (e == 'p' || e == 'P') && self.pos + 1 < self.p.len && self.p[self.pos + 1] == '{' {
+                if self.unicode && (e == 'p' || e == 'P') && self.pos + 1 < self.p.len && self.p[self.pos + 1] == '{' {
                     self.pos += 1
-                    try self.propertyRanges(e == 'P')
+                    try regexpPropertyRanges(self, e == 'P')
                     continue
                 }
                 if e == 'b' {
@@ -609,8 +565,7 @@ struct RParser {
             return SyntaxErr.Syntax
         }
         self.pos += 1
-        let id = self.prog.sets.len() as u32
-        try self.prog.sets.append(CSet { start: start, count: self.prog.ranges.len() as u32 - start })
+        let id = try regexpCanonicalSet(self.prog, start)
         return self.node(RNode.Set { cls: id, neg: neg })
     }
 }
@@ -724,56 +679,7 @@ fn compileRegex(it: *mut Interp, pattern: u32, flags: u32) JsError!?u32 {
     if it.regex_cache.get(key) |id| {
         return id
     }
-    let prog = try it.alloc.create(RegexProg {
-        alloc: it.alloc,
-        insts: List(RInst).init(it.alloc),
-        ranges: List(CRange).init(it.alloc),
-        sets: List(CSet).init(it.alloc),
-        nodes: List(RNode).init(it.alloc),
-        lists: List(u32).init(it.alloc),
-        names: List(u32).init(it.alloc),
-        ngroups: 0,
-        nregs: 0,
-        global: false,
-        icase: false,
-        multiline: false,
-        dotall: false,
-        sticky: false,
-        source: pattern,
-        flags: flags,
-    })
-    var ok = true
-    for c in it.heap.atoms.name(flags) {
-        if c == 'g' {
-            prog.global = true
-        } else if c == 'i' {
-            prog.icase = true
-        } else if c == 'm' {
-            prog.multiline = true
-        } else if c == 's' {
-            prog.dotall = true
-        } else if c == 'y' {
-            prog.sticky = true
-        } else if c != 'u' && c != 'd' {
-            ok = false
-        }
-    }
-    var rp = RParser { prog: prog, atoms: &mut it.heap.atoms, p: it.heap.atoms.name(pattern), pos: 0, tmp: List(u32).init(it.alloc), nesting: 0 }
-    defer rp.tmp.deinit()
-    if ok {
-        let root = rp.alt() catch |e| NONE
-        if root == NONE || rp.pos != rp.p.len {
-            ok = false
-        } else {
-            try emit(prog, RInst.Save { n: 0 })
-            try compileNode(prog, root)
-            try emit(prog, RInst.Save { n: 1 })
-            try emit(prog, RInst.Match)
-        }
-    }
-    if !ok {
-        prog.deinit()
-        it.alloc.destroy(prog)
+    let prog = try regexpParse(it.alloc, &mut it.heap.atoms, pattern, flags) orelse {
         return null
     }
     let id = it.regexes.len() as u32
@@ -816,22 +722,13 @@ struct Matcher {
 
     fn inSet(self: *Self, cls: u32, c: u32) bool {
         let set = self.prog.sets.items()[cls]
-        for k in 0..set.count {
-            let r = self.prog.ranges.items()[(set.start + k) as usize]
-            if c >= r.lo && c <= r.hi {
-                return true
-            }
-            if self.prog.icase {
-                let f = fold(c)
-                if f >= r.lo && f <= r.hi {
-                    return true
-                }
-                if c >= 'a' && c <= 'z' && c - 32 >= r.lo && c - 32 <= r.hi {
-                    return true
-                }
-            }
+        if regexpSetHas(self.prog, set, c) {
+            return true
         }
-        return false
+        if !self.prog.icase {
+            return false
+        }
+        return regexpSetHas(self.prog, set, fold(c)) || (c >= 'a' && c <= 'z' && regexpSetHas(self.prog, set, c - 32))
     }
 
     fn wordAt(self: *Self, i: i64) bool {
@@ -1498,88 +1395,3 @@ pub fn regexpSplit(it: *mut Interp, s: u32, re: Value, limitV: Value) JsError!Va
     return it.pop()
 }
 
-// The ranges (lo, hi pairs, ascending) of the Unicode property `name`
-// into out; returns how many numbers it wrote. Unknown names have none.
-fn unicodeProperty(name: []u8, out: []mut u32) usize {
-    var r = []u32{}
-    let letters = [_]u32{
-        'A', 'Z', 'a', 'z', 0xAA, 0xAA, 0xB5, 0xB5, 0xBA, 0xBA, 0xC0, 0xD6, 0xD8, 0xF6,
-        0xF8, 0x2C1, 0x370, 0x3FF, 0x400, 0x52F, 0x531, 0x587, 0x5D0, 0x5EA, 0x620, 0x64A,
-        0x671, 0x6D3, 0x904, 0x939, 0xE01, 0xE30, 0x10A0, 0x10FF, 0x1100, 0x11FF,
-        0x1E00, 0x1FFF, 0x3041, 0x30FF, 0x3400, 0x4DBF, 0x4E00, 0x9FFF, 0xAC00, 0xD7A3,
-        0xF900, 0xFAFF, 0xFF21, 0xFF3A, 0xFF41, 0xFF5A, 0x20000, 0x2FFFF,
-    }
-    let upper = [_]u32{'A', 'Z', 0xC0, 0xD6, 0xD8, 0xDE, 0x391, 0x3A9, 0x410, 0x42F}
-    let lower = [_]u32{'a', 'z', 0xDF, 0xF6, 0xF8, 0xFF, 0x3B1, 0x3C9, 0x430, 0x44F}
-    let digits = [_]u32{'0', '9', 0x660, 0x669, 0x6F0, 0x6F9, 0x966, 0x96F, 0xFF10, 0xFF19}
-    let numbers = [_]u32{'0', '9', 0xB2, 0xB3, 0xB9, 0xB9, 0xBC, 0xBE, 0x660, 0x669, 0x6F0, 0x6F9, 0x966, 0x96F, 0x2150, 0x218B, 0x2460, 0x249B, 0xFF10, 0xFF19}
-    let punct = [_]u32{0x21, 0x23, 0x25, 0x2A, 0x2C, 0x2F, 0x3A, 0x3B, 0x3F, 0x40, 0x5B, 0x5D, 0x5F, 0x5F, 0x7B, 0x7B, 0x7D, 0x7D, 0xA1, 0xA1, 0xA7, 0xA7, 0xAB, 0xAB, 0xB6, 0xB7, 0xBB, 0xBB, 0xBF, 0xBF, 0x2010, 0x2027, 0x2030, 0x205E, 0x3001, 0x3003, 0x3008, 0x3011}
-    let symbols = [_]u32{0x24, 0x24, 0x2B, 0x2B, 0x3C, 0x3E, 0x5E, 0x5E, 0x60, 0x60, 0x7C, 0x7C, 0x7E, 0x7E, 0xA2, 0xA6, 0xA8, 0xA9, 0xAC, 0xAC, 0xAE, 0xB1, 0xB4, 0xB4, 0xD7, 0xD7, 0xF7, 0xF7, 0x20A0, 0x20CF, 0x2100, 0x214F, 0x2190, 0x2BFF, 0x1F300, 0x1FAFF}
-    let spaces = [_]u32{0x09, 0x0D, 0x20, 0x20, 0x85, 0x85, 0xA0, 0xA0, 0x1680, 0x1680, 0x2000, 0x200A, 0x2028, 0x2029, 0x202F, 0x202F, 0x205F, 0x205F, 0x3000, 0x3000}
-    let emoji = [_]u32{0x23, 0x23, 0x2A, 0x2A, 0x30, 0x39, 0xA9, 0xA9, 0xAE, 0xAE, 0x203C, 0x203C, 0x2049, 0x2049, 0x2122, 0x2122, 0x2139, 0x2139, 0x2194, 0x21AA, 0x231A, 0x23FF, 0x24C2, 0x24C2, 0x25AA, 0x27BF, 0x2934, 0x2935, 0x2B05, 0x2B55, 0x3030, 0x3030, 0x303D, 0x303D, 0x3297, 0x3299, 0x1F000, 0x1FAFF}
-    let pictographic = [_]u32{0xA9, 0xA9, 0xAE, 0xAE, 0x203C, 0x203C, 0x2049, 0x2049, 0x2122, 0x2122, 0x2139, 0x2139, 0x2194, 0x21AA, 0x231A, 0x23FF, 0x24C2, 0x24C2, 0x25AA, 0x27BF, 0x2934, 0x2935, 0x2B05, 0x2B55, 0x3030, 0x3030, 0x303D, 0x303D, 0x3297, 0x3299, 0x1F000, 0x1FAFF}
-    let latin = [_]u32{'A', 'Z', 'a', 'z', 0xAA, 0xAA, 0xBA, 0xBA, 0xC0, 0xD6, 0xD8, 0xF6, 0xF8, 0x24F, 0x1E00, 0x1EFF}
-    let greek = [_]u32{0x370, 0x3FF, 0x1F00, 0x1FFF}
-    let cyrillic = [_]u32{0x400, 0x52F}
-    let han = [_]u32{0x2E80, 0x2FDF, 0x3005, 0x3007, 0x3021, 0x3029, 0x3400, 0x4DBF, 0x4E00, 0x9FFF, 0xF900, 0xFAFF, 0x20000, 0x2FFFF}
-    let hiragana = [_]u32{0x3041, 0x309F}
-    let katakana = [_]u32{0x30A0, 0x30FF, 0x31F0, 0x31FF}
-    let hangul = [_]u32{0x1100, 0x11FF, 0x3130, 0x318F, 0xAC00, 0xD7AF}
-    let arabic = [_]u32{0x600, 0x6FF, 0x750, 0x77F}
-    let hebrew = [_]u32{0x591, 0x5F4}
-    if eqAny(name, "L", "Letter", "Alphabetic", "Alpha") {
-        r = letters[..]
-    } else if eqAny(name, "Lu", "Uppercase_Letter", "Uppercase", "Upper") {
-        r = upper[..]
-    } else if eqAny(name, "Ll", "Lowercase_Letter", "Lowercase", "Lower") {
-        r = lower[..]
-    } else if eqAny(name, "Nd", "Decimal_Number", "digit", "Nd") {
-        r = digits[..]
-    } else if eqAny(name, "N", "Number", "Nl", "No") {
-        r = numbers[..]
-    } else if eqAny(name, "P", "Punctuation", "punct", "Po") {
-        r = punct[..]
-    } else if eqAny(name, "S", "Symbol", "Sm", "So") {
-        r = symbols[..]
-    } else if eqAny(name, "Z", "Separator", "White_Space", "space") || eqAny(name, "Zs", "Space_Separator", "WSpace", "Zs") {
-        r = spaces[..]
-    } else if eqAny(name, "Emoji", "Emoji_Presentation", "EPres", "Emoji_Modifier_Base") {
-        r = emoji[..]
-    } else if eqAny(name, "Extended_Pictographic", "ExtPict", "Extended_Pictographic", "ExtPict") {
-        r = pictographic[..]
-    } else if eqAny(name, "Latin", "Latn", "Latin", "Latn") {
-        r = latin[..]
-    } else if eqAny(name, "Greek", "Grek", "Greek", "Grek") {
-        r = greek[..]
-    } else if eqAny(name, "Cyrillic", "Cyrl", "Cyrillic", "Cyrl") {
-        r = cyrillic[..]
-    } else if eqAny(name, "Han", "Hani", "Ideographic", "Ideo") {
-        r = han[..]
-    } else if eqAny(name, "Hiragana", "Hira", "Hiragana", "Hira") {
-        r = hiragana[..]
-    } else if eqAny(name, "Katakana", "Kana", "Katakana", "Kana") {
-        r = katakana[..]
-    } else if eqAny(name, "Hangul", "Hang", "Hangul", "Hang") {
-        r = hangul[..]
-    } else if eqAny(name, "Arabic", "Arab", "Arabic", "Arab") {
-        r = arabic[..]
-    } else if eqAny(name, "Hebrew", "Hebr", "Hebrew", "Hebr") {
-        r = hebrew[..]
-    } else if eqAny(name, "Any", "Assigned", "Any", "Assigned") {
-        out[0] = 0
-        out[1] = 0x10FFFF
-        return 2
-    } else if eqAny(name, "ASCII", "ASCII", "ASCII", "ASCII") {
-        out[0] = 0
-        out[1] = 0x7F
-        return 2
-    }
-    for i, v in r {
-        out[i] = v
-    }
-    return r.len
-}
-
-fn eqAny(s: []u8, a: []u8, b: []u8, c: []u8, d: []u8) bool {
-    return text.eql(s, a) || text.eql(s, b) || text.eql(s, c) || text.eql(s, d)
-}
