@@ -128,7 +128,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | base | DV2b | DV1 is counted over its next landings |
 | proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
-| perf | Q4.25a, Q4.25c | Q4.25b, Q4.25d, Q4.25e first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
+| perf | Q4.25a, Q4.25c | Q4.25b, Q4.25d, Q4.25e first of the kept Q4 rows (react's click), then Q6.3 to  |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
 
 ## Decisions (2026-11-04)
@@ -345,15 +345,13 @@ states the W7 sites it moves.
 | Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
 | Q4.25e | The window scrolls from the renderer's last frame while the renderer is busy (the texture offset of P4.36c) | the wheel-to-frame p95 of bbc with the flag is under 33 ms while a renderer task runs | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` |
-| Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.6 | Why `relayoutDirty` refuses (mistral: 1301 times): fix the exits | the mistral refusals fall under 10 | `core/layout/layout_object.cc` (`MarkContainerChainForLayout`) |
 | Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
-| Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
 | Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids (measured by Q4.16a, #303: mistral is natives and forced restyle, bbc is calls and inline-cache misses; the ranked cards Q4.16b–l are in its card) | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5, Q4.2, Q4.8.
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -414,11 +412,10 @@ check`. Chromium references come from the module map of
 | Q6.4 | `css/box-sizing` (51.5, 70) |
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
-| Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.

@@ -212,6 +212,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
+| Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
+| Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -228,6 +230,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.6 | `css/cascade-variables` (56.1, 75) |
 | Q6.7 | `css/values-color` (57.9, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |
+| Q6.10 | `html/semantics/forms` (54.3, 60) |
 
 ## Q7: acceptance and release (lane sites)
 
