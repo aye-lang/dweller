@@ -1,0 +1,24 @@
+// spec: https://drafts.csswg.org/css-cascade-5/#rollback
+fn trackRollback(c: *mut Computer, d: Decl, level: u8, spec: u64) {
+    let p = d.prop
+    let offered = Win { set: true, level: level, spec: spec, d: d }
+    let w = c.wins[p]
+
+    if level == L_UA && winBeats(level, spec, c.under[NPROPS + p]) {
+        c.under[NPROPS + p] = offered
+    }
+
+    if !w.set {
+        return
+    }
+
+    if winGroup(level, spec) > winGroup(w.level, w.spec) && !revertsLayer(w.d) {
+        c.under[p] = w
+    } else if winGroup(level, spec) < winGroup(w.level, w.spec) && !revertsLayer(d) && winBeats(level, spec, c.under[p]) {
+        c.under[p] = offered
+    }
+}
+
+fn revertsLayer(d: Decl) bool {
+    return d.reverts && d.raw.len == 0 && revertWord(d.value) == REVERT_LAYER
+}

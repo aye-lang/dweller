@@ -48,6 +48,11 @@ browser/
                   JSON-lines and MCP stdio servers, a window's agents
   ui/             SDL2 window, chrome (address bar, tabs), input, the
                   agent socket (`--agent-socket`, `connect`), Spaces
+  sdl/            SDL2's types, shared by `ui/` and `shell/`
+  shell/          a window on the engine for native apps: a document
+                  built from code, style, layout, paint and input,
+                  without `html/`, `js/` or `engine/`
+                  (`examples/native/counter`)
   perf/           `DWELLER_TIMING` phase records; local telemetry
   fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML, CSS, URL, JS)
   tests/          fixtures (HTML/CSS/JS) and golden outputs
@@ -65,7 +70,7 @@ file").
 
 | Layer | Modules |
 |---|---|
-| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf` |
+| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf`, `sdl`, `shell` |
 | render core | `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `url`, `dom` |
 | front end | `html`, `js`, `wasm`, `engine`, `agent` |
 

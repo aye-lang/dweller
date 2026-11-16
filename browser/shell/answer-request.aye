@@ -1,0 +1,34 @@
+import std.json
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn answerRequest(app: *mut App, tmp: Allocator, request: *json.Value, out: *mut text.Builder) AllocError!void {
+    try out.append("{\"id\":")
+    try writeRequestId(request, out)
+
+    let cmd = stringArg(request, "cmd") orelse return writeFailure(out, "missing \"cmd\"")
+
+    if text.eql(cmd, "snapshot") {
+        try writePage(app, out)
+
+        return jsonField(out, "snapshot", try snapshot(app, tmp))
+    }
+
+    let before = try snapshot(app, tmp)
+    let outcome = try act(app, tmp, cmd, request)
+
+    if !outcome.ok {
+        return writeFailure(out, outcome.message)
+    }
+
+    try out.append(",\"ok\":true")
+    try jsonField(out, "result", outcome.message)
+    try writePageFields(app, out)
+
+    let diff = try diffLines(tmp, before, try snapshot(app, tmp))
+
+    if diff.len > 0 {
+        try jsonField(out, "diff", diff)
+    }
+}

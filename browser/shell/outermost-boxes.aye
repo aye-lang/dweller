@@ -1,0 +1,32 @@
+import std.list.List
+import std.mem.AllocError
+
+fn outermostBoxes(app: *mut App, out: *mut List(usize)) AllocError!bool {
+    let t = app.tree.?
+    var found = List(usize).init(app.alloc)
+    defer found.deinit()
+
+    for el in app.dirty.items() {
+        let b = rebuildableBox(app, el) orelse return false
+
+        if !holds(found.items(), b) {
+            try found.append(b)
+        }
+    }
+
+    for b in found.items() {
+        var under = false
+        var up = t.bx(b).parent
+
+        while up |u| {
+            under = under || holds(found.items(), u)
+            up = t.bx(u).parent
+        }
+
+        if !under {
+            try out.append(b)
+        }
+    }
+
+    return true
+}

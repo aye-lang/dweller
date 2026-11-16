@@ -1,0 +1,24 @@
+import std.text
+
+test "the site of a URL: scheme and registrable domain, and a blob: URL's inner site" {
+    var site = text.Builder.init(@testAllocator())
+    defer site.deinit()
+
+    try writeSite("https://www.a.example:8443/page", &mut site)
+    @expectEqual("https://a.example", site.bytes())
+
+    try writeSite("blob:https://www.a.example:8443/0b0e7d2a-5c1f", &mut site)
+    @expectEqual("https://a.example", site.bytes())
+
+    try writeSite("BLOB:http://127.0.0.1:8000/0b0e7d2a-5c1f", &mut site)
+    @expectEqual("http://127.0.0.1", site.bytes())
+
+    try writeSite("blob:null/0b0e7d2a-5c1f", &mut site)
+    @expectEqual("", site.bytes())
+
+    try writeSite("data:text/html,x", &mut site)
+    @expectEqual("", site.bytes())
+
+    try writeSite("file:///tmp/a.html", &mut site)
+    @expectEqual("file:", site.bytes())
+}

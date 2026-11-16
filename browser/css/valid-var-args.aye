@@ -1,0 +1,21 @@
+// spec: https://drafts.csswg.org/css-values-5/#component-function-commas
+fn validVarArgs(args: []Token) bool {
+    let start = skipWhitespace(args, 0)
+    var end = start
+
+    while end < args.len && args[end].kind != Tok.Comma {
+        end = skipComponent(args, end)
+    }
+
+    let name = args[start..trimEnd(args, start, end)]
+
+    if name.len == 0 {
+        return false
+    }
+
+    if name[0].kind == Tok.LBrace {
+        return blockEnd(name, 0) == name.len - 1 && skipWhitespace(name, 1) < name.len - 1
+    }
+
+    return !hasTopBrace(name)
+}

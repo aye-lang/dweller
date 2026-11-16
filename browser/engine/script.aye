@@ -694,10 +694,13 @@ fn setUp(s: *mut Script) JsError!void {
     }
     try s.it.runScript(ANIMATION_VALUES_PRELUDE)
     try s.it.runScript(CSS_ANIMATIONS_PRELUDE)
+    try s.it.runScript(CSSOM_SYNTAX_PRELUDE)
+    try s.it.runScript(CSSOM_RULES_PRELUDE)
     try s.it.runScript(REFLECTION_TABLE_PRELUDE)
     try s.it.runScript(REFLECTION_PRELUDE)
     try s.it.runScript(LAZY_IMAGES_PRELUDE)
     try s.it.runScript(PRELUDE)
+    try s.it.runScript(WEBSOCKET_PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
     try s.it.runScript(UI_EVENTS_PRELUDE)
@@ -752,6 +755,7 @@ fn setUp(s: *mut Script) JsError!void {
 /// Frees the script of a page (before its document).
 pub fn destroyScript(s: *mut Script) {
     stopWorkers(s)
+    stopPageSockets(s)
     dropIdbClient(s)
     s.it.host = null
     if s.wasm_on {
@@ -1731,10 +1735,10 @@ fn nextTimer(p: *mut Page, limit: f64) ?NextTimer {
 /// When there is none, the due FinalizationRegistry callbacks run
 /// instead; false when there were none either.
 pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
-    if try waitWorkers(p, false) {
+    if try waitWorkers(p, false) || try waitSockets(p, false) {
         return true
     }
-    let n = nextTimer(p, deadline - pageClock(p)) orelse return try runCleanups(p) || try waitWorkers(p, true)
+    let n = nextTimer(p, deadline - pageClock(p)) orelse return try runCleanups(p) || try waitWorkers(p, true) || try waitSockets(p, true)
     try runTimer(n.script, n.index)
     try afterTask(n.script)
     if !n.script.real {
@@ -1862,7 +1866,7 @@ pub fn msUntilNextTimer(p: *mut Page) ?f64 {
         }
     }
     if p.script |s| {
-        wait = workerWait(s, wait)
+        wait = socketWait(s, workerWait(s, wait))
         // A playing AudioContext renders ahead of its device each turn.
         if s.audio_owner != 0 && audio.playing(s.audio_owner) {
             if wait |w| {

@@ -1,0 +1,18 @@
+import std.json
+import std.mem.AllocError
+import std.text
+
+fn jsonField(out: *mut text.Builder, key: []u8, value: []u8) AllocError!void {
+    let v = json.Value.String { value: value }
+
+    try out.append(",\"")
+    try out.append(key)
+    try out.append("\":")
+    try json.write(out, &v)
+}
+
+fn stringArg(request: *json.Value, key: []u8) ?[]u8 {
+    let v = request.get(key) orelse return null
+
+    return v.asString()
+}

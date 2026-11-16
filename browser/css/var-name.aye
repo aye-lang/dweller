@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-variables-2/#replace-a-var-function
+fn varName(alloc: Allocator, arg: []Token, level: ?*mut CustomLevel, depth: usize) AllocError!?[]u8 {
+    var name = trimmedTokens(arg)
+
+    if hasVar(name) {
+        name = trimmedTokens((try substituteVars(alloc, name, level, depth + 1)) orelse return null)
+    }
+
+    if name.len > 1 && name[0].kind == Tok.LBrace && blockEnd(name, 0) == name.len - 1 {
+        name = trimmedTokens(name[1..name.len - 1])
+    }
+
+    if name.len != 1 || name[0].kind != Tok.Ident || !text.startsWith(name[0].text, "--") {
+        return null
+    }
+
+    return name[0].text
+}

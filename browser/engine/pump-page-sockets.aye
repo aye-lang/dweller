@@ -1,0 +1,30 @@
+import net
+import std.mem.AllocError
+
+fn pumpPageSockets(s: *mut Script) AllocError!bool {
+    let all = page_sockets orelse return false
+    var queued = false
+    var i: usize = 0
+
+    while i < all.len() {
+        let k = all.items()[i]
+
+        i += 1
+
+        if k.owner != s {
+            continue
+        }
+
+        while net.socketNext(k.id) |note| {
+            try queueSocketTask(s, k, note)
+            queued = true
+        }
+
+        if !net.socketAlive(k.id) {
+            i -= 1
+            closePageSocket(s, i)
+        }
+    }
+
+    return queued
+}

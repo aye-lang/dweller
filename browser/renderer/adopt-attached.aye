@@ -1,0 +1,21 @@
+import ipc
+import std
+import std.list.List
+
+// chromium: content/browser/renderer_host/render_frame_host_impl.cc (CreateNewWindow: a popup that keeps its opener is created in the opener's process)
+fn adoptAttached(tabs: *mut List(*mut TabRenderer), r: *mut TabRenderer) !void {
+    while r.attaching.pop() |a| {
+        if !attachable(tabs, a.context) {
+            close(a.fd)
+
+            continue
+        }
+
+        let conn = std.fs.File { fd: a.fd }
+        let t = try newTabRenderer(r.alloc, conn, r.measure, r.system, r.blink)
+
+        t.context = a.context
+        try tabs.append(t)
+        try send(t.alloc, conn, 0, ipc.Message.Hello { version: ipc.VERSION, pid: getpid() as u32 })
+    }
+}

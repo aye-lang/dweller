@@ -1,0 +1,32 @@
+import css
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn appendCanonicalDecl(alloc: Allocator, d: StyleDecl, out: *mut text.Builder) AllocError!void {
+    var name = text.Builder.init(alloc)
+    defer name.deinit()
+
+    try appendPropertyName(d.name, &mut name)
+
+    var canon = text.Builder.init(alloc)
+    defer canon.deinit()
+
+    if !css.knownProperty(name.bytes()) || !(try css.specifiedValue(alloc, name.bytes(), d.value, &mut canon)) {
+        return
+    }
+
+    if out.len() > 0 {
+        try out.appendByte(' ')
+    }
+
+    try out.append(name.bytes())
+    try out.append(": ")
+    try out.append(text.trim(canon.bytes()))
+
+    if d.important {
+        try out.append(" !important")
+    }
+
+    try out.appendByte(';')
+}

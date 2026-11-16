@@ -63,6 +63,10 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "fetch", 1, akFetch)
     try defMethod(it, o, "fetchStart", 7, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
+    try defMethod(it, o, "socketOpen", 3, akSocketOpen)
+    try defMethod(it, o, "socketSend", 3, akSocketSend)
+    try defMethod(it, o, "socketClose", 3, akSocketClose)
+    try defMethod(it, o, "socketBuffered", 1, akSocketBuffered)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
@@ -84,6 +88,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "supports", 1, akSupports)
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
     try defMethod(it, o, "selectorText", 1, akSelectorText)
+    try defMethod(it, o, "declarationsText", 1, akDeclarationsText)
     try defMethod(it, o, "styleBlocked", 1, akStyleBlocked)
     try defMethod(it, o, "linkLoad", 2, akLinkLoad)
     try defMethod(it, o, "linkStart", 1, akLinkStart)
@@ -814,6 +819,15 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     defer it.release(b)
     if one {
         try argText(it, a, 1, b)
+
+        if text.startsWith(b.bytes(), "--") {
+            let custom = try it.builder()
+            defer it.release(custom)
+
+            try computedCustom(s, h, b.bytes(), custom)
+
+            return it.newString(custom.bytes())
+        }
 
         if text.eql(b.bytes(), "outline") {
             b.clear()

@@ -1,0 +1,18 @@
+import std
+import std.text
+
+fn nextStyleDecl(decls: []u8, pos: *mut usize) ?StyleDecl {
+    while pos.* < decls.len {
+        let start = pos.*
+        let end = declEnd(decls, start)
+        let d = decls[start..end]
+
+        pos.* = end + 1
+
+        let colon = std.mem.indexOf(d, ':') orelse continue
+
+        return splitImportant(text.trim(d[..colon]), text.trim(d[colon + 1..]))
+    }
+
+    return null
+}

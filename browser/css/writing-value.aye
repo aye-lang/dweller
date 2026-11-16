@@ -1,0 +1,26 @@
+// spec: https://drafts.csswg.org/css-writing-modes-4/#block-flow
+fn writingValue(prop: usize, comps: []Comp) ?Value {
+    if prop == TEXT_COMBINE_UPRIGHT {
+        return textCombineValue(comps)
+    }
+
+    if comps.len != 1 {
+        return null
+    }
+
+    let word = identIn(comps[0], "lr lr-tb rl rl-tb tb tb-rl sideways-right") orelse return single(PROPERTIES[prop], comps[0])
+
+    if prop == TEXT_ORIENTATION {
+        return legacyKeyword(word, "sideways-right", "sideways")
+    }
+
+    return legacyKeyword(word, "tb tb-rl", "vertical-rl") orelse legacyKeyword(word, "lr lr-tb rl rl-tb", "horizontal-tb")
+}
+
+fn legacyKeyword(word: []u8, legacy: []u8, now: []u8) ?Value {
+    if inList(word, legacy) == null {
+        return null
+    }
+
+    return Value.Keyword { k: now }
+}

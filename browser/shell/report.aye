@@ -1,0 +1,31 @@
+import std
+import std.text
+
+fn report(app: *mut App, w: *mut Window, o: Options) i32 {
+    if o.save.len > 0 {
+        savePng(app, w, o.save) catch |e| {
+            std.log.err("cannot write {}", o.save)
+
+            return 1
+        }
+    }
+
+    var b = text.Builder.init(app.alloc)
+    defer b.deinit()
+
+    if o.dump {
+        dumpTree(app, app.doc.root, 0, &mut b) catch |e| {
+            return 1
+        }
+    }
+
+    if o.timing {
+        writeTiming(app, w, &mut b) catch |e| {
+            return 1
+        }
+    }
+
+    @print(b.bytes())
+
+    return 0
+}
