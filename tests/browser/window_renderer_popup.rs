@@ -8,7 +8,7 @@ fn popup_window(base: &str, events: &str) -> String {
         .current_dir(root())
         .env("DWELLER_PROCESS", "tab")
         .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--events", events])
         .output()
         .unwrap();
     assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
