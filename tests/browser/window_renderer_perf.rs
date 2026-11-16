@@ -36,3 +36,40 @@ fn window_renderer_perf_records() {
     let tasks = labels("r_task");
     assert!(!pid.is_empty() && tasks.len() >= 3 && tasks.iter().all(|l| *l == pid), "pid {pid:?}, {} tasks", tasks.len());
 }
+
+/// Q4.25d: with `DWELLER_PROCESS=tab` the scripts of a load are tasks of
+/// the renderer's loop and an input is served between them: a wheel sent
+/// once the page's first frame is shown (`browser/tests/perf/staged_scripts.html`,
+/// eight inline scripts of 100 ms) is acked while scripts are still to
+/// run (at least 3 `scripts` records follow its `input_to_frame`), and no
+/// `scripts` record is as long as the eight together.
+#[test]
+fn window_renderer_perf_input_between_scripts() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TIMING", "1")
+        .arg(format!("{}/perf/staged_scripts.html", srv.base))
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000", "--until-idle", "--text"])
+        .args(["--events", "renderer:frame move:200,150 wheel:-1 renderer:input renderer:loaded frame"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).contains("ran: external 0 1 2 3 4 5 6 7"), "{}", text(&out.stdout));
+    let err = text(&out.stderr);
+    let lines: Vec<&str> = err.lines().filter(|l| l.starts_with("info: DWELLER_TIMING\tscripts\t") || l.starts_with("info: DWELLER_TIMING\tinput_to_frame\t")).collect();
+    let acked = lines.iter().position(|l| l.contains("\tinput_to_frame\t")).expect("no input_to_frame record");
+    let after = lines.len() - acked - 1;
+    let longest = lines.iter().filter(|l| l.contains("\tscripts\t")).filter_map(|l| l.split('\t').nth(2)?.parse::<u64>().ok()).max().unwrap_or(0) / 1_000_000;
+    assert!(after >= 3, "{after} scripts records after the input's ack:\n{}", lines.join("\n"));
+    assert!(longest < 600, "one scripts task of {longest} ms");
+    println!("{after} scripts records after the ack, longest {longest} ms");
+}
