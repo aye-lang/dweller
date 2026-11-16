@@ -98,3 +98,28 @@ fn window_renderer_loads_slow_navigation() {
     assert!(longest < 500 && loops.len() >= 20, "longest iteration {longest} ms of {}:\n{got}", loops.len());
     println!("longest iteration {longest} ms, {} iterations in {took} ms", loops.len());
 }
+
+/// Q2.16a: with `DWELLER_PROCESS=tab` the renderer lays its page out and
+/// shows it before its scripts ran, as the window's own process does:
+/// the server holds the script of `browser/tests/net/staged.html` until
+/// the first layout asks for a background image.
+#[test]
+fn window_renderer_loads_staged() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/staged.html", srv.base);
+    let want = "script ran after the first layout";
+    let own = login_window_with(&href, "frame", None, &[]);
+    assert!(own.contains(want), "{own}");
+    let began = std::time::Instant::now();
+    let renderer = login_window_with(&href, "frame", None, &[("DWELLER_PROCESS", "tab")]);
+    assert!(renderer.contains(want) && renderer.contains("title Staged ran"), "{renderer}");
+    assert!(began.elapsed() < std::time::Duration::from_secs(20), "the script waited for the server's limit");
+    assert_eq!(page_lines(&renderer), page_lines(&own));
+}
