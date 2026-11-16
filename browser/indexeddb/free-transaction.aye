@@ -1,0 +1,11 @@
+fn freeTransaction(b: *mut Backend, tx: *mut Transaction) {
+    for u in tx.undo.items() {
+        b.alloc.free(u.key)
+
+        if u.old |r| { freeRecord(b.alloc, r) }
+    }
+
+    tx.undo.deinit()
+    tx.scope.deinit()
+    b.alloc.destroy(tx)
+}

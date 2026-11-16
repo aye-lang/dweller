@@ -1,0 +1,42 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn waitingRequestOf(b: *Backend, client: u64) ?usize {
+    for i in 0..b.requests.len() {
+        if b.requests.items()[i].client == client && b.requests.items()[i].tx == 0 { return i }
+    }
+
+    return null
+}
+
+fn transactionOf(b: *Backend, client: u64) ?usize {
+    for i in 0..b.txs.len() {
+        if b.txs.items()[i].client == client { return i }
+    }
+
+    return null
+}
+
+fn connectionOf(b: *Backend, client: u64) ?usize {
+    for i in 0..b.conns.len() {
+        if b.conns.items()[i].client == client { return i }
+    }
+
+    return null
+}
+
+pub fn dropClient(client: u64) AllocError!void {
+    let b = the_backend orelse return
+
+    while waitingRequestOf(b, client) |i| {
+        let r = b.requests.orderedRemove(i)
+
+        b.alloc.free(r.area)
+        b.alloc.free(r.name)
+    }
+
+    while transactionOf(b, client) |i| { try finishTransaction(b, i, false) }
+    while connectionOf(b, client) |i| { _ = b.conns.orderedRemove(i) }
+
+    try settle(b)
+}

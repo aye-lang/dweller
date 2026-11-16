@@ -96,5 +96,5 @@
     if (Array.isArray(t) || typeof t[Symbol.iterator] === 'function') return t;
     return t.transfer || [];
   }
-  Object.defineProperty(G, '__wire', { value: { send, receive, transferOf }, configurable: true });
+  Object.defineProperty(G, '__wire', { value: { send, receive, transferOf, encode, decode }, configurable: true });
 })(globalThis);

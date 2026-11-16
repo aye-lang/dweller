@@ -1,0 +1,18 @@
+import indexeddb
+import std.text
+
+fn dropIdbClient(s: *mut Script) {
+    var out = text.Builder.init(s.alloc)
+    defer out.deinit()
+
+    if !s.idb_used { return }
+
+    if idb_remote |hook| {
+        hook(IdbAsk { href: "", page: s.page.id, request: "drop" }, &mut out) catch return
+
+        return
+    }
+
+    indexeddb.dropClient(s.page.id as u64) catch return
+    deliverIdbEvents() catch return
+}

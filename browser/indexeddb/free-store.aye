@@ -1,0 +1,17 @@
+import std.mem.Allocator
+
+fn freeRecord(alloc: Allocator, r: *mut Record) {
+    alloc.free(r.key)
+    alloc.free(r.value)
+    alloc.free(r.index_keys)
+    alloc.destroy(r)
+}
+
+fn freeStore(alloc: Allocator, s: *mut Store) {
+    for r in s.records.items() { freeRecord(alloc, r) }
+
+    s.records.deinit()
+    alloc.free(s.name)
+    alloc.free(s.key_path)
+    alloc.destroy(s)
+}

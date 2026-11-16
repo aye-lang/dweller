@@ -248,9 +248,11 @@ pub let PRELUDE =
     \\  try {
     \\    callOrHandle(fn, t, ev, inline);
     \\  } catch (e) {
+    \\    if (ev._task) ev._threw = true;
     \\    report(e);
     \\  }
     \\  currentEvent = outer;
+    \\  if (ev._task) ak.checkpoint();
     \\}
     \\function callOrHandle(fn, t, ev, inline) {
     \\  if (inline && t === G && ev.type === 'error' && ev instanceof G.ErrorEvent) {
@@ -375,6 +377,26 @@ pub let PRELUDE =
     \\  ev._path = null;
     \\  return !ev.defaultPrevented;
     \\}
+    \\hidden(ak, 'dispatchAlong', function (path, ev) {
+    \\  ev.target = path[0];
+    \\  hidden(ev, '_dispatching', true);
+    \\  ev._path = path;
+    \\  for (let i = path.length - 1; i >= 0 && !ev._stop; i--) {
+    \\    ev.eventPhase = i === 0 ? 2 : 1;
+    \\    invoke(path[i], ev, true);
+    \\  }
+    \\  for (let i = 0; i < path.length && !ev._stop && (i === 0 || ev.bubbles); i++) {
+    \\    ev.eventPhase = i === 0 ? 2 : 3;
+    \\    invoke(path[i], ev, false);
+    \\  }
+    \\  ev.eventPhase = 0;
+    \\  ev.currentTarget = null;
+    \\  ev._stop = ev._stopNow = ev._dispatching = false;
+    \\  ev._path = null;
+    \\});
+    \\hidden(ak, 'defineHandlers', function (proto, types) {
+    \\  for (const type of types) Object.defineProperty(proto, 'on' + type, { get() { return handlerOf(this, type); }, set(v) { setHandler(this, type, v); }, configurable: true, enumerable: true });
+    \\});
     \\function dispatchChecked(t, ev) {
     \\  if (!(ev instanceof Event)) throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
     \\  return dispatch(t, ev);

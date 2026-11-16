@@ -1,0 +1,19 @@
+fn finishUpgrade(b: *mut Backend, tx: *mut Transaction, commit: bool) {
+    let db = tx.db
+
+    dropUpgradeRequest(b, tx.id)
+
+    if commit {
+        if db.before_upgrade |old| { freeDatabase(b.alloc, old) }
+
+        db.before_upgrade = null
+        db.changed = true
+
+        return
+    }
+
+    restoreDatabase(b.alloc, db)
+    removeConnection(b, tx.conn)
+
+    if db.version == 0 { removeDatabase(b, db) }
+}

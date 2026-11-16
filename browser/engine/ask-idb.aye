@@ -1,0 +1,15 @@
+import indexeddb
+import std.mem.AllocError
+import std.text
+
+fn askIdb(s: *mut Script, request: []u8, out: *mut text.Builder) AllocError!void {
+    let origin = originPage(s.page)
+    var area = text.Builder.init(s.alloc)
+    defer area.deinit()
+
+    if idb_remote |hook| { return hook(IdbAsk { href: origin.url.href, page: s.page.id, request: request }, out) }
+
+    try storageOrigin(&mut area, &origin.url)
+    try indexeddb.apply(s.alloc, area.bytes(), s.page.id as u64, request, out)
+    try deliverIdbEvents()
+}

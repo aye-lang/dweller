@@ -1,0 +1,11 @@
+import js
+import std.mem.AllocError
+
+pub fn idbEvent(page: u32, line: []u8) AllocError!void {
+    let p = findPageAnywhere(page) orelse return
+    let ts = p.script orelse return
+
+    if ts.on_idb == js.NONE { return }
+
+    queueIdb(ts, line) catch return AllocError.OutOfMemory
+}

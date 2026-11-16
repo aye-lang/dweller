@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn backendOf(alloc: Allocator) AllocError!*mut Backend {
+    if the_backend |b| { return b }
+
+    let b = try alloc.create(Backend {
+        alloc: alloc,
+        dbs: List(*mut Database).init(alloc),
+        conns: List(Connection).init(alloc),
+        txs: List(*mut Transaction).init(alloc),
+        requests: List(OpenRequest).init(alloc),
+        events: List(ClientEvent).init(alloc),
+    })
+
+    the_backend = b
+
+    return b
+}

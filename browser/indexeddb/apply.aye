@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: content/browser/indexed_db/indexed_db_database.cc
+pub fn apply(alloc: Allocator, area: []u8, client: u64, request: []u8, out: *mut text.Builder) AllocError!void {
+    var f = Fields { rest: request }
+    let op = f.next()
+    let a = Ask { b: try backendOf(alloc), area: area, client: client, f: &mut f, out: out }
+
+    try out.append("ok")
+
+    if text.eql(op, "open") { return queueRequest(a, false) }
+    if text.eql(op, "delete-database") { return queueRequest(a, true) }
+    if text.eql(op, "databases") { return listDatabases(a) }
+    if text.eql(op, "ack") { return ackVersionChange(a) }
+    if text.eql(op, "close") { return closeConnection(a) }
+    if text.eql(op, "begin") { return beginTransaction(a) }
+    if text.eql(op, "commit") { return endTransaction(a, true) }
+    if text.eql(op, "abort") { return endTransaction(a, false) }
+    if text.eql(op, "create-store") { return createStore(a) }
+    if text.eql(op, "delete-store") { return deleteStore(a) }
+    if text.eql(op, "put") { return putRecord(a) }
+    if text.eql(op, "get") { return getRecords(a, 1) }
+    if text.eql(op, "get-all") { return getRecords(a, 0) }
+    if text.eql(op, "delete") { return deleteRange(a) }
+    if text.eql(op, "count") { return countRange(a) }
+    if text.eql(op, "generator") { return readGenerator(a) }
+    if text.eql(op, "set-generator") { return raiseGenerator(a) }
+
+    return refuse(a, "UnknownError")
+}

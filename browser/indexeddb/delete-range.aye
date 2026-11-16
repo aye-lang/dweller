@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+fn deleteRange(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let range = readRange(a.f)
+    let start = rangeStart(t.store, range)
+    var end = rangeEnd(t.store, range)
+
+    if a.f.bad { return refuse(a, "DataError") }
+
+    while end > start {
+        end -= 1
+
+        let r = t.store.records.orderedRemove(end)
+
+        try logUndo(a.b, t, r.key, r)
+    }
+}

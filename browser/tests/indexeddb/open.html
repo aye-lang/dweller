@@ -1,0 +1,38 @@
+<!doctype html>
+<title>IndexedDB: open, upgrade, object stores</title>
+<pre id="log"></pre>
+<script>
+const out = [];
+const log = s => { out.push(s); document.getElementById('log').textContent = out.join(' | '); };
+const req = indexedDB.open('books', 2);
+log('state ' + req.readyState);
+req.onupgradeneeded = e => {
+  const db = req.result;
+  log('upgrade ' + e.oldVersion + '->' + e.newVersion + ' ' + req.readyState + ' ' + req.transaction.mode);
+  const store = db.createObjectStore('titles', { keyPath: 'isbn' });
+  db.createObjectStore('notes', { autoIncrement: true });
+  log('stores ' + Array.from(db.objectStoreNames).join(','));
+  store.put({ isbn: 2, title: 'Second' });
+  store.add({ isbn: 1, title: 'First' }).onsuccess = ev => log('added ' + ev.target.result);
+  req.transaction.oncomplete = () => log('upgrade complete');
+};
+req.onsuccess = () => {
+  const db = req.result;
+  log('open ' + db.name + ' v' + db.version);
+  const tx = db.transaction(['titles', 'notes'], 'readwrite');
+  const titles = tx.objectStore('titles');
+  titles.get(1).onsuccess = e => log('get ' + e.target.result.title);
+  titles.getAll().onsuccess = e => log('all ' + e.target.result.map(b => b.title).join(','));
+  titles.count().onsuccess = e => log('count ' + e.target.result);
+  tx.objectStore('notes').add('a note').onsuccess = e => log('note key ' + e.target.result);
+  titles.add({ isbn: 1 }).onerror = e => { log('error ' + e.target.error.name); e.preventDefault(); };
+  titles.delete(2);
+  titles.getAllKeys().onsuccess = e => log('keys ' + e.target.result.join(','));
+  tx.oncomplete = () => {
+    log('complete');
+    indexedDB.databases().then(list => log('databases ' + list.map(d => d.name + ':' + d.version).join(',')));
+    const lower = indexedDB.open('books', 1);
+    lower.onerror = e => { log('lower ' + lower.error.name); e.preventDefault(); };
+  };
+};
+</script>

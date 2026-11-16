@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn copyStore(alloc: Allocator, s: *Store) AllocError!*mut Store {
+    let copy = try alloc.create(Store {
+        id: s.id,
+        name: try dupe(alloc, s.name),
+        key_path: try dupe(alloc, s.key_path),
+        auto_increment: s.auto_increment,
+        generator: s.generator,
+        records: List(*mut Record).init(alloc),
+    })
+
+    for r in s.records.items() {
+        try copy.records.append(try alloc.create(Record { key: try dupe(alloc, r.key), value: try dupe(alloc, r.value), index_keys: try dupe(alloc, r.index_keys) }))
+    }
+
+    return copy
+}

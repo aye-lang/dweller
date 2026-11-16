@@ -1,0 +1,29 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn upgradeOf(a: Ask) ?*mut Transaction {
+    let tx = findTransaction(a.b, a.client, a.f.int()) orelse return null
+
+    if tx.mode != VERSION_CHANGE { return null }
+
+    return tx
+}
+
+fn createStore(a: Ask) AllocError!void {
+    let tx = upgradeOf(a) orelse return refuse(a, "InvalidStateError")
+    let auto = a.f.int() == 1
+    let name = a.f.next()
+    let key_path = a.f.tail()
+    let id = tx.db.next_store
+
+    for s in tx.db.stores.items() {
+        if text.eql(s.name, name) { return refuse(a, "ConstraintError") }
+    }
+
+    if a.f.bad { return refuse(a, "DataError") }
+
+    tx.db.next_store += 1
+    try tx.db.stores.append(try a.b.alloc.create(Store { id: id, name: try dupe(a.b.alloc, name), key_path: try dupe(a.b.alloc, key_path), auto_increment: auto, records: List(*mut Record).init(a.b.alloc) }))
+    try appendNumber(a.out, id as u64)
+}

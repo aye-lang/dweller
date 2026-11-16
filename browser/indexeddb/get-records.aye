@@ -1,0 +1,22 @@
+import std.mem.AllocError
+
+fn getRecords(a: Ask, only: u64) AllocError!void {
+    let t = targetOf(a, false) orelse return refuse(a, "InvalidStateError")
+    let range = readRange(a.f)
+    var limit = only
+    let start = rangeStart(t.store, range)
+    var end = rangeEnd(t.store, range)
+
+    if only == 0 { limit = a.f.int() }
+    if a.f.bad { return refuse(a, "DataError") }
+    if limit != 0 && end > start && (end - start) as u64 > limit { end = start + limit as usize }
+
+    for i in start..end {
+        let r = t.store.records.items()[i]
+
+        try a.out.appendByte('\n')
+        try a.out.append(r.key)
+        try a.out.appendByte('\n')
+        try a.out.append(r.value)
+    }
+}

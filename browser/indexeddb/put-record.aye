@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn putRecord(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let overwrite = a.f.int() == 1
+    let key = a.f.next()
+    let index_keys = a.f.next()
+    let value = a.f.tail()
+    let i = lowerBound(t.store, key)
+    let exists = i < t.store.records.len() && text.eql(t.store.records.items()[i].key, key)
+
+    if a.f.bad || key.len == 0 { return refuse(a, "DataError") }
+    if exists && !overwrite { return refuse(a, "ConstraintError") }
+
+    let made = try a.b.alloc.create(Record { key: try dupe(a.b.alloc, key), value: try dupe(a.b.alloc, value), index_keys: try dupe(a.b.alloc, index_keys) })
+
+    if exists {
+        try logUndo(a.b, t, key, t.store.records.items()[i])
+        t.store.records.items()[i] = made
+    } else {
+        try t.store.records.insert(i, made)
+        try logUndo(a.b, t, key, null)
+    }
+}
