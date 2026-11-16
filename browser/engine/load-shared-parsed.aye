@@ -1,0 +1,14 @@
+import net
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+pub fn loadSharedParsed(alloc: Allocator, target: *Url, body: ?*net.Body, initiator: net.Initiator, h: *mut SessionHistory) AllocError!*mut Page {
+    let p = try fetchShared(alloc, target, body, initiator, h)
+
+    p.scripts_pending = scriptingEnabled() && !p.plain && !p.no_scripts
+
+    if p.scripts_pending { useStorage(alloc) }
+
+    return p
+}

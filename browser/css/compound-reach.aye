@@ -1,0 +1,39 @@
+fn compoundReach(sheet: *Sheet, cx: Complex, ci: usize, outer: Reach) Reach {
+    if outer.kind == ReachKind.Whole || ci == cx.end - 1 { return outer }
+
+    let compounds = sheet.compounds.items()
+
+    if !isSiblingCombinator(compounds[ci + 1].combinator) { return Reach { kind: ReachKind.Descendant, distance: 0 } }
+
+    var last = ci + 1
+    var run = combinatorDistance(compounds[last].combinator)
+
+    while last + 1 < cx.end && isSiblingCombinator(compounds[last + 1].combinator) {
+        last += 1
+        run = addDistance(run, combinatorDistance(compounds[last].combinator))
+    }
+
+    if last < cx.end - 1 { return Reach { kind: ReachKind.SiblingDescendant, distance: run } }
+
+    if outer.kind == ReachKind.Own || outer.kind == ReachKind.Sibling {
+        return Reach { kind: ReachKind.Sibling, distance: addDistance(run, outer.distance) }
+    }
+
+    return Reach { kind: ReachKind.SiblingDescendant, distance: addDistance(run, outer.distance) }
+}
+
+fn isSiblingCombinator(c: u8) bool {
+    return c == '+' || c == '~'
+}
+
+fn combinatorDistance(c: u8) usize {
+    if c == '+' { return 1 }
+
+    return ANY_DISTANCE
+}
+
+fn addDistance(a: usize, b: usize) usize {
+    if a == ANY_DISTANCE || b == ANY_DISTANCE { return ANY_DISTANCE }
+
+    return a + b
+}

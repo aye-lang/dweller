@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import vt
+
+fn drawRow(v: *mut View, t: *mut vt.Term, y: usize) AllocError!void {
+    let s = t.screen()
+    let kept = t.scrollback.items()
+    var line: []vt.Cell = t.row(0)[0..0]
+
+    if y < v.offset {
+        line = kept[kept.len - v.offset + y]
+    } else {
+        line = t.row(y - v.offset)
+    }
+
+    for x in 0..t.cols {
+        var cell = vt.Cell {}
+
+        if x < line.len {
+            cell = line[x]
+        }
+
+        if t.cursor_visible && y == s.y + v.offset && x == s.x {
+            cell.attrs = cell.attrs ^ vt.INVERSE
+        }
+
+        try drawCell(v, cell, x, y)
+    }
+}

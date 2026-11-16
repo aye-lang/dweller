@@ -1,0 +1,34 @@
+import std.mem.AllocError
+
+fn stringByte(t: *mut Term, b: u8) AllocError!void {
+    let p = &mut t.parser
+    let ends = b == 0x07 || (p.string_escape && b == '\\')
+
+    if b == 0x1B && !p.string_escape {
+        p.string_escape = true
+
+        return
+    }
+
+    if !ends && !p.string_escape && p.state == State.OscString && p.string.len() < 4096 {
+        return p.string.appendByte(b)
+    }
+
+    if !ends && !p.string_escape {
+        return
+    }
+
+    if ends && p.state == State.OscString {
+        try oscDispatch(t)
+    }
+
+    p.string_escape = false
+    p.string.clear()
+    p.state = State.Ground
+
+    if !ends {
+        p.clear()
+        p.state = State.Escape
+        try step(t, b)
+    }
+}

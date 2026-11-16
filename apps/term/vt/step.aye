@@ -1,0 +1,27 @@
+import std.mem.AllocError
+
+// https://vt100.net/emu/dec_ansi_parser
+fn step(t: *mut Term, b: u8) AllocError!void {
+    let state = t.parser.state
+
+    if state == State.OscString || state == State.IgnoredString {
+        return stringByte(t, b)
+    }
+
+    if b == 0x18 || b == 0x1A {
+        t.parser.state = State.Ground
+    } else if b == 0x1B {
+        t.parser.clear()
+        t.parser.state = State.Escape
+    } else if state == State.Ground {
+        try ground(t, b)
+    } else if b < 0x20 {
+        try execute(t, b)
+    } else if b == 0x7F {
+        return
+    } else if state == State.Escape || state == State.EscapeIntermediate {
+        try escapeByte(t, b)
+    } else {
+        try csiByte(t, b)
+    }
+}

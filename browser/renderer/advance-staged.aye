@@ -1,0 +1,30 @@
+import engine
+
+fn advanceStaged(r: *mut TabRenderer, at_once: bool) !void {
+    let p = r.page orelse return
+    let s = &mut r.staged
+
+    if !s.on || (!s.stepping && !engine.loadsIn(s.sheets.items())) { return }
+
+    if !s.stepping && (!engine.loadsIn(s.scripts.items()) || (!at_once && !s.painted)) {
+        if !s.painted {
+            s.painted = true
+            r.due = true
+        }
+
+        return
+    }
+
+    let painted = s.painted
+    let kept = r.scroll_y
+
+    if !(try stepStaged(r, p, at_once)) { return }
+
+    s.drop()
+    r.due = true
+    try sayLoaded(r, p)
+
+    if painted && r.hist_scroll == 0.0 {
+        r.scroll_y = kept
+    }
+}

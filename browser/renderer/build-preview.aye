@@ -1,0 +1,23 @@
+import engine
+import url
+
+fn buildPreview(r: *mut TabRenderer, href: []u8, f: *mut Fetched) !void {
+    let v = &mut r.preview
+    let whole = f.body.count
+    let cut = lastTagEnd(f.body.bytes())
+
+    if cut <= v.len { return }
+
+    let target = try url.parse(r.alloc, href)
+    defer target.deinit(r.alloc)
+
+    f.body.count = cut
+    defer f.body.count = whole
+    var res = try fetchedResponse(r.alloc, f)
+    defer res.deinit(r.alloc)
+
+    v.drop()
+    v.len = cut
+    v.page = try engine.previewPage(r.alloc, &target, &res)
+    try engine.startEarly(v.page.?, r.width as f64 / r.scale, r.height as f64 / r.scale, &mut v.loads.sheets, &mut v.loads.scripts)
+}

@@ -203,7 +203,6 @@ pub fn stop() {
     dropReferrerPolicies()
     let s = session orelse return
     session = null
-    dropStoredCookies(s.alloc)
     if writesCookies(s) && s.jar.changed {
         saveCookies(s) catch |e| {
         }
@@ -359,7 +358,6 @@ pub fn setScriptCookie(partition: u32, page: *Url, top: *Url, line: []u8) AllocE
     let jar = jarOf(session, partition) orelse return
     if !storesIn(scriptContext(page, top)) { return }
     try jar.store(page, line, true, now())
-    if partition == 0 { try noteStored(page, line, true) }
 }
 
 fn withoutHash(href: []u8) []u8 {

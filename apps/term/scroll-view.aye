@@ -1,0 +1,23 @@
+fn scrollView(w: *mut TermWindow, lines: i64) {
+    var most = w.term.scrollback.len() as i64
+    var offset = w.view.offset as i64 + lines
+
+    if w.term.on_alternate {
+        most = 0
+    }
+
+    if offset > most {
+        offset = most
+    }
+
+    if offset < 0 {
+        offset = 0
+    }
+
+    w.view.offset = offset as usize
+    w.changed = true
+
+    for y in 0..w.term.rows {
+        w.term.dirty[y] = true
+    }
+}

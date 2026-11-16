@@ -64,6 +64,8 @@ mod scripts;
 mod security;
 #[path = "browser/storage.rs"]
 mod storage;
+#[path = "browser/term.rs"]
+mod term;
 #[path = "browser/webgl.rs"]
 mod webgl;
 #[path = "browser/websocket.rs"]

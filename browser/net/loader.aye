@@ -522,10 +522,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     if result != 0 {
         return failRequest(ld, l, curlError(result, job.curl, &job.sink))
     }
-    storeCookies(s, &job.at, &job.sink) catch |e| {
-        return failRequest(ld, l, FetchError.OutOfMemory)
-    }
-    noteHsts(s, &job.at, &job.sink) catch |e| {
+    storeHead(job) catch |e| {
         return failRequest(ld, l, FetchError.OutOfMemory)
     }
     var status: i64 = 0

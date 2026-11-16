@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn buildKeySets(sets: *mut KeySets, author: *Sheet, ua: *Sheet, quirks: ?*Sheet) AllocError!void {
+    try addKeySets(sets, author)
+    try addKeySets(sets, ua)
+
+    if quirks |q| { try addKeySets(sets, q) }
+
+    var start: usize = 0
+
+    while start < ALWAYS_DEEP.len {
+        var end = start
+
+        while end < ALWAYS_DEEP.len && ALWAYS_DEEP[end] != ' ' { end += 1 }
+
+        (try keySetAt(sets, nameKey("", ALWAYS_DEEP[start..end]))).whole = true
+        start = end + 1
+    }
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<title>class, id and attribute changes restyle what their selectors reach</title>
+<style>
+.dark .title { color: rgb(255, 0, 0) }
+.dark .row > .note { font-style: italic }
+#main.wide .cell { width: 50px }
+[data-mode=compact] .cell { height: 5px }
+.open + .panel { color: rgb(0, 128, 0) }
+.on ~ .item span { font-weight: 700 }
+:is(.pick .row) .title { text-decoration: underline }
+.row:not(.dark .skip) .note { letter-spacing: 1px }
+.flag + .next + .third { color: rgb(0, 0, 255) }
+#solo .title { margin-left: 3px }
+.cell { display: inline-block; width: 10px; height: 10px }
+</style>
+<div id="main"></div>
+<div id="head" class="tab">tab</div>
+<div id="panel" class="panel"><p id="ptext">panel</p></div>
+<div id="after" class="panel">after</div>
+<ul id="list"><li id="i0" class="item"><span id="s0">a</span></li><li id="i1" class="item"><span id="s1">b</span></li><li id="i2" class="item"><span id="s2">c</span></li></ul>
+<div id="f0">f0</div><div id="f1" class="next">f1</div><div id="f2" class="third">f2</div><div id="f3" class="third">f3</div>
+<pre id="out"></pre>
+<script>
+const main = document.getElementById('main');
+let html = '';
+for (let i = 0; i < 200; i++) {
+  html += '<div class="row' + (i % 50 == 0 ? ' skip' : '') + '"><span class="title">t</span><span class="note">n</span><span class="cell"></span><span><b>x</b></span></div>';
+}
+main.innerHTML = html;
+const out = [];
+const $ = (id) => document.getElementById(id);
+const cs = (el, p) => getComputedStyle(el)[p];
+const row = (i) => main.children[i];
+const read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };
+read('start', () => cs(row(3).children[0], 'color') + ' ' + cs(row(3).children[1], 'fontStyle'));
+document.body.classList.add('dark');
+read('dark', () => cs(row(3).children[0], 'color') + ' ' + cs(row(3).children[1], 'fontStyle') + ' ' + cs(row(0).children[1], 'letterSpacing') + ' ' + cs(row(3).children[1], 'letterSpacing'));
+document.body.classList.remove('dark');
+read('light', () => cs(row(199).children[0], 'color') + ' ' + cs(row(199).children[1], 'fontStyle') + ' ' + cs(row(0).children[1], 'letterSpacing'));
+main.classList.add('wide');
+read('wide', () => cs(row(7).children[2], 'width'));
+main.setAttribute('data-mode', 'compact');
+read('compact', () => cs(row(7).children[2], 'height'));
+main.setAttribute('data-mode', 'roomy');
+read('roomy', () => cs(row(7).children[2], 'height'));
+$('head').classList.add('open');
+read('open', () => cs($('panel'), 'color') + ' ' + cs($('ptext'), 'color') + ' ' + cs($('after'), 'color'));
+$('head').className = 'tab';
+read('closed', () => cs($('panel'), 'color') + ' ' + cs($('ptext'), 'color'));
+$('i0').classList.add('on');
+read('on', () => cs($('s0'), 'fontWeight') + ' ' + cs($('s1'), 'fontWeight') + ' ' + cs($('s2'), 'fontWeight'));
+$('i0').classList.remove('on');
+$('i1').classList.add('on');
+read('moved', () => cs($('s0'), 'fontWeight') + ' ' + cs($('s1'), 'fontWeight') + ' ' + cs($('s2'), 'fontWeight'));
+main.classList.add('pick');
+read('pick', () => cs(row(9).children[0], 'textDecorationLine'));
+$('f0').classList.add('flag');
+read('flag', () => cs($('f2'), 'color') + ' ' + cs($('f3'), 'color'));
+main.id = 'solo';
+read('solo', () => cs(row(9).children[0], 'marginLeft') + ' ' + cs(row(9).children[2], 'width'));
+$('out').textContent = out.join('\n');
+main.textContent = '';
+</script>

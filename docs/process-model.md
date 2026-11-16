@@ -19,10 +19,11 @@ Today Dweller is one process, except for Spaces:
 - `net/` fetches with blocking calls (`net.request`). The main thread
   drives one libcurl multi handle (`net/loader.aye`). The cookie jar,
   the cache and the profile are in the same process.
-- A Space (`ui/spaces.aye`) is the whole window program again, headless,
-  started with `posix_spawnp`. It has a `socketpair` with JSON control
-  lines and a two-slot frame file in `/tmp/dweller-PID-XXXXXX/`. It
-  starts in about 25 ms and takes about 45 MB.
+- A Space (`ui/spaces.aye`) was the whole window program again,
+  headless, started with `posix_spawnp`, with a `socketpair` of JSON
+  control lines and a two-slot frame file in `/tmp/dweller-PID-XXXXXX/`
+  (about 25 ms to start, about 45 MB). Since Q2.12e (2026-11-16) it is
+  gone: a Space is tabs of the window in renderers (§8).
 
 The decision is in "Decisions" of the plan and is not open here.
 
@@ -465,6 +466,21 @@ request on it and later page commands fail with "renderer crashed"
 (`failCrashed`), and `tab_close` frees it. Not yet: a sad tab while the
 person watches a crashed hosted tab, the Basic auth cache, the preflight
 cache and HSTS per partition.
+
+**Popups in their opener's process (Q2.12d, 2026-11-16).** A popup
+that keeps its opener and is same-site with it is a second tab of its
+opener's renderer: the browser sends `attach_tab` (74) with a socket on
+the opener's connection and keeps a `TabProcess` per tab with the same
+pid. Which records share a process is read from the pid: the process
+is waited for when its last tab ends, and a crash, a bad message or
+Stop ends every tab on it. In the renderer one loop serves every tab's
+connection, and a tab whose connection fails ends alone.
+
+**The flip (Q2.12e, 2026-11-16).** Hosted Spaces are the only Spaces:
+`DWELLER_SPACES` is read nowhere, and `dweller space`, the relay, the
+control connection, the sharing of cookies and `localStorage` with a
+Space and the frame file are removed. What the paragraphs above call
+"with the switch" is what the window does.
 
 ## 9. Risks and open questions, ranked
 
