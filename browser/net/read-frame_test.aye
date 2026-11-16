@@ -1,0 +1,100 @@
+import std
+import std.text
+
+test "readFrame: lengths, fragments of the bytes and what a server may not send" {
+    @expectEqual(-1 as i64, frameCode(readFrame("\x81", 100)))
+    @expectEqual(-1 as i64, frameCode(readFrame("\x81\x05Hel", 100)))
+
+    match readFrame("\x81\x05Hello\x82", 100) {
+        .Got { frame: f } => {
+            @expect(f.fin)
+            @expectEqual(FRAME_TEXT, f.opcode)
+            @expectEqual("Hello", f.payload)
+            @expectEqual(7 as usize, f.size)
+        }
+        _ => @expect(false)
+    }
+
+    match readFrame("\x02\x7e\x00\x03abc", 100) {
+        .Got { frame: f } => {
+            @expect(!f.fin)
+            @expectEqual("abc", f.payload)
+            @expectEqual(7 as usize, f.size)
+        }
+        _ => @expect(false)
+    }
+
+    @expectEqual(-1 as i64, frameCode(readFrame("\x82\x7f\x00\x00\x00\x00\x00\x00\x00", 100)))
+    @expectEqual(1009 as i64, frameCode(readFrame("\x82\x7f\x00\x00\x00\x00\x00\x00\x00\x65", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x82\x7f\x80\x00\x00\x00\x00\x00\x00\x01", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x81\x85\x00\x00\x00\x00Hello", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\xc1\x00", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x83\x00", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x8b\x00", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x09\x00", 100)))
+    @expectEqual(1002 as i64, frameCode(readFrame("\x89\x7e\x00\x7e", 1000)))
+}
+
+test "putFrame masks the payload and picks the length form" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    try putFrame(&mut out, FRAME_TEXT, "Hello", [4]u8{ 0x37, 0xfa, 0x21, 0x3d })
+    @expectEqual("\x81\x85\x37\xfa\x21\x3d\x7f\x9f\x4d\x51\x58", out.bytes())
+
+    out.clear()
+    let long = @zeroed([300]u8)
+    try putFrame(&mut out, FRAME_BINARY, long[..], [4]u8{ 1, 2, 3, 4 })
+    @expectEqual("\x82\xfe\x01\x2c\x01\x02\x03\x04\x01\x02", out.bytes()[..10])
+    @expectEqual(308 as usize, out.len())
+}
+
+test "takeFrame joins fragments, lets control frames through and checks text" {
+    var a = Assembly { data: text.Builder.init(@testAllocator()) }
+    defer a.data.deinit()
+
+    @expectEqual(0 as i64, takenCode(try takeFrame(&mut a, Frame { fin: false, opcode: FRAME_TEXT, payload: "Hel", size: 0 }, 100)))
+    @expectEqual(1 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_PING, payload: "p", size: 0 }, 100)))
+    @expectEqual(3 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_CONTINUATION, payload: "lo", size: 0 }, 100)))
+    @expectEqual("Hello", a.data.bytes())
+
+    @expectEqual(1002 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_CONTINUATION, payload: "x", size: 0 }, 100)))
+    @expectEqual(0 as i64, takenCode(try takeFrame(&mut a, Frame { fin: false, opcode: FRAME_BINARY, payload: "x", size: 0 }, 100)))
+    @expectEqual(1002 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_BINARY, payload: "y", size: 0 }, 100)))
+
+    a.open = false
+    @expectEqual(1007 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_TEXT, payload: "\xc3\x28", size: 0 }, 100)))
+    @expectEqual(4 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_BINARY, payload: "\xc3\x28", size: 0 }, 100)))
+    @expectEqual(1009 as i64, takenCode(try takeFrame(&mut a, Frame { fin: true, opcode: FRAME_BINARY, payload: "abc", size: 0 }, 2)))
+}
+
+test "closeOf: the code and reason of a Close frame" {
+    @expectEqual(101005 as i64, takenCode(closeOf("")))
+    @expectEqual(1002 as i64, takenCode(closeOf("\x03")))
+    @expectEqual(101000 as i64, takenCode(closeOf("\x03\xe8bye")))
+    @expectEqual(104000 as i64, takenCode(closeOf("\x0f\xa0")))
+    @expectEqual(1002 as i64, takenCode(closeOf("\x03\xed")))
+    @expectEqual(1002 as i64, takenCode(closeOf("\x03\xee")))
+    @expectEqual(1002 as i64, takenCode(closeOf("\x03\xe7")))
+    @expectEqual(1002 as i64, takenCode(closeOf("\x13\x88")))
+    @expectEqual(1007 as i64, takenCode(closeOf("\x03\xe8\xff")))
+}
+
+fn frameCode(r: FrameRead) i64 {
+    return match r {
+        .More => -1
+        .Got { frame: f } => 0
+        .Bad { code: c } => c as i64
+    }
+}
+
+fn takenCode(t: Taken) i64 {
+    return match t {
+        .Nothing => 0
+        .Ping => 1
+        .Pong => 2
+        .Message { binary: b } => 3 + (b as i64)
+        .Bad { code: c } => c as i64
+        .Close { code: c, reason: r } => 100000 + (c as i64)
+    }
+}

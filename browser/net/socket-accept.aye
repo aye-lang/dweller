@@ -1,0 +1,20 @@
+import std.crypto
+import std.encoding
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+let SOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-4.2.2
+fn socketAccept(alloc: Allocator, key: []u8) AllocError![]mut u8 {
+    var joined = text.Builder.init(alloc)
+    defer joined.deinit()
+
+    try joined.append(key)
+    try joined.append(SOCKET_GUID)
+
+    let digest = crypto.sha1(joined.bytes())
+
+    return encoding.base64Encode(alloc, digest[..])
+}

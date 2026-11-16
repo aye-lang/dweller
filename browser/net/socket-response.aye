@@ -1,0 +1,28 @@
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc6455#section-4.2.2
+fn socketResponse(head: []u8, accept: []u8, offered: []u8) ?[]u8 {
+    if !text.startsWith(head, "HTTP/1.1 101") {
+        return null
+    }
+
+    let upgrade = headValue(head, "upgrade") orelse return null
+    let connection = headValue(head, "connection") orelse return null
+    let accepted = headValue(head, "sec-websocket-accept") orelse return null
+
+    if !text.eqlIgnoreCase(upgrade, "websocket") || !listHas(connection, "upgrade", true) || !text.eql(accepted, accept) {
+        return null
+    }
+
+    if (headValue(head, "sec-websocket-extensions") orelse "").len > 0 {
+        return null
+    }
+
+    let protocol = headValue(head, "sec-websocket-protocol") orelse return ""
+
+    if !listHas(offered, protocol, false) {
+        return null
+    }
+
+    return protocol
+}

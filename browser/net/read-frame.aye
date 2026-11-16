@@ -1,0 +1,55 @@
+// https://www.rfc-editor.org/rfc/rfc6455#section-5.2
+fn readFrame(buf: []u8, limit: usize) FrameRead {
+    if buf.len < 2 {
+        return FrameRead.More
+    }
+
+    let opcode = buf[0] & 0x0f
+    let fin = buf[0] & 0x80 != 0
+    let short = (buf[1] & 0x7f) as usize
+
+    if buf[0] & 0x70 != 0 || buf[1] & 0x80 != 0 || !frameOpcodeKnown(opcode) {
+        return FrameRead.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    if opcode >= FRAME_CLOSE && (short > 125 || !fin) {
+        return FrameRead.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    var at: usize = 2
+    var length = short as u64
+
+    if short == 126 {
+        at = 4
+    } else if short == 127 {
+        at = 10
+    }
+
+    if buf.len < at {
+        return FrameRead.More
+    }
+
+    if at > 2 {
+        length = frameLength(buf[2..at])
+    }
+
+    if length >> 63 != 0 {
+        return FrameRead.Bad { code: CLOSE_PROTOCOL_ERROR }
+    }
+
+    if length > limit as u64 {
+        return FrameRead.Bad { code: CLOSE_TOO_BIG }
+    }
+
+    let end = at + length as usize
+
+    if buf.len < end {
+        return FrameRead.More
+    }
+
+    return FrameRead.Got { frame: Frame { fin: fin, opcode: opcode, payload: buf[at..end], size: end } }
+}
+
+fn frameOpcodeKnown(opcode: u8) bool {
+    return opcode <= FRAME_BINARY || (opcode >= FRAME_CLOSE && opcode <= FRAME_PONG)
+}
