@@ -1,0 +1,12 @@
+import engine
+import std.mem.AllocError
+
+fn askPickerInPage(ui: *mut Ui) AllocError!void {
+    let page = ui.tab.page orelse return
+    let asked = engine.takeFileRequest(page) orelse return
+
+    if try startPicker(ui, ui.slots[ui.active].?.id, 0, asked.multiple, asked.accept) { return }
+
+    try engine.chooseFiles(page, []engine.PickedFile{})
+    try ui.afterScripts()
+}

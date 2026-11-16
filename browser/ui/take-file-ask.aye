@@ -1,0 +1,20 @@
+import ipc
+import std.mem.AllocError
+
+let MAX_ACCEPT: usize = 4096
+
+// chromium: content/browser/web_contents/file_chooser_impl.cc (OpenFileChooser)
+fn takeFileAsk(tp: *mut TabProcess, multiple: u32, accepted: []u8) AllocError![]u8 {
+    if multiple > 1 || accepted.len > MAX_ACCEPT { return "bad file chooser" }
+
+    if tp.file_ask != 0 {
+        try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ChosenEnd { count: 0 })
+
+        return ""
+    }
+
+    tp.file_ask = 1 + multiple
+    tp.file_accept = try ownedCopy(tp.url.alloc, accepted)
+
+    return ""
+}

@@ -1,0 +1,18 @@
+import engine
+import std.list.List
+
+fn landChosen(r: *mut TabRenderer, c: *mut ChosenFiles) !void {
+    var picked = List(engine.PickedFile).init(c.arena.allocator())
+
+    for f in c.files.items() {
+        try picked.append(engine.PickedFile { name: f.name, mime: f.mime, bytes: f.bytes.bytes(), modified_ms: f.modified_ms })
+    }
+
+    if r.page |p| { try engine.chooseFiles(p, picked.items()) }
+
+    c.files.deinit()
+    c.arena.deinit()
+    r.alloc.destroy(c)
+    r.chosen = null
+    r.due = true
+}

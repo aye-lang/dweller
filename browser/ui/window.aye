@@ -402,6 +402,7 @@ pub struct Ui {
     scale: f64
     page_zoom: f64 = 1.0
     suggest: ?*mut Suggestions = null
+    picker: ?*mut FilePicker = null
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -552,6 +553,7 @@ pub struct Ui {
     fn deinit(self: *mut Self) {
         SDL_StopTextInput()
         closeSuggestions(self)
+        stopPicker(self)
         pageview.shutdown(&mut self.page_view)
         if self.texture |t| {
             SDL_DestroyTexture(t)
@@ -717,6 +719,7 @@ pub struct Ui {
             timeout = spacesTimeout(self, timeout)
             timeout = tabProcessTimeout(self, timeout)
             timeout = frameTimeout(self, timeout)
+            timeout = pickerTimeout(self, timeout)
             if net.msUntilCookieSave() |ms| {
                 if ms < timeout as i64 {
                     timeout = ms as i32
@@ -778,6 +781,7 @@ pub struct Ui {
             try sendFrame(self, false)
             try pollAgents(self)
             try pollTabProcesses(self)
+            try pollPicker(self)
             if engine.hasContextRequests() {
                 try serveContexts(self)
             }

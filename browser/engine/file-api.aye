@@ -1,0 +1,21 @@
+import dom
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn installFileApi(it: *mut Interp, html: u32) JsError!void {
+    try accessor(it, html, "_fileCount", controlFileCount, null)
+    try defMethod(it, html, "_fileInfo", 1, controlFileInfo)
+    try defMethod(it, html, "_fileBytes", 1, controlFileBytes)
+    try accessor(it, html, "_fileStamp", controlFileStamp, null)
+}
+
+fn controlFileCount(it: *mut Interp, a: Args) JsError!Value {
+    return js.numVal(dom.fileCount(docOf(it), try thisElement(it, a)) as f64)
+}
+
+fn controlFileStamp(it: *mut Interp, a: Args) JsError!Value {
+    return js.numVal(docOf(it).controls.files_version as f64)
+}

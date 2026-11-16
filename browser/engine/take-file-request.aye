@@ -1,0 +1,18 @@
+// chromium: third_party/blink/renderer/core/html/forms/file_input_type.cc (OpenPopupView)
+pub fn takeFileRequest(page: *mut Page) ?FileRequest {
+    if page.doc.controls.file_request |el| {
+        page.doc.controls.file_request = null
+
+        if page.doc.isLive(el) && pendingFilePage(page) == null {
+            page.doc.controls.file_pending = el
+
+            return FileRequest { multiple: page.doc.attr(el, "multiple") != null, accept: page.doc.attr(el, "accept") orelse "" }
+        }
+    }
+
+    for f in page.frames.items() {
+        if takeFileRequest(f.page) |r| { return r }
+    }
+
+    return null
+}

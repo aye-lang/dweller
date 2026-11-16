@@ -128,6 +128,9 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
     if doc.isElement(el, "select") {
         return Activation.OpenSelect { el: el }
     }
+    if doc.isElement(el, "input") && text.eql(dom.inputType(doc, el), "file") {
+        doc.controls.file_request = el
+    }
     return changedIf(moved)
 }
 
@@ -459,7 +462,7 @@ pub fn submitForm(page: *mut Page, form: NodeId, submitter: ?NodeId) AllocError!
     if post && multipart {
         try ctype.append("multipart/form-data; boundary=")
         try ctype.append(BOUNDARY)
-        try multipartBody(&mut body, entries.items())
+        try multipartBody(&mut body, &page.doc, entries.items())
     } else if post && plain {
         try ctype.append("text/plain")
         for e in entries.items() {
@@ -550,6 +553,8 @@ struct FormEntry {
     value: []mut u8
     // A file input: the value is a file name (always empty here).
     file: bool
+    el: ?NodeId = null
+    index: usize = 0
 }
 
 fn freeEntries(alloc: Allocator, list: *mut List(FormEntry)) {
@@ -655,7 +660,7 @@ fn formEntries(page: *mut Page, form: NodeId, submitter: ?NodeId, out: *mut List
             continue
         }
         if doc.isElement(el, "input") && text.eql(dom.inputType(doc, el), "file") {
-            try addEntry(alloc, out, name, "", true)
+            try addFileEntries(alloc, doc, el, name, out)
             continue
         }
         if doc.isElement(el, "input") && text.eql(dom.inputType(doc, el), "hidden") && text.eqlIgnoreCase(name, "_charset_") {
@@ -715,7 +720,7 @@ fn formEncode(out: *mut text.Builder, s: []u8) AllocError!void {
 /// The multipart/form-data body of the entries, with `BOUNDARY`. Names
 /// and file names escape `"` as `%22` and line breaks as `%0D%0A`; a
 /// file input sends an empty file.
-fn multipartBody(out: *mut text.Builder, entries: []FormEntry) AllocError!void {
+fn multipartBody(out: *mut text.Builder, doc: *Document, entries: []FormEntry) AllocError!void {
     for e in entries {
         try out.append("--")
         try out.append(BOUNDARY)
@@ -725,7 +730,8 @@ fn multipartBody(out: *mut text.Builder, entries: []FormEntry) AllocError!void {
         if e.file {
             try out.append("; filename=\"")
             try headerEscape(out, e.value)
-            try out.append("\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")
+            try out.append("\"\r\n")
+            try filePart(out, doc, e)
         } else {
             try out.append("\r\n\r\n")
             try out.append(e.value)

@@ -1,0 +1,38 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+extern fn pipe(fds: *mut [2]i32) i32
+extern fn posix_spawn_file_actions_addopen(actions: [*]u8, fd: i32, path: [*]u8, flags: i32, mode: u32) i32
+extern fn posix_spawn_file_actions_addclose(actions: [*]u8, fd: i32) i32
+
+fn spawnPicker(tmp: Allocator, argv: [][]u8, read_end: *mut i32) AllocError!i32 {
+    var actions = @zeroed([16]u64)
+    let fa = @ptrCast([*]u8, &mut actions)
+    let ptrs = try cArgs(tmp, argv)
+    let env = try processEnv(tmp)
+    var ends = [2]i32{-1, -1}
+    var pid: i32 = 0
+
+    if pipe(&mut ends) != 0 { return 0 }
+
+    posix_spawn_file_actions_init(fa)
+    posix_spawn_file_actions_adddup2(fa, ends[1], 1)
+    posix_spawn_file_actions_addopen(fa, 2, "/dev/null\x00".ptr, 1, 0)
+    posix_spawn_file_actions_addclose(fa, ends[0])
+    posix_spawn_file_actions_addclose(fa, ends[1])
+
+    let failed = posix_spawnp(&mut pid, ptrs[0].?, fa, null, ptrs.ptr, env) != 0
+
+    posix_spawn_file_actions_destroy(fa)
+    closeFd(ends[1])
+
+    if failed {
+        closeFd(ends[0])
+
+        return 0
+    }
+
+    read_end.* = ends[0]
+
+    return pid
+}

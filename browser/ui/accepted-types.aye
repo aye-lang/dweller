@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// https://html.spec.whatwg.org/multipage/input.html#attr-input-accept
+fn acceptedTypes(accepted: []u8, out: *mut text.Builder) AllocError!void {
+    var types = text.Builder.init(out.alloc)
+    defer types.deinit()
+    var tokens = text.split(accepted, ",")
+
+    while tokens.next() |raw| {
+        let token = text.trim(raw)
+        let known = uniformType(token)
+
+        if token.len == 0 { continue }
+        if known.len == 0 || text.indexOf(known, "\"") != null || text.indexOf(known, "\\") != null { return }
+        if types.len() > 0 { try types.append(", ") }
+
+        try types.append("\"")
+        try types.append(known)
+        try types.append("\"")
+    }
+
+    if types.len() == 0 { return }
+
+    try out.append(" of type {")
+    try out.append(types.bytes())
+    try out.append("}")
+}

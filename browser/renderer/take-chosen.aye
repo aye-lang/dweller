@@ -1,0 +1,36 @@
+import ipc
+import std.heap.Arena
+import std.list.List
+import std.text
+
+// chromium: third_party/blink/renderer/core/html/forms/file_chooser.cc (DidChooseFiles)
+fn takeChosen(r: *mut TabRenderer, m: ipc.Message) !bool {
+    if r.chosen == null {
+        r.chosen = try r.alloc.create(ChosenFiles { arena: Arena.init(r.alloc), files: List(PendingFile).init(r.alloc) })
+    }
+
+    let c = r.chosen.?
+    let tmp = c.arena.allocator()
+
+    match m {
+        .ChosenFile { name, mime, modified } => {
+            try c.files.append(PendingFile { name: try copyOf(tmp, name), mime: try copyOf(tmp, mime), modified_ms: modified, bytes: text.Builder.init(tmp) })
+        }
+
+        .ChosenBytes { chunk } => {
+            if c.files.len() == 0 { return false }
+
+            try c.files.items()[c.files.len() - 1].bytes.append(chunk)
+        }
+
+        .ChosenEnd { count } => {
+            if count as usize != c.files.len() { return false }
+
+            try landChosen(r, c)
+        }
+
+        _ => {}
+    }
+
+    return true
+}

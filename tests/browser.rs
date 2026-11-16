@@ -64,6 +64,8 @@ mod storage;
 mod webgl;
 #[path = "browser/websocket.rs"]
 mod websocket;
+#[path = "browser/window_file.rs"]
+mod window_file;
 #[path = "browser/window_login.rs"]
 mod window_login;
 #[path = "browser/window_places.rs"]
