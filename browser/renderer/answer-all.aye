@@ -77,6 +77,13 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .ContextClosed { context } => closeContext(r, context)
+            .ContextTab { context, frame } => engine.setContextTab(context, frame)
+            .OpenerInfo { frame, name } => {
+                r.remote_opener = frame
+                r.opener_name.clear()
+                try r.opener_name.append(name)
+            }
+
             .AttachTab { context } => {
                 if r.fds.len() == 0 { return false }
 

@@ -91,7 +91,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, active)
         }
 
-        .Context { ask, context, href, post, content_type, body, keeps } => {
+        .Context { ask, context, href, post, content_type, body, keeps, name } => {
             try putU32(out, ask)
             try putU32(out, context)
             try putBytes(out, href)
@@ -99,6 +99,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putBytes(out, content_type)
             try putBytes(out, body)
             try putU32(out, keeps)
+            try putBytes(out, name)
         }
 
         .AgentActed { what } => try putBytes(out, what)
@@ -107,6 +108,16 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .AgentWindow { line } => try putBytes(out, line)
         .AttachTab { context } => try putU32(out, context)
         .ContextClosed { context } => try putU32(out, context)
+        .OpenerInfo { frame, name } => {
+            try putU32(out, frame)
+            try putBytes(out, name)
+        }
+
+        .ContextTab { context, frame } => {
+            try putU32(out, context)
+            try putU32(out, frame)
+        }
+
         .AgentWindowReply { ok, message, fields, detail } => {
             try putU32(out, ok)
             try putBytes(out, message)

@@ -29,10 +29,8 @@ fn tab_pids(state: &str) -> Vec<String> {
 /// its opener and is same-site with it runs in its opener's renderer
 /// process (one pid for both tabs): it sees `opener`, reads and sets
 /// `opener.document.title` and reads the new one back, all in its own
-/// script's turn, and has the name its opener gave it. A
-/// `noopener` popup and a cross-site one each get a renderer of their
-/// own, where `opener` is null (and the cross-site one's name `w2` does
-/// not reach its renderer yet: names across renderers are Q2.12d's Left).
+/// script's turn, and has the name its opener gave it. A `noopener`
+/// popup gets a renderer of its own, where `opener` is null.
 #[test]
 fn window_renderer_popup_opener() {
     if !has_sdl() {
@@ -49,17 +47,43 @@ fn window_renderer_popup_opener() {
     assert!(state.contains(&format!("\nrenderer {} title opener Opener>set-by?same name w1 ?same\n", p[0])), "{state}");
     assert!(p.len() == 2 && p[0] == p[1] && p[0] != "0", "a same-site popup shares its opener's process: {p:?}\n{state}");
 
-    for (y, query) in [(106, "?none"), (146, "?cross")] {
-        let state = popup_window(&srv.base, &format!("renderer:loaded click:50,{y} renderer:input renderer:title:{query}"));
+    let state = popup_window(&srv.base, "renderer:loaded click:50,106 renderer:input renderer:title:?none");
+    let p = tab_pids(&state);
+    assert!(state.contains(&format!("\nrenderer {} title opener null name ?none\n", p[1])), "{state}");
+    assert!(p.len() == 2 && p[0] != p[1] && p[0] != "0" && p[1] != "0", "a renderer of its own: {p:?}\n{state}");
+}
+
+/// Q2.15n: a popup opened on another site with its opener kept runs in
+/// a renderer of its own and still has its opener and its name: reading
+/// `opener.document` is a SecurityError, `opener.postMessage` reaches
+/// the opener, whose `event.source` is the window `window.open`
+/// returned, and the answer posted to that source comes back with
+/// `event.source === window.opener`. In `tab` and `site` mode.
+#[test]
+fn window_renderer_popup_cross_opener() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let open = "renderer:loaded click:50,146 renderer:input renderer:title:?cross!";
+    for mode in ["tab", "site"] {
+        let state = popup_window_in(mode, &srv.base, open);
         let p = tab_pids(&state);
-        assert!(state.contains(&format!("\nrenderer {} title opener null name {query}\n", p[1])), "{query}:\n{state}");
-        assert!(p.len() == 2 && p[0] != p[1] && p[0] != "0" && p[1] != "0", "{query}: a renderer of its own: {p:?}\n{state}");
+        assert!(state.contains(&format!("\nrenderer {} title pong-true name w2 ?cross!\n", p[1])), "{mode}:\n{state}");
+        assert!(p.len() == 2 && p[0] != p[1] && p[0] != "0" && p[1] != "0", "{mode}: a renderer of its own: {p:?}\n{state}");
+        let state = popup_window_in(mode, &srv.base, &format!("{open} key:cmd+1 renderer:title:got-hi-true"));
+        assert!(state.contains(&format!("\nrenderer {} title got-hi-true\n", tab_pids(&state)[0])), "{mode}:\n{state}");
     }
 }
 
 /// Q2.12d: a popup that shares its opener's renderer and navigates to
-/// another site leaves the process: it commits in a renderer of its own
-/// with `opener` null, and the opener's renderer lives and takes input.
+/// another site leaves the process: it commits in a renderer of its own,
+/// where its opener is a proxy (Q2.15n: a message to it is answered,
+/// the name stays), and the opener's renderer lives and takes input.
 #[test]
 fn window_renderer_popup_leaves() {
     if !has_sdl() {
@@ -70,10 +94,10 @@ fn window_renderer_popup_leaves() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let away = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away");
+    let away = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away!");
     let state = popup_window(&srv.base, &away);
     let p = tab_pids(&state);
-    assert!(state.contains(&format!("\nrenderer {} title opener null name ", p[1])) && state.contains("\nrenderer-site http://localhost\n"), "{state}");
+    assert!(state.contains(&format!("\nrenderer {} title pong-true name w1 ?away!\n", p[1])) && state.contains("\nrenderer-site http://localhost\n"), "{state}");
     assert!(p.len() == 2 && p[0] != p[1] && p[0] != "0" && p[1] != "0", "{p:?}\n{state}");
 
     let state = popup_window(&srv.base, &format!("{away} key:cmd+1 click:50,212 renderer:input renderer:title:opener-alive"));
@@ -156,11 +180,11 @@ fn window_renderer_popup_returns() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let events = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away click:50,92 renderer:input renderer:title:?back");
+    let events = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away! click:50,92 renderer:input renderer:title:?back");
     for mode in ["tab", "site"] {
         let state = popup_window_in(mode, &srv.base, &events);
         let p = tab_pids(&state);
-        assert!(state.contains(&format!("\nrenderer {} title opener set-by?same>set-by?back name w1 ?back\n", p[0])), "{mode}:\n{state}");
+        assert!(state.contains(&format!("\nrenderer {} title opener got-hi-true>set-by?back name w1 ?back\n", p[0])), "{mode}:\n{state}");
         assert!(p.len() == 2 && p[0] == p[1] && p[0] != "0", "{mode}: back in its opener's process: {p:?}\n{state}");
         assert!(state.contains("\nrenderer-site http://127.0.0.1\n"), "{mode}:\n{state}");
     }
@@ -201,7 +225,7 @@ fn window_renderer_popup_closed() {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let away = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away");
+    let away = format!("{OPEN_SAME} click:50,92 renderer:input renderer:title:?away!");
     for mode in ["tab", "site"] {
         let state = popup_window_in(mode, &srv.base, &format!("{away} key:cmd+1 click:50,292 renderer:input renderer:title:closed-false"));
         assert!(state.contains(" title closed-false\n"), "{mode}:\n{state}");
@@ -209,5 +233,51 @@ fn window_renderer_popup_closed() {
             let state = popup_window_in(mode, &srv.base, &format!("{open} key:cmd+w click:50,264 renderer:input renderer:title:closed-true"));
             assert!(state.contains(" title closed-true\n") && tab_pids(&state).len() == 1, "{mode} {open}:\n{state}");
         }
+    }
+}
+
+/// Q2.15n: a popup opened on another site with its opener kept (a
+/// sign-in window) runs in a renderer of its own; when it navigates to
+/// its opener's site it commits in the opener's process, in the context
+/// the opener made for it: `opener` and the name `w2` are there, and it
+/// scripts the opener's document.
+#[test]
+fn window_renderer_popup_cross_returns() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let events = "renderer:loaded click:50,146 renderer:input renderer:title:?cross! click:50,92 renderer:input renderer:title:?away";
+    for mode in ["tab", "site"] {
+        let state = popup_window_in(mode, &srv.base, events);
+        let p = tab_pids(&state);
+        assert!(state.contains(&format!("\nrenderer {} title opener got-hi-true>set-by?away name w2 ?away\n", p[0])), "{mode}:\n{state}");
+        assert!(p.len() == 2 && p[0] == p[1] && p[0] != "0", "{mode}: in its opener's process: {p:?}\n{state}");
+    }
+}
+
+/// Q2.15n: the opener sets `location.href` of a popup that runs in
+/// another renderer: the browser navigates the popup's tab, which keeps
+/// its opener and its name.
+#[test]
+fn window_renderer_popup_cross_navigate() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let events = "renderer:loaded click:50,146 renderer:input renderer:title:?cross! key:cmd+1 click:50,332 renderer:input key:cmd+2 renderer:title:?moved!";
+    for mode in ["tab", "site"] {
+        let state = popup_window_in(mode, &srv.base, events);
+        let p = tab_pids(&state);
+        assert!(state.contains(&format!("\nrenderer {} title pong-true name w2 ?moved!\n", p[1])), "{mode}:\n{state}");
+        assert!(p.len() == 2 && p[0] != p[1], "{mode}: {p:?}\n{state}");
     }
 }

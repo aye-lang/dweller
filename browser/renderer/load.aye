@@ -16,7 +16,12 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
         sent = &body
     }
 
-    if r.context == 0 { r.context = try engine.newTabContext(r.alloc) }
+    if r.context == 0 {
+        r.context = try engine.newTabContext(r.alloc)
+        try engine.setContextName(r.context, r.opener_name.bytes())
+    }
+
+    engine.setRemoteOpener(r.context, r.remote_opener)
 
     engine.setLoadingContext(r.context)
 

@@ -7,13 +7,20 @@
 <button id="alive" style="display: block; width: 300px; height: 40px; margin: 0">alive</button>
 <button id="leave" style="display: block; width: 300px; height: 40px; margin: 0">leave</button>
 <button id="probe" style="display: block; width: 300px; height: 40px; margin: 0">closed?</button>
+<button id="move" style="display: block; width: 300px; height: 40px; margin: 0">move the popup</button>
 <script>
 const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
 let w = null;
 same.onclick = () => { w = window.open('popup_child.html?same', 'w1'); };
+addEventListener('message', function (e) {
+  document.title = 'got-' + e.data + '-' + (e.source === w || e.source === w2);
+  e.source.postMessage('pong', '*');
+});
+move.onclick = () => { w2.location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html?moved'; };
 probe.onclick = () => { document.title = 'closed-' + (w && w.closed); };
 none.onclick = () => { window.open('popup_child.html?none', '_blank', 'noopener'); };
-cross.onclick = () => { window.open('http://' + host + ':' + location.port + '/ui/popup_child.html?cross', 'w2'); };
+let w2 = null;
+cross.onclick = () => { w2 = window.open('http://' + host + ':' + location.port + '/ui/popup_child.html?cross', 'w2'); };
 alive.onclick = () => { document.title = 'opener-alive'; };
 leave.onclick = () => { location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html?away'; };
 </script>
