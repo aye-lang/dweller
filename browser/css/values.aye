@@ -495,12 +495,12 @@ struct Declarer {
     important: bool
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
+        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "", reverts: revertWord(v) != 0 })
     }
 
     // A declaration parsed at computed-value time (or a custom property).
     fn addRaw(self: *mut Self, prop: usize, toks: []Token, name: []u8) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name })
+        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name, reverts: prop != CUSTOM && hasRevertWord(toks) })
     }
 
     fn shorthand(self: *mut Self, name: []u8, comps: []Comp) AllocError!void {
@@ -1104,6 +1104,12 @@ fn cssWide(c: Comp) ?Value {
     }
     if isIdent(c, "unset") {
         return Value.Unset
+    }
+    if isIdent(c, "revert") {
+        return Value.Keyword { k: "revert" }
+    }
+    if isIdent(c, "revert-layer") {
+        return Value.Keyword { k: "revert-layer" }
     }
     return null
 }
