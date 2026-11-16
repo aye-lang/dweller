@@ -20,6 +20,19 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
 
     engine.setLoadingContext(r.context)
 
+    var kept = r.history
+    var restore = false
+
+    r.history = engine.SessionHistory.init(r.alloc)
+    defer {
+        if restore {
+            r.history.deinit()
+            r.history = kept
+        } else {
+            kept.deinit()
+        }
+    }
+
     try mirrorHistory(r)
 
     if evilTest("commit") && outsideTop(r, href) { return send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: "", url: href }) }
@@ -27,6 +40,12 @@ fn load(r: *mut TabRenderer, frame: u32, href: []u8, post: bool, content_type: [
     if evilTest("blob") && text.startsWith(href, "blob:") { return send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: "", url: href }) }
 
     let p = try engine.loadShared(r.alloc, &target, sent, net.Initiator.Browser, &mut r.history)
+
+    if p.downloaded {
+        restore = true
+
+        return p.destroy()
+    }
 
     if !net.sameOrigin(&target, &p.url) && !text.eql(target.withoutFragment(), p.url.withoutFragment()) {
         try send(r.alloc, r.conn, frame, ipc.Message.Redirect { url: p.url.href })

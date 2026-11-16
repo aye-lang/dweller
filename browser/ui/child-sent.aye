@@ -119,6 +119,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .Fetch { .. } => return answerFetch(tp, got.frame, got.message)
         .FetchCancel { id } => return cancelFetch(tp, id)
+        .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
         .CookieGet { .. }, .CookieSet { .. } => {
             if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }

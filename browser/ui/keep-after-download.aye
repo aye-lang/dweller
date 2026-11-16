@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/navigation_request.cc (OnResponseStarted, is_download)
+fn keepAfterDownload(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    let h = &mut slot.session.tab.history
+
+    if !tp.downloaded { return }
+
+    if slot.typed && h.len() > 0 {
+        h.truncate(h.len() - 1)
+
+        if h.current > 0 && h.current >= h.len() { h.current = h.len() - 1 }
+    }
+
+    slot.typed = false
+    tp.downloaded = false
+    tp.loading = false
+    tp.nav_failed = false
+    tp.push_on_commit = false
+    tp.url.clear()
+    try tp.url.append(slot.session.tab.href())
+    tp.committed.clear()
+    try tp.committed.append(tp.url.bytes())
+    try sendSessionHistory(slot, tp, h.current, h.len())
+}

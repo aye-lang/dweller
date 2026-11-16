@@ -30,6 +30,7 @@ pub error FetchError {
     CertInvalid
     TlsVersion
     Network
+    Downloaded
 }
 
 /// What a fetch returns. Every slice is owned by the response: free them
@@ -173,6 +174,13 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     }
     archiveWrite(alloc, target, req, &res, "")
     noteFailure(req.kind, res.status, target.href)
+
+    if req.kind == Kind.Document && try takeDownload(alloc, target, &res) {
+        res.deinit(alloc)
+
+        return FetchError.Downloaded
+    }
+
     return nosniffChecked(alloc, req, target, try orbChecked(alloc, req, target, try corsChecked(alloc, req, target, res)))
 }
 
@@ -212,6 +220,9 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     }
     if text.eql(target.scheme, "data") {
         return fetchData(alloc, target)
+    }
+    if req.initiator is .Browser && text.eql(target.href, "about:downloads") {
+        return downloadsPage(alloc)
     }
     if !text.eql(target.scheme, "http") && !text.eql(target.scheme, "https") {
         return FetchError.Unsupported
@@ -259,6 +270,7 @@ pub fn describe(e: FetchError) []u8 {
         .CertWrongHost => "the certificate is for another host"
         .CertInvalid => "the certificate is not valid"
         .TlsVersion => "the server does not support TLS 1.2 or later"
+        .Downloaded => "saved as a download"
         .Network => "network error"
     }
 }

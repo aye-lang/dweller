@@ -1,0 +1,17 @@
+// https://html.spec.whatwg.org/multipage/links.html#downloading-hyperlinks
+pub fn noteDownload(href: []u8, name: []u8) {
+    if remote_download |hook| { return hook(href, name) }
+
+    let all = downloadsOf() orelse return
+
+    forgetDownloadHint(all)
+    all.owned_hint_href = dup(all.alloc, href) catch return
+    all.owned_hint_name = dup(all.alloc, name) catch return
+}
+
+fn forgetDownloadHint(all: *mut Downloads) {
+    release(all.alloc, all.owned_hint_href)
+    release(all.alloc, all.owned_hint_name)
+    all.owned_hint_href = []mut u8{}
+    all.owned_hint_name = []mut u8{}
+}
