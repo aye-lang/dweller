@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn diffLines(tmp: Allocator, before: []u8, after: []u8) AllocError![]u8 {
+    var a = List([]u8).init(tmp)
+    var b = List([]u8).init(tmp)
+
+    try splitLines(before, &mut a)
+    try splitLines(after, &mut b)
+
+    let x = a.items()
+    let y = b.items()
+    var head: usize = 0
+    var tail: usize = 0
+
+    while head < x.len && head < y.len && text.eql(x[head], y[head]) {
+        head += 1
+    }
+
+    while tail < x.len - head && tail < y.len - head && text.eql(x[x.len - 1 - tail], y[y.len - 1 - tail]) {
+        tail += 1
+    }
+
+    return diffMiddle(tmp, x[head..x.len - tail], y[head..y.len - tail])
+}

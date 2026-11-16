@@ -1,0 +1,23 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn agentType(app: *mut App, tmp: Allocator, el: NodeId, typed: []u8) AllocError!Outcome {
+    let who = try describe(app, tmp, el)
+
+    if !dom.isTextField(&app.doc, el) {
+        return failed(try joined(tmp, "cannot type into ", who, ": it is not a text field"))
+    }
+
+    try dom.setValue(&mut app.doc, el, typed)
+    try focus(app, el)
+    try markDirty(app, el)
+
+    var shown = text.Builder.init(tmp)
+
+    try quoteSem(&mut shown, typed)
+
+    return done(try joined(tmp, try joined(tmp, "typed ", shown.bytes(), " into "), who, ""))
+}

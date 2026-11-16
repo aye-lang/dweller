@@ -1,0 +1,24 @@
+import dom.NodeId
+import std.text
+
+fn nodeOfRef(app: *mut App, ref: []u8) ?NodeId {
+    if ref.len < 2 || ref[0] != 'e' {
+        return null
+    }
+
+    let n = text.parseInt(ref[1..]) catch |e| {
+        return null
+    }
+
+    if n < 1 || n as usize > app.refs.len() {
+        return null
+    }
+
+    let el = app.refs.items()[(n - 1) as usize]
+
+    if !app.doc.isLive(el) || !app.doc.isConnected(el) {
+        return null
+    }
+
+    return el
+}
