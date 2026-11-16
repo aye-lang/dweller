@@ -3,6 +3,7 @@ import ipc
 import layout
 import pageview
 import paint
+import perf
 import std.math
 import std.list.List
 import std.text
@@ -10,6 +11,8 @@ import std.text
 fn paintFrame(r: *mut TabRenderer) !void {
     let p = r.page orelse return
     var k: usize = 0
+
+    imagesIn(r, p)
 
     if engine.takeScriptScroll(p) |y| {
         r.scroll_y = y
@@ -21,6 +24,8 @@ fn paintFrame(r: *mut TabRenderer) !void {
     }
 
     if !r.due || !r.free[k] || paintWaits(r, p) { return }
+
+    let t_relayout = perf.start()
 
     try layOut(r, p)
     try runFind(r, p)
@@ -37,6 +42,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
     defer damage.deinit()
 
     try paint.signature(&list, t, &mut sigs)
+    perf.end("ui_relayout", t_relayout, "")
 
     r.max_x = math.max(0.0, list.width - r.width as f64 / r.scale)
     r.max_y = math.max(0.0, list.height - r.height as f64 / r.scale)

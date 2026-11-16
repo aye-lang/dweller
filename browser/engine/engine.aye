@@ -687,6 +687,7 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
 // The page of `res`, the response to a request for `target`, parsed as
 // `fetchPage` does.
 fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding.Encoding) AllocError!*mut Page {
+    if res.remote { return remotePageAt(alloc, target, fallback) }
     var located = finalUrl(alloc, target, res.url) catch |e| {
         return AllocError.OutOfMemory
     }

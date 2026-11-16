@@ -1,0 +1,11 @@
+import paint
+import std
+
+fn savePng(app: *mut App, w: *mut Window, path: []u8) !void {
+    let png = try paint.encodePng(app.alloc, w.canvas.width, w.canvas.height, w.canvas.pixels)
+    defer app.alloc.free(png)
+    let f = try std.fs.create(path)
+    defer f.close()
+
+    try f.write(png)
+}

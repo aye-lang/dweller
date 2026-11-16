@@ -2,6 +2,8 @@ import engine
 import std
 import std.math
 
+let IMAGE_POLL_MS: i32 = 8
+
 fn timerWait(r: *mut TabRenderer) i32 {
     let p = r.page orelse return -1
 
@@ -19,6 +21,10 @@ fn timerWait(r: *mut TabRenderer) i32 {
 
     if r.staged.on && (wait < 0 || wait > STAGED_POLL_MS) {
         wait = STAGED_POLL_MS
+    }
+
+    if (engine.imagesLoading(p) || engine.decodesPending(p)) && (wait < 0 || wait > IMAGE_POLL_MS) {
+        wait = IMAGE_POLL_MS
     }
 
     if !caretBlinks(r, p) { return wait }

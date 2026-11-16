@@ -1,0 +1,13 @@
+import std.text
+import url
+
+test "a blob: document's storage is its inner origin's" {
+    let a = @testAllocator()
+    var area = text.Builder.init(a)
+    defer area.deinit()
+    let page = try url.parse(a, "blob:http://a.example:8000/0b0e7d2a-5c1f")
+    defer page.deinit(a)
+
+    try storageOrigin(&mut area, &page)
+    @expectEqual("http://a.example:8000", area.bytes())
+}

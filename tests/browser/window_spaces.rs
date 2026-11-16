@@ -1107,11 +1107,15 @@ fn window_spaces_chips_with(env: &[(&str, &str)]) {
     let page = format!("{fixed_dir}/long.html");
     std::fs::create_dir_all(fixed_dir).unwrap();
     std::fs::write(&page, std::fs::read(root().join("browser/tests/ui/long.html")).unwrap()).unwrap();
-    // The person's scroll after the same wheel, without agents.
-    let alone = run_window(&[
-        &page, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "1", "--state",
-        "--events", "wheel:-3",
-    ]);
+    // The person's scroll after the same wheel, without agents; the
+    // person's tab is in the window's process (its `scroll` line).
+    let alone = dweller_command()
+        .current_dir(root())
+        .env(IN_PROCESS.0, IN_PROCESS.1)
+        .args([page.as_str(), "--font", "fixed", "--width", "800", "--height", "600", "--frames", "1", "--state"])
+        .args(["--events", "wheel:-3"])
+        .output()
+        .unwrap();
     let alone = text(&alone.stdout);
     let scroll = alone.lines().find(|l| l.starts_with("scroll ")).unwrap().to_string();
     assert_ne!(scroll, "scroll 0", "{alone}");
@@ -1126,7 +1130,7 @@ fn window_spaces_chips_with(env: &[(&str, &str)]) {
     let window = spaces_window_env(
         &sock,
         &["--spaces", "--state", "--save", png.to_str().unwrap(), "--events", events, &page],
-        &[env, &[("DWELLER_TIMING", "1")]].concat(),
+        &[env, &[IN_PROCESS, ("DWELLER_TIMING", "1")]].concat(),
     );
     let pid = window.id();
     // The records are read as they come (`spaces_window`).

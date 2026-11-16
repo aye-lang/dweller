@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn runScript(app: *mut App, w: *mut Window, events: []u8) AllocError!void {
+    var words = text.split(events, " ")
+    var at: usize = 0
+
+    while words.next() |word| {
+        at += 1
+
+        if at <= w.words_done {
+            continue
+        }
+
+        w.words_done = at
+
+        if text.eql(word, "frame") {
+            return
+        }
+
+        try scriptWord(app, word)
+    }
+}

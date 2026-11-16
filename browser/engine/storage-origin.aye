@@ -1,8 +1,12 @@
 import std.mem.AllocError
 import std.text
+import url
 import url.Url
 
+// spec: https://url.spec.whatwg.org/#concept-url-origin (a blob: URL has the origin of its inner URL)
 pub fn storageOrigin(b: *mut text.Builder, u: *Url) AllocError!void {
+    if text.eql(u.scheme, "blob") { return blobOrigin(b, u.href[5..]) }
+
     try b.append(u.scheme)
     try b.append("://")
     try b.append(u.host)
@@ -11,4 +15,11 @@ pub fn storageOrigin(b: *mut text.Builder, u: *Url) AllocError!void {
         try b.appendByte(':')
         try b.append(u.port)
     }
+}
+
+fn blobOrigin(b: *mut text.Builder, inner: []u8) AllocError!void {
+    let u = url.parse(b.alloc, inner) catch return b.append("blob://")
+    defer u.deinit(b.alloc)
+
+    try storageOrigin(b, &u)
 }

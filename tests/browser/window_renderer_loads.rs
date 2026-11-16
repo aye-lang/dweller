@@ -148,3 +148,30 @@ fn window_renderer_loads_parts() {
     );
     assert!(began.elapsed() < std::time::Duration::from_secs(20), "the rest waited for the server's limit");
 }
+
+/// Q2.16a: the images a staged load starts in the background are laid
+/// out when they arrive, so the page of 60 images
+/// (`browser/tests/net/many_loads.html`) goes idle; before, the renderer
+/// never took them and the window ran to its frame cap (47 s).
+#[test]
+fn window_renderer_loads_images_settle() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/many_loads.html", srv.base);
+    let mut window = dweller_command();
+    window.current_dir(root()).env("DWELLER_PROCESS", "tab").args([
+        &href, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "4000",
+        "--until-idle", "--state", "--events", "renderer:loaded frame",
+    ]);
+    let began = std::time::Instant::now();
+    let out = window.output().unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).contains("title Many loads"), "{}", text(&out.stdout));
+    assert!(began.elapsed() < std::time::Duration::from_secs(20), "the page never went idle");
+}

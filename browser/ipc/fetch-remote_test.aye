@@ -1,0 +1,16 @@
+import std.text
+
+test "a fetch_remote message round-trips and never comes from a renderer" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let remote = try roundTrip(&mut out, 7, Message.FetchRemote { id: 9 })
+
+    match remote.message {
+        .FetchRemote { id } => @expectEqual(9, id)
+        _ => @expect(false)
+    }
+
+    @expectEqual(100, (Message.FetchRemote { id: 0 }).kind())
+    @expect(!fromRenderer(Message.FetchRemote { id: 0 }))
+}

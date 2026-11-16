@@ -1,0 +1,23 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#text-combine-upright
+fn textCombineValue(comps: []Comp) ?Value {
+    if comps.len == 1 {
+        if identIn(comps[0], "none all") |k| {
+            return Value.Keyword { k: k }
+        }
+    }
+
+    if comps.len == 0 || comps.len > 2 || identIn(comps[0], "digits") == null {
+        return null
+    }
+
+    if comps.len == 1 {
+        return Value.Keyword { k: "digits 2" }
+    }
+
+    let digits = combinedDigits(comps[1]) orelse return null
+    let forms = [3][]u8{"digits 2", "digits 3", "digits 4"}
+
+    return Value.Keyword { k: forms[(math.round(digits) as usize) - 2] }
+}
