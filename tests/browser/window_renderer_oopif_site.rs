@@ -180,3 +180,40 @@ fn window_renderer_oopif_site_sandbox() {
         assert!(line(&state, "renderer ").ends_with(" title Parent"), "{evil}: the parent lives\n{state}");
     }
 }
+
+fn far_pixels(a: &Path, b: &Path, by: u8) -> usize {
+    let (w, h, got) = png_rgba(&std::fs::read(a).unwrap());
+    let (gw, gh, want) = png_rgba(&std::fs::read(b).unwrap());
+    assert_eq!((w, h), (gw, gh));
+    got.chunks(4).zip(want.chunks(4)).filter(|(p, q)| p.iter().zip(q.iter()).any(|(x, y)| x.abs_diff(*y) > by)).count()
+}
+
+/// Q2.15d: the window shows a cross-site frame as its parent's paint
+/// places it: clipped by an ancestor's `overflow: hidden`, moved and
+/// clipped by an ancestor scroll container's scroll offset, moved by an
+/// ancestor's `transform: translate()` (all byte-equal to the in-process
+/// window), and blended at an ancestor's `opacity` (each channel within 1
+/// of the in-process window, which rounds once where the two processes
+/// round twice).
+#[test]
+fn window_renderer_oopif_site_effects() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let golden = scratch().join("oopif_site_effects_in_process.png");
+    let shot = scratch().join("oopif_site_effects.png");
+    let cases = [("?hidden", "at 20 40 ", 0u8), ("?scrolled", "at 20 -5 ", 0), ("?moved", "at 50 60 ", 0), ("?faded", "at 20 40 ", 1)];
+    for (query, at, by) in cases {
+        let page = format!("oopif-effects.html{query}");
+        run_site(&srv.base, &page, "", &golden, "loaded frame frame");
+        let state = run_site(&srv.base, &page, "site", &shot, "renderer:loaded renderer:child frame");
+        let children = kids(&state);
+        assert!(children.len() == 1 && children[0].contains(" frame 200 100 ") && children[0].contains(at), "{query}:\n{state}");
+        assert_eq!(far_pixels(&shot, &golden, by), 0, "{query}: {} differs from the in-process window {}", shot.display(), golden.display());
+    }
+}
