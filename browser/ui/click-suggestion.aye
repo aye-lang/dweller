@@ -1,0 +1,26 @@
+import std.mem.AllocError
+
+fn clickSuggestion(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    let r = suggestRect(ui) orelse return false
+    let s = ui.suggest.?
+
+    if !inRect(r, x, y) {
+        closeSuggestions(ui)
+
+        return false
+    }
+
+    var row = ((y - r.y - 1.0) / SUGGEST_ROW) as usize
+
+    if s.typed.len() > 0 && row == 0 {
+        try ui.address.set(s.typed.bytes())
+    } else {
+        row -= (s.typed.len() > 0) as usize
+
+        if row < s.rows.len() { try ui.address.set(s.rows.items()[row].owned_url) }
+    }
+
+    try ui.submitAddress()
+
+    return true
+}

@@ -314,7 +314,7 @@ fn window_login_cookies() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
-    assert_eq!(names, ["cookies", "lock", "telemetry"]);
+    assert_eq!(names, ["cookies", "history", "lock", "telemetry"]);
     let again = login_window(&account, "frame", Some(&dir));
     assert!(
         again.contains(&format!("url {account}\n"))

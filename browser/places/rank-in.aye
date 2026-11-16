@@ -1,0 +1,22 @@
+import std.list.List
+import std.mem.AllocError
+
+fn rankIn(out: *mut List(Suggestion), limit: usize, found: Suggestion) AllocError!void {
+    var at = out.len()
+
+    while at > 0 && ranksBefore(found, out.items()[at - 1]) {
+        at -= 1
+    }
+
+    if at >= limit { return }
+
+    try out.insert(at, found)
+
+    if out.len() > limit { _ = out.orderedRemove(limit) }
+}
+
+fn ranksBefore(a: Suggestion, b: Suggestion) bool {
+    if a.score != b.score { return a.score > b.score }
+
+    return a.last_ms > b.last_ms
+}

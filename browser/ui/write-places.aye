@@ -1,0 +1,28 @@
+import places
+import std.mem.AllocError
+import std.text
+
+fn writePlaces(ui: *Ui, out: *mut text.Builder) AllocError!void {
+    if places.isBookmarked(zoomHref(ui.slots[ui.active].?)) { try out.append("bookmarked\n") }
+
+    let s = ui.suggest orelse return
+
+    if s.typed.len() > 0 {
+        try writeSuggestMark(out, s.selected == null, false)
+        try typedRowText(s.typed.bytes(), out)
+        try out.append("\n")
+    }
+
+    for k in 0..s.rows.len() {
+        try writeSuggestMark(out, s.selected != null && s.selected.? == k, s.rows.items()[k].bookmarked)
+        try placeRowText(&s.rows.items()[k], out)
+        try out.append("\n")
+    }
+}
+
+fn writeSuggestMark(out: *mut text.Builder, selected: bool, bookmarked: bool) AllocError!void {
+    try out.append("suggest ")
+
+    if selected { try out.append("> ") }
+    if bookmarked { try out.append("* ") }
+}

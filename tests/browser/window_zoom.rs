@@ -54,7 +54,7 @@ fn window_zoom_keys() {
         assert_eq!(seen(&reset), "w400 dpr1 widetrue down115,75 hit", "{envs:?}");
         assert_eq!(zoom_line(&reset), "zoom 100", "{envs:?}");
 
-        let chip = run("key:cmd+= key:cmd+= key:cmd+= key:cmd+= key:cmd+= ~ click:370,20 ~ click:115,115 frame");
+        let chip = run("key:cmd+= key:cmd+= key:cmd+= key:cmd+= key:cmd+= ~ click:345,20 ~ click:115,115 frame");
         assert_eq!(seen(&chip), "w400 dpr1 widetrue down115,75 hit", "{envs:?}");
         assert_eq!(zoom_line(&chip), "zoom 100", "{envs:?}");
 
@@ -114,7 +114,7 @@ fn window_zoom_pixels() {
         }
     }
 
-    let chip = (330..395).flat_map(|x| (8..32).map(move |y| (x, y))).filter(|&(x, y)| pixel(&plain, x, y) != pixel(&zoomed, x, y)).count();
+    let chip = (320..368).flat_map(|x| (8..32).map(move |y| (x, y))).filter(|&(x, y)| pixel(&plain, x, y) != pixel(&zoomed, x, y)).count();
 
     assert!(chip > 40, "the zoom chip changed only {chip} pixels");
 

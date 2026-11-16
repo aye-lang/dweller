@@ -1,0 +1,25 @@
+fn dropOldest(s: *mut PlaceStore) {
+    var visited: usize = 0
+    var oldest: ?usize = null
+
+    for k in 0..s.places.len() {
+        let p = &s.places.items()[k]
+
+        if p.visits == 0 || p.bookmarked { continue }
+
+        visited += 1
+
+        if oldest == null || p.last_ms < s.places.items()[oldest.?].last_ms {
+            oldest = k
+        }
+    }
+
+    if visited <= MAX_VISITED { return }
+
+    freePlace(s, s.places.orderedRemove(oldest.?))
+}
+
+fn freePlace(s: *mut PlaceStore, p: Place) {
+    s.alloc.free(p.owned_url)
+    s.alloc.free(p.owned_title)
+}

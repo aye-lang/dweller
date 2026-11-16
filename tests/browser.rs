@@ -66,6 +66,8 @@ mod webgl;
 mod websocket;
 #[path = "browser/window_login.rs"]
 mod window_login;
+#[path = "browser/window_places.rs"]
+mod window_places;
 #[path = "browser/window_renderer.rs"]
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]

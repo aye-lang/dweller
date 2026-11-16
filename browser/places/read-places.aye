@@ -1,0 +1,26 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+fn readPlaces(s: *mut PlaceStore, dir: []u8) AllocError!void {
+    if try profileFile(s, dir, "bookmarks") |saved| {
+        defer s.alloc.free(saved)
+
+        try decodeBookmarks(s, saved)
+    }
+
+    if try profileFile(s, dir, "history") |saved| {
+        defer s.alloc.free(saved)
+
+        try decodeHistory(s, saved)
+    }
+
+    if s.owned_search != null { return }
+
+    if try profileFile(s, dir, "search") |saved| {
+        defer s.alloc.free(saved)
+
+        if text.indexOf(saved, "%s") != null { s.owned_search = try ownedText(s.alloc, text.trim(saved)) }
+    }
+}

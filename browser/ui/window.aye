@@ -34,6 +34,7 @@ import net
 import pageview
 import paint
 import perf
+import places
 import sessions
 import std
 import std.mem.AllocError
@@ -219,6 +220,9 @@ pub fn run(alloc: Allocator, args: [][]u8) i32 {
     zoom.openZoom(alloc) catch |e| {
     }
     defer zoom.closeZoom()
+    places.openPlaces(alloc) catch |e| {
+    }
+    defer places.closePlaces()
     return runWith(alloc, o)
 }
 
@@ -397,6 +401,7 @@ pub struct Ui {
     px_h: i32
     scale: f64
     page_zoom: f64 = 1.0
+    suggest: ?*mut Suggestions = null
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -546,6 +551,7 @@ pub struct Ui {
 
     fn deinit(self: *mut Self) {
         SDL_StopTextInput()
+        closeSuggestions(self)
         pageview.shutdown(&mut self.page_view)
         if self.texture |t| {
             SDL_DestroyTexture(t)
@@ -642,6 +648,7 @@ pub struct Ui {
             let t_loop = perf.start()
             var waited: u64 = 0
             var waited_ns: u64 = 0
+            try noteVisits(self)
             try self.advanceLoad(false)
             try self.imagesIn()
             try runAnimationFrame(self)
@@ -1021,10 +1028,11 @@ pub struct Ui {
         if typed.len == 0 {
             return
         }
-        let target = engine.urlOfInput(self.alloc, typed) catch |e| {
+        let target = addressTarget(self, typed) catch |e| {
             return
         }
         defer target.deinit(self.alloc)
+        closeSuggestions(self)
         self.focus = Focus.Page
         try self.go(&target, net.Initiator.Browser)
     }
@@ -1368,7 +1376,7 @@ pub struct Ui {
             self.swallow = true
             return
         }
-        if cmd && ((try zoomShortcut(self, sym)) || try windowKey(self, sym, shift)) {
+        if cmd && ((try zoomShortcut(self, sym)) || (try bookmarkShortcut(self, sym, shift)) || try windowKey(self, sym, shift)) {
             self.swallow = true
             return
         }
@@ -1416,6 +1424,9 @@ pub struct Ui {
             } else {
                 self.swallow = false
             }
+            return
+        }
+        if try suggestKey(self, sym) {
             return
         }
         if sym == SDLK_ESCAPE {
@@ -1485,6 +1496,9 @@ pub struct Ui {
         if edited && self.focus == Focus.Find {
             try self.findAll(true)
         }
+        if edited && self.focus == Focus.Address {
+            try refreshSuggestions(self)
+        }
     }
 
     // The focused text field (the find bar's when the page has focus).
@@ -1513,6 +1527,9 @@ pub struct Ui {
         self.dirty = true
         if self.focus == Focus.Find {
             try self.findAll(true)
+        }
+        if self.focus == Focus.Address {
+            try refreshSuggestions(self)
         }
     }
 
@@ -1621,7 +1638,10 @@ pub struct Ui {
         if y >= TOOLBAR && y < self.top() {
             return clickTabStrip(self, x)
         }
-        if y < TOOLBAR && try clickZoomChip(self, x, y) {
+        if try clickSuggestion(self, x, y) {
+            return
+        }
+        if y < TOOLBAR && ((try clickZoomChip(self, x, y)) || try clickStar(self, x, y)) {
             return
         }
         if y < TOOLBAR {
@@ -1957,6 +1977,7 @@ pub struct Ui {
         drawWatched(self, area)
         try drawToolbar(self)
         try drawZoomChip(self)
+        drawStar(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)
         }
@@ -1980,6 +2001,7 @@ pub struct Ui {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }
         try drawSpaceMenu(self)
+        try drawSuggestions(self)
         if self.texture |t| {
             SDL_UpdateTexture(t, null, self.canvas.pixels.ptr, (self.canvas.width * 4) as i32)
             SDL_RenderClear(self.renderer)

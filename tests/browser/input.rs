@@ -55,7 +55,7 @@ fn window_events() {
         ),
         (
             "key:cmd+l text:browser/tests/ui/other.html",
-            "url long.html\nscroll 0\nfocus address\naddress browser/tests/ui/other.html\nhistory 1 of 1\nmatches 0\nstatus \n",
+            "url long.html\nscroll 0\nfocus address\naddress browser/tests/ui/other.html\nhistory 1 of 1\nmatches 0\nstatus \nsuggest > Go to browser/tests/ui/other.html\n",
         ),
         (
             "key:cmd+l text:browser/tests/ui/other.html key:return",
