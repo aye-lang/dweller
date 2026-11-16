@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+
+fn runLoop(app: *mut App, w: *mut Window, o: Options, began: u64) AllocError!void {
+    let headless = o.frames > 0
+
+    while !w.quit {
+        if app.redraw || headless {
+            try drawFrame(app, w)
+        }
+
+        if w.frames == 1 && w.first_frame_ms == 0 {
+            w.first_frame_ms = std.time.monotonicMs() - began
+        }
+
+        if headless && w.frames as i64 >= o.frames {
+            return
+        }
+
+        try runScript(app, w, o.events)
+        try takeEvents(app, w, !headless && !app.redraw)
+    }
+}

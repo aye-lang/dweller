@@ -44,6 +44,8 @@ mod js;
 mod jsdom;
 #[path = "browser/media.rs"]
 mod media;
+#[path = "browser/native.rs"]
+mod native;
 #[path = "browser/net.rs"]
 mod net;
 #[path = "browser/paint.rs"]

@@ -1,0 +1,19 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn markDirty(app: *mut App, el: NodeId) AllocError!void {
+    app.redraw = true
+
+    if app.tree == null {
+        return
+    }
+
+    for d in app.dirty.items() {
+        if dom.same(d, el) {
+            return
+        }
+    }
+
+    try app.dirty.append(el)
+}

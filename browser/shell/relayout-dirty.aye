@@ -1,0 +1,56 @@
+import css
+import dom.NodeId
+import layout
+import std.list.List
+import std.mem.AllocError
+
+fn relayoutDirty(app: *mut App) AllocError!bool {
+    let t = app.tree.?
+
+    if t.boxes.len() > 2 * app.built_boxes + 1024 {
+        return false
+    }
+
+    var shallow = List(bool).init(app.alloc)
+    defer shallow.deinit()
+
+    for _ in app.dirty.items() {
+        try shallow.append(false)
+    }
+
+    _ = try css.restyleSubtrees(&app.doc, &app.ua, &app.author, app.media, app.dirty.items(), shallow.items(), true, &mut app.styles)
+
+    if app.styles.moved_many {
+        return false
+    }
+
+    for el in app.styles.moved_els.items() {
+        try app.dirty.append(el)
+    }
+
+    var boxes = List(usize).init(app.alloc)
+    defer boxes.deinit()
+
+    if !(try outermostBoxes(app, &mut boxes)) {
+        return false
+    }
+
+    var forgotten = List(NodeId).init(app.alloc)
+    defer forgotten.deinit()
+
+    for b in boxes.items() {
+        if !(try layout.rebuild(t, b, &mut forgotten)) {
+            return false
+        }
+    }
+
+    for b in boxes.items() {
+        if !(try layout.relayout(t, b)) {
+            return false
+        }
+    }
+
+    app.partial_layouts += 1
+
+    return true
+}

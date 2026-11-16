@@ -1,0 +1,51 @@
+import std.text
+
+fn readOptions(args: [][]u8) ?Options {
+    var o = Options {}
+    var i: usize = 1
+
+    while i < args.len {
+        let a = args[i]
+        let value = optionValue(args, i)
+
+        if text.eql(a, "--dump") {
+            o.dump = true
+        } else if text.eql(a, "--timing") {
+            o.timing = true
+        } else if text.eql(a, "--full-layout") {
+            o.full_layout = true
+        } else if text.eql(a, "--font") && text.eql(value, "fixed") {
+            o.fixed_font = true
+        } else if text.eql(a, "--font") && text.eql(value, "system") {
+            o.fixed_font = false
+        } else if text.eql(a, "--events") && value.len > 0 {
+            o.events = value
+        } else if text.eql(a, "--save") && value.len > 0 {
+            o.save = value
+        } else if text.eql(a, "--width") {
+            o.width = optionNumber(value) orelse return null
+        } else if text.eql(a, "--height") {
+            o.height = optionNumber(value) orelse return null
+        } else if text.eql(a, "--frames") {
+            o.frames = (optionNumber(value) orelse return null) as i64
+        } else {
+            return null
+        }
+
+        if !text.eql(a, "--dump") && !text.eql(a, "--timing") && !text.eql(a, "--full-layout") {
+            i += 1
+        }
+
+        i += 1
+    }
+
+    return o
+}
+
+fn optionValue(args: [][]u8, i: usize) []u8 {
+    if i + 1 < args.len {
+        return args[i + 1]
+    }
+
+    return ""
+}
