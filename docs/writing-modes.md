@@ -60,6 +60,10 @@ The entry points ask it first:
   (containing block, static position), solved by `layoutAbsolute`, and
   turned back; static positions are then taken physically.
 
+A replaced box (`BoxKind.Image`) is never turned: its natural size is
+physical. In a vertical flow `replacedSize` sizes it with its physical
+style and swaps the result (`turnedReplacedSize`).
+
 A turned box is a formatting context root. Incremental layout
 (`relayout`) answers false in a tree with a vertical box: the tree is
 laid out from scratch.

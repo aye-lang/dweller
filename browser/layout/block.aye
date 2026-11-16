@@ -120,6 +120,8 @@ fn horizontalMargins(t: *mut Tree, i: usize, cb_w: f64) {
         b.margin[3] = math.max(0.0, free)
     } else if right_auto {
         b.margin[1] = math.max(0.0, free)
+    } else if startsRight(t, i) {
+        b.margin[3] += free
     }
 }
 
@@ -260,6 +262,10 @@ fn shrinkToFit(t: *mut Tree, i: usize, avail: f64) AllocError!void {
         t.bx(i).w = w
         return
     }
+    if ratioWidth(t, i, avail, -1.0) |w| {
+        t.bx(i).w = w
+        return
+    }
     if controlContentWidth(t, i) |cw| {
         t.bx(i).w = clampWidth(t, i, cw + hEdges(t.bx(i)), avail)
         return
@@ -274,6 +280,9 @@ fn shrinkToFit(t: *mut Tree, i: usize, avail: f64) AllocError!void {
 // An auto size follows the other one's clamped value by the aspect
 // ratio (CSS 2.1 10.4: a clamped width first, then the height).
 fn replacedSize(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) {
+    if turnsReplaced(t, i) {
+        return turnedReplacedSize(t, i, cb_w, cb_h)
+    }
     let b = t.bx(i)
     let he = hEdges(b)
     let ve = vEdges(b)
