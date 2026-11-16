@@ -82,6 +82,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q0.2 | W7 and W8, plus `jsbench`, with a fast and with a safe build. A dated table goes in `PERF.md`, with the cost of safe mode | `window_perf.py report --replay` runs for both builds and the table is committed | – |
 | Q0.4 | Find why results changed since 2026-10-17 (Q0.2). zol's first paint went from 3013 to 30079 ms. The scroll p95 of wikipedia-en, wikipedia (ja), react and go-docs went from about 17 to about 225 ms. bbc's idle CPU rose to 10.7%. First decide whether the cause is the measurement (the `--until-idle` change 2c25b94, `window_perf.py` history) or the engine, by measuring the affected sites at 7de2c08 and at c0a6fa2. Then bisect. This step only finds the cause and files a card for it | each changed row is explained, naming a commit or a measurement artifact | – |
 | Q0.5 | bbc under replay ran 64 of its scripts, not 91, since Q3.3b: old archive entries gave CORS-mode module scripts no `Access-Control-Allow-Origin`, and `permissiveCors` now adds it for `Mode.Cors` too (done, #321) | `permissive-cors_test.aye`, `module_cors`; bbc's replay dump runs 96 scripts and 204 requests | – |
+| Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -102,6 +103,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q1.10d | Fuzz targets for the image decoders (PNG, JPEG, GIF, WebP) and fonts (WOFF/WOFF2) (done, #340; the 705 MB image peak is Q1.10d2; the `font` target stops before FreeType) | the same | – |
 | Q1.10d2 | A 256 MiB cap on the memory one image decode may use, checked from the header and the working buffers; a JPEG past it decodes downscaled and keeps its natural size (done, #343; left: PNG inflates all rows before unfiltering, so a very large PNG is refused where the reference streams it) | `downscaled_jpeg_natural_size`; the `image` fuzz peak falls from 705 to 297 MB; WPT `images` unchanged | `platform/image-decoders/image_decoder.cc` (`max_decoded_bytes_`), `jpeg/jpeg_image_decoder.cc` (`DesiredScaleNumerator`) |
 | Q1.10e | A nightly CI job that runs each target for 10 min. It keeps the corpus and files issues (done, #320; left: each matrix job builds its own binary) | the job is green, and a planted crash is filed | – |
+| Q1.12 | Crashes the weekly conformance run of 2026-11-09 found (Q0.1's card): SIGSEGV on three webaudio `audiobuffersource` pages and twelve WebGL 2 wasm-memory pages, abort on two WebGL 2 pages. Reproduced on the Mac in the safe build; likely cause (card): a safe-mode check fires on `start(Infinity)` and the panic report of aye O7.9 reads an unset message pointer | the cause is in the card with its evidence, and the pages run without a crash in the weekly run | – |
 
 ## Q2: process model and site isolation (lane proc)
 
@@ -214,6 +216,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.11b | WPT url, the URL setters: `url.setComponent` runs the basic URL parser with a state override over a Parser copied from the Url (`url-setters*.js` 0 -> 1156/1156, `a-element` setters included); `ak.setUrlPart` native behind the `URL` class setters; url 90.3 -> 93.9, threshold 88 -> 90 (done, 2026-11-09; left: `location` setters other than hash, `setComponent` in the url fuzz target) |
 | Q6.12 | `css/css-animations` (50.9 -> 69.1, threshold 60 -> 65; done, 2026-11-09; inline validation of animation-*/transition-*, animation-timeline and animation-range-*, shorthand longhand reads, @keyframes name validity; left: `text-decoration-inset` 84, expanding a shorthand when one longhand is cleared, CSSKeyframesRule in the CSSOM, `animation-duration: auto`, `animation-composition`) |
 | Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
+| Q6.6 | `css/cascade-variables` (56.1, 75) |
 
 ## Q7: acceptance and release (lane sites)
 
