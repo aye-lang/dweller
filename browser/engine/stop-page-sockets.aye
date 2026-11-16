@@ -1,0 +1,18 @@
+fn stopPageSockets(s: *mut Script) {
+    let all = page_sockets orelse return
+    var i = all.len()
+
+    while i > 0 {
+        i -= 1
+
+        if all.items()[i].owner == s {
+            closePageSocket(s, i)
+        }
+    }
+
+    if all.len() == 0 {
+        all.deinit()
+        s.alloc.destroy(all)
+        page_sockets = null
+    }
+}

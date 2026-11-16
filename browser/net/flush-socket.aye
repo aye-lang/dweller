@@ -1,0 +1,22 @@
+fn flushSocket(k: *mut Socket) {
+    let job = k.job orelse return
+
+    while k.written < k.outgoing.len() {
+        let rest = k.outgoing.bytes()[k.written..]
+        var sent: usize = 0
+        let code = curl_easy_send(job.curl, rest.ptr, rest.len, &mut sent)
+
+        if code == CURLE_AGAIN {
+            return
+        }
+
+        if code != 0 {
+            return failSocket(k)
+        }
+
+        k.written += sent
+    }
+
+    k.outgoing.clear()
+    k.written = 0
+}

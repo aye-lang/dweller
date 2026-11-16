@@ -1,0 +1,17 @@
+fn freeSocket(all: *mut Sockets, k: *mut Socket) {
+    dropSocket(k)
+
+    for n in k.notes.items() {
+        release(all.alloc, n.owned_data)
+    }
+
+    k.notes.deinit()
+    k.outgoing.deinit()
+    k.incoming.deinit()
+    k.assembly.data.deinit()
+    release(all.alloc, k.owned_protocols)
+    release(all.alloc, k.owned_origin)
+    release(all.alloc, k.owned_accept)
+    release(all.alloc, k.owned_taken)
+    all.alloc.destroy(k)
+}
