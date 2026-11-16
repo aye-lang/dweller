@@ -7,8 +7,9 @@ async function run() {
   const sw = navigator.serviceWorker;
   if (!sw.controller) {
     for (const old of await sw.getRegistrations()) await old.unregister();
+    const claimed = new Promise(r => { sw.oncontrollerchange = r; });
     await sw.register('worker.js');
-    await new Promise(r => { sw.oncontrollerchange = r; });
+    await claimed;
     log('claimed');
   } else log('controlled at load');
   const made = await fetch('made.txt', { method: 'POST', body: 'x' });

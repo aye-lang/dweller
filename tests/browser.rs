@@ -60,6 +60,8 @@ mod screenshot;
 mod scripts;
 #[path = "browser/security.rs"]
 mod security;
+#[path = "browser/serviceworker.rs"]
+mod serviceworker;
 #[path = "browser/storage.rs"]
 mod storage;
 #[path = "browser/webgl.rs"]

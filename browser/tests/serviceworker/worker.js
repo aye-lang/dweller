@@ -9,6 +9,6 @@ self.addEventListener('fetch', e => {
   else if (url.pathname.endsWith('/page.html') && url.search === '?made') e.respondWith(new Response('<!doctype html><title>made done</title><pre id=log>a page made by the worker</pre><script>document.getElementById("log").textContent += ", controlled " + (navigator.serviceWorker.controller !== null) + ", " + ' + JSON.stringify(e.request.mode + ' ' + e.request.destination) + ';fetch("made.txt").then(r => r.text()).then(t => { document.getElementById("log").textContent += ", " + t; });</scr' + 'ipt>', { headers: { 'Content-Type': 'text/html' } }));
 });
 self.addEventListener('message', e => {
-  if (e.data.ask === 'seen') e.source.postMessage({ seen: seen.join(','), scope: registration.scope, isWorker: self instanceof ServiceWorkerGlobalScope });
+  if (e.data.ask === 'seen') e.source.postMessage({ seen: seen.join(','), scope: new URL(registration.scope).pathname, isWorker: self instanceof ServiceWorkerGlobalScope });
   if (e.data.ask === 'clients') clients.matchAll().then(list => e.source.postMessage({ clients: list.map(c => new URL(c.url).pathname.split('/').pop()).sort().join(',') }));
 });

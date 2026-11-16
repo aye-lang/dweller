@@ -5,8 +5,9 @@
 (async () => {
   const sw = navigator.serviceWorker;
   for (const old of await sw.getRegistrations()) await old.unregister();
+  const claimed = new Promise(r => { sw.oncontrollerchange = r; });
   await sw.register('worker.js');
-  await new Promise(r => { sw.oncontrollerchange = r; });
+  await claimed;
   location.href = 'page.html?made';
 })();
 </script>
