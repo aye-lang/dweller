@@ -1,0 +1,15 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+fn loadFile(b: *mut Backend, area: []u8, dir: []u8, name: []u8) AllocError!void {
+    if !text.endsWith(name, ".idb") { return }
+
+    let path = try net.joinPath(b.alloc, dir, name)
+    defer b.alloc.free(path)
+    let bytes = std.fs.readFile(b.alloc, path) catch return
+    defer b.alloc.free(bytes)
+
+    try readDatabase(b, area, bytes)
+}

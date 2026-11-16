@@ -1,0 +1,25 @@
+import engine
+import ipc
+import std
+import std.mem.AllocError
+import std.text
+
+let IDB_CHUNK: usize = 262144
+
+// chromium: third_party/blink/renderer/modules/indexeddb/idb_factory.cc
+fn idbRemote(ask: engine.IdbAsk, out: *mut text.Builder) AllocError!void {
+    let r = store_renderer orelse return out.append("!UnknownError")
+    var doc: u32 = 0
+    var rest = ask.request
+
+    if !text.eql(ask.request, "drop") { doc = storeDoc(r, ask.href, "idb") orelse return out.append("!SecurityError") }
+
+    while rest.len > IDB_CHUNK {
+        send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: ask.page, more: 1, request: rest[..IDB_CHUNK] }) catch return out.append("!UnknownError")
+        rest = rest[IDB_CHUNK..]
+    }
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: ask.page, more: 0, request: rest }) catch return out.append("!UnknownError")
+
+    try awaitIdbReply(r, out)
+}

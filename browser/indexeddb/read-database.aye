@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+let FILE_HEADER = "dweller-idb 1\n"
+
+fn readDatabase(b: *mut Backend, area: []u8, bytes: []u8) AllocError!void {
+    if !text.startsWith(bytes, FILE_HEADER) { return }
+
+    var f = FileFields { rest: bytes[FILE_HEADER.len..] }
+    let name = f.blob()
+
+    if f.bad || findDatabase(b, area, name) != null { return }
+
+    let db = try newDatabase(b, area, name)
+
+    db.version = f.number()
+    db.next_store = f.number() as u32
+
+    for i in 0..f.number() {
+        if f.bad { break }
+
+        try readStore(b, db, &mut f)
+    }
+
+    if f.bad || db.version == 0 { removeDatabase(b, db) }
+}

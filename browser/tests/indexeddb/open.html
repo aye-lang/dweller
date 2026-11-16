@@ -1,9 +1,8 @@
 <!doctype html>
 <title>IndexedDB: open, upgrade, object stores</title>
 <pre id="log"></pre>
+<script src="harness.js"></script>
 <script>
-const out = [];
-const log = s => { out.push(s); document.getElementById('log').textContent = out.join(' | '); };
 const req = indexedDB.open('books', 2);
 log('state ' + req.readyState);
 req.onupgradeneeded = e => {
@@ -32,7 +31,7 @@ req.onsuccess = () => {
     log('complete');
     indexedDB.databases().then(list => log('databases ' + list.map(d => d.name + ':' + d.version).join(',')));
     const lower = indexedDB.open('books', 1);
-    lower.onerror = e => { log('lower ' + lower.error.name); e.preventDefault(); };
+    lower.onerror = e => { e.preventDefault(); done('lower ' + lower.error.name); };
   };
 };
 </script>

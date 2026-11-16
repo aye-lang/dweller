@@ -1,0 +1,27 @@
+import std
+
+let SAVE_MS: u64 = 1000
+
+fn anyChanged(b: *Backend) bool {
+    for db in b.dbs.items() {
+        if db.changed && !hasWriter(b, db) { return true }
+    }
+
+    return false
+}
+
+pub fn msUntilSave() ?i64 {
+    let b = the_backend orelse return null
+    let since = std.time.monotonicMs() - b.saved_ms
+
+    if !anyChanged(b) { return null }
+    if since >= SAVE_MS { return 0 }
+
+    return (SAVE_MS - since) as i64
+}
+
+pub fn saveIfDue() {
+    if msUntilSave() |ms| {
+        if ms == 0 { save() }
+    }
+}

@@ -1,0 +1,34 @@
+import engine
+import indexeddb
+import ipc
+import std.mem.AllocError
+import std.text
+import url
+
+let IDB_REQUEST_LIMIT: usize = 268435456
+
+// chromium: content/browser/indexed_db/indexed_db_context_impl.cc
+fn answerIdb(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .Idb { doc, page, more, request } => {
+            let whole = try idbRequestOf(tp)
+
+            try whole.append(request)
+
+            if more > 1 || whole.len() > IDB_REQUEST_LIMIT || doc > docCount(tp) { return "bad idb" }
+            if more == 1 { return "" }
+
+            defer whole.clear()
+
+            let href = fetchDoc(tp, doc)
+
+            if !text.eql(whole.bytes(), "drop") && !(try inSiteLock(tp, href)) { return "idb outside site lock" }
+
+            try applyIdb(tp, on, IdbCall { href: href, client: (tp.pid as u64) << 32 | page as u64, request: whole.bytes() })
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

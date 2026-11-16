@@ -1,0 +1,17 @@
+import std.list.List
+import std.mem.AllocError
+
+fn readStore(b: *mut Backend, db: *mut Database, f: *mut FileFields) AllocError!void {
+    let id = f.number() as u32
+    let auto = f.number() == 1
+    let generator = f.number()
+    let s = try b.alloc.create(Store { id: id, name: try dupe(b.alloc, f.blob()), key_path: try dupe(b.alloc, f.blob()), auto_increment: auto, generator: generator, records: List(*mut Record).init(b.alloc) })
+
+    try db.stores.append(s)
+
+    for i in 0..f.number() {
+        if f.bad { return }
+
+        try s.records.append(try b.alloc.create(Record { key: try dupe(b.alloc, f.blob()), value: try dupe(b.alloc, f.blob()), index_keys: try dupe(b.alloc, f.blob()) }))
+    }
+}
