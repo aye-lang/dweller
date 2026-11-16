@@ -1,0 +1,27 @@
+import std.list.List
+import std.map.IntMap
+import std.mem.Allocator
+
+pub struct KeySets {
+    index: IntMap(u64, usize)
+    sets: List(KeySet)
+
+    pub fn init(alloc: Allocator) KeySets {
+        return KeySets { index: IntMap(u64, usize).init(alloc), sets: List(KeySet).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for i in 0..self.sets.len() {
+            self.sets.items()[i].deinit()
+        }
+
+        self.index.deinit()
+        self.sets.deinit()
+    }
+
+    pub fn get(self: *Self, key: u64) ?*KeySet {
+        let i = self.index.get(key) orelse return null
+
+        return &self.sets.items()[i]
+    }
+}

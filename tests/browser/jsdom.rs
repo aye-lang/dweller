@@ -199,6 +199,41 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(full <= 4 && restyles >= 3, "{full} full, {restyles} restyles:\n{err}");
 }
 
+/// Q4.3: `browser/tests/jsdom/class_sets.html` toggles classes, an id and
+/// an attribute that selectors look at on an ancestor or a preceding
+/// sibling, over 200 rows of 6 elements. The restyles compute again the
+/// changed element and the elements its invalidation set names (the
+/// subjects of those selectors), not its whole subtree and following
+/// siblings: 2029 elements in 12 restyles (8512 in 11 and one refused
+/// before). The values are in `class_sets.tree` (`jsdom_fixtures`).
+#[test]
+fn jsdom_class_sets_restyle_reached_elements() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/class_sets.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let counts: Vec<usize> = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\trestyled_elements\t"))
+        .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
+        .collect();
+    let total: usize = counts.iter().sum();
+    assert!(
+        counts.len() >= 12 && total <= 2500,
+        "{} restyles, {total} elements: {counts:?}",
+        counts.len()
+    );
+}
+
 /// Under `DWELLER_BENCHMARK=1`, `Date` is a fixed epoch plus the virtual
 /// clock, which a task's steps move: a loop that waits for `Date.now()`
 /// ends, after the same work on every run.
