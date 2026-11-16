@@ -1,0 +1,24 @@
+import std.heap.Arena
+import std.json
+import std.mem.AllocError
+import std.text
+
+fn answerLine(app: *mut App, line: []u8) AllocError!void {
+    if text.trim(line).len == 0 {
+        return
+    }
+
+    var arena = Arena.init(app.alloc)
+    defer arena.deinit()
+
+    var out = text.Builder.init(arena.allocator())
+    var request = json.parse(&mut arena, line) catch |e| {
+        @print("{\"id\":null,\"ok\":false,\"error\":\"invalid JSON\"}\n")
+
+        return
+    }
+
+    try answerRequest(app, arena.allocator(), &request, &mut out)
+    try out.append("}\n")
+    @print(out.bytes())
+}

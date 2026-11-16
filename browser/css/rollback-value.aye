@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn rollbackValue(c: *mut Computer, p: usize, w: Win) AllocError!Value {
+    if !w.set {
+        return Value.Unset
+    }
+
+    var v = w.d.value
+
+    if w.d.raw.len > 0 {
+        v = try c.pending(p, w.d)
+    }
+
+    if revertWord(v) != 0 {
+        return Value.Unset
+    }
+
+    return v
+}

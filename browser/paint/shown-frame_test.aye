@@ -1,0 +1,29 @@
+import std.list.List
+
+test "the clips and layer alphas around an item, and not those closed before it" {
+    let a = @testAllocator()
+    var items = List(Item).init(a)
+    defer items.deinit()
+    let all = Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 }
+    let own = Rect { x: 10.0, y: 10.0, w: 80.0, h: 80.0 }
+
+    try items.append(Item.Layer { r: all })
+    try items.append(Item.Clip { r: Rect { x: 0.0, y: 0.0, w: 5.0, h: 5.0 } })
+    try items.append(Item.Unclip)
+    try items.append(Item.Clip { r: Rect { x: 0.0, y: 0.0, w: 50.0, h: 100.0 } })
+    try items.append(Item.Layer { r: all })
+    try items.append(Item.Clip { r: own })
+    try items.append(Item.Layer { r: own })
+    try items.append(Item.EndLayer { r: own, radii: SQUARE, alpha: 10 })
+    try items.append(Item.Unclip)
+    try items.append(Item.EndLayer { r: all, radii: SQUARE, alpha: 128 })
+    try items.append(Item.Unclip)
+    try items.append(Item.EndLayer { r: all, radii: SQUARE, alpha: 128 })
+
+    let clip = clipAround(items.items(), 5, own)
+
+    @expectEqual(10.0, clip.x)
+    @expectEqual(40.0, clip.w)
+    @expectEqual(80.0, clip.h)
+    @expectEqual(64, alphaAround(items.items(), 5))
+}

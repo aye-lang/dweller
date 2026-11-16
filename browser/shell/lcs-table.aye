@@ -1,0 +1,28 @@
+import std.math
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn lcsTable(tmp: Allocator, xs: [][]u8, ys: [][]u8) AllocError![]mut u32 {
+    let w = ys.len + 1
+    let lcs = try tmp.alloc(0 as u32, (xs.len + 1) * w)
+    var i = xs.len
+
+    while i > 0 {
+        i -= 1
+
+        var j = ys.len
+
+        while j > 0 {
+            j -= 1
+
+            if text.eql(xs[i], ys[j]) {
+                lcs[i * w + j] = lcs[(i + 1) * w + j + 1] + 1
+            } else {
+                lcs[i * w + j] = math.maxOf(u32, lcs[(i + 1) * w + j], lcs[i * w + j + 1])
+            }
+        }
+    }
+
+    return lcs
+}

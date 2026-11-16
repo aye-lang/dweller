@@ -35,6 +35,9 @@ pub struct Comp {
 /// Unknown properties and invalid values are ignored.
 pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: bool) AllocError!void {
     var d = Declarer { sheet: sheet, important: important }
+    if text.eql(name, "--") {
+        return
+    }
     if text.startsWith(name, "--") {
         return d.addRaw(CUSTOM, toks, try dupText(sheet, name))
     }
@@ -227,6 +230,7 @@ fn logicalAlias(name: []u8) []u8 {
         "min-inline-size", "min-width", "max-inline-size", "max-width",
         "min-block-size", "min-height", "max-block-size", "max-height",
         "overflow-inline", "overflow-x", "overflow-block", "overflow-y",
+        "-webkit-writing-mode", "writing-mode",
     }
     var k: usize = 0
     while k + 1 < pairs.len {
@@ -492,12 +496,12 @@ struct Declarer {
     important: bool
 
     fn add(self: *mut Self, prop: usize, v: Value) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "" })
+        try self.sheet.decls.append(Decl { prop: prop, value: v, important: self.important, raw: []Token{}, name: "", reverts: revertWord(v) != 0 })
     }
 
     // A declaration parsed at computed-value time (or a custom property).
     fn addRaw(self: *mut Self, prop: usize, toks: []Token, name: []u8) AllocError!void {
-        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name })
+        try self.sheet.decls.append(Decl { prop: prop, value: Value.Unset, important: self.important, raw: toks, name: name, reverts: prop != CUSTOM && hasRevertWord(toks) })
     }
 
     fn shorthand(self: *mut Self, name: []u8, comps: []Comp) AllocError!void {
@@ -1102,6 +1106,12 @@ fn cssWide(c: Comp) ?Value {
     if isIdent(c, "unset") {
         return Value.Unset
     }
+    if isIdent(c, "revert") {
+        return Value.Keyword { k: "revert" }
+    }
+    if isIdent(c, "revert-layer") {
+        return Value.Keyword { k: "revert-layer" }
+    }
     return null
 }
 
@@ -1152,6 +1162,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
     if prop == SCROLLBAR_GUTTER {
         return scrollbarGutterValue(sheet, comps)
+    }
+    if prop >= WRITING_MODE && prop <= TEXT_COMBINE_UPRIGHT {
+        return writingValue(prop, comps)
     }
     if prop == TEXT_OVERFLOW {
         return textOverflowValue(sheet, comps)
@@ -1367,7 +1380,7 @@ fn writeToken(t: Token, out: *mut text.Builder) AllocError!void {
             try out.append(t.text)
         }
         .Whitespace => {
-            try out.appendByte(' ')
+            try writeSpace(t, out)
         }
         .Colon => {
             try out.appendByte(':')

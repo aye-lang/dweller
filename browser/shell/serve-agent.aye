@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+extern fn read(fd: i32, buf: [*]u8, n: usize) isize
+
+fn serveAgent(app: *mut App) AllocError!void {
+    var pending = text.Builder.init(app.alloc)
+    defer pending.deinit()
+
+    var chunk = @zeroed([4096]u8)
+
+    while true {
+        let n = read(0, chunk[..].ptr, chunk.len)
+
+        if n <= 0 {
+            break
+        }
+
+        try pending.append(chunk[0..n as usize])
+        try answerLines(app, &mut pending)
+    }
+
+    try answerLine(app, pending.bytes())
+}

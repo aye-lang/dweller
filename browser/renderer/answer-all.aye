@@ -26,7 +26,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if !(try traverseTo(r, index)) { return false }
             }
 
-            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. } => try landFetched(r, got.message)
+            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. }, .FetchRemote { .. } => try landFetched(r, got.message)
             .SocketNote { .. } => {
                 if !(try landSocketNote(r, got.message)) { return false }
             }
@@ -78,6 +78,12 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 let m = engine.RemoteMessage { page: page, from_key: from_key, from_frame: from_frame, from_page: from_page, origin: origin, target_origin: target_origin, data: data, buffers: buffers }
 
                 if r.page |p| { try engine.deliverRemoteMessage(p, m) }
+            }
+
+            .AttachTab { context } => {
+                if r.fds.len() == 0 { return false }
+
+                try r.attaching.append(Attach { context: context, fd: r.fds.orderedRemove(0) })
             }
 
             .FrameLoaded { key } => {

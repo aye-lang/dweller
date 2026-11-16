@@ -1,0 +1,47 @@
+import font
+import sdl
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn runWithFonts(alloc: Allocator, o: Options, style_source: []u8, build: fn(*mut App) AllocError!void, measure: dyn font.Measurer, system: ?*mut font.System, began: u64) i32 {
+    let app = openApp(alloc, style_source, measure, o.width as f64, o.height as f64) catch |e| {
+        return outOfMemory()
+    }
+
+    defer closeApp(app)
+
+    app.always_full = o.full_layout
+
+    build(app) catch |e| {
+        return outOfMemory()
+    }
+
+    if sdl.SDL_Init(sdl.SDL_INIT_VIDEO) != 0 {
+        return sdlFailed("cannot start SDL")
+    }
+
+    defer sdl.SDL_Quit()
+
+    let window = sdl.SDL_CreateWindow("Dweller app".ptr, sdl.SDL_WINDOWPOS_UNDEFINED, sdl.SDL_WINDOWPOS_UNDEFINED, o.width, o.height, sdl.SDL_WINDOW_RESIZABLE | sdl.SDL_WINDOW_ALLOW_HIGHDPI) orelse return sdlFailed("cannot open a window")
+    defer sdl.SDL_DestroyWindow(window)
+
+    let renderer = openRenderer(window) orelse return sdlFailed("cannot create a renderer")
+    defer sdl.SDL_DestroyRenderer(renderer)
+
+    return showWindow(app, o, window, renderer, system, began)
+}
+
+fn openRenderer(window: *mut sdl.SDL_Window) ?*mut sdl.SDL_Renderer {
+    if sdl.SDL_CreateRenderer(window, -1, sdl.SDL_RENDERER_PRESENTVSYNC) |r| {
+        return r
+    }
+
+    return sdl.SDL_CreateRenderer(window, -1, sdl.SDL_RENDERER_SOFTWARE)
+}
+
+fn outOfMemory() i32 {
+    std.log.err("out of memory")
+
+    return 1
+}

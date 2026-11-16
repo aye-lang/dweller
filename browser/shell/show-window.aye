@@ -1,0 +1,23 @@
+import font
+import paint
+import sdl
+import std
+
+fn showWindow(app: *mut App, o: Options, window: *mut sdl.SDL_Window, renderer: *mut sdl.SDL_Renderer, system: ?*mut font.System, began: u64) i32 {
+    var w = Window {
+        window: window,
+        renderer: renderer,
+        canvas: paint.Canvas.init(app.alloc, 0, 0) catch unreachable,
+        painter: paint.TextPainter.init(app.alloc, system),
+    }
+
+    defer closeWindow(&mut w)
+
+    sdl.SDL_StartTextInput()
+
+    runLoop(app, &mut w, o, began) catch |e| {
+        return outOfMemory()
+    }
+
+    return report(app, &mut w, o)
+}

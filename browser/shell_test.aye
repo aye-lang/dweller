@@ -1,0 +1,40 @@
+import dom
+import font
+import shell
+import shell.App
+import std.mem.AllocError
+import std.text
+
+fn countUp(app: *mut App, el: dom.NodeId) AllocError!void {
+    try app.setText(app.byId("count"), "1")
+}
+
+test "shell: a click runs its handler and the change is laid out incrementally" {
+    let alloc = @testAllocator()
+    var fixed = font.Fixed.init()
+    let app = try shell.openApp(alloc, "p, div { margin: 0; height: 20px }", &mut fixed, 200.0, 100.0)
+    defer app.close()
+
+    let shown = try app.element(app.body, "p")
+    try app.setAttr(shown, "id", "count")
+    try app.setText(shown, "0")
+
+    let target = try app.element(app.body, "div")
+    try app.onClick(target, countUp)
+    try app.settle()
+
+    try app.click(50.0, 10.0)
+    try app.settle()
+    @expectEqual(0, app.partial_layouts)
+
+    try app.click(50.0, 38.0)
+    try app.settle()
+
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try app.doc.textContent(shown, &mut b)
+    @expect(text.eql(b.bytes(), "1"))
+    @expectEqual(1, app.full_layouts)
+    @expectEqual(1, app.partial_layouts)
+}

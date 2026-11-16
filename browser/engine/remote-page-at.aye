@@ -1,0 +1,23 @@
+import encoding
+import html
+import std.mem.AllocError
+import std.mem.Allocator
+import url
+import url.Url
+
+fn remotePageAt(alloc: Allocator, target: *Url, inherited: encoding.Encoding) AllocError!*mut Page {
+    var located = url.parse(alloc, target.href) catch return AllocError.OutOfMemory
+
+    errdefer located.deinit(alloc)
+
+    var doc = try html.parse(alloc, "")
+
+    errdefer doc.deinit()
+
+    let c = try newPage(alloc, located, 200, "", doc)
+
+    c.remote = true
+    c.encoding = inherited
+
+    return c
+}

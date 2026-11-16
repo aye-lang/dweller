@@ -1,0 +1,19 @@
+import std.list.List
+
+fn reportOthers(tabs: *List(*mut TabRenderer), served: *mut TabRenderer) {
+    for t in tabs.items() {
+        if t == served || t.broken { continue }
+
+        serveAs(t)
+        t.due = true
+
+        reportTab(t) catch |e| {
+            t.broken = true
+        }
+    }
+}
+
+fn reportTab(t: *mut TabRenderer) !void {
+    try paintFrame(t)
+    try reportPage(t)
+}
