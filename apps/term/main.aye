@@ -1,0 +1,30 @@
+import std
+import std.mem.Allocator
+import std.text
+import vt
+
+let USAGE = "usage: term dump FILE [--cols N] [--rows N]"
+
+pub fn main() {
+    var gpa = std.heap.General.init()
+    let status = run(gpa.allocator())
+
+    gpa.deinit()
+    std.os.exit(status)
+}
+
+fn run(alloc: Allocator) i32 {
+    let args = std.os.args(alloc) catch |e| {
+        return 1
+    }
+
+    defer alloc.free(args)
+
+    if args.len >= 3 && text.eql(args[1], "dump") {
+        return dumpStream(alloc, args[2..]) catch 1
+    }
+
+    std.log.err(USAGE)
+
+    return 2
+}
