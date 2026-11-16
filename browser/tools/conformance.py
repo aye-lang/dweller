@@ -4,6 +4,7 @@
   conformance.py run [-j N] [AREA...]   run wpt.py / test262.py per area
   conformance.py table                  write docs/conformance.md and the per-area baselines
   conformance.py check                  exit 1 when an area fell more than 0.5 points
+  conformance.py targets                count the targets again and refresh their column (conformance_targets.py)
 
 check counts subtests that the files of the baseline passed and no longer
 pass (net of the ones those files gained) over the baseline's total. Files
@@ -18,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import conformance_targets
 import fast_build
 
 REPO = Path(__file__).resolve().parents[2]
@@ -176,7 +178,7 @@ def cmd_table(args):
     revs = {"wpt": revision(TOOLS / "wpt.rev"), "t262": revision(TOOLS / "test262.rev"),
             "webgl": revision(TOOLS / "webgl_cts.rev")}
     today = datetime.date.today().isoformat()
-    DOC.write_text(render(measured, before, revs, today, head_commit()))
+    DOC.write_text(conformance_targets.apply(render(measured, before, revs, today, head_commit()), conformance_targets.read()))
     for m in fresh:
         (BASELINES / f"{file_key(m['area'])}.json").write_text(json.dumps(m, indent=0) + "\n")
     append_history([[today, head_commit(), m["area"], m["passed"], m["total"], f"{m['score']:.4f}"] for m in fresh])
@@ -223,8 +225,10 @@ def main():
     r.add_argument("--allow-debug", action="store_true", help="run a binary that browser/build.sh did not build")
     sub.add_parser("table")
     sub.add_parser("check")
+    sub.add_parser("targets")
     args = ap.parse_args()
-    return {"run": cmd_run, "table": cmd_table, "check": cmd_check}[args.cmd](args) or 0
+    commands = {"run": cmd_run, "table": cmd_table, "check": cmd_check, "targets": conformance_targets.cmd_targets}
+    return commands[args.cmd](args) or 0
 
 
 if __name__ == "__main__":
