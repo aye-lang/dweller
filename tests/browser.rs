@@ -30,6 +30,8 @@ mod cli;
 mod csp_directives;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
+#[path = "browser/eventsource.rs"]
+mod eventsource;
 #[path = "browser/link_events.rs"]
 mod link_events;
 #[path = "browser/fixtures.rs"]
