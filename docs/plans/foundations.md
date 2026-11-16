@@ -125,10 +125,10 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 
 | Lane | Next | Then |
 |---|---|---|
-| base | Q1.12 (the panic report in aye, then the audio times), Q0.1, DV2b | Q0.3b; DV1 is counted over its next landings |
-| proc | Q2.12 (Q2.12d, then the Spaces flip); Q2.14b, Q2.14c, then Q2.14e to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
+| base | DV2b | Q0.3b; DV1 is counted over its next landings |
+| proc | Q2.12 (, then the Spaces flip); Q2.14b, Q2.14c, then Q2.14e to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
 | sec | – (no open step; the Left lists of Q3 wait for decision 3) | – |
-| perf | Q4.25a, Q4.25c, Q6.15 | Q4.25b, Q4.25d, Q4.25e; Q4.3 first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
+| perf | Q4.25a, Q4.25c | Q4.25b, Q4.25d, Q4.25e; Q4.3 first of the kept Q4 rows (react's click), then Q6.3 to Q6.10 |
 | feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
 
 ## Decisions (2026-11-04)
@@ -218,11 +218,10 @@ and the weekly workflow is green.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
 | Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 | Q0.3b | (proposed, decision 3) A "Target" column in `docs/conformance.md` for the X2 areas and the Q6 areas, beside the floor that `conformance.py check` enforces. Each target names where it comes from: the features the 20 sites and the daily sites use, or the score of the subtests that do not need a deferred feature. X2 and W9 then read "at target" | the table has the column, every X2 and Q6 area has a target with one line of reason, and `conformance.py check` still enforces only the floor | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1.
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -233,14 +232,13 @@ can be stopped.
 |---|---|---|---|
 | Q1.4 | Flaky tests: only when the TC5b record files a `flaky:` issue (none since 2026-10-21 in 38 `ci` runs; `window_spaces` and `window_css_animation` were last seen before Q1.3) | 50 runs in a row | – |
 | Q1.11 | Soak: 1 h of scripted browsing over the archives, with RSS sampled and `--leak-check` at exit | RSS growth stays under the budget, with no leak | – |
-| Q1.12 | Crashes the weekly conformance run of 2026-11-09 found (Q0.1's card): SIGSEGV on three webaudio `audiobuffersource` pages and twelve WebGL 2 wasm-memory pages, abort on two WebGL 2 pages. Reproduced on the Mac in the safe build; likely cause (card): a safe-mode check fires on `start(Infinity)` and the panic report of aye O7.9 reads an unset message pointer | the cause is in the card with its evidence, and the pages run without a crash in the weekly run | – |
 
 Q1.1 was listed as open at the stop, but its verify holds on `main`
 (`browser/build.sh` builds `--mode safe` by default, and the required
 `browser` job runs "Smoke the shipped build"); closed 2026-11-11 in its
 card.
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q1.1, Q1.2, Q1.3, Q1.6, Q1.7, Q1.8, Q1.9, Q1.9b, Q1.10a, Q1.10a2, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q1.1, Q1.2, Q1.3, Q1.6, Q1.7, Q1.8, Q1.9, Q1.9b, Q1.10a, Q1.10a2, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e, Q1.12.
 
 ## Q2: process model and site isolation (lane proc)
 
@@ -424,16 +422,14 @@ check`. Chromium references come from the module map of
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
 | Q6.4 | `css/box-sizing` (51.5, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |
-| Q6.6 | `css/cascade-variables` (56.1, 75) |
 | Q6.7 | `css/values-color` (57.9, 70) |
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
-| Q6.15 | `css/css-transforms` (52.3 -> 48.0 in the weekly run of 2026-11-09, floor 50: 250 subtests lost in `animation/*-composition.html`; a regression, so it runs before Q6.3) |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.

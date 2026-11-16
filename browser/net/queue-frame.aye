@@ -1,0 +1,13 @@
+import std.crypto
+
+fn queueFrame(k: *mut Socket, opcode: u8, payload: []u8) {
+    var mask = @zeroed([4]u8)
+
+    crypto.randomBytes(mask[..]) catch |e| {}
+
+    putFrame(&mut k.outgoing, opcode, payload, mask) catch |e| {
+        return failSocket(k)
+    }
+
+    flushSocket(k)
+}

@@ -1,0 +1,14 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn buildSem(app: *mut App, alloc: Allocator) AllocError!Sem {
+    var sem = Sem { alloc: alloc, app: app, nodes: List(SemNode).init(alloc) }
+
+    try update(app)
+    try sem.nodes.append(SemNode { role: "document", children: List(usize).init(alloc) })
+    try walkSemChildren(&mut sem, app.body, 0)
+    try finishSem(&mut sem, 0)
+
+    return sem
+}

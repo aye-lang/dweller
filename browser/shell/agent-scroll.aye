@@ -1,0 +1,27 @@
+import dom
+import std.json
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn agentScroll(app: *mut App, tmp: Allocator, request: *json.Value) AllocError!Outcome {
+    try update(app)
+
+    if stringArg(request, "ref") |ref| {
+        let el = nodeOfRef(app, ref) orelse return failed(try joined(tmp, "unknown ref ", ref, ": take a new snapshot (refs belong to one document)"))
+        let who = try describe(app, tmp, el)
+        let t = app.tree.?
+
+        for i in 0..t.boxes.len() {
+            if dom.isSame(t.bx(i).node, el) {
+                return scrollTo(app, tmp, t.bx(i).ay, try joined(tmp, "scrolled to ", who, ""))
+            }
+        }
+
+        return failed(try joined(tmp, "cannot scroll to ", who, ": it has no box"))
+    }
+
+    let dy = request.get("dy") orelse return failed("scroll needs \"ref\" (a string) or \"dy\" (a number)")
+    let by = dy.asNumber() orelse return failed("scroll needs \"ref\" (a string) or \"dy\" (a number)")
+
+    return scrollTo(app, tmp, app.scroll + by, "scrolled")
+}

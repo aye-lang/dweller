@@ -1,0 +1,16 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn walkPlain(sem: *mut Sem, h: NodeId, parent: usize) AllocError!void {
+    let block = isBlockLevel(sem.app, h)
+
+    if block {
+        sealSemText(sem, parent)
+    }
+
+    try walkSemChildren(sem, h, parent)
+
+    if block {
+        sealSemText(sem, parent)
+    }
+}

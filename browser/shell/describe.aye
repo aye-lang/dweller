@@ -1,0 +1,25 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn describe(app: *mut App, tmp: Allocator, el: NodeId) AllocError![]u8 {
+    var sem = Sem { alloc: tmp, app: app, nodes: List(SemNode).init(tmp) }
+    var role = semRole(app, el)
+    var out = text.Builder.init(tmp)
+
+    if role.len == 0 {
+        role = "generic"
+    }
+
+    try sem.nodes.append(SemNode { role: "document", children: List(usize).init(tmp) })
+
+    let i = try sem.add(0, role, el)
+
+    try describeSem(&mut sem, i, el)
+    sem.at(i).level = 0
+    try writeDescription(sem.at(i), &mut out)
+
+    return out.bytes()
+}

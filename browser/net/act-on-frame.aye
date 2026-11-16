@@ -1,0 +1,18 @@
+// https://www.rfc-editor.org/rfc/rfc6455#section-5.5
+fn actOnFrame(k: *mut Socket, f: Frame) {
+    let taken = takeFrame(&mut k.assembly, f, SOCKET_MESSAGE_LIMIT) catch |e| {
+        return failSocket(k)
+    }
+
+    match taken {
+        .Nothing, .Pong => {}
+        .Ping => queueFrame(k, FRAME_PONG, f.payload)
+        .Bad { code: c } => protocolFailed(k, c)
+        .Close { code: c, reason: r } => peerClosed(k, c, r)
+        .Message { binary: b } => {
+            if k.phase == SocketPhase.Open {
+                noteSocket(k, SOCKET_TEXT + (b as u8), false, 0, k.assembly.data.bytes())
+            }
+        }
+    }
+}

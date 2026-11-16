@@ -1,0 +1,35 @@
+fn clipAround(items: []Item, at: usize, own: Rect) Rect {
+    var clip = own
+    var closed: usize = 0
+    var k = at
+
+    while k > 0 {
+        k -= 1
+
+        match items[k] {
+            .Unclip, .EndLayer { .. } => {
+                closed += 1
+            }
+
+            .Layer { .. } => {
+                closed = closedAfterOpen(closed)
+            }
+
+            .Clip { r } => {
+                if closed == 0 { clip = intersectRects(clip, r) }
+
+                closed = closedAfterOpen(closed)
+            }
+
+            _ => {}
+        }
+    }
+
+    return clip
+}
+
+fn closedAfterOpen(closed: usize) usize {
+    if closed == 0 { return 0 }
+
+    return closed - 1
+}
