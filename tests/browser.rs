@@ -70,6 +70,8 @@ mod window_login;
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]
 mod window_renderer_edit;
+#[path = "browser/window_renderer_list.rs"]
+mod window_renderer_list;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]
