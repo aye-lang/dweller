@@ -226,6 +226,7 @@ pub struct Script {
     remote_windows: List(RemoteStandIn)
     remote_staged: text.Builder
     remote_inbox: List(RemoteBuffers)
+    ports: List(PortKey)
     // The prelude's `hostStorage` (storage.aye), js.NONE before it ran.
     on_storage: u32
     node_proto: u32
@@ -568,6 +569,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         remote_windows: List(RemoteStandIn).init(alloc),
         remote_staged: text.Builder.init(alloc),
         remote_inbox: List(RemoteBuffers).init(alloc),
+        ports: List(PortKey).init(alloc),
         on_storage: js.NONE,
         node_proto: js.NONE,
         element_proto: js.NONE,
@@ -767,6 +769,7 @@ pub fn destroyScript(s: *mut Script) {
     s.remote_windows.deinit()
     s.remote_staged.deinit()
     dropRemoteInbox(s)
+    s.ports.deinit()
     for i in 0..s.lists.len() {
         let l = &mut s.lists.items()[i]
         if l.used {

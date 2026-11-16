@@ -1,0 +1,20 @@
+fn forgetPorts(tp: *TabProcess) {
+    let list = port_channels orelse return
+    var i: usize = 0
+
+    while i < list.len() {
+        let c = list.items()[i]
+
+        if (c.owner == tp.serial && c.tab == tp.tab) || (c.holder == tp.serial && c.holder_tab == tp.tab) {
+            _ = list.orderedRemove(i)
+        } else {
+            i += 1
+        }
+    }
+
+    if list.len() > 0 { return }
+
+    list.deinit()
+    tp.url.alloc.destroy(list)
+    port_channels = null
+}

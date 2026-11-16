@@ -281,3 +281,27 @@ fn window_renderer_popup_cross_navigate() {
         assert!(p.len() == 2 && p[0] != p[1], "{mode}: {p:?}\n{state}");
     }
 }
+
+/// Q2.15o: a `MessagePort` in the transfer list of a `postMessage` to a
+/// window in another renderer arrives as `event.ports[0]` (the same
+/// object as the port inside the data), and messages on the channel go
+/// both ways between the two processes.
+#[test]
+fn window_renderer_popup_port() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let events = "renderer:loaded click:50,146 renderer:input renderer:title:?cross! click:50,212 renderer:input renderer:title:?cross!!";
+    for mode in ["tab", "site"] {
+        let state = popup_window_in(mode, &srv.base, events);
+        let p = tab_pids(&state);
+        assert!(state.contains(&format!("\nrenderer {} title port2-ping-true ?cross!!\n", p[1])) && p[0] != p[1], "{mode}:\n{state}");
+        let state = popup_window_in(mode, &srv.base, &format!("{events} key:cmd+1 renderer:title:port1-echo-ping"));
+        assert!(state.contains(&format!("\nrenderer {} title port1-echo-ping\n", tab_pids(&state)[0])), "{mode}:\n{state}");
+    }
+}

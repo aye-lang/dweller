@@ -5,9 +5,10 @@
     throw typeof G.DOMException === 'function' ? new G.DOMException(msg, 'DataCloneError') : new TypeError(msg);
   }
   const isCanvas = v => typeof G.OffscreenCanvas === 'function' && v instanceof G.OffscreenCanvas;
-  function encode(value, transfer) {
+  const isPort = v => typeof G.MessagePort === 'function' && v instanceof G.MessagePort;
+  function encode(value, transfer, port) {
     const list = Array.from(transfer || []);
-    for (const b of list) if (!(b instanceof ArrayBuffer || isCanvas(b)) || b.detached) fail(b);
+    for (const b of list) if (!(b instanceof ArrayBuffer || isCanvas(b) || (port && isPort(b))) || b.detached) fail(b);
     const seen = new Map();
     const buffers = [];
     function number(v) {
@@ -30,6 +31,10 @@
       if (v instanceof Map) return { t: 'm', id, e: Array.from(v, ([k, x]) => [enc(k), enc(x)]) };
       if (v instanceof Set) return { t: 's', id, e: Array.from(v, enc) };
       if (v instanceof Error) return { t: 'e', id, n: v.name, m: v.message };
+      if (port && isPort(v)) {
+        if (port(v) < 0) fail(v);
+        return { t: 'P', id, i: port(v) };
+      }
       if (isCanvas(v)) {
         if (!list.includes(v)) fail(v);
         return { t: 'C', id, p: v._placeholder || 0, w: v.width, h: v.height };
@@ -50,7 +55,7 @@
     for (const b of list) if (!seen.has(b) && b instanceof ArrayBuffer) buffers.push(b);
     return { json, buffers, moved: list };
   }
-  function decode(json, buffers) {
+  function decode(json, buffers, ports) {
     const made = [];
     function dec(x) {
       if (x === null || typeof x !== 'object') return x;
@@ -67,6 +72,7 @@
         case 's': out = made[x.id] = new Set(); for (const v of x.e) out.add(dec(v)); return out;
         case 'e': return made[x.id] = new (errors[x.n] || Error)(x.m);
         case 'B': return made[x.id] = buffers[x.i];
+        case 'P': return made[x.id] = ports[x.i];
         case 'V': return made[x.id] = new G[x.c](dec(x.b), x.o, x.n);
         case 'C': out = made[x.id] = new G.OffscreenCanvas(x.w, x.h); out._placeholder = x.p; return out;
         case 'w': return made[x.id] = Object(dec(x.v));
@@ -77,19 +83,19 @@
     return dec(JSON.parse(json));
   }
   function send(host, value, transfer) {
-    const w = encode(value, transfer);
+    const w = encode(value, transfer, host.port);
     for (const b of w.buffers) host.stage(b);
-    for (const b of w.moved) if (b instanceof ArrayBuffer) b.transfer(); else Object.defineProperty(b, 'detached', { value: true });
+    for (const b of w.moved) if (b instanceof ArrayBuffer) b.transfer(); else if (!isPort(b)) Object.defineProperty(b, 'detached', { value: true });
     return w.json;
   }
-  function receive(host, json, n) {
+  function receive(host, json, n, ports) {
     const buffers = [];
     for (let i = 0; i < n; i++) {
       const b = new ArrayBuffer(host.size(i));
       host.fill(i, b);
       buffers.push(b);
     }
-    return decode(json, buffers);
+    return decode(json, buffers, ports || []);
   }
   function transferOf(t) {
     if (t === undefined || t === null) return [];

@@ -13,10 +13,17 @@ const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
 let w = null;
 same.onclick = () => { w = window.open('popup_child.html?same', 'w1'); };
 addEventListener('message', function (e) {
+  if (e.data === 'want-port') return sendPort(e.source);
   document.title = 'got-' + e.data + '-' + (e.source === w || e.source === w2);
   e.source.postMessage('pong', '*');
 });
 move.onclick = () => { w2.location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html?moved'; };
+function sendPort(to) {
+  const ch = new MessageChannel();
+  ch.port1.onmessage = e => { document.title = 'port1-' + e.data; };
+  to.postMessage({ kind: 'port', port: ch.port2 }, '*', [ch.port2]);
+  ch.port1.postMessage('ping');
+}
 probe.onclick = () => { document.title = 'closed-' + (w && w.closed); };
 none.onclick = () => { window.open('popup_child.html?none', '_blank', 'noopener'); };
 let w2 = null;
