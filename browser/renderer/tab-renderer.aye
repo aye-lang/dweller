@@ -2,6 +2,7 @@ import agent
 import dom.NodeId
 import engine
 import font
+import layout
 import pageview
 import paint
 import std
@@ -96,6 +97,13 @@ struct TabRenderer {
     preview: Preview
     outer: u32 = 0
     images_at: u64 = 0
+    list: ?paint.DisplayList = null
+    list_tree: ?*mut layout.Tree = null
+    list_version: u64 = 0
+    list_laid: u64 = 0
+    relist: bool = true
+    sigs: List(paint.Sig)
+    shown: List(paint.ShownBitmap)
     attaching: List(Attach)
     settled_said: bool = false
 
@@ -156,6 +164,9 @@ struct TabRenderer {
         for p in self.pending.items() { p.deinit(self.alloc) }
 
         self.pending.deinit()
+        dropList(self)
+        self.sigs.deinit()
+        self.shown.deinit()
         self.staged.deinit()
         self.preview.deinit()
         self.find.deinit()
