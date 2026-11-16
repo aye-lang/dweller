@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<title>changes around shadow hosts restyle what they reach</title>
+<style>
+.dark .title { color: rgb(255, 0, 0) }
+.tint { color: rgb(0, 0, 255) }
+.wide { --gap: 7px }
+.cell { display: inline-block; width: 10px; height: 10px }
+.pick > .cell { width: 20px }
+x-card { display: block }
+</style>
+<div id="main"></div>
+<div id="wrap"><x-card id="c0"><span id="lead" slot="lead">lead</span><p id="body0" class="row"><span id="deep" class="title">deep</span><span class="cell"></span></p></x-card><x-card id="c1"><p id="body1">one</p></x-card></div>
+<pre id="out"></pre>
+<script>
+const main = document.getElementById('main');
+let html = '';
+for (let i = 0; i < 200; i++) {
+  html += '<div class="row"><span class="title">t</span><span class="note">n</span><span class="cell"></span><span><b>x</b></span></div>';
+}
+main.innerHTML = html;
+const $ = (id) => document.getElementById(id);
+for (const id of ['c0', 'c1']) {
+  $(id).attachShadow({ mode: 'open' }).innerHTML = '<style>:host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px }</style><div class="frame"><span class="label">label</span><slot name="lead"></slot><slot></slot></div>';
+}
+const out = [];
+const cs = (el, p) => getComputedStyle(el)[p];
+const inner = (id, sel) => $(id).shadowRoot.querySelector(sel);
+const row = (i) => main.children[i];
+const read = (label, f) => { document.body.offsetHeight; out.push(label + ': ' + f()); };
+read('start', () => cs(row(3).children[0], 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(inner('c0', '.label'), 'color'));
+document.body.classList.add('dark');
+read('dark', () => cs(row(3).children[0], 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(inner('c0', '.label'), 'color'));
+$('wrap').classList.add('tint');
+read('tint', () => cs(inner('c0', '.label'), 'color') + ' ' + cs($('body1'), 'color') + ' ' + cs($('deep'), 'color') + ' ' + cs(row(3).children[1], 'color'));
+$('wrap').classList.add('wide');
+read('wide', () => cs(inner('c0', '.label'), 'marginLeft') + ' ' + cs(inner('c1', '.label'), 'marginLeft'));
+$('c0').classList.add('on');
+read('on', () => cs(inner('c0', '.label'), 'fontWeight') + ' ' + cs(inner('c1', '.label'), 'fontWeight'));
+$('lead').classList.add('sel');
+read('sel', () => cs($('lead'), 'fontStyle') + ' ' + cs($('body0'), 'fontStyle'));
+$('body0').classList.add('pick');
+read('pick', () => cs($('body0').children[1], 'width'));
+$('body0').setAttribute('slot', 'lead');
+read('slot', () => cs($('body0'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing'));
+inner('c0', '.frame').classList.add('open');
+read('open', () => cs($('lead'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing') + ' ' + cs($('body1'), 'letterSpacing'));
+main.classList.add('tint');
+read('main', () => cs(row(9).children[1], 'color'));
+$('out').textContent = out.join('\n');
+main.textContent = '';
+</script>
