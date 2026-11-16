@@ -1,0 +1,13 @@
+// chromium: components/viz/service/hit_test/hit_test_query.cc (a region flagged kHitTestAsk is resolved by asking its embedder)
+fn unaskedHit(tp: *mut TabProcess, answers: []HitAsk, at: [2]i64, ox: i64, oy: i64) ?HitAsk {
+    let c = childUnder(tp, at, ox, oy) orelse return null
+    let ask = HitAsk { frame: tp.tab, key: c.key, x: at[0] - ox, y: at[1] - oy }
+
+    if c.hit_test {
+        let within = hitAnswer(answers, ask) orelse return ask
+
+        if !within { return null }
+    }
+
+    return unaskedHit(c.tp.?, answers, at, ox + c.x, oy + c.y)
+}

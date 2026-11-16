@@ -217,3 +217,51 @@ fn window_renderer_oopif_site_effects() {
         assert_eq!(far_pixels(&shot, &golden, by), 0, "{query}: {} differs from the in-process window {}", shot.display(), golden.display());
     }
 }
+
+fn title_of(line: &str) -> &str {
+    line.split_once(" title ").map(|(_, t)| t).unwrap_or("")
+}
+
+/// Q2.15e: the hit-test slow path. Where the parent paints something
+/// above a cross-site frame, or the frame has `pointer-events: none`,
+/// the browser asks the parent's renderer which frame is at the point
+/// before it sends the mouse event: a click on the cover goes to the
+/// parent, a click beside it (and one through a `pointer-events: none`
+/// cover) to the child at child-local coordinates, and a click on a
+/// `pointer-events: none` frame to the parent. A reply nobody asked for
+/// kills its renderer.
+#[test]
+fn window_renderer_oopif_site_hit_test() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let on_cover = "click:52,106 release:52,106 renderer:input";
+    let beside = "click:172,136 release:172,136 renderer:input";
+    let cases = [
+        ("?cover", on_cover, "P up", "C"),
+        ("?cover", beside, "P", "C down 150,60,click,up 150,60"),
+        ("?through", on_cover, "P", "C down 30,30,click,up 30,30"),
+        ("?none", beside, "P up", "C"),
+    ];
+    for (query, clicks, parent, child) in cases {
+        let page = format!("{}/ui/oopif-input.html{query}", srv.base);
+        let events = format!("renderer:loaded renderer:child {clicks} frame");
+        let (state, err) = run_state(&page, "site", &events, "");
+        assert!(err.is_empty(), "{query} {clicks}: {err}");
+        let children = kids(&state);
+        assert_eq!(children.len(), 1, "{query}:\n{state}");
+        assert_eq!(title_of(line(&state, "renderer ")), parent, "{query} {clicks}: the parent\n{state}");
+        assert_eq!(title_of(children[0]), child, "{query} {clicks}: the child\n{state}");
+    }
+
+    let page = format!("{}/ui/oopif-input.html", srv.base);
+    let (state, err) = run_state(&page, "site", "renderer:gone", "hit-reply");
+    let renderer = line(&state, "renderer ");
+    assert!(renderer.ends_with(" gone unexpected hit_test_reply"), "{state}");
+    assert_eq!(err, format!("error: bad message: unexpected hit_test_reply {}\n", pid(renderer)));
+}
