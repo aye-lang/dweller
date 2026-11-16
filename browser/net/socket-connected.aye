@@ -1,0 +1,21 @@
+fn socketConnected(easy: ?*mut Curl, result: i32) bool {
+    let all = sockets orelse return false
+
+    for k in all.all.items() {
+        let job = k.job orelse continue
+
+        if easy != job.curl {
+            continue
+        }
+
+        if result != 0 {
+            failSocket(k)
+        } else {
+            startHandshake(all, k, job)
+        }
+
+        return true
+    }
+
+    return false
+}

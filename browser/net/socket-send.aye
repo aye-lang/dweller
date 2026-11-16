@@ -1,0 +1,11 @@
+pub fn socketSend(id: u32, binary: bool, data: []u8) {
+    if remote_sockets |hooks| { return hooks.send(id, binary, data) }
+
+    let k = socketById(id) orelse return
+
+    if k.phase != SocketPhase.Open {
+        return
+    }
+
+    queueFrame(k, FRAME_TEXT + (binary as u8), data)
+}

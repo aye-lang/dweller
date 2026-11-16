@@ -62,6 +62,8 @@ mod security;
 mod storage;
 #[path = "browser/webgl.rs"]
 mod webgl;
+#[path = "browser/websocket.rs"]
+mod websocket;
 #[path = "browser/window_login.rs"]
 mod window_login;
 #[path = "browser/window_renderer.rs"]

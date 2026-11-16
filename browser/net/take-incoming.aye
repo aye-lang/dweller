@@ -1,0 +1,24 @@
+import std.text
+
+fn takeIncoming(k: *mut Socket) {
+    if k.phase == SocketPhase.Handshaking {
+        let end = text.indexOf(k.incoming.bytes(), "\r\n\r\n") orelse return
+
+        if !takeHandshake(k, k.incoming.bytes()[..end + 2]) {
+            return failSocket(k)
+        }
+
+        dropIncoming(k, end + 4)
+    }
+
+    while k.phase == SocketPhase.Open || k.phase == SocketPhase.Closing {
+        match readFrame(k.incoming.bytes(), SOCKET_MESSAGE_LIMIT) {
+            .More => return
+            .Bad { code: c } => return protocolFailed(k, c)
+            .Got { frame: f } => {
+                actOnFrame(k, f)
+                dropIncoming(k, f.size)
+            }
+        }
+    }
+}

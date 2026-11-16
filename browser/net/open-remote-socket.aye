@@ -1,0 +1,14 @@
+import url.Url
+
+fn openRemoteSocket(hooks: RemoteSockets, target: *Url, req: Request, protocols: []u8) u32 {
+    let all = socketsOf(hooks.alloc) orelse return 0
+    let k = newSocket(all, protocols, "") catch |e| {
+        return 0
+    }
+
+    if !hooks.open(k.id, target, req, protocols) {
+        failSocket(k)
+    }
+
+    return k.id
+}
