@@ -207,6 +207,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.25 | Measurement: W7 with `DWELLER_PROCESS=site` on bbc, zol, mistral and react (medians of 3, the Mac, load 6 to 26). The window's longest loop is 50 ms on bbc and 20 ms on react (553 and 138 in process), but 1415 ms on mistral, and zol's scroll hangs. The window presents 2 to 22 ms after an input with the old pixels; the real frame waits for the renderer's task (up to 4.1 s on bbc). The card proposes the criterion and the rows Q4.25a to Q4.25e | a table in `PERF.md` and the note in the card | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` |
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
+| Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 

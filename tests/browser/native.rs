@@ -141,3 +141,81 @@ fn native_counter_agent() {
         .collect();
     assert!(got == web, "the app's answers:\n{got}\nthe page's answers:\n{web}");
 }
+
+fn native_base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = (chunk[0] as u32) << 16
+            | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+            | *chunk.get(2).unwrap_or(&0) as u32;
+        for k in 0..4 {
+            if k <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * k) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The lines of a tree dump under the first line that is `opening`,
+/// without that line's indentation.
+fn native_subtree(dump: &str, opening: &str) -> String {
+    let mut lines = dump.lines().skip_while(|l| l.trim_start() != opening);
+    let depth = lines.next().map_or(0, |l| l.len() - l.trim_start().len());
+    lines
+        .take_while(|l| l.len() - l.trim_start().len() > depth)
+        .map(|l| format!("{}\n", &l[depth + 2..]))
+        .collect()
+}
+
+/// V3: one component (`examples/native/counter/widget`), two targets. It
+/// is the native app's whole document, and, built for wasm32, it runs in
+/// a page of `dweller` over `widget/glue.js`. After the same clicks and
+/// the same typed text, the two documents are equal.
+#[test]
+fn native_counter_component() {
+    let dir = root().join("examples/native/counter");
+    let wasm = scratch().join("widget.wasm");
+    let built = aye()
+        .args(["build", "examples/native/counter/widget", "--target", "wasm32-freestanding", "-o"])
+        .arg(&wasm)
+        .output()
+        .unwrap();
+    let has_linker = Command::new("wasm-ld").arg("--version").output().is_ok();
+    if !built.status.success() && !has_linker {
+        eprintln!("native_counter_component: no wasm-ld here; only the native half runs");
+        return;
+    }
+    assert!(built.status.success(), "{}", text(&built.stderr));
+
+    let page = scratch().join("component.html");
+    std::fs::write(
+        &page,
+        format!(
+            "<!doctype html>\n<div id=\"root\"></div>\n<script src=\"file://{}\"></script>\n<script>\n\
+             var bytes = Uint8Array.from(atob('{}'), function (c) {{ return c.charCodeAt(0); }});\n\
+             mountComponent(document.getElementById('root'), bytes).then(function () {{\n\
+             var b = document.querySelectorAll('button');\n\
+             b[0].click(); b[0].click(); b[0].click(); b[1].click(); b[0].click();\n\
+             document.getElementById('name').value = 'hello word';\n\
+             b[2].click();\n\
+             }});\n</script>\n",
+            dir.join("widget/glue.js").display(),
+            native_base64(&std::fs::read(&wasm).unwrap())
+        ),
+    )
+    .unwrap();
+    let web = run(&["dump", "--tree", "--js", page.to_str().unwrap()]);
+    assert!(web.status.success(), "{}", text(&web.stderr));
+    let in_page = native_subtree(&text(&web.stdout), "<div id=\"root\">");
+
+    let events = format!("{TYPED} frame click:258,176");
+    let shot = scratch().join("native-component.png");
+    let in_app = native_subtree(&native_counter_run(&events, &shot, &["--dump"]), "<body>");
+
+    assert!(in_app.lines().count() > 2000, "{in_app}");
+    assert!(in_app == in_page, "the app's document:\n{in_app}\nthe page's:\n{in_page}");
+}
