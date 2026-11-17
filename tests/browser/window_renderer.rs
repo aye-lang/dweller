@@ -806,7 +806,7 @@ fn window_renderer_history() {
 
     let (state, err) = run("renderer:loaded click:50,282 renderer:input", &tab);
     assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
-    assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
+    assert_eq!(err, "", "the renderer refuses a top-level data: navigation itself (a console error), as the window's own process does");
 
     let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "pushstate")];
     let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
