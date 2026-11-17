@@ -5,8 +5,11 @@ const G = globalThis;
 const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
 const getter = (o, k, get, set) => Object.defineProperty(o, k, { get, set, enumerable: true, configurable: true });
 const INLINE = { bold: ['b', 'strong'], italic: ['i', 'em'], underline: ['u'] };
-const INPUT_TYPES = { inserttext: 'insertText', delete: 'deleteContentBackward', forwarddelete: 'deleteContentForward', insertlinebreak: 'insertLineBreak', insertparagraph: 'insertParagraph', inserthtml: 'insertHTML', bold: 'formatBold', italic: 'formatItalic', underline: 'formatUnderline' };
+const INPUT_TYPES = { inserttext: 'insertText', delete: 'deleteContentBackward', forwarddelete: 'deleteContentForward', insertlinebreak: 'insertLineBreak', insertparagraph: 'insertParagraph', inserthtml: 'insertHTML', bold: 'formatBold', italic: 'formatItalic', underline: 'formatUnderline', undo: 'historyUndo', redo: 'historyRedo' };
+const history = G.__editHistory;
 let design = false;
+
+delete G.__editHistory;
 
 function editableState(el) {
   const v = el.getAttribute('contenteditable');
@@ -196,6 +199,16 @@ function editEvent(type, host, command, value, cancelable) {
   return host.dispatchEvent(new InputEvent(type, { bubbles: true, cancelable, inputType: INPUT_TYPES[command], data }));
 }
 
+function stepped(host, command) {
+  if (!history.has(host, command === 'redo')) return false;
+  if (!editEvent('beforeinput', host, command, '', true)) return true;
+
+  history.step(host, command === 'redo');
+  editEvent('input', host, command, '', false);
+
+  return true;
+}
+
 hidden(Document.prototype, 'execCommand', function execCommand(name, showUI, value) {
   const command = String(name).toLowerCase();
   const text = value === undefined || value === null ? '' : String(value);
@@ -207,9 +220,11 @@ hidden(Document.prototype, 'execCommand', function execCommand(name, showUI, val
     return true;
   }
 
+  if (command === 'undo' || command === 'redo') return stepped(t ? t.host : hostOf(document.activeElement || document.body), command);
   if (!COMMANDS[command] || !t) return false;
   if (!editEvent('beforeinput', t.host, command, text, true)) return true;
 
+  history.record(t.host);
   COMMANDS[command](t, text);
   editEvent('input', t.host, command, text, false);
 
@@ -227,10 +242,12 @@ hidden(G, '__hostEdit', function (host, line) {
 hidden(Document.prototype, 'queryCommandSupported', function queryCommandSupported(name) {
   const command = String(name).toLowerCase();
 
-  return command === 'selectall' || command in COMMANDS;
+  return command === 'selectall' || command === 'undo' || command === 'redo' || command in COMMANDS;
 });
 hidden(Document.prototype, 'queryCommandEnabled', function queryCommandEnabled(name) {
   const command = String(name).toLowerCase();
+
+  if (command === 'undo' || command === 'redo') return history.has(hostOf(document.activeElement || document.body), command === 'redo');
 
   return command === 'selectall' || (command in COMMANDS && target() !== null);
 });

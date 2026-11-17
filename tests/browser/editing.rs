@@ -184,3 +184,44 @@ fn editing_copy_cut_paste_in_host() {
     );
     assert_eq!(clip_report(&site), host, "{site}");
 }
+
+fn history_report(out: &str) -> Vec<&str> {
+    out.lines().filter(|l| l.starts_with("insertText ") || l.starts_with("historyUndo ") || l.starts_with("historyRedo ")).collect()
+}
+
+/// Q5.10, slice 7: Cmd+Z and Cmd+Shift+Z in an editing host
+/// (`browser/tests/editing/typing.html`) undo and redo its edits, each
+/// with an `input` event (`historyUndo`, `historyRedo`); a new edit
+/// after an undo drops what could be redone. In one process and with
+/// `DWELLER_PROCESS=site` (edit commands 4 and 5 of the browser).
+#[test]
+fn editing_undo_redo_in_host() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let want = [
+        "insertText abc",
+        "insertText abcd",
+        "historyUndo abc",
+        "historyUndo ab",
+        "historyRedo abc",
+        "insertText abce",
+    ];
+    let page = "browser/tests/editing/typing.html";
+    let one = login_window_with(
+        page,
+        "frame click:50,70 text:c text:d key:cmd+z key:cmd+z key:cmd+z key:cmd+shift+z text:e key:cmd+shift+z frame",
+        None,
+        &[],
+    );
+    assert_eq!(history_report(&one), want, "{one}");
+    let site = login_window_with(
+        page,
+        "click:50,70 renderer:input text:c renderer:input text:d renderer:input key:cmd+z renderer:input key:cmd+z renderer:input \
+         key:cmd+z renderer:input key:cmd+shift+z renderer:input text:e renderer:input key:cmd+shift+z renderer:input frame",
+        None,
+        &[("DWELLER_PROCESS", "site")],
+    );
+    assert_eq!(history_report(&site), want, "{site}");
+}
