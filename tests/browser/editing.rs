@@ -134,3 +134,53 @@ fn editing_caret_is_drawn() {
     assert_eq!(dark_column(&before), None, "no caret before the click");
     assert!(dark_column(&after).is_some(), "the caret after the click");
 }
+
+fn clip_report(out: &str) -> Vec<&str> {
+    out.lines()
+        .filter(|l| ["copy \"", "cut \"", "paste \"", "insertText ", "deleteContent", "custom \""].iter().any(|p| l.starts_with(p)))
+        .collect()
+}
+
+/// Q5.10, slice 6: Cmd+A, Cmd+C, Cmd+X and Cmd+V in an editing host
+/// (`browser/tests/editing/clip.html`) fire `copy`, `cut` and `paste`
+/// (ClipboardEvent with `clipboardData`) and do their default: the
+/// selection's text goes to the clipboard, a cut deletes it, a paste
+/// inserts the clipboard's text. In one process a second host's `copy`
+/// handler replaces the data. With `DWELLER_PROCESS=site` the same keys
+/// reach the renderer as edit commands and the clipboard is the
+/// browser's.
+#[test]
+fn editing_copy_cut_paste_in_host() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let host = [
+        "copy \"\" true",
+        "paste \"one two\" true",
+        "insertText \"one twoone two\"",
+        "cut \"\" true",
+        "deleteContentBackward \"\"",
+        "paste \"one twoone two\" true",
+        "insertText \"one twoone two\"",
+    ];
+    let page = "browser/tests/editing/clip.html";
+    let one = login_window_with(
+        page,
+        "frame click:50,62 release:50,62 key:cmd+a key:cmd+c key:end key:cmd+v key:cmd+a key:cmd+x key:cmd+v \
+         click:50,102 release:50,102 key:cmd+a key:cmd+c key:end key:cmd+v frame",
+        None,
+        &[],
+    );
+    let mut want = host.to_vec();
+    want.push("custom \"plainmade by the page\"");
+    assert_eq!(clip_report(&one), want, "{one}");
+    let site = login_window_with(
+        page,
+        "click:50,62 release:50,62 renderer:input key:cmd+a renderer:input key:cmd+c renderer:input key:end renderer:input \
+         key:cmd+v renderer:input key:cmd+a renderer:input key:cmd+x renderer:input key:cmd+v renderer:input frame",
+        None,
+        &[("DWELLER_PROCESS", "site")],
+    );
+    assert_eq!(clip_report(&site), host, "{site}");
+}

@@ -1,0 +1,21 @@
+import engine
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/editing/editing_behavior.cc (the key bindings of an editable)
+fn hostCmdKey(ui: *mut Ui, p: *mut engine.Page, sym: i32) AllocError!bool {
+    var pasted = text.Builder.init(ui.alloc)
+    defer pasted.deinit()
+    var command: []u8 = ""
+
+    if sym == 'a' { command = "selectall" }
+    if sym == 'c' { command = "copy" }
+    if sym == 'x' { command = "cut" }
+    if sym == 'v' && (try clipboardRead(&mut pasted)) { command = "paste" }
+
+    if !(try engine.editHost(p, command, pasted.bytes())) { return false }
+
+    try ui.relayout()
+
+    return true
+}
