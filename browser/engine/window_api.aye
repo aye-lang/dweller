@@ -808,9 +808,12 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
     if s.page.doc.node(h).kind != Kind.Element || !s.page.doc.isConnected(h) {
         return none
     }
-    let values = try computedValues(s, h) orelse return none
-    try animation.styleChange(&mut s.transitions, h, values, s.now)
+    let cascaded = try computedValues(s, h) orelse return none
+    try animation.styleChange(&mut s.transitions, h, cascaded, s.now)
     animation.markRead(&mut s.transitions, h)
+    let animated = try animation.animatedCopy(&mut s.transitions, s.alloc, h, cascaded, s.now)
+    defer freeValues(s, animated)
+    let values = animated orelse cascaded
     let b = try it.builder()
     defer it.release(b)
     if one {
