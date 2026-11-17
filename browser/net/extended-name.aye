@@ -1,0 +1,26 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+// https://www.rfc-editor.org/rfc/rfc8187#section-3.2.1
+fn extendedName(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!void {
+    let first = std.mem.indexOf(value, '\'') orelse return
+    let second = std.mem.indexOf(value[first + 1..], '\'') orelse return
+    let charset = value[..first]
+    let bytes = try url.percentDecode(alloc, value[first + second + 2..])
+    defer alloc.free(bytes)
+
+    if text.eqlIgnoreCase(charset, "utf-8") && frameTextValid(bytes) {
+        return out.append(bytes)
+    }
+
+    if !text.eqlIgnoreCase(charset, "iso-8859-1") {
+        return
+    }
+
+    for b in bytes {
+        try out.appendChar(b as u32)
+    }
+}

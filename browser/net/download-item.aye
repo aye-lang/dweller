@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn downloadItem(d: Download, b: *mut text.Builder) AllocError!void {
+    try b.append("<li><b>")
+    try escapedText(b, lastSegment(d.owned_path))
+    try b.append("</b> ")
+
+    if d.state == DOWNLOAD_FAILED {
+        try b.append("failed")
+    } else {
+        try b.appendInt(d.size as i64)
+        try b.append(" bytes")
+    }
+
+    try b.append("<br><small>")
+    try escapedText(b, d.owned_path)
+    try b.append("<br>")
+    try escapedText(b, d.owned_href)
+    try b.append("</small></li>")
+}

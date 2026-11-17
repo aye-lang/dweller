@@ -1,0 +1,25 @@
+import paint.Rgba
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub struct Cell {
+    code: u32 = ' '
+    fg: Rgba
+    bg: Rgba
+    bold: bool = false
+}
+
+pub struct Grid {
+    alloc: Allocator
+    cols: usize
+    rows: usize
+    cells: []mut Cell
+
+    pub fn init(alloc: Allocator, cols: usize, rows: usize, fg: Rgba, bg: Rgba) AllocError!Grid {
+        return Grid { alloc: alloc, cols: cols, rows: rows, cells: try alloc.alloc(Cell { fg: fg, bg: bg }, cols * rows) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.alloc.free(self.cells)
+    }
+}

@@ -200,6 +200,33 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(full <= 1 && restyles >= 6, "{full} full, {restyles} restyles:\n{err}");
 }
 
+/// Q4.8: the matched-properties cache picks its slot from a mixed hash
+/// and has two places per key. `browser/tests/perf/feed.html` has 7
+/// different sets of matched rules, parent values and custom properties:
+/// 442 hits and 7 misses (224 and 225 before: the slot came from the low
+/// bits of the hash, which the rule numbers do not reach, so the keys
+/// took each other's slot).
+#[test]
+fn matched_cache_keeps_feed_keys() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args(["dump", "--style", "--js", "browser/tests/perf/feed.html"])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let last = err
+        .lines()
+        .filter(|l| l.contains("DWELLER_TIMING\tmatched_cache\t"))
+        .last()
+        .expect("a matched_cache record");
+    let mut counts = last.rsplit('\t').next().unwrap().split(' ');
+    let hits: usize = counts.next().unwrap().parse().unwrap();
+    let misses: usize = counts.next().unwrap().parse().unwrap();
+    assert!(hits >= 400 && misses <= 20, "{hits} hits, {misses} misses");
+}
+
 /// Q4.5: `browser/tests/jsdom/sheet_changes.html` changes the sheets 17
 /// times after the first layout: style elements added, rewritten and
 /// removed, `insertRule`, `deleteRule`, a rule's `style`,
@@ -241,7 +268,9 @@ fn jsdom_sheet_changes_restyle_by_rule() {
 /// beside 200 rows. A class on `body` that a selector looks at restyles
 /// the elements its set names (202), not the document because a host is
 /// below (1222 before); a class on a slotted child or under one restyles
-/// that element, not its host's subtree (1 to 3 elements, 10 before).
+/// that element, not its host's subtree (2 to 4 elements, 10 before); a
+/// class inside a shadow tree restyles what its tree's sheet names (2, 7
+/// before), and the host's subtree only when a slot's values change.
 #[test]
 fn jsdom_shadow_restyle_keeps_roots_shallow() {
     let out = dweller_command()
@@ -263,7 +292,7 @@ fn jsdom_shadow_restyle_keeps_roots_shallow() {
         .map(|l| l.rsplit('\t').next().unwrap().parse().unwrap())
         .collect();
     assert!(
-        counts.len() >= 9 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 8,
+        counts.len() >= 11 && counts[0] <= 250 && counts[4..7].iter().sum::<usize>() <= 12 && counts[8] <= 3,
         "{counts:?}"
     );
 }

@@ -53,6 +53,8 @@ browser/
                   built from code, style, layout, paint and input,
                   without `html/`, `js/` or `engine/`
                   (`examples/native/counter`)
+  tui/            a cell measurer and a display-list consumer that
+                  writes ANSI (`APP --tui`)
   perf/           `DWELLER_TIMING` phase records; local telemetry
   fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML, CSS, URL, JS)
   tests/          fixtures (HTML/CSS/JS) and golden outputs
@@ -70,7 +72,7 @@ file").
 
 | Layer | Modules |
 |---|---|
-| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf`, `sdl`, `shell` |
+| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf`, `sdl`, `shell`, `tui` |
 | render core | `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `url`, `dom` |
 | front end | `html`, `js`, `wasm`, `engine`, `agent` |
 

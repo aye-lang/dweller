@@ -12,6 +12,8 @@ fn waitSockets(p: *mut Page, block: bool) AllocError!bool {
         net.pumpLoads()
 
         if try pumpPageSockets(s) {
+            passSocketWait(s, time.monotonicMs() - started)
+
             return true
         }
 
@@ -21,4 +23,8 @@ fn waitSockets(p: *mut Page, block: bool) AllocError!bool {
     net.pumpLoads()
 
     return pumpPageSockets(s)
+}
+
+fn passSocketWait(s: *mut Script, waited: u64) {
+    if !s.real { s.now += waited as f64 }
 }

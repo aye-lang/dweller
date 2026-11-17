@@ -1,0 +1,21 @@
+import std
+import std.text
+
+// https://websockets.spec.whatwg.org/#dom-websocket-websocket
+pub fn socketProtocols(protocols: []u8) bool {
+    var all = text.split(protocols, ", ")
+
+    while all.next() |p| {
+        if protocols.len > 0 && !socketToken(p) { return false }
+    }
+
+    return true
+}
+
+fn socketToken(p: []u8) bool {
+    for c in p {
+        if c <= ' ' || c >= 0x7f || std.mem.indexOf("()<>@,;:\\\"/[]?={}", c) != null { return false }
+    }
+
+    return p.len > 0
+}
