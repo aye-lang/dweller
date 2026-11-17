@@ -19,7 +19,7 @@ fn window_renderer_perf_records() {
         .env("DWELLER_PROCESS", "tab")
         .env("DWELLER_TIMING", "1")
         .arg(format!("{}/ui/kept_list.html", srv.base))
-        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "2000", "--until-idle", "--state"])
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "2000", "--until-idle", "--state", "--processes"])
         .args(["--events", "renderer:loaded move:200,150 wheel:-3 renderer:input wheel:-3 renderer:input click:200,150 release:200,150 renderer:input"])
         .output()
         .unwrap();

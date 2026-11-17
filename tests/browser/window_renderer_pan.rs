@@ -6,7 +6,7 @@ fn pan_run(base: &str, query: &str, mode: &str, png: &Path, events: &str) -> (St
         .env("DWELLER_PROCESS", mode)
         .env("DWELLER_TIMING", "1")
         .arg(format!("{base}/ui/pan_busy.html{query}"))
-        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--state", "--save"])
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--state", "--processes", "--save"])
         .arg(png)
         .args(["--events", events])
         .output()
