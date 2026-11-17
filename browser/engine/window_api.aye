@@ -453,7 +453,7 @@ fn akMatchMedia(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, q)
     var sheet = try css.Sheet.init(it.alloc)
     defer sheet.deinit()
-    let m = try css.mediaMatches(&mut sheet, q.bytes(), css.Media { width: s.width, height: s.height })
+    let m = try css.mediaMatches(&mut sheet, q.bytes(), css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark })
     return js.boolVal(m)
 }
 
@@ -976,7 +976,7 @@ fn akSupports(it: *mut Interp, a: Args) JsError!Value {
     var sheet = try css.Sheet.init(it.alloc)
     defer sheet.deinit()
     let s = scriptOf(it)
-    try css.parseSheet(&mut sheet, b.bytes(), css.Media { width: s.width, height: s.height })
+    try css.parseSheet(&mut sheet, b.bytes(), css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark })
     return js.boolVal(sheet.rules.len() == 1)
 }
 
@@ -1019,7 +1019,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
     }
     try takeSheetChanges(s)
     if s.computed |c| {
-        if c.media.width == s.width && c.media.height == s.height {
+        if c.media.width == s.width && c.media.height == s.height && sameDark(c.media.dark, s.page.prefers_dark) {
             if c.version == s.style_version {
                 return c
             }
@@ -1033,7 +1033,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
         }
     }
     dropComputed(s)
-    let media = css.Media { width: s.width, height: s.height }
+    let media = css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark }
     var ua = try css.Sheet.init(p.alloc)
     errdefer ua.deinit()
     try css.uaSheet(&mut ua, media)

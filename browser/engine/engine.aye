@@ -80,6 +80,7 @@ pub struct Page {
     sheet_key: u64
     tree: ?*mut layout.Tree
     host_caret: ?paint.Rect = null
+    prefers_dark: ?bool = null
     // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
     // which owns it.
     tree_borrowed: bool = false
@@ -332,7 +333,7 @@ pub struct Page {
             }
             if !same {
                 self.dropStyling()
-                self.styling = try self.styleFor(css.Media { width: width, height: height })
+                self.styling = try self.styleFor(css.Media { width: width, height: height, dark: self.prefers_dark })
                 self.sheet_key = key
             }
         }
@@ -340,7 +341,7 @@ pub struct Page {
             _ = try loadStyledWebFonts(self, st, measure)
         }
         let images_began = perf.start()
-        try updateImages(self, css.Media { width: width, height: height })
+        try updateImages(self, css.Media { width: width, height: height, dark: self.prefers_dark })
         perf.end("images", images_began, self.url.href)
         if self.styling |st| {
             var nodes: ?*layout.Images = null
@@ -550,7 +551,7 @@ pub fn loadParsed(alloc: Allocator, target: *Url, initiator: net.Initiator) Allo
 /// now on: `preloadImages`). The document is parsed in full already, so
 /// the scan walks the tree. The ids are released by the caller.
 pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32), scripts: *mut List(u32)) AllocError!void {
-    let media = css.Media { width: width, height: height }
+    let media = css.Media { width: width, height: height, dark: p.prefers_dark }
     var base = try documentBase(p.alloc, &p.doc, &p.url)
     defer base.deinit(p.alloc)
     var hrefs = text.Builder.init(p.alloc)
