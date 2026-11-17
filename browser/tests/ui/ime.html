@@ -1,0 +1,19 @@
+<!doctype html>
+<title>ime</title>
+<body style="margin:0;font:16px/20px monospace">
+<input id="field" value="ab" style="position:absolute;left:10px;top:10px;width:200px;height:24px;font:16px/20px monospace;padding:0;border:1px solid #888;margin:0">
+<textarea id="area" style="position:absolute;left:10px;top:50px;width:200px;height:60px;font:16px/20px monospace;padding:0;border:1px solid #888;margin:0"></textarea>
+<pre id="out" style="position:absolute;top:120px;left:0;margin:0"></pre>
+<script>
+function log(s) { document.getElementById('out').textContent += s + '\n'; }
+['field', 'area'].forEach(function (id) {
+  var el = document.getElementById(id);
+  ['compositionstart', 'compositionupdate', 'compositionend'].forEach(function (type) {
+    el.addEventListener(type, function (e) { log(type + ' ' + id + ' data=' + JSON.stringify(e.data) + ' value=' + JSON.stringify(el.value) + ' ' + (e instanceof CompositionEvent)); });
+  });
+  ['beforeinput', 'input'].forEach(function (type) {
+    el.addEventListener(type, function (e) { log(type + ' ' + id + ' data=' + JSON.stringify(e.data) + ' value=' + JSON.stringify(el.value) + ' ' + e.inputType + ' composing=' + e.isComposing); });
+  });
+  el.addEventListener('blur', function () { log('blur ' + id); });
+});
+</script>

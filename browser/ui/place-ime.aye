@@ -1,0 +1,21 @@
+import engine
+import std.mem.AllocError
+
+fn placeIme(ui: *mut Ui) AllocError!void {
+    if ui.tab.page |p| {
+        if engine.composing(p) && !engine.composingFocused(p) {
+            try engine.settleComposition(p)
+            try ui.afterScripts()
+        }
+    }
+
+    let at = imeRect(ui) orelse return
+    let s = try imeOf(ui)
+
+    if at[0] == s.rect[0] && at[1] == s.rect[1] && at[2] == s.rect[2] && at[3] == s.rect[3] { return }
+
+    let shown = SDL_Rect { x: at[0], y: at[1], w: at[2], h: at[3] }
+
+    s.rect = at
+    SDL_SetTextInputRect(&shown)
+}

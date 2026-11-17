@@ -1,0 +1,15 @@
+import engine
+import paint
+import std.list.List
+import std.mem.AllocError
+
+fn drawComposition(ui: *mut Ui, p: *mut engine.Page, v: paint.View) AllocError!void {
+    var rects = List(paint.Rect).init(ui.alloc)
+    defer rects.deinit()
+
+    try engine.compositionRects(p, &mut rects)
+
+    for r in rects.items() {
+        ui.canvas.fillRect(paint.deviceRect(r, v), CARET_INK)
+    }
+}

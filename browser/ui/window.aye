@@ -394,6 +394,7 @@ pub struct Ui {
     page_zoom: f64 = 1.0
     suggest: ?*mut Suggestions = null
     picker: ?*mut FilePicker = null
+    ime: ?*mut ImeState = null
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -545,6 +546,7 @@ pub struct Ui {
         SDL_StopTextInput()
         closeSuggestions(self)
         stopPicker(self)
+        endIme(self)
         pageview.shutdown(&mut self.page_view)
         if self.texture |t| {
             SDL_DestroyTexture(t)
@@ -606,6 +608,7 @@ pub struct Ui {
         if !(try self.resize()) {
             return 1
         }
+        imeHints()
         SDL_StartTextInput()
         let restored = try restoreTabs(self)
 
@@ -761,6 +764,7 @@ pub struct Ui {
             try pollTabProcesses(self)
             try pollPicker(self)
             try printAsked(self)
+            try placeIme(self)
             if engine.hasContextRequests() {
                 try serveContexts(self)
             }
@@ -1183,6 +1187,8 @@ pub struct Ui {
                 perf.noteAction("key")
                 try self.key(ke.keysym.sym, ke.keysym.mods, sc, ke.repeat != 0)
             }
+        } else if kind == SDL_TEXTEDITING || kind == SDL_TEXTEDITING_EXT {
+            try takeEditing(self, ev)
         } else if kind == SDL_TEXTINPUT {
             let te = &ev.text
             var n: usize = 0
@@ -1191,6 +1197,7 @@ pub struct Ui {
             }
             perf.noteAction("text")
             try self.typed(te.text[0..n])
+            clearComposed(self)
         } else if kind == SDL_MOUSEMOTION {
             let me = &ev.motion
             var mx = me.xrel as f64
@@ -1501,6 +1508,9 @@ pub struct Ui {
         }
         if self.focus == Focus.Page {
             try pageText(self, s)
+            return
+        }
+        if try commitInField(self, s) {
             return
         }
         try self.field().insert(s)
@@ -1958,6 +1968,7 @@ pub struct Ui {
         try drawToolbar(self)
         try drawZoomChip(self)
         drawStar(self)
+        drawFieldComposition(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)
         }

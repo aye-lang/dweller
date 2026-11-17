@@ -443,6 +443,10 @@ fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
     }
+    if try engine.commitText(p, s) {
+        try afterEdit(ui)
+        return true
+    }
     if !try engine.dispatchEvent(p, f, "beforeinput", s) {
         return true
     }
@@ -603,6 +607,7 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
                     ui.canvas.fillRect(paint.deviceRect(c, v), CARET_INK)
                 }
             }
+            try drawComposition(ui, p, v)
         }
     }
     try drawValidation(ui, p, v)
