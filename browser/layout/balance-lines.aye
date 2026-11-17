@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-flexbox-2/#flex-wrap-property
+fn balanceLines(all: []Item, gap: f64, limit: f64, breaks: *mut List(usize)) AllocError!void {
+    let count = breaks.len()
+    var low = 0.0
+    var high = limit
+
+    if count < 2 {
+        return
+    }
+
+    for _ in 0..24 {
+        let mid = (low + high) / 2.0
+
+        try breakLines(all, gap, mid, breaks)
+
+        if breaks.len() <= count {
+            high = mid
+        } else {
+            low = mid
+        }
+    }
+
+    try breakLines(all, gap, high, breaks)
+}

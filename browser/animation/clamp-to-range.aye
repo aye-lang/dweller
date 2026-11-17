@@ -19,7 +19,15 @@ fn clampToRange(prop: usize, v: css.Value, nonneg: bool) css.Value {
     return match v {
         .Px { v: x } => css.Value.Px { v: math.min(math.max(x, low), high) }
         .Percent { v: x } => css.Value.Percent { v: math.min(math.max(x, low), high) }
-        .Number { v: x } => css.Value.Number { v: math.min(math.max(x, low), high) }
+        .Number { v: x } => css.Value.Number { v: wholeFor(prop, math.min(math.max(x, low), high)) }
         _ => v
     }
+}
+
+fn wholeFor(prop: usize, x: f64) f64 {
+    if css.PROPERTIES[prop].kind == css.PKind.Int {
+        return math.floor(x + 0.5)
+    }
+
+    return x
 }

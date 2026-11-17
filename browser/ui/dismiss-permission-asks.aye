@@ -1,0 +1,21 @@
+import net
+
+fn dismissPermissionAsks(owner: ?*mut TabProcess, answers: bool) {
+    let ui = permission_ui orelse return
+    let all = permission_asks orelse return
+    var i = all.len()
+
+    while i > 0 {
+        i -= 1
+
+        if all.items()[i].owner != owner { continue }
+
+        if answers {
+            answerPermissionAsk(ui, i, net.PERMISSION_PROMPT) catch |e| {}
+        } else {
+            var ask = all.orderedRemove(i)
+
+            freePermissionAsk(&mut ask)
+        }
+    }
+}

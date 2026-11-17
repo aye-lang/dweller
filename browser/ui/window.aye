@@ -289,6 +289,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             var ui = Ui.init(alloc, window, renderer, measure, system, first_tab)
             defer ui.deinit()
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
+            watchPermissions(&mut ui)
+            defer endPermissionAsks(&mut ui)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -963,6 +965,7 @@ pub struct Ui {
         self.range_drag = false
         self.cert_advanced = false
         self.cert_focused = false
+        dismissPermissionAsks(null, false)
         if loaded {
             // The agents' refs are of the old document.
             self.slots[self.active].?.shown += 1
@@ -1125,6 +1128,9 @@ pub struct Ui {
             return
         }
         noteInput(self, ev)
+        if try permissionInput(self, ev) {
+            return
+        }
         if try forwardInput(self, ev) {
             return
         }
@@ -1599,6 +1605,9 @@ pub struct Ui {
         if self.auth.open {
             return authClick(self, x, y)
         }
+        if try permissionClick(self, x, y) {
+            return
+        }
         if try certClick(self, x, y) {
             return
         }
@@ -1959,6 +1968,7 @@ pub struct Ui {
         if certPage(self) |p| {
             try drawCertBar(self, p)
         }
+        try drawPermissionBar(self)
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }

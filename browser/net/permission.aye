@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.Allocator
+
+pub let PERMISSION_PROMPT: u8 = 0
+pub let PERMISSION_GRANTED: u8 = 1
+pub let PERMISSION_DENIED: u8 = 2
+pub let PERMISSION_KINDS: u8 = 4
+
+struct Permission {
+    owned_origin: []mut u8
+    kind: u8
+    state: u8
+}
+
+struct Permissions {
+    alloc: Allocator
+    all: List(Permission)
+}
+
+var permissions: ?*mut Permissions = null
+var remote_permission: ?fn([]u8, u8) u8 = null
+
+pub fn setRemotePermission(hook: fn([]u8, u8) u8) {
+    remote_permission = hook
+}

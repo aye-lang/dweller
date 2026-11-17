@@ -1,0 +1,36 @@
+import css
+import std.mem.AllocError
+import std.text
+
+fn appendLonghands(s: *mut Script, b: *mut text.Builder, name: []u8, value: []u8, index: usize) AllocError!bool {
+    var ids = [12]usize{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    let n = css.shorthandLonghands(name, ids[..])
+    var covers = false
+    var part = text.Builder.init(s.alloc)
+    defer part.deinit()
+
+    var longs = text.Builder.init(s.alloc)
+    defer longs.deinit()
+
+    for id in ids[..n] {
+        covers = covers || id == index
+
+        if !(try css.shorthandLonghandText(s.alloc, name, value, css.PROPERTIES[id].name, &mut part)) {
+            return false
+        }
+
+        try appendDecl(&mut longs, css.PROPERTIES[id].name, part.bytes())
+    }
+
+    if !covers {
+        return false
+    }
+
+    if b.len() > 0 {
+        try b.appendByte(' ')
+    }
+
+    try b.append(longs.bytes())
+
+    return true
+}

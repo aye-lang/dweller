@@ -1,16 +1,17 @@
-// spec: https://drafts.csswg.org/css-sizing-4/#aspect-ratio-automatic
-fn ratioWidth(t: *Tree, i: usize, cb_w: f64, cb_h: f64) ?f64 {
-    let r = aspectRatio(t, i) orelse return null
-    let b = t.bx(i)
-    let ch = definiteContentHeight(t, i, cb_h)
+import css
+import std.text
 
-    if ch < 0.0 || b.kind == BoxKind.Image {
-        return null
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-cross-item
+fn ratioWidth(t: *mut Tree, c: usize, cw: f64) {
+    let b = t.bx(c)
+    let align = alignOf(t, c)
+    let stretches = text.eql(align, "stretch") || text.eql(align, "normal")
+
+    if b.kind != BoxKind.Image || stretches || !isKeyword(b.style[css.WIDTH], "auto") {
+        return
     }
 
-    if borderBoxSizing(b.style) {
-        return clampWidth(t, i, (ch + vEdges(b)) * r, cb_w)
+    if naturalRatio(t, c) |ratio| {
+        t.bx(c).w = clampWidth(t, c, (b.h - vEdges(b)) * ratio + hEdges(b), cw)
     }
-
-    return clampWidth(t, i, ch * r + hEdges(b), cb_w)
 }
