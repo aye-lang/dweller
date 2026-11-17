@@ -716,14 +716,28 @@ fn flow(t: *mut Tree, p: usize, cw: f64, ch: f64, top_open: bool, bottom_open: b
         }
         t.hint_y = est
         try layoutBlockLevel(t, c, room, ch)
-        if t.floats.len() > t.float_base && isFormattingRoot(t, c) {
+        var tries: usize = 0
+        while tries < 8 && t.floats.len() > t.float_base && isFormattingRoot(t, c) {
             let whole = bandAt(t, est, t.bx(c).h, cw)
-            if whole.left != shift || whole.width() != room {
+            let open = whole.left == 0.0 && whole.width() == cw
+            let fits = open || t.bx(c).w <= whole.width() + 0.01
+            let same = whole.left == shift && whole.width() == room
+            if fits && same {
+                break
+            }
+            if !fits && same {
+                est = nextFloatBottom(t, est, t.bx(c).h) orelse break
+                clear_to = est
+                let band = bandAt(t, est, 1.0, cw)
+                shift = band.left
+                room = band.width()
+            } else {
                 shift = whole.left
                 room = whole.width()
-                t.hint_y = est
-                try layoutBlockLevel(t, c, room, ch)
             }
+            t.hint_y = est
+            try layoutBlockLevel(t, c, room, ch)
+            tries += 1
         }
         let cb = t.bx(c)
         cb.x = shift + cb.margin[3]
