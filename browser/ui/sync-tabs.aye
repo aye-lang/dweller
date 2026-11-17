@@ -1,3 +1,4 @@
+import pageview
 import std.mem.AllocError
 
 fn syncTabs(ui: *mut Ui) AllocError!void {
@@ -5,10 +6,13 @@ fn syncTabs(ui: *mut Ui) AllocError!void {
 
     for i in 0..ui.count {
         let slot = ui.slots[i].?
-        let p = slot.session.tab.page orelse continue
         let background = ui.hidden || i != ui.active
 
-        try tabHidden(p, background)
+        if slot.process |tp| { try tellVisible(tp, !background) }
+
+        let p = slot.session.tab.page orelse continue
+
+        try pageview.tabHidden(p, background)
 
         if background {
             try runBackgroundTimers(slot, p, now)

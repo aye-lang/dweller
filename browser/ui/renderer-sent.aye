@@ -64,8 +64,11 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
         }
 
-        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
             if got.frame != slot.id { return "unexpected begin_navigation" }
+            if user > 1 { return "bad begin_navigation" }
+
+            tp.nav_user = user == 1
 
             let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
 
@@ -223,6 +226,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .State { .. } => return "unexpected state"
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
