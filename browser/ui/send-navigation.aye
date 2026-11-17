@@ -17,6 +17,12 @@ fn sendNavigation(tp: *mut TabProcess, on: u32, id: u32, href: []u8, got: net.Re
         return ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.AccessDenied) })
     }
 
+    if try navigationDownloads(tp, href, &res) {
+        res.deinit(alloc)
+
+        return ipc.encode(&mut tp.outbox, on, ipc.Message.FetchFail { id: id, code: net.fetchErrorCode(net.FetchError.Downloaded) })
+    }
+
     if try takesSwap(tp, res, final) { return }
 
     defer res.deinit(alloc)

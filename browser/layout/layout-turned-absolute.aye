@@ -1,0 +1,36 @@
+import css
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#orthogonal-flows
+fn layoutTurnedAbsolute(t: *mut Tree, i: usize, cb: Area) AllocError!void {
+    let b = t.bx(i)
+    let outer = b.style
+    let origin = Area { x: b.ax - b.x, y: b.ay - b.y, w: 0.0, h: 0.0 }
+    let at = Area { x: b.ax, y: b.ay, w: 0.0, h: 0.0 }
+    let zero = Area { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }
+    let into = Turn { flip_x: false, flip_y: b.mode == VERTICAL_RL }
+    let back = Turn { flip_x: b.mode == VERTICAL_RL, flip_y: false }
+    let start = turnedRect(at, zero, into)
+
+    b.style = b.inner.?
+    b.inside = true
+    b.ax = start.x
+    b.ay = start.y
+    b.x = start.x
+    b.y = start.y
+    t.abs_area = turnedRect(cb, zero, into)
+    try layoutAbsolute(t, i)
+    t.abs_area = null
+
+    let r = t.bx(i)
+    let placed = turnedRect(Area { x: r.ax, y: r.ay, w: r.w, h: r.h }, zero, back)
+
+    r.style = outer
+    r.inside = false
+    r.has_intrinsic = false
+    r.w = placed.w
+    r.h = placed.h
+    turnBoxEdges(r, back)
+    turnContents(t, i, back)
+    placeTurnedAbsolute(t, i, cb, StaticSpot { at: at, placed: placed, origin: origin })
+}

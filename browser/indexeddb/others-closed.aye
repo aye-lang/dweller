@@ -1,0 +1,24 @@
+import std.mem.AllocError
+
+fn othersClosed(b: *mut Backend, r: *mut OpenRequest, db: *mut Database, target: u64) AllocError!bool {
+    var open: usize = 0
+    var waiting: usize = 0
+
+    for i in 0..b.conns.len() {
+        let c = &mut b.conns.items()[i]
+
+        if c.db != db { continue }
+
+        open += 1
+
+        if c.closing || c.acked == r.serial { continue }
+
+        waiting += 1
+
+        if c.told != r.serial { try tellVersionChange(b, c, r.serial, target) }
+    }
+
+    if open > 0 && waiting == 0 && !r.blocked_sent { try tellBlocked(b, r, db, target) }
+
+    return open == 0
+}

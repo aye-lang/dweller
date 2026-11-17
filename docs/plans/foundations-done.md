@@ -148,6 +148,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q2.14c | The in-process arm of a two-arm test says that it is in process, so it keeps its meaning after the flip (21 tests; causes 4, 7 and 8) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
 
 ## Q3: web security (lane sec)
 
@@ -214,8 +215,19 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
+| Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
+| Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
+
+| Step | Feature | Chromium |
+|---|---|---|
+| Q5.12 | Permissions with a prompt: notifications, geolocation, camera and microphone denied until asked | `components/permissions/`, `modules/permissions/` |
+| Q5.6 | Downloads: `Content-Disposition`, `download` attribute and a downloads list | `components/download/`, `chrome/browser/download/` |
+| Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |
+| Q5.11a | IndexedDB 1: databases, object stores, transactions, in the browser process | `content/browser/indexed_db/`, `modules/indexeddb/` |
+| Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
+| Q5.14a | Service Worker 1: registration, lifecycle and fetch interception | `content/browser/service_worker/`, `modules/service_worker/` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)
@@ -231,6 +243,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.7 | `css/values-color` (57.9, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
+| Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
+| Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
 
 ## Q7: acceptance and release (lane sites)
 

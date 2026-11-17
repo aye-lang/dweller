@@ -1,0 +1,21 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn startUpgrade(b: *mut Backend, r: *mut OpenRequest, db: *mut Database, target: u64) AllocError!void {
+    let old = db.version
+    let conn = try connectTo(b, db, r.client)
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    db.before_upgrade = try copyDatabase(b.alloc, db)
+    db.version = target
+    r.tx = try newTransaction(b, conn, r.client, db, VERSION_CHANGE)
+    try requestLine(&mut line, "upgradeneeded", r)
+    try appendNumber(&mut line, conn as u64)
+    try appendNumber(&mut line, r.tx as u64)
+    try appendNumber(&mut line, old)
+    try appendNumber(&mut line, target)
+    try writeMetadata(&mut line, db)
+    try emit(b, r.client, &mut line)
+}

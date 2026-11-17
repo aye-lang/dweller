@@ -1,0 +1,31 @@
+import net
+import std
+import std.text
+
+let FILE_HEADER = "dweller-sw 1\n"
+let SAVE_MS: u64 = 1000
+
+var saved_ms: u64 = 0
+
+pub fn save() {
+    let r = the_registry orelse return
+    var out = text.Builder.init(r.alloc)
+    defer out.deinit()
+
+    if !r.changed || !net.profileWritable() { return }
+
+    r.changed = false
+    saved_ms = std.time.monotonicMs()
+    writeRegistry(r, &mut out) catch return
+
+    let path = net.joinPath(r.alloc, net.profileDir(), "serviceworkers") catch return
+    defer r.alloc.free(path)
+
+    _ = net.writeAtomic(r.alloc, path, out.bytes()) catch return
+}
+
+pub fn saveIfDue() {
+    let r = the_registry orelse return
+
+    if r.changed && std.time.monotonicMs() - saved_ms >= SAVE_MS { save() }
+}

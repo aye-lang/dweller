@@ -1,0 +1,15 @@
+pub fn closeRegistry() {
+    let r = the_registry orelse return
+
+    while r.regs.pop() |reg| { freeRegistration(r.alloc, reg) }
+
+    while r.clients.pop() |c| {
+        r.alloc.free(c.area)
+        r.alloc.free(c.url)
+    }
+
+    r.regs.deinit()
+    r.clients.deinit()
+    the_registry = null
+    r.alloc.destroy(r)
+}

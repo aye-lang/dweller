@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: net/base/filename_util_internal.cc (SanitizeGeneratedFileName)
+fn safeFileName(raw: []u8, out: *mut text.Builder) AllocError!void {
+    var name = text.trim(raw)
+
+    while name.len > 0 && (name[0] == '.' || name[0] == ' ') { name = name[1..] }
+    while name.len > 0 && (name[name.len - 1] == '.' || name[name.len - 1] == ' ') { name = name[..name.len - 1] }
+
+    for c in name {
+        if c < 0x20 || c == 0x7f || std.mem.indexOf("/\\:*?\"<>|", c) != null {
+            try out.appendByte('_')
+        } else {
+            try out.appendByte(c)
+        }
+    }
+
+    if out.len() == 0 {
+        try out.append("download")
+    }
+}

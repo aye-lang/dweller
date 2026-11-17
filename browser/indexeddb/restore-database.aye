@@ -1,0 +1,13 @@
+import std.mem.Allocator
+
+fn restoreDatabase(alloc: Allocator, db: *mut Database) {
+    let old = db.before_upgrade orelse return
+    let current = db.stores
+
+    db.stores = old.stores
+    old.stores = current
+    db.version = old.version
+    db.next_store = old.next_store
+    db.before_upgrade = null
+    freeDatabase(alloc, old)
+}

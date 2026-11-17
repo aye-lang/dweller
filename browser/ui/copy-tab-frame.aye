@@ -1,11 +1,18 @@
 import paint
+import perf
 
 fn copyTabFrame(ui: *mut Ui, r: paint.IRect) {
     let tp = ui.slots[ui.active].?.process orelse return
 
-    copyShown(ui, tp, r, 0, 0)
-
+    let pan = tabPan(ui, tp)
     let all = paint.IRect { x0: 0, y0: 0, x1: ui.page.canvas.width as i64, y1: ui.page.canvas.height as i64 }
 
-    copyChildFrames(ui, tp, r, 0, 0, all, 255)
+    copyShown(ui, tp, r, 0, -pan)
+
+    if pan != 0 {
+        fillPanGap(ui, tp, r, pan)
+        perf.end("ui_pan", perf.start(), "")
+    }
+
+    copyChildFrames(ui, tp, r, 0, -pan, all, 255)
 }

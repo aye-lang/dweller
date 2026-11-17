@@ -5,6 +5,14 @@ import std.mem.AllocError
 
 // spec: https://drafts.csswg.org/css-grid-2/#abspos-items
 fn gridAreaOf(t: *Tree, i: usize, c: usize, pad: Area) AllocError!Area {
+    if t.bx(c).mode != HORIZONTAL && t.bx(c).grid_lines != null {
+        return turnedGridArea(t, i, c, pad)
+    }
+
+    return gridAreaIn(t, i, c, pad, t.bx(c).padding)
+}
+
+fn gridAreaIn(t: *Tree, i: usize, c: usize, pad: Area, padding: [4]f64) AllocError!Area {
     let g = t.bx(c)
     let lines = g.grid_lines orelse return pad
     let s = t.bx(i).style
@@ -15,10 +23,15 @@ fn gridAreaOf(t: *Tree, i: usize, c: usize, pad: Area) AllocError!Area {
 
     let cols = outOfFlowLines(lineRef(s[css.GRID_COLUMN_START], areas.items(), lines.explicit_cols, true, false), lineRef(s[css.GRID_COLUMN_START + 1], areas.items(), lines.explicit_cols, true, true), lines.starts_x.len())
     let rows = outOfFlowLines(lineRef(s[css.GRID_COLUMN_START + 2], areas.items(), lines.explicit_rows, false, false), lineRef(s[css.GRID_COLUMN_START + 3], areas.items(), lines.explicit_rows, false, true), lines.starts_y.len())
-    let x0 = lineAt(cols[0], lines.starts_x.items(), lines.ends_x.items(), false, pad.x, pad.x + g.padding[3])
-    let x1 = lineAt(cols[1], lines.starts_x.items(), lines.ends_x.items(), true, pad.x + pad.w, pad.x + g.padding[3])
-    let y0 = lineAt(rows[0], lines.starts_y.items(), lines.ends_y.items(), false, pad.y, pad.y + g.padding[0])
-    let y1 = lineAt(rows[1], lines.starts_y.items(), lines.ends_y.items(), true, pad.y + pad.h, pad.y + g.padding[0])
+    let rtl = isKeyword(g.style[css.DIRECTION], "rtl")
+    let x0 = lineAt(cols[0], lines.starts_x.items(), lines.ends_x.items(), false, pad.x + pad.w * oneWhen(rtl), pad.x + padding[3])
+    let x1 = lineAt(cols[1], lines.starts_x.items(), lines.ends_x.items(), true, pad.x + pad.w * oneWhen(!rtl), pad.x + padding[3])
+    let y0 = lineAt(rows[0], lines.starts_y.items(), lines.ends_y.items(), false, pad.y, pad.y + padding[0])
+    let y1 = lineAt(rows[1], lines.starts_y.items(), lines.ends_y.items(), true, pad.y + pad.h, pad.y + padding[0])
+
+    if rtl {
+        return Area { x: x1, y: y0, w: math.max(0.0, x0 - x1), h: math.max(0.0, y1 - y0) }
+    }
 
     return Area { x: x0, y: y0, w: math.max(0.0, x1 - x0), h: math.max(0.0, y1 - y0) }
 }

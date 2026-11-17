@@ -1,0 +1,16 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn sendIdb(r: *mut TabRenderer, doc: u32, page: u32, request: []u8, out: *mut text.Builder) AllocError!void {
+    var rest = request
+
+    while rest.len > IDB_CHUNK {
+        send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: page, more: 1, request: rest[..IDB_CHUNK] }) catch return out.append("!UnknownError")
+        rest = rest[IDB_CHUNK..]
+    }
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.Idb { doc: doc, page: page, more: 0, request: rest }) catch return out.append("!UnknownError")
+
+    try awaitIdbReply(r, out)
+}

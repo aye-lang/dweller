@@ -1,0 +1,11 @@
+import std
+import std.mem.AllocError
+
+fn removeFile(b: *mut Backend, db: *Database) AllocError!void {
+    if !persists(db.area) { return }
+
+    let path = try filePath(b.alloc, db)
+    defer b.alloc.free(path)
+
+    std.fs.remove(path) catch return
+}

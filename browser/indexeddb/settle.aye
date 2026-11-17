@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn settle(b: *mut Backend) AllocError!void {
+    var i: usize = 0
+
+    while i < b.requests.len() {
+        if isHead(b, i) && (try stepRequest(b, i)) {
+            i = 0
+        } else {
+            i += 1
+        }
+    }
+
+    try startReady(b)
+}

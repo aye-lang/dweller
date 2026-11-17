@@ -1,0 +1,33 @@
+import net
+import std.mem.Allocator
+import url.Url
+
+let WORKER_MADE = "dweller-worker-response: 1\n"
+
+fn navigationResponse(alloc: Allocator, target: *Url, req: net.Request, worker: u32) net.FetchError!net.Response {
+    if worker == 0 { return net.request(alloc, target, req) }
+
+    var made = (try swFetch(alloc, SwFetch { version: worker, client: 0, navigates: true }, target, req)) orelse return net.request(alloc, target, req)
+
+    if !net.hasRemote() { return made }
+
+    var told = req
+
+    told.headers = WORKER_MADE
+
+    let commit = net.request(alloc, target, told) catch |e| {
+        made.deinit(alloc)
+
+        return e
+    }
+
+    if commit.remote {
+        made.deinit(alloc)
+
+        return commit
+    }
+
+    commit.deinit(alloc)
+
+    return made
+}
