@@ -1,0 +1,14 @@
+<!doctype html>
+<title>IndexedDB: an exception in a handler aborts the transaction</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+async function run() {
+  const db = await fresh('throws', db => db.createObjectStore('a'));
+  const tx = db.transaction('a', 'readwrite');
+  tx.objectStore('a').put('thrown', 9).onsuccess = () => { throw new Error('in a handler'); };
+  log('throw ' + await ended(tx));
+  done('left ' + await wait(db.transaction('a').objectStore('a').count()));
+}
+run().catch(e => done('failed ' + e));
+</script>

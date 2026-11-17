@@ -144,6 +144,11 @@ Follow-ups noted at the stop (not yet cards):
 | Q2.14a | Flip readiness as a number: the daily `site-mode` workflow runs the whole browser suite with `DWELLER_PROCESS=site` and prints passed over total and the failing names. First count 2026-11-12: 151 of 249; the 98 failures are grouped by cause in the card, and the rows Q2.14b to Q2.14h come from it | the job's summary shows the count on `main`; the count is in the scoreboard | – |
 | Q2.14d | A renderer's `DWELLER_TIMING` records and the page's `[log]` lines reach the test (11 tests; causes 6 and 10) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.12 | Spaces become renderers: an agent's Space uses the same renderer processes, and the second copy of the engine in `ui/spaces.aye` goes away. Shared logins go through the browser's jar (slices Q2.12, Q2.12b and Q2.12c are done behind `DWELLER_SPACES=renderer`; next: Q2.12d, a popup's `opener`, then the flip and the removal of the process path; the status and the Left lists are in the cards) | the `window_spaces*` tests pass | `render_frame_host_impl.cc` (`CreateNewWindow`), `target_handler.cc` (`CreateTarget`) |
+| Q2.14b | The headless `--events` and `--frames` run waits for the renderer by itself under the flag (22 tests; causes 1 and 5 of Q2.14a's card) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14c | The in-process arm of a two-arm test says that it is in process, so it keeps its meaning after the flip (21 tests; causes 4, 7 and 8) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
 
 ## Q3: web security (lane sec)
 
@@ -208,8 +213,18 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.3 | Invalidation sets for class, id and attribute changes (descendant and sibling); covers P3.64 slice 2 and P4.11 | the perf gate's `style_full` falls, and the W7 rows improve | `core/css/invalidation/invalidation_set.h`, `rule_invalidation_data.h` |
 | Q4.4 | `:has()` invalidation without a whole-sheet restyle | the same | `core/css/invalidation/` (`:has` sets), `core/css/check_pseudo_has_*` |
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
+| Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
+| Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
+
+| Step | Feature | Chromium |
+|---|---|---|
+| Q5.12 | Permissions with a prompt: notifications, geolocation, camera and microphone denied until asked | `components/permissions/`, `modules/permissions/` |
+| Q5.6 | Downloads: `Content-Disposition`, `download` attribute and a downloads list | `components/download/`, `chrome/browser/download/` |
+| Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |
+| Q5.11a | IndexedDB 1: databases, object stores, transactions, in the browser process | `content/browser/indexed_db/`, `modules/indexeddb/` |
+| Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)
@@ -224,6 +239,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.6 | `css/cascade-variables` (56.1, 75) |
 | Q6.7 | `css/values-color` (57.9, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |
+| Q6.10 | `html/semantics/forms` (54.3, 60) |
 
 ## Q7: acceptance and release (lane sites)
 

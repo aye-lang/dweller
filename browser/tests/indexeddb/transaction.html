@@ -1,0 +1,58 @@
+<!doctype html>
+<title>IndexedDB: transactions</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+const nameOf = f => { try { f(); return 'none'; } catch (e) { return e.name; } };
+async function run() {
+  const db = await fresh('tx', db => { db.createObjectStore('a'); db.createObjectStore('b'); });
+  let tx = db.transaction('a', 'readwrite');
+  let a = tx.objectStore('a');
+  a.put('kept', 1);
+  log('first ' + await ended(tx) + ' ' + nameOf(() => a.put('late', 2)) + ' ' + nameOf(() => tx.objectStore('a')));
+
+  tx = db.transaction(['a', 'b'], 'readwrite');
+  a = tx.objectStore('a');
+  a.put('undone', 1);
+  a.put('undone', 2);
+  tx.objectStore('b').put('undone', 1).onerror = e => log('request ' + e.target.error.name);
+  a.get(1).onsuccess = e => { log('inside ' + e.target.result); tx.abort(); };
+  log('aborted ' + await ended(tx) + ' ' + nameOf(() => tx.abort()));
+
+  tx = db.transaction(['a', 'b']);
+  log('readonly ' + nameOf(() => tx.objectStore('a').put(1, 1)) + ' ' + nameOf(() => tx.objectStore('c')) + ' ' + nameOf(() => db.transaction('c')) + ' ' + nameOf(() => db.transaction([])) + ' ' + nameOf(() => db.transaction('a', 'versionchange')) + ' ' + tx.mode + ' ' + Array.from(tx.objectStoreNames));
+  log('rolled back ' + await wait(tx.objectStore('a').getAll()) + '/' + (await wait(tx.objectStore('b').count())));
+
+  tx = db.transaction('a', 'readwrite');
+  a = tx.objectStore('a');
+  const value = await wait(a.get(1));
+  await Promise.resolve();
+  log('promise ' + nameOf(() => a.put(value + '!', 1)));
+  await new Promise(r => setTimeout(r, 0));
+  log('timeout ' + nameOf(() => a.put('late', 3)) + ' ' + await ended(tx));
+
+  tx = db.transaction('a', 'readwrite');
+  tx.objectStore('a').add('dup', 1);
+  log('unhandled ' + await ended(tx));
+
+  const order = [];
+  const one = db.transaction('a', 'readwrite');
+  const two = db.transaction('a', 'readwrite');
+  const other = db.transaction('b', 'readwrite');
+  const reader = db.transaction('a');
+  two.objectStore('a').put('two', 5).onsuccess = () => order.push('two');
+  reader.objectStore('a').get(5).onsuccess = e => order.push('read ' + e.target.result);
+  other.objectStore('b').put('b', 1).onsuccess = () => order.push('other');
+  one.objectStore('a').put('one', 5).onsuccess = () => order.push('one');
+  await Promise.all([ended(one), ended(two), ended(other), ended(reader)]);
+  log('order ' + order.join(','));
+
+  tx = db.transaction('a', 'readwrite');
+  tx.objectStore('a').put('committed', 6);
+  tx.commit();
+  log('commit ' + nameOf(() => tx.objectStore('a').put('x', 7)) + ' ' + nameOf(() => tx.commit()) + ' ' + await ended(tx));
+  tx = db.transaction('a');
+  done('final ' + await wait(tx.objectStore('a').getAll()));
+}
+run().catch(e => done('failed ' + e));
+</script>

@@ -1,0 +1,15 @@
+import net
+import std.text
+import url.Url
+
+fn hintedByPage(r: *mut TabRenderer, target: *Url, req: net.Request) net.Request {
+    let n = r.notes orelse return req
+    var hinted = req
+
+    if req.kind != net.Kind.Document || req.referrer.len > 0 || (r.width > 0 && req.initiator is .Browser) || !text.eql(n.nav_target.bytes(), target.withoutFragment()) { return req }
+
+    n.nav_target.clear()
+    hinted.referrer = n.nav_referrer.bytes()
+
+    return hinted
+}

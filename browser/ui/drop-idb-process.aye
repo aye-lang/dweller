@@ -1,0 +1,15 @@
+import engine
+import indexeddb
+import serviceworker
+
+fn dropIdbProcess(tp: *mut TabProcess) {
+    if tp.idb_request |b| {
+        b.deinit()
+        tp.url.alloc.destroy(b)
+        tp.idb_request = null
+    }
+
+    indexeddb.dropProcess(tp.pid as u32) catch return
+    serviceworker.dropProcess(tp.pid as u32) catch return
+    engine.deliverIdbEvents() catch return
+}

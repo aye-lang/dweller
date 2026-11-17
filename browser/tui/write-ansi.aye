@@ -1,0 +1,33 @@
+import paint.Rgba
+import std.mem.AllocError
+import std.text
+
+pub fn writeAnsi(grid: *Grid, out: *mut text.Builder) AllocError!void {
+    try out.append("\x1b[H")
+
+    for y in 0..grid.rows {
+        var last: ?Cell = null
+        var skip: usize = 0
+
+        for cell in grid.cells[y * grid.cols..(y + 1) * grid.cols] {
+            if skip > 0 {
+                skip -= 1
+                continue
+            }
+
+            if !sameLook(last, cell) {
+                try writeLook(out, cell)
+            }
+
+            try out.appendChar(cell.code)
+            last = cell
+            skip = cellsOfCode(cell.code) - 1
+        }
+
+        try out.append("\x1b[0m")
+
+        if y + 1 < grid.rows {
+            try out.append("\r\n")
+        }
+    }
+}

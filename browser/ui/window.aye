@@ -29,11 +29,13 @@ import css
 import dom.NodeId
 import engine
 import font
+import indexeddb
 import layout
 import net
 import pageview
 import paint
 import perf
+import serviceworker
 import sessions
 import std
 import std.mem.AllocError
@@ -289,6 +291,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             var ui = Ui.init(alloc, window, renderer, measure, system, first_tab)
             defer ui.deinit()
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
+            watchPermissions(&mut ui)
+            defer endPermissionAsks(&mut ui)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -723,6 +727,11 @@ pub struct Ui {
                     timeout = ms as i32
                 }
             }
+            if indexeddb.msUntilSave() |ms| {
+                if ms < timeout as i64 {
+                    timeout = ms as i32
+                }
+            }
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -768,6 +777,8 @@ pub struct Ui {
             }
             net.saveCookiesIfDue()
             engine.saveStorageIfDue()
+            indexeddb.saveIfDue()
+            serviceworker.saveIfDue()
             try saveTabs(self, false)
             if self.resized {
                 self.resized = false
@@ -963,6 +974,7 @@ pub struct Ui {
         self.range_drag = false
         self.cert_advanced = false
         self.cert_focused = false
+        dismissPermissionAsks(null, false)
         if loaded {
             // The agents' refs are of the old document.
             self.slots[self.active].?.shown += 1
@@ -1127,6 +1139,9 @@ pub struct Ui {
         noteInput(self, ev)
         if ev.kind != SDL_MOUSEWHEEL && tabInput(self) != null {
             try self.flushWheel()
+        }
+        if try permissionInput(self, ev) {
+            return
         }
         if try forwardInput(self, ev) {
             return
@@ -1605,6 +1620,9 @@ pub struct Ui {
         if self.auth.open {
             return authClick(self, x, y)
         }
+        if try permissionClick(self, x, y) {
+            return
+        }
         if try certClick(self, x, y) {
             return
         }
@@ -1965,6 +1983,7 @@ pub struct Ui {
         if certPage(self) |p| {
             try drawCertBar(self, p)
         }
+        try drawPermissionBar(self)
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }

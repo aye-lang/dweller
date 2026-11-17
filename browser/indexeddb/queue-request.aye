@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+fn queueRequest(a: Ask, deletes: bool) AllocError!void {
+    let request = a.f.int()
+    var version: u64 = 0
+
+    if !deletes { version = a.f.int() }
+
+    let name = a.f.tail()
+
+    if a.f.bad { return refuse(a, "UnknownError") }
+
+    let serial = a.b.next_id
+
+    a.b.next_id += 1
+    try a.b.requests.append(OpenRequest { serial: serial, client: a.client, request: request, area: try dupe(a.b.alloc, a.area), name: try dupe(a.b.alloc, name), version: version, deletes: deletes })
+    try settle(a.b)
+}

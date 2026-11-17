@@ -1,0 +1,14 @@
+import std.list.List
+import std.mem.AllocError
+
+fn newDatabase(b: *mut Backend, area: []u8, name: []u8) AllocError!*mut Database {
+    let db = try b.alloc.create(Database {
+        area: try dupe(b.alloc, area),
+        name: try dupe(b.alloc, name),
+        stores: List(*mut Store).init(b.alloc),
+    })
+
+    try b.dbs.append(db)
+
+    return db
+}

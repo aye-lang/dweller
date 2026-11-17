@@ -152,6 +152,14 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerFetch(tp, got.frame, got.message)
         }
 
+        .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
+        .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => {
+            if got.frame != slot.id { return "bad socket" }
+
+            return tabSocketSent(tp, got.frame, got.message)
+        }
+
         .FetchCancel { id } => {
             if got.frame != slot.id { return "bad fetch_cancel" }
 
@@ -174,6 +182,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id { return "bad storage" }
 
             return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Idb { .. } => {
+            if got.frame != slot.id { return "bad idb" }
+
+            return answerIdb(tp, got.frame, got.message)
         }
 
         .Subframes { frames } => {

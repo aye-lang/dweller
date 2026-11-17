@@ -1,0 +1,36 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+// https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigation-params (as a download)
+pub fn takeDownload(alloc: Allocator, target: *Url, res: *Response) AllocError!bool {
+    let all = downloadsOf() orelse return false
+    let hinted = all.owned_hint_href.len > 0 && text.eql(all.owned_hint_href, target.href)
+    let disposition = requestHeaderValue(res.headers_raw, "content-disposition")
+
+    if res.status >= 400 || (!hinted && !dispositionAttaches(disposition)) {
+        return false
+    }
+
+    var final: []u8 = target.href
+
+    if res.url.len > 0 { final = res.url }
+
+    let at = url.parse(alloc, final) catch return false
+    defer at.deinit(alloc)
+
+    var name = text.Builder.init(alloc)
+    defer name.deinit()
+
+    var suggested: []u8 = ""
+
+    if hinted { suggested = all.owned_hint_name }
+
+    try downloadName(alloc, disposition, suggested, &at, &mut name)
+    try saveDownload(alloc, all, final, name.bytes(), res.body)
+    forgetDownloadHint(all)
+
+    return true
+}

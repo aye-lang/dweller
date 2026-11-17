@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+fn startReady(b: *mut Backend) AllocError!void {
+    for tx in b.txs.items() {
+        if tx.started || !canStart(b, tx) { continue }
+
+        var line = text.Builder.init(b.alloc)
+        defer line.deinit()
+
+        tx.started = true
+        try line.append("start")
+        try appendNumber(&mut line, tx.id as u64)
+        try emit(b, tx.client, &mut line)
+    }
+}

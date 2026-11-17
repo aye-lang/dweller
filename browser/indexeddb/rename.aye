@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+fn renameStore(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let name = try dupe(a.b.alloc, a.f.tail())
+
+    a.b.alloc.free(t.store.name)
+    t.store.name = name
+}
+
+fn renameIndex(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let v = viewOf(a, t) orelse return refuse(a, "NotFoundError")
+    let x = v.index orelse return refuse(a, "NotFoundError")
+    let name = try dupe(a.b.alloc, a.f.tail())
+
+    a.b.alloc.free(x.name)
+    x.name = name
+}
