@@ -207,6 +207,11 @@ pub struct Box {
     uy: f64 = 0.0
     uroot: usize = 0
     grid_lines: ?GridLines = null
+    physical: ?[]Value = null
+    inner: ?[]Value = null
+    mode: u8 = 0
+    space: u8 = 0
+    inside: bool = false
 
     /// Is the box out of flow (a float, or absolutely positioned)?
     pub fn oof(self: *Self) bool {
@@ -258,6 +263,7 @@ pub struct Frag {
     hidden: bool = false
     // Ellipsis: its text (static).
     ellipsis: []u8 = ""
+    turned: bool = false
 }
 
 pub struct Tree {
@@ -309,6 +315,8 @@ pub struct Tree {
     frames: List(FrameView)
     box_scrolls: ?*mut IntMap(u32, BoxScroll) = null
     serial: u64 = 0
+    vertical: bool = false
+    abs_area: ?Area = null
 
     pub fn deinit(self: *mut Self) {
         self.arena.deinit()
@@ -426,9 +434,12 @@ pub fn layoutDocumentWith(alloc: Allocator, doc: *Document, styles: *css.Styles,
                 try buildChildren(&mut t, r, el)
                 try fixUp(&mut t, r)
                 try prepareText(&mut t)
+                try propagateWritingMode(&mut t, r)
+                try enterSpaces(&mut t, r, 0, null, style)
                 try layoutRoot(&mut t, r)
                 place(&mut t, r, 0.0, 0.0)
                 try layoutAbsolutes(&mut t)
+                leaveSpaces(&mut t)
                 try applyTransforms(&mut t, r)
                 try collectScrolled(&mut t, r, false, false)
                 _ = scrollTo(&mut t, 0.0)
