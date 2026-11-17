@@ -1,0 +1,77 @@
+<!doctype html>
+<title>Media element</title>
+<audio id="a" src="tone.wav" muted></audio>
+<audio id="sources"><source src="tone.ogg" type="audio/ogg"><source src="missing.wav" type="audio/wav"><source src="tone.wav" type="audio/wav"></audio>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const EVENTS = ['loadstart', 'durationchange', 'loadedmetadata', 'loadeddata', 'progress', 'suspend', 'canplay', 'canplaythrough', 'play', 'playing', 'waiting', 'pause', 'seeking', 'seeked', 'ended', 'emptied', 'abort', 'error', 'ratechange', 'volumechange'];
+function watch(el, seen) {
+  for (const t of EVENTS) el.addEventListener(t, () => seen.push(t));
+  let updates = 0;
+  el.addEventListener('timeupdate', () => { updates++; });
+  return () => updates;
+}
+const until = (el, type) => new Promise(resolve => el.addEventListener(type, resolve, { once: true }));
+const state = el => 'network=' + el.networkState + ' ready=' + el.readyState + ' paused=' + el.paused + ' ended=' + el.ended + ' time=' + el.currentTime.toFixed(2) + ' duration=' + (isNaN(el.duration) ? 'NaN' : el.duration.toFixed(2));
+const ranges = r => Array.from({ length: r.length }, (_, i) => r.start(i).toFixed(2) + '-' + r.end(i).toFixed(2)).join(',') || 'none';
+const name = e => e.name;
+
+const s = document.getElementById('sources');
+const source_errors = [];
+for (const c of s.children) c.addEventListener('error', () => source_errors.push(c.getAttribute('src')));
+
+(async () => {
+  const a = document.getElementById('a');
+  const seen = [];
+  const updates = watch(a, seen);
+  log('canPlayType: ' + JSON.stringify(['audio/wav', 'audio/wav; codecs="1"', 'audio/wav; codecs="7"', 'audio/ogg', 'video/mp4; codecs="avc1.42E01E"'].map(t => a.canPlayType(t))));
+  log('before: ' + state(a) + ' muted=' + a.muted + ' volume=' + a.volume);
+  await until(a, 'suspend');
+  log('loaded: ' + seen.join(' '));
+  log('loaded: ' + state(a) + ' buffered=' + ranges(a.buffered) + ' seekable=' + ranges(a.seekable) + ' src=' + a.currentSrc.replace(location.origin, ''));
+  seen.length = 0;
+  const playing = a.play();
+  log('play(): ' + state(a));
+  await playing;
+  await until(a, 'ended');
+  log('played: ' + seen.join(' ') + ' timeupdates>=2=' + (updates() >= 2));
+  log('played: ' + state(a) + ' played=' + ranges(a.played));
+  seen.length = 0;
+  a.currentTime = 0.1;
+  log('seek: seeking=' + a.seeking + ' ' + state(a));
+  await until(a, 'seeked');
+  a.loop = true;
+  a.playbackRate = 2;
+  a.volume = 0.5;
+  await until(a, 'seeked');
+  a.pause();
+  await until(a, 'pause');
+  log('seek, rate, loop: ' + seen.join(' '));
+  log('volume: ' + (() => { try { a.volume = 2; return 'set'; } catch (e) { return e.name; } })() + ' ' + a.volume + ' rate=' + a.playbackRate);
+
+  const sound = new Audio('tone.wav');
+  log('unmuted play without a gesture: ' + await sound.play().then(() => 'played', name));
+  const none = document.createElement('video');
+  none.muted = true;
+  none.play();
+  log('no source: network=' + none.networkState + ' paused=' + none.paused);
+  const bad = document.createElement('audio');
+  const bad_seen = [];
+  watch(bad, bad_seen);
+  bad.muted = true;
+  bad.src = 'element.html';
+  const refused = bad.play().then(() => 'played', name);
+  log('not media: ' + await refused + ' error=' + bad.error.code + ' network=' + bad.networkState + ' events=' + bad_seen.join(' '));
+
+  if (s.readyState < 4) await until(s, 'canplaythrough');
+  log('sources: ' + s.currentSrc.replace(location.origin, '') + ' errors=' + source_errors.join(',') + ' ' + state(s));
+  s.load();
+  const again = [];
+  watch(s, again);
+  await until(s, 'suspend');
+  log('load(): ' + again.join(' '));
+  log('done');
+})();
+</script>

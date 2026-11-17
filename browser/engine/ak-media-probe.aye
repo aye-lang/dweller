@@ -1,0 +1,30 @@
+import audio
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// https://html.spec.whatwg.org/multipage/media.html#media-data-processing-steps-list
+fn akMediaProbe(it: *mut Interp, a: Args) JsError!Value {
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 0, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    let wav = audio.parseWav(bytes.bytes()) orelse return Value.Null
+    let found = try it.newArray(0)
+
+    try it.push(js.objVal(found))
+    try it.heap.pushElem(found, js.numVal(wav.frames as f64 / wav.rate))
+    try it.heap.pushElem(found, js.numVal(wav.channels as f64))
+    try it.heap.pushElem(found, js.numVal(wav.rate))
+    try it.heap.pushElem(found, js.numVal(0.0))
+    try it.heap.pushElem(found, js.numVal(0.0))
+
+    return it.pop()
+}
