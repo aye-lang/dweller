@@ -3,11 +3,17 @@ import std.text
 
 // spec: https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
 fn allowsDiscrete(after: []css.Value, i: usize, p: usize) bool {
-    if !mixesText(p) {
+    if !mixesText(p) && !flipsLength(p) {
         return false
     }
 
     let list = keywordOf(after[css.TRANSITION_BEHAVIOR])
 
     return text.eql(css.listItem(list, i % css.listLength(list)), "allow-discrete")
+}
+
+fn flipsLength(p: usize) bool {
+    let kind = css.PROPERTIES[p].kind
+
+    return kind == css.PKind.Length || kind == css.PKind.LengthNonNeg
 }
