@@ -716,6 +716,15 @@ fn flow(t: *mut Tree, p: usize, cw: f64, ch: f64, top_open: bool, bottom_open: b
         }
         t.hint_y = est
         try layoutBlockLevel(t, c, room, ch)
+        if t.floats.len() > t.float_base && isFormattingRoot(t, c) {
+            let whole = bandAt(t, est, t.bx(c).h, cw)
+            if whole.left != shift || whole.width() != room {
+                shift = whole.left
+                room = whole.width()
+                t.hint_y = est
+                try layoutBlockLevel(t, c, room, ch)
+            }
+        }
         let cb = t.bx(c)
         cb.x = shift + cb.margin[3]
         if clear_to |cy| {
