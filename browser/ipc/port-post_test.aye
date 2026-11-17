@@ -1,0 +1,25 @@
+import std.text
+
+test "port_post goes to the browser, port_posted to the renderer, and both round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let post = try roundTrip(&mut out, 7, Message.PortPost { tab: 0, key: 5, data: "1", buffers: "" })
+
+    match post.message {
+        .PortPost { tab, key, data, .. } => @expect(tab == 0 && key == 5 && text.eql(data, "1"))
+        _ => @expect(false)
+    }
+
+    let posted = try roundTrip(&mut out, 7, Message.PortPosted { tab: 9, key: 5, data: "2", buffers: "" })
+
+    match posted.message {
+        .PortPosted { tab, key, data, .. } => @expect(tab == 9 && key == 5 && text.eql(data, "2"))
+        _ => @expect(false)
+    }
+
+    @expectEqual(93, Message.PortPost { tab: 0, key: 0, data: "", buffers: "" }.kind())
+    @expectEqual(94, Message.PortPosted { tab: 0, key: 0, data: "", buffers: "" }.kind())
+    @expect(fromRenderer(Message.PortPost { tab: 0, key: 0, data: "", buffers: "" }))
+    @expect(!fromRenderer(Message.PortPosted { tab: 0, key: 0, data: "", buffers: "" }))
+}

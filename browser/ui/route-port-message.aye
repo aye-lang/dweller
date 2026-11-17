@@ -1,0 +1,23 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: mojo/core (a message on a port's pipe goes to the process that holds the other end, and to no other)
+fn routePortMessage(tp: *mut TabProcess, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .PortPost { tab, key, data, buffers } => {
+            if ipc.badBuffers(buffers) { return "bad port_post" }
+
+            let to = portPeer(tp, tab, key) orelse return ""
+            var named = tab
+
+            if tab == 0 { named = tp.tab }
+            if to.tab == named { named = 0 }
+
+            try ipc.encode(&mut to.outbox, to.tab, ipc.Message.PortPosted { tab: named, key: key, data: data, buffers: buffers })
+        }
+
+        _ => {}
+    }
+
+    return ""
+}
