@@ -55,6 +55,9 @@ def renderer_line(name, scroll, idle):
     if not scroll or not idle:
         return f"{name:<14} {'-':>8} {'-':>14} {'-':>6} {'-':>8}  FAIL no measurement", False
     n, p50, p95 = scroll["input_to_frame_n_p50_p95"]
+    panned = scroll["input_to_pan_n_p50_p95"]
+    if panned[0] >= n > 0:
+        n, p50, p95 = panned
     checks = [
         (scroll["longest_loop_ms"] >= LOOP_MS, f"loop {scroll['longest_loop_ms']} ms"),
         (n == 0 or p95 >= SCROLL_P95_MS, f"wheel to frame p95 {p95} ms of {n}"),

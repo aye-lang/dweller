@@ -145,6 +145,10 @@ def scroll(a):
     # is the input's kind), and the renderer's loop turns (`r_task`).
     held = [v for k, v, l in recs if k == "input_to_frame" and l != "move"]
     out["input_to_frame_n_p50_p95"] = [len(held), round(pct(held, 0.5), 1), round(pct(held, 0.95), 1)]
+    # A wheel the window scrolled itself (Q4.25e): to the present of the
+    # shifted frame.
+    panned = [v for k, v, _ in recs if k == "input_to_pan"]
+    out["input_to_pan_n_p50_p95"] = [len(panned), round(pct(panned, 0.5), 1), round(pct(panned, 0.95), 1)]
     out["renderer_longest_task_ms"] = round(max((v for k, v, _ in recs if k == "r_task"), default=0))
     out["step_ms_n_p50_p95_max"] = [len(steps), round(pct(steps, 0.5), 1), round(pct(steps, 0.95), 1), round(max(steps, default=0), 1)]
     print(json.dumps(out))

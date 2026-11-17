@@ -84,6 +84,8 @@ mod window_renderer_oopif_input;
 mod window_renderer_oopif_proxy;
 #[path = "browser/window_renderer_oopif_site.rs"]
 mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_pan.rs"]
+mod window_renderer_pan;
 #[path = "browser/window_renderer_perf.rs"]
 mod window_renderer_perf;
 #[path = "browser/window_renderer_popup.rs"]
