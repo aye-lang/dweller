@@ -1,0 +1,29 @@
+import std.mem.AllocError
+
+fn runInstanceTimer(p: *mut Page, limit: f64) AllocError!bool {
+    let st = sw_state orelse return false
+    var i: usize = 0
+
+    if st.running { return false }
+
+    while i < st.instances.len() {
+        let ip = st.instances.items()[i]
+
+        i += 1
+        syncClock(ip, pageClock(p))
+
+        let n = nextTimer(ip, limit) orelse continue
+
+        st.running = true
+        defer st.running = false
+
+        try runTimer(n.script, n.index)
+        try afterTask(n.script)
+
+        if !n.script.real { syncClock(p, n.script.now) }
+
+        return true
+    }
+
+    return false
+}

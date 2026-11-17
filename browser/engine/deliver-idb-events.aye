@@ -1,0 +1,20 @@
+import indexeddb
+import std.mem.AllocError
+
+var idb_router: ?fn(indexeddb.ClientEvent) AllocError!void = null
+
+pub fn setIdbRouter(route: fn(indexeddb.ClientEvent) AllocError!void) {
+    idb_router = route
+}
+
+pub fn deliverIdbEvents() AllocError!void {
+    while indexeddb.nextEvent() |e| {
+        defer indexeddb.freeEvent(e)
+
+        if e.client >> 32 == 0 {
+            try idbEvent(e.client as u32, e.line)
+        } else if idb_router |route| {
+            try route(e)
+        }
+    }
+}

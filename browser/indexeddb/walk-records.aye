@@ -1,0 +1,30 @@
+import std.mem.AllocError
+
+fn walkRecords(a: Ask) AllocError!void {
+    let t = targetOf(a, false) orelse return refuse(a, "InvalidStateError")
+    let v = viewOf(a, t) orelse return refuse(a, "NotFoundError")
+    let range = readRange(a.f)
+    var w = Walk { v: v, lo: rangeStart(v, range), hi: rangeEnd(v, range), dir: a.f.int(), after_key: a.f.next(), after_primary: a.f.next(), to_key: a.f.next() }
+    let to_primary = a.f.next()
+    var skip = a.f.int()
+    var limit = a.f.int()
+
+    if to_primary.len > 0 { w.to_primary = to_primary }
+    if a.f.bad || w.dir > 3 { return refuse(a, "DataError") }
+
+    while step(w) |i| {
+        w.after_key = v.key(i)
+        w.after_primary = v.primary(i)
+        w.to_key = ""
+
+        if skip > 0 {
+            skip -= 1
+            continue
+        }
+
+        try writeEntry(a, t.store, v, i)
+
+        if limit == 1 { return }
+        if limit > 0 { limit -= 1 }
+    }
+}

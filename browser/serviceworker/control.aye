@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+fn control(a: Ask) AllocError!void {
+    let c = findClient(a.r, a.client) orelse return
+    let version = a.f.int() as u32
+    let address = try dupe(a, a.f.tail())
+
+    a.r.alloc.free(c.url)
+    c.url = address
+    c.controller = version
+
+    for reg in a.r.regs.items() { try tryActivate(a.r, reg) }
+}

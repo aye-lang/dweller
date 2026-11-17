@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/ServiceWorker/#unregister-algorithm
+fn unregister(a: Ask) AllocError!void {
+    let id = a.f.int()
+
+    for i in 0..a.r.regs.len() {
+        let reg = a.r.regs.items()[i]
+
+        if reg.id as u64 != id || !text.eql(reg.area, a.area) { continue }
+
+        reg.installing = dropVersion(a.r, reg.installing)
+        reg.waiting = dropVersion(a.r, reg.waiting)
+        reg.active = dropVersion(a.r, reg.active)
+        try tell(a.r, reg)
+        freeRegistration(a.r.alloc, a.r.regs.orderedRemove(i))
+
+        return number(a.out, 1)
+    }
+
+    try number(a.out, 0)
+}

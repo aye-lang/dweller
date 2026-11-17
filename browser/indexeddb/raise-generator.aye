@@ -1,0 +1,11 @@
+import std.mem.AllocError
+
+fn raiseGenerator(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let next = a.f.int()
+
+    if a.f.bad || next <= t.store.generator { return }
+    if t.tx.mode != VERSION_CHANGE { try t.tx.undo.append(Undo { store: t.store.id, key: try dupe(a.b.alloc, ""), generator: t.store.generator }) }
+
+    t.store.generator = next
+}

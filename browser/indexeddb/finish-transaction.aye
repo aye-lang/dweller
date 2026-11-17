@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+fn finishTransaction(b: *mut Backend, i: usize, commit: bool) AllocError!void {
+    let tx = b.txs.orderedRemove(i)
+    let conn = tx.conn
+
+    if tx.mode == VERSION_CHANGE {
+        finishUpgrade(b, tx, commit)
+    } else if commit {
+        tx.db.changed = tx.db.changed || tx.undo.len() > 0
+    } else {
+        rollBack(b, tx)
+    }
+
+    freeTransaction(b, tx)
+
+    if closingIdle(b, conn) { removeConnection(b, conn) }
+
+    try settle(b)
+}

@@ -1,0 +1,23 @@
+import std.mem.AllocError
+
+fn clientOfProcess(b: *Backend, process: u32) ?u64 {
+    for r in b.requests.items() {
+        if r.client >> 32 == process as u64 { return r.client }
+    }
+
+    for t in b.txs.items() {
+        if t.client >> 32 == process as u64 { return t.client }
+    }
+
+    for c in b.conns.items() {
+        if c.client >> 32 == process as u64 { return c.client }
+    }
+
+    return null
+}
+
+pub fn dropProcess(process: u32) AllocError!void {
+    let b = the_backend orelse return
+
+    while clientOfProcess(b, process) |client| { try dropClient(client) }
+}

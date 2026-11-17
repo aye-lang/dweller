@@ -1,0 +1,27 @@
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/ServiceWorker/#installation-algorithm
+fn setInstalled(a: Ask) AllocError!void {
+    let id = a.f.int()
+    let ok = a.f.int() == 1
+
+    for reg in a.r.regs.items() {
+        let v = reg.installing orelse continue
+
+        if v.id as u64 != id || v.installer != a.client { continue }
+
+        reg.installing = null
+
+        if ok {
+            freeVersion(a.r.alloc, reg.waiting)
+            v.state = INSTALLED
+            reg.waiting = v
+        } else {
+            freeVersion(a.r.alloc, v)
+        }
+
+        try tell(a.r, reg)
+
+        return tryActivate(a.r, reg)
+    }
+}

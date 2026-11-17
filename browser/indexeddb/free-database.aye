@@ -1,0 +1,17 @@
+import std.mem.Allocator
+
+fn freeStores(alloc: Allocator, db: *mut Database) {
+    for s in db.stores.items() { freeStore(alloc, s) }
+
+    db.stores.clear()
+}
+
+fn freeDatabase(alloc: Allocator, db: *mut Database) {
+    if db.before_upgrade |old| { freeDatabase(alloc, old) }
+
+    freeStores(alloc, db)
+    db.stores.deinit()
+    alloc.free(db.area)
+    alloc.free(db.name)
+    alloc.destroy(db)
+}
