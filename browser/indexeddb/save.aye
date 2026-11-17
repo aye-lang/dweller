@@ -1,0 +1,27 @@
+import std
+import std.mem.AllocError
+
+fn hasWriter(b: *Backend, db: *Database) bool {
+    for t in b.txs.items() {
+        if t.db == db && t.mode != READ_ONLY { return true }
+    }
+
+    return false
+}
+
+fn saveChanged(b: *mut Backend) AllocError!void {
+    for db in b.dbs.items() {
+        if !db.changed || hasWriter(b, db) { continue }
+
+        db.changed = false
+
+        if persists(db.area) { try saveDatabase(b, db) }
+    }
+}
+
+pub fn save() {
+    let b = the_backend orelse return
+
+    b.saved_ms = std.time.monotonicMs()
+    saveChanged(b) catch return
+}

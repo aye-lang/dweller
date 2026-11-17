@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn committedVersion(db: *Database) u64 {
+    if db.before_upgrade |old| { return old.version }
+
+    return db.version
+}
+
+fn listDatabases(a: Ask) AllocError!void {
+    for db in a.b.dbs.items() {
+        if !text.eql(db.area, a.area) || committedVersion(db) == 0 { continue }
+
+        try appendNumber(a.out, committedVersion(db))
+        try a.out.appendByte('\n')
+        try a.out.append(db.name)
+    }
+}

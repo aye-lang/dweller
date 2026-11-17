@@ -1,0 +1,23 @@
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/ServiceWorker/#try-activate-algorithm
+fn tryActivate(r: *mut Registry, reg: *mut Registration) AllocError!void {
+    let w = reg.waiting orelse return
+
+    if reg.active |old| {
+        if !w.skip && controlled(r, old.id) > 0 { return }
+
+        try moveClients(r, reg, old.id, w.id)
+        freeVersion(r.alloc, old)
+    }
+
+    reg.active = w
+    reg.waiting = null
+    w.state = ACTIVATING
+
+    if findClient(r, w.installer) == null { w.state = ACTIVATED }
+
+    try tell(r, reg)
+
+    if w.state == ACTIVATING { try tellClient(r, w.installer, "activate", reg) }
+}

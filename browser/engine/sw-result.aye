@@ -1,0 +1,37 @@
+import net
+import std
+import std.mem.Allocator
+import url.Url
+
+fn swResult(st: *mut SwState, id: u32) *mut SwResult {
+    for i in 0..st.results.len() {
+        if st.results.items()[i].id == id { return &mut st.results.items()[i] }
+    }
+
+    unreachable
+}
+
+fn takeSwResult(alloc: Allocator, st: *mut SwState, id: u32, target: *Url) net.FetchError!?net.Response {
+    for i in 0..st.results.len() {
+        if st.results.items()[i].id != id { continue }
+
+        let r = st.results.orderedRemove(i)
+
+        if r.state != SW_RESPONSE {
+            alloc.free(r.headers)
+            alloc.free(r.body)
+        }
+
+        if r.state == SW_FALLBACK { return null }
+        if r.state != SW_RESPONSE { return net.FetchError.Network }
+
+        var res = try net.respond(alloc, net.requestHeaderValue(r.headers, "content-type"), r.body)
+
+        res.status = r.status
+        res.headers_raw = r.headers
+
+        return res
+    }
+
+    return null
+}

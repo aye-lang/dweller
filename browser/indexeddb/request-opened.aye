@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn requestOpened(a: Ask) AllocError!void {
+    let request = a.f.int()
+
+    for i in 0..a.b.requests.len() {
+        let r = &a.b.requests.items()[i]
+
+        if r.client != a.client || r.request != request || r.tx == 0 { continue }
+
+        dropUpgradeRequest(a.b, r.tx)
+
+        return settle(a.b)
+    }
+}

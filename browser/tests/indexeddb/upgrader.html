@@ -1,0 +1,18 @@
+<!doctype html>
+<title>IndexedDB: the tab that upgrades</title>
+<script>
+const seen = [];
+const req = indexedDB.open('shared', 2);
+req.onblocked = e => seen.push('blocked ' + e.oldVersion + '->' + e.newVersion);
+req.onupgradeneeded = e => {
+  seen.push('upgrade ' + e.oldVersion + '->' + e.newVersion);
+  req.result.createObjectStore('added').put('from the upgrader', 1);
+  req.transaction.objectStore('notes').get(1).onsuccess = g => seen.push('read ' + g.target.result);
+};
+req.onsuccess = () => {
+  req.result.close();
+  localStorage.setItem('idb-upgrader', seen.join(', '));
+  document.title = 'upgraded';
+};
+req.onerror = () => localStorage.setItem('idb-upgrader', 'error ' + req.error.name);
+</script>

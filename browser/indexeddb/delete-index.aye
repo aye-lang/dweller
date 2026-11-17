@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn freeIndex(alloc: Allocator, x: *mut Index) {
+    x.entries.deinit()
+    alloc.free(x.name)
+    alloc.free(x.key_path)
+    alloc.destroy(x)
+}
+
+fn deleteIndex(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let id = a.f.int()
+
+    for i in 0..t.store.indexes.len() {
+        if t.store.indexes.items()[i].id as u64 != id || t.tx.mode != VERSION_CHANGE { continue }
+
+        freeIndex(a.b.alloc, t.store.indexes.orderedRemove(i))
+
+        return
+    }
+
+    return refuse(a, "NotFoundError")
+}

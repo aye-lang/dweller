@@ -1,0 +1,19 @@
+import indexeddb
+import std.mem.AllocError
+import std.text
+
+fn postToClient(a: Ask) AllocError!void {
+    var to = a.f.int()
+
+    if to >> 32 == 0 { to |= a.client >> 32 << 32 }
+
+    let target = findClient(a.r, to) orelse return refuse(a, "InvalidStateError")
+    var line = text.Builder.init(a.r.alloc)
+    defer line.deinit()
+
+    if !text.eql(target.area, a.area) { return refuse(a, "InvalidStateError") }
+
+    try line.append("sw\nmessage\n")
+    try line.append(a.f.tail())
+    try indexeddb.pushEvent(a.r.alloc, to, &mut line)
+}

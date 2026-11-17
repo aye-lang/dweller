@@ -1,0 +1,30 @@
+struct Target {
+    tx: *mut Transaction
+    store: *mut Store
+}
+
+fn inScope(tx: *Transaction, store: u32) bool {
+    for s in tx.scope.items() {
+        if s == store { return true }
+    }
+
+    return tx.mode == VERSION_CHANGE
+}
+
+fn findTransaction(b: *Backend, client: u64, id: u64) ?*mut Transaction {
+    for tx in b.txs.items() {
+        if tx.id as u64 == id && tx.client == client { return tx }
+    }
+
+    return null
+}
+
+fn targetOf(a: Ask, write: bool) ?Target {
+    let tx = findTransaction(a.b, a.client, a.f.int()) orelse return null
+    let id = a.f.int() as u32
+    let store = findStore(tx.db, id) orelse return null
+
+    if !tx.started || !inScope(tx, id) || (write && tx.mode == READ_ONLY) { return null }
+
+    return Target { tx: tx, store: store }
+}

@@ -1,0 +1,50 @@
+import engine
+import indexeddb
+import ipc
+import std
+import std.mem.AllocError
+import std.text
+import url
+
+let IDB_REQUEST_LIMIT: usize = 268435456
+
+// chromium: content/browser/indexed_db/indexed_db_context_impl.cc
+fn answerIdb(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .Idb { doc, page, more, request } => {
+            let whole = try idbRequestOf(tp)
+
+            try whole.append(request)
+
+            if more > 1 || whole.len() > IDB_REQUEST_LIMIT || doc > docCount(tp) { return "bad idb" }
+            if more == 1 { return "" }
+
+            defer whole.clear()
+
+            var call = IdbCall { href: fetchDoc(tp, doc), client: (tp.pid as u64) << 32 | page as u64, request: whole.bytes() }
+
+            if text.startsWith(call.request, "sw\n") {
+                let end = 3 + (std.mem.indexOf(call.request[3..], '\n') orelse return "bad idb")
+
+                call = IdbCall { href: call.request[3..end], client: call.client, request: call.request[end + 1..], worker: true }
+            }
+
+            let locked = text.eql(call.request, "drop") || (tp.sandbox & SB_ORIGIN == 0 && try inSiteLock(tp, call.href))
+
+            if !locked && call.worker {
+                try replyIdb(tp, on, "!SecurityError")
+
+                return ""
+            }
+
+            if !locked && tp.sandbox & SB_ORIGIN != 0 { return "idb in a sandboxed origin" }
+            if !locked { return "idb outside site lock" }
+
+            try applyIdb(tp, on, call)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

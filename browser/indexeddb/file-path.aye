@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn filePath(alloc: Allocator, db: *Database) AllocError![]mut u8 {
+    let dir = try areaPath(alloc, db.area)
+    defer alloc.free(dir)
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+    var hash: u64 = 0xcbf29ce484222325
+
+    for c in db.name { hash = (hash ^ c as u64) *% 0x100000001b3 }
+
+    try b.append(dir)
+    try b.appendByte('/')
+    try b.appendUint(hash)
+    try b.append(".idb")
+
+    return b.toOwned()
+}
