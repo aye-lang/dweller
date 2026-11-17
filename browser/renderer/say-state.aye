@@ -1,0 +1,27 @@
+import ipc
+import pageview
+import std.math
+import std.text
+
+let MAX_TEXT: usize = 900000
+
+fn sayState(r: *mut TabRenderer, frame: u32, with_text: bool) !void {
+    var frames = text.Builder.init(r.alloc)
+    defer frames.deinit()
+    var focus = text.Builder.init(r.alloc)
+    defer focus.deinit()
+    var content = text.Builder.init(r.alloc)
+    defer content.deinit()
+
+    try settleLoads(r)
+    try runTimers(r)
+
+    if r.page |p| {
+        try pageview.writeFrames(p, &mut frames)
+        try pageview.writeFocus(p, &mut focus)
+
+        if with_text { try p.doc.textContent(p.doc.root, &mut content) }
+    }
+
+    try send(r.alloc, r.conn, frame, ipc.Message.State { scroll: r.scroll_y, frames: frames.bytes(), focus: focus.bytes(), content: content.bytes()[..math.minOf(usize, content.len(), MAX_TEXT)] })
+}

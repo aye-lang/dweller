@@ -52,3 +52,8 @@ An agent uses the app as it uses a page (`docs/agent-protocol.md`,
 ```
 printf '%s\n' '{"id":1,"cmd":"snapshot"}' '{"id":2,"cmd":"click","ref":"e2"}' | target/counter --agent
 ```
+
+The same app in a terminal (V7): `target/counter --tui` prints one frame
+as ANSI, laid out in cells by the same engine with the stylesheet
+`counter/counter.tui.css` (1 px is one cell). `--events` works as above,
+with clicks in columns and rows.

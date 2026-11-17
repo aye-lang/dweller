@@ -121,6 +121,10 @@ pub struct Tab {
         perf.noteNavigation()
         let p = try loadWith(self.alloc, target, null, initiator)
         errdefer p.destroy()
+        if p.downloaded {
+            p.destroy()
+            return false
+        }
         try self.push(target, p)
         return true
     }
@@ -142,6 +146,10 @@ pub struct Tab {
         perf.noteNavigation()
         let p = try loadParsed(self.alloc, target, initiator)
         errdefer p.destroy()
+        if p.downloaded {
+            p.destroy()
+            return false
+        }
         try self.push(target, p)
         self.early = true
         try startEarly(p, width, height, &mut self.sheet_loads, &mut self.script_loads)

@@ -14,7 +14,7 @@ fn run_site(base: &str, page: &str, mode: &str, png: &Path, events: &str) -> Str
         .current_dir(root())
         .arg(format!("{base}/ui/{page}"))
         .args(["--font", "fixed", "--width", "400", "--height", "400"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
         .arg(png)
         .args(["--events", events])
         .output()
@@ -103,7 +103,7 @@ fn window_renderer_oopif_site_blob() {
             .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
             .arg(format!("{}/ui/blob-away.html", srv.base))
-            .args(["--font", "fixed", "--frames", "300", "--until-idle", "--state", "--events", events])
+            .args(["--font", "fixed", "--frames", "300", "--until-idle", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
         (text(&out.stdout), text(&out.stderr))
@@ -130,7 +130,7 @@ fn run_state(page: &str, mode: &str, events: &str, evil: &str) -> (String, Strin
         .env("DWELLER_TEST_EVIL", evil)
         .arg(page)
         .args(["--font", "fixed", "--width", "400", "--height", "340"])
-        .args(["--frames", "600", "--until-idle", "--state", "--events", events])
+        .args(["--frames", "600", "--until-idle", "--state", "--processes", "--events", events])
         .output()
         .unwrap();
     assert!(out.status.success(), "{page} {events}: {}\n{}", out.status, text(&out.stderr));

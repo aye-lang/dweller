@@ -1,0 +1,21 @@
+import std.encoding
+import std.mem.AllocError
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc7617#section-2
+fn basicAuthLine(user: []u8, password: []u8, out: *mut text.Builder) AllocError!void {
+    let alloc = (sockets orelse return).alloc
+    var pair = text.Builder.init(alloc)
+    defer pair.deinit()
+
+    try pair.append(user)
+    try pair.appendByte(':')
+    try pair.append(password)
+
+    let coded = try encoding.base64Encode(alloc, pair.bytes())
+    defer alloc.free(coded)
+
+    try out.append("Authorization: Basic ")
+    try out.append(coded)
+    try out.appendByte('\n')
+}

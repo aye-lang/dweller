@@ -1,0 +1,24 @@
+<!doctype html>
+<title>Downloads</title>
+<a id="named" href="download_file.txt" download="renamed.txt">named</a>
+<a id="plain" href="download_file.txt?again" download>plain</a>
+<a id="inline" href="/attach?name=shown.txt&disposition=inline&type=text/plain" download="kept.txt">the header's name wins over the attribute's</a>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const steps = [
+  () => document.getElementById('named').click(),
+  () => document.getElementById('plain').click(),
+  () => { location.href = '/attach?name=report.pdf'; },
+  () => { location.href = '/attach?name=../../escape.txt'; },
+  () => { location.href = '/attach?name=report.pdf'; },
+  () => { location.href = '/attach'; },
+  () => document.getElementById('inline').click(),
+  () => { out.textContent = 'still here: ' + document.title + ' ' + location.pathname + ' history ' + history.length; },
+];
+let at = 0;
+(function next() {
+  steps[at++]();
+  if (at < steps.length) setTimeout(next, 30);
+})();
+</script>

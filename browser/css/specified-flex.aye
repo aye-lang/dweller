@@ -1,0 +1,34 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#flex-property
+fn specifiedFlex(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var first = text.Builder.init(alloc)
+    defer first.deinit()
+
+    var second = text.Builder.init(alloc)
+    defer second.deinit()
+
+    if text.eql(prop, "flex-flow") {
+        if !(try shorthandLonghandText(alloc, prop, value, "flex-direction", &mut first)) || !(try shorthandLonghandText(alloc, prop, value, "flex-wrap", &mut second)) {
+            return false
+        }
+
+        return writeFlexFlowText(first.bytes(), second.bytes(), out)
+    }
+
+    for name in [3][]u8{"flex-grow", "flex-shrink", "flex-basis"} {
+        if !(try shorthandLonghandText(alloc, prop, value, name, &mut first)) {
+            return false
+        }
+
+        if out.len() > 0 {
+            try out.appendByte(' ')
+        }
+
+        try out.append(first.bytes())
+    }
+
+    return true
+}

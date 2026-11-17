@@ -1,0 +1,22 @@
+import dom
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn chooseListOption(alloc: Allocator, doc: *mut dom.Document, node: NodeId, k: usize) AllocError!void {
+    var opts = List(NodeId).init(alloc)
+    defer opts.deinit()
+
+    try dom.options(doc, node, &mut opts)
+
+    if k >= opts.len() || dom.isDisabled(doc, opts.items()[k]) { return }
+
+    let opt = opts.items()[k]
+
+    if doc.attr(node, "multiple") != null {
+        try dom.setSelected(doc, opt, !dom.isSelected(doc, opt))
+    } else {
+        try dom.selectOption(doc, node, opt)
+    }
+}

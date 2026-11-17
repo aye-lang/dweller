@@ -80,7 +80,7 @@ fn window_renderer_loads_slow_navigation() {
         .env("DWELLER_TIMING", "1")
         .args([
             &href, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000",
-            "--until-idle", "--state", "--text", "--events", "key:cmd+l text:abc renderer:loaded frame",
+            "--until-idle", "--state", "--processes", "--text", "--events", "key:cmd+l text:abc renderer:loaded frame",
         ]);
     let began = std::time::Instant::now();
     let out = window.output().unwrap();
@@ -167,7 +167,7 @@ fn window_renderer_loads_images_settle() {
     let mut window = dweller_command();
     window.current_dir(root()).env("DWELLER_PROCESS", "tab").args([
         &href, "--font", "fixed", "--width", "800", "--height", "600", "--frames", "4000",
-        "--until-idle", "--state", "--events", "renderer:loaded frame",
+        "--until-idle", "--state", "--processes", "--events", "renderer:loaded frame",
     ]);
     let began = std::time::Instant::now();
     let out = window.output().unwrap();

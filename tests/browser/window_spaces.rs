@@ -108,7 +108,7 @@ fn window_agent_session(input: &Path, n: usize, env: &[(&str, &str)]) -> Result<
 /// tab has no renderer.
 fn spaces_of(pid: u32) -> Vec<u32> {
     let renderers = Command::new("pgrep")
-        .args(["-P", &pid.to_string(), "-f", " --renderer 3 "])
+        .args(["-P", &pid.to_string(), "-f", " --renderer 3 .* --space-tab"])
         .output()
         .unwrap();
     text(&renderers.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()

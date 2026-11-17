@@ -4,10 +4,10 @@ test "replace_navigation round-trips and comes from a renderer" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let nav = try roundTrip(&mut out, 7, Message.ReplaceNavigation { url: "http://a/b", referrer_policy: 2 })
+    let nav = try roundTrip(&mut out, 7, Message.ReplaceNavigation { url: "http://a/b", referrer_policy: 2, user: 1 })
 
     match nav.message {
-        .ReplaceNavigation { url, referrer_policy } => {
+        .ReplaceNavigation { url, referrer_policy, .. } => {
             @expectEqual("http://a/b", url)
             @expectEqual(2, referrer_policy)
         }
@@ -15,6 +15,6 @@ test "replace_navigation round-trips and comes from a renderer" {
         _ => @expect(false)
     }
 
-    @expectEqual(103, (Message.ReplaceNavigation { url: "", referrer_policy: 0 }).kind())
-    @expect(fromRenderer(Message.ReplaceNavigation { url: "", referrer_policy: 0 }))
+    @expectEqual(103, (Message.ReplaceNavigation { url: "", referrer_policy: 0, user: 0 }).kind())
+    @expect(fromRenderer(Message.ReplaceNavigation { url: "", referrer_policy: 0, user: 0 }))
 }
