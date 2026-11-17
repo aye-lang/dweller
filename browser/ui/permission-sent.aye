@@ -1,0 +1,25 @@
+import ipc
+import net
+import std.mem.AllocError
+
+fn permissionSent(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .PermissionGet { doc, kind } => {
+            if doc > docCount(tp) || kind >= net.PERMISSION_KINDS as u32 { return "bad permission" }
+
+            try ipc.encode(&mut tp.outbox, on, ipc.Message.PermissionState { state: net.permissionOf(fetchDoc(tp, doc), kind as u8) as u32 })
+        }
+
+        .PermissionAsk { id, doc, kind } => {
+            if doc > docCount(tp) || kind >= net.PERMISSION_KINDS as u32 { return "bad permission" }
+
+            if !(try addPermissionAsk(tp, on, id, fetchDoc(tp, doc), kind as u8)) {
+                try ipc.encode(&mut tp.outbox, on, ipc.Message.PermissionAnswer { id: id, state: net.PERMISSION_PROMPT as u32 })
+            }
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

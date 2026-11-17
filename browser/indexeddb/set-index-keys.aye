@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn setIndexKeys(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let key = a.f.next()
+    let index_keys = a.f.tail()
+    let i = lowerBound(t.store, key)
+
+    if t.tx.mode != VERSION_CHANGE || i >= t.store.records.len() || !text.eql(t.store.records.items()[i].key, key) { return refuse(a, "InvalidStateError") }
+    if breaksUnique(t.store, key, index_keys) { return refuse(a, "ConstraintError") }
+
+    let r = t.store.records.items()[i]
+    let fresh = try dupe(a.b.alloc, index_keys)
+
+    unlinkRecord(t.store, r)
+    a.b.alloc.free(r.index_keys)
+    r.index_keys = fresh
+    try linkRecord(t.store, r)
+}

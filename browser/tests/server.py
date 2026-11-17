@@ -4,6 +4,10 @@
 # routes that a file server cannot produce:
 #
 #   /redirect        302 to /basic.html
+#   /attach?name=N&disposition=D&type=T  the body "attached N" with
+#                    Content-Disposition: D (attachment), filename="N"
+#                    when there is a name, and Content-Type T
+#                    (application/octet-stream)
 #   /ws/NAME         a WebSocket that echoes each message (the last
 #                    subprotocol offered, or ?protocol=P; ?setcookie=V
 #                    sets the cookie ws=V; ?badaccept answers a wrong
@@ -286,6 +290,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             back = query.get("redirect_uri", ["/"])[0]
             extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
             self.reply(302, [("Location", back + "?" + extra)])
+        elif path.startswith("/attach"):
+            query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query))
+            disposition = query.get("disposition", "attachment")
+            if "name" in query:
+                disposition += '; filename="' + query["name"] + '"'
+            self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], ("attached " + query.get("name", "")).encode())
         elif path == "/event-stream":
             last = self.headers.get("Last-Event-ID")
             body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"

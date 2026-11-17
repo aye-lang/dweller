@@ -20,7 +20,7 @@ for (let i = 0; i < 200; i++) {
 main.innerHTML = html;
 const $ = (id) => document.getElementById(id);
 for (const id of ['c0', 'c1']) {
-  $(id).attachShadow({ mode: 'open' }).innerHTML = '<style>:host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px }</style><div class="frame"><span class="label">label</span><slot name="lead"></slot><slot></slot></div>';
+  $(id).attachShadow({ mode: 'open' }).innerHTML = '<style>:host(.on) .label { font-weight: 700 } .label { margin-left: var(--gap, 1px) } ::slotted(.sel) { font-style: italic } .frame > slot { letter-spacing: 1px } .frame.open > slot { letter-spacing: 3px } .frame.hot .label { text-decoration: underline } .label.sel + slot { word-spacing: 2px }</style><div class="frame"><span class="label">label</span><slot name="lead"></slot><slot></slot></div>';
 }
 const out = [];
 const cs = (el, p) => getComputedStyle(el)[p];
@@ -44,6 +44,10 @@ $('body0').setAttribute('slot', 'lead');
 read('slot', () => cs($('body0'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing'));
 inner('c0', '.frame').classList.add('open');
 read('open', () => cs($('lead'), 'letterSpacing') + ' ' + cs($('deep'), 'letterSpacing') + ' ' + cs($('body1'), 'letterSpacing'));
+inner('c1', '.frame').classList.add('hot');
+read('hot', () => cs(inner('c1', '.label'), 'textDecorationLine') + ' ' + cs(inner('c0', '.label'), 'textDecorationLine'));
+inner('c1', '.label').classList.add('sel');
+read('inner sel', () => cs($('body1'), 'wordSpacing') + ' ' + cs($('body0'), 'wordSpacing') + ' ' + cs(inner('c1', '.label'), 'fontStyle'));
 main.classList.add('tint');
 read('main', () => cs(row(9).children[1], 'color'));
 $('out').textContent = out.join('\n');

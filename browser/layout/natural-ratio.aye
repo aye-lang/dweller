@@ -1,0 +1,16 @@
+// spec: https://drafts.csswg.org/css-sizing-4/#preferred-aspect-ratio
+fn naturalRatio(t: *Tree, c: usize) ?f64 {
+    if sizelessPicture(t, c) && aspectRatio(t, c) == null {
+        return null
+    }
+
+    return replacedRatio(t, c)
+}
+
+fn sizelessPicture(t: *Tree, c: usize) bool {
+    let el = t.bx(c).node orelse return false
+    let imgs = t.images orelse return false
+    let pic = imgs.picture(el) orelse return false
+
+    return pic.view == null && (pic.width <= 0.0 || pic.height <= 0.0)
+}

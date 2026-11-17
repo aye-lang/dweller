@@ -1,0 +1,10 @@
+import indexeddb
+import serviceworker
+import std.mem.AllocError
+import std.text
+
+fn applyStore(call: IdbCall, area: []u8, out: *mut text.Builder) AllocError!void {
+    if call.worker { return serviceworker.apply(out.alloc, area, call.client, call.request, out) }
+
+    return indexeddb.apply(out.alloc, area, call.client, call.request, out)
+}

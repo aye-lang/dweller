@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc6266#section-4.3
+pub fn dispositionName(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!void {
+    if dispositionParam(value, "filename*") |extended| {
+        try extendedName(alloc, extended, out)
+    }
+
+    if out.len() > 0 {
+        return
+    }
+
+    let plain = dispositionParam(value, "filename") orelse return
+
+    if plain.len < 2 || plain[0] != '"' {
+        return out.append(plain)
+    }
+
+    var i: usize = 1
+
+    while i + 1 < plain.len {
+        if plain[i] == '\\' && i + 2 < plain.len { i += 1 }
+
+        try out.appendByte(plain[i])
+        i += 1
+    }
+}

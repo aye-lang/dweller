@@ -1,0 +1,19 @@
+import dom.NodeId
+
+// spec: https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element (a prepared script runs even when it was removed)
+fn holdQueued(s: *mut Script) {
+    for el in s.queue.items() {
+        s.page.doc.node(el).js_refs += 1
+    }
+}
+
+fn dropQueued(s: *mut Script, el: NodeId) {
+    let doc = &mut s.page.doc
+
+    if !doc.isLive(el) {
+        return
+    }
+
+    doc.node(el).js_refs -= 1
+    _ = doc.releaseIfUnused(el)
+}

@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+fn deleteNow(b: *mut Backend, i: usize, db: *mut Database) AllocError!bool {
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    try requestLine(&mut line, "deleted", &b.requests.items()[i])
+    try appendNumber(&mut line, db.version)
+    try removeFile(b, db)
+    removeDatabase(b, db)
+
+    return answerRequest(b, i, &mut line)
+}

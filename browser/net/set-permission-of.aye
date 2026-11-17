@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+pub fn setPermissionOf(href: []u8, kind: u8, state: u8) AllocError!void {
+    let s = session orelse return
+    let all = permissionsOf() orelse return
+    var origin = text.Builder.init(all.alloc)
+    defer origin.deinit()
+
+    if kind >= PERMISSION_KINDS || state > PERMISSION_DENIED || !(try permissionOrigin(all.alloc, href, &mut origin)) {
+        return
+    }
+
+    try storePermission(all, origin.bytes(), kind, state)
+    try savePermissions(s, all)
+}

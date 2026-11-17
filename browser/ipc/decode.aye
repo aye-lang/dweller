@@ -13,7 +13,7 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         10 => Message.Key { seq: try r.readU32(), down: try r.readU32(), key: try r.readBytes(), code: try r.readBytes(), repeat: try r.readU32(), location: try r.readU32(), mods: try r.readU32() }
         11 => Message.Text { seq: try r.readU32(), typed: try r.readBytes() }
         12 => Message.InputAck { seq: try r.readU32() }
-        13 => Message.BeginNavigation { url: try r.readBytes(), post: try r.readU32(), content_type: try r.readBytes(), body: try r.readBytes(), referrer_policy: try r.readU32() }
+        13 => Message.BeginNavigation { url: try r.readBytes(), post: try r.readU32(), content_type: try r.readBytes(), body: try r.readBytes(), referrer_policy: try r.readU32(), user: try r.readU32() }
         14 => Message.Popup { items: try r.readBytes(), disabled: try r.readBytes(), selected: try r.readU32(), x: try r.readF64(), y: try r.readF64(), w: try r.readF64(), h: try r.readF64() }
         15 => Message.PopupChoice { index: try r.readU32() }
         16 => Message.Focus { on: try r.readU32() }
@@ -73,7 +73,24 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         74 => Message.AttachTab { context: try r.readU32() }
         90 => Message.ContextClosed { context: try r.readU32() }
         78 => Message.Settled { on: try r.readU32() }
+        120 => Message.ScrollInfo { max_y: try r.readF64(), pan: try r.readU32(), background: try r.readU32() }
+        80 => Message.AskState { with_text: try r.readU32() }
+        81 => Message.State { scroll: try r.readF64(), frames: try r.readBytes(), focus: try r.readBytes(), content: try r.readBytes() }
+        82 => Message.AgentViewport { width: try r.readF64(), height: try r.readF64() }
+        83 => Message.Visible { on: try r.readU32() }
         100 => Message.FetchRemote { id: try r.readU32() }
+        140 => Message.SocketOpen { id: try r.readU32(), doc: try r.readU32(), url: try r.readBytes(), protocols: try r.readBytes() }
+        141 => Message.SocketSend { id: try r.readU32(), binary: try r.readU32(), more: try r.readU32(), data: try r.readBytes() }
+        142 => Message.SocketClose { id: try r.readU32(), code: try r.readU32(), reason: try r.readBytes() }
+        143 => Message.SocketNote { id: try r.readU32(), kind: try r.readU32(), clean: try r.readU32(), code: try r.readU32(), more: try r.readU32(), data: try r.readBytes() }
+        144 => Message.DownloadHint { url: try r.readBytes(), name: try r.readBytes() }
+        145 => Message.PermissionGet { doc: try r.readU32(), kind: try r.readU32() }
+        146 => Message.PermissionState { state: try r.readU32() }
+        147 => Message.PermissionAsk { id: try r.readU32(), doc: try r.readU32(), kind: try r.readU32() }
+        148 => Message.PermissionAnswer { id: try r.readU32(), state: try r.readU32() }
+        160 => Message.Idb { doc: try r.readU32(), page: try r.readU32(), more: try r.readU32(), request: try r.readBytes() }
+        161 => Message.IdbReply { more: try r.readU32(), reply: try r.readBytes() }
+        162 => Message.IdbEvent { page: try r.readU32(), line: try r.readBytes() }
         _ => return DecodeError.UnknownType
     }
 

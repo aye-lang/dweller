@@ -13,6 +13,7 @@ import engine
 import font
 import layout
 import net
+import pageview
 import paint
 import paint.Rgba
 import std
@@ -128,45 +129,9 @@ fn inside(doc: *dom.Document, node: NodeId, el: NodeId) bool {
     return false
 }
 
-// A click on a row of a list box (a `select` with `multiple` or a
-// `size`): selects that option (toggles it in a `multiple` one); false
-// when `node` is no list box.
 fn clickListBox(ui: *mut Ui, p: *mut engine.Page, node: NodeId, dy: f64) AllocError!bool {
-    if !p.doc.isElement(node, "select") || !layout.isListBox(&p.doc, node) || dom.isDisabled(&p.doc, node) {
+    if !(try pageview.clickListBox(ui.alloc, p, node, dy)) {
         return false
-    }
-    let t = p.tree orelse return false
-    var row: ?usize = null
-    for i in 0..t.boxes.len() {
-        let b = t.bx(i).*
-        if dom.isSame(b.node, node) && (b.kind == layout.BoxKind.InlineBlock || b.kind == layout.BoxKind.Block) {
-            var scroll = 0.0
-            if p.doc.controls.get(node) |c| {
-                scroll = c.scroll
-            }
-            let cy = b.ay + b.border[0] + b.padding[0] - scroll
-            for li in b.line_start..b.line_end {
-                let line = t.lines.items()[li]
-                if dy >= cy + line.y && dy < cy + line.y + line.h {
-                    row = li - b.line_start
-                }
-            }
-            break
-        }
-    }
-    engine.setFocus(p, node)
-    if row |k| {
-        var opts = List(NodeId).init(ui.alloc)
-        defer opts.deinit()
-        try dom.options(&p.doc, node, &mut opts)
-        if k < opts.len() && !dom.isDisabled(&p.doc, opts.items()[k]) {
-            let opt = opts.items()[k]
-            if p.doc.attr(node, "multiple") != null {
-                try dom.setSelected(&mut p.doc, opt, !dom.isSelected(&p.doc, opt))
-            } else {
-                try dom.selectOption(&mut p.doc, node, opt)
-            }
-        }
     }
     try restyled(ui)
     return true
@@ -672,23 +637,4 @@ fn overTextField(ui: *mut Ui, x: f64, y: f64) bool {
     let t = p.tree orelse return false
     let n = engine.nodeAt(t, x, y - ui.top() + ui.tab.scroll) orelse return false
     return dom.isTextField(&p.doc, n)
-}
-
-/// The focused element and its value, for `--state` (nothing when the
-/// page has no focus).
-fn writeFocus(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
-    let p = ui.tab.page orelse return
-    let f = p.doc.controls.focus orelse return
-    try out.append("element ")
-    try out.append(p.doc.node(f).name)
-    if p.doc.attr(f, "name") |n| {
-        try out.append(" name=")
-        try out.append(n)
-    }
-    try out.appendByte('\n')
-    if dom.isTextField(&p.doc, f) || p.doc.isElement(f, "select") || (p.doc.isElement(f, "input") && (text.eql(dom.inputType(&p.doc, f), "range") || text.eql(dom.inputType(&p.doc, f), "color"))) {
-        try out.append("value ")
-        try out.append(dom.valueOf(&p.doc, f))
-        try out.appendByte('\n')
-    }
 }

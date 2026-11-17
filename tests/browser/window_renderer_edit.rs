@@ -7,7 +7,7 @@ fn shoot(page: &str, png: &Path, events: &str, envs: &[(&str, &str)]) -> (String
         .current_dir(root())
         .envs(envs.iter().copied())
         .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-        .args(["--frames", "2000", "--until-idle", "--state", "--save"])
+        .args(["--frames", "2000", "--until-idle", "--state", "--processes", "--save"])
         .arg(png)
         .args(["--events", events])
         .output()

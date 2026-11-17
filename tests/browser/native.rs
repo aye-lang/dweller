@@ -219,3 +219,38 @@ fn native_counter_component() {
     assert!(in_app.lines().count() > 2000, "{in_app}");
     assert!(in_app == in_page, "the app's document:\n{in_app}\nthe page's:\n{in_page}");
 }
+
+/// V7: the same component in a terminal. `counter --tui` lays the
+/// document out in cells (1 CSS px is one cell) and writes one frame as
+/// ANSI; the frame is read back by the VT parser of `apps/term` and its
+/// cell grid compared.
+#[test]
+fn native_counter_tui() {
+    let expected = root().join("examples/native/counter/expected");
+    let typed = "click:3,5 click:3,5 click:4,7 text:typed_text";
+    let added = format!("{typed} click:26,7 wheel:-25");
+    let mut failures = Vec::new();
+    for (name, events) in [("tui", typed), ("tui-added", added.as_str())] {
+        let frame = Command::new(native_counter_exe())
+            .args(["--tui", "--width", "40", "--height", "12", "--events", events])
+            .output()
+            .unwrap();
+        assert!(
+            frame.status.success() && frame.stderr.is_empty(),
+            "{}\n{}",
+            frame.status,
+            text(&frame.stderr)
+        );
+        let file = scratch().join(format!("{name}.ansi"));
+        std::fs::write(&file, &frame.stdout).unwrap();
+        let grid = Command::new(super::term::term_exe())
+            .arg("dump")
+            .arg(&file)
+            .args(["--cols", "40", "--rows", "12"])
+            .output()
+            .unwrap();
+        assert!(grid.status.success(), "{}", text(&grid.stderr));
+        check_golden(&expected.join(format!("{name}.grid")), &text(&grid.stdout), name, &mut failures);
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

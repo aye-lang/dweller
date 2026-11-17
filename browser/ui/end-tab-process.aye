@@ -20,6 +20,8 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
 
     tp.attaches.deinit()
 
+    dropIdbProcess(tp)
+
     while tp.children.pop() |c| { endChild(alloc, c) }
 
     tp.children.deinit()
@@ -31,6 +33,8 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
     for k in tp.kept.items() { k.deinit(alloc) }
 
     tp.kept.deinit()
+    endTabSockets(tp)
+    dismissPermissionAsks(tp, false)
     forgetTabProcess(tp)
     unmapBuffers(tp)
     tp.inbox.deinit()

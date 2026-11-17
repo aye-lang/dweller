@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+fn loadDownload(all: *mut Downloads, line: []u8) AllocError!void {
+    var fields = text.split(line, "\t")
+    let state = text.parseInt(fields.next() orelse return) catch return
+    let size = text.parseInt(fields.next() orelse return) catch return
+    let path = fields.next() orelse return
+    let href = fields.next() orelse return
+
+    if state < 1 || state > 2 || size < 0 { return }
+
+    try addDownload(all, state as u8, size as usize, path, href)
+}

@@ -29,11 +29,13 @@ import css
 import dom.NodeId
 import engine
 import font
+import indexeddb
 import layout
 import net
 import pageview
 import paint
 import perf
+import serviceworker
 import sessions
 import std
 import std.mem.AllocError
@@ -41,7 +43,7 @@ import std.mem.Allocator
 import std.text
 import url
 
-let UI_USAGE = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]"
+let UI_USAGE = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state [--processes]] [--text] [--save OUT.png]]"
 
 /// The toolbar height, in CSS px.
 pub let TOOLBAR: f64 = 40.0
@@ -107,6 +109,7 @@ struct UiOptions {
     until_idle: bool
     events: []u8
     state: bool
+    processes: bool = false
     save: []u8
     // Scripts run (not with --no-js); --text prints the document's text
     // at the end (after --state).
@@ -160,6 +163,8 @@ fn uiOptions(args: [][]u8) ?UiOptions {
             o.until_idle = true
         } else if text.eql(a, "--state") {
             o.state = true
+        } else if text.eql(a, "--processes") {
+            o.processes = true
         } else if text.eql(a, "--text") {
             o.show_text = true
         } else if text.eql(a, "--no-js") {
@@ -179,6 +184,9 @@ fn uiOptions(args: [][]u8) ?UiOptions {
         return null
     }
     if o.until_idle && o.frames == 0 {
+        return null
+    }
+    if o.processes && !o.state {
         return null
     }
     return o
@@ -283,6 +291,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             var ui = Ui.init(alloc, window, renderer, measure, system, first_tab)
             defer ui.deinit()
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
+            watchPermissions(&mut ui)
+            defer endPermissionAsks(&mut ui)
             watchDialogs(&mut ui, o.frames > 0 || o.exit_when_idle)
             engine.setClipboardHooks(clipboardWrite, clipboardRead)
             var target: ?*url.Url = null
@@ -336,11 +346,23 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                     return 1
                 }
             }
+            var said = SaidState.init(alloc)
+            defer said.deinit()
+            if o.state || o.show_text {
+                askState(&mut ui, o.show_text, &mut said) catch |e| {
+                    return 1
+                }
+            }
             if o.state {
                 var b = text.Builder.init(alloc)
                 defer b.deinit()
-                writeState(&mut ui, &mut b) catch |e| {
+                writeState(&mut ui, &said, &mut b) catch |e| {
                     return 1
+                }
+                if o.processes {
+                    writeTabProcess(&ui, &mut b) catch |e| {
+                        return 1
+                    }
                 }
                 @print(b.bytes())
             }
@@ -351,12 +373,9 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
                     p.doc.textContent(p.doc.root, &mut b) catch |e| {
                         return 1
                     }
-                } else {
-                    rendererText(&mut ui, &mut b) catch |e| {
-                        return 1
-                    }
                 }
                 @print(b.bytes())
+                @print(said.content.bytes())
             }
             return 0
         }
@@ -438,6 +457,7 @@ pub struct Ui {
     overlay_key: ?u64 = null
     // Inside the timers' `afterScripts`.
     from_timers: bool = false
+    pan_ns: u64 = 0
     quit: bool
     stuck: bool = false
     cert_advanced: bool = false
@@ -475,6 +495,7 @@ pub struct Ui {
     input_ns: u64 = 0
     tab_processes: bool
     auto_waits: bool = false
+    script_held: bool = false
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
         var slots = @zeroed([16]?*mut TabSlot)
@@ -636,7 +657,10 @@ pub struct Ui {
             try self.advanceLoad(false)
             try self.imagesIn()
             try runAnimationFrame(self)
-            if self.dirty || self.repaint || frames > 0 {
+            if self.script_held {
+                try resumeScript(self)
+            }
+            if self.dirty || self.repaint || (frames > 0 && !scriptBehind(self)) {
                 let t_draw = perf.start()
                 let drew = std.time.monotonicMs()
                 try self.draw()
@@ -644,7 +668,7 @@ pub struct Ui {
                 perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 self.repaint = false
-                if !rendererBehind(self) {
+                if !scriptBehind(self) {
                     drawn += 1
                 }
                 if self.paint_began != 0 && pageview.hasFrame(self.view()) {
@@ -709,6 +733,11 @@ pub struct Ui {
                     timeout = ms as i32
                 }
             }
+            if indexeddb.msUntilSave() |ms| {
+                if ms < timeout as i64 {
+                    timeout = ms as i32
+                }
+            }
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -754,6 +783,8 @@ pub struct Ui {
             }
             net.saveCookiesIfDue()
             engine.saveStorageIfDue()
+            indexeddb.saveIfDue()
+            serviceworker.saveIfDue()
             try saveTabs(self, false)
             if self.resized {
                 self.resized = false
@@ -949,6 +980,7 @@ pub struct Ui {
         self.range_drag = false
         self.cert_advanced = false
         self.cert_focused = false
+        dismissPermissionAsks(null, false)
         if loaded {
             // The agents' refs are of the old document.
             self.slots[self.active].?.shown += 1
@@ -1114,6 +1146,9 @@ pub struct Ui {
             return
         }
         noteInput(self, ev)
+        if try permissionInput(self, ev) {
+            return
+        }
         if try forwardInput(self, ev) {
             return
         }
@@ -1150,6 +1185,7 @@ pub struct Ui {
                     // The pointer's gesture is over (a held button is lost).
                     self.buttons = 0
                     try self.pointerEvent("pointercancel", 0, self.mouse_x, self.mouse_y, 0.0, 0.0)
+                    try cancelPointer(self)
                 }
             } else if we.event == SDL_WINDOWEVENT_MINIMIZED || we.event == SDL_WINDOWEVENT_HIDDEN {
                 self.hidden = windowGone(self.window, we.window)
@@ -1587,6 +1623,9 @@ pub struct Ui {
         if self.auth.open {
             return authClick(self, x, y)
         }
+        if try permissionClick(self, x, y) {
+            return
+        }
         if try certClick(self, x, y) {
             return
         }
@@ -1947,6 +1986,7 @@ pub struct Ui {
         if certPage(self) |p| {
             try drawCertBar(self, p)
         }
+        try drawPermissionBar(self)
         if self.dialog.open {
             try drawDialog(self)
         }

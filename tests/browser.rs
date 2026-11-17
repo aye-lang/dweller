@@ -30,6 +30,8 @@ mod cli;
 mod color_scheme;
 #[path = "browser/csp_directives.rs"]
 mod csp_directives;
+#[path = "browser/downloads.rs"]
+mod downloads;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
 #[path = "browser/editing.rs"]
@@ -42,6 +44,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/indexeddb.rs"]
+mod indexeddb;
 #[path = "browser/input.rs"]
 mod input;
 #[path = "browser/js.rs"]
@@ -58,12 +62,16 @@ mod net;
 mod paint;
 #[path = "browser/perf.rs"]
 mod perf;
+#[path = "browser/permissions.rs"]
+mod permissions;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
 #[path = "browser/scripts.rs"]
 mod scripts;
 #[path = "browser/security.rs"]
 mod security;
+#[path = "browser/serviceworker.rs"]
+mod serviceworker;
 #[path = "browser/storage.rs"]
 mod storage;
 #[path = "browser/term.rs"]
@@ -94,6 +102,10 @@ mod window_renderer_oopif_input;
 mod window_renderer_oopif_proxy;
 #[path = "browser/window_renderer_oopif_site.rs"]
 mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_pan.rs"]
+mod window_renderer_pan;
+#[path = "browser/window_renderer_perf.rs"]
+mod window_renderer_perf;
 #[path = "browser/window_renderer_popup.rs"]
 mod window_renderer_popup;
 #[path = "browser/window_renderer_scroll.rs"]
@@ -416,7 +428,7 @@ fn check_png(path: &Path) -> (u32, u32) {
     size
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state [--processes]] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -803,7 +815,7 @@ fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&
     let out = c
         .args([
             url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
-            "--until-idle", "--state", "--text", "--events", events,
+            "--until-idle", "--state", "--processes", "--text", "--events", events,
         ])
         .output()
         .unwrap();

@@ -40,3 +40,17 @@ fn websocket_echo() {
     };
     assert!(window.contains(want.trim_end()), "{window}");
 }
+
+/// Q5.7: the same page with a renderer process per tab and per site: the
+/// socket is the browser process's (IPC `SocketOpen`, `SocketSend`,
+/// `SocketClose`, `SocketNote`), the lines are the same.
+#[test]
+fn websocket_echo_in_renderers() {
+    for mode in ["tab", "site"] {
+        let Some((want, window)) = websocket_page(&[("DWELLER_PROCESS", mode)]) else {
+            println!("skipped: no test server or no SDL2");
+            return;
+        };
+        assert!(window.contains(want.trim_end()), "{mode}: {window}");
+    }
+}

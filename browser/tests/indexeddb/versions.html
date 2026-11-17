@@ -1,0 +1,27 @@
+<!doctype html>
+<title>IndexedDB: versionchange and blocked between tabs</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+async function run() {
+  localStorage.removeItem('idb-upgrader');
+  const db = await fresh('shared', db => db.createObjectStore('notes'));
+  const tx = db.transaction('notes', 'readwrite');
+  tx.objectStore('notes').put('from the opener', 1);
+  await ended(tx);
+  db.onversionchange = e => {
+    log('versionchange ' + e.oldVersion + '->' + e.newVersion);
+    setTimeout(() => { db.close(); log('closed'); }, 30);
+  };
+  addEventListener('storage', async e => {
+    if (e.key !== 'idb-upgrader' || e.newValue === null) return;
+    log('upgrader: ' + e.newValue);
+    const again = await wait(indexedDB.open('shared'));
+    const read = again.transaction(['notes', 'added']);
+    log('reopened v' + again.version + ' ' + Array.from(again.objectStoreNames) + ' ' + await wait(read.objectStore('added').get(1)));
+    done();
+  });
+  window.open('upgrader.html', '_blank', 'noopener');
+}
+run().catch(e => done('failed ' + e));
+</script>

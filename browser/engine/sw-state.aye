@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.Allocator
+
+struct SwResult {
+    id: u32
+    state: u8 = 0
+    status: i64 = 200
+    headers: []mut u8
+    body: []mut u8
+}
+
+struct SwState {
+    alloc: Allocator
+    instances: List(*mut Page)
+    results: List(SwResult)
+    next: u32 = 1
+    running: bool = false
+    seen: bool = false
+}
+
+let SW_FALLBACK: u8 = 1
+let SW_ERROR: u8 = 2
+let SW_RESPONSE: u8 = 3
+
+var sw_state: ?*mut SwState = null

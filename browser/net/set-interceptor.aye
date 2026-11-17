@@ -1,0 +1,16 @@
+import std.mem.Allocator
+import url.Url
+
+var interceptor: ?fn(Allocator, *Url, Request) FetchError!?Response = null
+var claims: ?fn() bool = null
+
+pub fn setInterceptor(hook: fn(Allocator, *Url, Request) FetchError!?Response, claimer: fn() bool) {
+    interceptor = hook
+    claims = claimer
+}
+
+fn claimed() bool {
+    if claims |c| { return c() }
+
+    return false
+}

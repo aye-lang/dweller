@@ -1,0 +1,14 @@
+import net
+
+// https://websockets.spec.whatwg.org/#dom-websocket-close
+fn closeTabSocket(tp: *mut TabProcess, id: u32, code: u32, reason: []u8) []u8 {
+    let all = tab_sockets orelse return ""
+    let i = tabSocketIndex(tp, id) orelse return ""
+    let named = code == 1000 || code == 1001 || code == 1005 || (code >= 3000 && code <= 4999)
+
+    if !named || reason.len > 123 { return "bad socket" }
+
+    net.socketClose(all.items()[i].socket, code as u16, reason)
+
+    return ""
+}

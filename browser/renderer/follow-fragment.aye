@@ -1,0 +1,15 @@
+import engine
+import std
+import url
+
+// html: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-fragid
+fn followFragment(r: *mut TabRenderer, p: *mut engine.Page, target: *url.Url) !void {
+    let old = try r.alloc.alloc(0 as u8, p.url.href.len)
+    defer r.alloc.free(old)
+
+    std.mem.copy(old, p.url.href)
+
+    try engine.fragmentNavigate(p, target, false)
+    try aimAtFragment(r, target.fragment)
+    try engine.fragmentNavigated(p, old)
+}

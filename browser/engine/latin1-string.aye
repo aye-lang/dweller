@@ -1,0 +1,20 @@
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn latin1String(it: *mut Interp, bytes: []u8) JsError!Value {
+    var raw = text.Builder.init(it.alloc)
+    defer raw.deinit()
+
+    for b in bytes {
+        if b < 0x80 {
+            try raw.appendByte(b)
+        } else {
+            try raw.appendByte(0xC0 | (b >> 6))
+            try raw.appendByte(0x80 | (b & 0x3F))
+        }
+    }
+
+    return it.newString(raw.bytes())
+}

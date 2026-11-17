@@ -1,0 +1,23 @@
+import paint
+import std
+import std.mem.AllocError
+
+fn checkTabFrame(ui: *mut Ui) AllocError!void {
+    let pd = &mut ui.page
+    let all = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
+    let composed = try ui.alloc.alloc(0 as u8, pd.canvas.pixels.len)
+    defer ui.alloc.free(composed)
+
+    std.mem.copy(composed, pd.canvas.pixels)
+    copyTabFrame(ui, all)
+
+    var count: usize = 0
+
+    for i in 0..composed.len / 4 {
+        if memcmp(composed[i * 4..].ptr, pd.canvas.pixels[i * 4..].ptr, 4) != 0 { count += 1 }
+    }
+
+    if count > 0 {
+        std.log.err("DAMAGE CHECK: {} pixels of the window differ from the renderer's frames (damage {} rects, {} px)", count, pd.damage.rects.len(), pd.damage.area())
+    }
+}

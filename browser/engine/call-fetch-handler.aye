@@ -1,0 +1,35 @@
+import js
+import js.JsError
+import js.Value
+import net
+import url.Url
+
+let DESTINATIONS = [7][]u8{"document", "style", "image", "script", "", "font", "worker"}
+
+fn callFetchHandler(s: *mut Script, id: u32, f: SwFetch, target: *Url, req: net.Request) JsError!void {
+    let it = &mut s.it
+    let base = it.stack.len()
+    var method = req.method
+    var body: []u8 = ""
+    var mode: []u8 = "no-cors"
+
+    if req.body |b| { body = b.data }
+    if method.len == 0 && req.body != null { method = "POST" }
+    if method.len == 0 { method = "GET" }
+    if req.mode is .Cors { mode = "cors" }
+    if f.navigates { mode = "navigate" }
+
+    try it.push(it.roots.items()[s.on_sw])
+    try it.push(Value.Undefined)
+    try it.push(try it.newString("fetch"))
+    try it.push(js.numVal(id as f64))
+    try it.push(try it.newString(target.href))
+    try it.push(try it.newString(method))
+    try it.push(try it.newString(req.headers))
+    try it.push(try latin1String(it, body))
+    try it.push(try it.newString(DESTINATIONS[net.requestCode(req)[0] as usize]))
+    try it.push(try it.newString(mode))
+    try it.push(js.numVal(f.client as f64))
+    _ = callReported(s, base, 9) catch return JsError.OutOfMemory
+    runMicrotasks(s) catch return JsError.OutOfMemory
+}

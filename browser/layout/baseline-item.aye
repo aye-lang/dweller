@@ -1,0 +1,23 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#flex-baselines
+fn baselineItem(t: *Tree, line: []Item, row: bool, rtl: bool, last: bool) usize {
+    var wanted: []u8 = "baseline"
+    var best = line[0].box
+
+    if last {
+        wanted = "last baseline"
+    }
+
+    for it in line {
+        if row && text.eql(alignOf(t, it.box), wanted) {
+            return it.box
+        }
+
+        if mainStart(t, it.box, row, rtl != last) < mainStart(t, best, row, rtl != last) {
+            best = it.box
+        }
+    }
+
+    return best
+}

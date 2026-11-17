@@ -1,0 +1,31 @@
+<!doctype html>
+<title>Service worker: registration and lifecycle</title>
+<pre id="log"></pre>
+<script src="../indexeddb/harness.js"></script>
+<script>
+async function run() {
+  const sw = navigator.serviceWorker;
+  for (const old of await sw.getRegistrations()) await old.unregister();
+  log('before ' + (sw.controller === null) + ' ' + (await sw.getRegistration()));
+  const states = [];
+  sw.oncontrollerchange = () => states.push('controllerchange');
+  const reg = await sw.register('worker.js');
+  const worker = reg.installing;
+  log('registered ' + new URL(reg.scope).pathname + ' ' + new URL(worker.scriptURL).pathname.split('/').pop() + ' ' + worker.state + ' ' + (reg.waiting === null) + (reg.active === null));
+  worker.onstatechange = () => states.push(worker.state);
+  const ready = await sw.ready;
+  log('ready ' + (ready === reg) + ' ' + (reg.active === worker));
+  await new Promise(r => { const t = setInterval(() => { if (worker.state === 'activated' && sw.controller) { clearInterval(t); r(); } }, 5); });
+  log('states ' + states.join(',') + ' controller ' + (sw.controller === worker));
+  sw.onmessage = async e => {
+    log('worker says ' + JSON.stringify(e.data));
+    log('same ' + ((await sw.register('worker.js')) === reg) + ' ' + (reg.installing === null) + ' list ' + (await sw.getRegistrations()).length);
+    for (const bad of ['http://other.test/worker.js', 'plain.txt', 'missing.js']) await sw.register(bad).then(() => log('registered ' + bad), e => log(bad.split('/').pop() + ' ' + e.name));
+    await sw.register('worker.js', { scope: '../' }).catch(e => log('wide scope ' + e.name));
+    log('unregister ' + await reg.unregister() + ' ' + await reg.unregister() + ' ' + (await sw.getRegistration()));
+    done();
+  };
+  worker.postMessage({ ask: 'seen' });
+}
+run().catch(e => done('failed ' + e));
+</script>

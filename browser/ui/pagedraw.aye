@@ -118,7 +118,7 @@ fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     let all = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
     let slot = ui.slots[ui.active].?
     let doc = (slot.id as u64) << 32 | (slot.shown & 0xffffffff)
-    var whole = !pd.valid || v.scale != pd.view.scale || !sameRgba(bg, pd.background) || doc != pd.doc || ui.page_view.list == null
+    var whole = !pd.valid || v.scale != pd.view.scale || !sameRgba(bg, pd.background) || doc != pd.doc || (ui.page_view.list == null && slot.process == null)
     if doc != pd.doc {
         // Another document: the cache's keys may name its freed pixels.
         pd.cache.clear()
@@ -238,6 +238,9 @@ fn putNum(buf: *mut [48]u8, at: usize, v: u64) usize {
 // `render` does without damage or cache, and logs the pixels that differ
 // from the page's.
 fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
+    if ui.slots[ui.active].?.process != null {
+        return checkTabFrame(ui)
+    }
     let pd = &mut ui.page
     let area = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: pd.canvas.height as i64 }
     if pd.scratch == null || pd.scratch.?.width != pd.canvas.width || pd.scratch.?.height != pd.canvas.height {

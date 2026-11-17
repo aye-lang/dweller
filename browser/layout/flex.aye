@@ -104,19 +104,14 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     // Lines: ranges of `all`.
     var breaks = List(usize).init(t.backing)
     defer breaks.deinit()
-    var used = 0.0
-    for k, it in all {
-        let outer = it.hyp + it.before + it.after
-        if wrap && k > 0 && used + main_gap + outer > breakLimit(row, cw, ch) {
-            try breaks.append(k)
-            used = outer
-        } else if k > 0 {
-            used += main_gap + outer
-        } else {
-            used = outer
-        }
+    var limit = INFINITE
+    if wrap {
+        limit = breakLimit(t, i, row, cw, ch)
     }
-    try breaks.append(all.len)
+    try breakLines(all, main_gap, limit, &mut breaks)
+    if text.endsWith(keywordOf(style[css.FLEX_WRAP]), "balance") {
+        try balanceLines(all, main_gap, limit, &mut breaks)
+    }
     let lines = breaks.items()
     var avail_main = cw
     if !row {
@@ -151,7 +146,8 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             } else {
                 let content_h = b.h
                 b.h = it.target
-                try relayoutAt(t, it.box, content_h, cw, ch)
+                ratioWidth(t, it.box, cw)
+                try relayoutAt(t, it.box, content_h, cw, ch, ch >= 0.0)
                 let cb = t.bx(it.box)
                 line_cross = math.max(line_cross, cb.w + cb.margin[1] + cb.margin[3])
             }
@@ -242,6 +238,8 @@ fn layoutFlex(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     if wrap {
         try alignLines(t, i, all, lines, crosses.items(), row, cross_gap, cw, ch)
     }
+    mirrorAcross(t, i, all, row, cw)
+    flexBaselines(t, i, all, lines, row, ch)
     if ch >= 0.0 {
         return ch
     }
@@ -288,6 +286,10 @@ fn flexItem(t: *mut Tree, c: usize, row: bool, cw: f64, ch: f64) AllocError!Item
             it.basis = fb
         } else if spec |w| {
             it.basis = w
+        } else if stretchedRatioBasis(t, c, ch) |rb| {
+            it.basis = rb
+        } else if b.kind == BoxKind.Image {
+            it.basis = imageBasis(t, c, cw, ch)
         } else {
             it.basis = mm.max
         }
@@ -354,6 +356,7 @@ fn itemContents(t: *mut Tree, c: usize, cw: f64, ch: f64) AllocError!void {
         let w = t.bx(c).w
         replacedSize(t, c, cw, ch)
         t.bx(c).w = w
+        ratioHeight(t, c, ch)
     } else if kind == BoxKind.Table {
         try layoutTable(t, c, t.bx(c).w)
     } else {
@@ -386,11 +389,14 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, base: LineBase
         size = b.h + b.margin[0] + b.margin[2]
     }
     let align = alignWord(alignOf(t, c), line_cross - size)
+    if crossAutoOffset(t, c, row, line_cross - size) |offset| {
+        return before + offset
+    }
     if row && (text.eql(align, "stretch") || text.eql(align, "normal")) && isKeyword(b.style[css.HEIGHT], "auto") {
         let h = clampHeight(t, c, line_cross - b.margin[0] - b.margin[2], ch)
         let content_h = b.h
         t.bx(c).h = h
-        try relayoutAt(t, c, content_h, cw, ch)
+        try relayoutAt(t, c, content_h, cw, ch, true)
         return before
     }
     if !row && try stretchAcross(t, c, align, line_cross, cw, ch) {
@@ -416,9 +422,9 @@ fn alignCross(t: *mut Tree, c: usize, row: bool, line_cross: f64, base: LineBase
 // (CSS Flexbox 9.4, 9.8), so its content is laid out again at it when it
 // differs and the content can depend on it (a flex or grid container, or
 // a child with a percentage height).
-fn relayoutAt(t: *mut Tree, c: usize, laid_h: f64, cw: f64, ch: f64) AllocError!void {
+fn relayoutAt(t: *mut Tree, c: usize, laid_h: f64, cw: f64, ch: f64, definite: bool) AllocError!void {
     let h = t.bx(c).h
-    if math.abs(h - laid_h) < 0.01 || !heightDependent(t, c) {
+    if !heightDependent(t, c) || (math.abs(h - laid_h) < 0.01 && !(definite && hasPercentChild(t, c))) {
         return
     }
     t.bx(c).forced_h = h
@@ -435,13 +441,7 @@ fn heightDependent(t: *Tree, c: usize) bool {
     if kind != BoxKind.Block && kind != BoxKind.InlineBlock {
         return false
     }
-    for k in t.children(c) {
-        let s = t.bx(k).style
-        if hasPercent(s[css.HEIGHT]) || hasPercent(s[css.MIN_HEIGHT]) || hasPercent(s[css.MAX_HEIGHT]) {
-            return true
-        }
-    }
-    return false
+    return hasPercentChild(t, c)
 }
 
 fn hasPercent(v: css.Value) bool {
