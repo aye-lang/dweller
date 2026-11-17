@@ -1,0 +1,21 @@
+// https://tc39.es/ecma262/#sec-identifiers-static-semantics-early-errors
+
+import std.text
+
+fn parseCheckName(p: *mut Parser, name: []u8) SyntaxErr!void {
+    if text.eql(name, "await") && (p.in_async || p.module) {
+        _ = try p.fail("Unexpected reserved word")
+    }
+
+    if text.eql(name, "yield") && (p.in_gen || p.strict) {
+        _ = try p.fail("Unexpected strict mode reserved word")
+    }
+
+    if text.eql(name, "arguments") && p.in_field {
+        _ = try p.fail("'arguments' is not allowed in class field initializer")
+    }
+
+    if p.strict && parseStrictReserved(name) {
+        _ = try p.fail("Unexpected strict mode reserved word")
+    }
+}

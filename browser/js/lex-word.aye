@@ -7,6 +7,7 @@ fn lexWord(lx: *mut Lexer, start: usize) SyntaxErr!void {
     var plain = start
 
     if private {
+        try lx.out.cooked.appendByte(PRIVATE_NAME_MARK)
         lx.pos += 1
     }
 
@@ -43,14 +44,10 @@ fn lexWord(lx: *mut Lexer, start: usize) SyntaxErr!void {
         return lx.fail("Invalid or unexpected token")
     }
 
-    if escaped {
+    if escaped || private {
         try lx.out.cooked.append(lx.src[plain..lx.pos])
 
         return lx.emit(Tok.Ident, start, 0.0, off, lx.out.cooked.len() - off)
-    }
-
-    if private {
-        return lx.emit(Tok.Ident, start, 0.0, 0, 0)
     }
 
     let word = keyword(lx.src[start..lx.pos])
@@ -62,3 +59,5 @@ fn lexWord(lx: *mut Lexer, start: usize) SyntaxErr!void {
 
     return lx.emit(word, start, 0.0, 0, 0)
 }
+
+let PRIVATE_NAME_MARK: u8 = 1

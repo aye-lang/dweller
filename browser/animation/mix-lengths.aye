@@ -1,0 +1,19 @@
+import css
+
+// spec: https://drafts.csswg.org/css-values-4/#combine-mixed
+fn mixLengths(a: css.Value, b: css.Value, p: f64) ?css.Value {
+    let from = lengthPair(a) orelse return null
+    let to = lengthPair(b) orelse return null
+    let px = from[0] + (to[0] - from[0]) * p
+    let pct = from[1] + (to[1] - from[1]) * p
+
+    if from[1] == 0.0 && to[1] == 0.0 {
+        return css.Value.Px { v: px }
+    }
+
+    if from[0] == 0.0 && to[0] == 0.0 {
+        return css.Value.Percent { v: pct }
+    }
+
+    return css.Value.Calc { pct: pct, px: px }
+}
