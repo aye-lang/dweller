@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-grid-2/#abspos-items
+fn turnedGridArea(t: *Tree, i: usize, c: usize, pad: Area) AllocError!Area {
+    let rl = t.bx(c).mode == VERTICAL_RL
+    let zero = Area { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }
+    let into = Turn { flip_x: false, flip_y: rl }
+    let back = Turn { flip_x: rl, flip_y: false }
+    let area = try gridAreaIn(t, i, c, turnedRect(pad, zero, into), turnedEdges(t.bx(c).padding, into))
+
+    return turnedRect(area, zero, back)
+}
