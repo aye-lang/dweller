@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+let MOUSE_CANCEL: u32 = 4
+
+fn cancelPointer(ui: *mut Ui) AllocError!void {
+    let tp = tabInput(ui) orelse return
+
+    if tp.pressed == 0 { return }
+
+    tp.pressed = 0
+    try sendMouse(ui, findFrame(tp, tp.capture_frame, 0, 0) orelse FrameHit { tp: tp, ox: 0, oy: 0 }, MOUSE_CANCEL, 0, 0.0, 0.0)
+    tp.capture_frame = 0
+}

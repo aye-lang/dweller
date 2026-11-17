@@ -15,7 +15,7 @@ fn window_renderer_out_of_memory() {
         .env("DWELLER_JS_HEAP_LIMIT", "64000000")
         .args([
             "browser/tests/ui/out-of-memory.html",
-            "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:loaded frame frame frame",
+            "--font", "fixed", "--frames", "300", "--state", "--processes", "--events", "renderer:loaded frame frame frame",
         ])
         .output()
         .unwrap();
@@ -46,7 +46,7 @@ fn window_renderer_lifecycle() {
         let child = dweller_command()
             .current_dir(root())
             .envs(envs.iter().copied())
-            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--processes", "--events", events])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -133,7 +133,7 @@ fn window_renderer_net() {
             .env("DWELLER_TEST_EVIL", evil)
             .args([
                 &format!("{}/net/cors.html", srv.base),
-                "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone",
+                "--font", "fixed", "--frames", "300", "--state", "--processes", "--events", "renderer:gone",
             ])
             .output()
             .unwrap();
@@ -257,7 +257,7 @@ fn window_renderer_storage() {
             .env("DWELLER_PROCESS", "tab")
             .env("DWELLER_TEST", "1")
             .env("DWELLER_TEST_EVIL", evil)
-            .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
+            .args([&format!("{base}/{page}"), "--font", "fixed", "--frames", "300", "--state", "--processes", "--events", "renderer:gone"])
             .output()
             .unwrap();
         let state = text(&out.stdout);
@@ -344,7 +344,7 @@ fn window_renderer_sad_tab() {
         let out = dweller_command()
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
-            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--events", events])
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
@@ -391,7 +391,7 @@ fn window_renderer_hang() {
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
             .env("DWELLER_HANG_MS", "1000")
-            .args(["browser/tests/ui/renderer_hang.html", "--frames", "600", "--state", "--events", events])
+            .args(["browser/tests/ui/renderer_hang.html", "--frames", "600", "--state", "--processes", "--events", events])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -473,7 +473,7 @@ fn window_renderer_frames() {
         let out = dweller_command()
             .current_dir(root())
             .envs(envs.iter().copied())
-            .args([page, "--frames", "300", "--state", "--save"])
+            .args([page, "--frames", "300", "--state", "--processes", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -545,7 +545,7 @@ fn window_renderer_sandbox() {
             .current_dir(root())
             .envs(base.iter().copied())
             .envs(envs.iter().copied())
-            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--save"])
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--state", "--processes", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -589,7 +589,7 @@ fn window_renderer_input() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -619,9 +619,9 @@ fn window_renderer_input() {
         let (state, err) = run_page(page, &shot, &format!("renderer:loaded renderer:frame {events} renderer:input"), &tab);
         assert!(err.is_empty(), "{err}");
         assert!(state.contains("\nrenderer-frame "), "{state}");
-        assert_eq!(scroll(&state), "scroll 0", "{what}: the window scrolled its own copy\n{state}");
+        assert_eq!(scroll(&state), scroll(&in_process), "{what}: the renderer's scroll is not the in-process window's\n{state}");
         assert!(std::fs::read(&shot).unwrap() != std::fs::read(&still).unwrap(), "{what}: no change in {}", shot.display());
-        assert!(!state.contains("value hello"), "{what}: the window typed into its own copy\n{state}");
+        assert_eq!(state.contains("value hello"), in_process.contains("value hello"), "{what}: the renderer's field is not the in-process window's\n{state}");
         let (w, _, a) = png_rgba(&std::fs::read(&shot).unwrap());
         let (_, _, b) = png_rgba(&std::fs::read(&golden).unwrap());
         let columns: std::collections::BTreeSet<usize> =
@@ -661,7 +661,7 @@ fn window_renderer_focus() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -713,7 +713,7 @@ fn window_renderer_focus() {
         .current_dir(root())
         .env("DWELLER_PROCESS", "tab")
         .args(["browser/tests/ui/renderer_focus.html", "--font", "fixed", "--width", "400", "--height", "340"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
         .arg(&shot)
         .args(["--events", "renderer:loaded renderer:frame click:90,102 renderer:input renderer:next renderer:next"])
         .output()
@@ -759,7 +759,7 @@ fn window_renderer_history() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args(["browser/tests/ui/renderer_history.html", "--font", "fixed", "--width", "400", "--height", "400"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--text", "--events", events])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--text", "--events", events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
@@ -838,7 +838,7 @@ fn window_renderer_sites() {
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
             .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
@@ -892,7 +892,7 @@ fn window_renderer_coop() {
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
             .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--events", events])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
@@ -944,7 +944,7 @@ fn window_renderer_site_lock() {
         let events = format!("renderer:loaded key:cmd+t {} key:return renderer:loaded {then} key:cmd+1 renderer:frame frame", typed(second));
         let out = cmd
             .args([first.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--events", &events])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--events", &events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{hook} {second}: {}\n{}", out.status, text(&out.stderr));
@@ -1000,7 +1000,7 @@ fn window_renderer_input_actions() {
             .current_dir(root())
             .envs(envs.iter().copied())
             .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
             .arg(png)
             .args(["--events", events])
             .output()
@@ -1071,7 +1071,7 @@ fn window_renderer_status() {
             .current_dir(root())
             .env("DWELLER_PROCESS", "tab")
             .args([page, "--font", "fixed", "--width", "400", "--height", "340"])
-            .args(["--frames", "2000", "--until-idle", "--state", "--events", events])
+            .args(["--frames", "2000", "--until-idle", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
         assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));

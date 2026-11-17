@@ -121,7 +121,7 @@ fn window_renderer_indexeddb() {
         .env("DWELLER_PROCESS", "tab")
         .env("DWELLER_TEST", "1")
         .env("DWELLER_TEST_EVIL", "idb")
-        .args([&format!("{base}/indexeddb/open.html"), "--font", "fixed", "--frames", "300", "--state", "--events", "renderer:gone"])
+        .args([&format!("{base}/indexeddb/open.html"), "--font", "fixed", "--frames", "300", "--state", "--processes", "--events", "renderer:gone"])
         .output()
         .unwrap();
     let state = text(&out.stdout);
