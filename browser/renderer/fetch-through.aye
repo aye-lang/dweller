@@ -1,3 +1,4 @@
+import ipc
 import net
 import std.mem.AllocError
 import std.mem.Allocator
@@ -11,6 +12,7 @@ fn fetchThrough(r: *mut TabRenderer) AllocError!void {
     net.setRemote(fetchRemote)
     net.setNavigationNoter(noteRemoteNavigation)
     net.setRealmKeeper(keptRealm)
+    net.setUpgradeNoter(noteRemoteUpgrade, keptUpgrade)
 
     try net.setRemoteLoads(r.alloc, startRemote, cancelRemote, pumpRemote)
 }
@@ -52,4 +54,26 @@ fn noteRemoteNavigation(target: []u8, referrer: []u8) AllocError!void {
     try n.nav_target.append(target)
     n.nav_referrer.clear()
     try n.nav_referrer.append(referrer)
+}
+
+fn noteRemoteUpgrade(page: []u8) AllocError!void {
+    let r = fetch_renderer orelse return
+    let n = try notesOf(r)
+
+    try n.upgrading.append(page)
+    try n.upgrading.appendByte('\n')
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.UpgradeInsecure { page: page }) catch return
+}
+
+fn keptUpgrade(page: []u8) bool {
+    let r = fetch_renderer orelse return false
+    let n = r.notes orelse return false
+    var lines = text.split(n.upgrading.bytes(), "\n")
+
+    while lines.next() |line| {
+        if text.eql(line, page) { return true }
+    }
+
+    return false
 }

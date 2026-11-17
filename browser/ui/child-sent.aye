@@ -144,6 +144,12 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             tp.hang_seen = false
         }
 
+        .UpgradeInsecure { page } => {
+            if page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
+
+            try net.noteUpgradeInsecure(page)
+        }
+
         _ => return "unexpected in a frame"
     }
 
