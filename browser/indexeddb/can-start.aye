@@ -1,0 +1,11 @@
+// chromium: content/browser/indexed_db/indexed_db_transaction_coordinator.cc
+fn canStart(b: *Backend, tx: *Transaction) bool {
+    for t in b.txs.items() {
+        if t == tx { break }
+        if t.db != tx.db { continue }
+        if t.mode == VERSION_CHANGE || tx.mode == VERSION_CHANGE { return false }
+        if (t.mode == READ_WRITE || tx.mode == READ_WRITE) && overlaps(t, tx) { return false }
+    }
+
+    return true
+}

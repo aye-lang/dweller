@@ -1,0 +1,35 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn akSwDone(it: *mut Interp, a: Args) JsError!Value {
+    let st = sw_state orelse return Value.Undefined
+    let id = try it.toNumber(it.arg(a, 0))
+    let headers = try it.builder()
+    defer it.release(headers)
+    let raw = try it.builder()
+    defer it.release(raw)
+    var body = text.Builder.init(st.alloc)
+    defer body.deinit()
+
+    for i in 0..st.results.len() {
+        let r = &mut st.results.items()[i]
+
+        if r.id as f64 != id || r.state != 0 { continue }
+
+        try argText(it, a, 3, headers)
+        try argText(it, a, 4, raw)
+        binaryBytes(raw.bytes(), &mut body) catch return JsError.OutOfMemory
+        st.alloc.free(r.headers)
+        st.alloc.free(r.body)
+        r.headers = ownedCopy(st.alloc, headers.bytes()) catch return JsError.OutOfMemory
+        r.body = body.toOwned() catch return JsError.OutOfMemory
+        r.status = (try it.toNumber(it.arg(a, 2))) as i64
+        r.state = (try it.toNumber(it.arg(a, 1))) as u8
+    }
+
+    return Value.Undefined
+}

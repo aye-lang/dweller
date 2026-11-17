@@ -1,0 +1,37 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/indexed_db/indexed_db_connection_coordinator.cc
+fn stepRequest(b: *mut Backend, i: usize) AllocError!bool {
+    let r = &mut b.requests.items()[i]
+    let found = findDatabase(b, r.area, r.name)
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    if r.tx != 0 { return false }
+
+    if r.deletes && found == null {
+        try requestLine(&mut line, "deleted", r)
+        try appendNumber(&mut line, 0)
+
+        return answerRequest(b, i, &mut line)
+    }
+
+    let db = found orelse try newDatabase(b, r.area, r.name)
+    let target = wantedVersion(r, db)
+
+    if !r.deletes && target < db.version {
+        try requestLine(&mut line, "error", r)
+        try line.append("\nVersionError")
+
+        return answerRequest(b, i, &mut line)
+    }
+
+    if !r.deletes && target == db.version { return connectRequest(b, i, db) }
+    if !(try othersClosed(b, r, db, target)) { return false }
+    if r.deletes { return deleteNow(b, i, db) }
+
+    try startUpgrade(b, r, db, target)
+
+    return false
+}

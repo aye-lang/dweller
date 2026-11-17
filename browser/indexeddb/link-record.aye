@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn linkRecord(s: *mut Store, r: *mut Record) AllocError!void {
+    var pairs = KeyPairs { rest: r.index_keys }
+
+    while pairs.next() {
+        let x = findIndex(s, pairs.index) orelse continue
+        let at = firstAt(View { store: s, index: x }, pairs.key, r.key, false)
+
+        try x.entries.insert(at, Entry { key: pairs.key, primary: r.key })
+    }
+}

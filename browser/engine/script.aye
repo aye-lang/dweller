@@ -36,6 +36,8 @@ import dom
 import dom.Kind
 import dom.NodeId
 import encoding
+import engine.idb
+import engine.sw
 import font
 import js
 import js.Interp
@@ -228,6 +230,11 @@ pub struct Script {
     remote_inbox: List(RemoteBuffers)
     // The prelude's `hostStorage` (storage.aye), js.NONE before it ran.
     on_storage: u32
+    on_idb: u32 = js.NONE
+    on_sw: u32 = js.NONE
+    idb_cleanup: u32 = js.NONE
+    idb_fresh: bool = false
+    idb_used: bool = false
     node_proto: u32
     element_proto: u32
     document_proto: u32
@@ -722,6 +729,9 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(WEBGL_SAMPLER_PARAMETER_PRELUDE)
     try s.it.runScript(WEBGL_PROGRAM_NAMES_PRELUDE)
     try s.it.runScript(WEBGL_TEX_DOM_3D_PRELUDE)
+    for source in idb.SOURCES { try s.it.runScript(source) }
+    for source in sw.SOURCES { try s.it.runScript(source) }
+
     try s.it.runScript(CANVAS_PRELUDE)
     try s.it.runScript(CANVAS_PLACEHOLDER_PRELUDE)
 
@@ -751,6 +761,7 @@ pub fn destroyScript(s: *mut Script) {
     stopWorkers(s)
     stopPageSockets(s)
     stopPageAsks(s)
+    dropIdbClient(s)
     s.it.host = null
     if s.wasm_on {
         wasm.release(&mut s.it)
@@ -1422,6 +1433,7 @@ fn runMicrotasks(s: *mut Script) AllocError!void {
     if head > MAX_MICROTASKS {
         try addConsole(s, "[error] ", "too many microtasks: the rest were dropped")
     }
+    try cleanUpIdb(s)
     try reportRejections(s)
     js.clearKeptObjects(&mut s.it)
     // The background loads progress between tasks.
@@ -1731,7 +1743,15 @@ pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
     if try waitWorkers(p, false) || try waitSockets(p, false) {
         return true
     }
-    let n = nextTimer(p, deadline - pageClock(p)) orelse return try runCleanups(p) || try waitWorkers(p, true) || try waitSockets(p, true)
+    let mine = nextTimer(p, deadline - pageClock(p))
+    var limit = deadline - pageClock(p)
+    if mine |m| {
+        limit = m.wait
+    }
+    if try runInstanceTimer(p, limit) {
+        return true
+    }
+    let n = mine orelse return try runCleanups(p) || try waitWorkers(p, true) || try waitSockets(p, true)
     try runTimer(n.script, n.index)
     try afterTask(n.script)
     if !n.script.real {
@@ -1858,6 +1878,7 @@ pub fn msUntilNextTimer(p: *mut Page) ?f64 {
             wait = 0.0
         }
     }
+    wait = instanceWait(wait)
     if p.script |s| {
         wait = socketWait(s, workerWait(s, wait))
         // A playing AudioContext renders ahead of its device each turn.

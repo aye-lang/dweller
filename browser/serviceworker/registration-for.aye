@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.text
+
+fn registrationFor(a: Ask, scope: []u8) AllocError!*mut Registration {
+    for reg in a.r.regs.items() {
+        if text.eql(reg.area, a.area) && text.eql(reg.scope, scope) { return reg }
+    }
+
+    let reg = try a.r.alloc.create(Registration { id: a.r.next_id, area: try dupe(a, a.area), scope: try dupe(a, scope), script_url: try dupe(a, "") })
+
+    a.r.next_id += 1
+    try a.r.regs.append(reg)
+
+    return reg
+}

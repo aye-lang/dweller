@@ -1,0 +1,26 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn newest(reg: *Registration) ?*mut Version {
+    return reg.installing orelse reg.waiting orelse reg.active
+}
+
+// spec: https://w3c.github.io/ServiceWorker/#update-algorithm
+fn register(a: Ask) AllocError!void {
+    let scope = a.f.next()
+    let script_url = a.f.next()
+    let source = a.f.tail()
+
+    if a.f.bad || !inArea(a.area, scope) || !inArea(a.area, script_url) || !trustworthy(a.area) { return refuse(a, "SecurityError") }
+
+    let reg = try registrationFor(a, scope)
+    var same = false
+
+    if newest(reg) |v| { same = text.eql(reg.script_url, script_url) && text.eql(v.script, source) }
+
+    if !same { try addVersion(a, reg, script_url, source) }
+
+    try snapshot(a.out, reg)
+    try number(a.out, (!same) as u64)
+}

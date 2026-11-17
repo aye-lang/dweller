@@ -1,0 +1,19 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn saveDatabase(b: *mut Backend, db: *Database) AllocError!void {
+    let root = try net.joinPath(b.alloc, net.profileDir(), "indexeddb")
+    defer b.alloc.free(root)
+    let dir = try areaPath(b.alloc, db.area)
+    defer b.alloc.free(dir)
+    let path = try filePath(b.alloc, db)
+    defer b.alloc.free(path)
+    var out = text.Builder.init(b.alloc)
+    defer out.deinit()
+
+    if !(try net.makeDir(b.alloc, root)) || !(try net.makeDir(b.alloc, dir)) { return }
+
+    try writeDatabase(&mut out, db)
+    _ = try net.writeAtomic(b.alloc, path, out.bytes())
+}

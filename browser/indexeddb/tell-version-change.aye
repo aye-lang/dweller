@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+fn tellVersionChange(b: *mut Backend, c: *mut Connection, serial: u32, target: u64) AllocError!void {
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    c.told = serial
+    try line.append("versionchange")
+    try appendNumber(&mut line, c.id as u64)
+    try appendNumber(&mut line, c.db.version)
+    try appendNumber(&mut line, target)
+    try emit(b, c.client, &mut line)
+}

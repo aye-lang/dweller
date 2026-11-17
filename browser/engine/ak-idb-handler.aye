@@ -1,0 +1,20 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akIdbHandler(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+
+    s.on_idb = try it.addRoot(try js.callableArg(it, a, 0))
+    s.idb_cleanup = try it.addRoot(try js.callableArg(it, a, 1))
+
+    return Value.Undefined
+}
+
+fn akIdbFresh(it: *mut Interp, a: Args) JsError!Value {
+    scriptOf(it).idb_fresh = true
+
+    return Value.Undefined
+}

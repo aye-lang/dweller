@@ -34,6 +34,7 @@
         if (!list.includes(v)) fail(v);
         return { t: 'C', id, p: v._placeholder || 0, w: v.width, h: v.height };
       }
+      if (typeof G.Blob === 'function' && v instanceof G.Blob) return { t: 'b', id, y: v.type, f: v instanceof G.File ? [v.name, v.lastModified] : null, b: enc(v._array().buffer) };
       if (v instanceof ArrayBuffer) {
         buffers.push(v);
         return { t: 'B', id, i: buffers.length - 1 };
@@ -42,7 +43,7 @@
         const c = v instanceof DataView ? 'DataView' : v.constructor.name;
         return { t: 'V', id, c, b: enc(v.buffer), o: v.byteOffset, n: v instanceof DataView ? v.byteLength : v.length };
       }
-      if (tag === '[object Number]' || tag === '[object String]' || tag === '[object Boolean]') return { t: 'w', id, v: enc(v.valueOf()) };
+      if (tag === '[object Number]' || tag === '[object String]' || tag === '[object Boolean]' || tag === '[object BigInt]') return { t: 'w', id, v: enc(v.valueOf()) };
       if (tag !== '[object Object]') fail(v);
       return { t: 'o', id, p: Object.keys(v).map(k => [k, enc(v[k])]) };
     }
@@ -66,6 +67,7 @@
         case 'm': out = made[x.id] = new Map(); for (const [k, v] of x.e) out.set(dec(k), dec(v)); return out;
         case 's': out = made[x.id] = new Set(); for (const v of x.e) out.add(dec(v)); return out;
         case 'e': return made[x.id] = new (errors[x.n] || Error)(x.m);
+        case 'b': return made[x.id] = x.f ? new G.File([dec(x.b)], x.f[0], { type: x.y, lastModified: x.f[1] }) : new G.Blob([dec(x.b)], { type: x.y });
         case 'B': return made[x.id] = buffers[x.i];
         case 'V': return made[x.id] = new G[x.c](dec(x.b), x.o, x.n);
         case 'C': out = made[x.id] = new G.OffscreenCanvas(x.w, x.h); out._placeholder = x.p; return out;
@@ -96,5 +98,5 @@
     if (Array.isArray(t) || typeof t[Symbol.iterator] === 'function') return t;
     return t.transfer || [];
   }
-  Object.defineProperty(G, '__wire', { value: { send, receive, transferOf }, configurable: true });
+  Object.defineProperty(G, '__wire', { value: { send, receive, transferOf, encode, decode }, configurable: true });
 })(globalThis);
