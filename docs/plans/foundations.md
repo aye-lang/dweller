@@ -382,7 +382,6 @@ Where a row can be verified:
 | Q5.9b | Media 2: Media Source Extensions (YouTube) | `third_party/blink/renderer/modules/mediasource/` |
 | Q5.10 | contenteditable and the core of `execCommand`; the async Clipboard API | `core/editing/`, `modules/clipboard/` |
 | Q5.13 | Bookmarks and address-bar search (search engine, suggestions from history) | `components/bookmarks/`, `components/omnibox/` |
-| Q5.14b | Service Worker 2: the Cache API | `content/browser/cache_storage/` |
 | Q5.15 | Print to PDF and `@media print` | `components/printing/`, `core/paint/` (print) |
 
 Autofill and password saving stay out, as decided before
