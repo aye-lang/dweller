@@ -60,3 +60,77 @@ fn editing_typing_in_host() {
     );
     assert_eq!(typed_report(&site), want, "{site}");
 }
+
+fn caret_report(out: &str) -> Vec<&str> {
+    out.lines().filter(|l| l.starts_with("caret ") || l.starts_with("insertText ")).collect()
+}
+
+/// Q5.10, slice 4: the caret of an editing host
+/// (`browser/tests/editing/caret.html`, "hello   world" in the fixed
+/// font). A click places it at the nearest character boundary of the
+/// text as shown (the three spaces are one on screen); Left, Home and
+/// End move it; typed text goes in at the caret. In one process and
+/// with `DWELLER_PROCESS=site`.
+#[test]
+fn editing_caret_by_click_and_keys() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let want = [
+        "caret #text 6",
+        "insertText hello X  world",
+        "insertText helloY X  world",
+        "insertText AhelloY X  world",
+        "insertText AhelloY X  worldE",
+    ];
+    let page = "browser/tests/editing/caret.html";
+    let one = login_window_with(
+        page,
+        "frame click:75,62 release:75,62 text:X key:left key:left text:Y key:home text:A key:end text:E frame",
+        None,
+        &[],
+    );
+    assert_eq!(caret_report(&one), want, "{one}");
+    let site = login_window_with(
+        page,
+        "click:75,62 release:75,62 renderer:input text:X renderer:input key:left renderer:input key:left renderer:input \
+         text:Y renderer:input key:home renderer:input text:A renderer:input key:end renderer:input text:E renderer:input frame",
+        None,
+        &[("DWELLER_PROCESS", "site")],
+    );
+    assert_eq!(caret_report(&site), want, "{site}");
+}
+
+/// Q5.10, slice 4: the window draws the caret of a focused editing
+/// host: after a click at the end of "hello   world" (20 px fixed font)
+/// above the letters, right of the last one, there is a column of the
+/// caret's ink, and it is not there before the click.
+#[test]
+fn editing_caret_is_drawn() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let shot = |events: &str, name: &str| {
+        let png = scratch().join(name);
+        let out = dweller_command()
+            .current_dir(root())
+            .args([
+                "browser/tests/editing/caret.html", "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
+                "--until-idle", "--events", events, "--save",
+            ])
+            .arg(&png)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+        png_rgba(&std::fs::read(&png).unwrap())
+    };
+    let dark_column = |(w, _, px): &(usize, usize, Vec<u8>)| {
+        (116..128).find(|x| (55..59).all(|y| px[(y * w + x) * 4] < 60 && px[(y * w + x) * 4 + 1] < 60))
+    };
+    let before = shot("frame", "caret_before.png");
+    let after = shot("frame click:250,62 release:250,62 frame", "caret_after.png");
+    assert_eq!(dark_column(&before), None, "no caret before the click");
+    assert!(dark_column(&after).is_some(), "the caret after the click");
+}
