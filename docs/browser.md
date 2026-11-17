@@ -1062,7 +1062,7 @@ on (`--no-js` turns it off), `dump` with `--js`.
     snapshot).
   - *Iframes:* `srcdoc`, `src` or about:blank load as pages of their
     own; `sandbox` turns off scripts and gives the frame its own
-    origin; at most 3 deep and 16 frames per tab. Scripts use
+    origin; at most 3 deep and 1000 frames per tab. Scripts use
     `parent`, `top`, `frames[i]`, `frameElement`, `contentWindow` and
     `contentDocument` (same origin), `postMessage` between frames and
     iframe `load` events; iframes added by scripts, or whose `src`
