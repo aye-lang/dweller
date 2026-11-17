@@ -10,6 +10,7 @@ let CURL_HTTP_VERSION_1_1: i64 = 2
 let CURLE_AGAIN: i32 = 81
 let SOCKET_MESSAGE_LIMIT: usize = 16 << 20
 let SOCKET_CLOSE_MS: u64 = 3000
+let MAX_SOCKETS: i64 = 255
 
 pub let SOCKET_OPENED: u8 = 0
 pub let SOCKET_TEXT: u8 = 1
@@ -24,6 +25,7 @@ pub struct SocketNote {
 }
 
 enum SocketPhase {
+    Queued
     Connecting
     Handshaking
     Open
@@ -52,6 +54,7 @@ struct Sockets {
     alloc: Allocator
     all: List(*mut Socket)
     next_id: u32 = 1
+    multi: ?*mut CurlMulti = null
 }
 
 var sockets: ?*mut Sockets = null

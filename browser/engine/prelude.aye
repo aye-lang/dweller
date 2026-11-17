@@ -5247,6 +5247,35 @@ pub let PRELUDE =
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
     \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\const READONLY_TYPES = /^(?:text|search|url|tel|email|password|date|month|week|time|datetime-local|number)$/;
+    \\function showPicker() {
+    \\  const fixed = this.disabled || (this instanceof HTMLInputElement && this.readOnly && READONLY_TYPES.test(this.type));
+    \\  if (fixed) throw new DOMException("Failed to execute 'showPicker': the element is not mutable.", 'InvalidStateError');
+    \\  if (!hasActivation()) throw new DOMException("Failed to execute 'showPicker': it requires a user gesture.", 'NotAllowedError');
+    \\  actUntil = 0;
+    \\}
+    \\hidden(HTMLInputElement.prototype, 'showPicker', showPicker);
+    \\hidden(HTMLSelectElement.prototype, 'showPicker', showPicker);
+    \\const VALUE_TYPES = /^(?:text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color)$/;
+    \\const SELECTABLE = /^(?:text|search|tel|url|password)$/;
+    \\const inputType = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type');
+    \\getter(HTMLInputElement.prototype, 'type', inputType.get, function (v) {
+    \\  const before = this.type;
+    \\  const value = this.value;
+    \\  const dirty = ak.valueDirty(this);
+    \\  const selection = SELECTABLE.test(before) ? [this.selectionStart, this.selectionEnd, this.selectionDirection] : null;
+    \\  inputType.set.call(this, v);
+    \\  const now = this.type;
+    \\  if (now === before || !VALUE_TYPES.test(now)) {
+    \\    if (now !== before && now !== 'file' && VALUE_TYPES.test(before) && value !== '') this.setAttribute('value', value);
+    \\    return;
+    \\  }
+    \\  if (!VALUE_TYPES.test(before) && this.hasAttribute('value')) this.value = this.getAttribute('value');
+    \\  else if (VALUE_TYPES.test(before) && dirty) this.value = value;
+    \\  if (!SELECTABLE.test(now)) return;
+    \\  if (selection && this.value === value) this.setSelectionRange(selection[0], selection[1], selection[2]);
+    \\  else this.setSelectionRange(0, 0, 'none');
+    \\});
     \\const cssAnimations = G.__cssAnimations(ak, Animation, KeyframeEffect, documentTimeline, hidden);
     \\delete G.__cssAnimations;
     \\hidden(G, 'CSSAnimation', cssAnimations.CSSAnimation);

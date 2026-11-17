@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: chrome/browser/download/download_prefs.cc (GetDefaultDownloadDirectory)
+fn downloadDir(alloc: Allocator) AllocError!?[]mut u8 {
+    if getenv("DWELLER_DOWNLOADS".ptr) |named| {
+        return try dup(alloc, named[0..strlen(named)])
+    }
+
+    let home = getenv("HOME".ptr) orelse return null
+
+    return try joinPath(alloc, home[0..strlen(home)], "Downloads")
+}

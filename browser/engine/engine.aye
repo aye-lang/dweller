@@ -111,6 +111,7 @@ pub struct Page {
     inherited_csp: usize = 0
     frame_options: net.FrameOptions = net.FrameOptions.Allow
     coop: net.Coop = net.Coop.UnsafeNone
+    downloaded: bool = false
     opaque: bool
     sandbox: u32
     // Changes the scripts of other pages made to the document (through
@@ -681,6 +682,9 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
                 if top.len == 0 {
                     return notPrivatePage(alloc, target, net.describe(e), net.certKindOf(e))
                 }
+            }
+            .Downloaded => {
+                return downloadedPage(alloc, target)
             }
             _ => {}
         }

@@ -1,0 +1,37 @@
+import std.mem.Allocator
+import std.text
+import url
+
+fn nameFor(alloc: Allocator, disposition: []u8, suggested: []u8, href: []u8, want: []u8) !void {
+    let at = try url.parse(alloc, href)
+    defer at.deinit(alloc)
+
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try downloadName(alloc, disposition, suggested, &at, &mut out)
+    @expectEqual(want, out.bytes())
+}
+
+test "Content-Disposition: the type decides, inline and no type do not attach" {
+    @expect(dispositionAttaches("attachment"))
+    @expect(dispositionAttaches("ATTACHMENT; filename=a.txt"))
+    @expect(dispositionAttaches("foobar"))
+    @expect(!dispositionAttaches("inline; filename=a.txt"))
+    @expect(!dispositionAttaches(""))
+    @expect(!dispositionAttaches("filename=a.txt"))
+}
+
+test "a download's name: the header, then the attribute, then the URL" {
+    try nameFor(@testAllocator(), "attachment; filename=report.pdf", "x.bin", "http://a.test/get", "report.pdf")
+    try nameFor(@testAllocator(), "attachment; filename=\"a \\\"b\\\"; c.txt\"; size=3", "", "http://a.test/get", "a _b_; c.txt")
+    try nameFor(@testAllocator(), "attachment; filename=plain.txt; filename*=UTF-8''%e2%82%ac%20rates.txt", "", "http://a.test/get", "\xe2\x82\xac rates.txt")
+    try nameFor(@testAllocator(), "attachment; filename*=iso-8859-1'en'%A3%20rates; filename=plain.txt", "", "http://a.test/get", "\xc2\xa3 rates")
+    try nameFor(@testAllocator(), "attachment; filename*=UTF-8''%ff; filename=plain.txt", "", "http://a.test/get", "plain.txt")
+    try nameFor(@testAllocator(), "attachment", "named.bin", "http://a.test/dir/file.zip", "named.bin")
+    try nameFor(@testAllocator(), "attachment", "", "http://a.test/dir/file%20one.zip?x=1", "file one.zip")
+    try nameFor(@testAllocator(), "", "", "http://a.test/dir/", "download")
+    try nameFor(@testAllocator(), "attachment; filename=\"../../etc/passwd\"", "", "http://a.test/x", "_.._etc_passwd")
+    try nameFor(@testAllocator(), "attachment; filename=\".hidden. \"", "", "http://a.test/x", "hidden")
+    try nameFor(@testAllocator(), "attachment; filename=\"a\\\\b:c\"", "", "http://a.test/x", "a_b_c")
+}

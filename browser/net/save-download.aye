@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn saveDownload(alloc: Allocator, all: *mut Downloads, href: []u8, name: []u8, body: []u8) AllocError!void {
+    let s = session orelse return
+    let dir = try downloadDir(alloc) orelse return addDownload(all, DOWNLOAD_FAILED, 0, name, href)
+    defer alloc.free(dir)
+
+    if !(try makeDir(alloc, dir)) {
+        return addDownload(all, DOWNLOAD_FAILED, 0, name, href)
+    }
+
+    let path = try freePath(alloc, dir, name)
+    defer alloc.free(path)
+
+    var state = DOWNLOAD_DONE
+
+    if !writeDownload(path, body) { state = DOWNLOAD_FAILED }
+
+    try addDownload(all, state, body.len, path, href)
+    try saveDownloads(s, all)
+}

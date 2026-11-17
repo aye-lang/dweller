@@ -1,0 +1,37 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+// chromium: components/permissions/permission_request_manager.cc (AddRequest)
+fn akPermissionAsk(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let done = try js.callableArg(it, a, 1)
+    let kind = (try akPermissionState(it, a))
+    let state = try it.toNumber(kind)
+    let asked = try it.toNumber(it.arg(a, 0))
+    let hook = permission_hook orelse return settleAsk(s, done, state)
+
+    if state != net.PERMISSION_PROMPT as f64 {
+        return settleAsk(s, done, state)
+    }
+
+    let all = try pageAsks(s.alloc)
+    let root = try it.addRoot(done)
+
+    all.append(PageAsk { owner: s, id: next_page_ask, root: root }) catch |e| {
+        it.removeRoot(root)
+
+        return e
+    }
+
+    next_page_ask += 1
+
+    if !hook(next_page_ask - 1, permissionHref(s.page), asked as u8) {
+        try answerPermission(next_page_ask - 1, net.PERMISSION_PROMPT)
+    }
+
+    return Value.Undefined
+}

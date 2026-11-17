@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn storePermission(all: *mut Permissions, origin: []u8, kind: u8, state: u8) AllocError!void {
+    for i, p in all.all.items() {
+        if p.kind == kind && text.eql(p.owned_origin, origin) {
+            all.all.items()[i].state = state
+
+            return
+        }
+    }
+
+    let owned = try dup(all.alloc, origin)
+
+    errdefer release(all.alloc, owned)
+
+    try all.all.append(Permission { owned_origin: owned, kind: kind, state: state })
+}

@@ -1,0 +1,11 @@
+import ipc
+import std.mem.AllocError
+
+fn tabSocketSent(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    return match m {
+        .SocketOpen { id, doc, url, protocols } => try openTabSocket(tp, on, id, doc, url, protocols)
+        .SocketSend { id, binary, more, data } => try sendTabSocket(tp, id, binary, more, data)
+        .SocketClose { id, code, reason } => closeTabSocket(tp, id, code, reason)
+        _ => ""
+    }
+}

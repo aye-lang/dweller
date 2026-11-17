@@ -247,7 +247,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
             return false
         }
     }
@@ -300,6 +300,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             return
         }
         if text.eql(w, "loaded") && ui.tab.early {
+            return
+        }
+        if text.eql(w, "asked") && permissionBarOf(ui) == null {
             return
         }
         if text.eql(w, "renderer:input") && (ui.wheel_x != 0.0 || ui.wheel_y != 0.0) {
@@ -391,6 +394,8 @@ fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
+    try writeDownloads(out)
+    try writePermission(out)
     if certPage(ui) |p| {
         try out.append("cert ")
         try certLabel(ui, p, out)
