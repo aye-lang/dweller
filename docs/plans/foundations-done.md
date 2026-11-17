@@ -223,6 +223,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q5.12 | Permissions with a prompt: notifications, geolocation, camera and microphone denied until asked | `components/permissions/`, `modules/permissions/` |
 | Q5.6 | Downloads: `Content-Disposition`, `download` attribute and a downloads list | `components/download/`, `chrome/browser/download/` |
 | Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |
+| Q5.11a | IndexedDB 1: databases, object stores, transactions, in the browser process | `content/browser/indexed_db/`, `modules/indexeddb/` |
+| Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)

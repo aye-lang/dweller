@@ -1,0 +1,24 @@
+import std
+import std.text
+
+struct KeyPairs {
+    rest: []u8
+    index: u64 = 0
+    key: []u8 = ""
+
+    fn next(self: *mut Self) bool {
+        return nextPair(self)
+    }
+}
+
+fn nextPair(p: *mut KeyPairs) bool {
+    let space = std.mem.indexOf(p.rest, ' ') orelse return false
+    let after = p.rest[space + 1..]
+    let end = std.mem.indexOf(after, ' ') orelse after.len
+
+    p.index = (text.parseInt(p.rest[..space]) catch 0) as u64
+    p.key = after[..end]
+    p.rest = after[std.math.minOf(usize, end + 1, after.len)..]
+
+    return true
+}

@@ -1,0 +1,12 @@
+import std.text
+
+fn unlinkRecord(s: *mut Store, r: *mut Record) {
+    var pairs = KeyPairs { rest: r.index_keys }
+
+    while pairs.next() {
+        let x = findIndex(s, pairs.index) orelse continue
+        let at = firstAt(View { store: s, index: x }, pairs.key, r.key, false)
+
+        if at < x.entries.len() && text.eql(x.entries.items()[at].key, pairs.key) && text.eql(x.entries.items()[at].primary, r.key) { _ = x.entries.orderedRemove(at) }
+    }
+}

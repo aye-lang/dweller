@@ -1,0 +1,26 @@
+import indexeddb
+import std
+import std.mem.AllocError
+import std.text
+
+struct Ask {
+    r: *mut Registry
+    area: []u8
+    client: u64
+    f: *mut indexeddb.Fields
+    out: *mut text.Builder
+}
+
+fn refuse(a: Ask, why: []u8) AllocError!void {
+    a.out.clear()
+    try a.out.appendByte('!')
+    try a.out.append(why)
+}
+
+fn dupe(a: Ask, bytes: []u8) AllocError![]mut u8 {
+    let copy = try a.r.alloc.alloc(0 as u8, bytes.len)
+
+    std.mem.copy(copy, bytes)
+
+    return copy
+}

@@ -1,0 +1,26 @@
+import indexeddb
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn copied(alloc: Allocator, bytes: []u8) AllocError![]mut u8 {
+    let copy = try alloc.alloc(0 as u8, bytes.len)
+
+    std.mem.copy(copy, bytes)
+
+    return copy
+}
+
+fn loadRegistration(r: *mut Registry, f: *mut indexeddb.FileFields) AllocError!void {
+    let area = f.blob()
+    let scope = f.blob()
+    let script_url = f.blob()
+    let script = f.blob()
+
+    if f.bad { return }
+
+    let v = try r.alloc.create(Version { id: r.next_id + 1, script: try copied(r.alloc, script), state: ACTIVATED, installer: 0 })
+
+    try r.regs.append(try r.alloc.create(Registration { id: r.next_id, area: try copied(r.alloc, area), scope: try copied(r.alloc, scope), script_url: try copied(r.alloc, script_url), active: v }))
+    r.next_id += 2
+}

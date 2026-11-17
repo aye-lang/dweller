@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/ServiceWorker/#clients-claim
+fn claim(a: Ask) AllocError!void {
+    let id = a.f.int()
+
+    for reg in a.r.regs.items() {
+        let v = reg.active orelse continue
+
+        if v.id as u64 != id { continue }
+
+        for i in 0..a.r.clients.len() {
+            let c = &mut a.r.clients.items()[i]
+
+            if c.controller == v.id || !text.eql(c.area, reg.area) || bestMatch(a.r, c.area, c.url, true) != reg { continue }
+
+            c.controller = v.id
+            try tellClient(a.r, c.client, "controller", reg)
+        }
+
+        return
+    }
+
+    return refuse(a, "InvalidStateError")
+}

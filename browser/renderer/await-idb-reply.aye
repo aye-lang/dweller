@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn awaitIdbReply(r: *mut TabRenderer, out: *mut text.Builder) AllocError!void {
+    while true {
+        let got = awaitReply(r) orelse return out.append("!UnknownError")
+
+        match got {
+            .IdbReply { more, reply } => {
+                try out.append(reply)
+
+                if more == 0 { return }
+            }
+
+            _ => return out.append("!UnknownError")
+        }
+    }
+}
