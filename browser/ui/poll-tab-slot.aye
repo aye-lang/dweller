@@ -3,6 +3,10 @@ import std.mem.AllocError
 
 fn pollTabSlot(ui: *mut Ui, slot: *mut TabSlot, shown: bool) AllocError!void {
     if slot.process == null {
+        slot.process = try reusedProcess(slot)
+    }
+
+    if slot.process == null {
         slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition)
     }
 

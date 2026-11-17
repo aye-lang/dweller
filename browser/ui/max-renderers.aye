@@ -1,0 +1,32 @@
+import std
+import std.text
+
+extern fn sysconf(name: i32) i64
+
+let RENDERER_MB: i64 = 60
+let MIN_RENDERERS: i64 = 3
+let MAX_RENDERERS: i64 = 82
+
+// chromium: content/browser/renderer_host/render_process_host_impl.cc GetMaxRendererProcessCount
+fn maxRenderers() usize {
+    if std.os.getenv("DWELLER_MAX_RENDERERS") |set| {
+        if text.parseInt(set) |n| {
+            if n > 0 { return n as usize }
+        } else |e| {}
+    }
+
+    var pages: i32 = 85
+    var page_size: i32 = 30
+
+    if @targetOs() is .macos {
+        pages = 200
+        page_size = 29
+    }
+
+    let fits = sysconf(pages) * sysconf(page_size) / 2 / (RENDERER_MB * 1048576)
+
+    if fits < MIN_RENDERERS { return MIN_RENDERERS as usize }
+    if fits > MAX_RENDERERS { return MAX_RENDERERS as usize }
+
+    return fits as usize
+}
