@@ -1,0 +1,19 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn loadDownloads(s: *Session, all: *mut Downloads) AllocError!void {
+    if s.profile.len == 0 { return }
+
+    let path = try joinPath(s.alloc, s.profile, "downloads")
+    defer s.alloc.free(path)
+
+    let saved = std.fs.readFile(s.alloc, path) catch return
+    defer s.alloc.free(saved)
+
+    var lines = text.split(saved, "\n")
+
+    while lines.next() |line| {
+        try loadDownload(all, line)
+    }
+}

@@ -1,0 +1,20 @@
+import std.text
+
+// https://w3c.github.io/permissions/#dfn-permission-state
+pub fn permissionOf(href: []u8, kind: u8) u8 {
+    if remote_permission |hook| { return hook(href, kind) }
+
+    let all = permissionsOf() orelse return PERMISSION_DENIED
+    var origin = text.Builder.init(all.alloc)
+    defer origin.deinit()
+
+    if !(permissionOrigin(all.alloc, href, &mut origin) catch false) {
+        return PERMISSION_DENIED
+    }
+
+    for p in all.all.items() {
+        if p.kind == kind && text.eql(p.owned_origin, origin.bytes()) { return p.state }
+    }
+
+    return PERMISSION_PROMPT
+}

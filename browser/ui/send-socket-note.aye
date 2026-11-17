@@ -1,0 +1,20 @@
+import ipc
+import net
+import std.mem.AllocError
+
+fn sendSocketNote(tp: *mut TabProcess, k: TabSocket, note: net.SocketNote) AllocError!void {
+    let data = note.owned_data
+    var at: usize = 0
+
+    while true {
+        var end = at + SOCKET_NOTE_CHUNK
+
+        if end > data.len { end = data.len }
+
+        try ipc.encode(&mut tp.outbox, k.on, ipc.Message.SocketNote { id: k.wire, kind: note.kind as u32, clean: note.clean as u32, code: note.code as u32, more: (end < data.len) as u32, data: data[at..end] })
+
+        at = end
+
+        if at >= data.len { return }
+    }
+}

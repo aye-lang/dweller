@@ -1,0 +1,26 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn loadPermissions(s: *Session, all: *mut Permissions) AllocError!void {
+    if s.profile.len == 0 { return }
+
+    let path = try joinPath(s.alloc, s.profile, "permissions")
+    defer s.alloc.free(path)
+
+    let saved = std.fs.readFile(s.alloc, path) catch return
+    defer s.alloc.free(saved)
+
+    var lines = text.split(saved, "\n")
+
+    while lines.next() |line| {
+        var fields = text.split(line, "\t")
+        let origin = fields.next() orelse continue
+        let kind = text.parseInt(fields.next() orelse continue) catch continue
+        let state = text.parseInt(fields.next() orelse continue) catch continue
+
+        if origin.len > 0 && kind >= 0 && kind < PERMISSION_KINDS as i64 && (state == 1 || state == 2) {
+            try storePermission(all, origin, kind as u8, state as u8)
+        }
+    }
+}
