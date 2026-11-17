@@ -9,6 +9,7 @@ const workers = new Map();
 const registrations = new Map();
 const readyWaiters = [];
 let controller = null;
+let ready = null;
 
 const hide = (o, fields) => { for (const k of Object.keys(fields)) Object.defineProperty(o, k, { value: fields[k], writable: true, configurable: true }); };
 const legal = token => { if (token !== TOKEN) throw new TypeError('Illegal constructor'); };
@@ -166,11 +167,15 @@ class ServiceWorkerContainer extends G.EventTarget {
   }
   get controller() { return controller; }
   get ready() {
-    return new Promise(resolve => {
-      readyWaiters.push(resolve);
-      current(G.location.href);
-      settleReady();
-    });
+    if (!ready) {
+      ready = new Promise(resolve => {
+        readyWaiters.push(resolve);
+        current(G.location.href);
+        settleReady();
+      });
+    }
+
+    return ready;
   }
   register(scriptURL, options) {
     return new Promise(resolve => {
