@@ -1044,7 +1044,7 @@ fn window_renderer_input_actions() {
 
     run(&page, &still, "renderer:loaded renderer:frame", &tab);
     let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
-    assert_eq!(err, format!("error: navigation refused: {secret}\n"));
+    assert_eq!(err, "", "the renderer drops a file: link of an http page itself, as the window's own process does");
     assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
 }
 
