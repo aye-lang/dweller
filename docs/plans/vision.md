@@ -8,12 +8,12 @@ the browser lanes until V2 is done. Card format and rules as in
 | Step | Card | What | Depends on | Status |
 |---|---|---|---|---|
 | V1 | V1 | layering rules written down and checked in CI; `layout` stops importing `js` | – | done |
-| V2 | V2 | native shell spike: an Aye program opens a window on the engine with a DOM built from code | V1 | open |
-| V3 | V3 | component API: one DOM-shaped interface, engine and wasm implementations | V2, framework F4 | open |
-| V4 | V4 | terminal emulator spike: PTY, VT parser, cell grid drawn by the text stack | V1 | open |
-| V5 | V5 | agent protocol over native apps (`--agent` on a V2 app) | V2 | open |
+| V2 | V2 | native shell spike: an Aye program opens a window on the engine with a DOM built from code | V1 | done (card; the Mac numbers are in the Mac queue) |
+| V3 | V3 | component API: one DOM-shaped interface, engine and wasm implementations | V2, framework F4 | done without the framework's packaging (card) |
+| V4 | V4 | terminal emulator spike: PTY, VT parser, cell grid drawn by the text stack | V1 | done (card; the acceptance programs by hand are in the Mac queue) |
+| V5 | V5 | agent protocol over native apps (`--agent` on a V2 app) | V2 | done |
 | V6 | V6 | abstract node tree for `css/`, `layout/`, `paint/` | V3, V4 | open |
-| V7 | V7 | TUI backend: layout into cells, ANSI output | V6 | open |
+| V7 | V7 | TUI backend: layout into cells, ANSI output | V6 | one rendered frame (card); the interactive loop is open |
 | V8 | V8 | Windows: CI job and the platform layer | V2; Aye on Windows (aye-lang/aye) | open |
 
 #### V1: layering rules, checked
