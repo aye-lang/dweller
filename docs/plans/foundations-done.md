@@ -215,6 +215,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.5 | Sheet insertion and change invalidate by rule (github: 3 of 7 forced layouts) | the github forced-layout time falls | `core/css/style_engine.cc` (`InvalidateForRuleSetChanges`) |
 | Q4.2 | Shadow trees in subtree restyle (`css/invalidation.aye` `restyleSubtrees`, `RestyleDeps`) | the github and mistral `STYLE_FULL` counts fall, and `window_perf` rows improve | `core/css/style-invalidation.md`, `core/css/style_engine.cc` |
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
+| Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
+| Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
