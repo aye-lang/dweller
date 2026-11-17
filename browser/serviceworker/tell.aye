@@ -1,0 +1,21 @@
+import indexeddb
+import std.mem.AllocError
+import std.text
+
+fn tellClient(r: *mut Registry, client: u64, kind: []u8, reg: *Registration) AllocError!void {
+    var line = text.Builder.init(r.alloc)
+    defer line.deinit()
+
+    try line.append("sw\n")
+    try line.append(kind)
+    try snapshot(&mut line, reg)
+    try indexeddb.pushEvent(r.alloc, client, &mut line)
+}
+
+fn tell(r: *mut Registry, reg: *Registration) AllocError!void {
+    r.changed = true
+
+    for c in r.clients.items() {
+        if text.eql(c.area, reg.area) { try tellClient(r, c.client, "registration", reg) }
+    }
+}

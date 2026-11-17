@@ -1,0 +1,33 @@
+import paint
+import std.mem.AllocError
+import std.text
+import tui
+
+let TUI_INK = paint.Rgba { r: 229, g: 229, b: 229, a: 255 }
+
+fn showTui(app: *mut App, o: Options, build: fn(*mut App) AllocError!void) AllocError!void {
+    try build(app)
+    try update(app)
+
+    var words = text.split(o.events, " ")
+
+    while words.next() |word| {
+        try scriptWord(app, word)
+    }
+
+    try update(app)
+
+    var list = try paint.build(app.alloc, app.tree.?)
+    defer list.deinit()
+
+    var grid = try tui.Grid.init(app.alloc, app.media.width as usize, app.media.height as usize, TUI_INK, list.background)
+    defer grid.deinit()
+
+    var out = text.Builder.init(app.alloc)
+    defer out.deinit()
+
+    clampScroll(app, list.height)
+    try tui.drawList(&mut grid, &list, app.scroll)
+    try tui.writeAnsi(&grid, &mut out)
+    @print(out.bytes())
+}

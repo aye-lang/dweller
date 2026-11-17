@@ -1,11 +1,18 @@
-fn breakLimit(row: bool, cw: f64, ch: f64) f64 {
+import css
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-line-break
+fn breakLimit(t: *Tree, i: usize, row: bool, cw: f64, ch: f64) f64 {
     if row {
         return cw
     }
 
-    if ch < 0.0 {
-        return INFINITE
+    if ch >= 0.0 {
+        return ch
     }
 
-    return ch
+    let b = t.bx(i)
+    let edges = vEdges(b)
+    let max = sizeOf(b.style, b.style[css.MAX_HEIGHT], -1.0, edges) orelse return INFINITE
+
+    return max - edges
 }

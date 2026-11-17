@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.text
+
+fn connectRequest(b: *mut Backend, i: usize, db: *mut Database) AllocError!bool {
+    let r = &b.requests.items()[i]
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    try requestLine(&mut line, "success", r)
+    try appendNumber(&mut line, (try connectTo(b, db, r.client)) as u64)
+    try appendNumber(&mut line, db.version)
+    try writeMetadata(&mut line, db)
+
+    return answerRequest(b, i, &mut line)
+}

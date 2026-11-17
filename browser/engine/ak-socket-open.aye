@@ -18,6 +18,10 @@ fn akSocketOpen(it: *mut Interp, a: Args) JsError!Value {
 
     try argText(it, a, 1, protocols)
 
+    if try requestRefused(page, "connect-src", &target, null) {
+        return js.numVal(0.0)
+    }
+
     let all = try pageSockets(s.alloc)
     let req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, initiator: initiatorOf(page) }
     let id = net.socketOpen(&target, req, protocols.bytes())

@@ -1,0 +1,40 @@
+<!doctype html>
+<title>Permissions</title>
+<pre id="out"></pre>
+<button id="go">ask again</button>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const name = e => (e && e.name) || String(e);
+const position = () => new Promise(resolve => navigator.geolocation.getCurrentPosition(() => resolve('a position'), e => resolve('error ' + e.code + ' ' + (e.code === e.PERMISSION_DENIED) + ' ' + e.message)));
+
+async function states(label) {
+  const all = [];
+  for (const n of ['notifications', 'geolocation', 'camera', 'microphone']) all.push(n + '=' + (await navigator.permissions.query({ name: n })).state);
+  log(label + ': ' + all.join(' ') + ' Notification.permission=' + Notification.permission);
+}
+
+async function run(label) {
+  await states(label + ' before');
+  const status = await navigator.permissions.query({ name: 'notifications' });
+  let changes = 0;
+  status.onchange = () => { changes++; };
+  log(label + ' requestPermission: ' + await Notification.requestPermission() + ' changes=' + changes + ' status=' + status.state);
+  log(label + ' notification: ' + await new Promise(resolve => {
+    const n = new Notification('hello', { body: 'b', tag: 't' });
+    n.onshow = () => resolve('show ' + n.title + ' ' + n.body + ' ' + n.tag);
+    n.onerror = () => resolve('error');
+  }));
+  log(label + ' geolocation: ' + await position());
+  log(label + ' getUserMedia audio: ' + await navigator.mediaDevices.getUserMedia({ audio: true }).then(() => 'a stream', name));
+  log(label + ' getUserMedia video: ' + await navigator.mediaDevices.getUserMedia({ video: true }).then(() => 'a stream', name));
+  await states(label + ' after');
+}
+
+(async () => {
+  log('interfaces: ' + [typeof Notification, typeof PermissionStatus, typeof navigator.permissions.query, typeof navigator.geolocation.watchPosition, typeof navigator.mediaDevices.enumerateDevices, Notification.maxActions].join(' '));
+  log('bad query: ' + await navigator.permissions.query({ name: 'nonsense' }).then(() => 'resolved', name) + ', ' + await navigator.mediaDevices.getUserMedia({}).then(() => 'resolved', name) + ', devices ' + (await navigator.mediaDevices.enumerateDevices()).length);
+  await run('first');
+  log('done');
+})();
+</script>

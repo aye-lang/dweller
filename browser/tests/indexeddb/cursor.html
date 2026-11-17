@@ -1,0 +1,55 @@
+<!doctype html>
+<title>IndexedDB: cursors</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+const nameOf = f => { try { f(); return 'none'; } catch (e) { return e.name; } };
+function each(req, visit) {
+  return new Promise(resolve => {
+    const seen = [];
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return resolve(seen.join(','));
+      if (visit(c, seen) !== false) c.continue();
+    };
+  });
+}
+async function run() {
+  const db = await fresh('cursors', db => {
+    const s = db.createObjectStore('s');
+    s.createIndex('kind', 'kind');
+    [['a', 'x'], ['b', 'y'], ['c', 'x'], ['d', 'y'], ['e', 'z']].forEach(([k, kind], i) => s.put({ kind, n: i }, k));
+  });
+  const tx = db.transaction('s', 'readwrite');
+  const s = tx.objectStore('s');
+  const kind = s.index('kind');
+  log('next ' + await each(s.openCursor(), (c, seen) => seen.push(c.key + c.value.n)));
+  log('prev ' + await each(s.openCursor(IDBKeyRange.bound('b', 'd'), 'prev'), (c, seen) => seen.push(c.key)));
+  log('keys ' + await each(s.openKeyCursor(null, 'next'), (c, seen) => seen.push(c.key + ('value' in c ? '!' : ''))));
+  log('index ' + await each(kind.openCursor(), (c, seen) => seen.push(c.key + c.primaryKey)));
+  log('nextunique ' + await each(kind.openCursor(null, 'nextunique'), (c, seen) => seen.push(c.key + c.primaryKey)));
+  log('prevunique ' + await each(kind.openKeyCursor(null, 'prevunique'), (c, seen) => seen.push(c.key + c.primaryKey)));
+  log('index prev ' + await each(kind.openCursor(IDBKeyRange.upperBound('y')), (c, seen) => seen.push(c.primaryKey)));
+  log('advance ' + await each(s.openCursor(), (c, seen) => { seen.push(c.key); c.advance(2); return false; }));
+  log('continue to ' + await each(s.openCursor(), (c, seen) => { seen.push(c.key); if (c.key === 'a') { c.continue('d'); return false; } }));
+  log('primary ' + await each(kind.openCursor(), (c, seen) => { seen.push(c.key + c.primaryKey); if (c.primaryKey === 'a') { c.continuePrimaryKey('y', 'd'); return false; } }));
+  await each(s.openCursor(), c => {
+    if (c.key === 'a') log('errors ' + [nameOf(() => c.continue('a')), nameOf(() => c.advance(0)), nameOf(() => c.continuePrimaryKey('b', 'b')), (c.continue(), nameOf(() => c.continue())), c.direction, c.source === s, c.request.readyState].join(' '));
+    return c.key !== 'a';
+  });
+  log('update ' + await each(s.openCursor(), (c, seen) => {
+    if (c.key === 'b') c.update({ kind: 'w', n: 10 });
+    if (c.key === 'c') c.delete();
+    if (c.key === 'd') s.put({ kind: 'x', n: 11 }, 'dd');
+    seen.push(c.key);
+  }));
+  log('after ' + await each(kind.openCursor(), (c, seen) => seen.push(c.key + c.primaryKey + c.value.n)));
+  const ro = db.transaction('s');
+  ro.objectStore('s').openCursor().onsuccess = e => {
+    const c = e.target.result;
+    log('readonly ' + nameOf(() => c.update(1)) + ' ' + nameOf(() => c.delete()));
+    setTimeout(() => done('late ' + nameOf(() => c.continue())), 0);
+  };
+}
+run().catch(e => done('failed ' + e));
+</script>

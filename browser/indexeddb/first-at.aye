@@ -1,0 +1,21 @@
+fn firstAt(v: View, key: []u8, primary: ?[]u8, strict: bool) usize {
+    var lo: usize = 0
+    var hi = v.len()
+
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        var c = orderOf(v.key(mid), key)
+
+        if c == 0 {
+            if primary |p| { c = orderOf(v.primary(mid), p) }
+        }
+
+        if c < 0 || (strict && c == 0) {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+
+    return lo
+}

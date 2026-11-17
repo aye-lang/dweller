@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://w3c.github.io/ServiceWorker/#scope-match-algorithm
+fn bestMatch(r: *Registry, area: []u8, address: []u8, active: bool) ?*mut Registration {
+    var best: ?*mut Registration = null
+
+    for reg in r.regs.items() {
+        if !text.eql(reg.area, area) || !text.startsWith(address, reg.scope) || (active && reg.active == null) { continue }
+
+        if best |b| {
+            if b.scope.len >= reg.scope.len { continue }
+        }
+
+        best = reg
+    }
+
+    return best
+}
+
+fn bestFor(a: Ask, active: bool) AllocError!void {
+    let reg = bestMatch(a.r, a.area, a.f.tail(), active) orelse return
+
+    try snapshot(a.out, reg)
+}

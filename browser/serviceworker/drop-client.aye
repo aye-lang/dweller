@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+pub fn dropClient(client: u64) AllocError!void {
+    let r = the_registry orelse return
+
+    for i in 0..r.clients.len() {
+        if r.clients.items()[i].client != client { continue }
+
+        let c = r.clients.orderedRemove(i)
+
+        r.alloc.free(c.area)
+        r.alloc.free(c.url)
+        break
+    }
+
+    for reg in r.regs.items() { try tryActivate(r, reg) }
+}

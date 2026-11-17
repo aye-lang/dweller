@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+fn tellBlocked(b: *mut Backend, r: *mut OpenRequest, db: *Database, target: u64) AllocError!void {
+    var line = text.Builder.init(b.alloc)
+    defer line.deinit()
+
+    r.blocked_sent = true
+    try requestLine(&mut line, "blocked", r)
+    try appendNumber(&mut line, db.version)
+    try appendNumber(&mut line, target)
+    try emit(b, r.client, &mut line)
+}

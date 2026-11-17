@@ -1,0 +1,15 @@
+import ipc
+import std.mem.AllocError
+
+let IDB_REPLY_CHUNK: usize = 262144
+
+fn replyIdb(tp: *mut TabProcess, on: u32, reply: []u8) AllocError!void {
+    var rest = reply
+
+    while rest.len > IDB_REPLY_CHUNK {
+        try ipc.encode(&mut tp.outbox, on, ipc.Message.IdbReply { more: 1, reply: rest[..IDB_REPLY_CHUNK] })
+        rest = rest[IDB_REPLY_CHUNK..]
+    }
+
+    try ipc.encode(&mut tp.outbox, on, ipc.Message.IdbReply { more: 0, reply: rest })
+}

@@ -28,6 +28,8 @@ mod agent;
 mod cli;
 #[path = "browser/csp_directives.rs"]
 mod csp_directives;
+#[path = "browser/downloads.rs"]
+mod downloads;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
 #[path = "browser/link_events.rs"]
@@ -36,6 +38,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/indexeddb.rs"]
+mod indexeddb;
 #[path = "browser/input.rs"]
 mod input;
 #[path = "browser/js.rs"]
@@ -52,12 +56,16 @@ mod net;
 mod paint;
 #[path = "browser/perf.rs"]
 mod perf;
+#[path = "browser/permissions.rs"]
+mod permissions;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
 #[path = "browser/scripts.rs"]
 mod scripts;
 #[path = "browser/security.rs"]
 mod security;
+#[path = "browser/serviceworker.rs"]
+mod serviceworker;
 #[path = "browser/storage.rs"]
 mod storage;
 #[path = "browser/term.rs"]

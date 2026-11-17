@@ -1,0 +1,24 @@
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-line-break
+fn breakLines(all: []Item, gap: f64, limit: f64, breaks: *mut List(usize)) AllocError!void {
+    var used = 0.0
+
+    breaks.clear()
+
+    for k, it in all {
+        let outer = it.hyp + it.before + it.after
+
+        if k > 0 && used + gap + outer > limit {
+            try breaks.append(k)
+            used = outer
+        } else if k > 0 {
+            used += gap + outer
+        } else {
+            used = outer
+        }
+    }
+
+    try breaks.append(all.len)
+}
