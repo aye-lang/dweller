@@ -1,0 +1,18 @@
+import std.text
+import url.Url
+
+pub fn navigationHinted(target: *Url, req: Request) Request {
+    let s = session orelse return req
+    var r = req
+
+    if r.kind != Kind.Document || r.referrer.len > 0 || !text.eql(s.nav_target, target.withoutFragment()) { return r }
+
+    r.referrer = s.nav_referrer
+    r.user_activated = s.nav_user
+
+    if r.referrer_policy == null {
+        r.referrer_policy = nav_policy
+    }
+
+    return r
+}

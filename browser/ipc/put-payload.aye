@@ -9,11 +9,11 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .Navigate { url, post, content_type, body } => try putNavigation(out, url, post, content_type, body)
-        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
             try putNavigation(out, url, post, content_type, body)
             try putU32(out, referrer_policy)
+            try putU32(out, user)
         }
-
 
         .Loaded { title, url } => {
             try putBytes(out, title)
@@ -105,21 +105,22 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .AgentActed { what } => try putBytes(out, what)
         .AgentPaused { on } => try putU32(out, on)
         .Settled { on } => try putU32(out, on)
+        .AskState { with_text } => try putU32(out, with_text)
+        .Visible { on } => try putU32(out, on)
+        .AgentViewport { width, height } => {
+            try putF64(out, width)
+            try putF64(out, height)
+        }
+
+        .State { scroll, frames, focus, content } => {
+            try putF64(out, scroll)
+            try putBytes(out, frames)
+            try putBytes(out, focus)
+            try putBytes(out, content)
+        }
+
         .AgentWindow { line } => try putBytes(out, line)
-        .AttachTab { context } => try putU32(out, context)
-        .ContextClosed { context } => try putU32(out, context)
-        .OpenerInfo { frame, name } => {
-            try putU32(out, frame)
-            try putBytes(out, name)
-        }
-
-        .ContextTab { context, frame } => {
-            try putU32(out, context)
-            try putU32(out, frame)
-        }
-
-        .PortPost { tab, key, data, buffers } => try putPort(out, tab, key, data, buffers)
-        .PortPosted { tab, key, data, buffers } => try putPort(out, tab, key, data, buffers)
+        .AttachTab { .. }, .ContextClosed { .. }, .OpenerInfo { .. }, .ContextTab { .. }, .PortPost { .. }, .PortPosted { .. } => try putPopupPayload(out, m)
 
         .AgentWindowReply { ok, message, fields, detail } => {
             try putU32(out, ok)
@@ -130,54 +131,9 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
 
         .Ping { n } => try putU32(out, n)
         .Pong { n } => try putU32(out, n)
-        .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
-            try putU32(out, seq)
-            try putU32(out, kind)
-            try putF64(out, x)
-            try putF64(out, y)
-            try putF64(out, mx)
-            try putF64(out, my)
-            try putU32(out, button)
-            try putU32(out, buttons)
-            try putU32(out, mods)
-            try putU32(out, clicks)
-        }
-
-        .Wheel { seq, x, y, dx, dy, precise } => {
-            try putU32(out, seq)
-            try putF64(out, x)
-            try putF64(out, y)
-            try putF64(out, dx)
-            try putF64(out, dy)
-            try putU32(out, precise)
-        }
-
-        .Key { seq, down, key, code, repeat, location, mods } => {
-            try putU32(out, seq)
-            try putU32(out, down)
-            try putBytes(out, key)
-            try putBytes(out, code)
-            try putU32(out, repeat)
-            try putU32(out, location)
-            try putU32(out, mods)
-        }
-
-        .Text { seq, typed } => {
-            try putU32(out, seq)
-            try putBytes(out, typed)
-        }
+        .Mouse { .. }, .Wheel { .. }, .Key { .. }, .Text { .. }, .Popup { .. } => try putInputPayload(out, m)
 
         .InputAck { seq } => try putU32(out, seq)
-        .Popup { items, disabled, selected, x, y, w, h } => {
-            try putBytes(out, items)
-            try putBytes(out, disabled)
-            try putU32(out, selected)
-            try putF64(out, x)
-            try putF64(out, y)
-            try putF64(out, w)
-            try putF64(out, h)
-        }
-
         .PopupChoice { index } => try putU32(out, index)
         .Focus { on } => try putU32(out, on)
         .Title { title } => try putBytes(out, title)
@@ -210,79 +166,14 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putBytes(out, answer)
         }
 
-        .Fetch { id, doc, nav, kind, credentials, mode, method, url, referrer, referrer_policy, top, headers, content_type, has_body, body } => {
-            let numbers = [6]u32{id, doc, nav, kind, credentials, mode}
-            let texts = [7][]u8{method, url, referrer, referrer_policy, top, headers, content_type}
-
-            for v in numbers { try putU32(out, v) }
-
-            for b in texts { try putBytes(out, b) }
-
-            try putU32(out, has_body)
-            try putBytes(out, body)
-        }
-
-        .FetchHead { id, doc, status, tainted, mime, charset, url, headers } => {
-            let numbers = [4]u32{id, doc, status, tainted}
-            let texts = [4][]u8{mime, charset, url, headers}
-
-            for v in numbers { try putU32(out, v) }
-
-            for b in texts { try putBytes(out, b) }
-        }
-
-        .FetchBody { id, chunk } => {
-            try putU32(out, id)
-            try putBytes(out, chunk)
-        }
+        .Fetch { .. }, .FetchHead { .. }, .FetchBody { .. }, .FetchFail { .. } => try putFetchPayload(out, m)
 
         .FetchEnd { id } => try putU32(out, id)
         .FetchRemote { id } => try putU32(out, id)
         .FetchCancel { id } => try putU32(out, id)
-        .FetchFail { id, code } => {
-            try putU32(out, id)
-            try putU32(out, code)
-        }
-
         .CookieGet { doc } => try putU32(out, doc)
         .Cookies { cookies } => try putBytes(out, cookies)
-        .CookieSet { doc, line } => {
-            try putU32(out, doc)
-            try putBytes(out, line)
-        }
-
-        .Storage { doc, context, session, op, index, key, value } => {
-            let numbers = [5]u32{doc, context, session, op, index}
-
-            for v in numbers { try putU32(out, v) }
-
-            try putBytes(out, key)
-            try putBytes(out, value)
-        }
-
-        .StorageReply { found, refused, changed, count, value } => {
-            let numbers = [4]u32{found, refused, changed, count}
-
-            for v in numbers { try putU32(out, v) }
-
-            try putBytes(out, value)
-        }
-
-        .StorageEvent { nulls, key, old, value, url } => {
-            let texts = [4][]u8{key, old, value, url}
-
-            try putU32(out, nulls)
-
-            for b in texts { try putBytes(out, b) }
-        }
-
-        .SessionHistory { index, length, scroll, nulls, state } => {
-            try putU32(out, index)
-            try putU32(out, length)
-            try putF64(out, scroll)
-            try putU32(out, nulls)
-            try putBytes(out, state)
-        }
+        .CookieSet { .. }, .Storage { .. }, .StorageReply { .. }, .StorageEvent { .. }, .SessionHistory { .. } => try putStoragePayload(out, m)
 
         .HistoryGo { index } => try putU32(out, index)
         .Traverse { index } => try putU32(out, index)

@@ -1,14 +1,18 @@
 import std.list.List
 import std.mem.AllocError
 
-fn ruleSubjects(sheet: *Sheet, from: usize, to: usize, out: *mut List(Simple)) AllocError!bool {
+fn ruleSubjects(sheet: *Sheet, from: usize, to: usize, out: *mut List(RuleTarget)) AllocError!bool {
     for ri in from..to {
         let r = sheet.rules.items()[ri]
 
         for k in r.sel_start..r.sel_end {
-            let s = subjectSimple(sheet, sheet.complexes.items()[k]) orelse return false
+            let cx = sheet.complexes.items()[k]
+            let subject = subjectSimple(sheet, cx)
+            let held = needsCascade(sheet, k, 0)
 
-            try out.append(s)
+            if cx.end == cx.start || cx.pseudo >= PSEUDO_SLOTTED || (subject == null && held) { return false }
+
+            try out.append(RuleTarget { cx: cx, subject: subject, whole: !held })
         }
     }
 
