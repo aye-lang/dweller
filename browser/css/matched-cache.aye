@@ -14,6 +14,7 @@ struct MatchedEntry {
     level: ?*mut CustomLevel
     values_hash: u64
     values: []Value
+    stamp: u64
 }
 
 // blink: core/css/resolver/matched_properties_cache.cc
@@ -27,9 +28,10 @@ pub struct MatchedCache {
     filling: ?*mut MatchedEntry
     hits: u64
     misses: u64
+    clock: u64
 
     pub fn init(alloc: Allocator) MatchedCache {
-        return MatchedCache { alloc: alloc, slots: []mut MatchedEntry{}, words: @zeroed([96]u64), n: 0, ok: false, hit: null, filling: null, hits: 0, misses: 0 }
+        return MatchedCache { alloc: alloc, slots: []mut MatchedEntry{}, words: @zeroed([96]u64), n: 0, ok: false, hit: null, filling: null, hits: 0, misses: 0, clock: 0 }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -67,7 +69,7 @@ pub struct MatchedCache {
 
     fn table(self: *mut Self) AllocError![]mut MatchedEntry {
         if self.slots.len == 0 {
-            self.slots = try self.alloc.alloc(MatchedEntry { used: false, hash: 0, n: 0, words: @zeroed([96]u64), context: @zeroed([4]f64), owned_parent: []mut Value{}, inherited: null, level: null, values_hash: 0, values: []Value{} }, MATCHED_SLOTS)
+            self.slots = try self.alloc.alloc(MatchedEntry { used: false, hash: 0, n: 0, words: @zeroed([96]u64), context: @zeroed([4]f64), owned_parent: []mut Value{}, inherited: null, level: null, values_hash: 0, values: []Value{}, stamp: 0 }, MATCHED_SLOTS)
         }
 
         return self.slots

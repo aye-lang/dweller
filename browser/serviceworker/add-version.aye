@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn freeVersion(alloc: Allocator, v: ?*mut Version) {
+    let x = v orelse return
+
+    alloc.free(x.script)
+    alloc.destroy(x)
+}
+
+fn addVersion(a: Ask, reg: *mut Registration, script_url: []u8, source: []u8) AllocError!void {
+    let url = try dupe(a, script_url)
+    let v = try a.r.alloc.create(Version { id: a.r.next_id, script: try dupe(a, source), installer: a.client })
+
+    a.r.next_id += 1
+    a.r.alloc.free(reg.script_url)
+    reg.script_url = url
+    freeVersion(a.r.alloc, reg.installing)
+    reg.installing = v
+    try tell(a.r, reg)
+}

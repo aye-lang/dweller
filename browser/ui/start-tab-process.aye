@@ -17,7 +17,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [9][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", ""}
+    var argv = [10][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -36,6 +36,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     if engine.consoleEchoed() {
         argv[n] = "--console"
+        n += 1
+    }
+
+    if tab >= FIRST_SPACE_TAB && tab < FIRST_CHILD_FRAME {
+        argv[n] = "--space-tab"
         n += 1
     }
 
@@ -58,6 +63,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     process_serials += 1
     tp.serial = process_serials
+    engine.setIdbRouter(routeIdbEvent)
 
     return tp
 }

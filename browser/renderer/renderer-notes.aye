@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.text
+
+struct RendererNotes {
+    fragment: text.Builder
+    nav_target: text.Builder
+    nav_referrer: text.Builder
+    challenged: text.Builder
+    realm: text.Builder
+
+    fn deinit(self: *mut Self) {
+        self.fragment.deinit()
+        self.nav_target.deinit()
+        self.nav_referrer.deinit()
+        self.challenged.deinit()
+        self.realm.deinit()
+    }
+}
+
+fn notesOf(r: *mut TabRenderer) AllocError!*mut RendererNotes {
+    if r.notes |n| { return n }
+
+    let a = r.alloc
+    let n = try a.create(RendererNotes { fragment: text.Builder.init(a), nav_target: text.Builder.init(a), nav_referrer: text.Builder.init(a), challenged: text.Builder.init(a), realm: text.Builder.init(a) })
+
+    r.notes = n
+
+    return n
+}

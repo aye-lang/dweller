@@ -1,0 +1,43 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akSwWorker(it: *mut Interp, a: Args) JsError!Value {
+    let p = scriptOf(it).page
+
+    if p.worker == 0 { return Value.Null }
+
+    return it.newString(p.worker_boot)
+}
+
+fn akSwBroken(it: *mut Interp, a: Args) JsError!Value {
+    return js.boolVal(scriptOf(it).page.worker_broken)
+}
+
+fn akSwHandler(it: *mut Interp, a: Args) JsError!Value {
+    scriptOf(it).on_sw = try it.addRoot(try js.callableArg(it, a, 0))
+
+    return Value.Undefined
+}
+
+fn akSwController(it: *mut Interp, a: Args) JsError!Value {
+    return js.numVal(scriptOf(it).page.controller as f64)
+}
+
+fn akSwControl(it: *mut Interp, a: Args) JsError!Value {
+    let version = try it.toNumber(it.arg(a, 0))
+
+    swControl(scriptOf(it).page, version as u32) catch return JsError.OutOfMemory
+
+    return Value.Undefined
+}
+
+fn akSwStart(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let version = try it.toNumber(it.arg(a, 0))
+    let made = instanceFor(s.alloc, version as u32, originPage(s.page).url.href, it.toBoolean(it.arg(a, 1))) catch return JsError.OutOfMemory
+
+    return js.boolVal(made != null)
+}

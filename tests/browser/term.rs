@@ -1,6 +1,6 @@
 use super::*;
 
-fn term_exe() -> &'static Path {
+pub(super) fn term_exe() -> &'static Path {
     static EXE: OnceLock<PathBuf> = OnceLock::new();
     EXE.get_or_init(|| {
         let exe = scratch().join("term");

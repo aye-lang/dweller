@@ -1,0 +1,28 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn addPermissionAsk(owner: ?*mut TabProcess, on: u32, id: u32, href: []u8, kind: u8) AllocError!bool {
+    let ui = permission_ui orelse return false
+    let all = permission_asks orelse return false
+    var ask = PermissionAsk { owner: owner, on: on, id: id, kind: kind, href: text.Builder.init(ui.alloc), origin: text.Builder.init(ui.alloc) }
+
+    errdefer freePermissionAsk(&mut ask)
+
+    if all.len() >= MAX_PERMISSION_ASKS || !(try net.permissionOrigin(ui.alloc, href, &mut ask.origin)) {
+        freePermissionAsk(&mut ask)
+
+        return false
+    }
+
+    try ask.href.append(href)
+    try all.append(ask)
+    ui.dirty = true
+
+    return true
+}
+
+fn freePermissionAsk(ask: *mut PermissionAsk) {
+    ask.href.deinit()
+    ask.origin.deinit()
+}

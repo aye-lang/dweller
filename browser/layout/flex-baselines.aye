@@ -1,0 +1,47 @@
+import css
+import std.math
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#flex-baselines
+fn flexBaselines(t: *mut Tree, i: usize, all: []Item, lines: []usize, row: bool, ch: f64) {
+    if all.len == 0 {
+        return
+    }
+
+    let b = t.bx(i)
+    let top = b.border[0] + b.padding[0]
+    let rtl = isKeyword(b.style[css.DIRECTION], "rtl")
+    var first = all[..lines[0]]
+    var last = all[..lines[0]]
+
+    if lines.len > 1 {
+        last = all[lines[lines.len - 2]..]
+    }
+
+    if crossStart(t, last[0].box, row) < crossStart(t, first[0].box, row) {
+        let swap = first
+
+        first = last
+        last = swap
+    }
+
+    let first_item = baselineItem(t, first, row, rtl, false)
+    let last_item = baselineItem(t, last, row, rtl, true)
+
+    b.first_baseline = top + t.bx(first_item).y + firstBaseline(t.bx(first_item))
+    b.last_baseline = top + t.bx(last_item).y + lastBaseline(t.bx(last_item))
+
+    if ch >= 0.0 && !isKeyword(b.style[css.OVERFLOW_Y], "visible") {
+        let bottom = top + ch + b.padding[2] + b.border[2]
+
+        b.first_baseline = math.max(0.0, math.min(b.first_baseline, bottom))
+        b.last_baseline = math.max(0.0, math.min(b.last_baseline, bottom))
+    }
+}
+
+fn crossStart(t: *Tree, c: usize, row: bool) f64 {
+    if row {
+        return t.bx(c).y
+    }
+
+    return t.bx(c).x
+}

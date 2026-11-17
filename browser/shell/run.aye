@@ -3,9 +3,14 @@ import std
 import std.mem.AllocError
 import std.mem.Allocator
 
-let USAGE = "usage: APP [--width W] [--height H] [--font fixed|system] [--frames N] [--events WORDS] [--save OUT.png] [--dump] [--timing] [--full-layout] | APP --agent [--width W] [--height H]"
+let USAGE = "usage: APP [--width W] [--height H] [--font fixed|system] [--frames N] [--events WORDS] [--save OUT.png] [--dump] [--timing] [--full-layout] | APP --agent [--width W] [--height H] | APP --tui [--width COLUMNS] [--height ROWS] [--events WORDS]"
 
 pub fn run(alloc: Allocator, style_source: []u8, build: fn(*mut App) AllocError!void) i32 {
+    return runLook(alloc, Look { window: style_source }, build)
+}
+
+pub fn runLook(alloc: Allocator, look: Look, build: fn(*mut App) AllocError!void) i32 {
+    let style_source = look.window
     let began = std.time.monotonicMs()
     let args = std.os.args(alloc) catch |e| {
         return 1
@@ -17,6 +22,10 @@ pub fn run(alloc: Allocator, style_source: []u8, build: fn(*mut App) AllocError!
         std.log.err(USAGE)
 
         return 2
+    }
+
+    if o.tui {
+        return runTui(alloc, o, look.terminal, build)
     }
 
     if o.agent {

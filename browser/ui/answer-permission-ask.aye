@@ -1,0 +1,24 @@
+import engine
+import ipc
+import net
+import std.mem.AllocError
+
+// chromium: components/permissions/permission_request_manager.cc (Accept, Deny, Dismiss)
+fn answerPermissionAsk(ui: *mut Ui, i: usize, state: u8) AllocError!void {
+    let all = permission_asks orelse return
+    var ask = all.orderedRemove(i)
+
+    defer freePermissionAsk(&mut ask)
+
+    if state != net.PERMISSION_PROMPT {
+        try net.setPermissionOf(ask.href.bytes(), ask.kind, state)
+    }
+
+    if ask.owner |tp| {
+        try ipc.encode(&mut tp.outbox, ask.on, ipc.Message.PermissionAnswer { id: ask.id, state: state as u32 })
+    } else {
+        try engine.answerPermission(ask.id, state)
+    }
+
+    ui.dirty = true
+}

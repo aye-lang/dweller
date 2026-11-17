@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn skipWaiting(a: Ask) AllocError!void {
+    let id = a.f.int()
+
+    for reg in a.r.regs.items() {
+        if reg.installing |v| {
+            if v.id as u64 == id { v.skip = true }
+        }
+
+        if reg.waiting |v| {
+            if v.id as u64 == id { v.skip = true }
+        }
+
+        try tryActivate(a.r, reg)
+    }
+}

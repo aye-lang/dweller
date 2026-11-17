@@ -11,7 +11,7 @@ fn run_oopif(base: &str, query: &str, mode: &str, png: &Path, events: &str, envs
         .envs(envs.iter().copied())
         .arg(format!("{base}/ui/oopif.html{query}"))
         .args(["--font", "fixed", "--width", "400", "--height", "400"])
-        .args(["--frames", "1000", "--until-idle", "--state", "--save"])
+        .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--save"])
         .arg(png)
         .args(["--events", events])
         .output()

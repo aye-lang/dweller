@@ -1,0 +1,16 @@
+import engine
+import ipc
+import net
+
+fn permissionsThrough() {
+    net.setRemotePermission(permissionRemote)
+    engine.setPermissionHook(askPermissionRemote)
+}
+
+fn askPermissionRemote(id: u32, href: []u8, kind: u8) bool {
+    let r = fetch_renderer orelse return false
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.PermissionAsk { id: id, doc: docOf(r, href), kind: kind as u32 }) catch return false
+
+    return true
+}

@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+
+fn newTransaction(b: *mut Backend, conn: u32, client: u64, db: *mut Database, mode: u8) AllocError!u32 {
+    let id = b.next_id
+
+    b.next_id += 1
+    try b.txs.append(try b.alloc.create(Transaction {
+        id: id,
+        conn: conn,
+        client: client,
+        db: db,
+        mode: mode,
+        scope: List(u32).init(b.alloc),
+        started: mode == VERSION_CHANGE,
+        undo: List(Undo).init(b.alloc),
+    }))
+
+    return id
+}

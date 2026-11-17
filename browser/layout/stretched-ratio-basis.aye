@@ -1,0 +1,21 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-main-item
+fn stretchedRatioBasis(t: *mut Tree, c: usize, ch: f64) ?f64 {
+    let b = t.bx(c)
+    let s = b.style
+    let align = alignOf(t, c)
+    let stretches = text.eql(align, "stretch") || text.eql(align, "normal")
+    let single = isKeyword(t.bx(b.parent.?).style[css.FLEX_WRAP], "nowrap")
+    let auto_margin = isKeyword(s[css.MARGIN_TOP], "auto") || isKeyword(s[css.MARGIN_TOP + 2], "auto")
+
+    if b.kind != BoxKind.Image || ch < 0.0 || !stretches || !single || auto_margin || !isKeyword(s[css.HEIGHT], "auto") {
+        return null
+    }
+
+    let ratio = naturalRatio(t, c) orelse return null
+    let cross = clampHeight(t, c, ch - b.margin[0] - b.margin[2], ch)
+
+    return (cross - vEdges(b)) * ratio + hEdges(b)
+}

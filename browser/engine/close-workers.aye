@@ -1,0 +1,17 @@
+pub fn closeWorkers() {
+    let st = sw_state orelse return
+
+    st.running = true
+
+    while st.instances.pop() |p| { p.destroy() }
+
+    while st.results.pop() |r| {
+        st.alloc.free(r.headers)
+        st.alloc.free(r.body)
+    }
+
+    st.instances.deinit()
+    st.results.deinit()
+    sw_state = null
+    st.alloc.destroy(st)
+}
