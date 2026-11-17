@@ -1,0 +1,17 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-grid-2/#track-sizes
+fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
+    let height = try layoutGridIn(t, i, cw, ch)
+    let style = t.bx(i).style
+
+    if ch >= 0.0 || (text.indexOf(keywordOf(style[css.GRID_TEMPLATE_ROWS]), "%") == null && text.indexOf(keywordOf(style[css.GRID_AUTO_ROWS]), "%") == null) {
+        return height
+    }
+
+    _ = try layoutGridIn(t, i, cw, height)
+
+    return height
+}
