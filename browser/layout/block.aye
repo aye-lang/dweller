@@ -71,10 +71,10 @@ fn clampHeight(t: *Tree, i: usize, h: f64, cb_h: f64) f64 {
     let b = t.bx(i)
     let e = vEdges(b)
     var r = h
-    if sizeOf(b.style, b.style[css.MAX_HEIGHT], cb_h, e) |mx| {
+    if heightOf(b, b.style[css.MAX_HEIGHT], cb_h, e) |mx| {
         r = math.min(r, mx)
     }
-    if sizeOf(b.style, b.style[css.MIN_HEIGHT], cb_h, e) |mn| {
+    if heightOf(b, b.style[css.MIN_HEIGHT], cb_h, e) |mn| {
         r = math.max(r, mn)
     }
     return math.max(r, e)
@@ -97,7 +97,7 @@ fn definiteContentHeight(t: *Tree, i: usize, cb_h: f64) f64 {
     if b.forced_h >= 0.0 {
         return math.max(0.0, b.forced_h - vEdges(b))
     }
-    if sizeOf(b.style, b.style[css.HEIGHT], cb_h, vEdges(b)) |h| {
+    if heightOf(b, b.style[css.HEIGHT], cb_h, vEdges(b)) |h| {
         return clampHeight(t, i, h, cb_h) - vEdges(b)
     }
     return -1.0
@@ -269,8 +269,8 @@ fn replacedSize(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) {
     let dims = replacedDims(t, i, cb_w, cb_h, he, ve)
     var cw = clampWidth(t, i, dims.w, cb_w)
     var ch = clampHeight(t, i, dims.h, cb_h)
-    let w_auto = sizeOf(b.style, b.style[css.WIDTH], cb_w, he) == null
-    let h_auto = sizeOf(b.style, b.style[css.HEIGHT], cb_h, ve) == null
+    let w_auto = widthOf(b, b.style[css.WIDTH], cb_w, he) == null
+    let h_auto = heightOf(b, b.style[css.HEIGHT], cb_h, ve) == null
     if replacedRatio(t, i) |r| {
         if w_auto && h_auto && dims.w > he && dims.h > ve {
             // CSS 2.1 10.4 table: both sizes auto, constrained together.
@@ -394,8 +394,8 @@ fn aspectRatio(t: *Tree, i: usize) ?f64 {
 /// is as wide as its containing block); else 0.
 fn replacedDims(t: *Tree, i: usize, cb_w: f64, cb_h: f64, he: f64, ve: f64) Size {
     let style = t.bx(i).style
-    var w: ?f64 = sizeOf(style, style[css.WIDTH], cb_w, he)
-    var h: ?f64 = sizeOf(style, style[css.HEIGHT], cb_h, ve)
+    var w: ?f64 = widthOf(t.bx(i), style[css.WIDTH], cb_w, he)
+    var h: ?f64 = heightOf(t.bx(i), style[css.HEIGHT], cb_h, ve)
     if aspectRatio(t, i) |r| {
         // `aspect-ratio`: a missing size follows the given one.
         if w |ww| {
