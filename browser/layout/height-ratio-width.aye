@@ -1,0 +1,16 @@
+// spec: https://drafts.csswg.org/css-sizing-4/#aspect-ratio-automatic
+fn heightRatioWidth(t: *Tree, i: usize, cb_w: f64, cb_h: f64) ?f64 {
+    let r = aspectRatio(t, i) orelse return null
+    let b = t.bx(i)
+    let ch = definiteContentHeight(t, i, cb_h)
+
+    if ch < 0.0 || b.kind == BoxKind.Image {
+        return null
+    }
+
+    if borderBoxSizing(b.style) {
+        return clampWidth(t, i, (ch + vEdges(b)) * r, cb_w)
+    }
+
+    return clampWidth(t, i, ch * r + hEdges(b), cb_w)
+}

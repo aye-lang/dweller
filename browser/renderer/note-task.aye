@@ -1,0 +1,24 @@
+import perf
+
+var task_pid: [16]u8 = @zeroed([16]u8)
+var task_pid_at: usize = 0
+
+fn noteTask(began: u64) {
+    if began == 0 { return }
+
+    if task_pid_at == 0 { writeTaskPid() }
+
+    perf.end("r_task", began, task_pid[task_pid_at..])
+}
+
+fn writeTaskPid() {
+    var n = getpid() as u32
+
+    task_pid_at = task_pid.len
+
+    while n > 0 && task_pid_at > 0 {
+        task_pid_at -= 1
+        task_pid[task_pid_at] = '0' + (n % 10) as u8
+        n /= 10
+    }
+}

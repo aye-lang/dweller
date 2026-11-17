@@ -83,6 +83,9 @@ pub struct TextPainter {
         if size64 <= 0 || size64 > 0x1FFFFFFF {
             return
         }
+        if f.turned {
+            return drawTurned(self, sys, canvas, Pen { x: x, y: y, scale: scale, size64: size64 }, s, f, c)
+        }
         let base = roundPx(y)
         self.placed.clear()
         try sys.shapeText(f, s, &mut self.placed)
@@ -203,6 +206,9 @@ pub fn roundPx(v: f64) i64 {
 // letters (with a descender for g, j, p, q, y), cap height for the rest.
 // Spaces and zero-width characters draw nothing.
 fn drawFixed(canvas: *mut Canvas, x: f64, y: f64, s: []u8, f: font.Font, scale: f64, c: Rgba) {
+    if f.turned {
+        return drawFixedTurned(canvas, x, y, s, f, scale, c)
+    }
     let em = f.size * scale
     var pen = x
     var i: usize = 0

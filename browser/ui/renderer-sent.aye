@@ -30,6 +30,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.loaded_new = true
         }
 
+        .ScrollInfo { max_y, pan, background } => {
+            if got.frame != slot.id { return "bad scroll_info" }
+
+            return takeScrollInfo(tp, max_y, pan, background)
+        }
+
         .Title { title } => {
             if got.frame != slot.id || title.len > 4096 { return "bad title" }
 
@@ -47,6 +53,8 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
             if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
+
+            noteFrameScroll(tp, scroll_y)
 
             return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
@@ -245,6 +253,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+            noteInputAcked(tp)
         }
 
         .Pong { n } => {

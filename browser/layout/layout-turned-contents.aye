@@ -1,0 +1,26 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#orthogonal-flows
+fn layoutTurnedContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
+    let b = t.bx(i)
+    let outer = b.style
+    let outer_forced = b.forced_h
+    let turn = Turn { flip_x: b.space == VERTICAL_RL, flip_y: b.mode == VERTICAL_RL }
+
+    b.style = b.inner.?
+    b.inside = true
+    b.has_intrinsic = false
+    b.forced_h = b.w
+    turnBoxEdges(b, turn)
+    try primeIntrinsic(t, i)
+    t.bx(i).w = try turnedWidth(t, i, outer_forced, cb_h)
+    try layoutContents(t, i, -1.0)
+    turnSubtree(t, i)
+
+    let r = t.bx(i)
+
+    r.style = outer
+    r.inside = false
+    r.has_intrinsic = false
+    r.forced_h = outer_forced
+}

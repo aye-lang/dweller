@@ -1,0 +1,36 @@
+import css
+import css.Value
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#logical-to-physical
+fn turnedStyle(t: *mut Tree, style: []Value, mode: u8) AllocError![]Value {
+    if mode == HORIZONTAL {
+        return style
+    }
+
+    let copy = try t.alloc.alloc(Value.Initial, style.len)
+    var from = [4]usize{3, 2, 1, 0}
+
+    if mode == VERTICAL_RL {
+        from = [4]usize{1, 2, 3, 0}
+    }
+
+    for k, v in style {
+        copy[k] = v
+    }
+
+    for group in [4]usize{css.MARGIN_TOP, css.PADDING_TOP, css.BORDER_TOP_WIDTH, css.INSET_TOP} {
+        for side in 0..4 {
+            copy[group + side] = style[group + from[side]]
+        }
+    }
+
+    for pair in [5][2]usize{[2]usize{css.WIDTH, css.HEIGHT}, [2]usize{css.MIN_WIDTH, css.MIN_HEIGHT}, [2]usize{css.MAX_WIDTH, css.MAX_HEIGHT}, [2]usize{css.OVERFLOW_X, css.OVERFLOW_Y}, [2]usize{css.BORDER_SPACING_H, css.BORDER_SPACING_V}} {
+        copy[pair[0]] = style[pair[1]]
+        copy[pair[1]] = style[pair[0]]
+    }
+
+    copy[css.ASPECT_RATIO] = try turnedRatio(t, style[css.ASPECT_RATIO])
+
+    return copy
+}
