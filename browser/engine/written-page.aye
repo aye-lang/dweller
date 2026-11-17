@@ -1,0 +1,26 @@
+import html
+import std.mem.AllocError
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-open-steps
+fn writtenPage(old: *mut Page) AllocError!*mut Page {
+    let alloc = old.alloc
+    var doc = try html.parse(alloc, old.opened_doc)
+
+    errdefer doc.deinit()
+
+    var located = url.parse(alloc, old.url.href) catch return AllocError.OutOfMemory
+
+    errdefer located.deinit(alloc)
+
+    let c = try newPage(alloc, located, 200, "", doc)
+
+    c.encoding = old.encoding
+    c.inherited_csp = old.inherited_csp
+    c.frame_options = old.frame_options
+    c.csp = copyPolicy(alloc, old.csp) catch ""
+    c.header_csp = copyPolicy(alloc, old.header_csp) catch ""
+    c.report_csp = copyPolicy(alloc, old.report_csp) catch ""
+
+    return c
+}
