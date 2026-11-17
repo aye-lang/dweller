@@ -148,6 +148,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q2.14c | The in-process arm of a two-arm test says that it is in process, so it keeps its meaning after the flip (21 tests; causes 4, 7 and 8) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
 
 ## Q3: web security (lane sec)
 
@@ -216,6 +217,12 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
+
+| Step | Feature | Chromium |
+|---|---|---|
+| Q5.12 | Permissions with a prompt: notifications, geolocation, camera and microphone denied until asked | `components/permissions/`, `modules/permissions/` |
+| Q5.6 | Downloads: `Content-Disposition`, `download` attribute and a downloads list | `components/download/`, `chrome/browser/download/` |
+| Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)
