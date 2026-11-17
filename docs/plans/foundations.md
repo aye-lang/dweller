@@ -382,7 +382,6 @@ Where a row can be verified:
 | Q5.9b | Media 2: Media Source Extensions (YouTube) | `third_party/blink/renderer/modules/mediasource/` |
 | Q5.10 | contenteditable and the core of `execCommand`; the async Clipboard API | `core/editing/`, `modules/clipboard/` |
 | Q5.13 | Bookmarks and address-bar search (search engine, suggestions from history) | `components/bookmarks/`, `components/omnibox/` |
-| Q5.14a | Service Worker 1: registration, lifecycle and fetch interception | `content/browser/service_worker/`, `modules/service_worker/` |
 | Q5.14b | Service Worker 2: the Cache API | `content/browser/cache_storage/` |
 | Q5.15 | Print to PDF and `@media print` | `components/printing/`, `core/paint/` (print) |
 
@@ -399,15 +398,13 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
-| Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
 | Q6.4 | `css/box-sizing` (51.5, 70) |
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
-| Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.
