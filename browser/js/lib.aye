@@ -1701,19 +1701,20 @@ pub let LIB =
     \\KINDS.forEach((name, kind) => {
     \\  if (name === 'Uint8Clamped') return;
     \\  const size = SIZES[kind];
-    \\  hidden(DataView.prototype, 'get' + name, method(function (i, le) {
+    \\  const accessors = { ['get' + name](i, le = false) {
     \\    i = Math.trunc(Number(i)) || 0;
     \\    liveBuffer(this.buffer, 'DataView.prototype.get' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
     \\    return viewGet(this.buffer, this.byteOffset + i, kind, !!le);
-    \\  }));
-    \\  hidden(DataView.prototype, 'set' + name, method(function (i, v, le) {
+    \\  }, ['set' + name](i, v, le = false) {
     \\    i = Math.trunc(Number(i)) || 0;
     \\    v = kind >= 9 ? BigInt(v) : Number(v);
     \\    liveBuffer(this.buffer, 'DataView.prototype.set' + name);
     \\    if (i < 0 || i + size > this.byteLength) throw new RangeError('Offset is outside the bounds of the DataView');
     \\    viewSet(this.buffer, this.byteOffset + i, kind, v, !!le);
-    \\  }));
+    \\  } };
+    \\  hidden(DataView.prototype, 'get' + name, accessors['get' + name]);
+    \\  hidden(DataView.prototype, 'set' + name, accessors['set' + name]);
     \\});
     \\hidden(G, 'DataView', DataView);
     \\
