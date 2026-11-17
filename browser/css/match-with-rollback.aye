@@ -1,0 +1,20 @@
+import dom.NodeId
+import std.mem.AllocError
+
+fn matchWithRollback(c: *mut Computer, ua: *Sheet, author: *Sheet, hints: []u8, h: NodeId) AllocError!void {
+    if c.rollback || !c.wants_rollback {
+        return
+    }
+
+    try enableRollback(c)
+
+    for i in 0..c.wins.len {
+        c.wins[i].set = false
+    }
+
+    c.clearCustoms()
+    c.out.matched.start()
+    setShadowHost(null)
+
+    try matchElement(c, ua, author, hints, h)
+}

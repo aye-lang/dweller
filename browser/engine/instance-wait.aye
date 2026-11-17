@@ -1,0 +1,17 @@
+import std
+
+fn instanceWait(wait: ?f64) ?f64 {
+    let st = sw_state orelse return wait
+    var best = wait
+
+    for ip in st.instances.items() {
+        var mine: f64 = 1.0e300
+
+        if nextTimer(ip, 1.0e300) |n| { mine = std.math.ceil(n.wait) }
+        if mine < 0.0 { mine = 0.0 }
+        if waitingForLoads(ip) && mine > LOAD_POLL_MS { mine = LOAD_POLL_MS }
+        if mine < (best orelse 1.0e300) { best = mine }
+    }
+
+    return best
+}

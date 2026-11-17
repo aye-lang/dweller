@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn endTransaction(a: Ask, commit: bool) AllocError!void {
+    let id = a.f.int()
+
+    for i in 0..a.b.txs.len() {
+        let tx = a.b.txs.items()[i]
+
+        if tx.id as u64 != id || tx.client != a.client { continue }
+        if commit && !tx.started { break }
+
+        return finishTransaction(a.b, i, commit)
+    }
+
+    return refuse(a, "InvalidStateError")
+}

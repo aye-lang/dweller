@@ -2,6 +2,7 @@ import agent
 import dom.NodeId
 import engine
 import font
+import layout
 import pageview
 import paint
 import std
@@ -32,10 +33,15 @@ struct TabRenderer {
     fetches: u32 = 0
     pending: List(*mut PendingFetch)
     landed: bool = false
+    socket_staged: text.Builder
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
     context: u32 = 0
+    broken: bool = false
+    closed: bool = false
+    remote_opener: u32 = 0
+    opener_name: text.Builder
     first: u32 = 0
     width: u32 = 0
     height: u32 = 0
@@ -77,6 +83,11 @@ struct TabRenderer {
     hist_state: text.Builder
     hist_null: bool = true
     said_state: text.Builder
+    to_fragment: bool = false
+    notes: ?*mut RendererNotes = null
+    agent_size: [2]f64 = [2]f64{800.0, 600.0}
+    hidden: bool = false
+    background_run_at: u64 = 0
     said_null: bool = true
     subframes: text.Builder
     embedded: bool = false
@@ -90,6 +101,24 @@ struct TabRenderer {
     find_on: bool = false
     find_said: [2]u32 = [2]u32{0, 0}
     load_said: u32 = 0
+    staged: StagedLoad
+    preview: Preview
+    outer: u32 = 0
+    images_at: u64 = 0
+    pan_off: bool = false
+    info_said: bool = false
+    info_max: f64 = 0.0
+    info_pan: u32 = 0
+    info_bg: u32 = 0
+    list: ?paint.DisplayList = null
+    list_tree: ?*mut layout.Tree = null
+    list_version: u64 = 0
+    list_laid: u64 = 0
+    relist: bool = true
+    sigs: List(paint.Sig)
+    shown: List(paint.ShownBitmap)
+    attaching: List(Attach)
+    settled_said: bool = false
 
     pub fn ack(self: *mut Self, buffer: u32) {
         if buffer >= self.first && buffer - self.first < 2 { self.free[buffer - self.first] = true }
@@ -113,7 +142,7 @@ struct TabRenderer {
     pub fn deinit(self: *mut Self) {
         if self.page |p| { p.destroy() }
 
-        if self.context != 0 { engine.tabContextGone(self.context) }
+        leaveContext(self)
 
         if self.session |s| {
             if self.width > 0 { s.tab.page = null }
@@ -125,6 +154,9 @@ struct TabRenderer {
         dropBuffers(self)
 
         for fd in self.fds.items() { close(fd) }
+        for a in self.attaching.items() { close(a.fd) }
+
+        close(self.conn.fd)
 
         self.fds.deinit()
         self.drawn.deinit()
@@ -140,12 +172,26 @@ struct TabRenderer {
         self.history.deinit()
         self.hist_state.deinit()
         self.said_state.deinit()
+
+        if self.notes |n| {
+            n.deinit()
+            self.alloc.destroy(n)
+        }
+
         self.subframes.deinit()
 
         for p in self.pending.items() { p.deinit(self.alloc) }
 
         self.pending.deinit()
+        dropList(self)
+        self.sigs.deinit()
+        self.shown.deinit()
+        self.staged.deinit()
+        self.preview.deinit()
         self.find.deinit()
         self.find_rects.deinit()
+        self.attaching.deinit()
+        self.opener_name.deinit()
+        self.socket_staged.deinit()
     }
 }

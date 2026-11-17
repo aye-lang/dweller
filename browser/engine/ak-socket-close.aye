@@ -1,0 +1,17 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+fn akSocketClose(it: *mut Interp, a: Args) JsError!Value {
+    let id = try socketArg(it, a)
+    let code = try it.toNumber(it.arg(a, 1))
+    let reason = try it.builder()
+    defer it.release(reason)
+
+    try argText(it, a, 2, reason)
+    net.socketClose(id, code as u16, reason.bytes())
+
+    return Value.Undefined
+}

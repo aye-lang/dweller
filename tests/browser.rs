@@ -24,10 +24,14 @@ mod common;
 
 #[path = "browser/agent.rs"]
 mod agent;
+#[path = "browser/cachestorage.rs"]
+mod cachestorage;
 #[path = "browser/cli.rs"]
 mod cli;
 #[path = "browser/csp_directives.rs"]
 mod csp_directives;
+#[path = "browser/downloads.rs"]
+mod downloads;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
 #[path = "browser/link_events.rs"]
@@ -36,6 +40,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/indexeddb.rs"]
+mod indexeddb;
 #[path = "browser/input.rs"]
 mod input;
 #[path = "browser/js.rs"]
@@ -44,28 +50,40 @@ mod js;
 mod jsdom;
 #[path = "browser/media.rs"]
 mod media;
+#[path = "browser/native.rs"]
+mod native;
 #[path = "browser/net.rs"]
 mod net;
 #[path = "browser/paint.rs"]
 mod paint;
 #[path = "browser/perf.rs"]
 mod perf;
+#[path = "browser/permissions.rs"]
+mod permissions;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
 #[path = "browser/scripts.rs"]
 mod scripts;
 #[path = "browser/security.rs"]
 mod security;
+#[path = "browser/serviceworker.rs"]
+mod serviceworker;
 #[path = "browser/storage.rs"]
 mod storage;
+#[path = "browser/term.rs"]
+mod term;
 #[path = "browser/webgl.rs"]
 mod webgl;
+#[path = "browser/websocket.rs"]
+mod websocket;
 #[path = "browser/window_login.rs"]
 mod window_login;
 #[path = "browser/window_renderer.rs"]
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]
 mod window_renderer_edit;
+#[path = "browser/window_renderer_list.rs"]
+mod window_renderer_list;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]
@@ -74,6 +92,16 @@ mod window_renderer_oopif;
 mod window_renderer_oopif_input;
 #[path = "browser/window_renderer_oopif_proxy.rs"]
 mod window_renderer_oopif_proxy;
+#[path = "browser/window_renderer_oopif_site.rs"]
+mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_oopif_throttle.rs"]
+mod window_renderer_oopif_throttle;
+#[path = "browser/window_renderer_pan.rs"]
+mod window_renderer_pan;
+#[path = "browser/window_renderer_perf.rs"]
+mod window_renderer_perf;
+#[path = "browser/window_renderer_popup.rs"]
+mod window_renderer_popup;
 #[path = "browser/window_renderer_scroll.rs"]
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
@@ -394,7 +422,7 @@ fn check_png(path: &Path) -> (u32, u32) {
     size
 }
 
-const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state] [--text] [--save OUT.png]]";
+const WINDOW_USAGE: &str = "usage: dweller [open] [FILE|URL] [--width W] [--height H] [--font fixed|system] [--no-js] [--agent-socket PATH [--exit-when-idle]] [--frames N [--until-idle] [--events SCRIPT] [--state [--processes]] [--text] [--save OUT.png]]";
 
 fn has_sdl() -> bool {
     Command::new("pkg-config")
@@ -754,15 +782,25 @@ fn login_window(url: &str, events: &str, profile: Option<&Path>) -> String {
     login_window_with(url, events, profile, &[])
 }
 
-/// With `envs` (`DWELLER_PROCESS=tab`) the page loads in a renderer, so
-/// the script first waits for it, and after each Enter for the input to
-/// be handled and the navigation it started to load.
+/// The arm of a test that means the window's own process: it says so, so
+/// that it keeps that meaning whatever `DWELLER_PROCESS` the run has.
+const IN_PROCESS: (&str, &str) = ("DWELLER_PROCESS", "single");
+
+/// Whether `envs` (`DWELLER_PROCESS=tab` or `site`, not `IN_PROCESS`)
+/// loads the page in a renderer.
+fn in_renderer(envs: &[(&str, &str)]) -> bool {
+    !envs.is_empty() && !envs.contains(&IN_PROCESS)
+}
+
+/// With `envs` `in_renderer` the page loads in a renderer, so the
+/// script first waits for it, and after each Enter for the input to be
+/// handled and the navigation it started to load.
 fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&str, &str)]) -> String {
     let waited = format!(
         "renderer:loaded {}",
         events.replace("key:return", "key:return renderer:input renderer:loaded")
     );
-    let events = if envs.is_empty() { events } else { &waited };
+    let events = if in_renderer(envs) { &waited } else { events };
     let mut c = dweller_command();
     c.current_dir(root()).envs(envs.iter().copied());
     if let Some(p) = profile {
@@ -771,7 +809,7 @@ fn login_window_with(url: &str, events: &str, profile: Option<&Path>, envs: &[(&
     let out = c
         .args([
             url, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400",
-            "--until-idle", "--state", "--text", "--events", events,
+            "--until-idle", "--state", "--processes", "--text", "--events", events,
         ])
         .output()
         .unwrap();

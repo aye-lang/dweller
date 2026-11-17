@@ -1,0 +1,25 @@
+import layout
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn collapsed(alloc: Allocator, s: []u8) AllocError![]u8 {
+    var b = text.Builder.init(alloc)
+    var space = false
+
+    for c in s {
+        if layout.isWhite(c) {
+            space = b.len() > 0
+            continue
+        }
+
+        if space {
+            try b.appendByte(' ')
+        }
+
+        space = false
+        try b.appendByte(c)
+    }
+
+    return b.bytes()
+}

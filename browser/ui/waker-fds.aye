@@ -1,0 +1,43 @@
+import ipc
+import net
+
+let POLL_IN: i16 = 1
+let POLL_OUT: i16 = 4
+
+fn wakerFds(ui: *Ui, set: *mut [96]ipc.PollFd, timeout: *mut i32) usize {
+    var n: usize = 0
+    var next = tab_processes
+    let loads = net.waitsOfLoads()
+
+    while next |tp| {
+        next = tp.next
+
+        if tp.gone.len > 0 || n >= WAKER_FDS { continue }
+
+        var events = POLL_IN
+
+        if tp.outbox.len() > 0 {
+            events |= POLL_OUT
+        }
+
+        set[n] = ipc.PollFd { fd: tp.fd, events: events, revents: 0 }
+        n += 1
+    }
+
+    for i in 0..loads.count {
+        if n >= WAKER_FDS { break }
+
+        var events = POLL_IN
+
+        if loads.writes[i] {
+            events |= POLL_OUT
+        }
+
+        set[n] = ipc.PollFd { fd: loads.fds[i], events: events, revents: 0 }
+        n += 1
+    }
+
+    timeout.* = loads.timeout_ms
+
+    return n
+}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<title>Opener</title>
+<body style="margin: 0">
+<button id="same" style="display: block; width: 300px; height: 40px; margin: 0">same site</button>
+<button id="none" style="display: block; width: 300px; height: 40px; margin: 0">noopener</button>
+<button id="cross" style="display: block; width: 300px; height: 40px; margin: 0">other site</button>
+<button id="alive" style="display: block; width: 300px; height: 40px; margin: 0">alive</button>
+<button id="leave" style="display: block; width: 300px; height: 40px; margin: 0">leave</button>
+<button id="probe" style="display: block; width: 300px; height: 40px; margin: 0">closed?</button>
+<button id="move" style="display: block; width: 300px; height: 40px; margin: 0">move the popup</button>
+<script>
+const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+let w = null;
+same.onclick = () => { w = window.open('popup_child.html?same', 'w1'); };
+addEventListener('message', function (e) {
+  if (e.data === 'want-port') return sendPort(e.source);
+  document.title = 'got-' + e.data + '-' + (e.source === w || e.source === w2);
+  e.source.postMessage('pong', '*');
+});
+move.onclick = () => { w2.location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html?moved'; };
+function sendPort(to) {
+  const ch = new MessageChannel();
+  ch.port1.onmessage = e => { document.title = 'port1-' + e.data; };
+  to.postMessage({ kind: 'port', port: ch.port2 }, '*', [ch.port2]);
+  ch.port1.postMessage('ping');
+}
+probe.onclick = () => { document.title = 'closed-' + (w && w.closed); };
+none.onclick = () => { window.open('popup_child.html?none', '_blank', 'noopener'); };
+let w2 = null;
+cross.onclick = () => { w2 = window.open('http://' + host + ':' + location.port + '/ui/popup_child.html?cross', 'w2'); };
+alive.onclick = () => { document.title = 'opener-alive'; };
+leave.onclick = () => { location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html?away'; };
+</script>

@@ -203,7 +203,6 @@ pub fn stop() {
     dropReferrerPolicies()
     let s = session orelse return
     session = null
-    dropStoredCookies(s.alloc)
     if writesCookies(s) && s.jar.changed {
         saveCookies(s) catch |e| {
         }
@@ -212,6 +211,8 @@ pub fn stop() {
     }
     unlockProfile(s.lock)
     stopLoads()
+    stopDownloads()
+    stopPermissions()
     stopAuth()
     freeResolveEntries()
     if s.curl |c| {
@@ -272,7 +273,7 @@ pub fn now() i64 {
 /// the Referer. The next document fetch forgets it.
 pub fn noteNavigation(target: []u8, referrer: []u8, user: bool) AllocError!void {
     nav_policy = null
-    let s = session orelse return
+    let s = session orelse return noteElsewhere(withoutHash(target), referrer)
     let t = try dup(s.alloc, withoutHash(target))
     let r = dup(s.alloc, referrer) catch |e| {
         release(s.alloc, t)
@@ -357,7 +358,6 @@ pub fn setScriptCookie(partition: u32, page: *Url, top: *Url, line: []u8) AllocE
     let jar = jarOf(session, partition) orelse return
     if !storesIn(scriptContext(page, top)) { return }
     try jar.store(page, line, true, now())
-    if partition == 0 { try noteStored(page, line, true) }
 }
 
 fn withoutHash(href: []u8) []u8 {

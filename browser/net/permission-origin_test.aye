@@ -1,0 +1,20 @@
+import std.text
+
+test "a permission belongs to a potentially trustworthy origin" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    @expect(try permissionOrigin(@testAllocator(), "https://a.test:8443/x?y#z", &mut out))
+    @expectEqual("https://a.test:8443", out.bytes())
+    out.clear()
+    @expect(try permissionOrigin(@testAllocator(), "http://127.0.0.1:8000/", &mut out))
+    @expectEqual("http://127.0.0.1:8000", out.bytes())
+    out.clear()
+    @expect(!(try permissionOrigin(@testAllocator(), "http://a.test/", &mut out)))
+    out.clear()
+    @expect(!(try permissionOrigin(@testAllocator(), "data:text/html,x", &mut out)))
+    out.clear()
+    @expect(!(try permissionOrigin(@testAllocator(), "not a url", &mut out)))
+    @expectEqual("geolocation", permissionName(1))
+    @expectEqual("", permissionName(PERMISSION_KINDS))
+}

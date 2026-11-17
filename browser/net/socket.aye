@@ -1,0 +1,60 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+extern fn curl_easy_send(h: *mut Curl, buf: [*]u8, n: usize, sent: *mut usize) i32
+extern fn curl_easy_recv(h: *mut Curl, buf: [*]u8, n: usize, got: *mut usize) i32
+
+let CURLOPT_HTTP_VERSION: i32 = 84
+let CURL_HTTP_VERSION_1_1: i64 = 2
+let CURLE_AGAIN: i32 = 81
+let SOCKET_MESSAGE_LIMIT: usize = 16 << 20
+let SOCKET_CLOSE_MS: u64 = 3000
+let MAX_SOCKETS: i64 = 255
+
+pub let SOCKET_OPENED: u8 = 0
+pub let SOCKET_TEXT: u8 = 1
+pub let SOCKET_BINARY: u8 = 2
+pub let SOCKET_CLOSED: u8 = 3
+
+pub struct SocketNote {
+    kind: u8
+    clean: bool = false
+    code: u16 = 0
+    owned_data: []mut u8
+}
+
+enum SocketPhase {
+    Queued
+    Connecting
+    Handshaking
+    Open
+    Closing
+    Closed
+}
+
+struct Socket {
+    id: u32
+    phase: SocketPhase
+    job: ?*mut Job
+    owned_protocols: []mut u8
+    owned_origin: []mut u8
+    owned_accept: []mut u8 = []mut u8{}
+    outgoing: text.Builder
+    written: usize = 0
+    incoming: text.Builder
+    assembly: Assembly
+    notes: List(SocketNote)
+    owned_taken: []mut u8 = []mut u8{}
+    closing_since: u64 = 0
+    wire: u32 = 0
+}
+
+struct Sockets {
+    alloc: Allocator
+    all: List(*mut Socket)
+    next_id: u32 = 1
+    multi: ?*mut CurlMulti = null
+}
+
+var sockets: ?*mut Sockets = null

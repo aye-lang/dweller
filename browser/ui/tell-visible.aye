@@ -1,0 +1,14 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc WasHidden, WasShown
+fn tellVisible(tp: *mut TabProcess, on: bool) AllocError!void {
+    if tp.visible == on || !tp.hello || tp.gone.len > 0 { return }
+
+    tp.visible = on
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Visible { on: on as u32 })
+
+    for c in tp.children.items() {
+        if c.tp |child| { try tellVisible(child, on && frameSeen(child)) }
+    }
+}

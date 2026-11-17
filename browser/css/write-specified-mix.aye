@@ -22,12 +22,20 @@ fn writeSpecifiedMix(toks: []Token, out: *mut text.Builder) AllocError!bool {
     }
 
     var a = skipWhitespace(toks, 1)
+    let has_method = toks[a].kind == Tok.Ident && text.eqlIgnoreCase(toks[a].text, "in")
+
+    if commas == 0 {
+        return writeSingleMix(toks, null, out)
+    }
+
+    if commas == 1 && has_method {
+        return writeSingleMix(toks, items[0], out)
+    }
 
     try out.append("color-mix(")
 
     if commas == 2 {
-        try writeTokens(toks[a..items[0]], out)
-        try out.append(", ")
+        try writeMixMethod(toks[a..items[0]], out)
         a = items[0] + 1
     }
 

@@ -1,0 +1,21 @@
+// spec: https://drafts.csswg.org/css-writing-modes-4/#vertical-layout
+fn turnedReplacedSize(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) {
+    let b = t.bx(i)
+    let flowed = b.style
+    let back = Turn { flip_x: b.space == VERTICAL_RL, flip_y: false }
+    let into = Turn { flip_x: false, flip_y: b.space == VERTICAL_RL }
+
+    b.style = b.physical orelse flowed
+    b.inside = true
+    turnBoxEdges(b, back)
+    replacedSize(t, i, cb_h, cb_w)
+
+    let r = t.bx(i)
+    let w = r.w
+
+    r.w = r.h
+    r.h = w
+    r.style = flowed
+    r.inside = false
+    turnBoxEdges(r, into)
+}

@@ -51,7 +51,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             return showTabFrame(tp.tab, tp, got.frame, buffer, width, height, damage)
         }
 
-        .BeginNavigation { url: href, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url: href, post, content_type, body, referrer_policy, .. } => {
             let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
             let target = url.parse(tp.url.alloc, href) catch return ""
             defer target.deinit(tp.url.alloc)
@@ -61,6 +61,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
                 return ""
             }
+
+            if post != 0 && tp.sandbox & SB_FORMS != 0 { return "form in a sandboxed frame" }
 
             if !tp.loading {
                 tp.nav_policy = policy
@@ -94,6 +96,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             if seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+            noteInputAcked(tp)
         }
 
         .WheelUnused { seq, dx, dy } => {
@@ -117,10 +120,26 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .Fetch { .. } => return answerFetch(tp, got.frame, got.message)
         .FetchCancel { id } => return cancelFetch(tp, id)
-        .CookieGet { .. }, .CookieSet { .. } => return answerCookie(tp, got.frame, got.message)
-        .Storage { .. } => return answerStorage(tp, got.frame, got.message)
+        .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
+        .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
+        .CookieGet { .. }, .CookieSet { .. } => {
+            if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
+
+            return answerCookie(tp, got.frame, got.message)
+        }
+
+        .Storage { op, .. } => {
+            if op < STORAGE_TAB_OPS && tp.sandbox & SB_ORIGIN != 0 { return "storage in a sandboxed origin" }
+
+            return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Idb { .. } => return answerIdb(tp, got.frame, got.message)
+
         .Subframes { frames } => return takeSubframes(tp, frames)
         .PostMessage { .. } => return routePostMessage(tp, got.message)
+        .PortPost { .. } => return routePortMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {

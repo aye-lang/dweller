@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+pub fn putNumber(out: *mut text.Builder, n: u64) AllocError!void {
+    try out.appendUint(n)
+    try out.appendByte('\n')
+}
+
+pub fn putBlob(out: *mut text.Builder, bytes: []u8) AllocError!void {
+    try putNumber(out, bytes.len as u64)
+    try out.append(bytes)
+    try out.appendByte('\n')
+}
+
+fn writeDatabase(out: *mut text.Builder, db: *Database) AllocError!void {
+    try out.append("dweller-idb 2\n")
+    try putBlob(out, db.name)
+    try putNumber(out, db.version)
+    try putNumber(out, db.next_store as u64)
+    try putNumber(out, db.stores.len() as u64)
+
+    for s in db.stores.items() { try writeStore(out, s) }
+}

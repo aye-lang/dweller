@@ -1,0 +1,20 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn loadArea(b: *mut Backend, area: []u8) AllocError!void {
+    for known in b.loaded.items() {
+        if text.eql(known, area) { return }
+    }
+
+    try b.loaded.append(try dupe(b.alloc, area))
+
+    if !persists(area) { return }
+
+    let dir = try areaPath(b.alloc, area)
+    defer b.alloc.free(dir)
+    let entries = std.fs.readDir(b.alloc, dir) catch return
+    defer entries.deinit()
+
+    for e in entries.items { try loadFile(b, area, dir, e.name) }
+}

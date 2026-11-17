@@ -24,6 +24,7 @@ import js.Interp
 import js.JsError
 import js.Value
 import std.list.List
+import std.math
 import std.mem.copy
 import std.mem.AllocError
 import std.mem.Allocator
@@ -891,13 +892,18 @@ fn optionalMax(it: *mut Interp, v: Value) JsError!f64 {
     return it.toNumber(v)
 }
 
+let MAX_MEMORY_PAGES: f64 = 65536.0
+
 // memNew(initial, maximum or undefined): a memory's index.
 fn wMemNew(it: *mut Interp, a: Args) JsError!Value {
     let st = try current(it)
     let min = try it.toNumber(it.arg(a, 0))
     let max = try optionalMax(it, it.arg(a, 1))
+    if !(min >= 0.0 && min <= MAX_MEMORY_PAGES && max <= MAX_MEMORY_PAGES) {
+        return it.rangeError("WebAssembly.Memory(): bad limits")
+    }
     var mt: ?*mut c.wasm_memorytype_t = null
-    let terr = c.wasmtime_memorytype_new(min as u64, max >= 0.0, max as u64, false, false, 16, &mut mt)
+    let terr = c.wasmtime_memorytype_new(min as u64, max >= 0.0, math.max(max, 0.0) as u64, false, false, 16, &mut mt)
     if terr != null {
         c.wasmtime_error_delete(terr)
         return it.rangeError("WebAssembly.Memory(): bad limits")

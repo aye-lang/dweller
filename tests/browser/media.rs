@@ -114,6 +114,27 @@ fn webaudio_core() {
     );
 }
 
+/// `browser/tests/audio/times.html` (Q1.12): a source's start, stop and
+/// offset times that are not finite throw `TypeError`, times past the end
+/// of time mean never, and a negative `playbackRate` plays backwards. The
+/// output must be `times.txt` (the values of WPT's
+/// `audiobuffersource-basic` and `audiobuffersource-playbackrate-negative`),
+/// with an empty stderr: these pages once ended in a failed cast check.
+#[test]
+fn webaudio_source_times() {
+    let page = "browser/tests/audio/times.html";
+    let golden = root().join("browser/tests/audio/times.txt");
+    let out = run(&["dump", "--text", "--js", page]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{page}: {}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let want = std::fs::read_to_string(&golden).unwrap();
+    assert_eq!(text(&out.stdout), want, "differs from {}", golden.display());
+}
+
 /// `browser/tests/audio/effects.html` (P11.20, Web Audio effects):
 /// OfflineAudioContext renders through BiquadFilterNode (8 types, with the
 /// frequency responses), StereoPannerNode, DynamicsCompressorNode and

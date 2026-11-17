@@ -1,0 +1,33 @@
+import css
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn queryIn(app: *mut App, from: NodeId, selector: []u8) AllocError!?NodeId {
+    var sheet = try css.Sheet.init(app.alloc)
+    defer sheet.deinit()
+
+    var rule = text.Builder.init(app.alloc)
+    defer rule.deinit()
+
+    try rule.append(selector)
+    try rule.append(" {}")
+    try css.parseSheet(&mut sheet, rule.bytes(), app.media)
+
+    if sheet.rules.len() != 1 {
+        return null
+    }
+
+    var cur = app.doc.following(from, from)
+
+    while cur |h| {
+        if app.doc.node(h).kind == dom.Kind.Element && matchesRule(&sheet, &app.doc, h) {
+            return h
+        }
+
+        cur = app.doc.following(h, from)
+    }
+
+    return null
+}

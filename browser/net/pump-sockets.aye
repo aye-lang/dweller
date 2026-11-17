@@ -1,0 +1,25 @@
+import std
+
+// chromium: net/websockets/websocket_endpoint_lock_manager.cc
+fn pumpSockets() {
+    let all = sockets orelse return
+    let m = all.multi orelse return
+    var running: i32 = 0
+
+    for k in all.all.items() {
+        if k.phase == SocketPhase.Queued {
+            connectSocket(all, m, k)
+        } else if k.phase != SocketPhase.Closed && k.phase != SocketPhase.Connecting {
+            flushSocket(k)
+            readSocket(k)
+        }
+
+        if k.phase == SocketPhase.Closing && std.time.monotonicMs() - k.closing_since > SOCKET_CLOSE_MS {
+            failSocket(k)
+        }
+    }
+
+    if curl_multi_perform(m, &mut running) == 0 {
+        harvestSockets(m)
+    }
+}

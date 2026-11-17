@@ -1,0 +1,11 @@
+fn rendererBehind(ui: *mut Ui) bool {
+    if !ui.auto_waits || ui.unresponsive > 0 { return false }
+
+    let slot = ui.slots[ui.active].?
+    let href = slot.session.tab.href()
+    let tp = slot.process orelse return href.len > 0
+
+    if tp.gone.len > 0 || tp.hung { return false }
+
+    return !tp.hello || tp.loading || tp.traverse_to != null || (tp.url.len() == 0 && href.len > 0) || inputWaits(tp) || tp.find_seen != tp.find_id
+}

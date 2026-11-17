@@ -49,10 +49,8 @@
 //     dweller connect PATH [--mcp]               stdio <-> that socket
 //         [--name NAME] [--space N]               (the hello: a Space's name,
 //                                                 or a done Space to attach to)
-//     dweller --agent-socket PATH ...             each agent in a Space,
-//                                                 a process of its own
-//                                                 (`dweller space`,
-//                                                 internal; ui/spaces.aye)
+//     dweller --agent-socket PATH ...             each agent in a Space
+//                                                 (ui/spaces.aye)
 
 import agent
 import css
@@ -64,10 +62,12 @@ import font
 import fuzz
 import gpu
 import html
+import indexeddb
 import js
 import net
 import perf
 import renderer
+import serviceworker
 import std
 import std.list.List
 import std.mem.Allocator
@@ -86,9 +86,13 @@ pub fn main() {
         }
     }
     let status = run(gpa.allocator())
+    engine.closeWorkers()
     engine.saveStorage()
     engine.closeStorage()
-    engine.stopSharingStorage()
+    indexeddb.save()
+    serviceworker.save()
+    serviceworker.closeRegistry()
+    indexeddb.closeBackend()
     engine.stopDecoding()
     net.stop()
     gpa.deinit()
@@ -135,17 +139,13 @@ fn run(alloc: Allocator) i32 {
     if args.len >= 2 && text.eql(args[1], "connect") {
         return ui.connectMain(alloc, args[2..])
     }
-    if args.len >= 2 && text.eql(args[1], "space") {
-        return ui.spaceMain(alloc, args[2..])
-    }
     if args.len >= 3 && text.eql(args[1], "--renderer") {
         return renderer.serve(alloc, args[2], args[3..])
     }
     if args.len >= 2 && text.eql(args[1], "fuzz") {
         return fuzz.fuzzMain(alloc, args[2..])
     }
-    // DWELLER_PROFILE: the profile directory (net/profile.aye) of any
-    // command but a Space's (it gets the window's jar); the
+    // DWELLER_PROFILE: the profile directory (net/profile.aye); the
     // window opens ~/.dweller without it (ui.run).
     if std.os.getenv("DWELLER_PROFILE") |dir| {
         net.openProfile(dir) catch |e| {

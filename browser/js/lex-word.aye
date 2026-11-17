@@ -1,0 +1,63 @@
+// https://tc39.es/ecma262/#prod-PrivateIdentifier
+
+fn lexWord(lx: *mut Lexer, start: usize) SyntaxErr!void {
+    let off = lx.out.cooked.len()
+    let private = lx.src[start] == '#'
+    var escaped = false
+    var plain = start
+
+    if private {
+        try lx.out.cooked.appendByte(PRIVATE_NAME_MARK)
+        lx.pos += 1
+    }
+
+    while lx.pos < lx.src.len {
+        let ch = lx.src[lx.pos]
+
+        if ch >= 0x80 && lexAtSeparator(lx.src, lx.pos) {
+            break
+        }
+
+        if isIdPart(ch) {
+            lx.pos += 1
+        } else if ch == '\\' && lx.peekAt(1) == 'u' {
+            try lx.out.cooked.append(lx.src[plain..lx.pos])
+            let first = lx.pos == start + private as usize
+
+            lx.pos += 2
+
+            let cp = try lx.unicodeEscape()
+
+            if !lexEscapeNames(cp, first) {
+                return lx.fail("Invalid Unicode escape sequence")
+            }
+
+            try appendWtf8(&mut lx.out.cooked, cp)
+            escaped = true
+            plain = lx.pos
+        } else {
+            break
+        }
+    }
+
+    if lx.pos == start {
+        return lx.fail("Invalid or unexpected token")
+    }
+
+    if escaped || private {
+        try lx.out.cooked.append(lx.src[plain..lx.pos])
+
+        return lx.emit(Tok.Ident, start, 0.0, off, lx.out.cooked.len() - off)
+    }
+
+    let word = keyword(lx.src[start..lx.pos])
+
+    if word == Tok.KwFunction && lx.startsStatement() {
+        lx.fn_decl = true
+        lx.fn_parens = lx.parens.len()
+    }
+
+    return lx.emit(word, start, 0.0, 0, 0)
+}
+
+let PRIVATE_NAME_MARK: u8 = 1

@@ -248,9 +248,11 @@ pub let PRELUDE =
     \\  try {
     \\    callOrHandle(fn, t, ev, inline);
     \\  } catch (e) {
+    \\    if (ev._task) ev._threw = true;
     \\    report(e);
     \\  }
     \\  currentEvent = outer;
+    \\  if (ev._task) ak.checkpoint();
     \\}
     \\function callOrHandle(fn, t, ev, inline) {
     \\  if (inline && t === G && ev.type === 'error' && ev instanceof G.ErrorEvent) {
@@ -278,6 +280,7 @@ pub let PRELUDE =
     \\function invokeType(t, ev, capture) {
     \\  let found = false;
     \\  ev.currentTarget = t;
+    \\  const ls = t.__listeners && t.__listeners.length > 0 ? t.__listeners.slice() : null;
     \\  if (!capture) {
     \\    const h = handlerOf(t, ev.type);
     \\    if (h) {
@@ -286,9 +289,8 @@ pub let PRELUDE =
     \\    }
     \\    if (ev._stopNow) return found;
     \\  }
-    \\  const ls = t.__listeners;
-    \\  if (!ls || ls.length === 0) return found;
-    \\  for (const l of ls.slice()) {
+    \\  if (!ls) return found;
+    \\  for (const l of ls) {
     \\    if (l.removed || l.type !== ev.type || l.capture !== capture) continue;
     \\    found = true;
     \\    if (l.once) removeListener(t, l.type, l.fn, l.capture);
@@ -375,6 +377,26 @@ pub let PRELUDE =
     \\  ev._path = null;
     \\  return !ev.defaultPrevented;
     \\}
+    \\hidden(ak, 'dispatchAlong', function (path, ev) {
+    \\  ev.target = path[0];
+    \\  hidden(ev, '_dispatching', true);
+    \\  ev._path = path;
+    \\  for (let i = path.length - 1; i >= 0 && !ev._stop; i--) {
+    \\    ev.eventPhase = i === 0 ? 2 : 1;
+    \\    invoke(path[i], ev, true);
+    \\  }
+    \\  for (let i = 0; i < path.length && !ev._stop && (i === 0 || ev.bubbles); i++) {
+    \\    ev.eventPhase = i === 0 ? 2 : 3;
+    \\    invoke(path[i], ev, false);
+    \\  }
+    \\  ev.eventPhase = 0;
+    \\  ev.currentTarget = null;
+    \\  ev._stop = ev._stopNow = ev._dispatching = false;
+    \\  ev._path = null;
+    \\});
+    \\hidden(ak, 'defineHandlers', function (proto, types) {
+    \\  for (const type of types) Object.defineProperty(proto, 'on' + type, { get() { return handlerOf(this, type); }, set(v) { setHandler(this, type, v); }, configurable: true, enumerable: true });
+    \\});
     \\function dispatchChecked(t, ev) {
     \\  if (!(ev instanceof Event)) throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
     \\  return dispatch(t, ev);
@@ -1410,7 +1432,7 @@ pub let PRELUDE =
     \\  get length() { return this._el.isConnected ? CSS_NAMES.length : 0; }
     \\  get cssText() { return ''; }
     \\  item(i) { return i >= 0 && i < this.length ? CSS_NAMES[i] : ''; }
-    \\  getPropertyValue(name) { return styleOf(this._el, String(name).toLowerCase()); }
+    \\  getPropertyValue(name) { const n = String(name); return styleOf(this._el, n.startsWith('--') ? n : n.toLowerCase()); }
     \\  getPropertyPriority() { return ''; }
     \\  setProperty() { throw new DOMException("Failed to execute 'setProperty' on 'CSSStyleDeclaration': These styles are computed, and therefore read-only.", 'NoModificationAllowedError'); }
     \\  removeProperty() { throw new DOMException("Failed to execute 'removeProperty' on 'CSSStyleDeclaration': These styles are computed, and therefore read-only.", 'NoModificationAllowedError'); }
@@ -1619,8 +1641,8 @@ pub let PRELUDE =
     \\  }
     \\  ak.messageEvent(data, origin, source);
     \\});
-    \\ak.messageEvent = function (data, origin, source) {
-    \\  const ev = new G.MessageEvent('message', { data, origin, source });
+    \\ak.messageEvent = function (data, origin, source, ports) {
+    \\  const ev = new G.MessageEvent('message', { data, origin, source, ports: ports || [] });
     \\  ev.isTrusted = true;
     \\  dispatch(G, ev);
     \\};
@@ -2331,6 +2353,7 @@ pub let PRELUDE =
     \\}
     \\bodyMethods(Request, 'Request');
     \\Object.defineProperty(Request.prototype, Symbol.toStringTag, { value: 'Request', configurable: true });
+    \\Object.defineProperty(Response.prototype, Symbol.toStringTag, { value: 'Response', configurable: true });
     \\hidden(G, 'Headers', Headers);
     \\hidden(G, 'Response', Response);
     \\hidden(G, 'Request', Request);
@@ -3059,6 +3082,10 @@ pub let PRELUDE =
     \\    if (!el.__linkRequest) linkUpdate(el, parsed);
     \\  }
     \\}
+    \\function styleDiscover(root) {
+    \\  const els = root instanceof HTMLStyleElement ? [root] : root.querySelectorAll ? root.querySelectorAll('style') : [];
+    \\  for (const el of els) if (el.ownerDocument === document && isConnected(el)) ak.imageTask(() => { if (isConnected(el)) hostEvent(el, 'load'); }, 0);
+    \\}
     \\function linkForget(root) {
     \\  if (root instanceof HTMLLinkElement) root.__linkRequest = undefined;
     \\  if (root.querySelectorAll) for (const el of root.querySelectorAll('link')) el.__linkRequest = undefined;
@@ -3081,6 +3108,7 @@ pub let PRELUDE =
     \\    if (kind === 1 && target instanceof HTMLLinkElement && ['href', 'rel', 'crossorigin', 'as', 'referrerpolicy'].includes(name)) linkUpdate(target);
     \\    if (kind === 3 && node) {
     \\      linkDiscover(node);
+    \\      styleDiscover(node);
     \\      imageDiscover(node);
     \\      // Moving a loaded img out of a picture must reselect its own src.
     \\      if (node instanceof HTMLImageElement && node.__imageRequest) {
@@ -3399,6 +3427,8 @@ pub let PRELUDE =
     \\  get name() { return this._name; }
     \\  get lastModified() { return this._modified; }
     \\}
+    \\Object.defineProperty(Blob.prototype, Symbol.toStringTag, { value: 'Blob', configurable: true });
+    \\Object.defineProperty(File.prototype, Symbol.toStringTag, { value: 'File', configurable: true });
     \\hidden(G, 'Blob', Blob);
     \\hidden(G, 'File', File);
     \\class FileReader extends EventTarget {
@@ -3492,19 +3522,23 @@ pub let PRELUDE =
     \\    super();
     \\    hidden(this, '_other', null);
     \\    hidden(this, '_closed', false);
+    \\    hidden(this, '_remote', null);
     \\    hidden(this, '_onmessage', null);
     \\  }
     \\  get onmessage() { return this._onmessage; }
     \\  set onmessage(f) { this._onmessage = typeof f === 'function' ? f : null; }
     \\  postMessage(data) {
     \\    const to = this._other;
+    \\    if (this._remote && !this._closed) return ak.portSend(this, data);
     \\    if (!to || this._closed) return;
     \\    setTimeout(() => {
-    \\      if (to._closed) return;
-    \\      const ev = new MessageEvent('message', { data });
-    \\      if (to._onmessage) callListener(to._onmessage, to, ev, false);
-    \\      to.dispatchEvent(ev);
+    \\      if (!to._closed) to._deliver(data);
     \\    }, 0);
+    \\  }
+    \\  _deliver(data) {
+    \\    const ev = new MessageEvent('message', { data });
+    \\    if (this._onmessage) callListener(this._onmessage, this, ev, false);
+    \\    this.dispatchEvent(ev);
     \\  }
     \\  start() {}
     \\  close() { this._closed = true; }
@@ -3920,30 +3954,14 @@ pub let PRELUDE =
     \\  }
     \\  return rules;
     \\}
-    \\const RULE_TYPES = { media: 4, import: 3, 'font-face': 5, page: 6, keyframes: 7, '-webkit-keyframes': 7, namespace: 10, supports: 12, layer: 18, container: 0, property: 0 };
-    \\function ruleObject(sheet, text) {
-    \\  const m = /^@([-\w]+)/.exec(text);
-    \\  const r = { cssText: text, parentStyleSheet: sheet, parentRule: null };
-    \\  if (m) {
-    \\    r.type = RULE_TYPES[m[1].toLowerCase()] || 0;
-    \\    if (r.type === 4) r.media = { mediaText: text.slice(m[0].length, text.indexOf('{')).trim() };
-    \\    if (r.type === 7) r.name = text.slice(m[0].length, text.indexOf('{')).trim();
-    \\  } else {
-    \\    r.type = 1;
-    \\    const sel = text.slice(0, text.indexOf('{')).trim();
-    \\    r.selectorText = ak.selectorText(sel) ?? sel;
-    \\  }
-    \\  return r;
-    \\}
     \\function validKeyframesName(n) {
     \\  if (/^"(?:[^"\\\n]|\\.)+"$|^'(?:[^'\\\n]|\\.)+'$/.test(n)) return true;
     \\  return /^(?:--|-?(?:[a-zA-Z_]|[^\x00-\x7f]|\\.))(?:[\w-]|[^\x00-\x7f]|\\.)*$/.test(n) && !/^(?:none|default|initial|inherit|unset|revert|revert-layer)$/i.test(n);
     \\}
-    \\function validRule(text) {
-    \\  const k = /^@(?:-webkit-)?keyframes\s+([^{]*)\{/i.exec(text);
-    \\  if (k) return validKeyframesName(k[1].trim());
-    \\  return /^@/.test(text) || ak.selectorText(text.slice(0, text.indexOf('{'))) !== null;
-    \\}
+    \\const cssomRules = G.__cssomRules(ak, hidden, G.__cssomSyntax(ak, validKeyframesName));
+    \\delete G.__cssomRules;
+    \\delete G.__cssomSyntax;
+    \\const validRule = cssomRules.validRule;
     \\let sheetIds = 0;
     \\class CSSStyleSheet {
     \\  constructor(options) {
@@ -3960,7 +3978,10 @@ pub let PRELUDE =
     \\    this.media = { mediaText: options && options.media ? String(options.media) : '', length: 0 };
     \\  }
     \\  get _rules() {
-    \\    if (!this._list) this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
+    \\    if (!this._list) {
+    \\      this._list = this._owner && this._owner.localName === 'style' ? splitRules(this._source).filter(validRule) : [];
+    \\      hidden(this, '_objects', []);
+    \\    }
     \\    return this._list;
     \\  }
     \\  // The sheet of an element: the browser takes its rules over from the
@@ -3979,13 +4000,28 @@ pub let PRELUDE =
     \\    for (const owner of this._adopters) pushAdopted(owner);
     \\  }
     \\  get cssRules() {
-    \\    if (!this._ruleList) hidden(this, '_ruleList', []);
+    \\    if (!this._ruleList) hidden(this, '_ruleList', cssomRules.ruleList([]));
     \\    return this._syncRules();
     \\  }
     \\  _syncRules() {
     \\    const list = this._ruleList;
-    \\    if (list) list.splice(0, list.length, ...this._rules.map(t => ruleObject(this, t)));
+    \\    const rules = this._rules;
+    \\    const objects = this._objects;
+    \\    if (list) list.splice(0, list.length, ...rules.map((t, i) => objects[i] || (objects[i] = cssomRules.ruleObject(this, t))));
     \\    return list;
+    \\  }
+    \\  _ruleChanged(rule) {
+    \\    const i = this._rules && this._objects.indexOf(rule);
+    \\    if (i < 0) return;
+    \\    const text = rule._source();
+    \\    if (!this._owner) {
+    \\      this._rules[i] = text;
+    \\      return this._changed(null);
+    \\    }
+    \\    this._hand();
+    \\    this._rules[i] = text;
+    \\    ak.sheetDelete(this._id, i);
+    \\    ak.sheetInsert(this._id, i, text);
     \\  }
     \\  get rules() { return this.cssRules; }
     \\  get ownerNode() { return this._owner; }
@@ -4010,12 +4046,14 @@ pub let PRELUDE =
     \\    if (rule.indexOf('{') < 0 && !/^@/.test(rule) || !validRule(rule)) throw new DOMException("Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '" + rule + "'.", 'SyntaxError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 0, rule);
+    \\      this._objects.splice(index, 0, undefined);
     \\      this._changed(null);
     \\      this._syncRules();
     \\      return index;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 0, rule);
+    \\    this._objects.splice(index, 0, undefined);
     \\    ak.sheetInsert(this._id, index, rule);
     \\    this._syncRules();
     \\    return index;
@@ -4026,12 +4064,14 @@ pub let PRELUDE =
     \\    if (index >= rules.length) throw new DOMException("Failed to execute 'deleteRule' on 'CSSStyleSheet': The index provided (" + index + ") is larger than the maximum index (" + (rules.length - 1) + ").", 'IndexSizeError');
     \\    if (!this._owner) {
     \\      rules.splice(index, 1);
+    \\      this._objects.splice(index, 1);
     \\      this._changed(null);
     \\      this._syncRules();
     \\      return;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 1);
+    \\    this._objects.splice(index, 1);
     \\    ak.sheetDelete(this._id, index);
     \\    this._syncRules();
     \\  }
@@ -4039,6 +4079,7 @@ pub let PRELUDE =
     \\  removeRule(index) { this.deleteRule(index === undefined ? 0 : index); }
     \\  replaceSync(text) {
     \\    this._list = splitRules(String(text)).filter(r => !/^@import/i.test(r));
+    \\    hidden(this, '_objects', []);
     \\    if (!this._owner) return this._changed(null);
     \\    this._handed = false;
     \\    this._hand();
@@ -5211,6 +5252,35 @@ pub let PRELUDE =
     \\});
     \\for (const c of [AnimationEffect, KeyframeEffect, AnimationTimeline, DocumentTimeline, AnimationPlaybackEvent, Animation]) hidden(G, c.name, c);
     \\G.__animationValues(ak, AnimationEffect, KeyframeEffect, hidden, cssName, fills);
+    \\const READONLY_TYPES = /^(?:text|search|url|tel|email|password|date|month|week|time|datetime-local|number)$/;
+    \\function showPicker() {
+    \\  const fixed = this.disabled || (this instanceof HTMLInputElement && this.readOnly && READONLY_TYPES.test(this.type));
+    \\  if (fixed) throw new DOMException("Failed to execute 'showPicker': the element is not mutable.", 'InvalidStateError');
+    \\  if (!hasActivation()) throw new DOMException("Failed to execute 'showPicker': it requires a user gesture.", 'NotAllowedError');
+    \\  actUntil = 0;
+    \\}
+    \\hidden(HTMLInputElement.prototype, 'showPicker', showPicker);
+    \\hidden(HTMLSelectElement.prototype, 'showPicker', showPicker);
+    \\const VALUE_TYPES = /^(?:text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color)$/;
+    \\const SELECTABLE = /^(?:text|search|tel|url|password)$/;
+    \\const inputType = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type');
+    \\getter(HTMLInputElement.prototype, 'type', inputType.get, function (v) {
+    \\  const before = this.type;
+    \\  const value = this.value;
+    \\  const dirty = ak.valueDirty(this);
+    \\  const selection = SELECTABLE.test(before) ? [this.selectionStart, this.selectionEnd, this.selectionDirection] : null;
+    \\  inputType.set.call(this, v);
+    \\  const now = this.type;
+    \\  if (now === before || !VALUE_TYPES.test(now)) {
+    \\    if (now !== before && now !== 'file' && VALUE_TYPES.test(before) && value !== '') this.setAttribute('value', value);
+    \\    return;
+    \\  }
+    \\  if (!VALUE_TYPES.test(before) && this.hasAttribute('value')) this.value = this.getAttribute('value');
+    \\  else if (VALUE_TYPES.test(before) && dirty) this.value = value;
+    \\  if (!SELECTABLE.test(now)) return;
+    \\  if (selection && this.value === value) this.setSelectionRange(selection[0], selection[1], selection[2]);
+    \\  else this.setSelectionRange(0, 0, 'none');
+    \\});
     \\const cssAnimations = G.__cssAnimations(ak, Animation, KeyframeEffect, documentTimeline, hidden);
     \\delete G.__cssAnimations;
     \\hidden(G, 'CSSAnimation', cssAnimations.CSSAnimation);

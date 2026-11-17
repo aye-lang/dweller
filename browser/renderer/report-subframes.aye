@@ -1,16 +1,16 @@
 import engine
 import ipc
 import pageview
+import paint
 import std.text
 
-fn reportSubframes(r: *mut TabRenderer, p: *mut engine.Page) !void {
+fn reportSubframes(r: *mut TabRenderer, list: *paint.DisplayList, p: *mut engine.Page) !void {
     var out = text.Builder.init(r.alloc)
     defer out.deinit()
-    let all = [4]f64{0.0, 0.0, r.width as f64, r.height as f64}
     let ox = -pageview.snappedScroll(r.scroll_x, r.scale) * r.scale
     let oy = -pageview.snappedScroll(r.scroll_y, r.scale) * r.scale
 
-    try putRemoteFrames(r, &mut out, p, ox, oy, all)
+    try putRemoteFrames(r, &mut out, list, p, [2]f64{ox, oy})
     try engine.settleBoxlessFrames(p)
 
     if evilTest("subframes") { try ipc.putSubframe(&mut out, ipc.Subframe { key: 1, x: 0.0, y: 0.0, width: 1, height: 1, clip: [4]u32{0, 0, 0, 0}, url: r.href.bytes() }) }

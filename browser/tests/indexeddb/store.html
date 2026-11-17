@@ -1,0 +1,47 @@
+<!doctype html>
+<title>IndexedDB: keys, key paths, generators, values</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+const show = k => k instanceof Date ? 'date' + k.getTime() : k instanceof ArrayBuffer ? 'bytes' + new Uint8Array(k).join('.') : Array.isArray(k) ? '[' + k.map(show).join(',') + ']' : typeof k === 'string' ? JSON.stringify(k) : String(k);
+async function run() {
+  const db = await fresh('store', db => {
+    db.createObjectStore('plain');
+    db.createObjectStore('made', { autoIncrement: true });
+    db.createObjectStore('path', { keyPath: 'a.b', autoIncrement: true });
+    db.createObjectStore('pair', { keyPath: ['x', 'y'] });
+  });
+  const tx = db.transaction(db.objectStoreNames, 'readwrite');
+  const plain = tx.objectStore('plain');
+  const keys = [[1, [0]], [], 'b', 'a', '', new Uint8Array([2, 1]).buffer, new Date(5), -Infinity, 3, -0.5, new Uint8Array([2])];
+  keys.forEach((k, i) => plain.put(i, k));
+  log('order ' + (await wait(plain.getAllKeys())).map(show).join(' '));
+  log('range ' + (await wait(plain.getAllKeys(IDBKeyRange.bound(-1, 'a', false, true)))).map(show).join(' '));
+  log('count ' + await wait(plain.count(IDBKeyRange.lowerBound(''))) + ' cmp ' + indexedDB.cmp([1], 'z') + indexedDB.cmp(2, 2) + indexedDB.cmp(new Date(0), 9));
+  for (const bad of [NaN, {}, null, undefined, true, [1, [NaN]], new Date(NaN)]) {
+    try { plain.put(0, bad); log('bad key accepted'); } catch (e) { if (e.name !== 'DataError') log('bad key ' + e.name); }
+  }
+  const made = tx.objectStore('made');
+  log('made ' + await wait(made.add('one')) + ' ' + await wait(made.add('two')) + ' ' + await wait(made.put('ten', 10.7)) + ' ' + await wait(made.add('next')) + ' ' + await wait(made.put('text', 'k')) + ' ' + await wait(made.add('after')));
+  const path = tx.objectStore('path');
+  log('path ' + await wait(path.add({ name: 'gen' })) + ' ' + await wait(path.add({ a: { b: 7 }, name: 'given' })) + ' ' + JSON.stringify(await wait(path.get(1))) + ' ' + path.keyPath);
+  try { path.add({ a: 5 }); log('injected into a number'); } catch (e) { log('inject ' + e.name); }
+  try { path.add({}, 3); log('key with key path'); } catch (e) { log('inline ' + e.name); }
+  const pair = tx.objectStore('pair');
+  await wait(pair.put({ x: 1, y: 'b', v: 1 }));
+  await wait(pair.put({ x: 1, y: 'a', v: 2 }));
+  log('pair ' + (await wait(pair.getAllKeys())).map(show).join(' ') + ' ' + (await wait(pair.get([1, 'a']))).v);
+  const value = { when: new Date(86400000), map: new Map([[1, new Set(['s'])]]), bytes: new Uint8Array([1, 2, 255]), re: /x+/gi, big: 12345678901234567890n, hole: [1, , 3], nan: NaN, nothing: undefined, deep: { list: [true, null] } };
+  value.self = value;
+  await wait(plain.put(value, 'value'));
+  const back = await wait(plain.get('value'));
+  log('value ' + [back.when.getTime(), back.map.get(1).has('s'), Array.from(back.bytes).join('.'), back.re.source + back.re.flags, back.big, back.hole.length + ('1' in back.hole ? 'full' : 'hole'), back.nan, 'nothing' in back, back.self === back, JSON.stringify(back.deep)].join(' '));
+  try { plain.put(() => 1, 'f'); log('function stored'); } catch (e) { log('clone ' + e.name); }
+  await wait(plain.delete(IDBKeyRange.upperBound('', true)));
+  log('after delete ' + await wait(plain.count()) + ' get ' + await wait(plain.get(3)) + ' key ' + show(await wait(plain.getKey(IDBKeyRange.lowerBound('a')))));
+  await wait(plain.clear());
+  log('cleared ' + await wait(plain.count()) + ' all ' + (await wait(plain.getAll(null, 2))).length);
+  done(await ended(tx));
+}
+run().catch(e => done('failed ' + e));
+</script>

@@ -193,7 +193,7 @@ fn rebaseline(t: *mut Tree, i: usize, old: Box) bool {
     var was = old
     while was.first_baseline != t.bx(x).first_baseline || was.last_baseline != t.bx(x).last_baseline {
         let up = t.bx(x).parent orelse return true
-        if t.bx(up).marker.len > 0 {
+        if t.bx(up).marker.len > 0 || t.bx(up).kind == BoxKind.Flex {
             return false
         }
         was = t.bx(up).*
@@ -212,6 +212,9 @@ fn rebaseline(t: *mut Tree, i: usize, old: Box) bool {
 /// root as a full layout does). False for a box not in block flow: the
 /// tree must then be laid out from scratch.
 pub fn relayout(t: *mut Tree, i: usize) AllocError!bool {
+    if t.vertical || writingModeOf(t.bx(i).style) != HORIZONTAL {
+        return false
+    }
     let ok = relayoutUp(t, i) catch |e| {
         t.keep_under = null
         return e

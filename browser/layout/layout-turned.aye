@@ -1,0 +1,31 @@
+import css
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#orthogonal-auto
+fn layoutTurned(t: *mut Tree, i: usize, cb_w: f64, cb_h: f64) AllocError!void {
+    let outer = t.bx(i).style
+
+    t.bx(i).style = t.bx(i).inner.?
+    t.bx(i).inside = true
+    t.bx(i).has_intrinsic = false
+
+    if t.bx(i).parent == null {
+        try layoutBlockLevel(t, i, cb_h, cb_w)
+    } else {
+        try layoutFitted(t, i, cb_h, cb_w)
+    }
+
+    turnSubtree(t, i)
+
+    let b = t.bx(i)
+
+    b.style = outer
+    b.inside = false
+    b.has_intrinsic = false
+    b.margin[0] = lengthOr0(outer[css.MARGIN_TOP], cb_w)
+    b.margin[2] = lengthOr0(outer[css.MARGIN_TOP + 2], cb_w)
+    b.top_strut = Strut.of(b.margin[0])
+    b.bottom_strut = Strut.of(b.margin[2])
+    b.through = false
+    relOffsets(t, i, cb_w, cb_h)
+}

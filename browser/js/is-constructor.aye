@@ -1,0 +1,37 @@
+// https://tc39.es/ecma262/#sec-isconstructor
+
+fn isConstructor(it: *mut Interp, v: Value) bool {
+    let o = objectOf(v)
+
+    if o == NONE {
+        return false
+    }
+
+    if it.heap.obj(o).class == Class.Proxy {
+        return it.isCallable(v)
+    }
+
+    if it.heap.obj(o).class != Class.Function {
+        return false
+    }
+
+    match it.heap.obj(o).data {
+        .Closure { func, .. } => {
+            let fi = it.ast.func(func)
+
+            return !(fi.arrow || fi.method || fi.generator || fi.is_async)
+        }
+
+        .Native { id } => {
+            return it.natives.items()[id].constructs || it.hasOwn(o, A_PROTOTYPE)
+        }
+
+        .Bound { target, .. } => {
+            return isConstructor(it, objVal(target))
+        }
+
+        _ => {
+            return false
+        }
+    }
+}

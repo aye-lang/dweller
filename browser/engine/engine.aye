@@ -50,6 +50,7 @@ pub struct Styling {
     // `domVersion` of the document these styles are for.
     version: u64
     fonts_settled: ?usize = null
+    kept: ?*mut List(css.Sheet) = null
 }
 
 pub struct Page {
@@ -76,7 +77,6 @@ pub struct Page {
     styling: ?*mut Styling
     // The stylesheet source fingerprint for styling (sheet_cache.aye).
     sheet_key: u64
-    kept_sheets: List(css.Sheet)
     tree: ?*mut layout.Tree
     // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
     // which owns it.
@@ -111,6 +111,7 @@ pub struct Page {
     inherited_csp: usize = 0
     frame_options: net.FrameOptions = net.FrameOptions.Allow
     coop: net.Coop = net.Coop.UnsafeNone
+    downloaded: bool = false
     opaque: bool
     sandbox: u32
     // Changes the scripts of other pages made to the document (through
@@ -134,12 +135,17 @@ pub struct Page {
     // Where the window scrolled it before its scripts ran: their
     // scrollY to begin with.
     early_scroll: f64 = 0.0
+    layouts: u64 = 0
     // How far `stepPageScripts` is: 0 not begun, 1 running the
     // scripts, 2 loading the frames' documents (`frame_loads`).
     load_step: u8 = 0
     frame_loads: List(FrameLoad)
     remote: bool = false
     remote_loaded: bool = false
+    controller: u32 = 0
+    worker: u32 = 0
+    worker_boot: []u8 = ""
+    worker_broken: bool = false
 
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
@@ -157,7 +163,6 @@ pub struct Page {
         }
         self.dropTree()
         self.dropStyling()
-        dropKeptSheets(self)
         if self.images |imgs| {
             imgs.deinit()
             alloc.destroy(imgs)
@@ -239,6 +244,7 @@ pub struct Page {
                 // The frames' trees may go before the next layout.
                 t.frames.clear()
             } else {
+                self.layouts += 1
                 t.deinit()
                 self.alloc.destroy(t)
             }
@@ -265,6 +271,7 @@ pub struct Page {
         self.unshareStyles()
         if self.styling |st| {
             st.styles.deinit()
+            dropKeptSheets(self.alloc, st)
             st.author.deinit()
             st.ua.deinit()
             self.alloc.destroy(st)
@@ -664,7 +671,8 @@ pub fn scriptsRan(p: *Page) bool {
 // Its scripts have not run (`runDocument`).
 fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encoding.Encoding, top: []u8, initiator: net.Initiator) AllocError!*mut Page {
     let fetch_began = perf.start()
-    let res = net.request(alloc, target, net.Request { body: body, top: top, initiator: initiator }) catch |e| {
+    let worker = try swNavigation(alloc, target)
+    let res = navigationResponse(alloc, target, net.Request { body: body, top: top, initiator: initiator }, worker) catch |e| {
         perf.end("fetch", fetch_began, target.href)
         match e {
             .OutOfMemory => {
@@ -675,18 +683,26 @@ fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encodin
                     return notPrivatePage(alloc, target, net.describe(e), net.certKindOf(e))
                 }
             }
+            .Downloaded => {
+                return downloadedPage(alloc, target)
+            }
             _ => {}
         }
         return errorPage(alloc, target, net.describe(e))
     }
     perf.end("fetch", fetch_began, target.href)
     defer res.deinit(alloc)
-    return pageOf(alloc, target, &res, fallback)
+    let p = try pageOf(alloc, target, &res, fallback)
+
+    if worker != 0 { try swControl(p, worker) }
+
+    return p
 }
 
 // The page of `res`, the response to a request for `target`, parsed as
 // `fetchPage` does.
 fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding.Encoding) AllocError!*mut Page {
+    if res.remote { return remotePageAt(alloc, target, fallback) }
     var located = finalUrl(alloc, target, res.url) catch |e| {
         return AllocError.OutOfMemory
     }
@@ -772,7 +788,6 @@ fn newPage(alloc: Allocator, located: Url, status: i64, failure: []u8, doc: Docu
         title: title,
         styling: null,
         sheet_key: 0,
-        kept_sheets: List(css.Sheet).init(alloc),
         tree: null,
         script: null,
         images: null,

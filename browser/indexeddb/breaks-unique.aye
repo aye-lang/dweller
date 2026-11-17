@@ -1,0 +1,16 @@
+import std.text
+
+// chromium: content/browser/indexed_db/indexed_db_index_writer.cc
+fn breaksUnique(s: *mut Store, key: []u8, index_keys: []u8) bool {
+    var pairs = KeyPairs { rest: index_keys }
+
+    while pairs.next() {
+        let x = findIndex(s, pairs.index) orelse continue
+        let v = View { store: s, index: x }
+        let at = firstAt(v, pairs.key, null, false)
+
+        if x.unique && at < v.len() && text.eql(v.key(at), pairs.key) && !text.eql(v.primary(at), key) { return true }
+    }
+
+    return false
+}

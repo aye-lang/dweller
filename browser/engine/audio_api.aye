@@ -440,6 +440,11 @@ pub let AUDIO_PRELUDE =
     \\  if (!Number.isFinite(v)) throw new TypeError("Failed to execute '" + what + "' on 'AudioParam': The provided float value is non-finite.");
     \\  return v;
     \\}
+    \\function finiteTime(v, method, iface) {
+    \\  v = +v;
+    \\  if (!Number.isFinite(v)) throw new TypeError("Failed to execute '" + method + "' on '" + iface + "': The provided double value is non-finite.");
+    \\  return v;
+    \\}
     \\function notSupported(m) { return new DOMException(m, 'NotSupportedError'); }
     \\function invalidState(m) { return new DOMException(m, 'InvalidStateError'); }
     \\
@@ -718,13 +723,13 @@ pub let AUDIO_PRELUDE =
     \\  start(when = 0) { this._start(when, 0, undefined); }
     \\  stop(when = 0) {
     \\    if (!this._started) throw invalidState("Failed to execute 'stop' on 'AudioScheduledSourceNode': cannot call stop without calling start first.");
-    \\    when = +when;
+    \\    when = finiteTime(when, 'stop', 'AudioScheduledSourceNode');
     \\    if (!(when >= 0)) throw new RangeError("Failed to execute 'stop' on 'AudioScheduledSourceNode': The stop time provided (" + when + ') is less than the minimum bound (0).');
     \\    H.auStop(this._ctx._id, this._id, when);
     \\  }
     \\  _start(when, offset, duration) {
     \\    if (this._started) throw invalidState("Failed to execute 'start' on 'AudioScheduledSourceNode': cannot call start more than once.");
-    \\    when = +when;
+    \\    when = finiteTime(when, 'start', 'AudioScheduledSourceNode');
     \\    if (!(when >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioScheduledSourceNode': The start time provided (" + when + ') is less than the minimum bound (0).');
     \\    this._started = true;
     \\    this._acquire();
@@ -779,10 +784,11 @@ pub let AUDIO_PRELUDE =
     \\  get loopEnd() { return this._loopEnd; }
     \\  set loopEnd(v) { this._loopEnd = finite(v, 'loopEnd'); this._sync(); }
     \\  start(when = 0, offset = 0, duration) {
-    \\    offset = +offset;
+    \\    when = finiteTime(when, 'start', 'AudioBufferSourceNode');
+    \\    offset = finiteTime(offset, 'start', 'AudioBufferSourceNode');
     \\    if (!(offset >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioBufferSourceNode': The offset provided (" + offset + ') is less than the minimum bound (0).');
     \\    if (duration !== undefined) {
-    \\      duration = +duration;
+    \\      duration = finiteTime(duration, 'start', 'AudioBufferSourceNode');
     \\      if (!(duration >= 0)) throw new RangeError("Failed to execute 'start' on 'AudioBufferSourceNode': The duration provided (" + duration + ') is less than the minimum bound (0).');
     \\    }
     \\    this._start(when, offset, duration);

@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn putIdbPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .Idb { doc, page, more, request } => {
+            try putU32(out, doc)
+            try putU32(out, page)
+            try putU32(out, more)
+            try putBytes(out, request)
+        }
+
+        .IdbReply { more, reply } => {
+            try putU32(out, more)
+            try putBytes(out, reply)
+        }
+
+        .IdbEvent { page, line } => {
+            try putU32(out, page)
+            try putBytes(out, line)
+        }
+
+        _ => {}
+    }
+}

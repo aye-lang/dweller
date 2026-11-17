@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn agentScrollKey(app: *mut App, tmp: Allocator, key: []u8) AllocError!Outcome {
+    var dy = 0.0
+
+    if text.eql(key, "PageDown") || text.eql(key, " ") || text.eql(key, "Space") {
+        dy = app.media.height * 0.875
+    } else if text.eql(key, "PageUp") {
+        dy = -app.media.height * 0.875
+    } else if text.eql(key, "ArrowDown") {
+        dy = 40.0
+    } else if text.eql(key, "ArrowUp") {
+        dy = -40.0
+    } else if text.eql(key, "Home") {
+        dy = -app.scroll
+    } else if text.eql(key, "End") {
+        dy = documentHeight(app)
+    } else {
+        return done(try joined(tmp, "pressed ", key, "; nothing to do (recorded the key event)"))
+    }
+
+    return scrollTo(app, tmp, app.scroll + dy, "scrolled")
+}

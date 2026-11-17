@@ -129,7 +129,7 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
         .Browser => ""
         .Page { url: page } => page
     }
-    if !text.startsWith(href, "http://") && !text.startsWith(href, "https://") {
+    if (!text.startsWith(href, "http://") && !text.startsWith(href, "https://")) || claimed() {
         return 0
     }
     if remote_loader |rl| { return startRemoteLoad(rl, href, req) }
@@ -264,6 +264,7 @@ pub fn loadsRunning() bool {
 /// read, finished loads are kept.
 pub fn pumpLoads() {
     if remote_loader |rl| { return remotePump(rl, 0) }
+    pumpSockets()
     let ld = loader orelse return
     extendForStall(ld)
     if !anyRunning(ld) {
@@ -323,7 +324,7 @@ pub fn releaseLoad(id: u32) {
 /// archive answers at once), nor for a URL other than http or https:
 /// those are made with `request`.
 pub fn liveRequest(target: *Url) bool {
-    if (session == null && remote_loader == null) || archiveReplay() {
+    if (session == null && remote_loader == null) || archiveReplay() || claimed() {
         return false
     }
     return text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
@@ -521,10 +522,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     if result != 0 {
         return failRequest(ld, l, curlError(result, job.curl, &job.sink))
     }
-    storeCookies(s, &job.at, &job.sink) catch |e| {
-        return failRequest(ld, l, FetchError.OutOfMemory)
-    }
-    noteHsts(s, &job.at, &job.sink) catch |e| {
+    storeHead(job) catch |e| {
         return failRequest(ld, l, FetchError.OutOfMemory)
     }
     var status: i64 = 0
@@ -660,6 +658,7 @@ fn performShared(curl: *mut Curl) i32 {
 
 /// Ends every load (when the session stops).
 fn stopLoads() {
+    stopSockets()
     let ld = loader orelse return
     loader = null
     for l in ld.loads.items() {

@@ -1,0 +1,28 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn describeSem(sem: *mut Sem, i: usize, el: NodeId) AllocError!void {
+    let app = sem.app
+    let role = sem.at(i).role
+
+    if hasRef(role) {
+        sem.at(i).ref = try refOf(app, el)
+    }
+
+    if text.eql(role, "heading") {
+        sem.at(i).level = (app.doc.node(el).name[1] - '0') as u32
+    }
+
+    if isLeafRole(role) {
+        sem.at(i).value = dom.valueOf(&app.doc, el)
+    }
+
+    if isNamedByContent(role) {
+        var b = text.Builder.init(sem.alloc)
+
+        try app.doc.textContent(el, &mut b)
+        sem.at(i).name = try collapsed(sem.alloc, b.bytes())
+    }
+}

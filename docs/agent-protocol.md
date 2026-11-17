@@ -10,8 +10,9 @@ actions on refs. Two stdio servers carry it:
   Protocol server (second part).
 
 A window can take agents too: `dweller --agent-socket PATH [URL]`
-serves both protocols on a Unix socket, on the pages a person sees and
-uses at the same time, and `dweller connect PATH [--mcp]` bridges stdio
+serves both protocols on a Unix socket: each agent works in tabs of
+its own beside the person's and can see what the person does
+(`user_context`), and `dweller connect PATH [--mcp]` bridges stdio
 to that socket for MCP clients ([A shared window](#a-shared-window)).
 
 Both keep one session: the page shown, the history, the refs. The
@@ -60,7 +61,15 @@ either. A session does not do this by itself: `scroll` fires the
 page's `scroll` event and moves what its observers see, and `wait`
 gives the page the time to load.
 
-The code is in `browser/agent/`; the goldens in `browser/tests/agent/`.
+The code is in `browser/agent/`; the window's side is in `browser/ui/`
+(`agents.aye`, `spaces.aye`, `hosted-*.aye`, `socket.aye` for `dweller
+connect`, `relay-agent-main.aye`) and the renderer's in
+`browser/renderer/` (`answer-agent.aye`, `renderer-host.aye`,
+`ask-window.aye`); the goldens are in `browser/tests/agent/`.
+
+With `DWELLER_PROCESS=tab` (or `site`) the page of `dweller agent` and
+`dweller mcp` runs in a sandboxed renderer process and the stdio process
+relays the lines to it; the answers are the same.
 
 ## The snapshot
 
@@ -213,7 +222,7 @@ session goes on after an error.
 | `find` | `text` (ignoring ASCII case) | `result`: the matches |
 | `wait` | `selector` (CSS; at most `ms`, 5000 by default), or `ms` alone, or neither (until no timer is left, at most 5 s of page time) | `result` ("found ... after N ms", or "waited N ms"); an error after the time without a match |
 | `eval` | `expression`: a script; its last expression statement is the result | `result`: a string as it is, anything else as `console.log` shows it; an uncaught exception is the error |
-| `tabs`, `tab_new`, `tab_select`, `tab_close`, `user_context` | | only in a window ([A shared window](#a-shared-window)) |
+| `tabs`, `tab_new`, `tab_select`, `tab_close`, `user_context`, `spaces`, `space_close` | | only in a window ([A shared window](#a-shared-window)) |
 | `screenshot` | `ref` (the element's border box), or `full` (bool: the whole document, at most 16384 px tall); neither: the viewport as scrolled | `result` (what it shows and its size), `url`, `title`, `width`, `height`, `png` (the PNG file in base64) |
 | `run` | `code`: a function body ([Code mode](#code-mode-run)); `ms`: the longest the run may take (default 30000) | `result` ("ran N calls"), `value` (what the code returned, as JSON; `null` for `undefined`), `log`, `calls`, `url`, `title`; a failure is the error, with `log` and `calls` |
 
@@ -336,17 +345,32 @@ message"` for an exception of the code itself (a syntax error too).
 than its ms"` once `ms` has passed (checked between calls, and in the
 realm's own code by processor time). In a window or a Space the calls
 are refused like the commands they send (`"paused by user"` while the
-person pauses the Space, the person's tab), and between calls and
-while the run's own code runs a Space reads its control connection, so
-a pause takes effect at the next call; after `stop` the run ends at
-once and is not answered (the connection closes after `stopped`, also
-when the code was busy longer than a stopped Space may live). `wait` inside a run waits on the
+person pauses the Space, the person's tab). In a Space a run executes
+in the tab's renderer: a pause applies from the agent's next request (a
+run already going keeps the state it started with), and after `stop`
+the run is not answered (the agent gets `stopped`, the connection
+closes, and the renderer is killed when it has not exited within a
+second). A run cannot send `spaces` or `space_close`. `wait` inside a run waits on the
 tab's page clock, as in `dweller agent`, also in a window.
 
 ```
 {"id":1,"cmd":"run","code":"navigate('browser/tests/agent/site/form.html'); fill('e2', 'Ada'); click('e4'); wait({ms: 100}); return {checked: snapshot().snapshot.includes('[checked]'), name: evaluate('document.getElementById(\"name\").value')}"}
 {"id":1,"ok":true,"result":"ran 6 calls","value":{"checked":true,"name":"Ada"},"log":[],"calls":6,"url":"file:///.../form.html","title":"Sign up"}
 ```
+
+## Native apps
+
+An app built on the engine without the browser (`browser/shell/`,
+`examples/native/counter`) serves the JSON lines above on its own stdio:
+`APP --agent [--width PX] [--height PX]`. The commands are `snapshot`,
+`click`, `type`, `press` and `scroll`, with the same response fields; `url`
+is the app's address (`app:counter`) and `title` its title. The snapshot
+has the roles the shell knows: `heading`, `paragraph`, `button`,
+`textbox`, `list`, `listitem`, `text`, and `generic` for another element
+with a click handler. `click` runs the app's handler, as a click in its
+window does. The other commands answer `unknown command`. The test
+`native_counter_agent` sends one session to the counter app and to
+`dweller agent` on the same app as a page, and the answers are equal.
 
 ## MCP
 
@@ -409,8 +433,8 @@ replaced; the file is removed when the window closes). Agents connect
 to it while a person uses the window: each one works in tabs of its
 own, in the background, and can look at the person's tabs but not act
 on them; the person sees what the agents do. Each agent works in a
-Space, a process of its own ([Spaces](#spaces)); the window itself
-never runs an agent's request. `--spaces` is still accepted and does
+Space, tabs of its own in renderer processes ([Spaces](#spaces)); the
+window's thread never runs an agent's page. `--spaces` is still accepted and does
 nothing: Spaces are the default (P9.9).
 
 - **Who may connect (Q3.12).** The socket's directory is the user's
@@ -462,11 +486,10 @@ nothing: Spaces are the default (P9.9).
 
 What the person sees and does:
 
-- **Activity.** Before an action, the target element is outlined in
-  purple with its ref (e.g. `e12`), fading out over about a second; an
-  `AI` badge sits in the toolbar while an agent is connected; the
-  status bar tells the last action (`agent: click button "Sign in"
-  [e3]`).
+- **Activity.** The status bar tells the Space's name and its last
+  action (`Alpha: click button "Sign in" [e3]`), and the toolbar shows
+  a chip per Space ([Spaces](#spaces)). The outline of an agent's target
+  element is not drawn for a Space's tabs.
 - **Pause.** The toolbar's Pause button or Cmd+Shift+P (Ctrl+Shift+P)
   pauses the agents: actions (`navigate`, `back`, `forward`, `reload`,
   `click`, `type`, `select`, `press`, `scroll`, `eval` and the tab
@@ -476,12 +499,11 @@ What the person sees and does:
   mouse (else the focused one) and the selected text: every connection
   gets a notification, and `user_context` keeps it as `pointed`.
 - **Focus.** `snapshot` adds `"focused":"e7"` (MCP: a `Focused:` line)
-  when an element of the page has the focus; on a tab of the person's,
-  that is the person's focus.
+  when an element of the page has the focus.
 - **Tabs.** Cmd+T opens a tab, Cmd+W closes the shown one (the last one
   closes the window), Cmd+1..8 show a tab and Cmd+9 the last one; a tab
   strip under the toolbar shows them (a click shows a tab, its `x`
-  closes it), agents' tabs too, so the person can watch one. Without
+  closes it); the person watches an agent's tabs through its chip. Without
   agents the strip shows with two tabs or more; while the window listens
   for agents it is always there, so the page viewport never changes
   height when agents open or close tabs. At most 16 tabs.
@@ -499,7 +521,7 @@ The commands only a window has (MCP: `browser_` and the name):
 
 | `cmd` | arguments | response fields |
 | --- | --- | --- |
-| `tabs` | | `result` ("2 tabs"), `tabs`: `[{"id":1,"url":..,"title":..,"shown":true,"agent":false},...]` (`shown`: the person sees it; `agent`: this connection acts on it) |
+| `tabs` | | `result` ("2 tabs"), `tabs`: `[{"id":1,"url":..,"title":..,"shown":true,"agent":false},...]` (`shown`: the person sees it, always false for a Space's tabs; `agent`: this connection acts on it; `"crashed":true` only on a crashed tab) |
 | `tab_new` | | `result` ("opened tab 2"), `tab`: its id; a tab of the agents', in the background; the connection acts on it from now on |
 | `tab_select` | `tab` (an id) | `result` ("acting on tab 2"), `tab` |
 | `tab_close` | `tab` (default: the one the connection acts on) | `result`; the last tab cannot be closed |
@@ -512,26 +534,35 @@ Tab ids are numbers that are never reused, in a Space. The argument is
 
 ### Spaces
 
-`dweller --agent-socket PATH [FILE|URL]`: each connection is
-served by a Space, a process of its own, so no agent request runs on
+`dweller --agent-socket PATH [FILE|URL]`: each connection gets a
+Space, a group of tabs of its own that the window hosts. Every tab of
+a Space runs in a sandboxed renderer process, like a tab under site
+isolation (`docs/process-model.md` §8), so no agent's page code runs on
 the window's thread; a slow load or a long `eval` never holds up the
-person's input or the window's frames.
+person's input or the window's frames. There is no Space process
+(Q2.12e, 2026-11-16: `dweller space`, its control connection and its
+frame file are gone).
 
 - The window reads a connection's first line after the token, then
-  starts its Space
-  (`dweller space --control FD --agent-socket DIR/agent.sock --width W
-  --height H`, internal: the window program, headless, with the
-  window's size, font and `--no-js`; `DIR` is
-  `/tmp/dweller-WINDOWPID-XXXXXX`, a directory only the user can
-  read), or attaches it to a done Space (below), and from then on
-  copies the bytes both ways without reading them. A Space starts in
-  about 25 ms and takes about 45 MB.
-- The Space serves the whole protocol, JSON lines or MCP, as the window
-  does, on tabs of its own: ids from 1, its agent acts on tab 1 until it
+  starts its Space with one tab and that tab's renderer, or attaches
+  the connection to a done Space (below). Page commands (`navigate`,
+  `snapshot`, `click`, `eval`, `run`, ...) and `wait` go to the
+  renderer of the tab the connection acts on and are answered when the
+  renderer answers; the window commands (`tabs`, `tab_new`,
+  `tab_select`, `tab_close`, `user_context`, `spaces`, `space_close`)
+  are answered by the window from its own records.
+- A Space's tabs have ids from 1; its agent acts on tab 1 until it
   opens or selects another, and `shown` is false (the person sees none
-  of them). It runs the timers of all its tabs. The person's tabs are
-  not in it: `tabs` lists only the Space's tabs, and an agent can
-  neither act on the person's tabs nor `tab_select` them.
+  of them unless they watch the Space). The person's tabs are not in
+  it: `tabs` lists only the Space's tabs, and an agent can neither act
+  on the person's tabs nor `tab_select` them.
+- **Popups.** A tab an agent's page opens (`window.open`, a link with
+  a target) is a tab of the same Space. One that keeps its opener and
+  is same-site with it runs in its opener's renderer process, so
+  `window.opener`, `window.name` and scripting between the two work
+  (Q2.12d); any other gets a renderer of its own, where `opener` is
+  null. An agent's answer waits (at most 5 s) until the tabs its
+  request opened have loaded.
 - **The hello.** The first line may be the hello, an object without
   `cmd` and without `jsonrpc` (no response):
   `{"mcp":true,"name":"Claude Code","space":"new","profile":"shared"}`.
@@ -544,176 +575,107 @@ person's input or the window's frames.
   (MCP: a `notifications/message` of level `error` with
   `{"error":...}`) and the connection is closed: `"no Space 9: see
   \"spaces\""`, `"Space 3 has an agent: only a done Space can be
-  attached to"`, `"Space 3 crashed"`, `"\"profile\" is \"shared\" or
-  \"isolated\""`, `"\"space\" is \"new\" or the id
-  of a done Space (a number)"`, `"too many Spaces (8)"`.
+  attached to"`, `"\"profile\" is \"shared\" or \"isolated\""`,
+  `"\"space\" is \"new\" or the id of a done Space (a number)"`,
+  `"too many Spaces (8)"`.
 - **Spaces stay.** A Space whose agent leaves stays, `done`, with its
   tabs, until an agent attaches to it, the person stops it, or the
   window closes. An agent that attaches acts on the tab the last one
-  acted on. At most 8 Spaces: a new one replaces the oldest `done` or
-  `crashed` one. Ids are never reused.
+  acted on. At most 8 Spaces: a new one replaces the oldest `done`
+  one. Ids are never reused.
 - **`spaces`** lists them: the connection's own Space first, then the
   others by id: `{"id":3,"name":"Claude Code","mine":true,"state":
   "working","last":"click button \"Sign in\" [e3]","tabs":2,"profile":
-  "shared","watched":false}`. `state` is `working` (a request runs;
-  the asking Space is always `working`, or `paused`), `waiting` (a
-  `wait`), `idle`, `paused`, `done` (no agent) or `crashed`; `last` is
-  the last action (as in the status bar, without `agent: `); `watched`
-  is true while the person watches that Space (below). The other Spaces are as the window last heard
-  from them (their status comes over the control connection, below).
+  "shared","watched":false}`. `state` is `working` (a request runs),
+  `waiting` (a `wait`), `idle`, `paused` or `done` (no agent); `last`
+  is the last action (as in the status bar, without `agent: `);
+  `watched` is true while the person watches that Space (below). The
+  window computes every Space's state itself, so the list is current.
   MCP: one line per Space, `- Space 3 "Claude Code" (yours): working,
   2 tabs; last: ...`.
-- **`space_close`** answers `"closing Space 3"`, then the Space ends and
-  the connection is closed (the agent's later requests are not
-  served); the Space is gone from `spaces`.
-- **The person's context.** `user_context` in a Space answers what the
-  window last sent: the same members as in the window (the person's
-  shown tab, scroll, selection, hovered, focused, pointed). The window
-  sends the context when it changed, at most every 100 ms (after the
-  person's input, a load, or the page's timers; refs of the person's
-  tab are computed without laying it out again, except for a new
-  document), and at once on Cmd+Shift+K; a new Space gets it before
-  its first request. So a context can be up to about 100 ms old.
-- **Pointing.** Cmd+Shift+K sends every Space the new context, then the
-  `user_pointed` event, which the Space gives to its agent as in the
-  window.
+- **`space_close`** answers `"closing Space 3"`, then the Space and
+  its tabs' renderers end and the connection is closed (the agent's
+  later requests are not served); the Space is gone from `spaces`.
+- **The person's context.** `user_context` answers from the window as
+  it is at that moment: the person's shown tab, scroll, selection,
+  hovered, focused, pointed.
+- **Pointing.** Cmd+Shift+K gives every connection the `user_pointed`
+  event.
 - **Pause and stop.** The person pauses a Space: its actions fail with
-  `"paused by user"` (as in the window: the acting commands and the tab
-  commands; looking still works) and its agent gets
+  `"paused by user"` (the acting commands and the tab commands, also
+  inside a `run`; looking still works) and its agent gets
   `{"event":"paused","space":3}`; resuming gives
   `{"event":"resumed","space":3}`. The toolbar's Pause button and
   Cmd+Shift+P pause or resume every Space, also while one is shown
-  (acting on the shown Space only is not done yet); a Space started while
-  paused starts paused (without an event). Stopping a Space gives its
-  agent `{"event":"stopped","space":3}`, then the end of its
-  connection, and the Space ends (gone from `spaces`); one that does
-  not exit within a second (a long `eval`) is killed, and its agent
-  then gets only the end. The Space reads the window's messages before
-  each request and while it waits, so a pause or a stop counts from
-  the agent's next request on; a request that runs goes on. In MCP the
-  events are `notifications/message` (level `notice`) whose `data` is
-  the event. In tests, the `--events` words `pause:N`, `resume:N` and
-  `stop:N` act on Space N as its chip's menu does.
-- **Chips.** In place of the `AI` badge, the toolbar shows "You" (the
-  person's tabs, shown) and a chip per Space, left of the Pause button:
-  a dot by its state (purple: working or waiting; light purple: idle;
-  amber: paused; grey: done or being stopped; red: crashed) and its name
-  (long names are cut when the chips do not fit beside an address bar
-  160 px wide). The address bar ends before the chips; nothing else
-  moves, and no row is added. With the mouse over a chip the status
-  line reads `NAME (STATE): LAST`. A click on a chip opens its menu
-  under it, over the page: Pause (Resume) and Stop while an agent is
-  attached, Close for a done or crashed Space; a click elsewhere or
-  Escape closes it (that click does nothing else). Neither the chips
-  nor the menu take the focus or touch the person's page. A stopped
-  Space's chip goes when its process ends.
+  (acting on the shown Space only is not done yet); a Space started
+  while paused starts paused (without an event). Stopping a Space
+  gives its agent `{"event":"stopped","space":3}`, then the end of its
+  connection, and the Space ends (gone from `spaces`); a renderer that
+  does not exit within a second (a long `eval`) is killed. A pause
+  counts from the agent's next request on; a request that runs goes
+  on. In MCP the events are `notifications/message` (level `notice`)
+  whose `data` is the event. In tests, the `--events` words `pause:N`,
+  `resume:N` and `stop:N` act on Space N as its chip's menu does.
+- **Chips.** The toolbar shows "You" (the person's tabs, shown) and a
+  chip per Space, left of the Pause button: a dot by its state
+  (purple: working or waiting; light purple: idle; amber: paused; grey:
+  done or being stopped) and its name (long names are cut when the
+  chips do not fit beside an address bar 160 px wide). The address bar
+  ends before the chips; nothing else moves, and no row is added. With
+  the mouse over a chip the status line reads `NAME (STATE): LAST`. A
+  click on a chip opens its menu under it, over the page: Pause
+  (Resume) and Stop while an agent is attached, Close for a done
+  Space; a click elsewhere or Escape closes it (that click does
+  nothing else). Neither the chips nor the menu take the focus or
+  touch the person's page.
 - **Watching.** A click on a Space's chip (it also opens the chip's
   menu), or Cmd+Shift+1..8 (the Nth chip from the left), shows that
   Space; a click on "You" or Cmd+Shift+0 shows the person's tabs again,
   and so does the end of the shown Space. The shown chip has the grey
-  of "You" before. The window sends the Space `watch` with the size of
-  its page area; the Space's window takes that size for its own page
-  area (its toolbar and tab strip above it) and, after each frame it
-  draws, at most 30 a second, writes its page area to its frame file
-  (`DIR/frame`, beside its socket) and sends `frame`. The window draws
-  the newest frame in its page area (white until the first one; the
-  toolbar, tab strip and address bar stay the person's), and sends
-  `watch` with `on` false to the Space it stops showing.
+  of "You" before. The window draws the newest frame of the Space's
+  first tab's renderer in its page area, as it draws a tab's (white
+  until the first frame; the toolbar, tab strip and address bar stay
+  the person's).
 - **Taking over.** While a Space is shown (and no chip menu is open),
   the person's clicks in the page area, keys without Cmd while the page
-  has the focus, text and the wheel go to the Space, not to the
-  person's page: the window sends `input` with one word of `--events`
-  (`click:X,Y[,right|middle]`, `key:NAME` with `shift+`, `ctrl+`, `alt+`
-  and `repeat+`, `keyup:NAME`, `text:ABC` with `_` for a space,
-  `wheel:X,Y[,flipped]`), in the Space's window coordinates (its page
-  area sits where the window's does), and the Space handles it as its
-  own window would. Keys with no word (F-keys, say) are dropped. Showing
-  a Space, or clicking in its page area, gives the page the focus;
-  clicking the address bar takes it back. The first input after a tab
-  was free takes over the Space's shown tab: the Space sends the agent
-  `taken_over` (`space`, `tab`), and the agent's acting commands
-  (`ACTING`: navigate, click, type, eval, `tab_close`...) on that tab
-  fail with "the user took over tab N (wait for handed_back)"; reading
-  commands (`snapshot`, `read`, `find`, `screenshot`) and `wait` still
-  work, and the Space's other tabs and the other Spaces are not
-  touched. Hand back (the chip menu's third item, shown while the Space
-  has a taken tab; in tests the `--events` word `handback:N`) sends
-  `hand_back`; the Space frees every taken tab and sends `handed_back`
-  (`space`, `tab`) for each. The chip menu's item and `status`'s
-  `taken` come from the Space, so they follow its tabs. A closed tab
+  has the focus, text and the wheel go to the shown tab's renderer, not
+  to the person's page. Showing a Space, or clicking in its page area,
+  gives the page the focus; clicking the address bar takes it back. The
+  first input after a tab was free takes that tab over: the agent gets
+  `taken_over` (`space`, `tab`), and its acting commands (`ACTING`:
+  navigate, click, type, eval, `tab_close`...) on that tab fail with
+  "the user took over tab N (wait for handed_back)"; reading commands
+  (`snapshot`, `read`, `find`, `screenshot`) and `wait` still work, and
+  the Space's other tabs and the other Spaces are not touched. Hand
+  back (the chip menu's third item, shown while the Space has a taken
+  tab; in tests the `--events` word `handback:N`) frees every taken
+  tab, with `handed_back` (`space`, `tab`) for each. A closed tab
   forgets its flag without an event.
-- **Logins.** A `shared` Space starts with the window's cookies
-  (session cookies too) and `localStorage`, and reads an origin's
-  `localStorage` the window has not touched yet from the window's
-  profile (it never writes the profile). From then on each side sends
-  the other every cookie it stores (from a response or
-  `document.cookie`) and every `localStorage` write; the window passes a
-  Space's on to the other shared Spaces. So a login in the person's tab
-  is sent by the agent's next request, and a cookie or item an agent's
-  page sets is seen by the person's next request or script (the request
-  that runs while it changes does not see it). Two writes of one cookie
-  or item settle by arrival order; a change from another process fires
-  no `storage` event. `sessionStorage` is not shared. An `isolated`
-  Space starts with no cookies and no `localStorage` and shares
-  nothing; `spaces` shows each Space's `profile`.
+- **Logins.** A `shared` Space (the default) uses the person's cookie
+  jar and `localStorage`, which the window keeps: its renderers ask the
+  window for them as a tab's do, so a login in the person's tab is
+  there for the agent's next request and what an agent's page sets is
+  there for the person's, with `storage` events between them as
+  between tabs. An `isolated` Space gets a partition of its own in the
+  window (Q2.12c): a cookie jar, `localStorage` and the HTTP cache and
+  connections, in memory only, never written to the profile, and
+  dropped when the Space goes (`space_close`, stop, or replaced as the
+  oldest done one). `sessionStorage` is per tab either way. `spaces`
+  shows each Space's `profile`.
 - **Activity.** A Space's new last action shows in the window's status
   line after its name (`Alpha: click button "Sign in" [e3]`), and what
   the person did to a Space after it (`Alpha paused`). The outline of an
   agent's target is not drawn in a watched Space's frames yet.
-- A Space exits when it is stopped or closed, or when the window closes
-  or is killed (the end of file on its control connection, a
-  socketpair). If a Space crashes, its agent gets
-  `{"id":null,"ok":false,"error":"the Space crashed"}` (MCP: a
-  `notifications/message` of level `error` with `{"error":"the Space
-  crashed"}`) and its connection is closed; the Space is listed as
-  `crashed`; the window and the other Spaces go on. The window reaps
-  its Spaces and, when it closes, kills those still running after a
-  second.
-- **Hosted Spaces** (`DWELLER_SPACES=renderer`, Q2.12; the default
-  once the switch flips). The window serves the Space itself, each of
-  its tabs in a renderer of its own. A `shared` Space uses the person's
-  jar and `localStorage`; an `isolated` one gets a partition of its own
-  in the window (Q2.12c): a cookie jar, `localStorage` and the HTTP
-  cache and connections, in memory only, never written to the profile,
-  and dropped when the Space goes (`space_close`, stop, or replaced as
-  the oldest done one). `sessionStorage` is per tab either way. The
-  Space no longer crashes as a whole: when a tab's renderer dies, the
-  request on it and every later page command on that tab (`navigate`,
-  `snapshot`, `eval`, `wait`, ...) fail with `"renderer crashed"`
-  (`{"id":5,"ok":false,"error":"renderer crashed"}`; MCP: an error
-  result), `tabs` lists the tab with `"crashed":true` (MCP: `[crashed]`),
-  and the Space, its other tabs and the window go on; `tab_close`
-  closes the crashed tab, and `tab_new` opens a fresh one.
-
-The control connection (internal; both ways JSON lines, `{"ctl":...}`;
-the window never waits on it: what a Space's socket does not take is
-kept, and of the list of Spaces and the context only the newest is
-sent once the rest went):
-
-| From | `ctl` | Members | Meaning |
-|---|---|---|---|
-| window | `spaces` | `id`, `name`, `profile` (the Space's own), `others` (the other Spaces' objects, as in `spaces`), `detail` (their lines for MCP) | sent when a Space comes, goes or its status changes |
-| window | `context` | the members of `user_context`, and `detail` (its text for MCP) | the person's context, when it changed |
-| window | `pointed` | the members of the `user_pointed` event | Cmd+Shift+K (after the new `context`) |
-| window | `pause`, `resume`, `stop` | | the person paused, resumed or stopped this Space |
-| window | `share` | `cookies` (the jar in the cookie file format, session cookies with expiry 0), `profile` (the window's profile directory, or empty) | first, to a `shared` Space only; then a `storage` `clear` per origin the window has read and a `set` per item |
-| both | `cookie` | `url`, `line` (the `Set-Cookie` value or the `document.cookie` assignment), `script` (bool: from a script, which cannot set HttpOnly) | the sender stored a cookie; the other side stores it again (the window also passes it to its other shared Spaces) |
-| both | `storage` | `origin`, `kind` (`set`, `remove` or `clear`), `key`, `value` | the sender changed `localStorage`; the other side does the same (and the window passes it on) |
-| Space | `status` | `state` (as in `spaces`, `done` when no agent is attached), `last`, `tabs`, `taken` (bool: a tab is taken over), `title` and `url` (of its agent's tab) | when it changed: before and after each request (before its answer), when a `wait` ends, an agent comes or goes, or it is paused |
-| Space | `close` | | its agent sent `space_close` (then it exits) |
-| window | `watch` | `on` (bool), `width`, `height` (the window's page area, CSS px), `scale` | send frames (or stop); the Space's page area takes that size |
-| Space | `frame` | `seq`, `width`, `height` (device px) | a new frame is in the frame file |
-| window | `input` | `events`: one word of `--events` | the person's click, key, text or wheel while watching |
-| window | `hand_back` | | the person gives the taken tabs back |
-
-The frame file holds two frames of `width` × `height` RGBA pixels, one
-after the other; frame `seq` is in slot `seq % 2`, so the Space writes
-the slot the window is not reading. The Space makes it (mode 0600),
-grows it with `ftruncate` and maps it shared; it never shrinks it, so
-the window's mapping (read-only, the size of the last `frame`) stays
-inside the file. The window maps it on a `frame` of the shown Space and
-copies the slot into its canvas when it draws; it never waits on the
-file or the Space. The Space removes the file with its directory.
+- **Crashes.** A Space does not crash as a whole. When a tab's
+  renderer dies, the request on it and every later page command on
+  that tab (`navigate`, `snapshot`, `eval`, `wait`, ...) fail with
+  `"renderer crashed"` (`{"id":5,"ok":false,"error":"renderer
+  crashed"}`; MCP: an error result), `tabs` lists the tab with
+  `"crashed":true` (MCP: `[crashed]`), and the Space, its other tabs
+  and the window go on; `tab_close` closes the crashed tab, and
+  `tab_new` opens a fresh one. Tabs that share a renderer (a popup and
+  its opener) crash together. When the window closes or is killed, the
+  renderers read the end of file on their connections and exit.
 
 ### `dweller connect`
 
@@ -740,15 +702,13 @@ person shares the window.
 
 `--exit-when-idle` closes the window once the last agent has left, and
 lets `--events`, `--state`, `--text` and `--save` work without
-`--frames`. In `--events`, the word `agents:N` makes the events after it
-wait until the agents made N requests (the MCP hello does not count);
-`--state` then adds the tabs, the page viewport's size (`viewport
+`--frames`. `--state` then adds the tabs, the page viewport's size (`viewport
 800x532`), whether the agents are paused, the status bar's activity
 line, one line `space ID "NAME" STATE: LAST` per Space (`: LAST`
 only when it did something), and `loop_max_ms N`: the longest
 iteration of the window's loop while an agent was connected, without
-its wait for events. `agents:N` waits for N lines from
-the Spaces (answers and events), and the words `pause:N`, `resume:N`
+its wait for events. `agents:N` waits for N lines sent
+to agents (answers and events), and the words `pause:N`, `resume:N`
 and `stop:N` pause, resume or stop Space N. `cargo test
 --test browser window_spaces` runs `browser/tests/agent/spaces/X.jsonl`
 with the events of `X.events`, over the socket from the test or through

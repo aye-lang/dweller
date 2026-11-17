@@ -1,0 +1,59 @@
+# Native apps on Dweller's engine
+
+`counter/` is the V2 spike of `docs/vision.md`: an Aye program that opens
+a window and runs a small app on the browser's engine. The document is
+built from code (`dom.Document` is the scene graph), styled by a CSS
+string, laid out and painted by the browser's own `css/`, `layout/` and
+`paint/`. No HTML parser runs, and `js/`, `engine/` and `net/` are not in
+the binary.
+
+```
+aye build examples/native/counter -o target/counter --mode fast
+target/counter
+```
+
+The app is `counter/main.aye`, `counter/counter.css` and the component
+`counter/widget/`. Its `aye.toml` names the engine as a path dependency,
+and the app imports `dweller.shell` (the window, `browser/shell/`).
+`shell.run(alloc, css, build)` opens the window, and `build` mounts the
+component on `app.body` (`shell.mount`). The component is written against
+a few DOM functions (`docs/plans/cards/V3.md`), so the same file also
+builds for wasm32 and runs in a page over `widget/glue.js`:
+
+```
+aye build examples/native/counter/widget --target wasm32-freestanding -o widget.wasm
+```
+
+An app can also fill `app.body` itself (`app.element`, `app.setAttr`,
+`app.setText`, `app.onClick(element, handler)`). Either way a change to
+the document is styled and laid out incrementally at the next frame.
+
+`counter/counter.html` is the same app as a web page, for comparing the
+two (`dweller counter.html`).
+
+Headless runs, as the browser's window has them:
+
+```
+SDL_VIDEODRIVER=dummy target/counter --font fixed --frames 8 \
+    --events "click:36,134 frame text:hello wheel:-3" \
+    --save out.png --dump --timing
+```
+
+`--events` takes `click:X,Y`, `wheel:Y`, `text:STRING` (`_` is a space),
+`key:NAME` (backspace, delete, left, right, home, end) and `frame`.
+`--dump` prints the document, `--timing` the time to the first frame, the
+frame times and how many layouts were full or partial, and
+`--full-layout` turns the partial layout off (the test compares the two).
+
+An agent uses the app as it uses a page (`docs/agent-protocol.md`,
+"Native apps"): `target/counter --agent` answers `snapshot`, `click`,
+`type`, `press` and `scroll` as JSON lines on stdio.
+
+```
+printf '%s\n' '{"id":1,"cmd":"snapshot"}' '{"id":2,"cmd":"click","ref":"e2"}' | target/counter --agent
+```
+
+The same app in a terminal (V7): `target/counter --tui` prints one frame
+as ANSI, laid out in cells by the same engine with the stylesheet
+`counter/counter.tui.css` (1 px is one cell). `--events` works as above,
+with clicks in columns and rows.

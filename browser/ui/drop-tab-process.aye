@@ -1,8 +1,18 @@
 fn dropTabProcess(tp: *mut TabProcess, why: []u8) {
     var st: i32 = 0
+    var at = tab_processes
 
     kill(tp.pid, SIGKILL)
     waitpid(tp.pid, &mut st, 0)
-    closeFd(tp.fd)
-    tp.gone = why
+
+    while at |cur| {
+        if cur.pid == tp.pid && cur.gone.len == 0 {
+            closeFd(cur.fd)
+            cur.gone = why
+        }
+
+        at = cur.next
+    }
+
+    dropIdbProcess(tp)
 }

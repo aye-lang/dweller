@@ -9,12 +9,16 @@ fn serviceTabProcess(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!bool {
     let hung = try watchHang(tp)
 
     try answerHeld(tp)
+    try answerSockets(tp)
+    try keepAfterDownload(slot, tp)
 
     let sent = sendSome(tp.fd, tp.outbox.bytes())
 
     if sent > 0 {
         ipc.consume(&mut tp.outbox, sent as usize)
     }
+
+    try sendAttaches(tp)
 
     if sent < 0 || !(try readTabProcess(tp)) {
         dropTabProcess(tp, "crashed")

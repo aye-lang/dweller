@@ -1,0 +1,33 @@
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub struct SemNode {
+    role: []u8
+    name: []u8 = ""
+    el: ?NodeId = null
+    level: u32 = 0
+    ref: u32 = 0
+    value: []u8 = ""
+    inline: []u8 = ""
+    closed: bool = false
+    children: List(usize)
+}
+
+pub struct Sem {
+    alloc: Allocator
+    app: *mut App
+    nodes: List(SemNode)
+
+    fn at(self: *Self, i: usize) *mut SemNode {
+        return &mut self.nodes.items()[i]
+    }
+
+    fn add(self: *mut Self, parent: usize, role: []u8, el: ?NodeId) AllocError!usize {
+        try self.nodes.append(SemNode { role: role, el: el, children: List(usize).init(self.alloc) })
+        try self.at(parent).children.append(self.nodes.len() - 1)
+
+        return self.nodes.len() - 1
+    }
+}

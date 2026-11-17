@@ -9,6 +9,10 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
         let got = (try ipc.nextMessage(r.current.bytes())).?
 
+        if !keepsList(got.message) {
+            r.relist = true
+        }
+
         engine.setTabHost(r.width > 0 && (drivesInput(got.message) || got.message is .Agent))
 
         match got.message {
@@ -26,19 +30,42 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if !(try traverseTo(r, index)) { return false }
             }
 
-            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. } => try landFetched(r, got.message)
+            .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. }, .FetchRemote { .. } => try landFetched(r, got.message)
+            .PermissionAnswer { id, state } => {
+                if state > 2 { return false }
+
+                try engine.answerPermission(id, state as u8)
+                r.landed = true
+            }
+
+            .SocketNote { .. } => {
+                if !(try landSocketNote(r, got.message)) { return false }
+            }
+
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
+            .AskState { with_text } => try sayState(r, got.frame, with_text != 0)
+            .Visible { on } => {
+                if on > 1 { return false }
+
+                try showVisible(r, on == 1)
+            }
+
+            .AgentViewport { width, height } => {
+                r.agent_size = [2]f64{width, height}
+            }
+
             .AgentPaused { on } => {
                 r.agent_paused = on != 0
             }
 
             .Agent { id, mcp, ref_base, line } => try answerAgent(r, got.frame, id, mcp != 0, ref_base, line)
+            .IdbEvent { page, line } => try engine.idbEvent(page, line)
             .StorageEvent { nulls, key, old, value, url } => try engine.storageEvent(r.alloc, url, unlessNull(key, nulls, 1), unlessNull(old, nulls, 2), unlessNull(value, nulls, 4))
 
             .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
-                if kind > 3 { return false }
+                if kind > 4 { return false }
 
                 try mouseInput(r, kind, button, MouseAt { x: x, y: y, mx: mx, my: my, buttons: buttons, mods: mods, clicks: clicks })
                 r.took(seq)
@@ -70,10 +97,32 @@ fn answerAll(r: *mut TabRenderer) !bool {
             .AdvanceFocus { key, reverse } => try advanceFocus(r, key, reverse != 0)
             .ViewportIntersection { x0, y0, x1, y1 } => try takeIntersection(r, [4]u32{x0, y0, x1, y1})
             .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name } => try engine.setFrameOwner(r.alloc, engine.FrameOwner { parent_frame: parent_frame, parent_page: parent_page, top_frame: top_frame, sandbox: sandbox, name: name })
-            .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers } => {
-                let m = engine.RemoteMessage { page: page, from_key: from_key, from_frame: from_frame, from_page: from_page, origin: origin, target_origin: target_origin, data: data, buffers: buffers }
+            .PortPosted { tab, key, data, buffers } => {
+                if r.page |p| { try engine.deliverPortMessage(p, tab, key, data, buffers) }
+
+                wakeForMessage(r)
+            }
+
+            .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers, ports } => {
+                let m = engine.RemoteMessage { page: page, from_key: from_key, from_frame: from_frame, from_page: from_page, origin: origin, target_origin: target_origin, data: data, buffers: buffers, ports: ports }
 
                 if r.page |p| { try engine.deliverRemoteMessage(p, m) }
+
+                wakeForMessage(r)
+            }
+
+            .ContextClosed { context } => closeContext(r, context)
+            .ContextTab { context, frame } => engine.setContextTab(context, frame)
+            .OpenerInfo { frame, name } => {
+                r.remote_opener = frame
+                r.opener_name.clear()
+                try r.opener_name.append(name)
+            }
+
+            .AttachTab { context } => {
+                if r.fds.len() == 0 { return false }
+
+                try r.attaching.append(Attach { context: context, fd: r.fds.orderedRemove(0) })
             }
 
             .FrameLoaded { key } => {
@@ -97,6 +146,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
         if drivesInput(got.message) { try sendContexts(r) }
     }
 
+    try advanceStaged(r, false)
     try paintFrame(r)
     try reportPage(r)
 

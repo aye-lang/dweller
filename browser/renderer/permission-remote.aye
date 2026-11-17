@@ -1,0 +1,17 @@
+import ipc
+import net
+
+fn permissionRemote(href: []u8, kind: u8) u8 {
+    let r = fetch_renderer orelse return net.PERMISSION_DENIED
+
+    if href.len == 0 { return net.PERMISSION_DENIED }
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.PermissionGet { doc: docOf(r, href), kind: kind as u32 }) catch return net.PERMISSION_DENIED
+
+    let got = awaitReply(r) orelse return net.PERMISSION_DENIED
+
+    return match got {
+        .PermissionState { state } => (state & 3) as u8
+        _ => net.PERMISSION_DENIED
+    }
+}

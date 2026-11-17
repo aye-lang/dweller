@@ -1,0 +1,28 @@
+import css
+import std.math
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#auto-margins
+fn crossAutoOffset(t: *Tree, c: usize, row: bool, free: f64) ?f64 {
+    let s = t.bx(c).style
+    var start = isKeyword(s[css.MARGIN_TOP + 3], "auto")
+    var end = isKeyword(s[css.MARGIN_TOP + 1], "auto")
+
+    if row {
+        start = isKeyword(s[css.MARGIN_TOP], "auto")
+        end = isKeyword(s[css.MARGIN_TOP + 2], "auto")
+    }
+
+    if !start && !end {
+        return null
+    }
+
+    if start && end {
+        return math.max(free, 0.0) / 2.0
+    }
+
+    if start {
+        return math.max(free, 0.0)
+    }
+
+    return 0.0
+}

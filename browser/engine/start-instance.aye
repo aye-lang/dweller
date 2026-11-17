@@ -1,0 +1,46 @@
+import html
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+struct WorkerStart {
+    version: u32
+    scope: []u8
+    script_url: []u8
+    source: []u8
+    install: bool
+}
+
+// chromium: content/browser/service_worker/embedded_worker_instance.cc
+fn startInstance(alloc: Allocator, w: WorkerStart) AllocError!?*mut Page {
+    let st = try swStateOf(alloc)
+    let located = url.parse(alloc, w.script_url) catch return null
+    let p = try newPage(alloc, located, 200, "", try html.parse(alloc, ""))
+    var boot = text.Builder.init(alloc)
+    defer boot.deinit()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try boot.appendUint(w.version as u64)
+    try boot.appendByte('\n')
+    try boot.append(w.scope)
+    try boot.appendByte('\n')
+    try boot.append(w.script_url)
+    try boot.appendByte('\n')
+    try boot.appendUint(w.install as u64)
+    p.worker = w.version
+    p.worker_boot = boot.bytes()
+    try st.instances.append(p)
+
+    let was = st.running
+
+    st.running = true
+    st.seen = true
+    try startPageScripts(p)
+    p.worker_boot = ""
+    p.worker_broken = !(try evalInPage(p, w.source, &mut out))
+    st.running = was
+
+    return p
+}

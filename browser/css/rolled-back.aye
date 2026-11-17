@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-cascade-5/#default
+fn rolledBack(c: *mut Computer, p: usize, v: Value) AllocError!Value {
+    let word = revertWord(v)
+
+    if word == 0 {
+        return v
+    }
+
+    if !c.rollback {
+        return Value.Unset
+    }
+
+    if word == REVERT_ORIGIN {
+        return rollbackValue(c, p, c.under[NPROPS + p])
+    }
+
+    return rollbackValue(c, p, c.under[p])
+}

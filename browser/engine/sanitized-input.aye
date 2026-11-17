@@ -1,0 +1,22 @@
+import dom
+import std.mem.AllocError
+import std.text
+
+// https://html.spec.whatwg.org/multipage/input.html#value-sanitization-algorithm
+fn sanitizedInput(kind: []u8, value: []u8, out: *mut text.Builder) AllocError![]u8 {
+    for c in value {
+        if c != '\n' && c != '\r' {
+            try out.appendByte(c)
+        }
+    }
+
+    if text.eql(kind, "email") || text.eql(kind, "url") {
+        return text.trim(out.bytes())
+    }
+
+    if isScalarInput(kind) && dom.scalar(kind, out.bytes()) == null {
+        return ""
+    }
+
+    return out.bytes()
+}

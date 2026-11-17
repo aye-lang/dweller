@@ -1,0 +1,41 @@
+import std.mem.AllocError
+
+fn ground(t: *mut Term, b: u8) AllocError!void {
+    let p = &mut t.parser
+
+    if b < 0x20 {
+        p.utf8_left = 0
+
+        return execute(t, b)
+    }
+
+    if b < 0x80 {
+        p.utf8_left = 0
+
+        if b != 0x7F {
+            try print(t, b as u32)
+        }
+    } else if b < 0xC0 && p.utf8_left > 0 {
+        p.utf8_code = (p.utf8_code << 6) | (b & 0x3F) as u32
+        p.utf8_left -= 1
+
+        if p.utf8_left == 0 {
+            try print(t, p.utf8_code)
+        }
+    } else if b >= 0xC0 {
+        startUtf8(p, b)
+    }
+}
+
+fn startUtf8(p: *mut Parser, b: u8) {
+    if b >= 0xF0 {
+        p.utf8_left = 3
+        p.utf8_code = (b & 0x07) as u32
+    } else if b >= 0xE0 {
+        p.utf8_left = 2
+        p.utf8_code = (b & 0x0F) as u32
+    } else {
+        p.utf8_left = 1
+        p.utf8_code = (b & 0x1F) as u32
+    }
+}

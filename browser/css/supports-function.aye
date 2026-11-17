@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-conditional-5/#at-supports-ext
+fn supportsFunction(name: []u8, args: []Token) bool {
+    if text.eqlIgnoreCase(name, "selector") {
+        return true
+    }
+
+    let arg = trimmedTokens(args)
+
+    if arg.len != 1 {
+        return false
+    }
+
+    if text.eqlIgnoreCase(name, "font-format") {
+        return arg[0].kind == Tok.Ident && inList(arg[0].text, "woff woff2 truetype opentype collection") != null
+    }
+
+    if text.eqlIgnoreCase(name, "font-tech") {
+        return arg[0].kind == Tok.Ident && inList(arg[0].text, "features-opentype variations color-colrv0 color-colrv1 palettes") != null
+    }
+
+    if text.eqlIgnoreCase(name, "at-rule") {
+        return arg[0].kind == Tok.AtKeyword && inList(arg[0].text, "import media supports layer container scope property font-face keyframes namespace page") != null
+    }
+
+    return false
+}

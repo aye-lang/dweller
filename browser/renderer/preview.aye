@@ -1,0 +1,36 @@
+import engine
+import std.mem.Allocator
+
+struct Preview {
+    loads: StagedLoad
+    page: ?*mut engine.Page = null
+    on: bool = false
+    shown: bool = false
+    len: usize = 0
+    due: u64 = 0
+
+    pub fn init(alloc: Allocator) Preview {
+        return Preview { loads: StagedLoad.init(alloc) }
+    }
+
+    pub fn drop(self: *mut Self) {
+        self.loads.drop()
+
+        if self.page |p| { p.destroy() }
+
+        self.page = null
+        self.shown = false
+    }
+
+    pub fn end(self: *mut Self) {
+        self.drop()
+        self.on = false
+        self.len = 0
+        self.due = 0
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.drop()
+        self.loads.deinit()
+    }
+}

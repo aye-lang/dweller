@@ -1,0 +1,36 @@
+// spec: https://drafts.csswg.org/css-syntax-3/#consume-declaration
+fn declEnd(src: []u8, from: usize) usize {
+    var depth: usize = 0
+    var quote: u8 = 0
+    var i = from
+
+    while i < src.len {
+        let c = src[i]
+
+        if c == '\\' {
+            i += 1
+        } else if quote != 0 {
+            quote = quoteAfter(quote, c)
+        } else if c == '"' || c == '\'' {
+            quote = c
+        } else if c == '(' || c == '[' || c == '{' {
+            depth += 1
+        } else if (c == ')' || c == ']' || c == '}') && depth > 0 {
+            depth -= 1
+        } else if c == ';' && depth == 0 {
+            return i
+        }
+
+        i += 1
+    }
+
+    return src.len
+}
+
+fn quoteAfter(quote: u8, c: u8) u8 {
+    if c == quote {
+        return 0
+    }
+
+    return quote
+}

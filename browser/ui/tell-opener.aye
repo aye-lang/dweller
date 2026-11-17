@@ -1,0 +1,13 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_frame_host_manager.cc (CreateOpenerProxies: the opener's proxy in the process a window commits in)
+fn tellOpener(slot: *TabSlot, tp: *mut TabProcess) AllocError!void {
+    let home = slot.home orelse return
+
+    tp.opener_tab = slot.opener
+
+    if tp.serial == home.serial { return }
+
+    return ipc.encode(&mut tp.outbox, slot.id, ipc.Message.OpenerInfo { frame: slot.opener, name: slot.name.bytes() })
+}

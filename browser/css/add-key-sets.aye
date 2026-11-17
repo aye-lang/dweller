@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+fn addKeySets(sets: *mut KeySets, sheet: *Sheet) AllocError!void {
+    for r in sheet.rules.items() {
+        for k in r.sel_start..r.sel_end {
+            let cx = sheet.complexes.items()[k]
+
+            if cx.end == cx.start { continue }
+
+            var outer = Reach { kind: ReachKind.Own, distance: 0 }
+
+            if cx.pseudo > 2 { outer.kind = ReachKind.Whole }
+
+            try walkKeySets(sets, sheet, k, outer, compoundFeature(sheet, sheet.compounds.items()[cx.end - 1]), 0)
+        }
+    }
+
+    for sc in sheet.scoped.items() {
+        try addKeySets(sets, sc.sheet)
+    }
+}

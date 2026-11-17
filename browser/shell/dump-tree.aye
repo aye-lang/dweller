@@ -1,0 +1,28 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+fn dumpTree(app: *mut App, h: NodeId, depth: usize, out: *mut text.Builder) AllocError!void {
+    let n = app.doc.node(h)
+
+    for _ in 0..depth {
+        try out.append("  ")
+    }
+
+    if n.kind == dom.Kind.Text {
+        try dumpQuoted(out, n.data)
+        try out.appendByte('\n')
+
+        return
+    }
+
+    try dumpOpening(app, h, out)
+
+    var cur = n.first_child
+
+    while cur |c| {
+        try dumpTree(app, c, depth + 1, out)
+        cur = app.doc.node(c).next
+    }
+}

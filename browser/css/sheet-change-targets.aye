@@ -14,15 +14,14 @@ pub fn sheetChangeTargets(doc: *Document, a: *Sheet, b: *Sheet, out: *mut List(N
     if scoped.len > 0 { return scoped }
 
     let d = changedRules(a, b)
-    var removed = List(Simple).init(a.alloc)
+    var removed = List(RuleTarget).init(a.alloc)
     defer removed.deinit()
-    var added = List(Simple).init(a.alloc)
+    var added = List(RuleTarget).init(a.alloc)
     defer added.deinit()
 
     if !(try ruleSubjects(a, d.old_start, d.old_end, &mut removed)) || !(try ruleSubjects(b, d.new_start, d.new_end, &mut added)) { return "sheet:universal" }
 
-    try markSubjects(doc, a, removed.items(), out)
-    try markSubjects(doc, b, added.items(), out)
+    if !(try markSubjects(doc, a, removed.items(), out)) || !(try markSubjects(doc, b, added.items(), out)) { return "sheet:universal" }
 
     return ""
 }

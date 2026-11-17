@@ -1,0 +1,18 @@
+import css
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.map.IntMap
+import std.mem.AllocError
+
+fn addAnchorRoot(doc: *Document, g: *Geometry, el: NodeId, out: *mut List(NodeId), shallow: *mut List(bool), found: *mut IntMap(u32, usize)) AllocError!void {
+    let seen = g.styles.has_anchors.get(el.index) orelse return
+
+    try addRoot(out, shallow, found, el, true)
+
+    for start in g.deps.sets.has_starts.items() {
+        if seen & css.hasBit(start) == 0 { continue }
+
+        if css.anchorSet(&g.deps, start) |set| { try addSetRoots(doc, set, el, out, shallow, found) }
+    }
+}

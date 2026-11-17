@@ -1,0 +1,23 @@
+import std
+
+// https://websockets.spec.whatwg.org/#dom-websocket-close
+pub fn socketClose(id: u32, code: u16, reason: []u8) {
+    if remote_sockets |hooks| { return hooks.close(id, code, reason) }
+
+    let k = socketById(id) orelse return
+
+    if k.phase == SocketPhase.Queued || k.phase == SocketPhase.Connecting || k.phase == SocketPhase.Handshaking {
+        return failSocket(k)
+    }
+
+    if k.phase != SocketPhase.Open {
+        return
+    }
+
+    queueClose(k, code, reason)
+
+    if k.phase == SocketPhase.Open {
+        k.phase = SocketPhase.Closing
+        k.closing_since = std.time.monotonicMs()
+    }
+}

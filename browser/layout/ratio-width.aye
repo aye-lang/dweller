@@ -1,0 +1,17 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#algo-cross-item
+fn ratioWidth(t: *mut Tree, c: usize, cw: f64) {
+    let b = t.bx(c)
+    let align = alignOf(t, c)
+    let stretches = text.eql(align, "stretch") || text.eql(align, "normal")
+
+    if b.kind != BoxKind.Image || stretches || !isKeyword(b.style[css.WIDTH], "auto") {
+        return
+    }
+
+    if naturalRatio(t, c) |ratio| {
+        t.bx(c).w = clampWidth(t, c, (b.h - vEdges(b)) * ratio + hEdges(b), cw)
+    }
+}

@@ -1,0 +1,47 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+// https://websockets.spec.whatwg.org/#dom-websocket-websocket
+fn akSocketOpen(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let page = s.page
+    let done = try js.callableArg(it, a, 2)
+    let target = try argUrl(it, a) orelse return js.numVal(0.0)
+    defer target.deinit(it.alloc)
+
+    let protocols = try it.builder()
+    defer it.release(protocols)
+
+    try argText(it, a, 1, protocols)
+
+    if try requestRefused(page, "connect-src", &target, null) {
+        return js.numVal(0.0)
+    }
+
+    let all = try pageSockets(s.alloc)
+    let req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, initiator: initiatorOf(page) }
+    let id = net.socketOpen(&target, req, protocols.bytes())
+
+    if id == 0 {
+        return js.numVal(0.0)
+    }
+
+    let root = it.addRoot(done) catch |e| {
+        net.socketRelease(id)
+
+        return e
+    }
+
+    all.append(PageSocket { owner: s, id: id, root: root }) catch |e| {
+        it.removeRoot(root)
+        net.socketRelease(id)
+
+        return e
+    }
+
+    return js.numVal(id as f64)
+}

@@ -1,0 +1,39 @@
+import std.text
+
+test "context_closed goes to the renderer and round-trips" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let closed = try roundTrip(&mut out, 7, Message.ContextClosed { context: 5 })
+
+    match closed.message {
+        .ContextClosed { context } => @expectEqual(5, context)
+        _ => @expect(false)
+    }
+
+    @expectEqual(90, Message.ContextClosed { context: 0 }.kind())
+    @expect(!fromRenderer(Message.ContextClosed { context: 0 }))
+}
+
+test "opener_info and context_tab go to the renderer and round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let info = try roundTrip(&mut out, 7, Message.OpenerInfo { frame: 4, name: "w2" })
+
+    match info.message {
+        .OpenerInfo { frame, name } => @expect(frame == 4 && text.eql(name, "w2"))
+        _ => @expect(false)
+    }
+
+    let shown = try roundTrip(&mut out, 7, Message.ContextTab { context: 2, frame: 9 })
+
+    match shown.message {
+        .ContextTab { context, frame } => @expect(context == 2 && frame == 9)
+        _ => @expect(false)
+    }
+
+    @expectEqual(91, Message.OpenerInfo { frame: 0, name: "" }.kind())
+    @expectEqual(92, Message.ContextTab { context: 0, frame: 0 }.kind())
+    @expect(!fromRenderer(Message.OpenerInfo { frame: 0, name: "" }) && !fromRenderer(Message.ContextTab { context: 0, frame: 0 }))
+}

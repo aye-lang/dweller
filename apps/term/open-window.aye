@@ -1,0 +1,32 @@
+import dweller.font
+import dweller.paint
+import dweller.sdl
+import std
+import std.mem.Allocator
+import vt
+
+fn openWindow(alloc: Allocator, o: TermOptions, measure: dyn font.Measurer, system: ?*mut font.System) i32 {
+    var view = View { canvas: paint.Canvas.init(alloc, 0, 0) catch unreachable, painter: paint.TextPainter.init(alloc, system), measure: measure }
+
+    measureCells(&mut view)
+
+    if sdl.SDL_Init(sdl.SDL_INIT_VIDEO) != 0 {
+        return failed("cannot start SDL")
+    }
+
+    defer sdl.SDL_Quit()
+
+    let window = sdl.SDL_CreateWindow("Dweller terminal".ptr, sdl.SDL_WINDOWPOS_UNDEFINED, sdl.SDL_WINDOWPOS_UNDEFINED, (80 * view.cell_w) as i32, (24 * view.cell_h) as i32, sdl.SDL_WINDOW_RESIZABLE | sdl.SDL_WINDOW_ALLOW_HIGHDPI) orelse return failed("cannot open a window")
+    defer sdl.SDL_DestroyWindow(window)
+
+    let renderer = sdl.SDL_CreateRenderer(window, -1, sdl.SDL_RENDERER_SOFTWARE) orelse return failed("cannot create a renderer")
+    defer sdl.SDL_DestroyRenderer(renderer)
+
+    return serveWindow(alloc, o, view, window, renderer) catch failed("out of memory")
+}
+
+fn failed(what: []u8) i32 {
+    std.log.err("{}", what)
+
+    return 1
+}

@@ -1,0 +1,26 @@
+// https://tc39.es/ecma262/#sec-static-semantics-unicodematchproperty-p
+
+import std.text
+
+fn unicodePropertyLookup(expression: []u8) ?UnicodePropertySet {
+    let eq = text.indexOf(expression, "=") orelse {
+        return unicodePropertyFind(UNICODE_BINARY, expression) orelse unicodePropertyFind(UNICODE_CATEGORY, expression)
+    }
+
+    let name = expression[..eq]
+    let value = expression[eq + 1..]
+
+    if text.eql(name, "General_Category") || text.eql(name, "gc") {
+        return unicodePropertyFind(UNICODE_CATEGORY, value)
+    }
+
+    if text.eql(name, "Script") || text.eql(name, "sc") {
+        return unicodePropertyFind(UNICODE_SCRIPT, value)
+    }
+
+    if text.eql(name, "Script_Extensions") || text.eql(name, "scx") {
+        return unicodePropertyFind(UNICODE_SCRIPT_EXTENSIONS, value)
+    }
+
+    return null
+}

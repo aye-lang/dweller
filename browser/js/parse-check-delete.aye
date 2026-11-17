@@ -1,0 +1,20 @@
+// https://tc39.es/ecma262/#sec-delete-operator-static-semantics-early-errors
+
+fn parseCheckDelete(p: *mut Parser, arg: u32) SyntaxErr!void {
+    match p.ast.node(arg) {
+        .Ident { .. } => {
+            if p.strict {
+                _ = try p.fail("Delete of an unqualified identifier in strict mode.")
+            }
+        }
+
+        .Member { name, .. } => {
+            if p.atoms.name(name)[0] == PRIVATE_NAME_MARK {
+                _ = try p.fail("Private fields can not be deleted")
+            }
+        }
+
+        .OptChain { e } => try parseCheckDelete(p, e)
+        _ => {}
+    }
+}

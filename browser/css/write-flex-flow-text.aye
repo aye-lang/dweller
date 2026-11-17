@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serializing-css-values
+fn writeFlexFlowText(direction: []u8, wrap: []u8, out: *mut text.Builder) AllocError!bool {
+    let plain_wrap = text.eql(wrap, "nowrap")
+
+    if !text.eql(direction, "row") || plain_wrap {
+        try out.append(direction)
+    }
+
+    if plain_wrap {
+        return true
+    }
+
+    if out.len() > 0 {
+        try out.appendByte(' ')
+    }
+
+    try out.append(wrap)
+
+    return true
+}

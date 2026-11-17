@@ -2,11 +2,13 @@ import ipc
 import std
 import std.mem.AllocError
 
+let MAX_NAME_CHARS: usize = 4096
+
 // chromium: content/browser/renderer_host/render_frame_host_impl.cc (CreateNewWindow: a popup needs a user gesture, and the browser checks the request)
 fn takeContext(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
     match got.message {
-        .Context { ask, href, post, .. } => {
-            if ask > 1 || post > 1 || href.len > MAX_URL_CHARS { return "bad context" }
+        .Context { ask, href, post, keeps, name, .. } => {
+            if ask > 1 || post > 1 || keeps > 1 || href.len > MAX_URL_CHARS || name.len > MAX_NAME_CHARS { return "bad context" }
         }
 
         _ => return "bad context"

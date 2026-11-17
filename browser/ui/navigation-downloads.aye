@@ -1,0 +1,17 @@
+import net
+import std.mem.AllocError
+import url
+
+// chromium: content/browser/loader/navigation_url_loader_impl.cc (is_download)
+fn navigationDownloads(tp: *mut TabProcess, href: []u8, res: *net.Response) AllocError!bool {
+    let alloc = tp.url.alloc
+    let target = url.parse(alloc, href) catch return false
+    defer target.deinit(alloc)
+
+    if !(try net.takeDownload(alloc, &target, res)) { return false }
+
+    tp.nav_failed = true
+    tp.downloaded = true
+
+    return true
+}

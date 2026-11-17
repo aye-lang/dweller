@@ -1,0 +1,21 @@
+import std.text
+import std.mem.Allocator
+
+// chromium: chrome/browser/ui/webui/downloads/downloads_ui.cc
+fn downloadsPage(alloc: Allocator) FetchError!Response {
+    var b = text.Builder.init(alloc)
+    defer b.deinit()
+
+    try b.append("<!doctype html><title>Downloads</title><h1>Downloads</h1><ul>")
+
+    var i = downloadCount()
+
+    while i > 0 {
+        i -= 1
+        try downloadItem(downloadAt(i), &mut b)
+    }
+
+    try b.append("</ul>")
+
+    return respond(alloc, "text/html; charset=utf-8", try b.toOwned())
+}

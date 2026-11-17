@@ -87,6 +87,7 @@ pub struct Parser {
     // generator (`yield` is one).
     in_async: bool
     in_gen: bool
+    in_field: bool = false
     // In strict mode code: after a "use strict" directive, in a class.
     strict: bool
     // The lowest stack address the recursion may reach (0: no limit).
@@ -690,7 +691,7 @@ pub struct Parser {
             }
             let target = try self.ident(local, nameTok)
             let f = try self.functionRestFlags(name, fstart, false, isAsync, isGen)
-            try self.push(try self.mk(Node.FuncDecl { f: f, target: target }, fstart))
+            try self.push(try self.mk(Node.FuncDecl { f: f, target: target, annex: 0 }, fstart))
             try info.locals.append(LocalExport { name: try self.intern("default"), local: local })
             return
         }
@@ -797,10 +798,10 @@ pub struct Parser {
             try self.expect(Tok.LParen)
             let cond = try self.expression(false)
             try self.expect(Tok.RParen)
-            let cons = try parseSubStatement(self)
+            let cons = try parseIfClause(self)
             var alt: u32 = 0
             if self.eat(Tok.KwElse) {
-                alt = try parseSubStatement(self)
+                alt = try parseIfClause(self)
             }
             return self.mk(Node.If { cond: cond, cons: cons, alt: alt }, start)
         }
@@ -871,8 +872,13 @@ pub struct Parser {
             return self.mk(Node.Empty, start)
         }
         if k == Tok.Ident && self.kindAt(1) == Tok.Colon {
+            try parseCheckName(self, self.tokText(self.tok()))
             let label = try self.intern(self.tokText(self.tok()))
             self.pos += 2
+            if self.at(Tok.KwFunction) && !self.strict && self.kindAt(1) != Tok.Star {
+                let body = try self.statement()
+                return self.mk(Node.Labeled { label: label, body: body }, start)
+            }
             let body = try parseSubStatement(self)
             return self.mk(Node.Labeled { label: label, body: body }, start)
         }
@@ -965,7 +971,7 @@ pub struct Parser {
         self.pos += 1
         let target = try self.ident(name, nameTok)
         let f = try self.functionRestFlags(name, start, false, isAsync, isGen)
-        return self.mk(Node.FuncDecl { f: f, target: target }, start)
+        return self.mk(Node.FuncDecl { f: f, target: target, annex: 0 }, start)
     }
 
     fn forStatement(self: *mut Self) SyntaxErr!u32 {
@@ -1092,6 +1098,7 @@ pub struct Parser {
         try self.tooDeep()
         let start = self.pos
         if self.at(Tok.Ident) {
+            try parseCheckName(self, self.tokText(self.tok()))
             let name = try self.intern(self.tokText(self.tok()))
             self.pos += 1
             return self.ident(name, start)
@@ -1104,7 +1111,11 @@ pub struct Parser {
                     try self.push(try self.mk(Node.Hole, self.pos - 1))
                     continue
                 }
+                let rest = self.at(Tok.Ellipsis)
                 try self.push(try self.bindingElement())
+                if rest && !self.at(Tok.RBracket) {
+                    return self.fail("Rest element must be last element")
+                }
                 if !self.at(Tok.RBracket) {
                     try self.expect(Tok.Comma)
                 }
@@ -1118,8 +1129,14 @@ pub struct Parser {
             while !self.eat(Tok.RBrace) {
                 let pstart = self.pos
                 if self.eat(Tok.Ellipsis) {
+                    if !self.at(Tok.Ident) {
+                        return self.fail("`...` must be followed by an identifier in declaration contexts")
+                    }
                     let t = try self.bindingTarget()
                     try self.push(try self.mk(Node.Rest { target: t }, pstart))
+                    if !self.at(Tok.RBrace) {
+                        return self.fail("Rest element must be last element")
+                    }
                 } else {
                     let shorthand = self.at(Tok.Ident) && self.kindAt(1) != Tok.Colon
                     var computed = false
@@ -1195,6 +1212,9 @@ pub struct Parser {
                     match self.ast.node(el) {
                         .Hole => {}
                         .Spread { arg } => {
+                            if k + 1 != n {
+                                return self.fail("Rest element must be last element")
+                            }
                             let t = try self.toPattern(arg)
                             self.set(el, Node.Rest { target: t })
                         }
@@ -1220,6 +1240,9 @@ pub struct Parser {
                     match self.ast.node(p) {
                         .Prop { kind, key, computed, value } => {
                             if kind == PROP_SPREAD {
+                                if k + 1 != n {
+                                    return self.fail("Rest element must be last element")
+                                }
                                 let t = try self.toPattern(value)
                                 self.set(p, Node.Rest { target: t })
                             } else if kind == PROP_INIT {
@@ -1466,6 +1489,9 @@ pub struct Parser {
         if op != Op.None {
             self.pos += 1
             let arg = try self.unary()
+            if op == Op.Delete {
+                try parseCheckDelete(self, arg)
+            }
             return self.mk(Node.Unary { op: op, arg: arg }, start)
         }
         if self.in_async && self.isWord("await") {
@@ -1685,6 +1711,9 @@ pub struct Parser {
             let plen = t.num as usize
             let pattern = try self.intern(all[..plen])
             let flags = try self.intern(all[plen..])
+            if !(try regexpLiteralValid(self.alloc, self.atoms, pattern, flags)) {
+                return self.fail("Invalid regular expression")
+            }
             return self.mk(Node.Regex { pattern: pattern, flags: flags }, start)
         }
         if k == Tok.Ident && self.isWord("async") && self.kindAt(1) == Tok.KwFunction && !self.tokAt(1).nl {
@@ -1693,7 +1722,7 @@ pub struct Parser {
         }
         if k == Tok.Ident {
             let txt = self.tokText(t)
-            if txt[0] == '#' {
+            if txt[0] == PRIVATE_NAME_MARK {
                 // `#x in obj`: the private name as a key.
                 if self.kindAt(1) != Tok.KwIn {
                     return self.unexpected()
@@ -1701,6 +1730,7 @@ pub struct Parser {
                 self.pos += 1
                 return self.mk(Node.Str { atom: try self.intern(txt) }, start)
             }
+            try parseCheckName(self, txt)
             self.pos += 1
             let name = try self.intern(txt)
             return self.ident(name, start)
@@ -1753,6 +1783,9 @@ pub struct Parser {
             self.pos += 1
             let thisNode = try self.ident(A_THIS, start)
             if self.at(Tok.LParen) {
+                if self.in_field {
+                    return self.fail("'super' keyword unexpected here")
+                }
                 let m = try self.args() as usize
                 let n = self.count(m)
                 let l = try self.list(m)
@@ -2001,7 +2034,11 @@ pub struct Parser {
     fn params(self: *mut Self, m: usize) SyntaxErr!void {
         try self.expect(Tok.LParen)
         while !self.eat(Tok.RParen) {
+            let rest = self.at(Tok.Ellipsis)
             try self.push(try self.bindingElement())
+            if rest && !self.at(Tok.RParen) {
+                _ = try self.fail("Rest parameter must be last formal parameter")
+            }
             if !self.at(Tok.RParen) {
                 try self.expect(Tok.Comma)
             }
@@ -2084,6 +2121,9 @@ pub struct Parser {
         try self.expect(Tok.LBrace)
         let outer = self.strict
         if self.useStrict() {
+            if !self.ast.funcs.items()[f].simple {
+                _ = try self.fail("Illegal 'use strict' directive in function with non-simple parameter list")
+            }
             self.strict = true
         }
         self.ast.funcs.items()[f].strict = self.strict
@@ -2108,10 +2148,13 @@ pub struct Parser {
         let savedAsync = self.in_async
         let savedGen = self.in_gen
         let savedTop = self.module_top
+        let savedField = self.in_field
         self.in_async = isAsync
         self.in_gen = isGen
         self.module_top = false
+        self.in_field = false
         defer {
+            self.in_field = savedField
             self.in_async = savedAsync
             self.in_gen = savedGen
             self.module_top = savedTop
@@ -2193,7 +2236,7 @@ pub struct Parser {
             let key = try self.propertyKey()
             if self.at(Tok.LParen) {
                 let isCtor = !isStatic && !computed && kind == PROP_METHOD && text.eql(self.atoms.name(key), "constructor")
-                var fname = key
+                var fname = try parseMemberName(self, key, computed)
                 if computed {
                     fname = A_EMPTY
                 }
@@ -2221,10 +2264,16 @@ pub struct Parser {
             let f = try self.newFunc(A_EMPTY, fm)
             self.ast.funcs.items()[f].method = true
             if self.eat(Tok.Assign) {
-                let init = try self.assign(false)
+                let outerField = self.in_field
+                self.in_field = true
+                let init = self.assign(false) catch |e| {
+                    self.in_field = outerField
+                    return e
+                }
+                self.in_field = outerField
                 self.ast.funcs.items()[f].expr = init
                 if !computed {
-                    try self.nameValue(init, key)
+                    try self.nameValue(init, try parseMemberName(self, key, computed))
                 }
             }
             self.finishFunc(f, mstart)

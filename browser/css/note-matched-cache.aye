@@ -1,0 +1,17 @@
+import perf
+import std.text
+
+fn noteMatchedCache(out: *mut Styles) {
+    let began = perf.start()
+
+    if began == 0 { return }
+
+    var label = text.Builder.init(out.alloc)
+    defer label.deinit()
+
+    writeCounts(&mut label, out.matched.hits, out.matched.misses) catch |e| {
+        return
+    }
+
+    perf.end("matched_cache", began, label.bytes())
+}

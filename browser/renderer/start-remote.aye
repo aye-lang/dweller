@@ -2,10 +2,12 @@ import net
 import std.text
 import url.Url
 
+var next_load: u32 = 0
+
 fn startRemote(target: *Url, req: net.Request) u32 {
     let r = fetch_renderer orelse return 0
     let nav = fetchNavigates(r, req)
-    let p = r.alloc.create(PendingFetch { id: r.fetches + 1, nav: nav, href: text.Builder.init(r.alloc), f: Fetched.init(r.alloc) }) catch return 0
+    let p = r.alloc.create(PendingFetch { id: r.fetches + 1, load_id: next_load + 1, nav: nav, href: text.Builder.init(r.alloc), f: Fetched.init(r.alloc) }) catch return 0
 
     p.href.append(target.href) catch {
         p.deinit(r.alloc)
@@ -20,11 +22,12 @@ fn startRemote(target: *Url, req: net.Request) u32 {
     }
 
     r.fetches += 1
+    next_load += 1
     askFetch(r, r.fetches, nav, target, req) catch {
         dropPending(r, r.fetches)
 
         return 0
     }
 
-    return r.fetches
+    return next_load
 }

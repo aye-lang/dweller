@@ -1,0 +1,13 @@
+fn rollBack(b: *mut Backend, tx: *mut Transaction) {
+    while tx.undo.pop() |u| {
+        let s = findStore(tx.db, u.store) orelse unreachable
+
+        if u.key.len == 0 {
+            s.generator = u.generator
+        } else {
+            putBack(b, s, u)
+        }
+
+        b.alloc.free(u.key)
+    }
+}

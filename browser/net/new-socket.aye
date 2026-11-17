@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn newSocket(all: *mut Sockets, protocols: []u8, origin: []u8) AllocError!*mut Socket {
+    let alloc = all.alloc
+    let k = try alloc.create(Socket {
+        id: all.next_id,
+        phase: SocketPhase.Queued,
+        job: null,
+        owned_protocols: []mut u8{},
+        owned_origin: []mut u8{},
+        outgoing: text.Builder.init(alloc),
+        incoming: text.Builder.init(alloc),
+        assembly: Assembly { data: text.Builder.init(alloc) },
+        notes: List(SocketNote).init(alloc),
+    })
+
+    errdefer freeSocket(all, k)
+
+    k.owned_protocols = try dup(alloc, protocols)
+    k.owned_origin = try dup(alloc, origin)
+    try all.all.append(k)
+    all.next_id += 1
+
+    return k
+}

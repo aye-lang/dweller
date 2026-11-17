@@ -41,6 +41,7 @@
 // `--state` prints the tab's state when the window closes, and `--save
 // FILE.png` writes the last frame.
 
+import pageview
 import paint
 import std
 import std.mem.AllocError
@@ -246,7 +247,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
             return false
         }
     }
@@ -301,12 +302,20 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if text.eql(w, "loaded") && ui.tab.early {
             return
         }
+        if text.eql(w, "asked") && permissionBarOf(ui) == null {
+            return
+        }
         if text.eql(w, "renderer:input") && (ui.wheel_x != 0.0 || ui.wheel_y != 0.0) {
             try ui.flushWheel()
         }
         if rendererWaits(ui, w) {
             return
         }
+        if scriptEvent(w) != null && rendererBehind(ui) {
+            ui.script_held = true
+            return
+        }
+        ui.script_held = false
         // Drop the word before handling it (handling may resume again).
         var next = end
         while next < all.len && all[next] == ' ' {
@@ -342,7 +351,6 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
                 ui.swallow = false
             }
             try ui.handle(&ev)
-            contextMayChange(ui)
         }
     }
     try ui.flushWheel()
@@ -354,11 +362,15 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
 /// agents are paused, what they did last and the longest loop iteration
 /// while they were connected (`loop_max_ms`); and when an element of the page has the focus, its
 /// name and value.
-fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
+fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!void {
+    var scroll = ui.tab.scroll
+    if said.said {
+        scroll = said.scroll
+    }
     try out.append("url ")
     try out.append(ui.tab.href())
     try out.append("\nscroll ")
-    try out.appendInt(std.math.floor(ui.tab.scroll + 0.5) as i64)
+    try out.appendInt(std.math.floor(scroll + 0.5) as i64)
     try out.append("\nfocus ")
     try out.append(match ui.focus {
         .Page => "page"
@@ -382,6 +394,8 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
+    try writeDownloads(out)
+    try writePermission(out)
     if certPage(ui) |p| {
         try out.append("cert ")
         try certLabel(ui, p, out)
@@ -401,22 +415,9 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.append("\n")
     }
     if ui.tab.page |p| {
-        if p.frames.len() > 0 {
-            // How far each frame's document is scrolled.
-            try out.append("frames")
-            for f in p.frames.items() {
-                try out.append(" ")
-                try out.appendInt(std.math.floor(f.scroll + 0.5) as i64)
-            }
-            try out.append("\n")
-            try out.append("frame_urls")
-            for f in p.frames.items() {
-                try out.append(" ")
-                try out.append(f.page.url.href)
-            }
-            try out.append("\n")
-        }
+        try pageview.writeFrames(p, out)
     }
+    try out.append(said.frames.bytes())
     if ui.agents == null && ui.count > 1 {
         // window.open and `target=_blank` opened tabs.
         try out.append("tabs ")
@@ -452,8 +453,10 @@ fn writeState(ui: *mut Ui, out: *mut text.Builder) AllocError!void {
         try out.appendUint(a.loop_max_ms)
         try out.append("\n")
     }
-    try writeTabProcess(ui, out)
-    try writeFocus(ui, out)
+    if ui.tab.page |p| {
+        try pageview.writeFocus(p, out)
+    }
+    try out.append(said.focus.bytes())
 }
 
 /// Writes the canvas as a PNG.

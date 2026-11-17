@@ -1,0 +1,19 @@
+fn looksOutside(sheet: *Sheet, s: Simple, nesting: usize) bool {
+    if nesting >= 16 { return true }
+
+    for k in s.sub_start..s.sub_end {
+        let cx = sheet.complexes.items()[k]
+
+        if nesting > 0 && cx.end - cx.start > 1 { return true }
+
+        for ci in cx.start..cx.end {
+            let comp = sheet.compounds.items()[ci]
+
+            for si in comp.start..comp.end {
+                if looksOutside(sheet, sheet.simples.items()[si], nesting + 1) { return true }
+            }
+        }
+    }
+
+    return false
+}

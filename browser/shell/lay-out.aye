@@ -1,0 +1,22 @@
+import css
+import layout
+import std.mem.AllocError
+
+fn layOut(app: *mut App) AllocError!void {
+    dropTree(app)
+    app.styles.deinit()
+    app.styles = try css.Styles.init(app.alloc)
+
+    try css.computeStyles(&app.doc, &app.ua, &app.author, app.media, &mut app.styles)
+
+    var tree = try layout.layoutDocumentWith(app.alloc, &app.doc, &app.styles, null, app.measure, app.media.width, app.media.height)
+
+    app.built_boxes = tree.boxes.len()
+    app.tree = app.alloc.create(tree) catch |e| {
+        tree.deinit()
+
+        return e
+    }
+
+    app.full_layouts += 1
+}

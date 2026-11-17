@@ -4,24 +4,22 @@ import dom.NodeId
 import std.list.List
 import std.mem.AllocError
 
-fn markSubjects(doc: *Document, sheet: *Sheet, subjects: []Simple, out: *mut List(NodeId)) AllocError!void {
-    if subjects.len == 0 { return }
+fn markSubjects(doc: *Document, sheet: *Sheet, targets: []RuleTarget, out: *mut List(NodeId)) AllocError!bool {
+    if targets.len == 0 { return true }
 
+    let before = out.len()
+    var elements: usize = 0
     var cur: ?NodeId = doc.root
 
     while cur |h| {
-        if doc.node(h).kind == Kind.Element && anySubject(sheet, doc, subjects, h) {
-            try out.append(h)
+        if doc.node(h).kind == Kind.Element {
+            elements += 1
+
+            if anyTarget(sheet, doc, targets, h) { try out.append(h) }
         }
 
         cur = doc.following(h, doc.root)
     }
-}
 
-fn anySubject(sheet: *Sheet, doc: *Document, subjects: []Simple, el: NodeId) bool {
-    for s in subjects {
-        if matchSimple(sheet, doc, s, el) { return true }
-    }
-
-    return false
+    return elements < 64 || (out.len() - before) * 2 <= elements
 }

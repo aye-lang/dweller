@@ -1,12 +1,16 @@
 import engine
 import std
 
+let TIMER_TASK_MS: u64 = 50
+
 fn runTimers(r: *mut TabRenderer) !void {
     r.landed = false
 
     let p = r.page orelse return
 
-    if try engine.runDueTimersUntil(p, null) {
+    if backgroundWaits(r) { return }
+
+    if !(r.staged.stepping && !engine.scriptsRan(p)) && try engine.runDueTimersUntil(p, std.time.monotonicMs() + TIMER_TASK_MS) {
         r.due = true
     }
 
@@ -16,6 +20,7 @@ fn runTimers(r: *mut TabRenderer) !void {
         r.due = true
     }
 
+    try advanceStaged(r, false)
     try paintFrame(r)
     try reportPage(r)
 }

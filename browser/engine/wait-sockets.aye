@@ -1,0 +1,30 @@
+import net
+import std.mem.AllocError
+import std.time
+
+let SOCKET_IDLE_MS: u64 = 5000
+
+fn waitSockets(p: *mut Page, block: bool) AllocError!bool {
+    let s = p.script orelse return false
+    let started = time.monotonicMs()
+
+    while block && socketsBusy(s) && time.monotonicMs() - started < SOCKET_IDLE_MS {
+        net.pumpLoads()
+
+        if try pumpPageSockets(s) {
+            passSocketWait(s, time.monotonicMs() - started)
+
+            return true
+        }
+
+        time.sleep(1)
+    }
+
+    net.pumpLoads()
+
+    return pumpPageSockets(s)
+}
+
+fn passSocketWait(s: *mut Script, waited: u64) {
+    if !s.real { s.now += waited as f64 }
+}

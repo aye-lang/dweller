@@ -568,6 +568,8 @@ fn installDom(s: *mut Script) JsError!void {
     try accessor(it, s.style_proto, "cssText", styleCssText, styleSetCssText)
     try accessor(it, s.style_proto, "length", styleLength, null)
     try defMethod(it, s.style_proto, "getPropertyValue", 1, styleGetPropertyValue)
+    try defMethod(it, s.style_proto, "getPropertyPriority", 1, styleGetPropertyPriority)
+    try defMethod(it, s.style_proto, "item", 1, styleItem)
     try defMethod(it, s.style_proto, "setProperty", 2, styleSetProperty)
     try defMethod(it, s.style_proto, "removeProperty", 1, styleRemoveProperty)
 
@@ -1457,7 +1459,14 @@ fn controlSetValue(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 0, b)
     }
     let doc = docOf(it)
-    if dom.isControl(doc, h) || doc.isElement(h, "output") {
+    let clean = try it.builder()
+    defer it.release(clean)
+    if defaultModeInput(doc, h) {
+        try doc.setAttr(h, "value", b.bytes())
+        (try doc.controls.ensure(h)).dirty = false
+    } else if doc.isElement(h, "input") {
+        try dom.setValue(doc, h, try sanitizedInput(dom.inputType(doc, h), b.bytes(), clean))
+    } else if dom.isControl(doc, h) || doc.isElement(h, "output") {
         try dom.setValue(doc, h, b.bytes())
     } else {
         try doc.setAttr(h, "value", b.bytes())
@@ -1720,32 +1729,17 @@ fn hostTag(it: *mut Interp, o: u32) u32 {
     }
 }
 
-// The value of property `prop` in the declarations `decls` ("a: b; c: d").
-fn styleValue(decls: []u8, prop: []u8, out: *mut text.Builder) AllocError!void {
-    var parts = text.split(decls, ";")
-    while parts.next() |d| {
-        let colon = std.mem.indexOf(d, ':') orelse continue
-        let name = text.trim(d[..colon])
-
-        if text.eqlIgnoreCase(name, prop) {
-            out.clear()
-            try out.append(text.trim(d[colon + 1..]))
-        } else {
-            _ = try css.shorthandLonghandText(out.alloc, name, text.trim(d[colon + 1..]), prop, out)
-        }
-    }
-    if out.len() == 0 && text.eqlIgnoreCase(prop, "overflow") {
-        try overflowOfDecls(decls, out)
-    }
-}
-
 // Sets (or, for an empty value, removes) the declaration of `prop` in
 // the style attribute of `el`.
-fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!void {
+fn setStyleDecl(s: *mut Script, el: NodeId, legacy_prop: []u8, raw: []u8) AllocError!void {
+    let prop = css.unprefixed(legacy_prop)
     var canon = text.Builder.init(s.alloc)
     defer canon.deinit()
     if !(try css.specifiedValue(s.alloc, prop, raw, &mut canon)) {
         return
+    }
+    if text.trim(raw).len == 0 {
+        try expandShorthands(s, el, prop)
     }
     if text.eql(prop, "overflow") {
         return putOverflow(s, el, canon.bytes())
@@ -1781,7 +1775,10 @@ fn thisStyleNode(it: *mut Interp, a: Args) JsError!NodeId {
 
 fn styleCssText(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisStyleNode(it, a)
-    return it.newString(styleAttrOf(scriptOf(it).active, h))
+    let b = try it.builder()
+    defer it.release(b)
+    try formatStyleText(styleAttrOf(scriptOf(it).active, h), b)
+    return it.newString(b.bytes())
 }
 
 fn styleSetCssText(it: *mut Interp, a: Args) JsError!Value {
@@ -1830,6 +1827,14 @@ fn styleSetProperty(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 1, v)
     }
     try setStyleDecl(scriptOf(it), h, b.bytes(), v.bytes())
+    let priority = try it.builder()
+    defer it.release(priority)
+    if !js.isNullish(it.arg(a, 2)) {
+        try argText(it, a, 2, priority)
+    }
+    if text.eqlIgnoreCase(priority.bytes(), "important") {
+        try makeImportant(scriptOf(it), h, b.bytes())
+    }
     try changedAt(it, h, "style")
     return Value.Undefined
 }
