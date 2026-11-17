@@ -1,0 +1,31 @@
+fn finalizeHosts(it: *mut Interp) {
+    var kept: usize = 0
+
+    for k in 0..it.heap.host_objs.len() {
+        let o = it.heap.host_objs.items()[k]
+
+        if it.heap.obj(o).mark {
+            it.heap.host_objs.items()[kept] = o
+            kept += 1
+            continue
+        }
+
+        finalizeHost(it, o)
+        it.heap.freeObj(o)
+        it.heap.free_objs.append(o) catch |e| {
+        }
+    }
+
+    it.heap.host_objs.count = kept
+}
+
+fn finalizeHost(it: *mut Interp, o: u32) {
+    match it.heap.obj(o).data {
+        .Host { tag, index, generation } => {
+            if it.host |h| {
+                h.finalize(tag, index, generation)
+            }
+        }
+        _ => {}
+    }
+}

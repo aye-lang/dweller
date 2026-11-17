@@ -1,0 +1,25 @@
+let MARK_STEP_ALLOCATIONS: u32 = 64
+let MARK_PER_ALLOCATION: usize = 6
+
+// v8: src/heap/incremental-marking.cc
+fn startMarking(it: *mut Interp) {
+    finishSweep(it)
+    it.gc_count += 1
+    it.gc_debt = 0
+    markRoots(it)
+    it.heap.marking = true
+}
+
+fn markStep(it: *mut Interp) {
+    it.gc_debt += 1
+
+    if it.gc_debt < MARK_STEP_ALLOCATIONS && !it.gc_stress {
+        return
+    }
+
+    it.gc_debt = 0
+
+    if drainSome(it, MARK_STEP_ALLOCATIONS as usize * MARK_PER_ALLOCATION) {
+        finishCycle(it, true)
+    }
+}

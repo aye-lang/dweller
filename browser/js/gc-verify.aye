@@ -1,0 +1,33 @@
+import std
+import std.mem.AllocError
+
+fn gcVerify(it: *mut Interp) {
+    let missed = remark(it) catch |e| {
+        return
+    }
+
+    if missed > 0 {
+        std.log.err("GC VERIFY: {} values reachable but not marked by the incremental marking", missed)
+        std.os.exit(70)
+    }
+}
+
+fn remark(it: *mut Interp) AllocError!usize {
+    let h = &mut it.heap
+    let objs = try it.alloc.alloc(false, h.objs.len())
+    defer it.alloc.free(objs)
+
+    let strs = try it.alloc.alloc(false, h.strs.len())
+    defer it.alloc.free(strs)
+
+    let envs = try it.alloc.alloc(false, h.envs.len())
+    defer it.alloc.free(envs)
+
+    takeMarks(h, objs, strs, envs)
+    h.marking = false
+    markRoots(it)
+    markAll(it)
+    h.marking = true
+
+    return unmarkedBefore(h, objs, strs, envs)
+}

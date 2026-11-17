@@ -20,6 +20,25 @@ pub fn gcStressRequested() bool {
     return false
 }
 
+/// DWELLER_JS_GC: `incremental` marks in steps between allocations
+/// (gc-incremental.aye), `verify` also checks each incremental marking
+/// against a full one (gc-verify.aye), `torture` also starts a cycle
+/// every 256 allocations and steps at every one. 0: none of them.
+pub fn gcIncrementalMode() u8 {
+    if getenv("DWELLER_JS_GC".ptr) |p| {
+        if p[0] == 'i' {
+            return 1
+        }
+        if p[0] == 'v' {
+            return 2
+        }
+        if p[0] == 't' {
+            return 3
+        }
+    }
+    return 0
+}
+
 var trace_mode: u8 = 0
 
 /// DWELLER_JS_TRACE=1 adds to the message of every error the engine
@@ -130,14 +149,55 @@ fn traceEnv(it: *mut Interp, e: u32) {
     }
 }
 
-/// Collects the garbage of the engine's heap.
+/// Collects the garbage of the engine's heap, finishing a marking that is
+/// under way (gc-incremental.aye).
 pub fn collectGarbage(it: *mut Interp) {
-    it.gc_count += 1
+    finishCycle(it, false)
+}
+
+fn finishCycle(it: *mut Interp, lazy: bool) {
+    finishSweep(it)
+    if !it.heap.marking {
+        it.gc_count += 1
+    }
     let gc_began = perf.start()
     defer perf.end("js_gc", gc_began, "")
     let gc_paused = switchNative(it, NONE)
     defer resumeNative(it, gc_paused)
-    // Roots.
+    markRoots(it)
+    // Trace, then mark the values of the weak collections whose keys are
+    // marked and let the host keep more alive, until nothing changes.
+    drain(it)
+    while true {
+        markEphemerons(it)
+        if hasGray(it) {
+            drain(it)
+            continue
+        }
+        if it.host |h| {
+            if h.trace(it) {
+                drain(it)
+                continue
+            }
+        }
+        break
+    }
+    if it.heap.marking && it.gc_verify {
+        gcVerify(it)
+    }
+    it.heap.marking = false
+    clearDeadWeak(it)
+    perf.end("js_gc_mark", gc_began, "")
+    if lazy {
+        finalizeHosts(it)
+        return startSweep(it)
+    }
+    let sweep_began = perf.start()
+    sweep(it)
+    perf.end("js_gc_sweep", sweep_began, "")
+}
+
+fn markRoots(it: *mut Interp) {
     markObj(it, it.global)
     let protos = [20]u32{
         it.iterator_proto, it.math_obj, it.json_obj,
@@ -175,25 +235,6 @@ pub fn collectGarbage(it: *mut Interp) {
         markValue(it, it.jobs.items()[k])
     }
     markWeakRoots(it)
-    // Trace, then mark the values of the weak collections whose keys are
-    // marked and let the host keep more alive, until nothing changes.
-    drain(it)
-    while true {
-        markEphemerons(it)
-        if hasGray(it) {
-            drain(it)
-            continue
-        }
-        if it.host |h| {
-            if h.trace(it) {
-                drain(it)
-                continue
-            }
-        }
-        break
-    }
-    clearDeadWeak(it)
-    sweep(it)
 }
 
 /// For `Host.trace`: is object o marked (reachable) in this collection?
@@ -207,13 +248,14 @@ pub fn gcMark(it: *mut Interp, o: u32) {
 }
 
 fn hasGray(it: *mut Interp) bool {
-    return it.gray_objs.len() > 0 || it.gray_strs.len() > 0 || it.gray_envs.len() > 0
+    return it.gray_objs.len() > 0 || it.gray_strs.len() > 0 || it.gray_envs.len() > 0 || hasShaded(&it.heap)
 }
 
 // Marks everything reachable from the gray objects, strings and
 // environments.
 fn drain(it: *mut Interp) {
     while true {
+        takeShaded(it)
         if it.gray_objs.pop() |o| {
             traceObj(it, o)
         } else if it.gray_strs.pop() |s| {
@@ -231,68 +273,10 @@ fn drain(it: *mut Interp) {
 }
 
 fn sweep(it: *mut Interp) {
-    var live: usize = 0
-    var bytes: usize = 0
-    for i in 0..it.heap.objs.len() {
-        let ob = &mut it.heap.objs.items()[i]
-        if !ob.live {
-            continue
-        }
-        if ob.mark {
-            ob.mark = false
-            live += 1
-            bytes += objBytes(ob)
-            continue
-        }
-        match ob.data {
-            .Host { tag, index, generation } => {
-                if it.host |h| {
-                    h.finalize(tag, index, generation)
-                }
-            }
-            _ => {}
-        }
-        it.heap.freeObj(i as u32)
-        it.heap.free_objs.append(i as u32) catch |e| {}
-    }
-    for i in 0..it.heap.strs.len() {
-        let c = &mut it.heap.strs.items()[i]
-        if !c.live {
-            continue
-        }
-        if c.mark || c.perm {
-            c.mark = false
-            live += 1
-            bytes += strBytes(c)
-            continue
-        }
-        it.heap.freeStr(i as u32)
-        it.heap.free_strs.append(i as u32) catch |e| {}
-    }
-    for i in 0..it.heap.envs.len() {
-        let ev = &mut it.heap.envs.items()[i]
-        if !ev.live {
-            continue
-        }
-        if ev.mark {
-            ev.mark = false
-            live += 1
-            bytes += envBytes(ev)
-            continue
-        }
-        it.heap.freeEnv(i as u32)
-        it.heap.free_envs.append(i as u32) catch |e| {}
-    }
-    it.heap.allocs_before_gc += it.heap.since_gc as u64
-    it.heap.since_gc = 0
-    it.heap.bytes_since_gc = 0
-    it.heap.live_bytes = bytes
-    it.heap.out_of_memory = it.heap.out_of_memory || bytes > it.heap.limit_bytes
-    it.terminated = it.terminated || it.heap.out_of_memory
-    if it.heap.threshold > 1 {
-        it.heap.threshold = live * 2
-        if it.heap.threshold < 20000 {
-            it.heap.threshold = 20000
-        }
-    }
+    finalizeHosts(it)
+    startSweep(it)
+    sweepSlots(it, 0, it.heap.sweep_end[0])
+    sweepSlots(it, 1, it.heap.sweep_end[1])
+    sweepSlots(it, 2, it.heap.sweep_end[2])
+    endSweep(it)
 }

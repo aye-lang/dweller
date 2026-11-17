@@ -67,6 +67,7 @@ pub fn installBuiltins(it: *mut Interp) JsError!void {
 pub fn makeIterator(it: *mut Interp, arr: u32) Value {
     let ob = it.heap.obj(arr)
     ob.class = Class.Iterator
+    it.heap.shadeObj(it.iterator_proto)
     ob.proto = it.iterator_proto
     ob.data = ObjData.Prim { v: numVal(0.0) }
     return objVal(arr)
@@ -597,7 +598,9 @@ pub fn defineOwnProperty(it: *mut Interp, o: u32, key: u32, desc: Value, throwin
         try it.push(setter)
         if it.heap.findProp(o, key) |i| {
             let p = &mut it.heap.obj(o).props[i]
+            it.heap.shade(getter)
             p.value = getter
+            it.heap.shade(setter)
             p.setter = setter
             p.flags = flags | F_ACCESSOR
         } else {
@@ -828,6 +831,7 @@ pub fn setPrototype(it: *mut Interp, o: u32, proto: Value) JsError!bool {
         q = qb.proto
     }
     heapProtoChanged(&mut it.heap, o)
+    it.heap.shadeObj(p)
     ob.proto = p
     return true
 }
@@ -1256,6 +1260,7 @@ fn installErrors(it: *mut Interp) JsError!void {
 fn errorType(it: *mut Interp, name: []u8, f: NativeFn, base: u32) JsError!u32 {
     let p = try it.heap.newObj(Class.Object, it.error_proto, ObjData.None)
     let c = try makeConstructor(it, name, 1, f, p)
+    it.heap.shadeObj(base)
     it.heap.obj(c).proto = base
     try it.defineValue(p, "name", try it.newString(name))
     try it.defineValue(p, "message", try it.atomValue(A_EMPTY))

@@ -1,0 +1,18 @@
+fn shadeValue(h: *mut Heap, v: Value) {
+    match v {
+        .Obj { o } => shadeObject(h, o)
+        .Str { s } => shadeString(h, s)
+        .Big { s } => shadeString(h, s)
+        _ => {}
+    }
+}
+
+fn shadeObject(h: *mut Heap, o: u32) {
+    if o == NONE || h.obj(o).mark {
+        return
+    }
+
+    h.obj(o).mark = true
+    h.shaded_objs.append(o) catch |e| {
+    }
+}
