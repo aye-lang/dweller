@@ -7,8 +7,14 @@ marked "(FF, unchecked)".
 
 ## 0. Today
 
-Today Dweller is one process, except for Spaces:
-- The window (`ui/window.aye`) has the chrome, the SDL event loop, and
+As built (2026-11-17): by default a tab's page runs in the window's
+process; with `DWELLER_PROCESS=tab` or `site` (§3, Modes), and always
+for a Space's tabs (§8), pages run in sandboxed renderer processes.
+The page state is a `PageView` (`pageview/`), which the window holds
+for a tab in its own process and a renderer holds otherwise.
+
+Before Q2 Dweller was one process, except for Spaces:
+- The window (`ui/window.aye`) had the chrome, the SDL event loop, and
   the page state of the shown tab, all in one struct `Ui`: `tab`,
   `page` (pixels and damage), `list`, `focus`, `matches`, `hover`,
   `dropdown`, `wheel_el`.
@@ -40,15 +46,15 @@ Where the modules go:
 | Module | Process | Note |
 |---|---|---|
 | `ui/window.aye`, `chrome.aye`, `tabs.aye`, `field.aye`, `sdl.aye`, `auth.aye` | browser | `window.aye` loses its page state (next row) |
-| page half of `ui/`: `PageDraw` and `damage.aye`, `forms.aye`, focus, find matching, hover, wheel targets, the `select` model | renderer, as a new "page view" | the browser draws the `select` popup from a message |
+| page half of `ui/`: `PageDraw` and `damage.aye` (now `pageview/damage.aye`), `forms.aye`, focus, find matching, hover, wheel targets, the `select` model | renderer, as a new "page view" | the browser draws the `select` popup from a message |
 | `ui/agents.aye`, `ui/spaces.aye`, `ui/socket.aye` | browser | the Space process goes (§8) |
 | `agent/` (snapshot, refs, actions, eval) | renderer, per frame | the browser joins the parts of a tab |
 | `net/` (http, loader, multi, cache, cookies, session, profile, archive, auth) | browser | the renderer uses only its types (`Request`, `Response`, `Kind`) and calls `ipc/` instead |
 | `net/psl.aye`, `url/`, `std`, `encoding/`, `perf/` | both | `perf` lines carry the role and pid |
-| `engine/` (pages, DOM API, scripts, local frames, proxies) | renderer | `engine/storage.aye` keeps a cache per origin; saving moves to the browser. `engine/tab.aye` `SessionHistory` moves to the browser |
+| `engine/` (pages, DOM API, scripts, local frames, proxies) | renderer | `engine/storage.aye` keeps a cache per origin; saving moves to the browser. `SessionHistory` (`engine/history.aye`) moves to the browser: it sends `session_history` (39) and `traverse` (41), and the renderer asks with `history_go` (40) |
 | `html dom css layout paint font image svg webfont animation js wasm gpu audio` | renderer | `paint` and `font` also in the browser, for the chrome and compositing |
 | new `ipc/` | both | framing, codec, shared buffers, fd passing |
-| new `proc/` | browser | spawn, lock, reuse, cap, kill, the policy checks, crash and hang |
+| new `proc/` | browser | spawn, lock, reuse, cap, kill, the policy checks, crash and hang. As built there is no `proc/`: this is in `ui/` (`TabProcess`, `spawnRenderer`, `startTabProcess`, `takesSwap`, `originHosted`, `inSiteLock`, `renderer-sent.aye`, `child-sent.aye`) |
 
 ## 2. IPC
 
@@ -71,7 +77,7 @@ a fixed order: u32, u64 and f64 little-endian, bytes as a u32 length
 and the data. One `ipc.Reader` checks the bounds of every read. These
 are bad messages (§4): a read past the end, bytes left over, an unknown
 type, a payload over 1 MiB (body chunks: 256 KiB). `DWELLER_IPC_LOG=1`
-prints each message as one text line on stderr. Type codes are numbered in the order the messages are added (Q2.2a: 1 `hello`, 2 `navigate`, 3 `loaded`, 4 `shutdown`; `ipc/message.aye`); flags and request id stay 0 until a message uses them. Why not the JSON lines
+would print each message as one text line on stderr (not built). Type codes are numbered in the order the messages are added (Q2.2a: 1 `hello`, 2 `navigate`, 3 `loaded`, 4 `shutdown`; `ipc/message.aye`); flags and request id stay 0 until a message uses them. Why not the JSON lines
 of Spaces: bodies are binary (base64 costs a third more), and the
 browser parses what a compromised process writes; a fixed binary codec
 has less to get wrong than a JSON parser. JSON stays for the agent
@@ -79,12 +85,12 @@ protocol.
 
 **Rules.**
 - The browser never waits for a renderer. Its sockets do not block,
-  each renderer has an out buffer (as `ctl_out` now), and it reads
+  each renderer has an out buffer (`TabProcess.outbox`), and it reads
   only what is ready.
 - An IO thread in the browser `poll`s the renderer sockets and pushes
   an SDL user event to wake the main loop. All handling stays on the
-  main thread. Today's `POLL_MS` (15 ms) is too slow for frames and
-  input acks.
+  main thread (`ui/io-waker.aye`). The 15 ms poll of the Space
+  process was too slow for frames and input acks.
 - Only a renderer makes sync calls (flag `sync`). While it waits for
   the reply, it reads and queues the other messages. The browser answers
   a sync call from its own state, never by asking another renderer, so
@@ -93,7 +99,41 @@ protocol.
   must be a frame that this process hosts (or, for proxy messages, a
   proxy that it holds).
 
-**Messages** (B = browser, R = renderer; "(s)": a sync call):
+**Messages** (B = browser, R = renderer; "(s)": a sync call). The
+table is the design; a message with a number or a Q step is built, and
+the built set is `ipc/message.aye`: 1 `hello`, 2 `navigate{url, post,
+content_type, body}`, 3 `loaded`, 4 `shutdown`, 5 `resize{width,
+height, scale, buffer}` (with the two buffer fds), 6 `frame{buffer,
+width, height, scroll_x, scroll_y, damage}`, 7 `frame_ack`, 8 `mouse`,
+9 `wheel`, 10 `key`, 11 `text`, 12 `input_ack`, 13 `begin_navigation`,
+14 `popup`, 15 `popup_choice`, 16 `focus`, 17 `title`, 18
+`same_document`, 19 `cursor`, 20 `target_url`, 21 `long_task`, 22
+`take_focus`, 23 `redirect`, 24 `agent`, 25 `agent_reply`, 26 `fetch`,
+27 `fetch_head`, 28 `fetch_body`, 29 `fetch_end`, 30 `fetch_fail`, 31
+`cookie_get{doc}`, 32 `cookies`, 33 `cookie_set{doc, line}`, 34
+`storage{doc, context, session, op, index, key, value}`, 35
+`storage_reply`, 36 `storage_event`, 37 `ping`, 38 `pong`, 39
+`session_history`, 40 `history_go`, 41 `traverse`, 42 `out_of_memory`,
+43 `subframes`, 44 `wheel_unused`, 45 `scroll_bubble`, 46
+`focus_frame`, 47 `advance_focus`, 48 `viewport_intersection`, 50
+`fetch_cancel`, 51 `post_message`, 52 `message`, 53 `frame_owner`, 54
+`frame_loaded`, 55 `proxy_navigate`, 56 `load_stopped`, 60 `edit`, 61
+`clipboard`, 62 `find`, 63 `find_reply`, 64 `context`, 70
+`agent_acted`, 71 `agent_paused`, 72 `agent_window`, 73
+`agent_window_reply`, 74 `attach_tab`, 78 `settled`, 80 `ask_state`, 81
+`state`, 82 `agent_viewport`, 83 `visible`, 90 `context_closed`, 100
+`fetch_remote`, 140 to 143 `socket_*`, 144 `download_hint`, 145 to 148
+`permission_*`. Not built: `init` (the settings are spawn arguments:
+`dweller --renderer 3 --font fixed|system [--no-js] [--site-frames]
+[--console] [--steady-caret]`), `buffers` (the fds come with `resize`),
+`commit_navigation` and the `load*` group (a navigation and a
+subresource are both a `fetch`), the `proxy_*` messages other than
+`proxy_navigate`, `hit_test`, `dialog` (`alert`, `confirm` and
+`prompt` are console messages in the renderer; `confirm` gives false
+and `prompt` null), `file_chooser`, `font_open`, `agent_event`,
+`page_state` and `memory_pressure`. Cookie and storage messages name a
+document id (`doc`), and the browser uses its own record of that
+document's origin.
 
 | Group | Messages |
 |---|---|
@@ -168,11 +208,16 @@ now). Firefox instead allows a few processes per site
 (`dom.ipc.processCount.webIsolated`) (FF, unchecked).
 
 **Stages.** `tab`: one unlocked process per BCG, no OOPIF, partition
-checked. `site`: locks, rules 1 and 3. OOPIF: rule 2.
+checked. `site`: locks, rules 1 and 3. OOPIF: rule 2. As built, `tab`
+is one renderer per tab, locked to the site of its first commit and
+swapped on a cross-site top-level navigation or a COOP response
+(`takesSwap`), with cross-site iframes in the parent's process; `site`
+adds the renderers of cross-site iframes (the spawn argument
+`--site-frames`).
 
 **Modes.** `DWELLER_PROCESS` picks one: `tab` and `site` as above, and
-`single`, the page in the window's own process (what `--single-process`
-selects after Q2.14). Unset, or any other value, is `single` until Q2.14
+`single`, the page in the window's own process (there is no
+`--single-process` flag). Unset, or any other value, is `single` until Q2.14
 makes `site` the default. A test arm that means the window's own process
 sets `single` (Q2.14c), so it keeps that meaning after the flip.
 
@@ -185,8 +230,9 @@ precursor, for an opaque one) is the process's lock. This is Chromium's
 "jail" check (`ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin`,
 then `PerformJailAndCitadelChecks`). The "citadel" check (an unlocked
 process may not touch sites that need a lock) has nothing to protect in
-Dweller once every process is locked. In stage `tab` no check is
-possible.
+Dweller once every process is locked. As built the check is
+`originHosted` and `inSiteLock` (`ui/origin-hosted.aye`,
+`ui/in-site-lock.aye`), the same in `tab` and `site`.
 
 | Message | Check | Failure |
 |---|---|---|
@@ -212,10 +258,12 @@ cookies; ORB still matters for responses that are authorized in other
 ways (an intranet, cached HTTP auth). `X-Frame-Options` and
 `frame-ancestors` are checked in the browser at commit (Q3.6).
 
-**Kill.** The browser logs `bad message: REASON pid site`, sends
+**Kill.** The browser logs `bad message: REASON PID`, sends
 SIGKILL, and the frames of the process go to the crash path (§7).
 Chromium `bad_message::ReceivedBadMessage` does the same. The Q2.7 test
-hook `DWELLER_TEST_EVIL=cookie|storage|commit|message|load` makes a
+hook `DWELLER_TEST=1 DWELLER_TEST_EVIL=NAME` (the names are the
+`evilTest` calls in `renderer/`, such as `commit`, `site`, `initiator`,
+`post-message`, `sandbox-cookie`) makes a
 renderer send one forged message; the test checks that it is dead and
 that the other tabs live.
 
@@ -279,11 +327,15 @@ memory, make threads (workers, Q4.10 decoding), read clocks, read font
 files, exit. It may not: open any other file (`~/.dweller`, `/tmp`),
 make a socket or connect, exec, fork, ptrace, signal another process,
 talk to the window server or the GPU. It enters the sandbox in `dweller
-renderer` after `init` and the font preload, before the first commit.
-It never starts SDL.
+--renderer FD` after the font preload and before it sends `hello`
+(`renderer/serve-on.aye`); a renderer that cannot enter it exits with
+status 3. `DWELLER_NO_SANDBOX=1` skips the sandbox, with a warning on
+stderr. It never starts SDL.
 
 Its stderr is the browser's (fd 2 is kept by `spawnRenderer`, `write`
-is allowed), and `DWELLER_*` variables pass to it (`rendererKeeps`), so
+is allowed), and `DWELLER_*` variables pass to it (`rendererKeeps`;
+not `DWELLER_PROFILE`, `DWELLER_COOKIE_FILE` or
+`DWELLER_TELEMETRY_DIR`), so
 its `DWELLER_TIMING` records (`perf.end`, one `write` per record) and
 its console lines go to the same stream as the browser's, unmarked.
 The console is echoed when the browser's is (`--console`, from
@@ -374,7 +426,9 @@ file and exits, as a Space does now.
 **Session restore.** The session is the browser's: tabs, and history
 entries (URL, title, site, serialized state, scroll, form state).
 Renderers send `page_state{frame, scroll, form}` when the frame
-navigates away and at most once a second (Chromium `PageState`). The
+navigates away and at most once a second (Chromium `PageState`); as
+built there is no `page_state`, and the browser saves the session
+itself (`sessions/`, `DWELLER_RESTORE`). The
 browser writes the session atomically (`net/profile.aye`
 `writeAtomic`). A renderer crash does not change the session. At
 startup only the shown tab loads; the others load when first shown.
@@ -383,12 +437,12 @@ that Q2.6 moves the code without changing the file.
 
 ## 8. Spaces become renderers (Q2.12)
 
-Today a Space is a full copy of the window program, with its own tabs,
-engine and jar. A `shared` Space gets the whole jar and every origin's
-`localStorage` in its `share` message, and it sends cookie and storage
-lines back (`ui/share-with-space.aye`, `ui/apply-shared.aye`). Under
-site isolation that gives every site's cookies to one process, so it
-goes.
+Before Q2.12 a Space was a full copy of the window program, with its
+own tabs, engine and jar. A `shared` Space got the whole jar and every
+origin's `localStorage` in its `share` message, and it sent cookie and
+storage lines back (`ui/share-with-space.aye`, `ui/apply-shared.aye`,
+removed in Q2.12e). Under site isolation that gives every site's
+cookies to one process, so it went.
 
 After Q2.12:
 - A Space is a group of tabs in the browser with an agent as owner. Its
@@ -510,7 +564,8 @@ Space and the frame file are removed. What the paragraphs above call
    the IO thread wakes the loop. Q2.3 measures input to frame; the
    budget is 2 ms p95 over one process.
 5. **Linux sandbox availability.** Recommendation: seccomp required,
-   namespaces best effort, and a CI test that seccomp is on.
+   namespaces best effort, and a CI test that seccomp is on. As built:
+   Landlock and seccomp, no namespaces (§6).
 6. **Compositing gaps** (transforms, interleaved z-order).
    Recommendation: the under and over buffers; translation, clip and
    opacity; the gaps listed in the Q2.9 card.
@@ -521,7 +576,8 @@ Space and the frame file are removed. What the paragraphs above call
    not in v1; after Q2.11 if it is cheap.
 9. **Open: `--single-process`.** Recommendation: the same interfaces,
    bound to direct calls (no IPC, no checks), for debugging and for
-   `dump` and `screenshot`. CI runs one smoke test in it.
+   `dump` and `screenshot`. CI runs one smoke test in it. As built
+   there is no flag: an unset `DWELLER_PROCESS` is this mode.
 
 **Changes to the Q2 step list:**
 - Add **Q2.1b** before Q2.2: the in-process split of `ui/window.aye`
