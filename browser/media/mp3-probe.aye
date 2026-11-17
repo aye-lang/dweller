@@ -1,0 +1,37 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: media/formats/mpeg/mpeg_audio_stream_parser_base.cc (ParseSyncSafeInt, FindNextValidStartCode), media/filters/ffmpeg_demuxer.cc
+fn mp3Probe(alloc: Allocator, b: []u8) AllocError!?Media {
+    var at: usize = 0
+
+    if isTag(b, 0, "ID3") && b.len >= 10 {
+        at = 10 + ((b[6] as usize & 0x7f) << 21 | (b[7] as usize & 0x7f) << 14 | (b[8] as usize & 0x7f) << 7 | (b[9] as usize & 0x7f))
+    }
+
+    let first = mp3Frame(b, at) orelse return null
+    var frames = mp3TaggedFrames(b, at, first)
+    var m = Media { container: Container.Mp3, duration: 0.0, tracks: List(Track).init(alloc) }
+
+    errdefer m.deinit()
+
+    var t = Track { kind: TrackKind.Audio, codec: "mp3", channels: first.channels, rate: first.rate, samples: List(Sample).init(alloc) }
+
+    errdefer t.samples.deinit()
+
+    while mp3Frame(b, at) |f| {
+        if f.size == 0 || at + f.size > b.len { break }
+
+        try t.samples.append(Sample { offset: at as u64, size: f.size as u32, time: t.samples.len() as f64 * f.samples / f.rate, duration: f.samples / f.rate, key: true })
+        at += f.size
+    }
+
+    if frames == 0.0 { frames = t.samples.len() as f64 }
+
+    m.duration = frames * first.samples / first.rate
+    t.duration = m.duration
+    try m.tracks.append(t)
+
+    return m
+}

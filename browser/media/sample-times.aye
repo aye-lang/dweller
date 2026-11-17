@@ -1,0 +1,30 @@
+// chromium: media/formats/mp4/box_definitions.cc
+struct SampleTimes {
+    b: []u8
+    x: Box
+    scale: u32
+    run: usize = 0
+    used: u32 = 0
+    at: u64 = 0
+
+    fn next(self: *mut Self) [2]f64 {
+        let entry = self.x.body + 8 + self.run * 8
+        var delta: u32 = 0
+
+        if entry + 8 <= self.x.end {
+            delta = be32(self.b, entry + 4)
+            self.used += 1
+
+            if self.used >= be32(self.b, entry) {
+                self.run += 1
+                self.used = 0
+            }
+        }
+
+        let start = self.at as f64 / self.scale as f64
+
+        self.at += delta as u64
+
+        return [2]f64{ start, delta as f64 / self.scale as f64 }
+    }
+}

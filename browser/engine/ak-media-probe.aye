@@ -1,9 +1,9 @@
-import audio
 import js
 import js.Args
 import js.Interp
 import js.JsError
 import js.Value
+import media
 
 // https://html.spec.whatwg.org/multipage/media.html#media-data-processing-steps-list
 fn akMediaProbe(it: *mut Interp, a: Args) JsError!Value {
@@ -16,15 +16,26 @@ fn akMediaProbe(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, given)
     try binaryBytes(given.bytes(), bytes)
 
-    let wav = audio.parseWav(bytes.bytes()) orelse return Value.Null
-    let found = try it.newArray(0)
+    var found = try media.probe(it.alloc, bytes.bytes()) orelse return Value.Null
+    defer found.deinit()
 
-    try it.push(js.objVal(found))
-    try it.heap.pushElem(found, js.numVal(wav.frames as f64 / wav.rate))
-    try it.heap.pushElem(found, js.numVal(wav.channels as f64))
-    try it.heap.pushElem(found, js.numVal(wav.rate))
-    try it.heap.pushElem(found, js.numVal(0.0))
-    try it.heap.pushElem(found, js.numVal(0.0))
+    if !media.playable(&found) { return Value.Null }
+
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+    try it.heap.pushElem(out, js.numVal(found.duration))
+
+    for kind in [2]media.TrackKind{ media.TrackKind.Audio, media.TrackKind.Video } {
+        var numbers = [2]f64{ 0.0, 0.0 }
+
+        if found.first(kind) |t| {
+            numbers = [2]f64{ t.channels as f64 + t.width as f64, t.rate + t.height as f64 }
+        }
+
+        try it.heap.pushElem(out, js.numVal(numbers[0]))
+        try it.heap.pushElem(out, js.numVal(numbers[1]))
+    }
 
     return it.pop()
 }

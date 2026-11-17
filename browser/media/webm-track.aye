@@ -1,0 +1,36 @@
+import std.list.List
+import std.mem.Allocator
+
+// chromium: media/formats/webm/webm_tracks_parser.cc, webm_video_client.cc, webm_audio_client.cc
+fn webmTrack(alloc: Allocator, b: []u8, x: Ebml) ?Track {
+    let kind = ebmlIn(b, x.body, x.end, 0x83) orelse return null
+    let codec = ebmlIn(b, x.body, x.end, 0x86) orelse return null
+    let number = ebmlIn(b, x.body, x.end, 0xD7) orelse return null
+    var t = Track { kind: TrackKind.Video, codec: b[codec.body..codec.end], samples: List(Sample).init(alloc) }
+
+    t.number = ebmlUint(b, number) as u32
+
+    if ebmlIn(b, x.body, x.end, 0x63A2) |private| { t.config = b[private.body..private.end] }
+
+    if ebmlUint(b, kind) == 1 {
+        let video = ebmlIn(b, x.body, x.end, 0xE0) orelse return null
+
+        if ebmlIn(b, video.body, video.end, 0xB0) |w| { t.width = ebmlUint(b, w) as u32 }
+        if ebmlIn(b, video.body, video.end, 0xBA) |h| { t.height = ebmlUint(b, h) as u32 }
+
+        return t
+    }
+
+    if ebmlUint(b, kind) != 2 { return null }
+
+    t.kind = TrackKind.Audio
+    t.rate = 8000.0
+    t.channels = 1
+
+    if ebmlIn(b, x.body, x.end, 0xE1) |sound| {
+        if ebmlIn(b, sound.body, sound.end, 0xB5) |r| { t.rate = ebmlFloat(b, r) }
+        if ebmlIn(b, sound.body, sound.end, 0x9F) |c| { t.channels = ebmlUint(b, c) as u32 }
+    }
+
+    return t
+}
