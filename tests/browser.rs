@@ -24,6 +24,8 @@ mod common;
 
 #[path = "browser/agent.rs"]
 mod agent;
+#[path = "browser/cachestorage.rs"]
+mod cachestorage;
 #[path = "browser/cli.rs"]
 mod cli;
 #[path = "browser/csp_directives.rs"]
