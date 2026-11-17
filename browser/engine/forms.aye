@@ -73,6 +73,9 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
             target.deinit(page.alloc)
             return Activation.Nothing
         }
+        if notesDownload(page, el, &target) {
+            return Activation.Follow { target: target }
+        }
         // `target=_blank` or another tab's name: that tab loads it
         // (contexts.aye).
         let elsewhere = openElsewhere(page, el, &target) catch |e| {

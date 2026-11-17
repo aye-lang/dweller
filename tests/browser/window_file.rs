@@ -187,7 +187,7 @@ fn window_file_in_cross_site_frame() {
         .env("DWELLER_PICKER", picker(&dir))
         .env("DWELLER_PROCESS", "site")
         .arg(format!("{}/ui/file-frame.html", s.base))
-        .args(["--font", "fixed", "--width", "400", "--height", "400", "--frames", "1500", "--until-idle", "--state"])
+        .args(["--font", "fixed", "--width", "400", "--height", "400", "--frames", "1500", "--until-idle", "--state", "--processes"])
         .args(["--events", "renderer:loaded renderer:child frame click:50,102 renderer:input renderer:child-title:done1 frame"])
         .output()
         .unwrap();

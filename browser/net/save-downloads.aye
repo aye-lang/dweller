@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn saveDownloads(s: *Session, all: *Downloads) AllocError!void {
+    if s.profile.len == 0 || s.lock < 0 { return }
+
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+
+    for d in all.all.items() {
+        try b.appendInt(d.state as i64)
+        try b.appendByte('\t')
+        try b.appendInt(d.size as i64)
+        try b.appendByte('\t')
+        try b.append(d.owned_path)
+        try b.appendByte('\t')
+        try b.append(d.owned_href)
+        try b.appendByte('\n')
+    }
+
+    let path = try joinPath(s.alloc, s.profile, "downloads")
+    defer s.alloc.free(path)
+
+    _ = try writeAtomic(s.alloc, path, b.bytes())
+}

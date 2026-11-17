@@ -1,0 +1,38 @@
+import ipc
+import net
+import std.mem.AllocError
+import std.text
+import url
+
+// chromium: content/browser/websockets/websocket_connector_impl.cc
+fn openTabSocket(tp: *mut TabProcess, on: u32, id: u32, doc: u32, href: []u8, protocols: []u8) AllocError![]u8 {
+    let alloc = tp.url.alloc
+    let all = try tabSockets(alloc)
+
+    if id == 0 || doc > docCount(tp) || tabSocketIndex(tp, id) != null || !net.socketProtocols(protocols) { return "bad socket" }
+
+    let target = url.parse(alloc, href) catch return "bad socket"
+    defer target.deinit(alloc)
+
+    if target.has_fragment || (!text.eql(target.scheme, "ws") && !text.eql(target.scheme, "wss")) { return "bad socket" }
+
+    let from = fetchDoc(tp, doc)
+    let req = net.Request { kind: net.Kind.Other, referrer: from, top: contextTop(tp), initiator: net.Initiator.Page { url: from }, partition: tp.partition }
+    var opened: u32 = 0
+
+    if ownedTabSockets(tp) < MAX_TAB_SOCKETS { opened = net.socketOpen(&target, req, protocols) }
+
+    if opened == 0 {
+        try ipc.encode(&mut tp.outbox, on, ipc.Message.SocketNote { id: id, kind: net.SOCKET_CLOSED as u32, clean: 0, code: 1006, more: 0, data: "" })
+
+        return ""
+    }
+
+    all.append(TabSocket { owner: tp, on: on, wire: id, socket: opened, staged: text.Builder.init(alloc) }) catch |e| {
+        net.socketRelease(opened)
+
+        return e
+    }
+
+    return ""
+}

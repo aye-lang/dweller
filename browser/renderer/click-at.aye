@@ -1,5 +1,6 @@
 import dom
 import engine
+import pageview
 
 fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) !void {
     if engine.frameAt(p, x, y) |fp| { return clickFrame(r, fp) }
@@ -18,6 +19,12 @@ fn clickAt(r: *mut TabRenderer, p: *mut engine.Page, x: f64, y: f64) !void {
         engine.setFocus(p, null)
 
         return
+    }
+
+    if try pageview.clickListBox(r.alloc, p, node, y) {
+        try p.restyle()
+
+        return layOut(r, p)
     }
 
     if try pressRange(r, p, node, x) { return }

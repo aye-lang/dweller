@@ -35,6 +35,7 @@ struct TabRenderer {
     fetches: u32 = 0
     pending: List(*mut PendingFetch)
     landed: bool = false
+    socket_staged: text.Builder
     blink: bool
     page: ?*mut engine.Page = null
     tab: u32 = 0
@@ -82,6 +83,11 @@ struct TabRenderer {
     hist_state: text.Builder
     hist_null: bool = true
     said_state: text.Builder
+    to_fragment: bool = false
+    notes: ?*mut RendererNotes = null
+    agent_size: [2]f64 = [2]f64{800.0, 600.0}
+    hidden: bool = false
+    background_run_at: u64 = 0
     said_null: bool = true
     subframes: text.Builder
     embedded: bool = false
@@ -161,6 +167,12 @@ struct TabRenderer {
         self.history.deinit()
         self.hist_state.deinit()
         self.said_state.deinit()
+
+        if self.notes |n| {
+            n.deinit()
+            self.alloc.destroy(n)
+        }
+
         self.subframes.deinit()
 
         for p in self.pending.items() { p.deinit(self.alloc) }
@@ -174,5 +186,6 @@ struct TabRenderer {
         self.find.deinit()
         self.find_rects.deinit()
         self.attaching.deinit()
+        self.socket_staged.deinit()
     }
 }

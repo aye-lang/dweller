@@ -1,0 +1,28 @@
+import dom
+import engine
+import std.mem.AllocError
+import std.text
+
+pub fn writeFocus(p: *engine.Page, out: *mut text.Builder) AllocError!void {
+    let f = p.doc.controls.focus orelse return
+
+    try out.append("element ")
+    try out.append(p.doc.node(f).name)
+
+    if p.doc.attr(f, "name") |n| {
+        try out.append(" name=")
+        try out.append(n)
+    }
+
+    try out.appendByte('\n')
+
+    if holdsValue(&p.doc, f) {
+        try out.append("value ")
+        try out.append(dom.valueOf(&p.doc, f))
+        try out.appendByte('\n')
+    }
+}
+
+fn holdsValue(doc: *dom.Document, f: dom.NodeId) bool {
+    return dom.isTextField(doc, f) || doc.isElement(f, "select") || (doc.isElement(f, "input") && (text.eql(dom.inputType(doc, f), "range") || text.eql(dom.inputType(doc, f), "color")))
+}

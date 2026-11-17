@@ -1460,7 +1460,14 @@ fn controlSetValue(it: *mut Interp, a: Args) JsError!Value {
         try argText(it, a, 0, b)
     }
     let doc = docOf(it)
-    if dom.isControl(doc, h) || doc.isElement(h, "output") {
+    let clean = try it.builder()
+    defer it.release(clean)
+    if defaultModeInput(doc, h) {
+        try doc.setAttr(h, "value", b.bytes())
+        (try doc.controls.ensure(h)).dirty = false
+    } else if doc.isElement(h, "input") {
+        try dom.setValue(doc, h, try sanitizedInput(dom.inputType(doc, h), b.bytes(), clean))
+    } else if dom.isControl(doc, h) || doc.isElement(h, "output") {
         try dom.setValue(doc, h, b.bytes())
     } else {
         try doc.setAttr(h, "value", b.bytes())
@@ -1725,11 +1732,15 @@ fn hostTag(it: *mut Interp, o: u32) u32 {
 
 // Sets (or, for an empty value, removes) the declaration of `prop` in
 // the style attribute of `el`.
-fn setStyleDecl(s: *mut Script, el: NodeId, prop: []u8, raw: []u8) AllocError!void {
+fn setStyleDecl(s: *mut Script, el: NodeId, legacy_prop: []u8, raw: []u8) AllocError!void {
+    let prop = css.unprefixed(legacy_prop)
     var canon = text.Builder.init(s.alloc)
     defer canon.deinit()
     if !(try css.specifiedValue(s.alloc, prop, raw, &mut canon)) {
         return
+    }
+    if text.trim(raw).len == 0 {
+        try expandShorthands(s, el, prop)
     }
     if text.eql(prop, "overflow") {
         return putOverflow(s, el, canon.bytes())

@@ -7,11 +7,12 @@ const f = document.getElementById('f'), field = document.getElementById('field')
 const out = [];
 function test(name, ok) { if (!ok) throw new Error(name); out.push(name); }
 function type(kind, value, good) { field.type = kind; field.value = value; test(kind + ' ' + value, field.checkValidity() === good); }
-type('date', '2000-02-29', true); type('date', '1900-02-29', false); type('date', '2024-13-01', false);
-type('time', '23:59', true); type('time', '24:00', false); type('time', '12:30:20', false); field.step = 'any'; type('time', '12:30:20.250', true);
-type('datetime-local', '2024-02-29T12:30', true); type('datetime-local', '2024-02-30T12:30', false);
-type('month', '2024-12', true); type('month', '2024-00', false);
-type('week', '2020-W53', true); type('week', '2021-W53', false);
+function cleared(kind, value) { field.type = kind; field.value = value; test(kind + ' ' + value, field.value === '' && field.checkValidity()); }
+type('date', '2000-02-29', true); cleared('date', '1900-02-29'); cleared('date', '2024-13-01');
+type('time', '23:59', true); cleared('time', '24:00'); type('time', '12:30:20', false); field.step = 'any'; type('time', '12:30:20.250', true);
+type('datetime-local', '2024-02-29T12:30', true); cleared('datetime-local', '2024-02-30T12:30');
+type('month', '2024-12', true); cleared('month', '2024-00');
+type('week', '2020-W53', true); cleared('week', '2021-W53');
 field.step = '2'; field.min = '2024-01-01'; type('date', '2024-01-02', false); type('date', '2024-01-03', true);
 field.removeAttribute('step'); field.removeAttribute('min');
 type('email', 'alice@example.com', true); type('email', 'alice example.com', false); field.multiple = true; type('email', 'alice@example.com, bob@example.org', true); field.multiple = false;

@@ -1,0 +1,31 @@
+import css
+import dom.NodeId
+import std
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#dom-cssstyledeclaration-removeproperty
+fn expandShorthands(s: *mut Script, el: NodeId, longhand: []u8) AllocError!void {
+    let index = css.propertyIndex(longhand) orelse return
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+
+    var expanded = false
+    var parts = text.split(styleAttrOf(s.active, el), ";")
+
+    while parts.next() |d| {
+        let colon = std.mem.indexOf(d, ':') orelse continue
+        let name = text.trim(d[..colon])
+        let value = text.trim(d[colon + 1..])
+
+        if try appendLonghands(s, &mut b, name, value, index) {
+            expanded = true
+        } else {
+            try appendDecl(&mut b, name, value)
+        }
+    }
+
+    if expanded {
+        try s.active.doc.setAttr(el, "style", b.bytes())
+    }
+}

@@ -1,0 +1,19 @@
+import dom
+import dom.NodeId
+import engine
+import layout
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn clickListBox(alloc: Allocator, p: *mut engine.Page, node: NodeId, y: f64) AllocError!bool {
+    if !p.doc.isElement(node, "select") || !layout.isListBox(&p.doc, node) || dom.isDisabled(&p.doc, node) { return false }
+
+    let t = p.tree orelse return false
+    let row = listRowAt(p, t, node, y)
+
+    engine.setFocus(p, node)
+
+    if row |k| { try chooseListOption(alloc, &mut p.doc, node, k) }
+
+    return true
+}
