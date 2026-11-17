@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+pub fn answerPermission(id: u32, state: u8) AllocError!void {
+    let all = page_asks orelse return
+
+    for i, k in all.items() {
+        if k.id != id {
+            continue
+        }
+
+        let s = k.owner
+        let done = s.it.roots.items()[k.root]
+
+        _ = all.orderedRemove(i)
+        try queueAskTask(s, done, state as f64)
+        s.it.removeRoot(k.root)
+
+        return
+    }
+}

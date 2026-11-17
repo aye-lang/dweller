@@ -1,0 +1,23 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-logical-1/#box
+fn placeLogical(wins: []Win, values: []mut Value) {
+    let vertical = !text.startsWith(keywordText(values[WRITING_MODE]), "horizontal")
+    let rtl = text.eql(keywordText(values[DIRECTION]), "rtl")
+
+    if !vertical && !rtl {
+        return
+    }
+
+    let flow = flowSides(keywordText(values[WRITING_MODE]), rtl)
+
+    for group in [6]usize{MARGIN_TOP, PADDING_TOP, INSET_TOP, BORDER_TOP_WIDTH, BORDER_TOP_STYLE, BORDER_TOP_COLOR} {
+        moveLogical(wins, values, [4]usize{group + flow[0], group + flow[1], group + flow[2], group + flow[3]}, [4]usize{group, group + 1, group + 2, group + 3})
+    }
+
+    if vertical {
+        for pair in [4][2]usize{[2]usize{WIDTH, HEIGHT}, [2]usize{MIN_WIDTH, MIN_HEIGHT}, [2]usize{MAX_WIDTH, MAX_HEIGHT}, [2]usize{OVERFLOW_X, OVERFLOW_Y}} {
+            moveLogical(wins, values, [4]usize{pair[1], pair[0], pair[0], pair[0]}, [4]usize{pair[0], pair[1], pair[0], pair[0]})
+        }
+    }
+}

@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn clientOfProcess(r: *Registry, process: u32) ?u64 {
+    for c in r.clients.items() {
+        if c.client >> 32 == process as u64 { return c.client }
+    }
+
+    return null
+}
+
+pub fn dropProcess(process: u32) AllocError!void {
+    let r = the_registry orelse return
+
+    while clientOfProcess(r, process) |client| { try dropClient(client) }
+}

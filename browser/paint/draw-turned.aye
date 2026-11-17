@@ -1,0 +1,27 @@
+import font
+import std.mem.AllocError
+
+struct Pen {
+    x: f64
+    y: f64
+    scale: f64
+    size64: i64
+}
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#text-orientation
+fn drawTurned(self: *mut TextPainter, sys: *mut font.System, canvas: *mut Canvas, pen: Pen, s: []u8, f: font.Font, c: Rgba) AllocError!void {
+    self.placed.clear()
+    _ = try sys.shapeText(f, s, &mut self.placed)
+
+    for k in 0..self.placed.len() {
+        let p = self.placed.items()[k]
+        let gi = try self.glyph(sys, p.face, pen.size64, p.glyph, p.bold)
+        let gl = self.glyphs.items()[gi]
+
+        if gl.ok && !gl.color && gl.w > 0 && gl.h > 0 {
+            let mask = self.data.items()[gl.offset..gl.offset + gl.w * gl.h]
+
+            blitMaskTurned(canvas, IRect { x0: roundPx(pen.x), y0: roundPx(pen.y), x1: roundPx(p.x * pen.scale) + gl.left, y1: -roundPx(p.y * pen.scale) - gl.top }, gl.w, mask, c)
+        }
+    }
+}

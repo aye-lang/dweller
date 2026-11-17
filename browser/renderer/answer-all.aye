@@ -9,6 +9,10 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
         let got = (try ipc.nextMessage(r.current.bytes())).?
 
+        if !keepsList(got.message) {
+            r.relist = true
+        }
+
         engine.setTabHost(r.width > 0 && (drivesInput(got.message) || got.message is .Agent))
 
         match got.message {
@@ -27,18 +31,41 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .FetchHead { .. }, .FetchBody { .. }, .FetchEnd { .. }, .FetchFail { .. }, .FetchRemote { .. } => try landFetched(r, got.message)
+            .PermissionAnswer { id, state } => {
+                if state > 2 { return false }
+
+                try engine.answerPermission(id, state as u8)
+                r.landed = true
+            }
+
+            .SocketNote { .. } => {
+                if !(try landSocketNote(r, got.message)) { return false }
+            }
+
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
+            .AskState { with_text } => try sayState(r, got.frame, with_text != 0)
+            .Visible { on } => {
+                if on > 1 { return false }
+
+                try showVisible(r, on == 1)
+            }
+
+            .AgentViewport { width, height } => {
+                r.agent_size = [2]f64{width, height}
+            }
+
             .AgentPaused { on } => {
                 r.agent_paused = on != 0
             }
 
             .Agent { id, mcp, ref_base, line } => try answerAgent(r, got.frame, id, mcp != 0, ref_base, line)
+            .IdbEvent { page, line } => try engine.idbEvent(page, line)
             .StorageEvent { nulls, key, old, value, url } => try engine.storageEvent(r.alloc, url, unlessNull(key, nulls, 1), unlessNull(old, nulls, 2), unlessNull(value, nulls, 4))
 
             .Mouse { seq, kind, x, y, mx, my, button, buttons, mods, clicks } => {
-                if kind > 3 { return false }
+                if kind > 4 { return false }
 
                 try mouseInput(r, kind, button, MouseAt { x: x, y: y, mx: mx, my: my, buttons: buttons, mods: mods, clicks: clicks })
                 r.took(seq)

@@ -1,0 +1,26 @@
+import font
+import paint
+import std.math
+import std.text
+
+fn putText(grid: *mut Grid, x: f64, baseline: f64, s: []u8, bold: bool, c: paint.Rgba, clip: paint.IRect) {
+    let y = math.round(baseline) as i64 - 1
+    var col = math.round(x) as i64
+    var i: usize = 0
+
+    while i < s.len {
+        let d = text.decode(s[i..])
+        let wide = font.columns(d.code) as i64
+
+        if wide > 0 && y >= clip.y0 && y < clip.y1 && col >= clip.x0 && col + wide <= clip.x1 {
+            let cell = &mut grid.cells[y as usize * grid.cols + col as usize]
+
+            cell.code = d.code
+            cell.fg = c
+            cell.bold = bold
+        }
+
+        col += wide
+        i += d.len
+    }
+}

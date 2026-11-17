@@ -29,6 +29,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.loading = false
         }
 
+        .ScrollInfo { max_y, pan, background } => {
+            if got.frame != slot.id { return "bad scroll_info" }
+
+            return takeScrollInfo(tp, max_y, pan, background)
+        }
+
         .Title { title } => {
             if got.frame != slot.id || title.len > 4096 { return "bad title" }
 
@@ -47,6 +53,8 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
             if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
 
+            noteFrameScroll(tp, scroll_y)
+
             return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
 
@@ -56,8 +64,11 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
         }
 
-        .BeginNavigation { url, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
             if got.frame != slot.id { return "unexpected begin_navigation" }
+            if user > 1 { return "bad begin_navigation" }
+
+            tp.nav_user = user == 1
 
             let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
 
@@ -148,6 +159,14 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerFetch(tp, got.frame, got.message)
         }
 
+        .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
+        .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => {
+            if got.frame != slot.id { return "bad socket" }
+
+            return tabSocketSent(tp, got.frame, got.message)
+        }
+
         .FetchCancel { id } => {
             if got.frame != slot.id { return "bad fetch_cancel" }
 
@@ -170,6 +189,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id { return "bad storage" }
 
             return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Idb { .. } => {
+            if got.frame != slot.id { return "bad idb" }
+
+            return answerIdb(tp, got.frame, got.message)
         }
 
         .Subframes { frames } => {
@@ -215,11 +240,13 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .State { .. } => return "unexpected state"
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+            noteInputAcked(tp)
         }
 
         .Pong { n } => {

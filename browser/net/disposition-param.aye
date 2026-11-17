@@ -1,0 +1,21 @@
+import std
+import std.text
+
+// https://www.rfc-editor.org/rfc/rfc6266#section-4.1
+fn dispositionParam(value: []u8, name: []u8) ?[]u8 {
+    var at = std.mem.indexOf(value, ';') orelse return null
+
+    while at < value.len {
+        let end = dispositionParamEnd(value, at + 1)
+        let part = value[at + 1..end]
+        let eq = std.mem.indexOf(part, '=') orelse part.len
+
+        if eq < part.len && text.eqlIgnoreCase(text.trim(part[..eq]), name) {
+            return text.trim(part[eq + 1..])
+        }
+
+        at = end
+    }
+
+    return null
+}

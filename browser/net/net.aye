@@ -30,6 +30,7 @@ pub error FetchError {
     CertInvalid
     TlsVersion
     Network
+    Downloaded
 }
 
 /// What a fetch returns. Every slice is owned by the response: free them
@@ -135,6 +136,11 @@ pub fn fetchWith(alloc: Allocator, target: *Url, body: ?*Body) FetchError!Respon
 
 /// Fetches `target` for `req`.
 pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
+    if interceptor |hook| {
+        if try hook(alloc, target, req) |res| {
+            return res
+        }
+    }
     if remote |hook| {
         if try takeLanded(alloc, target, req) |res| {
             return res
@@ -173,6 +179,13 @@ pub fn request(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     }
     archiveWrite(alloc, target, req, &res, "")
     noteFailure(req.kind, res.status, target.href)
+
+    if req.kind == Kind.Document && try takeDownload(alloc, target, &res) {
+        res.deinit(alloc)
+
+        return FetchError.Downloaded
+    }
+
     return nosniffChecked(alloc, req, target, try orbChecked(alloc, req, target, try corsChecked(alloc, req, target, res)))
 }
 
@@ -213,29 +226,17 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     if text.eql(target.scheme, "data") {
         return fetchData(alloc, target)
     }
+    if req.initiator is .Browser && text.eql(target.href, "about:downloads") {
+        return downloadsPage(alloc)
+    }
     if !text.eql(target.scheme, "http") && !text.eql(target.scheme, "https") {
         return FetchError.Unsupported
     }
     if req.kind != Kind.Document {
         return fetchHttp(alloc, target, req)
     }
-    // A navigation from a page (noteNavigation) sends the page's URL.
-    let s = session orelse return fetchHttp(alloc, target, req)
-    let hint_target = s.nav_target
-    let hint_referrer = s.nav_referrer
-    s.nav_target = []mut u8{}
-    s.nav_referrer = []mut u8{}
-    defer release(s.alloc, hint_target)
-    defer release(s.alloc, hint_referrer)
-    var r = req
-    if r.referrer.len == 0 && text.eql(hint_target, target.withoutFragment()) {
-        r.referrer = hint_referrer
-        r.user_activated = s.nav_user
-        if r.referrer_policy == null {
-            r.referrer_policy = nav_policy
-        }
-    }
-    return fetchHttp(alloc, target, r)
+    defer forgetNavigation()
+    return fetchHttp(alloc, target, navigationHinted(target, req))
 }
 
 /// A message for a fetch error, for the command line.
@@ -259,6 +260,7 @@ pub fn describe(e: FetchError) []u8 {
         .CertWrongHost => "the certificate is for another host"
         .CertInvalid => "the certificate is not valid"
         .TlsVersion => "the server does not support TLS 1.2 or later"
+        .Downloaded => "saved as a download"
         .Network => "network error"
     }
 }

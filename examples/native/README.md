@@ -12,13 +12,21 @@ aye build examples/native/counter -o target/counter --mode fast
 target/counter
 ```
 
-The app is `counter/main.aye` and `counter/counter.css`. Its `aye.toml`
-names the engine as a path dependency, and the app imports
-`dweller.shell` (the window, `browser/shell/`) and `dweller.dom`.
-`shell.run(alloc, css, build)` opens the window: `build` fills
-`app.body` (`app.element`, `app.setAttr`, `app.setText`) and names the
-click handlers (`app.onClick(element, handler)`). A handler changes the
-document; the next frame styles and lays out only what changed.
+The app is `counter/main.aye`, `counter/counter.css` and the component
+`counter/widget/`. Its `aye.toml` names the engine as a path dependency,
+and the app imports `dweller.shell` (the window, `browser/shell/`).
+`shell.run(alloc, css, build)` opens the window, and `build` mounts the
+component on `app.body` (`shell.mount`). The component is written against
+a few DOM functions (`docs/plans/cards/V3.md`), so the same file also
+builds for wasm32 and runs in a page over `widget/glue.js`:
+
+```
+aye build examples/native/counter/widget --target wasm32-freestanding -o widget.wasm
+```
+
+An app can also fill `app.body` itself (`app.element`, `app.setAttr`,
+`app.setText`, `app.onClick(element, handler)`). Either way a change to
+the document is styled and laid out incrementally at the next frame.
 
 `counter/counter.html` is the same app as a web page, for comparing the
 two (`dweller counter.html`).
@@ -44,3 +52,8 @@ An agent uses the app as it uses a page (`docs/agent-protocol.md`,
 ```
 printf '%s\n' '{"id":1,"cmd":"snapshot"}' '{"id":2,"cmd":"click","ref":"e2"}' | target/counter --agent
 ```
+
+The same app in a terminal (V7): `target/counter --tui` prints one frame
+as ANSI, laid out in cells by the same engine with the stylesheet
+`counter/counter.tui.css` (1 px is one cell). `--events` works as above,
+with clicks in columns and rows.

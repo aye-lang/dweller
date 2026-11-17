@@ -51,7 +51,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             return showTabFrame(tp.tab, tp, got.frame, buffer, width, height, damage)
         }
 
-        .BeginNavigation { url: href, post, content_type, body, referrer_policy } => {
+        .BeginNavigation { url: href, post, content_type, body, referrer_policy, .. } => {
             let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
             let target = url.parse(tp.url.alloc, href) catch return ""
             defer target.deinit(tp.url.alloc)
@@ -96,6 +96,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             if seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+            noteInputAcked(tp)
         }
 
         .WheelUnused { seq, dx, dy } => {
@@ -119,6 +120,9 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .Fetch { .. } => return answerFetch(tp, got.frame, got.message)
         .FetchCancel { id } => return cancelFetch(tp, id)
+        .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
+        .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
         .CookieGet { .. }, .CookieSet { .. } => {
             if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
 
@@ -130,6 +134,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
             return answerStorage(tp, got.frame, got.message)
         }
+
+        .Idb { .. } => return answerIdb(tp, got.frame, got.message)
 
         .Subframes { frames } => return takeSubframes(tp, frames)
         .PostMessage { .. } => return routePostMessage(tp, got.message)

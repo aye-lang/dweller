@@ -1,0 +1,19 @@
+import net
+import std.mem.AllocError
+
+fn sendTabSocket(tp: *mut TabProcess, id: u32, binary: u32, more: u32, data: []u8) AllocError![]u8 {
+    let all = tab_sockets orelse return ""
+    let i = tabSocketIndex(tp, id) orelse return ""
+    let k = &mut all.items()[i]
+
+    if binary > 1 || more > 1 || k.staged.len() + data.len > MAX_SOCKET_MESSAGE { return "bad socket" }
+
+    try k.staged.append(data)
+
+    if more == 1 { return "" }
+
+    net.socketSend(k.socket, binary == 1, k.staged.bytes())
+    k.staged.clear()
+
+    return ""
+}

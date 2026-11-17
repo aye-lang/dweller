@@ -1,0 +1,28 @@
+import dom
+
+pub extern fn dom_value(el: i32, out: [*]u8, capacity: usize) usize {
+    let app = mounted orelse return 0
+    let node = nodeOfHandle(app, el) orelse return 0
+    let value = dom.valueOf(&app.doc, node)
+    var n = value.len
+
+    if n > capacity {
+        n = capacity
+    }
+
+    for i in 0..n {
+        out[i] = value[i]
+    }
+
+    return n
+}
+
+pub extern fn dom_set_value(el: i32, s: [*]u8, len: usize) {
+    let app = mounted orelse return
+    let node = nodeOfHandle(app, el) orelse return
+
+    dom.setValue(&mut app.doc, node, s[0..len]) catch |e| {
+    }
+    markDirty(app, node) catch |e| {
+    }
+}

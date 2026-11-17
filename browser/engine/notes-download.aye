@@ -1,0 +1,18 @@
+import dom.NodeId
+import net
+import std.text
+import url.Url
+
+// https://html.spec.whatwg.org/multipage/links.html#downloading-hyperlinks
+fn notesDownload(page: *mut Page, el: NodeId, target: *Url) bool {
+    let name = page.doc.attr(el, "download") orelse return false
+    let fetched = text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
+
+    if !fetched || !net.sameOrigin(&page.url, target) || page.sandbox & SB_DOWNLOADS != 0 {
+        return false
+    }
+
+    net.noteDownload(target.href, text.trim(name))
+
+    return true
+}

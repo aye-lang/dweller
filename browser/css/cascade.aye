@@ -483,6 +483,7 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
     defer setHasCache(null)
     setHasAnchors(&mut out.has_anchors)
     defer setHasAnchors(null)
+    defer noteMatchedCache(out)
     setRegistered(&author.registered)
     defer setRegistered(null)
     defer setShadowHost(null)
@@ -682,6 +683,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     defer setHasCache(null)
     setHasAnchors(&mut out.has_anchors)
     defer setHasAnchors(null)
+    defer noteMatchedCache(out)
     setRegistered(&author.registered)
     defer setRegistered(null)
     defer setShadowHost(null)
@@ -757,9 +759,9 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
                 if !had || had_own_customs || own_customs || (styleParent(doc, h) == null && !sameRootUnits(old.items(), values)) || !sameContainer(old.items(), values) {
                     // Custom properties and `rem` reach any descendant,
                     // and so does what query container is the nearest.
-                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
-                } else if doc.node(h).shadow != null && !sameValues(old.items(), values) {
-                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), h)
+                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), belowTop(doc, h))
+                } else if (doc.node(h).shadow != null || dom.isSlot(doc, h)) && !sameValues(old.items(), values) {
+                    styled += try restyleBelow(&mut c, ua, author, &mut hints, ua_pseudo.items(), belowTop(doc, h))
                 } else if !sameValues(old.items(), values) || text.eql(keywordText(values[TEXT_ALIGN]), "center") {
                     var child = doc.firstChild(h)
                     while child |ch| {
@@ -1355,6 +1357,8 @@ struct Computer {
                 useLineHeight(lineHeightPx(values[p], font_px), is_root)
             }
         }
+        placeLogical(self.wins, values)
+        fixWritingMode(values, parent)
         fixBorderWidths(values)
         fixOverflow(values)
         fixSpacing(values)

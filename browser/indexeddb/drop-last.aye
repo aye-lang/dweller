@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn liveUpgrade(b: *Backend, conn: u32) bool {
+    for t in b.txs.items() {
+        if t.conn == conn && t.mode == VERSION_CHANGE { return true }
+    }
+
+    return false
+}
+
+fn dropLast(a: Ask) AllocError!void {
+    freeTransaction(a.b, a.b.txs.pop().?)
+
+    return refuse(a, "NotFoundError")
+}

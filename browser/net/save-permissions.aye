@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn savePermissions(s: *Session, all: *Permissions) AllocError!void {
+    if s.profile.len == 0 || s.lock < 0 { return }
+
+    var b = text.Builder.init(s.alloc)
+    defer b.deinit()
+
+    for p in all.all.items() {
+        if p.state == PERMISSION_PROMPT { continue }
+
+        try b.append(p.owned_origin)
+        try b.appendByte('\t')
+        try b.appendInt(p.kind as i64)
+        try b.appendByte('\t')
+        try b.appendInt(p.state as i64)
+        try b.appendByte('\n')
+    }
+
+    let path = try joinPath(s.alloc, s.profile, "permissions")
+    defer s.alloc.free(path)
+
+    _ = try writeAtomic(s.alloc, path, b.bytes())
+}

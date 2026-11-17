@@ -1,0 +1,39 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+pub fn drawList(grid: *mut Grid, list: *paint.DisplayList, scroll: f64) AllocError!void {
+    var clips = List(paint.IRect).init(grid.alloc)
+    defer clips.deinit()
+
+    try clips.append(paint.IRect { x0: 0, y0: 0, x1: grid.cols as i64, y1: grid.rows as i64 })
+
+    for item in list.items.items() {
+        let clip = clips.items()[clips.len() - 1]
+
+        match item {
+            .Fill { r, c } => {
+                fillCells(grid, cellRect(r, scroll), clip, c)
+            }
+
+            .Quad { p, c } => {
+                fillCells(grid, quadCells(p, scroll), clip, c)
+            }
+
+            .Text { x, y, s, face, c } => {
+                putText(grid, x, y - scroll, s, face.bold, c, clip)
+            }
+
+            .Clip { r } => {
+                try clips.append(paint.intersect(clip, cellRect(r, scroll)))
+            }
+
+            .Unclip => {
+                _ = clips.pop()
+            }
+
+            _ => {
+            }
+        }
+    }
+}

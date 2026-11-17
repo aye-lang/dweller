@@ -1,0 +1,33 @@
+import dom
+import dom.NodeId
+import engine
+import layout
+
+fn listRowAt(p: *mut engine.Page, t: *layout.Tree, node: NodeId, y: f64) ?usize {
+    for i in 0..t.boxes.len() {
+        let b = t.bx(i).*
+
+        if !dom.isSame(b.node, node) || (b.kind != layout.BoxKind.InlineBlock && b.kind != layout.BoxKind.Block) { continue }
+
+        var scroll = 0.0
+        var row: ?usize = null
+
+        if p.doc.controls.get(node) |c| {
+            scroll = c.scroll
+        }
+
+        let top = b.ay + b.border[0] + b.padding[0] - scroll
+
+        for li in b.line_start..b.line_end {
+            let line = t.lines.items()[li]
+
+            if y >= top + line.y && y < top + line.y + line.h {
+                row = li - b.line_start
+            }
+        }
+
+        return row
+    }
+
+    return null
+}

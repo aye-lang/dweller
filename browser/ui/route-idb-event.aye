@@ -1,0 +1,13 @@
+import indexeddb
+import ipc
+import std.mem.AllocError
+
+fn routeIdbEvent(e: indexeddb.ClientEvent) AllocError!void {
+    var next = tab_processes
+
+    while next |tp| {
+        next = tp.next
+
+        if tp.gone.len == 0 && tp.pid as u64 == e.client >> 32 { return ipc.encode(&mut tp.outbox, 0, ipc.Message.IdbEvent { page: (e.client & 0xFFFFFFFF) as u32, line: e.line }) }
+    }
+}

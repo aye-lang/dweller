@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+fn addDownload(all: *mut Downloads, state: u8, size: usize, path: []u8, href: []u8) AllocError!void {
+    let owned_path = try dup(all.alloc, path)
+
+    errdefer release(all.alloc, owned_path)
+
+    let owned_href = try dup(all.alloc, href)
+
+    errdefer release(all.alloc, owned_href)
+
+    try all.all.append(Download { state: state, size: size, owned_path: owned_path, owned_href: owned_href })
+}

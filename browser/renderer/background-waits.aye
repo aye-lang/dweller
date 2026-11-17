@@ -1,0 +1,15 @@
+import std
+
+let BACKGROUND_PERIOD_MS: u64 = 1000
+
+// blink: third_party/blink/renderer/platform/scheduler/common/throttling/budget_pool.cc
+fn backgroundWaits(r: *mut TabRenderer) bool {
+    let now = std.time.monotonicMs()
+
+    if !r.hidden { return false }
+    if now < r.background_run_at { return true }
+
+    r.background_run_at = now + BACKGROUND_PERIOD_MS
+
+    return false
+}

@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn deleteStore(a: Ask) AllocError!void {
+    let tx = upgradeOf(a) orelse return refuse(a, "InvalidStateError")
+    let id = a.f.int()
+
+    for i in 0..tx.db.stores.len() {
+        if tx.db.stores.items()[i].id as u64 != id { continue }
+
+        freeStore(a.b.alloc, tx.db.stores.orderedRemove(i))
+
+        return
+    }
+
+    return refuse(a, "NotFoundError")
+}

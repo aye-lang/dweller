@@ -1,19 +1,14 @@
-import dweller.dom
-import dweller.dom.NodeId
 import dweller.shell
 import dweller.shell.App
 import std
 import std.mem.AllocError
-import std.text
+import widget
 
-let STYLE = @embedFile("counter.css")
-let ROWS: usize = 1000
-
-var count: i64 = 0
+let LOOK = shell.Look { window: @embedFile("counter.css"), terminal: @embedFile("counter.tui.css") }
 
 pub fn main() {
     var gpa = std.heap.General.init()
-    let status = shell.run(gpa.allocator(), STYLE, build)
+    let status = shell.runLook(gpa.allocator(), LOOK, build)
 
     gpa.deinit()
     std.os.exit(status)
@@ -23,74 +18,5 @@ fn build(app: *mut App) AllocError!void {
     app.title = "Counter"
     app.address = "app:counter"
 
-    let title = try app.element(app.body, "h1")
-    try app.setText(title, "Counter")
-
-    let shown = try app.element(app.body, "p")
-    try app.setAttr(shown, "id", "count")
-    try app.setText(shown, "0")
-
-    try button(app, app.body, "+1", increment)
-    try button(app, app.body, "Reset", reset)
-
-    let add = try app.element(app.body, "div")
-    try app.setAttr(add, "class", "add")
-
-    let name = try app.element(add, "input")
-    try app.setAttr(name, "id", "name")
-    try button(app, add, "Add", addRow)
-
-    let list = try app.element(app.body, "div")
-    try app.setAttr(list, "id", "list")
-
-    for i in 0..ROWS {
-        var label = text.Builder.init(app.alloc)
-        defer label.deinit()
-
-        try label.append("Row ")
-        try label.appendInt((i + 1) as i64)
-        _ = try row(app, list, label.bytes())
-    }
-}
-
-fn button(app: *mut App, parent: NodeId, label: []u8, call: fn(*mut App, NodeId) AllocError!void) AllocError!void {
-    let el = try app.element(parent, "button")
-
-    try app.setText(el, label)
-    try app.onClick(el, call)
-}
-
-fn row(app: *mut App, list: NodeId, label: []u8) AllocError!NodeId {
-    let el = try app.element(list, "div")
-
-    try app.setAttr(el, "class", "row")
-    try app.setText(el, label)
-
-    return el
-}
-
-fn show(app: *mut App) AllocError!void {
-    var b = text.Builder.init(app.alloc)
-    defer b.deinit()
-
-    try b.appendInt(count)
-    try app.setText(app.byId("count"), b.bytes())
-}
-
-fn increment(app: *mut App, el: NodeId) AllocError!void {
-    count += 1
-    try show(app)
-}
-
-fn reset(app: *mut App, el: NodeId) AllocError!void {
-    count = 0
-    try show(app)
-}
-
-fn addRow(app: *mut App, el: NodeId) AllocError!void {
-    let name = app.byId("name")
-    let added = try row(app, app.byId("list"), dom.valueOf(&app.doc, name))
-
-    try app.setAttr(added, "class", "row added")
-    try dom.setValue(&mut app.doc, name, "")
+    try shell.mount(app, app.body, widget.mount, widget.event, "")
 }

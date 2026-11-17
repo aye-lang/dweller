@@ -1,0 +1,30 @@
+import indexeddb
+import serviceworker
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+fn askIdb(s: *mut Script, request: []u8, out: *mut text.Builder) AllocError!void {
+    try askStore(s.alloc, IdbAsk { href: originPage(s.page).url.href, page: s.page.id, request: request }, out)
+}
+
+fn askStore(alloc: Allocator, ask: IdbAsk, out: *mut text.Builder) AllocError!void {
+    var area = text.Builder.init(alloc)
+    defer area.deinit()
+
+    if idb_remote |hook| { return hook(ask, out) }
+
+    let at = url.parse(alloc, ask.href) catch return out.append("!SecurityError")
+    defer at.deinit(alloc)
+
+    try storageOrigin(&mut area, &at)
+
+    if text.startsWith(ask.request, "sw\n") {
+        try serviceworker.apply(alloc, area.bytes(), ask.page as u64, ask.request[3..], out)
+    } else {
+        try indexeddb.apply(alloc, area.bytes(), ask.page as u64, ask.request, out)
+    }
+
+    try deliverIdbEvents()
+}

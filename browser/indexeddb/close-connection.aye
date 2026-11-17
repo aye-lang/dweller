@@ -1,0 +1,11 @@
+import std.mem.AllocError
+
+fn closeConnection(a: Ask) AllocError!void {
+    let c = findConnection(a.b, a.client, a.f.int()) orelse return refuse(a, "UnknownError")
+
+    c.closing = true
+
+    if liveTransactions(a.b, c.id) == 0 { removeConnection(a.b, c.id) }
+
+    try settle(a.b)
+}

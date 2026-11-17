@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn createIndex(a: Ask) AllocError!void {
+    let t = targetOf(a, true) orelse return refuse(a, "InvalidStateError")
+    let unique = a.f.int() == 1
+    let multi = a.f.int() == 1
+    let name = a.f.next()
+    let key_path = a.f.tail()
+    let id = t.store.next_index
+
+    if a.f.bad || t.tx.mode != VERSION_CHANGE { return refuse(a, "InvalidStateError") }
+
+    t.store.next_index += 1
+    try t.store.indexes.append(try newIndex(a.b.alloc, id, name, key_path, unique, multi))
+    try appendNumber(a.out, id as u64)
+}

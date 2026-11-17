@@ -1,0 +1,21 @@
+import css
+import std.math
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#orthogonal-auto
+fn availableInline(t: *Tree, i: usize, cb_inline: f64) f64 {
+    if cb_inline >= 0.0 {
+        return cb_inline
+    }
+
+    var limit = t.viewport_w
+
+    if t.bx(i).space == HORIZONTAL {
+        limit = t.viewport_h
+    }
+
+    if t.bx(i).parent |p| {
+        limit = math.min(limit, lengthOf(t.bx(p).style[css.MAX_HEIGHT], -1.0) orelse limit)
+    }
+
+    return limit
+}

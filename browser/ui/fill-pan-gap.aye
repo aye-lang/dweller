@@ -1,0 +1,28 @@
+import paint
+import std.math
+
+fn fillPanGap(ui: *mut Ui, tp: *TabProcess, r: paint.IRect, pan: i64) {
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+    var y0 = r.y0
+    var y1 = r.y1
+
+    if pan > 0 {
+        y0 = math.maxOf(i64, y0, tp.buffers.height as i64 - pan)
+    } else {
+        y1 = math.minOf(i64, y1, -pan)
+    }
+
+    for y in y0..y1 {
+        let row = (((y + pd.ring) % h) as usize * pd.canvas.width) * 4
+
+        for x in math.maxOf(i64, r.x0, 0)..math.minOf(i64, r.x1, pd.canvas.width as i64) {
+            let i = row + x as usize * 4
+
+            pd.canvas.pixels[i] = (tp.pan_bg >> 24) as u8
+            pd.canvas.pixels[i + 1] = ((tp.pan_bg >> 16) & 255) as u8
+            pd.canvas.pixels[i + 2] = ((tp.pan_bg >> 8) & 255) as u8
+            pd.canvas.pixels[i + 3] = 255
+        }
+    }
+}

@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+
+// chromium: components/permissions/permission_context_base.cc (IsRestrictedToSecureOrigins)
+pub fn permissionOrigin(alloc: Allocator, href: []u8, out: *mut text.Builder) AllocError!bool {
+    let at = url.parse(alloc, href) catch return false
+    defer at.deinit(alloc)
+
+    if !trustworthyUrl(&at) { return false }
+
+    try hrefOrigin(alloc, href, out)
+
+    return !text.eql(out.bytes(), "null")
+}

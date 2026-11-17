@@ -1,0 +1,20 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akSwPost(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let version = try it.toNumber(it.arg(a, 0))
+    let message = try js.argString(it, a, 1)
+    let made = instanceFor(s.alloc, version as u32, originPage(s.page).url.href, false) catch return JsError.OutOfMemory
+    let ip = made orelse return js.boolVal(false)
+    let ts = ip.script orelse return js.boolVal(false)
+
+    if ts.on_sw == js.NONE { return js.boolVal(false) }
+
+    try queueSwMessage(ts, it.heap.bytes(js.strOf(message)), s.page.id)
+
+    return js.boolVal(true)
+}
