@@ -1,0 +1,9 @@
+// chromium: media/formats/mp4/box_definitions.cc
+fn trackId(b: []u8, trak: Box) u32 {
+    let tkhd = boxIn(b, trak.body, trak.end, "tkhd") orelse return 0
+
+    if tkhd.body + 24 > tkhd.end { return 0 }
+    if b[tkhd.body] == 1 { return be32(b, tkhd.body + 20) }
+
+    return be32(b, tkhd.body + 12)
+}

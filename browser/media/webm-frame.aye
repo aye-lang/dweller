@@ -1,0 +1,31 @@
+import std.mem.AllocError
+
+// https://www.rfc-editor.org/rfc/rfc9559#name-simpleblock-structure
+fn webmFrame(b: []u8, x: Ebml, scale: u64, out: *mut Stream) AllocError!void {
+    var block = x
+    var key = true
+    var span: u64 = 0
+
+    if x.id == EBML_BLOCK_GROUP {
+        block = ebmlIn(b, x.body, x.end, 0xA1) orelse return
+        key = ebmlIn(b, x.body, x.end, 0xFB) == null
+
+        if ebmlIn(b, x.body, x.end, 0x9B) |d| { span = ebmlUint(b, d) }
+    }
+
+    let number = ebmlNumber(b, block.body, block.end, false) orelse return
+    let head = block.body + number[1] as usize
+
+    if head + 3 > block.end || out.base < 0 {
+        out.bad = true
+
+        return
+    }
+
+    if x.id == EBML_SIMPLE_BLOCK { key = b[head + 2] & 0x80 != 0 }
+
+    let relative = ((be16(b, head) as i64) ^ 0x8000) - 0x8000
+    let unit = scale as f64 / 1.0e9
+
+    try out.frames.append(Frame { track: number[0] as u32, offset: head + 3, size: block.end - head - 3, time: (out.base + relative) as f64 * unit, duration: span as f64 * unit, key: key })
+}
