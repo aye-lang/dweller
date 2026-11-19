@@ -1,0 +1,19 @@
+import decoder
+import ipc
+import std.mem.AllocError
+
+fn sendDecoderOutput(tp: *mut TabProcess, k: TabDecoder, o: decoder.Output) AllocError!void {
+    var at: usize = 0
+
+    while true {
+        var end = at + SOCKET_NOTE_CHUNK
+
+        if end > o.data.len { end = o.data.len }
+
+        try ipc.encode(&mut tp.outbox, k.on, ipc.Message.DecoderOutput { id: k.wire, seq: o.seq, state: o.ok as u32, more: (end < o.data.len) as u32, data: o.data[at..end] })
+
+        at = end
+
+        if at >= o.data.len { return }
+    }
+}

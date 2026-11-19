@@ -1,0 +1,43 @@
+import ipc
+import std
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+extern fn read(fd: i32, buf: [*]u8, n: usize) isize
+
+struct Served {
+    id: u32
+    spec: Spec
+    partial: text.Builder
+}
+
+pub fn serve(alloc: Allocator, fd: []u8) i32 {
+    let sock = text.parseInt(fd) catch -1
+
+    if sock < 0 { return 2 }
+
+    let conn = std.fs.File { fd: sock as i32 }
+    var streams = List(Served).init(alloc)
+    defer endServed(alloc, &mut streams)
+
+    var inbox = text.Builder.init(alloc)
+    defer inbox.deinit()
+
+    var buf = @zeroed([65536]u8)
+
+    while true {
+        let n = read(conn.fd, buf[..].ptr, buf.len)
+
+        if n <= 0 { return 0 }
+
+        inbox.append(buf[..n as usize]) catch return 1
+
+        while (ipc.nextMessage(inbox.bytes()) catch return 1) |got| {
+            answer(alloc, conn, &mut streams, got.message) catch return 1
+            ipc.consume(&mut inbox, got.used)
+        }
+    }
+
+    unreachable
+}

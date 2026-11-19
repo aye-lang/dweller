@@ -1,0 +1,29 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn specifiedFont(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let comps = try components(&mut sheet, toks.items())
+    let parts = (try parseFontParts(&mut sheet, comps)) orelse return false
+
+    if parts.system {
+        try writeTokens(comps[0].toks, out)
+
+        return true
+    }
+
+    try writeFontPrefix(comps, parts, out)
+    try writeFontTail(comps, parts, out)
+
+    return true
+}

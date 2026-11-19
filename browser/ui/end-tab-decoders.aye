@@ -1,0 +1,18 @@
+import decoder
+
+fn endTabDecoders(tp: *TabProcess) {
+    let all = tab_decoders orelse return
+    var i = all.len()
+
+    while i > 0 {
+        i -= 1
+
+        if all.items()[i].owner == tp { decoder.close(all.orderedRemove(i).stream) }
+    }
+
+    if all.len() == 0 {
+        all.deinit()
+        tp.url.alloc.destroy(all)
+        tab_decoders = null
+    }
+}

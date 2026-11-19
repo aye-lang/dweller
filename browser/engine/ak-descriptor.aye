@@ -1,0 +1,28 @@
+import css
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+fn akDescriptor(it: *mut Interp, a: Args) JsError!Value {
+    let rule = try it.builder()
+    defer it.release(rule)
+    let name = try it.builder()
+    defer it.release(name)
+    let value = try it.builder()
+    defer it.release(value)
+
+    try argText(it, a, 0, rule)
+    try argText(it, a, 1, name)
+    try argText(it, a, 2, value)
+
+    var out = text.Builder.init(it.alloc)
+    defer out.deinit()
+
+    if !(try css.specifiedDescriptor(it.alloc, rule.bytes(), name.bytes(), value.bytes(), &mut out)) {
+        return Value.Null
+    }
+
+    return it.newString(out.bytes())
+}

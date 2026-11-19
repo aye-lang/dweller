@@ -37,7 +37,8 @@ fn sandbox_document_domain_and_written_documents() {
 
 /// Q3.15b: a popup that a frame without `allow-same-origin` opened does
 /// not give it its document; a popup's `origin` is its opener's until
-/// it loads; a `location` set on a popup before it loaded is followed.
+/// it loads; a `location` set on a popup before it loaded is followed;
+/// a script's `click()` on a link of another frame's document follows it.
 #[test]
 fn sandbox_popups_of_frames() {
     let Some(srv) = server() else {
@@ -46,8 +47,13 @@ fn sandbox_popups_of_frames() {
     };
     let out = run(&["dump", "--text", "--js", &format!("{}/sandbox/popups.html", srv.base)]);
     assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
-    let want = "document of the popup of an opaque frame: SecurityError\n\
-        origin before the popup loads is the opener's: true\n\
-        navigated before it loaded: Blank\n";
-    assert!(text(&out.stdout).contains(want), "{}\n{}", text(&out.stdout), text(&out.stderr));
+    let got = text(&out.stdout);
+    for want in [
+        "document of the popup of an opaque frame: SecurityError\n",
+        "origin before the popup loads is the opener's: true\n",
+        "navigated before it loaded: Blank\n",
+        "popup of a link the parent clicked: its scripts ran\n",
+    ] {
+        assert!(got.contains(want), "no {want:?} in:\n{got}\n{}", text(&out.stderr));
+    }
 }

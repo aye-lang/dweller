@@ -1,0 +1,24 @@
+import css
+import std
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#set-a-css-declaration
+fn shadowedByShorthand(decls: []u8, prop: []u8) bool {
+    var seen = false
+    var parts = text.split(decls, ";")
+
+    while parts.next() |d| {
+        let colon = std.mem.indexOf(d, ':') orelse continue
+        let name = text.trim(d[..colon])
+
+        if seen && css.shorthandCovers(name, prop) {
+            return true
+        }
+
+        if text.eqlIgnoreCase(name, prop) {
+            seen = true
+        }
+    }
+
+    return false
+}
