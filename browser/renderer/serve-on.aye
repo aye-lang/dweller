@@ -18,6 +18,7 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
     var tabs = List(*mut TabRenderer).init(alloc)
     defer endTabs(&mut tabs)
     defer engine.closeContexts()
+    defer engine.dropRemoteCloses(alloc)
     defer engine.dropOpenedContexts()
     defer engine.dropFrameOwner(alloc)
     let r = newTabRenderer(alloc, conn, measure, system, blink) catch return 1
@@ -28,6 +29,7 @@ fn serveOn(alloc: Allocator, conn: std.fs.File, measure: dyn font.Measurer, syst
     defer net.stopRemoteLoads()
     storeThrough(r)
     windowsThrough(r)
+    engine.closeThroughBrowser(alloc) catch return 1
     socketsThrough(r)
     permissionsThrough()
     defer net.stopSockets()
