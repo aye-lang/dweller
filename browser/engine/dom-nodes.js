@@ -254,7 +254,16 @@ function replaceData(node, offset, count, data) {
 
   if (offset > text.length) throw new DOMException("The offset " + offset + " is greater than the node's length (" + text.length + ").", 'IndexSizeError');
 
-  node.data = text.slice(0, offset) + data + text.slice(offset + count);
+  const ranges = globalThis.__rangeData;
+  if (ranges) ranges.busy = true;
+
+  try {
+    node.data = text.slice(0, offset) + data + text.slice(offset + count);
+  } finally {
+    if (ranges) ranges.busy = false;
+  }
+
+  if (ranges) ranges.replaced(node, offset, Math.min(count, text.length - offset), data.length);
 }
 function required(args, n, name) {
   if (args.length < n) throw new TypeError("Failed to execute '" + name + "' on 'CharacterData': " + n + " arguments required, but only " + args.length + " present.");
