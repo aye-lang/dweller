@@ -1,0 +1,14 @@
+import engine
+import ipc
+import net
+import url
+
+// chromium: content/renderer/render_frame_impl.cc BeginNavigation
+fn askNavigation(r: *mut TabRenderer, p: *mut engine.Page, href: []u8, post: bool, content_type: []u8, body: []u8) !void {
+    let target = url.parse(r.alloc, href) catch return
+    defer target.deinit(r.alloc)
+
+    if !net.initiatorMayLoad(engine.initiatorOf(p), &target) || (try engine.topDataBlocked(p, &target)) { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.BeginNavigation { url: href, post: post as u32, content_type: content_type, body: body, referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy(p.url.href)), user: engine.hasTransientActivation(p) as u32 })
+}
