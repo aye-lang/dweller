@@ -9,7 +9,9 @@ fn vmStaGlobal(it: *mut Interp, id: u32, v: Value) JsError!void {
                 let i = vmGlobalSlot(it, id, name)
 
                 if i != NONE && (ob.props[i].flags & (F_ACCESSOR | F_WRITE)) == F_WRITE {
-                    it.heap.shade(v)
+                    if it.heap.marking {
+                        shadeValue(&mut it.heap, v)
+                    }
                     ob.props[i].value = v
 
                     return

@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop-desc
+fn writeDescriptorPart(c: Comp, kind: u8, lo: f64, hi: f64, words: []u8, out: *mut text.Builder) AllocError!bool {
+    let t = c.toks[0]
+
+    if isMathFunction(t) {
+        return writeDescriptorMath(c, kind, out)
+    }
+
+    if c.toks.len != 1 {
+        return false
+    }
+
+    if t.kind == Tok.Ident {
+        try out.append(inList(t.text, words) orelse return false)
+
+        return true
+    }
+
+    let n = descriptorNumber(t, kind) orelse return false
+
+    if n < lo || n > hi {
+        return false
+    }
+
+    try writeTokens(c.toks, out)
+
+    return true
+}

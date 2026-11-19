@@ -131,6 +131,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderClose { .. } => return tabDecoderSent(tp, got.frame, got.message)
         .CookieGet { .. }, .CookieSet { .. } => {
             if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
 
@@ -156,6 +157,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .PortPost { .. } => return routePortMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
         .HitTestReply { id, key } => return takeHitReply(tp, id, key)
+        .FindReply { id, count, active } => return takeFindReply(tp, id, count, active)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {
             if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }

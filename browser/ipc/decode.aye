@@ -97,6 +97,10 @@ pub fn decode(kind: u16, payload: []u8) DecodeError!Message {
         146 => Message.PermissionState { state: try r.readU32() }
         147 => Message.PermissionAsk { id: try r.readU32(), doc: try r.readU32(), kind: try r.readU32() }
         148 => Message.PermissionAnswer { id: try r.readU32(), state: try r.readU32() }
+        149 => try readDecoderOpen(&mut r)
+        150 => Message.DecoderData { id: try r.readU32(), seq: try r.readU32(), more: try r.readU32(), data: try r.readBytes() }
+        151 => Message.DecoderOutput { id: try r.readU32(), seq: try r.readU32(), state: try r.readU32(), more: try r.readU32(), data: try r.readBytes() }
+        152 => Message.DecoderClose { id: try r.readU32() }
         160 => Message.Idb { doc: try r.readU32(), page: try r.readU32(), more: try r.readU32(), request: try r.readBytes() }
         161 => Message.IdbReply { more: try r.readU32(), reply: try r.readBytes() }
         162 => Message.IdbEvent { page: try r.readU32(), line: try r.readBytes() }

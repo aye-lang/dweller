@@ -218,6 +218,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 | Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
+| Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -250,6 +251,9 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 | Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
+| Q6.4 | `css/box-sizing` (51.5, 70) |
+| Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
+| Q6.9 | `css/floats-tables` (55.5, 65) |
 
 ## Q7: acceptance and release (lane sites)
 

@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeDescriptorMath(c: Comp, kind: u8, out: *mut text.Builder) AllocError!bool {
+    var p = CalcParser { toks: c.toks, i: 0 }
+    let q = finiteQuantity(p.term() orelse return false)
+    let plain = q.number && q.kind == 0
+    let percent = !q.number && q.kind == 0 && q.px == 0.0
+
+    if (kind == 'n' && !plain) || (kind == '%' && !percent) || (kind == 'a' && q.kind != 'a') {
+        return false
+    }
+
+    try out.append("calc(")
+
+    if kind == '%' {
+        try writeNumber(q.pct, out)
+        try out.appendByte('%')
+    } else {
+        try writeNumber(q.num, out)
+    }
+
+    if kind == 'a' {
+        try out.append("deg")
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

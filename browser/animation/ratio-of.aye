@@ -1,0 +1,24 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#degenerate-ratio
+fn ratioOf(value: []u8) ?f64 {
+    var s = text.trim(value)
+    var height = 1.0
+
+    if text.startsWith(s, "auto") {
+        s = text.trim(s[4..])
+    }
+
+    if text.indexOf(s, "/") |slash| {
+        height = text.parseFloat(text.trim(s[slash + 1..])) catch return null
+        s = text.trim(s[..slash])
+    }
+
+    let width = text.parseFloat(s) catch return null
+
+    if width <= 0.0 || height <= 0.0 {
+        return null
+    }
+
+    return width / height
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<title>fetch: the body of a response that stays open is read while it arrives</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const text = new TextDecoder();
+fetch('/event-stream-open' + location.search).then(async res => {
+  log('head ' + res.status + ' ' + res.headers.get('content-type') + ' used ' + res.bodyUsed);
+  const reader = res.body.getReader();
+  let ended = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    log('part ' + JSON.stringify(text.decode(value)) + (ended ? ' after the end was asked' : ' while open'));
+    if (!ended) { ended = true; fetch('/event-stream-end' + location.search); }
+  }
+  log('done');
+}).catch(e => log('failed ' + e));
+</script>

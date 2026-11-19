@@ -1,0 +1,30 @@
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+fn tableBorderHint(doc: *Document, el: NodeId, out: *mut text.Builder) AllocError!void {
+    let width = tableBorderPixels(doc, el)
+    let frame = frameStyles(doc.attr(el, "frame") orelse "")
+
+    if tableRules(doc, el) != null {
+        try out.append("border-style: hidden; border-color: black; border-collapse: collapse; ")
+    }
+
+    if width > 0 {
+        try out.append("border: ")
+        try out.appendUint(width)
+        try out.append("px outset gray; ")
+    }
+
+    if frame.len > 0 {
+        if width == 0 {
+            try out.append("border-width: 1px; ")
+        }
+
+        try out.append("border-style: ")
+        try out.append(frame)
+        try out.append("; ")
+    }
+}

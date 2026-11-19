@@ -1,0 +1,54 @@
+import decoder
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// chromium: media/base/audio_decoder.h, video_decoder.h
+fn akMediaDecoderOpen(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let done = try js.callableArg(it, a, 3)
+    let codec = try it.builder()
+    defer it.release(codec)
+
+    let given = try it.builder()
+    defer it.release(given)
+
+    let config = try it.builder()
+    defer it.release(config)
+
+    try argText(it, a, 1, codec)
+    try argText(it, a, 2, given)
+    try binaryBytes(given.bytes(), config)
+
+    var spec = decoder.Spec { kind: try countArg(it, a, 0), codec: codec.bytes(), config: config.bytes(), rate: try countArg(it, a, 6) }
+
+    if spec.kind == decoder.VIDEO {
+        spec.width = try countArg(it, a, 4)
+        spec.height = try countArg(it, a, 5)
+    } else {
+        spec.channels = try countArg(it, a, 4)
+        spec.bits = try countArg(it, a, 5)
+    }
+
+    let all = try pageDecoders(s.alloc)
+    let id = decoder.open(s.alloc, spec)
+
+    if id == 0 { return js.numVal(0.0) }
+
+    let root = it.addRoot(done) catch |e| {
+        decoder.close(id)
+
+        return e
+    }
+
+    all.append(PageDecoder { owner: s, id: id, root: root }) catch |e| {
+        it.removeRoot(root)
+        decoder.close(id)
+
+        return e
+    }
+
+    return js.numVal(id as f64)
+}

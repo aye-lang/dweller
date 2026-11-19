@@ -14,7 +14,7 @@ function computedWith(el, name, value) {
 
   el.style.setProperty(name, value);
 
-  const v = getComputedStyle(el).getPropertyValue(name);
+  const v = name === 'transform' ? ak.computedStyle(el, name) : getComputedStyle(el).getPropertyValue(name);
 
   el.style.setProperty(name, old);
 
@@ -33,7 +33,7 @@ function composed(el, name, frame, composite) {
 
   if (frame.value === null || mode === 'replace') return frame.value;
 
-  const r = ak.add(name, computedWith(el, name, underlying(el, name)), computedWith(el, name, frame.value));
+  const r = ak.add(name, computedWith(el, name, underlying(el, name)), computedWith(el, name, frame.value), mode === 'accumulate');
 
   return r === null ? frame.value : r;
 }

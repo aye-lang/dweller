@@ -1,0 +1,29 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-face-rule
+pub fn specifiedDescriptor(alloc: Allocator, rule: []u8, name: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let comps = try components(&mut sheet, toks.items())
+
+    if comps.len == 0 || name.len == 0 {
+        return false
+    }
+
+    if text.eql(rule, "font-face") {
+        return fontFaceDescriptor(name, comps, out)
+    }
+
+    try writeTokens(toks.items(), out)
+
+    return true
+}
