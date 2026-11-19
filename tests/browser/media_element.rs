@@ -93,7 +93,7 @@ fn media_element_sound() {
         };
         let href = format!("{}/media/sound.html", srv.base);
         let envs = [("DWELLER_PROCESS", mode), ("SDL_AUDIODRIVER", "dummy")];
-        let got = login_window_with(&href, "frame click:100,90 frame", None, &envs);
+        let got = login_window_with(&href, "painted click:100,90 frame", None, &envs);
         for line in [
             "activated: true",
             "playing: muted=false paused=false",
