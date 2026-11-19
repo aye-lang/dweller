@@ -707,6 +707,8 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(PRELUDE)
     try s.it.runScript(WEBSOCKET_PRELUDE)
     try s.it.runScript(PERMISSIONS_PRELUDE)
+    try s.it.runScript(MEDIA_TYPES_PRELUDE)
+    try s.it.runScript(MEDIA_ELEMENT_PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
     try s.it.runScript(UI_EVENTS_PRELUDE)
@@ -870,6 +872,9 @@ fn beginPageScripts(p: *mut Page) AllocError!void {
     for el in later.items() {
         try s.queue.append(el)
     }
+    for el in s.queue.items() {
+        p.doc.node(el).js_refs += 1
+    }
 }
 
 /// Runs the next script of the queue (`beginPageScripts`); false when
@@ -884,6 +889,7 @@ fn runQueuedScript(s: *mut Script) AllocError!bool {
     }
     let el = s.queue.items()[s.queue_at]
     s.queue_at += 1
+    defer releaseQueuedScript(s, el)
     try runScriptElement(s, el)
     return true
 }
@@ -1836,6 +1842,10 @@ pub fn runUntilConsole(p: *mut Page, max_ms: f64, prefix: []u8, out: *mut text.B
             continue
         }
         try syncFrames(p)
+        if framesWritten(p) {
+            n += 1
+            continue
+        }
         if liveContexts() {
             if !try waitLive(p, end, &mut mark) {
                 return false

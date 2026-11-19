@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn mp4Probe(alloc: Allocator, b: []u8) AllocError!?Media {
+    let moov = boxIn(b, 0, b.len, "moov") orelse return null
+    let mvhd = boxIn(b, moov.body, moov.end, "mvhd") orelse return null
+    var m = Media { container: Container.Mp4, duration: headerSeconds(b, mvhd), tracks: List(Track).init(alloc) }
+
+    errdefer m.deinit()
+
+    var at = moov.body
+
+    while boxAt(b, at, moov.end) |x| {
+        if text.eql(x.kind, "trak") {
+            if try mp4Track(alloc, b, x) |t| { try m.tracks.append(t) }
+        }
+
+        at = x.end
+    }
+
+    if m.tracks.len() == 0 {
+        m.deinit()
+
+        return null
+    }
+
+    return m
+}
