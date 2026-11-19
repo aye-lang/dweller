@@ -344,3 +344,23 @@ fn editing_caret_up_and_down() {
     );
     assert_eq!(report(&site), want, "{site}");
 }
+
+/// Q5.10 (left list): ranges are live
+/// (`browser/tests/editing/live_ranges.html` prints `live_ranges.txt`):
+/// the boundary points of a `Range`, and so of the `Selection`, follow
+/// removed and inserted children, a removed container, replaced
+/// children, `deleteData`, `insertData`, `replaceData`, a set `data` and
+/// `splitText`, by the steps of the DOM standard.
+#[test]
+fn editing_ranges_are_live() {
+    let out = run(&["dump", "--text", "--js", "browser/tests/editing/live_ranges.html"]);
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/editing/live_ranges.txt"),
+        &text(&out.stdout),
+        "editing_ranges_are_live",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
