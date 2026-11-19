@@ -16,6 +16,7 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
         if c.key != s.key { continue }
         if !text.eql(c.src, s.url) { return false }
 
+        tp.placed = tp.placed || c.x != x || c.y != y || !sameIRect(c.clip, clip)
         tp.whole = tp.whole || c.x != x || c.y != y || c.width != s.width || c.height != s.height || !sameIRect(c.clip, clip) || c.opacity != s.opacity
         c.x = x
         c.y = y
@@ -48,6 +49,7 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
 
     try tp.children.append(fresh)
     tp.whole = true
+    tp.placed = true
 
     return true
 }
