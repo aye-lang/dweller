@@ -85,7 +85,7 @@ test "an MP4's movie header, track and sample table" {
 
     try videoFile(@testAllocator(), &mut file)
 
-    var m = (try probe(@testAllocator(), file.bytes())).?
+    var m = (try probe(@testAllocator(), file.bytes(), file.bytes().len)).?
     defer m.deinit()
 
     @expect(m.container == Container.Mp4)
@@ -117,6 +117,6 @@ test "an MP4's movie header, track and sample table" {
 }
 
 test "a file that is not media, and a truncated box" {
-    @expect((try probe(@testAllocator(), "<!doctype html><title>x</title>")) == null)
-    @expect((try probe(@testAllocator(), "\x00\x00\x00\x10ftypisom\x00\x00\x00\x00\x00\x00\x00\x40moov")) == null)
+    @expect((try probe(@testAllocator(), "<!doctype html><title>x</title>", 64)) == null)
+    @expect((try probe(@testAllocator(), "\x00\x00\x00\x10ftypisom\x00\x00\x00\x00\x00\x00\x00\x40moov", 64)) == null)
 }

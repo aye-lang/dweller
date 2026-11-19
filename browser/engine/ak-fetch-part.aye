@@ -1,0 +1,35 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+import url
+
+fn akFetchPart(it: *mut Interp, a: Args) JsError!Value {
+    let bytes = try it.builder()
+    defer it.release(bytes)
+    let data = try it.builder()
+    defer it.release(data)
+
+    let n = try it.toNumber(it.arg(a, 0))
+
+    if !(n >= 1.0 && n < 4294967295.0) {
+        return Value.Null
+    }
+
+    let part = try net.takeStreamPart(n as u32, bytes) orelse return Value.Null
+    let landed = url.parse(it.alloc, part.url) catch return Value.Null
+    defer landed.deinit(it.alloc)
+    let r = try it.newObject(it.object_proto)
+
+    try it.push(js.objVal(r))
+    try binaryString(bytes.bytes(), data)
+    try it.defineOwn(r, try it.intern("status"), js.numVal(part.status as f64), js.F_DEFAULT)
+    try it.defineOwn(r, try it.intern("blocked"), js.boolVal(try requestRefused(scriptOf(it).page, "connect-src", &landed, null)), js.F_DEFAULT)
+    try setField(it, r, "url", part.url)
+    try setField(it, r, "type", part.content_type)
+    try setField(it, r, "data", data.bytes())
+
+    return it.pop()
+}

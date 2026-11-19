@@ -1,0 +1,22 @@
+// spec: https://fetch.spec.whatwg.org/#cors-check
+fn openStream(ld: *mut Loader, l: *mut Load, job: *mut Job) bool {
+    let a = l.ask.?
+
+    if a.stream_checked {
+        return true
+    }
+
+    let checked = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+
+    if corsCheck(ld.alloc, checked, job.at.href, job.sink.headers_raw.bytes()) catch false {
+        a.stream_checked = true
+
+        return true
+    }
+
+    l.job = null
+    dropJob(ld.alloc, ld.multi, job)
+    failRequest(ld, l, FetchError.Refused)
+
+    return false
+}

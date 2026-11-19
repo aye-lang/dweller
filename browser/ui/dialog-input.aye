@@ -1,0 +1,21 @@
+import engine
+import std.mem.AllocError
+
+fn dialogInput(ui: *mut Ui, ev: *SDL_Event) AllocError!void {
+    let sh = dialogSheetOf(ui)
+    let x = ev.button.x as f64
+    let y = ev.button.y as f64
+
+    if ev.kind == SDL_QUIT {
+        ui.quit = true
+        closeDialog(ui, false)
+    } else if ev.kind == SDL_KEYDOWN {
+        try dialogKey(ui, ev.key.keysym.sym)
+    } else if ev.kind == SDL_TEXTINPUT && ui.dialog.kind == engine.DIALOG_PROMPT {
+        try dialogTyped(ui, ev)
+    } else if ev.kind == SDL_MOUSEBUTTONDOWN && inRect(sh.ok, x, y) {
+        closeDialog(ui, true)
+    } else if ev.kind == SDL_MOUSEBUTTONDOWN && inRect(sh.cancel, x, y) && ui.dialog.kind != engine.DIALOG_ALERT {
+        closeDialog(ui, false)
+    }
+}
