@@ -215,6 +215,7 @@ pub struct Heap {
     load_epoch: u32
     marking: bool = false
     sweeping: bool = false
+    collecting: bool = false
     sweep_at: [3]usize = [3]usize{0, 0, 0}
     sweep_end: [3]usize = [3]usize{0, 0, 0}
     swept_live: usize = 0
@@ -354,15 +355,16 @@ pub struct Heap {
             used_as_proto: false,
             own_keys_made: false,
         }
-        if self.free_objs.pop() |i| {
+        var i = self.objs.len() as u32
+        if self.free_objs.pop() |k| {
+            i = k
             self.objs.items()[i] = o
-            self.objs.items()[i].mark = self.unswept(0, i)
-            self.shadeObj(i)
-            return i
+        } else {
+            try self.objs.append(o)
         }
-        let i = self.objs.len() as u32
-        try self.objs.append(o)
-        self.shadeObj(i)
+        if self.collecting {
+            bornObject(self, i)
+        }
         return i
     }
 
@@ -566,13 +568,16 @@ pub struct Heap {
         }
         if self.free_strs.pop() |k| {
             self.strs.items()[k] = c
-            self.strs.items()[k].mark = self.unswept(1, k)
-            self.shade(Value.Str { s: k })
+            if self.collecting {
+                bornString(self, k)
+            }
             return k
         }
         let k = self.strs.len() as u32
         try self.strs.append(c)
-        self.shade(Value.Str { s: k })
+        if self.collecting {
+            bornString(self, k)
+        }
         return k
     }
 
@@ -660,13 +665,16 @@ pub struct Heap {
         }
         if self.free_strs.pop() |k| {
             self.strs.items()[k] = c
-            self.strs.items()[k].mark = self.unswept(1, k)
-            self.shade(Value.Str { s: k })
+            if self.collecting {
+                bornString(self, k)
+            }
             return k
         }
         let k = self.strs.len() as u32
         try self.strs.append(c)
-        self.shade(Value.Str { s: k })
+        if self.collecting {
+            bornString(self, k)
+        }
         return k
     }
 
@@ -731,13 +739,16 @@ pub struct Heap {
         let e = Env { slots: slots, parent: parent, mark: false, live: true }
         if self.free_envs.pop() |i| {
             self.envs.items()[i] = e
-            self.envs.items()[i].mark = self.unswept(2, i)
-            self.shadeEnv(i)
+            if self.collecting {
+                bornEnvironment(self, i)
+            }
             return i
         }
         let i = self.envs.len() as u32
         try self.envs.append(e)
-        self.shadeEnv(i)
+        if self.collecting {
+            bornEnvironment(self, i)
+        }
         return i
     }
 

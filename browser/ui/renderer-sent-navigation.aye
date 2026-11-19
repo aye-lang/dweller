@@ -1,0 +1,50 @@
+import ipc
+import net
+import std.mem.AllocError
+
+fn rendererSentNavigation(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .SameDocument { url, index, nulls, state } => {
+            if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
+            if nulls > 1 || !(try sameDocumentEntry(slot, tp, url, index, nulls, state)) { return "bad same_document" }
+
+            try showCommitted(tp, tp.title.bytes(), url)
+        }
+
+        .HistoryGo { index } => {
+            if got.frame != slot.id || index as usize >= slot.session.tab.history.len() { return "bad history_go" }
+
+            if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
+        }
+
+        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
+            if got.frame != slot.id { return "unexpected begin_navigation" }
+            if user > 1 { return "bad begin_navigation" }
+
+            tp.nav_user = user == 1
+
+            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
+
+            try beginNavigation(slot, tp, url, post, content_type, body, policy)
+        }
+
+        .ReplaceNavigation { url, referrer_policy, user } => return beginReplace(slot, tp, got.frame, url, [2]u32{referrer_policy, user})
+        .Redirect { url } => {
+            if got.frame != slot.id || !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad redirect" }
+
+            tp.redirected = true
+            tp.committed.clear()
+            try tp.committed.append(url)
+        }
+
+        .UpgradeInsecure { page } => {
+            if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
+
+            try net.noteUpgradeInsecure(page)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}
