@@ -1,0 +1,33 @@
+import ipc
+import std.mem.AllocError
+
+fn rendererSentAgent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .AgentReply { id, next_ref, answer } => {
+            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id || next_ref < tp.next_ref { return "bad agent_reply" }
+
+            tp.next_ref = next_ref
+            tp.answer.clear()
+            try tp.answer.append(answer)
+            tp.agent_id = 0
+            tp.answered = true
+        }
+
+        .AgentActed { what } => {
+            if got.frame != slot.id || tp.agent_id == 0 || what.len > 4096 { return "bad agent_acted" }
+
+            tp.acted.clear()
+            try tp.acted.append(what)
+        }
+
+        .AgentWindow { line } => {
+            if got.frame != slot.id || tp.agent_id == 0 || tp.window_ask.len() > 0 || line.len > 65536 { return "bad agent_window" }
+
+            try tp.window_ask.append(line)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

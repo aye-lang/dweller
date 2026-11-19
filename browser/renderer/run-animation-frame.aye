@@ -1,4 +1,5 @@
 import engine
+import perf
 
 extern fn aye_std_monotonic_ns() u64
 
@@ -15,5 +16,9 @@ fn runAnimationFrame(r: *mut TabRenderer, p: *mut engine.Page) !void {
 
     r.next_frame_ns = frame_ns + r.frame_ns
 
+    let began = perf.start()
+
     if try engine.runAnimationFrames(p, frame_ns) { r.due = true }
+
+    perf.end("ui_raf", began, "")
 }

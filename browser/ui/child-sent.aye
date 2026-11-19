@@ -155,6 +155,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .PortPost { .. } => return routePortMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
         .HitTestReply { id, key } => return takeHitReply(tp, id, key)
+        .FindReply { id, count, active } => return takeFindReply(tp, id, count, active)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {
             if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }

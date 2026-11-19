@@ -1,0 +1,19 @@
+<!doctype html>
+<title>XMLHttpRequest: progress while a response that stays open arrives</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const xhr = new XMLHttpRequest();
+let ended = false;
+xhr.open('GET', '/event-stream-open' + location.search);
+xhr.onreadystatechange = () => log('state ' + xhr.readyState + ' status ' + xhr.status + ' length ' + xhr.responseText.length);
+xhr.onprogress = e => {
+  log('progress ' + e.loaded + ' ' + JSON.stringify(xhr.responseText) + (ended ? ' after the end was asked' : ' while open'));
+  if (!ended) { ended = true; fetch('/event-stream-end' + location.search); }
+};
+xhr.onload = () => log('load ' + xhr.getResponseHeader('content-type') + ' ' + JSON.stringify(xhr.response));
+xhr.onloadend = () => log('loadend');
+xhr.onerror = () => log('error');
+xhr.send();
+</script>
