@@ -21,12 +21,21 @@ fn queueRemoteMessage(ts: *mut Script, root: *mut Page, m: RemoteMessage) JsErro
     try it.heap.pushElem(arr, it.roots.items()[ts.on_remote_message])
     try it.heap.pushElem(arr, try it.newString(m.data))
     try it.heap.pushElem(arr, try it.newString(m.origin))
-    try it.heap.pushElem(arr, try remoteSource(ts, root, m))
+    try it.heap.pushElem(arr, try sourceOrNone(ts, root, m))
     try it.heap.pushElem(arr, js.numVal(id as f64))
+    try it.heap.pushElem(arr, js.numVal(m.from_frame as f64))
+    try it.heap.pushElem(arr, try it.newString(m.ports))
+    try it.heap.pushElem(arr, js.numVal(m.port_key as f64))
 
     let root_arr = try it.addRoot(js.objVal(arr))
 
     ts.next_timer += 1
     try ts.timers.append(Timer { id: id, due: ts.now, interval: 0.0, repeat: false, raf: false, root: root_arr, seq: ts.seq })
     ts.seq += 1
+}
+
+fn sourceOrNone(ts: *mut Script, root: *mut Page, m: RemoteMessage) JsError!Value {
+    if m.port_key != 0 { return Value.Null }
+
+    return remoteSource(ts, root, m)
 }

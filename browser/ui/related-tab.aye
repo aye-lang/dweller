@@ -1,0 +1,14 @@
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (RouteMessageEvent: a proxy exists only for a window of the sender's browsing instance)
+fn relatedTab(tp: *mut TabProcess, id: u32) ?*mut TabProcess {
+    var at = tab_processes
+
+    if tp.embedder != null { return null }
+
+    while at |cur| {
+        if cur.tab == id && cur != tp && cur.embedder == null && cur.gone.len == 0 && cur.hello && !cur.speculative && cur.partition == tp.partition && (cur.opener_tab == tp.tab || tp.opener_tab == id) { return cur }
+
+        at = cur.next
+    }
+
+    return null
+}

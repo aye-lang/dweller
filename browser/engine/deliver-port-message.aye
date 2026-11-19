@@ -1,0 +1,9 @@
+import std.mem.AllocError
+
+// blink: core/messaging/message_port.cc (Accept: a message for a port of this process)
+pub fn deliverPortMessage(root: *mut Page, tab: u32, key: u32, data: []u8, buffers: []u8) AllocError!void {
+    let ts = scriptWithPort(root, tab, key) orelse return
+    let m = RemoteMessage { page: 0, from_key: 0, from_frame: tab, from_page: 0, origin: "", target_origin: "*", data: data, buffers: buffers, port_key: key }
+
+    queueRemoteMessage(ts, root, m) catch return AllocError.OutOfMemory
+}
