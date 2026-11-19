@@ -1,7 +1,29 @@
 fn findCounts(ui: *Ui) [2]usize {
     if ui.tab_processes {
-        if ui.slots[ui.active].?.process |tp| { return [2]usize{tp.find_count as usize, tp.find_active as usize} }
+        if ui.slots[ui.active].?.process |tp| {
+            var sum = [2]usize{0, 0}
+
+            _ = addFindCounts(tp, tp.find_frame, &mut sum)
+
+            return sum
+        }
     }
 
     return [2]usize{ui.page_view.matches.len(), ui.page_view.current}
+}
+
+fn addFindCounts(tp: *TabProcess, active: u32, sum: *mut [2]usize) bool {
+    var found = tp.tab == active
+
+    if found { sum[1] = sum[0] + tp.find_active as usize }
+
+    sum[0] += tp.find_count as usize
+
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        if child.gone.len == 0 && addFindCounts(child, active, sum) { found = true }
+    }
+
+    return found
 }
