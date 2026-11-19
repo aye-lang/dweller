@@ -1,5 +1,6 @@
 import ipc
 import net
+import perf
 import std
 import std.mem.AllocError
 import url
@@ -166,12 +167,18 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             tp.hang_seen = false
         }
 
+        .Telemetry { records } => {
+            if tp.partition != 0 || !perf.telemetryTake(records) { return "bad telemetry" }
+        }
+
         .UpgradeInsecure { page } => {
             if page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
 
             try net.noteUpgradeInsecure(page)
         }
 
+        .HostRequest { lock, fs } => try refuseHost(tp, lock, fs)
+        .BusyAsk { .. } => try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.BusyAnswer { wait: 1 })
         _ => return "unexpected in a frame"
     }
 

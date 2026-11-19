@@ -52,35 +52,7 @@ fn askAuth(ui: *mut Ui) AllocError!void {
     if p.status != 401 {
         return
     }
-    let realm = net.authRealm(p.url.href) orelse return
-    let a = &mut ui.auth
-    // Asked again (wrong credentials): the username stays.
-    let again = text.eql(a.href.bytes(), p.url.href)
-    a.open = true
-    a.href.clear()
-    try a.href.append(p.url.href)
-    a.origin.clear()
-    try a.origin.append(p.url.host)
-    if p.url.port.len > 0 {
-        try a.origin.appendByte(':')
-        try a.origin.append(p.url.port)
-    }
-    a.realm.clear()
-    try a.realm.append(realm)
-    try a.password.set("")
-    if !again {
-        try a.user.set("")
-    }
-    if p.url.username.len > 0 {
-        let user = try url.percentDecode(ui.alloc, p.url.username)
-        defer ui.alloc.free(user)
-        try a.user.set(user)
-    }
-    ui.focus = Focus.AuthUser
-    if again && a.user.bytes().len > 0 {
-        ui.focus = Focus.AuthPassword
-    }
-    ui.dirty = true
+    return askAuthAt(ui, p.url.href)
 }
 
 fn closeAuth(ui: *mut Ui) {

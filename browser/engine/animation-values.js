@@ -55,8 +55,8 @@ function valueAt(el, name, frames, progress, easing, composite) {
   const span = b.offset - a.offset;
   const local = span === 0 ? 1 : ak.ease(a.easing, (progress - a.offset) / span);
 
-  if (local === 0) return va;
-  if (local === 1) return vb;
+  if (local === 0 && name !== 'transform') return va;
+  if (local === 1 && name !== 'transform') return vb;
 
   const r = ak.interpolate(name, computedWith(el, name, va), computedWith(el, name, vb), local);
 

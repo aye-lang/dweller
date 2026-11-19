@@ -27,6 +27,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try showCommitted(tp, title, url)
             tp.loading = false
             tp.loaded_new = true
+            notePageLoaded(tp, url)
         }
 
         .ScrollInfo { .. }, .Title { .. }, .Popup { .. }, .Cursor { .. }, .TargetUrl { .. }, .LongTask { .. }, .Settled { .. }, .TakeFocus { .. } => return rendererSentChrome(slot, tp, got)
@@ -34,9 +35,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
-            if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
-
-            noteFrameScroll(tp, scroll_y)
+            keepFrameScroll(slot, tp, scroll_y)
 
             return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
@@ -62,6 +61,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .WheelUnused { .. } => return "unexpected wheel_unused"
         .HitTestReply { id, key } => return takeHitReply(tp, id, key)
         .State { .. } => return "unexpected state"
+        .BusyAsk { .. }, .Telemetry { .. }, .HostRequest { .. } => return rendererAsked(slot, tp, got)
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }

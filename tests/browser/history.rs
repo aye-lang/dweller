@@ -102,6 +102,13 @@ fn window_session_restore_after_kill_tab() {
     session_restore_after_kill("session-kill-tab", &[("DWELLER_PROCESS", "tab")]);
 }
 
+/// Q2.14h: the same with `DWELLER_PROCESS=site`: the restored tabs are
+/// of one site (`file:`), so they come back in one shared renderer.
+#[test]
+fn window_session_restore_after_kill_site() {
+    session_restore_after_kill("session-kill-site", &[("DWELLER_PROCESS", "site")]);
+}
+
 fn session_restore_after_kill(name: &str, env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
@@ -136,19 +143,29 @@ fn session_restore_after_kill(name: &str, env: &[(&str, &str)]) {
 /// starts fresh; a torn session file starts a new tab, and says so.
 #[test]
 fn window_session_restore_after_quit() {
+    session_restore_after_quit("session-quit", &[]);
+}
+
+/// Q2.14h: the quit path with `DWELLER_PROCESS=site`.
+#[test]
+fn window_session_restore_after_quit_site() {
+    session_restore_after_quit("session-quit-site", &[("DWELLER_PROCESS", "site")]);
+}
+
+fn session_restore_after_quit(name: &str, env: &[(&str, &str)]) {
     if !has_sdl() {
         println!("skipped: no SDL2");
         return;
     }
-    let dir = profile("session-quit");
-    let (_, err) = session_run(&dir, "1", SESSION_EVENTS, &[]);
+    let dir = profile(name);
+    let (_, err) = session_run(&dir, "1", SESSION_EVENTS, env);
     assert!(err.is_empty(), "{err}");
-    session_restored(&dir, &[]);
-    let (got, _) = session_run(&dir, "0", "frame", &[]);
+    session_restored(&dir, env);
+    let (got, _) = session_run(&dir, "0", "frame", env);
     assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
     let saved = std::fs::read(dir.join("session")).unwrap();
     std::fs::write(dir.join("session"), &saved[..saved.len() / 2]).unwrap();
-    let (got, err) = session_run(&dir, "1", "frame", &[]);
+    let (got, err) = session_run(&dir, "1", "frame", env);
     assert!(got.starts_with("url \n") && !got.contains("\ntabs "), "{got}");
     assert_eq!(err, "error: the saved session is unreadable: starting with a new tab\n");
 }

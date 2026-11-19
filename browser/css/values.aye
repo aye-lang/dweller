@@ -232,6 +232,7 @@ fn logicalAlias(name: []u8) []u8 {
         "min-block-size", "min-height", "max-block-size", "max-height",
         "overflow-inline", "overflow-x", "overflow-block", "overflow-y",
         "-webkit-writing-mode", "writing-mode",
+        "font-width", "font-stretch",
     }
     var k: usize = 0
     while k + 1 < pairs.len {
@@ -340,6 +341,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
     } else if text.eql(name, "text-wrap") {
         first = TEXT_WRAP_MODE
         n = 2
+    } else if text.eql(name, "font-synthesis") {
+        first = FONT_SYNTHESIS_WEIGHT
+        n = 4
     } else if text.eql(name, "transition") {
         first = TRANSITION_PROPERTY
         n = 5
@@ -577,6 +581,9 @@ struct Declarer {
         }
         if text.eql(name, "text-wrap") {
             return textWrapShorthand(self, comps)
+        }
+        if text.eql(name, "font-synthesis") {
+            return synthesisShorthand(self, comps)
         }
         if text.eql(name, "white-space") {
             return whiteSpaceShorthand(self, comps)
@@ -1139,6 +1146,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     }
     if prop == ASPECT_RATIO {
         return aspectRatioValue(sheet, comps)
+    }
+    if prop == TRANSFORM {
+        return transformValue(sheet, comps)
     }
     if prop == SCROLLBAR_GUTTER {
         return scrollbarGutterValue(sheet, comps)
