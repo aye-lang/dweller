@@ -449,7 +449,9 @@ fn syncFrames(p: *mut Page) AllocError!void {
             try reloadFrame(p, k, key)
         } else {
             p.alloc.free(key)
-            if !try submitIntoFrame(f.page) {
+            if f.page.opened_doc.len > 0 {
+                try showWritten(p, k)
+            } else if !try submitIntoFrame(f.page) {
                 try followFrameNavigation(p, k)
             }
         }

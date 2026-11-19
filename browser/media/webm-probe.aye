@@ -1,0 +1,46 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+let EBML_SEGMENT: u32 = 0x18538067
+let EBML_INFO: u32 = 0x1549A966
+let EBML_TIMESCALE: u32 = 0x2AD7B1
+let EBML_DURATION: u32 = 0x4489
+let EBML_TRACKS: u32 = 0x1654AE6B
+let EBML_TRACK: u32 = 0xAE
+let EBML_CLUSTER: u32 = 0x1F43B675
+
+// chromium: media/formats/webm/webm_info_parser.cc, webm_tracks_parser.cc
+fn webmProbe(alloc: Allocator, b: []u8) AllocError!?Media {
+    let segment = ebmlIn(b, 0, b.len, EBML_SEGMENT) orelse return null
+    let tracks = ebmlIn(b, segment.body, segment.end, EBML_TRACKS) orelse return null
+    var scale: u64 = 1000000
+    var m = Media { container: Container.WebM, duration: 0.0, tracks: List(Track).init(alloc) }
+
+    errdefer m.deinit()
+
+    if ebmlIn(b, segment.body, segment.end, EBML_INFO) |info| {
+        if ebmlIn(b, info.body, info.end, EBML_TIMESCALE) |x| { scale = ebmlUint(b, x) }
+        if ebmlIn(b, info.body, info.end, EBML_DURATION) |x| { m.duration = ebmlFloat(b, x) * scale as f64 / 1.0e9 }
+    }
+
+    var at = tracks.body
+
+    while ebmlAt(b, at, tracks.end) |x| {
+        if x.id == EBML_TRACK {
+            if webmTrack(alloc, b, x) |t| { try m.tracks.append(t) }
+        }
+
+        at = x.end
+    }
+
+    at = segment.body
+
+    while ebmlAt(b, at, segment.end) |x| {
+        if x.id == EBML_CLUSTER { try webmCluster(b, x, scale, &mut m) }
+
+        at = x.end
+    }
+
+    return m
+}
