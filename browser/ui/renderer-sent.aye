@@ -110,6 +110,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.status_new = true
         }
 
+        .UserContext { .. } => {
+            if got.frame != slot.id { return "bad user_context" }
+
+            return takeUserContext(tp, got)
+        }
+
         .Settled { on } => {
             if got.frame != slot.id || on > 1 { return "bad settled" }
 

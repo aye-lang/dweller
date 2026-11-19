@@ -1,0 +1,42 @@
+import agent
+import ipc
+import std.heap.Arena
+import std.mem.AllocError
+
+fn checkContext(ui: *mut Ui, c: *mut Conn) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    var reply = agent.newReply()
+    let slot = personSlot(ui, c.ctx_tab) orelse ui.slots[ui.active].?
+    let tp = contextProcess(slot) orelse {
+        if slot.process == null && personBusy(ui) { return }
+
+        try contextReply(ui, arena.allocator(), &mut reply, false)
+
+        return answerContext(ui, c, arena.allocator(), reply)
+    }
+
+    if !c.ctx_sent {
+        if !tp.hello || tp.loading || (tp.url.len() == 0 && slot.session.tab.href().len > 0) || personBusy(ui) { return }
+
+        tp.ctx_next += 1
+        c.ctx_ask = tp.ctx_next
+        c.ctx_sent = true
+
+        return ipc.encode(&mut tp.outbox, slot.id, ipc.Message.AskUserContext { id: c.ctx_ask, point: 0 })
+    }
+
+    let got = (ipc.nextMessage(tp.ctx.bytes()) catch return) orelse return
+
+    match got.message {
+        .UserContext { id, .. } => {
+            if id < c.ctx_ask { return }
+
+            try rendererContext(ui, slot, arena.allocator(), got.message, &mut reply)
+        }
+
+        _ => return
+    }
+
+    return answerContext(ui, c, arena.allocator(), reply)
+}

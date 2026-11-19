@@ -1,0 +1,65 @@
+import agent
+import ipc
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn rendererContext(ui: *mut Ui, slot: *mut TabSlot, tmp: Allocator, m: ipc.Message, reply: *mut agent.Reply) AllocError!void {
+    let a = ui.agents.?
+    var b = text.Builder.init(tmp)
+    var w = agent.Writer.init(&mut b)
+    var d = text.Builder.init(tmp)
+
+    match m {
+        .UserContext { scroll, selection, hovered, hovered_text, focused, focused_text, .. } => {
+            try w.beginObject()
+            try w.key("tab")
+            try w.int(slot.id as i64)
+            try w.key("url")
+            try w.string(slot.session.tab.href())
+            try w.key("title")
+            try w.string(slotTitle(slot))
+            try w.key("scroll")
+            try w.int(scroll as i64)
+            try w.key("selection")
+            try w.string(selection)
+            try b.append(",\"hovered\":")
+            try b.append(hovered)
+            try b.append(",\"focused\":")
+            try b.append(focused)
+            try b.append(",\"pointed\":")
+            try d.append("Tab: ")
+            try d.appendUint(slot.id as u64)
+            try d.append("\nURL: ")
+            try d.append(slot.session.tab.href())
+            try d.append("\nTitle: ")
+            try d.append(slotTitle(slot))
+            try d.append("\nScroll: ")
+            try d.appendUint(scroll as u64)
+            try d.append(" px\nSelection: ")
+            try d.append(selection)
+            try d.append("\nHovered: ")
+            try d.append(hovered_text)
+            try d.append("\nFocused: ")
+            try d.append(focused_text)
+            try d.append("\nPointed at (Cmd+Shift+K): ")
+        }
+
+        _ => return
+    }
+
+    if a.pointed.len() > 0 {
+        try b.appendByte('{')
+        try b.append(a.pointed.bytes())
+        try b.appendByte('}')
+        try d.append(a.pointed_text.bytes())
+    } else {
+        try b.append("null")
+        try d.append("nothing yet")
+    }
+
+    try b.appendByte('}')
+    reply.message = "the user's context"
+    reply.fields = members(&b)
+    reply.detail = d.bytes()
+}
