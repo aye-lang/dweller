@@ -1,0 +1,24 @@
+import net
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn openZoom(alloc: Allocator) AllocError!void {
+    if zoom_store != null { return }
+
+    let s = try alloc.create(ZoomStore { alloc: alloc, levels: List(ZoomLevel).init(alloc) })
+
+    zoom_store = s
+
+    if net.profileDir().len == 0 { return }
+
+    let path = try net.joinPath(alloc, net.profileDir(), "zoom")
+
+    readZoom(s, path)
+
+    if net.profileWritable() {
+        s.owned_path = path
+    } else {
+        alloc.free(path)
+    }
+}

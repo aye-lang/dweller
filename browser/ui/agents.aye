@@ -450,7 +450,7 @@ fn connSlot(ui: *Ui, c: *Conn) *mut TabSlot {
 fn syncSlot(ui: *mut Ui, slot: *mut TabSlot) AllocError!void {
     let fresh = slot.shown != slot.seen
     slot.seen = slot.shown
-    try agent.syncSession(&mut slot.session, ui.win_w as f64, ui.layoutHeight(), fresh)
+    try agent.syncSession(&mut slot.session, pageX(ui, ui.win_w as f64), ui.layoutHeight() / ui.page_zoom, fresh)
     if slot == ui.slots[ui.active].? {
         // The shown page was laid out again: the window's display list
         // pointed into the old layout.
@@ -760,7 +760,7 @@ fn hoveredNode(ui: *mut Ui) ?NodeId {
     }
     let p = ui.tab.page orelse return null
     let t = p.tree orelse return null
-    return engine.nodeAt(t, ui.mouse_x + ui.tab.scroll_x, ui.mouse_y - ui.top() + ui.tab.scroll)
+    return engine.nodeAt(t, pageX(ui, ui.mouse_x) + ui.tab.scroll_x, pageY(ui, ui.mouse_y) + ui.tab.scroll)
 }
 
 fn refText(tmp: Allocator, r: u32) AllocError![]u8 {

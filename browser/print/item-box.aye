@@ -1,0 +1,27 @@
+import paint
+import std.math
+
+fn itemBox(item: paint.Item) ?paint.Rect {
+    match item {
+        .Fill { r, .. } => return r
+        .Image { r, .. } => return r
+        .Svg { r, .. } => return r
+        .Tiles { clip, .. } => return clip
+        .Quad { p, .. } => {
+            let x0 = math.min(math.min(p[0], p[2]), math.min(p[4], p[6]))
+            let y0 = math.min(math.min(p[1], p[3]), math.min(p[5], p[7]))
+            let x1 = math.max(math.max(p[0], p[2]), math.max(p[4], p[6]))
+            let y1 = math.max(math.max(p[1], p[3]), math.max(p[5], p[7]))
+
+            return paint.Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+        }
+
+        .Shadow { r, dx, dy, blur, spread, inset, .. } => {
+            let grow = (blur + math.abs(spread) + math.abs(dx) + math.abs(dy)) * (!inset) as u8 as f64
+
+            return paint.Rect { x: r.x - grow, y: r.y - grow, w: r.w + 2.0 * grow, h: r.h + 2.0 * grow }
+        }
+
+        _ => return null
+    }
+}

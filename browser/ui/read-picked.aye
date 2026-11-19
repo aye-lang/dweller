@@ -1,0 +1,32 @@
+import engine
+import net
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn readPicked(tmp: Allocator, paths: []u8, out: *mut List(engine.PickedFile)) AllocError!void {
+    var lines = text.split(paths, "\n")
+    var total: usize = 0
+
+    while lines.next() |raw| {
+        let path = text.trim(raw)
+
+        if path.len == 0 { continue }
+
+        let bytes = std.fs.readFile(tmp, path) catch |e| {
+            continue
+        }
+
+        total += bytes.len
+
+        if total > PICKED_LIMIT {
+            out.clear()
+
+            return
+        }
+
+        try out.append(engine.PickedFile { name: baseName(path), mime: net.typeOfPath(path), bytes: bytes, modified_ms: ((std.fs.mtime(path) orelse 0) as f64) * 1000.0 })
+    }
+}

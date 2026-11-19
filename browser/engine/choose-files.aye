@@ -1,0 +1,30 @@
+import dom
+import std.mem.AllocError
+
+// https://html.spec.whatwg.org/multipage/input.html#file-upload-state-(type=file)
+pub fn chooseFiles(top: *mut Page, files: []PickedFile) AllocError!void {
+    let page = pendingFilePage(top) orelse return
+    let el = page.doc.controls.file_pending.?
+
+    page.doc.controls.file_pending = null
+
+    if !page.doc.isLive(el) { return }
+
+    if files.len == 0 {
+        _ = try dispatchEvent(page, el, "cancel", "")
+
+        return
+    }
+
+    dom.clearFiles(&mut page.doc, el)
+
+    for k, f in files {
+        if k == 0 || page.doc.attr(el, "multiple") != null {
+            try dom.addFile(&mut page.doc, el, f.name, f.mime, f.bytes, f.modified_ms)
+        }
+    }
+
+    noteControlChange(page)
+    _ = try dispatchEvent(page, el, "input", "")
+    _ = try dispatchEvent(page, el, "change", "")
+}

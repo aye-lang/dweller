@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf (9.10.3 ToUnicode CMaps)
+fn toUnicode(out: *mut text.Builder, book: *GlyphBook, first: usize, count: usize) AllocError!void {
+    let hex = "0123456789ABCDEF"
+
+    try out.append("/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n")
+
+    for k in 0..count {
+        let g = book.glyphs.items()[first + k]
+
+        if g.said_len == 0 { continue }
+
+        try out.append("1 beginbfchar\n<")
+        try out.appendByte(hex[k >> 4])
+        try out.appendByte(hex[k % 16])
+        try out.append("> <")
+        try utf16Hex(out, book.said.items()[g.said..g.said + g.said_len])
+        try out.append(">\nendbfchar\n")
+    }
+
+    try out.append("endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n")
+}

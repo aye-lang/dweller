@@ -1,0 +1,18 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+fn pdfNumber(out: *mut text.Builder, v: f64) AllocError!void {
+    let hundredths = math.floor(math.abs(v) * 100.0 + 0.5) as u64
+
+    if v < 0.0 && hundredths > 0 { try out.append("-") }
+
+    try out.appendUint(hundredths / 100)
+
+    if hundredths % 100 == 0 { return }
+
+    try out.append(".")
+    try out.appendUint(hundredths % 100 / 10)
+
+    if hundredths % 10 != 0 { try out.appendUint(hundredths % 10) }
+}

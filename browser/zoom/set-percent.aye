@@ -1,0 +1,18 @@
+import net
+import std.mem.AllocError
+import std.text
+
+pub fn setPercent(href: []u8, percent: u32) AllocError!void {
+    let s = zoom_store orelse return
+
+    if !knownPercent(percent) { return }
+
+    try putLevel(s, keyOf(href), percent)
+
+    let path = s.owned_path orelse return
+    var out = text.Builder.init(s.alloc)
+    defer out.deinit()
+
+    try encodeZoom(s, &mut out)
+    _ = try net.writeAtomic(s.alloc, path, out.bytes())
+}

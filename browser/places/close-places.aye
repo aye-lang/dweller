@@ -1,0 +1,18 @@
+pub fn closePlaces() {
+    let s = place_store orelse return
+
+    saveHistoryIfDue(true) catch |e| {
+    }
+
+    place_store = null
+
+    for p in s.places.items() {
+        freePlace(s, p)
+    }
+
+    if s.owned_dir |d| { s.alloc.free(d) }
+    if s.owned_search |t| { s.alloc.free(t) }
+
+    s.places.deinit()
+    s.alloc.destroy(s)
+}

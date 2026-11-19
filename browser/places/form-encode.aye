@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// https://url.spec.whatwg.org/#urlencoded-serializing
+fn formEncode(out: *mut text.Builder, s: []u8) AllocError!void {
+    let hex = "0123456789ABCDEF"
+
+    for c in s {
+        let plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '*' || c == '-' || c == '.' || c == '_'
+
+        if plain {
+            try out.appendByte(c)
+        } else if c == ' ' {
+            try out.appendByte('+')
+        } else {
+            try out.appendByte('%')
+            try out.appendByte(hex[(c >> 4) as usize])
+            try out.appendByte(hex[(c & 15) as usize])
+        }
+    }
+}

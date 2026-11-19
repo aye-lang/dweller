@@ -1,0 +1,32 @@
+import places
+import std
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// chromium: components/omnibox/browser/autocomplete_controller.cc
+fn fillSuggestions(ui: *mut Ui, typed: []u8) AllocError!void {
+    if ui.suggest == null {
+        ui.suggest = try ui.alloc.create(Suggestions { alloc: ui.alloc, rows: List(SuggestRow).init(ui.alloc), typed: text.Builder.init(ui.alloc) })
+    }
+
+    let s = ui.suggest.?
+    var found = List(places.Suggestion).init(ui.alloc)
+    defer found.deinit()
+
+    clearSuggestRows(s)
+    s.typed.clear()
+    try s.typed.append(text.trim(typed))
+    s.selected = null
+    ui.dirty = true
+    try places.suggest(typed, std.time.now() as u64, SUGGEST_LIMIT, &mut found)
+
+    for f in found.items() {
+        let href = try ownedCopy(ui.alloc, f.url)
+        let title = try ownedCopy(ui.alloc, f.title)
+
+        try s.rows.append(SuggestRow { owned_url: href, owned_title: title, bookmarked: f.bookmarked })
+    }
+
+    if suggestRowCount(s) == 0 { closeSuggestions(ui) }
+}

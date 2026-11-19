@@ -1,0 +1,40 @@
+import std.list.List
+import std.mem.AllocError
+
+pub let PATH_MOVE: f64 = 0.0
+pub let PATH_LINE: f64 = 1.0
+pub let PATH_CURVE: f64 = 2.0
+pub let PATH_CLOSE: f64 = 3.0
+
+// https://freetype.org/freetype2/docs/reference/ft2-outline_processing.html#ft_outline
+pub fn glyphOutline(sys: *mut System, face: u32, glyph: u32, bold: bool, path: *mut List(f64)) AllocError!?f64 {
+    let fc = sys.faces.items()[face as usize]
+    let ft = fc.ft
+
+    if fc.color || ft.units_per_em == 0 || FT_Load_Glyph(ft, glyph, FT_LOAD_NO_SCALE) != 0 { return null }
+
+    let g = ft.glyph orelse return null
+    let slot = @ptrCast(*mut FTGlyphSlot, g)
+    let scale = 1000.0 / ft.units_per_em as f64
+    var start: usize = 0
+
+    if slot.format != FT_GLYPH_FORMAT_OUTLINE { return null }
+    if bold { FT_Outline_Embolden(&mut slot.outline, (ft.units_per_em / 24) as c_long) }
+
+    let o = &slot.outline
+
+    if o.n_contours == 0 || o.points == null || o.tags == null || o.contours == null { return slot.advance.x as f64 * scale }
+
+    let ends = @ptrCast([*]u16, o.contours.?)
+
+    for k in 0..o.n_contours as usize {
+        let end = ends[k] as usize
+
+        if end < start || end >= o.n_points as usize { return null }
+
+        try contourPath(Contour { points: @ptrCast([*]FTVector, o.points.?), tags: o.tags.?, scale: scale }, start, end, path)
+        start = end + 1
+    }
+
+    return slot.advance.x as f64 * scale
+}

@@ -1,0 +1,30 @@
+import font
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn renderPage(alloc: Allocator, list: *paint.DisplayList, painter: *mut paint.TextPainter, paper: Paper, top: f64, bottom: f64) AllocError!PrintedPage {
+    let s = PRINT_SCALE
+    let width = (paper.contentWidth() * s) as usize
+    let height = (paper.contentHeight() * s) as usize
+    var canvas = try paint.Canvas.init(alloc, width, height)
+    defer canvas.deinit()
+    let shown = paint.IRect { x0: 0, y0: 0, x1: width as i64, y1: paint.roundPx((bottom - top) * s) }
+
+    canvas.clear(paint.Rgba { r: 255, g: 255, b: 255, a: 255 })
+    try canvas.pushClip(shown)
+    canvas.fillRect(shown, list.background)
+    try paint.render(list, &mut canvas, paint.View { scale: s, dx: 0.0, dy: -top * s }, painter)
+    canvas.popClip()
+
+    let rgb = try alloc.alloc(0 as u8, width * height * 3)
+
+    for i in 0..width * height {
+        rgb[i * 3] = canvas.pixels[i * 4]
+        rgb[i * 3 + 1] = canvas.pixels[i * 4 + 1]
+        rgb[i * 3 + 2] = canvas.pixels[i * 4 + 2]
+    }
+
+    return PrintedPage { width: width, height: height, owned_rgb: rgb, texts: List(TextRun).init(alloc), glyphs: List(PageGlyph).init(alloc), runs: List(VectorRun).init(alloc) }
+}

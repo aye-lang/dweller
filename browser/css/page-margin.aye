@@ -1,0 +1,32 @@
+import std.text
+
+// https://drafts.csswg.org/css-page-3/#margin-boxes (the page's own margins: the lengths of `margin` and its longhands)
+fn pageMargin(box: *mut PageBox, name: []u8, toks: []Token) {
+    let sides = [4][]u8{"margin-top", "margin-right", "margin-bottom", "margin-left"}
+    var given = [4]f64{0.0, 0.0, 0.0, 0.0}
+    var n: usize = 0
+
+    for t in toks {
+        if t.kind == Tok.Whitespace { continue }
+        if n == 4 || (t.kind != Tok.Dimension && !(t.kind == Tok.Number && t.num == 0.0)) { return }
+
+        given[n] = 0.0
+
+        if t.kind == Tok.Dimension { given[n] = absoluteLength(t.num, t.text) orelse return }
+        if given[n] < 0.0 { return }
+
+        n += 1
+    }
+
+    if n == 0 { return }
+
+    if text.eqlIgnoreCase(name, "margin") {
+        box.margin = [4]f64{given[0], given[(n > 1) as usize], given[(n > 2) as usize * 2], given[(n > 1) as usize + (n > 3) as usize * 2]}
+
+        return
+    }
+
+    for k, side in sides {
+        if n == 1 && text.eqlIgnoreCase(name, side) { box.margin[k] = given[0] }
+    }
+}

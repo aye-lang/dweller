@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.text
+
+fn sizeText(out: *mut text.Builder, bytes: usize) AllocError!void {
+    let units = [3][]u8{" kB", " MB", " GB"}
+    var tenths = bytes as u64 * 10
+    var unit: usize = 0
+
+    if bytes < 1000 {
+        try out.appendUint(bytes as u64)
+
+        return out.append(" B")
+    }
+
+    tenths = (tenths + 500) / 1000
+
+    while tenths >= 10000 && unit < 2 {
+        tenths = (tenths + 500) / 1000
+        unit += 1
+    }
+
+    try out.appendUint(tenths / 10)
+    try out.append(".")
+    try out.appendUint(tenths % 10)
+    try out.append(units[unit])
+}

@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+fn putFeatUi(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .Print { paper } => try putBytes(out, paper)
+        .Printed { chunk } => try putBytes(out, chunk)
+        .PrintedEnd { pages } => try putU32(out, pages)
+        .PrintAsk => {}
+        .CaretRect { .. }, .Compose { .. } => try putIme(out, m)
+        _ => try putChosen(out, m)
+    }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<title>file</title>
+<body style="margin:0;font:16px/20px monospace">
+<form id="f" method="post" enctype="multipart/form-data" action="/upload">
+<input type="hidden" name="note" value="hello">
+<input type="file" id="one" name="one" accept=".txt,image/*" style="position:absolute;left:10px;top:10px;width:180px;height:24px">
+<input type="file" id="many" name="many" multiple style="position:absolute;left:10px;top:50px;width:180px;height:24px">
+<input type="submit" id="go" value="Send" style="position:absolute;left:10px;top:90px;width:80px;height:24px">
+</form>
+<button id="fetch" style="position:absolute;left:110px;top:90px;width:80px;height:24px">Fetch</button>
+<button id="clear" style="position:absolute;left:210px;top:90px;width:80px;height:24px">Clear</button>
+<pre id="out" style="position:absolute;top:130px;left:0;margin:0"></pre>
+<script>
+var done = 0, total = 0;
+function log(s) { document.getElementById('out').textContent += s + '\n'; }
+function finish() { done++; document.title = total + ' done' + done; }
+function sum(buffer) {
+  var total = 0, bytes = new Uint8Array(buffer);
+  for (var i = 0; i < bytes.length; i++) total += bytes[i];
+  return total;
+}
+function describe(input) {
+  var files = input.files, left = files.length;
+  log(input.id + ' value=' + input.value + ' files=' + files.length + ' same=' + (files === input.files) + ' list=' + (files instanceof FileList));
+  if (!left) finish();
+  for (var i = 0; i < files.length; i++) (function (file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      file.text().then(function (t) {
+        total += file.size;
+        log(file.name + ' | ' + file.type + ' | ' + file.size + ' | sum ' + sum(reader.result) + ' | ' + (file.lastModified > 0) + ' | ' + JSON.stringify(t.slice(0, 12)) + ' | ' + (file instanceof File));
+        if (--left === 0) finish();
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  })(files[i]);
+}
+['one', 'many'].forEach(function (id) {
+  var input = document.getElementById(id);
+  input.addEventListener('input', function () { log('input ' + id); });
+  input.addEventListener('change', function () { log('change ' + id); describe(input); });
+  input.addEventListener('cancel', function () { log('cancel ' + id + ' files=' + input.files.length); finish(); });
+});
+document.getElementById('fetch').onclick = function () {
+  var data = new FormData(document.getElementById('f'));
+  data.append('extra', new Blob(['blob!'], { type: 'text/plain' }), 'made.txt');
+  fetch('/upload', { method: 'POST', body: data }).then(function (r) { return r.text(); }).then(function (t) { log('fetched\n' + t); finish(); });
+};
+document.getElementById('clear').onclick = function () {
+  document.getElementById('one').value = '';
+  describe(document.getElementById('one'));
+};
+</script>

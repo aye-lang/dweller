@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// chromium: components/bookmarks/browser/bookmark_model.cc
+pub fn setBookmark(href: []u8, title: []u8, on: bool) AllocError!void {
+    let s = place_store orelse return
+
+    if !keptUrl(href) { return }
+
+    let p = try placeOf(s, href, title)
+
+    p.bookmarked = on
+
+    if on { _ = try renamePlace(s, p, title) }
+
+    if !on && p.visits == 0 {
+        freePlace(s, s.places.orderedRemove(findPlace(s, href).?))
+    }
+
+    try saveBookmarks(s)
+}

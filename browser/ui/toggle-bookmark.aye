@@ -1,0 +1,31 @@
+import places
+import std.mem.AllocError
+import std.text
+
+fn toggleBookmark(ui: *mut Ui) AllocError!void {
+    let slot = ui.slots[ui.active].?
+    let href = zoomHref(slot)
+    var title = slotTitle(slot)
+
+    if slot.in_space != 0 { return }
+    if text.eql(title, href) { title = "" }
+
+    try places.setBookmark(href, title, !places.isBookmarked(href))
+    ui.dirty = true
+}
+
+fn bookmarkShortcut(ui: *mut Ui, sym: i32, shift: bool) AllocError!bool {
+    if sym != 'd' || shift { return false }
+
+    try toggleBookmark(ui)
+
+    return true
+}
+
+fn clickStar(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    if !inRect(starRect(ui) orelse return false, x, y) { return false }
+
+    try toggleBookmark(ui)
+
+    return true
+}

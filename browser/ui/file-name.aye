@@ -1,0 +1,25 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+fn fileName(out: *mut text.Builder, title: []u8, k: usize) AllocError!void {
+    let shown = text.trim(title)
+
+    for c in shown[..math.minOf(usize, shown.len, 80)] {
+        if c == '/' || c == ':' || c < ' ' {
+            try out.appendByte('_')
+        } else {
+            try out.appendByte(c)
+        }
+    }
+
+    if out.len() == 0 { try out.append("Untitled") }
+
+    if k > 1 {
+        try out.append(" (")
+        try out.appendUint(k as u64)
+        try out.append(")")
+    }
+
+    try out.append(".pdf")
+}

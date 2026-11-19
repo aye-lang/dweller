@@ -1,0 +1,14 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn rasterList(alloc: Allocator, list: *paint.DisplayList, vector: []bool) AllocError!paint.DisplayList {
+    var kept = paint.DisplayList { items: List(paint.Item).init(alloc), background: list.background, width: list.width, height: list.height, layers: List(paint.Promoted).init(alloc), frames: List(paint.FramePlace).init(alloc) }
+
+    for at, item in list.items.items() {
+        if !vector[at] { try kept.items.append(item) }
+    }
+
+    return kept
+}

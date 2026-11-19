@@ -1,0 +1,12 @@
+import net
+import std
+import std.mem.AllocError
+
+fn profileFile(s: *mut PlaceStore, dir: []u8, name: []u8) AllocError!?[]mut u8 {
+    let path = try net.joinPath(s.alloc, dir, name)
+    defer s.alloc.free(path)
+
+    return std.fs.readFile(s.alloc, path) catch |e| {
+        return null
+    }
+}

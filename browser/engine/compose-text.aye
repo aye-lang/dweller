@@ -1,0 +1,27 @@
+import dom
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/editing/ime/input_method_controller.cc (SetComposition)
+pub fn composeText(page: *mut Page, typed: []u8) AllocError!void {
+    try settleComposition(page)
+
+    let f = composingField(page) orelse return
+    let c = &mut page.doc.controls
+
+    if c.composing == null {
+        if typed.len == 0 { return }
+
+        _ = try dispatchEvent(page, f, "compositionstart", "")
+        try dom.insertText(&mut page.doc, f, "")
+        c.composing = f
+        c.compose_start = dom.caretOf(&page.doc, f).lo
+        c.compose_len = 0
+    }
+
+    _ = try dispatchEvent(page, f, "composingbeforeinput", typed)
+    _ = try dispatchEvent(page, f, "compositionupdate", typed)
+    try replaceComposed(page, f, typed)
+    _ = try dispatchEvent(page, f, "composinginput", typed)
+
+    if typed.len == 0 { try endComposition(page, f, "") }
+}
