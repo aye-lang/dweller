@@ -1,0 +1,34 @@
+import engine
+import paint
+import std.math
+
+let DIALOG_LINES: usize = 4
+let DIALOG_LINE_H: f64 = 18.0
+
+struct DialogSheet {
+    box: paint.Rect
+    input: paint.Rect
+    cancel: paint.Rect
+    ok: paint.Rect
+}
+
+fn dialogSheetOf(ui: *Ui) DialogSheet {
+    let w = math.min(SHEET_W, ui.win_w as f64 - 2.0 * PAD)
+    let x = math.floor((ui.win_w as f64 - w) / 2.0)
+    let y = ui.top() - 1.0
+    var fields = 36.0 + DIALOG_LINE_H * dialogLines(ui.dialog.message.bytes()) as f64
+
+    let input = paint.Rect { x: x + 12.0, y: y + fields, w: w - 24.0, h: 24.0 }
+
+    if ui.dialog.kind == engine.DIALOG_PROMPT { fields += 32.0 }
+
+    let by = y + fields + 4.0
+    let right = x + w - 12.0
+
+    return DialogSheet {
+        box: paint.Rect { x: x, y: y, w: w, h: fields + 16.0 + SHEET_BUTTON_H },
+        input: input,
+        cancel: paint.Rect { x: right - 2.0 * SHEET_BUTTON_W - 8.0, y: by, w: SHEET_BUTTON_W, h: SHEET_BUTTON_H },
+        ok: paint.Rect { x: right - SHEET_BUTTON_W, y: by, w: SHEET_BUTTON_W, h: SHEET_BUTTON_H },
+    }
+}

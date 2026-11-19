@@ -3,7 +3,7 @@ import std.mem.AllocError
 import std.mem.Allocator
 
 // chromium: media/audio/wav_audio_handler.cc
-fn wavProbe(alloc: Allocator, b: []u8) AllocError!?Media {
+fn wavProbe(alloc: Allocator, b: []u8, total: usize) AllocError!?Media {
     if !isTag(b, 8, "WAVE") { return null }
 
     var at: usize = 12
@@ -21,7 +21,7 @@ fn wavProbe(alloc: Allocator, b: []u8) AllocError!?Media {
         } else if isTag(b, at, "data") {
             bytes = size
 
-            if at + 8 + size > b.len { bytes = b.len - at - 8 }
+            if at + 8 + size > total { bytes = total - at - 8 }
         }
 
         at += 8 + size + (size & 1)

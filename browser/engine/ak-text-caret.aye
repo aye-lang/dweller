@@ -1,0 +1,19 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akTextCaret(it: *mut Interp, a: Args) JsError!Value {
+    let node = ownHandle(it, it.arg(a, 0)) orelse return Value.Null
+    let units = try it.toNumber(it.arg(a, 1))
+    let r = try textCaretRect(scriptOf(it).page, node, units as usize) orelse return Value.Null
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+    try it.heap.pushElem(out, js.numVal(r.x))
+    try it.heap.pushElem(out, js.numVal(r.y))
+    try it.heap.pushElem(out, js.numVal(r.h))
+
+    return it.pop()
+}

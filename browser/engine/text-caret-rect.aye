@@ -1,0 +1,39 @@
+import dom.NodeId
+import layout
+import layout.FragKind
+import paint
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/editing/local_caret_rect.cc
+pub fn textCaretRect(p: *mut Page, node: NodeId, units: usize) AllocError!?paint.Rect {
+    let s = p.script orelse return null
+    let t = (try geometry(s)).tree
+    let source = p.doc.node(node).data
+
+    for i in 0..t.boxes.len() {
+        if !layout.hasInlineContent(t, i) { continue }
+
+        let b = t.bx(i).*
+
+        for li in b.line_start..b.line_end {
+            let line = t.lines.items()[li]
+
+            for fi in line.frag_start..line.frag_end {
+                let f = t.frags.items()[fi]
+                let tb = t.bx(f.box).*
+
+                if f.kind != FragKind.Text || tb.node == null || tb.node.? != node { continue }
+
+                let k = alignedText(source, tb.text, utf16ToByte(source, units), NO_STOP).shown
+
+                if k < f.start || k > f.end { continue }
+
+                let x = b.ax + b.border[3] + b.padding[3] + f.x + t.measure.width(layout.fontOf(tb.style), tb.text[f.start..k])
+
+                return paint.Rect { x: x, y: b.ay + b.border[0] + b.padding[0] + f.y, w: 1.0, h: f.h }
+            }
+        }
+    }
+
+    return null
+}
