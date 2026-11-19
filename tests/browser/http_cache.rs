@@ -119,3 +119,32 @@ fn http_cache_survives_restart() {
     assert_eq!(logged(&third, "cached fresh 200"), 2, "{third}");
     assert_eq!(logged(&third, "cached etag 200"), 2, "{third}");
 }
+
+fn request_order(site: bool) -> String {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return String::new();
+    };
+    let page = format!("{}/net/priority.html", srv.base);
+    let env = [("DWELLER_HOST_CONNECTIONS", "2")];
+    visit_with(&page, &[format!("{}/order", srv.base)], site, &env)
+}
+
+/// Q4.12c: `net/priority.html` starts eight images from a script, then
+/// adds a style sheet and has a script element, on a host with two
+/// connections (HTTP/1.1). Images wait in the loader while the host's
+/// connections are taken, so the sheet is asked for right after the two
+/// images in flight, not after all eight (libcurl's own queue is first
+/// in, first out). The same with a renderer per site. (The page is left
+/// for `/order` before the last images are asked for.)
+#[test]
+fn request_priority_sheet_before_waiting_images() {
+    for site in [false, true] {
+        let got = request_order(site);
+        if got.is_empty() {
+            return;
+        }
+        let want = "late.js i1.png i2.png late.css i3.png";
+        assert!(got.contains(want), "site {site}: expected {want:?} in:\n{got}");
+    }
+}
