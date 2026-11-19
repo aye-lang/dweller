@@ -21,7 +21,7 @@ import re
 import sys
 
 PLATFORM = {"ui", "gpu", "audio", "font", "net", "perf", "sessions", "shell", "sdl", "tui"}
-CORE = {"animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "idna", "url", "dom"}
+CORE = {"media", "animation", "css", "layout", "paint", "image", "svg", "webfont", "encoding", "idna", "url", "dom"}
 FRONT = {"html", "js", "wasm", "engine", "agent", "pageview", "renderer"}
 
 # (path prefix relative to browser/, imported module): removed by card.

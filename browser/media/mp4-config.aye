@@ -1,0 +1,17 @@
+import std.text
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn mp4Config(b: []u8, t: Track, entry: usize, limit: usize) []u8 {
+    var from = entry + 36
+    let end = entry + be32(b, entry) as usize
+
+    if t.kind == TrackKind.Video { from = entry + 86 }
+
+    if end > limit || from > end { return "" }
+
+    for kind in [5][]u8{ "avcC", "hvcC", "vpcC", "esds", "dOps" } {
+        if boxIn(b, from, end, kind) |x| { return b[x.body..x.end] }
+    }
+
+    return ""
+}
