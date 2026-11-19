@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn showWritten(p: *mut Page, k: usize) AllocError!void {
+    let old = p.frames.items()[k].page
+    let flags = old.sandbox
+    let child = try writtenPage(old)
+
+    placeFrame(p, p.frames.items()[k].el, child)
+    setSandbox(child, flags)
+
+    return replaceFrame(p, k, child, null)
+}
