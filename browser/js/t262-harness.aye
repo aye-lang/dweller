@@ -1,0 +1,21 @@
+// https://github.com/tc39/test262/blob/main/INTERPRETING.md#test262-defined-bindings
+
+import std.fs
+
+fn t262RunHarness(it: *mut Interp) JsError!void {
+    let path = getenv("DWELLER_TEST262_HARNESS".ptr) orelse return
+    var n: usize = 0
+
+    while path[n] != 0 {
+        n += 1
+    }
+
+    let src = fs.readFile(it.alloc, path[0..n]) catch {
+        _ = try it.typeError("cannot read the test262 harness")
+
+        return
+    }
+    defer it.alloc.free(src)
+
+    _ = try it.runScript(src)
+}
