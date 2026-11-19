@@ -124,6 +124,7 @@ function took(el, source, from, r) {
   }
 
   m.have = parts.addRange(m.have, start, start + bytes.length);
+  m.bytes.push([start, bytes]);
   if (!m.first && rangeAt(m, byteOf(m, m.at))) {
     m.first = true;
     m.ready = CURRENT;
@@ -215,7 +216,7 @@ parts.load = el => {
     Object.assign(m, { ready: NOTHING, paused: true, seeking: false, duration: NaN, at: 0, played: [] });
   }
 
-  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null });
+  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null, bytes: [], format: null });
   parts.selectResource(el);
 };
 

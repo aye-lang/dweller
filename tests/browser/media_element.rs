@@ -74,3 +74,33 @@ fn media_element_ranges() {
         assert!(site.contains(line), "{line} in {site}");
     }
 }
+
+/// Q5.9a slice 4a: an unmuted `<audio>` played from a click
+/// (`browser/tests/media/sound.html`) sends its samples to the page's
+/// audio output: one buffer of the file's half second, one channel, at
+/// rate 1 and not silent, and `ended` comes on the real clock. In the
+/// window in one process and with `DWELLER_PROCESS=site`.
+#[test]
+fn media_element_sound() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for mode in ["single", "site"] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let href = format!("{}/media/sound.html", srv.base);
+        let envs = [("DWELLER_PROCESS", mode), ("SDL_AUDIODRIVER", "dummy")];
+        let got = login_window_with(&href, "frame click:100,90 frame", None, &envs);
+        for line in [
+            "activated: true",
+            "playing: muted=false paused=false",
+            "scheduled: 1 buffer(s), 0.50 s, channels 1, rate 1, loud true",
+            "done",
+        ] {
+            assert!(got.contains(line), "{mode}: {line} in {got}");
+        }
+    }
+}
