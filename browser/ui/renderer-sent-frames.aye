@@ -1,0 +1,58 @@
+import ipc
+import std.mem.AllocError
+
+fn rendererSentFrames(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .Subframes { frames } => {
+            if got.frame != slot.id { return "bad subframes" }
+
+            return takeSubframes(tp, frames)
+        }
+
+        .FocusFrame { key, how } => {
+            if got.frame != slot.id { return "bad focus_frame" }
+
+            return focusFrame(tp, key, how)
+        }
+
+        .Clipboard { copied } => {
+            if got.frame != slot.id { return "bad clipboard" }
+
+            return takeClipboard(tp, copied)
+        }
+
+        .FindReply { id, count, active } => {
+            if got.frame != slot.id { return "bad find_reply" }
+
+            return takeFindReply(tp, id, count, active)
+        }
+
+        .Context { .. } => {
+            if got.frame != slot.id { return "bad context" }
+
+            return takeContext(tp, got)
+        }
+
+        .PostMessage { .. } => {
+            if got.frame != slot.id { return "bad post_message" }
+
+            return routePostMessage(tp, got.message)
+        }
+
+        .PortPost { .. } => {
+            if got.frame != slot.id { return "bad port_post" }
+
+            return routePortMessage(tp, got.message)
+        }
+
+        .ProxyNavigate { .. } => {
+            if got.frame != slot.id { return "bad proxy_navigate" }
+
+            return navigateProxy(tp, got.message)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

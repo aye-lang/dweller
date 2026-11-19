@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+// chromium: content/browser/find_request_manager.cc (Traverse: past a frame's last match the next frame with matches takes the active one)
+fn stepFind(top: *mut TabProcess, frames: []*mut TabProcess, forward: bool, query: []u8) AllocError!bool {
+    let at = activeFindFrame(top, frames) orelse return true
+    let f = frames[at]
+    let to = nextFindFrame(frames, at, forward)
+    let at_edge = (forward && f.find_active + 1 >= f.find_count) || (!forward && f.find_active == 0)
+
+    if !at_edge || to == at {
+        try sendFind(f, 3 - forward as u32, query)
+
+        return true
+    }
+
+    try sendFind(f, FIND_PASSIVE, query)
+    top.find_frame = frames[to].tab
+    try sendFind(frames[to], FIND_LAST - 6 * forward as u32, query)
+
+    return true
+}
