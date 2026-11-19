@@ -1,0 +1,24 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn osascriptArgs(tmp: Allocator, multiple: bool, accepted: []u8, argv: *mut List([]u8)) AllocError!void {
+    var choose = text.Builder.init(tmp)
+
+    try choose.append("set chosen to (choose file")
+    try acceptedTypes(accepted, &mut choose)
+
+    if multiple { try choose.append(" with multiple selections allowed") }
+
+    try choose.append(") as list")
+
+    let lines = [6][]u8{choose.bytes(), "set out to \"\"", "repeat with f in chosen", "set out to out & POSIX path of f & linefeed", "end repeat", "out"}
+
+    try argv.append("osascript")
+
+    for line in lines {
+        try argv.append("-e")
+        try argv.append(line)
+    }
+}

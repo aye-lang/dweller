@@ -1,0 +1,30 @@
+import std.text
+
+let URL_SCHEMES = [8][]u8{"http:", "https:", "file:", "data:", "about:", "blob:", "view-source:", "javascript:"}
+
+// chromium: components/omnibox/browser/autocomplete_input.cc (Parse)
+pub fn isSearch(typed: []u8) bool {
+    let s = text.trim(typed)
+
+    if s.len == 0 { return false }
+    if s[0] == '?' { return true }
+    if s[0] == '/' || s[0] == '.' || s[0] == '~' || text.indexOf(s, "://") != null { return false }
+
+    for scheme in URL_SCHEMES {
+        if text.startsWith(s, scheme) { return false }
+    }
+
+    if text.indexOf(s, " ") != null { return true }
+
+    let host = s[..hostEnd(s)]
+
+    return text.indexOf(host, ".") == null && !text.eql(host, "localhost") && host.len == s.len
+}
+
+fn hostEnd(s: []u8) usize {
+    for i, c in s {
+        if c == '/' || c == ':' { return i }
+    }
+
+    return s.len
+}

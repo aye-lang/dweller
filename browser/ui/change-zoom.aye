@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import zoom
+
+// chromium: components/zoom/page_zoom.cc
+fn changeZoom(ui: *mut Ui, direction: i32) AllocError!void {
+    let slot = ui.slots[ui.active].?
+    let href = zoomHref(slot)
+
+    if slot.in_space != 0 || href.len == 0 { return }
+
+    try zoom.setPercent(href, zoom.stepPercent(zoom.percentOf(href), direction))
+    try syncZoom(ui)
+}

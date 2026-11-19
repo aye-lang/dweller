@@ -1,0 +1,40 @@
+import std.list.List
+import std.text
+
+test "zoom levels are kept by key, encoded to a file and read back; 100% erases a level" {
+    let alloc = @testAllocator()
+    var s = ZoomStore { alloc: alloc, levels: List(ZoomLevel).init(alloc) }
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try putLevel(&mut s, "example.com", 125)
+    try putLevel(&mut s, "file:///a.html", 50)
+    try putLevel(&mut s, "example.com", 150)
+    try putLevel(&mut s, "gone.example", 200)
+    try putLevel(&mut s, "gone.example", 100)
+    try encodeZoom(&s, &mut out)
+
+    @expectEqual("dweller-zoom 1\n150 example.com\n50 file:///a.html\n", out.bytes())
+
+    var back = ZoomStore { alloc: alloc, levels: List(ZoomLevel).init(alloc) }
+
+    try decodeZoom(&mut back, "dweller-zoom 1\n150 example.com\n7 odd.example\nnonsense\n50 file:///a.html\n")
+
+    @expectEqual(2, back.levels.len())
+    @expectEqual(50, back.levels.items()[1].percent)
+
+    try decodeZoom(&mut back, "cookies\n200 other.example\n")
+
+    @expectEqual(2, back.levels.len())
+
+    for l in s.levels.items() {
+        alloc.free(l.owned_key)
+    }
+
+    for l in back.levels.items() {
+        alloc.free(l.owned_key)
+    }
+
+    s.levels.deinit()
+    back.levels.deinit()
+}

@@ -1,0 +1,43 @@
+import std.heap.Arena
+import std.list.List
+
+test "the macOS picker is `choose file` with the accepted types and the multiple flag; an unknown type drops the filter" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    var argv = List([]u8).init(arena.allocator())
+
+    try osascriptArgs(arena.allocator(), true, ".png, image/*,.JPG", &mut argv)
+
+    @expectEqual(13, argv.len())
+    @expectEqual("osascript", argv.items()[0])
+    @expectEqual("-e", argv.items()[1])
+    @expectEqual("set chosen to (choose file of type {\"png\", \"public.image\", \"JPG\"} with multiple selections allowed) as list", argv.items()[2])
+    @expectEqual("out", argv.items()[12])
+
+    argv.clear()
+    try osascriptArgs(arena.allocator(), false, ".png,application/pdf", &mut argv)
+
+    @expectEqual("set chosen to (choose file) as list", argv.items()[2])
+
+    argv.clear()
+    try osascriptArgs(arena.allocator(), false, ".a\"b", &mut argv)
+
+    @expectEqual("set chosen to (choose file) as list", argv.items()[2])
+}
+
+test "the Linux picker is zenity with a filter of the accepted extensions" {
+    var arena = Arena.init(@testAllocator())
+    defer arena.deinit()
+    var argv = List([]u8).init(arena.allocator())
+
+    try zenityArgs(arena.allocator(), true, ".png,.jpg", &mut argv)
+
+    @expectEqual(5, argv.len())
+    @expectEqual("--multiple", argv.items()[3])
+    @expectEqual("--file-filter=Accepted | *.png *.jpg", argv.items()[4])
+
+    argv.clear()
+    try zenityArgs(arena.allocator(), false, "image/*", &mut argv)
+
+    @expectEqual(3, argv.len())
+}

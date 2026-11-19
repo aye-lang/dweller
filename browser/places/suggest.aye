@@ -1,0 +1,16 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+pub fn suggest(typed: []u8, now_ms: u64, limit: usize, out: *mut List(Suggestion)) AllocError!void {
+    let s = place_store orelse return
+    let wanted = text.trim(typed)
+
+    for k in 0..s.places.len() {
+        let p = &s.places.items()[k]
+
+        if (wanted.len == 0 && !p.bookmarked) || !placeMatches(p, wanted) { continue }
+
+        try rankIn(out, limit, Suggestion { url: p.owned_url, title: p.owned_title, bookmarked: p.bookmarked, score: placeScore(p, wanted, now_ms), last_ms: p.last_ms })
+    }
+}

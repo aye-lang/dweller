@@ -62,6 +62,7 @@ struct Load {
     top: []mut u8 = []mut u8{}
     partition: u32 = 0
     validators: []mut u8 = []mut u8{}
+    held: bool = false
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -110,6 +111,7 @@ struct Loader {
     waiting: ?*mut Curl
     waited: i32
     pumped: u64
+    multiplexed: ?*mut List([]mut u8) = null
 }
 
 var loader: ?*mut Loader = null
@@ -203,11 +205,10 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(key) {
         l.validators = (staleValidators(&mut s.cache, ld.alloc, key, "") catch null) orelse []mut u8{}
-        var hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
-        l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null, &mut hop)
         l.state = LoadState.Running
-        if l.job == null {
-            l.state = LoadState.Failed
+        l.held = mustHold(ld, l)
+        if !l.held {
+            startLoadJob(ld, s, l)
         }
         pumpLoads()
     }
@@ -675,6 +676,7 @@ fn stopLoads() {
         freeLoad(ld, l)
     }
     ld.loads.deinit()
+    dropMultiplexed(ld)
     curl_multi_cleanup(ld.multi)
     ld.alloc.destroy(ld)
 }
@@ -774,6 +776,7 @@ fn harvest(ld: *mut Loader) {
             }
         }
     }
+    releaseHeld(ld)
 }
 
 // The transfer of `l` ended with `result` (a CURLcode): keeps its
@@ -784,6 +787,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     defer dropJob(ld.alloc, ld.multi, job)
     l.state = LoadState.Failed
     let s = session orelse return
+    noteMultiplexed(ld, job)
     if result != 0 || job.sink.out_of_memory || job.sink.too_large {
         noteFailure(l.kind, 0, l.href)
         return

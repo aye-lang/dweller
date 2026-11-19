@@ -168,7 +168,7 @@ function fetchChunk(el, from) {
 
     m.fetching = false;
     took(el, m.source, from, typeof x === 'number' ? ak.fetchTake(x) : x);
-  }, '');
+  }, '', false, el.localName);
 }
 
 function fetchResource(el, source, value) {

@@ -488,6 +488,10 @@ pub let PRELUDE =
     \\    ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x || 0, clientY: y || 0, detail: 1 });
     \\  } else if (type === 'wheel') {
     \\    ev = new WheelEvent(type, { bubbles: true, cancelable: wheelCancelable(target), composed: true, clientX: x, clientY: y, deltaX: dx, deltaY: dy, deltaMode: 0 });
+    \\  } else if (/^composition(start|update|end)$/.test(type)) {
+    \\    ev = new CompositionEvent(type, { bubbles: true, cancelable: false, composed: true, data: key === undefined ? '' : key });
+    \\  } else if (type === 'composinginput' || type === 'composingbeforeinput') {
+    \\    ev = new InputEvent(type.slice(9), { bubbles: true, cancelable: false, composed: true, data: key === undefined ? '' : key, inputType: 'insertCompositionText', isComposing: true });
     \\  } else if (type === 'input' || type === 'beforeinput') {
     \\    ev = new InputEvent(type, { bubbles: true, cancelable: type === 'beforeinput', composed: true, data: key === undefined ? null : key, inputType: 'insertText' });
     \\  } else if (type === 'focus' || type === 'blur') {
@@ -1453,7 +1457,7 @@ pub let PRELUDE =
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
-    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return n === 'transform' && v !== 'none' ? ak.resolvedTransform(el, v) : v; }
+    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); if (n === 'transform-origin') return ak.resolvedOrigin(el, v); return n === 'transform' && v !== 'none' ? ak.resolvedTransform(el, v) : v; }
     \\for (const n of CSS_NAMES) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
@@ -2986,7 +2990,7 @@ pub let PRELUDE =
     \\  constructor() { throw new TypeError('Illegal constructor'); }
     \\}
     \\hidden(G, 'SVGAnimatedString', SVGAnimatedString);
-    \\getter(G, 'origin', function () { return ak.urlPart('origin'); });
+    \\getter(G, 'origin', function () { return ak.winOrigin(G); });
     \\hidden(G, 'isSecureContext', true);
     \\hidden(G, 'Image', function Image(width, height) {
     \\  const img = document.createElement('img');
@@ -3563,7 +3567,7 @@ pub let PRELUDE =
     \\      if (submitter.form !== form) throw new DOMException('Submitter belongs to another form', 'NotFoundError');
     \\    }
     \\    for (const e of form._formEntries(submitter)) {
-    \\      this._list.push([e[0], e[2] ? new File([], '', { type: 'application/octet-stream' }) : e[1]]);
+    \\      this._list.push([e[0], e[2] ? (e[3] ? e[3]._file(e[4]) : new File([], '', { type: 'application/octet-stream' })) : e[1]]);
     \\    }
     \\  }
     \\  append(k, v, filename) { this._list.push([String(k), formValue(v, filename)]); }
@@ -4273,6 +4277,7 @@ pub let PRELUDE =
     \\function isConnected(n) { return nativeIsConnected.call(n); }
     \\function onMutations(recs) {
     \\  resourceMutations(recs);
+    \\  if (G.__rangeMutations) G.__rangeMutations(recs);
     \\  if (registered.size > 0) queueRecords(recs);
     \\  if (ceDefs.size > 0) {
     \\    for (let i = 0; i < recs.length; i += 7) {

@@ -2,7 +2,8 @@
 // chromium: third_party/blink/renderer/core/dom/range.cc (ProcessContents)
 (function () {
 const G = globalThis;
-const { lengthOf, indexOf, holds, fail } = G.__ranges;
+const ranges = G.__ranges;
+const { lengthOf, indexOf, holds, fail } = ranges;
 const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
 const isData = n => n.nodeType === 3 || n.nodeType === 4 || n.nodeType === 7 || n.nodeType === 8;
 const DELETE = 0, EXTRACT = 1, CLONE = 2;
@@ -83,8 +84,10 @@ if (!Text.prototype.splitText) {
     if (o > this.data.length) throw new DOMException("Failed to execute 'splitText' on 'Text': The offset " + o + " is larger than the Text node's length.", 'IndexSizeError');
 
     const rest = document.createTextNode(this.data.slice(o));
-    this.deleteData(o, this.data.length - o);
     if (this.parentNode) this.parentNode.insertBefore(rest, this.nextSibling);
+    if (this.parentNode) ranges.split(this, o, rest);
+
+    this.deleteData(o, this.data.length - o);
 
     return rest;
   });

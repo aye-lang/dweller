@@ -1,0 +1,46 @@
+import engine
+import font
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn printLaidOut(alloc: Allocator, page: *mut engine.Page, measure: dyn font.Measurer, system: ?*mut font.System, paper: Paper, out: *mut text.Builder) AllocError!usize {
+    let tree = page.tree orelse return 0
+    var list = try paint.build(alloc, tree)
+    defer list.deinit()
+    var painter = paint.TextPainter.init(alloc, system)
+    defer painter.deinit()
+    var forced = List(f64).init(alloc)
+    defer forced.deinit()
+    var whole = List(Span).init(alloc)
+    defer whole.deinit()
+    var cuts = List(f64).init(alloc)
+    defer cuts.deinit()
+    var pages = List(PrintedPage).init(alloc)
+    defer freePages(alloc, &mut pages)
+    var vector = List(bool).init(alloc)
+    defer vector.deinit()
+    var book = VectorText.init(alloc, system)
+    defer book.deinit()
+
+    try book.sort(alloc, &list, measure, &mut vector)
+    try itemSpans(&list, &mut whole)
+    try boxBreaks(tree, &mut forced, &mut whole)
+    try pageCuts(list.height, paper.contentHeight(), forced.items(), whole.items(), &mut cuts)
+
+    for k, top in cuts.items() {
+        var bottom = top + paper.contentHeight()
+
+        if k + 1 < cuts.len() { bottom = cuts.items()[k + 1] }
+
+        try pages.append(try renderPage(alloc, book.raster(&list), &mut painter, paper, top, bottom))
+        try pageTexts(book.raster(&list), measure, top, bottom, &mut pages.items()[k])
+        try book.place(alloc, &list, vector.items(), [2]f64{top, bottom}, &mut pages.items()[k])
+    }
+
+    try writePdf(alloc, paper, page.title, pages.items(), book.glyphs(), out)
+
+    return pages.len()
+}

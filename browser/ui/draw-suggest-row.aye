@@ -1,0 +1,14 @@
+import paint
+import std.mem.AllocError
+
+fn drawSuggestRow(ui: *mut Ui, r: paint.Rect, y: f64, line: []u8, bookmarked: bool, selected: bool) AllocError!void {
+    let f = uiFont(13.0)
+    let clip = paint.Rect { x: r.x + 1.0, y: y, w: r.w - 2.0, h: SUGGEST_ROW }
+
+    if selected { fill(ui, clip.x, clip.y, clip.w, clip.h, CHIP_HOVER) }
+    if bookmarked { drawRibbon(ui, r.x + 9.0, y + 7.0, true) }
+
+    try ui.canvas.pushClip(paint.deviceRect(clip, screen(ui)))
+    try label(ui, r.x + 26.0, centered(ui, y, SUGGEST_ROW, f), line, f, INK)
+    ui.canvas.popClip()
+}

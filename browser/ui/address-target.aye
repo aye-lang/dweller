@@ -1,0 +1,33 @@
+import engine
+import places
+import std
+import std.text
+import url
+
+// chromium: components/omnibox/browser/autocomplete_input.cc
+fn addressTarget(ui: *mut Ui, typed: []u8) url.UrlError!url.Url {
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+
+    if places.isSearch(typed) && !std.fs.exists(typed) {
+        places.searchUrl(&mut b, typed[(typed[0] == '?') as usize..]) catch |e| {
+            return url.UrlError.OutOfMemory
+        }
+
+        return url.parse(ui.alloc, b.bytes())
+    }
+
+    if text.startsWith(typed, "localhost") && (typed.len == 9 || typed[9] == ':' || typed[9] == '/') {
+        b.append("http://") catch |e| {
+            return url.UrlError.OutOfMemory
+        }
+
+        b.append(typed) catch |e| {
+            return url.UrlError.OutOfMemory
+        }
+
+        return url.parse(ui.alloc, b.bytes())
+    }
+
+    return engine.urlOfInput(ui.alloc, typed)
+}

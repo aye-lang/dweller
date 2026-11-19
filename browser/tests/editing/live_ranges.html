@@ -1,0 +1,39 @@
+<!doctype html>
+<title>live ranges follow DOM changes</title>
+<div id="box"></div>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out'), box = document.getElementById('box');
+const name = n => n === box ? 'box' : n.nodeType === 3 ? JSON.stringify(n.data) : n.nodeName.toLowerCase() + (n.id ? '#' + n.id : '');
+const show = r => name(r.startContainer) + ' ' + r.startOffset + ' .. ' + name(r.endContainer) + ' ' + r.endOffset;
+function check(what, markup, start, end, change) {
+  box.innerHTML = markup;
+  const r = document.createRange(), at = p => [p[0] === 'box' ? box : p[0].endsWith(' text') ? box.querySelector(p[0].slice(0, -5)).firstChild : box.querySelector(p[0]), p[1]];
+  r.setStart(...at(start));
+  r.setEnd(...at(end));
+  change();
+  out.textContent += what + ': ' + show(r) + '\n';
+}
+const q = s => box.querySelector(s);
+const kids = '<i id="a">one</i><i id="b">two</i><i id="c">three</i>';
+check('a child before the range is removed', kids, ['box', 1], ['box', 3], () => q('#a').remove());
+check('a child inside the range is removed', kids, ['box', 1], ['box', 3], () => q('#b').remove());
+check('the node of a boundary is removed', kids, ['#b text', 1], ['#c text', 2], () => q('#b').remove());
+check('a child is inserted before the range', kids, ['box', 1], ['box', 2], () => box.prepend(document.createElement('b')));
+check('a child is inserted at the start boundary', kids, ['box', 1], ['box', 2], () => box.insertBefore(document.createElement('b'), q('#b')));
+check('all children are replaced', kids, ['box', 1], ['#c', 1], () => { box.textContent = 'new'; });
+check('text is deleted before the boundary', '<i id="t">abcdefgh</i>', ['i text', 5], ['i text', 7], () => q('i').firstChild.deleteData(1, 2));
+check('text is deleted around the start', '<i>abcdefgh</i>', ['i text', 3], ['i text', 7], () => q('i').firstChild.deleteData(2, 3));
+check('text is inserted before the boundary', '<i>abcdefgh</i>', ['i text', 3], ['i text', 7], () => q('i').firstChild.insertData(1, 'XY'));
+check('text is replaced', '<i>abcdefgh</i>', ['i text', 3], ['i text', 7], () => q('i').firstChild.replaceData(4, 2, 'X'));
+check('data is set', '<i>abcdefgh</i>', ['i text', 3], ['i text', 7], () => { q('i').firstChild.data = 'xyz'; });
+check('the text is split inside the range', '<i>abcdefgh</i>', ['i text', 2], ['i text', 6], () => q('i').firstChild.splitText(4));
+check('a node is moved out', kids, ['#b', 0], ['#b', 1], () => box.after(q('#b')));
+const sel = getSelection();
+box.innerHTML = '<i>abcdefgh</i>';
+sel.setBaseAndExtent(box.firstChild.firstChild, 2, box.firstChild.firstChild, 6);
+box.firstChild.firstChild.deleteData(0, 1);
+out.textContent += 'the selection follows too: ' + sel.anchorOffset + ' .. ' + sel.focusOffset + ' ' + JSON.stringify(String(sel)) + '\n';
+document.getElementById('box').remove();
+out.textContent += 'its container removed: ' + name(sel.anchorNode) + ' ' + sel.anchorOffset + '\n';
+</script>

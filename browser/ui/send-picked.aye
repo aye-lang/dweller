@@ -1,0 +1,30 @@
+import engine
+import ipc
+import std.math
+import std.mem.AllocError
+
+let PICKED_CHUNK: usize = 262144
+
+fn sendPicked(slot: *TabSlot, frame_id: u32, files: []engine.PickedFile) AllocError!void {
+    let hit = findFrame(slot.process orelse return, frame_id, 0, 0) orelse return
+    let tp = hit.tp
+
+    if tp.file_ask != FILE_ASK_WAITS { return }
+
+    tp.file_ask = 0
+
+    for f in files {
+        var sent: usize = 0
+
+        try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ChosenFile { name: f.name, mime: f.mime, modified: f.modified_ms })
+
+        while sent < f.bytes.len {
+            let end = math.minOf(usize, f.bytes.len, sent + PICKED_CHUNK)
+
+            try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ChosenBytes { chunk: f.bytes[sent..end] })
+            sent = end
+        }
+    }
+
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ChosenEnd { count: files.len as u32 })
+}

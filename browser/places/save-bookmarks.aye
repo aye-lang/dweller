@@ -1,0 +1,14 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn saveBookmarks(s: *mut PlaceStore) AllocError!void {
+    let dir = s.owned_dir orelse return
+    let path = try net.joinPath(s.alloc, dir, "bookmarks")
+    defer s.alloc.free(path)
+    var out = text.Builder.init(s.alloc)
+    defer out.deinit()
+
+    try encodeBookmarks(s, &mut out)
+    _ = try net.writeAtomic(s.alloc, path, out.bytes())
+}

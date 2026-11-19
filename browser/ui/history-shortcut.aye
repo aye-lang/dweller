@@ -1,0 +1,24 @@
+import places
+import std.mem.AllocError
+
+// chromium: chrome/browser/ui/browser_command_controller.cc (IDC_CLEAR_BROWSING_DATA, IDC_SHOW_BOOKMARK_BAR)
+fn historyShortcut(ui: *mut Ui, sym: i32, shift: bool) AllocError!bool {
+    if !shift { return false }
+
+    if sym == 'b' {
+        ui.bar_hidden = !ui.bar_hidden
+        try syncBookmarksBar(ui)
+
+        return true
+    }
+
+    if sym != SDLK_BACKSPACE && sym != SDLK_DELETE { return false }
+
+    try places.clearHistory(null)
+    closeSuggestions(ui)
+    ui.hover.clear()
+    try ui.hover.append("History cleared")
+    ui.dirty = true
+
+    return true
+}

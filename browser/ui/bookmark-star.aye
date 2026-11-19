@@ -1,0 +1,20 @@
+import paint
+import places
+
+let STAR_W: f64 = 22.0
+
+fn starRect(ui: *mut Ui) ?paint.Rect {
+    let field = addressRect(ui)
+    let slot = ui.slots[ui.active].?
+
+    if slot.in_space != 0 || field.w < STAR_W * 6.0 || !places.keptUrl(zoomHref(slot)) { return null }
+
+    return paint.Rect { x: field.x + field.w - STAR_W - 1.0, y: field.y + 1.0, w: STAR_W, h: field.h - 2.0 }
+}
+
+fn drawStar(ui: *mut Ui) {
+    let r = starRect(ui) orelse return
+
+    fill(ui, r.x, r.y, r.w, r.h, PAPER)
+    drawRibbon(ui, r.x + (r.w - RIBBON_W) / 2.0, r.y + (r.h - RIBBON_H) / 2.0, places.isBookmarked(zoomHref(ui.slots[ui.active].?)))
+}

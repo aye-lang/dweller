@@ -107,7 +107,7 @@ pub struct PageDraw {
 /// moves the pixels a new drawing would give).
 fn drawPage(ui: *mut Ui, area: paint.IRect) AllocError!bool {
     let pd = &mut ui.page
-    let s = ui.scale
+    let s = pageScale(ui)
     let v = paint.View { scale: s, dx: -pageview.snappedScroll(ui.tab.scroll_x, s) * s, dy: -pageview.snappedScroll(ui.tab.scroll, s) * s }
     var bg = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
     if ui.page_view.list |l| {
@@ -300,7 +300,7 @@ fn checkDamage(ui: *mut Ui, v: paint.View, bg: paint.Rgba) AllocError!void {
 /// Is something drawn over the page (find matches, the focused field,
 /// a dropdown, the status line, an agent's flash, a menu)?
 fn pageOverlays(ui: *mut Ui) bool {
-    if ui.page_view.matches.len() > 0 || ui.finding || ui.dropdown != null || ui.hover.len() > 0 || ui.dialog.open {
+    if ui.page_view.matches.len() > 0 || ui.finding || ui.dropdown != null || ui.hover.len() > 0 || suggestionsOpen(ui) || ui.downloads_open || ui.dialog.open {
         return true
     }
     if chipStatus(ui).len > 0 || agentStatus(ui).len > 0 || sadTabOf(ui) != null || hungProcess(ui) != null {

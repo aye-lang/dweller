@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.text
+
+fn composeInField(ui: *mut Ui, s: *mut ImeState, typed: []u8) AllocError!void {
+    let f = ui.field()
+
+    if !s.in_field || s.focus != ui.focus || s.start + s.len > f.bytes().len {
+        if typed.len == 0 { return }
+        if f.all { try f.set("") }
+
+        s.in_field = true
+        s.focus = ui.focus
+        s.start = f.caret
+        s.len = 0
+    }
+
+    try replaceInField(ui, f, s, typed)
+    s.in_field = typed.len > 0
+}

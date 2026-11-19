@@ -1,0 +1,12 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/editing/ime/input_method_controller.cc (FinishComposingText, kKeepSelection)
+pub fn finishComposition(page: *mut Page) AllocError!void {
+    let f = page.doc.controls.composing orelse return
+    var kept = text.Builder.init(page.alloc)
+    defer kept.deinit()
+
+    try kept.append(composedText(page))
+    try endComposition(page, f, kept.bytes())
+}

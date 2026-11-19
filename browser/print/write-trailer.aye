@@ -1,0 +1,24 @@
+import std.mem.AllocError
+
+fn writeTrailer(w: *mut PdfWriter, catalog: usize, info: usize) AllocError!void {
+    let at = w.out.len()
+
+    try w.out.append("xref\n0 ")
+    try w.out.appendUint((w.offsets.len() + 1) as u64)
+    try w.out.append("\n0000000000 65535 f \n")
+
+    for offset in w.offsets.items() {
+        try padded(w, offset)
+        try w.out.append(" 00000 n \n")
+    }
+
+    try w.out.append("trailer\n<< /Size ")
+    try w.out.appendUint((w.offsets.len() + 1) as u64)
+    try w.out.append(" /Root ")
+    try w.ref(catalog)
+    try w.out.append(" /Info ")
+    try w.ref(info)
+    try w.out.append(" >>\nstartxref\n")
+    try w.out.appendUint(at as u64)
+    try w.out.append("\n%%EOF\n")
+}

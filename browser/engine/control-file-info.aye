@@ -1,0 +1,19 @@
+import dom
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn controlFileInfo(it: *mut Interp, a: Args) JsError!Value {
+    let index = try it.toNumber(it.arg(a, 0))
+    let f = dom.fileAt(docOf(it), try thisElement(it, a), index as usize) orelse return Value.Null
+    let info = try it.newArray(0)
+
+    try it.push(js.objVal(info))
+    try it.heap.pushElem(info, try it.newString(f.owned_name))
+    try it.heap.pushElem(info, try it.newString(f.owned_type))
+    try it.heap.pushElem(info, js.numVal(f.modified_ms))
+
+    return it.pop()
+}

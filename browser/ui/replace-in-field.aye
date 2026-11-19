@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn replaceInField(ui: *mut Ui, f: *mut Field, s: *mut ImeState, typed: []u8) AllocError!void {
+    var b = text.Builder.init(ui.alloc)
+    defer b.deinit()
+
+    try b.append(f.bytes()[..s.start])
+    try b.append(typed)
+    try b.append(f.bytes()[s.start + s.len..])
+    try f.set(b.bytes())
+    f.caret = s.start + typed.len
+    s.len = typed.len
+    ui.dirty = true
+
+    if ui.focus == Focus.Find { try ui.findAll(true) }
+    if ui.focus == Focus.Address { try refreshSuggestions(ui) }
+}

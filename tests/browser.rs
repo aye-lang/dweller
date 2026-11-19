@@ -62,6 +62,8 @@ mod media;
 mod native;
 #[path = "browser/media_element.rs"]
 mod media_element;
+#[path = "browser/media_scripted.rs"]
+mod media_scripted;
 #[path = "browser/net.rs"]
 mod net;
 #[path = "browser/paint.rs"]
@@ -70,6 +72,8 @@ mod paint;
 mod perf;
 #[path = "browser/permissions.rs"]
 mod permissions;
+#[path = "browser/print.rs"]
+mod print;
 #[path = "browser/screenshot.rs"]
 mod screenshot;
 #[path = "browser/sandbox.rs"]
@@ -92,8 +96,18 @@ mod websocket;
 mod window_clipboard;
 #[path = "browser/window_dialogs.rs"]
 mod window_dialogs;
+#[path = "browser/window_downloads.rs"]
+mod window_downloads;
+#[path = "browser/window_file.rs"]
+mod window_file;
+#[path = "browser/window_ime.rs"]
+mod window_ime;
 #[path = "browser/window_login.rs"]
 mod window_login;
+#[path = "browser/window_places.rs"]
+mod window_places;
+#[path = "browser/window_print.rs"]
+mod window_print;
 #[path = "browser/window_renderer.rs"]
 mod window_renderer;
 #[path = "browser/window_renderer_edit.rs"]
@@ -124,6 +138,8 @@ mod window_renderer_popup;
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
 mod window_spaces;
+#[path = "browser/window_zoom.rs"]
+mod window_zoom;
 #[path = "browser/wpt.rs"]
 mod wpt;
 

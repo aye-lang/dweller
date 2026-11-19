@@ -1,0 +1,24 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn putLevel(s: *mut ZoomStore, key: []u8, percent: u32) AllocError!void {
+    for k in 0..s.levels.len() {
+        if !text.eql(s.levels.items()[k].owned_key, key) { continue }
+
+        if percent == DEFAULT_PERCENT {
+            s.alloc.free(s.levels.orderedRemove(k).owned_key)
+        } else {
+            s.levels.items()[k].percent = percent
+        }
+
+        return
+    }
+
+    if percent == DEFAULT_PERCENT || key.len == 0 { return }
+
+    let owned = try s.alloc.alloc(0 as u8, key.len)
+
+    std.mem.copy(owned, key)
+    try s.levels.append(ZoomLevel { owned_key: owned, percent: percent })
+}

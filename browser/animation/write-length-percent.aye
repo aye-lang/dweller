@@ -1,0 +1,24 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn writeLengthPercent(px: f64, percent: f64, out: *mut text.Builder) AllocError!void {
+    if percent == 0.0 {
+        try css.writeFineNumber(px, out)
+
+        return out.append("px")
+    }
+
+    if px == 0.0 {
+        try css.writeFineNumber(percent, out)
+
+        return out.append("%")
+    }
+
+    try out.append("calc(")
+    try css.writeFineNumber(percent, out)
+    try out.append("% + ")
+    try css.writeFineNumber(px, out)
+    try out.append("px)")
+}

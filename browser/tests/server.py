@@ -84,6 +84,9 @@
 #                    an ETag), plain (none). A matching If-None-Match
 #                    gets 304. Each request is logged ("cached MODE
 #                    200" or "... 304", see /log).
+#   /ordered/NAME      an empty response after 50 ms, typed by NAME's
+#                    extension; /order lists the NAMEs in the order the
+#                    requests arrived
 #   /logged-acao/NAME  as /acao/NAME, recording the request (method,
 #                    path, Origin, Cookie) in /log
 #   /meta/NAME       (GET and POST) records the request's method, path,
@@ -154,6 +157,7 @@ import json
 import http.server
 import mimetypes
 import os
+import re
 import secrets
 import select
 import socket
@@ -178,6 +182,7 @@ COOKIES = [
 ]
 
 LOG = []
+ORDER = []
 CACHED_TAG = '"v1"'
 CACHED = {
     "fresh": [("Cache-Control", "max-age=3600")],
@@ -391,6 +396,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 LOG.append("cached %s 200\n" % mode)
                 self.reply(200, headers, (".%s { color: rgb(1, 2, 3) }" % mode).encode())
+        elif path.startswith("/ordered/"):
+            name = path[len("/ordered/"):]
+            ORDER.append(name)
+            time.sleep(0.05)
+            kind = {"css": "text/css", "js": "text/javascript"}.get(name.rpartition(".")[2], "image/png")
+            self.reply(200, [("Content-Type", kind), ("Cache-Control", "no-store")], b"")
+        elif path == "/order":
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], " ".join(ORDER).encode())
         elif path.startswith("/log/"):
             self.log_request_line("GET")
         elif path.startswith("/fail/"):
@@ -706,6 +719,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(303, [("Location", "/meta/" + self.path[len("/see/"):])])
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
+        elif self.path == "/upload":
+            self.upload(body)
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
@@ -1003,6 +1018,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
+    def upload(self, body):
+        ctype = self.headers.get("Content-Type", "")
+        lines = ["upload " + ctype.split(";")[0]] + upload_parts(ctype, body)
+        page = "<!doctype html><title>done9</title><pre>%s</pre>" % html.escape("\n".join(lines))
+        self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
     def echo(self, method, body):
         query = urllib.parse.urlsplit(self.path).query
         ctype = self.headers.get("Content-Type", "")
@@ -1019,6 +1040,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             % (method, html.escape(self.path), html.escape(ctype), items, html.escape(raw))
         )
         self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
+
+def upload_parts(ctype, body):
+    """One line per part of a multipart/form-data body: its name, file
+    name, type, length and the start of its SHA-256."""
+    boundary = ctype.split("boundary=", 1)[-1].strip().strip('"').encode()
+    lines = []
+    for part in body.split(b"--" + boundary)[1:-1]:
+        head, _, data = part[2:].partition(b"\r\n\r\n")
+        data = data[:-2]
+        text = head.decode("utf-8", "replace")
+        name = re.search(r'name="([^"]*)"', text)
+        filename = re.search(r'filename="([^"]*)"', text)
+        kind = re.search(r"Content-Type: (.*)", text)
+        lines.append(
+            "part %s | %s | %s | %d | %s"
+            % (
+                name.group(1) if name else "?",
+                filename.group(1) if filename else "-",
+                kind.group(1).strip() if kind else "-",
+                len(data),
+                hashlib.sha256(data).hexdigest()[:16],
+            )
+        )
+    return lines
 
 
 def form_fields(ctype, body):

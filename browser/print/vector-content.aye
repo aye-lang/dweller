@@ -1,0 +1,44 @@
+import std.mem.AllocError
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
+fn vectorContent(out: *mut text.Builder, page: *PrintedPage, left: f64, top: f64) AllocError!void {
+    let hex = "0123456789ABCDEF"
+
+    for run in page.runs.items() {
+        var shown: usize = FONT_GLYPHS * 65536
+
+        try out.append("q ")
+
+        if run.clip |r| {
+            let box = [4]f64{left + r.x * PT_PER_PX, top - (r.y + r.h) * PT_PER_PX, r.w * PT_PER_PX, r.h * PT_PER_PX}
+
+            try pdfNumbers(out, box[..], "re W n ")
+        }
+
+        let ink = [3]f64{run.c.r as f64 / 255.0, run.c.g as f64 / 255.0, run.c.b as f64 / 255.0}
+
+        try pdfNumbers(out, ink[..], "rg BT 0 Tr\n")
+
+        for g in page.glyphs.items()[run.first..run.first + run.count] {
+            if g.id as usize / FONT_GLYPHS != shown {
+                shown = g.id as usize / FONT_GLYPHS
+                try out.append("/T")
+                try out.appendUint(shown as u64)
+                try out.append(" ")
+                try pdfNumber(out, run.size * PT_PER_PX)
+                try out.append(" Tf\n")
+            }
+
+            let at = [2]f64{left + g.x * PT_PER_PX, top - g.y * PT_PER_PX}
+
+            try out.append("1 0 0 1 ")
+            try pdfNumbers(out, at[..], "Tm <")
+            try out.appendByte(hex[(g.id as usize % FONT_GLYPHS) >> 4])
+            try out.appendByte(hex[g.id as usize % 16])
+            try out.append("> Tj\n")
+        }
+
+        try out.append("ET Q\n")
+    }
+}

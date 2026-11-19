@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn decodeHistory(s: *mut PlaceStore, bytes: []u8) AllocError!void {
+    var lines = text.split(bytes, "\n")
+
+    if !text.eql(lines.next() orelse "", HISTORY_HEAD) { return }
+
+    while lines.next() |line| {
+        var fields = text.split(line, " ")
+        let visits = wholeNumber(fields.next()) orelse continue
+        let last_ms = wholeNumber(fields.next()) orelse continue
+        let href = fields.next() orelse continue
+
+        if visits == 0 || visits > 0xffffffff || !keptUrl(href) { continue }
+
+        let p = try placeOf(s, href, restAfter(line, 3))
+
+        p.visits = visits as u32
+        p.last_ms = last_ms
+    }
+}

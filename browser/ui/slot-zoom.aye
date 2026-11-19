@@ -1,0 +1,19 @@
+import zoom
+
+fn slotZoom(slot: *TabSlot) f64 {
+    return hrefZoom(slot, zoomHref(slot))
+}
+
+fn hrefZoom(slot: *TabSlot, href: []u8) f64 {
+    if slot.in_space != 0 { return 1.0 }
+
+    return zoom.percentOf(href) as f64 / 100.0
+}
+
+fn zoomHref(slot: *TabSlot) []u8 {
+    if slot.process |tp| {
+        if tp.committed.len() > 0 { return tp.committed.bytes() }
+    }
+
+    return slot.session.tab.href()
+}

@@ -64,9 +64,16 @@ pub struct Controls {
     // Matches a `pattern` attribute (with the page's RegExp engine);
     // null: the bounded matcher of pattern.aye.
     pattern_match: ?fn(Allocator, []u8, []u8) bool
+    files: List(ChosenFile)
+    file_request: ?NodeId = null
+    file_pending: ?NodeId = null
+    files_version: u64 = 0
+    composing: ?NodeId = null
+    compose_start: usize = 0
+    compose_len: usize = 0
 
     pub fn init(alloc: Allocator) Controls {
-        return Controls { alloc: alloc, map: IntMap(u32, Control).init(alloc), focus: null, hover: null, active: null, pointer_styled: 0, noted_inputs: 0, transition_frame: 0, validation: null, focus_visible: true, pattern_match: null }
+        return Controls { alloc: alloc, map: IntMap(u32, Control).init(alloc), focus: null, hover: null, active: null, pointer_styled: 0, noted_inputs: 0, transition_frame: 0, validation: null, focus_visible: true, pattern_match: null, files: List(ChosenFile).init(alloc) }
     }
 
     pub fn deinit(self: *mut Self) {
@@ -76,6 +83,7 @@ pub struct Controls {
             self.alloc.free(e.value.custom)
         }
         self.map.deinit()
+        freeChosenFiles(self)
     }
 
     /// The state of `el`, if it has any; valid until the next `ensure`.
@@ -398,7 +406,7 @@ pub fn valueOf(doc: *Document, el: NodeId) []u8 {
     if doc.isElement(el, "input") {
         let t = inputType(doc, el)
         if text.eql(t, "file") {
-            return ""
+            return (fileAt(doc, el, 0) orelse return "").owned_path
         }
         if text.eql(t, "color") {
             let color = value
@@ -449,6 +457,7 @@ pub fn setValue(doc: *mut Document, el: NodeId, v: []u8) AllocError!void {
     doc.controls.validation = null
     var clean = v
     if doc.isElement(el, "input") && text.eql(inputType(doc, el), "file") {
+        if v.len == 0 { clearFiles(doc, el) }
         return
     }
     if doc.isElement(el, "input") && text.eql(inputType(doc, el), "color") && !validColor(clean) {
@@ -702,6 +711,7 @@ pub fn resetForm(doc: *mut Document, form: NodeId) AllocError!void {
     try formControls(doc, form, &mut list)
     for el in list.items() {
         doc.controls.forget(el)
+        clearFiles(doc, el)
         if doc.isElement(el, "select") {
             var opts = List(NodeId).init(doc.alloc)
             defer opts.deinit()

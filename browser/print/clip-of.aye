@@ -1,0 +1,20 @@
+import paint
+import std.math
+
+fn clipOf(clips: []paint.Rect, top: f64) ?paint.Rect {
+    if clips.len == 0 { return null }
+
+    var x0 = clips[0].x
+    var y0 = clips[0].y
+    var x1 = clips[0].x + clips[0].w
+    var y1 = clips[0].y + clips[0].h
+
+    for r in clips {
+        x0 = math.max(x0, r.x)
+        y0 = math.max(y0, r.y)
+        x1 = math.min(x1, r.x + r.w)
+        y1 = math.min(y1, r.y + r.h)
+    }
+
+    return paint.Rect { x: x0, y: y0 - top, w: math.max(0.0, x1 - x0), h: math.max(0.0, y1 - y0) }
+}

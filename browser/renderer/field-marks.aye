@@ -25,6 +25,13 @@ fn fieldMarks(r: *TabRenderer, p: *engine.Page, out: *mut List(Mark)) AllocError
     var rects = List(paint.Rect).init(r.alloc)
     defer rects.deinit()
 
+    try engine.compositionRects(p, &mut rects)
+
+    for s in rects.items() {
+        try out.append(Mark { rect: paint.deviceRect(s, v), ink: CARET_INK })
+    }
+
+    rects.clear()
     try engine.selectionRects(p, f, &mut rects)
 
     for s in rects.items() {

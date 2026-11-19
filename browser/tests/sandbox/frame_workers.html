@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<title>Workers of frames</title>
+<pre id="out"></pre>
+<script>
+const report = (line) => { document.getElementById('out').textContent += line + '\n'; };
+addEventListener('message', (e) => report(e.data));
+const frame = document.createElement('iframe');
+frame.srcdoc = '<script>' +
+  "parent.postMessage('origin of a srcdoc frame is its parent\\'s: ' + (self.origin === parent.origin), '*');" +
+  "const w = new Worker('echo_worker.js');" +
+  "w.onmessage = (e) => parent.postMessage(e.data, '*');" +
+  "w.onerror = (e) => parent.postMessage('worker of a srcdoc frame: ' + e.message, '*');" +
+  '</scr' + 'ipt>';
+document.body.append(frame);
+const failing = new Worker("data:text/javascript,import './missing_module.js'; postMessage('ran')", { type: 'module' });
+failing.onmessage = () => report('module worker with a missing import: ran');
+failing.onerror = (e) => { e.preventDefault(); report('module worker with a missing import: error'); };
+</script>

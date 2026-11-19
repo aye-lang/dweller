@@ -1,0 +1,21 @@
+import css
+
+test "the paper takes the size, the turn and the margins of @page; a page with no room keeps the default" {
+    let a4 = paperNamed("a4").?
+    let wide = paperFor(a4, css.PageBox { turn: css.PAGE_LANDSCAPE, margin: [4]f64{96.0, -1.0, 0.0, 48.0} })
+    let card = paperFor(a4, css.PageBox { width: 480.0, height: 288.0, turn: css.PAGE_PORTRAIT })
+    let none = paperFor(a4, css.PageBox { width: 96.0, height: 96.0, margin: [4]f64{48.0, 48.0, 48.0, 48.0} })
+
+    @expectEqual(842, wide.width_pt as i64)
+    @expectEqual(595, wide.height_pt as i64)
+    @expectEqual(72, wide.margin_pt[0] as i64)
+    @expectEqual(28, wide.margin_pt[1] as i64)
+    @expectEqual(0, wide.margin_pt[2] as i64)
+    @expectEqual(36, wide.margin_pt[3] as i64)
+    @expectEqual(1037, wide.contentWidth() as i64)
+    @expectEqual(697, wide.contentHeight() as i64)
+    @expectEqual(216, card.width_pt as i64)
+    @expectEqual(360, card.height_pt as i64)
+    @expectEqual(595, none.width_pt as i64)
+    @expectEqual(28, none.margin_pt[0] as i64)
+}

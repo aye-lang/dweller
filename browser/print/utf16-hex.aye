@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+fn utf16Hex(out: *mut text.Builder, s: []u8) AllocError!void {
+    let hex = "0123456789ABCDEF"
+    var i: usize = 0
+
+    while i < s.len {
+        let lead = s[i]
+        let n = 1 + (lead >= 0xC0) as usize + (lead >= 0xE0) as usize + (lead >= 0xF0) as usize
+        let masks = [5]u32{0, 0x7F, 0x1F, 0x0F, 0x07}
+        var code = lead as u32 & masks[n]
+        var units = [2]u32{0, 0}
+
+        for c in s[i + 1..i + ((i + n <= s.len) as usize * n + (i + n > s.len) as usize)] { code = code << 6 | (c as u32 & 0x3F) }
+
+        i += n
+        units[1] = code
+
+        if code >= 0x10000 {
+            units[0] = 0xD800 + ((code - 0x10000) >> 10)
+            units[1] = 0xDC00 + ((code - 0x10000) & 0x3FF)
+        }
+
+        for k, u in units {
+            if k == 0 && code < 0x10000 { continue }
+
+            for shift in [4]u32{12, 8, 4, 0} { try out.appendByte(hex[((u >> shift) & 15) as usize]) }
+        }
+    }
+}

@@ -1,0 +1,22 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
+fn addFileEntries(alloc: Allocator, doc: *Document, el: NodeId, name: []u8, out: *mut List(FormEntry)) AllocError!void {
+    let n = dom.fileCount(doc, el)
+
+    if n == 0 { return addEntry(alloc, out, name, "", true) }
+
+    for k in 0..n {
+        try addEntry(alloc, out, name, dom.fileAt(doc, el, k).?.owned_name, true)
+
+        let added = &mut out.items()[out.len() - 1]
+
+        added.el = el
+        added.index = k
+    }
+}

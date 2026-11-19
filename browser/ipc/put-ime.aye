@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn putIme(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .CaretRect { on, x, y, w, h } => {
+            try putU32(out, on)
+
+            for n in [4]f64{x, y, w, h} {
+                try putF64(out, n)
+            }
+        }
+
+        .Compose { seq, typed } => {
+            try putU32(out, seq)
+            try putBytes(out, typed)
+        }
+
+        _ => {}
+    }
+}

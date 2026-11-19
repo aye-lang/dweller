@@ -1,0 +1,20 @@
+import dom
+import dom.NodeId
+
+fn composingField(page: *mut Page) ?NodeId {
+    let f = page.doc.controls.focus orelse return null
+
+    if !dom.isTextField(&page.doc, f) || page.doc.attr(f, "readonly") != null || dom.isDisabled(&page.doc, f) { return null }
+
+    return f
+}
+
+pub fn composedText(page: *Page) []u8 {
+    let c = &page.doc.controls
+    let el = c.composing orelse return ""
+    let v = dom.valueOf(&page.doc, el)
+
+    if c.compose_start + c.compose_len > v.len { return "" }
+
+    return v[c.compose_start..c.compose_start + c.compose_len]
+}

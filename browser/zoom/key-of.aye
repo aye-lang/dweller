@@ -1,0 +1,24 @@
+import std.text
+
+// chromium: net/base/url_util.cc (GetHostOrSpecFromURL)
+pub fn keyOf(href: []u8) []u8 {
+    let whole = href[..text.indexOf(href, "#") orelse href.len]
+    let scheme_end = text.indexOf(whole, "://") orelse return whole
+    var rest = whole[scheme_end + 3..]
+
+    rest = rest[..endOfAuthority(rest)]
+
+    if text.indexOf(rest, "@") |at| { rest = rest[at + 1..] }
+    if rest.len == 0 { return whole }
+    if rest[0] == '[' { return rest[..(text.indexOf(rest, "]") orelse rest.len - 1) + 1] }
+
+    return rest[..text.indexOf(rest, ":") orelse rest.len]
+}
+
+fn endOfAuthority(rest: []u8) usize {
+    for i, c in rest {
+        if c == '/' || c == '?' || c == '\\' { return i }
+    }
+
+    return rest.len
+}

@@ -56,7 +56,7 @@ pub fn newPageId() u32 {
 
 /// Is `h` a `frame` or an `iframe`?
 pub fn isFrameElement(doc: *dom.Document, h: NodeId) bool {
-    return doc.isElement(h, "frame") || doc.isElement(h, "iframe")
+    return doc.isElement(h, "frame") || doc.isElement(h, "iframe") || isHtmlObject(doc, h)
 }
 
 /// The page of the tab that `p` is in (`p` when it is no frame).
@@ -162,7 +162,7 @@ fn sourceKey(alloc: Allocator, doc: *dom.Document, el: NodeId) AllocError![]mut 
         }
     }
     try b.append("src ")
-    try b.append(text.trim(doc.attr(el, "src") orelse ""))
+    try b.append(text.trim(doc.attr(el, frameAddressAttr(doc, el)) orelse ""))
     return b.toOwned()
 }
 

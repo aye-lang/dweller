@@ -1,0 +1,29 @@
+import net
+import paint
+
+let DOWNLOADS_LIST_W: f64 = 280.0
+let DOWNLOADS_ROWS: usize = 5
+
+fn downloadsListRows() usize {
+    let n = net.downloadCount()
+
+    if n > DOWNLOADS_ROWS { return DOWNLOADS_ROWS }
+
+    return n
+}
+
+// chromium: chrome/browser/ui/views/download/bubble/download_bubble_contents_view.cc
+fn downloadsListRect(ui: *mut Ui) ?paint.Rect {
+    if !ui.downloads_open { return null }
+
+    let b = downloadsButtonRect(ui) orelse return null
+    var w = DOWNLOADS_LIST_W
+
+    if w > ui.win_w as f64 - 8.0 { w = ui.win_w as f64 - 8.0 }
+
+    var x = b.x + b.w - w
+
+    if x < 4.0 { x = 4.0 }
+
+    return paint.Rect { x: x, y: b.y + b.h + 2.0, w: w, h: (downloadsListRows() + 1) as f64 * SUGGEST_ROW + 2.0 }
+}

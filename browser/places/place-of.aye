@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn placeOf(s: *mut PlaceStore, href: []u8, title: []u8) AllocError!*mut Place {
+    if findPlace(s, href) |k| { return &mut s.places.items()[k] }
+
+    let url = try ownedText(s.alloc, href)
+
+    errdefer s.alloc.free(url)
+
+    let named = try ownedText(s.alloc, title)
+
+    errdefer s.alloc.free(named)
+
+    try s.places.append(Place { owned_url: url, owned_title: named })
+
+    return &mut s.places.items()[s.places.len() - 1]
+}

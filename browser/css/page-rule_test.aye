@@ -1,0 +1,31 @@
+test "@page gives the paper's size, its turn and its margins; a named or a wrong rule changes nothing, one in `@media print` counts while printing" {
+    let media = Media { width: 800.0, height: 600.0 }
+    var sheet = try Sheet.init(@testAllocator())
+    defer sheet.deinit()
+
+    try parseSheet(&mut sheet, "@page :first { size: a3 } @page wide { size: a3 } @page { size: 10in 5in; size: 3em; size: a4 2in; margin: 1in 0 96px; margin-left: 0.5in !important; margin-top: 5%; }", media)
+
+    @expectEqual(960, (sheet.page.width + 0.5) as i64)
+    @expectEqual(480, (sheet.page.height + 0.5) as i64)
+    @expectEqual(0, sheet.page.turn as i64)
+    @expectEqual(96, sheet.page.margin[0] as i64)
+    @expectEqual(0, sheet.page.margin[1] as i64)
+    @expectEqual(96, sheet.page.margin[2] as i64)
+    @expectEqual(48, sheet.page.margin[3] as i64)
+
+    setPrinting(true)
+    defer setPrinting(false)
+
+    try parseSheet(&mut sheet, "@media print { @page { size: landscape A5; margin-right: 2cm } } @media (min-width: 9000px) { @page { size: a3 } }", media)
+
+    @expectEqual(PAGE_LANDSCAPE as i64, sheet.page.turn as i64)
+    @expectEqual(559, (sheet.page.width + 0.5) as i64)
+    @expectEqual(794, (sheet.page.height + 0.5) as i64)
+    @expectEqual(76, (sheet.page.margin[1] + 0.5) as i64)
+
+    try parseSheet(&mut sheet, "@page { size: auto; margin: 1cm 2cm 3cm 4cm }", media)
+
+    @expectEqual(0, sheet.page.width as i64)
+    @expectEqual(0, sheet.page.turn as i64)
+    @expectEqual(151, (sheet.page.margin[3] + 0.5) as i64)
+}

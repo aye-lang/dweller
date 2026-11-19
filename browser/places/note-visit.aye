@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+pub fn noteVisit(href: []u8, title: []u8, now_ms: u64) AllocError!void {
+    let s = place_store orelse return
+
+    if !keptUrl(href) { return }
+
+    let p = try placeOf(s, href, title)
+
+    _ = try renamePlace(s, p, title)
+    p.visits += 1
+    p.last_ms = now_ms
+    s.history_dirty = true
+    dropOldest(s)
+}

@@ -1,0 +1,35 @@
+import std.list.List
+
+test "pages are cut above what would straddle the page end, and at forced breaks" {
+    let alloc = @testAllocator()
+    var cuts = List(f64).init(alloc)
+    defer cuts.deinit()
+    let lines = [6]Span{Span { top: 0.0, bottom: 20.0 }, Span { top: 90.0, bottom: 110.0 }, Span { top: 110.0, bottom: 130.0 }, Span { top: 150.0, bottom: 320.0 }, Span { top: 185.0, bottom: 205.0 }, Span { top: 330.0, bottom: 350.0 }}
+    let none = [0]f64{}
+
+    try pageCuts(360.0, 100.0, none[..], lines[..], &mut cuts)
+
+    @expectEqual(5, cuts.len())
+    @expectEqual(90.0, cuts.items()[1])
+    @expectEqual(150.0, cuts.items()[2])
+    @expectEqual(250.0, cuts.items()[3])
+    @expectEqual(350.0, cuts.items()[4])
+
+    cuts.clear()
+
+    let forced = [3]f64{40.0, 45.0, 300.0}
+
+    try pageCuts(310.0, 100.0, forced[..], lines[0..1], &mut cuts)
+
+    @expectEqual(6, cuts.len())
+    @expectEqual(40.0, cuts.items()[1])
+    @expectEqual(45.0, cuts.items()[2])
+    @expectEqual(145.0, cuts.items()[3])
+    @expectEqual(245.0, cuts.items()[4])
+    @expectEqual(300.0, cuts.items()[5])
+
+    cuts.clear()
+    try pageCuts(80.0, 100.0, none[..], lines[0..1], &mut cuts)
+
+    @expectEqual(1, cuts.len())
+}

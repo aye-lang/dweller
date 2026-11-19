@@ -4,6 +4,9 @@ import std.mem.AllocError
 
 fn textInput(r: *mut TabRenderer, typed: []u8) AllocError!void {
     let p = r.page orelse return
+
+    if !r.swallow && try engine.commitText(p, typed) { return }
+
     let f = p.doc.controls.focus orelse return
 
     if !r.swallow && (try engine.editHost(p, "inserttext", typed)) { return }

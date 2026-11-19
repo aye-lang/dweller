@@ -1,0 +1,22 @@
+import std.text
+
+// chromium: services/network/resource_scheduler/resource_scheduler.cc (ShouldStartRequest)
+fn mustHold(ld: *Loader, l: *Load) bool {
+    if l.kind != Kind.Image || multiplexes(ld, authorityOf(l.href)) { return false }
+
+    var on_host: i64 = 0
+    var images: usize = 0
+    var blocking = false
+
+    for other in ld.loads.items() {
+        if other.job == null { continue }
+
+        if text.eql(authorityOf(other.href), authorityOf(l.href)) { on_host += 1 }
+
+        if other.kind == Kind.Image { images += 1 }
+
+        blocking = blocking || other.kind == Kind.Style || other.kind == Kind.Script
+    }
+
+    return on_host >= hostLimit() || (blocking && images >= 1)
+}
