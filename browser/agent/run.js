@@ -43,9 +43,9 @@
     evaluate: expression => command('eval', { expression }).result,
     screenshot: opts => command('screenshot', opts),
     tabs: () => command('tabs'),
-    tabNew: url => command('tab_new', url === undefined ? {} : { url }),
-    tabSelect: id => command('tab_select', { id }),
-    tabClose: id => command('tab_close', id === undefined ? {} : { id }),
+    tabNew: () => command('tab_new'),
+    tabSelect: tab => command('tab_select', { tab }),
+    tabClose: tab => command('tab_close', tab === undefined ? {} : { tab }),
     log: (...values) => { log.push(values.map(text).join(' ')); },
   };
   Object.assign(G, fns);

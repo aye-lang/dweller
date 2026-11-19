@@ -332,8 +332,9 @@ message is the command's error:
 `fill`; `opts`: `{submit}`), `select(ref, option)`, `press(key)`,
 `scroll(ref)` or `scroll(dy)`, `wait(opts)` (`{selector, ms}`, or a
 number of ms), `evaluate(expression)` (`eval` in the page; returns its
-`result`, a string), `screenshot(opts)`, `tabs()`, `tabNew(url)`,
-`tabSelect(id)`, `tabClose(id)` (the tab commands only in a window), and
+`result`, a string), `screenshot(opts)`, `tabs()`, `tabNew()`,
+`tabSelect(tab)`, `tabClose(tab)` (the tab commands only in a window;
+`tab` is a tab's id from `tabs`, and `tabClose()` closes the current one), and
 `log(...values)` (strings as they are, other values as JSON, joined by a
 space, one entry of `log` per call).
 
