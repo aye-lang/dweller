@@ -53,3 +53,27 @@ fn window_renderer_limits_cap() {
     let pids = tab_pids(&state);
     assert!(pids.len() == 2 && pids[0] != pids[1], "under the cap each tab has its own renderer\n{state}");
 }
+
+/// Q2.15h: a site whose renderer crashed three times within 30 s is
+/// told apart: the sad tab says "This page keeps crashing" where the
+/// first and second crash say "This page crashed". Reload stays the
+/// person's choice and still works.
+#[test]
+fn window_renderer_limits_crashing() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let crash = "renderer:kill renderer:gone frame";
+    let reload = "key:cmd+r frame renderer:loaded";
+    let page = "browser/tests/ui/form.html";
+
+    let state = limits_run(page, &format!("renderer:loaded {crash} {reload} {crash}"), "600", &[]);
+    assert!(state.contains("\nsad-tab This page crashed\n"), "two crashes\n{state}");
+
+    let state = limits_run(page, &format!("renderer:loaded {crash} {reload} {crash} {reload} {crash}"), "600", &[]);
+    assert!(state.contains("\nsad-tab This page keeps crashing\n"), "three crashes\n{state}");
+
+    let state = limits_run(page, &format!("renderer:loaded {crash} {reload} {crash} {reload} {crash} {reload} frame"), "600", &[]);
+    assert!(state.contains(" title Form\n") && !state.contains("sad-tab"), "Reload still loads the page\n{state}");
+}

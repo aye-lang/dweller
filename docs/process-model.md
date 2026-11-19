@@ -402,7 +402,11 @@ browser) with Reload; an OOPIF shows a sad frame in its rect, and its
 parent goes on; the other renderers get `proxy_update` (gone). Open
 agent requests fail with "renderer crashed". With same-site reuse one
 crash ends every tab of that process; Chromium is the same. After three
-crashes of one site within 30 s, Reload is not automatic.
+crashes of one site within 30 s, Reload is not automatic. As built (Q2.15h):
+nothing reloads by itself; the browser keeps the last three crash times
+of a site, and a site with three within 30 s gets the sad tab "This page
+keeps crashing" (`keepsCrashing`), which any later automatic restart
+must ask first.
 
 **Hang** has two signals:
 - An input that is not acked within 5 s (Chromium's hung renderer).
