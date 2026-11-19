@@ -1,8 +1,8 @@
 import std.mem.AllocError
 import std.mem.Allocator
 
-pub fn staleValidators(c: *Cache, alloc: Allocator, key: []u8, more: []u8) AllocError!?[]mut u8 {
-    let i = entryOf(c, key) orelse return null
+pub fn staleValidators(c: *mut Cache, alloc: Allocator, key: []u8, more: []u8) AllocError!?[]mut u8 {
+    let i = foundEntry(c, key) orelse return null
     let e = &c.entries.items()[i]
 
     if usableEntry(c, e) || (requestHeaderValue(e.headers, "ETag").len == 0 && requestHeaderValue(e.headers, "Last-Modified").len == 0) { return null }
