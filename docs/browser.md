@@ -162,6 +162,18 @@ its card in `docs/plans/cards/`:
   and `wss:` over libcurl; a message of at most 16 MiB, at most 255
   sockets a renderer; with renderer processes the connection is the
   browser's (IPC 140 to 143). Tests: `tests/browser/websocket.rs`.
+- **EventSource** (Q5.8, `engine/event-source.js`, the parser in
+  `engine/event-stream.aye`, `ak.eventStream`). The response is read
+  while it runs: a request marked `stream` has no total timeout and no
+  preflight (`net/endless-job.aye`), and its parts reach the script
+  through a stream task (`engine/stream-turn.aye`, `ak.fetchPart`).
+  With renderer processes the browser sends the head and one
+  `FetchBody` per part of the held fetch (`ui/send-stream-part.aye`;
+  the field `stream` of the IPC message `Fetch`, no new message). In a
+  dedicated worker it is a proxy to the page's
+  (`engine/workers/worker-event-source.js`). Only `EventSource` uses
+  the parts: fetch's `Response.body` and XHR `progress` still get the
+  whole body. Tests: `tests/browser/eventsource.rs`.
 - **Downloads** (Q5.6, `net/download*.aye`). A response with
   `Content-Disposition: attachment`, or a link with `download`, is
   saved under `DWELLER_DOWNLOADS` (else `~/Downloads`) and the page

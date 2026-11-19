@@ -1,0 +1,21 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-synthesis
+fn specifiedSynthesis(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let words = synthesisWords(try components(&mut sheet, toks.items())) orelse return false
+
+    try writeSynthesis(words, out)
+
+    return true
+}

@@ -159,3 +159,35 @@ fn window_renderer_limits_find_in_frames() {
     let state = limits_run(&page, &format!("{find} key:escape renderer:find frame"), "2000", &[]);
     assert_eq!(find_state(&state).0, "matches 0", "{state}");
 }
+
+/// Q2.15k: the clipboard outside text fields. With no field in focus,
+/// Cmd+A selects the document's text and Cmd+C copies the selection (the
+/// page gets a `copy` event); pasted into a field it is the page's text.
+/// The same in the window's own process and in a renderer.
+#[test]
+fn window_renderer_limits_page_copy() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for mode in ["", "tab", "site"] {
+        let (loaded, input) = if mode.is_empty() { ("loaded frame", "frame frame") } else { ("renderer:loaded frame", "renderer:input frame") };
+        let events = format!("{loaded} key:cmd+a {input} key:cmd+c {input} frame frame click:50,55 release:50,55 {input} key:cmd+v {input} frame");
+        let mut command = dweller_command();
+        if mode.is_empty() {
+            command.env_remove("DWELLER_PROCESS");
+        } else {
+            command.env("DWELLER_PROCESS", mode);
+        }
+        let out = command
+            .current_dir(root())
+            .args(["browser/tests/ui/page-copy.html", "--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "600", "--state", "--processes", "--text", "--events", &events])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        assert!(state.contains("Copy copy"), "{mode}: the page got a copy event\n{state}");
+        assert!(state.contains("pasted alpha beta") || state.contains("\nvalue alpha beta\n"), "{mode}: the page's text was copied and pasted\n{state}");
+    }
+}

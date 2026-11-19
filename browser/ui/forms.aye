@@ -285,7 +285,12 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
         }
         return true
     }
-    let f = p.doc.controls.focus orelse return false
+    let f = p.doc.controls.focus orelse {
+        if cmd {
+            return hostCmdKey(ui, p, sym, shift)
+        }
+        return false
+    }
     try engine.setFocusVisible(p, true)
     let range = p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "range")
     if !cmd && (sym == SDLK_UP || sym == SDLK_DOWN || (range && (sym == SDLK_LEFT || sym == SDLK_RIGHT))) {
