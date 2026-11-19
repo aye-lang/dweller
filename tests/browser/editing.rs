@@ -225,3 +225,79 @@ fn editing_undo_redo_in_host() {
     );
     assert_eq!(history_report(&site), want, "{site}");
 }
+
+fn selected_report(out: &str) -> Vec<&str> {
+    out.lines().filter(|l| l.starts_with("selected ")).collect()
+}
+
+/// Q5.10, Left of slice 4: a drag selects page text
+/// (`browser/tests/editing/select.html`, "hello world again" in the 20 px
+/// fixed font). The `Selection` holds the dragged range with its
+/// direction, `selectionchange` fires, `Range.getBoundingClientRect`
+/// gives the selected text's box, and the window draws the highlight.
+/// In one process (forward and backward) and with `DWELLER_PROCESS=site`.
+#[test]
+fn editing_drag_selects_page_text() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let page = "browser/tests/editing/select.html";
+    let png = scratch().join("select.png");
+    let out = dweller_command()
+        .current_dir(root())
+        .args([
+            page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--state", "--text",
+            "--events", "frame click:72,62 move:112,62 move:122,62 release:122,62 frame click:122,62 move:32,62 release:32,62 frame",
+            "--save",
+        ])
+        .arg(&png)
+        .output()
+        .unwrap();
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    let one = text(&out.stdout);
+    assert_eq!(
+        selected_report(&one),
+        [
+            "selected \"world\" forward rect 70,13,50,20 changes true",
+            "selected \"llo world\" backward rect 30,13,90,20 changes true"
+        ],
+        "{one}"
+    );
+    let (w, _, px) = png_rgba(&std::fs::read(&png).unwrap());
+    let at = |x: usize, y: usize| px[(y * w + x) * 4..(y * w + x) * 4 + 3].to_vec();
+    assert!(at(80, 55)[2] > 200 && at(80, 55)[0] < 200, "the highlight over the selection: {:?}", at(80, 55));
+    assert_eq!(at(150, 55), [255, 255, 255], "no highlight right of the selection");
+    let site = login_window_with(
+        page,
+        "click:72,62 move:122,62 release:122,62 renderer:input frame frame",
+        None,
+        &[("DWELLER_PROCESS", "site")],
+    );
+    assert_eq!(selected_report(&site), ["selected \"world\" forward rect 70,13,50,20 changes true"], "{site}");
+}
+
+/// Q5.10, Left of slice 4: Shift with Left, Right, Home and End extends
+/// the selection of an editing host (`typing.html`, "ab"); typed text
+/// replaces what is selected.
+#[test]
+fn editing_shift_arrows_extend() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for (keys, want) in [
+        ("key:shift+left key:shift+left text:X", "insertText X"),
+        ("key:home key:shift+right text:X", "insertText Xb"),
+        ("key:shift+home text:X", "insertText X"),
+        ("key:home key:shift+end text:X", "insertText X"),
+    ] {
+        let out = login_window_with(
+            "browser/tests/editing/typing.html",
+            &format!("frame click:50,62 release:50,62 {keys} frame"),
+            None,
+            &[],
+        );
+        assert!(out.lines().any(|l| l == want), "{keys}: {out}");
+    }
+}

@@ -47,17 +47,19 @@ function moved(host, how) {
   let node = sel.focusNode, offset = sel.focusOffset;
   if (node.nodeType !== 3) [node, offset] = node.childNodes[offset] && node.childNodes[offset].nodeType === 3 ? [node.childNodes[offset], 0] : [all[0], 0];
 
-  const i = all.indexOf(node);
-  if (how === 'movehome') return sel.collapse(all[0], 0);
-  if (how === 'moveend') return sel.collapse(all[all.length - 1], all[all.length - 1].data.length);
-  if (how === 'moveleft') return offset > 0 ? sel.collapse(node, offset - 1) : i > 0 ? sel.collapse(all[i - 1], all[i - 1].data.length) : undefined;
+  const i = all.indexOf(node), last = all[all.length - 1];
+  let to = null;
+  if (how.endsWith('home')) to = [all[0], 0];
+  else if (how.endsWith('end')) to = [last, last.data.length];
+  else if (how.endsWith('left')) to = offset > 0 ? [node, offset - 1] : i > 0 ? [all[i - 1], all[i - 1].data.length] : null;
+  else to = offset < node.data.length ? [node, offset + 1] : i + 1 < all.length ? [all[i + 1], 0] : null;
 
-  return offset < node.data.length ? sel.collapse(node, offset + 1) : i + 1 < all.length ? sel.collapse(all[i + 1], 0) : undefined;
+  if (to) how.startsWith('extend') ? sel.extend(to[0], to[1]) : sel.collapse(to[0], to[1]);
 }
 
 hidden(G, '__hostEdit', function (host, line) {
   const command = line.slice(0, line.indexOf('\n'));
-  command.startsWith('move') ? moved(host, command) : edit(host, line);
+  command.startsWith('move') || command.startsWith('extend') ? moved(host, command) : edit(host, line);
   showCaret();
 });
 

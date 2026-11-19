@@ -13,6 +13,19 @@ function checked(method, node, offset) {
   return o;
 }
 
+let noted = false;
+
+function changed() {
+  if (noted) return;
+
+  noted = true;
+  queueMicrotask(() => {
+    noted = false;
+    document.dispatchEvent(new Event('selectionchange'));
+    if (G.__selectionShown) G.__selectionShown();
+  });
+}
+
 class Selection {
   constructor() {
     hidden(this, '_range', null);
@@ -39,16 +52,22 @@ class Selection {
 
     this._range = range;
     this._backwards = false;
+    changed();
   }
 
   removeRange(range) {
     if (this._range !== range) throw fail('removeRange', 'The given range is not in the selection.', 'NotFoundError');
 
     this._range = null;
+    changed();
   }
 
-  removeAllRanges() { this._range = null; }
-  empty() { this._range = null; }
+  removeAllRanges() {
+    this._range = null;
+    changed();
+  }
+
+  empty() { this.removeAllRanges(); }
 
   collapse(node, offset) {
     if (node === null || node === undefined) return this.removeAllRanges();
@@ -61,6 +80,7 @@ class Selection {
     r.setStart(node, o);
     this._range = r;
     this._backwards = false;
+    changed();
   }
 
   setPosition(node, offset) { this.collapse(node, offset); }
@@ -85,6 +105,7 @@ class Selection {
     this._backwards = position(anchor, a, focus, f) > 0;
     this._backwards ? (r.setStart(focus, f), r.setEnd(anchor, a)) : (r.setStart(anchor, a), r.setEnd(focus, f));
     this._range = r;
+    changed();
   }
 
   extend(node, offset) {
@@ -102,10 +123,13 @@ class Selection {
     r.selectNodeContents(node);
     this._range = r;
     this._backwards = false;
+    changed();
   }
 
   deleteFromDocument() {
     if (this._range) this._range.deleteContents();
+
+    changed();
   }
 
   containsNode(node, partly) {

@@ -80,6 +80,7 @@ pub struct Page {
     sheet_key: u64
     tree: ?*mut layout.Tree
     host_caret: ?paint.Rect = null
+    selection: []mut paint.Rect = []mut paint.Rect{}
     prefers_dark: ?bool = null
     // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
     // which owns it.
@@ -153,6 +154,7 @@ pub struct Page {
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
         let alloc = self.alloc
+        alloc.free(self.selection)
         contextPageGone(self)
         if self.parent != null {
             net.forgetFrame(self.id)
