@@ -17,28 +17,28 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `encoding` | 158 | 4 | 1138971/1139872 | 99.9 | 80 | - | done | +0.0 |
 | `webaudio` | 305 | 5 | 1571/2685 | 58.5 | - | - | baseline | -5.0 |
 | `css/css-flexbox` | 1422 | 469 | 4610/5816 | 79.3 | 70 | 87 | done | +16.4 |
-| `css/css-transforms` | 711 | 156 | 2921/5428 | 53.8 | 50 | 89 | done | +1.5 |
+| `css/css-transforms` | 711 | 156 | 3733/5428 | 68.8 | 50 | 89 | done | +16.4 |
 | `css/css-transitions` | 143 | 59 | 1687/3374 | 50.0 | - | - | baseline | +6.0 |
 | `css/css-animations` | 206 | 91 | 985/1405 | 70.1 | 65 | - | done | +1.0 |
 | `html/syntax` | 98 | 0 | 2560/2772 | 92.4 | 90 | - | done | -1.4 |
-| `dom/api` | 469 | 107 | 61359/65016 | 94.4 | 75 | - | done | -0.1 |
+| `dom/api` | 469 | 107 | 61484/65091 | 94.5 | 75 | - | done | +0.0 |
 | `html/webappapis/timers` | 16 | 0 | 20/25 | 80.0 | 70 | - | done | +0.0 |
 | `css/selectors` | 540 | 136 | 5190/6280 | 82.6 | 80 | - | done | +1.4 |
 | `css/cascade-variables` | 398 | 31 | 1118/1436 | 77.9 | 75 | 89 | done | +21.8 |
 | `css/values-color` | 865 | 237 | 16768/23417 | 71.6 | 70 | 70 | done | +13.7 |
-| `css/box-sizing` | 1591 | 259 | 5908/8549 | 69.1 | 70 | 76 | below | +12.9 |
-| `css/floats-tables` | 709 | 251 | 934/1603 | 58.3 | 65 | 68 | below | +2.8 |
+| `css/box-sizing` | 1591 | 259 | 6343/8549 | 74.2 | 70 | 76 | done | +18.0 |
+| `css/floats-tables` | 709 | 251 | 1139/1603 | 71.1 | 65 | 68 | done | +15.6 |
 | `css/inline-text` | 2343 | 407 | 5070/8112 | 62.5 | 60 | - | done | +1.9 |
-| `css/overflow` | 939 | 189 | 1059/1924 | 55.0 | 60 | 74 | below | +0.7 |
+| `css/overflow` | 939 | 189 | 1171/1924 | 60.9 | 60 | 74 | done | +6.5 |
 | `css/css-grid` | 2508 | 1085 | 11104/17578 | 63.2 | 60 | 69 | done | +15.9 |
-| `css/positioning` | 915 | 239 | 1635/2310 | 70.8 | 70 | 84 | done | +9.1 |
+| `css/positioning` | 915 | 239 | 1673/2310 | 72.4 | 70 | 84 | done | +10.7 |
 | `css/backgrounds-borders` | 1041 | 295 | 5592/8473 | 66.0 | 65 | - | done | +0.9 |
-| `css/css-fonts` | 560 | 325 | 5073/8396 | 60.4 | 50 | 89 | done | +27.7 |
+| `css/css-fonts` | 560 | 325 | 7008/8396 | 83.5 | 50 | 89 | done | +50.7 |
 | `images` | 715 | 268 | 4811/5965 | 80.7 | 60 | - | done | +3.2 |
 | `intersection-observer` | 144 | 10 | 179/355 | 50.4 | - | - | baseline | +0.3 |
 | `mixed-content` | 388 | 0 | 1279/2281 | 56.1 | 50 | 89 | done | +2.8 |
 | `upgrade-insecure-requests` | 197 | 0 | 283/1000 | 28.3 | 25 | - | done | +0.2 |
-| `html/browsers/sandboxing` | 21 | 1 | 11/31 | 35.5 | 30 | 63 | done | +1.1 |
+| `html/browsers/sandboxing` | 21 | 1 | 20/32 | 62.5 | 30 | 64 | done | +28.1 |
 | `fetch/metadata` | 87 | 0 | 666/1928 | 34.5 | 25 | - | done | +4.9 |
 | `referrer-policy` | 1392 | 0 | 4166/8465 | 49.2 | 45 | - | done | +0.0 |
 | `content-security-policy/script-src` | 97 | 0 | 128/217 | 59.0 | 55 | - | done | +0.9 |
@@ -57,6 +57,9 @@ Change is in points since the previous table. Regenerate with `conformance.py ru
 | `IndexedDB` | 226 | 4 | 1296/1370 | 94.6 | - | - | baseline | new |
 | `service-workers/service-worker` | 272 | 10 | 229/1528 | 15.0 | - | - | baseline | new |
 | `service-workers/cache-storage` | 18 | 0 | 133/162 | 82.1 | - | - | baseline | new |
+| `eventsource` | 63 | 0 | 87/102 | 85.3 | - | - | baseline | new |
+| `css/css-color-adjust` | 27 | 21 | 149/171 | 87.1 | - | - | baseline | new |
+| `selection` | 178 | 15 | 246/690 | 35.7 | - | - | baseline | new |
 | `test262/built-ins` | 18373 | 5450 | 14475/18373 | 78.8 | 80 | 90 | below | +6.1 |
 | `test262/language` | 23210 | 516 | 19664/23210 | 84.7 | 80 | 90 | done | +11.3 |
 | `test262/annexB` | 1044 | 42 | 856/1044 | 82.0 | 80 | 90 | done | +40.7 |
@@ -109,7 +112,7 @@ Nothing checks a target. The patterns and reasons are in `browser/tools/conforma
 - `content-security-policy`: 80. 90% of the 3666 of 4077 subtests that need none of: `report-sha256` hash reporting (Chromium only); tentative tests; the `csp` attribute of iframes (Chromium only).
 - `mixed-content`: 89. 90% of the 2272 of 2281 subtests that need none of: tentative tests.
 - `x-frame-options`: 90. 90% of the 157 of 157 subtests that need none of: tentative tests.
-- `html/browsers/sandboxing`: 63. 90% of the 22 of 31 subtests that need none of: tentative tests; the `csp` attribute of iframes (Chromium only).
+- `html/browsers/sandboxing`: 64. 90% of the 23 of 32 subtests that need none of: tentative tests; the `csp` attribute of iframes (Chromium only).
 - `html/browsers/origin`: 39. 90% of the 294 of 668 subtests that need none of: `Origin-Agent-Cluster` (an opt-in finer than the site isolation of Q2; not in Safari); tentative tests.
 - `css/css-grid`: 69. 90% of the 13617 of 17578 subtests that need none of: grid-lanes (masonry; in no stable browser); tentative tests.
 - `css/css-flexbox`: 87. 90% of the 5686 of 5816 subtests that need none of: tentative tests.
