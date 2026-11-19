@@ -5,8 +5,8 @@ import std.text
 fn pageContent(out: *mut text.Builder, paper: Paper, page: *PrintedPage) AllocError!void {
     let w = page.width as f64 / PRINT_SCALE * PT_PER_PX
     let h = page.height as f64 / PRINT_SCALE * PT_PER_PX
-    let top = paper.height_pt - paper.margin_pt
-    let numbers = [6]f64{w, 0.0, 0.0, h, paper.margin_pt, top - h}
+    let top = paper.height_pt - paper.margin_pt[0]
+    let numbers = [6]f64{w, 0.0, 0.0, h, paper.margin_pt[3], top - h}
 
     try out.append("q")
 
@@ -18,7 +18,7 @@ fn pageContent(out: *mut text.Builder, paper: Paper, page: *PrintedPage) AllocEr
     try out.append(" cm /Im0 Do Q\nBT 3 Tr\n")
 
     for run in page.texts.items() {
-        try textRun(out, run, paper.margin_pt, top)
+        try textRun(out, run, paper.margin_pt[3], top)
     }
 
     try out.append("ET\n")

@@ -15,7 +15,13 @@ pub fn printDocument(alloc: Allocator, page: *mut engine.Page, measure: dyn font
     engine.setPrintMedia(page, true)
     try page.layoutPage(measure, paper.contentWidth(), paper.contentHeight())
 
-    let count = printLaidOut(alloc, page, measure, system, paper, out) catch |e| {
+    let fitted = paperFor(paper, engine.pageBox(page))
+
+    if fitted.contentWidth() != paper.contentWidth() || fitted.contentHeight() != paper.contentHeight() {
+        try page.layoutPage(measure, fitted.contentWidth(), fitted.contentHeight())
+    }
+
+    let count = printLaidOut(alloc, page, measure, system, fitted, out) catch |e| {
         engine.setPrintMedia(page, false)
 
         return e

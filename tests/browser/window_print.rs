@@ -50,6 +50,33 @@ fn window_print_shortcut() {
     }
 }
 
+/// Q5.15 (follow-up): Cmd+P on a page with an `@page` rule writes the
+/// PDF `dweller print` gives (the rule's paper, not the window's
+/// default), in one process and in a site's renderer.
+#[test]
+fn window_print_page_rule() {
+    if !has_sdl() {
+        return;
+    }
+    let cli = scratch().join("window_print_rule_cli.pdf");
+    let run = dweller_command().current_dir(root()).args(["print", "browser/tests/print/page-rule.html", "--font", "fixed", "-o"]).arg(&cli).output().unwrap();
+
+    assert!(run.status.success(), "{}", text(&run.stderr));
+
+    let want = std::fs::read(&cli).unwrap();
+
+    assert!(String::from_utf8_lossy(&want).contains("/MediaBox [0 0 432 288]"));
+
+    for mode in ["single", "site"] {
+        let to = scratch().join(format!("window_print_rule_{mode}.pdf"));
+        let _ = std::fs::remove_file(&to);
+        let out = print_window("browser/tests/print/page-rule.html", "key:cmd+p ~", mode, Some(&to), None);
+
+        assert!(out.contains(&format!("status Printed 1 pages to {}\n", to.display())), "{mode}: {out}");
+        assert!(std::fs::read(&to).unwrap() == want, "{mode}: {} differs from {}", to.display(), cli.display());
+    }
+}
+
 /// Q5.15: `window.print()` prints too (`onbeforeprint`, `onafterprint`);
 /// without `DWELLER_PRINT_TO` the PDF is named after the title in the
 /// downloads directory, and a second print does not replace the first.

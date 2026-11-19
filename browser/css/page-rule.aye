@@ -1,0 +1,36 @@
+import std.text
+
+// https://drafts.csswg.org/css-page-3/#at-page-rule
+fn pageRule(sheet: *mut Sheet, toks: []Token, lo: usize, hi: usize) {
+    let within = toks[..hi]
+    var i = lo
+
+    while i < hi {
+        var end = i
+        var stop = hi
+
+        while end < hi && toks[end].kind != Tok.Semicolon {
+            if toks[end].kind == Tok.Delim && toks[end].delim == '!' && stop == hi { stop = end }
+
+            end = skipComponent(within, end)
+        }
+
+        if stop > end { stop = end }
+
+        let n = skipWhitespace(within, i)
+        let c = skipWhitespace(within, n + 1)
+
+        if c < stop && toks[n].kind == Tok.Ident && toks[c].kind == Tok.Colon {
+            let from = skipWhitespace(toks[..stop], c + 1)
+            let value = toks[from..trimEnd(toks, from, stop)]
+
+            if text.eqlIgnoreCase(toks[n].text, "size") {
+                pageSize(&mut sheet.page, value)
+            } else {
+                pageMargin(&mut sheet.page, toks[n].text, value)
+            }
+        }
+
+        i = end + 1
+    }
+}

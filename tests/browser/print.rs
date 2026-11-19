@@ -38,10 +38,14 @@ fn printed(pdf: Vec<u8>) -> Printed {
 }
 
 fn print_doc(extra: &[&str], name: &str) -> Printed {
+    print_file("browser/tests/print/doc.html", extra, name)
+}
+
+fn print_file(file: &str, extra: &[&str], name: &str) -> Printed {
     let out = scratch().join(name);
     let run = dweller_command()
         .current_dir(root())
-        .args(["print", "browser/tests/print/doc.html", "--font", "fixed", "-o"])
+        .args(["print", file, "--font", "fixed", "-o"])
         .arg(&out)
         .args(extra)
         .output()
@@ -123,6 +127,30 @@ fn print_to_pdf() {
     assert!(pdf.contains("/MediaBox [0 0 612 792]"));
     assert_eq!(letter.pages.len(), 5);
     assert_eq!(letter.pages[0].len(), 49);
+}
+
+/// Q5.15 (follow-up): `@page` gives the paper its size and margins: the
+/// media box, the width the page is laid out at, where the page's image
+/// sits; `size: landscape` turns the paper asked for; a rule for
+/// `:first` and one in `@media screen` do not count.
+#[test]
+fn print_page_rule() {
+    let small = print_file("browser/tests/print/page-rule.html", &[], "print_page_rule.pdf");
+    let pdf = String::from_utf8_lossy(&small.pdf).to_string();
+    let content = String::from_utf8_lossy(&pdf_streams(&small.pdf)[0]).to_string();
+
+    assert!(pdf.contains("/Count 1 ") && pdf.contains("/MediaBox [0 0 432 288]"), "the media box of 6in by 4in");
+    assert!(pdf.contains("/Width 1008 /Height 480 "), "the image of a content box 504 by 240 CSS px");
+    assert!(content.starts_with("q 378 0 0 180 18 36 cm /Im0 Do Q\n"), "{content}");
+    assert_eq!(small.images[0][..3], [0, 0, 255], "the bar starts at the content box's corner");
+    assert_eq!(small.images[0][1007 * 3..1008 * 3], [0, 0, 255], "the bar is as wide as the content box");
+    assert_eq!(small.pages[0], ["Small page"]);
+
+    let turned = print_file("browser/tests/print/page-turn.html", &["--paper", "letter"], "print_page_turn.pdf");
+    let pdf = String::from_utf8_lossy(&turned.pdf).to_string();
+
+    assert!(pdf.contains("/MediaBox [0 0 792 612]") && pdf.contains("/Width 2112 /Height 1632 "), "letter, turned, without margins");
+    assert!(String::from_utf8_lossy(&pdf_streams(&turned.pdf)[0]).starts_with("q 792 0 0 612 0 0 cm /Im0 Do Q\n"));
 }
 
 /// Q5.15: an unknown paper is a usage error.
