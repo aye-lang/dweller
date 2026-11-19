@@ -806,7 +806,7 @@ fn window_renderer_history() {
 
     let (state, err) = run("renderer:loaded click:50,282 renderer:input", &tab);
     assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
-    assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
+    assert_eq!(err, "", "the renderer refuses a top-level data: navigation itself (a console error), as the window's own process does");
 
     let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "pushstate")];
     let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
@@ -1044,7 +1044,7 @@ fn window_renderer_input_actions() {
 
     run(&page, &still, "renderer:loaded renderer:frame", &tab);
     let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
-    assert_eq!(err, format!("error: navigation refused: {secret}\n"));
+    assert_eq!(err, "", "the renderer drops a file: link of an http page itself, as the window's own process does");
     assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
 }
 

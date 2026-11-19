@@ -1,5 +1,6 @@
 import ipc
 import net
+import perf
 import std
 import std.mem.AllocError
 import std.text
@@ -19,6 +20,8 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
 
         return
     }
+
+    if net.navigationUpgraded(alloc, topOf(tp), &target) { return beginSecured(slot, tp, target.href, post, content_type, body, policy) }
 
     if text.eql(target.scheme, "data") {
         std.log.err("Not allowed to navigate top frame to data URL: {}", target.href)
@@ -40,4 +43,7 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
     tp.loading = true
     tp.redirected = false
     tp.nav_failed = false
+    tp.cert = null
+    tp.nav_began = perf.start()
+    tp.paint_from = tp.frames
 }
