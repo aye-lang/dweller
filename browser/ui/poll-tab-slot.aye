@@ -6,6 +6,10 @@ fn pollTabSlot(ui: *mut Ui, slot: *mut TabSlot, shown: bool) AllocError!void {
         slot.process = try startTabProcess(ui.alloc, ui.painter.system == null, slot.id, slot.partition)
     }
 
+    if slot.process |asked| {
+        if asked.close_asked && (try closeScripted(ui, slot, asked)) { return }
+    }
+
     if slot.process |tp| {
         try giveBuffers(ui, tp, ui.page.canvas.width as u32, ui.page.canvas.height as u32)
         try tellFocus(ui, slot, tp, shown || watchedTab(ui) == slot)
