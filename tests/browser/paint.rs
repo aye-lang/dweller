@@ -382,6 +382,14 @@ fn window_damage_rect_only() {
         .iter()
         .rposition(|f| f.iter().any(|(n, _)| n == "ui_window_px"))
         .unwrap_or_else(|| panic!("no window raster:\n{err}"));
+    if std::env::var("DWELLER_PROCESS").is_ok_and(|m| m == "site" || m == "tab") {
+        // With a renderer the caret is the renderer's, so the window has
+        // no overlay to compose: it presents the page's texture, and the
+        // last frame that drew pixels drew the rect alone.
+        let drew = frames.iter().rposition(|f| !rasters(f).is_empty()).unwrap();
+        assert!(drew > painted && rasters(&frames[drew]).iter().all(|r| r.1 == "1344 1"), "{:?}\n{err}", rasters(&frames[drew]));
+        return;
+    }
     let last = rasters(&frames[painted]);
     assert_eq!(last, vec![("raster_px", "1344 1"), ("ui_window_px", "1344 1")], "{err}");
 }

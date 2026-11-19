@@ -1,0 +1,28 @@
+import engine
+import perf
+
+extern fn aye_std_monotonic_ns() u64
+
+let FRAME_NS: u64 = 16666667
+
+// spec: https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+fn runAnimationFrame(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let now = aye_std_monotonic_ns()
+    var frame_ns = r.next_frame_ns
+
+    if (r.staged.stepping && !engine.scriptsRan(p)) || now < r.next_frame_ns || !engine.animationFrameRequested(p) { return }
+
+    if now - frame_ns >= FRAME_NS {
+        frame_ns = now
+    }
+
+    r.next_frame_ns = frame_ns + FRAME_NS
+
+    let began = perf.start()
+
+    if try engine.runAnimationFrames(p, frame_ns) {
+        r.due = true
+    }
+
+    perf.end("ui_raf", began, "")
+}
