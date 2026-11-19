@@ -22,16 +22,20 @@ let pthread = @cimport("pthread.h")
 /// uncaught exception prints `Uncaught <Name>: <message>` to stderr and
 /// gives status 1.
 pub fn runFile(alloc: Allocator, path: []u8) i32 {
-    return runFileWith(alloc, path, false)
+    return runFileWith(alloc, path, false, false)
 }
 
 /// `dweller js --test262 FILE`: runFile with the test262 host hooks
 /// (`print` and `$262`).
 pub fn runTest262File(alloc: Allocator, path: []u8) i32 {
-    return runFileWith(alloc, path, true)
+    return runFileWith(alloc, path, true, false)
 }
 
-fn runFileWith(alloc: Allocator, path: []u8, test262: bool) i32 {
+pub fn runTest262Module(alloc: Allocator, path: []u8) i32 {
+    return runFileWith(alloc, path, true, true)
+}
+
+fn runFileWith(alloc: Allocator, path: []u8, test262: bool, module: bool) i32 {
     let src = std.fs.readFile(alloc, path) catch |e| {
         std.log.err("cannot read {}", path)
         return 1
@@ -54,7 +58,7 @@ fn runFileWith(alloc: Allocator, path: []u8, test262: bool) i32 {
     b.append(path) catch return 1
     let target = url.parse(alloc, b.bytes()) catch return 1
     defer target.deinit(alloc)
-    return runOnBigStackAt(alloc, src, target.href, text.endsWith(path, ".mjs"), test262)
+    return runOnBigStackAt(alloc, src, target.href, module || text.endsWith(path, ".mjs"), test262)
 }
 
 /// `dweller js --print-scopes FILE`: writes the scope tree of the script
@@ -238,6 +242,7 @@ fn installTest262(it: *mut Interp) JsError!void {
     try it.defineNative(h, "gc", 0, t262Gc)
     try it.defineNative(h, "detach", 1, engineBufDetach)
     _ = try it.runScript(T262_PRELUDE)
+    try t262RunHarness(it)
 }
 
 fn t262Print(it: *mut Interp, a: Args) JsError!Value {
