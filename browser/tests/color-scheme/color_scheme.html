@@ -1,0 +1,37 @@
+<!doctype html>
+<meta name="color-scheme" content="light dark">
+<title>color-scheme</title>
+<style>
+#query { color: rgb(1, 1, 1) }
+@media (prefers-color-scheme: dark) { #query { color: rgb(2, 2, 2) } }
+@media (prefers-color-scheme: light) { #query { color: rgb(3, 3, 3) } }
+#pair { color: light-dark(rgb(10, 20, 30), rgb(200, 210, 220)); border: 1px solid light-dark(red, lime) }
+#light { color-scheme: light }
+#dark { color-scheme: only dark }
+#system { color: canvastext; background-color: canvas }
+#unknown { color-scheme: sepia }
+</style>
+<p id="query">query</p>
+<p id="pair">pair</p>
+<p id="system">system</p>
+<p><a id="link" href="#x">link</a> <input id="field" value="field"> <button id="button">button</button></p>
+<div id="light"><p id="in-light">light</p><input id="light-field"></div>
+<div id="dark"><p id="in-dark">dark</p><input id="dark-field"></div>
+<div id="unknown"><p id="in-unknown" style="color: initial">unknown</p></div>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const style = id => getComputedStyle(document.getElementById(id));
+log('prefers dark ' + matchMedia('(prefers-color-scheme: dark)').matches + ' light ' + matchMedia('(prefers-color-scheme: light)').matches);
+log('query ' + style('query').color);
+log('root ' + getComputedStyle(document.documentElement).color + ' scheme ' + getComputedStyle(document.documentElement).colorScheme);
+log('pair ' + style('pair').color + ' border ' + style('pair').borderTopColor);
+log('system ' + style('system').color + ' on ' + style('system').backgroundColor);
+log('link ' + style('link').color);
+log('field ' + style('field').color + ' on ' + style('field').backgroundColor + ' border ' + style('field').borderTopColor);
+log('button ' + style('button').color + ' on ' + style('button').backgroundColor);
+log('light ' + style('in-light').color + ' field on ' + style('light-field').backgroundColor + ' scheme ' + style('in-light').colorScheme);
+log('dark ' + style('in-dark').color + ' field on ' + style('dark-field').backgroundColor + ' scheme ' + style('in-dark').colorScheme);
+log('unknown ' + style('in-unknown').color + ' scheme ' + style('in-unknown').colorScheme);
+</script>

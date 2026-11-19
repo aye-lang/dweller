@@ -1,0 +1,16 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://w3c.github.io/clipboard-apis/#dom-clipboard-writetext
+fn akClipboardWrite(it: *mut Interp, a: Args) JsError!Value {
+    let writer = clipboard_write orelse return js.boolVal(false)
+    let copied = try it.builder()
+    defer it.release(copied)
+
+    try argText(it, a, 0, copied)
+
+    return js.boolVal(try writer(copied.bytes()))
+}

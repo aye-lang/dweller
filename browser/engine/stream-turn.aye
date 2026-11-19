@@ -1,0 +1,32 @@
+import net
+
+let STREAM_POLL_MS: i32 = 10
+
+enum StreamTurn {
+    Idle
+    Part
+    Ended
+}
+
+fn streamTurn(s: *mut Script, i: usize) StreamTurn {
+    let t = s.timers.items()[i]
+
+    if !s.real {
+        net.waitStream(t.load, STREAM_POLL_MS)
+    }
+
+    if net.loadState(t.load) != net.LoadState.Running {
+        return StreamTurn.Ended
+    }
+
+    if net.streamReady(t.load) {
+        return StreamTurn.Part
+    }
+
+    tick(s)
+    s.timers.items()[i].due = s.now + STREAM_POLL_MS as f64
+    s.timers.items()[i].seq = s.seq
+    s.seq += 1
+
+    return StreamTurn.Idle
+}

@@ -1,0 +1,37 @@
+import layout
+import layout.FragKind
+import std.math
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/layout/hit_test_result.cc (PositionForPoint)
+pub fn caretAtPoint(p: *mut Page, x: f64, y: f64) AllocError!?TextPoint {
+    let s = p.script orelse return null
+    let t = (try geometry(s)).tree
+    var found: ?TextPoint = null
+    var nearest = 1.0e300
+
+    for i in 0..t.boxes.len() {
+        if !layout.hasInlineContent(t, i) { continue }
+
+        let b = t.bx(i).*
+        let cx = b.ax + b.border[3] + b.padding[3]
+        let cy = b.ay + b.border[0] + b.padding[0]
+
+        for li in b.line_start..b.line_end {
+            let line = t.lines.items()[li]
+
+            for fi in line.frag_start..line.frag_end {
+                let f = t.frags.items()[fi]
+                let node = t.bx(f.box).node orelse continue
+                let gap = math.max(0.0, math.max(cx + f.x - x, x - (cx + f.x + f.w)))
+
+                if f.kind != FragKind.Text || y < cy + f.y || y >= cy + f.y + f.h || gap >= nearest { continue }
+
+                nearest = gap
+                found = TextPoint { node: node, units: fragUnits(p, t, fi, x - cx - f.x) }
+            }
+        }
+    }
+
+    return found
+}

@@ -19,8 +19,6 @@ fn timerWait(r: *mut TabRenderer) i32 {
         wait = math.ceil(ms) as i32
     }
 
-    wait = frameWait(r, p, wait)
-
     if r.staged.on && (wait < 0 || wait > STAGED_POLL_MS) {
         wait = STAGED_POLL_MS
     }
@@ -29,7 +27,9 @@ fn timerWait(r: *mut TabRenderer) i32 {
         wait = IMAGE_POLL_MS
     }
 
-    if r.hidden && wait >= 0 && r.background_run_at > now { return math.maxOf(i32, wait, (r.background_run_at - now) as i32) }
+    if r.hidden { return backgroundWait(r, now) }
+
+    wait = frameWait(r, p, wait)
 
     if !caretBlinks(r, p) { return wait }
 

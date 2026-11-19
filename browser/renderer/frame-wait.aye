@@ -2,14 +2,15 @@ import engine
 
 fn frameWait(r: *TabRenderer, p: *mut engine.Page, wait: i32) i32 {
     let now = aye_std_monotonic_ns()
+    var left: i32 = 0
 
     if !engine.animationFrameRequested(p) { return wait }
 
-    if now >= r.next_frame_ns { return 0 }
+    if r.next_frame_ns > now {
+        left = ((r.next_frame_ns - now + 999999) / 1000000) as i32
+    }
 
-    let ms = ((r.next_frame_ns - now + 999999) / 1000000) as i32
-
-    if wait < 0 || ms < wait { return ms }
+    if wait < 0 || left < wait { return left }
 
     return wait
 }

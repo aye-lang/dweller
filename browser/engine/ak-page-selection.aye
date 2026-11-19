@@ -1,0 +1,24 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import paint
+import std.math
+
+let MAX_SELECTION_RECTS: usize = 4096
+
+fn akPageSelection(it: *mut Interp, a: Args) JsError!Value {
+    let page = scriptOf(it).page
+    let n = math.minOf(usize, MAX_SELECTION_RECTS, a.argc / 4)
+    let rects = try page.alloc.alloc(paint.Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }, n)
+
+    for i in 0..n {
+        rects[i] = paint.Rect { x: try it.toNumber(it.arg(a, i * 4)), y: try it.toNumber(it.arg(a, i * 4 + 1)), w: try it.toNumber(it.arg(a, i * 4 + 2)), h: try it.toNumber(it.arg(a, i * 4 + 3)) }
+    }
+
+    page.alloc.free(page.selection)
+    page.selection = rects
+
+    return Value.Undefined
+}

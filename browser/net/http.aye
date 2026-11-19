@@ -100,6 +100,7 @@ struct Sink {
     public_only: bool = false
     reached_public: bool = false
     partition: u32 = 0
+    head_done: bool = false
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -132,6 +133,11 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
         sink.headers_raw.clear()
         sink.no_store = false
         sink.challenged = false
+        sink.head_done = false
+        return total
+    }
+    if line.len == 0 {
+        sink.head_done = true
         return total
     }
     let colon = std.mem.indexOf(line, ':') orelse return total

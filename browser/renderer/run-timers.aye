@@ -8,13 +8,11 @@ fn runTimers(r: *mut TabRenderer) !void {
 
     let p = r.page orelse return
 
-    if backgroundWaits(r) { return }
+    try runAnimationFrame(r, p)
 
-    if !(r.staged.stepping && !engine.scriptsRan(p)) && try engine.runDueTimersUntil(p, std.time.monotonicMs() + TIMER_TASK_MS) {
+    if !backgroundWaits(r) && !(r.staged.stepping && !engine.scriptsRan(p)) && try engine.runDueTimersUntil(p, std.time.monotonicMs() + TIMER_TASK_MS) {
         r.due = true
     }
-
-    try runAnimationFrame(r, p)
 
     if caretBlinks(r, p) && std.time.monotonicMs() >= r.blink_at {
         r.caret_on = !r.caret_on
