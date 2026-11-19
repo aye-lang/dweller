@@ -185,6 +185,18 @@ class CSSFontFeatureValuesRule extends CSSRule {
   get fontFamily() { return this._prelude; }
   get cssText() { return '@font-feature-values ' + this._prelude + ' { ' + descriptors.featureValuesText(this._body || '') + ' }'; }
 }
+class CSSFontPaletteValuesRule extends CSSRule {
+  get _block() {
+    if (!this._style) hidden(this, '_style', descriptors.descriptorBlock('font-palette-values', this._body || ''));
+
+    return this._style;
+  }
+  get name() { return this._prelude; }
+  get fontFamily() { return this._block.fontFamily; }
+  get basePalette() { return this._block.basePalette; }
+  get overrideColors() { return this._block.overrideColors; }
+  get cssText() { return '@font-palette-values ' + this._prelude + ' { ' + this._block.cssText + (this._block.length ? ' ' : '') + '}'; }
+}
 class CSSPropertyRule extends CSSRule {
   get name() { return this._prelude; }
 }
@@ -233,7 +245,7 @@ class CSSStyleRule extends CSSGroupingRule {
 }
 
 const BLOCKS = { media: CSSMediaRule, supports: CSSSupportsRule, container: CSSContainerRule, 'starting-style': CSSStartingStyleRule, scope: CSSScopeRule, layer: CSSLayerBlockRule };
-const OTHERS = { layer: CSSLayerStatementRule, import: CSSImportRule, keyframes: CSSKeyframesRule, '-webkit-keyframes': CSSKeyframesRule, 'font-face': CSSFontFaceRule, 'font-feature-values': CSSFontFeatureValuesRule, property: CSSPropertyRule, namespace: CSSNamespaceRule, page: CSSPageRule };
+const OTHERS = { layer: CSSLayerStatementRule, import: CSSImportRule, keyframes: CSSKeyframesRule, '-webkit-keyframes': CSSKeyframesRule, 'font-face': CSSFontFaceRule, 'font-feature-values': CSSFontFeatureValuesRule, 'font-palette-values': CSSFontPaletteValuesRule, property: CSSPropertyRule, namespace: CSSNamespaceRule, page: CSSPageRule };
 
 function blockText(head, declarations, rules) {
   if (rules.length === 0 && head[0] !== '@') return head + (declarations ? ' { ' + declarations + ' }' : ' { }');
@@ -294,7 +306,7 @@ function ruleObject(sheet, text, parent) {
   return newRule(Class, sheet, parent, text, parts);
 }
 
-const classes = { CSSRule, CSSGroupingRule, CSSConditionRule, CSSMediaRule, CSSSupportsRule, CSSContainerRule, CSSStartingStyleRule, CSSScopeRule, CSSLayerBlockRule, CSSLayerStatementRule, CSSImportRule, CSSKeyframesRule, CSSFontFaceRule, CSSFontFeatureValuesRule, CSSPropertyRule, CSSNamespaceRule, CSSPageRule, CSSNestedDeclarations, CSSStyleRule };
+const classes = { CSSRule, CSSGroupingRule, CSSConditionRule, CSSMediaRule, CSSSupportsRule, CSSContainerRule, CSSStartingStyleRule, CSSScopeRule, CSSLayerBlockRule, CSSLayerStatementRule, CSSImportRule, CSSKeyframesRule, CSSFontFaceRule, CSSFontFeatureValuesRule, CSSFontPaletteValuesRule, CSSPropertyRule, CSSNamespaceRule, CSSPageRule, CSSNestedDeclarations, CSSStyleRule };
 
 for (const name in classes) hidden(globalThis, name, classes[name]);
 

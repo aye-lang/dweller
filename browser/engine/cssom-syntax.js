@@ -60,7 +60,8 @@ function stripComments(text) {
   return text.replace(/\/\*[^]*?\*\//g, '');
 }
 
-function ruleParts(text) {
+function ruleParts(source) {
+  const text = source.replace(/^(?:\s|\/\*[^]*?\*\/)+/, '');
   const at = /^@([-\w]+)/.exec(text);
   const open = topLevel(text, '{');
   const head = open < 0 ? text.replace(/;\s*$/, '') : text.slice(0, open);
@@ -166,6 +167,7 @@ function validRule(text, nested) {
   if (parts.name === 'keyframes' || parts.name === '-webkit-keyframes') return validKeyframesName(parts.prelude);
   if (parts.name === 'scope') return parts.body !== null && scopeParts(parts.prelude) !== null;
   if (parts.name === 'layer') return layerNames(parts.prelude, parts.body !== null) !== null;
+  if (parts.name === 'font-palette-values') return parts.body !== null && /^--/.test(parts.prelude) && IDENT.test(parts.prelude);
   if (parts.name === 'font-feature-values') return parts.body !== null && validFamilies(parts.prelude);
 
   return true;
