@@ -1,0 +1,27 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transform-functions
+fn slerpRotations(a: TransformFn, b: TransformFn, p: f64) ?TransformFn {
+    let ra = rotationOf(a) orelse return null
+    let rb = rotationOf(b) orelse return null
+    let q = slerp(axisQuaternion(ra), axisQuaternion(rb), p)
+    let w = math.min(math.max(q[3], -1.0), 1.0)
+    let s = math.sqrt(1.0 - w * w)
+    var out = ra
+
+    out.n[3] = 2.0 * math.acos(w) * 180.0 / math.pi
+
+    if s < 0.000001 {
+        out.n[0] = 0.0
+        out.n[1] = 0.0
+        out.n[2] = 1.0
+
+        return out
+    }
+
+    out.n[0] = q[0] / s
+    out.n[1] = q[1] / s
+    out.n[2] = q[2] / s
+
+    return out
+}
