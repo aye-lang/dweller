@@ -1,0 +1,16 @@
+import net
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-replace
+fn beginReplace(slot: *TabSlot, tp: *mut TabProcess, on: u32, href: []u8, said: [2]u32) AllocError![]u8 {
+    if on != slot.id { return "unexpected begin_navigation" }
+    if said[1] > 1 { return "bad begin_navigation" }
+
+    let policy = net.referrerPolicyAt(said[0]) orelse return "bad begin_navigation"
+
+    tp.nav_user = said[1] == 1
+    tp.replace_on_commit = slot.session.tab.history.len() > 0
+    try beginNavigation(slot, tp, href, 0, "", "", policy)
+
+    return ""
+}

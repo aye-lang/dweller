@@ -76,18 +76,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try beginNavigation(slot, tp, url, post, content_type, body, policy)
         }
 
-        .ReplaceNavigation { url, referrer_policy, user } => {
-            if got.frame != slot.id { return "unexpected begin_navigation" }
-            if user > 1 { return "bad begin_navigation" }
-
-            tp.nav_user = user == 1
-
-            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
-
-            tp.replace_on_commit = slot.session.tab.history.len() > 0
-            try beginNavigation(slot, tp, url, 0, "", "", policy)
-        }
-
+        .ReplaceNavigation { url, referrer_policy, user } => return beginReplace(slot, tp, got.frame, url, [2]u32{referrer_policy, user})
         .Popup { items, disabled, selected, x, y, w, h } => {
             if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
 
