@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+// https://www.matroska.org/technical/codec_specs.html
+pub fn decodeAudio(out: *mut text.Builder, t: *Track, data: []u8) AllocError!bool {
+    if t.kind != TrackKind.Audio || !decodable(t) { return false }
+
+    let width = (t.bits / 8) as usize
+    let float = t.codec.len == PCM_FLOAT.len
+    var at: usize = 0
+
+    while at + width <= data.len {
+        try putSample(out, pcmSample(data, at, width, float))
+        at += width
+    }
+
+    return true
+}

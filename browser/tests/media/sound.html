@@ -18,7 +18,9 @@ document.getElementById('go').onclick = async () => {
   a.volume = 0.5;
   await a.play();
   log('playing: muted=' + a.muted + ' paused=' + a.paused);
-  a.onended = () => {
+  a.onended = async () => {
+    for (let i = 0; i < 400 && !scheduled.length; i++) await new Promise(done => setTimeout(done, 5));
+
     const total = scheduled.reduce((n, s) => n + s.seconds, 0);
     log('scheduled: ' + scheduled.length + ' buffer(s), ' + total.toFixed(2) + ' s, channels ' + scheduled[0].channels + ', rate ' + scheduled[0].rate + ', loud ' + (scheduled[0].loud > 0.5));
     log('done');

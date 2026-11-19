@@ -27,7 +27,7 @@ function stateOf(el) {
   }
 
   watch();
-  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], format: null, sound: null, keeps: false });
+  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], sound: null, keeps: false, soundTrack: null, pictureTrack: null, picture: null });
   if (el.hasAttribute('src') || el.querySelector('source')) parts.selectResource(el);
 
   return el.__media;
@@ -82,6 +82,7 @@ function runClock(el, keeps) {
   m.from = m.at;
   if (!m.sound) parts.soundStart(el);
   m.timer = ak.setTimer(() => tick(el), Math.max(1, Math.min(TICK_MS, (parts.playableEnd(m) - m.at) / m.rate * 1000)), false, [], false);
+  parts.pictureRun(el);
 }
 
 function tick(el) {
@@ -113,6 +114,7 @@ function seek(el, time) {
     fire(el, 'timeupdate');
     fire(el, 'seeked');
     runClock(el);
+    parts.pictureShow(el);
   }));
 }
 
@@ -255,5 +257,5 @@ function watch() {
   }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
 }
 later(() => document.querySelectorAll('audio, video').forEach(stateOf));
-Object.assign(parts, { stateOf, fire, queue, settle, stopClock, runClock, allowed });
+Object.assign(parts, { stateOf, fire, queue, settle, stopClock, runClock, allowed, position });
 })();

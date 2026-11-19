@@ -1,0 +1,22 @@
+import decoder
+import std.mem.Allocator
+import std.text
+
+let DECODER_OUTBOX_MAX: usize = 268435456
+
+struct DecoderProcess {
+    alloc: Allocator
+    fd: i32
+    pid: i32
+    outbox: text.Builder
+    inbox: text.Builder
+}
+
+var decoder_process: ?*mut DecoderProcess = null
+var decoder_alloc: ?Allocator = null
+
+// chromium: content/browser/media/ (the utility process that decodes for every renderer)
+pub fn decoderThrough(alloc: Allocator) {
+    decoder_alloc = alloc
+    decoder.setLink(decoder.Link { send: sendToDecoder, pump: pumpDecoder })
+}

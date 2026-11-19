@@ -1,0 +1,27 @@
+import decoder
+import js
+import std.mem.AllocError
+
+fn queueDecoderTask(s: *mut Script, k: PageDecoder, o: decoder.Output) AllocError!void {
+    let it = &mut s.it
+    let arr = it.newArray(0) catch return AllocError.OutOfMemory
+
+    try jsPush(s, js.objVal(arr))
+    try it.heap.pushElem(arr, it.roots.items()[k.root])
+    try it.heap.pushElem(arr, js.numVal(o.seq as f64))
+    try it.heap.pushElem(arr, js.boolVal(o.ok))
+    try it.heap.pushElem(arr, try binaryText(s, o.data))
+
+    let root = it.addRoot(js.objVal(arr)) catch return AllocError.OutOfMemory
+
+    it.pop()
+    tick(s)
+    s.timers.append(Timer { id: s.next_timer, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq }) catch |e| {
+        it.removeRoot(root)
+
+        return e
+    }
+
+    s.next_timer += 1
+    s.seq += 1
+}
