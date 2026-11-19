@@ -320,7 +320,7 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if ui.auto_waits && scriptEvent(w) != null && (ui.wheel_x != 0.0 || ui.wheel_y != 0.0) {
             try ui.flushWheel()
         }
-        if scriptEvent(w) != null && rendererBehind(ui) {
+        if (scriptEvent(w) != null && rendererBehind(ui)) || stopWaits(ui, w) {
             ui.script_held = true
             return
         }
@@ -351,7 +351,7 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             ui.stuck = false
             ui.wait = false
         } else if text.eql(w, "stuck:stop") {
-            stopHung(ui)
+            try stopHung(ui)
         }
         if text.eql(w, "frame") {
             // The rest waits for the next frame (`Ui.loop`).

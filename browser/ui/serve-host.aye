@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+// chromium: content/browser/web_contents/web_contents_impl.cc RequestToLockMouse, EnterFullscreenMode
+fn serveHost(ui: *mut Ui, tp: *mut TabProcess, shown: bool) AllocError!void {
+    let lock = tp.host_lock
+    let fs = tp.host_fs
+
+    if !shown && (tp.locked || tp.fullscreen) { try ui.leaveHostModes() }
+
+    tp.host_lock = 0
+    tp.host_fs = 0
+
+    if !shown { return refuseHost(tp, lock, fs) }
+
+    try hostLock(ui, tp, lock)
+    try hostFullscreen(ui, tp, fs)
+}
