@@ -1,0 +1,39 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#mathematical-description
+fn transformMatrix(f: TransformFn) ?[16]f64 {
+    var m = IDENTITY4
+
+    if text.eql(f.name, "matrix3d") && f.count == 16 {
+        return f.n
+    }
+
+    if text.eql(f.name, "matrix") && f.count == 6 {
+        return [16]f64{f.n[0], f.n[1], 0.0, 0.0, f.n[2], f.n[3], 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, f.n[4], f.n[5], 0.0, 1.0}
+    }
+
+    if text.startsWith(f.name, "rotate") {
+        return rotationMatrix(f)
+    }
+
+    if text.startsWith(f.name, "skew") {
+        return skewMatrix(f)
+    }
+
+    let p = primitiveTransform(f) orelse return null
+
+    if text.eql(p.name, "scale3d") {
+        m[0] = p.n[0]
+        m[5] = p.n[1]
+        m[10] = p.n[2]
+
+        return m
+    }
+
+    m[12] = p.n[0]
+    m[13] = p.n[1]
+    m[14] = p.n[2]
+
+    return m
+}

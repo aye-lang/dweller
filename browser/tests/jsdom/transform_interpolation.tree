@@ -1,0 +1,16 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "Interpolation of transform lists"
+      "\n"
+    <body>
+      <div id="box" style="">
+      "\n"
+      <pre id="out">
+        "same function translateX(25px)\nsame primitive translate(25px, 25px)\nscale scale(1.5, 2.5)\nshorter list translate(150px) rotate(360deg)\nfrom none rotate(45deg)\nsame axis rotate3d(0, 2, 0, 45deg)\nmatrices matrix(0.71, 0.71, -0.71, 0.71, 10, 0)\nmismatch matrix(0.71, 0.71, -0.71, 0.71, 10, 0)\n3d matrix3d(1, 0, 0, 0, 0, 0.71, 0.71, 0, 0, -1.06, 1.06, 0, 0, 0, 0, 1)\n"
+      "\n"
+      <script>
+        "\nfunction log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\\n'; }\nconst box = document.getElementById('box');\n\nfunction half(from, to) {\n  const a = box.animate({ transform: [from, to] }, 2000);\n  a.pause();\n  a.currentTime = 1000;\n  const v = getComputedStyle(box).transform;\n  a.cancel();\n  return v;\n}\n\nlog('same function', half('translateX(0px)', 'translateX(50px)'));\nlog('same primitive', half('translateX(50px)', 'translateY(50px)'));\nlog('scale', half('scale(1, 3)', 'scale(2)'));\nlog('shorter list', half('translate(100px)', 'translate(200px) rotate(720deg)'));\nlog('from none', half('none', 'rotate(90deg)'));\nlog('same axis', half('rotate3d(0, 1, 0, 0deg)', 'rotate3d(0, 2, 0, 90deg)'));\nlog('matrices', half('matrix(1, 0, 0, 1, 0, 0)', 'matrix(0, 1, -1, 0, 20, 0)'));\nlog('mismatch', half('rotate(90deg)', 'translate(20px, 0px)'));\nlog('3d', half('rotateX(90deg)', 'scale3d(1, 1, 2)'));\n"
+      "\n"

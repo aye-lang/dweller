@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transforms
+fn mixTransforms(alloc: Allocator, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    if !(try mixTransformLists(alloc, a, b, p, out)) {
+        return false
+    }
+
+    if (p == 0.0 && !text.eql(text.trim(a), "none")) || (p == 1.0 && !text.eql(text.trim(b), "none")) {
+        out.clear()
+
+        return writeEndpoint(a, b, p, out)
+    }
+
+    return true
+}

@@ -1,0 +1,18 @@
+// spec: https://drafts.csswg.org/css-transforms-2/#mathematical-description
+fn transformsMatrix(list: []TransformFn) ?[16]f64 {
+    var m = IDENTITY4
+
+    for f in list {
+        for k in 0..f.count {
+            if f.unit[k] == UNIT_PERCENT {
+                return null
+            }
+        }
+
+        let one = transformMatrix(f) orelse return null
+
+        m = multiply4(m, one)
+    }
+
+    return m
+}

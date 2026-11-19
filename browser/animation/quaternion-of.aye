@@ -1,0 +1,25 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-transforms-2/#decomposing-a-3d-matrix
+fn quaternionOf(row0: [3]f64, row1: [3]f64, row2: [3]f64) [4]f64 {
+    var q = [4]f64{
+        0.5 * math.sqrt(math.max(1.0 + row0[0] - row1[1] - row2[2], 0.0)),
+        0.5 * math.sqrt(math.max(1.0 - row0[0] + row1[1] - row2[2], 0.0)),
+        0.5 * math.sqrt(math.max(1.0 - row0[0] - row1[1] + row2[2], 0.0)),
+        0.5 * math.sqrt(math.max(1.0 + row0[0] + row1[1] + row2[2], 0.0)),
+    }
+
+    if row2[1] > row1[2] {
+        q[0] = -q[0]
+    }
+
+    if row0[2] > row2[0] {
+        q[1] = -q[1]
+    }
+
+    if row1[0] > row0[1] {
+        q[2] = -q[2]
+    }
+
+    return q
+}

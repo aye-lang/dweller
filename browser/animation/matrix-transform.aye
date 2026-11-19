@@ -1,0 +1,23 @@
+// spec: https://drafts.csswg.org/css-transforms-2/#serialization-of-the-computed-value
+fn matrixTransform(m: [16]f64) TransformFn {
+    var f = emptyTransformFn("matrix3d")
+    let flat = m[2] == 0.0 && m[3] == 0.0 && m[6] == 0.0 && m[7] == 0.0 && m[8] == 0.0 && m[9] == 0.0 && m[10] == 1.0 && m[11] == 0.0 && m[14] == 0.0 && m[15] == 1.0
+
+    if !flat {
+        f.n = m
+        f.count = 16
+
+        return f
+    }
+
+    f.name = "matrix"
+    f.count = 6
+    f.n[0] = m[0]
+    f.n[1] = m[1]
+    f.n[2] = m[4]
+    f.n[3] = m[5]
+    f.n[4] = m[12]
+    f.n[5] = m[13]
+
+    return f
+}
