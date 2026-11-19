@@ -181,7 +181,7 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 }
 
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
-    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other
+    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other && req.kind != Kind.Audio && req.kind != Kind.Video
     if session |s| {
         let key = try cacheKey(alloc, req, target.withoutFragment())
         defer alloc.free(key)
@@ -595,7 +595,7 @@ fn acceptOf(kind: Kind) []u8 {
         .Document => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         .Style => "text/css,*/*;q=0.1"
         .Image => "image/webp,image/png,image/gif,image/jpeg,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-        .Script, .Other, .Font, .Worker => "*/*"
+        .Script, .Other, .Font, .Worker, .Audio, .Video => "*/*"
     }
 }
 

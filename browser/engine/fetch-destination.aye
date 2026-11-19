@@ -1,0 +1,23 @@
+import js.Args
+import js.Interp
+import js.JsError
+import net
+import std.text
+
+// spec: https://fetch.spec.whatwg.org/#concept-request-destination
+fn fetchDestination(it: *mut Interp, a: Args, i: usize) JsError!net.Kind {
+    let b = try it.builder()
+    defer it.release(b)
+
+    try argText(it, a, i, b)
+
+    if text.eql(b.bytes(), "audio") {
+        return net.Kind.Audio
+    }
+
+    if text.eql(b.bytes(), "video") {
+        return net.Kind.Video
+    }
+
+    return net.Kind.Other
+}

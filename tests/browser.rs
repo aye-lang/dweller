@@ -62,6 +62,8 @@ mod media;
 mod native;
 #[path = "browser/media_element.rs"]
 mod media_element;
+#[path = "browser/media_scripted.rs"]
+mod media_scripted;
 #[path = "browser/net.rs"]
 mod net;
 #[path = "browser/paint.rs"]

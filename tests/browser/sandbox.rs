@@ -57,3 +57,24 @@ fn sandbox_popups_of_frames() {
         assert!(got.contains(want), "no {want:?} in:\n{got}\n{}", text(&out.stderr));
     }
 }
+
+/// Q3.15c: a srcdoc frame has its parent's origin as `self.origin`, so
+/// its same-origin worker script loads, and the worker's messages reach
+/// the frame; a module worker whose import cannot load gets `error`.
+#[test]
+fn sandbox_workers_of_frames() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&["dump", "--text", "--js", &format!("{}/sandbox/frame_workers.html", srv.base)]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    for want in [
+        "origin of a srcdoc frame is its parent's: true\n",
+        "worker of a srcdoc frame: ran\n",
+        "module worker with a missing import: error\n",
+    ] {
+        assert!(got.contains(want), "no {want:?} in:\n{got}\n{}", text(&out.stderr));
+    }
+}

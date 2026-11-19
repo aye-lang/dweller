@@ -51,7 +51,7 @@
       if (json.startsWith('blob:')) {
         const blob = blobs.get(json);
         h.answer(id, blob ? blob._array().buffer : null);
-      } else if (kind === FETCH_SAME_ORIGIN && new URL(json).origin !== location.origin) {
+      } else if (kind === FETCH_SAME_ORIGIN && new URL(json).origin !== origin) {
         h.answer(id, null);
       } else {
         h.fetch(id, json, kind === FETCH_MODULE, w._credentials, kind !== FETCH);
