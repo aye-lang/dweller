@@ -129,6 +129,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderClose { .. } => return tabDecoderSent(tp, got.frame, got.message)
         .CookieGet { .. }, .CookieSet { .. } => {
             if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
 

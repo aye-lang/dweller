@@ -1,0 +1,29 @@
+<!doctype html>
+<title>Media sound</title>
+<button id="go" style="position:absolute;left:0;top:0;width:200px;height:100px">play</button>
+<pre id="out" style="margin-top:110px"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const scheduled = [];
+const start = AudioBufferSourceNode.prototype.start;
+AudioBufferSourceNode.prototype.start = function (when) {
+  const d = this.buffer.getChannelData(0);
+  scheduled.push({ seconds: this.buffer.duration, channels: this.buffer.numberOfChannels, rate: this.playbackRate.value, loud: Math.max(...Array.from(d.subarray(0, 400), Math.abs)) });
+  return start.apply(this, arguments);
+};
+const a = new Audio('tone.wav');
+document.getElementById('go').onclick = async () => {
+  log('activated: ' + navigator.userActivation.hasBeenActive);
+  a.volume = 0.5;
+  await a.play();
+  log('playing: muted=' + a.muted + ' paused=' + a.paused);
+  a.onended = async () => {
+    for (let i = 0; i < 400 && !scheduled.length; i++) await new Promise(done => setTimeout(done, 5));
+
+    const total = scheduled.reduce((n, s) => n + s.seconds, 0);
+    log('scheduled: ' + scheduled.length + ' buffer(s), ' + total.toFixed(2) + ' s, channels ' + scheduled[0].channels + ', rate ' + scheduled[0].rate + ', loud ' + (scheduled[0].loud > 0.5));
+    log('done');
+  };
+};
+</script>

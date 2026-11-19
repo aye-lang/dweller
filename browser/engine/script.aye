@@ -723,6 +723,8 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(PERMISSIONS_PRELUDE)
     try s.it.runScript(MEDIA_TYPES_PRELUDE)
     try s.it.runScript(MEDIA_ELEMENT_PRELUDE)
+    try s.it.runScript(MEDIA_SOUND_PRELUDE)
+    try s.it.runScript(MEDIA_PICTURE_PRELUDE)
     try s.it.runScript(MEDIA_LOAD_PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
@@ -782,6 +784,7 @@ fn setUp(s: *mut Script) JsError!void {
 pub fn destroyScript(s: *mut Script) {
     stopWorkers(s)
     stopPageSockets(s)
+    stopPageDecoders(s)
     stopPageAsks(s)
     dropIdbClient(s)
     s.it.host = null
@@ -1776,7 +1779,7 @@ fn nextTimer(p: *mut Page, limit: f64) ?NextTimer {
 /// When there is none, the due FinalizationRegistry callbacks run
 /// instead; false when there were none either.
 pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
-    if try waitWorkers(p, false) || try waitSockets(p, false) {
+    if try waitWorkers(p, false) || try waitSockets(p, false) || try waitDecoders(p, false) {
         return true
     }
     let mine = nextTimer(p, deadline - pageClock(p))
@@ -1787,7 +1790,7 @@ pub fn runNextTimer(p: *mut Page, deadline: f64) AllocError!bool {
     if try runInstanceTimer(p, limit) {
         return true
     }
-    let n = mine orelse return try runCleanups(p) || try waitWorkers(p, true) || try waitSockets(p, true)
+    let n = mine orelse return try runCleanups(p) || try waitWorkers(p, true) || try waitSockets(p, true) || try waitDecoders(p, true)
     try runTimer(n.script, n.index)
     try afterTask(n.script)
     if !n.script.real {
@@ -1920,7 +1923,7 @@ pub fn msUntilNextTimer(p: *mut Page) ?f64 {
     }
     wait = instanceWait(wait)
     if p.script |s| {
-        wait = socketWait(s, workerWait(s, wait))
+        wait = decoderWait(s, socketWait(s, workerWait(s, wait)))
         // A playing AudioContext renders ahead of its device each turn.
         if s.audio_owner != 0 && audio.playing(s.audio_owner) {
             if wait |w| {

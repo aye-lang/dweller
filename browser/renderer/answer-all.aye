@@ -1,3 +1,4 @@
+import decoder
 import engine
 import ipc
 
@@ -40,6 +41,12 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
             .SocketNote { .. } => {
                 if !(try landSocketNote(r, got.message)) { return false }
+            }
+
+            .DecoderOutput { .. } => {
+                if !(try decoder.deliver(got.message)) { return false }
+
+                r.landed = true
             }
 
             .FrameAck { buffer } => r.ack(buffer)

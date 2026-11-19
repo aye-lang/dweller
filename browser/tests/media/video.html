@@ -1,0 +1,57 @@
+<!doctype html>
+<title>Media video</title>
+<video id="v" src="clip.mkv" muted preload="auto"></video>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const v = document.getElementById('v');
+const c = document.createElement('canvas');
+c.width = 32;
+c.height = 24;
+const g = c.getContext('2d');
+const NAMES = { '255,0,0,255': 'red', '0,255,0,255': 'green', '0,0,255,255': 'blue', '255,255,0,255': 'yellow', '0,255,255,255': 'cyan', '0,0,0,0': 'nothing' };
+const once = type => new Promise(done => v.addEventListener(type, done, { once: true }));
+const sleep = ms => new Promise(done => setTimeout(done, ms));
+function look() {
+  g.clearRect(0, 0, 32, 24);
+  g.drawImage(v, 0, 0);
+  const row = g.getImageData(0, 2, 32, 1).data;
+  let square = -1;
+  for (let x = 31; x >= 0; x--) if (row[4 * x] + row[4 * x + 1] + row[4 * x + 2] === 765) square = x;
+
+  const colour = Array.from(g.getImageData(1, 10, 1, 1).data).join(',');
+
+  return (NAMES[colour] || colour) + ', square at ' + square;
+}
+async function shown(label, colour) {
+  for (let i = 0; i < 200 && !look().startsWith(colour); i++) await sleep(5);
+
+  log(label + ': ' + look());
+}
+(async () => {
+  const loaded = once('loadeddata');
+  await once('loadedmetadata');
+  log('at metadata: box ' + v.getBoundingClientRect().width + 'x' + v.getBoundingClientRect().height + ', ' + look());
+  await loaded;
+  log('size: ' + v.videoWidth + 'x' + v.videoHeight + ', duration ' + v.duration.toFixed(2) + ', box ' + v.getBoundingClientRect().width + 'x' + v.getBoundingClientRect().height);
+  await shown('first frame', 'red');
+  for (const [t, colour] of [[0.25, 'green'], [0.85, 'cyan'], [0.45, 'blue']]) {
+    v.currentTime = t;
+    await once('seeked');
+    await shown('seek to ' + t, colour);
+  }
+
+  v.currentTime = 0;
+  await once('seeked');
+  const ORDER = ['red', 'green', 'blue', 'yellow', 'cyan'];
+  const seen = [];
+  v.addEventListener('timeupdate', () => seen.push(ORDER.indexOf(look().split(',')[0])));
+  await v.play();
+  await once('ended');
+  log('played: ' + (seen.length > 1 && seen.every((k, i) => k >= 0 && (i === 0 || k >= seen[i - 1])) ? 'frames in order' : seen.join(' ')) + ', ended at ' + v.currentTime.toFixed(2));
+  await shown('last frame', 'cyan');
+  log('error: ' + (v.error && v.error.code));
+  log('done');
+})();
+</script>

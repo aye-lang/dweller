@@ -7,33 +7,45 @@ fn wavProbe(alloc: Allocator, b: []u8, total: usize) AllocError!?Media {
     if !isTag(b, 8, "WAVE") { return null }
 
     var at: usize = 12
-    var t = Track { kind: TrackKind.Audio, codec: "pcm", samples: List(Sample).init(alloc) }
+    var t = Track { kind: TrackKind.Audio, codec: "", samples: List(Sample).init(alloc) }
+
+    errdefer t.samples.deinit()
+
     var block: usize = 0
     var bytes: usize = 0
+    var start: usize = 0
 
     while at + 8 <= b.len {
         let size = le32(b, at + 4) as usize
 
         if isTag(b, at, "fmt ") && at + 24 <= b.len {
+            t.codec = wavCodec(b, at, size)
             t.channels = le32(b, at + 8) >> 16
             t.rate = le32(b, at + 12) as f64
             block = (le32(b, at + 20) & 0xffff) as usize
+            t.bits = le32(b, at + 20) >> 16
         } else if isTag(b, at, "data") {
             bytes = size
+            start = at + 8
 
-            if at + 8 + size > total { bytes = total - at - 8 }
+            if start + size > total { bytes = total - start }
         }
 
         at += 8 + size + (size & 1)
     }
 
-    if block == 0 || t.rate <= 0.0 || t.channels == 0 { return null }
+    if block == 0 || t.rate <= 0.0 || t.channels == 0 {
+        t.samples.deinit()
+
+        return null
+    }
 
     var m = Media { container: Container.Wav, duration: (bytes / block) as f64 / t.rate, tracks: List(Track).init(alloc) }
 
-    errdefer m.deinit()
+    errdefer m.tracks.deinit()
 
     t.duration = m.duration
+    try wavSamples(&mut t, start, bytes, block)
     try m.tracks.append(t)
 
     return m

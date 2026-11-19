@@ -1,0 +1,30 @@
+import decoder
+import ipc
+import std.mem.AllocError
+
+// chromium: media/mojo/services/interface_factory_impl.cc
+fn tabDecoderSent(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    match m {
+        .DecoderOpen { .. } => return openTabDecoder(tp, on, m)
+        .DecoderData { id, seq, more, data } => {
+            let at = tabDecoderIndex(tp, id) orelse return ""
+            let k = tab_decoders.?.items()[at]
+
+            if !decoder.feedChunk(k.stream, seq, more, data) { try sendDecoderGone(tp, on, id) }
+        }
+
+        .DecoderClose { id } => {
+            let at = tabDecoderIndex(tp, id) orelse return ""
+
+            decoder.close(tab_decoders.?.orderedRemove(at).stream)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}
+
+fn sendDecoderGone(tp: *mut TabProcess, on: u32, id: u32) AllocError!void {
+    try ipc.encode(&mut tp.outbox, on, ipc.Message.DecoderOutput { id: id, seq: decoder.GONE, state: 0, more: 0, data: "" })
+}
