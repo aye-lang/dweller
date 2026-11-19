@@ -1,0 +1,36 @@
+import js
+import js.Value
+import net
+import std
+import std.mem.Allocator
+import std.time
+import url.Url
+
+struct SwFetch {
+    version: u32
+    client: u32
+    navigates: bool
+}
+
+let SW_FETCH_MS: u64 = 30000
+
+// spec: https://w3c.github.io/ServiceWorker/#handle-fetch
+fn swFetch(alloc: Allocator, f: SwFetch, target: *Url, req: net.Request) net.FetchError!?net.Response {
+    let st = try swStateOf(alloc)
+    let ip = (try instanceFor(alloc, f.version, target.href, false)) orelse return null
+    let s = ip.script orelse return null
+    let id = st.next
+    let until = time.monotonicMs() + SW_FETCH_MS
+
+    if s.on_sw == js.NONE || ip.worker_broken { return null }
+
+    st.next += 1
+    try st.results.append(SwResult { id: id, headers: try alloc.alloc(0 as u8, 0), body: try alloc.alloc(0 as u8, 0) })
+    callFetchHandler(s, id, f, target, req) catch return net.FetchError.OutOfMemory
+
+    while swResult(st, id).state == 0 && time.monotonicMs() < until {
+        if !(try pumpInstances()) { time.sleep(1) }
+    }
+
+    return takeSwResult(alloc, st, id, target)
+}

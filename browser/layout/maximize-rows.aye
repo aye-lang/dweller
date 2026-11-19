@@ -1,0 +1,25 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-grid-2/#algo-grow-tracks
+fn maximizeRows(g: *Grid, hs: []mut f64, free: f64) f64 {
+    var left = free
+
+    for round in 0..g.rows.len() {
+        let open = growableRows(g, hs)
+
+        if open == 0 || left <= 0.001 {
+            break
+        }
+
+        let share = left / open as f64
+
+        for r in 0..explicitRows(g, hs.len) {
+            let grow = math.clamp(g.rows.items()[r].max - hs[r], 0.0, share)
+
+            hs[r] += grow
+            left -= grow
+        }
+    }
+
+    return free - left
+}

@@ -1,0 +1,20 @@
+import indexeddb
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+fn loadRegistry(r: *mut Registry) AllocError!void {
+    if !net.profileWritable() { return }
+
+    let path = try net.joinPath(r.alloc, net.profileDir(), "serviceworkers")
+    defer r.alloc.free(path)
+    let bytes = std.fs.readFile(r.alloc, path) catch return
+    defer r.alloc.free(bytes)
+
+    if !text.startsWith(bytes, FILE_HEADER) { return }
+
+    var f = indexeddb.FileFields { rest: bytes[FILE_HEADER.len..] }
+
+    while f.rest.len > 0 && !f.bad { try loadRegistration(r, &mut f) }
+}

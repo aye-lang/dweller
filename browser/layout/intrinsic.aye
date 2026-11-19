@@ -16,6 +16,14 @@ pub struct MinMax {
 /// The content-based border-box widths of box `i`, regardless of its own
 /// `width` (cached).
 fn intrinsic(t: *mut Tree, i: usize) AllocError!MinMax {
+    if turns(t, i) {
+        return turnedIntrinsic(t, i)
+    }
+    if turnsReplaced(t, i) {
+        turnedReplacedSize(t, i, -1.0, -1.0)
+
+        return MinMax { min: t.bx(i).w, max: t.bx(i).w }
+    }
     if t.bx(i).has_intrinsic {
         return MinMax { min: t.bx(i).min_w, max: t.bx(i).max_w }
     }

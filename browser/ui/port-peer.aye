@@ -1,0 +1,12 @@
+fn portPeer(tp: *mut TabProcess, tab: u32, key: u32) ?*mut TabProcess {
+    let list = port_channels orelse return null
+
+    for c in list.items() {
+        if c.key != key { continue }
+
+        if tab == 0 && c.tab == tp.tab && c.owner == tp.serial { return processOf(c.holder, c.holder_tab) }
+        if tab == c.tab && c.holder == tp.serial && c.holder_tab == tp.tab { return processOf(c.owner, c.tab) }
+    }
+
+    return null
+}

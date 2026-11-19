@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+
+fn writeMetadata(out: *mut text.Builder, db: *Database) AllocError!void {
+    for s in db.stores.items() {
+        try out.append("\nstore")
+        try appendNumber(out, s.id as u64)
+        try appendNumber(out, s.auto_increment as u64)
+        try out.appendByte('\n')
+        try out.append(s.name)
+        try out.appendByte('\n')
+        try out.append(s.key_path)
+
+        for x in s.indexes.items() { try writeIndexMetadata(out, s, x) }
+    }
+}

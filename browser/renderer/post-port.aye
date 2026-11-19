@@ -1,0 +1,10 @@
+import engine
+import ipc
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/messaging/message_port.cc (the message goes through the port's pipe)
+fn postPort(m: engine.PortPost) AllocError!void {
+    let r = windows_renderer orelse return
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.PortPost { tab: m.tab, key: m.key, data: m.data, buffers: m.buffers }) catch return
+}

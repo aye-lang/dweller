@@ -1,3 +1,4 @@
+import css
 import std.list.List
 import std.mem.AllocError
 
@@ -11,9 +12,11 @@ fn recordGridLines(t: *mut Tree, i: usize, g: *Grid, xs: []f64, ws: []f64, ys: [
         explicit_rows: g.explicit_rows,
     }
 
+    let rtl = isKeyword(t.bx(i).style[css.DIRECTION], "rtl")
+
     for k in 0..ws.len {
-        try lines.starts_x.append(xs[k])
-        try lines.ends_x.append(xs[k] + ws[k])
+        try lines.starts_x.append(xs[k] + ws[k] * oneWhen(rtl))
+        try lines.ends_x.append(xs[k] + ws[k] * oneWhen(!rtl))
     }
 
     for k in 0..hs.len {
@@ -22,4 +25,12 @@ fn recordGridLines(t: *mut Tree, i: usize, g: *Grid, xs: []f64, ws: []f64, ys: [
     }
 
     t.bx(i).grid_lines = lines
+}
+
+fn oneWhen(on: bool) f64 {
+    if on {
+        return 1.0
+    }
+
+    return 0.0
 }

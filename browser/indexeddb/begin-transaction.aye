@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+fn beginTransaction(a: Ask) AllocError!void {
+    let c = findConnection(a.b, a.client, a.f.int()) orelse return refuse(a, "InvalidStateError")
+    let mode = a.f.int()
+
+    if c.closing || mode > 1 || liveUpgrade(a.b, c.id) { return refuse(a, "InvalidStateError") }
+
+    let id = try newTransaction(a.b, c.id, a.client, c.db, mode as u8)
+    let tx = a.b.txs.items()[a.b.txs.len() - 1]
+
+    while !a.f.ended {
+        let store = a.f.int() as u32
+
+        if findStore(c.db, store) == null { a.f.bad = true }
+
+        try tx.scope.append(store)
+    }
+
+    if a.f.bad || tx.scope.len() == 0 { return dropLast(a) }
+
+    tx.started = canStart(a.b, tx)
+    try appendNumber(a.out, id as u64)
+    try appendNumber(a.out, tx.started as u64)
+}

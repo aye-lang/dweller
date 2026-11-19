@@ -1,0 +1,56 @@
+<!doctype html>
+<title>IndexedDB: indexes</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+const nameOf = f => { try { f(); return 'none'; } catch (e) { return e.name; } };
+async function run() {
+  const db = await fresh('indexes', (db, tx) => {
+    const people = db.createObjectStore('people', { keyPath: 'id' });
+    people.put({ id: 1, name: 'Ada', tags: ['math', 'code'], mail: 'ada@x', kind: 'p' });
+    people.put({ id: 2, name: 'Bob', tags: ['code'], mail: 'bob@x', kind: 'p' });
+    people.createIndex('by name', 'name');
+    people.createIndex('by tag', 'tags', { multiEntry: true });
+    people.createIndex('by mail', 'mail', { unique: true });
+    people.createIndex('gone', 'id');
+    people.deleteIndex('gone');
+    log('made ' + Array.from(people.indexNames) + ' ' + nameOf(() => people.createIndex('by name', 'x')) + ' ' + nameOf(() => people.createIndex('bad', 'a b')) + ' ' + nameOf(() => people.createIndex('multi', ['a'], { multiEntry: true })));
+  });
+  let tx = db.transaction('people', 'readwrite');
+  let people = tx.objectStore('people');
+  const byName = people.index('by name');
+  log('index ' + byName.name + ' ' + byName.keyPath + ' ' + byName.unique + ' ' + people.index('by tag').multiEntry + ' ' + (byName === people.index('by name')) + ' ' + nameOf(() => people.index('gone')));
+  people.put({ id: 3, name: 'Ada', tags: [], mail: 'ada2@x' });
+  people.put({ id: 4, name: 'Cy', mail: 'cy@x' });
+  people.add({ id: 5, name: 'Dup', mail: 'bob@x' }).onerror = e => { e.preventDefault(); log('unique ' + e.target.error.name); };
+  log('get ' + (await wait(byName.get('Bob'))).id + ' key ' + await wait(byName.getKey('Ada')) + ' count ' + await wait(byName.count('Ada')) + '/' + await wait(byName.count()));
+  log('all ' + (await wait(byName.getAll(IDBKeyRange.lowerBound('B')))).map(p => p.id) + ' keys ' + await wait(byName.getAllKeys(null, 2)) + ' prev ' + await wait(byName.getAllKeys({ direction: 'prev' })) + ' unique ' + await wait(byName.getAllKeys({ direction: 'nextunique' })));
+  const tags = people.index('by tag');
+  log('tags ' + await wait(tags.getAllKeys('code')) + ' math ' + await wait(tags.getAllKeys('math')) + ' count ' + await wait(tags.count()));
+  log('records ' + (await wait(tags.getAllRecords({ count: 2 }))).map(r => r.key + ':' + r.primaryKey + ':' + r.value.name));
+  people.delete(1);
+  people.put({ id: 2, name: 'Rob', tags: ['art'], mail: 'bob@x' });
+  log('after ' + await wait(byName.getAllKeys()) + ' tags ' + (await wait(tags.getAllRecords())).map(r => r.key + ':' + r.primaryKey) + ' mail ' + await wait(people.index('by mail').getKey('bob@x')));
+  people.put({ id: 9, name: 'Gone', mail: 'gone@x' });
+  tx.abort();
+  log(await ended(tx));
+  tx = db.transaction('people');
+  log('rolled back ' + await wait(tx.objectStore('people').index('by name').getAllKeys()) + ' ' + await wait(tx.objectStore('people').index('by mail').count()));
+  db.close();
+  const again = indexedDB.open('indexes', 2);
+  again.onupgradeneeded = () => {
+    const people = again.transaction.objectStore('people');
+    people.index('by name').name = 'named';
+    people.name = 'folk';
+    people.createIndex('one kind', 'kind', { unique: true });
+    log('renamed ' + people.name + ' ' + Array.from(people.indexNames));
+    again.transaction.onabort = () => log('duplicate keys abort ' + again.transaction.error.name);
+  };
+  again.onerror = async e => {
+    e.preventDefault();
+    const kept = await wait(indexedDB.open('indexes'));
+    done('kept v' + kept.version + ' ' + Array.from(kept.objectStoreNames) + ' ' + Array.from(kept.transaction('people').objectStore('people').indexNames));
+  };
+}
+run().catch(e => done('failed ' + e));
+</script>

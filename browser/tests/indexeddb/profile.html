@@ -1,0 +1,19 @@
+<!doctype html>
+<title>IndexedDB: a database kept in the profile</title>
+<pre id="log"></pre>
+<script src="harness.js"></script>
+<script>
+const req = indexedDB.open('visits', 3);
+req.onupgradeneeded = e => {
+  log('created from ' + e.oldVersion);
+  req.result.createObjectStore('log', { autoIncrement: true });
+};
+req.onsuccess = () => {
+  const tx = req.result.transaction('log', 'readwrite');
+  const store = tx.objectStore('log');
+  store.add({ at: 'visit', bytes: new Uint8Array([7, 8]) });
+  store.getAllKeys().onsuccess = e => log('visits ' + e.target.result.join(','));
+  store.get(1).onsuccess = e => log('first ' + e.target.result.at + ' ' + Array.from(e.target.result.bytes));
+  tx.oncomplete = () => done('saved');
+};
+</script>

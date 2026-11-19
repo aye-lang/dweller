@@ -1,0 +1,14 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn registryOf(alloc: Allocator) AllocError!*mut Registry {
+    if the_registry |r| { return r }
+
+    let r = try alloc.create(Registry { alloc: alloc, regs: List(*mut Registration).init(alloc), clients: List(Client).init(alloc) })
+
+    the_registry = r
+    try loadRegistry(r)
+
+    return r
+}

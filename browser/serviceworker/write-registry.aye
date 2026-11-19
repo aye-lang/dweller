@@ -1,0 +1,18 @@
+import indexeddb
+import std.mem.AllocError
+import std.text
+
+fn writeRegistry(r: *Registry, out: *mut text.Builder) AllocError!void {
+    try out.append(FILE_HEADER)
+
+    for reg in r.regs.items() {
+        let v = reg.active orelse continue
+
+        if reg.area.len == 0 || reg.area[0] == '#' { continue }
+
+        try indexeddb.putBlob(out, reg.area)
+        try indexeddb.putBlob(out, reg.scope)
+        try indexeddb.putBlob(out, reg.script_url)
+        try indexeddb.putBlob(out, v.script)
+    }
+}

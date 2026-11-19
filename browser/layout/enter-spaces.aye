@@ -1,0 +1,47 @@
+import css.Value
+import std.mem.AllocError
+
+fn enterSpaces(t: *mut Tree, i: usize, space: u8, shared: ?[]Value, shared_turned: []Value) AllocError!void {
+    let physical = t.bx(i).style
+    let mode = ownMode(t.bx(i), space)
+    var outer = shared_turned
+
+    if !sharesStyle(physical, shared) {
+        outer = try turnedStyle(t, physical, space)
+    }
+
+    var content = outer
+
+    if mode != space {
+        content = try turnedStyle(t, physical, mode)
+        t.bx(i).inner = content
+    }
+
+    let b = t.bx(i)
+
+    b.physical = physical
+    b.style = outer
+    b.mode = mode
+    b.space = space
+    t.vertical = t.vertical || mode != HORIZONTAL
+
+    for k in 0..t.children(i).len {
+        let c = t.children(i)[k]
+
+        try enterSpaces(t, c, childSpace(t.bx(c), mode), physical, content)
+    }
+}
+
+fn sharesStyle(style: []Value, shared: ?[]Value) bool {
+    let s = shared orelse return false
+
+    return s.ptr == style.ptr
+}
+
+fn childSpace(c: *Box, parent_mode: u8) u8 {
+    if c.abs != 0 {
+        return HORIZONTAL
+    }
+
+    return parent_mode
+}

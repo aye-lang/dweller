@@ -1,0 +1,26 @@
+import std
+
+struct Walk {
+    v: View
+    lo: usize
+    hi: usize
+    dir: u64
+    after_key: []u8 = ""
+    after_primary: []u8 = ""
+    to_key: []u8 = ""
+    to_primary: ?[]u8 = null
+}
+
+// chromium: content/browser/indexed_db/indexed_db_cursor.cc
+fn step(w: Walk) ?usize {
+    if w.dir >= 2 { return stepBack(w) }
+
+    var i = w.lo
+
+    if w.after_key.len > 0 && w.dir == 1 { i = std.math.maxOf(usize, i, firstAt(w.v, w.after_key, null, true)) }
+    if w.after_key.len > 0 && w.dir == 0 { i = std.math.maxOf(usize, i, firstAt(w.v, w.after_key, w.after_primary, true)) }
+    if w.to_key.len > 0 { i = std.math.maxOf(usize, i, firstAt(w.v, w.to_key, w.to_primary, false)) }
+    if i >= w.hi { return null }
+
+    return i
+}

@@ -4,10 +4,11 @@ test "the window proxy messages round-trip and go the right way" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let post = try roundTrip(&mut out, 7, Message.PostMessage { key: 0, frame: 9, page: 3, source_page: 0, source_origin: "http://a.test", target_origin: "*", data: "{\"t\":\"u\"}", buffers: "" })
+    let post = try roundTrip(&mut out, 7, Message.PostMessage { key: 0, frame: 9, page: 3, source_page: 0, source_origin: "http://a.test", target_origin: "*", data: "{\"t\":\"u\"}", buffers: "", ports: "3,4" })
 
     match post.message {
-        .PostMessage { frame, page, source_origin, target_origin, data, .. } => {
+        .PostMessage { frame, page, source_origin, target_origin, data, ports, .. } => {
+            @expectEqual("3,4", ports)
             @expectEqual(9, frame)
             @expectEqual(3, page)
             @expectEqual("http://a.test", source_origin)
@@ -18,7 +19,7 @@ test "the window proxy messages round-trip and go the right way" {
         _ => @expect(false)
     }
 
-    let posted = try roundTrip(&mut out, 7, Message.PostedMessage { page: 0, from_key: 12, from_frame: 1, from_page: 0, origin: "http://b.test", target_origin: "http://a.test", data: "1", buffers: "\x01\x00\x00\x00x" })
+    let posted = try roundTrip(&mut out, 7, Message.PostedMessage { page: 0, from_key: 12, from_frame: 1, from_page: 0, origin: "http://b.test", target_origin: "http://a.test", data: "1", buffers: "\x01\x00\x00\x00x", ports: "" })
 
     match posted.message {
         .PostedMessage { from_key, origin, buffers, .. } => {
@@ -53,9 +54,9 @@ test "the window proxy messages round-trip and go the right way" {
         _ => @expect(false)
     }
 
-    @expect(fromRenderer(Message.PostMessage { key: 0, frame: 0, page: 0, source_page: 0, source_origin: "", target_origin: "", data: "", buffers: "" }))
+    @expect(fromRenderer(Message.PostMessage { key: 0, frame: 0, page: 0, source_page: 0, source_origin: "", target_origin: "", data: "", buffers: "", ports: "" }))
     @expect(fromRenderer(Message.ProxyNavigate { key: 0, frame: 0, page: 0, url: "" }))
-    @expect(!fromRenderer(Message.PostedMessage { page: 0, from_key: 0, from_frame: 0, from_page: 0, origin: "", target_origin: "", data: "", buffers: "" }))
+    @expect(!fromRenderer(Message.PostedMessage { page: 0, from_key: 0, from_frame: 0, from_page: 0, origin: "", target_origin: "", data: "", buffers: "", ports: "" }))
     @expect(!fromRenderer(Message.FrameOwner { parent_frame: 0, parent_page: 0, top_frame: 0, sandbox: 0, name: "" }))
     @expect(!fromRenderer(Message.FrameLoaded { key: 1 }))
     @expect(fromRenderer(Message.LoadStopped))
