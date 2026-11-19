@@ -1,17 +1,17 @@
 import std.text
 
-fn staticAlignFactor(word: []u8, reverse: bool, rtl: bool, horizontal: bool) f64 {
+fn staticAlignFactor(word: []u8, reverse: bool, flipped: bool, inline_axis: bool) f64 {
     if text.eql(word, "center") || text.eql(word, "space-around") || text.eql(word, "space-evenly") {
         return 0.5
     }
 
     if text.eql(word, "left") || text.eql(word, "right") {
-        return farFactor(horizontal && text.eql(word, "right"))
+        return farFactor((inline_axis && text.eql(word, "right")) || (!inline_axis && flipped))
     }
 
     var at_end = reverse
 
-    if text.eql(word, "end") || text.eql(word, "self-end") {
+    if text.eql(word, "end") || text.eql(word, "self-end") || text.eql(word, "last baseline") {
         at_end = true
     } else if text.eql(word, "start") || text.eql(word, "self-start") || text.eql(word, "baseline") {
         at_end = false
@@ -19,7 +19,7 @@ fn staticAlignFactor(word: []u8, reverse: bool, rtl: bool, horizontal: bool) f64
         at_end = !reverse
     }
 
-    return farFactor(at_end != rtl)
+    return farFactor(at_end != flipped)
 }
 
 fn farFactor(far: bool) f64 {

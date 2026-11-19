@@ -1,0 +1,29 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-flexbox-1/#abspos-items
+fn flexStaticFactor(t: *Tree, i: usize, horizontal: bool, room: f64) f64 {
+    let p = t.bx(i).parent.?
+    let pb = t.bx(p)
+    let s = pb.style
+    let row = isRow(t, p)
+    let main = (row == (pb.mode == HORIZONTAL)) == horizontal
+    let inline_flip = isKeyword(s[css.DIRECTION], "rtl")
+    let block_flip = pb.mode == VERTICAL_RL
+
+    if main {
+        let reverse = text.endsWith(keywordOf(s[css.FLEX_DIRECTION]), "reverse")
+        let word = alignWord(keywordOf(s[css.JUSTIFY_CONTENT]), room)
+
+        return staticAlignFactor(word, reverse, (row && inline_flip) || (!row && block_flip), row)
+    }
+
+    let flipped = (row && block_flip) || (!row && inline_flip)
+    let own = alignWord(alignOf(t, i), room)
+
+    if text.startsWith(own, "self-") {
+        return farFactor(text.eql(own, "self-end") != startsFar(t.bx(i), horizontal))
+    }
+
+    return staticAlignFactor(own, wrapsReverse(s[css.FLEX_WRAP]), flipped, false)
+}
