@@ -191,3 +191,40 @@ fn window_renderer_limits_page_copy() {
         assert!(state.contains("pasted alpha beta") || state.contains("\nvalue alpha beta\n"), "{mode}: the page's text was copied and pasted\n{state}");
     }
 }
+
+/// Q2.15l: `IntersectionObserverEntry.rootBounds` of an observer with the
+/// implicit root is null when the target's document is cross-origin with
+/// the top document (a cross-site frame, in its own renderer or not), and
+/// the viewport grown by `rootMargin` for the top document's own target.
+#[test]
+fn window_renderer_limits_root_bounds() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/oopif-root.html", srv.base);
+    for mode in ["", "site"] {
+        let mut command = dweller_command();
+        let wait = if mode.is_empty() {
+            command.env_remove("DWELLER_PROCESS");
+            "loaded ".to_string() + &"frame ".repeat(60)
+        } else {
+            command.env("DWELLER_PROCESS", mode);
+            "renderer:loaded renderer:child renderer:title:true frame".to_string()
+        };
+        let out = command
+            .current_dir(root())
+            .args([&page, "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1500", "--state", "--processes", "--text", "--events", &wait])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        let title = state.lines().find(|l| l.contains("P own ")).unwrap_or("");
+        assert!(title.contains("P own rect ") && title.ends_with(" frame null true"), "{mode}:\n{state}");
+    }
+}
