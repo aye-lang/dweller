@@ -21,7 +21,9 @@ JavaScript and the agent protocol are Aye.
 
 ```
 browser/
-  main.aye        CLI: window mode, `dump`, `agent`, `mcp`, `connect`
+  main.aye        CLI: window mode, `dump`, `screenshot`, `js`, `wpt`,
+                  `fuzz`, `gpu-smoke`, `agent`, `mcp`, `connect`, and
+                  the internal `--renderer FD`
   url/            URL parsing and resolution (WHATWG subset)
   net/            fetch: file:, data:, http(s) through libcurl, cache
   html/           tokenizer and tree builder (WHATWG subset), entities
@@ -56,7 +58,23 @@ browser/
   tui/            a cell measurer and a display-list consumer that
                   writes ANSI (`APP --tui`)
   perf/           `DWELLER_TIMING` phase records; local telemetry
-  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML, CSS, URL, JS)
+  fuzz/           `dweller fuzz`: mutator and fuzz targets (HTML, CSS,
+                  URL, JS, images, fonts)
+  animation/      CSS transitions and animations: keyframes, easing,
+                  interpolation
+  audio/          Web Audio: the graph, its nodes, a WAV decoder, SDL
+                  output
+  csp/            Content Security Policy: parsing and the checks
+  gpu/            WebGL 1 and 2 on ANGLE (`docs/webgl.md`)
+  idna/           UTS 46 and Punycode for host names
+  wasm/           WebAssembly on wasmtime (optional at build time)
+  ipc/            the messages between the browser and a renderer
+                  process, shared buffers, fd passing
+  pageview/       the page half of a window: draw, damage, focus, find
+  renderer/       the renderer process and its sandbox
+                  (`docs/process-model.md`)
+  sessions/       session restore: the saved tabs and their history
+  tools/          generators, checks and the conformance runners
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
 
@@ -72,9 +90,9 @@ file").
 
 | Layer | Modules |
 |---|---|
-| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf`, `sdl`, `shell`, `tui` |
-| render core | `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `url`, `dom` |
-| front end | `html`, `js`, `wasm`, `engine`, `agent` |
+| platform | `ui`, `gpu`, `audio`, `font`, `net`, `perf`, `sessions`, `sdl`, `shell`, `tui` |
+| render core | `animation`, `css`, `layout`, `paint`, `image`, `svg`, `webfont`, `encoding`, `idna`, `url`, `dom` |
+| front end | `html`, `js`, `wasm`, `engine`, `agent`, `pageview`, `renderer` |
 
 A render-core module (and a platform module other than `ui`, the window
 shell) imports no front-end module; nothing imports `ui` except the root
@@ -83,7 +101,10 @@ it) and lists the exceptions with the card that removes each.
 
 ## Threading model
 
-One window thread owns the DOM, the scripts, style, layout and paint.
+One thread owns the DOM, the scripts, style, layout and paint of a
+page: the window's thread by default, and the main thread of the tab's
+renderer process with `DWELLER_PROCESS=tab` or `site` and always for a
+Space's tabs (`docs/process-model.md`).
 Chromium's rule is the same (`docs/threading_and_tasks.md`: tasks on
 sequences, not threads; only the main thread touches the DOM), and the
 engine's module-level state (B9) makes any other split a rewrite.
@@ -103,12 +124,59 @@ engine's module-level state (B9) makes any other split a rewrite.
   Blink's scheduler (`TaskSchedulingInBlink.md`) only the input queue's
   top priority is taken; its many task queues and frame scheduling
   heuristics are not, until a site shows the need.
-- **Image decode and raster** stay on the window thread. They move to
-  helper threads only when a measurement shows the need (raster draws
-  only the damage since P4.35).
+- **Image decode** runs on two decode threads
+  (`engine/decode-pool.aye`); **raster** stays on the page's thread
+  (it draws only the damage since P4.35). Each Worker has a thread of
+  its own (`engine/workers/`), and an IO thread wakes the window's loop
+  when a renderer's socket is ready (`ui/io-waker.aye`).
 - **Spaces** are tabs of the window whose pages run in renderer
   processes (Q2.12e; B9's "a process per Space" was the design until
   2026-11-16).
+
+## Since B9
+
+Features built by the Q steps of `docs/plans/foundations.md`, each with
+its card in `docs/plans/cards/`:
+
+- **Renderer processes** (Q2, `docs/process-model.md`). `DWELLER_PROCESS=tab`
+  runs each tab's page in a sandboxed process (`dweller --renderer FD`,
+  `renderer/`, `ipc/`), `site` also each cross-site iframe; unset, the
+  page runs in the window's process. The sandbox is seatbelt on macOS
+  and Landlock with seccomp on Linux; `DWELLER_NO_SANDBOX=1` turns it
+  off with a warning. In a headless run `--processes` (with `--state`)
+  adds the renderers' lines. Tests: `tests/browser/window_renderer*.rs`.
+- **Session restore** (Q1.9, `sessions/`). A person's window saves its
+  tabs and their history to `<profile>/session` (written atomically, at
+  most every 500 ms) and restores them at the next start;
+  `DWELLER_RESTORE=0` starts fresh and `=1` turns it on in a headless
+  run. Tests: `tests/browser/history.rs`.
+- **HSTS** (`net/hsts*.aye`). `Strict-Transport-Security` is kept in
+  `<profile>/hsts`, beside a preload list (`net/hsts-preload.txt`, from
+  `tools/gen_hsts_preload.py`); a known host is upgraded to `https:`.
+  Tests: `tests/browser/net.rs`.
+- **Content Security Policy** (Q3.6 to Q3.9, `csp/`). Tests:
+  `tests/browser/security.rs`, `csp_directives.rs`.
+- **WebSocket** (Q5.7, `engine/websocket.js`, `net/socket*.aye`). `ws:`
+  and `wss:` over libcurl; a message of at most 16 MiB, at most 255
+  sockets a renderer; with renderer processes the connection is the
+  browser's (IPC 140 to 143). Tests: `tests/browser/websocket.rs`.
+- **Downloads** (Q5.6, `net/download*.aye`). A response with
+  `Content-Disposition: attachment`, or a link with `download`, is
+  saved under `DWELLER_DOWNLOADS` (else `~/Downloads`) and the page
+  stays; the list is `<profile>/downloads`, shown by `about:downloads`.
+  Tests: `tests/browser/downloads.rs`.
+- **Permissions** (Q5.12, `engine/permissions.js`,
+  `net/permission*.aye`, `ui/permission-*.aye`). Notifications,
+  geolocation, camera and microphone: the window asks in a bar under
+  the toolbar and keeps the answer per origin in
+  `<profile>/permissions`. Tests: `tests/browser/permissions.rs`.
+- **WebGL** (`gpu/`, `docs/webgl.md`), **WebAssembly** (`wasm/`, on
+  wasmtime), **Web Audio** (`audio/`) and **Workers**
+  (`engine/workers/`). Tests: `tests/browser/webgl.rs`, `js.rs`,
+  `media.rs`.
+- **Conformance** (`docs/conformance.md`): `dweller wpt FILE|URL
+  [--timeout S]` runs one testharness.js page, `dweller js --test262
+  FILE` one test262 file; `tools/conformance.py` runs the areas.
 
 ## Telemetry
 
@@ -220,7 +288,7 @@ Same rules as `milestones.md`: tests first; a milestone is done when its
 acceptance tests pass. Tests run headless and offline (`file:` fixtures
 and a local test server), so CI needs no network and no display.
 
-**Status.** B1–B7 are done; B8 and B9 are under way:
+**Status.** B1–B7 and B9 are done; B8 is under way:
 
 | | State | Tests (`cargo test --test browser`) |
 |---|---|---|
@@ -232,7 +300,7 @@ and a local test server), so CI needs no network and no display.
 | B6 JavaScript | done | 212 conformance scripts (`dweller js`), 30 DOM fixtures (`dump --tree --js`, also under GC stress), a to-do app session, window script test, GC unit tests |
 | B7 agent interface | done | 17 snapshot/Markdown fixtures, session and MCP transcripts (with `eval` and `wait`), shared-window sessions over its socket (JSON lines, MCP through `dweller connect`, pause, pointing, tabs) |
 | B8 the real web | in progress | net over the local server (`net_http`, the `net_cookies` and `base` agent sessions), HTML/CSS fixtures (templates, quirks, hints, `var()`/`calc()`, at-rules, `@import`), layout fixtures of site shapes (floats, positioned boxes, grid, `details`), hit testing by layer (`window_hit_layers`), JS conformance scripts for generators, async, Symbol, the web APIs and ES modules (231–237, 242–245), DOM fixtures for module scripts, layout queries, Shadow DOM, custom elements, `MutationObserver` and Web Animations, background image loads (`net/bg_images.html`, `net/bg_image_events.html`), BigInt and property descriptor scripts (246–250), `fetch`/XHR methods and a failed image over the local server (`net/fetch_methods.html`, `net/xhr_methods.html`, `net/failed_image_once.html`), session history (`jsdom/history.html`, the `history` and `history_paths` agent sessions), Reflect, `setPrototypeOf` and Map/Set scripts (251–254), DOM fixtures for the body mixin, DOMParser, `IntersectionObserverEntry`, the virtual clock and endless feeds, replaced sizing layout fixtures (`replaced_sizing`, `replaced_minmax`) |
-| B9 agents without disturbing the user | done (P9, Spaces by default, 2026-10-17) | R1, R3: `window_spaces` `isolation` (agents act in their own tabs; the person's tab, scroll, selection, focus, field text and page height stay); R2: `window_spaces` (sessions in Spaces), `window_spaces_responsive` (`loop_max_ms` under 50 while agents load and `eval` for 1.5 s), `window_spaces_crash` (a killed Space, a killed window); R4: `window_spaces_parallel` (three agents in three Spaces navigate, type and read at once, each one's answers equal its answers alone; pausing one leaves the others working; the person's strip keeps one tab); R6 control: `window_spaces_control` (two agents: pause, resume and stop one while the other works; `spaces`, a done Space attached to, `space_close`) and the `spaces/` sessions `pause`, `pointing`, `attach`; R6 chips: `window_spaces_chips` (pause and stop from a Space's chip, its state and last action, the golden `browser/tests/ui/spaces_chips.png`); R6 watching: `window_spaces_watch` (a click on a Space's chip shows its green page in the window's page area, `loop_max_ms` under 50); R6 take over: `window_spaces_takeover` and the `spaces/` session `takeover` (the person's click takes a tab, the agent's acting commands fail, the other Space goes on, `handback:1` gives it back); R5: `window_spaces_logins` (a shared Space sends the person's cookies and the person's page sees the Space's cookie and `localStorage` item; an isolated Space sees and shares none) |
+| B9 agents without disturbing the user | done (P9, Spaces by default, 2026-10-17) | R1, R3: `window_spaces` `isolation` (agents act in their own tabs; the person's tab, scroll, selection, focus, field text and page height stay); R2: `window_spaces` (sessions in Spaces), `window_spaces_responsive` (`loop_max_ms` under 50 while agents load and `eval` for 1.5 s), `window_spaces_crash` (a killed renderer fails only its tab; a killed window ends its renderers); R4: `window_spaces_parallel` (three agents in three Spaces navigate, type and read at once, each one's answers equal its answers alone; pausing one leaves the others working; the person's strip keeps one tab); R6 control: `window_spaces_control` (two agents: pause, resume and stop one while the other works; `spaces`, a done Space attached to, `space_close`) and the `spaces/` sessions `pause`, `pointing`, `attach`; R6 chips: `window_spaces_chips` (pause and stop from a Space's chip, its state and last action, the golden `browser/tests/ui/spaces_chips.png`); R6 watching: `window_spaces_watch` (a click on a Space's chip shows its green page in the window's page area, `loop_max_ms` under 50); R6 take over: `window_spaces_takeover` and the `spaces/` session `takeover` (the person's click takes a tab, the agent's acting commands fail, the other Space goes on, `handback:1` gives it back); R5: `window_spaces_logins` (a shared Space sends the person's cookies and the person's page sees the Space's cookie and `localStorage` item; an isolated Space sees and shares none) |
 
 All the front ends share `engine/`: the window, `screenshot` and the
 agent sessions load pages through `engine.load` and keep history in a
@@ -341,15 +409,16 @@ are in `browser/COMPILER_GAPS.md`.
 - **Acceptance:** screenshot golden tests compared by pixel hash; a
   manual checklist run once per milestone for the window.
 - Done: `dweller screenshot FILE|URL -o out.png [--width W] [--height
-  H] [--font fixed|system] [--full]` and `dweller [open] FILE|URL`.
+  H] [--font fixed|system] [--full] [--wait-class NAME]` and `dweller [open] FILE|URL`.
   Golden PNGs (`browser/tests/paint/`, fixed font, compared byte for
   byte), PNG checks, and headless window tests (SDL's dummy driver,
   `--frames N` with scripted `--events`, `--state`, `--save`; see
   `browser/ui/script.aye`). The interactive checks are in
   `docs/browser-manual-checklist.md`. Simplifications: positioned boxes
   are painted after the rest of their layer in z-index order (negative
-  ones first) and hit testing searches in the reverse order, but there
-  are no other stacking contexts (opacity, transforms), clips are rectangles,
+  ones first) and hit testing searches in the reverse order (since B8
+  opacity, filters and transforms make layers too, and overflow clips
+  follow `border-radius`),
   the 3-D border styles are solid, and the style sheets are parsed again
   when the window is resized.
 
@@ -419,8 +488,8 @@ are in `browser/COMPILER_GAPS.md`.
     (relative, `data:`) before each layout for elements that have none
     yet; the natural size and aspect ratio feed layout (`width`/`height`
     attributes and CSS), and paint scales them (bilinear, alpha
-    blended). Not yet: `srcset`, `background-image`, progressive JPEG,
-    animation.
+    blended). `srcset`, background images and progressive JPEG came
+    in B8; not yet: animation.
   - Tests: `agent_forms_http` (sessions over the local server's
     `/echo`, which shows the request), `window_forms`, `fill_form`,
     the `image` module's decoder tests (PngSuite-like fixtures made by
@@ -488,10 +557,10 @@ output as goldens.
   `await` hands the value to a driver written in JavaScript that resumes
   the coroutine when the promise settles; `for await` and async
   generators go through the same driver.
-- *Not yet:* `BigInt64Array`/`BigUint64Array` (BigInt itself is B8,
-  below), typed arrays over shared bytes (a view of an
-  `ArrayBuffer` is a copy), time zones (local time is UTC), full
-  Unicode case mapping and normalization.
+- *Not yet:* time zones (local time is UTC), full
+  Unicode case mapping and normalization. (`BigInt64Array` and
+  `BigUint64Array` exist, and every view of an `ArrayBuffer` reads and
+  writes the same bytes, `js/typed.aye`.)
   A plain function call gets `this === undefined` (strict-mode rule);
   a script's top-level `this` is the global object, and top-level
   `var`/`function` are properties of it. HTML-like comments (`<!--`,
@@ -639,8 +708,11 @@ on (`--no-js` turns it off), `dump` with `--js`.
   and `dump --md` (`--js` to run scripts).
 - The shared window (`ui/agents.aye`, `ui/socket.aye`, `ui/tabs.aye`,
   `agent/shared.aye`): the window polls a non-blocking Unix socket
-  between its events, so requests run on its thread; each tab is an
-  agent session laid out with the window's fonts. Tabs (Cmd+T, Cmd+W,
+  between its events; a connection starts with the token of
+  `PATH.token`, and since B9 its page commands go to the renderer of
+  its Space's tab, while the window answers the tab and Space commands
+  itself (before B9 requests ran on the window's thread, each tab an
+  agent session laid out with the window's fonts). Tabs (Cmd+T, Cmd+W,
   Cmd+1..9, a tab strip) and the commands `tabs`, `tab_new`,
   `tab_select`, `tab_close` (an agent can work in a background tab);
   visible activity (a fading outline with the ref, an `AI` badge, the
@@ -672,7 +744,10 @@ on (`--no-js` turns it off), `dump` with `--js`.
     on every request; a certificate that is expired, self-signed or from
     an unknown issuer, or for another host, or a server without TLS 1.2,
     gives a top-level navigation the "Your connection is not private"
-    page with the host and the reason (no way past it), the agent's
+    page with the host and the reason (in a window a bar offers Advanced,
+    then "Proceed to HOST (unsafe)", which allows that certificate's key
+    for the run, `ui/press-cert.aye`, `net/allow-cert.aye`; a host with
+    HSTS gets no bar), the agent's
     navigate a failure with the reason, and frames, subresources, fetch
     and XHR a network error. `<base href>` for links, forms, images,
     sheets, scripts, `fetch` and `location`. A page's images, sheets and
@@ -738,7 +813,8 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `DWELLER_PROFILE` is set. A `shared` Space uses the window's jar and
     `localStorage` through the window; an `isolated` one has a partition
     in memory (Q2.12c). Layout:
-    `cookies` (the jar) and `lock`. The jar is loaded at the start and
+    `cookies` (the jar), `lock`, `storage/`, `hsts`, `permissions`,
+    `downloads`, `session`, `settings` and `telemetry/`. The jar is loaded at the start and
     written after any change, at most once a second (the window's loop),
     and at exit, so a killed window loses at most a second of cookies.
     Each write goes to a temporary file (mode 0600) renamed over
@@ -876,7 +952,8 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `MutationObserver` records from the document's mutation log. Web
     Animations basics (`Element.animate`, `Animation`, `KeyframeEffect`,
     `document.timeline`): an animation keeps time and fills write the
-    inline style, no frame is interpolated. Layout queries
+    inline style, no frame is interpolated (CSS transitions and CSS
+    animations do interpolate, `animation/`). Layout queries
     (`engine/geometry.aye`): `getBoundingClientRect`, `getClientRects`,
     `offsetTop`/`Left`/`Width`/`Height`/`Parent`, `client*`,
     `scrollTop`/`Left`/`Width`/`Height`, `scroll`/`scrollTo`/`scrollBy`
@@ -985,7 +1062,7 @@ on (`--no-js` turns it off), `dump` with `--js`.
     snapshot).
   - *Iframes:* `srcdoc`, `src` or about:blank load as pages of their
     own; `sandbox` turns off scripts and gives the frame its own
-    origin; at most 3 deep and 16 frames per tab. Scripts use
+    origin; at most 3 deep and 1000 frames per tab. Scripts use
     `parent`, `top`, `frames[i]`, `frameElement`, `contentWindow` and
     `contentDocument` (same origin), `postMessage` between frames and
     iframe `load` events; iframes added by scripts, or whose `src`
@@ -1089,7 +1166,7 @@ selection and was scrolled to 200 px.
 
 The probes were throwaway scripts; P9.1 and P9.2 turn them into tests.
 
-**Acceptance checks.** Each one is a test in `tests/browser.rs` (P9
+**Acceptance checks.** Each one is a test in `tests/browser/window_spaces.rs` (P9
 cards say which):
 
 - R1: with the person's page scrolled, a text field focused and text
@@ -1125,8 +1202,8 @@ cards say which):
 **Since Q2.12e (2026-11-16) a Space is a group of the window's tabs in
 renderer processes** (`docs/process-model.md` §8, `docs/agent-protocol.md`
 "Spaces"); the Space process, its control connection, the copied
-cookies and storage and the frame file described from here to the end
-of this section are the design of P9 as it was built and are gone from
+cookies and storage and the frame file described in the R table above
+and from here to the end of this section are the design of P9 as it was built and are gone from
 the code. R1 to R7 hold with the same tests.
 
 **Threading model: a process per Space.** R2 fails because the window
