@@ -1,0 +1,24 @@
+import std.text
+
+test "hit_test goes to a renderer and its reply comes from one" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let asked = try roundTrip(&mut out, 7, Message.HitTest { id: 3, x: 40, y: 50 })
+
+    match asked.message {
+        .HitTest { id, x, y } => @expectEqual(93, id + x + y)
+        _ => @expect(false)
+    }
+
+    let said = try roundTrip(&mut out, 7, Message.HitTestReply { id: 3, key: 9 })
+
+    match said.message {
+        .HitTestReply { id, key } => @expectEqual(12, id + key)
+        _ => @expect(false)
+    }
+
+    @expectEqual(101, (Message.HitTest { id: 0, x: 0, y: 0 }).kind())
+    @expectEqual(102, (Message.HitTestReply { id: 0, key: 0 }).kind())
+    @expect(!fromRenderer(Message.HitTest { id: 0, x: 0, y: 0 }) && fromRenderer(Message.HitTestReply { id: 0, key: 0 }))
+}

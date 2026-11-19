@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/render_process_host_impl.cc (GetExistingProcessHost: over the limit a new page joins a process of its site)
+fn reusedProcess(slot: *TabSlot) AllocError!?*mut TabProcess {
+    if !siteFrames() || rendererCount() < maxRenderers() { return null }
+
+    let first = tab_processes orelse return null
+    var site = text.Builder.init(first.url.alloc)
+    defer site.deinit()
+
+    try writeSite(slot.session.tab.href(), &mut site)
+
+    if site.len() == 0 { return null }
+
+    var at = tab_processes
+
+    while at |cur| {
+        if cur.gone.len == 0 && cur.hello && cur.embedder == null && cur.partition == slot.partition && text.eql(cur.site.bytes(), site.bytes()) { return attachTabProcess(AttachFrom { context: 0, process: cur }, slot.id) }
+
+        at = cur.next
+    }
+
+    return null
+}

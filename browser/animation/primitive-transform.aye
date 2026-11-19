@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transform-functions
+fn primitiveTransform(f: TransformFn) ?TransformFn {
+    let scale = text.startsWith(f.name, "scale")
+    var p = emptyTransformFn("translate3d")
+    var fill = 0.0
+
+    if !scale && !text.startsWith(f.name, "translate") {
+        return null
+    }
+
+    if scale {
+        p.name = "scale3d"
+        fill = 1.0
+    }
+
+    p.count = 3
+    p.n = [16]f64{fill, fill, fill, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+
+    if !scale {
+        p.unit[0] = UNIT_PX
+        p.unit[1] = UNIT_PX
+        p.unit[2] = UNIT_PX
+    }
+
+    return placePrimitive(f, p, scale)
+}

@@ -17,6 +17,7 @@ fn webmTrack(alloc: Allocator, b: []u8, x: Ebml) ?Track {
 
         if ebmlIn(b, video.body, video.end, 0xB0) |w| { t.width = ebmlUint(b, w) as u32 }
         if ebmlIn(b, video.body, video.end, 0xBA) |h| { t.height = ebmlUint(b, h) as u32 }
+        if ebmlIn(b, video.body, video.end, 0x2EB524) |four| { t.config = b[four.body..four.end] }
 
         return t
     }
@@ -30,6 +31,7 @@ fn webmTrack(alloc: Allocator, b: []u8, x: Ebml) ?Track {
     if ebmlIn(b, x.body, x.end, 0xE1) |sound| {
         if ebmlIn(b, sound.body, sound.end, 0xB5) |r| { t.rate = ebmlFloat(b, r) }
         if ebmlIn(b, sound.body, sound.end, 0x9F) |c| { t.channels = ebmlUint(b, c) as u32 }
+        if ebmlIn(b, sound.body, sound.end, 0x6264) |d| { t.bits = ebmlUint(b, d) as u32 }
     }
 
     return t

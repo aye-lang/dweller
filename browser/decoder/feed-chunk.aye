@@ -1,0 +1,12 @@
+import ipc
+
+pub fn feedChunk(id: u32, seq: u32, more: u32, data: []u8) bool {
+    let l = link orelse return false
+    let s = streamOf(id) orelse return false
+
+    if !l.send(ipc.Message.DecoderData { id: id, seq: seq, more: more, data: data }) { return false }
+
+    if more == 0 { s.pending += 1 }
+
+    return true
+}

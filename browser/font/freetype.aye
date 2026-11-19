@@ -1203,7 +1203,11 @@ fn openFace(alloc: Allocator, library: *mut FTLibraryRec, path: []u8, index: i64
         z[i] = c
     }
     var out: ?*mut FTFaceRec = null
-    if FT_New_Face(library, z.ptr, index, &mut out) != 0 {
+    if keptFontFile(path) |kept| {
+        if FT_New_Memory_Face(library, kept.data.?, kept.len as i64, index, &mut out) != 0 {
+            return null
+        }
+    } else if FT_New_Face(library, z.ptr, index, &mut out) != 0 {
         return null
     }
     if out |face| {

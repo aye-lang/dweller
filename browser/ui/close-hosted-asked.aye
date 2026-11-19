@@ -1,0 +1,17 @@
+fn closeHostedAsked(ui: *mut Ui, sp: *mut Space) {
+    for k, slot in sp.own_tabs.items() {
+        if !slot.closing { continue }
+
+        if hostedTabBusy(ui, sp, slot.in_space) { return }
+
+        slot.closing = false
+
+        if sp.own_tabs.len() <= 1 { return }
+
+        _ = sp.own_tabs.orderedRemove(k)
+        sp.tabs = sp.own_tabs.len() as u32
+        freeSlot(ui.alloc, slot)
+
+        return
+    }
+}

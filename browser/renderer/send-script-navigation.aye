@@ -1,0 +1,16 @@
+import engine
+import ipc
+import net
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-replace
+fn sendScriptNavigation(r: *mut TabRenderer, p: *mut engine.Page, nav: engine.Navigation) !void {
+    if !nav.replace { return askNavigation(r, p, nav.href, false, "", "") }
+
+    let target = url.parse(r.alloc, nav.href) catch return
+    defer target.deinit(r.alloc)
+
+    if !net.initiatorMayLoad(engine.initiatorOf(p), &target) || (try engine.topDataBlocked(p, &target)) { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.ReplaceNavigation { url: nav.href, referrer_policy: net.referrerPolicyCode(net.navigationReferrerPolicy(p.url.href)), user: engine.hasTransientActivation(p) as u32 })
+}
