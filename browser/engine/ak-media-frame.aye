@@ -1,0 +1,42 @@
+import css
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std
+
+let VIDEO_SIDE: usize = 8192
+
+// chromium: third_party/blink/renderer/core/html/media/html_video_element.cc
+fn akMediaFrame(it: *mut Interp, a: Args) JsError!Value {
+    let p = scriptOf(it).active
+    let h = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return Value.Undefined
+    let w = (try countArg(it, a, 1)) as usize
+    let ht = (try countArg(it, a, 2)) as usize
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 3, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    if !p.doc.isElement(h, "video") || w == 0 || ht == 0 || w > VIDEO_SIDE || ht > VIDEO_SIDE || (bytes.len() != 0 && bytes.len() != w * ht * 4) {
+        return Value.Undefined
+    }
+
+    var resized = true
+
+    if videoFrame(p, h) |old| { resized = old.width != w || old.height != ht }
+
+    let c = try videoBitmap(p, h, w, ht)
+
+    if resized { try noteLayoutChange(scriptOf(it), h, css.CHILDREN_CHANGED) }
+
+    if bytes.len() != 0 { std.mem.copy(c.bmp.pixels, bytes.bytes()) }
+
+    c.bmp.version += 1
+
+    return Value.Undefined
+}

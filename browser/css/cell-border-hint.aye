@@ -1,0 +1,23 @@
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+fn cellBorderHint(doc: *Document, table: NodeId, out: *mut text.Builder) AllocError!void {
+    if tableBorderPixels(doc, table) > 0 {
+        try out.append("border: 1px inset gray; ")
+    }
+
+    let rules = tableRules(doc, table) orelse return
+
+    try out.append("border-width: 1px; ")
+
+    if text.eql(rules, "rows") {
+        try out.append("border-style: solid none; ")
+    } else if text.eql(rules, "cols") {
+        try out.append("border-style: none solid; ")
+    } else if text.eql(rules, "all") {
+        try out.append("border-style: solid; ")
+    }
+}

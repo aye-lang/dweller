@@ -1,0 +1,22 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn fontPrefix(sheet: *mut Sheet, comps: []Comp, parts: *mut FontParts) AllocError!?usize {
+    var i: usize = 0
+
+    while i < comps.len && i < 4 {
+        let kind = try fontPrefixKind(sheet, comps[i])
+
+        if kind == FONT_PREFIX_NONE {
+            break
+        }
+
+        if !takeFontPrefix(parts, kind, i) {
+            return null
+        }
+
+        i += 1
+    }
+
+    return i
+}

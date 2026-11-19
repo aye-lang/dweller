@@ -1,0 +1,18 @@
+// https://tc39.es/ecma262/#sec-get-arraybuffer.prototype.maxbytelength
+
+fn bufMax(it: *Interp, o: u32) u32 {
+    return match it.heap.obj(o).data {
+        .Bytes { max, .. } => max
+        _ => NONE
+    }
+}
+
+fn engineBufMax(it: *mut Interp, a: Args) JsError!Value {
+    let limit = bufMax(it, try bufArg(it, a, 0))
+
+    if limit == NONE {
+        return numVal(-1.0)
+    }
+
+    return numVal(limit as f64)
+}

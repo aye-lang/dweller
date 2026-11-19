@@ -1,0 +1,42 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn parseFontParts(sheet: *mut Sheet, comps: []Comp) AllocError!?FontParts {
+    var parts = FontParts {}
+
+    if comps.len == 1 && isSystemFont(comps[0]) {
+        parts.system = true
+
+        return parts
+    }
+
+    var i = (try fontPrefix(sheet, comps, &mut parts)) orelse return null
+
+    if i >= comps.len || isNumberToken(comps[i]) || (try parseValue(sheet, FONT_SIZE, comps[i..i + 1])) == null {
+        return null
+    }
+
+    parts.size = i
+    i += 1
+
+    if i + 1 < comps.len && isDelim(comps[i], '/') {
+        if (try parseValue(sheet, LINE_HEIGHT, comps[i + 1..i + 2])) == null {
+            return null
+        }
+
+        parts.line = i + 1
+        i += 2
+    }
+
+    if i >= comps.len || (try fontFamily(sheet, comps[i..])) == null {
+        return null
+    }
+
+    parts.family = i
+
+    return parts
+}
+
+fn isSystemFont(c: Comp) bool {
+    return c.toks.len == 1 && c.toks[0].kind == Tok.Ident && inList(c.toks[0].text, "caption icon menu message-box small-caption status-bar") != null
+}

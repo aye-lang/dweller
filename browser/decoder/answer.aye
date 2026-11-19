@@ -1,0 +1,47 @@
+import ipc
+import std
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn answer(alloc: Allocator, conn: std.fs.File, streams: *mut List(Served), m: ipc.Message) !void {
+    match m {
+        .DecoderOpen { id, kind, width, height, channels, bits, rate, codec, config } => {
+            if streams.len() >= MAX_STREAMS || servedAt(streams, id) != null { return }
+
+            let spec = Spec { kind: kind, width: width, height: height, channels: channels, bits: bits, rate: rate, codec: try copyOf(alloc, codec), config: try copyOf(alloc, config) }
+
+            try streams.append(Served { id: id, spec: spec, partial: text.Builder.init(alloc) })
+        }
+
+        .DecoderData { id, seq, more, data } => {
+            let at = servedAt(streams, id) orelse return reply(alloc, conn, id, seq, false, "")
+            let s = &mut streams.items()[at]
+
+            if s.partial.len() + data.len > MAX_SAMPLE { return ipc.DecodeError.TooLong }
+
+            try s.partial.append(data)
+
+            if more != 0 { return }
+
+            var out = text.Builder.init(alloc)
+            defer out.deinit()
+
+            let ok = try decodeSample(&mut out, s.spec, s.partial.bytes())
+
+            s.partial.clear()
+            try reply(alloc, conn, id, seq, ok, out.bytes())
+        }
+
+        .DecoderClose { id } => {
+            let at = servedAt(streams, id) orelse return
+            var s = streams.orderedRemove(at)
+
+            alloc.free(s.spec.codec)
+            alloc.free(s.spec.config)
+            s.partial.deinit()
+        }
+
+        _ => return ipc.DecodeError.UnknownType
+    }
+}

@@ -10,7 +10,14 @@ fn serveOpenRequests(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess) All
         let held = next orelse return
 
         match held.message {
-            .Context { context, href, post, content_type, body, keeps, name, .. } => try openTarget(ui, opener, tp, OpenAsk { context: context, keeps: keeps != 0, name: name }, href, post != 0, content_type, body)
+            .Context { ask, context, href, post, content_type, body, keeps, name } => {
+                if ask == 2 {
+                    askClose(ui, opener, tp, context)
+                } else {
+                    try openTarget(ui, opener, tp, OpenAsk { context: context, keeps: keeps != 0, name: name }, href, post != 0, content_type, body)
+                }
+            }
+
             _ => {}
         }
 

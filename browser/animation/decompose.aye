@@ -1,0 +1,40 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-transforms-2/#decomposing-a-3d-matrix
+fn decompose(m: [16]f64) ?Decomposed {
+    var d = Decomposed { translate: [3]f64{m[12], m[13], m[14]}, scale: [3]f64{0.0, 0.0, 0.0}, skew: [3]f64{0.0, 0.0, 0.0}, quaternion: [4]f64{0.0, 0.0, 0.0, 1.0} }
+    var row0 = [3]f64{m[0], m[1], m[2]}
+    var row1 = [3]f64{m[4], m[5], m[6]}
+    var row2 = [3]f64{m[8], m[9], m[10]}
+
+    if m[3] != 0.0 || m[7] != 0.0 || m[11] != 0.0 || m[15] != 1.0 || dot3(row0, cross3(row1, row2)) == 0.0 {
+        return null
+    }
+
+    d.scale[0] = length3(row0)
+    row0 = scaled3(row0, 1.0 / d.scale[0])
+    d.skew[0] = dot3(row0, row1)
+    row1 = combined3(row1, row0, -d.skew[0])
+    d.scale[1] = length3(row1)
+    row1 = scaled3(row1, 1.0 / d.scale[1])
+    d.skew[0] /= d.scale[1]
+    d.skew[1] = dot3(row0, row2)
+    row2 = combined3(row2, row0, -d.skew[1])
+    d.skew[2] = dot3(row1, row2)
+    row2 = combined3(row2, row1, -d.skew[2])
+    d.scale[2] = length3(row2)
+    row2 = scaled3(row2, 1.0 / d.scale[2])
+    d.skew[1] /= d.scale[2]
+    d.skew[2] /= d.scale[2]
+
+    if dot3(row0, cross3(row1, row2)) < 0.0 {
+        d.scale = scaled3(d.scale, -1.0)
+        row0 = scaled3(row0, -1.0)
+        row1 = scaled3(row1, -1.0)
+        row2 = scaled3(row2, -1.0)
+    }
+
+    d.quaternion = quaternionOf(row0, row1, row2)
+
+    return d
+}

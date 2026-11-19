@@ -15,7 +15,7 @@ let RULESET_SIZE_BY_ABI = [7]u64{0, 8, 8, 8, 16, 16, 24}
 fn restrictPaths(alloc: Allocator) bool {
     let abi = syscall(NR_LANDLOCK_CREATE_RULESET, 0 as u64, 0 as u64, LANDLOCK_CREATE_RULESET_VERSION)
 
-    if abi < 1 { return false }
+    if abi < 1 || landlockOffForTest() { return false }
 
     var ruleset = [3]u64{HANDLED_FS_BY_ABI[upTo(abi, 5)], LANDLOCK_TCP_BIND_AND_CONNECT, LANDLOCK_SCOPE_UNIX_AND_SIGNAL}
     let fd = syscall(NR_LANDLOCK_CREATE_RULESET, ruleset[..].ptr, RULESET_SIZE_BY_ABI[upTo(abi, 6)], 0 as u64)
