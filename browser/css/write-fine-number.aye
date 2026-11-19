@@ -1,0 +1,32 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serializing-css-values
+pub fn writeFineNumber(n: f64, out: *mut text.Builder) AllocError!void {
+    if !(math.abs(n) < 1e15) {
+        return out.appendFloat(n)
+    }
+
+    var millionths = math.round(math.abs(n) * 1000000.0) as i64
+    var digits: usize = 6
+
+    if n < 0.0 && millionths > 0 {
+        try out.appendByte('-')
+    }
+
+    try out.appendInt(millionths / 1000000)
+    millionths = millionths % 1000000
+
+    if millionths == 0 {
+        return
+    }
+
+    while millionths % 10 == 0 {
+        millionths = millionths / 10
+        digits -= 1
+    }
+
+    try out.appendByte('.')
+    try writePadded(millionths, digits, out)
+}

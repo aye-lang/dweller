@@ -1,0 +1,22 @@
+import dom
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// chromium: third_party/blink/renderer/core/html/media/html_media_element.cc (EnsureMediaControls)
+fn akMediaControlsRoot(it: *mut Interp, a: Args) JsError!Value {
+    let h = handleOf(it, it.arg(a, 0), TAG_NODE) orelse return Value.Null
+    let doc = docOf(it)
+
+    if !doc.isElement(h, "video") && !doc.isElement(h, "audio") { return Value.Null }
+
+    if dom.shadowRootOf(doc, h) |r| { return wrap(it, r) }
+
+    let root = try dom.attachShadow(doc, h, true)
+
+    doc.recording = true
+    try changedAt(it, h, "")
+
+    return wrap(it, root)
+}

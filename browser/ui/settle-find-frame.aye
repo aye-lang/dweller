@@ -1,0 +1,19 @@
+import std.list.List
+import std.mem.AllocError
+
+fn settleFindFrame(ui: *mut Ui, top: *mut TabProcess) AllocError!void {
+    if top.children.len() == 0 || top.find_frame != top.tab || top.find_seen != top.find_id || top.find_count > 0 || ui.find.bytes().len == 0 { return }
+
+    var frames = List(*mut TabProcess).init(ui.alloc)
+    defer frames.deinit()
+
+    try findFrames(top, &mut frames)
+
+    for f in frames.items() {
+        if f == top || !f.find_passive || f.find_seen != f.find_id || f.find_count == 0 { continue }
+
+        top.find_frame = f.tab
+
+        return sendFind(f, FIND_FIRST, ui.find.bytes())
+    }
+}

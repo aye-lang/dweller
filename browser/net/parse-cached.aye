@@ -1,0 +1,34 @@
+import std
+import std.text
+
+fn parseCached(c: *mut Cache, bytes: []u8, key: []u8) ?Cached {
+    let first = text.indexOf(bytes, "\n") orelse return null
+
+    if !text.eql(bytes[..first], DISK_CACHE_MAGIC) { return null }
+
+    let second = text.indexOf(bytes[first + 1..], "\n") orelse return null
+    var n = @zeroed([9]i64)
+    var fields = text.split(bytes[first + 1..first + 1 + second], " ")
+
+    for i in 0..9 {
+        n[i] = secondsOf(fields.next() orelse return null)
+    }
+
+    var at = first + second + 2
+    var parts = [6][]u8{"", "", "", "", "", ""}
+
+    for i in 0..6 {
+        let len = n[3 + i] as usize
+
+        if at + len > bytes.len { return null }
+
+        parts[i] = bytes[at..at + len]
+        at += len
+    }
+
+    if at != bytes.len || !std.mem.eql(parts[0], key) { return null }
+
+    let e = dupCached(c, n, parts) catch return null
+
+    return e
+}

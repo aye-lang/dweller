@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn leaveHostTabs(ui: *mut Ui) AllocError!void {
+    for s in ui.slots {
+        let slot = s orelse continue
+        let tp = slot.process orelse continue
+
+        if tp.locked { try tellHost(tp, "lock:0") }
+        if tp.fullscreen { try tellHost(tp, "fs:0") }
+
+        tp.locked = false
+        tp.fullscreen = false
+    }
+}
