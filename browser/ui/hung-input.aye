@@ -1,4 +1,6 @@
-fn hungInput(ui: *mut Ui, ev: *SDL_Event) bool {
+import std.mem.AllocError
+
+fn hungInput(ui: *mut Ui, ev: *SDL_Event) AllocError!bool {
     let tp = hungProcess(ui) orelse return false
     let b = stuckBarOf(ui)
     let x = ev.button.x as f64
@@ -6,12 +8,15 @@ fn hungInput(ui: *mut Ui, ev: *SDL_Event) bool {
 
     if ev.kind != SDL_MOUSEBUTTONDOWN || !inRect(b.box, x, y) { return false }
 
-    if inRect(b.wait, x, y) {
+    if inRect(b.wait, x, y) && tp.busy_seen {
+        try tellBusy(tp, true)
+    } else if inRect(b.wait, x, y) {
         waitHang(tp)
-        ui.dirty = true
     } else if inRect(b.stop, x, y) {
-        stopHung(ui)
+        try stopHung(ui)
     }
+
+    ui.dirty = true
 
     return true
 }

@@ -317,7 +317,7 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if rendererWaits(ui, w) {
             return
         }
-        if scriptEvent(w) != null && rendererBehind(ui) {
+        if (scriptEvent(w) != null && rendererBehind(ui)) || stopWaits(ui, w) {
             ui.script_held = true
             return
         }
@@ -348,7 +348,7 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             ui.stuck = false
             ui.wait = false
         } else if text.eql(w, "stuck:stop") {
-            stopHung(ui)
+            try stopHung(ui)
         }
         if text.eql(w, "frame") {
             // The rest waits for the next frame (`Ui.loop`).

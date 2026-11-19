@@ -1,0 +1,27 @@
+import ipc
+import perf
+
+fn rendererAsked(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) []u8 {
+    match got.message {
+        .Telemetry { records } => {
+            if tp.partition != 0 || !perf.telemetryTake(records) { return "bad telemetry" }
+        }
+
+        .BusyAsk { ms } => {
+            if got.frame != slot.id || tp.busy_asked { return "bad busy_ask" }
+
+            tp.busy_asked = true
+            tp.busy_ms = ms
+        }
+
+        .CloseSelf => {
+            if got.frame != slot.id { return "bad close" }
+
+            tp.close_asked = true
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

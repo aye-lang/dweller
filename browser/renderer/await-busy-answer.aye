@@ -1,0 +1,18 @@
+import ipc
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc RendererIsUnresponsive
+fn awaitBusyAnswer(r: *mut TabRenderer) bool {
+    var buf = @zeroed([65536]u8)
+
+    while true {
+        if busyAnswered(r) catch return false |wait| { return wait }
+
+        let n = ipc.recvFds(r.conn.fd, buf[..], &mut r.fds) catch return false
+
+        if n <= 0 { return false }
+
+        r.inbox.append(buf[..n as usize]) catch return false
+    }
+
+    unreachable
+}

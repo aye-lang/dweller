@@ -260,16 +260,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
         .State { .. } => return "unexpected state"
-        .CloseSelf => {
-            if got.frame != slot.id { return "bad close" }
-
-            tp.close_asked = true
-        }
-
-        .Telemetry { records } => {
-            if tp.partition != 0 || !perf.telemetryTake(records) { return "bad telemetry" }
-        }
-
+        .BusyAsk { .. }, .CloseSelf, .Telemetry { .. } => return rendererAsked(slot, tp, got)
         .UpgradeInsecure { page } => {
             if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
 
