@@ -1531,7 +1531,7 @@ pub let LIB =
     \\  return max === undefined ? -1 : toIndex(max, 'array buffer max length');
     \\}
     \\class ArrayBuffer {
-    \\  constructor(n, options) {
+    \\  constructor(n, options = undefined) {
     \\    const len = toIndex(n, 'array buffer length');
     \\    bufNew(this, len, maxLengthOption(options));
     \\  }
@@ -1622,7 +1622,8 @@ pub let LIB =
     \\    b = relIndex(b, n, 0);
     \\    e = relIndex(e, n, n);
     \\    liveBuffer(this._buf, 'fill');
-    \\    typedFill(this, v, b, e);
+    \\    if (viewOutOfBounds(this)) throw new TypeError('Cannot perform fill on a typed array that is out of the bounds of its buffer');
+    \\    typedFill(this, v, b, Math.min(e, this.length));
     \\    return this;
     \\  }
     \\  copyWithin(t, b, e) {
@@ -1746,11 +1747,11 @@ pub let LIB =
     \\  return v;
     \\}
     \\function dataViewLength(v, what) {
-    \\  liveBuffer(v._buf, 'DataView.prototype.' + what);
-    \\  const total = bufLen(v._buf);
-    \\  const end = v._len === undefined ? v._off : v._off + v._len;
+    \\  liveBuffer(v._viewBuf, 'DataView.prototype.' + what);
+    \\  const total = bufLen(v._viewBuf);
+    \\  const end = v._viewLen === undefined ? v._viewOff : v._viewOff + v._viewLen;
     \\  if (end > total) throw new TypeError('DataView.prototype.' + what + ': the view is out of the bounds of its buffer');
-    \\  return v._len === undefined ? total - v._off : v._len;
+    \\  return v._viewLen === undefined ? total - v._viewOff : v._viewLen;
     \\}
     \\class DataView {
     \\  constructor(buffer, offset, length) {
@@ -1766,14 +1767,14 @@ pub let LIB =
     \\    } else if (!buffer.resizable) {
     \\      len = total - offset;
     \\    }
-    \\    hidden(this, '_buf', buffer);
-    \\    hidden(this, '_off', offset);
-    \\    hidden(this, '_len', len);
+    \\    hidden(this, '_viewBuf', buffer);
+    \\    hidden(this, '_viewOff', offset);
+    \\    hidden(this, '_viewLen', len);
     \\    dataViews.add(this);
     \\  }
-    \\  get buffer() { return dataView(this, 'buffer')._buf; }
+    \\  get buffer() { return dataView(this, 'buffer')._viewBuf; }
     \\  get byteLength() { return dataViewLength(dataView(this, 'byteLength'), 'byteLength'); }
-    \\  get byteOffset() { dataViewLength(dataView(this, 'byteOffset'), 'byteOffset'); return this._off; }
+    \\  get byteOffset() { dataViewLength(dataView(this, 'byteOffset'), 'byteOffset'); return this._viewOff; }
     \\  get [Symbol.toStringTag]() { return 'DataView'; }
     \\}
     \\KINDS.forEach((name, kind) => {
@@ -1783,13 +1784,13 @@ pub let LIB =
     \\    dataView(this, 'get' + name);
     \\    i = toIndex(i, 'offset');
     \\    if (i + size > dataViewLength(this, 'get' + name)) throw new RangeError('Offset is outside the bounds of the DataView');
-    \\    return viewGet(this._buf, this._off + i, kind, !!le);
+    \\    return viewGet(this._viewBuf, this._viewOff + i, kind, !!le);
     \\  }, ['set' + name](i, v, le = false) {
     \\    dataView(this, 'set' + name);
     \\    i = toIndex(i, 'offset');
     \\    v = kind >= 9 ? BigInt(v) : Number(v);
     \\    if (i + size > dataViewLength(this, 'set' + name)) throw new RangeError('Offset is outside the bounds of the DataView');
-    \\    viewSet(this._buf, this._off + i, kind, v, !!le);
+    \\    viewSet(this._viewBuf, this._viewOff + i, kind, v, !!le);
     \\  } };
     \\  hidden(DataView.prototype, 'get' + name, accessors['get' + name]);
     \\  hidden(DataView.prototype, 'set' + name, accessors['set' + name]);
