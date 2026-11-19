@@ -1,6 +1,11 @@
-fn stopHung(ui: *mut Ui) {
+import std.mem.AllocError
+
+fn stopHung(ui: *mut Ui) AllocError!void {
     let tp = hungProcess(ui) orelse return
 
-    dropTabProcess(tp, "stopped")
     ui.dirty = true
+
+    if tp.busy_seen { return tellBusy(tp, false) }
+
+    dropTabProcess(tp, "stopped")
 }

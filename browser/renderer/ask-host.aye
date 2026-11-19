@@ -1,0 +1,11 @@
+import engine
+import ipc
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc RequestMouseLock
+fn askHost(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    let asked = engine.takeHostRequests(p)
+
+    if asked.lock == 0 && asked.fs == 0 { return }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.HostRequest { lock: asked.lock as u32, fs: asked.fs as u32 })
+}

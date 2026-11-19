@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#transform-functions
+fn writeTransformFunction(c: Comp, out: *mut text.Builder) AllocError!bool {
+    let t = c.toks[0]
+    var args = [16]Token{t, t, t, t, t, t, t, t, t, t, t, t, t, t, t, t}
+    let pattern = transformPattern(c.toks[0].text) orelse return false
+    let n = functionArgs(c, args[..]) orelse return false
+    let optional = pattern.len == 2 && pattern[0] == pattern[1]
+
+    if n > pattern.len || (n < pattern.len && !(optional && n == 1)) {
+        return false
+    }
+
+    try out.append(c.toks[0].text)
+    try out.appendByte('(')
+
+    for k in 0..n {
+        if k > 0 {
+            try out.append(", ")
+        }
+
+        if !(try writeTransformArg(pattern[k], args[k], out)) {
+            return false
+        }
+    }
+
+    try out.appendByte(')')
+
+    return true
+}

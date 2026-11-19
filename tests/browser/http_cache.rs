@@ -9,6 +9,10 @@ fn typed(url: &str) -> String {
 }
 
 fn visit(first: &str, then: &[String], site: bool) -> String {
+    visit_with(first, then, site, &[])
+}
+
+fn visit_with(first: &str, then: &[String], site: bool, env: &[(&str, &str)]) -> String {
     let loaded = if site { "renderer:loaded" } else { "loaded" };
     let mut events = String::from(loaded);
     for url in then {
@@ -19,6 +23,7 @@ fn visit(first: &str, then: &[String], site: bool) -> String {
         command.env("DWELLER_PROCESS", "site");
     }
     let out = command
+        .envs(env.iter().copied())
         .current_dir(root())
         .args([first, "--frames", "600", "--until-idle", "--state", "--text", "--events", &events])
         .output()
@@ -71,4 +76,46 @@ fn http_cache_revalidates_between_pages() {
 #[test]
 fn http_cache_revalidates_in_renderers() {
     revalidates(true);
+}
+
+fn logged(log: &str, line: &str) -> usize {
+    log.lines().filter(|l| l.trim() == line).count()
+}
+
+/// Q4.12b: the cache is on disk in the profile (`<profile>/cache`, one
+/// file per response that can be used again: fresh for a time, or with a
+/// validator). A second process with the same profile asks nothing for
+/// the fresh sheet and revalidates the two with an ETag (304, the body
+/// from the file); the sheet without cache headers is not stored and is
+/// fetched again. With `DWELLER_DISK_CACHE_BYTES=1` the next start
+/// removes the files, and a third process fetches all four.
+#[test]
+fn http_cache_survives_restart() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let profile = scratch().join("http-cache-profile");
+    let _ = std::fs::remove_dir_all(&profile);
+    let dir = profile.to_str().unwrap();
+    let a = format!("{}/net/cache-a.html", srv.base);
+    let b = format!("{}/net/cache-b.html", srv.base);
+    let log = format!("{}/log", srv.base);
+    let env = [("DWELLER_PROFILE", dir), ("DWELLER_RESTORE", "0")];
+    visit_with(&a, &[], false, &env);
+    let files = std::fs::read_dir(profile.join("cache")).unwrap().count();
+    assert_eq!(files, 3, "the fresh sheet and the two with an ETag");
+    let second = visit_with(&b, &[log.clone()], false, &env);
+    let got = [
+        logged(&second, "cached fresh 200"),
+        logged(&second, "cached etag 200"),
+        logged(&second, "cached etag 304"),
+        logged(&second, "cached nocache 304"),
+        logged(&second, "cached plain 200"),
+    ];
+    assert_eq!(got, [1, 1, 1, 1, 2], "{second}");
+    let small = [("DWELLER_PROFILE", dir), ("DWELLER_RESTORE", "0"), ("DWELLER_DISK_CACHE_BYTES", "1")];
+    let third = visit_with(&b, &[log], false, &small);
+    assert_eq!(logged(&third, "cached fresh 200"), 2, "{third}");
+    assert_eq!(logged(&third, "cached etag 200"), 2, "{third}");
 }

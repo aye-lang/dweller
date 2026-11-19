@@ -1,0 +1,33 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+let NEVER_MS: f64 = 1.0e15
+
+// https://html.spec.whatwg.org/multipage/media.html#delaying-the-load-event-flag
+fn akMediaDelayLoad(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let cb = try js.callableArg(it, a, 0)
+
+    if !s.real || s.ready >= 2 { return js.numVal(0.0) }
+
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, cb)
+
+    let root = try it.addRoot(js.objVal(arr))
+
+    it.pop()
+    tick(s)
+
+    let id = s.next_timer
+
+    s.next_timer += 1
+    try s.timers.append(Timer { id: id, due: s.now + NEVER_MS, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, delays_load: true })
+    s.seq += 1
+
+    return js.numVal(id as f64)
+}

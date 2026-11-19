@@ -1,0 +1,46 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#transform-functions
+fn writeTransformArg(kind: u8, t: Token, out: *mut text.Builder) AllocError!bool {
+    let zero = t.kind == Tok.Number && t.num == 0.0
+    let angle = t.kind == Tok.Dimension && inList(t.text, "deg rad grad turn") != null
+    let length = t.kind == Tok.Dimension && !angle
+
+    if kind == 'n' && t.kind == Tok.Percentage {
+        try writeNumber(t.num / 100.0, out)
+
+        return true
+    }
+
+    if (kind == 'a' || kind == 'l' || kind == 'L') && zero {
+        try out.append(zeroWithUnit(kind))
+
+        return true
+    }
+
+    let fits = match kind {
+        'N', 'n' => t.kind == Tok.Number
+        'a' => angle
+        'l' => length || t.kind == Tok.Percentage
+        'L' => length
+        _ => (length && t.num >= 0.0) || (t.kind == Tok.Ident && text.eql(t.text, "none"))
+    }
+
+    if fits && t.kind == Tok.Ident {
+        try out.append(t.text)
+    } else if fits {
+        try writeFineNumber(t.num, out)
+        try out.append(unitText(t))
+    }
+
+    return fits
+}
+
+fn zeroWithUnit(kind: u8) []u8 {
+    if kind == 'a' {
+        return "0deg"
+    }
+
+    return "0px"
+}
