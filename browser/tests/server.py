@@ -115,8 +115,10 @@
 #                    HOLD_LIMIT s, which only a broken browser reaches)
 #   /parts/NAME?KEY  the HTML file NAME in two parts, cut at its
 #                    "<!--rest-->": the first at once (no Content-Length),
-#                    the rest once a /held-now?KEY request counted it, as
-#                    a /held/ request with the query KEY
+#                    the rest once /parts-go?KEY was asked for (waits stop
+#                    after HOLD_LIMIT s)
+#   /parts-go?KEY    answers at once, every time, and lets the /parts/
+#                    request of KEY go on
 #   /held-now        once a /held/ request is in flight, the number in
 #                    flight, as text/plain; then it answers them
 #                    (waits stop after HOLD_LIMIT s, which only a broken
@@ -199,6 +201,11 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+
+# The keys /parts-go was asked for: a /parts/ request sends its rest once
+# its key is here.
+PARTS_GONE = set()
+PARTS_CHANGED = threading.Condition()
 # The keys of the /event-stream-open responses that may end.
 STREAM_ENDED = set()
 STREAM_CHANGED = threading.Condition()
@@ -253,11 +260,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             HELD["queries"].remove(query)
 
     def parts(self, path):
-        """/parts/NAME?KEY: the file's first part, then (once counted
-        by /held-now?KEY) the rest; the end closes the connection."""
+        """/parts/NAME?KEY: the file's first part, then (once
+        /parts-go?KEY was asked for) the rest; the end closes the
+        connection."""
         split = urllib.parse.urlsplit(path)
         with open(os.path.join(ROOT, split.path[len("/parts/"):]), "rb") as f:
             first, _, rest = f.read().partition(b"<!--rest-->")
+        with PARTS_CHANGED:
+            PARTS_GONE.discard(split.query)
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Cache-Control", "no-store")
@@ -265,7 +275,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(first)
         self.wfile.flush()
-        self.hold(split.query)
+        with PARTS_CHANGED:
+            PARTS_CHANGED.wait_for(lambda: split.query in PARTS_GONE, HOLD_LIMIT)
         self.wfile.write(rest)
         self.close_connection = True
 
@@ -449,6 +460,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply_file(path[len("/held/"):])
         elif path.startswith("/parts/"):
             self.parts(path)
+        elif path.startswith("/parts-go?"):
+            with PARTS_CHANGED:
+                PARTS_GONE.add(urllib.parse.urlsplit(path).query)
+                PARTS_CHANGED.notify_all()
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], b"go\n")
         elif path == "/held-now" or path.startswith("/held-now?"):
             names = [q for q in urllib.parse.urlsplit(path).query.split(",") if q]
             with HELD_CHANGED:
