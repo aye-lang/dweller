@@ -220,6 +220,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
 | Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
+| Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
