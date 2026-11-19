@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<title>Interpolation of transform lists</title>
+<title>Interpolation and composition of transform lists; the resolved matrix</title>
 <div id="box"></div>
 <pre id="out"></pre>
 <script>
@@ -24,4 +24,20 @@ log('same axis', half('rotate3d(0, 1, 0, 0deg)', 'rotate3d(0, 2, 0, 90deg)'));
 log('matrices', half('matrix(1, 0, 0, 1, 0, 0)', 'matrix(0, 1, -1, 0, 20, 0)'));
 log('mismatch', half('rotate(90deg)', 'translate(20px, 0px)'));
 log('3d', half('rotateX(90deg)', 'scale3d(1, 1, 2)'));
+
+function composed(under, value, composite) {
+  box.style.transform = under;
+  const a = box.animate({ transform: [value, value] }, { duration: 2000, composite });
+  a.pause();
+  a.currentTime = 1000;
+  const v = getComputedStyle(box).transform;
+  a.cancel();
+  box.style.transform = '';
+  return v;
+}
+
+log('add', composed('translateX(100px)', 'scale(2)', 'add'));
+log('accumulate', composed('scale(2)', 'scale(3)', 'accumulate'));
+log('percent', (box.style.width = '200px', box.style.transform = 'translateX(50%)', getComputedStyle(box).transform));
+log('none', (box.style.transform = '', getComputedStyle(box).transform));
 </script>
