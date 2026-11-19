@@ -115,6 +115,16 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .Visible { on } => try putU32(out, on)
         .BusyAsk { ms } => try putU32(out, ms)
         .BusyAnswer { wait } => try putU32(out, wait)
+        .HostRequest { lock, fs } => {
+            try putU32(out, lock)
+            try putU32(out, fs)
+        }
+
+        .HostState { seq, what } => {
+            try putU32(out, seq)
+            try putBytes(out, what)
+        }
+
         .UpgradeInsecure { page } => try putBytes(out, page)
         .FramePeriod { ns } => try putF64(out, ns)
         .Telemetry { records } => try putBytes(out, records)

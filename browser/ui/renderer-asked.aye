@@ -14,6 +14,13 @@ fn rendererAsked(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) []u8 {
             tp.busy_ms = ms
         }
 
+        .HostRequest { lock, fs } => {
+            if got.frame != slot.id || lock > 2 || fs > 2 { return "bad host_request" }
+
+            tp.host_lock = lock
+            tp.host_fs = fs
+        }
+
         .CloseSelf => {
             if got.frame != slot.id { return "bad close" }
 

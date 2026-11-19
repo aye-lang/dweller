@@ -168,6 +168,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             try net.noteUpgradeInsecure(page)
         }
 
+        .HostRequest { lock, fs } => try refuseHost(tp, lock, fs)
         .BusyAsk { .. } => try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.BusyAnswer { wait: 1 })
         _ => return "unexpected in a frame"
     }

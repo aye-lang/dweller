@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn hostLock(ui: *mut Ui, tp: *mut TabProcess, lock: u32) AllocError!void {
+    if lock == 1 && !lockPointer() { return tellHost(tp, "lockerror") }
+    if lock == 2 && ui.locked { SDL_SetRelativeMouseMode(0) }
+    if lock == 0 { return }
+
+    ui.locked = lock == 1
+    tp.locked = lock == 1
+
+    if lock == 1 { return tellHost(tp, "lock:1") }
+
+    try tellHost(tp, "lock:0")
+}
