@@ -1,0 +1,15 @@
+import js
+import js.Value
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/IndexedDB/#cleanup-indexed-database-transactions
+fn cleanUpIdb(s: *mut Script) AllocError!void {
+    if !s.idb_fresh || s.idb_cleanup == js.NONE { return }
+
+    let base = s.it.stack.len()
+
+    s.idb_fresh = false
+    try jsPush(s, s.it.roots.items()[s.idb_cleanup])
+    try jsPush(s, Value.Undefined)
+    _ = try callReported(s, base, 0)
+}

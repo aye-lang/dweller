@@ -1,0 +1,26 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn instanceFor(alloc: Allocator, version: u32, href: []u8, install: bool) AllocError!?*mut Page {
+    if workerOf(version) |p| { return p }
+
+    var ask = text.Builder.init(alloc)
+    defer ask.deinit()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try ask.append("sw\nsource\n")
+    try ask.appendUint(version as u64)
+    try askStore(alloc, IdbAsk { href: href, page: 0, request: ask.bytes() }, &mut out)
+
+    let reply = out.bytes()
+
+    if !text.startsWith(reply, "ok\n") { return null }
+
+    let scope_end = 3 + (std.mem.indexOf(reply[3..], '\n') orelse return null)
+    let url_end = scope_end + 1 + (std.mem.indexOf(reply[scope_end + 1..], '\n') orelse return null)
+
+    return startInstance(alloc, WorkerStart { version: version, scope: reply[3..scope_end], script_url: reply[scope_end + 1..url_end], source: reply[url_end + 1..], install: install })
+}

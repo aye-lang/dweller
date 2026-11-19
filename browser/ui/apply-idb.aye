@@ -1,0 +1,40 @@
+import engine
+import indexeddb
+import ipc
+import serviceworker
+import std.mem.AllocError
+import std.text
+import url
+
+struct IdbCall {
+    href: []u8
+    client: u64
+    request: []u8
+    worker: bool = false
+}
+
+fn applyIdb(tp: *mut TabProcess, on: u32, call: IdbCall) AllocError!void {
+    let alloc = tp.url.alloc
+    var area = text.Builder.init(alloc)
+    defer area.deinit()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    if tp.partition != 0 { try partitionArea(&mut area, tp.partition) }
+
+    if text.eql(call.request, "drop") {
+        try indexeddb.dropClient(call.client)
+        try serviceworker.dropClient(call.client)
+        try out.append("ok")
+    } else if url.parse(alloc, call.href) |page| {
+        defer page.deinit(alloc)
+
+        try engine.storageOrigin(&mut area, &page)
+        try applyStore(call, area.bytes(), &mut out)
+    } else |e| {
+        try out.append("!SecurityError")
+    }
+
+    try replyIdb(tp, on, out.bytes())
+    try engine.deliverIdbEvents()
+}

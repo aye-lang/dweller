@@ -96,6 +96,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             if seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
             tp.acked = seq
+            noteInputAcked(tp)
         }
 
         .WheelUnused { seq, dx, dy } => {
@@ -136,8 +137,11 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             return answerStorage(tp, got.frame, got.message)
         }
 
+        .Idb { .. } => return answerIdb(tp, got.frame, got.message)
+
         .Subframes { frames } => return takeSubframes(tp, frames)
         .PostMessage { .. } => return routePostMessage(tp, got.message)
+        .PortPost { .. } => return routePortMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {

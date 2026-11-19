@@ -1,0 +1,11 @@
+import std.mem.AllocError
+
+fn logUndo(b: *mut Backend, t: Target, key: []u8, old: ?*mut Record) AllocError!void {
+    if t.tx.mode == VERSION_CHANGE {
+        if old |r| { freeRecord(b.alloc, r) }
+
+        return
+    }
+
+    try t.tx.undo.append(Undo { store: t.store.id, key: try dupe(b.alloc, key), old: old })
+}

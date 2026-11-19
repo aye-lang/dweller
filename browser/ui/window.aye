@@ -29,12 +29,14 @@ import css
 import dom.NodeId
 import engine
 import font
+import indexeddb
 import layout
 import net
 import pageview
 import paint
 import perf
 import places
+import serviceworker
 import sessions
 import std
 import std.mem.AllocError
@@ -464,6 +466,7 @@ pub struct Ui {
     overlay_key: ?u64 = null
     // Inside the timers' `afterScripts`.
     from_timers: bool = false
+    pan_ns: u64 = 0
     quit: bool
     stuck: bool = false
     cert_advanced: bool = false
@@ -743,6 +746,11 @@ pub struct Ui {
                     timeout = ms as i32
                 }
             }
+            if indexeddb.msUntilSave() |ms| {
+                if ms < timeout as i64 {
+                    timeout = ms as i32
+                }
+            }
             if self.tab.page |p| {
                 if engine.msUntilNextTimer(p) |ms| {
                     if ms < timeout as f64 {
@@ -791,6 +799,8 @@ pub struct Ui {
             }
             net.saveCookiesIfDue()
             engine.saveStorageIfDue()
+            indexeddb.saveIfDue()
+            serviceworker.saveIfDue()
             try saveTabs(self, false)
             try syncZoom(self)
             if self.resized {

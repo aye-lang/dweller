@@ -20,8 +20,12 @@ fn akPostRemote(it: *mut Interp, a: Args) JsError!Value {
     let origin = try it.builder()
     defer it.release(origin)
 
+    let ports = try it.builder()
+    defer it.release(ports)
+
     try argText(it, a, 1, data)
     try argText(it, a, 2, want)
+    try argText(it, a, 3, ports)
     try appendOrigin(origin, s.page)
 
     if !(try remoteTargetOrigin(it, s.page, text.trim(want.bytes()), target)) {
@@ -40,7 +44,7 @@ fn akPostRemote(it: *mut Interp, a: Args) JsError!Value {
 
     if s.page.parent != null { source_page = s.page.id }
 
-    try post(RemotePost { to: to, source_page: source_page, source_origin: origin.bytes(), target_origin: target.bytes(), data: data.bytes(), buffers: s.remote_staged.bytes() })
+    try post(RemotePost { to: to, source_page: source_page, source_origin: origin.bytes(), target_origin: target.bytes(), data: data.bytes(), buffers: s.remote_staged.bytes(), ports: ports.bytes() })
     s.remote_staged.clear()
 
     return Value.Undefined

@@ -638,6 +638,8 @@ fn akOpenerWindow(it: *mut Interp, a: Args) JsError!Value {
     }
     let c = contextOf(s.page.context) orelse return Value.Null
     if c.opener == 0 || contextOf(c.opener) == null {
+        if c.remote_opener != 0 { return remoteWindowValue(s, c.remote_opener, 0) }
+
         return Value.Null
     }
     return contextValue(s, c.opener)
@@ -649,6 +651,7 @@ fn akDropOpener(it: *mut Interp, a: Args) JsError!Value {
     if s.page.parent == null {
         if contextOf(s.page.context) |c| {
             c.opener = 0
+            c.remote_opener = 0
         }
     }
     return Value.Undefined

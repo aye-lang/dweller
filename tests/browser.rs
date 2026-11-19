@@ -24,6 +24,8 @@ mod common;
 
 #[path = "browser/agent.rs"]
 mod agent;
+#[path = "browser/cachestorage.rs"]
+mod cachestorage;
 #[path = "browser/cli.rs"]
 mod cli;
 #[path = "browser/csp_directives.rs"]
@@ -38,6 +40,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/indexeddb.rs"]
+mod indexeddb;
 #[path = "browser/input.rs"]
 mod input;
 #[path = "browser/js.rs"]
@@ -64,6 +68,8 @@ mod print;
 mod scripts;
 #[path = "browser/security.rs"]
 mod security;
+#[path = "browser/serviceworker.rs"]
+mod serviceworker;
 #[path = "browser/storage.rs"]
 mod storage;
 #[path = "browser/term.rs"]
@@ -98,6 +104,12 @@ mod window_renderer_oopif_input;
 mod window_renderer_oopif_proxy;
 #[path = "browser/window_renderer_oopif_site.rs"]
 mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_oopif_throttle.rs"]
+mod window_renderer_oopif_throttle;
+#[path = "browser/window_renderer_pan.rs"]
+mod window_renderer_pan;
+#[path = "browser/window_renderer_perf.rs"]
+mod window_renderer_perf;
 #[path = "browser/window_renderer_popup.rs"]
 mod window_renderer_popup;
 #[path = "browser/window_renderer_scroll.rs"]

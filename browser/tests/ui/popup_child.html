@@ -4,6 +4,7 @@
 <button id="away" style="display: block; width: 300px; height: 40px; margin: 0">other site</button>
 <button id="alive" style="display: block; width: 300px; height: 40px; margin: 0">alive</button>
 <button id="more" style="display: block; width: 300px; height: 40px; margin: 0">open another</button>
+<button id="want" style="display: block; width: 300px; height: 40px; margin: 0">ask for a port</button>
 <script>
 const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
 let saw = 'opener null';
@@ -15,9 +16,22 @@ try {
   }
 } catch (e) {
   saw = 'opener ' + e.name;
+  opener.postMessage('hi', '*');
 }
+addEventListener('message', function (e) {
+  if (e.data && e.data.kind === 'port') {
+    const p = e.ports[0];
+    p.onmessage = ev => {
+      document.title = 'port2-' + ev.data + '-' + (p === e.data.port) + ' ' + location.search + '!!';
+      p.postMessage('echo-' + ev.data);
+    };
+    return;
+  }
+  document.title = e.data + '-' + (e.source === window.opener) + ' name ' + window.name + ' ' + location.search + '!';
+});
 document.title = saw + ' name ' + window.name + ' ' + location.search;
 away.onclick = () => { location.href = 'http://' + host + ':' + location.port + '/ui/popup_child.html' + (location.search === '?away' ? '?back' : '?away'); };
 alive.onclick = () => { document.title = 'popup-alive'; };
+want.onclick = () => { opener.postMessage('want-port', '*'); };
 more.onclick = () => { window.open('popup_child.html?third', 'w3'); };
 </script>

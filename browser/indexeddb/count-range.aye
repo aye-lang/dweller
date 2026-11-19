@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+fn countRange(a: Ask) AllocError!void {
+    let t = targetOf(a, false) orelse return refuse(a, "InvalidStateError")
+    let v = viewOf(a, t) orelse return refuse(a, "NotFoundError")
+    let range = readRange(a.f)
+    let start = rangeStart(v, range)
+    let end = rangeEnd(v, range)
+
+    if a.f.bad { return refuse(a, "DataError") }
+    if end <= start { return appendNumber(a.out, 0) }
+
+    try appendNumber(a.out, (end - start) as u64)
+}

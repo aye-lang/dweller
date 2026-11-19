@@ -1,0 +1,25 @@
+import css
+import css.Value
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#principal-flow
+fn propagateWritingMode(t: *mut Tree, root: usize) AllocError!void {
+    let body = bodyBox(t, root) orelse return
+    let from = t.bx(body).style
+    let style = t.bx(root).style
+
+    if writingModeOf(from) == writingModeOf(style) && isKeyword(from[css.DIRECTION], keywordOf(style[css.DIRECTION])) {
+        return
+    }
+
+    let copy = try t.alloc.alloc(Value.Initial, style.len)
+
+    for k, v in style {
+        copy[k] = v
+    }
+
+    copy[css.WRITING_MODE] = from[css.WRITING_MODE]
+    copy[css.DIRECTION] = from[css.DIRECTION]
+    t.bx(root).style = copy
+}
