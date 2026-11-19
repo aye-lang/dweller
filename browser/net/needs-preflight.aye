@@ -2,8 +2,12 @@ import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 
-// chromium: services/network/cors/cors_url_loader.cc NeedsPreflight
+// chromium: services/network/cors/cors_url_loader.cc NeedsPreflight (kPreventPreflight)
 fn needsPreflight(alloc: Allocator, req: Request, at: []u8) AllocError!bool {
+    if req.stream {
+        return false
+    }
+
     var origin = text.Builder.init(alloc)
     defer origin.deinit()
     try corsOrigin(alloc, req, at, &mut origin)

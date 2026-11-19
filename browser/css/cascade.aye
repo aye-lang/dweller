@@ -67,6 +67,7 @@ import std.text
 /// share one array (`intern`), which nothing writes while two hold it.
 pub struct Styles {
     alloc: Allocator
+    dark: ?bool = null
     arena: *mut Arena
     // Node index to its values.
     map: IntMap(u32, []Value)
@@ -441,6 +442,7 @@ pub fn computeStyles(doc: *Document, ua: *Sheet, author: *Sheet, media: Media, o
     defer perf.end("cascade", began, "document")
     defer perf.end("style_full", began, "document")
     out.inputs = 0
+    out.dark = media.dark
     let a = out.arena.allocator()
     let wins = try a.alloc(Win { set: false, level: 0, spec: 0, d: NO_DECL }, NPROPS)
     var c = Computer {
@@ -567,6 +569,7 @@ pub fn computeStylesOf(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     let began = perf.start()
     defer perf.end("cascade_read", began, "ancestors")
     out.inputs = 0
+    out.dark = media.dark
     if out.map.contains(el.index) {
         return
     }
@@ -636,6 +639,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     let began = perf.start()
     defer perf.end("restyle", began, "subtrees")
     out.inputs = 0
+    out.dark = media.dark
     out.moved = false
     out.moved_els.clear()
     out.moved_many = false
@@ -882,6 +886,7 @@ struct Computer {
     level: ?*mut CustomLevel
     // The element being styled (for container units).
     el: NodeId
+    page_scheme: ?[]u8 = null
     // The sheets of the document's tree and of its shadow trees.
     scopes: List(Scope)
     // The host whose `::part()` rules `consider` matches.
@@ -1329,6 +1334,7 @@ struct Computer {
         if is_root {
             self.root_font = font_px
         }
+        setSchemeDark(usedDarkBy(keywordText(try self.specified(COLOR_SCHEME, parent)), pageScheme(self), prefersDarkOf(self.media.dark)))
         for q in 0..NPROPS {
             let p = lineHeightFirst(q)
             if p == FONT_SIZE {
@@ -1339,8 +1345,10 @@ struct Computer {
             } else {
                 setCalcContext(font_px, self.root_font, vw, vh, -1.0)
             }
-            var v = try self.specified(p, parent)
-            if p == COLOR && isCurrentColor(v) {
+            var v = schemeResolved(try self.specified(p, parent))
+            if p == COLOR && is_root && !self.wins[p].set {
+                v = initialOf(p)
+            } else if p == COLOR && isCurrentColor(v) {
                 v = parent[COLOR]
             } else if p == FONT_WEIGHT {
                 v = relativeWeight(v, numberOr(parent[FONT_WEIGHT], 400.0))
@@ -1412,8 +1420,8 @@ struct Computer {
         }
         return match v {
             .Inherit => parent[p]
-            .Initial => PROPERTIES[p].initial
-            .Unset => unsetValue(inherited, parent[p], PROPERTIES[p].initial)
+            .Initial => initialOf(p)
+            .Unset => unsetValue(inherited, parent[p], initialOf(p))
             _ => v
         }
     }
@@ -1625,6 +1633,9 @@ pub fn writeValue(v: Value, out: *mut text.Builder) AllocError!void {
         .CurrentColor => {
             try out.append("currentcolor")
         }
+        .Schemed { light, .. } => {
+            try writeValue(Value.Rgba { c: unpackColor(light) }, out)
+        }
         .Inherit => {
             try out.append("inherit")
         }
@@ -1826,6 +1837,7 @@ fn tagOf(v: Value) u8 {
         .Unset => 13
         .Ch { .. } => 16
         .Ex { .. } => 17
+        .Schemed { .. } => 18
     }
 }
 

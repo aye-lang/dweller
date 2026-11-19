@@ -1,0 +1,20 @@
+fn sweepEnvs(it: *mut Interp, from: usize, to: usize) {
+    for i in from..to {
+        let ev = &mut it.heap.envs.items()[i]
+
+        if !ev.live {
+            continue
+        }
+
+        if ev.mark {
+            ev.mark = false
+            it.heap.swept_live += 1
+            it.heap.swept_bytes += envBytes(ev)
+            continue
+        }
+
+        it.heap.freeEnv(i as u32)
+        it.heap.free_envs.append(i as u32) catch |e| {
+        }
+    }
+}

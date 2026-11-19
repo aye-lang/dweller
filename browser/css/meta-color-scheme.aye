@@ -1,0 +1,27 @@
+import dom.Document
+import dom.NodeId
+import std.mem
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/semantics.html#meta-color-scheme
+pub fn metaColorScheme(doc: *Document) []u8 {
+    var cur: ?NodeId = doc.root
+
+    while cur |h| {
+        if doc.isElement(h, "body") {
+            return ""
+        }
+
+        if doc.isElement(h, "meta") && text.eqlIgnoreCase(doc.attr(h, "name") orelse "", "color-scheme") {
+            let content = text.trim(doc.attr(h, "content") orelse "")
+
+            if content.len > 0 && mem.indexOf(content, ',') == null {
+                return content
+            }
+        }
+
+        cur = doc.following(h, doc.root)
+    }
+
+    return ""
+}

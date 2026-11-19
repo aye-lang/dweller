@@ -1,0 +1,29 @@
+import std
+
+fn unmarkedBefore(h: *mut Heap, objs: []bool, strs: []bool, envs: []bool) usize {
+    var missed: usize = 0
+
+    for i in 0..objs.len {
+        if h.objs.items()[i].mark && h.objs.items()[i].live && !objs[i] {
+            if missed == 0 {
+                std.log.err("GC VERIFY: object {} of class {} was missed", i, @tagName(h.objs.items()[i].class))
+            }
+
+            missed += 1
+        }
+    }
+
+    for i in 0..strs.len {
+        if h.strs.items()[i].mark && h.strs.items()[i].live && !strs[i] {
+            missed += 1
+        }
+    }
+
+    for i in 0..envs.len {
+        if h.envs.items()[i].mark && h.envs.items()[i].live && !envs[i] {
+            missed += 1
+        }
+    }
+
+    return missed
+}

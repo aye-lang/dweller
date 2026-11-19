@@ -1,0 +1,21 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+fn clipboardReadRemote(pasted: *mut text.Builder) AllocError!bool {
+    let r = store_renderer orelse return false
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.ClipboardRead) catch return false
+
+    let got = awaitReply(r) orelse return false
+
+    match got {
+        .ClipboardText { ok, pasted: found } => {
+            try pasted.append(found)
+
+            return ok == 1
+        }
+
+        _ => return false
+    }
+}

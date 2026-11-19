@@ -1,0 +1,35 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop
+fn colorSchemeValue(sheet: *mut Sheet, comps: []Comp) ?Value {
+    var out = text.Builder.init(sheet.arena.allocator())
+    var only = false
+
+    for k, c in comps {
+        let t = c.toks[0]
+
+        if c.toks.len != 1 || t.kind != Tok.Ident || inList(t.text, "normal default inherit initial unset revert revert-layer") != null {
+            return null
+        }
+
+        if text.eqlIgnoreCase(t.text, "only") {
+            if only || (k > 0 && k + 1 < comps.len) {
+                return null
+            }
+
+            only = true
+        } else {
+            if out.len() > 0 { out.appendByte(' ') catch return null }
+
+            out.append(inList(t.text, "light dark") orelse t.text) catch return null
+        }
+    }
+
+    if out.len() == 0 {
+        return null
+    }
+
+    if only { out.append(" only") catch return null }
+
+    return Value.Keyword { k: out.toOwned() catch return null }
+}

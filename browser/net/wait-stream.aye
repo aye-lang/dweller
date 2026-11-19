@@ -1,0 +1,14 @@
+pub fn waitStream(id: u32, ms: i32) {
+    pumpLoads()
+
+    if loadState(id) != LoadState.Running || streamReady(id) {
+        return
+    }
+
+    if remote_loader |rl| { return remotePump(rl, ms) }
+
+    let ld = loader orelse return
+
+    curl_multi_poll(ld.multi, null, 0, ms, null)
+    pumpLoads()
+}

@@ -1,0 +1,14 @@
+pub fn streamReady(id: u32) bool {
+    if remote_loader |rl| { return remoteStreamReady(rl, id) }
+
+    let ld = loader orelse return false
+    let l = loadById(ld, id) orelse return false
+    let a = l.ask orelse return false
+    let job = l.job orelse return false
+
+    if !a.stream || l.state != LoadState.Running || !streamHeadFinal(job) || !openStream(ld, l, job) {
+        return false
+    }
+
+    return !a.stream_taken || job.sink.body.len() > 0
+}
