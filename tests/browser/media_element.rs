@@ -199,3 +199,67 @@ fn media_element_video_painted() {
         }
     }
 }
+
+/// Q5.9a slice 5: the `controls` of a media element are a UA shadow
+/// tree (`browser/tests/media/controls.html`, a `<video controls>` and
+/// an `<audio controls>`). Clicks on the scrub bar, the mute button,
+/// the volume bar and the two play buttons seek, unmute, lower the
+/// volume and play both to the end; the page sees the clicks at the
+/// element (the tree is closed) and `load` waits for the media. The
+/// page area of the last frame is `controls.png`, the same in one
+/// process and with `DWELLER_PROCESS=site`.
+#[test]
+fn media_element_controls() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    const TOP: usize = 40;
+    let events = "renderer:title:ready click:199,264 renderer:title:sought click:250,264 renderer:title:unmuted \
+                  click:285,264 renderer:title:quieter click:22,307 click:22,264 renderer:title:done frame";
+    let golden = root().join("browser/tests/media/controls.png");
+    for mode in ["single", "site"] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let png = scratch().join(format!("media_controls_{mode}.png"));
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .env("SDL_AUDIODRIVER", "dummy")
+            .args([&format!("{}/media/controls.html", srv.base), "--font", "fixed", "--width", "400", "--height", "440"])
+            .args(["--frames", "4000", "--until-idle", "--text", "--save"])
+            .arg(&png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        let got = text(&out.stdout);
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        for line in [
+            "load: v 320x240 ready true, a 300x54 ready true; shadowRoot null",
+            "v click: target video",
+            "v seeked: t=0.73 paused=true muted=true volume=1.00",
+            "v volumechange: t=0.73 paused=true muted=false volume=1.00",
+            "v volumechange: t=0.73 paused=true muted=false volume=0.39",
+            "a click: target audio",
+            "a play: t=0.00 paused=false muted=false volume=1.00",
+            "v play: t=0.73 paused=false muted=false volume=0.39",
+            "v ended: t=1.00 paused=false muted=false volume=0.39",
+            "a ended: t=0.50 paused=false muted=false volume=1.00",
+        ] {
+            assert!(got.contains(line), "{mode}: {line} in {got}");
+        }
+        if mode == "single" && std::env::var_os("DWELLER_BLESS").is_some() {
+            std::fs::copy(&png, &golden).unwrap();
+        }
+        let (width, _, shot) = png_rgba(&std::fs::read(&png).unwrap());
+        let (wide, _, want) = png_rgba(&std::fs::read(&golden).unwrap());
+        assert!(
+            width == wide && shot[TOP * width * 4..] == want[TOP * wide * 4..],
+            "{mode}: the page area of {} differs from {}",
+            png.display(),
+            golden.display()
+        );
+    }
+}

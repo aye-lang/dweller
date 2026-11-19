@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-individual-transforms
+fn mixRotate(a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    let none_a = text.eql(text.trim(a), "none")
+    let none_b = text.eql(text.trim(b), "none")
+    var fa = rotateValueFn(a)
+    var fb = rotateValueFn(b)
+
+    if none_a && fb != null {
+        fa = identityTransform(fb.?)
+    } else if none_b && fa != null {
+        fb = identityTransform(fa.?)
+    }
+
+    let from = fa orelse return false
+    let to = fb orelse return false
+
+    if text.eql(from.name, "rotate") && text.eql(to.name, "rotate") {
+        let mixed = mixTransformArgs(from, to, p) orelse return false
+
+        return writeRotateValue(mixed, out)
+    }
+
+    let turned = mixRotations(from, to, p) orelse slerpRotations(from, to, p) orelse return false
+
+    return writeRotateValue(turned, out)
+}

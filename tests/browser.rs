@@ -46,6 +46,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/http_cache.rs"]
+mod http_cache;
 #[path = "browser/indexeddb.rs"]
 mod indexeddb;
 #[path = "browser/input.rs"]

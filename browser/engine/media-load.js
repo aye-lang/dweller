@@ -83,11 +83,19 @@ function pump(el) {
     if (m.network === LOADING && m.ready >= METADATA) {
       m.network = IDLE;
       fire(el, 'suspend');
+      delays(m, false);
     }
     return;
   }
 
   fetchChunk(el, from);
+}
+
+// https://html.spec.whatwg.org/multipage/media.html#delaying-the-load-event-flag
+function delays(m, on) {
+  if (on && !m.delay) m.delay = ak.mediaDelayLoad(() => {});
+  if (!on && m.delay) ak.clearTimer(m.delay);
+  if (!on) m.delay = 0;
 }
 
 function fail(el, source) {
@@ -96,6 +104,8 @@ function fail(el, source) {
     fire(source, 'error');
     return trySources(el, source.nextElementSibling);
   }
+
+  delays(m, false);
 
   m.error = parts.error(m.ready >= METADATA ? 2 : 4, m.ready >= METADATA ? 'MEDIA_ELEMENT_ERROR: Network error' : 'MEDIA_ELEMENT_ERROR: Format error');
   m.network = m.ready >= METADATA ? IDLE : NO_SOURCE;
@@ -119,6 +129,7 @@ function took(el, source, from, r) {
     [m.duration, m.audio, , m.width, m.height] = found;
     for (const t of parts.tracks(bytes, total)) m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] = m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] || t;
     if (m.pictureTrack) ak.mediaFrame(el, m.width, m.height, '');
+    parts.pictureMirror(el);
     m.total = total;
     fire(el, 'durationchange');
     m.ready = METADATA;
@@ -131,6 +142,7 @@ function took(el, source, from, r) {
     m.first = true;
     m.ready = CURRENT;
     fire(el, 'loadeddata');
+    delays(m, false);
   }
 
   fire(el, 'progress');
@@ -192,10 +204,12 @@ parts.selectResource = el => {
   const m = stateOf(el);
   m.network = NO_SOURCE;
   m.seen = el.getAttribute('src');
+  delays(m, true);
   queue(el, () => {
     const value = el.getAttribute('src');
     if (value === null && !el.querySelector(':scope > source')) {
       m.network = EMPTY;
+      delays(m, false);
       return;
     }
 

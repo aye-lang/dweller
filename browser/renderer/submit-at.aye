@@ -2,7 +2,13 @@ import dom.NodeId
 import engine
 
 fn submitAt(r: *mut TabRenderer, p: *mut engine.Page, form: NodeId, submitter: ?NodeId) !void {
-    if !(try engine.validateSubmission(p, form, submitter)) || !(try engine.dispatchSubmit(p, form, submitter)) { return p.restyle() }
+    if !(try engine.validateSubmission(p, form, submitter)) {
+        try showInvalid(r, p)
+
+        return p.restyle()
+    }
+
+    if !(try engine.dispatchSubmit(p, form, submitter)) { return p.restyle() }
 
     try sendSubmission(r, p, form, submitter)
 }

@@ -1,0 +1,17 @@
+// chromium: net/http/http_cache_transaction.cc (UpdateCacheEntry)
+pub fn refreshEntry(c: *mut Cache, key: []u8, headers: []u8) bool {
+    let i = entryOf(c, key) orelse return false
+    let e = &mut c.entries.items()[i]
+    var lifetime = freshnessLifetime(headers)
+
+    if requestHeaderValue(headers, "Cache-Control").len == 0 && requestHeaderValue(headers, "Expires").len == 0 {
+        lifetime = freshnessLifetime(e.headers)
+    }
+
+    e.stored = now()
+    e.lifetime = lifetime
+    e.epoch = c.epoch
+    storeCached(c, e)
+
+    return true
+}

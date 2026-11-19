@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn hostFullscreen(ui: *mut Ui, tp: *mut TabProcess, fs: u32) AllocError!void {
+    if fs == 1 && SDL_SetWindowFullscreen(ui.window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0 { return tellHost(tp, "fserror") }
+    if fs == 2 && ui.fullscreen { SDL_SetWindowFullscreen(ui.window, 0) }
+    if fs == 0 { return }
+
+    ui.resized = ui.resized || ui.fullscreen != (fs == 1)
+    ui.fullscreen = fs == 1
+    tp.fullscreen = fs == 1
+
+    if fs == 1 { return tellHost(tp, "fs:1") }
+
+    try tellHost(tp, "fs:0")
+}

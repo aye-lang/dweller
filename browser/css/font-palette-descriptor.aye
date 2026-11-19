@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-palette-values
+fn fontPaletteDescriptor(sheet: *mut Sheet, name: []u8, comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    if text.eql(name, "font-family") {
+        try writeValue((try fontFamily(sheet, comps)) orelse return false, out)
+
+        return true
+    }
+
+    if text.eql(name, "override-colors") {
+        return overrideColors(comps, out)
+    }
+
+    if !text.eql(name, "base-palette") || comps.len != 1 || !(isIdent(comps[0], "light") || isIdent(comps[0], "dark") || isPaletteIndex(comps[0])) {
+        return false
+    }
+
+    try writeTokens(comps[0].toks, out)
+
+    return true
+}
+
+fn isPaletteIndex(c: Comp) bool {
+    return c.toks.len == 1 && c.toks[0].kind == Tok.Number && c.toks[0].flag && c.toks[0].num >= 0.0
+}

@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-synthesis
+fn synthesisShorthand(d: *mut Declarer, comps: []Comp) AllocError!void {
+    let props = [4]usize{FONT_SYNTHESIS_WEIGHT, FONT_SYNTHESIS_STYLE, FONT_SYNTHESIS_SMALL_CAPS, FONT_SYNTHESIS_POSITION}
+
+    if try d.wide(comps, props[..]) {
+        return
+    }
+
+    let words = synthesisWords(comps) orelse return
+
+    for k in 0..4 {
+        try d.add(props[k], Value.Keyword { k: words[k] })
+    }
+}

@@ -1,0 +1,24 @@
+import std
+
+var relay: ?fn([]u8) = null
+
+pub fn telemetryRelay(hook: fn([]u8)) {
+    relay = hook
+    tm_on = true
+    flushed_ms = std.time.monotonicMs()
+}
+
+pub fn telemetryFlush() {
+    if tm_on && out_len > 0 { flush() }
+}
+
+fn relayed() bool {
+    let hook = relay orelse return false
+
+    if whole_len > 0 { hook(out[..whole_len]) }
+
+    out_len = 0
+    whole_len = 0
+
+    return true
+}

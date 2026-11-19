@@ -1,0 +1,8 @@
+import ipc
+import std.mem.AllocError
+
+fn tellHost(tp: *mut TabProcess, what: []u8) AllocError!void {
+    tp.seq += 1
+    noteInputSent(tp, "host")
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.HostState { seq: tp.seq, what: what })
+}

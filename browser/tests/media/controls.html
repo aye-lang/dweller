@@ -1,0 +1,24 @@
+<!doctype html>
+<title>Media controls</title>
+<body style="margin:0;background:white">
+<video id="v" src="clip.mkv" controls muted preload="auto" style="display:block;width:320px;height:240px"></video>
+<audio id="a" src="tone.wav" controls preload="auto" style="display:block"></audio>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const v = document.getElementById('v'), a = document.getElementById('a');
+const state = el => 't=' + el.currentTime.toFixed(2) + ' paused=' + el.paused + ' muted=' + el.muted + ' volume=' + el.volume.toFixed(2);
+for (const el of [v, a]) {
+  for (const type of ['play', 'pause', 'ended', 'seeked', 'volumechange']) el.addEventListener(type, () => log(el.id + ' ' + type + ': ' + state(el)));
+
+  el.addEventListener('click', e => log(el.id + ' click: target ' + e.target.localName));
+  el.addEventListener('ended', () => { if (v.ended && a.ended) document.title = 'done'; });
+}
+v.addEventListener('seeked', () => { document.title = 'sought'; });
+v.addEventListener('volumechange', () => { document.title = v.volume < 1 ? 'quieter' : 'unmuted'; });
+addEventListener('load', () => {
+  log('load: ' + [v, a].map(el => el.id + ' ' + el.getBoundingClientRect().width + 'x' + el.getBoundingClientRect().height + ' ready ' + (el.readyState >= 1)).join(', ') + '; shadowRoot ' + v.shadowRoot);
+  document.title = 'ready';
+});
+</script>

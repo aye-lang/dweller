@@ -1,0 +1,30 @@
+import js
+import std.mem.AllocError
+
+fn noteMediaElements(s: *mut Script) AllocError!void {
+    let hook = s.media_hook orelse return
+    let stamp = mediaStamp(s)
+
+    if stamp == s.media_stamp { return }
+
+    s.media_stamp = stamp
+
+    let it = &mut s.it
+    let arr = it.newArray(0) catch return AllocError.OutOfMemory
+
+    try jsPush(s, js.objVal(arr))
+    try it.heap.pushElem(arr, it.roots.items()[hook])
+
+    let root = it.addRoot(js.objVal(arr)) catch return AllocError.OutOfMemory
+
+    it.pop()
+    tick(s)
+    s.timers.append(Timer { id: s.next_timer, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, delays_load: true }) catch |e| {
+        it.removeRoot(root)
+
+        return e
+    }
+
+    s.next_timer += 1
+    s.seq += 1
+}

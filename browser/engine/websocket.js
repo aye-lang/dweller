@@ -120,6 +120,8 @@ class WebSocket extends EventTarget {
     if (new TextEncoder().encode(reason).length > 123) throw fail("execute 'close' on 'WebSocket': The close reason must not be greater than 123 UTF-8 bytes.", 'SyntaxError');
     if (this._state === CLOSING || this._state === CLOSED) return;
 
+    if (this._state === CONNECTING) hidden(this, '_failed', true);
+
     this._state = CLOSING;
     if (this._id !== 0) ak.socketClose(this._id, code === undefined ? 1005 : code, reason);
   }
@@ -135,6 +137,10 @@ class WebSocket extends EventTarget {
       this._fire(new MessageEvent('message', { data: kind === TEXT ? data : received(data, this._binaryType), origin: new URL(this._url).origin }));
     } else {
       if (this._state === CLOSED) return;
+
+      // https://websockets.spec.whatwg.org/#dom-websocket-close : closed before it was established, the connection failed, whatever the network did meanwhile.
+      if (this._failed) [clean, code, data] = [false, 1006, ''];
+
       this._state = CLOSED;
       if (!clean) this._fire(new Event('error'));
       this._fire(new CloseEvent('close', { wasClean: clean, code, reason: data }));

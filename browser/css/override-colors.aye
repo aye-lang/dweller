@@ -1,0 +1,29 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#override-color
+fn overrideColors(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    var raw = text.Builder.init(out.alloc)
+    defer raw.deinit()
+    var k: usize = 0
+
+    while k + 1 < comps.len && isPaletteIndex(comps[k]) {
+        raw.clear()
+        try writeTokens(comps[k + 1].toks, &mut raw)
+
+        if out.len() > 0 {
+            try out.append(", ")
+        }
+
+        try writeTokens(comps[k].toks, out)
+        try out.appendByte(' ')
+
+        if !(try specifiedValue(out.alloc, "color", raw.bytes(), out)) || (k + 2 < comps.len && !isComma(comps[k + 2])) {
+            return false
+        }
+
+        k += 3
+    }
+
+    return k == comps.len + 1
+}

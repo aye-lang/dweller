@@ -1,22 +1,44 @@
 import engine
 import layout
+import pageview
 import paint
 
+let LIST_KEPT: u32 = 0
+let LIST_COMPOSITED: u32 = 1
+let LIST_BUILT: u32 = 2
+
 // blink: core/paint/paint_controller.cc (the cached display item list)
-fn keepList(r: *mut TabRenderer, p: *mut engine.Page, t: *mut layout.Tree, moved: bool) !void {
+fn keepList(r: *mut TabRenderer, p: *mut engine.Page, t: *mut layout.Tree, moved: bool) !u32 {
     let version = engine.treeVersion(p)
     let laid = engine.layoutGeneration(p)
+    let v = &mut r.lists
+    let same = v.list != null && !r.relist && r.list_tree == t && r.list_laid == laid
+    let follows = same && (!moved || paint.followPinned(&mut v.list.?, v.sigs.items(), t))
+    var did = LIST_BUILT
 
-    if r.list != null && !r.relist && !moved && r.list_tree == t && r.list_version == version && r.list_laid == laid { return canvasesDrawn(r, p, t) }
+    v.tab.page = p
+    v.tab.scroll = r.scroll_y
 
-    dropList(r)
-    r.list = try paint.build(r.alloc, t)
-    r.sigs.clear()
-    try paint.signature(&r.list.?, t, &mut r.sigs)
-    r.shown.clear()
-    try engine.canvasShown(p, &mut r.shown)
+    if follows && r.list_version == version {
+        try pageview.canvasesDrawn(v)
+
+        return LIST_KEPT
+    }
+
+    try pageview.noteAnimated(v, p)
+
+    if follows && pageview.composite(v, p) {
+        did = LIST_COMPOSITED
+    } else {
+        try pageview.buildList(v, t)
+    }
+
+    engine.markPainted(p)
+    try engine.afterLayout(p)
     r.list_tree = t
     r.list_version = version
     r.list_laid = laid
     r.relist = false
+
+    return did
 }
