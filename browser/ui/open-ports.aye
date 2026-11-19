@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/public/common/messaging/message_port_channel.h (a transferred port is a pipe between two processes)
+fn openPorts(from: *mut TabProcess, to: *mut TabProcess, keys: []u8) AllocError!bool {
+    var words = text.split(keys, ",")
+    var n: usize = 0
+
+    if keys.len == 0 { return true }
+
+    if port_channels == null { port_channels = try from.url.alloc.create(List(PortChannel).init(from.url.alloc)) }
+
+    let list = port_channels.?
+
+    while words.next() |w| {
+        let key = text.parseInt(w) catch return false
+
+        n += 1
+
+        if key < 1 || key > 4294967295 || n > MAX_PORTS { return false }
+
+        closePort(from.tab, key as u32)
+
+        if list.len() >= MAX_PORT_CHANNELS { _ = list.orderedRemove(0) }
+
+        try list.append(PortChannel { tab: from.tab, key: key as u32, owner: from.serial, holder: to.serial, holder_tab: to.tab })
+    }
+
+    return true
+}

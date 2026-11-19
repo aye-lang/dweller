@@ -1,0 +1,31 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.mem.AllocError
+
+var port_post: ?fn(PortPost) AllocError!void = null
+
+pub fn setPortPost(post: fn(PortPost) AllocError!void) {
+    port_post = post
+}
+
+// blink: core/messaging/message_port.cc (postMessage: to the entangled port's process)
+fn akPostPort(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let post = port_post orelse return Value.Undefined
+    let tab = try it.toNumber(it.arg(a, 0))
+    let key = try it.toNumber(it.arg(a, 1))
+    let data = try it.builder()
+    defer it.release(data)
+
+    try argText(it, a, 2, data)
+
+    if data.len() + s.remote_staged.len() <= MAX_REMOTE_MESSAGE {
+        try post(PortPost { tab: tab as u32, key: key as u32, data: data.bytes(), buffers: s.remote_staged.bytes() })
+    }
+
+    s.remote_staged.clear()
+
+    return Value.Undefined
+}
