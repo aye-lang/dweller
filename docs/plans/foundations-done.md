@@ -227,6 +227,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |
 | Q5.11a | IndexedDB 1: databases, object stores, transactions, in the browser process | `content/browser/indexed_db/`, `modules/indexeddb/` |
 | Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
+| Q5.14a | Service Worker 1: registration, lifecycle and fetch interception | `content/browser/service_worker/`, `modules/service_worker/` |
+| Q5.14b | Service Worker 2: the Cache API | `content/browser/cache_storage/` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)
@@ -242,6 +244,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.7 | `css/values-color` (57.9, 70) |
 | Q6.5 | `css/css-fonts` (32.7, 50) |
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
+| Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
+| Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
 
 ## Q7: acceptance and release (lane sites)
 

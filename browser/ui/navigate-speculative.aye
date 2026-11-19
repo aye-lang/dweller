@@ -14,6 +14,7 @@ fn navigateSpeculative(slot: *TabSlot, next: *mut TabProcess) AllocError!void {
     }
 
     try next.committed.append(next.url.bytes())
+    try tellOpener(slot, next)
     try sendSessionHistory(slot, next, at, length)
 
     if next.agent_id != 0 { return ipc.encode(&mut next.outbox, slot.id, ipc.Message.Agent { id: next.agent_id, mcp: next.agent_mcp as u32, ref_base: next.next_ref, line: next.agent_line.bytes() }) }

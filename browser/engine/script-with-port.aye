@@ -1,0 +1,17 @@
+import js
+
+fn scriptWithPort(p: *mut Page, tab: u32, key: u32) ?*mut Script {
+    if p.script |s| {
+        if s.on_remote_message != js.NONE {
+            for k in s.ports.items() {
+                if k.tab == tab && k.key == key { return s }
+            }
+        }
+    }
+
+    for f in p.frames.items() {
+        if scriptWithPort(f.page, tab, key) |found| { return found }
+    }
+
+    return null
+}

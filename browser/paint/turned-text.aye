@@ -1,0 +1,16 @@
+import css
+import layout
+import layout.Frag
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#line-orientation
+fn turnedText(self: *mut Builder, f: Frag, cx: f64, cy: f64) AllocError!void {
+    let b = self.t.bx(f.box)
+    let m = layout.textMetrics(self.t, b.style)
+    var face = m.font
+
+    face.rtl = f.rtl
+    face.turned = true
+    self.extend(cx + f.x + f.w, cy + f.y + f.h)
+    try self.add(Item.Text { x: cx + f.x + f.w - self.t.measure.metrics(m.font).ascent, y: cy + f.y, s: b.text[f.start..f.end], face: face, c: colorOf(b.style[css.COLOR], BLACK) })
+}

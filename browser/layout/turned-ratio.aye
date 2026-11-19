@@ -1,0 +1,22 @@
+import css.Value
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-sizing-4/#aspect-ratio
+fn turnedRatio(t: *mut Tree, v: Value) AllocError!Value {
+    let s = keywordOf(v)
+    let slash = text.indexOf(s, "/") orelse return v
+    var head = text.trim(s[..slash])
+    var out = text.Builder.init(t.alloc)
+
+    if text.startsWith(head, "auto") {
+        try out.append("auto ")
+        head = text.trim(head[4..])
+    }
+
+    try out.append(text.trim(s[slash + 1..]))
+    try out.append(" / ")
+    try out.append(head)
+
+    return Value.Keyword { k: try out.toOwned() }
+}

@@ -12,11 +12,15 @@ fn sendContexts(r: *mut TabRenderer) !void {
 
         var ask = (req.ask is .Navigate) as u32
         var keeps: u32 = 0
+        var name: []u8 = ""
 
-        if engine.contextOf(req.context) |c| { keeps = (c.opener != 0) as u32 }
+        if engine.contextOf(req.context) |c| {
+            keeps = (c.opener != 0) as u32
+            name = c.name
+        }
 
         if evilTest("context") { ask = 2 }
 
-        try send(r.alloc, r.conn, r.tab, ipc.Message.Context { ask: ask, context: req.context, href: req.href, post: req.post as u32, content_type: req.content_type, body: req.body, keeps: keeps })
+        try send(r.alloc, r.conn, r.tab, ipc.Message.Context { ask: ask, context: req.context, href: req.href, post: req.post as u32, content_type: req.content_type, body: req.body, keeps: keeps, name: name })
     }
 }

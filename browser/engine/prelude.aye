@@ -1649,8 +1649,8 @@ pub let PRELUDE =
     \\  }
     \\  ak.messageEvent(data, origin, source);
     \\});
-    \\ak.messageEvent = function (data, origin, source) {
-    \\  const ev = new G.MessageEvent('message', { data, origin, source });
+    \\ak.messageEvent = function (data, origin, source, ports) {
+    \\  const ev = new G.MessageEvent('message', { data, origin, source, ports: ports || [] });
     \\  ev.isTrusted = true;
     \\  dispatch(G, ev);
     \\};
@@ -2361,6 +2361,7 @@ pub let PRELUDE =
     \\}
     \\bodyMethods(Request, 'Request');
     \\Object.defineProperty(Request.prototype, Symbol.toStringTag, { value: 'Request', configurable: true });
+    \\Object.defineProperty(Response.prototype, Symbol.toStringTag, { value: 'Response', configurable: true });
     \\hidden(G, 'Headers', Headers);
     \\hidden(G, 'Response', Response);
     \\hidden(G, 'Request', Request);
@@ -3529,19 +3530,23 @@ pub let PRELUDE =
     \\    super();
     \\    hidden(this, '_other', null);
     \\    hidden(this, '_closed', false);
+    \\    hidden(this, '_remote', null);
     \\    hidden(this, '_onmessage', null);
     \\  }
     \\  get onmessage() { return this._onmessage; }
     \\  set onmessage(f) { this._onmessage = typeof f === 'function' ? f : null; }
     \\  postMessage(data) {
     \\    const to = this._other;
+    \\    if (this._remote && !this._closed) return ak.portSend(this, data);
     \\    if (!to || this._closed) return;
     \\    setTimeout(() => {
-    \\      if (to._closed) return;
-    \\      const ev = new MessageEvent('message', { data });
-    \\      if (to._onmessage) callListener(to._onmessage, to, ev, false);
-    \\      to.dispatchEvent(ev);
+    \\      if (!to._closed) to._deliver(data);
     \\    }, 0);
+    \\  }
+    \\  _deliver(data) {
+    \\    const ev = new MessageEvent('message', { data });
+    \\    if (this._onmessage) callListener(this._onmessage, this, ev, false);
+    \\    this.dispatchEvent(ev);
     \\  }
     \\  start() {}
     \\  close() { this._closed = true; }

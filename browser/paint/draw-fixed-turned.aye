@@ -1,0 +1,21 @@
+import font
+import std.text
+
+fn drawFixedTurned(canvas: *mut Canvas, x: f64, y: f64, s: []u8, f: font.Font, scale: f64, c: Rgba) {
+    let em = f.size * scale
+    var pen = y
+    var i: usize = 0
+
+    while i < s.len {
+        let d = text.decode(s[i..])
+        let adv = 0.5 * em * font.columns(d.code) as f64
+
+        i += d.len
+
+        if adv > 0.0 && d.code > 0x20 && d.code != 0xA0 {
+            canvas.fillRect(IRect { x0: roundPx(x), y0: roundPx(pen + adv * 0.15), x1: roundPx(x + 0.7 * em), y1: roundPx(pen + adv * 0.85) }, c)
+        }
+
+        pen += adv + font.spacingOf(f, s[i - d.len..i])
+    }
+}

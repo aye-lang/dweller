@@ -36,6 +36,7 @@ import dom
 import dom.Kind
 import dom.NodeId
 import encoding
+import engine.cachestorage
 import engine.idb
 import engine.sw
 import font
@@ -229,6 +230,7 @@ pub struct Script {
     remote_windows: List(RemoteStandIn)
     remote_staged: text.Builder
     remote_inbox: List(RemoteBuffers)
+    ports: List(PortKey)
     // The prelude's `hostStorage` (storage.aye), js.NONE before it ran.
     on_storage: u32
     on_idb: u32 = js.NONE
@@ -576,6 +578,7 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         remote_windows: List(RemoteStandIn).init(alloc),
         remote_staged: text.Builder.init(alloc),
         remote_inbox: List(RemoteBuffers).init(alloc),
+        ports: List(PortKey).init(alloc),
         on_storage: js.NONE,
         node_proto: js.NONE,
         element_proto: js.NONE,
@@ -742,6 +745,8 @@ fn setUp(s: *mut Script) JsError!void {
     for source in idb.SOURCES { try s.it.runScript(source) }
     for source in sw.SOURCES { try s.it.runScript(source) }
 
+    try s.it.runScript(cachestorage.SOURCE)
+
     try s.it.runScript(CANVAS_PRELUDE)
     try s.it.runScript(CANVAS_PLACEHOLDER_PRELUDE)
 
@@ -790,6 +795,7 @@ pub fn destroyScript(s: *mut Script) {
     s.remote_windows.deinit()
     s.remote_staged.deinit()
     dropRemoteInbox(s)
+    s.ports.deinit()
     for i in 0..s.lists.len() {
         let l = &mut s.lists.items()[i]
         if l.used {
