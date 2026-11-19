@@ -500,11 +500,13 @@ pub let CANVAS_PRELUDE =
     \\  }
     \\  drawImage(image) {
     \\    this._sync();
-    \\    image = sourceNode(image);
+    \\    const video = image instanceof HTMLVideoElement;
+    \\    if (video && image.readyState < 2) return;
+    \\    if (!video) image = sourceNode(image);
     \\    if (!image) throw new TypeError('Expected image source');
     \\    if (webgl.is(contexts.get(image))) webgl.snapshot(image);
     \\    const a = Array.from(arguments).slice(1).map(Number);
-    \\    const iw = image.naturalWidth || image.width, ih = image.naturalHeight || image.height;
+    \\    const iw = video ? image.videoWidth : image.naturalWidth || image.width, ih = video ? image.videoHeight : image.naturalHeight || image.height;
     \\    let sx = 0, sy = 0, sw = iw, sh = ih, dx, dy, dw, dh;
     \\    if (a.length === 2) [dx, dy, dw, dh] = [a[0], a[1], iw, ih];
     \\    else if (a.length === 4) [dx, dy, dw, dh] = a;

@@ -1,0 +1,36 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import media
+
+// https://html.spec.whatwg.org/multipage/media.html#media-data-processing-steps-list
+fn akMediaTracks(it: *mut Interp, a: Args) JsError!Value {
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 0, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    let total = try it.toNumber(it.arg(a, 1))
+    var size = bytes.len()
+
+    if total >= size as f64 && total < 9.0e15 { size = total as usize }
+
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+
+    var found = try media.probe(it.alloc, bytes.bytes(), size) orelse return it.pop()
+    defer found.deinit()
+
+    for i in 0..found.tracks.len() {
+        try it.heap.pushElem(out, try mediaTrack(it, &found.tracks.items()[i]))
+    }
+
+    return it.pop()
+}

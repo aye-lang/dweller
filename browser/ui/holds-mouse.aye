@@ -1,0 +1,32 @@
+import ipc
+import std.mem.AllocError
+
+fn holdsMouse(ui: *mut Ui, top: *mut TabProcess, ev: *SDL_Event) AllocError!bool {
+    if !top.hit_replay && (top.hit_asked != null || top.hit_queue.len() > 0) {
+        try top.hit_queue.append(ev.*)
+
+        return true
+    }
+
+    let at = mousePoint(ui, ev)
+
+    if top.capture_frame != 0 || ui.locked || at[1] < 0 || at[1] >= devicePx(ui, ui.viewHeight()) { return false }
+
+    var ask = unaskedHit(top, top.hit_answers.items(), at, 0, 0) orelse return false
+    let asked = findFrame(top, ask.frame, 0, 0) orelse return false
+
+    top.hit_ids += 1
+    ask.id = top.hit_ids
+    asked.tp.hit_open = ask.id
+    top.hit_asked = ask
+    try top.hit_queue.insert(0, ev.*)
+    try ipc.encode(&mut asked.tp.outbox, asked.tp.tab, ipc.Message.HitTest { id: ask.id, x: ask.x as u32, y: ask.y as u32 })
+
+    return true
+}
+
+fn mousePoint(ui: *Ui, ev: *SDL_Event) [2]i64 {
+    if ev.kind == SDL_MOUSEMOTION { return [2]i64{devicePx(ui, ev.motion.x as f64), devicePx(ui, ev.motion.y as f64 - ui.top())} }
+
+    return [2]i64{devicePx(ui, ev.button.x as f64), devicePx(ui, ev.button.y as f64 - ui.top())}
+}

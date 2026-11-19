@@ -3,6 +3,10 @@ globalThis.__cssomRules = function (ak, hidden, syntax) {
 const TYPES = { media: 4, import: 3, 'font-face': 5, page: 6, keyframes: 7, '-webkit-keyframes': 7, namespace: 10, supports: 12 };
 const CONSTANTS = { STYLE_RULE: 1, CHARSET_RULE: 2, IMPORT_RULE: 3, MEDIA_RULE: 4, FONT_FACE_RULE: 5, PAGE_RULE: 6, KEYFRAMES_RULE: 7, KEYFRAME_RULE: 8, MARGIN_RULE: 9, NAMESPACE_RULE: 10, COUNTER_STYLE_RULE: 11, SUPPORTS_RULE: 12, FONT_FEATURE_VALUES_RULE: 14 };
 
+const descriptors = globalThis.__cssomDescriptors(ak, syntax);
+
+delete globalThis.__cssomDescriptors;
+
 function illegal() {
   throw new TypeError('Illegal constructor');
 }
@@ -169,7 +173,14 @@ class CSSKeyframesRule extends CSSRule {
   get name() { return this._prelude; }
 }
 
-class CSSFontFaceRule extends CSSRule {}
+class CSSFontFaceRule extends CSSRule {
+  get style() {
+    if (!this._style) hidden(this, '_style', descriptors.descriptorBlock('font-face', this._body || ''));
+
+    return this._style;
+  }
+  get cssText() { return '@font-face { ' + this.style.cssText + (this.style.length ? ' ' : '') + '}'; }
+}
 class CSSPropertyRule extends CSSRule {
   get name() { return this._prelude; }
 }

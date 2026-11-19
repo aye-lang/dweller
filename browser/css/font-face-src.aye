@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-face-src-parsing
+fn fontFaceSrc(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    var start: usize = 0
+
+    for k in 0..comps.len + 1 {
+        if k < comps.len && !isComma(comps[k]) {
+            continue
+        }
+
+        if validSrcItem(comps[start..k]) {
+            try writeSrcItem(comps[start..k], out)
+        }
+
+        start = k + 1
+    }
+
+    return out.len() > 0
+}

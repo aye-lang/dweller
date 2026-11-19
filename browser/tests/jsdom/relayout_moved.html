@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<title>many moved elements in one part of the page lay out that part</title>
+<style>
+body { margin: 0 }
+#side .item { width: 40px; height: 4px }
+#side.open .item { width: 80px; height: 6px }
+.cell { display: inline-block; width: 10px; height: 10px }
+x-card { display: block }
+</style>
+<div id="side"></div>
+<x-card id="card"><p id="slotted">slotted</p></x-card>
+<div id="main"></div>
+<pre id="out"></pre>
+<script>
+const $ = (id) => document.getElementById(id);
+let html = '';
+for (let i = 0; i < 100; i++) html += '<div class="item"></div>';
+$('side').innerHTML = html;
+html = '';
+for (let i = 0; i < 300; i++) html += '<div class="row"><span class="title">t</span><span class="note">n</span><span class="cell"></span><span><b>x</b></span></div>';
+$('main').innerHTML = html;
+$('card').attachShadow({ mode: 'open' }).innerHTML = '<style>.box { height: 5px } .box.tall { height: 9px } ::slotted(.big) { height: 30px }</style><div id="frame"><div class="box"></div><slot></slot></div>';
+const out = [];
+const read = (label) => { out.push(label + ': ' + $('side').offsetHeight + ' ' + $('card').offsetHeight + ' ' + $('main').offsetTop + ' ' + document.body.offsetHeight); };
+read('start');
+for (let i = 0; i < 6; i++) {
+  $('side').classList.toggle('open');
+  read('side ' + i);
+}
+for (let i = 0; i < 6; i++) {
+  $('card').shadowRoot.querySelector('.box').classList.toggle('tall');
+  read('shadow ' + i);
+  $('slotted').classList.toggle('big');
+  read('slotted ' + i);
+}
+$('out').textContent = out.join('\n');
+$('main').textContent = '';
+</script>

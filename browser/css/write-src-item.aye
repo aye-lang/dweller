@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+fn writeSrcItem(item: []Comp, out: *mut text.Builder) AllocError!void {
+    var part = text.Builder.init(out.alloc)
+    defer part.deinit()
+
+    if out.len() > 0 {
+        try out.append(", ")
+    }
+
+    for k, c in item {
+        part.clear()
+        try writeTokens(c.toks, &mut part)
+
+        if k > 0 {
+            try out.appendByte(' ')
+        }
+
+        for ch in part.bytes() {
+            if isFunctionNamed(c, "tech") {
+                try out.appendByte(lowerAscii(ch))
+            } else {
+                try out.appendByte(ch)
+            }
+        }
+    }
+}

@@ -448,6 +448,16 @@ fn parseComplex(sheet: *mut Sheet, all: []Token, mode: u8) AllocError!?Complex {
                         i = close + 1
                         continue
                     }
+                    if next + 1 < hi && toks[next + 1].kind == Tok.Function && text.eqlIgnoreCase(toks[next + 1].text, "scroll-button") {
+                        let close = blockEnd(toks, next + 1)
+                        if close >= hi || !validScrollButton(toks[next + 2..close]) {
+                            return null
+                        }
+                        try simples.append(simple(SelKind.Never, ""))
+                        spec.types += 1
+                        i = close + 1
+                        continue
+                    }
                     if next + 1 >= hi || toks[next + 1].kind != Tok.Ident {
                         return null
                     }

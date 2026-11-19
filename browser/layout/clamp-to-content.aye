@@ -1,0 +1,25 @@
+import css
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-sizing-3/#sizing-values
+fn clampToContent(t: *Tree, i: usize, h: f64, content: f64) f64 {
+    let s = t.bx(i).style
+    var r = h
+
+    if sizesToContent(s[css.MAX_HEIGHT]) {
+        r = math.min(r, content)
+    }
+
+    if sizesToContent(s[css.MIN_HEIGHT]) {
+        r = math.max(r, content)
+    }
+
+    return r
+}
+
+fn sizesToContent(v: css.Value) bool {
+    let word = keywordOf(v)
+
+    return text.eql(word, "min-content") || text.eql(word, "max-content") || text.eql(word, "fit-content")
+}

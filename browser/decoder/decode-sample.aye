@@ -1,0 +1,16 @@
+import media
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn decodeSample(out: *mut text.Builder, spec: Spec, data: []u8) AllocError!bool {
+    var t = media.Track { kind: media.TrackKind.Audio, codec: spec.codec, config: spec.config, width: spec.width, height: spec.height, channels: spec.channels, bits: spec.bits, rate: spec.rate as f64, samples: List(media.Sample).init(out.alloc) }
+
+    if spec.kind == VIDEO {
+        t.kind = media.TrackKind.Video
+
+        return media.decodeVideo(out, &t, data)
+    }
+
+    return media.decodeAudio(out, &t, data)
+}

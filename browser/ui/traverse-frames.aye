@@ -1,0 +1,38 @@
+import engine
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/navigation_controller_impl.cc (FindFramesToNavigate: a traversal navigates only the frames whose entry differs)
+fn traverseFrames(top: *mut TabProcess, h: *engine.SessionHistory, from: usize, to: usize) AllocError!bool {
+    var at = from
+    var only = from != to
+
+    while at != to {
+        let forward = to > at
+        var edge = at
+
+        if forward { edge = at + 1 }
+
+        let step = frameStepAt(top, edge, h.entries.items()[edge].doc) orelse {
+            only = false
+            at = nextToward(at, forward)
+
+            continue
+        }
+
+        var href: []u8 = step.from
+
+        if forward { href = step.to }
+
+        if childByKey(top, step.key) |child| { try navigateChild(child, href, top.committed.bytes(), 0, "", "") }
+
+        at = nextToward(at, forward)
+    }
+
+    return only
+}
+
+fn nextToward(at: usize, forward: bool) usize {
+    if forward { return at + 1 }
+
+    return at - 1
+}

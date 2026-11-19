@@ -1,0 +1,20 @@
+import decoder
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akMediaDecoderFeed(it: *mut Interp, a: Args) JsError!Value {
+    let id = try decoderArg(it, a)
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 2, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    return js.boolVal(id != 0 && decoder.feed(id, try countArg(it, a, 1), bytes.bytes()))
+}
