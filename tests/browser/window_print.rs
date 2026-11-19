@@ -77,6 +77,45 @@ fn window_print_page_rule() {
     }
 }
 
+/// Q5.15 (follow-up): Cmd+P with the system's fonts writes the vector
+/// text `dweller print` writes, in one process and in a site's renderer
+/// (sandboxed: the outlines come from the faces it opened before).
+#[test]
+fn window_print_vector_text() {
+    if !has_sdl() {
+        return;
+    }
+    let cli = scratch().join("window_print_vector_cli.pdf");
+    let run = dweller_command().current_dir(root()).args(["print", "browser/tests/print/vector.html", "--font", "system", "-o"]).arg(&cli).output().unwrap();
+
+    if text(&run.stderr).contains("no system font found") {
+        println!("skipped: no system font");
+        return;
+    }
+    assert!(run.status.success(), "{}", text(&run.stderr));
+
+    let want = std::fs::read(&cli).unwrap();
+
+    assert!(String::from_utf8_lossy(&want).contains("/Subtype /Type3"));
+
+    for mode in ["single", "site"] {
+        let to = scratch().join(format!("window_print_vector_{mode}.pdf"));
+        let _ = std::fs::remove_file(&to);
+        let events = if mode == "single" { "loaded frame frame frame key:cmd+p frame frame" } else { "renderer:loaded frame frame frame key:cmd+p renderer:input frame renderer:printed frame frame" };
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .env("DWELLER_PRINT_TO", &to)
+            .args(["browser/tests/print/vector.html", "--font", "system", "--width", "400", "--height", "300", "--frames", "1500", "--until-idle", "--state", "--events", events])
+            .output()
+            .unwrap();
+
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains(&format!("status Printed 1 pages to {}\n", to.display())), "{mode}: {}", text(&out.stdout));
+        assert!(std::fs::read(&to).unwrap() == want, "{mode}: {} differs from {}", to.display(), cli.display());
+    }
+}
+
 /// Q5.15: `window.print()` prints too (`onbeforeprint`, `onafterprint`);
 /// without `DWELLER_PRINT_TO` the PDF is named after the title in the
 /// downloads directory, and a second print does not replace the first.

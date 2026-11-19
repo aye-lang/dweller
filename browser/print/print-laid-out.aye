@@ -20,7 +20,12 @@ fn printLaidOut(alloc: Allocator, page: *mut engine.Page, measure: dyn font.Meas
     defer cuts.deinit()
     var pages = List(PrintedPage).init(alloc)
     defer freePages(alloc, &mut pages)
+    var vector = List(bool).init(alloc)
+    defer vector.deinit()
+    var book = VectorText.init(alloc, system)
+    defer book.deinit()
 
+    try book.sort(alloc, &list, measure, &mut vector)
     try itemSpans(&list, &mut whole)
     try boxBreaks(tree, &mut forced, &mut whole)
     try pageCuts(list.height, paper.contentHeight(), forced.items(), whole.items(), &mut cuts)
@@ -30,11 +35,12 @@ fn printLaidOut(alloc: Allocator, page: *mut engine.Page, measure: dyn font.Meas
 
         if k + 1 < cuts.len() { bottom = cuts.items()[k + 1] }
 
-        try pages.append(try renderPage(alloc, &list, &mut painter, paper, top, bottom))
-        try pageTexts(&list, measure, top, bottom, &mut pages.items()[k])
+        try pages.append(try renderPage(alloc, book.raster(&list), &mut painter, paper, top, bottom))
+        try pageTexts(book.raster(&list), measure, top, bottom, &mut pages.items()[k])
+        try book.place(alloc, &list, vector.items(), [2]f64{top, bottom}, &mut pages.items()[k])
     }
 
-    try writePdf(alloc, paper, page.title, pages.items(), out)
+    try writePdf(alloc, paper, page.title, pages.items(), book.glyphs(), out)
 
     return pages.len()
 }

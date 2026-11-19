@@ -1,0 +1,33 @@
+import std.mem.AllocError
+
+struct FontRefs {
+    tree: usize
+    face: usize
+    fonts: usize
+    glyphs: usize
+}
+
+fn glyphCount(book: ?*GlyphBook) usize {
+    let b = book orelse return 0
+
+    return b.glyphs.len()
+}
+
+fn glyphsIn(glyphs: usize, k: usize) usize {
+    if glyphs - k * FONT_GLYPHS > FONT_GLYPHS { return FONT_GLYPHS }
+
+    return glyphs - k * FONT_GLYPHS
+}
+
+fn fontNumber(fonts: usize, k: usize) usize {
+    return fonts + k * (FONT_GLYPHS + 2)
+}
+
+fn fontRefs(w: *mut PdfWriter, refs: FontRefs) AllocError!void {
+    for k in 0..(refs.glyphs + FONT_GLYPHS - 1) / FONT_GLYPHS {
+        try w.out.append(" /T")
+        try w.out.appendUint(k as u64)
+        try w.out.append(" ")
+        try w.ref(fontNumber(refs.fonts, k))
+    }
+}

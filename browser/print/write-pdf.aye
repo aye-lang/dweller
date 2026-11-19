@@ -3,7 +3,7 @@ import std.mem.Allocator
 import std.text
 
 // https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
-pub fn writePdf(alloc: Allocator, paper: Paper, title: []u8, pages: []PrintedPage, out: *mut text.Builder) AllocError!void {
+pub fn writePdf(alloc: Allocator, paper: Paper, title: []u8, pages: []PrintedPage, book: ?*GlyphBook, out: *mut text.Builder) AllocError!void {
     var w = PdfWriter.init(alloc, out)
     defer w.deinit()
 
@@ -19,6 +19,13 @@ pub fn writePdf(alloc: Allocator, paper: Paper, title: []u8, pages: []PrintedPag
         _ = try w.reserve()
     }
 
+    let fonts = w.offsets.len() + 1
+    let glyphs = glyphCount(book)
+
+    for k in 0..glyphs + 2 * ((glyphs + FONT_GLYPHS - 1) / FONT_GLYPHS) {
+        _ = try w.reserve()
+    }
+
     try w.begin(catalog)
     try out.append("<< /Type /Catalog /Pages ")
     try w.ref(tree)
@@ -31,7 +38,11 @@ pub fn writePdf(alloc: Allocator, paper: Paper, title: []u8, pages: []PrintedPag
     try writeInfo(&mut w, info, title)
 
     for k, page in pages {
-        try writePage(alloc, &mut w, paper, tree, face, first + k * 3, &page)
+        try writePage(alloc, &mut w, paper, FontRefs { tree: tree, face: face, fonts: fonts, glyphs: glyphs }, first + k * 3, &page)
+    }
+
+    for k in 0..(glyphs + FONT_GLYPHS - 1) / FONT_GLYPHS {
+        try writeGlyphFont(alloc, &mut w, book.?, fontNumber(fonts, k), k * FONT_GLYPHS, glyphsIn(glyphs, k))
     }
 
     try writeTrailer(&mut w, catalog, info)

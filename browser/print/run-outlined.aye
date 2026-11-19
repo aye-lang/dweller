@@ -1,0 +1,17 @@
+import font
+import std.mem.AllocError
+
+fn runOutlined(book: *mut GlyphBook, face: font.Font, s: []u8) AllocError!bool {
+    book.placed.clear()
+    _ = try book.system.shapeText(face, s, &mut book.placed)
+
+    for k in 0..book.placed.len() {
+        let p = book.placed.items()[k]
+        let ch = s[p.cluster as usize]
+
+        if ch == ' ' || ch == '\t' || ch == '\n' { continue }
+        if (try bookGlyph(book, p, clusterText(book.placed.items(), k, s))) == null { return false }
+    }
+
+    return true
+}

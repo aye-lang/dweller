@@ -153,6 +153,51 @@ fn print_page_rule() {
     assert!(String::from_utf8_lossy(&pdf_streams(&turned.pdf)[0]).starts_with("q 792 0 0 612 0 0 cm /Im0 Do Q\n"));
 }
 
+/// Q5.15 (follow-up): with a font system, text is drawn from glyph
+/// outlines in Type 3 fonts: the glyphs' codes, places and color in the
+/// page's content, the outline of "A", the `ToUnicode` map, and the
+/// page's image without that text; a run that something covers, a
+/// translucent one and one in an opacity layer stay in the image (and
+/// in the invisible text layer); a clipped run keeps its clip.
+#[test]
+fn print_vector_text() {
+    let out = scratch().join("print_vector.pdf");
+    let run = dweller_command().current_dir(root()).args(["print", "browser/tests/print/vector.html", "--font", "system", "-o"]).arg(&out).output().unwrap();
+
+    if text(&run.stderr).contains("no system font found") {
+        println!("skipped: no system font");
+        return;
+    }
+    assert!(run.status.success(), "{}", text(&run.stderr));
+
+    let pdf = std::fs::read(&out).unwrap();
+    let streams = pdf_streams(&pdf);
+    let all = String::from_utf8_lossy(&pdf).to_string();
+    let content = String::from_utf8_lossy(&streams[0]).to_string();
+    let map = String::from_utf8_lossy(&streams[2]).to_string();
+    let glyph = String::from_utf8_lossy(&streams[3]).to_string();
+
+    assert_eq!(streams.len(), 2 + 1 + 15, "the page, the map and 15 glyphs");
+    assert!(all.contains("/Font << /F1 3 0 R /T0 8 0 R >>"), "the page names the font");
+    assert!(all.contains("8 0 obj\n<< /Type /Font /Subtype /Type3 /FontBBox [0 0 0 0] /FontMatrix [0.001 0 0 0.001 0 0] /Resources << >> /FirstChar 0 /LastChar 14 /ToUnicode 9 0 R /Encoding << /Type /Encoding /Differences [0 /g0 /g1 "), "the font");
+    assert!(all.contains("/Widths [639.16 563.96 615.23 257.81 ") && all.contains("/CharProcs << /g0 10 0 R /g1 11 0 R "), "the widths and the glyphs");
+    assert!(content.contains("q 0 0 0 rg BT 0 Tr\n/T0 15 Tf\n1 0 0 1 28 797.97 Tm <00> Tj\n1 0 0 1 37.59 797.97 Tm <01> Tj\n1 0 0 1 46.05 797.97 Tm <00> Tj\n1 0 0 1 59.53 797.97 Tm <02> Tj\n"), "{content}");
+    assert!(content.contains("ET Q\nq 28 694 37.5 30 re W n 1 0 0 rg BT 0 Tr\n/T0 15 Tf\n1 0 0 1 28 707.97 Tm <07> Tj\n"), "{content}");
+
+    let mut hidden = text_layer(&streams[0]);
+
+    hidden.sort();
+    assert_eq!(hidden, ["Covered", "Faint", "Layered"], "what stayed in the image has its invisible text");
+    assert!(map.contains("<00> <0041>\n") && map.contains("<01> <00E9>\n") && map.contains("<07> <0043>\n"), "{map}");
+    assert_eq!(glyph, "639.16 0 d0\n544.92 0 m\n458.98 221.19 l\n175.78 221.19 l\n90.82 0 l\n0 0 l\n278.81 716.8 l\n359.86 716.8 l\n638.18 0 l\nh\n432.13 300.78 m\n352.05 517.09 l\n317.87 624.02 l\n308.11 584.96 297.85 549.32 287.11 517.09 c\n206.05 300.78 l\nh\nf\n");
+
+    let ink = |from: usize, to: usize| streams[1][from * 1436 * 3..to * 1436 * 3].iter().filter(|&&b| b < 128).count();
+
+    assert_eq!(ink(0, 80), 0, "the vector line is not in the image");
+    assert!(ink(80, 160) > 500 && ink(160, 240) > 100 && ink(320, 400) > 100, "the covered, translucent and layered lines are");
+    assert_eq!(ink(240, 320), 0, "the clipped vector line is not");
+}
+
 /// Q5.15: an unknown paper is a usage error.
 #[test]
 fn print_usage() {

@@ -1,0 +1,44 @@
+import font
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+struct VectorText {
+    book: ?GlyphBook
+    kept: ?paint.DisplayList = null
+
+    fn init(alloc: Allocator, system: ?*mut font.System) VectorText {
+        let sys = system orelse return VectorText { book: null }
+
+        return VectorText { book: GlyphBook.init(alloc, sys) }
+    }
+
+    fn deinit(self: *mut Self) {
+        if self.book != null { self.book.?.deinit() }
+        if self.kept != null { self.kept.?.deinit() }
+    }
+
+    fn sort(self: *mut Self, alloc: Allocator, list: *paint.DisplayList, measure: dyn font.Measurer, vector: *mut List(bool)) AllocError!void {
+        if self.book == null { return }
+
+        try vectorRuns(alloc, list, measure, &mut self.book.?, vector)
+        self.kept = try rasterList(alloc, list, vector.items())
+    }
+
+    fn raster(self: *mut Self, list: *paint.DisplayList) *paint.DisplayList {
+        if self.kept != null { return &self.kept.? }
+
+        return list
+    }
+
+    fn place(self: *mut Self, alloc: Allocator, list: *paint.DisplayList, vector: []bool, span: [2]f64, page: *mut PrintedPage) AllocError!void {
+        if self.book != null { try pageGlyphs(alloc, list, vector, &mut self.book.?, span, page) }
+    }
+
+    fn glyphs(self: *mut Self) ?*GlyphBook {
+        if self.book != null { return &self.book.? }
+
+        return null
+    }
+}

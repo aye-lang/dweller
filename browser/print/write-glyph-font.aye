@@ -1,0 +1,48 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf (9.6.5 Type 3 fonts)
+fn writeGlyphFont(alloc: Allocator, w: *mut PdfWriter, book: *GlyphBook, number: usize, first: usize, count: usize) AllocError!void {
+    var stream = text.Builder.init(alloc)
+    defer stream.deinit()
+
+    try w.begin(number)
+    try w.out.append("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 0 0] /FontMatrix [0.001 0 0 0.001 0 0] /Resources << >> /FirstChar 0 /LastChar ")
+    try w.out.appendUint((count - 1) as u64)
+    try w.out.append(" /ToUnicode ")
+    try w.ref(number + 1)
+    try w.out.append(" /Encoding << /Type /Encoding /Differences [0")
+
+    for k in 0..count {
+        try w.out.append(" /g")
+        try w.out.appendUint(k as u64)
+    }
+
+    try w.out.append("] >> /Widths [")
+
+    for k in 0..count {
+        try pdfNumber(w.out, book.glyphs.items()[first + k].advance)
+        try w.out.append(" ")
+    }
+
+    try w.out.append("] /CharProcs <<")
+
+    for k in 0..count {
+        try w.out.append(" /g")
+        try w.out.appendUint(k as u64)
+        try w.out.append(" ")
+        try w.ref(number + 2 + k)
+    }
+
+    try w.out.append(" >> >>")
+    try w.end()
+    try toUnicode(&mut stream, book, first, count)
+    try writeStream(alloc, w, number + 1, "", stream.bytes())
+
+    for k in 0..count {
+        stream.clear()
+        try charProc(&mut stream, book, book.glyphs.items()[first + k])
+        try writeStream(alloc, w, number + 2 + k, "", stream.bytes())
+    }
+}

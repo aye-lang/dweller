@@ -3,7 +3,7 @@ import std.mem.Allocator
 import std.text
 
 // https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
-fn writePage(alloc: Allocator, w: *mut PdfWriter, paper: Paper, tree: usize, face: usize, number: usize, page: *PrintedPage) AllocError!void {
+fn writePage(alloc: Allocator, w: *mut PdfWriter, paper: Paper, refs: FontRefs, number: usize, page: *PrintedPage) AllocError!void {
     var content = text.Builder.init(alloc)
     defer content.deinit()
     var image = text.Builder.init(alloc)
@@ -11,7 +11,7 @@ fn writePage(alloc: Allocator, w: *mut PdfWriter, paper: Paper, tree: usize, fac
 
     try w.begin(number)
     try w.out.append("<< /Type /Page /Parent ")
-    try w.ref(tree)
+    try w.ref(refs.tree)
     try w.out.append(" /MediaBox [0 0 ")
     try w.out.appendFloat(paper.width_pt)
     try w.out.append(" ")
@@ -19,7 +19,8 @@ fn writePage(alloc: Allocator, w: *mut PdfWriter, paper: Paper, tree: usize, fac
     try w.out.append("] /Resources << /XObject << /Im0 ")
     try w.ref(number + 2)
     try w.out.append(" >> /Font << /F1 ")
-    try w.ref(face)
+    try w.ref(refs.face)
+    try fontRefs(w, refs)
     try w.out.append(" >> >> /Contents ")
     try w.ref(number + 1)
     try w.out.append(" >>")

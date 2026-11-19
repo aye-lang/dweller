@@ -1,0 +1,36 @@
+import font
+import std.list.List
+import std.map.IntMap
+import std.mem.Allocator
+
+pub let FONT_GLYPHS: usize = 256
+
+pub struct BookGlyph {
+    advance: f64
+    path: usize
+    path_len: usize
+    said: usize
+    said_len: usize
+}
+
+// chromium: third_party/skia/src/pdf/SkPDFFont.cpp (a Type 3 font of the glyphs used, for a face that is not embedded)
+pub struct GlyphBook {
+    system: *mut font.System
+    index: IntMap(u64, i64)
+    glyphs: List(BookGlyph)
+    paths: List(f64)
+    said: List(u8)
+    placed: List(font.Placed)
+
+    pub fn init(alloc: Allocator, system: *mut font.System) GlyphBook {
+        return GlyphBook { system: system, index: IntMap(u64, i64).init(alloc), glyphs: List(BookGlyph).init(alloc), paths: List(f64).init(alloc), said: List(u8).init(alloc), placed: List(font.Placed).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.index.deinit()
+        self.glyphs.deinit()
+        self.paths.deinit()
+        self.said.deinit()
+        self.placed.deinit()
+    }
+}
