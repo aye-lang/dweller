@@ -15,5 +15,7 @@ fn remoteFrame(p: *mut Page, target: *Url) bool {
 
     if !site_frames || !web || target.host.len == 0 { return false }
 
-    return !text.eql(target.scheme, top.scheme) || !net.sameSite(top, target)
+    let secured = text.eql(top.scheme, "https") && net.frameUpgraded(p.url.href, top.href, target)
+
+    return (!text.eql(target.scheme, top.scheme) && !secured) || !net.sameSite(top, target)
 }

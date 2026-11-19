@@ -12,6 +12,7 @@ fn vmIcStoreHit(it: *mut Interp, c: IcCase, v: Value, o: u32, key: u32, value: V
 
         if (p.flags & F_ACCESSOR) == 0 {
             if (p.flags & F_WRITE) != 0 {
+                it.heap.shade(value)
                 ob.props[c.slot].value = value
             }
 
@@ -37,6 +38,7 @@ fn vmIcStoreHit(it: *mut Interp, c: IcCase, v: Value, o: u32, key: u32, value: V
 
     heapProtoChanged(&mut it.heap, o)
 
+    it.heap.shade(value)
     ob.props[ob.nprops] = Prop { key: key, value: value, setter: Value.Undefined, flags: F_DEFAULT }
     ob.nprops += 1
     ob.shape = c.other

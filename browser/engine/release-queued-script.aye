@@ -1,0 +1,20 @@
+import dom.NodeId
+
+// https://html.spec.whatwg.org/multipage/scripting.html#list-of-scripts-that-will-execute-when-the-document-has-finished-parsing
+fn releaseQueuedScript(s: *mut Script, el: NodeId) {
+    let doc = &mut s.page.doc
+
+    if !doc.isLive(el) {
+        return
+    }
+
+    let n = doc.node(el)
+
+    if n.js_refs > 0 {
+        n.js_refs -= 1
+    }
+
+    if n.js_refs == 0 {
+        _ = doc.releaseIfUnused(el)
+    }
+}

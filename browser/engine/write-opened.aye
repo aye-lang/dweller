@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+fn writeOpened(t: *mut Page, markup: []u8) AllocError!void {
+    var b = text.Builder.init(t.alloc)
+    defer b.deinit()
+    try b.append(t.opened_doc)
+    try b.append(markup)
+    let joined = try b.toOwned()
+
+    freePolicy(t.alloc, t.opened_doc)
+    t.opened_doc = joined
+}
