@@ -1,0 +1,48 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-face-rule
+fn fontFaceDescriptor(name: []u8, comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    let ranged = inList(name, "font-weight font-stretch font-width font-style") != null
+
+    if ranged && comps.len == 1 && isIdent(comps[0], "auto") {
+        try out.append("auto")
+
+        return true
+    }
+
+    if text.eql(name, "font-weight") {
+        return writeDescriptorRange(comps, 'n', 1.0, 1000.0, "normal bold", out)
+    }
+
+    if text.eql(name, "font-stretch") || text.eql(name, "font-width") {
+        return writeDescriptorRange(comps, '%', 0.0, math.inf(), "normal ultra-condensed extra-condensed condensed semi-condensed semi-expanded expanded extra-expanded ultra-expanded", out)
+    }
+
+    if text.eql(name, "font-style") {
+        return fontFaceStyle(comps, out)
+    }
+
+    if text.eql(name, "src") {
+        return fontFaceSrc(comps, out)
+    }
+
+    if inList(name, "ascent-override descent-override line-gap-override") != null {
+        return writeDescriptorRange(comps, '%', 0.0, math.inf(), "normal", out)
+    }
+
+    if text.eql(name, "size-adjust") {
+        return comps.len == 1 && try writeDescriptorPart(comps[0], '%', 0.0, math.inf(), "", out)
+    }
+
+    for k, c in comps {
+        if k > 0 && !isComma(c) {
+            try out.appendByte(' ')
+        }
+
+        try writeTokens(c.toks, out)
+    }
+
+    return true
+}

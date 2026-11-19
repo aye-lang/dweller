@@ -112,6 +112,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
     try defMethod(it, o, "selectorText", 1, akSelectorText)
     try defMethod(it, o, "declarationsText", 1, akDeclarationsText)
+    try defMethod(it, o, "descriptor", 3, akDescriptor)
     try defMethod(it, o, "valueDirty", 1, akValueDirty)
     try defMethod(it, o, "styleBlocked", 1, akStyleBlocked)
     try defMethod(it, o, "linkLoad", 2, akLinkLoad)
@@ -872,7 +873,14 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
 
         if text.eql(b.bytes(), "border-spacing") {
             b.clear()
-            try css.writeBorderSpacing(values, b)
+            try writeCurrentSpacing(s, h, values, b)
+
+            return it.newString(b.bytes())
+        }
+
+        if text.eql(b.bytes(), "font") {
+            b.clear()
+            try writeComputedFont(s, h, values, b)
 
             return it.newString(b.bytes())
         }

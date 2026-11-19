@@ -46,8 +46,12 @@ pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, o
         }
     }
 
-    if prop == css.BACKGROUND_IMAGE || prop == css.MASK_IMAGE {
+    if prop == css.BACKGROUND_IMAGE || prop == css.MASK_IMAGE || prop == css.OVERFLOW_CLIP_MARGIN {
         return false
+    }
+
+    if prop == css.FONT_STYLE {
+        return mixFontStyle(a, b, p, out)
     }
 
     var na = text.Builder.init(alloc)
@@ -56,7 +60,7 @@ pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, o
     var nb = text.Builder.init(alloc)
     defer nb.deinit()
 
-    try matchValues(alloc, prop, a, b, &mut na, &mut nb)
+    try matchValues(alloc, prop, css.stretchPercent(prop, a), css.stretchPercent(prop, b), &mut na, &mut nb)
 
     if !(try mixText(prop, na.bytes(), nb.bytes(), p, isInteger(name), nonneg, out)) {
         return false
