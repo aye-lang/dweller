@@ -1,0 +1,27 @@
+import std.text
+
+let PICKED_LIMIT: usize = 268435456
+let PICKER_POLL_MS: i32 = 50
+
+struct FilePicker {
+    pid: i32
+    fd: i32
+    out: text.Builder
+    slot: u32
+    frame: u32
+    ended: bool = false
+}
+
+fn pickerTimeout(ui: *Ui, timeout: i32) i32 {
+    if ui.picker != null && timeout > PICKER_POLL_MS { return PICKER_POLL_MS }
+
+    return timeout
+}
+
+fn setNonBlocking(fd: i32) {
+    if @targetOs() is .macos {
+        fcntl(fd, 4, 0x4)
+    } else {
+        fcntl(fd, 4, 0x800)
+    }
+}

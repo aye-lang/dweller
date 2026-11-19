@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+let HELVETICA_AVERAGE: f64 = 0.5
+
+fn textRun(out: *mut text.Builder, run: TextRun, left: f64, top: f64) AllocError!void {
+    let size = run.size * PT_PER_PX
+    var chars: f64 = 0.0
+
+    for c in run.s {
+        if (c & 0xC0) != 0x80 { chars += 1.0 }
+    }
+
+    let stretch = run.width * PT_PER_PX / (chars * size * HELVETICA_AVERAGE) * 100.0
+    let numbers = [4]f64{size, stretch, left + run.x * PT_PER_PX, top - run.y * PT_PER_PX}
+    let words = [4][]u8{" Tf ", " Tz 1 0 0 1 ", " ", " Tm "}
+
+    try out.append("/F1 ")
+
+    for k, n in numbers {
+        try out.appendFloat(n)
+        try out.append(words[k])
+    }
+
+    try pdfString(out, run.s)
+    try out.append(" Tj\n")
+}

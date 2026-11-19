@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.text
+
+fn decodeBookmarks(s: *mut PlaceStore, bytes: []u8) AllocError!void {
+    var lines = text.split(bytes, "\n")
+
+    if !text.eql(lines.next() orelse "", BOOKMARKS_HEAD) { return }
+
+    while lines.next() |line| {
+        let href = line[..text.indexOf(line, " ") orelse line.len]
+
+        if !keptUrl(href) { continue }
+
+        let p = try placeOf(s, href, restAfter(line, 1))
+
+        p.bookmarked = true
+    }
+}

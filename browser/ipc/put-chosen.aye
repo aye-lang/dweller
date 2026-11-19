@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn putChosen(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .ChooseFiles { multiple, accept } => {
+            try putU32(out, multiple)
+            try putBytes(out, accept)
+        }
+
+        .ChosenFile { name, mime, modified } => {
+            try putBytes(out, name)
+            try putBytes(out, mime)
+            try putF64(out, modified)
+        }
+
+        .ChosenBytes { chunk } => try putBytes(out, chunk)
+        .ChosenEnd { count } => try putU32(out, count)
+        _ => {}
+    }
+}

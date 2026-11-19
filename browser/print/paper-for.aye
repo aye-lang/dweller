@@ -1,0 +1,31 @@
+import css
+
+let PAPER_MIN_PT: f64 = 72.0
+let PAPER_MAX_PT: f64 = 14400.0
+
+// chromium: third_party/blink/renderer/core/frame/web_local_frame_impl.cc (GetPageDescription: the `@page` size and margins over the default paper)
+pub fn paperFor(base: Paper, box: css.PageBox) Paper {
+    var paper = base
+
+    if box.width > 0.0 {
+        paper.width_pt = box.width * PT_PER_PX
+        paper.height_pt = box.height * PT_PER_PX
+    }
+
+    if (box.turn == css.PAGE_LANDSCAPE) != (paper.width_pt > paper.height_pt) && box.turn != 0 {
+        let w = paper.width_pt
+
+        paper.width_pt = paper.height_pt
+        paper.height_pt = w
+    }
+
+    for k, m in box.margin {
+        if m >= 0.0 { paper.margin_pt[k] = m * PT_PER_PX }
+    }
+
+    let outside = paper.width_pt < PAPER_MIN_PT || paper.height_pt < PAPER_MIN_PT || paper.width_pt > PAPER_MAX_PT || paper.height_pt > PAPER_MAX_PT
+
+    if outside || paper.contentWidth() < 48.0 || paper.contentHeight() < 48.0 { return base }
+
+    return paper
+}

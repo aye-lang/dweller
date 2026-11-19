@@ -1,0 +1,36 @@
+import std.list.List
+
+test "a glyph's outline is closed contours of lines and curves in 1000 units per em, with its advance" {
+    var sys = System.init(@testAllocator()) catch return
+    defer sys.deinit()
+    var placed = List(Placed).init(@testAllocator())
+    defer placed.deinit()
+    var path = List(f64).init(@testAllocator())
+    defer path.deinit()
+    var moves: usize = 0
+    var closes: usize = 0
+    var i: usize = 0
+
+    _ = try sys.shapeText(Font { size: 16.0, bold: false, italic: false, mono: false }, "o", &mut placed)
+
+    @expectEqual(1, placed.len())
+
+    let advance = (try glyphOutline(&mut sys, placed.items()[0].face, placed.items()[0].glyph, false, &mut path)).?
+
+    while i < path.len() {
+        let op = path.items()[i]
+
+        if op == PATH_MOVE { moves += 1 }
+        if op == PATH_CLOSE { closes += 1 }
+
+        @expect(op == PATH_CLOSE || (path.items()[i + 1] > -200.0 && path.items()[i + 1] < 1200.0))
+
+        i += 1 + 2 * (op == PATH_MOVE || op == PATH_LINE) as usize + 6 * (op == PATH_CURVE) as usize
+    }
+
+    @expectEqual(path.len(), i)
+    @expectEqual(2, moves)
+    @expectEqual(2, closes)
+    @expect(advance > 300.0 && advance < 800.0)
+    @expect(path.len() > 2 * (3 + 4 * 7 + 1) - 20)
+}

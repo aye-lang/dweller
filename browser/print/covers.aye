@@ -1,0 +1,44 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+let BAND: f64 = 256.0
+
+struct Cover {
+    at: usize
+    r: paint.Rect
+}
+
+struct Covers {
+    bands: List(List(Cover))
+
+    fn deinit(self: *mut Self) {
+        for k in 0..self.bands.len() { self.bands.items()[k].deinit() }
+
+        self.bands.deinit()
+    }
+}
+
+fn bandOf(y: f64, count: usize) usize {
+    if y <= 0.0 { return 0 }
+    if (y / BAND) as usize >= count { return count - 1 }
+
+    return (y / BAND) as usize
+}
+
+fn coversOf(alloc: Allocator, list: *paint.DisplayList) AllocError!Covers {
+    var covers = Covers { bands: List(List(Cover)).init(alloc) }
+
+    for k in 0..(list.height / BAND) as usize + 1 { try covers.bands.append(List(Cover).init(alloc)) }
+
+    for at, item in list.items.items() {
+        let r = itemBox(item) orelse continue
+
+        for band in bandOf(r.y, covers.bands.len())..bandOf(r.y + r.h, covers.bands.len()) + 1 {
+            try covers.bands.items()[band].append(Cover { at: at, r: r })
+        }
+    }
+
+    return covers
+}

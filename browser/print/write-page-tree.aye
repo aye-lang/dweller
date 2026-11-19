@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+fn writePageTree(w: *mut PdfWriter, tree: usize, first: usize, count: usize) AllocError!void {
+    try w.begin(tree)
+    try w.out.append("<< /Type /Pages /Count ")
+    try w.out.appendUint(count as u64)
+    try w.out.append(" /Kids [")
+
+    for k in 0..count {
+        try w.out.append(" ")
+        try w.ref(first + k * 3)
+    }
+
+    try w.out.append(" ] >>")
+    try w.end()
+}

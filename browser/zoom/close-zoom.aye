@@ -1,0 +1,14 @@
+pub fn closeZoom() {
+    let s = zoom_store orelse return
+
+    zoom_store = null
+
+    for l in s.levels.items() {
+        s.alloc.free(l.owned_key)
+    }
+
+    if s.owned_path |p| { s.alloc.free(p) }
+
+    s.levels.deinit()
+    s.alloc.destroy(s)
+}

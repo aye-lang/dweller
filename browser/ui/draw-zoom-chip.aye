@@ -1,0 +1,16 @@
+import std.mem.AllocError
+import std.text
+import zoom
+
+fn drawZoomChip(ui: *mut Ui) AllocError!void {
+    let r = zoomChipRect(ui) orelse return
+    let f = uiFont(12.0)
+    var percent = text.Builder.init(ui.alloc)
+    defer percent.deinit()
+
+    try percent.appendUint(zoom.percentOf(zoomHref(ui.slots[ui.active].?)) as u64)
+    try percent.append("%")
+    fill(ui, r.x, r.y, r.w, r.h, BAR_BG)
+    frame(ui, r, 1.0, LINE)
+    try label(ui, r.x + (r.w - ui.measure.width(f, percent.bytes())) / 2.0, centered(ui, r.y, r.h, f), percent.bytes(), f, INK)
+}

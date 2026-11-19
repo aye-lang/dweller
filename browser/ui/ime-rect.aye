@@ -1,0 +1,24 @@
+import engine
+import std.math
+
+// chromium: ui/base/ime/text_input_client.h (GetCaretBounds)
+fn imeRect(ui: *mut Ui) ?[4]i32 {
+    if ui.focus == Focus.Address { return addressCaret(ui) }
+    if ui.focus != Focus.Page { return null }
+
+    let z = ui.page_zoom
+
+    if tabInput(ui) |top| {
+        let hit = focusedFrame(top)
+        let c = hit.tp.caret
+
+        if c[0] == 0.0 { return null }
+
+        return [4]i32{math.floor(hit.ox as f64 / ui.scale + c[1] * z) as i32, math.floor(ui.top() + hit.oy as f64 / ui.scale + c[2] * z) as i32, 1, math.ceil(c[4] * z) as i32}
+    }
+
+    let page = ui.tab.page orelse return null
+    let c = engine.caretRect(page, engine.composingTarget(page) orelse return null) orelse return null
+
+    return [4]i32{math.floor((c.x - ui.tab.scroll_x) * z) as i32, math.floor(ui.top() + (c.y - ui.tab.scroll) * z) as i32, 1, math.ceil(c.h * z) as i32}
+}

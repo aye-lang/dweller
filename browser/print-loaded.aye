@@ -1,0 +1,20 @@
+import engine
+import font
+import print
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn printLoaded(alloc: Allocator, page: *mut engine.Page, measure: dyn font.Measurer, system: ?*mut font.System, paper: print.Paper, pdf: *mut text.Builder) AllocError!usize {
+    let screen = [2]f64{paper.contentWidth(), paper.contentHeight()}
+
+    try engine.runUntilIdle(page, PRINT_WAIT_MS)
+    try page.layoutPage(measure, screen[0], screen[1])
+
+    let pages = try print.printDocument(alloc, page, measure, system, paper, screen, pdf)
+
+    try engine.runUntilIdle(page, PRINT_WAIT_MS)
+
+    return pages
+}

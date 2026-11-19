@@ -115,6 +115,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
 
         .FocusFrame { key, how } => return focusFrame(tp, key, how)
         .Clipboard { copied } => return takeClipboard(tp, copied)
+        .ChooseFiles { multiple, accept: accepted } => return takeFileAsk(tp, multiple, accepted)
+        .CaretRect { on, x, y, w, h } => return takeCaret(tp, on, [4]f64{x, y, w, h})
         .Context { .. } => {}
 
         .Redirect { url: href } => {

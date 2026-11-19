@@ -1,0 +1,30 @@
+import font
+import std.mem.AllocError
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf (9.6.5 Type 3 fonts: d0, then the glyph's path)
+fn charProc(out: *mut text.Builder, book: *GlyphBook, g: BookGlyph) AllocError!void {
+    let path = book.paths.items()[g.path..g.path + g.path_len]
+    var i: usize = 0
+
+    try pdfNumber(out, g.advance)
+    try out.append(" 0 d0\n")
+
+    while i < path.len {
+        if path[i] == font.PATH_CLOSE {
+            try out.append("h\n")
+            i += 1
+        } else if path[i] == font.PATH_CURVE {
+            try pdfNumbers(out, path[i + 1..i + 7], "c\n")
+            i += 7
+        } else if path[i] == font.PATH_MOVE {
+            try pdfNumbers(out, path[i + 1..i + 3], "m\n")
+            i += 3
+        } else {
+            try pdfNumbers(out, path[i + 1..i + 3], "l\n")
+            i += 3
+        }
+    }
+
+    try out.append("f\n")
+}

@@ -1,0 +1,75 @@
+import std.list.List
+import std.text
+
+test "a PDF has its objects where the cross-reference table says, one image and one text layer per page" {
+    let alloc = @testAllocator()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+    var pages = List(PrintedPage).init(alloc)
+    defer pages.deinit()
+
+    for k in 0..2 {
+        let rgb = try alloc.alloc(200 as u8, 4 * 2 * 3)
+        var texts = List(TextRun).init(alloc)
+
+        try texts.append(TextRun { x: 10.0, y: 20.0, size: 16.0, width: 54.0, s: "caf\xC3\xA9 (a)\\" })
+        try pages.append(PrintedPage { width: 4, height: 2, owned_rgb: rgb, texts: texts, glyphs: List(PageGlyph).init(alloc), runs: List(VectorRun).init(alloc) })
+    }
+
+    try writePdf(alloc, paperNamed("letter").?, "A title", pages.items(), null, &mut out)
+
+    let pdf = out.bytes()
+    let xref = text.indexOf(pdf, "xref\n0 11\n").?
+
+    @expect(text.startsWith(pdf, "%PDF-1.4\n"))
+    @expect(text.endsWith(pdf, "%%EOF\n"))
+    @expect(text.indexOf(pdf, "/Count 2 /Kids [ 5 0 R 8 0 R ]") != null)
+    @expect(text.indexOf(pdf, "/MediaBox [0 0 612 792]") != null)
+    @expect(text.indexOf(pdf, "/Title (A title)") != null)
+    @expect(text.indexOf(pdf, "/Width 4 /Height 2 /Filter /FlateDecode") != null)
+
+    for n in 1..11 {
+        let row = pdf[xref + 10 + n * 20..][..10]
+        var at: usize = 0
+
+        for digit in row {
+            at = at * 10 + (digit - '0') as usize
+        }
+
+        var want = text.Builder.init(alloc)
+        defer want.deinit()
+
+        try want.appendUint(n as u64)
+        try want.append(" 0 obj\n")
+
+        @expect(text.startsWith(pdf[at..], want.bytes()))
+    }
+
+    var start = text.Builder.init(alloc)
+    defer start.deinit()
+
+    try start.append("startxref\n")
+    try start.appendUint(xref as u64)
+
+    @expect(text.indexOf(pdf, start.bytes()) != null)
+
+    var content = text.Builder.init(alloc)
+    defer content.deinit()
+
+    try pageContent(&mut content, paperNamed("letter").?, &pages.items()[0])
+
+    @expectEqual("q 1.5 0 0 0.75 28 763.25 cm /Im0 Do Q\nBT 3 Tr\n/F1 12 Tf 75 Tz 1 0 0 1 35.5 749 Tm (caf\\351 \\(a\\)\\\\) Tj\nET\n", content.bytes())
+
+    for k in 0..pages.len() {
+        alloc.free(pages.items()[k].owned_rgb)
+        pages.items()[k].texts.deinit()
+    }
+}
+
+test "only Latin-1 text goes into the text layer" {
+    @expect(latin1Only("plain"))
+    @expect(latin1Only("caf\xC3\xA9"))
+    @expect(!latin1Only("\xE4\xB8\xAD"))
+    @expect(!latin1Only("a\tb"))
+    @expect(!latin1Only(""))
+}

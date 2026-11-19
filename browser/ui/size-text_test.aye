@@ -1,0 +1,15 @@
+import std.text
+
+test "a download's size is in bytes under 1000, then in kB, MB and GB with one decimal" {
+    let sizes = [7]usize{0, 999, 1000, 1549, 999949, 12345678, 5000000000}
+    let texts = [7][]u8{"0 B", "999 B", "1.0 kB", "1.5 kB", "999.9 kB", "12.3 MB", "5.0 GB"}
+
+    for i, n in sizes {
+        var b = text.Builder.init(@testAllocator())
+        defer b.deinit()
+
+        try sizeText(&mut b, n)
+
+        @expectEqual(texts[i], b.bytes())
+    }
+}

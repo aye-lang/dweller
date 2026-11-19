@@ -4,6 +4,7 @@
 const G = globalThis;
 const ak = G.__canvasHost;
 const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
+const live = [];
 const fail = (method, why, name) => new DOMException("Failed to execute '" + method + "' on 'Range': " + why, name);
 
 function lengthOf(n) {
@@ -69,6 +70,7 @@ class Range extends AbstractRange {
     hidden(this, '_so', 0);
     hidden(this, '_ec', document);
     hidden(this, '_eo', 0);
+    live.push(new WeakRef(this));
   }
 
   get commonAncestorContainer() {
@@ -222,6 +224,6 @@ class StaticRange extends AbstractRange {
 hidden(G, 'AbstractRange', AbstractRange);
 hidden(G, 'Range', Range);
 hidden(G, 'StaticRange', StaticRange);
-hidden(G, '__ranges', { lengthOf, indexOf, rootOf, holds, position, fail });
+hidden(G, '__ranges', { lengthOf, indexOf, rootOf, holds, position, fail, live });
 hidden(Document.prototype, 'createRange', function () { return new Range(); });
 })();

@@ -1,0 +1,38 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn pageGlyphs(alloc: Allocator, list: *paint.DisplayList, vector: []bool, book: *mut GlyphBook, span: [2]f64, page: *mut PrintedPage) AllocError!void {
+    var clips = List(paint.Rect).init(alloc)
+    defer clips.deinit()
+
+    for at, item in list.items.items() {
+        match item {
+            .Clip { r } => try clips.append(r)
+            .Unclip => {
+                _ = clips.pop()
+            }
+
+            .Text { x, y, s, face, c } => {
+                if !vector[at] || y < span[0] || y >= span[1] { continue }
+
+                try page.runs.append(VectorRun { size: face.size, c: c, clip: clipOf(clips.items(), span[0]), first: page.glyphs.len(), count: 0 })
+                book.placed.clear()
+                _ = try book.system.shapeText(face, s, &mut book.placed)
+
+                for k in 0..book.placed.len() {
+                    let p = book.placed.items()[k]
+                    let id = (try bookGlyph(book, p, "")) orelse continue
+
+                    if s[p.cluster as usize] == ' ' || s[p.cluster as usize] == '\t' || s[p.cluster as usize] == '\n' { continue }
+
+                    try page.glyphs.append(PageGlyph { id: id, x: x + p.x, y: y - span[0] - p.y })
+                    page.runs.items()[page.runs.len() - 1].count += 1
+                }
+            }
+
+            _ => {}
+        }
+    }
+}

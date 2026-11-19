@@ -98,6 +98,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "setDocumentDomain", 1, akSetDocumentDomain)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
     try defMethod(it, o, "hostRequest", 2, akHostRequest)
+    try defMethod(it, o, "printAsk", 0, akPrintAsk)
     try defMethod(it, o, "computedStyle", 2, akComputedStyle)
     try defMethod(it, o, "resolvedTransform", 2, akResolvedTransform)
     try defMethod(it, o, "resolvedOrigin", 2, akResolvedOrigin)
@@ -573,7 +574,7 @@ fn akFetch(it: *mut Interp, a: Args) JsError!Value {
     return fetchWith(it, a, false)
 }
 
-// fetchStart(url, method, headers, body, credentials, mode, callback, referrerPolicy): the request of
+// fetchStart(url, method, headers, body, credentials, mode, callback, referrerPolicy, stream, destination): the request of
 // akFetch, in the background (net.startRequest) when it can be; queues
 // the task that calls `callback` once it ended, with the request's id
 // for fetchTake, or with the response (made now: another scheme, a
@@ -669,7 +670,7 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
         try setField(it, r, "error", "URL scheme \"file\" is not supported")
         return fetchEnd(it, a, queue, 0)
     }
-    var req = net.Request { kind: net.Kind.Other, referrer: page.url.href, top: rootPage(page).url.href, credentials: net.Credentials.SameOrigin, initiator: initiatorOf(page) }
+    var req = net.Request { kind: try fetchDestination(it, a, 9), referrer: page.url.href, top: rootPage(page).url.href, credentials: net.Credentials.SameOrigin, initiator: initiatorOf(page) }
     if !js.isUndef(it.arg(a, 4)) {
         let mode = try it.builder()
         defer it.release(mode)

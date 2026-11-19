@@ -1,0 +1,17 @@
+import font
+import paint
+import std.mem.AllocError
+
+fn pageTexts(list: *paint.DisplayList, measure: dyn font.Measurer, top: f64, bottom: f64, page: *mut PrintedPage) AllocError!void {
+    for item in list.items.items() {
+        match item {
+            .Text { x, y, s, face, .. } => {
+                if y < top || y >= bottom || !latin1Only(s) { continue }
+
+                try page.texts.append(TextRun { x: x, y: y - top, size: face.size, width: measure.width(face, s), s: s })
+            }
+
+            _ => {}
+        }
+    }
+}

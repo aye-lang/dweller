@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+fn commitInField(ui: *mut Ui, typed: []u8) AllocError!bool {
+    let s = ui.ime orelse return false
+
+    if !s.in_field || s.focus != ui.focus { return false }
+
+    try replaceInField(ui, ui.field(), s, typed)
+    s.in_field = false
+    s.composed.clear()
+
+    return true
+}

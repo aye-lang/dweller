@@ -1,0 +1,39 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
+pub struct PdfWriter {
+    out: *mut text.Builder
+    offsets: List(usize)
+
+    pub fn init(alloc: Allocator, out: *mut text.Builder) PdfWriter {
+        return PdfWriter { out: out, offsets: List(usize).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        self.offsets.deinit()
+    }
+
+    pub fn reserve(self: *mut Self) AllocError!usize {
+        try self.offsets.append(0)
+
+        return self.offsets.len()
+    }
+
+    pub fn begin(self: *mut Self, number: usize) AllocError!void {
+        self.offsets.items()[number - 1] = self.out.len()
+        try self.out.appendUint(number as u64)
+        try self.out.append(" 0 obj\n")
+    }
+
+    pub fn end(self: *mut Self) AllocError!void {
+        try self.out.append("\nendobj\n")
+    }
+
+    pub fn ref(self: *mut Self, number: usize) AllocError!void {
+        try self.out.appendUint(number as u64)
+        try self.out.append(" 0 R")
+    }
+}

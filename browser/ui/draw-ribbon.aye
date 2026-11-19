@@ -1,0 +1,33 @@
+import paint
+import paint.Rgba
+
+let RIBBON_W: f64 = 9.0
+let RIBBON_H: f64 = 12.0
+
+fn drawRibbon(ui: *mut Ui, x: f64, y: f64, filled: bool) {
+    ribbonShape(ui, x, y, RIBBON_W, RIBBON_H, INK)
+
+    if !filled { ribbonShape(ui, x + 1.0, y + 1.0, RIBBON_W - 2.0, RIBBON_H - 2.5, PAPER) }
+}
+
+fn ribbonShape(ui: *mut Ui, x: f64, y: f64, w: f64, h: f64, c: Rgba) {
+    let s = ui.scale
+    let notch = w * s / 2.0
+    let rows = paint.roundPx(h * s)
+
+    for row in 0..rows {
+        let gap = (row as f64 + 1.0 - (rows as f64 - notch)) * 2.0
+        let x0 = paint.roundPx(x * s)
+        let x1 = paint.roundPx((x + w) * s)
+        let top = paint.roundPx(y * s) + row
+
+        if gap <= 0.0 {
+            ui.canvas.fillRect(paint.IRect { x0: x0, y0: top, x1: x1, y1: top + 1 }, c)
+        } else {
+            let half = paint.roundPx((w * s - gap) / 2.0)
+
+            ui.canvas.fillRect(paint.IRect { x0: x0, y0: top, x1: x0 + half, y1: top + 1 }, c)
+            ui.canvas.fillRect(paint.IRect { x0: x1 - half, y0: top, x1: x1, y1: top + 1 }, c)
+        }
+    }
+}

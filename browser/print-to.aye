@@ -1,0 +1,56 @@
+import engine
+import font
+import print
+import std
+import std.mem.Allocator
+import std.text
+
+let PRINT_WAIT_MS: f64 = 3000.0
+
+fn printTo(alloc: Allocator, o: PrintOptions, measure: dyn font.Measurer, system: ?*mut font.System) i32 {
+    let paper = print.paperNamed(o.paper).?
+    let location = engine.urlOfInput(alloc, o.target) catch |e| {
+        std.log.err("not a URL or file: {}", o.target)
+
+        return 1
+    }
+
+    defer location.deinit(alloc)
+
+    var pdf = text.Builder.init(alloc)
+    defer pdf.deinit()
+
+    engine.setScripting(true)
+    engine.setCanvasFixed(system == null)
+
+    let page = engine.load(alloc, &location) catch |e| {
+        return 1
+    }
+
+    defer engine.closeContexts()
+    defer page.destroy()
+
+    if page.failure.len > 0 {
+        std.log.err("cannot fetch {}: {}", location.href, page.failure)
+
+        return 1
+    }
+
+    engine.setViewport(page, paper.contentWidth(), paper.contentHeight())
+
+    let pages = printLoaded(alloc, page, measure, system, paper, &mut pdf) catch |e| {
+        std.log.err("out of memory")
+
+        return 1
+    }
+
+    if !writeWhole(o.out, pdf.bytes()) {
+        std.log.err("cannot write {}", o.out)
+
+        return 1
+    }
+
+    std.log.info("{} pages", pages)
+
+    return 0
+}

@@ -11,6 +11,7 @@ fn pollTabSlot(ui: *mut Ui, slot: *mut TabSlot, shown: bool) AllocError!void {
     }
 
     if slot.process |tp| {
+        tp.page_zoom = slotZoom(slot)
         tp.front = shown
         try giveBuffers(ui, tp, ui.page.canvas.width as u32, ui.page.canvas.height as u32)
         try tellFocus(ui, slot, tp, shown || watchedTab(ui) == slot)
@@ -29,6 +30,7 @@ fn pollTabSlot(ui: *mut Ui, slot: *mut TabSlot, shown: bool) AllocError!void {
         if tp.window_ask.len() > 0 { try answerWindowAsk(ui, slot, tp) }
         if tp.gone.len == 0 { try settleAsked(ui, slot, tp) }
         if tp.popup_new { try takePopup(ui, tp, shown) }
+        if tp.file_ask == 1 || tp.file_ask == 2 { try answerFileAsk(ui, tp) }
         if tp.shown_new && shown { try showToolbar(ui, tp) }
         if tp.status_new && shown { try showStatus(ui, tp) }
         if tp.take_focus { takeFocusBack(ui, tp, shown) }

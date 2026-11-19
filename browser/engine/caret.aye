@@ -145,35 +145,9 @@ pub fn caretRect(page: *Page, el: NodeId) ?paint.Rect {
 /// Appends to `out` the rectangles of the selected text of the field
 /// `el`, line by line.
 pub fn selectionRects(page: *Page, el: NodeId, out: *mut List(paint.Rect)) AllocError!void {
-    let t = page.tree orelse return
-    let fb = fieldBoxes(t, el) orelse return
     let sel = dom.selectionOf(&page.doc, el)
-    if sel.lo >= sel.hi {
-        return
-    }
-    let lo = shownOffset(&page.doc, el, sel.lo)
-    let hi = shownOffset(&page.doc, el, sel.hi)
-    let b = t.bx(fb.box).*
-    let cx = b.ax + b.border[3] + b.padding[3]
-    let cy = b.ay + b.border[0] + b.padding[0]
-    let tb = t.bx(fb.text_box).*
-    let face = layout.fontOf(tb.style)
-    for li in b.line_start..b.line_end {
-        let line = t.lines.items()[li]
-        for fi in line.frag_start..line.frag_end {
-            let f = t.frags.items()[fi]
-            if f.kind != FragKind.Text || f.box != fb.text_box {
-                continue
-            }
-            let a = math.maxOf(usize, lo, f.start)
-            let z = math.minOf(usize, hi, f.end)
-            if a < z {
-                let x0 = t.measure.width(face, tb.text[f.start..a])
-                let w = t.measure.width(face, tb.text[a..z])
-                try out.append(paint.Rect { x: cx + f.x + x0, y: cy + f.y, w: w, h: f.h })
-            }
-        }
-    }
+
+    return rangeRects(page, el, sel.lo, sel.hi, out)
 }
 
 /// The offset in the value of the field `el` nearest to the point

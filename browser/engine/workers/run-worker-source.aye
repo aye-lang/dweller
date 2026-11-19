@@ -1,0 +1,17 @@
+import js
+import js.Interp
+import js.JsError
+
+fn runWorkerSource(it: *mut Interp, l: *mut Link, source: []u8) JsError!void {
+    if !l.module {
+        _ = try it.runScript(source)
+
+        return
+    }
+
+    let ran = try js.runModuleScript(it, null, source, l.href, false)
+
+    if js.isNullish(ran) {
+        try it.typeError("Failed to load a module of the worker script")
+    }
+}

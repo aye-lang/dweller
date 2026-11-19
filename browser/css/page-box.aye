@@ -1,0 +1,24 @@
+import std.text
+
+pub let PAGE_PORTRAIT: u8 = 1
+pub let PAGE_LANDSCAPE: u8 = 2
+
+// https://drafts.csswg.org/css-page-3/#page-size-prop
+pub struct PageBox {
+    width: f64 = 0.0
+    height: f64 = 0.0
+    turn: u8 = 0
+    margin: [4]f64 = [4]f64{-1.0, -1.0, -1.0, -1.0}
+}
+
+// https://drafts.csswg.org/css-page-3/#typedef-page-size-page-size
+fn pageSizeNamed(name: []u8) ?[2]f64 {
+    let names = [10][]u8{"a5", "a4", "a3", "b5", "b4", "jis-b5", "jis-b4", "letter", "legal", "ledger"}
+    let mm = [10][2]f64{[2]f64{148.0, 210.0}, [2]f64{210.0, 297.0}, [2]f64{297.0, 420.0}, [2]f64{176.0, 250.0}, [2]f64{250.0, 353.0}, [2]f64{182.0, 257.0}, [2]f64{257.0, 364.0}, [2]f64{215.9, 279.4}, [2]f64{215.9, 355.6}, [2]f64{279.4, 431.8}}
+
+    for k, n in names {
+        if text.eqlIgnoreCase(name, n) { return [2]f64{mm[k][0] * 96.0 / 25.4, mm[k][1] * 96.0 / 25.4} }
+    }
+
+    return null
+}

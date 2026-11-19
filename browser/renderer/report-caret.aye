@@ -1,0 +1,19 @@
+import engine
+import ipc
+
+fn reportCaret(r: *mut TabRenderer, p: *mut engine.Page) !void {
+    var now = [5]f64{0.0, 0.0, 0.0, 0.0, 0.0}
+
+    try engine.settleComposition(p)
+
+    if engine.composingTarget(p) |f| {
+        if engine.caretRect(p, f) |c| {
+            now = [5]f64{1.0, c.x - r.scroll_x, c.y - r.scroll_y, c.w, c.h}
+        }
+    }
+
+    if now[0] == r.caret_said[0] && now[1] == r.caret_said[1] && now[2] == r.caret_said[2] && now[4] == r.caret_said[4] { return }
+
+    r.caret_said = now
+    try send(r.alloc, r.conn, r.tab, ipc.Message.CaretRect { on: now[0] as u32, x: now[1], y: now[2], w: now[3], h: now[4] })
+}

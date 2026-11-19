@@ -1,0 +1,25 @@
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: third_party/blink/renderer/core/html/forms/file_input_type.cc (SetFiles)
+pub fn addFile(doc: *mut Document, el: NodeId, name: []u8, mime: []u8, bytes: []u8, modified_ms: f64) AllocError!void {
+    let alloc = doc.controls.alloc
+    var path = text.Builder.init(alloc)
+    defer path.deinit()
+
+    try path.append(FAKE_PATH)
+    try path.append(name)
+
+    let file = ChosenFile {
+        el: el,
+        owned_name: try ownedBytes(alloc, name),
+        owned_path: try ownedBytes(alloc, path.bytes()),
+        owned_type: try ownedBytes(alloc, mime),
+        owned_bytes: try ownedBytes(alloc, bytes),
+        modified_ms: modified_ms,
+    }
+
+    try doc.controls.files.append(file)
+    doc.controls.files_version += 1
+}

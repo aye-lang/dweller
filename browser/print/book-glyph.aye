@@ -1,0 +1,26 @@
+import font
+import std.mem.AllocError
+
+fn bookGlyph(book: *mut GlyphBook, p: font.Placed, said: []u8) AllocError!?u32 {
+    let key = (p.face as u64 << 33) | (p.glyph as u64 << 1) | p.bold as u64
+    let path = book.paths.len()
+
+    if book.index.get(key) |known| {
+        if known < 0 { return null }
+
+        return known as u32
+    }
+
+    let advance = (try font.glyphOutline(book.system, p.face, p.glyph, p.bold, &mut book.paths)) orelse {
+        try book.index.put(key, -1)
+
+        return null
+    }
+
+    try book.index.put(key, book.glyphs.len() as i64)
+    try book.glyphs.append(BookGlyph { advance: advance, path: path, path_len: book.paths.len() - path, said: book.said.len(), said_len: said.len })
+
+    for c in said { try book.said.append(c) }
+
+    return (book.glyphs.len() - 1) as u32
+}

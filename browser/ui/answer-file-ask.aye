@@ -1,0 +1,17 @@
+import ipc
+import std.mem.AllocError
+
+let FILE_ASK_WAITS: u32 = 3
+
+fn answerFileAsk(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
+    let started = try startPicker(ui, 0, tp.tab, tp.file_ask == 2, tp.file_accept)
+
+    tp.url.alloc.free(tp.file_accept)
+    tp.file_accept = []mut u8{}
+    tp.file_ask = FILE_ASK_WAITS
+
+    if !started {
+        tp.file_ask = 0
+        try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.ChosenEnd { count: 0 })
+    }
+}

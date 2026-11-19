@@ -1,0 +1,19 @@
+import std.mem.AllocError
+import std.text
+
+fn decodeZoom(s: *mut ZoomStore, bytes: []u8) AllocError!void {
+    var lines = text.split(bytes, "\n")
+
+    if !text.eql(lines.next() orelse "", ZOOM_HEAD) { return }
+
+    while lines.next() |line| {
+        let space = text.indexOf(line, " ") orelse continue
+        let percent = text.parseInt(line[..space]) catch |e| {
+            continue
+        }
+
+        if percent > 0 && percent <= 500 && knownPercent(percent as u32) {
+            try putLevel(s, line[space + 1..], percent as u32)
+        }
+    }
+}

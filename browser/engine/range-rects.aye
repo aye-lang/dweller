@@ -1,0 +1,40 @@
+import dom
+import dom.NodeId
+import layout
+import layout.FragKind
+import paint
+import std.list.List
+import std.math
+import std.mem.AllocError
+
+pub fn rangeRects(page: *Page, el: NodeId, from: usize, to: usize, out: *mut List(paint.Rect)) AllocError!void {
+    let t = page.tree orelse return
+    let fb = fieldBoxes(t, el) orelse return
+
+    if from >= to { return }
+
+    let lo = shownOffset(&page.doc, el, from)
+    let hi = shownOffset(&page.doc, el, to)
+    let b = t.bx(fb.box).*
+    let cx = b.ax + b.border[3] + b.padding[3]
+    let cy = b.ay + b.border[0] + b.padding[0]
+    let tb = t.bx(fb.text_box).*
+    let face = layout.fontOf(tb.style)
+
+    for li in b.line_start..b.line_end {
+        let line = t.lines.items()[li]
+
+        for fi in line.frag_start..line.frag_end {
+            let f = t.frags.items()[fi]
+            let a = math.maxOf(usize, lo, f.start)
+            let z = math.minOf(usize, hi, f.end)
+
+            if f.kind != FragKind.Text || f.box != fb.text_box || a >= z { continue }
+
+            let x0 = t.measure.width(face, tb.text[f.start..a])
+            let w = t.measure.width(face, tb.text[a..z])
+
+            try out.append(paint.Rect { x: cx + f.x + x0, y: cy + f.y, w: w, h: f.h })
+        }
+    }
+}

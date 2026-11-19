@@ -231,7 +231,7 @@ function noticed(node) {
     const m = stateOf(el);
     parts.controls(el);
     if (m.seen !== el.getAttribute('src')) parts.load(el);
-    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) parts.selectResource(el);
+    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src') && node.localName === 'source')) parts.selectResource(el);
   }
 }
 

@@ -1,0 +1,26 @@
+import engine
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+
+fn deliverPicked(ui: *mut Ui, p: *FilePicker) AllocError!void {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    var files = List(engine.PickedFile).init(arena.allocator())
+
+    try readPicked(arena.allocator(), p.out.bytes(), &mut files)
+
+    for i in 0..ui.count {
+        let slot = ui.slots[i].?
+
+        if p.frame != 0 {
+            try sendPicked(slot, p.frame, files.items())
+        } else if slot.id != p.slot {
+            continue
+        } else if slot.session.tab.page |page| {
+            try engine.chooseFiles(page, files.items())
+
+            if i == ui.active { try ui.afterScripts() }
+        }
+    }
+}

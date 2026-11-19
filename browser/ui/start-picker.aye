@@ -1,0 +1,27 @@
+import engine
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+fn startPicker(ui: *mut Ui, slot: u32, frame_id: u32, multiple: bool, accepted: []u8) AllocError!bool {
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    var argv = List([]u8).init(arena.allocator())
+    var fd: i32 = -1
+
+    if ui.picker != null { return false }
+
+    try pickerArgs(arena.allocator(), multiple, accepted, &mut argv)
+
+    if argv.len() == 0 { return false }
+
+    let pid = try spawnPicker(arena.allocator(), argv.items(), &mut fd)
+
+    if pid == 0 { return false }
+
+    setNonBlocking(fd)
+    ui.picker = try ui.alloc.create(FilePicker { pid: pid, fd: fd, out: text.Builder.init(ui.alloc), slot: slot, frame: frame_id })
+
+    return true
+}

@@ -1,0 +1,16 @@
+import dom
+import dom.NodeId
+import std.mem.AllocError
+
+fn replaceComposed(page: *mut Page, f: NodeId, typed: []u8) AllocError!void {
+    let c = &mut page.doc.controls
+    let before = fieldInput(page, f)
+
+    if !page.doc.isLive(f) { return }
+
+    try dom.setCaret(&mut page.doc, f, c.compose_start)
+    try dom.extendCaret(&mut page.doc, f, c.compose_start + c.compose_len)
+    try dom.insertText(&mut page.doc, f, typed)
+    c.compose_len = dom.caretOf(&page.doc, f).lo - c.compose_start
+    try noteFieldEdit(page, f, before)
+}

@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+fn pollPicker(ui: *mut Ui) AllocError!void {
+    try askPickerInPage(ui)
+
+    let p = ui.picker orelse return
+    var buf = @zeroed([4096]u8)
+    var st: i32 = 0
+
+    while !p.ended {
+        let n = read(p.fd, buf[..].ptr, 4096)
+
+        if n < 0 { break }
+
+        p.ended = n == 0
+
+        try p.out.append(buf[..n as usize])
+    }
+
+    if !p.ended || waitpid(p.pid, &mut st, WNOHANG) == 0 { return }
+
+    defer endPicker(ui)
+
+    try deliverPicked(ui, p)
+}

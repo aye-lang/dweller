@@ -155,6 +155,7 @@ import json
 import http.server
 import mimetypes
 import os
+import re
 import secrets
 import select
 import socket
@@ -702,6 +703,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(303, [("Location", "/meta/" + self.path[len("/see/"):])])
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
+        elif self.path == "/upload":
+            self.upload(body)
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
@@ -999,6 +1002,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
+    def upload(self, body):
+        ctype = self.headers.get("Content-Type", "")
+        lines = ["upload " + ctype.split(";")[0]] + upload_parts(ctype, body)
+        page = "<!doctype html><title>done9</title><pre>%s</pre>" % html.escape("\n".join(lines))
+        self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
     def echo(self, method, body):
         query = urllib.parse.urlsplit(self.path).query
         ctype = self.headers.get("Content-Type", "")
@@ -1015,6 +1024,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             % (method, html.escape(self.path), html.escape(ctype), items, html.escape(raw))
         )
         self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
+
+def upload_parts(ctype, body):
+    """One line per part of a multipart/form-data body: its name, file
+    name, type, length and the start of its SHA-256."""
+    boundary = ctype.split("boundary=", 1)[-1].strip().strip('"').encode()
+    lines = []
+    for part in body.split(b"--" + boundary)[1:-1]:
+        head, _, data = part[2:].partition(b"\r\n\r\n")
+        data = data[:-2]
+        text = head.decode("utf-8", "replace")
+        name = re.search(r'name="([^"]*)"', text)
+        filename = re.search(r'filename="([^"]*)"', text)
+        kind = re.search(r"Content-Type: (.*)", text)
+        lines.append(
+            "part %s | %s | %s | %d | %s"
+            % (
+                name.group(1) if name else "?",
+                filename.group(1) if filename else "-",
+                kind.group(1).strip() if kind else "-",
+                len(data),
+                hashlib.sha256(data).hexdigest()[:16],
+            )
+        )
+    return lines
 
 
 def form_fields(ctype, body):

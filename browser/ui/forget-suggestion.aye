@@ -1,0 +1,17 @@
+import places
+import std.mem.AllocError
+
+// chromium: components/omnibox/browser/omnibox_edit_model.cc (Shift+Delete removes the selected history match)
+fn forgetSuggestion(ui: *mut Ui) AllocError!bool {
+    let s = ui.suggest orelse return false
+    let k = s.selected orelse return false
+
+    if s.rows.items()[k].bookmarked { return false }
+
+    try places.clearHistory(s.rows.items()[k].owned_url)
+    try fillSuggestions(ui, s.typed.bytes())
+
+    if ui.suggest |left| { try ui.address.set(left.typed.bytes()) }
+
+    return true
+}

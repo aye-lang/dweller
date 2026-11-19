@@ -1,0 +1,25 @@
+import net
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn openPlaces(alloc: Allocator) AllocError!void {
+    if place_store != null { return }
+
+    let s = try alloc.create(PlaceStore { alloc: alloc, places: List(Place).init(alloc) })
+
+    place_store = s
+
+    if std.os.getenv("DWELLER_SEARCH") |template| {
+        s.owned_search = try ownedText(alloc, template)
+    }
+
+    if net.profileDir().len == 0 { return }
+
+    try readPlaces(s, net.profileDir())
+
+    if net.profileWritable() {
+        s.owned_dir = try ownedText(alloc, net.profileDir())
+    }
+}

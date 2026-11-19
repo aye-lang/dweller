@@ -1,0 +1,17 @@
+import engine
+import std.mem.AllocError
+
+fn printAsked(ui: *mut Ui) AllocError!void {
+    let slot = ui.slots[ui.active].?
+
+    if slot.process |tp| {
+        if tp.print_asked {
+            tp.print_asked = false
+            try printShown(ui)
+        }
+
+        return finishPrint(ui, tp, true)
+    }
+
+    if engine.takePrintAsk(ui.tab.page orelse return) { try printShown(ui) }
+}

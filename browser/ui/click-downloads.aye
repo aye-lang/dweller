@@ -1,0 +1,36 @@
+import net
+import std.mem.AllocError
+
+fn clickDownloads(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    let b = downloadsButtonRect(ui) orelse return false
+    let was = downloadsListRect(ui)
+
+    ui.dirty = ui.dirty || ui.downloads_open
+    ui.downloads_open = false
+
+    if inRect(b, x, y) {
+        ui.downloads_open = was == null
+        ui.dirty = true
+
+        return true
+    }
+
+    let r = was orelse return false
+
+    if !inRect(r, x, y) { return false }
+
+    let row = ((y - r.y - 1.0) / SUGGEST_ROW) as usize
+    let n = net.downloadCount()
+
+    if row >= downloadsListRows() {
+        try ui.address.set("about:downloads")
+    } else if net.downloadAt(n - 1 - row).state == net.DOWNLOAD_FAILED {
+        return true
+    } else {
+        try ui.address.set(net.downloadAt(n - 1 - row).owned_path)
+    }
+
+    try ui.submitAddress()
+
+    return true
+}

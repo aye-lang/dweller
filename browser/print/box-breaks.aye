@@ -1,0 +1,27 @@
+import css
+import layout
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// https://www.w3.org/TR/css-break-3/#break-between
+fn boxBreaks(t: *mut layout.Tree, forced: *mut List(f64), whole: *mut List(Span)) AllocError!void {
+    for i in 0..t.boxes.len() {
+        let b = t.bx(i)
+
+        if b.kind == layout.BoxKind.Text || b.kind == layout.BoxKind.Inline || b.node == null { continue }
+
+        if forcesPage(b.style[css.BREAK_BEFORE]) || forcesPage(b.style[css.PAGE_BREAK_BEFORE]) { try forced.append(b.ay) }
+        if forcesPage(b.style[css.BREAK_AFTER]) || forcesPage(b.style[css.PAGE_BREAK_AFTER]) { try forced.append(b.ay + b.h) }
+
+        if text.startsWith(layout.keywordOf(b.style[css.BREAK_INSIDE]), "avoid") || text.startsWith(layout.keywordOf(b.style[css.PAGE_BREAK_INSIDE]), "avoid") {
+            try whole.append(Span { top: b.ay, bottom: b.ay + b.h })
+        }
+    }
+}
+
+fn forcesPage(v: css.Value) bool {
+    let k = layout.keywordOf(v)
+
+    return text.eql(k, "page") || text.eql(k, "always") || text.eql(k, "left") || text.eql(k, "right") || text.eql(k, "recto") || text.eql(k, "verso")
+}
