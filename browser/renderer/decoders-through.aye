@@ -1,0 +1,20 @@
+import decoder
+import ipc
+
+var decoder_renderer: ?*mut TabRenderer = null
+
+fn decodersThrough(r: *mut TabRenderer) {
+    decoder_renderer = r
+    decoder.setLink(decoder.Link { send: sendDecoderRemote, pump: pumpDecoderRemote })
+}
+
+fn sendDecoderRemote(m: ipc.Message) bool {
+    let r = decoder_renderer orelse return false
+
+    send(r.alloc, r.conn, r.tab, m) catch return false
+
+    return true
+}
+
+fn pumpDecoderRemote(ms: i32) {
+}

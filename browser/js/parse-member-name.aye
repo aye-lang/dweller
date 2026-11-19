@@ -1,17 +1,33 @@
 // https://tc39.es/ecma262/#sec-runtime-semantics-definemethodproperty
 
 import std.mem.AllocError
+import std.text
 
-fn parseMemberName(p: *mut Parser, key: u32, computed: bool) AllocError!u32 {
+fn parseMemberName(p: *mut Parser, key: u32, computed: bool, kind: u32) AllocError!u32 {
     if computed {
         return key
     }
 
-    let name = p.atoms.name(key)
+    var name = p.atoms.name(key)
 
     if name.len > 0 && name[0] == PRIVATE_NAME_MARK {
-        return p.atoms.intern(name[1..])
+        name = name[1..]
     }
 
-    return key
+    if kind != PROP_GET && kind != PROP_SET {
+        return p.atoms.intern(name)
+    }
+
+    var b = text.Builder.init(p.alloc)
+    defer b.deinit()
+
+    if kind == PROP_GET {
+        try b.append("get ")
+    } else {
+        try b.append("set ")
+    }
+
+    try b.append(name)
+
+    return p.atoms.intern(b.bytes())
 }

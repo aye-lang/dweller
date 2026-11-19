@@ -8,10 +8,16 @@ let MAX_NAME_CHARS: usize = 4096
 fn takeContext(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
     match got.message {
         .Context { ask, href, post, keeps, name, .. } => {
-            if ask > 1 || post > 1 || keeps > 1 || href.len > MAX_URL_CHARS || name.len > MAX_NAME_CHARS { return "bad context" }
+            if ask > 2 || post > 1 || keeps > 1 || href.len > MAX_URL_CHARS || name.len > MAX_NAME_CHARS { return "bad context" }
         }
 
         _ => return "bad context"
+    }
+
+    if closeAsk(got.message) {
+        try ipc.encode(&mut tp.contexts, got.frame, got.message)
+
+        return ""
     }
 
     var key = tp.seq as u64

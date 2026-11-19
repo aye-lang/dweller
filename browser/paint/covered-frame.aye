@@ -1,0 +1,37 @@
+import layout.Tree
+
+// chromium: components/viz/common/hit_test/hit_test_region_list.h (kHitTestAsk: something may be drawn over the surface)
+pub fn coveredFrame(list: *DisplayList, tree: *Tree) bool {
+    let shown = shownFrame(list, tree) orelse return false
+    let items = list.items.items()
+    let seen = intersectRects(shown.r, shown.clip)
+    var open: usize = 0
+    var after = false
+
+    for k in placeOf(list, tree)..items.len {
+        if after && drawsOver(items[k], seen) { return true }
+
+        match items[k] {
+            .Clip { .. }, .Layer { .. } => {
+                open += 1
+            }
+
+            .Unclip, .EndLayer { .. } => {
+                open = closedAfterOpen(open)
+                after = after || open == 0
+            }
+
+            _ => {}
+        }
+    }
+
+    return false
+}
+
+fn placeOf(list: *DisplayList, tree: *Tree) usize {
+    for f in list.frames.items() {
+        if f.tree == tree { return f.at }
+    }
+
+    return list.items.len()
+}

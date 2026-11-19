@@ -1,0 +1,9 @@
+// chromium: components/input/render_widget_host_input_event_router.cc (FindViewAtLocation)
+fn hitFrameWith(tp: *mut TabProcess, answers: []HitAsk, at: [2]i64, ox: i64, oy: i64) FrameHit {
+    let c = childUnder(tp, at, ox, oy) orelse return FrameHit { tp: tp, ox: ox, oy: oy }
+    let ask = HitAsk { frame: tp.tab, key: c.key, x: at[0] - ox, y: at[1] - oy }
+
+    if c.hit_test && hitAnswer(answers, ask) == false { return FrameHit { tp: tp, ox: ox, oy: oy } }
+
+    return hitFrameWith(c.tp.?, answers, at, ox + c.x, oy + c.y)
+}

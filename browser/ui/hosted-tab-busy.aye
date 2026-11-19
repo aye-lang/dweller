@@ -1,0 +1,21 @@
+fn hostedTabBusy(ui: *mut Ui, sp: *mut Space, tab: u32) bool {
+    let a = ui.agents orelse return false
+    var busy = false
+
+    for c in a.conns {
+        let conn = c orelse continue
+
+        if conn.space != sp || conn.tab != tab { continue }
+        if conn.asked || conn.waiting { busy = true }
+    }
+
+    if busy { return true }
+
+    for c in a.conns {
+        let conn = c orelse continue
+
+        if conn.space == sp && conn.tab == tab { conn.tab = 0 }
+    }
+
+    return false
+}

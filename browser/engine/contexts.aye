@@ -51,6 +51,7 @@ pub struct BrowsingContext {
     own: ?*mut Tab
     popup_sandbox: u32
     epoch: u32 = 0
+    closing: bool = false
     remote_tab: u32 = 0
     remote_opener: u32 = 0
 }
@@ -369,6 +370,12 @@ fn navigateContext(id: u32, href: []u8, body: ?*net.Body, initiator: []u8) Alloc
 /// Asks the front end to close context `id`.
 fn closeContext(id: u32) AllocError!void {
     let t = bc_table orelse return
+    if remote_closes != null {
+        if contextOf(id) |c| {
+            c.closing = true
+        }
+        return noteRemoteClose(id)
+    }
     for r in t.requests.items() {
         if r.context == id && r.ask is .Close {
             return
@@ -471,7 +478,9 @@ pub fn pumpContexts() AllocError!void {
                     continue
                 }
                 defer target.deinit(t.alloc)
+                tab.replace_next = nav.replace
                 try tab.navigate(&target, initiatorOf(p))
+                tab.replace_next = false
                 did = true
             } else if ran {
                 did = true

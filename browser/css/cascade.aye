@@ -113,6 +113,7 @@ pub struct Styles {
     // element), and whether there were more.
     moved_els: List(NodeId)
     moved_many: bool = false
+    moved_more: List(NodeId)
     // The elements it styled whose values changed but not in what
     // layout reads, or there only in their transform (`shift`; one
     // before and after), with the values they had: their boxes stay and
@@ -177,6 +178,7 @@ pub struct Styles {
             inputs: 0,
             class_infos: List(*ClassInfo).init(alloc),
             moved_els: List(NodeId).init(alloc),
+            moved_more: List(NodeId).init(alloc),
             restyled: List(Restyled).init(alloc),
             has_anchors: IntMap(u32, u64).init(alloc),
             matched: MatchedCache.init(alloc),
@@ -215,6 +217,7 @@ pub struct Styles {
 
     pub fn deinit(self: *mut Self) {
         self.moved_els.deinit()
+        self.moved_more.deinit()
         self.restyled.deinit()
         self.has_anchors.deinit()
         self.matched.deinit()
@@ -241,6 +244,7 @@ pub struct Styles {
             try self.moved_els.append(el)
         } else {
             self.moved_many = true
+            try keepMoved(&mut self.moved_more, el)
         }
     }
 
@@ -643,6 +647,7 @@ pub fn restyleSubtrees(doc: *Document, ua: *Sheet, author: *Sheet, media: Media,
     out.moved = false
     out.moved_els.clear()
     out.moved_many = false
+    out.moved_more.clear()
     out.restyled.clear()
     let a = out.arena.allocator()
     let wins = try a.alloc(Win { set: false, level: 0, spec: 0, d: NO_DECL }, NPROPS)

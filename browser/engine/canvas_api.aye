@@ -225,6 +225,10 @@ fn canvasSource(it: *mut Interp, source: Value) JsError!?CanvasSource {
     if p.doc.isElement(h, "canvas") {
         return CanvasSource { bmp: (try canvasBitmap(it, source)).bmp, scale_x: 1.0, scale_y: 1.0 }
     }
+    if p.doc.isElement(h, "video") {
+        let frame = videoFrame(p, h) orelse return null
+        return CanvasSource { bmp: frame, scale_x: 1.0, scale_y: 1.0 }
+    }
     if !p.doc.isElement(h, "img") {
         return null
     }
@@ -1722,7 +1726,7 @@ fn akCanvasText(it: *mut Interp, a: Args) JsError!Value {
         } else if d.prop == css.FONT_STYLE {
             match d.value {
                 .Keyword { k } => {
-                    f.italic = text.eql(k, "italic") || text.eql(k, "oblique")
+                    f.italic = text.eql(k, "italic") || text.startsWith(k, "oblique")
                 }
                 _ => {}
             }

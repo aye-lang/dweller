@@ -1,0 +1,40 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+import media
+
+fn mediaTrack(it: *mut Interp, t: *media.Track) JsError!Value {
+    let s = scriptOf(it)
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+
+    let samples = try it.newArray(0)
+
+    try it.push(js.objVal(samples))
+
+    var numbers = [4]f64{ 1.0, t.channels as f64, t.bits as f64, t.rate }
+
+    if t.kind == media.TrackKind.Video { numbers = [4]f64{ 2.0, t.width as f64, t.height as f64, 0.0 } }
+
+    try it.heap.pushElem(out, js.numVal(numbers[0]))
+    try it.heap.pushElem(out, try stringFor(s, t.codec))
+    try it.heap.pushElem(out, try binaryText(s, t.config))
+
+    for k in 1..4 {
+        try it.heap.pushElem(out, js.numVal(numbers[k]))
+    }
+
+    for x in t.samples.items() {
+        try it.heap.pushElem(samples, js.numVal(x.offset as f64))
+        try it.heap.pushElem(samples, js.numVal(x.size as f64))
+        try it.heap.pushElem(samples, js.numVal(x.time))
+        try it.heap.pushElem(samples, js.boolVal(x.key))
+    }
+
+    try it.heap.pushElem(out, js.objVal(samples))
+    _ = it.pop()
+
+    return it.pop()
+}

@@ -1,0 +1,22 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-style-prop
+fn mixFontStyle(a: []u8, b: []u8, progress: f64, out: *mut text.Builder) AllocError!bool {
+    let from = obliqueAngle(a) orelse return false
+    let to = obliqueAngle(b) orelse return false
+    let angle = math.max(-90.0, math.min(90.0, from + (to - from) * progress))
+
+    if angle == 0.0 {
+        try out.append("normal")
+
+        return true
+    }
+
+    try out.append("oblique ")
+    try out.appendFloat(angle)
+    try out.append("deg")
+
+    return true
+}

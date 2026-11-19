@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn putHitPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .HitTest { id, x, y } => {
+            try putU32(out, id)
+            try putU32(out, x)
+            try putU32(out, y)
+        }
+
+        .HitTestReply { id, key } => {
+            try putU32(out, id)
+            try putU32(out, key)
+        }
+
+        .ReplaceNavigation { url, referrer_policy, user } => {
+            try putBytes(out, url)
+            try putU32(out, referrer_policy)
+            try putU32(out, user)
+        }
+
+        _ => {}
+    }
+}

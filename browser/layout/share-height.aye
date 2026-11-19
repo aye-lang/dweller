@@ -1,0 +1,34 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-tables-3/#height-distribution-algorithm
+fn shareHeight(hs: []mut f64, marks: []mut u8, pcts: []f64, extra: f64) {
+    var left = extra
+    let whole = sumOf(hs) + extra
+
+    for k in 0..hs.len {
+        if marks[k] == TRACK_PERCENT {
+            let more = math.max(0.0, math.min(left, pcts[k] * whole / 100.0 - hs[k]))
+
+            hs[k] += more
+            left -= more
+        }
+    }
+
+    if left <= 0.0 || growTracks(hs, marks, TRACK_AUTO, left) || growTracks(hs, marks, TRACK_EMPTY, left) || growTracks(hs, marks, TRACK_FIXED, left) {
+        return
+    }
+
+    for k in 0..hs.len {
+        if marks[k] != TRACK_OUT {
+            marks[k] = TRACK_AUTO
+        }
+    }
+
+    if !growTracks(hs, marks, TRACK_AUTO, left) {
+        for k in 0..hs.len {
+            marks[k] = TRACK_AUTO
+        }
+
+        growTracks(hs, marks, TRACK_AUTO, left)
+    }
+}
