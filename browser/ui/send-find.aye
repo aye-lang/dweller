@@ -1,0 +1,21 @@
+import ipc
+import std.mem.AllocError
+
+let FIND_FIRST: u32 = 0
+let FIND_NEXT: u32 = 2
+let FIND_PREVIOUS: u32 = 3
+let FIND_CLEAR: u32 = 4
+let FIND_PASSIVE: u32 = 5
+let FIND_LAST: u32 = 6
+
+fn sendFind(tp: *mut TabProcess, command: u32, query: []u8) AllocError!void {
+    tp.find_id += 1
+    tp.find_passive = command == FIND_PASSIVE
+
+    if command == FIND_CLEAR {
+        tp.find_count = 0
+        tp.find_active = 0
+    }
+
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Find { id: tp.find_id, command: command, query: query })
+}
