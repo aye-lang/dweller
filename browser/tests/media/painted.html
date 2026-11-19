@@ -1,0 +1,22 @@
+<!doctype html>
+<title>Media video painted</title>
+<body style="margin:0;background:white">
+<video id="a" src="clip.mkv" muted preload="auto" style="float:left;width:64px;height:48px"></video>
+<video id="b" src="clip.mkv" muted preload="auto" style="float:left;width:64px;height:64px"></video>
+<video id="c" src="clip.mkv" muted preload="auto" style="float:left;width:64px;height:24px;object-fit:fill"></video>
+<pre id="out" style="clear:both"></pre>
+<script>
+const out = document.getElementById('out');
+const c = document.createElement('canvas');
+const g = c.getContext('2d');
+const blue = v => { g.clearRect(0, 0, 300, 150); g.drawImage(v, 0, 0); return g.getImageData(1, 10, 1, 1).data[2] === 255 && g.getImageData(1, 10, 1, 1).data[0] === 0; };
+Promise.all(Array.from(document.querySelectorAll('video'), async v => {
+  if (v.readyState < 2) await new Promise(done => v.addEventListener('loadeddata', done, { once: true }));
+
+  v.currentTime = 0.45;
+  await new Promise(done => v.addEventListener('seeked', done, { once: true }));
+  for (let i = 0; i < 400 && !blue(v); i++) await new Promise(done => setTimeout(done, 5));
+
+  return v.id + (blue(v) ? ' blue' : ' not blue');
+})).then(all => { out.textContent = 'shown: ' + all.join(', ') + '\n'; });
+</script>

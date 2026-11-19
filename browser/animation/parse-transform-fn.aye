@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-functions
+fn parseTransformFn(name: []u8, args: []u8) ?TransformFn {
+    var f = emptyTransformFn(text.trim(name))
+    var i: usize = 0
+
+    while i < args.len {
+        if args[i] == ' ' || args[i] == ',' {
+            i += 1
+            continue
+        }
+
+        let end = floatEnd(args, i)
+        let after = unitEnd(args, end)
+
+        if end == i || f.count == 16 {
+            return null
+        }
+
+        f.n[f.count] = text.parseFloat(args[i..end]) catch return null
+        f.unit[f.count] = unitKind(args[end..after]) orelse return null
+        f.count += 1
+        i = after
+    }
+
+    return f
+}

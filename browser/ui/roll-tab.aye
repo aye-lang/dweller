@@ -1,0 +1,26 @@
+import paint
+import std.mem.AllocError
+
+// chromium: cc/trees/layer_tree_host_impl.cc (the scroll moves what is drawn; only the band that came into view is drawn)
+fn rollTab(ui: *mut Ui, all: paint.IRect, whole: bool) AllocError!bool {
+    let tp = ui.slots[ui.active].?.process orelse return whole
+    let pd = &mut ui.page
+    let to = tabShownPx(ui, tp)
+    let my = tp.canvas_px - to
+
+    tp.canvas_px = to
+
+    if whole || tp.whole || my == 0 { return whole }
+
+    if my <= -all.y1 || my >= all.y1 { return true }
+
+    pd.ring = rollRing(pd.ring, my, all.y1)
+
+    if my > 0 {
+        try pd.damage.add(paint.IRect { x0: 0, y0: 0, x1: all.x1, y1: my })
+    } else {
+        try pd.damage.add(paint.IRect { x0: 0, y0: all.y1 + my, x1: all.x1, y1: all.y1 })
+    }
+
+    return false
+}

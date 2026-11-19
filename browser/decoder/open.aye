@@ -1,0 +1,25 @@
+import ipc
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+pub fn open(alloc: Allocator, spec: Spec) u32 {
+    let l = link orelse return 0
+    let c = clientOf(alloc) orelse return 0
+
+    if c.streams.len() >= MAX_STREAMS { return 0 }
+
+    let id = c.next
+
+    if !l.send(ipc.Message.DecoderOpen { id: id, kind: spec.kind, width: spec.width, height: spec.height, channels: spec.channels, bits: spec.bits, rate: spec.rate, codec: spec.codec, config: spec.config }) { return 0 }
+
+    c.streams.append(Stream { id: id, pending: 0, partial: text.Builder.init(c.alloc), outputs: List(Output).init(c.alloc) }) catch |e| {
+        _ = l.send(ipc.Message.DecoderClose { id: id })
+
+        return 0
+    }
+
+    c.next += 1
+
+    return id
+}

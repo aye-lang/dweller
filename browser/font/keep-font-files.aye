@@ -1,0 +1,18 @@
+import std.mem.Allocator
+import std.text
+
+var kept_files = [64]KeptFile{KeptFile {}, ..}
+var kept_count: usize = 0
+
+// chromium: docs/linux/sandbox_ipc.md (font files reach a sandboxed renderer without an open of its own)
+pub fn keepFontFiles(alloc: Allocator) {
+    let lists = [13][]u8{SANS, SANS_ITALIC, SANS_BOLD, SANS_BOLD_ITALIC, MONO, MONO_ITALIC, MONO_BOLD, MONO_BOLD_ITALIC, SERIF, SERIF_ITALIC, SERIF_BOLD, SERIF_BOLD_ITALIC, FALLBACKS}
+
+    for list in lists {
+        var paths = text.split(list, "|")
+
+        while paths.next() |path| {
+            if kept_count < kept_files.len && keptFontFile(path) == null { keepFontFile(alloc, path) }
+        }
+    }
+}

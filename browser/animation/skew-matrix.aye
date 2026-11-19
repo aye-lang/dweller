@@ -1,0 +1,30 @@
+import std.math
+import std.text
+
+fn skewMatrix(f: TransformFn) ?[16]f64 {
+    var m = IDENTITY4
+
+    if f.count == 0 || f.count > 2 || (f.count == 2 && !text.eql(f.name, "skew")) {
+        return null
+    }
+
+    if text.eql(f.name, "skewY") {
+        m[1] = math.tan(radians(f, 0))
+
+        return m
+    }
+
+    m[4] = math.tan(radians(f, 0))
+
+    if f.count == 2 {
+        m[1] = math.tan(radians(f, 1))
+    }
+
+    return m
+}
+
+fn radians(f: TransformFn, k: usize) f64 {
+    let per_unit = [7]f64{math.pi / 180.0, math.pi / 180.0, math.pi / 180.0, math.pi / 180.0, 1.0, math.pi / 200.0, 2.0 * math.pi}
+
+    return f.n[k] * per_unit[f.unit[k] as usize]
+}

@@ -117,6 +117,8 @@ function took(el, source, from, r) {
     if (found === null) return fail(el, source);
 
     [m.duration, m.audio, , m.width, m.height] = found;
+    for (const t of parts.tracks(bytes, total)) m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] = m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] || t;
+    if (m.pictureTrack) ak.mediaFrame(el, m.width, m.height, '');
     m.total = total;
     fire(el, 'durationchange');
     m.ready = METADATA;
@@ -124,6 +126,7 @@ function took(el, source, from, r) {
   }
 
   m.have = parts.addRange(m.have, start, start + bytes.length);
+  m.bytes.push([start, bytes]);
   if (!m.first && rangeAt(m, byteOf(m, m.at))) {
     m.first = true;
     m.ready = CURRENT;
@@ -132,6 +135,7 @@ function took(el, source, from, r) {
 
   fire(el, 'progress');
   settleReady(el);
+  parts.pictureShow(el);
   if (m.seekDone && rangeAt(m, byteOf(m, m.at))) {
     const done = m.seekDone;
     m.seekDone = null;
@@ -215,8 +219,21 @@ parts.load = el => {
     Object.assign(m, { ready: NOTHING, paused: true, seeking: false, duration: NaN, at: 0, played: [] });
   }
 
-  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null });
+  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null, bytes: [], soundTrack: null, pictureTrack: null });
+  parts.pictureStop(m);
   parts.selectResource(el);
+};
+
+// chromium: media/base/pipeline_status.h (PIPELINE_ERROR_DECODE)
+parts.broke = el => {
+  const m = stateOf(el);
+  if (m.error) return;
+
+  m.error = parts.error(3, 'PIPELINE_ERROR_DECODE');
+  m.network = IDLE;
+  stopClock(m);
+  parts.pictureStop(m);
+  fire(el, 'error');
 };
 
 parts.ahead = el => {

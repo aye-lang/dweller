@@ -1,6 +1,7 @@
 import net
 
 let STREAM_POLL_MS: i32 = 10
+let STREAM_WAIT_MS: i32 = 100
 
 enum StreamTurn {
     Idle
@@ -13,6 +14,10 @@ fn streamTurn(s: *mut Script, i: usize) StreamTurn {
 
     if !s.real {
         net.waitStream(t.load, STREAM_POLL_MS)
+    }
+
+    while !s.real && !t.stream_poll && net.loadState(t.load) == net.LoadState.Running && !net.streamReady(t.load) {
+        net.waitStream(t.load, STREAM_WAIT_MS)
     }
 
     if net.loadState(t.load) != net.LoadState.Running {

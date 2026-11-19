@@ -1,0 +1,35 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#combining-transform-lists
+fn addTransforms(alloc: Allocator, under: []u8, value: []u8, accumulate: bool, out: *mut text.Builder) AllocError!bool {
+    var base = List(TransformFn).init(alloc)
+    defer base.deinit()
+
+    var added = List(TransformFn).init(alloc)
+    defer added.deinit()
+
+    if !(try parseTransformList(under, &mut base)) || !(try parseTransformList(value, &mut added)) {
+        return false
+    }
+
+    if accumulate && base.len() > 0 && added.len() > 0 {
+        return accumulateTransforms(&mut base, &mut added, out)
+    }
+
+    for f in base.items() {
+        try writeTransformFn(f, out)
+    }
+
+    for f in added.items() {
+        try writeTransformFn(f, out)
+    }
+
+    if out.len() == 0 {
+        try out.append("none")
+    }
+
+    return true
+}

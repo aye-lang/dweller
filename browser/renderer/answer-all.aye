@@ -1,3 +1,4 @@
+import decoder
 import engine
 import ipc
 
@@ -40,6 +41,12 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
             .SocketNote { .. } => {
                 if !(try landSocketNote(r, got.message)) { return false }
+            }
+
+            .DecoderOutput { .. } => {
+                if !(try decoder.deliver(got.message)) { return false }
+
+                r.landed = true
             }
 
             .FrameAck { buffer } => r.ack(buffer)
@@ -88,7 +95,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .Find { id, command, query } => {
-                if command > 4 { return false }
+                if command > 6 { return false }
 
                 try takeFind(r, id, command, query)
             }
@@ -117,6 +124,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 wakeForMessage(r)
             }
 
+            .HitTest { id, x, y } => try answerHitTest(r, id, x, y)
             .ContextClosed { context } => closeContext(r, context)
             .ContextTab { context, frame } => engine.setContextTab(context, frame)
             .OpenerInfo { frame, name } => {

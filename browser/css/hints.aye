@@ -115,22 +115,11 @@ pub fn writeHints(doc: *Document, el: NodeId, out: *mut text.Builder) AllocError
     }
     if text.eql(name, "table") {
         try cellspacingHint(doc, el, out)
-        if doc.attr(el, "border") |v| {
-            let w = borderWidth(v)
-            if w > 0 {
-                try out.append("border: ")
-                try out.appendUint(w)
-                try out.append("px outset gray; ")
-            }
-        }
+        try tableBorderHint(doc, el, out)
     }
     if text.eql(name, "td") || text.eql(name, "th") {
         if tableOf(doc, el) |t| {
-            if doc.attr(t, "border") |v| {
-                if borderWidth(v) > 0 {
-                    try out.append("border: 1px inset gray; ")
-                }
-            }
+            try cellBorderHint(doc, t, out)
             if doc.attr(t, "cellpadding") |v| {
                 if dimension(v) |d| {
                     try out.append("padding: ")

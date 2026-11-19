@@ -1,0 +1,38 @@
+import decoder
+import ipc
+import std.list.List
+import std.mem.AllocError
+
+fn openTabDecoder(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    let alloc = tp.url.alloc
+
+    match m {
+        .DecoderOpen { id, kind, width, height, channels, bits, rate, codec, config } => {
+            if id == 0 || tabDecoderIndex(tp, id) != null || (kind != decoder.AUDIO && kind != decoder.VIDEO) { return "bad decoder" }
+
+            var stream: u32 = 0
+
+            if ownedTabDecoders(tp) < MAX_TAB_DECODERS {
+                stream = decoder.open(alloc, decoder.Spec { kind: kind, width: width, height: height, channels: channels, bits: bits, rate: rate, codec: codec, config: config })
+            }
+
+            if stream == 0 {
+                try sendDecoderGone(tp, on, id)
+
+                return ""
+            }
+
+            if tab_decoders == null { tab_decoders = try alloc.create(List(TabDecoder).init(alloc)) }
+
+            tab_decoders.?.append(TabDecoder { owner: tp, on: on, wire: id, stream: stream }) catch |e| {
+                decoder.close(stream)
+
+                return e
+            }
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

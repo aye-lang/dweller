@@ -1,0 +1,25 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-style-prop
+fn specifiedFontStyle(alloc: Allocator, value: []u8, out: *mut text.Builder) AllocError!bool {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, value, &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let comps = try components(&mut sheet, toks.items())
+
+    if comps.len == 0 || !validLayers(FONT_STYLE, comps) {
+        return false
+    }
+
+    try writeValue(try fontStyleValue(&mut sheet, comps), out)
+
+    return true
+}

@@ -1,0 +1,13 @@
+// blink: core/layout/hit_test_result.cc (the hit node decides the frame, so content above a frame and pointer-events are honoured)
+pub fn remoteFrameAt(p: *mut Page, x: f64, y: f64) ?u32 {
+    let t = p.tree orelse return null
+    let node = nodeAt(t, x, y) orelse return null
+    let k = frameIndex(p, node) orelse return null
+    let f = p.frames.items()[k]
+
+    if f.page.remote { return f.page.id }
+
+    let r = frameRect(p, k) orelse return null
+
+    return remoteFrameAt(f.page, x - r.x, y - r.y + f.scroll)
+}

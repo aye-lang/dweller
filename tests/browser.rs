@@ -46,6 +46,8 @@ mod link_events;
 mod fixtures;
 #[path = "browser/history.rs"]
 mod history;
+#[path = "browser/http_cache.rs"]
+mod http_cache;
 #[path = "browser/indexeddb.rs"]
 mod indexeddb;
 #[path = "browser/input.rs"]
@@ -98,6 +100,8 @@ mod window_renderer;
 mod window_renderer_edit;
 #[path = "browser/window_renderer_list.rs"]
 mod window_renderer_list;
+#[path = "browser/window_renderer_limits.rs"]
+mod window_renderer_limits;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]

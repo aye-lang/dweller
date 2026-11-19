@@ -1,0 +1,20 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akMediaDecoderClose(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let id = try decoderArg(it, a)
+    let all = page_decoders orelse return Value.Undefined
+
+    for i, k in all.items() {
+        if k.owner == s && k.id == id && id != 0 {
+            closePageDecoder(s, i)
+
+            break
+        }
+    }
+
+    return Value.Undefined
+}

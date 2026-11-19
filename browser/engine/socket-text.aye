@@ -1,24 +1,11 @@
 import js.Value
 import net
 import std.mem.AllocError
-import std.text
 
 fn socketText(s: *mut Script, note: net.SocketNote) AllocError!Value {
     if note.kind != net.SOCKET_BINARY {
         return stringFor(s, note.owned_data)
     }
 
-    var raw = text.Builder.init(s.alloc)
-    defer raw.deinit()
-
-    for b in note.owned_data {
-        if b < 0x80 {
-            try raw.appendByte(b)
-        } else {
-            try raw.appendByte(0xC0 | (b >> 6))
-            try raw.appendByte(0x80 | (b & 0x3F))
-        }
-    }
-
-    return stringFor(s, raw.bytes())
+    return binaryText(s, note.owned_data)
 }
