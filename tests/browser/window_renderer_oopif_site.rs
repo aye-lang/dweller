@@ -217,3 +217,142 @@ fn window_renderer_oopif_site_effects() {
         assert_eq!(far_pixels(&shot, &golden, by), 0, "{query}: {} differs from the in-process window {}", shot.display(), golden.display());
     }
 }
+
+fn title_of(line: &str) -> &str {
+    line.split_once(" title ").map(|(_, t)| t).unwrap_or("")
+}
+
+/// Q2.15e: the hit-test slow path. Where the parent paints something
+/// above a cross-site frame, or the frame has `pointer-events: none`,
+/// the browser asks the parent's renderer which frame is at the point
+/// before it sends the mouse event: a click on the cover goes to the
+/// parent, a click beside it (and one through a `pointer-events: none`
+/// cover) to the child at child-local coordinates, and a click on a
+/// `pointer-events: none` frame to the parent. A reply nobody asked for
+/// kills its renderer.
+#[test]
+fn window_renderer_oopif_site_hit_test() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let on_cover = "click:52,106 release:52,106 renderer:input";
+    let beside = "click:172,136 release:172,136 renderer:input";
+    let cases = [
+        ("?cover", on_cover, "P up", "C"),
+        ("?cover", beside, "P", "C down 150,60,click,up 150,60"),
+        ("?through", on_cover, "P", "C down 30,30,click,up 30,30"),
+        ("?none", beside, "P up", "C"),
+    ];
+    for (query, clicks, parent, child) in cases {
+        let page = format!("{}/ui/oopif-input.html{query}", srv.base);
+        let events = format!("renderer:loaded renderer:child {clicks} frame");
+        let (state, err) = run_state(&page, "site", &events, "");
+        assert!(err.is_empty(), "{query} {clicks}: {err}");
+        let children = kids(&state);
+        assert_eq!(children.len(), 1, "{query}:\n{state}");
+        assert_eq!(title_of(line(&state, "renderer ")), parent, "{query} {clicks}: the parent\n{state}");
+        assert_eq!(title_of(children[0]), child, "{query} {clicks}: the child\n{state}");
+    }
+
+    let page = format!("{}/ui/oopif-input.html", srv.base);
+    let (state, err) = run_state(&page, "site", "renderer:gone", "hit-reply");
+    let renderer = line(&state, "renderer ");
+    assert!(renderer.ends_with(" gone unexpected hit_test_reply"), "{state}");
+    assert_eq!(err, format!("error: bad message: unexpected hit_test_reply {}\n", pid(renderer)));
+}
+
+/// Q2.15f: `location.replace()` to another document replaces the current
+/// session history entry. `replace.html` goes to `?second` (a new
+/// entry), which replaces itself by `?third`: two entries, and Back
+/// (`cmd+[`) shows the first page, not `?second`. A
+/// replace that crosses sites (`?go` goes to `?far`, which replaces
+/// itself by a page of another site: a renderer swap with
+/// `DWELLER_PROCESS=site`) keeps the count too. The same in the window's
+/// own process.
+#[test]
+fn window_renderer_oopif_site_replace() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let shot = scratch().join("oopif_site_replace.png");
+    let far = srv.base.replace("127.0.0.1", "localhost");
+    for mode in ["", "tab", "site"] {
+        let (wait, back, landed) = if mode.is_empty() {
+            ("loaded frame frame", "key:cmd+[ painted loaded frame", "loaded frame frame")
+        } else {
+            ("renderer:loaded renderer:title:?third_2 frame", "key:cmd+[ renderer:loaded renderer:title:Replace_2 frame", "renderer:loaded renderer:title:?landed_2 frame")
+        };
+
+        let state = run_site(&srv.base, "replace.html", mode, &shot, wait);
+        assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html?third", srv.base), "{mode}:\n{state}");
+        assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}:\n{state}");
+
+        let state = run_site(&srv.base, "replace.html", mode, &shot, &format!("{wait} {back}"));
+        assert_eq!(line(&state, "url "), format!("url {}/ui/replace.html", srv.base), "{mode}: Back skips the replaced entry\n{state}");
+        assert_eq!(line(&state, "history "), "history 1 of 2", "{mode}:\n{state}");
+
+        let state = run_site(&srv.base, "replace.html?go", mode, &shot, landed);
+        assert_eq!(line(&state, "url "), format!("url {far}/ui/replace.html?landed"), "{mode}:\n{state}");
+        assert_eq!(line(&state, "history "), "history 2 of 2", "{mode}: the entry of ?far was replaced\n{state}");
+    }
+}
+
+/// Q2.15g: on Linux without Landlock, seccomp refuses every open after
+/// the renderer entered its sandbox, and the fonts opened late (fallback
+/// faces for CJK, Arabic, Hebrew and symbols, bold italic serif, the
+/// canvas's own system faces) were missing. The renderer now maps the
+/// font files before it enters. With Landlock turned off for the test
+/// (the probe's refusals are all EPERM, none is Landlock's EACCES) the
+/// page with `DWELLER_PROCESS=site` is byte-equal to the in-process
+/// window's, as it is with Landlock.
+#[test]
+fn window_renderer_oopif_site_late_fonts() {
+    if !has_sdl() || !cfg!(target_os = "linux") {
+        println!("skipped: Linux with SDL2 only");
+        return;
+    }
+    let home = scratch().join("late_fonts_home");
+    let profile = home.join(".dweller");
+    std::fs::create_dir_all(&profile).unwrap();
+    let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env_remove("DWELLER_PROCESS")
+            .env("HOME", &home)
+            .env("DWELLER_PROFILE", &profile)
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/late-fonts.html", "--width", "400", "--height", "300"])
+            .args(["--frames", "600", "--until-idle", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
+        text(&out.stderr)
+    };
+    let golden = scratch().join("late_fonts_in_process.png");
+    let shot = scratch().join("late_fonts_site.png");
+    let site = [("DWELLER_PROCESS", "site"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SANDBOX_PROBE", "1")];
+    let seccomp_only = [site[0], site[1], site[2], ("DWELLER_TEST_NO_LANDLOCK", "1")];
+
+    let err = run(&golden, "loaded frame", &[]);
+    assert!(err.is_empty(), "{err}");
+
+    let err = run(&shot, "renderer:loaded renderer:frame frame", &seccomp_only);
+    assert_eq!(err, "sandbox-probe home=1 tmp=1 tcp=1 fork=1\n", "seccomp alone refuses with EPERM");
+    assert!(std::fs::read(&shot).unwrap() == std::fs::read(&golden).unwrap(), "without Landlock: {} differs from {}", shot.display(), golden.display());
+
+    let err = run(&shot, "renderer:loaded renderer:frame frame", &site);
+    assert!(err.starts_with("sandbox-probe home="), "{err}");
+    assert!(std::fs::read(&shot).unwrap() == std::fs::read(&golden).unwrap(), "with Landlock: {} differs from {}", shot.display(), golden.display());
+}

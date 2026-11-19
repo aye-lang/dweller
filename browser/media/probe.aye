@@ -1,0 +1,28 @@
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+
+// https://mimesniff.spec.whatwg.org/#matching-an-audio-or-video-type-pattern
+pub fn probe(alloc: Allocator, b: []u8, total: usize) AllocError!?Media {
+    if b.len >= 12 && isTag(b, 4, "ftyp") {
+        return mp4Probe(alloc, b)
+    }
+
+    if isTag(b, 0, "\x1a\x45\xdf\xa3") {
+        return webmProbe(alloc, b)
+    }
+
+    if isTag(b, 0, "RIFF") {
+        return wavProbe(alloc, b, total)
+    }
+
+    if isTag(b, 0, "ID3") || mp3Frame(b, 0) != null {
+        return mp3Probe(alloc, b)
+    }
+
+    return null
+}
+
+fn isTag(b: []u8, at: usize, tag: []u8) bool {
+    return b.len >= at + tag.len && std.mem.eql(b[at..at + tag.len], tag)
+}

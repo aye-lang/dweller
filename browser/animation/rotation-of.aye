@@ -1,0 +1,33 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transform-functions
+fn rotationOf(f: TransformFn) ?TransformFn {
+    var r = emptyTransformFn("rotate3d")
+
+    r.count = 4
+    r.unit[3] = UNIT_DEG
+
+    if text.eql(f.name, "rotate3d") && f.count == 4 {
+        r.n = f.n
+        r.n[3] = radians(f, 3) * 180.0 / math.pi
+
+        return r
+    }
+
+    if !text.startsWith(f.name, "rotate") || f.count != 1 {
+        return null
+    }
+
+    if text.eql(f.name, "rotateX") {
+        r.n[0] = 1.0
+    } else if text.eql(f.name, "rotateY") {
+        r.n[1] = 1.0
+    } else {
+        r.n[2] = 1.0
+    }
+
+    r.n[3] = radians(f, 0) * 180.0 / math.pi
+
+    return r
+}

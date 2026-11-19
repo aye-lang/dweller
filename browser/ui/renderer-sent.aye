@@ -27,6 +27,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
             try showCommitted(tp, title, url)
             tp.loading = false
+            tp.loaded_new = true
         }
 
         .ScrollInfo { max_y, pan, background } => {
@@ -75,6 +76,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try beginNavigation(slot, tp, url, post, content_type, body, policy)
         }
 
+        .ReplaceNavigation { url, referrer_policy, user } => return beginReplace(slot, tp, got.frame, url, [2]u32{referrer_policy, user})
         .Popup { items, disabled, selected, x, y, w, h } => {
             if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
 
@@ -161,6 +163,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
         .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderClose { .. } => return tabDecoderSent(tp, got.frame, got.message)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => {
             if got.frame != slot.id { return "bad socket" }
 
@@ -183,6 +186,18 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if got.frame != slot.id { return "bad cookie" }
 
             return answerCookie(tp, got.frame, got.message)
+        }
+
+        .ClipboardWrite { .. }, .ClipboardRead => {
+            if got.frame != slot.id { return "bad clipboard" }
+
+            return clipboardAsked(tp, got.frame, got.message)
+        }
+
+        .Dialog { .. } => {
+            if got.frame != slot.id { return "bad dialog" }
+
+            return takeDialog(tp, got.frame, got.message)
         }
 
         .Storage { .. } => {
@@ -246,7 +261,14 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .HitTestReply { id, key } => return takeHitReply(tp, id, key)
         .State { .. } => return "unexpected state"
+        .UpgradeInsecure { page } => {
+            if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
+
+            try net.noteUpgradeInsecure(page)
+        }
+
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }

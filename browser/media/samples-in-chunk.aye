@@ -1,0 +1,17 @@
+// chromium: media/formats/mp4/box_definitions.cc
+fn samplesInChunk(b: []u8, stsc: Box, chunk: usize) u32 {
+    if stsc.body + 8 > stsc.end { return 0 }
+
+    let runs = be32(b, stsc.body + 4) as usize
+    var per: u32 = 0
+
+    for i in 0..runs {
+        let at = stsc.body + 8 + i * 12
+
+        if at + 12 > stsc.end || be32(b, at) as usize > chunk { break }
+
+        per = be32(b, at + 4)
+    }
+
+    return per
+}

@@ -1,0 +1,32 @@
+import net
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: components/javascript_dialogs/app_modal_dialog_manager.cc GetTitle
+fn dialogTitle(ui: *mut Ui, href: []u8, top: []u8) AllocError!void {
+    let t = &mut ui.dialog.title
+    var above = text.Builder.init(ui.alloc)
+    defer above.deinit()
+
+    t.clear()
+    try net.hrefOrigin(ui.alloc, top, &mut above)
+    try net.hrefOrigin(ui.alloc, href, t)
+
+    if text.eql(t.bytes(), "null") {
+        t.clear()
+
+        return t.append("This page says")
+    }
+
+    let host = try ui.alloc.alloc(0 as u8, t.len())
+    defer ui.alloc.free(host)
+
+    std.mem.copy(host, t.bytes())
+    t.clear()
+
+    if !text.eql(host, above.bytes()) { try t.append("An embedded page at ") }
+
+    try t.append(host[(text.indexOf(host, "://") orelse 0) + 3..])
+    try t.append(" says")
+}

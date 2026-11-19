@@ -1,0 +1,16 @@
+fn pcmSample(b: []u8, at: usize, width: usize, float: bool) f32 {
+    if width == 1 { return ((b[at] as f64 - 128.0) / 128.0) as f32 }
+
+    var bits: u32 = 0
+
+    for k in 0..width {
+        bits = bits | (b[at + k] as u32) << (8 * k) as u32
+    }
+
+    if float { return @ptrCast(*f32, &bits).* }
+
+    let top = (1 as u64) << (8 * width - 1) as u64
+    let signed = (bits as u64 ^ top) as f64 - top as f64
+
+    return (signed / top as f64) as f32
+}

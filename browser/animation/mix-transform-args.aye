@@ -1,0 +1,25 @@
+// spec: https://drafts.csswg.org/css-transforms-1/#interpolation-of-transform-functions
+fn mixTransformArgs(a: TransformFn, b: TransformFn, p: f64) ?TransformFn {
+    var out = b
+
+    if a.count != b.count {
+        return null
+    }
+
+    for k in 0..a.count {
+        let zero_a = a.n[k] == 0.0
+        let zero_b = b.n[k] == 0.0
+
+        if a.unit[k] != b.unit[k] && !zero_a && !zero_b {
+            return null
+        }
+
+        if zero_b && !zero_a {
+            out.unit[k] = a.unit[k]
+        }
+
+        out.n[k] = a.n[k] + (b.n[k] - a.n[k]) * p
+    }
+
+    return out
+}

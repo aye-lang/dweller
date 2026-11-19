@@ -1,0 +1,38 @@
+import std.text
+
+test "decoder messages round-trip and go the right way" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    let opened = try roundTrip(&mut out, 7, Message.DecoderOpen { id: 1, kind: 2, width: 32, height: 24, channels: 0, bits: 0, rate: 0, codec: "V_UNCOMPRESSED", config: "RGBA" })
+
+    match opened.message {
+        .DecoderOpen { id, kind, width, height, codec, config, .. } => {
+            @expectEqual(1, id)
+            @expectEqual(2, kind)
+            @expectEqual(32, width)
+            @expectEqual(24, height)
+            @expectEqual("V_UNCOMPRESSED", codec)
+            @expectEqual("RGBA", config)
+        }
+
+        _ => @expect(false)
+    }
+
+    let output = try roundTrip(&mut out, 7, Message.DecoderOutput { id: 1, seq: 9, state: 1, more: 0, data: "rgba" })
+
+    match output.message {
+        .DecoderOutput { seq, state, more, data, .. } => {
+            @expectEqual(9, seq)
+            @expectEqual(1, state)
+            @expectEqual(0, more)
+            @expectEqual("rgba", data)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expect(fromRenderer(opened.message))
+    @expect(fromRenderer(Message.DecoderData { id: 1, seq: 9, more: 0, data: "x" }))
+    @expect(fromRenderer(Message.DecoderClose { id: 1 }))
+    @expect(!fromRenderer(output.message))
+}

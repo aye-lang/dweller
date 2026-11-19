@@ -1,0 +1,44 @@
+import css
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn writeComputedFont(s: *mut Script, h: NodeId, values: []css.Value, out: *mut text.Builder) AllocError!void {
+    var part = text.Builder.init(s.alloc)
+    defer part.deinit()
+
+    if try computedFontBlocked(s, values) {
+        return
+    }
+
+    for p in [4]usize{css.FONT_STYLE, css.FONT_VARIANT_CAPS, css.FONT_WEIGHT, css.FONT_STRETCH} {
+        part.clear()
+        try writeResolved(s, h, values, p, &mut part)
+
+        let word = css.fontPrefixWord(p, part.bytes())
+
+        if p == css.FONT_STRETCH && text.indexOf(word, "%") != null {
+            out.clear()
+
+            return
+        }
+
+        if word.len > 0 {
+            try out.append(word)
+            try out.appendByte(' ')
+        }
+    }
+
+    try writeResolved(s, h, values, css.FONT_SIZE, out)
+    part.clear()
+    try writeResolved(s, h, values, css.LINE_HEIGHT, &mut part)
+
+    if !text.eql(part.bytes(), "normal") {
+        try out.append(" / ")
+        try out.append(part.bytes())
+    }
+
+    try out.appendByte(' ')
+    try writeResolved(s, h, values, css.FONT_FAMILY, out)
+}

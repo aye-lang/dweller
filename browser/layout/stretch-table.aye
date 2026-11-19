@@ -1,0 +1,31 @@
+import css
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-tables-3/#height-distribution-algorithm
+fn stretchTable(t: *mut Tree, i: usize, extra: f64) AllocError!void {
+    var tracks = List(usize).init(t.backing)
+    defer tracks.deinit()
+    var hs = List(f64).init(t.backing)
+    defer hs.deinit()
+    var marks = List(u8).init(t.backing)
+    defer marks.deinit()
+    var pcts = List(f64).init(t.backing)
+    defer pcts.deinit()
+
+    for c in t.children(i) {
+        if t.bx(c).kind == BoxKind.Row || t.bx(c).kind == BoxKind.RowGroup {
+            try tracks.append(c)
+            try hs.append(t.bx(c).h)
+            try marks.append(trackMark(t, c))
+            try pcts.append(percentOfValue(t.bx(c).style[css.HEIGHT]))
+        }
+    }
+
+    preferBodies(t, tracks.items(), marks.items())
+    shareHeight(hs.items(), marks.items(), pcts.items(), extra)
+
+    for k in 0..hs.len() {
+        try stretchTrack(t, tracks.items()[k], hs.items()[k])
+    }
+}

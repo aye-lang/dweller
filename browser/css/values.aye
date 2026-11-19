@@ -41,7 +41,7 @@ pub fn addDeclaration(sheet: *mut Sheet, name: []u8, toks: []Token, important: b
     if text.startsWith(name, "--") {
         return d.addRaw(CUSTOM, toks, try dupText(sheet, name))
     }
-    var buf = @zeroed([32]u8)
+    var buf = @zeroed([48]u8)
     if name.len > buf.len {
         return
     }
@@ -445,7 +445,9 @@ pub fn shorthandLonghands(name: []u8, out: []mut usize) usize {
         out[2] = FONT_SIZE
         out[3] = LINE_HEIGHT
         out[4] = FONT_FAMILY
-        return 5
+        out[5] = FONT_STRETCH
+        out[6] = FONT_VARIANT_CAPS
+        return 7
     }
     for k in 0..n {
         out[k] = first + k * step
@@ -972,7 +974,7 @@ struct Declarer {
                 }
             }
             if !seen[2] {
-                if colorValue(c) |v| {
+                if schemeColorValue(c) |v| {
                     color = v
                     seen[2] = true
                     continue
@@ -1008,64 +1010,16 @@ struct Declarer {
     // `font: [style || variant || weight || stretch]? size[/line-height]?
     // family`.
     fn font(self: *mut Self, comps: []Comp) AllocError!void {
-        let props = [5]usize{FONT_STYLE, FONT_WEIGHT, FONT_SIZE, LINE_HEIGHT, FONT_FAMILY}
+        let props = [7]usize{FONT_STYLE, FONT_WEIGHT, FONT_SIZE, LINE_HEIGHT, FONT_FAMILY, FONT_STRETCH, FONT_VARIANT_CAPS}
         if try self.wide(comps, props[..]) {
             return
         }
-        var style = Value.Initial
-        var weight = Value.Initial
-        var line = Value.Initial
-        var i: usize = 0
-        var size = Value.Initial
-        var have_size = false
-        while i < comps.len {
-            let one = [1]Comp{comps[i]}
-            if try parseValue(self.sheet, FONT_SIZE, one[..]) |v| {
-                if !isNumberToken(comps[i]) {
-                    size = v
-                    have_size = true
-                    i += 1
-                    break
-                }
-            }
-            if isIdent(comps[i], "normal") || isIdent(comps[i], "small-caps") || isStretch(comps[i]) {
-                i += 1
-            } else if isIdent(comps[i], "italic") || isIdent(comps[i], "oblique") {
-                if try parseValue(self.sheet, FONT_STYLE, one[..]) |v| {
-                    style = v
-                }
-                i += 1
-            } else if try parseValue(self.sheet, FONT_WEIGHT, one[..]) |v| {
-                weight = v
-                i += 1
-            } else {
-                return
-            }
+        let parts = (try parseFontParts(self.sheet, comps)) orelse return
+        for p in props {
+            try self.add(p, try fontPartValue(self.sheet, comps, parts, p))
         }
-        if !have_size {
-            return
-        }
-        if i < comps.len && isDelim(comps[i], '/') {
-            if i + 1 >= comps.len {
-                return
-            }
-            let one = [1]Comp{comps[i + 1]}
-            if try parseValue(self.sheet, LINE_HEIGHT, one[..]) |v| {
-                line = v
-            } else {
-                return
-            }
-            i += 2
-        }
-        if i >= comps.len {
-            return
-        }
-        if try fontFamily(self.sheet, comps[i..]) |family| {
-            try self.add(FONT_STYLE, style)
-            try self.add(FONT_WEIGHT, weight)
-            try self.add(FONT_SIZE, size)
-            try self.add(LINE_HEIGHT, line)
-            try self.add(FONT_FAMILY, family)
+        for p in fontResets() {
+            try self.add(p, Value.Initial)
         }
     }
 
@@ -1183,6 +1137,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
     if prop == FLEX_WRAP {
         return flexWrapValue(sheet, comps)
     }
+    if prop == ASPECT_RATIO {
+        return aspectRatioValue(sheet, comps)
+    }
     if prop == SCROLLBAR_GUTTER {
         return scrollbarGutterValue(sheet, comps)
     }
@@ -1203,6 +1160,9 @@ pub fn parseValue(sheet: *mut Sheet, prop: usize, comps: []Comp) AllocError!?Val
         return animationRangeValue(sheet, prop, comps)
     }
 
+    if prop == COLOR_SCHEME && !(comps.len == 1 && isIdent(comps[0], "normal")) {
+        return colorSchemeValue(sheet, comps)
+    }
     if p.kind == PKind.Raw {
         if !(try isGridValue(sheet, prop, comps)) {
             return null
@@ -1251,7 +1211,7 @@ fn single(p: Property, c: Comp) ?Value {
             return fitContentValue(p, c) orelse lengthValue(c, true, true)
         }
         .Color => {
-            return colorValue(c)
+            return schemeColorValue(c)
         }
         .FontSize => {
             return fontSize(c)
@@ -1659,13 +1619,14 @@ fn fontFamily(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
     var b = text.Builder.init(sheet.arena.allocator())
     var words: usize = 0
     var quoted = false
+    var last: []u8 = ""
     for c in comps {
         let t = c.toks[0]
         if c.toks.len != 1 {
             return null
         }
         if t.kind == Tok.Comma {
-            if words == 0 && !quoted {
+            if (words == 0 && !quoted) || (words == 1 && isReservedFamily(last)) {
                 return null
             }
             try b.append(", ")
@@ -1692,12 +1653,13 @@ fn fontFamily(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
                 try b.appendByte(' ')
             }
             try b.append(t.text)
+            last = t.text
             words += 1
         } else {
             return null
         }
     }
-    if words == 0 && !quoted {
+    if (words == 0 && !quoted) || (words == 1 && isReservedFamily(last)) {
         return null
     }
     return Value.Keyword { k: try b.toOwned() }

@@ -17,6 +17,7 @@ struct TabProcess {
     nav_policy: net.ReferrerPolicy = net.ReferrerPolicy.StrictOriginWhenCrossOrigin
     nav_user: bool = true
     visible: bool = true
+    period_ns: u64 = 0
     docs: text.Builder
     idb_request: ?*mut text.Builder = null
     fetches: u32 = 0
@@ -37,8 +38,15 @@ struct TabProcess {
     take_focus: bool = false
     redirected: bool = false
     nav_failed: bool = false
+    cert: ?net.CertKind = null
+    loaded_new: bool = false
+    nav_began: u64 = 0
+    paint_from: u32 = 0
     downloaded: bool = false
     push_on_commit: bool = false
+    replace_on_commit: bool = false
+    replaced_on_commit: bool = false
+    replace_at: usize = 0
     doc_seq: u32 = 0
     traverse_to: ?u32 = null
     agent_id: u32 = 0
@@ -52,6 +60,8 @@ struct TabProcess {
     answer: text.Builder
     acted: text.Builder
     window_ask: text.Builder
+    asked: ?*mut AskedDialog = null
+    front: bool = false
     damage: text.Builder
     last_damage: text.Builder
     whole: bool = false
@@ -77,6 +87,17 @@ struct TabProcess {
     children: List(ChildFrame)
     held: List(*mut HeldFetch)
     kept: List(KeptFrame)
+    frame_steps: List(FrameStep)
+    before: text.Builder
+    self_nav: bool = false
+    pushes: bool = false
+    hit_queue: List(SDL_Event)
+    hit_asked: ?HitAsk = null
+    hit_answers: List(HitAsk)
+    hit_replay: bool = false
+    hit_ids: u32 = 0
+    hit_open: u32 = 0
+    hit_key: u32 = 0
     embedder: ?*mut TabProcess = null
     mouse_frame: u32 = 0
     capture_frame: u32 = 0

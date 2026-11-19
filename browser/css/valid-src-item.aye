@@ -1,0 +1,26 @@
+// spec: https://drafts.csswg.org/css-fonts-4/#font-face-src-parsing
+fn validSrcItem(item: []Comp) bool {
+    var next: usize = 1
+
+    if item.len == 0 {
+        return false
+    }
+
+    if isFunctionNamed(item[0], "local") {
+        return item.len == 1 && validLocalSrc(item[0].toks[1..item[0].toks.len - 1])
+    }
+
+    if item[0].toks[0].kind != Tok.Url && !isFunctionNamed(item[0], "url") {
+        return false
+    }
+
+    if next < item.len && isFunctionNamed(item[next], "format") && validSrcFormat(item[next].toks) {
+        next += 1
+    }
+
+    if next < item.len && isFunctionNamed(item[next], "tech") && validSrcTech(item[next].toks) {
+        next += 1
+    }
+
+    return next == item.len
+}

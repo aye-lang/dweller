@@ -1,0 +1,62 @@
+import std.list.List
+import std.mem.Allocator
+
+pub let PCM_INT: []u8 = "A_PCM/INT/LIT"
+pub let PCM_FLOAT: []u8 = "A_PCM/FLOAT/IEEE"
+pub let RAW_VIDEO: []u8 = "V_UNCOMPRESSED"
+
+pub enum Container {
+    Wav
+    Mp4
+    WebM
+    Mp3
+}
+
+pub enum TrackKind {
+    Audio
+    Video
+}
+
+pub struct Sample {
+    offset: u64
+    size: u32
+    time: f64
+    duration: f64
+    key: bool
+}
+
+pub struct Track {
+    kind: TrackKind
+    codec: []u8
+    width: u32 = 0
+    height: u32 = 0
+    channels: u32 = 0
+    bits: u32 = 0
+    number: u32 = 0
+    rate: f64 = 0.0
+    duration: f64 = 0.0
+    config: []u8 = ""
+    samples: List(Sample)
+}
+
+pub struct Media {
+    container: Container
+    duration: f64
+    tracks: List(Track)
+
+    pub fn deinit(self: *mut Self) {
+        for i in 0..self.tracks.len() {
+            self.tracks.items()[i].samples.deinit()
+        }
+
+        self.tracks.deinit()
+    }
+
+    pub fn first(self: *Self, kind: TrackKind) ?*Track {
+        for i in 0..self.tracks.len() {
+            if self.tracks.items()[i].kind == kind { return &self.tracks.items()[i] }
+        }
+
+        return null
+    }
+}

@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transform-functions
+fn mixTransformPair(a: TransformFn, b: TransformFn, p: f64) ?TransformFn {
+    if text.eql(a.name, b.name) && a.count == b.count && !text.startsWith(a.name, "matrix") && !text.eql(a.name, "rotate3d") && !text.eql(a.name, "perspective") {
+        return mixTransformArgs(a, b, p)
+    }
+
+    if text.startsWith(a.name, "rotate") {
+        return mixRotations(a, b, p)
+    }
+
+    let pa = primitiveTransform(a) orelse return null
+    let pb = primitiveTransform(b) orelse return null
+
+    if !text.eql(pa.name, pb.name) {
+        return null
+    }
+
+    var mixed = mixTransformArgs(pa, pb, p) orelse return null
+
+    if !is3dTransform(a) && !is3dTransform(b) {
+        mixed.count = 2
+        mixed.name = mixed.name[..mixed.name.len - 2]
+    }
+
+    return mixed
+}

@@ -1,0 +1,31 @@
+import ipc
+import std
+import std.mem.Allocator
+import std.text
+
+fn reply(alloc: Allocator, conn: std.fs.File, id: u32, seq: u32, ok: bool, data: []u8) !void {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    var state: u32 = 0
+    var at: usize = 0
+
+    if ok { state = 1 }
+
+    while true {
+        var end = at + CHUNK
+
+        if end > data.len { end = data.len }
+
+        var more: u32 = 1
+
+        if end == data.len { more = 0 }
+
+        out.clear()
+        try ipc.encode(&mut out, 0, ipc.Message.DecoderOutput { id: id, seq: seq, state: state, more: more, data: data[at..end] })
+        try conn.write(out.bytes())
+        at = end
+
+        if more == 0 { return }
+    }
+}

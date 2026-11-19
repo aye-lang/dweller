@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<title>document.domain and written documents</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const probe = "<script>let got = 'set'; try { document.domain = document.domain } catch (e) { got = e.name } parent.postMessage(NAME + ': ' + got + ' at ' + document.URL.split('/').pop(), '*')</scr" + "ipt>";
+function report(line) {
+  out.textContent += line + '\n';
+}
+function frame(name, sandbox, fill) {
+  const el = document.createElement('iframe');
+  if (sandbox !== null) el.sandbox = sandbox;
+  fill(el, probe.replace('NAME', "'" + name + "'"));
+  document.body.append(el);
+}
+function attempt(name, value) {
+  try {
+    document.domain = value;
+    report(name + ': set');
+  } catch (e) {
+    report(name + ': ' + e.name);
+  }
+}
+addEventListener('message', (e) => report(e.data));
+report('domain: ' + document.domain);
+attempt('own host', document.domain);
+attempt('other host', 'example.com');
+attempt('empty', '');
+frame('plain srcdoc', null, (el, markup) => { el.srcdoc = markup; });
+frame('sandboxed srcdoc', 'allow-scripts allow-same-origin', (el, markup) => { el.srcdoc = markup; });
+frame('written by the parent', 'allow-scripts allow-same-origin', (el, markup) => {
+  el.src = 'blank.html';
+  el.onload = () => { el.onload = null; el.contentDocument.write(markup); };
+});
+frame('written plain', null, (el, markup) => {
+  el.src = 'blank.html';
+  el.onload = () => { el.onload = null; el.contentDocument.write(markup); el.contentDocument.close(); };
+});
+frame('written by itself', 'allow-scripts allow-same-origin', (el, markup) => {
+  el.srcdoc = "<script>onload = () => document.write(" + JSON.stringify(markup).replace(/<\//g, '<\\/') + ")</scr" + "ipt>";
+});
+</script>

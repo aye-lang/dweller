@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-functions
+fn parseTransformList(s: []u8, out: *mut List(TransformFn)) AllocError!bool {
+    var k: usize = 0
+
+    if text.eql(text.trim(s), "none") {
+        return true
+    }
+
+    while true {
+        while k < s.len && s[k] == ' ' {
+            k += 1
+        }
+
+        if k >= s.len {
+            return out.len() > 0
+        }
+
+        let open = text.indexOf(s[k..], "(") orelse return false
+        let close = text.indexOf(s[k + open..], ")") orelse return false
+        let f = parseTransformFn(s[k..k + open], s[k + open + 1..k + open + close]) orelse return false
+
+        try out.append(f)
+        k += open + close + 1
+    }
+
+    return false
+}

@@ -122,10 +122,11 @@ test "ping and pong round-trip and go the right way" {
 test "fetch messages round-trip and go the right way" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
-    let asked = try roundTrip(&mut out, 7, Message.Fetch { id: 1, doc: 2, nav: 0, kind: 3, credentials: 1, mode: 1, method: "POST", url: "https://a/x", referrer: "https://a/", referrer_policy: "origin", top: "", headers: "X-A: 1", content_type: "text/plain", has_body: 1, body: "hi" })
+    let asked = try roundTrip(&mut out, 7, Message.Fetch { id: 1, doc: 2, nav: 0, stream: 1, kind: 3, credentials: 1, mode: 1, method: "POST", url: "https://a/x", referrer: "https://a/", referrer_policy: "origin", top: "", headers: "X-A: 1", content_type: "text/plain", has_body: 1, body: "hi" })
 
     match asked.message {
-        .Fetch { id, doc, kind, method, url, headers, has_body, body, .. } => {
+        .Fetch { id, doc, stream, kind, method, url, headers, has_body, body, .. } => {
+            @expect(stream == 1)
             @expectEqual(1, id)
             @expectEqual(2, doc)
             @expectEqual(3, kind)
@@ -159,7 +160,7 @@ test "fetch messages round-trip and go the right way" {
         _ => @expect(false)
     }
 
-    @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", referrer_policy: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
+    @expect(fromRenderer(Message.Fetch { id: 0, doc: 0, nav: 0, stream: 0, kind: 0, credentials: 0, mode: 0, method: "", url: "", referrer: "", referrer_policy: "", top: "", headers: "", content_type: "", has_body: 0, body: "" }))
     @expect(!fromRenderer(Message.FetchHead { id: 0, doc: 0, status: 0, tainted: 0, mime: "", charset: "", url: "", headers: "" }) && !fromRenderer(Message.FetchBody { id: 0, chunk: "" }))
     @expect(!fromRenderer(Message.FetchEnd { id: 0 }) && !fromRenderer(Message.FetchFail { id: 0, code: 0 }))
 

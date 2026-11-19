@@ -1,0 +1,46 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import media
+
+// https://html.spec.whatwg.org/multipage/media.html#media-data-processing-steps-list
+fn akMediaProbe(it: *mut Interp, a: Args) JsError!Value {
+    let given = try it.builder()
+    defer it.release(given)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 0, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    let total = try it.toNumber(it.arg(a, 1))
+    var size = bytes.len()
+
+    if total >= size as f64 && total < 9.0e15 { size = total as usize }
+
+    var found = try media.probe(it.alloc, bytes.bytes(), size) orelse return Value.Null
+    defer found.deinit()
+
+    if !media.playable(&found) { return Value.Null }
+
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+    try it.heap.pushElem(out, js.numVal(found.duration))
+
+    for kind in [2]media.TrackKind{ media.TrackKind.Audio, media.TrackKind.Video } {
+        var numbers = [2]f64{ 0.0, 0.0 }
+
+        if found.first(kind) |t| {
+            numbers = [2]f64{ t.channels as f64 + t.width as f64, t.rate + t.height as f64 }
+        }
+
+        try it.heap.pushElem(out, js.numVal(numbers[0]))
+        try it.heap.pushElem(out, js.numVal(numbers[1]))
+    }
+
+    return it.pop()
+}

@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-sizing-4/#aspect-ratio
+fn aspectRatioValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    var start: usize = 0
+    var end = comps.len
+    var b = text.Builder.init(sheet.arena.allocator())
+
+    if identIn(comps[0], "auto") != null {
+        start = 1
+        try b.append("auto")
+    } else if identIn(comps[end - 1], "auto") != null {
+        end -= 1
+        try b.append("auto")
+    }
+
+    if start == end {
+        return Value.Keyword { k: try b.toOwned() }
+    }
+
+    if b.len() > 0 {
+        try b.appendByte(' ')
+    }
+
+    if !(try writeRatio(comps[start..end], &mut b)) {
+        return null
+    }
+
+    return Value.Keyword { k: try b.toOwned() }
+}

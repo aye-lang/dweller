@@ -1,0 +1,21 @@
+import layout
+import layout.Tree
+import std.math
+
+fn fragUnits(p: *mut Page, t: *mut Tree, fi: usize, x: f64) usize {
+    let f = t.frags.items()[fi]
+    let tb = t.bx(f.box).*
+    let face = layout.fontOf(tb.style)
+    let source = p.doc.node(tb.node.?).data
+    var best = f.start
+    var k = f.start
+
+    while k <= f.end {
+        if math.abs(t.measure.width(face, tb.text[f.start..k]) - x) < math.abs(t.measure.width(face, tb.text[f.start..best]) - x) { best = k }
+
+        k += 1
+        while k < f.end && (tb.text[k] & 0xC0) == 0x80 { k += 1 }
+    }
+
+    return byteToUtf16(source, alignedText(source, tb.text, NO_STOP, best).source)
+}

@@ -1,0 +1,20 @@
+import decoder
+
+fn loseDecoder(d: *mut DecoderProcess) {
+    if d.fd < 0 { return }
+
+    closeFd(d.fd)
+    d.fd = -1
+    d.outbox.clear()
+    d.inbox.clear()
+    reapDecoder(d.pid)
+    decoder.lost() catch |e| {
+    }
+}
+
+fn reapDecoder(pid: i32) {
+    var st: i32 = 0
+
+    kill(pid, SIGKILL)
+    waitpid(pid, &mut st, 0)
+}

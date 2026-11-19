@@ -1,0 +1,18 @@
+import std
+import std.mem.AllocError
+
+let MAX_CLIP_BYTES: usize = 524288
+
+// chromium: content/browser/renderer_host/clipboard_host_impl.cc WriteText
+fn clipboardWrite(copied: []u8) AllocError!bool {
+    if copied.len > MAX_CLIP_BYTES || std.mem.indexOf(copied, 0) != null { return false }
+
+    let ui = dialog_ui orelse return false
+    let alloc = ui.alloc
+    let z = try alloc.alloc(0 as u8, copied.len + 1)
+    defer alloc.free(z)
+
+    std.mem.copy(z, copied)
+
+    return SDL_SetClipboardText(z.ptr) == 0
+}
