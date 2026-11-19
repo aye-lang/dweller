@@ -1,0 +1,20 @@
+fn sweepStrs(it: *mut Interp, from: usize, to: usize) {
+    for i in from..to {
+        let c = &mut it.heap.strs.items()[i]
+
+        if !c.live {
+            continue
+        }
+
+        if c.mark || c.perm {
+            c.mark = false
+            it.heap.swept_live += 1
+            it.heap.swept_bytes += strBytes(c)
+            continue
+        }
+
+        it.heap.freeStr(i as u32)
+        it.heap.free_strs.append(i as u32) catch |e| {
+        }
+    }
+}
