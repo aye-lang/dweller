@@ -1,7 +1,11 @@
 import std.mem.AllocError
 
 fn showOpener(ui: *mut Ui, opener: u32) AllocError!void {
-    let k = slotIndex(ui, opener) orelse return
+    for k in 0..ui.count {
+        if ui.slots[k].?.id != opener || k == ui.active { continue }
 
-    if k != ui.active { try showTab(ui, k) }
+        try showTab(ui, k)
+
+        return goInRenderer(ui)
+    }
 }

@@ -68,7 +68,7 @@ class EventSource extends EventTarget {
     hidden(this, '_rest', '');
     hidden(this, '_crlf', false);
     hidden(this, '_first', true);
-    this._task = ak.fetchStart(this._url, 'GET', lines, undefined, credentials, 'cors', x => this._arrived(x), '', true);
+    this._task = ak.fetchStart(this._url, 'GET', lines, undefined, credentials, 'cors', x => this._arrived(x), '', 2);
   }
 
   _arrived(x) {

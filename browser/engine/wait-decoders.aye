@@ -1,0 +1,19 @@
+import decoder
+import std.mem.AllocError
+import std.time
+
+let DECODER_IDLE_MS: u64 = 5000
+
+fn waitDecoders(p: *mut Page, block: bool) AllocError!bool {
+    let s = p.script orelse return false
+    let started = time.monotonicMs()
+    let must = block || !s.real
+
+    while must && decodersBusy(s) && time.monotonicMs() - started < DECODER_IDLE_MS {
+        decoder.pump(1)
+
+        if try pumpPageDecoders(s) { return true }
+    }
+
+    return pumpPageDecoders(s)
+}

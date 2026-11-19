@@ -1,0 +1,35 @@
+import std.mem.Allocator
+
+extern fn open(path: [*]u8, flags: i32, ...) i32
+extern fn lseek(fd: i32, offset: i64, whence: i32) i64
+extern fn mmap(addr: ?[*]u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) ?[*]u8
+extern fn close(fd: i32) i32
+
+let O_RDONLY_CLOEXEC: i32 = 0x80000
+let SEEK_END: i32 = 2
+let PROT_READ: i32 = 1
+let MAP_PRIVATE: i32 = 2
+
+fn keepFontFile(alloc: Allocator, path: []u8) {
+    let z = alloc.alloc(0 as u8, path.len + 1) catch return
+    defer alloc.free(z)
+
+    for i, c in path { z[i] = c }
+
+    let fd = open(z.ptr, O_RDONLY_CLOEXEC)
+
+    if fd < 0 { return }
+
+    defer _ = close(fd)
+
+    let len = lseek(fd, 0, SEEK_END)
+
+    if len <= 0 { return }
+
+    var data = mmap(null, len as usize, PROT_READ, MAP_PRIVATE, fd, 0)
+
+    if @ptrCast(*i64, &data).* == -1 { return }
+
+    kept_files[kept_count] = KeptFile { path: path, data: data, len: len as usize }
+    kept_count += 1
+}

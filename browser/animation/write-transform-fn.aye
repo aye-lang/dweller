@@ -1,0 +1,24 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/cssom/#serializing-css-values
+fn writeTransformFn(f: TransformFn, out: *mut text.Builder) AllocError!void {
+    if out.len() > 0 {
+        try out.appendByte(' ')
+    }
+
+    try out.append(f.name)
+    try out.appendByte('(')
+
+    for k in 0..f.count {
+        if k > 0 {
+            try out.append(", ")
+        }
+
+        try out.appendFloat(math.round(f.n[k] * 1000000.0) / 1000000.0 + 0.0)
+        try out.append(UNIT_NAMES[f.unit[k] as usize])
+    }
+
+    try out.appendByte(')')
+}

@@ -1,0 +1,27 @@
+import css
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn computedFontBlocked(s: *mut Script, values: []css.Value) AllocError!bool {
+    var got = text.Builder.init(s.alloc)
+    defer got.deinit()
+    var initial = text.Builder.init(s.alloc)
+    defer initial.deinit()
+
+    for p in css.fontResets() {
+        got.clear()
+        initial.clear()
+        try css.writeValue(values[p], &mut got)
+        try css.writeValue(css.PROPERTIES[p].initial, &mut initial)
+
+        if !text.eql(got.bytes(), initial.bytes()) {
+            return true
+        }
+    }
+
+    got.clear()
+    try css.writeValue(values[css.FONT_VARIANT_CAPS], &mut got)
+
+    return css.blocksFontShorthand("font-variant-caps", got.bytes())
+}

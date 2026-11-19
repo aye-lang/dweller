@@ -1,0 +1,30 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-box
+fn sizedTransform(f: TransformFn, box: ?[2]f64) ?TransformFn {
+    var percent = false
+
+    for k in 0..f.count {
+        percent = percent || f.unit[k] == UNIT_PERCENT
+    }
+
+    if !percent {
+        return f
+    }
+
+    let size = box orelse return null
+    var p = primitiveTransform(f) orelse return null
+
+    if !text.eql(p.name, "translate3d") {
+        return null
+    }
+
+    for k in 0..2 {
+        if p.unit[k] == UNIT_PERCENT {
+            p.n[k] = p.n[k] * size[k] / 100.0
+            p.unit[k] = UNIT_PX
+        }
+    }
+
+    return p
+}

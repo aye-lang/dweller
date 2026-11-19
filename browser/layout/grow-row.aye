@@ -1,0 +1,25 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css2/#height-layout
+fn growRow(t: *mut Tree, r: usize, h: f64) {
+    let more = h - t.bx(r).h
+
+    if more <= 0.0 {
+        return
+    }
+
+    for c in t.children(r) {
+        let word = keywordOf(t.bx(c).style[css.VERTICAL_ALIGN])
+
+        if text.eql(word, "middle") {
+            shiftContents(t, c, more / 2.0)
+        } else if text.eql(word, "bottom") {
+            shiftContents(t, c, more)
+        }
+
+        t.bx(c).h = h
+    }
+
+    t.bx(r).h = h
+}

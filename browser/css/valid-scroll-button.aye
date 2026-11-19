@@ -1,0 +1,21 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-overflow-5/#scroll-buttons
+fn validScrollButton(args: []Token) bool {
+    let lo = skipWhitespace(args, 0)
+    var hi = args.len
+
+    while hi > lo && args[hi - 1].kind == Tok.Whitespace {
+        hi -= 1
+    }
+
+    if hi != lo + 1 {
+        return false
+    }
+
+    if args[lo].kind == Tok.Delim {
+        return args[lo].delim == '*'
+    }
+
+    return args[lo].kind == Tok.Ident && inList(args[lo].text, "up down left right block-start block-end inline-start inline-end") != null
+}

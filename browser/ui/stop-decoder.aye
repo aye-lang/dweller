@@ -1,0 +1,18 @@
+import decoder
+
+pub fn stopDecoder() {
+    decoder.stop()
+
+    let d = decoder_process orelse return
+
+    decoder_process = null
+
+    if d.fd >= 0 {
+        closeFd(d.fd)
+        reapDecoder(d.pid)
+    }
+
+    d.outbox.deinit()
+    d.inbox.deinit()
+    d.alloc.destroy(d)
+}

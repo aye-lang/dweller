@@ -1,0 +1,11 @@
+import engine
+import ipc
+
+// chromium: third_party/blink/renderer/core/frame/local_frame.cc (GetCharacterIndexAtPoint style lookup: the embedder says which child frame is at a point)
+fn answerHitTest(r: *mut TabRenderer, id: u32, x: u32, y: u32) !void {
+    var key: u32 = 0
+
+    if r.page |p| { key = engine.remoteFrameAt(p, x as f64 / r.scale + r.scroll_x, y as f64 / r.scale + r.scroll_y) orelse 0 }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.HitTestReply { id: id, key: key })
+}

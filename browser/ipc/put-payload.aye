@@ -20,7 +20,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putBytes(out, url)
         }
 
-        .Shutdown, .OutOfMemory, .LoadStopped, .ClipboardRead, .CloseSelf => {}
+        .Shutdown, .OutOfMemory, .LoadStopped, .ClipboardRead => {}
         .Resize { width, height, scale, buffer } => {
             try putU32(out, width)
             try putU32(out, height)
@@ -192,7 +192,9 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         .Fetch { .. }, .FetchHead { .. }, .FetchBody { .. }, .FetchFail { .. } => try putFetchPayload(out, m)
         .FetchEnd { id } => try putU32(out, id)
         .FetchRemote { id } => try putU32(out, id)
+        .HitTest { .. }, .HitTestReply { .. }, .ReplaceNavigation { .. } => try putHitPayload(out, m)
         .DownloadHint { .. }, .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. }, .SocketNote { .. }, .PermissionGet { .. }, .PermissionState { .. }, .PermissionAsk { .. }, .PermissionAnswer { .. } => try putSocketPayload(out, m)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderOutput { .. }, .DecoderClose { .. } => try putDecoderPayload(out, m)
         .FetchCancel { id } => try putU32(out, id)
         .CookieGet { doc } => try putU32(out, doc)
         .Cookies { cookies } => try putBytes(out, cookies)

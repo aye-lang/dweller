@@ -1,0 +1,27 @@
+import dom
+import dom.Document
+import dom.NodeId
+
+fn commonAncestor(doc: *Document, a: NodeId, b: NodeId) ?NodeId {
+    var x = a
+    var y = b
+    var dx = flatDepth(doc, x)
+    var dy = flatDepth(doc, y)
+
+    while dx > dy {
+        x = dom.flatParent(doc, x) orelse return null
+        dx -= 1
+    }
+
+    while dy > dx {
+        y = dom.flatParent(doc, y) orelse return null
+        dy -= 1
+    }
+
+    while !dom.same(x, y) {
+        x = dom.flatParent(doc, x) orelse return null
+        y = dom.flatParent(doc, y) orelse return null
+    }
+
+    return x
+}

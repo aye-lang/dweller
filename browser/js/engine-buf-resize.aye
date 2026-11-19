@@ -1,0 +1,42 @@
+// https://tc39.es/ecma262/#sec-arraybuffer.prototype.resize
+
+import std.mem.copy
+
+fn engineBufResize(it: *mut Interp, a: Args) JsError!Value {
+    let o = try bufArg(it, a, 0)
+    let n = try it.toNumber(it.arg(a, 1))
+    let limit = bufMax(it, o)
+
+    if limit == NONE || isExternal(it, o) {
+        return it.typeError("Method ArrayBuffer.prototype.resize called on incompatible receiver")
+    }
+
+    if !(n >= 0.0) || n > limit as f64 {
+        return it.rangeError("Invalid array buffer length")
+    }
+
+    let old = storeMem(it, o)
+    let size = n as usize
+    var mem = []mut u8{}
+
+    if size > 0 {
+        mem = try it.alloc.alloc(0 as u8, size)
+    }
+
+    var kept = old.len
+
+    if size < kept {
+        kept = size
+    }
+
+    copy(mem[..kept], old[..kept])
+
+    if old.len > 0 {
+        it.alloc.free(old)
+    }
+
+    it.heap.bytes_since_gc += size
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: false, max: limit }
+
+    return Value.Undefined
+}

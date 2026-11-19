@@ -1,0 +1,25 @@
+import std.mem.AllocError
+
+// chromium: components/input/render_widget_host_input_event_router.cc (events wait in a queue while a target is asked for)
+fn serviceHitTest(ui: *mut Ui, top: *mut TabProcess) AllocError!void {
+    var ask = top.hit_asked orelse return
+
+    if findFrame(top, ask.frame, 0, 0) |asked| {
+        if asked.tp.hit_open == ask.id { return }
+
+        ask.inside = asked.tp.hit_key == ask.key
+    }
+
+    top.hit_asked = null
+    try top.hit_answers.append(ask)
+    top.hit_replay = true
+
+    while top.hit_asked == null && top.hit_queue.len() > 0 {
+        var ev = top.hit_queue.orderedRemove(0)
+
+        if tabInput(ui) == top { _ = try forwardMouse(ui, top, &mut ev) }
+        if top.hit_asked == null { top.hit_answers.clear() }
+    }
+
+    top.hit_replay = false
+}

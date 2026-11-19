@@ -1,0 +1,27 @@
+import css
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-tables-3/#height-distribution-algorithm
+fn stretchRows(t: *mut Tree, g: usize, extra: f64) AllocError!void {
+    var hs = List(f64).init(t.backing)
+    defer hs.deinit()
+    var marks = List(u8).init(t.backing)
+    defer marks.deinit()
+    var pcts = List(f64).init(t.backing)
+    defer pcts.deinit()
+
+    for r in t.children(g) {
+        try hs.append(t.bx(r).h)
+        try marks.append(trackMark(t, r))
+        try pcts.append(percentOfValue(t.bx(r).style[css.HEIGHT]))
+    }
+
+    shareHeight(hs.items(), marks.items(), pcts.items(), extra)
+
+    for k in 0..hs.len() {
+        growRow(t, t.children(g)[k], hs.items()[k])
+    }
+
+    t.bx(g).h += extra
+}

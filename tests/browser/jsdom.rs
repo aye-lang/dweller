@@ -200,6 +200,33 @@ fn jsdom_has_insert_restyles_partially() {
     assert!(full <= 1 && restyles >= 6, "{full} full, {restyles} restyles:\n{err}");
 }
 
+/// Q4.6: `browser/tests/jsdom/relayout_moved.html` moves 100 items in a
+/// side list (more than a restyle lists one by one), a box inside a shadow
+/// tree and a slotted child, 18 forced reads in all, beside 300 rows. Each
+/// read lays out again from the changed part (the items' common ancestor,
+/// the box in the shadow tree, the slotted child): 1 full layout, the
+/// first (19 before: `relayout:not_element` and `relayout:shadows`).
+#[test]
+fn jsdom_relayout_moved_part_of_page() {
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_TIMING", "1")
+        .args([
+            "dump",
+            "--tree",
+            "--js",
+            "browser/tests/jsdom/relayout_moved.html",
+        ])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    let full = err.matches("DWELLER_TIMING\tlayout_full\t").count()
+        + err.matches("DWELLER_TIMING\tlayout\t").count();
+    let dirty = err.matches("DWELLER_TIMING\tlayout_dirty\t").count();
+    assert!(full <= 2 && dirty >= 18, "{full} full layouts, {dirty} dirty");
+}
+
 /// Q4.8: the matched-properties cache picks its slot from a mixed hash
 /// and has two places per key. `browser/tests/perf/feed.html` has 7
 /// different sets of matched rules, parent values and custom properties:
