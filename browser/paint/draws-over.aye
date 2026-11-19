@@ -1,0 +1,16 @@
+fn drawsOver(it: Item, seen: Rect) bool {
+    let r = match it {
+        .Fill { r, .. } => r
+        .Image { r, .. } => r
+        .Svg { r, .. } => r
+        .Tiles { clip, .. } => clip
+        .Shadow { r, .. } => r
+        .Text { x, y, .. } => Rect { x: x, y: y - 1.0, w: 1.0, h: 1.0 }
+        .Quad { p, .. } => Rect { x: p[0], y: p[1], w: 1.0, h: 1.0 }
+        _ => return false
+    }
+
+    let both = intersectRects(r, seen)
+
+    return both.w > 0.0 && both.h > 0.0
+}

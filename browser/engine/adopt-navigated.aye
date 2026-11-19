@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate (historyHandling "replace")
+fn adoptNavigated(tab: *mut Tab, page: *mut Page) AllocError!void {
+    let replaces = tab.replace_next && tab.history.len() > 0
+
+    tab.replace_next = false
+
+    if replaces { return tab.history.adoptAt(tab.history.current, &mut page.history) }
+
+    try tab.history.adoptPushed(&mut page.history)
+}

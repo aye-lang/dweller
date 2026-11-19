@@ -149,6 +149,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 
 ## Q3: web security (lane sec)
 

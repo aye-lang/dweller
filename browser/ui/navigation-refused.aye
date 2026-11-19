@@ -1,0 +1,16 @@
+import net
+import std
+import std.text
+import url.Url
+
+fn navigationRefused(tp: *TabProcess, target: *Url) bool {
+    if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, target) {
+        std.log.err("navigation refused: {}", target.href)
+
+        return true
+    }
+
+    if text.eql(target.scheme, "data") { std.log.err("Not allowed to navigate top frame to data URL: {}", target.href) }
+
+    return text.eql(target.scheme, "data")
+}

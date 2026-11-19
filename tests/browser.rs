@@ -110,6 +110,8 @@ mod window_renderer;
 mod window_renderer_edit;
 #[path = "browser/window_renderer_list.rs"]
 mod window_renderer_list;
+#[path = "browser/window_renderer_limits.rs"]
+mod window_renderer_limits;
 #[path = "browser/window_renderer_loads.rs"]
 mod window_renderer_loads;
 #[path = "browser/window_renderer_oopif.rs"]

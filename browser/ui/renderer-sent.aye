@@ -76,6 +76,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try beginNavigation(slot, tp, url, post, content_type, body, policy)
         }
 
+        .ReplaceNavigation { url, referrer_policy, user } => return beginReplace(slot, tp, got.frame, url, [2]u32{referrer_policy, user})
         .Popup { items, disabled, selected, x, y, w, h } => {
             if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
 
@@ -222,14 +223,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return focusFrame(tp, key, how)
         }
 
-        .ChooseFiles { multiple, accept: accepted } => return takeFileAsk(tp, multiple, accepted)
-        .Printed { chunk } => return takePrinted(tp, chunk, false, 0)
-        .PrintedEnd { pages } => return takePrinted(tp, "", true, pages)
-        .PrintAsk => {
-            tp.print_asked = true
-        }
-
-        .CaretRect { on, x, y, w, h } => return takeCaret(tp, on, [4]f64{x, y, w, h})
+        .ChooseFiles { .. }, .Printed { .. }, .PrintedEnd { .. }, .PrintAsk, .CaretRect { .. } => return featUiSent(tp, got.message)
 
         .Clipboard { copied } => {
             if got.frame != slot.id { return "bad clipboard" }
@@ -268,6 +262,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         }
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .HitTestReply { id, key } => return takeHitReply(tp, id, key)
         .State { .. } => return "unexpected state"
         .UpgradeInsecure { page } => {
             if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
