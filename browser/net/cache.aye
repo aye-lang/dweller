@@ -25,12 +25,16 @@ struct Cached {
     headers: []mut u8
     // Served once, then dropped.
     once: bool
+    stored: i64 = 0
+    lifetime: i64 = 0
+    epoch: u64 = 0
 }
 
 pub struct Cache {
     alloc: Allocator
     entries: List(Cached)
     bytes: usize
+    epoch: u64 = 0
 
     pub fn init(alloc: Allocator) Cache {
         return Cache { alloc: alloc, entries: List(Cached).init(alloc), bytes: 0 }
@@ -45,18 +49,15 @@ pub struct Cache {
 
     /// Is there a response for `key`?
     pub fn has(self: *Self, key: []u8) bool {
-        for e in self.entries.items() {
-            if std.mem.eql(e.key, key) {
-                return true
-            }
-        }
-        return false
+        let i = entryOf(self, key) orelse return false
+
+        return usableEntry(self, &self.entries.items()[i])
     }
 
     /// A copy (from `alloc`) of the response kept for `key`, or null.
     pub fn lookup(self: *mut Self, alloc: Allocator, key: []u8) AllocError!?Response {
         for i, e in self.entries.items() {
-            if std.mem.eql(e.key, key) {
+            if std.mem.eql(e.key, key) && usableEntry(self, &self.entries.items()[i]) {
                 let mime = try copyBytes(alloc, e.mime)
                 errdefer alloc.free(mime)
                 let charset = try copyBytes(alloc, e.charset)
@@ -82,6 +83,7 @@ pub struct Cache {
         if self.bytes + res.body.len > MAX_CACHE_BYTES {
             return
         }
+        dropEntry(self, key)
         let a = self.alloc
         let e = Cached {
             key: try dup(a, key),
@@ -92,6 +94,9 @@ pub struct Cache {
             moved: try dup(a, res.url),
             headers: try dup(a, res.headers_raw),
             once: once,
+            stored: now(),
+            lifetime: freshnessLifetime(res.headers_raw),
+            epoch: self.epoch,
         }
         self.entries.append(e) catch |err| {
             freeEntry(a, e)

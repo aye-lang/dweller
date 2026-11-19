@@ -1,0 +1,16 @@
+import std
+
+// chromium: cc/trees/layer_tree_host_impl.cc (a scroll moves the pixels drawn before)
+fn copyShifted(to: []mut u8, from: []u8, width: usize, height: usize, my: i64) {
+    let row = width * 4
+
+    if my == 0 { return std.mem.copy(to, from) }
+
+    for y in 0..height {
+        let sy = y as i64 - my
+
+        if sy < 0 || sy >= height as i64 { continue }
+
+        std.mem.copy(to[y * row..(y + 1) * row], from[sy as usize * row..(sy as usize + 1) * row])
+    }
+}
