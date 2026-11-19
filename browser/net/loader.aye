@@ -93,6 +93,9 @@ struct Ask {
     owned_from: []mut u8 = []mut u8{}
     hop: Hop = Hop { from: "", limit: MAX_SUBRESOURCE }
     retried: bool = false
+    stream: bool = false
+    stream_checked: bool = false
+    stream_taken: bool = false
 }
 
 struct Loader {
@@ -400,6 +403,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         res: Response { mime: []mut u8{}, charset: []mut u8{}, body: []mut u8{}, status: 0, url: []mut u8{}, headers_raw: []mut u8{} },
         failure: "",
         user_activated: req.user_activated,
+        stream: req.stream,
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -464,8 +468,9 @@ fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
         a.hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
     }
     l.job = startJob(ld.alloc, s, ld.multi, href, req, a.verb[..a.verb.len - 1], post, &mut a.hop)
-    if l.job == null {
-        return false
+    let job = l.job orelse return false
+    if a.stream {
+        endlessJob(job)
     }
     l.state = LoadState.Running
     return true
@@ -561,7 +566,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                     return failRequest(ld, l, FetchError.OutOfMemory)
                 }
             }
-            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator } }
+            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator }, stream: a.stream }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)
             }
@@ -592,7 +597,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
     }
 
     if !(corsCheck(ld.alloc, checked, at, a.res.headers_raw) catch false) || (orbRefuses(ld.alloc, checked, at, &a.res) catch true) {
-        return failRequest(ld, l, FetchError.Network)
+        return failRequest(ld, l, FetchError.Refused)
     }
 
     l.state = LoadState.Done

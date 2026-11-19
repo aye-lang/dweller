@@ -115,6 +115,10 @@
 #   /held-now?A,B    as /held-now, but once the /held/ requests whose
 #                    queries are A and B are in flight (requests on
 #                    separate connections arrive in any order)
+#   /event-stream-open?KEY  a text/event-stream response that sends the
+#                    event "held" and stays open until
+#                    /event-stream-end?KEY, then sends "last" and ends
+#                    ("timeout" after HOLD_LIMIT s)
 #   /hang/NAME?KEY   never answered: holds the request until the client
 #                    closes the connection (or HOLD_LIMIT s) and records
 #                    that it was closed; KEY (or NAME) names it
@@ -177,6 +181,9 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+# The keys of the /event-stream-open responses that may end.
+STREAM_ENDED = set()
+STREAM_CHANGED = threading.Condition()
 
 # The /hang/ requests by key: "open" while held, "closed" once the client
 # closed the connection.
@@ -295,6 +302,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if "name" in query:
                 disposition += '; filename="' + query["name"] + '"'
             self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], ("attached " + query.get("name", "")).encode())
+        elif path == "/event-stream":
+            last = self.headers.get("Last-Event-ID")
+            body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"
+            self.reply(200, [("Content-Type", "text/event-stream"), ("Cache-Control", "no-store")], body)
+        elif path.startswith("/event-stream-open?"):
+            query = path.split("?", 1)[1]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b"data: held\n\n")
+            self.wfile.flush()
+            with STREAM_CHANGED:
+                ended = STREAM_CHANGED.wait_for(lambda: query in STREAM_ENDED, HOLD_LIMIT)
+            self.wfile.write(b"data: last\n\n" if ended else b"data: timeout\n\n")
+        elif path.startswith("/event-stream-end?"):
+            with STREAM_CHANGED:
+                STREAM_ENDED.add(path.split("?", 1)[1])
+                STREAM_CHANGED.notify_all()
+            self.reply(200, [("Content-Type", "text/plain")], b"ended")
+        elif path == "/event-stream-html":
+            self.reply(200, [("Content-Type", "text/html")], b"data: x\n\n")
         elif path == "/agent":
             agent = self.headers.get("User-Agent", "")
             self.reply(200, [("Content-Type", "text/plain")], agent.encode() + b"\n")

@@ -54,6 +54,7 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "documentWindow", 1, akDocumentWindow)
     try defMethod(it, o, "postMessage", 3, akPostMessage)
     try defMethod(it, o, "winDocument", 1, akWinDocument)
+    try defMethod(it, o, "winOrigin", 1, akWinOrigin)
     try defMethod(it, o, "winParent", 1, akWinParent)
     try defMethod(it, o, "winTop", 1, akWinTop)
     try defMethod(it, o, "winLength", 1, akWinLength)
@@ -495,7 +496,7 @@ fn queueMessage(ts: *mut Script, data: ?[]u8, origin: []u8, from: *mut Page) JsE
 
 fn akWinDocument(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return remoteCrossOrigin(it, a, "the document", Value.Undefined)
+    let page = (try argWindow(it, a)) orelse return documentOfUnloaded(it, a)
     if !sameOrigin(s.page, page) {
         return crossOrigin(it, "the document")
     }
@@ -534,7 +535,7 @@ fn akWinHref(it: *mut Interp, a: Args) JsError!Value {
 // against this page) once the script returned.
 fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return navigateRemote(it, a)
+    let page = (try argWindow(it, a)) orelse return navigateUnloaded(it, a)
     if page.remote {
         return navigateRemote(it, a)
     }

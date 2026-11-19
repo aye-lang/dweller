@@ -187,6 +187,18 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return answerCookie(tp, got.frame, got.message)
         }
 
+        .ClipboardWrite { .. }, .ClipboardRead => {
+            if got.frame != slot.id { return "bad clipboard" }
+
+            return clipboardAsked(tp, got.frame, got.message)
+        }
+
+        .Dialog { .. } => {
+            if got.frame != slot.id { return "bad dialog" }
+
+            return takeDialog(tp, got.frame, got.message)
+        }
+
         .Storage { .. } => {
             if got.frame != slot.id { return "bad storage" }
 

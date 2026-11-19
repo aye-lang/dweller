@@ -1,0 +1,18 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akCaretAt(it: *mut Interp, a: Args) JsError!Value {
+    let x = try it.toNumber(it.arg(a, 0))
+    let y = try it.toNumber(it.arg(a, 1))
+    let at = try caretAtPoint(scriptOf(it).page, x, y) orelse return Value.Null
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+    try it.heap.pushElem(out, try wrap(it, at.node))
+    try it.heap.pushElem(out, js.numVal(at.units as f64))
+
+    return it.pop()
+}

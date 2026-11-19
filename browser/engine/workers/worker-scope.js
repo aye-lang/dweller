@@ -4,6 +4,8 @@
   const listeners = new Map();
   const timers = new Map();
   let nextTimer = 1;
+  const relayed = G.__wEventSource;
+  delete G.__wEventSource;
   function describe(e) {
     return e instanceof Error ? e.name + ': ' + e.message : String(e);
   }
@@ -40,6 +42,7 @@
   }
   class WorkerLocation {
     constructor(href) { this.href = href; }
+    get hash() { return this.href.includes('#') ? this.href.slice(this.href.indexOf('#')) : ''; }
     toString() { return this.href; }
   }
   def('self', G);
@@ -92,6 +95,7 @@
     console[level] = function (...a) { h.post(CONSOLE, JSON.stringify([level, a.map(String).join(' ')])); };
   }
   def('__wDeliver', function (json, n) {
+    if (relayed(json)) return;
     let data;
     try {
       data = wire.receive(h, json, n);
