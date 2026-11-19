@@ -1,0 +1,23 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import net
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain
+fn akSetDocumentDomain(it: *mut Interp, a: Args) JsError!Value {
+    let given = try it.builder()
+    defer it.release(given)
+    try argText(it, a, 0, given)
+    let page = scriptOf(it).page
+
+    if page.sandbox & SB_DOCUMENT_DOMAIN != 0 {
+        return domError(it, "SecurityError", "Failed to set the 'domain' property on 'Document': Assignment is forbidden for sandboxed iframes.")
+    }
+
+    if page.opaque || !net.registrableSuffixOf(given.bytes(), originPage(page).url.host) {
+        return domError(it, "SecurityError", "Failed to set the 'domain' property on 'Document': the value is not a suffix of the document's domain.")
+    }
+
+    return Value.Undefined
+}
