@@ -1,0 +1,33 @@
+import js
+import js.Interp
+import js.JsError
+import js.Value
+import media
+
+fn streamValue(it: *mut Interp, found: *media.Stream) JsError!Value {
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+
+    let flat = try it.newArray(0)
+
+    try it.push(js.objVal(flat))
+
+    for n in [5]f64{ found.used as f64, found.bad as u8 as f64, found.init_at as f64, found.init_end as f64, found.base as f64 } {
+        try it.heap.pushElem(out, js.numVal(n))
+    }
+
+    for f in found.frames.items() {
+        try it.heap.pushElem(flat, js.numVal(f.track as f64))
+        try it.heap.pushElem(flat, js.numVal(f.time))
+        try it.heap.pushElem(flat, js.numVal(f.duration))
+        try it.heap.pushElem(flat, js.boolVal(f.key))
+        try it.heap.pushElem(flat, js.numVal(f.offset as f64))
+        try it.heap.pushElem(flat, js.numVal(f.size as f64))
+    }
+
+    try it.heap.pushElem(out, js.objVal(flat))
+    _ = it.pop()
+
+    return it.pop()
+}

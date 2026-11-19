@@ -16,14 +16,18 @@ const timeOf = (m, byte) => byte >= m.total ? m.duration : byte / m.total * m.du
 const byteOf = (m, time) => Math.min(Math.floor(time / m.duration * m.total), Math.max(m.total - 1, 0));
 const rangeAt = (m, byte) => m.have.find(r => r[0] <= byte && byte < r[1]) || null;
 
+// The range of an attached MediaSource's buffered data that holds the playback position.
+const fedAt = m => m.feed.ranges().find(r => r[0] <= m.at && m.at <= r[1]) || null;
+
 parts.playableEnd = m => {
+  if (m.feed) return (fedAt(m) || [0, m.at])[1];
   if (!m.total) return m.at;
 
   const r = rangeAt(m, byteOf(m, m.at));
 
   return r ? timeOf(m, r[1]) : m.at;
 };
-parts.bufferedTimes = m => m.ready >= METADATA ? m.have.map(r => [timeOf(m, r[0]), timeOf(m, r[1])]) : [];
+parts.bufferedTimes = m => m.feed ? m.feed.ranges() : m.ready >= METADATA ? m.have.map(r => [timeOf(m, r[0]), timeOf(m, r[1])]) : [];
 
 function setReady(el, next) {
   const m = stateOf(el);
@@ -58,6 +62,14 @@ function settleReady(el) {
   const m = stateOf(el);
   if (m.ready < METADATA) return;
 
+  if (m.feed) {
+    const fed = fedAt(m);
+    if (!fed) return setReady(el, METADATA);
+    if ((m.feed.ended() && fed[1] >= m.duration) || fed[1] - m.at >= ENOUGH_S) return setReady(el, ENOUGH);
+
+    return setReady(el, fed[1] > m.at + 0.001 ? FUTURE : CURRENT);
+  }
+
   const at = byteOf(m, m.at);
   const r = rangeAt(m, at);
   if (!r) return setReady(el, METADATA);
@@ -74,6 +86,8 @@ function wants(el) {
 
 function pump(el) {
   const m = stateOf(el);
+  if (m.feed) return;
+
   if (m.fetching || m.error || m.network === NO_SOURCE || m.network === EMPTY) return;
 
   let from = m.total ? byteOf(m, m.at) : 0;
@@ -114,6 +128,20 @@ function fail(el, source) {
   if (m.ready < METADATA) settle(el, ['NotSupportedError', 'The element has no supported sources.']);
 }
 
+// https://html.spec.whatwg.org/multipage/media.html#media-data-processing-steps-list : the metadata is known.
+function known(el, tracks, duration) {
+  const m = stateOf(el);
+  for (const t of tracks) m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] = m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] || t;
+
+  Object.assign(m, { duration, audio: m.soundTrack ? m.soundTrack.a : 0, width: m.pictureTrack ? m.pictureTrack.a : 0, height: m.pictureTrack ? m.pictureTrack.b : 0 });
+  if (m.pictureTrack) ak.mediaFrame(el, m.width, m.height, '');
+
+  parts.pictureMirror(el);
+  fire(el, 'durationchange');
+  m.ready = METADATA;
+  fire(el, 'loadedmetadata');
+}
+
 function took(el, source, from, r) {
   const m = stateOf(el);
   const bytes = r.raw !== undefined ? r.raw : r.body;
@@ -126,14 +154,8 @@ function took(el, source, from, r) {
     const found = ak.mediaProbe(bytes, total);
     if (found === null) return fail(el, source);
 
-    [m.duration, m.audio, , m.width, m.height] = found;
-    for (const t of parts.tracks(bytes, total)) m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] = m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] || t;
-    if (m.pictureTrack) ak.mediaFrame(el, m.width, m.height, '');
-    parts.pictureMirror(el);
     m.total = total;
-    fire(el, 'durationchange');
-    m.ready = METADATA;
-    fire(el, 'loadedmetadata');
+    known(el, parts.tracks(bytes, total), found[0]);
   }
 
   m.have = parts.addRange(m.have, start, start + bytes.length);
@@ -181,8 +203,65 @@ function fetchResource(el, source, value) {
 
   m.source = source;
   m.fetching = false;
+  if (parts.sourceFor(m.src)) return attach(el, source, parts.sourceFor(m.src));
+
   fetchChunk(el, 0);
 }
+
+// https://w3c.github.io/media-source/#mediasource-attach
+function attach(el, source, provider) {
+  const m = stateOf(el);
+  m.source = source;
+  m.feed = parts.sourceAttach(el, provider);
+  delays(m, false);
+  if (!m.feed) queue(el, () => fail(el, source));
+}
+
+// The attached source got or lost data, or a buffer.
+parts.sourceFed = el => {
+  const m = stateOf(el);
+  if (!m.feed) return;
+
+  if (m.ready === NOTHING) {
+    if (!m.feed.complete()) return;
+
+    known(el, m.feed.tracks(), Number.isNaN(m.feed.duration()) ? Infinity : m.feed.duration());
+  }
+
+  if (!m.first && fedAt(m)) {
+    m.first = true;
+    m.ready = CURRENT;
+    fire(el, 'loadeddata');
+  }
+
+  settleReady(el);
+  parts.pictureShow(el);
+  parts.soundMore(el);
+  if (m.seekDone && fedAt(m)) {
+    const done = m.seekDone;
+    m.seekDone = null;
+    done();
+  }
+};
+
+parts.sourceLasts = (el, duration) => {
+  const m = stateOf(el);
+  if (!m.feed || m.ready < METADATA) return;
+
+  m.duration = duration;
+  fire(el, 'durationchange');
+};
+
+// https://w3c.github.io/media-source/#end-of-stream-algorithm
+parts.sourceEnded = (el, error) => {
+  const m = stateOf(el);
+  if (!m.feed) return;
+  if (error === undefined) return parts.sourceFed(el);
+  if (m.ready < METADATA) return fail(el, m.source);
+  if (error === 'decode') return parts.broke(el);
+
+  fail(el, null);
+};
 
 function trySources(el, from) {
   const m = stateOf(el);
@@ -207,7 +286,7 @@ parts.selectResource = el => {
   delays(m, true);
   queue(el, () => {
     const value = el.getAttribute('src');
-    if (value === null && !el.querySelector(':scope > source')) {
+    if (!m.provider && value === null && !el.querySelector(':scope > source')) {
       m.network = EMPTY;
       delays(m, false);
       return;
@@ -215,6 +294,7 @@ parts.selectResource = el => {
 
     m.network = LOADING;
     fire(el, 'loadstart');
+    if (m.provider) return attach(el, null, m.provider);
     if (value === null) trySources(el, el.firstElementChild);
     else if (value === '') fail(el, null);
     else fetchResource(el, null, value);
@@ -235,6 +315,9 @@ parts.load = el => {
 
   Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null, bytes: [], soundTrack: null, pictureTrack: null });
   parts.pictureStop(m);
+  if (m.feed) parts.sourceDetach(m.feed);
+
+  m.feed = null;
   parts.selectResource(el);
 };
 
@@ -250,6 +333,19 @@ parts.broke = el => {
   fire(el, 'error');
 };
 
+// https://html.spec.whatwg.org/multipage/media.html#dom-media-srcobject
+Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+  configurable: true,
+  enumerable: true,
+  get() { return stateOf(this).provider; },
+  set(v) {
+    if (v !== null && !parts.isSource(v)) throw new TypeError("Failed to set the 'srcObject' property on 'HTMLMediaElement': The provided value is not of type 'MediaSourceHandle or MediaSource'.");
+
+    stateOf(this).provider = v;
+    parts.load(this);
+  },
+});
+
 parts.ahead = el => {
   settleReady(el);
   pump(el);
@@ -259,9 +355,11 @@ parts.seekTo = (el, done) => {
   const m = stateOf(el);
   m.sought = true;
   settleReady(el);
-  if (rangeAt(m, byteOf(m, m.at))) return done();
+  if (m.feed ? fedAt(m) : rangeAt(m, byteOf(m, m.at))) return done();
 
   m.seekDone = done;
+  if (m.feed) return;
+
   m.chunk++;
   m.fetching = false;
   pump(el);
