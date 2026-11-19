@@ -4,21 +4,31 @@
 const G = globalThis;
 const ak = G.__canvasHost;
 const parts = G.__mediaParts;
-delete G.__mediaParts;
 const P = HTMLMediaElement.prototype;
 const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
 const dispatchTrusted = EventTarget.prototype.dispatchEvent;
 const EMPTY = 0, IDLE = 1, LOADING = 2, NO_SOURCE = 3;
-const NOTHING = 0, METADATA = 1, ENOUGH = 4;
+const NOTHING = 0, METADATA = 1, FUTURE = 3, ENOUGH = 4;
 const TICK_MS = 250;
 const later = f => ak.setTimer(f, 0, false, [], false);
 
 function stateOf(el) {
-  if (el.__media) return el.__media;
+  const had = el.__media;
+  if (had) {
+    const value = el.getAttribute('src');
+    if (had.seen !== value && !had.busy) {
+      had.seen = value;
+      had.busy = true;
+      parts.load(el);
+      had.busy = false;
+    }
+
+    return had;
+  }
 
   watch();
-  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: null });
-  if (el.hasAttribute('src') || el.querySelector('source')) selectResource(el);
+  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null });
+  if (el.hasAttribute('src') || el.querySelector('source')) parts.selectResource(el);
 
   return el.__media;
 }
@@ -44,7 +54,7 @@ function settle(el, error) {
 function position(m) {
   if (!m.timer) return m.at;
 
-  return Math.min(m.at + (performance.now() - m.started) / 1000 * m.rate, m.duration);
+  return Math.min(m.at + (performance.now() - m.started) / 1000 * m.rate, parts.playableEnd(m));
 }
 
 function ended(el) {
@@ -65,11 +75,11 @@ function stopClock(m) {
 function runClock(el) {
   const m = stateOf(el);
   stopClock(m);
-  if (m.paused || m.ready < ENOUGH || m.error || !(m.rate > 0) || m.at >= m.duration) return;
+  if (m.paused || m.ready < FUTURE || m.error || !(m.rate > 0) || m.at >= m.duration) return;
 
   m.started = performance.now();
   m.from = m.at;
-  m.timer = ak.setTimer(() => tick(el), Math.max(1, Math.min(TICK_MS, (m.duration - m.at) / m.rate * 1000)), false, [], false);
+  m.timer = ak.setTimer(() => tick(el), Math.max(1, Math.min(TICK_MS, (parts.playableEnd(m) - m.at) / m.rate * 1000)), false, [], false);
 }
 
 function tick(el) {
@@ -77,6 +87,7 @@ function tick(el) {
   stopClock(m);
   if (m.at < m.duration) {
     fire(el, 'timeupdate');
+    parts.ahead(el);
     runClock(el);
   } else if (el.loop) {
     seek(el, 0);
@@ -92,12 +103,12 @@ function seek(el, time) {
   m.seeking = true;
   m.at = Math.min(Math.max(time, 0), m.duration);
   queue(el, () => fire(el, 'seeking'));
-  queue(el, () => {
+  parts.seekTo(el, () => queue(el, () => {
     m.seeking = false;
     fire(el, 'timeupdate');
     fire(el, 'seeked');
     runClock(el);
-  });
+  }));
 }
 
 function allowed(el) {
@@ -106,116 +117,8 @@ function allowed(el) {
   return m.muted || m.volume === 0 || navigator.userActivation.hasBeenActive;
 }
 
-function fail(el, source) {
-  const m = stateOf(el);
-  if (source) {
-    fire(source, 'error');
-    return trySources(el, source.nextElementSibling);
-  }
-
-  m.error = parts.error(4, 'MEDIA_ELEMENT_ERROR: Format error');
-  m.network = NO_SOURCE;
-  fire(el, 'error');
-  settle(el, ['NotSupportedError', 'The element has no supported sources.']);
-}
-
-function loaded(el, source, url, r) {
-  const m = stateOf(el);
-  const found = r.error === undefined && r.status < 400 ? ak.mediaProbe(r.raw !== undefined ? r.raw : r.body) : null;
-  if (found === null) return fail(el, source);
-
-  [m.duration, m.audio, , m.width, m.height] = found;
-  m.src = url;
-  fire(el, 'durationchange');
-  m.ready = METADATA;
-  fire(el, 'loadedmetadata');
-  m.ready = ENOUGH;
-  fire(el, 'loadeddata');
-  fire(el, 'progress');
-  fire(el, 'canplay');
-  if (!m.paused) fire(el, 'playing');
-  fire(el, 'canplaythrough');
-  m.network = IDLE;
-  fire(el, 'suspend');
-  if (m.autoplaying && m.paused && el.autoplay && allowed(el)) {
-    m.paused = false;
-    fire(el, 'play');
-    fire(el, 'playing');
-  }
-
-  if (!m.paused) settle(el, null);
-  runClock(el);
-}
-
-function fetchResource(el, source, value) {
-  const m = stateOf(el);
-  const load = m.load;
-  let url;
-  try {
-    url = new URL(value, document.baseURI).href;
-  } catch (e) {
-    return queue(el, () => fail(el, source));
-  }
-
-  m.src = url;
-  ak.fetchStart(url, 'GET', '', undefined, el.crossOrigin === 'use-credentials' ? 'include' : 'same-origin', el.crossOrigin === null ? 'no-cors' : 'cors', x => {
-    if (stateOf(el).load === load) loaded(el, source, url, typeof x === 'number' ? ak.fetchTake(x) : x);
-  }, '', el.localName);
-}
-
-function trySources(el, from) {
-  const m = stateOf(el);
-  for (let s = from; s; s = s.nextElementSibling) {
-    if (s.localName !== 'source') continue;
-
-    const value = s.getAttribute('src');
-    const type = s.getAttribute('type');
-    if (value && (type === null || parts.canPlay(type) !== '')) return fetchResource(el, s, value);
-
-    fire(s, 'error');
-  }
-
-  m.network = NO_SOURCE;
-}
-
-// https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
-function selectResource(el) {
-  const m = stateOf(el);
-  m.network = NO_SOURCE;
-  m.seen = el.getAttribute('src');
-  queue(el, () => {
-    const value = el.getAttribute('src');
-    if (value === null && !el.querySelector(':scope > source')) {
-      m.network = EMPTY;
-      return;
-    }
-
-    m.network = LOADING;
-    fire(el, 'loadstart');
-    if (value === null) trySources(el, el.firstElementChild);
-    else if (value === '') fail(el, null);
-    else fetchResource(el, null, value);
-  });
-}
-
-function load(el) {
-  const m = stateOf(el);
-  const was = m.network;
-  stopClock(m);
-  settle(el, ['AbortError', 'The play() request was interrupted by a new load request.']);
-  m.load++;
-  if (was === LOADING || was === IDLE) later(() => fire(el, 'abort'));
-  if (was !== EMPTY) {
-    later(() => fire(el, 'emptied'));
-    Object.assign(m, { ready: NOTHING, paused: true, seeking: false, duration: NaN, at: 0, played: [] });
-  }
-
-  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true });
-  selectResource(el);
-}
-
 const methods = {
-  load() { load(this); },
+  load() { parts.load(this); },
   canPlayType(type) { return parts.canPlay(type); },
   play() {
     const m = stateOf(this);
@@ -223,22 +126,23 @@ const methods = {
     if (m.error && m.error.code === 4) return Promise.reject(new DOMException('The element has no supported sources.', 'NotSupportedError'));
 
     const promise = new Promise((resolve, reject) => m.promises.push({ resolve, reject }));
-    if (m.network === EMPTY) selectResource(this);
+    if (m.network === EMPTY) parts.selectResource(this);
     if (ended(this)) seek(this, 0);
     if (m.paused) {
       m.paused = false;
       queue(this, () => fire(this, 'play'));
-      queue(this, () => fire(this, m.ready >= ENOUGH ? 'playing' : 'waiting'));
+      queue(this, () => fire(this, m.ready >= FUTURE ? 'playing' : 'waiting'));
     }
 
-    if (m.ready >= ENOUGH) queue(this, () => { settle(this, null); runClock(this); });
+    if (m.ready >= FUTURE) queue(this, () => { settle(this, null); runClock(this); });
+    parts.ahead(this);
     m.autoplaying = false;
 
     return promise;
   },
   pause() {
     const m = stateOf(this);
-    if (m.network === EMPTY) selectResource(this);
+    if (m.network === EMPTY) parts.selectResource(this);
     m.autoplaying = false;
     if (m.paused) return;
 
@@ -254,6 +158,7 @@ const methods = {
 for (const [k, f] of Object.entries(methods)) hidden(P, k, f);
 
 const whole = el => parts.ranges(stateOf(el).ready >= METADATA ? [[0, stateOf(el).duration]] : []);
+const buffered = el => parts.ranges(parts.bufferedTimes(stateOf(el)));
 const getters = {
   networkState: el => stateOf(el).network,
   readyState: el => stateOf(el).ready,
@@ -263,7 +168,7 @@ const getters = {
   error: el => stateOf(el).error,
   duration: el => stateOf(el).duration,
   currentSrc: el => stateOf(el).src,
-  buffered: whole,
+  buffered,
   seekable: whole,
   played: el => parts.ranges(parts.addRange(stateOf(el).played, stateOf(el).from, stateOf(el).timer ? position(stateOf(el)) : stateOf(el).from)),
   currentTime: el => position(stateOf(el)),
@@ -313,8 +218,8 @@ function noticed(node) {
     const m = stateOf(el);
     if (started) continue;
 
-    if (m.seen !== el.getAttribute('src')) load(el);
-    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) selectResource(el);
+    if (m.seen !== el.getAttribute('src')) parts.load(el);
+    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) parts.selectResource(el);
   }
 }
 
@@ -339,4 +244,5 @@ hidden(Document.prototype, 'createElement', function () {
 
   return el;
 });
+Object.assign(parts, { stateOf, fire, queue, settle, stopClock, runClock, allowed });
 })();

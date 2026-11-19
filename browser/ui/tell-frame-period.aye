@@ -1,0 +1,10 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: components/viz/common/frame_sinks/begin_frame_args.h (the interval of the display's frames)
+fn tellFramePeriod(ui: *Ui, tp: *mut TabProcess) AllocError!void {
+    if tp.period_ns == ui.frame_ns || !tp.hello || tp.gone.len > 0 { return }
+
+    tp.period_ns = ui.frame_ns
+    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.FramePeriod { ns: ui.frame_ns as f64 })
+}

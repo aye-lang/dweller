@@ -334,6 +334,7 @@ fn arrayUnshift(it: *mut Interp, a: Args) JsError!Value {
         ob.elems[i + k] = ob.elems[i]
     }
     for j in 0..a.argc {
+        it.heap.shade(it.arg(a, j))
         ob.elems[j] = it.arg(a, j)
     }
     return numVal((n + k) as f64)
@@ -394,6 +395,7 @@ fn arraySplice(it: *mut Interp, a: Args) JsError!Value {
         ob.nelems = newLen
     }
     for j in 0..ins {
+        it.heap.shade(it.arg(a, 2 + j as usize))
         it.heap.obj(o).elems[start + j] = it.arg(a, 2 + j as usize)
     }
     return it.pop()
@@ -484,6 +486,7 @@ fn arrayReverse(it: *mut Interp, a: Args) JsError!Value {
         j -= 1
         let t = ob.elems[i]
         ob.elems[i] = ob.elems[j]
+        it.heap.shade(t)
         ob.elems[j] = t
         i += 1
     }
@@ -560,6 +563,7 @@ fn arrayMap(it: *mut Interp, a: Args) JsError!Value {
     while i < n && i < alen(it, o) {
         if !isHole(it, o, i) {
             let v = try callback(it, a, f, o, i)
+            it.heap.shade(v)
             it.heap.obj(out).elems[i] = v
         }
         i += 1
@@ -823,17 +827,21 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
                 let y = it.heap.obj(keys).elems[j]
 
                 if try sortLess(it, f, y, x) {
+                    it.heap.shade(y)
                     it.heap.obj(tmpk).elems[k] = y
 
                     if keys != work {
+                        it.heap.shade(it.heap.obj(work).elems[j])
                         it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[j]
                     }
 
                     j += 1
                 } else {
+                    it.heap.shade(x)
                     it.heap.obj(tmpk).elems[k] = x
 
                     if keys != work {
+                        it.heap.shade(it.heap.obj(work).elems[i])
                         it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[i]
                     }
 
@@ -843,9 +851,11 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
                 k += 1
             }
             while i < mid {
+                it.heap.shade(it.heap.obj(work).elems[i])
                 it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[i]
 
                 if keys != work {
+                    it.heap.shade(it.heap.obj(keys).elems[i])
                     it.heap.obj(tmpk).elems[k] = it.heap.obj(keys).elems[i]
                 }
 
@@ -853,9 +863,11 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
                 k += 1
             }
             while j < hi {
+                it.heap.shade(it.heap.obj(work).elems[j])
                 it.heap.obj(tmp).elems[k] = it.heap.obj(work).elems[j]
 
                 if keys != work {
+                    it.heap.shade(it.heap.obj(keys).elems[j])
                     it.heap.obj(tmpk).elems[k] = it.heap.obj(keys).elems[j]
                 }
 
@@ -865,11 +877,13 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
             lo += 2 * width
         }
         for i in 0..m {
+            it.heap.shade(it.heap.obj(tmp).elems[i])
             it.heap.obj(work).elems[i] = it.heap.obj(tmp).elems[i]
         }
 
         if keys != work {
             for i in 0..m {
+                it.heap.shade(it.heap.obj(tmpk).elems[i])
                 it.heap.obj(keys).elems[i] = it.heap.obj(tmpk).elems[i]
             }
         }
@@ -878,6 +892,7 @@ fn arraySort(it: *mut Interp, a: Args) JsError!Value {
     }
     try it.heap.setLength(o, m + holes, Value.Empty)
     for i in 0..m {
+        it.heap.shade(it.heap.obj(work).elems[i])
         it.heap.obj(o).elems[i] = it.heap.obj(work).elems[i]
     }
     for i in m..m + holes {
@@ -897,6 +912,7 @@ fn arrayFill(it: *mut Interp, a: Args) JsError!Value {
     let end = relativeIndex(try argInteger(it, a, 2, n as f64), n)
     var i = start
     while i < end {
+        it.heap.shade(it.arg(a, 0))
         it.heap.obj(o).elems[i] = it.arg(a, 0)
         i += 1
     }
@@ -1016,6 +1032,7 @@ fn arrayWith(it: *mut Interp, a: Args) JsError!Value {
     if k < 0.0 || k >= n as f64 {
         return it.rangeError("Invalid index")
     }
+    it.heap.shade(it.arg(a, 1))
     it.heap.obj(o).elems[k as u32] = it.arg(a, 1)
     return c.this
 }

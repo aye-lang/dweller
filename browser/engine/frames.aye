@@ -345,6 +345,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
 fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     c.parent = p
     c.depth = p.depth + 1
+    c.prefers_dark = frameScheme(p, el) catch null
     // Its subresources are for the top-level page's site (cookies).
     net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
     }
@@ -662,6 +663,7 @@ fn layoutFrames(p: *mut Page, measure: dyn font.Measurer) AllocError!void {
         if frameBox(t, f.el) |bi| {
             let r = contentRect(t, bi)
             if r.w > 0.0 && r.h > 0.0 {
+                noteFrameScheme(p, f)
                 try f.page.layoutPage(measure, r.w, r.h)
                 if f.page.tree |sub| {
                     let scroll = math.min(f.scroll, maxFrameScroll(sub, r.h))
