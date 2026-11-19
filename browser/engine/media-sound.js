@@ -20,12 +20,27 @@ parts.slice = (m, from, to) => {
 };
 
 // The tracks of the resource: `a` and `b` are channels and bits (audio), width and height (video).
-parts.tracks = (bytes, total) => ak.mediaTracks(bytes, total).map(([kind, codec, config, a, b, rate, flat]) => {
+parts.tracks = (bytes, total) => ak.mediaTracks(bytes, total).map(([kind, codec, config, a, b, rate, flat, number, frame, decodable]) => {
   const samples = [];
   for (let i = 0; i < flat.length; i += 4) samples.push({ offset: flat[i], size: flat[i + 1], time: flat[i + 2], key: flat[i + 3] });
 
-  return { kind, codec, config, a, b, rate, samples };
+  return { kind, codec, config, a, b, rate, samples, number, frame, decodable };
 });
+parts.decodable = t => t.decodable;
+// A sample's bytes: its own (a source buffer's frame) or its range of the resource.
+parts.sampleBytes = (m, s) => s.data !== undefined ? s.data : parts.slice(m, s.offset, s.offset + s.size);
+
+// The first sample after `time`.
+parts.sampleAfter = (t, time) => {
+  let lo = 0, hi = t.samples.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (t.samples[mid].time <= time) lo = mid + 1;
+    else hi = mid;
+  }
+
+  return lo;
+};
 
 parts.sampleAt = (t, time) => {
   let lo = 0, hi = t.samples.length - 1;
@@ -63,7 +78,8 @@ function heard(el, s, seq, ok, data) {
 
   const t = m.soundTrack;
   const channels = channelsOf(data, t.a);
-  const skip = Math.max(0, s.from - t.samples[seq].time);
+  const skip = Math.max(0, s.from - s.sent.get(seq));
+  s.sent.delete(seq);
   if (channels[0].length / t.rate > skip) {
     const buffer = context.createBuffer(t.a, channels[0].length, t.rate);
     channels.forEach((c, i) => buffer.copyToChannel(c, i));
@@ -87,13 +103,16 @@ function schedule(el) {
   if (!s) return;
 
   const t = m.soundTrack;
-  while (s.next < t.samples.length && s.waiting < 2 && s.when - context.currentTime <= AHEAD_S / 2) {
-    const sample = t.samples[s.next];
-    const bytes = parts.slice(m, sample.offset, sample.offset + sample.size);
-    if (bytes === null) return;
-    if (!ak.mediaDecoderFeed(s.id, s.next, bytes)) return parts.broke(el);
+  while (s.waiting < 2 && s.when - context.currentTime <= AHEAD_S / 2) {
+    const sample = t.samples[s.fed === null ? parts.sampleAt(t, s.from) : parts.sampleAfter(t, s.fed)];
+    if (!sample || sample.time >= parts.playableEnd(m)) return;
 
-    s.next++;
+    const bytes = parts.sampleBytes(m, sample);
+    if (bytes === null) return;
+    if (!ak.mediaDecoderFeed(s.id, ++s.seq, bytes)) return parts.broke(el);
+
+    s.sent.set(s.seq, sample.time);
+    s.fed = sample.time;
     s.waiting++;
   }
 }
@@ -120,7 +139,7 @@ parts.soundStart = el => {
   context.resume();
 
   const gain = context.createGain();
-  const s = { id: 0, gain, nodes: [], next: parts.sampleAt(t, m.at), from: m.at, when: context.currentTime + LATENCY_S, waiting: 0 };
+  const s = { id: 0, gain, nodes: [], fed: null, seq: 0, sent: new Map(), from: m.at, when: context.currentTime + LATENCY_S, waiting: 0 };
   gain.gain.value = m.volume;
   gain.connect(context.destination);
   m.sound = s;

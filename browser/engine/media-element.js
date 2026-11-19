@@ -28,7 +28,7 @@ function stateOf(el) {
   }
 
   watch();
-  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, latched: null, autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], sound: null, keeps: false, soundTrack: null, pictureTrack: null, picture: null, controls: null, delay: 0 });
+  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, latched: null, autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], sound: null, keeps: false, soundTrack: null, pictureTrack: null, picture: null, controls: null, delay: 0, feed: null, provider: null });
   // https://html.spec.whatwg.org/multipage/media.html#dom-media-muted : the attribute, until the setter was used.
   Object.defineProperty(el.__media, 'muted', { get() { return this.latched === null ? el.hasAttribute('muted') : this.latched; }, set(v) { this.latched = v; } });
   parts.controls(el);
