@@ -1,0 +1,12 @@
+import net
+import std.mem.AllocError
+
+fn endNavigation(tp: *mut TabProcess, h: *HeldFetch, got: net.Response) AllocError!void {
+    var res = got
+    defer res.deinit(tp.url.alloc)
+    var rest: []u8 = ""
+
+    if res.body.len > h.sent { rest = res.body[h.sent..] }
+
+    try endStreamed(tp, h, rest)
+}

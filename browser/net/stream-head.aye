@@ -1,0 +1,18 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn streamHead(alloc: Allocator, part: StreamPart, asked: []u8) AllocError!Response {
+    var res = try respond(alloc, part.content_type, try alloc.alloc(0 as u8, 0))
+
+    errdefer res.deinit(alloc)
+
+    res.status = part.status
+    res.headers_raw = try dup(alloc, part.headers)
+
+    if !text.eql(part.url, asked) {
+        res.url = try dup(alloc, part.url)
+    }
+
+    return res
+}

@@ -1,12 +1,7 @@
 import ipc
-import net
 import std.mem.AllocError
 
-fn endStreamed(tp: *mut TabProcess, h: *HeldFetch, got: net.Response) AllocError!void {
-    var res = got
-    defer res.deinit(tp.url.alloc)
-
-    if res.body.len > h.sent { try sendBody(tp, h.on, h.id, res.body[h.sent..]) }
-
+fn endStreamed(tp: *mut TabProcess, h: *HeldFetch, rest: []u8) AllocError!void {
+    try sendBody(tp, h.on, h.id, rest)
     try ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchEnd { id: h.id })
 }
