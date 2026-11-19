@@ -27,7 +27,8 @@ function stateOf(el) {
   }
 
   watch();
-  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], sound: null, keeps: false, soundTrack: null, pictureTrack: null, picture: null });
+  hidden(el, '__media', { network: EMPTY, ready: NOTHING, paused: true, seeking: false, error: null, duration: NaN, at: 0, started: 0, played: [], from: 0, rate: 1, defaultRate: 1, volume: 1, muted: el.hasAttribute('muted'), autoplaying: true, promises: [], load: 0, timer: 0, src: '', audio: false, width: 0, height: 0, seen: el.getAttribute('src'), total: 0, have: [], fetching: false, chunk: 0, first: false, sought: false, seekDone: null, source: null, bytes: [], sound: null, keeps: false, soundTrack: null, pictureTrack: null, picture: null, controls: null, delay: 0 });
+  parts.controls(el);
   if (el.hasAttribute('src') || el.querySelector('source')) parts.selectResource(el);
 
   return el.__media;
@@ -223,6 +224,7 @@ function noticed(node) {
   if (node.localName === 'source' && node.parentNode instanceof HTMLMediaElement) media.push(node.parentNode);
   for (const el of media) {
     const m = stateOf(el);
+    parts.controls(el);
     if (m.seen !== el.getAttribute('src')) parts.load(el);
     else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) parts.selectResource(el);
   }
@@ -254,8 +256,10 @@ function watch() {
       if (r.type === 'attributes') noticed(r.target);
       else r.addedNodes.forEach(noticed);
     }
-  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'controls'] });
 }
-later(() => document.querySelectorAll('audio, video').forEach(stateOf));
+const scan = () => document.querySelectorAll('audio, video').forEach(stateOf);
+later(scan);
+ak.mediaWatch(() => { watch(); scan(); });
 Object.assign(parts, { stateOf, fire, queue, settle, stopClock, runClock, allowed, position });
 })();

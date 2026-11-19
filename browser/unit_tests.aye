@@ -426,7 +426,8 @@ test "a node taken out of the document lives while a script holds it" {
     let gone = p.doc.getElementById("gone").?
     var out = text.Builder.init(a)
     defer out.deinit()
-    // Both are removed; a global holds one.
+    // Both are removed; a global holds one; no collection before the one below.
+    p.script.?.it.heap.threshold = 1 << 40
     @expect(try evalText(p, "const box = document.getElementById('box'); window.held = box.removeChild(document.getElementById('kept')); box.removeChild(document.getElementById('gone')); 0", &mut out))
     @expect(p.doc.isLive(kept) && p.doc.isLive(gone))
     js.collectGarbage(&mut p.script.?.it)
