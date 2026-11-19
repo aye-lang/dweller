@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+// chromium: content/browser/devtools/protocol/target_handler.cc (a client's question about a page is answered by that page's process)
+fn parkForContext(ui: *mut Ui, c: *mut Conn, id: []u8) AllocError!bool {
+    let slot = ui.slots[ui.active].?
+
+    if !ui.tab_processes && contextProcess(slot) == null { return false }
+
+    c.waiting = true
+    c.wait_id.clear()
+    try c.wait_id.append(id)
+    c.ctx_tab = slot.id
+    c.ctx_sent = false
+    c.ctx_ask = 0
+
+    return true
+}

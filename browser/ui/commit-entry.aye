@@ -1,7 +1,14 @@
 import std.mem.AllocError
+import std.text
 
 fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!void {
     let h = &mut slot.session.tab.history
+
+    if tp.url.len() == 0 && !tp.push_on_commit && h.len() > 0 && !text.eql(h.now().href, href) {
+        tp.doc_seq += 1
+
+        return
+    }
 
     slot.typed = false
     tp.doc_seq += 1

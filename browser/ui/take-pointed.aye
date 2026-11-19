@@ -1,0 +1,48 @@
+import agent
+import ipc
+import std.heap.Arena
+import std.mem.AllocError
+import std.text
+
+fn takePointed(ui: *mut Ui, slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
+    let a = ui.agents orelse return tp.pointed.clear()
+    var arena = Arena.init(ui.alloc)
+    defer arena.deinit()
+    var b = text.Builder.init(arena.allocator())
+    var w = agent.Writer.init(&mut b)
+    var line = text.Builder.init(arena.allocator())
+    let got = (ipc.nextMessage(tp.pointed.bytes()) catch null) orelse return tp.pointed.clear()
+
+    match got.message {
+        .UserContext { node, node_ref, node_text, .. } => {
+            try w.beginObject()
+            try w.key("tab")
+            try w.int(slot.id as i64)
+            try w.key("url")
+            try w.string(slot.session.tab.href())
+            try b.appendByte(',')
+            try b.append(node)
+            a.pointed.clear()
+            try a.pointed.append(b.bytes()[1..])
+            a.pointed_text.clear()
+            try a.pointed_text.append(node_text)
+            try line.append("you pointed at ")
+
+            if node_ref.len > 0 {
+                try line.append(node_ref)
+            } else {
+                try line.append("the page")
+            }
+
+            try line.append(" for the agents")
+            try activity(ui, line.bytes())
+        }
+
+        _ => {}
+    }
+
+    tp.pointed.clear()
+    tp.point_asked = false
+
+    return tellPointed(ui, arena.allocator())
+}

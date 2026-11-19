@@ -1,0 +1,56 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub struct Pointed {
+    members: []u8
+    ref: []u8
+    described: []u8
+}
+
+pub fn pointedNode(s: *mut Session, tmp: Allocator, node: ?NodeId, selection: []u8) AllocError!Pointed {
+    var ref: u32 = 0
+    var name = text.Builder.init(tmp)
+    var target: ?RefNode = null
+    var said = selection
+    var b = text.Builder.init(tmp)
+    var w = Writer.init(&mut b)
+    var described = text.Builder.init(tmp)
+
+    if node |n| { ref = try refAt(s, tmp, n) }
+
+    try w.beginObject()
+
+    if ref > 0 {
+        try name.appendByte('e')
+        try name.appendUint(ref as u64)
+        target = nodeOfRefIn(s, name.bytes())
+        try w.key("ref")
+        try w.string(name.bytes())
+    }
+
+    if said.len == 0 {
+        if target |t| { said = try textOf(s, tmp, t, 200) }
+    }
+
+    try w.key("text")
+    try w.string(said)
+
+    if target |t| {
+        try w.key("element")
+        try w.string(try describe(s, tmp, t))
+        try described.append(try describe(s, tmp, t))
+    } else {
+        try described.append("the page")
+    }
+
+    try w.endObject()
+
+    if said.len > 0 {
+        try described.append(": ")
+        try described.append(said)
+    }
+
+    return Pointed { members: b.bytes()[1..b.len() - 1], ref: name.bytes(), described: described.bytes() }
+}

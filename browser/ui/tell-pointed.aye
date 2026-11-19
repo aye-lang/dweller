@@ -1,0 +1,21 @@
+import agent
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn tellPointed(ui: *mut Ui, tmp: Allocator) AllocError!void {
+    let a = ui.agents.?
+
+    for c in a.conns {
+        let conn = c orelse continue
+
+        if conn.mode == 0 { continue }
+
+        var out = text.Builder.init(tmp)
+
+        try agent.writeEvent(conn.mode == 2, "user_pointed", a.pointed.bytes(), &mut out)
+        try out.appendByte('\n')
+
+        if !sendAll(conn.fd, out.bytes()) { conn.gone = true }
+    }
+}
