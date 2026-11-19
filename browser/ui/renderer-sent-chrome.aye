@@ -1,0 +1,69 @@
+import ipc
+import std.mem.AllocError
+
+fn rendererSentChrome(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .ScrollInfo { max_y, pan, background } => {
+            if got.frame != slot.id { return "bad scroll_info" }
+
+            return takeScrollInfo(tp, max_y, pan, background)
+        }
+
+        .Title { title } => {
+            if got.frame != slot.id || title.len > 4096 { return "bad title" }
+
+            try showCommitted(tp, title, tp.committed.bytes())
+        }
+
+        .Popup { items, disabled, selected, x, y, w, h } => {
+            if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
+
+            tp.popup.clear()
+            try tp.popup.append(items)
+            tp.popup_off.clear()
+            try tp.popup_off.append(disabled)
+            tp.popup_at = [4]f64{x, y, w, h}
+            tp.popup_selected = selected
+            tp.popup_new = true
+        }
+
+        .Cursor { shape } => {
+            if got.frame != slot.id || shape > 2 { return "bad cursor" }
+
+            tp.cursor = shape
+            tp.status_new = true
+        }
+
+        .TargetUrl { url } => {
+            if got.frame != slot.id || url.len > MAX_URL_CHARS { return "bad target_url" }
+
+            tp.target.clear()
+            try tp.target.append(url)
+            tp.status_new = true
+        }
+
+        .LongTask { on, ms } => {
+            if got.frame != slot.id || on > 1 || (on == 1) == tp.busy { return "bad long_task" }
+
+            tp.busy = on == 1
+            tp.long_ms = ms
+            tp.status_new = true
+        }
+
+        .Settled { on } => {
+            if got.frame != slot.id || on > 1 { return "bad settled" }
+
+            tp.settled = on == 1
+        }
+
+        .TakeFocus { reverse } => {
+            if got.frame != slot.id || reverse > 1 { return "bad take_focus" }
+
+            tp.take_focus = true
+        }
+
+        _ => {}
+    }
+
+    return ""
+}
