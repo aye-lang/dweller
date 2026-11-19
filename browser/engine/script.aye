@@ -870,6 +870,9 @@ fn beginPageScripts(p: *mut Page) AllocError!void {
     for el in later.items() {
         try s.queue.append(el)
     }
+    for el in s.queue.items() {
+        p.doc.hold(el)
+    }
 }
 
 /// Runs the next script of the queue (`beginPageScripts`); false when
@@ -885,6 +888,7 @@ fn runQueuedScript(s: *mut Script) AllocError!bool {
     let el = s.queue.items()[s.queue_at]
     s.queue_at += 1
     try runScriptElement(s, el)
+    s.page.doc.unhold(el)
     return true
 }
 
