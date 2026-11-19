@@ -126,7 +126,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | Lane | Next | Then |
 |---|---|---|
 | base | DV2b | DV1 is counted over its next landings |
-| proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
+| proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.14 |
 | sec | Q3.15 (Q3.15b to Q3.15e) | – |
 | perf | Q4.25a | Q4.25b, Q4.25e first of the kept Q4 rows (react's click), then Q6.3 to  |
 | feat | Q5.2 | – |
@@ -259,10 +259,9 @@ How the steps run:
 | Q2.14h | The 20 failures without a known cause (causes 3, 11, 15 and 19 to 23): read them from the first daily run after Q2.14b to Q2.14d, with shard 0's failure report kept whole, and give each a row | every failing test of the daily run has a cause in a card | – |
 | Q2.15 | The readiness list below, "Security (X1)", "Logins and popups" and "What a person sees": one card per item (`Q2.15a`, ...), each with a test that runs with `DWELLER_PROCESS=site` | every item has a done card, or a reason in its card why the flip does not need it | – |
 | Q2.16 | The readiness list below, "Speed with the flag": one card per item (`Q2.16a`, ...) | every item has a done card with its number, measured on the pages of `browser/tests/` | – |
-| Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 
