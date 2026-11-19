@@ -33,8 +33,14 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
     for k in tp.kept.items() { k.deinit(alloc) }
 
     tp.kept.deinit()
+    dropFrameSteps(tp, 0)
+    tp.frame_steps.deinit()
+    tp.before.deinit()
+    tp.hit_queue.deinit()
+    tp.hit_answers.deinit()
     forgetPorts(tp)
     endTabSockets(tp)
+    endTabDecoders(tp)
     dismissPermissionAsks(tp, false)
     forgetTabProcess(tp)
     unmapBuffers(tp)
@@ -54,6 +60,7 @@ fn endTabProcess(alloc: Allocator, process: ?*mut TabProcess) {
     tp.answer.deinit()
     tp.acted.deinit()
     tp.window_ask.deinit()
+    dropAsked(tp)
     tp.damage.deinit()
     tp.last_damage.deinit()
     tp.site.deinit()

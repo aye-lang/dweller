@@ -1,0 +1,22 @@
+// spec: https://drafts.csswg.org/css-fonts-4/#font-face-src-parsing
+fn validSrcTech(toks: []Token) bool {
+    var wants_word = true
+
+    for t in toks[1..toks.len - 1] {
+        if t.kind == Tok.Whitespace {
+            continue
+        }
+
+        if wants_word != (t.kind == Tok.Ident) || (!wants_word && t.kind != Tok.Comma) {
+            return false
+        }
+
+        if wants_word && inList(t.text, "features-opentype features-aat features-graphite color-colrv0 color-colrv1 color-svg color-sbix color-cbdt variations palettes incremental") == null {
+            return false
+        }
+
+        wants_word = !wants_word
+    }
+
+    return !wants_word
+}

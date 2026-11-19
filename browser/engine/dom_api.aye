@@ -2099,7 +2099,11 @@ fn writeArgs(it: *mut Interp, a: Args, line: bool) JsError!Value {
     if line {
         try b.appendByte('\n')
     }
-    if s.current != null && s.ready == 0 && s.writes_ignored == 0 {
+    if s.active != s.page || s.ready != 0 {
+        if s.active.parent != null {
+            try writeOpened(s.active, b.bytes())
+        }
+    } else if s.current != null && s.writes_ignored == 0 {
         try s.written.append(b.bytes())
     }
     return Value.Undefined

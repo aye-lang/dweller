@@ -459,6 +459,7 @@ pub let PRELUDE =
     \\// An event the browser makes (a click, a key, the load of the page).
     \\function hostEvent(target, type, key, x, y, dx, dy) {
     \\  if (type === '__host') { hostState(key); return true; }
+    \\  if (type === '__edit') { G.__hostEdit(target, key); return true; }
     \\  if (type === '__focus') { moveFocus(key === 'key' ? target : target.closest(CLICK_FOCUSABLE)); return true; }
     \\  if (type === '__wheel') { wheelScroll(target, ...key.split('\\n').map(Number)); return true; }
     \\  if (type === '__click') { actUntil = ak.now() + 5000; return keyClick(target); }
@@ -1268,7 +1269,10 @@ pub let PRELUDE =
     \\getter(Document.prototype, 'contentType', function () { return 'text/html'; });
     \\getter(Document.prototype, 'referrer', function () { return ''; });
     \\// GitHub's cookie code throws without it. Setting it changes nothing.
-    \\getter(Document.prototype, 'domain', function () { return ak.urlPart('hostname'); }, function (v) {});
+    \\getter(Document.prototype, 'domain', function () { return this === document ? ak.documentDomain() : ''; }, function (v) {
+    \\  if (this !== document) throw new DOMException("Failed to set the 'domain' property on 'Document': the document has no browsing context.", 'SecurityError');
+    \\  ak.setDocumentDomain(String(v));
+    \\});
     \\getter(Document.prototype, 'scrollingElement', function () { return this.documentElement; });
     \\getter(Document.prototype, 'forms', function () { return this.getElementsByTagName('form'); });
     \\getter(Document.prototype, 'images', function () { return this.getElementsByTagName('img'); });
@@ -1449,7 +1453,7 @@ pub let PRELUDE =
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
-    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return v; }
+    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return n === 'transform' && v !== 'none' ? ak.resolvedTransform(el, v) : v; }
     \\for (const n of CSS_NAMES) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
@@ -1458,12 +1462,14 @@ pub let PRELUDE =
     \\  if (n === 'float') getter(ComputedStyle.prototype, 'cssFloat', get);
     \\}
     \\getter(ComputedStyle.prototype, 'outline', function () { return ak.computedStyle(this._el, 'outline'); });
+    \\for (const [n, to] of [['overflow-inline', 'overflow-x'], ['overflow-block', 'overflow-y'], ['inline-size', 'width'], ['block-size', 'height'], ['min-inline-size', 'min-width'], ['min-block-size', 'min-height'], ['max-inline-size', 'max-width'], ['max-block-size', 'max-height'], ['inset-inline-start', 'left'], ['inset-inline-end', 'right'], ['inset-block-start', 'top'], ['inset-block-end', 'bottom']]) for (const k of [n, n.replace(/-([a-z])/g, (m, c) => c.toUpperCase())]) getter(ComputedStyle.prototype, k, function () { return styleOf(this._el, to); });
     \\for (const n of ['border-spacing', 'borderSpacing']) getter(ComputedStyle.prototype, n, function () { return ak.computedStyle(this._el, 'border-spacing'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
     \\getter(ComputedStyle.prototype, 'animation', function () { return styleOf(this._el, 'animation'); });
     \\for (const n of ['animation-range', 'animationRange']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'animation-range'); });
     \\for (const n of ['text-decoration', 'textDecoration']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'text-decoration'); });
     \\getter(ComputedStyle.prototype, 'overflow', function () { return styleOf(this._el, 'overflow'); });
+    \\getter(ComputedStyle.prototype, 'font', function () { return styleOf(this._el, 'font'); });
     \\for (const n of ['line-clamp', 'lineClamp', '-webkit-line-clamp', 'webkitLineClamp', 'WebkitLineClamp']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, /ebkit/.test(n) ? '-webkit-line-clamp' : 'line-clamp'); });
     \\for (const n of ['white-space', 'whiteSpace', 'text-wrap', 'textWrap']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('S', '-s').replace('W', '-w')); });
     \\for (const n of ['margin', 'padding', 'border-width', 'border-style', 'border-color', 'border-radius']) {
@@ -1591,9 +1597,16 @@ pub let PRELUDE =
     \\function messageOf(m) {
     \\  return m === undefined ? '' : String(m);
     \\}
-    \\hidden(G, 'alert', function (m) { ak.alert('alert', messageOf(m)); });
-    \\hidden(G, 'confirm', function (m) { ak.alert('confirm', messageOf(m)); return false; });
-    \\hidden(G, 'prompt', function (m) { ak.alert('prompt', messageOf(m)); return null; });
+    \\function askPerson(kind, name, message, preset) {
+    \\  ak.alert(name, message);
+    \\  return ak.dialog(kind, message, preset);
+    \\}
+    \\hidden(G, 'alert', function (m) { askPerson(0, 'alert', messageOf(m), ''); });
+    \\hidden(G, 'confirm', function (m) { return askPerson(1, 'confirm', messageOf(m), '') === true; });
+    \\hidden(G, 'prompt', function (m, d) {
+    \\  const typed = askPerson(2, 'prompt', messageOf(m), messageOf(d));
+    \\  return typeof typed === 'string' ? typed : null;
+    \\});
     \\
     \\// ---- frames and the windows of other pages (engine/windows.aye)
     \\
@@ -1648,6 +1661,7 @@ pub let PRELUDE =
     \\};
     \\const WindowP = {};
     \\getter(WindowP, 'document', function () { return ak.winDocument(this); });
+    \\getter(WindowP, 'origin', function () { return ak.winOrigin(this); });
     \\hidden(WindowP, 'postMessage', function postMessage(message, origin) {
     \\  if (ak.winRemote(this)) return ak.remotePost(this, message, targetOrigin(origin), origin !== null && typeof origin === 'object' ? origin.transfer : arguments[2]);
     \\  ak.postMessage(this, cloneData(message), targetOrigin(origin));
@@ -2403,9 +2417,9 @@ pub let PRELUDE =
     \\  if (!blob) return { error: 'blob URL not found' };
     \\  return { status: 200, url, type: blob.type, body: new TextDecoder().decode(blob._array()), raw: blob._bytes };
     \\}
-    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy) {
+    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy, streams) {
     \\  if (url.startsWith('blob:')) return ak.imageTask(() => done(blobResponse(url, method)), 0);
-    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy);
+    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy, streams ? 1 : 0);
     \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
@@ -2423,30 +2437,50 @@ pub let PRELUDE =
     \\      reject(signal.reason);
     \\      return;
     \\    }
-    \\    let done = false;
-    \\    const onAbort = () => {
+    \\    let done = false, flow = null;
+    \\    const onAbort = why => {
+    \\      const reason = why instanceof Error ? why : signal.reason;
+    \\      if (flow !== null) { ak.clearTimer(task); return flow.error(reason); }
     \\      if (done) return;
     \\      done = true;
     \\      ak.clearTimer(task);
-    \\      reject(signal.reason);
+    \\      reject(reason);
+    \\    };
+    \\    const settle = r => {
+    \\      const headers = new Headers();
+    \\      if (r.type) headers.append('content-type', r.type);
+    \\      // A body that decoding changed comes as its bytes (Response.text()
+    \\      // decodes UTF-8, arrayBuffer() keeps binary data).
+    \\      const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.stream || (r.raw !== undefined ? byteArray(r.raw) : r.body));
+    \\      hidden(res, '_fetched', r);
+    \\      resolve(res);
+    \\    };
+    \\    // A response still arriving (ak.fetchPart): its body is a stream of the parts.
+    \\    const arriving = part => {
+    \\      if (flow === null) {
+    \\        if (part.blocked) return onAbort(new TypeError('Failed to fetch: blocked by Content Security Policy'));
+    \\        done = true;
+    \\        const stream = new ReadableStream({ start(c) { flow = c; }, cancel() { ak.clearTimer(task); } });
+    \\        settle({ status: part.status, url: part.url, type: part.type.split(';')[0].trim().toLowerCase(), headers: part.headers, stream });
+    \\      }
+    \\      if (part.data.length > 0) flow.enqueue(byteArray(part.data));
     \\    };
     \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, req.mode, x => {
+    \\      const part = typeof x === 'number' ? ak.fetchPart(x) : null;
+    \\      if (part !== null) return arriving(part);
     \\      const r = fetchTaken(x);
+    \\      signal.removeEventListener('abort', onAbort);
+    \\      if (flow !== null) {
+    \\        if (r.error !== undefined) return flow.error(new TypeError('network error'));
+    \\        const rest = r.raw !== undefined ? byteArray(r.raw) : new TextEncoder().encode(r.body);
+    \\        if (rest.length > 0) flow.enqueue(rest);
+    \\        return flow.close();
+    \\      }
     \\      if (done) return;
     \\      done = true;
-    \\      signal.removeEventListener('abort', onAbort);
     \\      if (r.error !== undefined) reject(new TypeError('Failed to fetch: ' + r.error));
-    \\      else {
-    \\        const headers = new Headers();
-    \\        if (r.type) headers.append('content-type', r.type);
-    \\        // A body that decoding changed comes as its bytes (Response.text()
-    \\        // decodes UTF-8, arrayBuffer() keeps binary data).
-    \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
-    \\        const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body);
-    \\        hidden(res, '_fetched', r);
-    \\        resolve(res);
-    \\      }
-    \\    }, req.referrerPolicy);
+    \\      else settle(r);
+    \\    }, req.referrerPolicy, true);
     \\    signal.addEventListener('abort', onAbort);
     \\  });
     \\});
@@ -3777,94 +3811,6 @@ pub let PRELUDE =
     \\  const delta = alignBy(r.top, r.height, ak.viewport(1), block);
     \\  if (delta) scrollTarget(null, NaN, ak.windowScroll(1) + delta);
     \\});
-    \\class Range {
-    \\  constructor() {
-    \\    this.startContainer = document;
-    \\    this.startOffset = 0;
-    \\    this.endContainer = document;
-    \\    this.endOffset = 0;
-    \\  }
-    \\  get collapsed() { return this.startContainer === this.endContainer && this.startOffset === this.endOffset; }
-    \\  get commonAncestorContainer() {
-    \\    const a = ancestry(this.startContainer), b = ancestry(this.endContainer);
-    \\    let i = 0;
-    \\    while (i < a.length && i < b.length && a[i] === b[i]) i++;
-    \\    return a[i - 1] || this.startContainer;
-    \\  }
-    \\  setStart(n, o) { this.startContainer = n; this.startOffset = o >>> 0; }
-    \\  setEnd(n, o) { this.endContainer = n; this.endOffset = o >>> 0; }
-    \\  setStartBefore(n) { this.setStart(n.parentNode, Array.prototype.indexOf.call(n.parentNode.childNodes, n)); }
-    \\  setStartAfter(n) { this.setStart(n.parentNode, Array.prototype.indexOf.call(n.parentNode.childNodes, n) + 1); }
-    \\  setEndBefore(n) { this.setEnd(n.parentNode, Array.prototype.indexOf.call(n.parentNode.childNodes, n)); }
-    \\  setEndAfter(n) { this.setEnd(n.parentNode, Array.prototype.indexOf.call(n.parentNode.childNodes, n) + 1); }
-    \\  selectNode(n) { this.setStartBefore(n); this.setEndAfter(n); }
-    \\  selectNodeContents(n) {
-    \\    this.setStart(n, 0);
-    \\    this.setEnd(n, n.nodeType === 1 || n.nodeType === 9 || n.nodeType === 11 ? n.childNodes.length : String(n.nodeValue || '').length);
-    \\  }
-    \\  collapse(toStart) {
-    \\    if (toStart) this.setEnd(this.startContainer, this.startOffset);
-    \\    else this.setStart(this.endContainer, this.endOffset);
-    \\  }
-    \\  cloneRange() {
-    \\    const r = new Range();
-    \\    r.setStart(this.startContainer, this.startOffset);
-    \\    r.setEnd(this.endContainer, this.endOffset);
-    \\    return r;
-    \\  }
-    \\  createContextualFragment(html) {
-    \\    const ctx = this.startContainer && this.startContainer.nodeType === 1 ? this.startContainer.localName : 'body';
-    \\    const box = document.createElement(ctx === 'html' ? 'body' : ctx);
-    \\    box.innerHTML = html;
-    \\    const f = document.createDocumentFragment();
-    \\    while (box.firstChild) f.appendChild(box.firstChild);
-    \\    // Its scripts run when it is inserted.
-    \\    ak.unstartScripts(f);
-    \\    return f;
-    \\  }
-    \\  insertNode(n) {
-    \\    const c = this.startContainer;
-    \\    if (c.nodeType === 3) c.parentNode.insertBefore(n, c.nextSibling);
-    \\    else c.insertBefore(n, c.childNodes[this.startOffset] || null);
-    \\  }
-    \\  getBoundingClientRect() { return new DOMRect(0, 0, 0, 0); }
-    \\  getClientRects() { return []; }
-    \\  detach() {}
-    \\  toString() { return this.startContainer === this.endContainer && this.startContainer.nodeType === 3 ? this.startContainer.data.slice(this.startOffset, this.endOffset) : ''; }
-    \\}
-    \\hidden(G, 'Range', Range);
-    \\hidden(Document.prototype, 'createRange', function () { return new Range(); });
-    \\class Selection {
-    \\  constructor() { hidden(this, '_ranges', []); }
-    \\  get rangeCount() { return this._ranges.length; }
-    \\  get isCollapsed() { return this._ranges.length === 0 || this._ranges[0].collapsed; }
-    \\  get anchorNode() { return this._ranges.length ? this._ranges[0].startContainer : null; }
-    \\  get focusNode() { return this._ranges.length ? this._ranges[0].endContainer : null; }
-    \\  get type() { return this._ranges.length === 0 ? 'None' : this.isCollapsed ? 'Caret' : 'Range'; }
-    \\  getRangeAt(i) {
-    \\    if (i < 0 || i >= this._ranges.length) throw new DOMException("Failed to execute 'getRangeAt' on 'Selection': " + i + " is not a valid index.", 'IndexSizeError');
-    \\    return this._ranges[i];
-    \\  }
-    \\  addRange(r) { this._ranges = [r]; }
-    \\  removeAllRanges() { this._ranges = []; }
-    \\  empty() { this._ranges = []; }
-    \\  collapse(n, o) {
-    \\    const r = new Range();
-    \\    r.setStart(n, o || 0);
-    \\    r.collapse(true);
-    \\    this._ranges = n ? [r] : [];
-    \\  }
-    \\  selectAllChildren(n) {
-    \\    const r = new Range();
-    \\    r.selectNodeContents(n);
-    \\    this._ranges = [r];
-    \\  }
-    \\  toString() { return this._ranges.map(r => r.toString()).join(''); }
-    \\}
-    \\hidden(G, 'Selection', Selection);
-    \\const selection = new Selection();
-    \\hidden(G, 'getSelection', function () { return selection; });
-    \\hidden(Document.prototype, 'getSelection', function () { return selection; });
     \\
     \\// DOMParser and XMLSerializer: HTML only (a page has one document, so the
     \\// parsed one is a stand-in, as createHTMLDocument's).

@@ -1,0 +1,21 @@
+fn drainSome(it: *mut Interp, budget: usize) bool {
+    var left = budget
+
+    while left > 0 {
+        takeShaded(it)
+
+        if it.gray_objs.pop() |o| {
+            traceObj(it, o)
+        } else if it.gray_envs.pop() |e| {
+            traceEnv(it, e)
+        } else if it.gray_strs.pop() |s| {
+            traceRope(it, s)
+        } else {
+            return true
+        }
+
+        left -= 1
+    }
+
+    return false
+}

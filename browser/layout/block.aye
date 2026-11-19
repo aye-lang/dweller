@@ -243,15 +243,16 @@ fn layoutAtomic(t: *mut Tree, i: usize, avail: f64) AllocError!void {
     let b = t.bx(i)
     b.margin[3] = lengthOr0(b.style[css.MARGIN_TOP + 3], avail)
     b.margin[1] = lengthOr0(b.style[css.MARGIN_TOP + 1], avail)
+    let cb_h = atomicContainingHeight(t, i)
     if kind == BoxKind.Image {
-        replacedSize(t, i, avail, -1.0)
+        replacedSize(t, i, avail, cb_h)
     } else if kind == BoxKind.Table {
         try layoutTable(t, i, avail)
     } else {
         try shrinkToFit(t, i, avail)
-        try layoutContents(t, i, -1.0)
+        try layoutContents(t, i, cb_h)
     }
-    relOffsets(t, i, avail, -1.0)
+    relOffsets(t, i, avail, cb_h)
 }
 
 // Sets the width of box `i` (margins and edges resolved) to its
@@ -636,7 +637,7 @@ fn layoutContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
     if ch >= 0.0 {
         h = ch + vEdges(bb)
     }
-    bb.h = clampHeight(t, i, h, cb_h)
+    bb.h = clampToContent(t, i, clampHeight(t, i, h, cb_h), content_h + vEdges(bb))
     bb.through = top_open && bottom_open && empty && bb.h == 0.0
     if bb.through {
         // An empty box: its margins and those of its children collapse
@@ -739,8 +740,39 @@ fn flow(t: *mut Tree, p: usize, cw: f64, ch: f64, top_open: bool, bottom_open: b
         }
         t.hint_y = est
         try layoutBlockLevel(t, c, room, ch)
+        var tries: usize = 0
+        var pulled = 0.0
+        while tries < 8 && t.floats.len() > t.float_base && isFormattingRoot(t, c) {
+            let whole = bandAt(t, est, t.bx(c).h, cw)
+            let open = whole.left == 0.0 && whole.width() == cw
+            let fits = open || t.bx(c).w <= whole.width() + 0.01
+            let same = whole.left == shift && whole.width() == room
+            let pull = floatSidePull(whole, t.bx(c).margin, cw)
+            if same && pulled == 0.0 && pull[0] + pull[1] < 0.0 {
+                pulled = pull[0]
+                t.hint_y = est
+                try layoutBlockLevel(t, c, room + pull[0] + pull[1], ch)
+                break
+            }
+            if fits && same {
+                break
+            }
+            if !fits && same {
+                est = nextFloatBottom(t, est, t.bx(c).h) orelse break
+                clear_to = est
+                let band = bandAt(t, est, 1.0, cw)
+                shift = band.left
+                room = band.width()
+            } else {
+                shift = whole.left
+                room = whole.width()
+            }
+            t.hint_y = est
+            try layoutBlockLevel(t, c, room, ch)
+            tries += 1
+        }
         let cb = t.bx(c)
-        cb.x = shift + cb.margin[3]
+        cb.x = shift + cb.margin[3] - pulled
         if clear_to |cy| {
             // Clearance: below the floats, margins do not collapse
             // across it.

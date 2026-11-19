@@ -4,6 +4,10 @@
 # routes that a file server cannot produce:
 #
 #   /redirect        302 to /basic.html
+#   /ranged?size=N&name=X  a WAV file of N bytes of 8-bit mono sound at
+#                    8000 Hz (N/8000 s) that answers Range requests with
+#                    206 (the whole file with 200 when ?norange is there),
+#                    each recorded in /log as "ranged X RANGE"
 #   /attach?name=N&disposition=D&type=T  the body "attached N" with
 #                    Content-Disposition: D (attachment), filename="N"
 #                    when there is a name, and Content-Type T
@@ -111,6 +115,10 @@
 #   /held-now?A,B    as /held-now, but once the /held/ requests whose
 #                    queries are A and B are in flight (requests on
 #                    separate connections arrive in any order)
+#   /event-stream-open?KEY  a text/event-stream response that sends the
+#                    event "held" and stays open until
+#                    /event-stream-end?KEY, then sends "last" and ends
+#                    ("timeout" after HOLD_LIMIT s)
 #   /hang/NAME?KEY   never answered: holds the request until the client
 #                    closes the connection (or HOLD_LIMIT s) and records
 #                    that it was closed; KEY (or NAME) names it
@@ -173,6 +181,9 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+# The keys of the /event-stream-open responses that may end.
+STREAM_ENDED = set()
+STREAM_CHANGED = threading.Condition()
 
 # The /hang/ requests by key: "open" while held, "closed" once the client
 # closed the connection.
@@ -283,12 +294,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             back = query.get("redirect_uri", ["/"])[0]
             extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
             self.reply(302, [("Location", back + "?" + extra)])
+        elif path.startswith("/ranged"):
+            self.ranged(path)
         elif path.startswith("/attach"):
             query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query))
             disposition = query.get("disposition", "attachment")
             if "name" in query:
                 disposition += '; filename="' + query["name"] + '"'
             self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], ("attached " + query.get("name", "")).encode())
+        elif path == "/event-stream":
+            last = self.headers.get("Last-Event-ID")
+            body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"
+            self.reply(200, [("Content-Type", "text/event-stream"), ("Cache-Control", "no-store")], body)
+        elif path.startswith("/event-stream-open?"):
+            query = path.split("?", 1)[1]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b"data: held\n\n")
+            self.wfile.flush()
+            with STREAM_CHANGED:
+                ended = STREAM_CHANGED.wait_for(lambda: query in STREAM_ENDED, HOLD_LIMIT)
+            self.wfile.write(b"data: last\n\n" if ended else b"data: timeout\n\n")
+        elif path.startswith("/event-stream-end?"):
+            with STREAM_CHANGED:
+                STREAM_ENDED.add(path.split("?", 1)[1])
+                STREAM_CHANGED.notify_all()
+            self.reply(200, [("Content-Type", "text/plain")], b"ended")
+        elif path == "/event-stream-html":
+            self.reply(200, [("Content-Type", "text/html")], b"data: x\n\n")
         elif path == "/agent":
             agent = self.headers.get("User-Agent", "")
             self.reply(200, [("Content-Type", "text/plain")], agent.encode() + b"\n")
@@ -538,6 +572,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.ws_send(2, bytes(i & 0xFF for i in range(int(text[4:]))))
             else:
                 self.ws_send(kind, parts)
+
+    def ranged(self, path):
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query, keep_blank_values=True))
+        size = int(query.get("size", "200000"))
+        data = bytes(128 + (i % 64) for i in range(size))
+        wav = b"RIFF" + (36 + size).to_bytes(4, "little") + b"WAVEfmt " + (16).to_bytes(4, "little") + (1).to_bytes(2, "little") + (1).to_bytes(2, "little") + (8000).to_bytes(4, "little") * 2 + (1).to_bytes(2, "little") + (8).to_bytes(2, "little") + b"data" + size.to_bytes(4, "little") + data
+        asked = self.headers.get("Range", "")
+        LOG.append("ranged %s %s\n" % (query.get("name", ""), asked or "whole"))
+        if "norange" in query or not asked.startswith("bytes="):
+            self.reply(200, [("Content-Type", "audio/wav")], wav)
+            return
+        first, _, last = asked[6:].partition("-")
+        start = int(first)
+        end = min(int(last) if last else len(wav) - 1, len(wav) - 1)
+        if start >= len(wav):
+            self.reply(416, [("Content-Range", "bytes */%d" % len(wav))])
+            return
+        self.reply(206, [("Content-Type", "audio/wav"), ("Accept-Ranges", "bytes"), ("Content-Range", "bytes %d-%d/%d" % (start, end, len(wav)))], wav[start:end + 1])
 
     def hang(self, path):
         parts = urllib.parse.urlsplit(path)

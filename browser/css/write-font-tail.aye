@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn writeFontTail(comps: []Comp, parts: FontParts, out: *mut text.Builder) AllocError!void {
+    try writeTokens(comps[parts.size].toks, out)
+
+    if parts.line |i| {
+        if !isIdent(comps[i], "normal") {
+            try out.append(" / ")
+            try writeTokens(comps[i].toks, out)
+        }
+    }
+
+    for k in parts.family..comps.len {
+        if isComma(comps[k]) {
+            try out.appendByte(',')
+        } else {
+            try out.appendByte(' ')
+            try writeTokens(comps[k].toks, out)
+        }
+    }
+}

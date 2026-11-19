@@ -1,0 +1,27 @@
+import ipc
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/clipboard_host_impl.cc (the frame must be the focused one)
+fn clipboardAsked(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
+    let front = topProcess(tp).front
+    var pasted = text.Builder.init(tp.url.alloc)
+    defer pasted.deinit()
+
+    match m {
+        .ClipboardWrite { copied } => {
+            if copied.len > MAX_CLIP_BYTES { return "bad clipboard_write" }
+            if front { _ = try clipboardWrite(copied) }
+        }
+
+        .ClipboardRead => {
+            let ok = front && (try clipboardRead(&mut pasted))
+
+            try ipc.encode(&mut tp.outbox, on, ipc.Message.ClipboardText { ok: ok as u32, pasted: pasted.bytes() })
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

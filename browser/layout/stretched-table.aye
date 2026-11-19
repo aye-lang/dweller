@@ -1,0 +1,25 @@
+import css
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-tables-3/#height-distribution-algorithm
+fn stretchedTable(t: *mut Tree, i: usize, y: f64, spacing: f64) AllocError!f64 {
+    for c in t.children(i) {
+        let fixed = lengthOf(t.bx(c).style[css.HEIGHT], -1.0) orelse 0.0
+
+        if t.bx(c).kind == BoxKind.RowGroup && fixed > t.bx(c).h {
+            try stretchRows(t, c, fixed - t.bx(c).h)
+        }
+    }
+
+    let tb = t.bx(i)
+    let used = placeTableRows(t, i, spacing)
+    let wanted = sizeOf(tb.style, tb.style[css.HEIGHT], -1.0, vEdges(tb)) orelse return used
+
+    if wanted - vEdges(tb) <= used {
+        return used
+    }
+
+    try stretchTable(t, i, wanted - vEdges(tb) - used)
+
+    return placeTableRows(t, i, spacing)
+}

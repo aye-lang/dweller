@@ -1398,3 +1398,42 @@ fn coop_popups() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Q5.8 (left list): `fetch` settles at the head of a response and its
+/// `body` is read while the response arrives. `/event-stream-open` sends
+/// one part and ends only after `/event-stream-end`, which the page asks
+/// for once it has read that part ("timed out" or one part holding both
+/// would mean the body came only when the response ended). With
+/// `dump`, in the window, and with `DWELLER_PROCESS=site`.
+#[test]
+fn fetch_body_streams_while_open() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/fetch_stream_open.html", srv.base);
+    let out = run(&["dump", "--text", "--js", &format!("{href}?dump")]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let mut failures = Vec::new();
+    check_golden(
+        &root().join("browser/tests/net/fetch_stream_open.txt"),
+        &text(&out.stdout),
+        "fetch_body_streams_while_open",
+        &mut failures,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    if !has_sdl() {
+        println!("skipped the window: no SDL2");
+        return;
+    }
+    let want = std::fs::read_to_string(root().join("browser/tests/net/fetch_stream_open.txt")).unwrap();
+    let window = login_window_with(&format!("{href}?window"), "frame", None, &[]);
+    assert!(window.contains(want.trim_end()), "{window}");
+    let site = login_window_with(&format!("{href}?site"), "frame", None, &[("DWELLER_PROCESS", "site")]);
+    assert!(site.contains(want.trim_end()), "{site}");
+}

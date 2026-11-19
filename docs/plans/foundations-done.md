@@ -149,6 +149,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q2.14e | `DWELLER_DAMAGE_CHECK` for a renderer's frames: where the check runs, then the real differences if the renderer's frame is wrong (11 tests; cause 2) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14f | The Spaces tests count Space processes without the window's own renderer, and a Space's `--state` golden takes the renderer lines (6 tests; causes 9 and 12) | those tests pass with `DWELLER_PROCESS=site` | – |
 | Q2.14g | The product gaps the count found; its card lists one slice each: `dweller agent` and `mcp` take `--width` and `--height` in the renderer modes, the window's loop does not block on the network in `net_sync` and `prefetch`, `Sec-Fetch-User` only with user activation, the agent's GET form sends `Referer`, a 401 reply carries `auth_required` (7 tests; causes 13, 14 and 16 to 18) | those tests pass with `DWELLER_PROCESS=site` | – |
+| Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 
 ## Q3: web security (lane sec)
 
@@ -217,6 +218,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 | Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
+| Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -229,6 +231,9 @@ Follow-ups noted at the stop (not yet cards):
 | Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
 | Q5.14a | Service Worker 1: registration, lifecycle and fetch interception | `content/browser/service_worker/`, `modules/service_worker/` |
 | Q5.14b | Service Worker 2: the Cache API | `content/browser/cache_storage/` |
+| Q5.10 | contenteditable and the core of `execCommand`; the async Clipboard API | `core/editing/`, `modules/clipboard/` |
+| Q5.3 | `alert`, `confirm` and `prompt` as real dialogs (`prompt` returns null today) | `core/frame/local_dom_window.cc`, `chrome/browser/ui/javascript_dialogs/` |
+| Q5.8 | EventSource | `modules/eventsource/` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)
@@ -246,6 +251,9 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 | Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
+| Q6.4 | `css/box-sizing` (51.5, 70) |
+| Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
+| Q6.9 | `css/floats-tables` (55.5, 65) |
 
 ## Q7: acceptance and release (lane sites)
 

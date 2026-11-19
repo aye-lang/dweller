@@ -1,13 +1,16 @@
-import engine
 import std.mem.AllocError
 import std.text
+import url
 
-fn certLabel(ui: *Ui, p: *engine.Page, out: *mut text.Builder) AllocError!void {
+fn certLabel(ui: *Ui, found: CertError, out: *mut text.Builder) AllocError!void {
     if !ui.cert_advanced {
         return out.append("Advanced")
     }
 
+    let at = url.parse(ui.alloc, found.href) catch return
+    defer at.deinit(ui.alloc)
+
     try out.append("Proceed to ")
-    try out.append(p.url.host)
+    try out.append(at.host)
     try out.append(" (unsafe)")
 }

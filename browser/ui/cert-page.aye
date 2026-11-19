@@ -1,12 +1,25 @@
-import engine
 import net
+import url
 
-fn certPage(ui: *Ui) ?*mut engine.Page {
-    let p = ui.tab.page orelse return null
+struct CertError {
+    href: []u8
+    kind: net.CertKind
+}
 
-    if p.cert == null || !net.certBypassable(p.url.host) {
-        return null
-    }
+fn certPage(ui: *Ui) ?CertError {
+    let found = shownCertError(ui) orelse return null
+    let at = url.parse(ui.alloc, found.href) catch return null
+    defer at.deinit(ui.alloc)
 
-    return p
+    if !net.certBypassable(at.host) { return null }
+
+    return found
+}
+
+fn shownCertError(ui: *Ui) ?CertError {
+    if ui.tab.page |p| { return CertError { href: p.url.href, kind: p.cert orelse return null } }
+
+    let tp = ui.slots[ui.active].?.process orelse return null
+
+    return CertError { href: tp.committed.bytes(), kind: tp.cert orelse return null }
 }

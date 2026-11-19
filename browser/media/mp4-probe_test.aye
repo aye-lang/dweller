@@ -1,0 +1,122 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn putBe(out: *mut text.Builder, v: u64, bytes: u64) AllocError!void {
+    var left = bytes
+
+    while left > 0 {
+        left -= 1
+
+        if left >= 8 {
+            try out.appendByte(0)
+        } else {
+            try out.appendByte((v >> (left * 8) & 0xff) as u8)
+        }
+    }
+}
+
+fn putBox(out: *mut text.Builder, kind: []u8, body: []u8) AllocError!void {
+    try putBe(out, (body.len + 8) as u64, 4)
+    try out.append(kind)
+    try out.append(body)
+}
+
+fn putNumbers(out: *mut text.Builder, kind: []u8, numbers: []u8, alloc: Allocator) AllocError!void {
+    var body = text.Builder.init(alloc)
+    defer body.deinit()
+    var all = text.split(numbers, " ")
+
+    while all.next() |n| {
+        try putBe(&mut body, (text.parseInt(n) catch 0) as u64, 4)
+    }
+
+    try putBox(out, kind, body.bytes())
+}
+
+fn videoFile(alloc: Allocator, out: *mut text.Builder) AllocError!void {
+    var stbl = text.Builder.init(alloc)
+    defer stbl.deinit()
+    var entry = text.Builder.init(alloc)
+    defer entry.deinit()
+    var held = text.Builder.init(alloc)
+    defer held.deinit()
+
+    try putBe(&mut entry, 0, 6)
+    try putBe(&mut entry, 1, 2)
+    try putBe(&mut entry, 0, 16)
+    try putBe(&mut entry, 320, 2)
+    try putBe(&mut entry, 180, 2)
+    try putBe(&mut entry, 0, 50)
+    try putBox(&mut entry, "avcC", "\x01\x42\xe0\x1e")
+    try putBe(&mut held, 0, 4)
+    try putBe(&mut held, 1, 4)
+    try putBox(&mut held, "avc1", entry.bytes())
+    try putBox(&mut stbl, "stsd", held.bytes())
+    try putNumbers(&mut stbl, "stts", "0 2 2 1000 1 1000", alloc)
+    try putNumbers(&mut stbl, "stsc", "0 2 1 2 1 2 1 1", alloc)
+    try putNumbers(&mut stbl, "stsz", "0 0 3 100 50 25", alloc)
+    try putNumbers(&mut stbl, "stco", "0 2 4096 8192", alloc)
+    try putNumbers(&mut stbl, "stss", "0 1 1", alloc)
+
+    var minf = text.Builder.init(alloc)
+    defer minf.deinit()
+    var mdia = text.Builder.init(alloc)
+    defer mdia.deinit()
+    var trak = text.Builder.init(alloc)
+    defer trak.deinit()
+    var moov = text.Builder.init(alloc)
+    defer moov.deinit()
+
+    try putBox(&mut minf, "stbl", stbl.bytes())
+    try putNumbers(&mut mdia, "mdhd", "0 0 0 1000 3000 0 0 0", alloc)
+    try putBox(&mut mdia, "hdlr", "\x00\x00\x00\x00\x00\x00\x00\x00vide\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+    try putBox(&mut mdia, "minf", minf.bytes())
+    try putBox(&mut trak, "mdia", mdia.bytes())
+    try putNumbers(&mut moov, "mvhd", "0 0 0 600 1800 0 0 0", alloc)
+    try putBox(&mut moov, "trak", trak.bytes())
+    try putBox(out, "ftyp", "isom\x00\x00\x02\x00isomavc1")
+    try putBox(out, "moov", moov.bytes())
+}
+
+test "an MP4's movie header, track and sample table" {
+    var file = text.Builder.init(@testAllocator())
+    defer file.deinit()
+
+    try videoFile(@testAllocator(), &mut file)
+
+    var m = (try probe(@testAllocator(), file.bytes(), file.bytes().len)).?
+    defer m.deinit()
+
+    @expect(m.container == Container.Mp4)
+    @expectEqual(3.0, m.duration)
+    @expectEqual(1 as usize, m.tracks.len())
+
+    let t = m.first(TrackKind.Video).?
+
+    @expectEqual("avc1", t.codec)
+    @expectEqual(320 as u32, t.width)
+    @expectEqual(180 as u32, t.height)
+    @expectEqual(3.0, t.duration)
+    @expectEqual("\x01\x42\xe0\x1e", t.config)
+    @expectEqual(3 as usize, t.samples.len())
+
+    let s = t.samples.items()
+
+    @expectEqual(4096 as u64, s[0].offset)
+    @expectEqual(100 as u32, s[0].size)
+    @expect(s[0].key)
+    @expectEqual(4196 as u64, s[1].offset)
+    @expectEqual(1.0, s[1].time)
+    @expect(!s[1].key)
+    @expectEqual(8192 as u64, s[2].offset)
+    @expectEqual(25 as u32, s[2].size)
+    @expectEqual(2.0, s[2].time)
+    @expectEqual(1.0, s[2].duration)
+    @expect(m.first(TrackKind.Audio) == null)
+}
+
+test "a file that is not media, and a truncated box" {
+    @expect((try probe(@testAllocator(), "<!doctype html><title>x</title>", 64)) == null)
+    @expect((try probe(@testAllocator(), "\x00\x00\x00\x10ftypisom\x00\x00\x00\x00\x00\x00\x00\x40moov", 64)) == null)
+}

@@ -23,6 +23,7 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
         c.height = s.height
         c.clip = clip
         c.opacity = s.opacity
+        c.hit_test = s.hit_test == 1
         c.holder = s.holder
         c.sandbox = s.sandbox
 
@@ -38,7 +39,7 @@ fn placeChild(tp: *mut TabProcess, s: ipc.Subframe) AllocError!bool {
 
     if kept == null && !(try childCrossSite(tp, s.url)) { return false }
 
-    var fresh = ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: try ownedCopy(alloc, s.url), holder: s.holder, sandbox: s.sandbox, name: try ownedCopy(alloc, s.name), opacity: s.opacity }
+    var fresh = ChildFrame { key: s.key, x: x, y: y, width: s.width, height: s.height, clip: clip, src: try ownedCopy(alloc, s.url), holder: s.holder, sandbox: s.sandbox, name: try ownedCopy(alloc, s.name), opacity: s.opacity, hit_test: s.hit_test == 1 }
 
     if kept |k| {
         alloc.free(k.src)

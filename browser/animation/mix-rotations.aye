@@ -1,0 +1,22 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transform-functions
+fn mixRotations(a: TransformFn, b: TransformFn, p: f64) ?TransformFn {
+    let ra = rotationOf(a) orelse return null
+    let rb = rotationOf(b) orelse return null
+    var out = rb
+    let same_axis = math.abs(ra.n[0] * rb.n[1] - ra.n[1] * rb.n[0]) + math.abs(ra.n[0] * rb.n[2] - ra.n[2] * rb.n[0]) + math.abs(ra.n[1] * rb.n[2] - ra.n[2] * rb.n[1]) < 0.000001
+
+    if !same_axis && ra.n[3] != 0.0 && rb.n[3] != 0.0 {
+        return null
+    }
+
+    if rb.n[3] == 0.0 && !same_axis {
+        out = ra
+    }
+
+    out.n[3] = ra.n[3] + (rb.n[3] - ra.n[3]) * p
+
+    return out
+}

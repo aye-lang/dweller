@@ -52,6 +52,9 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "navigate", 2, akNavigate)
     try defMethod(it, o, "reload", 0, akReload)
     try defMethod(it, o, "alert", 2, akAlert)
+    try defMethod(it, o, "dialog", 3, akDialog)
+    try defMethod(it, o, "clipboardWrite", 1, akClipboardWrite)
+    try defMethod(it, o, "clipboardRead", 0, akClipboardRead)
     try defMethod(it, o, "viewport", 1, akViewport)
     try defMethod(it, o, "visibleRect", 0, akVisibleRect)
     try defMethod(it, o, "storage", 4, akStorage)
@@ -71,21 +74,31 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "fetch", 1, akFetch)
     try defMethod(it, o, "fetchStart", 7, akFetchStart)
     try defMethod(it, o, "fetchTake", 1, akFetchTake)
+    try defMethod(it, o, "fetchPart", 1, akFetchPart)
     try defMethod(it, o, "socketOpen", 3, akSocketOpen)
     try defMethod(it, o, "socketSend", 3, akSocketSend)
     try defMethod(it, o, "socketClose", 3, akSocketClose)
     try defMethod(it, o, "socketBuffered", 1, akSocketBuffered)
     try defMethod(it, o, "permissionState", 1, akPermissionState)
     try defMethod(it, o, "permissionAsk", 2, akPermissionAsk)
+    try defMethod(it, o, "mediaProbe", 2, akMediaProbe)
+    try defMethod(it, o, "mediaTracks", 2, akMediaTracks)
+    try defMethod(it, o, "mediaFrame", 4, akMediaFrame)
+    try defMethod(it, o, "mediaDecoderOpen", 7, akMediaDecoderOpen)
+    try defMethod(it, o, "mediaDecoderFeed", 3, akMediaDecoderFeed)
+    try defMethod(it, o, "mediaDecoderClose", 1, akMediaDecoderClose)
     try defMethod(it, o, "cookie", 0, akCookie)
     try defMethod(it, o, "setCookie", 1, akSetCookie)
+    try defMethod(it, o, "documentDomain", 0, akDocumentDomain)
+    try defMethod(it, o, "setDocumentDomain", 1, akSetDocumentDomain)
     try defMethod(it, o, "setDispatch", 1, akSetDispatch)
     try defMethod(it, o, "hostRequest", 2, akHostRequest)
     try defMethod(it, o, "computedStyle", 2, akComputedStyle)
+    try defMethod(it, o, "resolvedTransform", 2, akResolvedTransform)
     try defMethod(it, o, "transitionFrame", 0, akTransitionFrame)
     try defMethod(it, o, "transitionsActive", 0, akTransitionsActive)
     try defMethod(it, o, "interpolate", 4, akInterpolate)
-    try defMethod(it, o, "add", 3, akAdd)
+    try defMethod(it, o, "add", 4, akAdd)
     try defMethod(it, o, "expand", 2, akExpand)
     try defMethod(it, o, "keyframes", 1, akKeyframes)
     try defMethod(it, o, "animatedElements", 0, akAnimatedElements)
@@ -99,11 +112,13 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
     try defMethod(it, o, "selectorText", 1, akSelectorText)
     try defMethod(it, o, "declarationsText", 1, akDeclarationsText)
+    try defMethod(it, o, "descriptor", 3, akDescriptor)
     try defMethod(it, o, "valueDirty", 1, akValueDirty)
     try defMethod(it, o, "styleBlocked", 1, akStyleBlocked)
     try defMethod(it, o, "linkLoad", 2, akLinkLoad)
     try defMethod(it, o, "linkStart", 1, akLinkStart)
     try defMethod(it, o, "cspRefused", 1, akCspRefused)
+    try defMethod(it, o, "eventStream", 4, akEventStream)
     try installFrames(s, o)
     try installHistory(s, o)
     try installGeometry(s, o)
@@ -255,7 +270,7 @@ fn akQueueMicrotask(it: *mut Interp, a: Args) JsError!Value {
 // submissions wait until the script returns (takeNavigation).
 fn akActivate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let h = ownHandle(it, it.arg(a, 0)) orelse return Value.Undefined
+    let h = ownHandle(it, it.arg(a, 0)) orelse return activateForeign(it, a)
     let act = try activate(s.page, h)
     match act {
         .Follow { target } => {
@@ -448,7 +463,7 @@ fn akMatchMedia(it: *mut Interp, a: Args) JsError!Value {
     try argText(it, a, 0, q)
     var sheet = try css.Sheet.init(it.alloc)
     defer sheet.deinit()
-    let m = try css.mediaMatches(&mut sheet, q.bytes(), css.Media { width: s.width, height: s.height })
+    let m = try css.mediaMatches(&mut sheet, q.bytes(), css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark })
     return js.boolVal(m)
 }
 
@@ -473,6 +488,7 @@ fn akNavigate(it: *mut Interp, a: Args) JsError!Value {
             return it.pop()
         }
         try setNavigation(s, u.href)
+        s.nav_replace = it.toBoolean(it.arg(a, 1))
         net.noteNavigation(u.href, s.page.url.href, hasTransientActivation(s.page)) catch |e| {
             return JsError.OutOfMemory
         }
@@ -671,6 +687,11 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
         req.mode = net.Mode.Cors
     }
 
+    let streams = try it.toNumber(it.arg(a, 8))
+
+    req.stream = queue && streams >= 1.0 && req.mode == net.Mode.Cors
+    req.no_preflight = req.stream && streams == 2.0
+
     let method = try it.builder()
     defer it.release(method)
     if !js.isUndef(it.arg(a, 1)) {
@@ -781,7 +802,7 @@ fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     tick(s)
     let id = s.next_timer
     s.next_timer += 1
-    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0 }) catch |e| {
+    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0, stream: waits != 0 && net.isStream(waits), stream_poll: (try it.toNumber(it.arg(a, 8))) == 2.0 }) catch |e| {
         it.removeRoot(root)
         net.releaseLoad(waits)
         return e
@@ -852,7 +873,14 @@ fn akComputedStyle(it: *mut Interp, a: Args) JsError!Value {
 
         if text.eql(b.bytes(), "border-spacing") {
             b.clear()
-            try css.writeBorderSpacing(values, b)
+            try writeCurrentSpacing(s, h, values, b)
+
+            return it.newString(b.bytes())
+        }
+
+        if text.eql(b.bytes(), "font") {
+            b.clear()
+            try writeComputedFont(s, h, values, b)
 
             return it.newString(b.bytes())
         }
@@ -970,7 +998,7 @@ fn akSupports(it: *mut Interp, a: Args) JsError!Value {
     var sheet = try css.Sheet.init(it.alloc)
     defer sheet.deinit()
     let s = scriptOf(it)
-    try css.parseSheet(&mut sheet, b.bytes(), css.Media { width: s.width, height: s.height })
+    try css.parseSheet(&mut sheet, b.bytes(), css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark })
     return js.boolVal(sheet.rules.len() == 1)
 }
 
@@ -1013,7 +1041,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
     }
     try takeSheetChanges(s)
     if s.computed |c| {
-        if c.media.width == s.width && c.media.height == s.height {
+        if c.media.width == s.width && c.media.height == s.height && sameDark(c.media.dark, s.page.prefers_dark) {
             if c.version == s.style_version {
                 return c
             }
@@ -1027,7 +1055,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
         }
     }
     dropComputed(s)
-    let media = css.Media { width: s.width, height: s.height }
+    let media = css.Media { width: s.width, height: s.height, dark: s.page.prefers_dark }
     var ua = try css.Sheet.init(p.alloc)
     errdefer ua.deinit()
     try css.uaSheet(&mut ua, media)

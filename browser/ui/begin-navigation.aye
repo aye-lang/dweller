@@ -1,43 +1,53 @@
 import ipc
 import net
-import std
+import perf
 import std.mem.AllocError
-import std.text
 import url
 
 // chromium: content/browser/renderer_host/render_frame_host_impl.cc BeginNavigation
 fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, content_type: []u8, body: []u8, policy: net.ReferrerPolicy) AllocError!void {
     let alloc = tp.url.alloc
+    let h = &slot.session.tab.history
+    let replaces = tp.replace_on_commit
+    var at = h.current + 1
+    var length = at + 1
+
+    tp.replace_on_commit = false
+
     let target = url.parse(alloc, href) catch |e| {
         return
     }
 
     defer target.deinit(alloc)
 
-    if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) {
-        std.log.err("navigation refused: {}", target.href)
+    if navigationRefused(tp, &target) { return }
 
-        return
+    if replaces {
+        at = h.current
+        length = h.len()
     }
 
-    if text.eql(target.scheme, "data") {
-        std.log.err("Not allowed to navigate top frame to data URL: {}", target.href)
+    if net.navigationUpgraded(alloc, topOf(tp), &target) {
+        tp.replace_on_commit = replaces
 
-        return
+        return beginSecured(slot, tp, target.href, post, content_type, body, policy)
     }
-
-    let at = slot.session.tab.history.current + 1
 
     tp.nav_initiator.clear()
     try tp.nav_initiator.append(topOf(tp))
     tp.nav_policy = policy
     tp.committed.clear()
     try tp.committed.append(target.href)
-    tp.push_on_commit = true
-    try sendSessionHistory(slot, tp, at, at + 1)
+    tp.push_on_commit = !replaces
+    tp.replaced_on_commit = replaces
+    tp.replace_at = h.current
+    try sendSessionHistory(slot, tp, at, length)
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Navigate { url: target.href, post: (post != 0) as u32, content_type: content_type, body: body })
     dismissPermissionAsks(tp, true)
     tp.loading = true
     tp.redirected = false
     tp.nav_failed = false
+    tp.cert = null
+    tp.nav_began = perf.start()
+    tp.paint_from = tp.frames
 }

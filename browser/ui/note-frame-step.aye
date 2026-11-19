@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/navigation_controller_impl.cc (RendererDidNavigateNewSubframe: a subframe's navigation adds an entry that clones the last one)
+fn noteFrameStep(ui: *mut Ui, parent: *mut TabProcess, c: *ChildFrame, child: *mut TabProcess) AllocError!void {
+    let top = topProcess(parent)
+    let slot = slotOfProcess(ui, top) orelse return
+    let h = &mut slot.session.tab.history
+    let alloc = top.url.alloc
+
+    if h.len() == 0 || child.before.len() == 0 { return }
+
+    let now = h.now().*
+
+    dropFrameSteps(top, h.current + 1)
+    try h.push(now.href, now.doc, now.state, now.manual_scroll)
+    try top.frame_steps.append(FrameStep { index: h.current, doc: now.doc, key: c.key, from: try ownedCopy(alloc, child.before.bytes()), to: try ownedCopy(alloc, child.committed.bytes()) })
+    ui.dirty = true
+}
