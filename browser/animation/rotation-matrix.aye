@@ -1,0 +1,25 @@
+import std.math
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#Rotate3dDefined
+fn rotationMatrix(f: TransformFn) ?[16]f64 {
+    var axis = [3]f64{0.0, 0.0, 1.0}
+    var angle_at: usize = 0
+
+    if text.eql(f.name, "rotateX") {
+        axis = [3]f64{1.0, 0.0, 0.0}
+    } else if text.eql(f.name, "rotateY") {
+        axis = [3]f64{0.0, 1.0, 0.0}
+    } else if text.eql(f.name, "rotate3d") && f.count == 4 {
+        axis = [3]f64{f.n[0], f.n[1], f.n[2]}
+        angle_at = 3
+    }
+
+    let length = math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+
+    if f.count != angle_at + 1 || length == 0.0 {
+        return null
+    }
+
+    return axisRotation([3]f64{axis[0] / length, axis[1] / length, axis[2] / length}, radians(f, angle_at))
+}

@@ -1,0 +1,14 @@
+import dom
+import font
+import paint
+import std.mem.AllocError
+
+fn drawBubble(r: *TabRenderer, canvas: *mut paint.Canvas, painter: *mut paint.TextPainter) AllocError!void {
+    let p = r.page orelse return
+    let box = bubbleBox(r, p) orelse return
+    let v = r.view()
+    let f = font.Font { size: BUBBLE_FONT, bold: false, italic: false, mono: false }
+    let m = r.measure.metrics(f)
+
+    try painter.draw(canvas, (box.x + 8.0) * v.scale + v.dx, (box.y + 6.0 + m.ascent) * v.scale + v.dy, dom.validationMessage(&p.doc, p.doc.controls.validation.?), f, v.scale, BUBBLE_INK)
+}

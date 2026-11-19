@@ -1,0 +1,23 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+
+// blink: core/layout/layout_object.cc (MarkContainerChainForLayout)
+fn movedTop(doc: *Document, styles: *css.Styles) NodeId {
+    if styles.moved_more.len() > css.MAX_MOVED_MORE { return doc.root }
+
+    var top = styles.moved_els.items()[0]
+
+    for el in styles.moved_els.items() {
+        top = commonAncestor(doc, top, el) orelse return doc.root
+    }
+
+    for el in styles.moved_more.items() {
+        top = commonAncestor(doc, top, el) orelse return doc.root
+    }
+
+    if flatDepth(doc, top) < 2 || !subtreeUnder(doc, top, styles.map.len() / 2) { return doc.root }
+
+    return top
+}

@@ -1152,7 +1152,7 @@ pub struct Ui {
         if self.dialog.open {
             return dialogInput(self, ev)
         }
-        if hungInput(self, ev) || (try sadTabInput(self, ev)) {
+        if (try hungInput(self, ev)) || (try sadTabInput(self, ev)) {
             return
         }
         noteInput(self, ev)
@@ -1856,6 +1856,7 @@ pub struct Ui {
 
     // Escape: leave pointer lock and fullscreen.
     fn leaveHostModes(self: *mut Self) AllocError!void {
+        try leaveHostTabs(self)
         if self.locked {
             SDL_SetRelativeMouseMode(0)
             self.locked = false
@@ -1883,7 +1884,10 @@ pub struct Ui {
                     return
                 }
                 defer target.deinit(self.alloc)
-                return self.go(&target, engine.initiatorOf(p))
+                self.tab.replace_next = nav.replace
+                try self.go(&target, engine.initiatorOf(p))
+                self.tab.replace_next = false
+                return
             }
             .History => {
                 return self.goBy(nav.step)

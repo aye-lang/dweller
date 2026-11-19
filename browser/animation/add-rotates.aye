@@ -1,0 +1,32 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#combining-transform-lists
+fn addRotates(under: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+    if text.eql(text.trim(under), "none") {
+        try out.append(value)
+
+        return true
+    }
+
+    if text.eql(text.trim(value), "none") {
+        try out.append(under)
+
+        return true
+    }
+
+    let a = rotateValueFn(under) orelse return false
+    let b = rotateValueFn(value) orelse return false
+    var sum = mixRotations(a, b, 1.0) orelse return false
+    let base = rotationOf(a) orelse return false
+
+    sum.n[3] += base.n[3]
+
+    if text.eql(a.name, "rotate") && text.eql(b.name, "rotate") {
+        sum.count = 1
+        sum.n[0] = sum.n[3]
+        sum.unit[0] = UNIT_DEG
+    }
+
+    return writeRotateValue(sum, out)
+}

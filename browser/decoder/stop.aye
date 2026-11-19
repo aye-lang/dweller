@@ -1,0 +1,20 @@
+pub fn stop() {
+    let c = client orelse return
+
+    client = null
+    link = null
+
+    for i in 0..c.streams.len() {
+        let s = &mut c.streams.items()[i]
+
+        for o in s.outputs.items() {
+            c.alloc.free(o.data)
+        }
+
+        s.outputs.deinit()
+        s.partial.deinit()
+    }
+
+    c.streams.deinit()
+    c.alloc.destroy(c)
+}

@@ -61,6 +61,8 @@ struct Load {
     referrer_policy: ?ReferrerPolicy = null
     top: []mut u8 = []mut u8{}
     partition: u32 = 0
+    validators: []mut u8 = []mut u8{}
+    held: bool = false
 }
 
 // A script's request (`startRequest`). Every slice is owned.
@@ -94,6 +96,7 @@ struct Ask {
     hop: Hop = Hop { from: "", limit: MAX_SUBRESOURCE }
     retried: bool = false
     stream: bool = false
+    no_preflight: bool = false
     stream_checked: bool = false
     stream_taken: bool = false
 }
@@ -108,6 +111,7 @@ struct Loader {
     waiting: ?*mut Curl
     waited: i32
     pumped: u64
+    multiplexed: ?*mut List([]mut u8) = null
 }
 
 var loader: ?*mut Loader = null
@@ -200,11 +204,11 @@ pub fn startLoadAs(href: []u8, req: Request) u32 {
     }
     ld.next_id += 1
     if !archiveReplay() && !s.cache.has(key) {
-        var hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
-        l.job = startJob(ld.alloc, s, ld.multi, href, loadRequest(l), "GET", null, &mut hop)
+        l.validators = (staleValidators(&mut s.cache, ld.alloc, key, "") catch null) orelse []mut u8{}
         l.state = LoadState.Running
-        if l.job == null {
-            l.state = LoadState.Failed
+        l.held = mustHold(ld, l)
+        if !l.held {
+            startLoadJob(ld, s, l)
         }
         pumpLoads()
     }
@@ -342,6 +346,7 @@ pub fn startRequest(target: *Url, req: Request) u32 {
     if remote_loader |rl| { return remoteStart(rl, target, req, false) }
     let s = session orelse return 0
     let ld = loaderOf(s) orelse return 0
+    noteDocumentLoad(s, req)
     var sendable = true
     preflight(ld.alloc, req, target) catch |e| {
         sendable = false
@@ -404,6 +409,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         failure: "",
         user_activated: req.user_activated,
         stream: req.stream,
+        no_preflight: req.no_preflight,
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -566,7 +572,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                     return failRequest(ld, l, FetchError.OutOfMemory)
                 }
             }
-            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator }, stream: a.stream }
+            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator }, stream: a.stream, no_preflight: a.no_preflight }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)
             }
@@ -670,6 +676,7 @@ fn stopLoads() {
         freeLoad(ld, l)
     }
     ld.loads.deinit()
+    dropMultiplexed(ld)
     curl_multi_cleanup(ld.multi)
     ld.alloc.destroy(ld)
 }
@@ -769,6 +776,7 @@ fn harvest(ld: *mut Loader) {
             }
         }
     }
+    releaseHeld(ld)
 }
 
 // The transfer of `l` ended with `result` (a CURLcode): keeps its
@@ -779,6 +787,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
     defer dropJob(ld.alloc, ld.multi, job)
     l.state = LoadState.Failed
     let s = session orelse return
+    noteMultiplexed(ld, job)
     if result != 0 || job.sink.out_of_memory || job.sink.too_large {
         noteFailure(l.kind, 0, l.href)
         return
@@ -839,11 +848,13 @@ fn keepLoad(alloc: Allocator, s: *mut Session, l: *Load, job: *mut Job, status: 
     if !text.eql(job.at.href, l.href) {
         res.url = try dup(alloc, job.at.href)
     }
+    if status == 304 && l.validators.len > 0 && refreshEntry(&mut s.cache, l.key, res.headers_raw) { return }
     let lasting = status >= 200 && status < 300 && !job.sink.no_store
     try s.cache.keep(l.key, &res, !lasting)
 }
 
 fn freeLoad(ld: *mut Loader, l: *mut Load) {
+    release(ld.alloc, l.validators)
     if l.job |j| {
         dropJob(ld.alloc, ld.multi, j)
     }

@@ -1,0 +1,46 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: media/formats/mp4/track_run_iterator.cc
+fn mp4Traf(init: []u8, b: []u8, moof_at: usize, traf: Box, out: *mut Stream) AllocError!void {
+    let tfhd = boxIn(b, traf.body, traf.end, "tfhd") orelse return
+
+    if tfhd.body + 8 > tfhd.end { return }
+
+    let flags = be32(b, tfhd.body) & 0xffffff
+    let id = be32(b, tfhd.body + 4)
+    var d = fragmentDefaults(init, id)
+    var p = tfhd.body + 8
+
+    if flags & 0x1 != 0 || d.scale == 0 || p + 16 > tfhd.end + 16 - optionalBytes(flags) {
+        out.bad = true
+
+        return
+    }
+
+    if flags & 0x2 != 0 { p += 4 }
+
+    for k, bit in [3]u32{ 0x8, 0x10, 0x20 } {
+        if flags & bit == 0 { continue }
+
+        let v = be32(b, p)
+
+        p += 4
+
+        if k == 0 { d.duration = v }
+        if k == 1 { d.size = v }
+        if k == 2 { d.flags = v }
+    }
+
+    var time: u64 = 0
+
+    if boxIn(b, traf.body, traf.end, "tfdt") |t| { time = decodeTime(b, t) }
+
+    var at = traf.body
+
+    while boxAt(b, at, traf.end) |x| {
+        if text.eql(x.kind, "trun") { time = try mp4Trun(b, x, moof_at, d, id, time, out) }
+
+        at = x.end
+    }
+}

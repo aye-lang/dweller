@@ -1,3 +1,4 @@
+import decoder
 import engine
 import ipc
 
@@ -42,9 +43,20 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if !(try landSocketNote(r, got.message)) { return false }
             }
 
+            .DecoderOutput { .. } => {
+                if !(try decoder.deliver(got.message)) { return false }
+
+                r.landed = true
+            }
+
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
+            .HostState { seq, what } => {
+                try hostSaid(r, what)
+                r.took(seq)
+            }
+
             .AskState { with_text } => try sayState(r, got.frame, with_text != 0)
             .FramePeriod { ns } => {
                 if !(ns >= 1.0e6 && ns <= 1.0e9) { return false }
@@ -88,7 +100,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .Find { id, command, query } => {
-                if command > 4 { return false }
+                if command > 6 { return false }
 
                 try takeFind(r, id, command, query)
             }
@@ -118,6 +130,7 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .AskUserContext { id, point } => try answerUserContext(r, id, point)
+            .HitTest { id, x, y } => try answerHitTest(r, id, x, y)
             .ContextClosed { context } => closeContext(r, context)
             .ContextTab { context, frame } => engine.setContextTab(context, frame)
             .OpenerInfo { frame, name } => {

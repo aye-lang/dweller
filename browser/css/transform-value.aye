@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#transform-functions
+fn transformValue(sheet: *mut Sheet, comps: []Comp) AllocError!?Value {
+    var out = text.Builder.init(sheet.arena.allocator())
+
+    if comps.len == 1 && isIdent(comps[0], "none") {
+        return Value.Keyword { k: "none" }
+    }
+
+    for c in comps {
+        if c.toks[0].kind != Tok.Function {
+            return null
+        }
+
+        if hasNestedFunction(c) {
+            return rawValue(sheet, comps)
+        }
+
+        if out.len() > 0 {
+            try out.appendByte(' ')
+        }
+
+        if !(try writeTransformFunction(c, &mut out)) {
+            return null
+        }
+    }
+
+    return Value.Keyword { k: try out.toOwned() }
+}

@@ -1,0 +1,39 @@
+import std.text
+
+struct FragmentDefaults {
+    scale: u32 = 0
+    duration: u32 = 0
+    size: u32 = 0
+    flags: u32 = 0
+}
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn fragmentDefaults(init: []u8, id: u32) FragmentDefaults {
+    var d = FragmentDefaults {}
+    let moov = boxIn(init, 0, init.len, "moov") orelse return d
+    var at = moov.body
+
+    while boxAt(init, at, moov.end) |x| {
+        if text.eql(x.kind, "trak") && trackId(init, x) == id {
+            if boxPath(init, x, "mdia", "mdhd", "") |mdhd| { d.scale = headerScale(init, mdhd) }
+        }
+
+        at = x.end
+    }
+
+    let mvex = boxIn(init, moov.body, moov.end, "mvex") orelse return d
+
+    at = mvex.body
+
+    while boxAt(init, at, mvex.end) |x| {
+        if text.eql(x.kind, "trex") && x.body + 24 <= x.end && be32(init, x.body + 4) == id {
+            d.duration = be32(init, x.body + 12)
+            d.size = be32(init, x.body + 16)
+            d.flags = be32(init, x.body + 20)
+        }
+
+        at = x.end
+    }
+
+    return d
+}

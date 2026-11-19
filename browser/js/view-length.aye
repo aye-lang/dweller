@@ -1,0 +1,20 @@
+// https://tc39.es/ecma262/#sec-typedarraylength
+
+fn viewLength(it: *Interp, store: u32, off: u32, len: u32, kind: u32) u32 {
+    let size = kindSize(kind) as usize
+    let total = storeMem(it, store).len
+
+    if len != NONE {
+        if off as usize + len as usize * size <= total {
+            return len
+        }
+
+        return 0
+    }
+
+    if off as usize > total {
+        return 0
+    }
+
+    return ((total - off as usize) / size) as u32
+}

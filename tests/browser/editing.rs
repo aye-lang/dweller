@@ -301,3 +301,46 @@ fn editing_shift_arrows_extend() {
         assert!(out.lines().any(|l| l == want), "{keys}: {out}");
     }
 }
+
+/// Q5.10 (left list): Up and Down in an editing host
+/// (`browser/tests/editing/lines.html`: three lines "abcdef", "ghi",
+/// "mnopqr" in the fixed font). The caret goes to the line above or
+/// below at the same x (the end of a shorter line), keeps that x over
+/// several moves, and goes to the start or the end of the host from its
+/// first or last line; Shift+Down extends the selection, and typing
+/// replaces it. In one process and with `DWELLER_PROCESS=site`.
+#[test]
+fn editing_caret_up_and_down() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let want = [
+        "caret abcdef 6",
+        "abcdefghiXmnopqr at ghiX 4",
+        "abcdefghiXmnopYqr at mnopYqr 5",
+        "abcdeZfghiXmnopYqr at abcdeZf 6",
+        "abcdeZfghiXmnopYqrE at mnopYqrE 8",
+        "AabcdeZfghiXmnopYqrE at AabcdeZf 1",
+        "AabcdeZfgSnopYqrE",
+    ];
+    let report = |out: &str| -> Vec<String> {
+        out.lines()
+            .filter(|l| l.starts_with("caret ") || (l.contains(" at ") && !l.contains("=>")))
+            .map(|l| if l.starts_with("AabcdeZfgS") { l.split(" at ").next().unwrap().to_string() } else { l.to_string() })
+            .collect()
+    };
+    let page = "browser/tests/editing/lines.html";
+    let keys = "key:down text:X key:down text:Y key:up key:up text:Z key:down key:down key:down text:E \
+                key:up key:up key:up text:A key:down key:shift+down text:S";
+    let one = login_window_with(page, &format!("frame click:75,62 release:75,62 {keys} frame"), None, &[]);
+    assert_eq!(report(&one), want, "{one}");
+    let waited = keys.replace(' ', " renderer:input ");
+    let site = login_window_with(
+        page,
+        &format!("click:75,62 release:75,62 renderer:input {waited} renderer:input frame"),
+        None,
+        &[("DWELLER_PROCESS", "site")],
+    );
+    assert_eq!(report(&site), want, "{site}");
+}

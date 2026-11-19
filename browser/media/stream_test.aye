@@ -1,0 +1,212 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+struct Got {
+    track: u32
+    ms: i64
+    size: usize
+    key: bool
+    first: u8
+}
+
+fn feedStream(alloc: Allocator, mp4: bool, whole: []u8, cut: usize, got: *mut List(Got)) AllocError!usize {
+    var pending = text.Builder.init(alloc)
+    defer pending.deinit()
+    var init = text.Builder.init(alloc)
+    defer init.deinit()
+    var rest = text.Builder.init(alloc)
+    defer rest.deinit()
+    var base: i64 = -1
+    var inits: usize = 0
+
+    for part in [2][]u8{ whole[..cut], whole[cut..] } {
+        try pending.append(part)
+
+        var used: usize = 1
+
+        while used > 0 {
+            var out = Stream.init(alloc)
+            defer out.deinit()
+
+            if mp4 {
+                try mp4Stream(init.bytes(), pending.bytes(), &mut out)
+            } else {
+                try webmStream(init.bytes(), pending.bytes(), base, &mut out)
+            }
+
+            if out.bad { return 99 }
+
+            for f in out.frames.items() {
+                try got.append(Got { track: f.track, ms: (f.time * 1000.0 + 0.5) as i64, size: f.size, key: f.key, first: pending.bytes()[f.offset] })
+            }
+
+            if out.init_end > 0 {
+                init.clear()
+                try init.append(pending.bytes()[out.init_at..out.init_end])
+                inits += 1
+            }
+
+            base = out.base
+            used = out.used
+            rest.clear()
+            try rest.append(pending.bytes()[used..])
+            pending.clear()
+            try pending.append(rest.bytes())
+        }
+    }
+
+    return inits
+}
+
+fn sameFrames(got: []Got, want: []Got) bool {
+    if got.len != want.len { return false }
+
+    for i, g in got {
+        let w = want[i]
+
+        if g.track != w.track || g.ms != w.ms || g.size != w.size || g.key != w.key || g.first != w.first { return false }
+    }
+
+    return true
+}
+
+fn webmStreamBytes(alloc: Allocator, out: *mut text.Builder) AllocError!void {
+    var info = text.Builder.init(alloc)
+    defer info.deinit()
+    var video = text.Builder.init(alloc)
+    defer video.deinit()
+    var tracks = text.Builder.init(alloc)
+    defer tracks.deinit()
+    var cluster = text.Builder.init(alloc)
+    defer cluster.deinit()
+
+    try putEl(&mut info, "\x2a\xd7\xb1", "\x0f\x42\x40")
+    try putEl(&mut video, "\xd7", "\x01")
+    try putEl(&mut video, "\x83", "\x01")
+    try putEl(&mut video, "\x86", "V_VP9")
+    try putEl(&mut video, "\xe0", "\xb0\x82\x02\x80\xba\x81\xf0")
+    try putEl(&mut tracks, "\xae", video.bytes())
+    try putEl(&mut cluster, "\xe7", "\x03\xe8")
+    try putEl(&mut cluster, "\xa3", "\x81\x00\x00\x80abcd")
+    try putEl(&mut cluster, "\xa3", "\x82\x00\x0a\x00xy")
+    try putEl(out, "\x1a\x45\xdf\xa3", "\x42\x82\x84webm")
+    try out.append("\x18\x53\x80\x67\x01\xff\xff\xff\xff\xff\xff\xff")
+    try putEl(out, "\x15\x49\xa9\x66", info.bytes())
+    try putEl(out, "\x16\x54\xae\x6b", tracks.bytes())
+    try putEl(out, "\x1f\x43\xb6\x75", cluster.bytes())
+    try out.append("\x1f\x43\xb6\x75\x01\xff\xff\xff\xff\xff\xff\xff")
+    try putEl(out, "\xe7", "\x07\xd0")
+    try putEl(out, "\xa3", "\x81\xff\xfb\x80efgh")
+}
+
+test "a WebM byte stream cut anywhere gives its initialization segment and frames" {
+    let a = @testAllocator()
+    var file = text.Builder.init(a)
+    defer file.deinit()
+
+    try webmStreamBytes(a, &mut file)
+
+    let want = [3]Got{ Got { track: 1, ms: 1000, size: 4, key: true, first: 'a' }, Got { track: 2, ms: 1010, size: 2, key: false, first: 'x' }, Got { track: 1, ms: 1995, size: 4, key: true, first: 'e' } }
+
+    for cut in 0..file.bytes().len + 1 {
+        var got = List(Got).init(a)
+        defer got.deinit()
+
+        @expectEqual(1 as usize, try feedStream(a, false, file.bytes(), cut, &mut got))
+        @expect(sameFrames(got.items(), want[..]))
+    }
+}
+
+test "a WebM block before its cluster's time, or an element of unknown size, is a bad stream" {
+    let a = @testAllocator()
+    var got = List(Got).init(a)
+    defer got.deinit()
+
+    @expectEqual(99 as usize, try feedStream(a, false, "\x1f\x43\xb6\x75\x88\xa3\x86\x81\x00\x00\x80ab", 0, &mut got))
+    @expectEqual(99 as usize, try feedStream(a, false, "\x15\x49\xa9\x66\x01\xff\xff\xff\xff\xff\xff\xff", 0, &mut got))
+}
+
+fn fragmentedBytes(alloc: Allocator, out: *mut text.Builder) AllocError!void {
+    var entry = text.Builder.init(alloc)
+    defer entry.deinit()
+    var held = text.Builder.init(alloc)
+    defer held.deinit()
+    var stbl = text.Builder.init(alloc)
+    defer stbl.deinit()
+    var minf = text.Builder.init(alloc)
+    defer minf.deinit()
+    var mdia = text.Builder.init(alloc)
+    defer mdia.deinit()
+    var trak = text.Builder.init(alloc)
+    defer trak.deinit()
+    var mvex = text.Builder.init(alloc)
+    defer mvex.deinit()
+    var moov = text.Builder.init(alloc)
+    defer moov.deinit()
+    var traf = text.Builder.init(alloc)
+    defer traf.deinit()
+    var moof = text.Builder.init(alloc)
+    defer moof.deinit()
+
+    try putBe(&mut entry, 0, 6)
+    try putBe(&mut entry, 1, 2)
+    try putBe(&mut entry, 0, 16)
+    try putBe(&mut entry, 320, 2)
+    try putBe(&mut entry, 180, 2)
+    try putBe(&mut entry, 0, 50)
+    try putBe(&mut held, 0, 4)
+    try putBe(&mut held, 1, 4)
+    try putBox(&mut held, "avc1", entry.bytes())
+    try putBox(&mut stbl, "stsd", held.bytes())
+    try putNumbers(&mut stbl, "stts", "0 0", alloc)
+    try putNumbers(&mut stbl, "stsc", "0 0", alloc)
+    try putNumbers(&mut stbl, "stsz", "0 0 0", alloc)
+    try putNumbers(&mut stbl, "stco", "0 0", alloc)
+    try putBox(&mut minf, "stbl", stbl.bytes())
+    try putNumbers(&mut mdia, "mdhd", "0 0 0 1000 0 0 0 0", alloc)
+    try putBox(&mut mdia, "hdlr", "\x00\x00\x00\x00\x00\x00\x00\x00vide\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+    try putBox(&mut mdia, "minf", minf.bytes())
+    try putNumbers(&mut trak, "tkhd", "0 0 0 1 0 0", alloc)
+    try putBox(&mut trak, "mdia", mdia.bytes())
+    try putNumbers(&mut mvex, "trex", "0 1 1 40 0 65536", alloc)
+    try putNumbers(&mut moov, "mvhd", "0 0 0 1000 0 0 0 0", alloc)
+    try putBox(&mut moov, "trak", trak.bytes())
+    try putBox(&mut moov, "mvex", mvex.bytes())
+    try putNumbers(&mut traf, "tfhd", "131072 1", alloc)
+    try putNumbers(&mut traf, "tfdt", "16777216 0 2000", alloc)
+    try putNumbers(&mut traf, "trun", "517 2 108 0 3 2", alloc)
+    try putNumbers(&mut moof, "mfhd", "0 1", alloc)
+    try putBox(&mut moof, "traf", traf.bytes())
+    try putBox(out, "ftyp", "isom\x00\x00\x02\x00isomavc1")
+    try putBox(out, "moov", moov.bytes())
+    try putBox(out, "styp", "msdh\x00\x00\x00\x00msdh")
+    try putBox(out, "moof", moof.bytes())
+    try putBox(out, "mdat", "abcde")
+}
+
+test "a fragmented MP4 cut anywhere gives its initialization segment and frames" {
+    let a = @testAllocator()
+    var file = text.Builder.init(a)
+    defer file.deinit()
+
+    try fragmentedBytes(a, &mut file)
+
+    let want = [2]Got{ Got { track: 1, ms: 2000, size: 3, key: true, first: 'a' }, Got { track: 1, ms: 2040, size: 2, key: false, first: 'd' } }
+
+    for cut in 0..file.bytes().len + 1 {
+        var got = List(Got).init(a)
+        defer got.deinit()
+
+        @expectEqual(1 as usize, try feedStream(a, true, file.bytes(), cut, &mut got))
+        @expect(sameFrames(got.items(), want[..]))
+    }
+
+    var m = (try probe(a, file.bytes(), file.bytes().len)).?
+    defer m.deinit()
+
+    @expectEqual(1 as u32, m.tracks.items()[0].number)
+    @expectEqual(1000 as u32, m.tracks.items()[0].scale)
+}

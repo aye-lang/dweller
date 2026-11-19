@@ -4,7 +4,8 @@
   wpt.py fetch [--rev SHA] [--wpt-root DIR]
       Sparse checkout of web-platform-tests at browser/tools/wpt.rev into
       target/wpt: the directories of browser/tools/wpt_areas.json plus
-      resources/, common/, fonts/, images/, css/support/, tools/ and
+      resources/, common/, fonts/, images/, css/support/, tools/,
+      web-animations/resources/ (with testcommon.js beside it) and
       docs/ (upstream `wpt serve` needs the last two).
   wpt.py serve [--port N] [--wpt-root DIR] [--upstream]
       A static server on 127.0.0.1 for the checkout (see Server below), or
@@ -49,7 +50,7 @@ WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 PROCESS = ""
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/reference", "tools", "docs"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
@@ -463,6 +464,7 @@ def trust_test_ca(root):
     """Dweller trusts WPT's CA (tools/certs/cacert.pem) in these runs only:
     DWELLER_TEST_CA counts only together with DWELLER_TEST=1."""
     os.environ["DWELLER_TEST"] = "1"
+    os.environ["DWELLER_AUTOPLAY"] = "1"
     os.environ["DWELLER_TEST_CA"] = str(Path(root) / "tools" / "certs" / "cacert.pem")
 
 

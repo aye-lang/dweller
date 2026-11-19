@@ -1453,7 +1453,7 @@ pub let PRELUDE =
     \\  watchTransitions();
     \\}
     \\function watchTransitions() { if (!transitionTimer && ak.transitionsActive()) transitionTimer = ak.setTimer(transitionFrame, 16, false, [], true); }
-    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); return v; }
+    \\function styleOf(el, n) { cssAnimations.sync(el); const v = ak.computedStyle(el, n); watchTransitions(); if (n === 'transform-origin') return ak.resolvedOrigin(el, v); return n === 'transform' && v !== 'none' ? ak.resolvedTransform(el, v) : v; }
     \\for (const n of CSS_NAMES) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
@@ -1462,15 +1462,17 @@ pub let PRELUDE =
     \\  if (n === 'float') getter(ComputedStyle.prototype, 'cssFloat', get);
     \\}
     \\getter(ComputedStyle.prototype, 'outline', function () { return ak.computedStyle(this._el, 'outline'); });
+    \\for (const [n, to] of [['overflow-inline', 'overflow-x'], ['overflow-block', 'overflow-y'], ['inline-size', 'width'], ['block-size', 'height'], ['min-inline-size', 'min-width'], ['min-block-size', 'min-height'], ['max-inline-size', 'max-width'], ['max-block-size', 'max-height'], ['inset-inline-start', 'left'], ['inset-inline-end', 'right'], ['inset-block-start', 'top'], ['inset-block-end', 'bottom'], ['font-width', 'font-stretch']]) for (const k of [n, n.replace(/-([a-z])/g, (m, c) => c.toUpperCase())]) getter(ComputedStyle.prototype, k, function () { return styleOf(this._el, to); });
     \\for (const n of ['border-spacing', 'borderSpacing']) getter(ComputedStyle.prototype, n, function () { return ak.computedStyle(this._el, 'border-spacing'); });
     \\getter(ComputedStyle.prototype, 'transition', function () { return styleOf(this._el, 'transition'); });
     \\getter(ComputedStyle.prototype, 'animation', function () { return styleOf(this._el, 'animation'); });
     \\for (const n of ['animation-range', 'animationRange']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'animation-range'); });
     \\for (const n of ['text-decoration', 'textDecoration']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, 'text-decoration'); });
     \\getter(ComputedStyle.prototype, 'overflow', function () { return styleOf(this._el, 'overflow'); });
+    \\getter(ComputedStyle.prototype, 'font', function () { return styleOf(this._el, 'font'); });
     \\for (const n of ['line-clamp', 'lineClamp', '-webkit-line-clamp', 'webkitLineClamp', 'WebkitLineClamp']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, /ebkit/.test(n) ? '-webkit-line-clamp' : 'line-clamp'); });
     \\for (const n of ['white-space', 'whiteSpace', 'text-wrap', 'textWrap']) getter(ComputedStyle.prototype, n, function () { return styleOf(this._el, n.replace('S', '-s').replace('W', '-w')); });
-    \\for (const n of ['margin', 'padding', 'border-width', 'border-style', 'border-color', 'border-radius']) {
+    \\for (const n of ['margin', 'padding', 'border-width', 'border-style', 'border-color', 'border-radius', 'font-synthesis']) {
     \\  const get = function () { return styleOf(this._el, n); };
     \\  getter(ComputedStyle.prototype, n, get);
     \\  const camel = n.replace(/-([a-z])/g, (m, c) => c.toUpperCase());
@@ -2415,9 +2417,9 @@ pub let PRELUDE =
     \\  if (!blob) return { error: 'blob URL not found' };
     \\  return { status: 200, url, type: blob.type, body: new TextDecoder().decode(blob._array()), raw: blob._bytes };
     \\}
-    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy) {
+    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy, streams) {
     \\  if (url.startsWith('blob:')) return ak.imageTask(() => done(blobResponse(url, method)), 0);
-    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy);
+    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy, streams ? 1 : 0);
     \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
@@ -2435,30 +2437,50 @@ pub let PRELUDE =
     \\      reject(signal.reason);
     \\      return;
     \\    }
-    \\    let done = false;
-    \\    const onAbort = () => {
+    \\    let done = false, flow = null;
+    \\    const onAbort = why => {
+    \\      const reason = why instanceof Error ? why : signal.reason;
+    \\      if (flow !== null) { ak.clearTimer(task); return flow.error(reason); }
     \\      if (done) return;
     \\      done = true;
     \\      ak.clearTimer(task);
-    \\      reject(signal.reason);
+    \\      reject(reason);
+    \\    };
+    \\    const settle = r => {
+    \\      const headers = new Headers();
+    \\      if (r.type) headers.append('content-type', r.type);
+    \\      // A body that decoding changed comes as its bytes (Response.text()
+    \\      // decodes UTF-8, arrayBuffer() keeps binary data).
+    \\      const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.stream || (r.raw !== undefined ? byteArray(r.raw) : r.body));
+    \\      hidden(res, '_fetched', r);
+    \\      resolve(res);
+    \\    };
+    \\    // A response still arriving (ak.fetchPart): its body is a stream of the parts.
+    \\    const arriving = part => {
+    \\      if (flow === null) {
+    \\        if (part.blocked) return onAbort(new TypeError('Failed to fetch: blocked by Content Security Policy'));
+    \\        done = true;
+    \\        const stream = new ReadableStream({ start(c) { flow = c; }, cancel() { ak.clearTimer(task); } });
+    \\        settle({ status: part.status, url: part.url, type: part.type.split(';')[0].trim().toLowerCase(), headers: part.headers, stream });
+    \\      }
+    \\      if (part.data.length > 0) flow.enqueue(byteArray(part.data));
     \\    };
     \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, req.mode, x => {
+    \\      const part = typeof x === 'number' ? ak.fetchPart(x) : null;
+    \\      if (part !== null) return arriving(part);
     \\      const r = fetchTaken(x);
+    \\      signal.removeEventListener('abort', onAbort);
+    \\      if (flow !== null) {
+    \\        if (r.error !== undefined) return flow.error(new TypeError('network error'));
+    \\        const rest = r.raw !== undefined ? byteArray(r.raw) : new TextEncoder().encode(r.body);
+    \\        if (rest.length > 0) flow.enqueue(rest);
+    \\        return flow.close();
+    \\      }
     \\      if (done) return;
     \\      done = true;
-    \\      signal.removeEventListener('abort', onAbort);
     \\      if (r.error !== undefined) reject(new TypeError('Failed to fetch: ' + r.error));
-    \\      else {
-    \\        const headers = new Headers();
-    \\        if (r.type) headers.append('content-type', r.type);
-    \\        // A body that decoding changed comes as its bytes (Response.text()
-    \\        // decodes UTF-8, arrayBuffer() keeps binary data).
-    \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
-    \\        const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body);
-    \\        hidden(res, '_fetched', r);
-    \\        resolve(res);
-    \\      }
-    \\    }, req.referrerPolicy);
+    \\      else settle(r);
+    \\    }, req.referrerPolicy, true);
     \\    signal.addEventListener('abort', onAbort);
     \\  });
     \\});
@@ -3227,6 +3249,9 @@ pub let PRELUDE =
     \\    hidden(this, '_headers', new Headers());
     \\    hidden(this, '_body', null);
     \\    hidden(this, '_task', 0);
+    \\    hidden(this, '_got', null);
+    \\    hidden(this, '_decoder', null);
+    \\    hidden(this, '_total', 0);
     \\  }
     \\  open(method, url, async) {
     \\    method = String(method);
@@ -3287,6 +3312,7 @@ pub let PRELUDE =
     \\      this._body = body;
     \\    }
     \\    this._sent = true;
+    \\    this._got = null;
     \\    const credentials = this.withCredentials ? 'include' : 'same-origin';
     \\    if (!this._async) {
     \\      this._load(this._url.startsWith('blob:') ? blobResponse(this._url, this._method) : ak.fetch(...fetchArgs(this._url, this._method, this._headers, this._body, credentials, 'cors')));
@@ -3295,9 +3321,45 @@ pub let PRELUDE =
     \\    this._fire('loadstart');
     \\    if (!this._sent || this._task !== 0) return;
     \\    this._task = startFetch(this._url, this._method, this._headers, this._body, credentials, 'cors', x => {
+    \\      const part = typeof x === 'number' ? ak.fetchPart(x) : null;
+    \\      if (part !== null) return this._part(part);
     \\      this._task = 0;
-    \\      this._load(fetchTaken(x));
-    \\    });
+    \\      this._load(this._whole(fetchTaken(x)));
+    \\    }, undefined, true);
+    \\  }
+    \\  _part(part) {
+    \\    if (part.blocked) {
+    \\      this._cancel();
+    \\      return this._load({ error: 'blocked by Content Security Policy' });
+    \\    }
+    \\    if (this._got === null) {
+    \\      const charset = /;\s*charset\s*=\s*"?([^";\s]+)/i.exec(part.type);
+    \\      this._got = '';
+    \\      this._total = /^content-encoding:/mi.test(part.headers) ? 0 : +(/^content-length:[ \t]*(\d+)[ \t]*$/mi.exec(part.headers) || [0, 0])[1];
+    \\      try { this._decoder = new TextDecoder(charset ? charset[1] : 'utf-8'); } catch (e) { this._decoder = new TextDecoder(); }
+    \\      this._head({ status: part.status, url: part.url, type: part.type.split(';')[0].trim().toLowerCase(), headers: part.headers });
+    \\    }
+    \\    if (part.data.length > 0) this._more(part.data);
+    \\  }
+    \\  _more(data) {
+    \\    this._got += data;
+    \\    this.responseText += this._decoder.decode(byteArray(data), { stream: true });
+    \\    this._state(3);
+    \\    this._fire('progress');
+    \\  }
+    \\  _whole(r) {
+    \\    if (this._got === null || r.error !== undefined) return r;
+    \\    const rest = r.raw !== undefined ? r.raw : byteString(new TextEncoder().encode(r.body));
+    \\    this._got += rest;
+    \\    return { status: r.status, url: r.url, type: r.type, headers: r.headers, raw: this._got, body: this.responseText + this._decoder.decode(byteArray(rest)), streamed: rest.length === 0 };
+    \\  }
+    \\  _head(r) {
+    \\    this.status = r.status;
+    \\    this.statusText = r.status >= 200 && r.status < 300 ? 'OK' : '';
+    \\    this.responseURL = (r.url || new URL(this._url, document.baseURI).href).split('#')[0];
+    \\    this._type = r.type;
+    \\    hidden(this, '_fetched', r);
+    \\    this._state(2);
     \\  }
     \\  // The XHR standard's abort(): a request in flight ends (readystatechange
     \\  // 4, abort, loadend) and the object is UNSENT again.
@@ -3317,26 +3379,25 @@ pub let PRELUDE =
     \\  _cancel() {
     \\    if (this._task !== 0) ak.clearTimer(this._task);
     \\    this._task = 0;
+    \\    this._got = null;
     \\  }
     \\  _load(r) {
     \\    if (!this._sent) return;
     \\    if (r.error !== undefined) {
     \\      this._sent = false;
+    \\      this._got = null;
+    \\      this.responseText = '';
     \\      this._state(4);
     \\      if (!this._async) throw xhrError('send', "Failed to load '" + this._url + "'.", 'NetworkError');
     \\      this._fire('error');
     \\      this._fire('loadend');
     \\      return;
     \\    }
-    \\    this.status = r.status;
-    \\    this.statusText = r.status >= 200 && r.status < 300 ? 'OK' : '';
-    \\    this.responseURL = (r.url || new URL(this._url, document.baseURI).href).split('#')[0];
-    \\    this._type = r.type;
-    \\    hidden(this, '_fetched', r);
-    \\    this._state(2);
+    \\    if (this._got === null) this._head(r);
+    \\    else hidden(this, '_fetched', r);
     \\    this.responseText = r.body;
-    \\    this._state(3);
-    \\    if (this._async) this._fire('progress');
+    \\    if (!r.streamed) this._state(3);
+    \\    if (this._async && !r.streamed) this._fire('progress');
     \\    this._sent = false;
     \\    this._state(4);
     \\    this._fire('load');
@@ -3349,8 +3410,8 @@ pub let PRELUDE =
     \\  _fire(type) {
     \\    // loadstart, progress, load, loadend, error, abort and timeout are
     \\    // ProgressEvents (of the body's length once there is one).
-    \\    const n = this.responseText.length;
-    \\    const ev = type === 'readystatechange' ? new Event(type) : new ProgressEvent(type, { loaded: n, total: n, lengthComputable: n > 0 });
+    \\    const n = this._got !== null ? this._got.length : this.responseText.length, total = this._got !== null && this._total > 0 ? this._total : n;
+    \\    const ev = type === 'readystatechange' ? new Event(type) : new ProgressEvent(type, { loaded: n, total, lengthComputable: total > 0 });
     \\    // `onload` and the like are the EventTarget's (HANDLERS); the others
     \\    // are plain properties.
     \\    const h = HANDLERS.includes(type) ? null : this['on' + type];

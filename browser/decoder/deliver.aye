@@ -1,0 +1,33 @@
+import ipc
+import std.mem.AllocError
+
+pub fn deliver(m: ipc.Message) AllocError!bool {
+    let c = client orelse return true
+
+    match m {
+        .DecoderOutput { id, seq, state, more, data } => {
+            let s = streamOf(id) orelse return true
+
+            if s.partial.len() + data.len > MAX_SAMPLE { return false }
+
+            try s.partial.append(data)
+
+            if more != 0 { return true }
+
+            let whole = try copyOf(c.alloc, s.partial.bytes())
+
+            s.partial.clear()
+            s.outputs.append(Output { seq: seq, ok: state == 1, data: whole }) catch |e| {
+                c.alloc.free(whole)
+
+                return e
+            }
+
+            if s.pending > 0 { s.pending -= 1 }
+
+            return true
+        }
+
+        _ => return false
+    }
+}

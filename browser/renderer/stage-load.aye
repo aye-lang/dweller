@@ -1,10 +1,13 @@
 import engine
+import net
 
 // blink: core/loader/document_loader.cc
 fn stageLoad(r: *mut TabRenderer, p: *mut engine.Page) !void {
     r.scroll_y = r.hist_scroll
     try engine.startEarly(p, r.width as f64 / r.scale, r.height as f64 / r.scale, &mut r.staged.sheets, &mut r.staged.scripts)
     r.staged.on = true
+
+    if !net.liveRequest(&p.url) { return finishStaged(r) }
 
     try advanceStaged(r, true)
 }

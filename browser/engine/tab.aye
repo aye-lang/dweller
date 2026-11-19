@@ -41,6 +41,7 @@ pub struct Tab {
     // The page shown before its scripts ran (`navigateEarly`): the loads
     // of its style sheets and of its scripts, and whether it was laid
     // out with its sheets in (`painted`).
+    replace_next: bool = false
     early: bool
     painted: bool
     // Its scripts are in and run one task at a time (`stepEarly`).
@@ -225,7 +226,7 @@ pub struct Tab {
     /// loaded, with the entries its scripts added while it loaded.
     pub fn push(self: *mut Self, target: *Url, page: *mut Page) AllocError!void {
         self.saveScroll()
-        try self.history.adoptPushed(&mut page.history)
+        try adoptNavigated(self, page)
         page.shared = &mut self.history
         try self.setFragment(target.fragment)
         self.restore = null

@@ -1,0 +1,52 @@
+import ipc
+import std.mem.AllocError
+
+fn rendererSentAsks(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    match got.message {
+        .Fetch { .. } => {
+            if got.frame != slot.id { return "bad fetch" }
+
+            return answerFetch(tp, got.frame, got.message)
+        }
+
+        .FetchCancel { id } => {
+            if got.frame != slot.id { return "bad fetch_cancel" }
+
+            return cancelFetch(tp, id)
+        }
+
+        .CookieGet { .. }, .CookieSet { .. } => {
+            if got.frame != slot.id { return "bad cookie" }
+
+            return answerCookie(tp, got.frame, got.message)
+        }
+
+        .ClipboardWrite { .. }, .ClipboardRead => {
+            if got.frame != slot.id { return "bad clipboard" }
+
+            return clipboardAsked(tp, got.frame, got.message)
+        }
+
+        .Dialog { .. } => {
+            if got.frame != slot.id { return "bad dialog" }
+
+            return takeDialog(tp, got.frame, got.message)
+        }
+
+        .Storage { .. } => {
+            if got.frame != slot.id { return "bad storage" }
+
+            return answerStorage(tp, got.frame, got.message)
+        }
+
+        .Idb { .. } => {
+            if got.frame != slot.id { return "bad idb" }
+
+            return answerIdb(tp, got.frame, got.message)
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

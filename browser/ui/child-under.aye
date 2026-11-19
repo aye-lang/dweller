@@ -1,0 +1,15 @@
+fn childUnder(tp: *mut TabProcess, at: [2]i64, ox: i64, oy: i64) ?*mut ChildFrame {
+    var k = tp.children.len()
+
+    while k > 0 {
+        k -= 1
+
+        let c = &mut tp.children.items()[k]
+        let child = c.tp orelse continue
+        let live = child.hello && child.gone.len == 0 && child.buffers.shown != 0
+
+        if live && at[0] >= ox + c.clip.x0 && at[0] < ox + c.clip.x1 && at[1] >= oy + c.clip.y0 && at[1] < oy + c.clip.y1 { return c }
+    }
+
+    return null
+}

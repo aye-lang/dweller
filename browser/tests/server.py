@@ -78,6 +78,15 @@
 #   /acao/NAME       the file NAME (as /slow/NAME, at once) with
 #                    Access-Control-Allow-Origin: the request's Origin (or
 #                    *) and Access-Control-Allow-Credentials: true
+#   /cached/MODE/NAME  a style sheet `.MODE { color: rgb(1, 2, 3) }` with
+#                    the cache headers of MODE: fresh (max-age=3600),
+#                    etag (max-age=0 and an ETag), nocache (no-cache and
+#                    an ETag), plain (none). A matching If-None-Match
+#                    gets 304. Each request is logged ("cached MODE
+#                    200" or "... 304", see /log).
+#   /ordered/NAME      an empty response after 50 ms, typed by NAME's
+#                    extension; /order lists the NAMEs in the order the
+#                    requests arrived
 #   /logged-acao/NAME  as /acao/NAME, recording the request (method,
 #                    path, Origin, Cookie) in /log
 #   /meta/NAME       (GET and POST) records the request's method, path,
@@ -170,6 +179,14 @@ COOKIES = [
 ]
 
 LOG = []
+ORDER = []
+CACHED_TAG = '"v1"'
+CACHED = {
+    "fresh": [("Cache-Control", "max-age=3600")],
+    "etag": [("Cache-Control", "max-age=0"), ("ETag", CACHED_TAG)],
+    "nocache": [("Cache-Control", "no-cache"), ("ETag", CACHED_TAG)],
+    "plain": [],
+}
 META = []
 
 SLOW = {"now": 0, "peak": 0}
@@ -358,6 +375,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path.startswith("/policy/"):
             policy, _, name = path[len("/policy/"):].partition("/")
             self.reply_file(name, [("Referrer-Policy", policy)])
+        elif path.startswith("/cached/"):
+            mode = path[len("/cached/"):].partition("/")[0]
+            headers = CACHED[mode] + [("Content-Type", "text/css")]
+            if self.headers.get("If-None-Match") == CACHED_TAG:
+                LOG.append("cached %s 304\n" % mode)
+                self.reply(304, headers)
+            else:
+                LOG.append("cached %s 200\n" % mode)
+                self.reply(200, headers, (".%s { color: rgb(1, 2, 3) }" % mode).encode())
+        elif path.startswith("/ordered/"):
+            name = path[len("/ordered/"):]
+            ORDER.append(name)
+            time.sleep(0.05)
+            kind = {"css": "text/css", "js": "text/javascript"}.get(name.rpartition(".")[2], "image/png")
+            self.reply(200, [("Content-Type", kind), ("Cache-Control", "no-store")], b"")
+        elif path == "/order":
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], " ".join(ORDER).encode())
         elif path.startswith("/log/"):
             self.log_request_line("GET")
         elif path.startswith("/fail/"):

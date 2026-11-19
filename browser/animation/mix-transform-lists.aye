@@ -1,0 +1,36 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-transforms
+fn mixTransformLists(alloc: Allocator, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    var from = List(TransformFn).init(alloc)
+    defer from.deinit()
+
+    var to = List(TransformFn).init(alloc)
+    defer to.deinit()
+
+    if !(try parseTransformList(a, &mut from)) || !(try parseTransformList(b, &mut to)) || from.len() + to.len() == 0 {
+        return false
+    }
+
+    if !(try padTransforms(&mut from, to.items())) || !(try padTransforms(&mut to, from.items())) {
+        return false
+    }
+
+    for k in 0..from.len() {
+        if mixTransformPair(from.items()[k], to.items()[k], p) |f| {
+            try writeTransformFn(f, out)
+            continue
+        }
+
+        let rest = mixTransformMatrices(from.items()[k..], to.items()[k..], p) orelse return false
+
+        try writeTransformFn(rest, out)
+
+        return true
+    }
+
+    return true
+}

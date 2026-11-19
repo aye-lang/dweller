@@ -373,8 +373,7 @@ fn geometry(s: *mut Script) AllocError!*mut Geometry {
             if fresh && local && g.styles.moved {
                 // Values that layout reads changed (`css.paintOnly`).
                 if g.styles.moved_many {
-                    dirty.clear()
-                    try dirty.append(p.doc.root)
+                    try dirty.append(movedTop(&p.doc, g.styles))
                 } else {
                     for el in g.styles.moved_els.items() {
                         try dirty.append(el)
@@ -1017,7 +1016,7 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
                     }
                 }
             }
-            cur = doc.parent(c)
+            cur = dom.flatParent(doc, c)
         }
         if found == null {
             noteFullLayout(s, "relayout:no_box")
@@ -1033,10 +1032,6 @@ fn relayoutDirty(s: *mut Script, g: *mut Geometry, dirty: []NodeId) AllocError!b
             try roots.append(b)
             try root_nodes.append(t.bx(b).node.?)
         }
-    }
-    if !aboveShadows(doc, root_nodes.items()) {
-        noteFullLayout(s, "relayout:shadows")
-        return false
     }
     // Only the outermost: the others are built again with them.
     var outer = List(usize).init(s.alloc)
@@ -1169,7 +1164,7 @@ fn settleContainers(s: *mut Script, g: *mut Geometry, st: *Styling) AllocError!b
         }
         dirty.clear()
         if g.styles.moved_many {
-            try dirty.append(doc.root)
+            try dirty.append(movedTop(doc, g.styles))
         } else {
             for el in g.styles.moved_els.items() {
                 try dirty.append(el)

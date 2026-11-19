@@ -1,0 +1,28 @@
+import ipc
+import perf
+
+fn rendererAsked(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) []u8 {
+    match got.message {
+        .Telemetry { records } => {
+            if tp.partition != 0 || !perf.telemetryTake(records) { return "bad telemetry" }
+        }
+
+        .BusyAsk { ms } => {
+            if got.frame != slot.id || tp.busy_asked { return "bad busy_ask" }
+
+            tp.busy_asked = true
+            tp.busy_ms = ms
+        }
+
+        .HostRequest { lock, fs } => {
+            if got.frame != slot.id || lock > 2 || fs > 2 { return "bad host_request" }
+
+            tp.host_lock = lock
+            tp.host_fs = fs
+        }
+
+        _ => {}
+    }
+
+    return ""
+}

@@ -3,7 +3,9 @@ import std.mem.AllocError
 
 let MAX_CONTEXT_PART: usize = 65536
 
-fn takeUserContext(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+fn takeUserContext(slot: *TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    if got.frame != slot.id { return "bad user_context" }
+
     match got.message {
         .UserContext { point, selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text, .. } => {
             let parts = [8][]u8{selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text}

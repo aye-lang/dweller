@@ -1,0 +1,21 @@
+import ipc
+
+fn sendToDecoder(m: ipc.Message) bool {
+    let d = startDecoderProcess() orelse return false
+
+    ipc.encode(&mut d.outbox, 0, m) catch return false
+
+    return flushDecoder(d)
+}
+
+fn flushDecoder(d: *mut DecoderProcess) bool {
+    let sent = sendSome(d.fd, d.outbox.bytes())
+
+    if sent > 0 { ipc.consume(&mut d.outbox, sent as usize) }
+
+    if sent >= 0 && d.outbox.len() <= DECODER_OUTBOX_MAX { return true }
+
+    loseDecoder(d)
+
+    return false
+}

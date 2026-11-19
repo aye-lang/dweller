@@ -1,0 +1,35 @@
+import std.mem.AllocError
+
+let FONT_PREFIX_NONE: u8 = 0
+let FONT_PREFIX_NORMAL: u8 = 1
+let FONT_PREFIX_STYLE: u8 = 2
+let FONT_PREFIX_CAPS: u8 = 3
+let FONT_PREFIX_WEIGHT: u8 = 4
+let FONT_PREFIX_STRETCH: u8 = 5
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn fontPrefixKind(sheet: *mut Sheet, c: Comp) AllocError!u8 {
+    let one = [1]Comp{c}
+
+    if isIdent(c, "normal") {
+        return FONT_PREFIX_NORMAL
+    }
+
+    if isIdent(c, "italic") || isIdent(c, "oblique") {
+        return FONT_PREFIX_STYLE
+    }
+
+    if isIdent(c, "small-caps") {
+        return FONT_PREFIX_CAPS
+    }
+
+    if isStretch(c) {
+        return FONT_PREFIX_STRETCH
+    }
+
+    if (try parseValue(sheet, FONT_WEIGHT, one[..])) != null {
+        return FONT_PREFIX_WEIGHT
+    }
+
+    return FONT_PREFIX_NONE
+}

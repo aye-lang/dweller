@@ -1,12 +1,20 @@
 import std.mem.AllocError
 
 fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool {
+    if try holdsMouse(ui, tp, ev) { return true }
+
     if ev.kind == SDL_MOUSEMOTION {
         let me = &ev.motion
         var mx = me.xrel as f64
         var my = me.yrel as f64
 
-        if !inPage(ui, me.y as f64) || ui.locked { return false }
+        if ui.locked {
+            try sendMouse(ui, mouseTarget(ui, tp), 0, 0, mx, my)
+
+            return true
+        }
+
+        if !inPage(ui, me.y as f64) { return false }
 
         if me.state == SCRIPT_MOVE && ui.mouse_in {
             mx = me.x as f64 - ui.mouse_x
@@ -37,7 +45,7 @@ fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!boo
         ui.buttons = ui.buttons & ~bit
         ui.clicks = be.clicks
     } else {
-        if !inPage(ui, be.y as f64) { return false }
+        if !ui.locked && !inPage(ui, be.y as f64) { return false }
 
         tp.pressed = tp.pressed | bit
         ui.buttons = ui.buttons | bit
@@ -47,8 +55,11 @@ fn forwardMouse(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!boo
     }
 
     ui.mouse_in = true
-    ui.mouse_x = be.x as f64
-    ui.mouse_y = be.y as f64
+
+    if !ui.locked {
+        ui.mouse_x = be.x as f64
+        ui.mouse_y = be.y as f64
+    }
 
     let hit = mouseTarget(ui, tp)
 

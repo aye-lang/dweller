@@ -1,0 +1,24 @@
+import decoder
+import std.mem.AllocError
+
+fn pumpPageDecoders(s: *mut Script) AllocError!bool {
+    let all = page_decoders orelse return false
+    var queued = false
+
+    decoder.pump(0)
+
+    for k in all.items() {
+        if k.owner != s {
+            continue
+        }
+
+        while decoder.next(k.id) |o| {
+            defer decoder.release(o)
+
+            try queueDecoderTask(s, k, o)
+            queued = true
+        }
+    }
+
+    return queued
+}

@@ -1,0 +1,13 @@
+import std.mem.AllocError
+
+pub fn lost() AllocError!void {
+    let c = client orelse return
+
+    for i in 0..c.streams.len() {
+        let s = &mut c.streams.items()[i]
+
+        s.pending = 0
+        s.partial.clear()
+        try s.outputs.append(Output { seq: GONE, ok: false, data: try copyOf(c.alloc, "") })
+    }
+}
