@@ -1,0 +1,25 @@
+import paint
+import places
+
+pub let BOOKMARKS_BAR: f64 = 26.0
+let BAR_ITEM_MAX: f64 = 140.0
+let BAR_ITEM_PAD: f64 = 10.0
+
+// chromium: chrome/browser/ui/views/bookmarks/bookmark_bar_view.cc
+fn bookmarksBarWanted(ui: *Ui) bool {
+    return ui.agents == null && !ui.bar_hidden && places.bookmarkAt(0) != null
+}
+
+fn barItemText(b: places.Suggestion) []u8 {
+    if b.title.len > 0 { return b.title }
+
+    return b.url
+}
+
+fn barItemWidth(ui: *mut Ui, b: places.Suggestion) f64 {
+    let w = ui.measure.width(uiFont(12.0), barItemText(b)) + 2.0 * BAR_ITEM_PAD
+
+    if w > BAR_ITEM_MAX { return BAR_ITEM_MAX }
+
+    return w
+}

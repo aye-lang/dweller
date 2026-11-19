@@ -147,3 +147,27 @@ test "suggestions match every typed word in the URL or the title and rank by vis
 
     endTestStore(&mut s)
 }
+
+test "clearing the history forgets visits and keeps bookmarks; one page can be forgotten alone" {
+    let alloc = @testAllocator()
+    var s = testStore(alloc)
+
+    place_store = &mut s
+    try noteVisit("https://a.example/", "A", 1000)
+    try noteVisit("https://b.example/", "B", 2000)
+    try noteVisit("https://c.example/", "C", 3000)
+    try setBookmark("https://b.example/", "B", true)
+    try clearHistory("https://a.example/")
+
+    @expectEqual(2, s.places.len())
+    @expectEqual("https://b.example/", bookmarkAt(0).?.url)
+    @expect(bookmarkAt(1) == null)
+
+    try clearHistory(null)
+
+    @expectEqual(1, s.places.len())
+    @expectEqual(0, s.places.items()[0].visits)
+    @expect(isBookmarked("https://b.example/"))
+
+    endTestStore(&mut s)
+}

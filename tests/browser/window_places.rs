@@ -185,3 +185,90 @@ fn window_places_bookmarks() {
         assert!(paper > 100 && dark(&list) > 10, "site {site}: the list is not drawn under the address bar");
     }
 }
+
+/// Q5.13 (follow-up): with a bookmark the window shows a bookmarks bar
+/// under the toolbar: the page's viewport starts below it, a click on a
+/// bookmark goes to it, Cmd+Shift+B hides the bar and shows it again.
+#[test]
+fn window_places_bookmarks_bar() {
+    if !has_sdl() {
+        return;
+    }
+    let Some(s) = server() else {
+        return;
+    };
+    let search = format!("{}/ui/search.html?q=%s", s.base);
+    let page = format!("{}/ui/zoom.html", s.base);
+    let next = format!("{}/ui/zoom-next.html", s.base);
+    for site in [false, true] {
+        let dir = profile(&format!("places_bar_{site}"));
+        let png = scratch().join(format!("places_bar_{site}.png"));
+        let hit = if site { "renderer:input frame" } else { "frame" };
+        let shown = places_window(&page, &format!("key:cmd+d frame frame frame click:115,141 {hit}"), &dir, &search, site);
+
+        assert!(shown.contains("\nbookmarks-bar\n"), "site {site}: {shown}");
+        assert!(shown.contains("down115,75 hit"), "site {site}: {shown}");
+
+        let back = places_window(&next, "frame click:20,53 ~", &dir, &search, site);
+
+        assert_eq!(state_line(&back, "url "), format!("url {page}"), "site {site}: {back}");
+
+        let hidden = places_window(&page, &format!("frame key:cmd+shift+b frame frame click:115,115 {hit}"), &dir, &search, site);
+
+        assert!(!hidden.contains("\nbookmarks-bar\n") && hidden.contains("down115,75 hit"), "site {site}: {hidden}");
+
+        let again = places_window(&page, &format!("frame key:cmd+shift+b frame key:cmd+shift+b frame frame click:115,141 {hit}"), &dir, &search, site);
+
+        assert!(again.contains("\nbookmarks-bar\n") && again.contains("down115,75 hit"), "site {site}: {again}");
+
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROFILE", &dir)
+            .env("DWELLER_PROCESS", if site { "site" } else { "single" })
+            .args([&page, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle", "--save"])
+            .arg(&png)
+            .args(["--events", if site { "renderer:loaded frame frame" } else { "loaded frame frame" }])
+            .output()
+            .unwrap();
+
+        assert!(out.status.success() && out.stderr.is_empty(), "{}", text(&out.stderr));
+
+        let shot = png_rgba(&std::fs::read(&png).unwrap());
+        let row = |y: usize| -> Vec<u8> { shot.2[y * shot.0 * 4..(y * shot.0 + 100) * 4].to_vec() };
+        let ink = (14..46).filter(|&x| shot.2[(53 * shot.0 + x) * 4] < 100).count();
+
+        assert!(ink > 8, "site {site}: no bookmark title in the bar ({ink} dark pixels)");
+        assert_eq!(&row(65)[..4], [200, 200, 200, 255], "site {site}: the bar's bottom line");
+        assert_eq!(&row(67)[..4], [255, 255, 255, 255], "site {site}: the page starts under the bar");
+    }
+}
+
+/// Q5.13 (follow-up): Cmd+Shift+Backspace clears the browsing history
+/// (the file too) and keeps the bookmarks; Shift+Delete on a suggested
+/// row forgets that page only.
+#[test]
+fn window_places_clear_history() {
+    if !has_sdl() {
+        return;
+    }
+    let Some(s) = server() else {
+        return;
+    };
+    let search = format!("{}/ui/search.html?q=%s", s.base);
+    let page = format!("{}/ui/zoom.html", s.base);
+    let next = format!("{}/ui/zoom-next.html", s.base);
+    for site in [false, true] {
+        let dir = profile(&format!("places_clear_{site}"));
+        let one = places_window(&page, &format!("{} key:cmd+l text:zoom frame key:down key:shift+delete frame", go_to(&next)), &dir, &search, site);
+
+        assert_eq!(suggested(&one), ["suggest > Search for zoom".to_string(), format!("suggest zoom - {page}")], "site {site}: {one}");
+        assert_eq!(state_line(&one, "address "), "address zoom", "site {site}");
+        assert!(!std::fs::read_to_string(dir.join("history")).unwrap().contains("zoom-next"), "site {site}");
+
+        let cleared = places_window(&page, "key:cmd+d frame key:cmd+shift+backspace frame", &dir, &search, site);
+
+        assert_eq!(state_line(&cleared, "status "), "status History cleared", "site {site}: {cleared}");
+        assert_eq!(std::fs::read_to_string(dir.join("history")).unwrap(), "dweller-history 1\n", "site {site}");
+        assert_eq!(std::fs::read_to_string(dir.join("bookmarks")).unwrap(), format!("dweller-bookmarks 1\n{page} zoom\n"), "site {site}");
+    }
+}

@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+// chromium: components/history/core/browser/history_service.cc (ExpireHistoryBetween, DeleteURLs)
+pub fn clearHistory(only: ?[]u8) AllocError!void {
+    let s = place_store orelse return
+    var k = s.places.len()
+
+    while k > 0 {
+        k -= 1
+
+        if forgets(&s.places.items()[k], only) { forgetVisits(s, k) }
+    }
+
+    s.history_dirty = true
+    try saveHistoryIfDue(true)
+}

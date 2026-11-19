@@ -1,0 +1,29 @@
+import net
+import places
+import std.mem.AllocError
+import url
+
+fn clickBookmarksBar(ui: *mut Ui, x: f64, y: f64) AllocError!bool {
+    var left: f64 = 4.0
+    var k: usize = 0
+
+    if !ui.bar_shown || y < ui.top() - BOOKMARKS_BAR || y >= ui.top() { return false }
+
+    while places.bookmarkAt(k) |b| {
+        let w = barItemWidth(ui, b)
+
+        if left + w > ui.win_w as f64 { break }
+
+        if x >= left && x < left + w {
+            try ui.address.set(b.url)
+            try ui.submitAddress()
+
+            return true
+        }
+
+        left += w
+        k += 1
+    }
+
+    return true
+}

@@ -1,10 +1,11 @@
 import std.mem.AllocError
 
 // chromium: chrome/browser/ui/views/omnibox/omnibox_view_views.cc (HandleKeyEvent)
-fn suggestKey(ui: *mut Ui, sym: i32) AllocError!bool {
+fn suggestKey(ui: *mut Ui, sym: i32, shift: bool) AllocError!bool {
     if ui.focus != Focus.Address { return false }
 
     if sym == SDLK_ESCAPE { closeSuggestions(ui) }
+    if shift && sym == SDLK_DELETE && try forgetSuggestion(ui) { return true }
 
     if sym != SDLK_DOWN && sym != SDLK_UP { return false }
 

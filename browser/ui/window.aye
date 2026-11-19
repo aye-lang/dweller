@@ -414,6 +414,8 @@ pub struct Ui {
     suggest: ?*mut Suggestions = null
     picker: ?*mut FilePicker = null
     ime: ?*mut ImeState = null
+    bar_shown: bool = false
+    bar_hidden: bool = false
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -794,6 +796,7 @@ pub struct Ui {
             try pollPicker(self)
             try printAsked(self)
             try placeIme(self)
+            try syncBookmarksBar(self)
             if engine.hasContextRequests() {
                 try serveContexts(self)
             }
@@ -875,10 +878,14 @@ pub struct Ui {
     // The top of the page's viewport: under the toolbar and the tab
     // strip.
     fn top(self: *Self) f64 {
-        if self.hasTabStrip() {
-            return TOOLBAR + TABBAR
+        var bar = 0.0
+        if self.bar_shown {
+            bar = BOOKMARKS_BAR
         }
-        return TOOLBAR
+        if self.hasTabStrip() {
+            return TOOLBAR + TABBAR + bar
+        }
+        return TOOLBAR + bar
     }
 
     // The height of the page's layout viewport (without the find bar).
@@ -1399,7 +1406,7 @@ pub struct Ui {
             self.swallow = true
             return
         }
-        if cmd && ((try zoomShortcut(self, sym)) || (try bookmarkShortcut(self, sym, shift)) || (try printShortcut(self, sym, shift)) || try windowKey(self, sym, shift)) {
+        if cmd && ((try zoomShortcut(self, sym)) || (try bookmarkShortcut(self, sym, shift)) || (try printShortcut(self, sym, shift)) || (try historyShortcut(self, sym, shift)) || try windowKey(self, sym, shift)) {
             self.swallow = true
             return
         }
@@ -1449,7 +1456,7 @@ pub struct Ui {
             }
             return
         }
-        if try suggestKey(self, sym) {
+        if try suggestKey(self, sym, shift) {
             return
         }
         if sym == SDLK_ESCAPE {
@@ -1662,6 +1669,9 @@ pub struct Ui {
             return
         }
         if try clickMenu(self, x, y) {
+            return
+        }
+        if try clickBookmarksBar(self, x, y) {
             return
         }
         if y >= TOOLBAR && y < self.top() {
@@ -2011,6 +2021,7 @@ pub struct Ui {
         if self.hasTabStrip() {
             try drawTabStrip(self)
         }
+        try drawBookmarksBar(self)
         if self.hover.len() > 0 {
             try drawStatus(self, bottom, self.hover.bytes())
         } else if chipStatus(self).len > 0 {
