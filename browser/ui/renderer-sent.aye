@@ -54,13 +54,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
-            if !tp.loading && slot.session.tab.history.len() > 0 {
-                if tp.partition == 0 && slot.session.tab.history.now().scroll != scroll_y { perf.noteScroll() }
-
-                slot.session.tab.history.now().scroll = scroll_y
-            }
-
-            noteFrameScroll(tp, scroll_y)
+            keepFrameScroll(slot, tp, scroll_y)
 
             return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
