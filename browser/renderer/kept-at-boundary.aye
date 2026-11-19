@@ -1,0 +1,12 @@
+import engine
+
+// chromium: cc/input/scroll_state.cc and content/browser/renderer_host/render_widget_host_view_child_frame.cc (a child's viewport with overscroll-behavior other than auto does not bubble its unused scroll)
+fn keptAtBoundary(r: *TabRenderer, p: *mut engine.Page, left: [2]f64) [2]f64 {
+    var out = left
+
+    if !r.embedded { return out }
+    if engine.viewportChainStops(p, left[0], 0.0) { out[0] = 0.0 }
+    if engine.viewportChainStops(p, 0.0, left[1]) { out[1] = 0.0 }
+
+    return out
+}
