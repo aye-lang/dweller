@@ -34,6 +34,11 @@
         W7 and W8 (P4.41, window_report.py), a row per non-excluded site of
         sites.json; exits 1 when a row fails. --replay: `scroll` and `idle`
         on the archives of DIR (default target/sites) against W7's limits.
+        --replay --process site: the same with a renderer per site,
+        against Q4.25's criterion: the window's longest loop, the p95 from
+        a wheel to the renderer's frame (`input_to_frame`), the idle CPU
+        of the window and its renderers together, and the renderer's
+        longest task (`r_task`).
         --live --chrome: Dweller's first paint against Chrome's first
         contentful paint (agent-browser), the median of 3 alternating runs.
 
@@ -135,6 +140,16 @@ def scroll(a):
     shown = [v for k, v, _ in recs if k == "input_to_present"]
     out["input_to_present_n_p50_p95"] = [len(shown), round(pct(shown, 0.5), 1), round(pct(shown, 0.95), 1)]
     steps = [1000 * (b - a) for a, b in zip(shown_at, shown_at[1:])]
+    # With a renderer (Q4.25c): from an input sent to the renderer to the
+    # ack that follows the frame holding it (`input_to_frame`, the label
+    # is the input's kind), and the renderer's loop turns (`r_task`).
+    held = [v for k, v, l in recs if k == "input_to_frame" and l != "move"]
+    out["input_to_frame_n_p50_p95"] = [len(held), round(pct(held, 0.5), 1), round(pct(held, 0.95), 1)]
+    # A wheel the window scrolled itself (Q4.25e): to the present of the
+    # shifted frame.
+    panned = [v for k, v, _ in recs if k == "input_to_pan"]
+    out["input_to_pan_n_p50_p95"] = [len(panned), round(pct(panned, 0.5), 1), round(pct(panned, 0.95), 1)]
+    out["renderer_longest_task_ms"] = round(max((v for k, v, _ in recs if k == "r_task"), default=0))
     out["step_ms_n_p50_p95_max"] = [len(steps), round(pct(steps, 0.5), 1), round(pct(steps, 0.95), 1), round(max(steps, default=0), 1)]
     print(json.dumps(out))
 
@@ -153,14 +168,28 @@ def idle(a):
         cmd += ["--frames", "16000", "--events", "painted window:hidden"]
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=f, env=env)
 
-    def cpu():
-        s = subprocess.run(["ps", "-o", "time=", "-p", str(p.pid)], capture_output=True, text=True).stdout.strip()
+    def seconds(s):
         # [[DD-]HH:]MM:SS (procps) or MM:SS.ss (macOS).
         days, _, s = s.rpartition("-")
         t = 0.0
         for part in s.split(":"):
             t = t * 60 + float(part)
         return t + int(days or 0) * 86400
+
+    def cpu():
+        """The CPU seconds of the window and of the processes under it
+        (its renderers), and how many those are."""
+        rows = [l.split() for l in subprocess.run(["ps", "-A", "-o", "pid=,ppid=,time="], capture_output=True, text=True).stdout.splitlines()]
+        rows = [r for r in rows if len(r) == 3]
+        own, under = {str(p.pid)}, 0.0
+        grew = True
+        while grew:
+            more = {r[0] for r in rows if r[1] in own} - own
+            grew = bool(more)
+            own |= more
+        mine = sum(seconds(r[2]) for r in rows if r[0] == str(p.pid))
+        under = sum(seconds(r[2]) for r in rows if r[0] in own)
+        return under, mine, len(own) - 1
 
     try:
         drawn = None
@@ -171,9 +200,9 @@ def idle(a):
             time.sleep(0.1)
         time.sleep(a.settle)
         start = os.path.getsize(path)
-        c0, w0 = cpu(), time.monotonic()
+        (c0, m0, _), w0 = cpu(), time.monotonic()
         time.sleep(10)
-        c1, w1 = cpu(), time.monotonic()
+        (c1, m1, under), w1 = cpu(), time.monotonic()
     finally:
         p.terminate()
         try:
@@ -186,7 +215,10 @@ def idle(a):
     print(json.dumps({
         "url": a.url,
         "first_frame_s": round(drawn, 1) if drawn else None,
+        # The window and its renderers together (Q4.25c); the window alone.
         "idle_cpu_pct": round(100 * (c1 - c0) / (w1 - w0), 1),
+        "window_cpu_pct": round(100 * (m1 - m0) / (w1 - w0), 1),
+        "renderers": under,
         "iterations": len(loops),
         "relayouts": sum(1 for k, _, _ in recs if k == "ui_relayout"),
         # The layouts scripts and relayouts did: of the whole document,
@@ -219,6 +251,7 @@ def main():
     ap.add_argument("--chrome", action="store_true", help="report --live: compare with Chrome")
     ap.add_argument("--site", action="append", help="report: only this site (repeatable)")
     ap.add_argument("--archives", default="target/sites", help="report: the archive directory")
+    ap.add_argument("--process", choices=["tab", "site"], help="report --replay: with DWELLER_PROCESS set, against Q4.25's criterion")
     ap.add_argument("--update", action="store_true", help="gate: lower the budgets to the values measured")
     a = ap.parse_args()
     if not os.path.exists(a.binary):

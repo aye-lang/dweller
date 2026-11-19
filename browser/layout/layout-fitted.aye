@@ -1,0 +1,23 @@
+import css
+import std.math
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-writing-modes-4/#orthogonal-auto
+fn layoutFitted(t: *mut Tree, i: usize, cb_inline: f64, cb_block: f64) AllocError!void {
+    let kind = t.bx(i).kind
+    let avail = availableInline(t, i, cb_inline)
+
+    resolveEdges(t, i, cb_block)
+    t.bx(i).margin[3] = lengthOr0(t.bx(i).style[css.MARGIN_TOP + 3], cb_block)
+    t.bx(i).margin[1] = lengthOr0(t.bx(i).style[css.MARGIN_TOP + 1], cb_block)
+
+    if kind == BoxKind.Image {
+        replacedSize(t, i, cb_inline, cb_block)
+    } else if kind == BoxKind.Table {
+        try layoutTable(t, i, avail)
+    } else {
+        try primeIntrinsic(t, i)
+        t.bx(i).w = try fittedWidth(t, i, avail, cb_inline)
+        try layoutContents(t, i, cb_block)
+    }
+}

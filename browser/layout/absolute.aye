@@ -47,7 +47,10 @@ fn containingArea(t: *Tree, i: usize) AllocError!Area {
 }
 
 fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
-    let cb = try containingArea(t, i)
+    let cb = t.abs_area orelse try containingArea(t, i)
+    if turns(t, i) {
+        return layoutTurnedAbsolute(t, i, cb)
+    }
     let b0 = t.bx(i)
     // The static position, and the origin of `x`, `y`.
     let sx = b0.ax
@@ -71,7 +74,10 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
         try layoutTable(t, i, avail)
     } else {
         try primeIntrinsic(t, i)
-        if specifiedWidth(t, i, cb.w) |w| {
+        if fillsAvailable(s[css.WIDTH]) {
+            let bb = t.bx(i)
+            bb.w = clampWidth(t, i, avail - bb.margin[1] - bb.margin[3], cb.w)
+        } else if specifiedWidth(t, i, cb.w) |w| {
             t.bx(i).w = w
         } else if left != null && right != null {
             let bb = t.bx(i)
@@ -85,6 +91,9 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
     // A height from `top` and `bottom`.
     if top != null && bottom != null && isKeyword(s[css.HEIGHT], "auto") && kind != BoxKind.Image {
         r.h = clampHeight(t, i, cb.h - top.? - bottom.? - r.margin[0] - r.margin[2], cb.h)
+    }
+    if fillsAvailable(s[css.HEIGHT]) && kind != BoxKind.Image {
+        r.h = clampHeight(t, i, cb.h - (top orelse 0.0) - (bottom orelse 0.0) - r.margin[0] - r.margin[2], cb.h)
     }
     // `auto` margins share what is left between the offsets.
     if left != null && right != null {
@@ -107,7 +116,7 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
             r.margin[0] += free
         }
     }
-    var ax = sx + r.margin[3] + flexStaticShift(t, i, true) + gridStaticShift(t, i, cb, sx, true)
+    var ax = sx + r.margin[3] + flexStaticShift(t, i, true) + gridStaticShift(t, i, cb, sx, true) - staticFlip(t, i)
     if left |l| {
         ax = cb.x + l + r.margin[3]
     } else if right |rr| {

@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn putPopupPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .AttachTab { context } => try putU32(out, context)
+        .ContextClosed { context } => try putU32(out, context)
+        .OpenerInfo { frame, name } => {
+            try putU32(out, frame)
+            try putBytes(out, name)
+        }
+
+        .ContextTab { context, frame } => {
+            try putU32(out, context)
+            try putU32(out, frame)
+        }
+
+        .PortPost { tab, key, data, buffers } => try putPort(out, tab, key, data, buffers)
+        .PortPosted { tab, key, data, buffers } => try putPort(out, tab, key, data, buffers)
+
+        _ => {}
+    }
+}

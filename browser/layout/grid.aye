@@ -801,7 +801,7 @@ fn gridIntrinsic(t: *mut Tree, i: usize) AllocError!MinMax {
 
 /// Lays out the items of grid container `i` in its content box (`cw`
 /// wide, `ch` high or -1); returns the content height.
-fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
+fn layoutGridIn(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
     let style = t.bx(i).style
     let col_gap = gapOfGrid(style[css.COLUMN_GAP], cw)
     let row_gap = gapOfGrid(style[css.ROW_GAP], ch)
@@ -875,6 +875,9 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
                 frs += g.rows.items()[r].fr
             }
         }
+        if frs <= 0.0 && ch > used {
+            used += maximizeRows(&g, hs.items(), ch - used)
+        }
         if frs > 0.0 && ch > used {
             for r in 0..g.rows.len() {
                 if r < g.nrows {
@@ -885,13 +888,13 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
             // `align-content: normal`: the auto rows stretch.
             var autos: usize = 0
             for r in 0..g.nrows {
-                if !isFixedRow(&g, r) {
+                if stretchesRow(&g, r) {
                     autos += 1
                 }
             }
             if autos > 0 {
                 for r in 0..g.nrows {
-                    if !isFixedRow(&g, r) {
+                    if stretchesRow(&g, r) {
                         hs.items()[r] += (ch - used) / autos as f64
                     }
                 }
@@ -946,6 +949,7 @@ fn layoutGrid(t: *mut Tree, i: usize, cw: f64, ch: f64) AllocError!f64 {
         let pb = t.bx(it.box)
         pb.y = ys.items()[it.row] + pb.margin[0] + dy
     }
+    mirrorColumns(t, i, &g, xs.items(), ws, cw)
     try recordGridLines(t, i, &g, xs.items(), ws, ys.items(), hs.items())
 
     // Absolutely positioned children: their static position.
