@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+fn binaryString(bytes: []u8, out: *mut text.Builder) AllocError!void {
+    for b in bytes {
+        if b < 0x80 {
+            try out.appendByte(b)
+        } else {
+            try out.appendByte(0xC0 | (b >> 6))
+            try out.appendByte(0x80 | (b & 0x3F))
+        }
+    }
+}

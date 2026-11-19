@@ -6,6 +6,7 @@ fn textInput(r: *mut TabRenderer, typed: []u8) AllocError!void {
     let p = r.page orelse return
     let f = p.doc.controls.focus orelse return
 
+    if !r.swallow && (try engine.editHost(p, "inserttext", typed)) { return }
     if r.swallow || !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null { return }
     if !(try engine.dispatchEvent(p, f, "beforeinput", typed)) { return }
 

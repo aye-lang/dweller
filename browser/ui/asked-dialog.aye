@@ -1,0 +1,19 @@
+import std.mem.Allocator
+import std.text
+
+struct AskedDialog {
+    kind: u8
+    on: u32
+    shown: bool = false
+    message: text.Builder
+    preset: text.Builder
+}
+
+fn dropAsked(tp: *mut TabProcess) {
+    let a = tp.asked orelse return
+
+    a.message.deinit()
+    a.preset.deinit()
+    tp.url.alloc.destroy(a)
+    tp.asked = null
+}

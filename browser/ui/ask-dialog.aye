@@ -1,0 +1,23 @@
+import engine
+import std.mem.AllocError
+import std.text
+
+var dialog_ui: ?*mut Ui = null
+var dialog_headless = false
+
+fn watchDialogs(ui: *mut Ui, headless: bool) {
+    dialog_ui = ui
+    dialog_headless = headless
+    engine.setDialogHook(askDialog)
+}
+
+fn askDialog(ask: engine.DialogAsk, typed: *mut text.Builder) AllocError!bool {
+    let ui = dialog_ui.?
+
+    try dialogTitle(ui, ask.href, ask.top)
+    try openDialog(ui, ask.kind, ask.message, ask.preset)
+    try awaitDialog(ui)
+    try typed.append(ui.dialog.input.bytes())
+
+    return ui.dialog.accepted
+}

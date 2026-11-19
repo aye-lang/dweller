@@ -1,0 +1,41 @@
+import dom.NodeId
+import layout
+import layout.FragKind
+import paint
+import std.list.List
+import std.math
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/dom/range.cc (GetBorderAndTextQuads)
+pub fn textRects(p: *mut Page, node: NodeId, from: usize, to: usize, out: *mut List(paint.Rect)) AllocError!void {
+    let s = p.script orelse return
+    let t = (try geometry(s)).tree
+    let source = p.doc.node(node).data
+
+    for i in 0..t.boxes.len() {
+        if !layout.hasInlineContent(t, i) { continue }
+
+        let b = t.bx(i).*
+
+        for li in b.line_start..b.line_end {
+            let line = t.lines.items()[li]
+
+            for fi in line.frag_start..line.frag_end {
+                let f = t.frags.items()[fi]
+                let tb = t.bx(f.box).*
+
+                if f.kind != FragKind.Text || tb.node == null || tb.node.? != node { continue }
+
+                let lo = math.maxOf(usize, f.start, alignedText(source, tb.text, utf16ToByte(source, from), NO_STOP).shown)
+                let hi = math.minOf(usize, f.end, alignedText(source, tb.text, utf16ToByte(source, to), NO_STOP).shown)
+
+                if lo >= hi { continue }
+
+                let face = layout.fontOf(tb.style)
+                let x = b.ax + b.border[3] + b.padding[3] + f.x + t.measure.width(face, tb.text[f.start..lo])
+
+                try out.append(paint.Rect { x: x, y: b.ay + b.border[0] + b.padding[0] + f.y, w: t.measure.width(face, tb.text[lo..hi]), h: f.h })
+            }
+        }
+    }
+}
