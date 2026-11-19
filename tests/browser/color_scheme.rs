@@ -72,3 +72,32 @@ fn color_scheme_canvas_and_checkbox() {
         assert_eq!(at(26, 26), field, "{scheme}: inside the check box");
     }
 }
+
+/// Q5.2, slice 5: `prefers-color-scheme` inside a frame is the used
+/// color scheme of its `iframe` element, already when the frame's load
+/// scripts run (`browser/tests/net/color-scheme/frame.html`): an element
+/// with `color-scheme: dark` gives a dark frame whatever the person
+/// prefers; `light`, or an embedder that did not opt in, gives a light
+/// one. Each frame reports its media query, a rule under it and its
+/// root's color.
+#[test]
+fn color_scheme_frames_follow_their_element() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let want = "dark: prefers dark true rule rgb(0, 0, 2) root rgb(255, 255, 255)\n\
+                light: prefers dark false rule rgb(0, 0, 1) root rgb(0, 0, 0)\n\
+                normal: prefers dark false rule rgb(0, 0, 1) root rgb(0, 0, 0)";
+    for scheme in ["light", "dark"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_COLOR_SCHEME", scheme)
+            .args(["dump", "--text", "--js", &format!("{}/net/color-scheme/frame.html", srv.base)])
+            .output()
+            .unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        assert!(got.contains(want), "{scheme}: {got}");
+    }
+}
