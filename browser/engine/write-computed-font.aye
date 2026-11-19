@@ -8,11 +8,21 @@ fn writeComputedFont(s: *mut Script, h: NodeId, values: []css.Value, out: *mut t
     var part = text.Builder.init(s.alloc)
     defer part.deinit()
 
+    if try computedFontBlocked(s, values) {
+        return
+    }
+
     for p in [4]usize{css.FONT_STYLE, css.FONT_VARIANT_CAPS, css.FONT_WEIGHT, css.FONT_STRETCH} {
         part.clear()
         try writeResolved(s, h, values, p, &mut part)
 
         let word = css.fontPrefixWord(p, part.bytes())
+
+        if p == css.FONT_STRETCH && text.indexOf(word, "%") != null {
+            out.clear()
+
+            return
+        }
 
         if word.len > 0 {
             try out.append(word)

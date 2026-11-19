@@ -1,0 +1,29 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+pub fn blocksFontShorthand(name: []u8, raw: []u8) bool {
+    let value = text.trim(raw)
+    let wide = inList(value, "inherit initial unset revert revert-layer") != null
+
+    if text.eqlIgnoreCase(name, "font-variant") || text.eqlIgnoreCase(name, "font-variant-caps") {
+        return wide || inList(value, "normal small-caps") == null
+    }
+
+    if text.eqlIgnoreCase(name, "font-stretch") {
+        return wide || inList(value, "normal ultra-condensed extra-condensed condensed semi-condensed semi-expanded expanded extra-expanded ultra-expanded") == null
+    }
+
+    if text.eqlIgnoreCase(name, "font-language-override") {
+        return !text.eqlIgnoreCase(value, "normal")
+    }
+
+    let index = propertyIndex(name) orelse return false
+
+    for p in fontResets() {
+        if p == index {
+            return !text.eqlIgnoreCase(value, keywordText(PROPERTIES[p].initial))
+        }
+    }
+
+    return false
+}
