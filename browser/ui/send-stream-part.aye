@@ -1,4 +1,3 @@
-import ipc
 import net
 import std.mem.AllocError
 import std.text
@@ -9,18 +8,12 @@ fn sendStreamPart(tp: *mut TabProcess, h: *mut HeldFetch) AllocError!void {
 
     let part = try net.takeStreamPart(h.load, &mut bytes) orelse return
 
-    if !h.headed {
-        let ct = net.parseContentType(part.content_type)
-        var landed = part.url
+    if !h.streamed {
+        var res = try net.streamHead(tp.url.alloc, part, h.href.bytes())
+        defer res.deinit(tp.url.alloc)
 
-        var kept = text.Builder.init(tp.url.alloc)
-        defer kept.deinit()
-
-        if text.eql(landed, h.href.bytes()) { landed = "" }
-
-        try headersWithoutCookies(part.headers, &mut kept)
-        try ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchHead { id: h.id, doc: 0, status: part.status as u32, tainted: 0, mime: ct.mime, charset: ct.charset, url: landed, headers: kept.bytes() })
-        h.headed = true
+        try sendHead(tp, h.on, h.id, false, false, h.href.bytes(), &res)
+        h.streamed = true
     }
 
     try sendBody(tp, h.on, h.id, bytes.bytes())
