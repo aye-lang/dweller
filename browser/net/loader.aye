@@ -94,6 +94,7 @@ struct Ask {
     hop: Hop = Hop { from: "", limit: MAX_SUBRESOURCE }
     retried: bool = false
     stream: bool = false
+    no_preflight: bool = false
     stream_checked: bool = false
     stream_taken: bool = false
 }
@@ -404,6 +405,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         failure: "",
         user_activated: req.user_activated,
         stream: req.stream,
+        no_preflight: req.no_preflight,
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -566,7 +568,7 @@ fn finishRequest(ld: *mut Loader, l: *mut Load, result: i32) {
                     return failRequest(ld, l, FetchError.OutOfMemory)
                 }
             }
-            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator }, stream: a.stream }
+            let cors = Request { kind: l.kind, referrer: l.referrer, referrer_policy: l.referrer_policy, method: a.method, headers: a.headers, top: a.top, credentials: a.credentials, mode: a.mode, initiator: Initiator.Page { url: a.initiator }, stream: a.stream, no_preflight: a.no_preflight }
             let tainted = corsRedirect(ld.alloc, cors, job.at.href, moved, job.sink.headers_raw.bytes()) catch |e| {
                 return failRequest(ld, l, e)
             }

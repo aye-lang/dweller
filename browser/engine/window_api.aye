@@ -675,11 +675,15 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     defer it.release(policy)
     try argText(it, a, 7, policy)
     req.referrer_policy = net.parseReferrerPolicy(policy.bytes())
-    req.stream = queue && it.toBoolean(it.arg(a, 8))
 
     if !text.eql(mode.bytes(), "no-cors") {
         req.mode = net.Mode.Cors
     }
+
+    let streams = try it.toNumber(it.arg(a, 8))
+
+    req.stream = queue && streams >= 1.0 && req.mode == net.Mode.Cors
+    req.no_preflight = req.stream && streams == 2.0
 
     let method = try it.builder()
     defer it.release(method)
@@ -791,7 +795,7 @@ fn fetchEnd(it: *mut Interp, a: Args, queue: bool, waits: u32) JsError!Value {
     tick(s)
     let id = s.next_timer
     s.next_timer += 1
-    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0, stream: waits != 0 && it.toBoolean(it.arg(a, 8)) }) catch |e| {
+    s.timers.append(Timer { id: id, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, load: waits, request: waits != 0, stream: waits != 0 && net.isStream(waits), stream_poll: (try it.toNumber(it.arg(a, 8))) == 2.0 }) catch |e| {
         it.removeRoot(root)
         net.releaseLoad(waits)
         return e
