@@ -18,7 +18,7 @@ function seen(el, p, seq, ok, data) {
 function open(el) {
   const m = parts.stateOf(el);
   const t = m.pictureTrack;
-  const p = { id: 0, fed: -1, shown: -1, ready: new Map(), timer: 0 };
+  const p = { id: 0, fed: -1, shown: -1, ready: new Map(), timer: 0, last: '' };
   m.picture = p;
   p.id = ak.mediaDecoderOpen(2, t.codec, t.config, (seq, ok, data) => seen(el, p, seq, ok, data), t.a, t.b, 0);
   if (!p.id) parts.broke(el);
@@ -52,14 +52,20 @@ function show(el) {
   let best = -1;
   for (const seq of p.ready.keys()) if (seq <= want && seq > best) best = seq;
   if (best > p.shown) {
-    ak.mediaFrame(el, t.a, t.b, p.ready.get(best));
+    p.last = p.ready.get(best);
     p.shown = best;
+    ak.mediaFrame(el, t.a, t.b, p.last);
+    if (m.controls) ak.mediaFrame(m.controls.screen, t.a, t.b, p.last);
   }
 
   for (const seq of [...p.ready.keys()]) if (seq <= best) p.ready.delete(seq);
 }
 
 parts.pictureShow = show;
+parts.pictureMirror = el => {
+  const m = parts.stateOf(el);
+  if (m.controls && m.controls.screen && m.pictureTrack) ak.mediaFrame(m.controls.screen, m.width, m.height, m.picture ? m.picture.last : '');
+};
 parts.pictureStop = m => {
   const p = m.picture;
   if (!p) return;
