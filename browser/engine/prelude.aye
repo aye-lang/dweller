@@ -713,7 +713,7 @@ pub let PRELUDE =
     \\getter(HTMLP, 'text', function () { return this.textContent; }, function (v) { this.textContent = v; });
     \\getter(HTMLP, 'innerText', function () { return this.textContent; }, function (v) { this.textContent = v; });
     \\getter(HTMLP, 'outerText', function () { return this.textContent; });
-    \\hidden(HTMLP, 'submit', function () { ak.submit(this); });
+    \\hidden(HTMLP, 'submit', function () { if (formDataEntries(this)) ak.submit(this); });
     \\hidden(HTMLP, 'select', function () {});
     \\
     \\// classList
@@ -3100,6 +3100,10 @@ pub let PRELUDE =
     \\  const els = root instanceof HTMLStyleElement ? [root] : root.querySelectorAll ? root.querySelectorAll('style') : [];
     \\  for (const el of els) if (el.ownerDocument === document && isConnected(el)) ak.imageTask(() => { if (isConnected(el)) hostEvent(el, 'load'); }, 0);
     \\}
+    \\function frameDiscover(root) {
+    \\  const els = root instanceof HTMLIFrameElement ? [root] : root.querySelectorAll ? root.querySelectorAll('iframe') : [];
+    \\  for (const el of els) if (el.ownerDocument === document && isConnected(el) && ak.blankFrameLoaded(el)) hostEvent(el, 'load');
+    \\}
     \\function linkForget(root) {
     \\  if (root instanceof HTMLLinkElement) root.__linkRequest = undefined;
     \\  if (root.querySelectorAll) for (const el of root.querySelectorAll('link')) el.__linkRequest = undefined;
@@ -3123,6 +3127,7 @@ pub let PRELUDE =
     \\    if (kind === 3 && node) {
     \\      linkDiscover(node);
     \\      styleDiscover(node);
+    \\      frameDiscover(node);
     \\      imageDiscover(node);
     \\      // Moving a loaded img out of a picture must reselect its own src.
     \\      if (node instanceof HTMLImageElement && node.__imageRequest) {
@@ -3494,11 +3499,31 @@ pub let PRELUDE =
     \\  if (v instanceof File && filename === undefined) return v;
     \\  return new File([v], filename === undefined ? 'blob' : String(filename), { type: v.type });
     \\}
+    \\class FormDataEvent extends Event {
+    \\  constructor(type, init) {
+    \\    if (arguments.length < 2 || !init || !(init.formData instanceof FormData)) throw new TypeError("Failed to construct 'FormDataEvent': formData is required");
+    \\    super(type, init);
+    \\    hidden(this, '_formData', init.formData);
+    \\  }
+    \\  get formData() { return this._formData; }
+    \\}
+    \\G.FormDataEvent = FormDataEvent;
+    \\const constructingForms = new WeakSet();
+    \\function formDataEntries(form) {
+    \\  if (!form || form.localName !== 'form' || !isConnected(form)) return true;
+    \\  if (constructingForms.has(form)) return false;
+    \\  const data = new FormData(form);
+    \\  if (!isConnected(form)) return false;
+    \\  ak.submitEntries(form);
+    \\  for (const [k, v] of data._list) ak.submitEntry(k, typeof v === 'string' ? v : v.name, typeof v !== 'string');
+    \\  return true;
+    \\}
     \\class FormData {
     \\  constructor(form, submitter) {
     \\    hidden(this, '_list', []);
     \\    if (form === undefined) return;
     \\    if (!form || form.localName !== 'form') throw new TypeError('Expected a form');
+    \\    if (constructingForms.has(form)) throw new DOMException('The form is constructing its entry list', 'InvalidStateError');
     \\    if (submitter !== undefined && submitter !== null) {
     \\      if (!((submitter.localName === 'button' && submitter.type === 'submit') || (submitter.localName === 'input' && /^(submit|image)$/.test(submitter.type)))) throw new TypeError('Expected a submit button');
     \\      if (submitter.form !== form) throw new DOMException('Submitter belongs to another form', 'NotFoundError');
@@ -3506,6 +3531,8 @@ pub let PRELUDE =
     \\    for (const e of form._formEntries(submitter)) {
     \\      this._list.push([e[0], e[2] ? new File([], '', { type: 'application/octet-stream' }) : e[1]]);
     \\    }
+    \\    constructingForms.add(form);
+    \\    try { form.dispatchEvent(new FormDataEvent('formdata', { bubbles: true, formData: this })); } finally { constructingForms.delete(form); }
     \\  }
     \\  append(k, v, filename) { this._list.push([String(k), formValue(v, filename)]); }
     \\  delete(k) { k = String(k); this._list = this._list.filter(p => p[0] !== k); }
