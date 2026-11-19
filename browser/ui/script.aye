@@ -295,11 +295,17 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
                 return
             }
         }
-        if text.eql(w, "painted") && ui.paint_began != 0 {
+        if text.eql(w, "painted") && (ui.paint_began != 0 || tabPaintWaits(ui)) {
             // The page is not drawn yet (`Ui.loop` resumes the script).
             return
         }
-        if text.eql(w, "loaded") && ui.tab.early {
+        if text.eql(w, "painted") {
+            ui.early_input = true
+        }
+        if text.eql(w, "loaded") {
+            ui.early_input = false
+        }
+        if text.eql(w, "loaded") && (ui.tab.early || rendererBehind(ui)) {
             return
         }
         if text.eql(w, "asked") && permissionBarOf(ui) == null {

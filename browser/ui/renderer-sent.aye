@@ -27,6 +27,7 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
             try showCommitted(tp, title, url)
             tp.loading = false
+            tp.loaded_new = true
         }
 
         .ScrollInfo { max_y, pan, background } => {
@@ -259,6 +260,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
         .State { .. } => return "unexpected state"
+        .UpgradeInsecure { page } => {
+            if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
+
+            try net.noteUpgradeInsecure(page)
+        }
+
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
