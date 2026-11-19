@@ -1,0 +1,38 @@
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn fontPartValue(sheet: *mut Sheet, comps: []Comp, parts: FontParts, prop: usize) AllocError!Value {
+    var at: ?usize = null
+
+    if parts.system {
+        return Value.Initial
+    }
+
+    if prop == FONT_FAMILY {
+        return (try fontFamily(sheet, comps[parts.family..])) orelse Value.Initial
+    }
+
+    if prop == FONT_VARIANT_CAPS && parts.caps {
+        return Value.Keyword { k: "small-caps" }
+    }
+
+    if prop == FONT_STRETCH {
+        let i = parts.stretch orelse return Value.Initial
+
+        return Value.Keyword { k: comps[i].toks[0].text }
+    }
+
+    if prop == FONT_STYLE {
+        at = parts.style
+    } else if prop == FONT_WEIGHT {
+        at = parts.weight
+    } else if prop == FONT_SIZE {
+        at = parts.size
+    } else if prop == LINE_HEIGHT {
+        at = parts.line
+    }
+
+    let i = at orelse return Value.Initial
+
+    return (try parseValue(sheet, prop, comps[i..i + 1])) orelse Value.Initial
+}
