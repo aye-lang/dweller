@@ -1,0 +1,18 @@
+<!doctype html>
+<title>EventSource: an event of a stream that stays open</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const es = new EventSource('/event-stream-open' + location.search);
+es.onopen = () => log('open state ' + es.readyState);
+es.onmessage = e => {
+  log('message ' + e.data + ' state ' + es.readyState);
+  if (e.data === 'held') fetch('/event-stream-end' + location.search);
+};
+es.onerror = () => {
+  log('error state ' + es.readyState);
+  es.close();
+  log('closed state ' + es.readyState);
+};
+</script>

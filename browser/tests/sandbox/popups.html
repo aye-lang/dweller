@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<title>Popups of sandboxed frames</title>
+<pre id="out"></pre>
+<script>
+addEventListener('message', (e) => { document.getElementById('out').textContent += e.data + '\n'; });
+function frame(sandbox, script) {
+  const el = document.createElement('iframe');
+  el.sandbox = sandbox;
+  el.srcdoc = '<script>' + script + '</scr' + 'ipt>';
+  document.body.append(el);
+}
+frame('allow-scripts allow-popups', `
+  const w = window.open();
+  let got = 'read';
+  try { w.document } catch (e) { got = e.name }
+  parent.postMessage('document of the popup of an opaque frame: ' + got, '*');
+`);
+frame('allow-scripts allow-popups allow-same-origin', `
+  const w = window.open();
+  parent.postMessage('origin before the popup loads is the opener\\'s: ' + (w.origin === parent.location.origin), '*');
+  w.location = 'blank.html';
+  setTimeout(() => parent.postMessage('navigated before it loaded: ' + w.document.title, '*'), 200);
+`);
+</script>

@@ -1,0 +1,27 @@
+fn darkArgument(c: Comp) ?Color {
+    var end = c.toks.len
+
+    if c.toks[end - 1].kind == Tok.RParen {
+        end -= 1
+    }
+
+    let args = c.toks[1..end]
+    let comma = skipWhitespace(args, skipComponent(args, skipWhitespace(args, 0)))
+
+    if comma >= args.len || args[comma].kind != Tok.Comma {
+        return null
+    }
+
+    var from = skipWhitespace(args, comma + 1)
+    var to = args.len
+
+    while to > from && args[to - 1].kind == Tok.Whitespace {
+        to -= 1
+    }
+
+    if from >= to {
+        return null
+    }
+
+    return compColor(Comp { toks: args[from..to] })
+}

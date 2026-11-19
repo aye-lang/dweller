@@ -293,6 +293,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
             watchPermissions(&mut ui)
             defer endPermissionAsks(&mut ui)
+            watchDialogs(&mut ui, o.frames > 0 || o.exit_when_idle)
+            engine.setClipboardHooks(clipboardWrite, clipboardRead)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -423,6 +425,7 @@ pub struct Ui {
     find: Field
     // The sign-in prompt of a 401 (auth.aye).
     auth: AuthPrompt
+    dialog: JsDialog
     // The URL of the link under the mouse (resolved), for the status
     // line; empty for none.
     hover: text.Builder
@@ -523,6 +526,7 @@ pub struct Ui {
             finding: false,
             find: Field.init(alloc),
             auth: AuthPrompt.init(alloc),
+            dialog: JsDialog.init(alloc),
             hover: text.Builder.init(alloc),
             hand: false,
             dropdown: null,
@@ -576,6 +580,7 @@ pub struct Ui {
         self.address.deinit()
         self.find.deinit()
         self.auth.deinit()
+        self.dialog.deinit()
         self.hover.deinit()
     }
 
@@ -1141,6 +1146,9 @@ pub struct Ui {
         }
         if self.stuck {
             return stuckInput(self, ev)
+        }
+        if self.dialog.open {
+            return dialogInput(self, ev)
         }
         if hungInput(self, ev) || (try sadTabInput(self, ev)) {
             return
@@ -1993,6 +2001,9 @@ pub struct Ui {
             try drawCertBar(self, p)
         }
         try drawPermissionBar(self)
+        if self.dialog.open {
+            try drawDialog(self)
+        }
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }

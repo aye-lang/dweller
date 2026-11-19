@@ -1,0 +1,29 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-href
+fn navigateUnloaded(it: *mut Interp, a: Args) JsError!Value {
+    let id = winContext(it, it.arg(a, 0))
+
+    if id == 0 {
+        return navigateRemote(it, a)
+    }
+
+    let s = scriptOf(it)
+    let b = try it.builder()
+    defer it.release(b)
+
+    try argText(it, a, 1, b)
+
+    let target = s.page.resolve(it.alloc, b.bytes()) catch |e| {
+        return domError(it, "SyntaxError", "Failed to set the 'href' property on 'Location': not a valid URL.")
+    }
+
+    defer target.deinit(it.alloc)
+
+    try navigateContext(id, target.href, null, originPage(s.page).url.href)
+
+    return Value.Undefined
+}

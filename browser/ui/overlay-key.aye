@@ -5,7 +5,7 @@ import std.list.List
 import std.mem.AllocError
 
 pub fn overlayKey(ui: *mut Ui, v: paint.View) AllocError!?u64 {
-    if ui.agents != null || ui.stuck || ui.auth.open || ui.finding || ui.dropdown != null || ui.page_view.matches.len() > 0 {
+    if ui.agents != null || ui.stuck || ui.dialog.open || ui.auth.open || ui.finding || ui.dropdown != null || ui.page_view.matches.len() > 0 {
         return null
     }
 
@@ -21,9 +21,13 @@ pub fn overlayKey(ui: *mut Ui, v: paint.View) AllocError!?u64 {
         return null
     }
 
+    for r in engine.pageSelection(p) { h = mixKey(h, @hash(r)) }
+
     let f = p.doc.controls.focus orelse return h
 
     h = mixKey(h, @hash(f))
+
+    if engine.hostCaret(p) |c| { h = mixKey(h, @hash(c)) }
 
     if !dom.isTextField(&p.doc, f) {
         return h

@@ -11,7 +11,9 @@ fn awaitReply(r: *mut TabRenderer) ?ipc.Message {
             let got = ipc.nextMessage(r.inbox.bytes()[at..]) catch return null
             let g = got orelse break
 
-            if g.message is .Cookies || g.message is .PermissionState || g.message is .StorageReply || g.message is .AgentWindowReply || g.message is .IdbReply {
+            if g.message is .Shutdown { return null }
+
+            if g.message is .Cookies || g.message is .PermissionState || g.message is .StorageReply || g.message is .AgentWindowReply || g.message is .IdbReply || g.message is .DialogReply || g.message is .ClipboardText {
                 r.reply.clear()
                 r.reply.append(r.inbox.bytes()[at..at + g.used]) catch return null
                 cutOut(&mut r.inbox, at, g.used)
