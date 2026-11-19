@@ -235,6 +235,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q5.10 | contenteditable and the core of `execCommand`; the async Clipboard API | `core/editing/`, `modules/clipboard/` |
 | Q5.3 | `alert`, `confirm` and `prompt` as real dialogs (`prompt` returns null today) | `core/frame/local_dom_window.cc`, `chrome/browser/ui/javascript_dialogs/` |
 | Q5.8 | EventSource | `modules/eventsource/` |
+| Q5.9a | `<video>` and `<audio>` 1: progressive playback of MP4 (H.264, AAC), WebM (VP9, Opus) and MP3, with controls. Decoding uses the system decoders in a utility process | `media/`, `third_party/blink/renderer/core/html/media/` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)

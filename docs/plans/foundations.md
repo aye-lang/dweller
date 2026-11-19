@@ -377,7 +377,6 @@ Where a row can be verified:
 | Q5.2 | `prefers-color-scheme: dark`, a dark UA sheet, and `color-scheme` | `core/css/media_query_evaluator.cc`, `core/css/resolver/` (color-scheme) |
 | Q5.4 | IME composition events and the candidate window placed at the caret (CJK) | `core/editing/ime/input_method_controller.cc` |
 | Q5.5 | `<input type=file>`: the picker and a multipart upload with files | `core/html/forms/file_input_type.cc`, `core/fileapi/` |
-| Q5.9a | `<video>` and `<audio>` 1: progressive playback of MP4 (H.264, AAC), WebM (VP9, Opus) and MP3, with controls. Decoding uses the system decoders in a utility process | `media/`, `third_party/blink/renderer/core/html/media/` |
 | Q5.9b | Media 2: Media Source Extensions (YouTube) | `third_party/blink/renderer/modules/mediasource/` |
 | Q5.13 | Bookmarks and address-bar search (search engine, suggestions from history) | `components/bookmarks/`, `components/omnibox/` |
 | Q5.15 | Print to PDF and `@media print` | `components/printing/`, `core/paint/` (print) |
