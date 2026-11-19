@@ -101,3 +101,29 @@ fn color_scheme_frames_follow_their_element() {
         assert!(got.contains(want), "{scheme}: {got}");
     }
 }
+
+/// Q5.2, slice 5: a frame's canvas
+/// (`browser/tests/color-scheme/frame_canvas.html`, four frames on a
+/// green page). A frame without a background is transparent when its
+/// used color scheme is its `iframe` element's; a dark frame in a light
+/// element gets the dark canvas, and a light frame in an element with
+/// `color-scheme: dark` a white one; a frame's own translucent
+/// background is blended over the page.
+#[test]
+fn color_scheme_frame_canvas() {
+    let png = scratch().join("color_scheme_frame_canvas.png");
+    let out = dweller_command()
+        .current_dir(root())
+        .args(["screenshot", "browser/tests/color-scheme/frame_canvas.html", "--font", "fixed", "--width", "300", "-o"])
+        .arg(&png)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let (w, _, px) = png_rgba(&std::fs::read(&png).unwrap());
+    let at = |x: usize| px[(25 * w + x) * 4..(25 * w + x) * 4 + 3].to_vec();
+    assert_eq!(at(25), [0, 128, 0], "the same scheme: transparent");
+    assert_eq!(at(85), [18, 18, 18], "a dark frame in a light element");
+    assert_eq!(at(145), [0, 64, 128], "a translucent background over the page");
+    assert_eq!(at(205), [255, 255, 255], "a light frame in a dark element");
+    assert_eq!(at(270), [0, 128, 0], "the page");
+}
