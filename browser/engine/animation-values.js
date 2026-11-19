@@ -14,7 +14,7 @@ function computedWith(el, name, value) {
 
   el.style.setProperty(name, value);
 
-  const v = name === 'transform' ? ak.computedStyle(el, name) : getComputedStyle(el).getPropertyValue(name);
+  const v = name === 'transform' || name === 'transform-origin' ? ak.computedStyle(el, name) : getComputedStyle(el).getPropertyValue(name);
 
   el.style.setProperty(name, old);
 

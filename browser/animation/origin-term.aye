@@ -1,0 +1,32 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+fn originTerm(term: []u8) ?[2]f64 {
+    if text.eql(term, "left") || text.eql(term, "top") {
+        return [2]f64{0.0, 0.0}
+    }
+
+    if text.eql(term, "center") {
+        return [2]f64{0.0, 50.0}
+    }
+
+    if text.eql(term, "right") || text.eql(term, "bottom") {
+        return [2]f64{0.0, 100.0}
+    }
+
+    if text.startsWith(term, "calc(") && text.endsWith(term, ")") {
+        return calcTerm(term[5..term.len - 1])
+    }
+
+    let f = parseTransformFn("origin", term) orelse return null
+
+    if f.count != 1 || (f.unit[0] != UNIT_PX && f.unit[0] != UNIT_PERCENT && f.n[0] != 0.0) {
+        return null
+    }
+
+    if f.unit[0] == UNIT_PERCENT {
+        return [2]f64{0.0, f.n[0]}
+    }
+
+    return [2]f64{f.n[0], 0.0}
+}

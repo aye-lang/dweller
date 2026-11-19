@@ -1,0 +1,28 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#calc-serialize
+fn calcTerm(sum: []u8) ?[2]f64 {
+    var out = [2]f64{0.0, 0.0}
+    var sign = 1.0
+    var at: usize = 0
+
+    while nextTerm(sum, &mut at) |term| {
+        if text.eql(term, "+") || text.eql(term, "-") {
+            sign = 1.0
+
+            if text.eql(term, "-") {
+                sign = -1.0
+            }
+
+            continue
+        }
+
+        let one = originTerm(term) orelse return null
+
+        out[0] += sign * one[0]
+        out[1] += sign * one[1]
+        sign = 1.0
+    }
+
+    return out
+}

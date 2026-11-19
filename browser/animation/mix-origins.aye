@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+fn mixOrigins(a: []u8, b: []u8, p: f64, sum: bool, out: *mut text.Builder) AllocError!bool {
+    let from = originOf(a) orelse return false
+    let to = originOf(b) orelse return false
+    var mixed = from
+
+    for k in 0..5 {
+        mixed[k] = from[k] + (to[k] - from[k]) * p
+
+        if sum {
+            mixed[k] = from[k] + to[k]
+        }
+    }
+
+    try writeOrigin(mixed, out)
+
+    return true
+}
