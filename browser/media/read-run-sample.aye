@@ -1,0 +1,26 @@
+struct RunSample {
+    duration: u32
+    size: u32
+    flags: u32
+    shift: i64
+}
+
+fn readRunSample(b: []u8, at: usize, flags: u32, version: u8, one: *mut RunSample) usize {
+    var p = at
+
+    for k, bit in [4]u32{ 0x100, 0x200, 0x400, 0x800 } {
+        if flags & bit == 0 { continue }
+
+        let v = be32(b, p)
+
+        p += 4
+
+        if k == 0 { one.duration = v }
+        if k == 1 { one.size = v }
+        if k == 2 { one.flags = v }
+        if k == 3 && version == 0 { one.shift = v as i64 }
+        if k == 3 && version != 0 { one.shift = signed32(v) }
+    }
+
+    return p
+}

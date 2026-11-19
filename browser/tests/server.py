@@ -84,6 +84,9 @@
 #                    an ETag), plain (none). A matching If-None-Match
 #                    gets 304. Each request is logged ("cached MODE
 #                    200" or "... 304", see /log).
+#   /ordered/NAME      an empty response after 50 ms, typed by NAME's
+#                    extension; /order lists the NAMEs in the order the
+#                    requests arrived
 #   /logged-acao/NAME  as /acao/NAME, recording the request (method,
 #                    path, Origin, Cookie) in /log
 #   /meta/NAME       (GET and POST) records the request's method, path,
@@ -176,6 +179,7 @@ COOKIES = [
 ]
 
 LOG = []
+ORDER = []
 CACHED_TAG = '"v1"'
 CACHED = {
     "fresh": [("Cache-Control", "max-age=3600")],
@@ -380,6 +384,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 LOG.append("cached %s 200\n" % mode)
                 self.reply(200, headers, (".%s { color: rgb(1, 2, 3) }" % mode).encode())
+        elif path.startswith("/ordered/"):
+            name = path[len("/ordered/"):]
+            ORDER.append(name)
+            time.sleep(0.05)
+            kind = {"css": "text/css", "js": "text/javascript"}.get(name.rpartition(".")[2], "image/png")
+            self.reply(200, [("Content-Type", kind), ("Cache-Control", "no-store")], b"")
+        elif path == "/order":
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], " ".join(ORDER).encode())
         elif path.startswith("/log/"):
             self.log_request_line("GET")
         elif path.startswith("/fail/"):

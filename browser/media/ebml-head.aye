@@ -1,0 +1,21 @@
+let EBML_LIMIT: u64 = 1 << 40
+
+struct EbmlHead {
+    id: u32
+    body: usize
+    size: usize
+    unknown: bool
+}
+
+// chromium: media/formats/webm/webm_parser.cc (ParseWebMElementHeader)
+fn ebmlHead(b: []u8, at: usize) ?EbmlHead {
+    let id = ebmlNumber(b, at, b.len, true) orelse return null
+    let size = ebmlNumber(b, at + id[1] as usize, b.len, false) orelse return null
+    let body = at + (id[1] + size[1]) as usize
+
+    if size[0] == ebmlUnknown(size[1]) || size[0] > EBML_LIMIT {
+        return EbmlHead { id: id[0] as u32, body: body, size: 0, unknown: true }
+    }
+
+    return EbmlHead { id: id[0] as u32, body: body, size: size[0] as usize, unknown: false }
+}
