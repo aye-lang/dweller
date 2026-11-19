@@ -1,0 +1,25 @@
+import net
+import paint
+import std.mem.AllocError
+import std.text
+
+fn drawDownloadRow(ui: *mut Ui, r: paint.Rect, y: f64, d: net.Download) AllocError!void {
+    let f = uiFont(13.0)
+    let small = uiFont(11.0)
+    var note = text.Builder.init(ui.alloc)
+    defer note.deinit()
+
+    if d.state == net.DOWNLOAD_FAILED {
+        try note.append("Failed")
+    } else {
+        try sizeText(&mut note, d.size)
+    }
+
+    let note_w = ui.measure.width(small, note.bytes())
+    let clip = paint.Rect { x: r.x + 1.0, y: y, w: r.w - note_w - 22.0, h: SUGGEST_ROW }
+
+    try ui.canvas.pushClip(paint.deviceRect(clip, screen(ui)))
+    try label(ui, r.x + 10.0, centered(ui, y, SUGGEST_ROW, f), baseName(d.owned_path), f, INK)
+    ui.canvas.popClip()
+    try label(ui, r.x + r.w - note_w - 10.0, centered(ui, y, SUGGEST_ROW, small), note.bytes(), small, DOWNLOAD_NOTE)
+}

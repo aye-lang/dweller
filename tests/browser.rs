@@ -82,6 +82,8 @@ mod term;
 mod webgl;
 #[path = "browser/websocket.rs"]
 mod websocket;
+#[path = "browser/window_downloads.rs"]
+mod window_downloads;
 #[path = "browser/window_file.rs"]
 mod window_file;
 #[path = "browser/window_ime.rs"]

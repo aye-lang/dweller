@@ -416,6 +416,9 @@ pub struct Ui {
     ime: ?*mut ImeState = null
     bar_shown: bool = false
     bar_hidden: bool = false
+    downloads_before: usize = 0
+    downloads_seen: usize = 0
+    downloads_open: bool = false
     canvas: paint.Canvas
     // The page's pixels, kept between frames (damage.aye): only what
     // changed is drawn again.
@@ -632,6 +635,8 @@ pub struct Ui {
             return 1
         }
         imeHints()
+        self.downloads_before = net.downloadCount()
+        self.downloads_seen = self.downloads_before
         SDL_StartTextInput()
         let restored = try restoreTabs(self)
 
@@ -798,6 +803,7 @@ pub struct Ui {
             try printAsked(self)
             try placeIme(self)
             try syncBookmarksBar(self)
+            syncDownloads(self)
             if engine.hasContextRequests() {
                 try serveContexts(self)
             }
@@ -1403,6 +1409,9 @@ pub struct Ui {
             }
             return
         }
+        if sym == SDLK_ESCAPE && closeDownloadsList(self) {
+            return
+        }
         if sym == SDLK_ESCAPE && closeSpaceMenu(self) {
             self.swallow = true
             return
@@ -1413,7 +1422,7 @@ pub struct Ui {
             self.swallow = true
             return
         }
-        if cmd && ((try zoomShortcut(self, sym)) || (try bookmarkShortcut(self, sym, shift)) || (try printShortcut(self, sym, shift)) || (try historyShortcut(self, sym, shift)) || try windowKey(self, sym, shift)) {
+        if cmd && ((try zoomShortcut(self, sym)) || (try bookmarkShortcut(self, sym, shift)) || (try printShortcut(self, sym, shift)) || (try historyShortcut(self, sym, shift)) || (try downloadsShortcut(self, sym, shift)) || try windowKey(self, sym, shift)) {
             self.swallow = true
             return
         }
@@ -1676,6 +1685,9 @@ pub struct Ui {
             return
         }
         if try clickMenu(self, x, y) {
+            return
+        }
+        if try clickDownloads(self, x, y) {
             return
         }
         if try clickBookmarksBar(self, x, y) {
@@ -2024,6 +2036,7 @@ pub struct Ui {
         try drawToolbar(self)
         try drawZoomChip(self)
         drawStar(self)
+        drawDownloadsButton(self)
         drawFieldComposition(self)
         if self.hasTabStrip() {
             try drawTabStrip(self)
@@ -2051,6 +2064,7 @@ pub struct Ui {
         }
         try drawSpaceMenu(self)
         try drawSuggestions(self)
+        try drawDownloadsList(self)
         if self.texture |t| {
             SDL_UpdateTexture(t, null, self.canvas.pixels.ptr, (self.canvas.width * 4) as i32)
             SDL_RenderClear(self.renderer)

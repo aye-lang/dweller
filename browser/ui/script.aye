@@ -250,7 +250,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "picker") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "picker") && !text.eql(w, "downloaded") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
             return false
         }
     }
@@ -306,6 +306,9 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
             return
         }
         if text.eql(w, "picker") && pickerWaits(ui) {
+            return
+        }
+        if text.eql(w, "downloaded") && !ui.downloads_open {
             return
         }
         if text.eql(w, "asked") && permissionBarOf(ui) == null {
@@ -400,7 +403,7 @@ fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
-    try writeDownloads(out)
+    try writeDownloads(ui, out)
     try writePermission(out)
     if certPage(ui) |p| {
         try out.append("cert ")
