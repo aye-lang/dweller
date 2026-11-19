@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: net/http/http_cache_transaction.cc (ConditionalizeRequest)
+fn validatorsOf(alloc: Allocator, headers: []u8, more: []u8) AllocError![]mut u8 {
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+    let etag = requestHeaderValue(headers, "ETag")
+    let modified = requestHeaderValue(headers, "Last-Modified")
+
+    try out.append(more)
+
+    if etag.len > 0 { try appendLine(&mut out, "If-None-Match: ", etag) }
+
+    if modified.len > 0 { try appendLine(&mut out, "If-Modified-Since: ", modified) }
+
+    return out.toOwned()
+}
+
+fn appendLine(out: *mut text.Builder, name: []u8, value: []u8) AllocError!void {
+    if out.len() > 0 { try out.append("\n") }
+
+    try out.append(name)
+    try out.append(value)
+}

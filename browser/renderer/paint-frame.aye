@@ -33,22 +33,21 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     let t = p.tree.?
 
-    try keepList(r, p, t, layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale)))
-    perf.end("ui_relayout", t_relayout, "")
+    notePaintStep(try keepList(r, p, t, layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))), t_relayout)
 
     var damage = paint.Damage.init(r.alloc)
     defer damage.deinit()
 
-    r.max_x = math.max(0.0, r.list.?.width - r.width as f64 / r.scale)
-    r.max_y = math.max(0.0, r.list.?.height - r.height as f64 / r.scale)
+    r.max_x = math.max(0.0, r.lists.list.?.width - r.width as f64 / r.scale)
+    r.max_y = math.max(0.0, r.lists.list.?.height - r.height as f64 / r.scale)
 
     if r.scroll_x > r.max_x || r.scroll_y > r.max_y {
         try scrollPage(r, 0.0, 0.0)
         _ = layout.scrollTo(t, pageview.snappedScroll(r.scroll_y, r.scale))
-        try keepList(r, p, t, true)
+        _ = try keepList(r, p, t, true)
     }
 
-    let list = &r.list.?
+    let list = &r.lists.list.?
 
     try sayScrollInfo(r, t, list.background)
 
@@ -60,7 +59,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
     try bubbleMarks(r, p, &mut marks)
     try reportSubframes(r, list, p)
 
-    let whole = try frameDamage(r, r.sigs.items(), list.background, &mut damage)
+    let whole = try frameDamage(r, r.lists.sigs.items(), list.background, r.marks.len() > 0 || marks.len() > 0, &mut damage)
 
     if !whole && !sameMarks(r.marks.items(), marks.items()) { try addMarks(r, &mut damage, marks.items()) }
 
@@ -68,7 +67,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     r.drawn.clear()
 
-    for g in r.sigs.items() { try r.drawn.append(g) }
+    for g in r.lists.sigs.items() { try r.drawn.append(g) }
 
     r.marks = marks
     marks = old_marks
