@@ -1,0 +1,31 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#identity-transform-function
+fn identityTransform(f: TransformFn) ?TransformFn {
+    var id = f
+    let scale = text.startsWith(f.name, "scale")
+    let matrix = text.startsWith(f.name, "matrix")
+    var step: usize = 3
+
+    if text.eql(f.name, "perspective") {
+        return null
+    }
+
+    if f.count == 16 {
+        step = 5
+    }
+
+    for k in 0..f.count {
+        if text.eql(f.name, "rotate3d") && k < 3 {
+            continue
+        }
+
+        id.n[k] = 0.0
+
+        if scale || (matrix && k % step == 0) {
+            id.n[k] = 1.0
+        }
+    }
+
+    return id
+}
