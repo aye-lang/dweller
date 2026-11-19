@@ -679,16 +679,17 @@ pub struct Ui {
                 let drew = std.time.monotonicMs()
                 try self.draw()
                 perf.noteFrame(std.time.monotonicMs() - drew)
-                perf.end("ui_draw", t_draw, "")
                 self.dirty = false
                 self.repaint = false
                 if !scriptBehind(self) {
+                    perf.end("ui_draw", t_draw, "")
                     drawn += 1
                 }
                 if self.paint_began != 0 && pageview.hasFrame(self.view()) {
                     perf.end("ui_first_paint", self.paint_began, self.tab.href())
                     self.paint_began = 0
                 }
+                noteTabPaint(self)
             }
             if until_idle && drawn > 0 && pageSettled(self) {
                 settled += 1
@@ -1170,10 +1171,16 @@ pub struct Ui {
             return
         }
         noteInput(self, ev)
+        if ev.kind != SDL_MOUSEWHEEL && tabInput(self) != null {
+            try self.flushWheel()
+        }
         if try permissionInput(self, ev) {
             return
         }
         if try forwardInput(self, ev) {
+            return
+        }
+        if try certInput(self, ev) {
             return
         }
         if try forwardTab(self, ev) {

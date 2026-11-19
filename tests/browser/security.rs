@@ -248,7 +248,7 @@ fn no_file_from_web() {
     };
     for (how, events) in [
         ("location", "frame frame frame"),
-        ("open", "frame frame frame"),
+        ("open", "frame click:12,50 frame frame frame"),
         ("click", "frame click:12,50 frame frame frame"),
     ] {
         let got = goes(&web, how, events);

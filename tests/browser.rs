@@ -62,10 +62,12 @@ mod paint;
 mod perf;
 #[path = "browser/permissions.rs"]
 mod permissions;
-#[path = "browser/screenshot.rs"]
-mod screenshot;
 #[path = "browser/print.rs"]
 mod print;
+#[path = "browser/screenshot.rs"]
+mod screenshot;
+#[path = "browser/sandbox.rs"]
+mod sandbox;
 #[path = "browser/scripts.rs"]
 mod scripts;
 #[path = "browser/security.rs"]
