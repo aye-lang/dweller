@@ -1,0 +1,24 @@
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/browsers.html#is-a-registrable-domain-suffix-of-or-is-equal-to
+pub fn registrableSuffixOf(suffix: []u8, host: []u8) bool {
+    if suffix.len == 0 {
+        return false
+    }
+
+    if text.eqlIgnoreCase(suffix, host) {
+        return true
+    }
+
+    if isIp(suffix) || isIp(host) || suffix.len >= host.len {
+        return false
+    }
+
+    let cut = host.len - suffix.len
+
+    if host[cut - 1] != '.' || !text.eqlIgnoreCase(host[cut..], suffix) {
+        return false
+    }
+
+    return suffix.len > publicSuffix(host).len && !isPublicSuffix(suffix)
+}

@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+// chromium: media/formats/webm/webm_cluster_parser.cc
+fn webmCluster(b: []u8, cluster: Ebml, scale: u64, m: *mut Media) AllocError!void {
+    var base: u64 = 0
+    var at = cluster.body
+
+    while ebmlAt(b, at, cluster.end) |x| {
+        if x.id == 0xE7 {
+            base = ebmlUint(b, x)
+        } else if x.id == 0xA3 {
+            try webmBlock(b, x, base, scale, m)
+        } else if x.id == 0xA0 {
+            if ebmlIn(b, x.body, x.end, 0xA1) |block| { try webmBlock(b, block, base, scale, m) }
+        }
+
+        at = x.end
+    }
+}

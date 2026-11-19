@@ -1,0 +1,24 @@
+// chromium: media/formats/mp4/box_definitions.cc
+fn headerSeconds(b: []u8, x: Box) f64 {
+    if x.body + 32 > x.end { return 0.0 }
+
+    if b[x.body] == 1 {
+        return ticks(be64(b, x.body + 24), headerScale(b, x))
+    }
+
+    return ticks(be32(b, x.body + 16) as u64, headerScale(b, x))
+}
+
+fn headerScale(b: []u8, x: Box) u32 {
+    if x.body + 32 > x.end { return 0 }
+
+    if b[x.body] == 1 { return be32(b, x.body + 20) }
+
+    return be32(b, x.body + 12)
+}
+
+fn ticks(n: u64, scale: u32) f64 {
+    if scale == 0 || n == 0xFFFFFFFF || n == 0xFFFFFFFFFFFFFFFF { return 0.0 }
+
+    return n as f64 / scale as f64
+}
