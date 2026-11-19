@@ -50,7 +50,7 @@ WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 PROCESS = ""
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "images", "css/support", "css/reference", "tools", "docs", "web-animations/resources"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
@@ -464,6 +464,7 @@ def trust_test_ca(root):
     """Dweller trusts WPT's CA (tools/certs/cacert.pem) in these runs only:
     DWELLER_TEST_CA counts only together with DWELLER_TEST=1."""
     os.environ["DWELLER_TEST"] = "1"
+    os.environ["DWELLER_AUTOPLAY"] = "1"
     os.environ["DWELLER_TEST_CA"] = str(Path(root) / "tools" / "certs" / "cacert.pem")
 
 
