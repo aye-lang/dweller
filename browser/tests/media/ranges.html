@@ -1,0 +1,53 @@
+<!doctype html>
+<title>Media ranges</title>
+<audio id="a" src="/ranged?size=399956&name=meta" muted></audio>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const until = (el, type) => new Promise(resolve => el.addEventListener(type, resolve, { once: true }));
+const ranges = r => Array.from({ length: r.length }, (_, i) => r.start(i).toFixed(1) + '-' + r.end(i).toFixed(1)).join(',') || 'none';
+const state = el => 'network=' + el.networkState + ' ready=' + el.readyState + ' time=' + el.currentTime.toFixed(1) + ' duration=' + el.duration.toFixed(1) + ' buffered=' + ranges(el.buffered);
+const asked = async name => (await (await fetch('/log')).text()).split('\n').filter(l => l.startsWith('ranged ' + name + ' ')).map(l => l.split('=')[1] || 'whole').join(' ');
+function media(src, preload) {
+  const el = new Audio();
+  el.muted = true;
+  el.preload = preload;
+  const seen = [];
+  for (const t of ['loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'suspend', 'waiting', 'playing', 'seeking', 'seeked', 'ended', 'error']) el.addEventListener(t, () => seen.push(t));
+  el.src = src;
+  return [el, seen];
+}
+
+(async () => {
+  const a = document.getElementById('a');
+  await until(a, 'suspend');
+  log('preload=metadata (the default): ' + state(a) + ' asked ' + await asked('meta'));
+
+  const [all, all_seen] = media('/ranged?size=199956&name=auto', 'auto');
+  await until(all, 'suspend');
+  log('preload=auto: ' + state(all) + ' asked ' + await asked('auto'));
+  log('preload=auto events: ' + all_seen.join(' '));
+
+  const [whole] = media('/ranged?size=99956&name=whole&norange', 'metadata');
+  await until(whole, 'suspend');
+  log('a server without ranges: ' + state(whole) + ' asked ' + await asked('whole'));
+
+  const [far, far_seen] = media('/ranged?size=399956&name=seek', 'metadata');
+  await until(far, 'suspend');
+  far.currentTime = 40;
+  await until(far, 'seeked');
+  await until(far, 'suspend');
+  log('a seek past the buffered end: ' + state(far) + ' asked ' + await asked('seek'));
+  log('a seek past the buffered end events: ' + far_seen.join(' '));
+
+  const [played, played_seen] = media('/ranged?size=199956&name=play', 'metadata');
+  await until(played, 'suspend');
+  played.playbackRate = 16;
+  played.play();
+  await until(played, 'ended');
+  log('playing loads the rest: ' + state(played) + ' asked ' + await asked('play'));
+  log('playing loads the rest events: ' + played_seen.join(' '));
+  log('done');
+})();
+</script>

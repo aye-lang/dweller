@@ -4,6 +4,10 @@
 # routes that a file server cannot produce:
 #
 #   /redirect        302 to /basic.html
+#   /ranged?size=N&name=X  a WAV file of N bytes of 8-bit mono sound at
+#                    8000 Hz (N/8000 s) that answers Range requests with
+#                    206 (the whole file with 200 when ?norange is there),
+#                    each recorded in /log as "ranged X RANGE"
 #   /attach?name=N&disposition=D&type=T  the body "attached N" with
 #                    Content-Disposition: D (attachment), filename="N"
 #                    when there is a name, and Content-Type T
@@ -283,6 +287,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             back = query.get("redirect_uri", ["/"])[0]
             extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
             self.reply(302, [("Location", back + "?" + extra)])
+        elif path.startswith("/ranged"):
+            self.ranged(path)
         elif path.startswith("/attach"):
             query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query))
             disposition = query.get("disposition", "attachment")
@@ -538,6 +544,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.ws_send(2, bytes(i & 0xFF for i in range(int(text[4:]))))
             else:
                 self.ws_send(kind, parts)
+
+    def ranged(self, path):
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query, keep_blank_values=True))
+        size = int(query.get("size", "200000"))
+        data = bytes(128 + (i % 64) for i in range(size))
+        wav = b"RIFF" + (36 + size).to_bytes(4, "little") + b"WAVEfmt " + (16).to_bytes(4, "little") + (1).to_bytes(2, "little") + (1).to_bytes(2, "little") + (8000).to_bytes(4, "little") * 2 + (1).to_bytes(2, "little") + (8).to_bytes(2, "little") + b"data" + size.to_bytes(4, "little") + data
+        asked = self.headers.get("Range", "")
+        LOG.append("ranged %s %s\n" % (query.get("name", ""), asked or "whole"))
+        if "norange" in query or not asked.startswith("bytes="):
+            self.reply(200, [("Content-Type", "audio/wav")], wav)
+            return
+        first, _, last = asked[6:].partition("-")
+        start = int(first)
+        end = min(int(last) if last else len(wav) - 1, len(wav) - 1)
+        if start >= len(wav):
+            self.reply(416, [("Content-Range", "bytes */%d" % len(wav))])
+            return
+        self.reply(206, [("Content-Type", "audio/wav"), ("Accept-Ranges", "bytes"), ("Content-Range", "bytes %d-%d/%d" % (start, end, len(wav)))], wav[start:end + 1])
 
     def hang(self, path):
         parts = urllib.parse.urlsplit(path)

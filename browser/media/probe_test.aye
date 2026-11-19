@@ -48,7 +48,7 @@ test "a WebM file's info, tracks and blocks" {
 
     try webmFile(@testAllocator(), &mut file)
 
-    var m = (try probe(@testAllocator(), file.bytes())).?
+    var m = (try probe(@testAllocator(), file.bytes(), file.bytes().len)).?
     defer m.deinit()
 
     @expect(m.container == Container.WebM)
@@ -85,7 +85,7 @@ test "an MP3's frames after an ID3 tag, and its duration" {
         }
     }
 
-    var m = (try probe(@testAllocator(), file.bytes())).?
+    var m = (try probe(@testAllocator(), file.bytes(), file.bytes().len)).?
     defer m.deinit()
 
     let t = m.first(TrackKind.Audio).?
@@ -101,7 +101,7 @@ test "an MP3's frames after an ID3 tag, and its duration" {
 
 test "a WAV's duration from its format and data chunks" {
     let file = "RIFF\x2c\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x40\x1f\x00\x00\x00\x7d\x00\x00\x04\x00\x10\x00data\x08\x00\x00\x0012345678"
-    var m = (try probe(@testAllocator(), file)).?
+    var m = (try probe(@testAllocator(), file, file.len)).?
     defer m.deinit()
 
     let t = m.first(TrackKind.Audio).?
