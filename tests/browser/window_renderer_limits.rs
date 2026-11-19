@@ -228,3 +228,35 @@ fn window_renderer_limits_root_bounds() {
         assert!(title.contains("P own rect ") && title.ends_with(" frame null true"), "{mode}:\n{state}");
     }
 }
+
+fn child_place(state: &str) -> (i64, String) {
+    let line = state.lines().find(|l| l.starts_with("renderer-child ")).unwrap_or_else(|| panic!("no child in\n{state}"));
+    let words: Vec<&str> = line.split(' ').collect();
+    let at = words.iter().position(|w| *w == "at").unwrap();
+    (words[at + 2].parse().unwrap(), line.split_once(" title ").map(|(_, t)| t.to_string()).unwrap_or_default())
+}
+
+/// Q2.15p: `overscroll-behavior` at a frame's boundary. A wheel over a
+/// cross-site frame scrolls the frame, and what the frame cannot use
+/// scrolls the page around it; with `overscroll-behavior: contain` on
+/// the frame's root element the page stays where it is.
+#[test]
+fn window_renderer_limits_overscroll() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let wheels = "renderer:loaded renderer:child ".to_string() + &vec!["move:172,136 wheel:-3 renderer:input"; 3].join(" ") + " frame";
+
+    let state = limits_run(&format!("{}/ui/oopif-input.html", srv.base), &wheels, "2000", &[]);
+    let (y, title) = child_place(&state);
+    assert!(y < 36 && title.ends_with("scroll 220"), "the rest of the wheel scrolls the page\n{state}");
+
+    let state = limits_run(&format!("{}/ui/oopif-input.html?contain", srv.base), &wheels, "2000", &[]);
+    let (y, title) = child_place(&state);
+    assert!(y == 36 && title.ends_with("scroll 220"), "overscroll-behavior: contain keeps the page still\n{state}");
+}
