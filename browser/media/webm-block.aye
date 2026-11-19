@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+// https://www.rfc-editor.org/rfc/rfc9559#name-simpleblock-structure
+fn webmBlock(b: []u8, x: Ebml, base: u64, scale: u64, m: *mut Media) AllocError!void {
+    let number = ebmlNumber(b, x.body, x.end, false) orelse return
+    let head = x.body + number[1] as usize
+
+    if head + 3 > x.end { return }
+
+    let relative = ((be16(b, head) as i64) ^ 0x8000) - 0x8000
+    let time = (base as i64 + relative) as f64 * scale as f64 / 1.0e9
+
+    for i in 0..m.tracks.len() {
+        let t = &mut m.tracks.items()[i]
+
+        if t.number as u64 != number[0] { continue }
+
+        try t.samples.append(Sample { offset: (head + 3) as u64, size: (x.end - head - 3) as u32, time: time, duration: 0.0, key: x.id == 0xA1 || b[head + 2] & 0x80 != 0 })
+    }
+}

@@ -1,0 +1,44 @@
+import std.list.List
+import std.mem.AllocError
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn mp4Samples(b: []u8, stbl: Box, scale: u32, out: *mut List(Sample)) AllocError!void {
+    let stsz = boxIn(b, stbl.body, stbl.end, "stsz") orelse return
+    let stsc = boxIn(b, stbl.body, stbl.end, "stsc") orelse return
+    let stts = boxIn(b, stbl.body, stbl.end, "stts") orelse return
+    let wide = boxIn(b, stbl.body, stbl.end, "co64")
+    let chunks = wide orelse (boxIn(b, stbl.body, stbl.end, "stco") orelse return)
+    let stss = boxIn(b, stbl.body, stbl.end, "stss")
+
+    if scale == 0 || stsz.body + 12 > stsz.end || chunks.body + 8 > chunks.end { return }
+
+    let fixed = be32(b, stsz.body + 4)
+    let count = be32(b, stsz.body + 8) as usize
+    let chunk_count = be32(b, chunks.body + 4) as usize
+    var times = SampleTimes { b: b, x: stts, scale: scale }
+    var chunk: usize = 0
+
+    while chunk < chunk_count && out.len() < count {
+        var offset = chunkOffset(b, chunks, wide != null, chunk) orelse return
+        var left = samplesInChunk(b, stsc, chunk + 1)
+
+        while left > 0 && out.len() < count {
+            let i = out.len()
+            var size = fixed
+
+            if fixed == 0 {
+                if stsz.body + 16 + i * 4 > stsz.end { return }
+
+                size = be32(b, stsz.body + 12 + i * 4)
+            }
+
+            let span = times.next()
+
+            try out.append(Sample { offset: offset, size: size, time: span[0], duration: span[1], key: isSync(b, stss, i + 1) })
+            offset += size as u64
+            left -= 1
+        }
+
+        chunk += 1
+    }
+}
