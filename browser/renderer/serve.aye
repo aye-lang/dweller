@@ -1,5 +1,6 @@
 import engine
 import font
+import perf
 import std
 import std.mem.Allocator
 import std.text
@@ -19,6 +20,8 @@ pub fn serve(alloc: Allocator, fd: []u8, settings: [][]u8) i32 {
     engine.setConsoleEcho(has(settings, "--console") || std.os.getenv("DWELLER_CONSOLE") != null)
     engine.setCanvasFixed(true)
     engine.keepCwd()
+
+    if has(settings, "--telemetry") { perf.telemetryRelay(relayTelemetry) }
 
     if has(settings, "fixed") { return serveOn(alloc, conn, &mut fixed, null, blink) }
 

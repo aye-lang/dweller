@@ -1,5 +1,6 @@
 import ipc
 import net
+import perf
 import std
 import std.mem.AllocError
 import url
@@ -149,6 +150,10 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             tp.pong_at = std.time.monotonicMs()
             tp.hung = false
             tp.hang_seen = false
+        }
+
+        .Telemetry { records } => {
+            if !perf.telemetryTake(records) { return "bad telemetry" }
         }
 
         .UpgradeInsecure { page } => {

@@ -1,5 +1,6 @@
 import ipc
 import net
+import perf
 import std
 import std.mem.AllocError
 
@@ -28,6 +29,8 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try showCommitted(tp, title, url)
             tp.loading = false
             tp.loaded_new = true
+            perf.telemetryPage(url)
+            perf.noteLoaded(url)
         }
 
         .ScrollInfo { max_y, pan, background } => {
@@ -52,7 +55,11 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
-            if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
+            if !tp.loading && slot.session.tab.history.len() > 0 {
+                if slot.session.tab.history.now().scroll != scroll_y { perf.noteScroll() }
+
+                slot.session.tab.history.now().scroll = scroll_y
+            }
 
             noteFrameScroll(tp, scroll_y)
 
@@ -248,6 +255,10 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
         .WheelUnused { .. } => return "unexpected wheel_unused"
         .State { .. } => return "unexpected state"
+        .Telemetry { records } => {
+            if !perf.telemetryTake(records) { return "bad telemetry" }
+        }
+
         .UpgradeInsecure { page } => {
             if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
 
