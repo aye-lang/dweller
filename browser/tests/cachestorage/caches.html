@@ -1,0 +1,31 @@
+<!doctype html>
+<title>Cache API</title>
+<pre id="log"></pre>
+<script src="../indexeddb/harness.js"></script>
+<script>
+const nameOf = p => p.then(() => 'none', e => e.name);
+async function run() {
+  for (const name of await caches.keys()) await caches.delete(name);
+  log('empty ' + (await caches.keys()).length + ' ' + await caches.has('v1') + ' ' + await caches.delete('v1'));
+  const cache = await caches.open('v1');
+  await caches.open('v2');
+  log('names ' + await caches.keys() + ' ' + await caches.has('v1'));
+  await cache.put('made.txt?a=1', new Response('first', { status: 201, statusText: 'Made', headers: { 'Content-Type': 'text/plain', 'X-Kind': 'a' } }));
+  await cache.put(new Request('varied', { headers: { Accept: 'x/one' } }), new Response('one', { headers: { Vary: 'Accept' } }));
+  await cache.put(new Request('varied', { headers: { Accept: 'x/two' } }), new Response('two', { headers: { Vary: 'Accept' } }));
+  await cache.add('../serviceworker/plain.txt');
+  const hit = await cache.match('made.txt?a=1');
+  log('match ' + hit.status + ' ' + hit.statusText + ' ' + hit.headers.get('x-kind') + ' ' + await hit.text() + ' again ' + await (await cache.match('made.txt?a=1')).text());
+  log('miss ' + await cache.match('made.txt') + ' ignoreSearch ' + await (await cache.match('made.txt', { ignoreSearch: true })).text());
+  log('vary ' + await (await cache.match(new Request('varied', { headers: { Accept: 'x/two' } }))).text() + ' ' + await cache.match(new Request('varied', { headers: { Accept: 'x/three' } })) + ' ' + (await cache.matchAll('varied', { ignoreVary: true })).length);
+  log('added ' + (await (await cache.match('../serviceworker/plain.txt')).text()).trim());
+  log('keys ' + (await cache.keys()).map(r => new URL(r.url).pathname.split('/').pop() + new URL(r.url).search));
+  await cache.put('made.txt?a=1', new Response('second'));
+  log('replaced ' + await (await cache.match('made.txt?a=1')).text() + ' ' + (await cache.keys()).length);
+  log('errors ' + [await nameOf(cache.put(new Request('x', { method: 'POST', body: 'b' }), new Response('p'))), await nameOf(cache.put('x', new Response('p', { status: 206 }))), await nameOf(cache.put('x', new Response('p', { headers: { Vary: '*' } }))), await nameOf(cache.add('missing-file.txt')), await cache.match(new Request('made.txt?a=1', { method: 'HEAD' }))].join(' '));
+  log('storage match ' + await (await caches.match('varied', { ignoreVary: true })).text() + ' ' + await caches.match('varied', { ignoreVary: true, cacheName: 'v2' }));
+  log('delete ' + await cache.delete('made.txt?a=1') + ' ' + await cache.delete('made.txt?a=1') + ' ' + (await cache.keys()).length + ' ' + await caches.delete('v1') + ' ' + await caches.keys());
+  done('databases ' + (await indexedDB.databases()).length);
+}
+run().catch(e => done('failed ' + e + ' ' + e.stack));
+</script>

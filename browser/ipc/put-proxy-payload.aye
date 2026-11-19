@@ -3,17 +3,17 @@ import std.text
 
 fn putProxyPayload(out: *mut text.Builder, m: Message) AllocError!void {
     match m {
-        .PostMessage { key, frame, page, source_page, source_origin, target_origin, data, buffers } => {
+        .PostMessage { key, frame, page, source_page, source_origin, target_origin, data, buffers, ports } => {
             let numbers = [4]u32{key, frame, page, source_page}
-            let texts = [4][]u8{source_origin, target_origin, data, buffers}
+            let texts = [5][]u8{source_origin, target_origin, data, buffers, ports}
 
             for v in numbers { try putU32(out, v) }
             for b in texts { try putBytes(out, b) }
         }
 
-        .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers } => {
+        .PostedMessage { page, from_key, from_frame, from_page, origin, target_origin, data, buffers, ports } => {
             let numbers = [4]u32{page, from_key, from_frame, from_page}
-            let texts = [4][]u8{origin, target_origin, data, buffers}
+            let texts = [5][]u8{origin, target_origin, data, buffers, ports}
 
             for v in numbers { try putU32(out, v) }
             for b in texts { try putBytes(out, b) }

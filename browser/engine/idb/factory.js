@@ -44,7 +44,7 @@ class IDBFactory {
     return new Promise(resolve => {
       const lines = I.pairs(I.ask('databases'));
 
-      resolve(lines.filter((_, i) => i % 2 === 1).map((name, i) => ({ name: JSON.parse(name), version: Number(lines[i * 2]) })));
+      resolve(lines.filter((_, i) => i % 2 === 1).map((name, i) => ({ name: JSON.parse(name), version: Number(lines[i * 2]) })).filter(d => d.name !== 'dweller:cache-storage'));
     });
   }
   cmp(first, second) {
