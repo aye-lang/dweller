@@ -12,6 +12,13 @@ fn forwardKey(ui: *mut Ui, tp: *mut TabProcess, ev: *SDL_Event) AllocError!bool 
 
     if ((mods & (KMOD_GUI | KMOD_CTRL)) != 0 && !arrow) || (sym == SDLK_ESCAPE && ui.finding) { return false }
 
+    if down && sym == SDLK_ESCAPE && (ui.locked || ui.fullscreen) {
+        ui.swallow = true
+        try ui.leaveHostModes()
+
+        return true
+    }
+
     if sc == 0 {
         sc = scancodeOfSym(sym)
     }

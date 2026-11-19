@@ -84,6 +84,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q0.5 | bbc under replay ran 64 of its scripts, not 91, since Q3.3b: old archive entries gave CORS-mode module scripts no `Access-Control-Allow-Origin`, and `permissiveCors` now adds it for `Mode.Cors` too (done, #321) | `permissive-cors_test.aye`, `module_cors`; bbc's replay dump runs 96 scripts and 204 requests | – |
 | Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
 | Q0.3b | (proposed, decision 3) A "Target" column in `docs/conformance.md` for the X2 areas and the Q6 areas, beside the floor that `conformance.py check` enforces. Each target names where it comes from: the features the 20 sites and the daily sites use, or the score of the subtests that do not need a deferred feature. X2 and W9 then read "at target" | the table has the column, every X2 and Q6 area has a target with one line of reason, and `conformance.py check` still enforces only the floor | – |
+| Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 
 ## Q1: stable in one process (lanes base and perf)
 

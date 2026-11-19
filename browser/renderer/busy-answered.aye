@@ -1,0 +1,25 @@
+import ipc
+
+fn busyAnswered(r: *mut TabRenderer) !?bool {
+    var at: usize = 0
+
+    while try ipc.nextMessage(r.inbox.bytes()[at..]) |g| {
+        let used = g.used
+        let answer: ?bool = match g.message {
+            .BusyAnswer { wait } => wait == 1
+            .Shutdown => false
+            _ => null
+        }
+
+        if answer != null && !(g.message is .Shutdown) { cutOut(&mut r.inbox, at, used) }
+        if answer != null { return answer }
+
+        if try answerPing(r, g.message) {
+            cutOut(&mut r.inbox, at, used)
+        } else {
+            at += used
+        }
+    }
+
+    return null
+}

@@ -1,0 +1,21 @@
+import ipc
+import std
+import std.mem.AllocError
+
+// chromium: chrome/browser/ui/views/hung_renderer_view.cc
+fn answerBusy(ui: *mut Ui, tp: *mut TabProcess, shown: bool) AllocError!void {
+    ui.dirty = true
+
+    if shown && !tp.busy_seen {
+        tp.busy_seen = true
+        ui.unresponsive += 1
+
+        return
+    }
+
+    if shown && !stuck_headless { return }
+
+    if shown { std.log.line("stuck: page busy {} ms, waiting", tp.busy_ms) }
+
+    try tellBusy(tp, true)
+}

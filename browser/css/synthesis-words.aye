@@ -1,0 +1,28 @@
+// spec: https://drafts.csswg.org/css-fonts-4/#font-synthesis
+fn synthesisWords(comps: []Comp) ?[4][]u8 {
+    var words = [4][]u8{"none", "none", "none", "none"}
+
+    if comps.len == 1 && isIdent(comps[0], "none") {
+        return words
+    }
+
+    for c in comps {
+        let slot = synthesisSlot(c) orelse return null
+
+        if !isNoneWord(words[slot]) {
+            return null
+        }
+
+        words[slot] = "auto"
+
+        if isIdent(c, "oblique-only") {
+            words[slot] = "oblique-only"
+        }
+    }
+
+    if comps.len == 0 {
+        return null
+    }
+
+    return words
+}

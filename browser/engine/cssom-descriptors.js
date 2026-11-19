@@ -56,5 +56,34 @@ function descriptorBlock(kind, body) {
   });
 }
 
-return { descriptorBlock };
+// spec: https://drafts.csswg.org/css-fonts-4/#font-feature-values-syntax
+const FEATURE_LIMITS = { stylistic: [1, 1], 'historical-forms': [1, 1], styleset: [1, Infinity], 'character-variant': [1, 2], swash: [1, 1], ornaments: [1, 1], annotation: [1, 1] };
+const FEATURE_NAME = /^(?:-?(?:[a-zA-Z_]|[^\x00-\x7f]|\\.))(?:[\w-]|[^\x00-\x7f]|\\.)*$/;
+
+function featureDeclaration(text, limits) {
+  const colon = text.indexOf(':');
+  const name = text.slice(0, Math.max(colon, 0)).trim();
+  const values = colon < 0 ? [] : text.slice(colon + 1).trim().split(/\s+/);
+
+  if (!FEATURE_NAME.test(name) || values.length < limits[0] || values.length > limits[1] || !values.every(v => /^\d+$/.test(v))) return null;
+
+  return name.replace(/\\([g-zG-Z_])/g, '$1') + ': ' + values.join(' ') + ';';
+}
+
+function featureValuesText(body) {
+  const blocks = [];
+
+  for (const item of syntax.bodyItems(body)) {
+    const head = /^@([-\w]+)\s*\{/.exec(item.text);
+    const limits = head && FEATURE_LIMITS[head[1].toLowerCase()];
+    const inner = limits ? item.text.slice(head[0].length).replace(/\}\s*$/, '') : '';
+    const kept = syntax.splitTop(inner, ';').map(d => featureDeclaration(d, limits)).filter(d => d !== null);
+
+    if (kept.length) blocks.push('@' + head[1].toLowerCase() + ' { ' + kept.join(' ') + ' }');
+  }
+
+  return blocks.join(' ');
+}
+
+return { descriptorBlock, featureValuesText };
 };

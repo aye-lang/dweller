@@ -1,0 +1,24 @@
+// https://tc39.es/ecma262/#sec-rawbytestonumeric
+
+fn viewReadBig(it: *mut Interp, store: u32, at: u32, kind: u32, le: bool) JsError!Value {
+    let mem = storeMem(it, store)
+    var bits: u64 = 0
+
+    if at as usize + 8 <= mem.len {
+        bits = loadBits(mem, at, 8, le)
+    }
+
+    if kind == K_BIGINT64 {
+        return bigFromI64(it, @ptrCast(*i64, &bits).*)
+    }
+
+    var x = BigMag.init(it.alloc)
+    defer x.words.deinit()
+
+    while bits > 0 {
+        try x.words.append((bits & 65535) as u32)
+        bits = bits >> 16
+    }
+
+    return bigSave(it, &mut x)
+}

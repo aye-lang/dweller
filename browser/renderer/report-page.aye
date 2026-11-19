@@ -1,4 +1,5 @@
 import ipc
+import perf
 import std.text
 
 fn reportPage(r: *mut TabRenderer) !void {
@@ -21,7 +22,9 @@ fn reportPage(r: *mut TabRenderer) !void {
         try send(r.alloc, r.conn, r.tab, ipc.Message.Title { title: p.title })
     }
 
+    try askHost(r, p)
     try reportHistory(r, p)
     try reportFrameFocus(r, p)
     try reportLoadStopped(r, p)
+    perf.telemetryFlush()
 }

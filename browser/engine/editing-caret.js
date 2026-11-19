@@ -5,6 +5,7 @@ const G = globalThis;
 const ak = G.__canvasHost;
 const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
 const edit = G.__hostEdit;
+let goal = null;
 
 function rectOf(node, offset) {
   if (node.nodeType === 3) return ak.textCaret(node, offset);
@@ -40,6 +41,21 @@ function texts(host) {
   return out;
 }
 
+// chromium: third_party/blink/renderer/core/editing/selection_modifier.cc (LineDirectionPointForBlockDirectionNavigation)
+function lineBeside(host, node, offset, down) {
+  const at = rectOf(node, offset);
+  if (!at) return null;
+  if (goal === null) goal = at[0];
+
+  for (let k = 0; k < 6; k++) {
+    const to = ak.caretAt(goal, down ? at[1] + at[2] * (1.25 + k / 2) : at[1] - at[2] * (0.25 + k / 2));
+    const line = to && host.contains(to[0]) ? rectOf(to[0], to[1]) : null;
+    if (line && line[1] !== at[1]) return to;
+  }
+
+  return null;
+}
+
 function moved(host, how) {
   const sel = getSelection(), all = texts(host);
   if (all.length === 0 || !sel.rangeCount || !host.contains(sel.focusNode)) return;
@@ -49,7 +65,9 @@ function moved(host, how) {
 
   const i = all.indexOf(node), last = all[all.length - 1];
   let to = null;
-  if (how.endsWith('home')) to = [all[0], 0];
+  if (how.endsWith('up')) to = lineBeside(host, node, offset, false) || [all[0], 0];
+  else if (how.endsWith('down')) to = lineBeside(host, node, offset, true) || [last, last.data.length];
+  else if (how.endsWith('home')) to = [all[0], 0];
   else if (how.endsWith('end')) to = [last, last.data.length];
   else if (how.endsWith('left')) to = offset > 0 ? [node, offset - 1] : i > 0 ? [all[i - 1], all[i - 1].data.length] : null;
   else to = offset < node.data.length ? [node, offset + 1] : i + 1 < all.length ? [all[i + 1], 0] : null;
@@ -59,6 +77,7 @@ function moved(host, how) {
 
 hidden(G, '__hostEdit', function (host, line) {
   const command = line.slice(0, line.indexOf('\n'));
+  if (!/(up|down)$/.test(command)) goal = null;
   command.startsWith('move') || command.startsWith('extend') ? moved(host, command) : edit(host, line);
   showCaret();
 });
@@ -67,6 +86,7 @@ document.addEventListener('mousedown', e => {
   const host = e.target && e.target.nodeType === 1 && e.target.isContentEditable ? e.target : null;
   const at = host ? caretAt(e.clientX, e.clientY) : null;
   if (at && host.contains(at.offsetNode)) getSelection().collapse(at.offsetNode, at.offset);
+  goal = null;
 }, true);
 document.addEventListener('focusin', showCaret, true);
 document.addEventListener('focusout', () => ak.hostCaret(), true);

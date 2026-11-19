@@ -1,0 +1,14 @@
+import engine
+import std.mem.AllocError
+
+fn showInvalid(r: *mut TabRenderer, p: *mut engine.Page) AllocError!void {
+    let el = p.doc.controls.validation orelse return
+    let at = engine.boxRect(p, el) orelse return
+    let view = r.height as f64 / r.scale
+
+    if at.y < r.scroll_y {
+        try scrollPage(r, 0.0, at.y - 8.0 - r.scroll_y)
+    } else if at.y + at.h > r.scroll_y + view {
+        try scrollPage(r, 0.0, at.y + at.h - view + 8.0 - r.scroll_y)
+    }
+}

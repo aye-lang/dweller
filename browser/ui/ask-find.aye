@@ -1,22 +1,30 @@
-import ipc
+import std.list.List
 import std.mem.AllocError
 
-// chromium: content/browser/find_request_manager.cc (the browser sends the query and the renderer answers with its match count and the active match)
+// chromium: content/browser/find_request_manager.cc (the browser sends the query to every frame's renderer and adds their answers up)
 fn askFind(ui: *mut Ui, command: u32) AllocError!bool {
     if !ui.tab_processes { return false }
 
-    let tp = ui.slots[ui.active].?.process orelse return false
+    let top = ui.slots[ui.active].?.process orelse return false
 
-    if !tp.hello || tp.gone.len > 0 { return false }
+    if !top.hello || top.gone.len > 0 { return false }
 
-    tp.find_id += 1
+    var frames = List(*mut TabProcess).init(ui.alloc)
+    defer frames.deinit()
 
-    if command == 4 {
-        tp.find_count = 0
-        tp.find_active = 0
+    try findFrames(top, &mut frames)
+
+    if command == FIND_NEXT || command == FIND_PREVIOUS { return stepFind(top, frames.items(), command == FIND_NEXT, ui.find.bytes()) }
+
+    top.find_frame = top.tab
+
+    for f in frames.items() {
+        var said = command
+
+        if f != top && command != FIND_CLEAR { said = FIND_PASSIVE }
+
+        try sendFind(f, said, ui.find.bytes())
     }
-
-    try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.Find { id: tp.find_id, command: command, query: ui.find.bytes() })
 
     return true
 }

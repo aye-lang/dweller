@@ -1,0 +1,25 @@
+import std.text
+
+// chromium: net/http/http_response_headers.cc (GetFreshnessLifetimes)
+fn freshnessLifetime(headers: []u8) i64 {
+    let control = requestHeaderValue(headers, "Cache-Control")
+    let vary = requestHeaderValue(headers, "Vary")
+
+    if cacheDirective(control, "no-cache") != null || (vary.len > 0 && !text.eqlIgnoreCase(vary, "Accept-Encoding")) { return 0 }
+
+    if cacheDirective(control, "max-age") |age| { return secondsOf(age) }
+
+    let date = parseDate(requestHeaderValue(headers, "Date")) orelse now()
+
+    if parseDate(requestHeaderValue(headers, "Expires")) |expires| { return nonNegative(expires - date) }
+
+    if parseDate(requestHeaderValue(headers, "Last-Modified")) |modified| { return nonNegative(date - modified) / 10 }
+
+    return 0
+}
+
+fn nonNegative(n: i64) i64 {
+    if n < 0 { return 0 }
+
+    return n
+}

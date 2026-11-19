@@ -1,0 +1,27 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#propdef-rotate
+fn rotateValueFn(value: []u8) ?TransformFn {
+    var f = parseTransformFn("rotate3d", value) orelse return rotateKeywordFn(value)
+
+    if f.count == 1 {
+        f.name = "rotate"
+
+        return f
+    }
+
+    if f.count == 4 && f.unit[0] != UNIT_NONE {
+        let angle = f.n[0]
+        let unit = f.unit[0]
+
+        f.n = [16]f64{f.n[1], f.n[2], f.n[3], angle, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+        f.unit[0] = UNIT_NONE
+        f.unit[3] = unit
+    }
+
+    if f.count != 4 {
+        return null
+    }
+
+    return f
+}

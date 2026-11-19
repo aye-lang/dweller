@@ -641,7 +641,9 @@ pub struct Interp {
     // ---- allocation (may collect garbage first)
 
     fn maybeGc(self: *mut Self) {
-        gcOnAllocation(self)
+        if self.heap.collecting || self.heap.since_gc >= self.heap.threshold || (self.heap.live_bytes + self.heap.bytes_since_gc > self.heap.limit_bytes && !self.heap.out_of_memory) {
+            gcOnAllocation(self)
+        }
     }
 
     pub fn newObject(self: *mut Self, proto: u32) JsError!u32 {
@@ -876,7 +878,9 @@ pub struct Interp {
         }
         if self.heap.findProp(o, key) |i| {
             let p = &mut self.heap.obj(o).props[i]
-            self.heap.shade(v)
+            if self.heap.marking {
+                shadeValue(&mut self.heap, v)
+            }
             p.value = v
             p.setter = Value.Undefined
             p.flags = flags
@@ -891,17 +895,25 @@ pub struct Interp {
             let p = &mut self.heap.obj(o).props[i]
             if (p.flags & F_ACCESSOR) != 0 {
                 if !isNullish(getter) {
-                    self.heap.shade(getter)
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, getter)
+                    }
                     p.value = getter
                 }
                 if !isNullish(setter) {
-                    self.heap.shade(setter)
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, setter)
+                    }
                     p.setter = setter
                 }
             } else {
-                self.heap.shade(getter)
+                if self.heap.marking {
+                    shadeValue(&mut self.heap, getter)
+                }
                 p.value = getter
-                self.heap.shade(setter)
+                if self.heap.marking {
+                    shadeValue(&mut self.heap, setter)
+                }
                 p.setter = setter
             }
             p.flags = flags | F_ACCESSOR
@@ -916,7 +928,9 @@ pub struct Interp {
             return
         }
         if idx < ob.nelems {
-            self.heap.shade(v)
+            if self.heap.marking {
+                shadeValue(&mut self.heap, v)
+            }
             ob.elems[idx] = v
             return
         }
@@ -927,7 +941,9 @@ pub struct Interp {
             return
         }
         try self.heap.setLength(o, idx + 1, Value.Empty)
-        self.heap.shade(v)
+        if self.heap.marking {
+            shadeValue(&mut self.heap, v)
+        }
         self.heap.obj(o).elems[idx] = v
     }
 
@@ -1335,7 +1351,9 @@ pub struct Interp {
             if (p.flags & F_WRITE) == 0 {
                 return failSet(self, key)
             }
-            self.heap.shade(value)
+            if self.heap.marking {
+                shadeValue(&mut self.heap, value)
+            }
             self.heap.obj(o).props[i].value = value
             return
         }
@@ -2325,7 +2343,9 @@ pub struct Interp {
         try self.push(objVal(f))
         let p = try self.newObject(self.object_proto)
         try self.heap.addProp(p, A_CONSTRUCTOR, objVal(f), Value.Undefined, F_HIDDEN)
-        self.heap.shade(objVal(p))
+        if self.heap.marking {
+            shadeValue(&mut self.heap, objVal(p))
+        }
         self.heap.obj(f).props[slot].value = objVal(p)
         return objVal(p)
     }
@@ -2564,7 +2584,9 @@ pub struct Interp {
                             _ => {}
                         }
                     }
-                    self.heap.shade(v)
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, v)
+                    }
                     self.heap.envs.items()[e].slots[slot] = v
                 } else {
                     try self.setOn(self.global, name, v, objVal(self.global))
