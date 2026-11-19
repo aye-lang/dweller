@@ -1,0 +1,25 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import paint
+import std.list.List
+
+fn akTextRects(it: *mut Interp, a: Args) JsError!Value {
+    let out = try it.newArray(0)
+
+    try it.push(js.objVal(out))
+
+    let node = ownHandle(it, it.arg(a, 0)) orelse return it.pop()
+    var rects = List(paint.Rect).init(it.alloc)
+    defer rects.deinit()
+
+    try textRects(scriptOf(it).page, node, (try it.toNumber(it.arg(a, 1))) as usize, (try it.toNumber(it.arg(a, 2))) as usize, &mut rects)
+
+    for r in rects.items() {
+        for v in [4]f64{r.x, r.y, r.w, r.h} { try it.heap.pushElem(out, js.numVal(v)) }
+    }
+
+    return it.pop()
+}

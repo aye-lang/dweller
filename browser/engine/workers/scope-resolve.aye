@@ -1,0 +1,17 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import url
+
+fn scopeResolve(it: *mut Interp, a: Args) JsError!Value {
+    let input = try it.toStringValue(it.arg(a, 0))
+    var base = url.parse(it.alloc, scopeOf(it).link.href) catch return Value.Null
+    defer base.deinit(it.alloc)
+
+    let target = url.resolve(it.alloc, &base, it.heap.bytes(js.strOf(input))) catch return Value.Null
+    defer target.deinit(it.alloc)
+
+    return it.newString(target.href)
+}

@@ -1,0 +1,21 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-color-5/#light-dark
+fn schemeColorValue(c: Comp) ?Value {
+    let light = colorValue(c) orelse return null
+    let t = c.toks[0]
+    var dark: ?Color = null
+
+    if c.toks.len == 1 && t.kind == Tok.Ident {
+        dark = darkSystemColor(t.text)
+    } else if t.kind == Tok.Function && text.eqlIgnoreCase(t.text, "light-dark") {
+        dark = darkArgument(c)
+    }
+
+    let dim = dark orelse return light
+
+    return match light {
+        .Rgba { c: lit } => Value.Schemed { light: packColor(lit), dark: packColor(dim) }
+        _ => light
+    }
+}

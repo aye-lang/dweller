@@ -20,7 +20,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putBytes(out, url)
         }
 
-        .Shutdown, .OutOfMemory, .LoadStopped => {}
+        .Shutdown, .OutOfMemory, .LoadStopped, .ClipboardRead => {}
         .Resize { width, height, scale, buffer } => {
             try putU32(out, width)
             try putU32(out, height)
@@ -128,6 +128,7 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .AgentWindow { line } => try putBytes(out, line)
+        .Dialog { .. }, .DialogReply { .. }, .ClipboardWrite { .. }, .ClipboardText { .. } => try putPagePayload(out, m)
         .AttachTab { .. }, .ContextClosed { .. }, .OpenerInfo { .. }, .ContextTab { .. }, .PortPost { .. }, .PortPosted { .. } => try putPopupPayload(out, m)
         .Idb { .. }, .IdbReply { .. }, .IdbEvent { .. } => try putIdbPayload(out, m)
 
@@ -176,7 +177,6 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
         }
 
         .Fetch { .. }, .FetchHead { .. }, .FetchBody { .. }, .FetchFail { .. } => try putFetchPayload(out, m)
-
         .FetchEnd { id } => try putU32(out, id)
         .FetchRemote { id } => try putU32(out, id)
         .DownloadHint { .. }, .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. }, .SocketNote { .. }, .PermissionGet { .. }, .PermissionState { .. }, .PermissionAsk { .. }, .PermissionAnswer { .. } => try putSocketPayload(out, m)

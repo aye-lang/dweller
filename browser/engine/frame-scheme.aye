@@ -1,0 +1,19 @@
+import css
+import dom.NodeId
+import layout
+import std.mem.AllocError
+
+// spec: https://drafts.csswg.org/css-color-adjust-1/#color-scheme-effect (the embedded document's preferred color scheme)
+fn frameScheme(p: *mut Page, el: NodeId) AllocError!?bool {
+    var values: ?[]css.Value = null
+
+    if p.script |s| {
+        values = try computedValues(s, el)
+    } else if p.styling |st| {
+        values = st.styles.get(el)
+    }
+
+    let style = values orelse return null
+
+    return css.usedDarkBy(layout.keywordOf(style[css.COLOR_SCHEME]), css.metaColorScheme(&p.doc), css.prefersDarkOf(p.prefers_dark))
+}

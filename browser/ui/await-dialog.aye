@@ -1,0 +1,21 @@
+import std.mem.AllocError
+
+// chromium: components/javascript_dialogs/app_modal_dialog_queue.cc
+fn awaitDialog(ui: *mut Ui) AllocError!void {
+    var ev = @zeroed(SDL_Event)
+
+    while ui.dialog.open {
+        if ui.dirty { try ui.draw() }
+
+        try resumeScript(ui)
+
+        if ui.dialog.open && dialog_headless {
+            dismissUnanswered(ui)
+        } else if ui.dialog.open && SDL_WaitEventTimeout(&mut ev, 100) != 0 {
+            try ui.handle(&ev)
+        }
+    }
+
+    ui.dirty = true
+    try ui.draw()
+}
