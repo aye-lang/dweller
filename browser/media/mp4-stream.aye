@@ -1,0 +1,47 @@
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/mse-byte-stream-format-isobmff/
+pub fn mp4Stream(init: []u8, b: []u8, out: *mut Stream) AllocError!void {
+    var at: usize = 0
+    var start: ?usize = null
+
+    while boxHead(b, at) |x| {
+        if x.end <= at {
+            out.bad = true
+
+            return
+        }
+
+        var end = x.end
+
+        if end > b.len { return }
+
+        if text.eql(x.kind, "ftyp") {
+            start = at
+        } else if text.eql(x.kind, "moov") {
+            out.init_at = start orelse at
+            out.init_end = end
+            out.used = end
+
+            return
+        } else if text.eql(x.kind, "moof") && start == null {
+            let mdat = boxHead(b, end) orelse return
+
+            if mdat.end <= end || !text.eql(mdat.kind, "mdat") {
+                out.bad = true
+
+                return
+            }
+
+            if mdat.end > b.len { return }
+
+            try mp4Fragment(init, b, at, x, out)
+            end = mdat.end
+        }
+
+        at = end
+
+        if start == null { out.used = at }
+    }
+}

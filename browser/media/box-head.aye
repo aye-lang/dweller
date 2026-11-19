@@ -1,0 +1,17 @@
+fn boxHead(b: []u8, at: usize) ?Box {
+    if at + 8 > b.len { return null }
+
+    var size = be32(b, at) as u64
+    var body = at + 8
+
+    if size == 1 {
+        if at + 16 > b.len { return null }
+
+        size = be64(b, at + 8)
+        body = at + 16
+    }
+
+    if size < (body - at) as u64 || size > 1 << 40 { return Box { kind: b[at + 4..at + 8], body: body, end: at } }
+
+    return Box { kind: b[at + 4..at + 8], body: body, end: at + size as usize }
+}

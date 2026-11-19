@@ -1,0 +1,11 @@
+fn dropMultiplexed(ld: *mut Loader) {
+    let hosts = ld.multiplexed orelse return
+
+    for h in hosts.items() {
+        release(ld.alloc, h)
+    }
+
+    hosts.deinit()
+    ld.alloc.destroy(hosts)
+    ld.multiplexed = null
+}

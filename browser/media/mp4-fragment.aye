@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn mp4Fragment(init: []u8, b: []u8, moof_at: usize, moof: Box, out: *mut Stream) AllocError!void {
+    var at = moof.body
+
+    while boxAt(b, at, moof.end) |x| {
+        if text.eql(x.kind, "traf") { try mp4Traf(init, b, moof_at, x, out) }
+
+        at = x.end
+    }
+}
