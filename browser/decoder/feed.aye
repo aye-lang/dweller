@@ -1,0 +1,21 @@
+pub fn feed(id: u32, seq: u32, data: []u8) bool {
+    var at: usize = 0
+
+    while true {
+        var end = at + CHUNK
+
+        if end > data.len { end = data.len }
+
+        var more: u32 = 1
+
+        if end == data.len { more = 0 }
+
+        if !feedChunk(id, seq, more, data[at..end]) { return false }
+
+        at = end
+
+        if more == 0 { return true }
+    }
+
+    unreachable
+}

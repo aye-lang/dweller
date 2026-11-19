@@ -470,6 +470,7 @@ fn akPostMessage(it: *mut Interp, a: Args) JsError!Value {
 // `data` and `origin` must not be in `ts`'s heap.
 fn queueMessage(ts: *mut Script, data: ?[]u8, origin: []u8, from: *mut Page) JsError!void {
     let it = &mut ts.it
+    local_messages += 1
     let base = it.stack.len()
     defer it.truncate(base)
     let arr = try it.newArray(0)
@@ -590,7 +591,10 @@ fn akWinClosed(it: *mut Interp, a: Args) JsError!Value {
 
     let id = winContext(it, it.arg(a, 0))
     if id != 0 {
-        return js.boolVal(contextOf(id) == null)
+        let c = contextOf(id) orelse return js.boolVal(true)
+
+        // spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-closed
+        return js.boolVal(c.closing)
     }
     return js.boolVal((try argWindow(it, a)) == null)
 }

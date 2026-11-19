@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+let MAX_SIDE: u32 = 8192
+
+pub fn decodeVideo(out: *mut text.Builder, t: *Track, data: []u8) AllocError!bool {
+    if t.kind != TrackKind.Video || !decodable(t) { return false }
+    if t.width == 0 || t.height == 0 || t.width > MAX_SIDE || t.height > MAX_SIDE { return false }
+    if data.len != t.width as usize * t.height as usize * 4 { return false }
+
+    try out.append(data)
+
+    return true
+}

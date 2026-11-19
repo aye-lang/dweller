@@ -112,3 +112,82 @@ fn window_renderer_limits_frame_history() {
     let state = limits_run(&page, &format!("{follow} {back} {forward}"), "2000", &[]);
     assert_eq!(history_state(&state), ("history 2 of 2".into(), "P loads 1".into(), "H?second".into()), "{state}");
 }
+
+fn find_state(state: &str) -> (String, String) {
+    let of = |head: &str| state.lines().find(|l| l.starts_with(head)).unwrap_or("").to_string();
+    (of("matches "), of("renderer-find "))
+}
+
+/// Q2.15j: find in frames. The find bar's query goes to the renderer of
+/// every frame of the tab: the count is the sum, the active match starts
+/// in the page, Enter walks through the page's matches and then the
+/// frame's and wraps, Shift+Enter walks back. A page without a match
+/// starts in the frame.
+#[test]
+fn window_renderer_limits_find_in_frames() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/oopif-find.html", srv.base);
+    let find = "renderer:loaded renderer:child key:cmd+f text:needle renderer:find frame";
+    let next = "key:return renderer:find frame";
+    let previous = "key:shift+return renderer:find frame";
+    let cases = [
+        (find.to_string(), "renderer-find 3 active 0"),
+        (format!("{find} {next}"), "renderer-find 3 active 1"),
+        (format!("{find} {next} {next}"), "renderer-find 3 active 2"),
+        (format!("{find} {next} {next} {next}"), "renderer-find 3 active 0"),
+        (format!("{find} {previous}"), "renderer-find 3 active 2"),
+        (format!("{find} {next} {previous}"), "renderer-find 3 active 0"),
+    ];
+    for (events, want) in &cases {
+        let state = limits_run(&page, events, "2000", &[]);
+        assert_eq!(find_state(&state), ("matches 3".to_string(), want.to_string()), "{events}\n{state}");
+    }
+
+    let state = limits_run(&format!("{page}?only"), &format!("{find} frame frame frame renderer:find frame"), "2000", &[]);
+    assert_eq!(find_state(&state), ("matches 2".to_string(), "renderer-find 2 active 0".to_string()), "{state}");
+
+    let state = limits_run(&format!("{page}?only"), &format!("{find} frame frame frame renderer:find {next}"), "2000", &[]);
+    assert_eq!(find_state(&state).1, "renderer-find 2 active 1", "{state}");
+
+    let state = limits_run(&page, &format!("{find} key:escape renderer:find frame"), "2000", &[]);
+    assert_eq!(find_state(&state).0, "matches 0", "{state}");
+}
+
+/// Q2.15k: the clipboard outside text fields. With no field in focus,
+/// Cmd+A selects the document's text and Cmd+C copies the selection (the
+/// page gets a `copy` event); pasted into a field it is the page's text.
+/// The same in the window's own process and in a renderer.
+#[test]
+fn window_renderer_limits_page_copy() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for mode in ["", "tab", "site"] {
+        let (loaded, input) = if mode.is_empty() { ("loaded frame", "frame frame") } else { ("renderer:loaded frame", "renderer:input frame") };
+        let events = format!("{loaded} key:cmd+a {input} key:cmd+c {input} frame frame click:50,55 release:50,55 {input} key:cmd+v {input} frame");
+        let mut command = dweller_command();
+        if mode.is_empty() {
+            command.env_remove("DWELLER_PROCESS");
+        } else {
+            command.env("DWELLER_PROCESS", mode);
+        }
+        let out = command
+            .current_dir(root())
+            .args(["browser/tests/ui/page-copy.html", "--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "600", "--state", "--processes", "--text", "--events", &events])
+            .output()
+            .unwrap();
+        let state = text(&out.stdout);
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        assert!(state.contains("Copy copy"), "{mode}: the page got a copy event\n{state}");
+        assert!(state.contains("pasted alpha beta") || state.contains("\nvalue alpha beta\n"), "{mode}: the page's text was copied and pasted\n{state}");
+    }
+}

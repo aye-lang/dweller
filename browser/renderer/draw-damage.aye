@@ -14,11 +14,9 @@ fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *
     defer canvas.bounds.deinit()
     var painter = paint.TextPainter.init(r.alloc, r.system)
     defer painter.deinit()
-    var reuse = paint.Reuse { sigs: r.drawn.items(), cache: null }
+    var reuse = paint.Reuse { sigs: r.drawn.items(), cache: &mut r.layers }
 
-    if r.sent |j| {
-        std.mem.copy(pixels, r.maps[j].?[0..size])
-    }
+    if r.sent |j| { copyShifted(pixels, r.maps[j].?[0..size], r.width as usize, r.height as usize, r.shift) }
 
     for d in damage.rects.items() {
         try canvas.pushDamage(d)
@@ -27,8 +25,13 @@ fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *
 
         for m in r.marks.items() { canvas.fillRect(m.rect, m.ink) }
 
+        try drawBubble(r, &mut canvas, &mut painter)
+
         canvas.popClip()
     }
+
+    noteLayers(reuse.kept, reuse.drawn)
+    r.layers.endFrame()
 
     if std.os.getenv("DWELLER_DAMAGE_CHECK") != null { try checkFrame(r, pixels, list) }
 }

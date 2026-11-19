@@ -1,0 +1,16 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "Interpolation and composition of transform lists; the resolved matrix"
+      "\n"
+    <body>
+      <div id="box" style="width: 200px;">
+      "\n"
+      <pre id="out">
+        "same function matrix(1, 0, 0, 1, 25, 0)\nsame primitive matrix(1, 0, 0, 1, 25, 25)\nscale matrix(1.5, 0, 0, 2.5, 0, 0)\nshorter list matrix(1, 0, 0, 1, 150, 0)\nfrom none matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)\nsame axis matrix3d(0.707107, 0, -0.707107, 0, 0, 1, 0, 0, 0.707107, 0, 0.707107, 0, 0, 0, 0, 1)\nmatrices matrix(0.707107, 0.707107, -0.707107, 0.707107, 10, 0)\nmismatch matrix(0.707107, 0.707107, -0.707107, 0.707107, 10, 0)\n3d matrix3d(1, 0, 0, 0, 0, 0.707107, 0.707107, 0, 0, -1.06066, 1.06066, 0, 0, 0, 0, 1)\nadd matrix(2, 0, 0, 2, 100, 0)\naccumulate matrix(4, 0, 0, 4, 0, 0)\npercent matrix(1, 0, 0, 1, 100, 0)\nnone none\n"
+      "\n"
+      <script>
+        "\nfunction log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\\n'; }\nconst box = document.getElementById('box');\n\nfunction half(from, to) {\n  const a = box.animate({ transform: [from, to] }, 2000);\n  a.pause();\n  a.currentTime = 1000;\n  const v = getComputedStyle(box).transform;\n  a.cancel();\n  return v;\n}\n\nlog('same function', half('translateX(0px)', 'translateX(50px)'));\nlog('same primitive', half('translateX(50px)', 'translateY(50px)'));\nlog('scale', half('scale(1, 3)', 'scale(2)'));\nlog('shorter list', half('translate(100px)', 'translate(200px) rotate(720deg)'));\nlog('from none', half('none', 'rotate(90deg)'));\nlog('same axis', half('rotate3d(0, 1, 0, 0deg)', 'rotate3d(0, 2, 0, 90deg)'));\nlog('matrices', half('matrix(1, 0, 0, 1, 0, 0)', 'matrix(0, 1, -1, 0, 20, 0)'));\nlog('mismatch', half('rotate(90deg)', 'translate(20px, 0px)'));\nlog('3d', half('rotateX(90deg)', 'scale3d(1, 1, 2)'));\n\nfunction composed(under, value, composite) {\n  box.style.transform = under;\n  const a = box.animate({ transform: [value, value] }, { duration: 2000, composite });\n  a.pause();\n  a.currentTime = 1000;\n  const v = getComputedStyle(box).transform;\n  a.cancel();\n  box.style.transform = '';\n  return v;\n}\n\nlog('add', composed('translateX(100px)', 'scale(2)', 'add'));\nlog('accumulate', composed('scale(2)', 'scale(3)', 'accumulate'));\nlog('percent', (box.style.width = '200px', box.style.transform = 'translateX(50%)', getComputedStyle(box).transform));\nlog('none', (box.style.transform = '', getComputedStyle(box).transform));\n"
+      "\n"

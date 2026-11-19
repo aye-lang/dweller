@@ -1,0 +1,22 @@
+import ipc
+
+pub fn close(id: u32) {
+    let c = client orelse return
+
+    for i in 0..c.streams.len() {
+        if c.streams.items()[i].id != id { continue }
+
+        var s = c.streams.orderedRemove(i)
+
+        for o in s.outputs.items() {
+            c.alloc.free(o.data)
+        }
+
+        s.outputs.deinit()
+        s.partial.deinit()
+
+        if link |l| { _ = l.send(ipc.Message.DecoderClose { id: id }) }
+
+        return
+    }
+}

@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+fn wavSamples(t: *mut Track, start: usize, bytes: usize, block: usize) AllocError!void {
+    var frames = t.rate as usize
+
+    if frames == 0 { frames = 1 }
+
+    var at: usize = 0
+
+    while at + block <= bytes {
+        var size = frames * block
+
+        if size > bytes - at { size = (bytes - at) / block * block }
+
+        let time = (at / block) as f64 / t.rate
+
+        try t.samples.append(Sample { offset: (start + at) as u64, size: size as u32, time: time, duration: (size / block) as f64 / t.rate, key: true })
+        at += size
+    }
+}

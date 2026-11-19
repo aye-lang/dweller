@@ -1,0 +1,13 @@
+import std.list.List
+import std.mem.AllocError
+
+// chromium: content/browser/find_request_manager.cc (the frames of a page are searched in tree order)
+fn findFrames(tp: *mut TabProcess, out: *mut List(*mut TabProcess)) AllocError!void {
+    if !tp.hello || tp.gone.len > 0 { return }
+
+    try out.append(tp)
+
+    for c in tp.children.items() {
+        if c.tp |child| { try findFrames(child, out) }
+    }
+}

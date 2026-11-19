@@ -1,0 +1,29 @@
+// https://tc39.es/ecma262/#sec-isanonymousfunctiondefinition
+
+fn namesComputedValue(it: *mut Interp, prop: u32) bool {
+    match it.ast.node(prop) {
+        .Prop { kind, value, .. } => {
+            if kind != PROP_INIT {
+                return true
+            }
+
+            match it.ast.node(value) {
+                .Func { f } => {
+                    return it.ast.func(f).name == A_EMPTY
+                }
+
+                .Class { c } => {
+                    return it.ast.classes.items()[c].name == A_EMPTY
+                }
+
+                _ => {
+                    return false
+                }
+            }
+        }
+
+        _ => {
+            return false
+        }
+    }
+}

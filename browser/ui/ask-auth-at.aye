@@ -1,0 +1,27 @@
+import net
+import std.mem.AllocError
+import std.text
+import url
+
+fn askAuthAt(ui: *mut Ui, href: []u8) AllocError!void {
+    let realm = net.authRealm(href) orelse return
+    let at = url.parse(ui.alloc, href) catch return
+    defer at.deinit(ui.alloc)
+    let a = &mut ui.auth
+    let again = text.eql(a.href.bytes(), href)
+
+    a.open = true
+    try setAuthPlace(a, &at, realm)
+    try a.password.set("")
+
+    if !again { try a.user.set("") }
+    if at.username.len > 0 { try setAuthUser(ui, at.username) }
+
+    ui.focus = Focus.AuthUser
+
+    if again && a.user.bytes().len > 0 {
+        ui.focus = Focus.AuthPassword
+    }
+
+    ui.dirty = true
+}

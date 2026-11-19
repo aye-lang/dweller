@@ -83,11 +83,19 @@ function pump(el) {
     if (m.network === LOADING && m.ready >= METADATA) {
       m.network = IDLE;
       fire(el, 'suspend');
+      delays(m, false);
     }
     return;
   }
 
   fetchChunk(el, from);
+}
+
+// https://html.spec.whatwg.org/multipage/media.html#delaying-the-load-event-flag
+function delays(m, on) {
+  if (on && !m.delay) m.delay = ak.mediaDelayLoad(() => {});
+  if (!on && m.delay) ak.clearTimer(m.delay);
+  if (!on) m.delay = 0;
 }
 
 function fail(el, source) {
@@ -96,6 +104,8 @@ function fail(el, source) {
     fire(source, 'error');
     return trySources(el, source.nextElementSibling);
   }
+
+  delays(m, false);
 
   m.error = parts.error(m.ready >= METADATA ? 2 : 4, m.ready >= METADATA ? 'MEDIA_ELEMENT_ERROR: Network error' : 'MEDIA_ELEMENT_ERROR: Format error');
   m.network = m.ready >= METADATA ? IDLE : NO_SOURCE;
@@ -117,6 +127,9 @@ function took(el, source, from, r) {
     if (found === null) return fail(el, source);
 
     [m.duration, m.audio, , m.width, m.height] = found;
+    for (const t of parts.tracks(bytes, total)) m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] = m[t.kind === 1 ? 'soundTrack' : 'pictureTrack'] || t;
+    if (m.pictureTrack) ak.mediaFrame(el, m.width, m.height, '');
+    parts.pictureMirror(el);
     m.total = total;
     fire(el, 'durationchange');
     m.ready = METADATA;
@@ -124,14 +137,17 @@ function took(el, source, from, r) {
   }
 
   m.have = parts.addRange(m.have, start, start + bytes.length);
+  m.bytes.push([start, bytes]);
   if (!m.first && rangeAt(m, byteOf(m, m.at))) {
     m.first = true;
     m.ready = CURRENT;
     fire(el, 'loadeddata');
+    delays(m, false);
   }
 
   fire(el, 'progress');
   settleReady(el);
+  parts.pictureShow(el);
   if (m.seekDone && rangeAt(m, byteOf(m, m.at))) {
     const done = m.seekDone;
     m.seekDone = null;
@@ -188,10 +204,12 @@ parts.selectResource = el => {
   const m = stateOf(el);
   m.network = NO_SOURCE;
   m.seen = el.getAttribute('src');
+  delays(m, true);
   queue(el, () => {
     const value = el.getAttribute('src');
     if (value === null && !el.querySelector(':scope > source')) {
       m.network = EMPTY;
+      delays(m, false);
       return;
     }
 
@@ -215,8 +233,21 @@ parts.load = el => {
     Object.assign(m, { ready: NOTHING, paused: true, seeking: false, duration: NaN, at: 0, played: [] });
   }
 
-  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null });
+  Object.assign(m, { rate: m.defaultRate, error: null, autoplaying: true, total: 0, have: [], fetching: false, first: false, sought: false, seekDone: null, bytes: [], soundTrack: null, pictureTrack: null });
+  parts.pictureStop(m);
   parts.selectResource(el);
+};
+
+// chromium: media/base/pipeline_status.h (PIPELINE_ERROR_DECODE)
+parts.broke = el => {
+  const m = stateOf(el);
+  if (m.error) return;
+
+  m.error = parts.error(3, 'PIPELINE_ERROR_DECODE');
+  m.network = IDLE;
+  stopClock(m);
+  parts.pictureStop(m);
+  fire(el, 'error');
 };
 
 parts.ahead = el => {

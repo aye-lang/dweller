@@ -243,15 +243,16 @@ fn layoutAtomic(t: *mut Tree, i: usize, avail: f64) AllocError!void {
     let b = t.bx(i)
     b.margin[3] = lengthOr0(b.style[css.MARGIN_TOP + 3], avail)
     b.margin[1] = lengthOr0(b.style[css.MARGIN_TOP + 1], avail)
+    let cb_h = atomicContainingHeight(t, i)
     if kind == BoxKind.Image {
-        replacedSize(t, i, avail, -1.0)
+        replacedSize(t, i, avail, cb_h)
     } else if kind == BoxKind.Table {
         try layoutTable(t, i, avail)
     } else {
         try shrinkToFit(t, i, avail)
-        try layoutContents(t, i, -1.0)
+        try layoutContents(t, i, cb_h)
     }
-    relOffsets(t, i, avail, -1.0)
+    relOffsets(t, i, avail, cb_h)
 }
 
 // Sets the width of box `i` (margins and edges resolved) to its
@@ -636,7 +637,7 @@ fn layoutContents(t: *mut Tree, i: usize, cb_h: f64) AllocError!void {
     if ch >= 0.0 {
         h = ch + vEdges(bb)
     }
-    bb.h = clampHeight(t, i, h, cb_h)
+    bb.h = clampToContent(t, i, clampHeight(t, i, h, cb_h), content_h + vEdges(bb))
     bb.through = top_open && bottom_open && empty && bb.h == 0.0
     if bb.through {
         // An empty box: its margins and those of its children collapse

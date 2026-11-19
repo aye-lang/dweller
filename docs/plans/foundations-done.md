@@ -84,6 +84,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q0.5 | bbc under replay ran 64 of its scripts, not 91, since Q3.3b: old archive entries gave CORS-mode module scripts no `Access-Control-Allow-Origin`, and `permissiveCors` now adds it for `Mode.Cors` too (done, #321) | `permissive-cors_test.aye`, `module_cors`; bbc's replay dump runs 96 scripts and 204 requests | – |
 | Q0.1 | Weekly `conformance`: the webgl job moves to a job of its own that is allowed to fail, and the 2/4/16 GB wasm-memory tests are skipped on runners with less memory than they need | the next scheduled run (or `workflow_dispatch`) is green | – |
 | Q0.3b | (proposed, decision 3) A "Target" column in `docs/conformance.md` for the X2 areas and the Q6 areas, beside the floor that `conformance.py check` enforces. Each target names where it comes from: the features the 20 sites and the daily sites use, or the score of the subtests that do not need a deferred feature. X2 and W9 then read "at target" | the table has the column, every X2 and Q6 area has a target with one line of reason, and `conformance.py check` still enforces only the floor | – |
+| Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -218,6 +219,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.8 | Finish the matched-properties cache (P4.75w) | the restyle ms on the W7 sites falls | `core/css/resolver/matched_properties_cache.cc` |
 | Q4.25c | Records for the time from an input to the renderer's next frame and for each renderer task, and idle CPU summed over the window and its renderers, so the criterion proposed in Q4.25's card has a command | `window_perf.py report --replay` prints the three numbers per site with the flag | – |
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
+| Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -250,6 +252,9 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.10 | `html/semantics/forms` (54.3, 60) |
 | Q6.14 | writing modes and bidi: a new area `css/css-writing-modes` with its baseline and threshold |
 | Q6.2 | `css/css-grid` (43.2 -> 47.9, threshold 60; slice 1 done, 2026-11-09: grid value validation, grid shorthands, resolved track lists with line names; left: vertical writing modes (Q6.14) for the orthogonal abspos tests (about 1900 subtests), grid-template animation, shorthand serialization, auto-repeat implicit line names, baseline-in-intrinsic-size) |
+| Q6.4 | `css/box-sizing` (51.5, 70) |
+| Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
+| Q6.9 | `css/floats-tables` (55.5, 65) |
 
 ## Q7: acceptance and release (lane sites)
 
