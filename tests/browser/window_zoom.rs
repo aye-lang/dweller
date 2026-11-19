@@ -7,7 +7,8 @@ const TAB: (&str, &str) = ("DWELLER_PROCESS", "tab");
 /// renderer's frame at the new zoom level (nothing in one process).
 fn zoom_events(events: &str, envs: &[(&str, &str)]) -> String {
     let wait = if in_renderer(envs) { "frame renderer:frame" } else { "frame" };
-    format!("loaded {}", events.replace('~', wait))
+    let first = if in_renderer(envs) { "renderer:loaded frame" } else { "loaded frame" };
+    format!("{first} {}", events.replace('~', wait))
 }
 
 fn zoom_page() -> String {
@@ -163,5 +164,28 @@ fn window_zoom_per_host_remembered() {
 
         assert_eq!(zoom_line(&back), "zoom 100", "{name}");
         assert_eq!(std::fs::read_to_string(dir.join("zoom")).unwrap(), "dweller-zoom 1\n", "{name}");
+    }
+}
+
+/// Q5.1 (follow-up): a zoom step changes the page's viewport, so the
+/// page gets one `resize` event at its window for each step, after the
+/// new layout; a page that only loaded got none.
+#[test]
+fn window_zoom_resize_event() {
+    if !has_sdl() {
+        return;
+    }
+    let page = root().join("browser/tests/ui/zoom-resize.html").display().to_string();
+    for envs in [[IN_PROCESS], [SITE]] {
+        let done = |n: u32| if in_renderer(&envs) { format!("frame renderer:frame renderer:title:resized{n}") } else { "frame frame frame".to_string() };
+        let events = format!("loaded frame frame key:cmd+= {} key:cmd+= {} key:cmd+0 {} frame", done(1), done(2), done(3));
+        let out = login_window_with(&page, &events, None, &envs);
+        let lines: Vec<&str> = out.lines().skip_while(|l| *l != "start").take(4).collect();
+
+        assert_eq!(lines, ["start", "resize 1 w363.6363636363636 dpr1.1 true", "resize 2 w320 dpr1.25 true", "resize 3 w400 dpr1 true"], "{envs:?}: {out}");
+
+        let still = login_window_with(&page, "loaded frame frame frame", None, &envs);
+
+        assert!(!still.contains("resize 1"), "{envs:?}: {still}");
     }
 }

@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+// https://drafts.csswg.org/cssom-view/#run-the-resize-steps
+pub fn fireResize(page: *mut Page) AllocError!bool {
+    var fired = false
+    var ignored = text.Builder.init(page.alloc)
+    defer ignored.deinit()
+
+    for f in page.frames.items() {
+        if try fireResize(f.page) { fired = true }
+    }
+
+    let s = page.script orelse return fired
+
+    if page.tree == null || (s.width == s.resized[0] && s.height == s.resized[1]) { return fired }
+
+    let first = s.resized[0] == 0.0
+
+    s.resized = [2]f64{s.width, s.height}
+
+    if first { return fired }
+
+    _ = try evalInPage(page, "dispatchEvent(new Event('resize'))", &mut ignored)
+
+    return true
+}
