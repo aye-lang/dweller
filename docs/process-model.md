@@ -37,7 +37,7 @@ The decision is in "Decisions" of the plan and is not open here.
 
 | Process | Owns | Never has |
 |---|---|---|
-| Browser (one, not sandboxed) | the windows and SDL; chrome, tabs, address bar; session history and restore; the frame tree of every tab; the process table and the site locks; all network (libcurl, HTTP cache, TLS, 401 prompts); the cookie jar; the storage backends (`localStorage`, `sessionStorage`, later IndexedDB); the profile and its lock; permissions, dialogs, downloads, file pickers; the agent socket and the Spaces list; compositing and hit testing | page script, parsing of page bytes (HTML, CSS, images, fonts) |
+| Browser (one, not sandboxed) | the windows and SDL; chrome, tabs, address bar; session history and restore; the frame tree of every tab; the process table and the site locks; all network (libcurl, HTTP cache, TLS, 401 prompts); the cookie jar; the storage backends (`localStorage`, `sessionStorage`, IndexedDB with the Cache API over it); the service worker registrations; the profile and its lock; permissions, dialogs, downloads, file pickers; the agent socket and the Spaces list; compositing and hit testing | page script, parsing of page bytes (HTML, CSS, images, fonts) |
 | Renderer (many, sandboxed, locked to one site) | for each local frame: DOM, HTML parsing, style, layout, paint into shared memory, JS and its dedicated workers (threads), image and webfont decoding; replicas (proxies) of the remote frames of its browsing context group; the agent snapshot and actions of its frames | files, sockets other than its IPC socket, the profile, other sites' cookies or storage, HttpOnly cookies, other renderers' pixels |
 | Utility (later, Q5.9a) | media decoding | a site lock (it gets bytes only), files, network |
 
@@ -123,7 +123,7 @@ width, height, scroll_x, scroll_y, damage}`, 7 `frame_ack`, 8 `mouse`,
 `agent_window_reply`, 74 `attach_tab`, 78 `settled`, 80 `ask_state`, 81
 `state`, 82 `agent_viewport`, 83 `visible`, 90 `context_closed`, 100
 `fetch_remote`, 140 to 143 `socket_*`, 144 `download_hint`, 145 to 148
-`permission_*`. Not built: `init` (the settings are spawn arguments:
+`permission_*`, 160 `idb`, 161 `idb_reply`, 162 `idb_event`. Not built: `init` (the settings are spawn arguments:
 `dweller --renderer 3 --font fixed|system [--no-js] [--site-frames]
 [--console] [--steady-caret]`), `buffers` (the fds come with `resize`),
 `commit_navigation` and the `load*` group (a navigation and a

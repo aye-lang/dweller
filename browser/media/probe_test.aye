@@ -1,0 +1,113 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn putEl(out: *mut text.Builder, id: []u8, body: []u8) AllocError!void {
+    try out.append(id)
+    try out.appendByte(0x80 | body.len as u8)
+    try out.append(body)
+}
+
+fn webmFile(alloc: Allocator, out: *mut text.Builder) AllocError!void {
+    var info = text.Builder.init(alloc)
+    defer info.deinit()
+    var video = text.Builder.init(alloc)
+    defer video.deinit()
+    var audio = text.Builder.init(alloc)
+    defer audio.deinit()
+    var tracks = text.Builder.init(alloc)
+    defer tracks.deinit()
+    var cluster = text.Builder.init(alloc)
+    defer cluster.deinit()
+
+    try putEl(&mut info, "\x2a\xd7\xb1", "\x0f\x42\x40")
+    try putEl(&mut info, "\x44\x89", "\x44\xfa\x00\x00")
+    try putEl(&mut video, "\xd7", "\x01")
+    try putEl(&mut video, "\x83", "\x01")
+    try putEl(&mut video, "\x86", "V_VP9")
+    try putEl(&mut video, "\xe0", "\xb0\x82\x02\x80\xba\x81\xf0")
+    try putEl(&mut audio, "\xd7", "\x02")
+    try putEl(&mut audio, "\x83", "\x02")
+    try putEl(&mut audio, "\x86", "A_OPUS")
+    try putEl(&mut audio, "\xe1", "\xb5\x84\x47\x3b\x80\x00\x9f\x81\x02")
+    try putEl(&mut tracks, "\xae", video.bytes())
+    try putEl(&mut tracks, "\xae", audio.bytes())
+    try putEl(&mut cluster, "\xe7", "\x03\xe8")
+    try putEl(&mut cluster, "\xa3", "\x81\x00\x0a\x80kk")
+    try putEl(&mut cluster, "\xa3", "\x82\xff\xf6\x00a")
+    try putEl(out, "\x1a\x45\xdf\xa3", "\x42\x82\x84webm")
+    try out.append("\x18\x53\x80\x67\x01\xff\xff\xff\xff\xff\xff\xff")
+    try putEl(out, "\x15\x49\xa9\x66", info.bytes())
+    try putEl(out, "\x16\x54\xae\x6b", tracks.bytes())
+    try putEl(out, "\x1f\x43\xb6\x75", cluster.bytes())
+}
+
+test "a WebM file's info, tracks and blocks" {
+    var file = text.Builder.init(@testAllocator())
+    defer file.deinit()
+
+    try webmFile(@testAllocator(), &mut file)
+
+    var m = (try probe(@testAllocator(), file.bytes())).?
+    defer m.deinit()
+
+    @expect(m.container == Container.WebM)
+    @expectEqual(2.0, m.duration)
+
+    let v = m.first(TrackKind.Video).?
+    let a = m.first(TrackKind.Audio).?
+
+    @expectEqual("V_VP9", v.codec)
+    @expectEqual(640 as u32, v.width)
+    @expectEqual(240 as u32, v.height)
+    @expectEqual("A_OPUS", a.codec)
+    @expectEqual(48000.0, a.rate)
+    @expectEqual(2 as u32, a.channels)
+    @expectEqual(1 as usize, v.samples.len())
+    @expectEqual(1.01, v.samples.items()[0].time)
+    @expectEqual(2 as u32, v.samples.items()[0].size)
+    @expect(v.samples.items()[0].key)
+    @expectEqual(0.99, a.samples.items()[0].time)
+    @expect(!a.samples.items()[0].key)
+}
+
+test "an MP3's frames after an ID3 tag, and its duration" {
+    var file = text.Builder.init(@testAllocator())
+    defer file.deinit()
+
+    try file.append("ID3\x04\x00\x00\x00\x00\x00\x05hello")
+
+    for i in 0..3 {
+        try file.append("\xff\xfb\x90\x64")
+
+        for k in 0..413 {
+            try file.appendByte(0)
+        }
+    }
+
+    var m = (try probe(@testAllocator(), file.bytes())).?
+    defer m.deinit()
+
+    let t = m.first(TrackKind.Audio).?
+
+    @expect(m.container == Container.Mp3)
+    @expectEqual(44100.0, t.rate)
+    @expectEqual(2 as u32, t.channels)
+    @expectEqual(3 as usize, t.samples.len())
+    @expectEqual(15 as u64, t.samples.items()[0].offset)
+    @expectEqual(417 as u32, t.samples.items()[0].size)
+    @expectEqual(3.0 * 1152.0 / 44100.0, m.duration)
+}
+
+test "a WAV's duration from its format and data chunks" {
+    let file = "RIFF\x2c\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x40\x1f\x00\x00\x00\x7d\x00\x00\x04\x00\x10\x00data\x08\x00\x00\x0012345678"
+    var m = (try probe(@testAllocator(), file)).?
+    defer m.deinit()
+
+    let t = m.first(TrackKind.Audio).?
+
+    @expect(m.container == Container.Wav)
+    @expectEqual(8000.0, t.rate)
+    @expectEqual(2 as u32, t.channels)
+    @expectEqual(2.0 / 8000.0, m.duration)
+}
