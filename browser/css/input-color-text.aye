@@ -1,0 +1,38 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/input.html#color-state-(type=color)
+pub fn inputColorText(alloc: Allocator, raw: []u8, p3: bool, alpha: bool, out: *mut text.Builder) AllocError!void {
+    var toks = List(Token).init(alloc)
+    defer toks.deinit()
+
+    try tokenize(alloc, text.trim(raw), &mut toks)
+
+    var sheet = try Sheet.init(alloc)
+    defer sheet.deinit()
+
+    let comps = try components(&mut sheet, toks.items())
+    var color = Color { r: 0, g: 0, b: 0, a: 1.0 }
+
+    if comps.len == 1 {
+        color = parsedInputColor(comps[0]) orelse color
+    }
+
+    if !alpha {
+        color.a = 1.0
+    }
+
+    if p3 {
+        return writeInputColor("display-p3", convertChannels(color, 3), out)
+    }
+
+    let srgb = eightBitChannels(convertChannels(color, 1))
+
+    if alpha {
+        return writeInputColor("srgb", srgb, out)
+    }
+
+    try writeHexColor(srgb, out)
+}
