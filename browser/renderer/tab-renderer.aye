@@ -110,13 +110,12 @@ struct TabRenderer {
     info_max: f64 = 0.0
     info_pan: u32 = 0
     info_bg: u32 = 0
-    list: ?paint.DisplayList = null
+    lists: pageview.PageView
+    layers: paint.RasterCache
     list_tree: ?*mut layout.Tree = null
     list_version: u64 = 0
     list_laid: u64 = 0
     relist: bool = true
-    sigs: List(paint.Sig)
-    shown: List(paint.ShownBitmap)
     attaching: List(Attach)
     settled_said: bool = false
 
@@ -184,8 +183,9 @@ struct TabRenderer {
 
         self.pending.deinit()
         dropList(self)
-        self.sigs.deinit()
-        self.shown.deinit()
+        self.layers.deinit()
+        freeViewTab(self.lists.tab)
+        pageview.shutdown(&mut self.lists)
         self.staged.deinit()
         self.preview.deinit()
         self.find.deinit()

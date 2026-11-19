@@ -151,7 +151,7 @@ fn window_relayout_floats() {
         .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
         .map(|r| r.split('\t').next().unwrap())
         .collect();
-    let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+    let first = page_first_draw(&phases);
     let after = &phases[first..];
     let count = |name: &str| after.iter().filter(|p| **p == name).count();
     assert_eq!(
@@ -205,7 +205,7 @@ fn window_relayout_attr() {
             .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
             .map(|r| r.split('\t').next().unwrap())
             .collect();
-        let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+        let first = page_first_draw(&phases);
         let after = &phases[first..];
         let count = |name: &str| after.iter().filter(|p| **p == name).count();
         (count("layout_full") + count("layout"), count("layout_dirty"), err.clone())
@@ -272,6 +272,15 @@ fn window_damage() {
 
 /// The DWELLER_TIMING records of each frame of a window's `err`, as
 /// (name, label) pairs: those written up to and including each `ui_draw`.
+/// The index of the first `ui_draw` after the page's first layout: the
+/// first frame that shows the page. In the window's own process that is
+/// the first `ui_draw`; with a renderer the window draws its toolbar
+/// before the renderer's first frame arrives.
+fn page_first_draw(phases: &[&str]) -> usize {
+    let laid = phases.iter().position(|p| *p == "layout" || *p == "layout_full").unwrap_or(0);
+    laid + phases[laid..].iter().position(|p| *p == "ui_draw").unwrap()
+}
+
 fn frame_records(err: &str) -> Vec<Vec<(String, String)>> {
     let mut frames = vec![Vec::new()];
     for line in err.lines() {
@@ -872,7 +881,7 @@ fn window_width_animation() {
         .filter_map(|l| l.split("DWELLER_TIMING\t").nth(1))
         .map(|r| r.split('\t').next().unwrap())
         .collect();
-    let first = phases.iter().position(|p| *p == "ui_draw").unwrap();
+    let first = page_first_draw(&phases);
     let after = &phases[first..];
     let count = |name: &str| after.iter().filter(|p| **p == name).count();
     assert!(
