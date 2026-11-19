@@ -1,0 +1,33 @@
+import std.mem.AllocError
+import std.text
+
+fn putDecoderPayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .DecoderOpen { id, kind, width, height, channels, bits, rate, codec, config } => {
+            for v in [7]u32{ id, kind, width, height, channels, bits, rate } {
+                try putU32(out, v)
+            }
+
+            try putBytes(out, codec)
+            try putBytes(out, config)
+        }
+
+        .DecoderData { id, seq, more, data } => {
+            try putU32(out, id)
+            try putU32(out, seq)
+            try putU32(out, more)
+            try putBytes(out, data)
+        }
+
+        .DecoderOutput { id, seq, state, more, data } => {
+            try putU32(out, id)
+            try putU32(out, seq)
+            try putU32(out, state)
+            try putU32(out, more)
+            try putBytes(out, data)
+        }
+
+        .DecoderClose { id } => try putU32(out, id)
+        _ => {}
+    }
+}

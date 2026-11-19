@@ -251,7 +251,10 @@ fn layoutTable(t: *mut Tree, i: usize, cb_w: f64) AllocError!void {
     }
     inner = table_inner
     t.bx(i).w = inner + edges
-    let row_w = math.max(0.0, inner - 2.0 * spacing[0])
+    var row_w = math.max(0.0, inner - 2.0 * spacing[0])
+    if n == 0 {
+        row_w = inner
+    }
     // Captions and rows, top to bottom.
     var y = 0.0
     var rows_seen = false
@@ -297,6 +300,7 @@ fn layoutTable(t: *mut Tree, i: usize, cb_w: f64) AllocError!void {
     if rows_seen {
         y += spacing[1]
     }
+    y = try stretchedTable(t, i, y, spacing[1])
     let tb = t.bx(i)
     var h = y + vEdges(tb)
     if sizeOf(tb.style, tb.style[css.HEIGHT], -1.0, vEdges(tb)) |sh| {

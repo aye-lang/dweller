@@ -1,0 +1,31 @@
+// spec: https://drafts.csswg.org/css2/#height-layout
+fn placeTableRows(t: *mut Tree, i: usize, spacing: f64) f64 {
+    var y = 0.0
+    var rows_seen = false
+
+    for c in t.children(i) {
+        let b = t.bx(c)
+
+        if b.kind == BoxKind.Row || (b.kind == BoxKind.RowGroup && t.children(c).len > 0) {
+            b.y = y + spacing
+            y += spacing + b.h
+            rows_seen = true
+        } else if b.kind == BoxKind.RowGroup {
+            b.y = y + spacing
+            y += b.h
+        } else {
+            b.y = y + b.margin[0]
+            y += b.margin[0] + b.h + b.margin[2]
+        }
+
+        if b.kind == BoxKind.RowGroup {
+            placeGroupRows(t, c, spacing)
+        }
+    }
+
+    if rows_seen {
+        y += spacing
+    }
+
+    return y
+}

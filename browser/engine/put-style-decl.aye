@@ -1,3 +1,4 @@
+import css
 import dom
 import dom.NodeId
 import std
@@ -11,11 +12,16 @@ fn putStyleDecl(s: *mut Script, el: NodeId, prop: []u8, value: []u8) AllocError!
     var b = text.Builder.init(s.alloc)
     defer b.deinit()
     var done = false
+    let moves = shadowedByShorthand(old, prop)
     var parts = text.split(old, ";")
 
     while parts.next() |d| {
         let colon = std.mem.indexOf(d, ':') orelse continue
         let name = text.trim(d[..colon])
+
+        if css.shorthandCovers(prop, name) || (moves && text.eqlIgnoreCase(name, prop)) {
+            continue
+        }
 
         if text.eqlIgnoreCase(name, prop) {
             if !done && text.trim(value).len > 0 {

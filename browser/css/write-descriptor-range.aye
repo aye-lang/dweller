@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop-desc
+fn writeDescriptorRange(comps: []Comp, kind: u8, lo: f64, hi: f64, words: []u8, out: *mut text.Builder) AllocError!bool {
+    var second = text.Builder.init(out.alloc)
+    defer second.deinit()
+    let start = out.len()
+
+    if comps.len > 2 || !(try writeDescriptorPart(comps[0], kind, lo, hi, words, out)) {
+        return false
+    }
+
+    if comps.len == 1 {
+        return true
+    }
+
+    if !(try writeDescriptorPart(comps[1], kind, lo, hi, words, &mut second)) {
+        return false
+    }
+
+    if !text.eql(out.bytes()[start..], second.bytes()) {
+        try out.appendByte(' ')
+        try out.append(second.bytes())
+    }
+
+    return true
+}

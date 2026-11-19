@@ -24,6 +24,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             try showCommitted(tp, title, href)
             tp.loading = false
             tp.stopped = false
+            tp.pushes = tp.self_nav && !tp.nav_failed
+            tp.self_nav = false
         }
 
         .LoadStopped => {
@@ -65,12 +67,16 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             if post != 0 && tp.sandbox & SB_FORMS != 0 { return "form in a sandboxed frame" }
 
             if !tp.loading {
+                tp.before.clear()
+                try tp.before.append(tp.committed.bytes())
+                tp.self_nav = true
                 tp.nav_policy = policy
                 try navigateChild(tp, target.href, topOf(tp), (post != 0) as u32, content_type, body)
             }
         }
 
         .HistoryGo { .. }, .Popup { .. } => {}
+        .ReplaceNavigation { url: href, referrer_policy, user } => return childSent(tp, ipc.Got { frame: got.frame, message: ipc.Message.BeginNavigation { url: href, post: 0, content_type: "", body: "", referrer_policy: referrer_policy, user: user }, used: got.used })
         .Cursor { shape } => {
             if shape > 2 { return "bad cursor" }
         }
@@ -123,6 +129,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => return tabSocketSent(tp, got.frame, got.message)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderClose { .. } => return tabDecoderSent(tp, got.frame, got.message)
         .CookieGet { .. }, .CookieSet { .. } => {
             if tp.sandbox & SB_ORIGIN != 0 { return "cookie in a sandboxed origin" }
 
@@ -147,6 +154,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         .PostMessage { .. } => return routePostMessage(tp, got.message)
         .PortPost { .. } => return routePortMessage(tp, got.message)
         .ProxyNavigate { .. } => return navigateProxy(tp, got.message)
+        .HitTestReply { id, key } => return takeHitReply(tp, id, key)
         .OutOfMemory => try showCommitted(tp, "Out of memory", tp.committed.bytes())
         .Pong { n } => {
             if got.frame != 0 || tp.ping_at == 0 || n != tp.ping { return "bad pong" }

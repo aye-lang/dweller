@@ -65,10 +65,10 @@ console.log(new ArrayBuffer(10).slice(2, -2).byteLength, err(function () { new A
 var t = new ArrayBuffer(4);
 var tv = new Uint8Array(t);
 tv[0] = 7;
+var dt = new DataView(t);
 var moved = t.transfer(6);
 console.log(t.detached, t.byteLength, tv.length, tv[0], tv.byteOffset, moved.byteLength, new Uint8Array(moved)[0]);
 console.log(err(function () { new Uint8Array(t); }), err(function () { t.slice(0); }), err(function () { new DataView(moved).getInt8(9); }));
-var dt = new DataView(t);
 console.log(err(function () { dt.getInt8(0); }), err(function () { tv.fill(1); }), err(function () { tv.set([1]); }));
 
 // structuredClone: views keep sharing one (new) buffer

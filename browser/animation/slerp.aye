@@ -1,0 +1,20 @@
+import std.math
+
+// spec: https://drafts.csswg.org/css-transforms-2/#interpolation-of-decomposed-3d-matrix-values
+fn slerp(a: [4]f64, b: [4]f64, p: f64) [4]f64 {
+    let product = math.min(math.max(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3], -1.0), 1.0)
+    var out = a
+
+    if math.abs(product) == 1.0 {
+        return a
+    }
+
+    let theta = math.acos(product)
+    let w = math.sin(p * theta) / math.sqrt(1.0 - product * product)
+
+    for k in 0..4 {
+        out[k] = a[k] * (math.cos(p * theta) - product * w) + b[k] * w
+    }
+
+    return out
+}

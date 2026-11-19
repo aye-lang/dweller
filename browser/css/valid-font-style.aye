@@ -1,0 +1,14 @@
+// spec: https://drafts.csswg.org/css-fonts-4/#font-style-prop
+fn validFontStyle(layer: []Comp) bool {
+    if layer.len == 1 {
+        return isIdent(layer[0], "normal") || isIdent(layer[0], "italic") || isIdent(layer[0], "oblique")
+    }
+
+    if layer.len != 2 || !isIdent(layer[0], "oblique") {
+        return false
+    }
+
+    let angle = rotateAngle(layer[1]) orelse return false
+
+    return isMathFunction(layer[1].toks[0]) || (angle >= -90.0 && angle <= 90.0)
+}

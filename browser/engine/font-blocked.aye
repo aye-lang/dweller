@@ -1,0 +1,18 @@
+import css
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop
+fn fontBlocked(decls: []u8) bool {
+    var pos: usize = 0
+    var blocked = false
+
+    while nextStyleDecl(decls, &mut pos) |d| {
+        if text.eqlIgnoreCase(d.name, "font") {
+            blocked = false
+        } else if css.blocksFontShorthand(d.name, d.value) {
+            blocked = true
+        }
+    }
+
+    return blocked
+}

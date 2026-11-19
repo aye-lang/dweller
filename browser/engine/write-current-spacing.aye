@@ -1,0 +1,18 @@
+import animation
+import css
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-tables-3/#propdef-border-spacing
+fn writeCurrentSpacing(s: *mut Script, h: NodeId, values: []css.Value, out: *mut text.Builder) AllocError!void {
+    let across = (try animation.currentValue(&mut s.transitions, h, css.BORDER_SPACING_H, s.now)) orelse values[css.BORDER_SPACING_H]
+    let down = (try animation.currentValue(&mut s.transitions, h, css.BORDER_SPACING_V, s.now)) orelse values[css.BORDER_SPACING_V]
+
+    try css.writeValue(across, out)
+
+    if !css.sameValue(across, down) {
+        try out.appendByte(' ')
+        try css.writeValue(down, out)
+    }
+}

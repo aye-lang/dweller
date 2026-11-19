@@ -1,8 +1,12 @@
+import engine
 import std.list.List
 
 fn reportOthers(tabs: *List(*mut TabRenderer), served: *mut TabRenderer) {
+    let posted = engine.takeLocalMessages()
+
     for t in tabs.items() {
         if t == served || t.broken { continue }
+        if posted { wakeForMessage(t) }
 
         serveAs(t)
         t.due = true
@@ -11,9 +15,4 @@ fn reportOthers(tabs: *List(*mut TabRenderer), served: *mut TabRenderer) {
             t.broken = true
         }
     }
-}
-
-fn reportTab(t: *mut TabRenderer) !void {
-    try paintFrame(t)
-    try reportPage(t)
 }
