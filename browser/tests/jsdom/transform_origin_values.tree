@@ -1,0 +1,16 @@
+#document
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>
+        "transform-origin: the resolved value, interpolation, composition"
+      "\n"
+    <body>
+      <div id="box" style="width: 200px; height: 100px; transition: none; transform-origin: 80px 60px;">
+      "\n"
+      <pre id="out">
+        "initial 100px 50px\nleft -> 0px 50px\nbottom right -> 200px 100px\n10% 30px -> 20px 30px\ntop -> 100px 0px\ncenter left 6px -> 0px 50px 6px\ntransition, percent to px 60px 35px\nadd 80px 60px\n"
+      "\n"
+      <script>
+        "\nfunction log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\\n'; }\nconst box = document.getElementById('box');\n\nlog('initial', getComputedStyle(box).transformOrigin);\nfor (const v of ['left', 'bottom right', '10% 30px', 'top', 'center left 6px']) {\n  box.style.transformOrigin = v;\n  log(v, '->', getComputedStyle(box).transformOrigin);\n}\n\nbox.style.transformOrigin = '';\ngetComputedStyle(box).transformOrigin;\nbox.style.transition = 'transform-origin 100s linear -50s';\nbox.style.transformOrigin = '20px 20px';\nlog('transition, percent to px', getComputedStyle(box).transformOrigin);\nbox.style.transition = 'none';\n\nconst a = box.animate({ transformOrigin: ['60px 40px', '60px 40px'] }, { duration: 1000, composite: 'add' });\na.pause();\na.currentTime = 500;\nlog('add', getComputedStyle(box).transformOrigin);\n"
+      "\n"

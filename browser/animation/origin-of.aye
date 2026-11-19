@@ -1,0 +1,36 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+fn originOf(value: []u8) ?[5]f64 {
+    var terms = [3][]u8{"center", "center", "0px"}
+    var n: usize = 0
+    var at: usize = 0
+
+    while nextTerm(value, &mut at) |term| {
+        if n == 3 {
+            return null
+        }
+
+        terms[n] = term
+        n += 1
+    }
+
+    if n == 0 {
+        return null
+    }
+
+    let swapped = text.eql(terms[0], "top") || text.eql(terms[0], "bottom") || text.eql(terms[1], "left") || text.eql(terms[1], "right")
+
+    if swapped {
+        let first = terms[0]
+
+        terms[0] = terms[1]
+        terms[1] = first
+    }
+
+    let x = originTerm(terms[0]) orelse return null
+    let y = originTerm(terms[1]) orelse return null
+    let z = originTerm(terms[2]) orelse return null
+
+    return [5]f64{x[0], x[1], y[0], y[1], z[0]}
+}
