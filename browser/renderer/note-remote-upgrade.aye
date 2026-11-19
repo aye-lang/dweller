@@ -1,7 +1,5 @@
 import ipc
-import net
 import std.mem.AllocError
-import std.text
 
 fn noteRemoteUpgrade(page: []u8) AllocError!void {
     let r = fetch_renderer orelse return
@@ -11,16 +9,4 @@ fn noteRemoteUpgrade(page: []u8) AllocError!void {
     try n.upgrading.appendByte('\n')
 
     send(r.alloc, r.conn, r.tab, ipc.Message.UpgradeInsecure { page: page }) catch return
-}
-
-fn keptUpgrade(page: []u8) bool {
-    let r = fetch_renderer orelse return false
-    let n = r.notes orelse return false
-    var lines = text.split(n.upgrading.bytes(), "\n")
-
-    while lines.next() |line| {
-        if text.eql(line, page) { return true }
-    }
-
-    return false
 }

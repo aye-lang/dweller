@@ -15,6 +15,7 @@ fn queueNavigate(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
     tp.committed.clear()
     try tp.committed.append(href)
     tp.push_on_commit = false
+    try tellOpener(slot, tp)
     try sendSessionHistory(slot, tp, slot.session.tab.history.current, slot.session.tab.history.len())
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Navigate { url: href, post: slot.post as u32, content_type: slot.post_type.bytes(), body: slot.post_body.bytes() })
     slot.post = false

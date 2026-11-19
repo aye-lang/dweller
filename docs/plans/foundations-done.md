@@ -228,6 +228,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q5.11a | IndexedDB 1: databases, object stores, transactions, in the browser process | `content/browser/indexed_db/`, `modules/indexeddb/` |
 | Q5.11b | IndexedDB 2: indexes, cursors and key ranges | the same |
 | Q5.14a | Service Worker 1: registration, lifecycle and fetch interception | `content/browser/service_worker/`, `modules/service_worker/` |
+| Q5.14b | Service Worker 2: the Cache API | `content/browser/cache_storage/` |
 
 
 ## Q6: correctness to threshold (lane perf, after Q4)

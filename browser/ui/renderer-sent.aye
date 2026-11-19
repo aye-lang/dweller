@@ -234,6 +234,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             return routePostMessage(tp, got.message)
         }
 
+        .PortPost { .. } => {
+            if got.frame != slot.id { return "bad port_post" }
+
+            return routePortMessage(tp, got.message)
+        }
+
         .ProxyNavigate { .. } => {
             if got.frame != slot.id { return "bad proxy_navigate" }
 
