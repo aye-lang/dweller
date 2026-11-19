@@ -1,0 +1,25 @@
+<!doctype html>
+<title>clipboard</title>
+<style>
+body { margin: 0 }
+button { position: absolute; left: 10px; top: 10px; width: 80px; height: 24px }
+pre { position: absolute; top: 50px; left: 10px; margin: 0 }
+</style>
+<button id="go">copy</button>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+log('api ' + (navigator.clipboard instanceof Clipboard) + ' ' + ClipboardItem.supports('text/plain') + ' ' + ClipboardItem.supports('image/png'));
+navigator.clipboard.writeText('too early').then(() => log('early write allowed'), e => log('early write ' + e.name));
+navigator.clipboard.readText().then(() => log('early read allowed'), e => log('early read ' + e.name));
+document.getElementById('go').onclick = () => {
+  navigator.clipboard.writeText('from the page é')
+    .then(() => navigator.clipboard.readText())
+    .then(t => { log('read ' + t); return navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob(['an item'], { type: 'text/plain' }) })]); })
+    .then(() => navigator.clipboard.read())
+    .then(items => { log('types ' + items[0].types); return items[0].getType('text/plain'); })
+    .then(blob => blob.text())
+    .then(t => log('item ' + t), e => log('failed ' + e.name + ' ' + e.message));
+};
+</script>

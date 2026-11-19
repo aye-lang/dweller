@@ -26,7 +26,7 @@ pub enum Message {
     Redirect { url: []u8 }
     Agent { id: u32, mcp: u32, ref_base: u32, line: []u8 }
     AgentReply { id: u32, next_ref: u32, answer: []u8 }
-    Fetch { id: u32, doc: u32, nav: u32, kind: u32, credentials: u32, mode: u32, method: []u8, url: []u8, referrer: []u8, referrer_policy: []u8, top: []u8, headers: []u8, content_type: []u8, has_body: u32, body: []u8 }
+    Fetch { id: u32, doc: u32, nav: u32, stream: u32, kind: u32, credentials: u32, mode: u32, method: []u8, url: []u8, referrer: []u8, referrer_policy: []u8, top: []u8, headers: []u8, content_type: []u8, has_body: u32, body: []u8 }
     FetchHead { id: u32, doc: u32, status: u32, tainted: u32, mime: []u8, charset: []u8, url: []u8, headers: []u8 }
     FetchBody { id: u32, chunk: []u8 }
     FetchEnd { id: u32 }
@@ -65,6 +65,11 @@ pub enum Message {
     AgentPaused { on: u32 }
     AgentWindow { line: []u8 }
     AgentWindowReply { ok: u32, message: []u8, fields: []u8, detail: []u8 }
+    Dialog { kind: u32, message: []u8, preset: []u8 }
+    DialogReply { accepted: u32, typed: []u8 }
+    ClipboardWrite { copied: []u8 }
+    ClipboardRead
+    ClipboardText { ok: u32, pasted: []u8 }
     AttachTab { context: u32 }
     ContextClosed { context: u32 }
     OpenerInfo { frame: u32, name: []u8 }
@@ -77,6 +82,8 @@ pub enum Message {
     State { scroll: f64, frames: []u8, focus: []u8, content: []u8 }
     AgentViewport { width: f64, height: f64 }
     Visible { on: u32 }
+    UpgradeInsecure { page: []u8 }
+    FramePeriod { ns: f64 }
     FetchRemote { id: u32 }
     SocketOpen { id: u32, doc: u32, url: []u8, protocols: []u8 }
     SocketSend { id: u32, binary: u32, more: u32, data: []u8 }
@@ -157,6 +164,11 @@ pub enum Message {
             .AgentPaused { .. } => 71
             .AgentWindow { .. } => 72
             .AgentWindowReply { .. } => 73
+            .Dialog { .. } => 130
+            .DialogReply { .. } => 131
+            .ClipboardWrite { .. } => 132
+            .ClipboardRead => 133
+            .ClipboardText { .. } => 134
             .AttachTab { .. } => 74
             .ContextClosed { .. } => 90
             .OpenerInfo { .. } => 91
@@ -169,6 +181,8 @@ pub enum Message {
             .State { .. } => 81
             .AgentViewport { .. } => 82
             .Visible { .. } => 83
+            .UpgradeInsecure { .. } => 84
+            .FramePeriod { .. } => 85
             .FetchRemote { .. } => 100
             .SocketOpen { .. } => 140
             .SocketSend { .. } => 141

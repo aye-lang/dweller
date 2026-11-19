@@ -136,6 +136,12 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
         }
 
         .Idb { .. } => return answerIdb(tp, got.frame, got.message)
+        .ClipboardWrite { .. }, .ClipboardRead => return clipboardAsked(tp, got.frame, got.message)
+        .Dialog { .. } => {
+            if tp.sandbox & SB_MODALS != 0 { return "dialog in a frame sandboxed without allow-modals" }
+
+            return takeDialog(tp, got.frame, got.message)
+        }
 
         .Subframes { frames } => return takeSubframes(tp, frames)
         .PostMessage { .. } => return routePostMessage(tp, got.message)
@@ -149,6 +155,12 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             tp.pong_at = std.time.monotonicMs()
             tp.hung = false
             tp.hang_seen = false
+        }
+
+        .UpgradeInsecure { page } => {
+            if page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
+
+            try net.noteUpgradeInsecure(page)
         }
 
         _ => return "unexpected in a frame"

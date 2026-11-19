@@ -31,6 +31,7 @@ import font
 import html
 import layout
 import net
+import paint
 import perf
 import std
 import std.list.List
@@ -78,6 +79,9 @@ pub struct Page {
     // The stylesheet source fingerprint for styling (sheet_cache.aye).
     sheet_key: u64
     tree: ?*mut layout.Tree
+    host_caret: ?paint.Rect = null
+    selection: []mut paint.Rect = []mut paint.Rect{}
+    prefers_dark: ?bool = null
     // `tree` is the layout the scripts read (geometry.aye `adoptLayout`),
     // which owns it.
     tree_borrowed: bool = false
@@ -106,6 +110,7 @@ pub struct Page {
     csp: []u8 = ""
     header_csp: []u8 = ""
     report_csp: []u8 = ""
+    opened_doc: []u8 = ""
     styles_marked: u64 = 0xFFFFFFFFFFFFFFFF
     styles_reported: u64 = 0xFFFFFFFFFFFFFFFF
     inherited_csp: usize = 0
@@ -150,6 +155,7 @@ pub struct Page {
     /// Frees the page and everything in it.
     pub fn destroy(self: *mut Self) {
         let alloc = self.alloc
+        alloc.free(self.selection)
         contextPageGone(self)
         if self.parent != null {
             net.forgetFrame(self.id)
@@ -185,6 +191,7 @@ pub struct Page {
         freePolicy(alloc, self.csp)
         freePolicy(alloc, self.header_csp)
         freePolicy(alloc, self.report_csp)
+        freePolicy(alloc, self.opened_doc)
         alloc.free(self.title)
         self.url.deinit(alloc)
         self.base.deinit(alloc)
@@ -330,7 +337,7 @@ pub struct Page {
             }
             if !same {
                 self.dropStyling()
-                self.styling = try self.styleFor(css.Media { width: width, height: height })
+                self.styling = try self.styleFor(css.Media { width: width, height: height, dark: self.prefers_dark })
                 self.sheet_key = key
             }
         }
@@ -338,7 +345,7 @@ pub struct Page {
             _ = try loadStyledWebFonts(self, st, measure)
         }
         let images_began = perf.start()
-        try updateImages(self, css.Media { width: width, height: height })
+        try updateImages(self, css.Media { width: width, height: height, dark: self.prefers_dark })
         perf.end("images", images_began, self.url.href)
         if self.styling |st| {
             var nodes: ?*layout.Images = null
@@ -548,7 +555,7 @@ pub fn loadParsed(alloc: Allocator, target: *Url, initiator: net.Initiator) Allo
 /// now on: `preloadImages`). The document is parsed in full already, so
 /// the scan walks the tree. The ids are released by the caller.
 pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32), scripts: *mut List(u32)) AllocError!void {
-    let media = css.Media { width: width, height: height }
+    let media = css.Media { width: width, height: height, dark: p.prefers_dark }
     var base = try documentBase(p.alloc, &p.doc, &p.url)
     defer base.deinit(p.alloc)
     var hrefs = text.Builder.init(p.alloc)
@@ -747,7 +754,7 @@ fn runDocument(p: *mut Page, scripts: bool) AllocError!void {
         perf.end("scripts", scripts_began, p.url.href)
     }
     if !p.plain {
-        try loadFrames(p)
+        try syncFrames(p)
     }
     if p.script != null {
         let scripts_began = perf.start()

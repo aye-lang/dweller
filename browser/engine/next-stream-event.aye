@@ -1,0 +1,41 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
+fn nextStreamEvent(es: *mut EventStream, input: []u8, from: usize) AllocError!?usize {
+    es.data.clear()
+    es.kind.clear()
+
+    var start = from
+    var i = from
+
+    while i < input.len {
+        let c = input[i]
+        let skipped = es.crlf && c == 0x0A
+
+        es.crlf = false
+        i += 1
+
+        if skipped {
+            start = i
+            continue
+        }
+
+        if c != 0x0D && c != 0x0A {
+            continue
+        }
+
+        es.crlf = c == 0x0D
+
+        let line = input[start..i - 1]
+
+        start = i
+
+        if line.len == 0 {
+            return streamDispatchEnd(es, input, i)
+        }
+
+        try takeStreamField(es, line)
+    }
+
+    return null
+}

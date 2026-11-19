@@ -1,0 +1,44 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: media/audio/wav_audio_handler.cc
+fn wavProbe(alloc: Allocator, b: []u8, total: usize) AllocError!?Media {
+    if !isTag(b, 8, "WAVE") { return null }
+
+    var at: usize = 12
+    var t = Track { kind: TrackKind.Audio, codec: "pcm", samples: List(Sample).init(alloc) }
+    var block: usize = 0
+    var bytes: usize = 0
+
+    while at + 8 <= b.len {
+        let size = le32(b, at + 4) as usize
+
+        if isTag(b, at, "fmt ") && at + 24 <= b.len {
+            t.channels = le32(b, at + 8) >> 16
+            t.rate = le32(b, at + 12) as f64
+            block = (le32(b, at + 20) & 0xffff) as usize
+        } else if isTag(b, at, "data") {
+            bytes = size
+
+            if at + 8 + size > total { bytes = total - at - 8 }
+        }
+
+        at += 8 + size + (size & 1)
+    }
+
+    if block == 0 || t.rate <= 0.0 || t.channels == 0 { return null }
+
+    var m = Media { container: Container.Wav, duration: (bytes / block) as f64 / t.rate, tracks: List(Track).init(alloc) }
+
+    errdefer m.deinit()
+
+    t.duration = m.duration
+    try m.tracks.append(t)
+
+    return m
+}
+
+fn le32(b: []u8, at: usize) u32 {
+    return b[at] as u32 | (b[at + 1] as u32) << 8 | (b[at + 2] as u32) << 16 | (b[at + 3] as u32) << 24
+}

@@ -1,0 +1,37 @@
+import engine
+import font
+import paint
+import std.mem.AllocError
+import std.text
+
+// chromium: components/javascript_dialogs/views/app_modal_dialog_view_views.cc
+fn drawDialog(ui: *mut Ui) AllocError!void {
+    let sh = dialogSheetOf(ui)
+    let b = sh.box
+    let title = font.Font { size: 14.0, bold: true, italic: false, mono: false }
+    let f = uiFont(13.0)
+    var lines = text.split(ui.dialog.message.bytes(), "\n")
+    var y = b.y + 32.0
+    var n: usize = 0
+
+    fill(ui, b.x + 2.0, b.y + 2.0, b.w, b.h, paint.Rgba { r: 0, g: 0, b: 0, a: 40 })
+    fill(ui, b.x, b.y, b.w, b.h, BAR_BG)
+    frame(ui, b, 1.0, LINE)
+    try ui.canvas.pushClip(paint.deviceRect(paint.Rect { x: b.x + 12.0, y: b.y, w: b.w - 24.0, h: b.h }, screen(ui)))
+    try label(ui, b.x + 12.0, centered(ui, b.y + 8.0, 20.0, title), ui.dialog.title.bytes(), title, INK)
+
+    while lines.next() |line| {
+        if n == DIALOG_LINES { break }
+
+        try label(ui, b.x + 12.0, centered(ui, y, DIALOG_LINE_H, f), line, f, INK)
+        y += DIALOG_LINE_H
+        n += 1
+    }
+
+    ui.canvas.popClip()
+
+    if ui.dialog.kind == engine.DIALOG_PROMPT { try drawField(ui, &ui.dialog.input, sh.input, true, 13.0) }
+    if ui.dialog.kind != engine.DIALOG_ALERT { try drawButton(ui, sh.cancel, "Cancel", false) }
+
+    try drawButton(ui, sh.ok, "OK", true)
+}

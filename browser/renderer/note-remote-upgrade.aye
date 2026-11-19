@@ -1,0 +1,12 @@
+import ipc
+import std.mem.AllocError
+
+fn noteRemoteUpgrade(page: []u8) AllocError!void {
+    let r = fetch_renderer orelse return
+    let n = try notesOf(r)
+
+    try n.upgrading.append(page)
+    try n.upgrading.appendByte('\n')
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.UpgradeInsecure { page: page }) catch return
+}
