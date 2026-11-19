@@ -1,0 +1,26 @@
+struct Box {
+    kind: []u8
+    body: usize
+    end: usize
+}
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn boxAt(b: []u8, at: usize, limit: usize) ?Box {
+    if at + 8 > limit { return null }
+
+    var size = be32(b, at) as u64
+    var body = at + 8
+
+    if size == 1 {
+        if at + 16 > limit { return null }
+
+        size = be64(b, at + 8)
+        body = at + 16
+    } else if size == 0 {
+        size = (limit - at) as u64
+    }
+
+    if size < (body - at) as u64 || size > (limit - at) as u64 { return null }
+
+    return Box { kind: b[at + 4..at + 8], body: body, end: at + size as usize }
+}

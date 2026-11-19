@@ -1,0 +1,24 @@
+// chromium: media/formats/webm/webm_parser.cc (ParseWebMElementHeaderField)
+fn ebmlNumber(b: []u8, at: usize, limit: usize, keeps_marker: bool) ?[2]u64 {
+    if at >= limit { return null }
+
+    var length: u64 = 1
+    var mask: u8 = 0x80
+
+    while length <= 8 && b[at] & mask == 0 {
+        mask >>= 1
+        length += 1
+    }
+
+    if length > 8 || at + length as usize > limit { return null }
+
+    var value = b[at] as u64
+
+    if !keeps_marker { value = (b[at] & (mask - 1)) as u64 }
+
+    for i in 1..length as usize {
+        value = value << 8 | b[at + i] as u64
+    }
+
+    return [2]u64{ value, length }
+}

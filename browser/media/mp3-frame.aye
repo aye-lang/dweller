@@ -1,0 +1,44 @@
+struct Mp3Frame {
+    rate: f64
+    channels: u32
+    bitrate: f64
+    samples: f64
+    size: usize
+    side: usize
+}
+
+let MP3_RATES = [3]f64{ 44100.0, 48000.0, 32000.0 }
+let MP3_V1_L3 = [15]f64{ 0.0, 32.0, 40.0, 48.0, 56.0, 64.0, 80.0, 96.0, 112.0, 128.0, 160.0, 192.0, 224.0, 256.0, 320.0 }
+let MP3_V2_L3 = [15]f64{ 0.0, 8.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 80.0, 96.0, 112.0, 128.0, 144.0, 160.0 }
+
+// chromium: media/formats/mpeg/mpeg1_audio_stream_parser.cc (ParseHeader)
+fn mp3Frame(b: []u8, at: usize) ?Mp3Frame {
+    if at + 4 > b.len || b[at] != 0xff || b[at + 1] & 0xe0 != 0xe0 { return null }
+
+    let version = (b[at + 1] >> 3) & 3
+    let layer = (b[at + 1] >> 1) & 3
+    let bitrate_index = (b[at + 2] >> 4) as usize
+    let rate_index = ((b[at + 2] >> 2) & 3) as usize
+
+    if version == 1 || layer != 1 || bitrate_index == 0 || bitrate_index == 15 || rate_index == 3 { return null }
+
+    var f = Mp3Frame { rate: MP3_RATES[rate_index], channels: 2, bitrate: MP3_V1_L3[bitrate_index] * 1000.0, samples: 1152.0, size: 0, side: 32 }
+
+    if b[at + 3] >> 6 == 3 {
+        f.channels = 1
+        f.side = 17
+    }
+
+    if version != 3 {
+        f.rate /= 2.0
+        f.bitrate = MP3_V2_L3[bitrate_index] * 1000.0
+        f.samples = 576.0
+        f.side = 9 + (f.channels as usize - 1) * 8
+
+        if version == 0 { f.rate /= 2.0 }
+    }
+
+    f.size = (f.samples / 8.0 * f.bitrate / f.rate) as usize + ((b[at + 2] >> 1) & 1) as usize
+
+    return f
+}
