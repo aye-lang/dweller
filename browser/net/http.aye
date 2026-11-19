@@ -185,10 +185,20 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
     if session |s| {
         let key = try cacheKey(alloc, req, target.withoutFragment())
         defer alloc.free(key)
+        noteDocumentLoad(s, req)
         if cacheable {
             if try s.cache.lookup(alloc, key) |hit| {
                 return hit
             }
+        }
+        var asked = req
+        var validators: ?[]mut u8 = null
+        if cacheable {
+            validators = try staleValidators(&s.cache, alloc, key, req.headers)
+        }
+        defer release(alloc, validators orelse []mut u8{})
+        if validators |v| {
+            asked.headers = v
         }
         if s.curl == null {
             s.curl = curl_easy_init()
@@ -196,7 +206,14 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
         if s.curl |curl| {
             if !sharedBusy(curl) {
                 var keep = cacheable
-                var res = try transfer(alloc, curl, target, req, s, &mut keep)
+                var res = try transfer(alloc, curl, target, asked, s, &mut keep)
+                if validators != null && res.status == 304 && refreshEntry(&mut s.cache, key, res.headers_raw) {
+                    res.deinit(alloc)
+                    if try s.cache.lookup(alloc, key) |hit| {
+                        return hit
+                    }
+                    return FetchError.Network
+                }
                 if keep && !res.tainted && res.status >= 200 && res.status < 300 {
                     s.cache.keep(key, &res, false) catch |e| {
                         res.deinit(alloc)
