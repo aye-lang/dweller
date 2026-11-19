@@ -1,0 +1,20 @@
+fn sweepObjs(it: *mut Interp, from: usize, to: usize) {
+    for i in from..to {
+        let ob = &mut it.heap.objs.items()[i]
+
+        if !ob.live {
+            continue
+        }
+
+        if ob.mark {
+            ob.mark = false
+            it.heap.swept_live += 1
+            it.heap.swept_bytes += objBytes(ob)
+            continue
+        }
+
+        it.heap.freeObj(i as u32)
+        it.heap.free_objs.append(i as u32) catch |e| {
+        }
+    }
+}

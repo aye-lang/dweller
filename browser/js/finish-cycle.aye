@@ -1,0 +1,36 @@
+import perf
+
+fn finishCycle(it: *mut Interp, lazy: bool) {
+    finishSweep(it)
+
+    if !it.heap.marking {
+        it.gc_count += 1
+    }
+
+    let gc_began = perf.start()
+    defer perf.end("js_gc", gc_began, "")
+
+    let gc_paused = switchNative(it, NONE)
+    defer resumeNative(it, gc_paused)
+
+    markRoots(it)
+    markAll(it)
+
+    if it.heap.marking && it.gc_verify {
+        gcVerify(it)
+    }
+
+    it.heap.marking = false
+    clearDeadWeak(it)
+    perf.end("js_gc_mark", gc_began, "")
+    finalizeHosts(it)
+
+    if lazy {
+        return startSweep(it)
+    }
+
+    let sweep_began = perf.start()
+
+    sweepAll(it)
+    perf.end("js_gc_sweep", sweep_began, "")
+}
