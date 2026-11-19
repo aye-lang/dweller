@@ -2414,9 +2414,9 @@ pub let PRELUDE =
     \\  if (!blob) return { error: 'blob URL not found' };
     \\  return { status: 200, url, type: blob.type, body: new TextDecoder().decode(blob._array()), raw: blob._bytes };
     \\}
-    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy) {
+    \\function startFetch(url, method, headers, body, credentials, mode, done, referrerPolicy, streams) {
     \\  if (url.startsWith('blob:')) return ak.imageTask(() => done(blobResponse(url, method)), 0);
-    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy);
+    \\  return ak.fetchStart(...fetchArgs(url, method, headers, body, credentials, mode), done, referrerPolicy, streams ? 1 : 0);
     \\}
     \\// The response of an ak.fetchStart task's argument: the id of a
     \\// background request, or the response itself.
@@ -2434,30 +2434,51 @@ pub let PRELUDE =
     \\      reject(signal.reason);
     \\      return;
     \\    }
-    \\    let done = false;
-    \\    const onAbort = () => {
+    \\    let done = false, flow = null;
+    \\    const onAbort = why => {
+    \\      const reason = why instanceof Error ? why : signal.reason;
+    \\      if (flow !== null) { ak.clearTimer(task); return flow.error(reason); }
     \\      if (done) return;
     \\      done = true;
     \\      ak.clearTimer(task);
-    \\      reject(signal.reason);
+    \\      reject(reason);
+    \\    };
+    \\    const settle = r => {
+    \\      const headers = new Headers();
+    \\      if (r.type) headers.append('content-type', r.type);
+    \\      // A body that decoding changed comes as its bytes (Response.text()
+    \\      // decodes UTF-8, arrayBuffer() keeps binary data).
+    \\      const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, r.stream || (r.raw !== undefined ? byteArray(r.raw) : r.body));
+    \\      hidden(res, '_fetched', r);
+    \\      resolve(res);
+    \\    };
+    \\    // A response that is still arriving (ak.fetchPart): the promise
+    \\    // settles at its head, and its body is a stream of the parts.
+    \\    const arriving = part => {
+    \\      if (flow === null) {
+    \\        if (part.blocked) return onAbort(new TypeError('Failed to fetch: blocked by Content Security Policy'));
+    \\        done = true;
+    \\        const stream = new ReadableStream({ start(c) { flow = c; }, cancel() { ak.clearTimer(task); } });
+    \\        settle({ status: part.status, url: part.url, type: part.type.split(';')[0].trim().toLowerCase(), headers: part.headers, stream });
+    \\      }
+    \\      if (part.data.length > 0) flow.enqueue(byteArray(part.data));
     \\    };
     \\    const task = startFetch(req.url, req.method, req.headers, req._body, req.credentials, req.mode, x => {
+    \\      const part = typeof x === 'number' ? ak.fetchPart(x) : null;
+    \\      if (part !== null) return arriving(part);
     \\      const r = fetchTaken(x);
+    \\      signal.removeEventListener('abort', onAbort);
+    \\      if (flow !== null) {
+    \\        if (r.error !== undefined) return flow.error(new TypeError('network error'));
+    \\        const rest = r.raw !== undefined ? byteArray(r.raw) : new TextEncoder().encode(r.body);
+    \\        if (rest.length > 0) flow.enqueue(rest);
+    \\        return flow.close();
+    \\      }
     \\      if (done) return;
     \\      done = true;
-    \\      signal.removeEventListener('abort', onAbort);
     \\      if (r.error !== undefined) reject(new TypeError('Failed to fetch: ' + r.error));
-    \\      else {
-    \\        const headers = new Headers();
-    \\        if (r.type) headers.append('content-type', r.type);
-    \\        // A body that decoding changed comes as its bytes (Response.text()
-    \\        // decodes UTF-8, arrayBuffer() keeps binary data).
-    \\        const body = r.raw !== undefined ? byteArray(r.raw) : r.body;
-    \\        const res = responseFrom(r.status, r.status >= 200 && r.status < 300 ? 'OK' : '', r.url, headers, body);
-    \\        hidden(res, '_fetched', r);
-    \\        resolve(res);
-    \\      }
-    \\    }, req.referrerPolicy);
+    \\      else settle(r);
+    \\    }, req.referrerPolicy, true);
     \\    signal.addEventListener('abort', onAbort);
     \\  });
     \\});

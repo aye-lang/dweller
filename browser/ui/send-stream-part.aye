@@ -13,9 +13,13 @@ fn sendStreamPart(tp: *mut TabProcess, h: *mut HeldFetch) AllocError!void {
         let ct = net.parseContentType(part.content_type)
         var landed = part.url
 
+        var kept = text.Builder.init(tp.url.alloc)
+        defer kept.deinit()
+
         if text.eql(landed, h.href.bytes()) { landed = "" }
 
-        try ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchHead { id: h.id, doc: 0, status: part.status as u32, tainted: 0, mime: ct.mime, charset: ct.charset, url: landed, headers: "" })
+        try headersWithoutCookies(part.headers, &mut kept)
+        try ipc.encode(&mut tp.outbox, h.on, ipc.Message.FetchHead { id: h.id, doc: 0, status: part.status as u32, tainted: 0, mime: ct.mime, charset: ct.charset, url: landed, headers: kept.bytes() })
         h.headed = true
     }
 
