@@ -160,7 +160,7 @@ function fetchResource(el, source, value) {
   m.src = url;
   ak.fetchStart(url, 'GET', '', undefined, el.crossOrigin === 'use-credentials' ? 'include' : 'same-origin', el.crossOrigin === null ? 'no-cors' : 'cors', x => {
     if (stateOf(el).load === load) loaded(el, source, url, typeof x === 'number' ? ak.fetchTake(x) : x);
-  }, '');
+  }, '', el.localName);
 }
 
 function trySources(el, from) {
@@ -309,7 +309,10 @@ function noticed(node) {
   const media = node instanceof HTMLMediaElement ? [node] : Array.from(node.querySelectorAll('audio, video'));
   if (node.localName === 'source' && node.parentNode instanceof HTMLMediaElement) media.push(node.parentNode);
   for (const el of media) {
+    const started = el.__media === undefined;
     const m = stateOf(el);
+    if (started) continue;
+
     if (m.seen !== el.getAttribute('src')) load(el);
     else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) selectResource(el);
   }
@@ -328,4 +331,12 @@ function watch() {
   }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
 }
 later(() => document.querySelectorAll('audio, video').forEach(stateOf));
+
+const createElement = Document.prototype.createElement;
+hidden(Document.prototype, 'createElement', function () {
+  const el = createElement.apply(this, arguments);
+  if (el instanceof HTMLMediaElement) watch();
+
+  return el;
+});
 })();
