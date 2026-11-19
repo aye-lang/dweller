@@ -24,6 +24,8 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             try showCommitted(tp, title, href)
             tp.loading = false
             tp.stopped = false
+            tp.pushes = tp.self_nav && !tp.nav_failed
+            tp.self_nav = false
         }
 
         .LoadStopped => {
@@ -65,6 +67,9 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             if post != 0 && tp.sandbox & SB_FORMS != 0 { return "form in a sandboxed frame" }
 
             if !tp.loading {
+                tp.before.clear()
+                try tp.before.append(tp.committed.bytes())
+                tp.self_nav = true
                 tp.nav_policy = policy
                 try navigateChild(tp, target.href, topOf(tp), (post != 0) as u32, content_type, body)
             }

@@ -77,3 +77,38 @@ fn window_renderer_limits_crashing() {
     let state = limits_run(page, &format!("renderer:loaded {crash} {reload} {crash} {reload} {crash} {reload} frame"), "600", &[]);
     assert!(state.contains(" title Form\n") && !state.contains("sad-tab"), "Reload still loads the page\n{state}");
 }
+
+fn history_state(state: &str) -> (String, String, String) {
+    let of = |head: &str| state.lines().find(|l| l.starts_with(head)).unwrap_or("").to_string();
+    let title = |l: String| l.split_once(" title ").map(|(_, t)| t.to_string()).unwrap_or_default();
+    (of("history "), title(of("renderer ")), title(of("renderer-child ")))
+}
+
+/// Q2.15i: a cross-site frame's own navigation is an entry of the tab's
+/// history. A click on a link in the frame gives `history 2 of 2`; Back
+/// navigates the frame back and does not reload the page around it;
+/// Forward navigates the frame again.
+#[test]
+fn window_renderer_limits_frame_history() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/ui/oopif-history.html", srv.base);
+    let follow = "renderer:loaded renderer:child click:50,60 release:50,60 renderer:input renderer:child-title:H?second frame";
+    let back = "key:cmd+[ renderer:child-title:H frame";
+    let forward = "key:cmd+] renderer:child-title:H?second frame";
+
+    let state = limits_run(&page, follow, "2000", &[]);
+    assert_eq!(history_state(&state), ("history 2 of 2".into(), "P loads 1".into(), "H?second".into()), "{state}");
+
+    let state = limits_run(&page, &format!("{follow} {back}"), "2000", &[]);
+    assert_eq!(history_state(&state), ("history 1 of 2".into(), "P loads 1".into(), "H".into()), "{state}");
+
+    let state = limits_run(&page, &format!("{follow} {back} {forward}"), "2000", &[]);
+    assert_eq!(history_state(&state), ("history 2 of 2".into(), "P loads 1".into(), "H?second".into()), "{state}");
+}
