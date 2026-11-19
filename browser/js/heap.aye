@@ -213,6 +213,16 @@ pub struct Heap {
     out_of_memory: bool = false
     proto_epoch: u32
     load_epoch: u32
+    marking: bool = false
+    sweeping: bool = false
+    sweep_at: [3]usize = [3]usize{0, 0, 0}
+    sweep_end: [3]usize = [3]usize{0, 0, 0}
+    swept_live: usize = 0
+    swept_bytes: usize = 0
+    host_objs: List(u32)
+    shaded_objs: List(u32)
+    shaded_strs: List(u32)
+    shaded_envs: List(u32)
 
     pub fn init(alloc: Allocator) AllocError!Heap {
         var h = Heap {
@@ -236,6 +246,10 @@ pub struct Heap {
             limit_bytes: heapLimit(),
             proto_epoch: 0,
             load_epoch: 0,
+            shaded_objs: List(u32).init(alloc),
+            host_objs: List(u32).init(alloc),
+            shaded_strs: List(u32).init(alloc),
+            shaded_envs: List(u32).init(alloc),
         }
         try h.shapes.append(Shape { parent: NONE, key: NONE, slot: 0, index: null })
         try h.atoms.predefine()
@@ -278,6 +292,38 @@ pub struct Heap {
         self.byte_mem.deinit()
         self.int_mem.deinit()
         self.rope_stack.deinit()
+        self.shaded_objs.deinit()
+        self.host_objs.deinit()
+        self.shaded_strs.deinit()
+        self.shaded_envs.deinit()
+    }
+
+    pub fn shade(self: *mut Self, v: Value) {
+        if self.marking {
+            shadeValue(self, v)
+        }
+    }
+
+    pub fn shadeObj(self: *mut Self, o: u32) {
+        if self.marking {
+            shadeObject(self, o)
+        }
+    }
+
+    pub fn shadeEnv(self: *mut Self, e: u32) {
+        if self.marking {
+            shadeEnvironment(self, e)
+        }
+    }
+
+    pub fn unswept(self: *Self, pool: usize, i: u32) bool {
+        return self.sweeping && i as usize >= self.sweep_at[pool] && (i as usize) < self.sweep_end[pool]
+    }
+
+    pub fn wrote(self: *mut Self, o: u32) {
+        if self.marking {
+            rescanObject(self, o)
+        }
     }
 
     // ---- objects
@@ -310,10 +356,13 @@ pub struct Heap {
         }
         if self.free_objs.pop() |i| {
             self.objs.items()[i] = o
+            self.objs.items()[i].mark = self.unswept(0, i)
+            self.shadeObj(i)
             return i
         }
         let i = self.objs.len() as u32
         try self.objs.append(o)
+        self.shadeObj(i)
         return i
     }
 
@@ -384,6 +433,8 @@ pub struct Heap {
             ob.props = try self.prop_mem.grow(ob.props, cap, Prop { key: 0, value: Value.Undefined, setter: Value.Undefined, flags: 0 })
         }
         ob.props[n] = Prop { key: key, value: value, setter: setter, flags: flags }
+        self.shade(value)
+        self.shade(setter)
         ob.nprops = n + 1
         if ob.shape != NONE {
             ob.shape = try shapeTransition(self, ob.shape, key, n)
@@ -450,6 +501,7 @@ pub struct Heap {
             self.bytes_since_gc += (cap - ob.elems.len) * @sizeOf(Value)
             ob.elems = try self.val_mem.grow(ob.elems, cap, Value.Undefined)
         }
+        self.shade(fill)
         var i = ob.nelems
         while i < n {
             ob.elems[i] = fill
@@ -514,10 +566,13 @@ pub struct Heap {
         }
         if self.free_strs.pop() |k| {
             self.strs.items()[k] = c
+            self.strs.items()[k].mark = self.unswept(1, k)
+            self.shade(Value.Str { s: k })
             return k
         }
         let k = self.strs.len() as u32
         try self.strs.append(c)
+        self.shade(Value.Str { s: k })
         return k
     }
 
@@ -605,10 +660,13 @@ pub struct Heap {
         }
         if self.free_strs.pop() |k| {
             self.strs.items()[k] = c
+            self.strs.items()[k].mark = self.unswept(1, k)
+            self.shade(Value.Str { s: k })
             return k
         }
         let k = self.strs.len() as u32
         try self.strs.append(c)
+        self.shade(Value.Str { s: k })
         return k
     }
 
@@ -673,10 +731,13 @@ pub struct Heap {
         let e = Env { slots: slots, parent: parent, mark: false, live: true }
         if self.free_envs.pop() |i| {
             self.envs.items()[i] = e
+            self.envs.items()[i].mark = self.unswept(2, i)
+            self.shadeEnv(i)
             return i
         }
         let i = self.envs.len() as u32
         try self.envs.append(e)
+        self.shadeEnv(i)
         return i
     }
 

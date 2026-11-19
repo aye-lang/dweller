@@ -11,6 +11,7 @@ fn focusKey(r: *mut TabRenderer, p: *mut engine.Page, key: []u8, mods: u32) !boo
     if (mods & 10) == 0 && (try stepKey(r, p, f, key)) { return true }
     if dom.isTextField(&p.doc, f) { return fieldKey(r, p, f, key, mods) }
     if (mods & 10) != 0 { return false }
+    if try engine.editHost(p, engine.keyEditCommand(key, (mods & 1) != 0), "") { return true }
 
     if text.eql(key, "Escape") {
         engine.setFocus(p, null)

@@ -284,18 +284,20 @@ fn collectLayers(t: *Tree, i: usize, out: *mut List(LayerRef)) AllocError!void {
 // The canvas takes the root's background, or, when that is transparent,
 // the body's (which is then not painted again).
 fn canvasBackground(b: *mut Builder, r: usize) {
-    let root_bg = colorOf(b.t.bx(r).style[css.BACKGROUND_COLOR], WHITE)
+    let base = canvasBase(b.t, r)
+    b.list.background = base
+    let root_bg = colorOf(b.t.bx(r).style[css.BACKGROUND_COLOR], base)
     if root_bg.a > 0 {
-        b.list.background = over(root_bg, WHITE)
+        b.list.background = over(root_bg, base)
         b.skip_bg = r
         return
     }
     for c in b.t.children(r) {
         if b.t.bx(c).node |el| {
             if b.t.doc.isElement(el, "body") {
-                let body_bg = colorOf(b.t.bx(c).style[css.BACKGROUND_COLOR], WHITE)
+                let body_bg = colorOf(b.t.bx(c).style[css.BACKGROUND_COLOR], base)
                 if body_bg.a > 0 {
-                    b.list.background = over(body_bg, WHITE)
+                    b.list.background = over(body_bg, base)
                     b.skip_bg = c
                 }
                 return
@@ -1064,6 +1066,10 @@ struct Builder {
         let off = dom.isDisabled(self.t.doc, el)
         var edge = CONTROL_EDGE
         var inside = WHITE
+        if controlDark(self.t, el) {
+            edge = CONTROL_EDGE_DARK
+            inside = FIELD_DARK
+        }
         if on {
             edge = ACCENT
             inside = ACCENT
@@ -1100,6 +1106,11 @@ struct Builder {
         let r = size / 2.0
         let on = dom.isChecked(self.t.doc, el)
         var edge = CONTROL_EDGE
+        var inside = WHITE
+        if controlDark(self.t, el) {
+            edge = CONTROL_EDGE_DARK
+            inside = FIELD_DARK
+        }
         if on {
             edge = ACCENT
         }
@@ -1107,7 +1118,7 @@ struct Builder {
             edge = DISABLED_EDGE
         }
         try self.disc(cx, cy, r, edge)
-        try self.disc(cx, cy, r - 1.0, WHITE)
+        try self.disc(cx, cy, r - 1.0, inside)
         if on {
             try self.disc(cx, cy, r - 3.0, edge)
         }
