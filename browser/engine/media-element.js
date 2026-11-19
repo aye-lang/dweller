@@ -214,12 +214,9 @@ function noticed(node) {
   const media = node instanceof HTMLMediaElement ? [node] : Array.from(node.querySelectorAll('audio, video'));
   if (node.localName === 'source' && node.parentNode instanceof HTMLMediaElement) media.push(node.parentNode);
   for (const el of media) {
-    const started = el.__media === undefined;
     const m = stateOf(el);
-    if (started) continue;
-
     if (m.seen !== el.getAttribute('src')) parts.load(el);
-    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src'))) parts.selectResource(el);
+    else if (m.network === EMPTY || (m.network === NO_SOURCE && !el.hasAttribute('src') && node.localName === 'source')) parts.selectResource(el);
   }
 }
 
