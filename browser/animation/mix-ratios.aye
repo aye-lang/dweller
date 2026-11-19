@@ -1,0 +1,22 @@
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#combine-ratio
+fn mixRatios(a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
+    let from = ratioOf(a) orelse return false
+    let to = ratioOf(b) orelse return false
+
+    if text.startsWith(text.trim(a), "auto") != text.startsWith(text.trim(b), "auto") {
+        return false
+    }
+
+    if text.startsWith(text.trim(a), "auto") {
+        try out.append("auto ")
+    }
+
+    try out.appendFloat(from * math.pow(to / from, p))
+    try out.append(" / 1")
+
+    return true
+}

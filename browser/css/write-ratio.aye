@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-values-4/#ratios
+fn writeRatio(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    let whole = comps.len == 1 && ratioTerm(comps[0])
+    let pair = comps.len == 3 && ratioTerm(comps[0]) && isDelim(comps[1], '/') && ratioTerm(comps[2])
+
+    if !whole && !pair {
+        return false
+    }
+
+    try out.appendFloat(comps[0].toks[0].num)
+    try out.append(" / ")
+
+    if pair {
+        try out.appendFloat(comps[2].toks[0].num)
+    } else {
+        try out.append("1")
+    }
+
+    return true
+}
+
+fn ratioTerm(c: Comp) bool {
+    return c.toks.len == 1 && c.toks[0].kind == Tok.Number && c.toks[0].num >= 0.0
+}

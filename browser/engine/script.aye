@@ -182,6 +182,7 @@ struct Timer {
     // net.startRequest), not an image's.
     request: bool = false
     stream: bool = false
+    stream_poll: bool = false
 }
 
 /// What a script asked the tab to do; the front end does it once the
@@ -205,6 +206,7 @@ pub struct Navigation {
     step: i64
     form: ?NodeId
     submitter: ?NodeId
+    replace: bool = false
 }
 
 /// The JavaScript of a page. On the heap, never moved: the engine's host
@@ -311,6 +313,7 @@ pub struct Script {
     host_fs: u8 = 0
     nav_href: []mut u8
     nav_step: i64
+    nav_replace: bool = false
     nav_form: ?NodeId
     nav_submitter: ?NodeId
     submit_submitter: ?NodeId
@@ -703,6 +706,7 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(ANIMATION_VALUES_PRELUDE)
     try s.it.runScript(CSS_ANIMATIONS_PRELUDE)
     try s.it.runScript(CSSOM_SYNTAX_PRELUDE)
+    try s.it.runScript(CSSOM_DESCRIPTORS_PRELUDE)
     try s.it.runScript(CSSOM_RULES_PRELUDE)
     try s.it.runScript(REFLECTION_TABLE_PRELUDE)
     try s.it.runScript(REFLECTION_PRELUDE)
@@ -2178,7 +2182,7 @@ pub fn navigationPending(p: *mut Page) bool {
 /// location.reload()), once: the next call says None.
 pub fn takeNavigation(p: *mut Page) Navigation {
     if p.script |s| {
-        var n = Navigation { kind: s.nav_kind, href: s.nav_href, step: s.nav_step, form: s.nav_form, submitter: s.nav_submitter }
+        var n = Navigation { kind: s.nav_kind, href: s.nav_href, step: s.nav_step, form: s.nav_form, submitter: s.nav_submitter, replace: s.nav_replace }
         if n.kind == NavKind.Submit {
             if n.form |f| {
                 if !p.doc.isLive(f) {
@@ -2187,6 +2191,7 @@ pub fn takeNavigation(p: *mut Page) Navigation {
             }
         }
         s.nav_kind = NavKind.None
+        s.nav_replace = false
         return n
     }
     return Navigation { kind: NavKind.None, href: "", step: 0, form: null, submitter: null }

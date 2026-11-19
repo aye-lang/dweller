@@ -4,8 +4,12 @@ import std.mem.Allocator
 import std.text
 
 // spec: https://drafts.csswg.org/web-animations-1/#effect-composition
-pub fn addText(alloc: Allocator, name: []u8, under: []u8, value: []u8, out: *mut text.Builder) AllocError!bool {
+pub fn addText(alloc: Allocator, name: []u8, under: []u8, value: []u8, accumulate: bool, out: *mut text.Builder) AllocError!bool {
     let prop = css.propertyIndex(name) orelse return false
+
+    if prop == css.TRANSFORM {
+        return addTransforms(alloc, under, value, accumulate, out)
+    }
 
     if css.PROPERTIES[prop].kind == css.PKind.Color {
         return false

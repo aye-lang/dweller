@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<title>aspect-ratio: canonical text, invalid values, interpolation</title>
+<div id="a"></div><div id="b" style="aspect-ratio: 1 / 2"></div>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\n'; }
+const style = document.getElementById('a').style;
+
+for (const v of ['16', '16/9', '16 auto', 'auto', 'auto / 5', '16 9', '16 / -9', '16px / 9px']) {
+  style.cssText = '';
+  style.aspectRatio = v;
+  log(v, '[' + style.aspectRatio + ']');
+}
+
+const b = document.getElementById('b');
+log('computed', getComputedStyle(b).aspectRatio);
+b.style.transition = 'aspect-ratio 100s linear -50s';
+b.style.aspectRatio = '2 / 1';
+log('half way', getComputedStyle(b).aspectRatio);
+b.style.transition = 'none';
+b.style.aspectRatio = '0 / 1';
+getComputedStyle(b).aspectRatio;
+b.style.transition = 'aspect-ratio 100s linear -25s';
+b.style.aspectRatio = '2 / 1';
+log('from a degenerate ratio', getComputedStyle(b).aspectRatio);
+</script>
