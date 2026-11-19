@@ -1,0 +1,48 @@
+import std
+import std.mem.AllocError
+import std.text
+
+let DISK_CACHE_MAGIC = "dweller-cache 1"
+
+fn storeCached(c: *Cache, e: *Cached) {
+    if !diskStorable(c, e) { return }
+
+    writeCached(c, e) catch |err| {
+        return
+    }
+}
+
+fn writeCached(c: *Cache, e: *Cached) AllocError!void {
+    let path = try diskCachePath(c.alloc, c.dir, e.key)
+    defer c.alloc.free(path)
+    let fresh = try joinPath(c.alloc, c.dir, "writing")
+    defer c.alloc.free(fresh)
+    var head = text.Builder.init(c.alloc)
+    defer head.deinit()
+
+    try head.append(DISK_CACHE_MAGIC)
+    try head.appendByte('\n')
+
+    for n in [9]i64{e.stored, e.lifetime, e.status, e.key.len as i64, e.mime.len as i64, e.charset.len as i64, e.moved.len as i64, e.headers.len as i64, e.body.len as i64} {
+        try head.appendUint(n as u64)
+        try head.appendByte(' ')
+    }
+
+    try head.appendByte('\n')
+
+    let file = std.fs.create(fresh) catch return
+    var ok = true
+
+    for part in [7][]u8{head.bytes(), e.key, e.mime, e.charset, e.moved, e.headers, e.body} {
+        file.write(part) catch |err| {
+            ok = false
+        }
+    }
+
+    file.close()
+
+    if ok {
+        std.fs.rename(fresh, path) catch |err| {
+        }
+    }
+}
