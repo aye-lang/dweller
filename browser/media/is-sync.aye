@@ -1,0 +1,17 @@
+// chromium: media/formats/mp4/box_definitions.cc
+fn isSync(b: []u8, stss: ?Box, sample: usize) bool {
+    let x = stss orelse return true
+
+    if x.body + 8 > x.end { return true }
+
+    let n = be32(b, x.body + 4) as usize
+
+    for i in 0..n {
+        let at = x.body + 8 + i * 4
+
+        if at + 4 > x.end { break }
+        if be32(b, at) as usize == sample { return true }
+    }
+
+    return false
+}
