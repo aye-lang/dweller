@@ -1,20 +1,14 @@
 import layout
 import std.mem.AllocError
 
-// spec: https://drafts.csswg.org/css-color-adjust-1/#color-scheme-effect (a frame's canvas is opaque when its scheme differs from its element's)
-fn frameItems(b: *mut Builder, inner: *DisplayList, fv: layout.FrameView, r: Rect, dark: bool) AllocError!void {
+fn frameItems(b: *mut Builder, inner: *DisplayList, fv: layout.FrameView, r: Rect) AllocError!void {
     let at = b.list.items.len()
-    var canvas = inner.canvas
-
-    if inner.dark != dark { canvas = inner.background }
 
     try b.list.frames.append(FramePlace { at: at, tree: fv.tree })
     try b.add(Item.Clip { r: r })
-    if canvas.a > 0 { try b.add(Item.Fill { r: r, c: canvas }) }
+    try b.add(Item.Fill { r: r, c: inner.background })
 
-    let first = b.list.items.len()
-
-    for f in inner.frames.items() { try b.list.frames.append(FramePlace { at: first + f.at, tree: f.tree }) }
+    for f in inner.frames.items() { try b.list.frames.append(FramePlace { at: at + 2 + f.at, tree: f.tree }) }
 
     for it in inner.items.items() {
         try b.add(moved(it, r.x, r.y - fv.scroll))

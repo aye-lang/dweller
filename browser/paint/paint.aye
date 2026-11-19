@@ -119,8 +119,6 @@ pub struct DisplayList {
     layers: List(Promoted)
     frames: List(FramePlace)
     unpinned: bool = false
-    canvas: Rgba = Rgba { r: 0, g: 0, b: 0, a: 0 }
-    dark: bool = false
 
     pub fn deinit(self: *mut Self) {
         self.items.deinit()
@@ -288,10 +286,8 @@ fn collectLayers(t: *Tree, i: usize, out: *mut List(LayerRef)) AllocError!void {
 fn canvasBackground(b: *mut Builder, r: usize) {
     let base = canvasBase(b.t, r)
     b.list.background = base
-    b.list.dark = schemeDark(b.t, r)
     let root_bg = colorOf(b.t.bx(r).style[css.BACKGROUND_COLOR], base)
     if root_bg.a > 0 {
-        b.list.canvas = root_bg
         b.list.background = over(root_bg, base)
         b.skip_bg = r
         return
@@ -301,7 +297,6 @@ fn canvasBackground(b: *mut Builder, r: usize) {
             if b.t.doc.isElement(el, "body") {
                 let body_bg = colorOf(b.t.bx(c).style[css.BACKGROUND_COLOR], base)
                 if body_bg.a > 0 {
-                    b.list.canvas = body_bg
                     b.list.background = over(body_bg, base)
                     b.skip_bg = c
                 }
@@ -991,7 +986,7 @@ struct Builder {
         if self.t.bx(i).node |el| {
             for fv in self.t.frames.items() {
                 if dom.same(fv.node, el) {
-                    return self.subframe(i, fv, x, y, w, h)
+                    return self.subframe(fv, x, y, w, h)
                 }
             }
             if self.t.images |imgs| {
@@ -1047,17 +1042,16 @@ struct Builder {
     // The display list of a frame's document `sub` (scrolled by
     // `scroll`), moved to (`x`, `y`) and clipped to `w` x `h` on its
     // canvas color.
-    fn subframe(self: *mut Self, i: usize, fv: layout.FrameView, x: f64, y: f64, w: f64, h: f64) AllocError!void {
+    fn subframe(self: *mut Self, fv: layout.FrameView, x: f64, y: f64, w: f64, h: f64) AllocError!void {
         if w <= 0.0 || h <= 0.0 {
             return
         }
-        let dark = schemeDark(self.t, i)
         if self.frames |c| {
-            return frameItems(self, try cachedFrame(c, fv), fv, Rect { x: x, y: y, w: w, h: h }, dark)
+            return frameItems(self, try cachedFrame(c, fv), fv, Rect { x: x, y: y, w: w, h: h })
         }
         var inner = try build(self.t.backing, fv.tree)
         defer inner.deinit()
-        return frameItems(self, &inner, fv, Rect { x: x, y: y, w: w, h: h }, dark)
+        return frameItems(self, &inner, fv, Rect { x: x, y: y, w: w, h: h })
     }
 
 
