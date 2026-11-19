@@ -1813,11 +1813,25 @@ pub let LIB =
     \\    return a;
     \\  }
     \\  includes(x, from = undefined) { validate(this, 'includes'); return apply(arrayProto.includes, this, arguments); }
-    \\  indexOf(x, from = undefined) { validate(this, 'indexOf'); return apply(arrayProto.indexOf, this, arguments); }
-    \\  lastIndexOf(x, from = undefined) { validate(this, 'lastIndexOf'); return apply(arrayProto.lastIndexOf, this, arguments); }
+    \\  indexOf(x, from = undefined) {
+    \\    const len = viewLen(validate(this, 'indexOf'));
+    \\    if (len === 0) return -1;
+    \\    let k = integer(from) + 0;
+    \\    if (k < 0) k = Math.max(len + k, 0);
+    \\    for (; k < len; k++) if (k in this && this[k] === x) return k;
+    \\    return -1;
+    \\  }
+    \\  lastIndexOf(x, from = undefined) {
+    \\    const len = viewLen(validate(this, 'lastIndexOf'));
+    \\    if (len === 0) return -1;
+    \\    const n = arguments.length > 1 ? integer(from) : len - 1;
+    \\    let k = (n >= 0 ? Math.min(n, len - 1) : len + n) + 0;
+    \\    for (; k >= 0; k--) if (k in this && this[k] === x) return k;
+    \\    return -1;
+    \\  }
     \\  join(separator) {
     \\    const len = viewLen(validate(this, 'join'));
-    \\    const sep = separator === undefined ? ',' : String(separator);
+    \\    const sep = separator === undefined ? ',' : `${separator}`;
     \\    let out = '';
     \\    for (let k = 0; k < len; k++) {
     \\      const x = this[k];
@@ -1833,8 +1847,28 @@ pub let LIB =
     \\    for (let k = 0; k < len; k++) a[k] = apply(f, thisArg, [this[k], k, this]);
     \\    return a;
     \\  }
-    \\  reduce(f) { validate(this, 'reduce'); return apply(arrayProto.reduce, this, arguments); }
-    \\  reduceRight(f) { validate(this, 'reduceRight'); return apply(arrayProto.reduceRight, this, arguments); }
+    \\  reduce(f) {
+    \\    const len = viewLen(validate(this, 'reduce'));
+    \\    callback(f);
+    \\    let k = 0;
+    \\    let acc;
+    \\    if (arguments.length > 1) acc = arguments[1];
+    \\    else if (len === 0) throw new TypeError('Reduce of empty array with no initial value');
+    \\    else acc = this[k++];
+    \\    for (; k < len; k++) acc = f(acc, this[k], k, this);
+    \\    return acc;
+    \\  }
+    \\  reduceRight(f) {
+    \\    const len = viewLen(validate(this, 'reduceRight'));
+    \\    callback(f);
+    \\    let k = len - 1;
+    \\    let acc;
+    \\    if (arguments.length > 1) acc = arguments[1];
+    \\    else if (len === 0) throw new TypeError('Reduce of empty array with no initial value');
+    \\    else acc = this[k--];
+    \\    for (; k >= 0; k--) acc = f(acc, this[k], k, this);
+    \\    return acc;
+    \\  }
     \\  reverse() {
     \\    const len = viewLen(validate(this, 'reverse'));
     \\    for (let lo = 0, hi = len - 1; lo < hi; lo++, hi--) { const x = this[lo]; this[lo] = this[hi]; this[hi] = x; }
