@@ -1,0 +1,19 @@
+import std.mem.AllocError
+
+var upgrade_noter: ?fn([]u8) AllocError!void = null
+var upgrade_keeper: ?fn([]u8) bool = null
+
+pub fn setUpgradeNoter(hook: fn([]u8) AllocError!void, keeper: fn([]u8) bool) {
+    upgrade_noter = hook
+    upgrade_keeper = keeper
+}
+
+fn upgradesElsewhere(page: []u8) bool {
+    let keeper = upgrade_keeper orelse return false
+
+    return keeper(page)
+}
+
+fn noteUpgradeElsewhere(page: []u8) AllocError!void {
+    if upgrade_noter |hook| { try hook(page) }
+}

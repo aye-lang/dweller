@@ -1,0 +1,13 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn beginSecured(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, content_type: []u8, body: []u8, policy: net.ReferrerPolicy) AllocError!void {
+    var secured = text.Builder.init(tp.url.alloc)
+    defer secured.deinit()
+
+    try secured.append("https")
+    try secured.append(href[4..])
+
+    return beginNavigation(slot, tp, secured.bytes(), post, content_type, body, policy)
+}

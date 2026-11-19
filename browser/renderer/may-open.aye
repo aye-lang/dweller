@@ -1,0 +1,11 @@
+import engine
+import net
+import url
+
+fn mayOpen(r: *TabRenderer, href: []u8) bool {
+    let p = r.page orelse return true
+    let target = url.parse(r.alloc, href) catch return href.len == 0
+    defer target.deinit(r.alloc)
+
+    return net.initiatorMayLoad(engine.initiatorOf(p), &target)
+}
