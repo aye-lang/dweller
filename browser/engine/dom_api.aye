@@ -1446,6 +1446,12 @@ fn elementSetOuterHtml(it: *mut Interp, a: Args) JsError!Value {
 fn controlValue(it: *mut Interp, a: Args) JsError!Value {
     let h = try thisElement(it, a)
     let doc = docOf(it)
+    if isColorInput(doc, h) {
+        let b = try it.builder()
+        defer it.release(b)
+        try colorInputValue(doc, h, colorInputSource(doc, h), b)
+        return it.newString(b.bytes())
+    }
     if dom.isControl(doc, h) || doc.isElement(h, "option") || doc.isElement(h, "textarea") || doc.isElement(h, "output") {
         return it.newString(dom.valueOf(doc, h))
     }
@@ -1465,6 +1471,9 @@ fn controlSetValue(it: *mut Interp, a: Args) JsError!Value {
     if defaultModeInput(doc, h) {
         try doc.setAttr(h, "value", b.bytes())
         (try doc.controls.ensure(h)).dirty = false
+    } else if isColorInput(doc, h) {
+        try colorInputValue(doc, h, b.bytes(), clean)
+        try dom.setValue(doc, h, clean.bytes())
     } else if doc.isElement(h, "input") {
         try dom.setValue(doc, h, try sanitizedInput(dom.inputType(doc, h), b.bytes(), clean))
     } else if dom.isControl(doc, h) || doc.isElement(h, "output") {

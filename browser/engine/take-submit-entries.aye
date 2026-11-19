@@ -1,0 +1,22 @@
+import dom
+import dom.NodeId
+import std.list.List
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
+fn takeSubmitEntries(page: *mut Page, form: NodeId, out: *mut List(FormEntry)) AllocError!void {
+    let s = page.script orelse return
+
+    if !dom.isSame(s.submit_form, form) {
+        return
+    }
+
+    dropEntries(page.alloc, out)
+
+    for e in s.submit_entries.items() {
+        try out.append(e)
+    }
+
+    s.submit_entries.clear()
+    s.submit_form = null
+}

@@ -320,6 +320,9 @@ pub struct Script {
     nav_submitter: ?NodeId
     submit_submitter: ?NodeId
     queued_forms: List(NodeId)
+    announced_frames: List(NodeId)
+    submit_form: ?NodeId = null
+    submit_entries: List(FormEntry)
     hover_path: List(NodeId)
     press_target: ?NodeId
     // Counts changes to the document by scripts (styles and layout are
@@ -630,6 +633,8 @@ fn createScript(p: *mut Page) AllocError!*mut Script {
         nav_submitter: null,
         submit_submitter: null,
         queued_forms: List(NodeId).init(alloc),
+        submit_entries: List(FormEntry).init(alloc),
+        announced_frames: List(NodeId).init(alloc),
         hover_path: List(NodeId).init(alloc),
         press_target: null,
         version: 0,
@@ -851,6 +856,9 @@ pub fn destroyScript(s: *mut Script) {
     }
     s.console.deinit()
     s.queued_forms.deinit()
+    dropEntries(s.page.alloc, &mut s.submit_entries)
+    s.submit_entries.deinit()
+    s.announced_frames.deinit()
     s.hover_path.deinit()
     s.alloc.free(s.nav_href)
     releaseStorage()

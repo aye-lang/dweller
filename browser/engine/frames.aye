@@ -283,7 +283,7 @@ fn loadFrame(p: *mut Page, el: NodeId) AllocError!?*mut Page {
         p.alloc.free(key)
         return null
     }
-    p.frames.append(Frame { el: el, page: child, scroll: 0.0, source: key, pending_load: true }) catch |e| {
+    p.frames.append(Frame { el: el, page: child, scroll: 0.0, source: key, pending_load: !takeAnnounced(p, el) }) catch |e| {
         p.alloc.free(key)
         child.destroy()
         return e
@@ -639,6 +639,9 @@ pub fn targetFrame(from: *mut Page, name: []u8) ?FrameSlot {
 // The frame named `name` among the frames of `p` and theirs.
 fn namedFrame(p: *mut Page, name: []u8) ?FrameSlot {
     for k, f in p.frames.items() {
+        if !p.doc.isLive(f.el) || !p.doc.isConnected(f.el) {
+            continue
+        }
         if p.doc.attr(f.el, "name") |n| {
             if text.eql(n, name) {
                 return FrameSlot { parent: p, index: k }

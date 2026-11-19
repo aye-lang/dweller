@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/input.html#serialize-a-color-well-control-color
+fn writeInputColor(space: []u8, ch: [4]f64, out: *mut text.Builder) AllocError!void {
+    try out.append("color(")
+    try out.append(space)
+
+    for i in 0..3 {
+        try out.appendByte(' ')
+        try writeChannel(ch[i], out)
+    }
+
+    if ch[3] < 1.0 {
+        try out.append(" / ")
+        try writeChannel(ch[3], out)
+    }
+
+    try out.appendByte(')')
+}

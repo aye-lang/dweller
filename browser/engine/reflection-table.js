@@ -196,6 +196,8 @@ globalThis.__reflection = {
     ["formTarget", "formtarget", "string", {}],
     ["max", "max", "string", {}],
     ["maxLength", "maxlength", "limited long", {}],
+    ["alpha", "alpha", "boolean", {}],
+    ["colorSpace", "colorspace", "enum", {"keywords": ["limited-srgb", "display-p3"], "defaultVal": "limited-srgb"}],
     ["min", "min", "string", {}],
     ["minLength", "minlength", "limited long", {}],
     ["multiple", "multiple", "boolean", {}],

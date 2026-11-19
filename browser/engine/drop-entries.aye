@@ -1,0 +1,16 @@
+import std.list.List
+import std.mem.Allocator
+
+fn dropEntries(alloc: Allocator, list: *mut List(FormEntry)) {
+    for e in list.items() {
+        alloc.free(e.name)
+        alloc.free(e.value)
+    }
+
+    list.clear()
+}
+
+fn forgetSubmitEntries(s: *mut Script) {
+    dropEntries(s.page.alloc, &mut s.submit_entries)
+    s.submit_form = null
+}

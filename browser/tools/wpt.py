@@ -50,7 +50,7 @@ WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 PROCESS = ""
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources", "FileAPI/file/resources"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.
@@ -254,6 +254,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def do_POST(self):
+        self.body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.do_GET()
+
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
         parts = [p for p in path.split("/") if p not in ("", ".")]
@@ -281,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_body(404, "text/plain", b"not found")
         if file.suffix == ".py":
             try:
-                return self.send_body(*wpt_handler.run(self.root, file, urlsplit(self.path).query, self.headers))
+                return self.send_body(*wpt_handler.run(self.root, file, urlsplit(self.path).query, self.headers, self.command, getattr(self, "body", b"")))
             except Exception as e:
                 return self.send_body(500, "text/plain", repr(e).encode())
         ctype = mimetypes.guess_type(file.name)[0] or "application/octet-stream"

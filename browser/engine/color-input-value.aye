@@ -1,0 +1,17 @@
+import css
+import dom
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/input.html#color-state-(type=color)
+fn colorInputValue(doc: *mut Document, el: NodeId, raw: []u8, out: *mut text.Builder) AllocError!void {
+    let p3 = text.eqlIgnoreCase(text.trim(doc.attr(el, "colorspace") orelse ""), "display-p3")
+
+    try css.inputColorText(out.alloc, raw, p3, doc.attr(el, "alpha") != null, out)
+}
+
+fn isColorInput(doc: *Document, el: NodeId) bool {
+    return doc.isElement(el, "input") && text.eql(dom.inputType(doc, el), "color")
+}
