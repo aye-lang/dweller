@@ -1,6 +1,6 @@
 globalThis.__cssomRules = function (ak, hidden, syntax) {
 // spec: https://drafts.csswg.org/cssom/#css-rules
-const TYPES = { media: 4, import: 3, 'font-face': 5, page: 6, keyframes: 7, '-webkit-keyframes': 7, namespace: 10, supports: 12 };
+const TYPES = { media: 4, import: 3, 'font-face': 5, page: 6, keyframes: 7, '-webkit-keyframes': 7, namespace: 10, supports: 12, 'font-feature-values': 14 };
 const CONSTANTS = { STYLE_RULE: 1, CHARSET_RULE: 2, IMPORT_RULE: 3, MEDIA_RULE: 4, FONT_FACE_RULE: 5, PAGE_RULE: 6, KEYFRAMES_RULE: 7, KEYFRAME_RULE: 8, MARGIN_RULE: 9, NAMESPACE_RULE: 10, COUNTER_STYLE_RULE: 11, SUPPORTS_RULE: 12, FONT_FEATURE_VALUES_RULE: 14 };
 
 const descriptors = globalThis.__cssomDescriptors(ak, syntax);
@@ -181,6 +181,10 @@ class CSSFontFaceRule extends CSSRule {
   }
   get cssText() { return '@font-face { ' + this.style.cssText + (this.style.length ? ' ' : '') + '}'; }
 }
+class CSSFontFeatureValuesRule extends CSSRule {
+  get fontFamily() { return this._prelude; }
+  get cssText() { return '@font-feature-values ' + this._prelude + ' { ' + descriptors.featureValuesText(this._body || '') + ' }'; }
+}
 class CSSPropertyRule extends CSSRule {
   get name() { return this._prelude; }
 }
@@ -229,7 +233,7 @@ class CSSStyleRule extends CSSGroupingRule {
 }
 
 const BLOCKS = { media: CSSMediaRule, supports: CSSSupportsRule, container: CSSContainerRule, 'starting-style': CSSStartingStyleRule, scope: CSSScopeRule, layer: CSSLayerBlockRule };
-const OTHERS = { layer: CSSLayerStatementRule, import: CSSImportRule, keyframes: CSSKeyframesRule, '-webkit-keyframes': CSSKeyframesRule, 'font-face': CSSFontFaceRule, property: CSSPropertyRule, namespace: CSSNamespaceRule, page: CSSPageRule };
+const OTHERS = { layer: CSSLayerStatementRule, import: CSSImportRule, keyframes: CSSKeyframesRule, '-webkit-keyframes': CSSKeyframesRule, 'font-face': CSSFontFaceRule, 'font-feature-values': CSSFontFeatureValuesRule, property: CSSPropertyRule, namespace: CSSNamespaceRule, page: CSSPageRule };
 
 function blockText(head, declarations, rules) {
   if (rules.length === 0 && head[0] !== '@') return head + (declarations ? ' { ' + declarations + ' }' : ' { }');
@@ -290,7 +294,7 @@ function ruleObject(sheet, text, parent) {
   return newRule(Class, sheet, parent, text, parts);
 }
 
-const classes = { CSSRule, CSSGroupingRule, CSSConditionRule, CSSMediaRule, CSSSupportsRule, CSSContainerRule, CSSStartingStyleRule, CSSScopeRule, CSSLayerBlockRule, CSSLayerStatementRule, CSSImportRule, CSSKeyframesRule, CSSFontFaceRule, CSSPropertyRule, CSSNamespaceRule, CSSPageRule, CSSNestedDeclarations, CSSStyleRule };
+const classes = { CSSRule, CSSGroupingRule, CSSConditionRule, CSSMediaRule, CSSSupportsRule, CSSContainerRule, CSSStartingStyleRule, CSSScopeRule, CSSLayerBlockRule, CSSLayerStatementRule, CSSImportRule, CSSKeyframesRule, CSSFontFaceRule, CSSFontFeatureValuesRule, CSSPropertyRule, CSSNamespaceRule, CSSPageRule, CSSNestedDeclarations, CSSStyleRule };
 
 for (const name in classes) hidden(globalThis, name, classes[name]);
 
