@@ -34,3 +34,20 @@ fn sandbox_document_domain_and_written_documents() {
         assert!(got.contains(want), "{mode}:\n{got}");
     }
 }
+
+/// Q3.15b: a popup that a frame without `allow-same-origin` opened does
+/// not give it its document; a popup's `origin` is its opener's until
+/// it loads; a `location` set on a popup before it loaded is followed.
+#[test]
+fn sandbox_popups_of_frames() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = run(&["dump", "--text", "--js", &format!("{}/sandbox/popups.html", srv.base)]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let want = "document of the popup of an opaque frame: SecurityError\n\
+        origin before the popup loads is the opener's: true\n\
+        navigated before it loaded: Blank\n";
+    assert!(text(&out.stdout).contains(want), "{}\n{}", text(&out.stdout), text(&out.stderr));
+}
