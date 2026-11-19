@@ -20,25 +20,6 @@ pub fn gcStressRequested() bool {
     return false
 }
 
-/// DWELLER_JS_GC: `incremental` marks in steps between allocations
-/// (gc-incremental.aye), `verify` also checks each incremental marking
-/// against a full one (gc-verify.aye), `torture` also starts a cycle
-/// every 256 allocations and steps at every one. 0: none of them.
-pub fn gcIncrementalMode() u8 {
-    if getenv("DWELLER_JS_GC".ptr) |p| {
-        if p[0] == 'i' {
-            return 1
-        }
-        if p[0] == 'v' {
-            return 2
-        }
-        if p[0] == 't' {
-            return 3
-        }
-    }
-    return 0
-}
-
 var trace_mode: u8 = 0
 
 /// DWELLER_JS_TRACE=1 adds to the message of every error the engine
@@ -149,92 +130,9 @@ fn traceEnv(it: *mut Interp, e: u32) {
     }
 }
 
-/// Collects the garbage of the engine's heap, finishing a marking that is
-/// under way (gc-incremental.aye).
+/// Collects the garbage of the engine's heap.
 pub fn collectGarbage(it: *mut Interp) {
     finishCycle(it, false)
-}
-
-fn finishCycle(it: *mut Interp, lazy: bool) {
-    finishSweep(it)
-    if !it.heap.marking {
-        it.gc_count += 1
-    }
-    let gc_began = perf.start()
-    defer perf.end("js_gc", gc_began, "")
-    let gc_paused = switchNative(it, NONE)
-    defer resumeNative(it, gc_paused)
-    markRoots(it)
-    // Trace, then mark the values of the weak collections whose keys are
-    // marked and let the host keep more alive, until nothing changes.
-    drain(it)
-    while true {
-        markEphemerons(it)
-        if hasGray(it) {
-            drain(it)
-            continue
-        }
-        if it.host |h| {
-            if h.trace(it) {
-                drain(it)
-                continue
-            }
-        }
-        break
-    }
-    if it.heap.marking && it.gc_verify {
-        gcVerify(it)
-    }
-    it.heap.marking = false
-    clearDeadWeak(it)
-    perf.end("js_gc_mark", gc_began, "")
-    if lazy {
-        finalizeHosts(it)
-        return startSweep(it)
-    }
-    let sweep_began = perf.start()
-    sweep(it)
-    perf.end("js_gc_sweep", sweep_began, "")
-}
-
-fn markRoots(it: *mut Interp) {
-    markObj(it, it.global)
-    let protos = [20]u32{
-        it.iterator_proto, it.math_obj, it.json_obj,
-        it.object_proto, it.function_proto, it.array_proto, it.string_proto,
-        it.number_proto, it.boolean_proto, it.error_proto, it.type_error_proto,
-        it.range_error_proto, it.syntax_error_proto, it.reference_error_proto,
-        it.eval_error_proto, it.uri_error_proto, it.date_proto, it.regexp_proto,
-        it.map_proto, it.set_proto,
-    }
-    for p in protos {
-        markObj(it, p)
-    }
-    markObj(it, it.bigint_proto)
-    markEnv(it, it.glex)
-    markEnv(it, it.env)
-    for e in it.outer_envs.items() {
-        markEnv(it, e)
-    }
-    for v in it.stack.items() {
-        markValue(it, v)
-    }
-    for f in it.frames.items() {
-        markObj(it, f.func)
-        markObj(it, f.this_obj)
-        markObj(it, f.new_target)
-        markEnv(it, f.env)
-    }
-    markValue(it, it.exception)
-    markValue(it, it.ret)
-    markValue(it, it.completion)
-    for v in it.roots.items() {
-        markValue(it, v)
-    }
-    for k in it.jobs_head..it.jobs.len() {
-        markValue(it, it.jobs.items()[k])
-    }
-    markWeakRoots(it)
 }
 
 /// For `Host.trace`: is object o marked (reachable) in this collection?
@@ -270,13 +168,4 @@ fn drain(it: *mut Interp) {
             break
         }
     }
-}
-
-fn sweep(it: *mut Interp) {
-    finalizeHosts(it)
-    startSweep(it)
-    sweepSlots(it, 0, it.heap.sweep_end[0])
-    sweepSlots(it, 1, it.heap.sweep_end[1])
-    sweepSlots(it, 2, it.heap.sweep_end[2])
-    endSweep(it)
 }

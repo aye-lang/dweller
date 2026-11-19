@@ -1,0 +1,49 @@
+fn markRoots(it: *mut Interp) {
+    markObj(it, it.global)
+
+    let protos = [20]u32{
+        it.iterator_proto, it.math_obj, it.json_obj,
+        it.object_proto, it.function_proto, it.array_proto, it.string_proto,
+        it.number_proto, it.boolean_proto, it.error_proto, it.type_error_proto,
+        it.range_error_proto, it.syntax_error_proto, it.reference_error_proto,
+        it.eval_error_proto, it.uri_error_proto, it.date_proto, it.regexp_proto,
+        it.map_proto, it.set_proto,
+    }
+
+    for p in protos {
+        markObj(it, p)
+    }
+
+    markObj(it, it.bigint_proto)
+    markEnv(it, it.glex)
+    markEnv(it, it.env)
+
+    for e in it.outer_envs.items() {
+        markEnv(it, e)
+    }
+
+    for v in it.stack.items() {
+        markValue(it, v)
+    }
+
+    for f in it.frames.items() {
+        markObj(it, f.func)
+        markObj(it, f.this_obj)
+        markObj(it, f.new_target)
+        markEnv(it, f.env)
+    }
+
+    markValue(it, it.exception)
+    markValue(it, it.ret)
+    markValue(it, it.completion)
+
+    for v in it.roots.items() {
+        markValue(it, v)
+    }
+
+    for k in it.jobs_head..it.jobs.len() {
+        markValue(it, it.jobs.items()[k])
+    }
+
+    markWeakRoots(it)
+}
