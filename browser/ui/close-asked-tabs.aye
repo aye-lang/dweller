@@ -1,0 +1,26 @@
+import std.mem.AllocError
+
+fn closeAskedTabs(ui: *mut Ui) AllocError!void {
+    var i: usize = 0
+
+    while i < ui.count {
+        let slot = ui.slots[i].?
+
+        if !slot.closing || ui.count <= 1 {
+            slot.closing = false
+            i += 1
+
+            continue
+        }
+
+        let shown = i == ui.active
+        let opener = slot.opener
+
+        if try removeTab(ui, i) |gone| {
+            forgetTab(ui, gone.id)
+            freeSlot(ui.alloc, gone)
+        }
+
+        if shown { try showOpener(ui, opener) }
+    }
+}
