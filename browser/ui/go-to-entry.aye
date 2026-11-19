@@ -4,6 +4,7 @@ import std.mem.AllocError
 fn goToEntry(slot: *mut TabSlot, tp: *mut TabProcess, at: usize) AllocError!bool {
     let h = &mut slot.session.tab.history
     let doc = h.now().doc
+    let from = h.current
     let same = at != h.current && doc != 0 && h.entries.items()[at].doc == doc
 
     h.current = at
@@ -12,6 +13,9 @@ fn goToEntry(slot: *mut TabSlot, tp: *mut TabProcess, at: usize) AllocError!bool
     if !same { return false }
 
     try tp.url.append(h.now().href)
+
+    if try traverseFrames(tp, h, from, at) { return true }
+
     tp.traverse_to = at as u32
     try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.Traverse { index: at as u32 })
 
