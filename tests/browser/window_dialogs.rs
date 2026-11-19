@@ -84,12 +84,18 @@ fn window_dialogs_open_sheet() {
         println!("skipped: no SDL2");
         return;
     }
+    // The address bar is in the PNG: the page is a copy at a fixed path,
+    // not under the checkout (whose path differs between machines).
+    let fixed_dir = "/tmp/dweller-dialogs";
+    let page = format!("{fixed_dir}/dialogs.html");
+    std::fs::create_dir_all(fixed_dir).unwrap();
+    std::fs::write(&page, std::fs::read(root().join(DIALOGS)).unwrap()).unwrap();
     let png = scratch().join("dialogs_prompt.png");
     let out = dweller_command()
         .current_dir(root())
         .env("DWELLER_PROCESS", "site")
         .args([
-            DIALOGS, "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle",
+            page.as_str(), "--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--until-idle",
             "--state", "--events", "renderer:loaded click:50,112 renderer:dialog text:Bo dialog:keep frame", "--save",
         ])
         .arg(&png)
