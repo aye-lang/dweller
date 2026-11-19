@@ -28,12 +28,18 @@ mod agent;
 mod cachestorage;
 #[path = "browser/cli.rs"]
 mod cli;
+#[path = "browser/color_scheme.rs"]
+mod color_scheme;
 #[path = "browser/csp_directives.rs"]
 mod csp_directives;
 #[path = "browser/downloads.rs"]
 mod downloads;
 #[path = "browser/dweller_command.rs"]
 mod dweller_command;
+#[path = "browser/editing.rs"]
+mod editing;
+#[path = "browser/eventsource.rs"]
+mod eventsource;
 #[path = "browser/link_events.rs"]
 mod link_events;
 #[path = "browser/fixtures.rs"]
@@ -82,6 +88,10 @@ mod term;
 mod webgl;
 #[path = "browser/websocket.rs"]
 mod websocket;
+#[path = "browser/window_clipboard.rs"]
+mod window_clipboard;
+#[path = "browser/window_dialogs.rs"]
+mod window_dialogs;
 #[path = "browser/window_downloads.rs"]
 mod window_downloads;
 #[path = "browser/window_file.rs"]

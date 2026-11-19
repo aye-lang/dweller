@@ -181,6 +181,7 @@ struct Timer {
     // The load is a script's request (fetch, XMLHttpRequest:
     // net.startRequest), not an image's.
     request: bool = false
+    stream: bool = false
 }
 
 /// What a script asked the tab to do; the front end does it once the
@@ -707,10 +708,21 @@ fn setUp(s: *mut Script) JsError!void {
     try s.it.runScript(REFLECTION_PRELUDE)
     try s.it.runScript(LAZY_IMAGES_PRELUDE)
     try s.it.runScript(PRELUDE)
+    try s.it.runScript(EVENT_SOURCE_PRELUDE)
+    try s.it.runScript(CLIPBOARD_PRELUDE)
+    try s.it.runScript(RANGE_PRELUDE)
+    try s.it.runScript(RANGE_CONTENTS_PRELUDE)
+    try s.it.runScript(SELECTION_PRELUDE)
+    try s.it.runScript(PAGE_SELECTION_PRELUDE)
+    try s.it.runScript(EDITING_HISTORY_PRELUDE)
+    try s.it.runScript(EDITING_PRELUDE)
+    try s.it.runScript(EDITING_CLIPBOARD_PRELUDE)
+    try s.it.runScript(EDITING_CARET_PRELUDE)
     try s.it.runScript(WEBSOCKET_PRELUDE)
     try s.it.runScript(PERMISSIONS_PRELUDE)
     try s.it.runScript(MEDIA_TYPES_PRELUDE)
     try s.it.runScript(MEDIA_ELEMENT_PRELUDE)
+    try s.it.runScript(MEDIA_LOAD_PRELUDE)
     try s.it.runScript(DOM_NODES_PRELUDE)
     try s.it.runScript(DOM_EVENTS_PRELUDE)
     try s.it.runScript(UI_EVENTS_PRELUDE)
@@ -1578,7 +1590,7 @@ fn earliestBefore(s: *mut Script, limit: f64, seq: u64) ?usize {
 // `runTimer` waits for the load (the order of tasks never depends on the
 // network).
 fn runnable(s: *Script, t: Timer) bool {
-    return t.load == 0 || !s.real || net.loadState(t.load) != net.LoadState.Running
+    return t.load == 0 || !s.real || net.loadState(t.load) != net.LoadState.Running || (t.stream && net.streamReady(t.load))
 }
 
 // Is a task of the page `p` or of its frames waiting for a background
@@ -1602,7 +1614,16 @@ fn waitingForLoads(p: *mut Page) bool {
 fn runTimer(s: *mut Script, i: usize) AllocError!void {
     let began = perf.start()
     defer perf.end("timers", began, s.page.url.href)
-    let t = s.timers.items()[i]
+    var t = s.timers.items()[i]
+    if t.stream {
+        match streamTurn(s, i) {
+            .Idle => return
+            .Part => {
+                t = partTask(t)
+            }
+            .Ended => {}
+        }
+    }
     if t.load != 0 {
         let wait_began = perf.start()
         net.waitLoad(t.load)

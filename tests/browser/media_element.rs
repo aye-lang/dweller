@@ -37,3 +37,40 @@ fn media_element_wav() {
         assert!(site.contains(line), "{line} in {site}");
     }
 }
+
+/// Q5.9a slice 2: a media resource is loaded by `Range` requests
+/// (`browser/tests/media/ranges.html` against the test server's
+/// `/ranged`): `preload=metadata` asks one range and suspends,
+/// `preload=auto` and playing ask the rest, a server without ranges
+/// answers whole, and a seek past the buffered end asks from the seek's
+/// byte, leaving two `buffered` ranges. On the virtual clock and in the
+/// window with `DWELLER_PROCESS=site`.
+#[test]
+fn media_element_ranges() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/media/ranges.html", srv.base);
+    let out = run(&["dump", "--text", "--js", &href]);
+    assert!(
+        out.status.success() && out.stderr.is_empty(),
+        "{}\n{}",
+        out.status,
+        text(&out.stderr)
+    );
+    let golden = root().join("browser/tests/media/ranges.txt");
+    let mut failures = Vec::new();
+    check_golden(&golden, &text(&out.stdout), "media_element_ranges", &mut failures);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    if !has_sdl() {
+        println!("skipped the window: no SDL2");
+        return;
+    }
+    let Some(again) = server() else { return };
+    let want = std::fs::read_to_string(golden).unwrap();
+    let site = login_window_with(&format!("{}/media/ranges.html", again.base), "frame", None, &[("DWELLER_PROCESS", "site")]);
+    for line in want.lines().filter(|l| l.contains(": ")) {
+        assert!(site.contains(line), "{line} in {site}");
+    }
+}

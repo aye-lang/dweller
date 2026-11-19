@@ -301,6 +301,8 @@ fn withFonts(alloc: Allocator, o: UiOptions, measure: dyn font.Measurer, system:
             watchStuck(&mut ui, o.frames > 0 || o.exit_when_idle)
             watchPermissions(&mut ui)
             defer endPermissionAsks(&mut ui)
+            watchDialogs(&mut ui, o.frames > 0 || o.exit_when_idle)
+            engine.setClipboardHooks(clipboardWrite, clipboardRead)
             var target: ?*url.Url = null
             if first |_| {
                 target = &first.?
@@ -440,6 +442,7 @@ pub struct Ui {
     find: Field
     // The sign-in prompt of a 401 (auth.aye).
     auth: AuthPrompt
+    dialog: JsDialog
     // The URL of the link under the mouse (resolved), for the status
     // line; empty for none.
     hover: text.Builder
@@ -510,6 +513,7 @@ pub struct Ui {
     tab_processes: bool
     auto_waits: bool = false
     script_held: bool = false
+    early_input: bool = false
 
     fn init(alloc: Allocator, window: *mut SDL_Window, renderer: *mut SDL_Renderer, measure: dyn font.Measurer, system: ?*mut font.System, first: *mut TabSlot) Ui {
         var slots = @zeroed([16]?*mut TabSlot)
@@ -539,6 +543,7 @@ pub struct Ui {
             finding: false,
             find: Field.init(alloc),
             auth: AuthPrompt.init(alloc),
+            dialog: JsDialog.init(alloc),
             hover: text.Builder.init(alloc),
             hand: false,
             dropdown: null,
@@ -595,6 +600,7 @@ pub struct Ui {
         self.address.deinit()
         self.find.deinit()
         self.auth.deinit()
+        self.dialog.deinit()
         self.hover.deinit()
     }
 
@@ -933,8 +939,11 @@ pub struct Ui {
     // loop goes on meanwhile (`advanceLoad`, `imagesIn`).
     fn go(self: *mut Self, target: *url.Url, initiator: net.Initiator) AllocError!void {
         if self.tab_processes {
+            let t_renderer = perf.start()
             try self.tab.history.push(target.href, 0, null, false)
-            return goInRenderer(self)
+            try goInRenderer(self)
+            perf.end("ui_navigate", t_renderer, "")
+            return
         }
         let t_go = perf.start()
         aimZoom(self, target.href)
@@ -1080,7 +1089,10 @@ pub struct Ui {
     // shown, its scripts got popstate; else its page loads in steps.
     fn goBy(self: *mut Self, step: i64) AllocError!void {
         if self.tab_processes {
-            return goByInRenderer(self, step)
+            let t_renderer = perf.start()
+            try goByInRenderer(self, step)
+            perf.end("ui_navigate", t_renderer, "")
+            return
         }
         let t_go = perf.start()
         aimZoom(self, self.tab.hrefAt(step))
@@ -1172,6 +1184,9 @@ pub struct Ui {
         }
         if self.stuck {
             return stuckInput(self, ev)
+        }
+        if self.dialog.open {
+            return dialogInput(self, ev)
         }
         if hungInput(self, ev) || (try sadTabInput(self, ev)) {
             return
@@ -2059,6 +2074,9 @@ pub struct Ui {
             try drawCertBar(self, p)
         }
         try drawPermissionBar(self)
+        if self.dialog.open {
+            try drawDialog(self)
+        }
         if self.auth.open {
             try drawSheet(self, self.auth.origin.bytes(), self.auth.realm.bytes())
         }

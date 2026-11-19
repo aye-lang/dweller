@@ -300,7 +300,10 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
         return fieldKey(ui, p, f, sym, cmd, shift)
     }
     if cmd {
-        return false
+        return hostCmdKey(ui, p, sym, shift)
+    }
+    if try hostKey(ui, p, sym, shift) {
+        return true
     }
     let enter = sym == SDLK_RETURN || sym == SDLK_KP_ENTER
     if sym == SDLK_ESCAPE {
@@ -405,6 +408,10 @@ fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, sh
 fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     let p = ui.tab.page orelse return false
     let f = p.doc.controls.focus orelse return false
+    if try engine.editHost(p, "inserttext", s) {
+        try ui.relayout()
+        return true
+    }
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
     }
@@ -558,6 +565,12 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
             try drawDropdown(ui, null, dd, v)
         }
         return
+    }
+    for r in engine.pageSelection(p) {
+        ui.canvas.fillRect(paint.deviceRect(r, v), SELECTED_TEXT)
+    }
+    if engine.hostCaret(p) |c| {
+        ui.canvas.fillRect(paint.deviceRect(c, v), CARET_INK)
     }
     if p.doc.controls.focus |f| {
         if dom.isTextField(&p.doc, f) {

@@ -1,0 +1,19 @@
+<!doctype html>
+<title>EventSource</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const es = new EventSource('/event-stream');
+log('url ' + es.url.replace(location.origin, '') + ' state ' + es.readyState + ' credentials ' + es.withCredentials);
+es.onopen = () => log('open state ' + es.readyState);
+es.addEventListener('first', e => log('first ' + e.data + ' id ' + e.lastEventId + ' origin ' + (e.origin === location.origin)));
+es.onerror = () => log('error state ' + es.readyState);
+es.onmessage = e => {
+  log('message ' + e.data + ' id ' + e.lastEventId);
+  es.close();
+  log('closed state ' + es.readyState);
+  const bad = new EventSource('/event-stream-html');
+  bad.onerror = () => log('wrong type: error state ' + bad.readyState);
+};
+</script>
