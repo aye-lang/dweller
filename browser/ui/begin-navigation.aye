@@ -1,5 +1,6 @@
 import ipc
 import net
+import perf
 import std.mem.AllocError
 import url
 
@@ -26,6 +27,12 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
         length = h.len()
     }
 
+    if net.navigationUpgraded(alloc, topOf(tp), &target) {
+        tp.replace_on_commit = replaces
+
+        return beginSecured(slot, tp, target.href, post, content_type, body, policy)
+    }
+
     tp.nav_initiator.clear()
     try tp.nav_initiator.append(topOf(tp))
     tp.nav_policy = policy
@@ -40,4 +47,7 @@ fn beginNavigation(slot: *TabSlot, tp: *mut TabProcess, href: []u8, post: u32, c
     tp.loading = true
     tp.redirected = false
     tp.nav_failed = false
+    tp.cert = null
+    tp.nav_began = perf.start()
+    tp.paint_from = tp.frames
 }
