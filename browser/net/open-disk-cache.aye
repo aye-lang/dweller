@@ -1,0 +1,23 @@
+import std
+import std.mem.AllocError
+
+fn openDiskCache(s: *mut Session, dir: []u8) AllocError!void {
+    if s.lock < 0 || s.cache.dir.len > 0 { return }
+
+    let cache_dir = try joinPath(s.alloc, dir, "cache")
+
+    if !(try makeDir(s.alloc, cache_dir)) {
+        s.alloc.free(cache_dir)
+
+        return
+    }
+
+    s.cache.dir = cache_dir
+    try trimDiskCache(s.alloc, cache_dir, diskCacheLimit())
+}
+
+fn diskCacheLimit() u64 {
+    let set = std.os.getenv("DWELLER_DISK_CACHE_BYTES") orelse return MAX_DISK_CACHE_BYTES
+
+    return secondsOf(set) as u64
+}

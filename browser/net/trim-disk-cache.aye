@@ -1,0 +1,49 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.sort
+
+pub let MAX_DISK_CACHE_BYTES: u64 = 256 << 20
+
+struct DiskFile {
+    name: []u8
+    size: u64
+    mtime: i64
+}
+
+// chromium: net/disk_cache/simple/simple_index.cc (StartEvictionIfNeeded)
+fn trimDiskCache(alloc: Allocator, dir: []u8, max: u64) AllocError!void {
+    let entries = std.fs.readDir(alloc, dir) catch return
+    defer entries.deinit()
+    var files = List(DiskFile).init(alloc)
+    defer files.deinit()
+    var total: u64 = 0
+
+    for entry in entries.items {
+        let path = try joinPath(alloc, dir, entry.name)
+        defer alloc.free(path)
+        let st = std.fs.stat(path) catch continue
+
+        try files.append(DiskFile { name: entry.name, size: st.size, mtime: st.mtime })
+        total += st.size
+    }
+
+    if total <= max { return }
+
+    sort.sort(DiskFile, files.items(), olderFile)
+
+    for f in files.items() {
+        if total <= max / 4 * 3 { break }
+
+        let path = try joinPath(alloc, dir, f.name)
+        defer alloc.free(path)
+
+        std.fs.remove(path) catch continue
+        total -= f.size
+    }
+}
+
+fn olderFile(a: DiskFile, b: DiskFile) bool {
+    return a.mtime < b.mtime
+}

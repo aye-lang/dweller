@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<title>rotate, scale and translate: interpolation and composition</title>
+<div id="box"></div>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\n'; }
+const box = document.getElementById('box');
+
+function at(prop, from, to, progress, composite, under) {
+  box.style[prop] = under || '';
+  const a = box.animate({ [prop]: [from, to] }, { duration: 1000, composite: composite || 'replace' });
+  a.pause();
+  a.currentTime = progress * 1000;
+  const v = getComputedStyle(box)[prop];
+  a.cancel();
+  box.style[prop] = '';
+  return v;
+}
+
+log('rotate angles', at('rotate', '100deg', '-100deg', 0.75));
+log('rotate from none', at('rotate', 'none', '30deg', 0.5));
+log('rotate same axis', at('rotate', '0 1 0 100deg', '0 1 0 -100deg', 0.75));
+log('rotate other axis', at('rotate', '1 0 0 0deg', '0 1 0 10deg', 0.5));
+log('rotate slerp', at('rotate', '45deg', '-1 1 0 60deg', 0.5));
+log('scale shortest', at('scale', '26 17 9', '2 1', 0.999999));
+log('scale from none', at('scale', 'none', '4 3 2', 0.5));
+log('translate shortest', at('translate', '-100px -50px 100px', '0px', 0.999999));
+log('scale add', at('scale', '3 1', '3 1', 0.5, 'add', '2 1'));
+log('scale accumulate', at('scale', '3 1', '3 1', 0.5, 'accumulate', '2 1'));
+log('rotate add', at('rotate', '1 0 0 -100deg', '1 0 0 -100deg', 0.5, 'add', '1 0 0 200deg'));
+</script>

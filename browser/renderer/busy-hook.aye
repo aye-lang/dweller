@@ -11,7 +11,11 @@ fn watchBusy(r: *mut TabRenderer) {
 fn busyHook(busy_ms: u64) bool {
     let r = busy_renderer orelse return true
 
-    if r.busy { return true }
+    send(r.alloc, r.conn, r.tab, ipc.Message.BusyAsk { ms: busy_ms as u32 }) catch return true
+
+    let wait = awaitBusyAnswer(r)
+
+    if r.busy || !wait { return wait }
 
     r.busy = true
     send(r.alloc, r.conn, r.tab, ipc.Message.LongTask { on: 1, ms: 0 }) catch return true

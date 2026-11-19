@@ -1,0 +1,23 @@
+import css
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#combining-transform-lists
+fn addScales(under: []u8, value: []u8, accumulate: bool, out: *mut text.Builder) AllocError!bool {
+    let a = scaleTriple(under) orelse return false
+    let b = scaleTriple(value) orelse return false
+
+    for k in 0..3 {
+        var v = a[k] * b[k]
+
+        if accumulate {
+            v = a[k] + b[k] - 1.0
+        }
+
+        try css.writeFineNumber(v, out)
+        try out.appendByte(' ')
+    }
+
+    return true
+}

@@ -218,9 +218,8 @@ and the weekly workflow is green.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b, Q0.3.
 
 ## Q1: stable in one process (lanes base and perf)
 
