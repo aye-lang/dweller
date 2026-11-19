@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn pumpPageWorkers(p: *mut Page) AllocError!bool {
+    var ran = false
+
+    if p.script |s| {
+        ran = try pumpWorkers(s)
+    }
+
+    for f in p.frames.items() {
+        if try pumpPageWorkers(f.page) {
+            ran = true
+        }
+    }
+
+    return ran
+}

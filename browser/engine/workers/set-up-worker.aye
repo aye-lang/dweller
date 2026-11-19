@@ -30,7 +30,11 @@ fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
 
 fn runWorkerSource(it: *mut Interp, l: *mut Link, source: []u8) JsError!void {
     if l.module {
-        _ = try js.runModuleScript(it, null, source, l.href, false)
+        let ran = try js.runModuleScript(it, null, source, l.href, false)
+
+        if js.isNullish(ran) {
+            try it.typeError("Failed to load a module of the worker script")
+        }
     } else {
         _ = try it.runScript(source)
     }
