@@ -185,9 +185,7 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
     if session |s| {
         let key = try cacheKey(alloc, req, target.withoutFragment())
         defer alloc.free(key)
-        if req.kind == Kind.Document && req.top.len == 0 {
-            s.cache.epoch += 1
-        }
+        noteDocumentLoad(s, req)
         if cacheable {
             if try s.cache.lookup(alloc, key) |hit| {
                 return hit
