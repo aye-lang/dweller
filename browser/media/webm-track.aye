@@ -11,6 +11,7 @@ fn webmTrack(alloc: Allocator, b: []u8, x: Ebml) ?Track {
     t.number = ebmlUint(b, number) as u32
 
     if ebmlIn(b, x.body, x.end, 0x63A2) |private| { t.config = b[private.body..private.end] }
+    if ebmlIn(b, x.body, x.end, 0x23E383) |d| { t.frame_duration = ebmlUint(b, d) as f64 / 1.0e9 }
 
     if ebmlUint(b, kind) == 1 {
         let video = ebmlIn(b, x.body, x.end, 0xE0) orelse return null

@@ -1,0 +1,50 @@
+import std.mem.AllocError
+
+// chromium: media/formats/mp4/track_run_iterator.cc
+fn mp4Trun(b: []u8, trun: Box, moof_at: usize, d: FragmentDefaults, id: u32, start: u64, out: *mut Stream) AllocError!u64 {
+    if trun.body + 12 > trun.end { return start }
+
+    let flags = be32(b, trun.body) & 0xffffff
+    let count = be32(b, trun.body + 4) as usize
+    var p = trun.body + 12
+    var first = d.flags
+    var time = start
+    var offset = moof_at as i64 + signed32(be32(b, trun.body + 8))
+
+    if flags & 0x4 != 0 {
+        if p + 4 > trun.end { return start }
+
+        first = be32(b, p)
+        p += 4
+    }
+
+    if flags & 0x1 == 0 || count > (trun.end - p) / 4 + 1 || p + count * runBytes(flags) > trun.end {
+        out.bad = true
+
+        return start
+    }
+
+    for i in 0..count {
+        var one = RunSample { duration: d.duration, size: d.size, flags: d.flags, shift: 0 }
+
+        if i == 0 { one.flags = first }
+
+        p = readRunSample(b, p, flags, b[trun.body], &mut one)
+
+        if offset < 0 || offset as usize + one.size as usize > b.len {
+            out.bad = true
+
+            return time
+        }
+
+        try out.frames.append(Frame { track: id, offset: offset as usize, size: one.size as usize, time: (time as i64 + one.shift) as f64 / d.scale as f64, duration: one.duration as f64 / d.scale as f64, key: one.flags & 0x10000 == 0 })
+        offset += one.size as i64
+        time += one.duration as u64
+    }
+
+    return time
+}
+
+fn signed32(v: u32) i64 {
+    return ((v as i64) ^ 0x80000000) - 0x80000000
+}
