@@ -1,21 +1,19 @@
+import dom
 import std.mem.AllocError
 import std.text
 
 // spec: https://w3c.github.io/editing/docs/execCommand/ (typing in an editing host)
 pub fn editHost(p: *mut Page, command: []u8, data: []u8) AllocError!bool {
-    let f = p.doc.controls.focus orelse return false
+    if command.len == 0 || p.script == null { return false }
 
-    if command.len == 0 || p.script == null || !editingHost(&p.doc, f) {
-        return false
-    }
-
+    let target = editTarget(p, command) orelse return false
     var line = text.Builder.init(p.alloc)
     defer line.deinit()
 
     try line.append(command)
     try line.appendByte('\n')
     try line.append(data)
-    _ = try dispatchEvent(p, f, "__edit", line.bytes())
+    _ = try dispatchEvent(p, target, "__edit", line.bytes())
 
     return true
 }

@@ -1,0 +1,15 @@
+import dom
+import dom.NodeId
+import std.text
+
+// spec: https://w3c.github.io/clipboard-apis/#fire-a-clipboard-event (without an editable in focus, copy and select-all act on the document's selection)
+fn editTarget(p: *mut Page, command: []u8) ?NodeId {
+    if p.doc.controls.focus |f| {
+        if editingHost(&p.doc, f) { return f }
+        if dom.isTextField(&p.doc, f) { return null }
+    }
+
+    if !text.eql(command, "copy") && !text.eql(command, "selectall") { return null }
+
+    return p.doc.documentElement()
+}
