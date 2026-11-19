@@ -5,7 +5,6 @@ import std.mem.AllocError
 fn takeIntersection(r: *mut TabRenderer, seen: [4]u32) AllocError!void {
     r.embedded = true
     r.visible = seen
-    r.offscreen = seen[0] == seen[2] || seen[1] == seen[3]
 
     let p = r.page orelse return
 
@@ -15,8 +14,6 @@ fn takeIntersection(r: *mut TabRenderer, seen: [4]u32) AllocError!void {
 fn showIntersection(r: *TabRenderer, p: *mut engine.Page) AllocError!void {
     let v = r.visible
     let s = r.scale
-
-    engine.throttleRoot(p, r.offscreen)
 
     try engine.setVisibleRect(p, [4]f64{v[0] as f64 / s, v[1] as f64 / s, (v[2] - v[0]) as f64 / s, (v[3] - v[1]) as f64 / s})
 }

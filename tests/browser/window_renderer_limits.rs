@@ -53,37 +53,3 @@ fn window_renderer_limits_cap() {
     let pids = tab_pids(&state);
     assert!(pids.len() == 2 && pids[0] != pids[1], "under the cap each tab has its own renderer\n{state}");
 }
-
-fn throttle_counts(state: &str) -> (u64, u64) {
-    let line = state.lines().find(|l| l.starts_with("renderer-child ")).unwrap_or_else(|| panic!("no child in\n{state}"));
-    let words: Vec<&str> = line.split(' ').collect();
-    let after = |w: &str| words.iter().position(|x| *x == w).and_then(|i| words.get(i + 1)).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("no {w} in {line}"));
-    (after("raf"), after("ticks"))
-}
-
-/// Q2.13: a cross-site frame that is out of its embedder's view is
-/// throttled in its own renderer: no animation frame runs and its 50 ms
-/// interval runs about once a second; once the parent scrolls it into
-/// view both run as usual.
-#[test]
-fn window_renderer_limits_hidden_frame() {
-    if !has_sdl() {
-        println!("skipped: no SDL2");
-        return;
-    }
-    let Some(srv) = server() else {
-        println!("skipped: cannot start python3 for the test server");
-        return;
-    };
-    let page = format!("{}/ui/oopif-throttle.html", srv.base);
-    let frames = "frame ".repeat(300);
-
-    let state = limits_run(&page, &format!("renderer:loaded {frames}"), "2000", &[]);
-    let (raf, ticks) = throttle_counts(&state);
-    assert_eq!(raf, 0, "no animation frame out of view\n{state}");
-
-    let state = limits_run(&page, &format!("renderer:loaded {frames}key:end renderer:input {frames}"), "2000", &[]);
-    let (shown_raf, shown_ticks) = throttle_counts(&state);
-    assert!(shown_raf >= 5, "animation frames run in view\n{state}");
-    assert!(shown_ticks >= ticks + 10 && shown_ticks >= 3 * ticks.max(1), "the interval runs unthrottled in view: {ticks} hidden, {shown_ticks} after\n{state}");
-}

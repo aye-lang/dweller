@@ -24,6 +24,8 @@ mod common;
 
 #[path = "browser/agent.rs"]
 mod agent;
+#[path = "browser/cachestorage.rs"]
+mod cachestorage;
 #[path = "browser/cli.rs"]
 mod cli;
 #[path = "browser/csp_directives.rs"]
@@ -94,6 +96,8 @@ mod window_renderer_oopif_input;
 mod window_renderer_oopif_proxy;
 #[path = "browser/window_renderer_oopif_site.rs"]
 mod window_renderer_oopif_site;
+#[path = "browser/window_renderer_oopif_throttle.rs"]
+mod window_renderer_oopif_throttle;
 #[path = "browser/window_renderer_pan.rs"]
 mod window_renderer_pan;
 #[path = "browser/window_renderer_perf.rs"]

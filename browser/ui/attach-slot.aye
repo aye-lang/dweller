@@ -3,5 +3,9 @@ import std.mem.AllocError
 fn attachSlot(slot: *mut TabSlot, from: AttachFrom) AllocError!void {
     slot.process = try attachTabProcess(from, slot.id)
 
-    if slot.process |tp| { slot.home = PopupHome { serial: tp.serial, context: from.context } }
+    if from.home == 0 { return }
+
+    slot.home = PopupHome { serial: from.home, context: from.context }
+    slot.opener = from.opener
+    try slot.name.append(from.name)
 }
