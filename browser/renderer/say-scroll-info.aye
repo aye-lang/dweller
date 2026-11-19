@@ -1,0 +1,24 @@
+import engine
+import ipc
+import layout
+import paint
+
+// chromium: cc/input/input_handler.h (ScrollBegin on the compositor thread unless the main thread must see the wheel)
+fn sayScrollInfo(r: *mut TabRenderer, t: *layout.Tree, bg: paint.Rgba) !void {
+    var pan: u32 = 0
+    let color = (bg.r as u32 << 24) | (bg.g as u32 << 16) | (bg.b as u32 << 8) | bg.a as u32
+
+    if !r.pan_off && t.scrolled.len() == 0 {
+        pan = 1
+    }
+
+    if engine.embedded() { return }
+
+    if r.info_said && r.info_max == r.max_y && r.info_pan == pan && r.info_bg == color { return }
+
+    r.info_said = true
+    r.info_max = r.max_y
+    r.info_pan = pan
+    r.info_bg = color
+    try send(r.alloc, r.conn, r.tab, ipc.Message.ScrollInfo { max_y: r.max_y, pan: pan, background: color })
+}

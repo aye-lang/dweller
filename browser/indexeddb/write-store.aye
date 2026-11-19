@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+fn writeStore(out: *mut text.Builder, s: *Store) AllocError!void {
+    try putNumber(out, s.id as u64)
+    try putNumber(out, s.auto_increment as u64)
+    try putNumber(out, s.generator)
+    try putBlob(out, s.name)
+    try putBlob(out, s.key_path)
+    try putNumber(out, s.next_index as u64)
+    try putNumber(out, s.indexes.len() as u64)
+
+    for x in s.indexes.items() { try writeIndex(out, x) }
+
+    try putNumber(out, s.records.len() as u64)
+
+    for r in s.records.items() {
+        try putBlob(out, r.key)
+        try putBlob(out, r.value)
+        try putBlob(out, r.index_keys)
+    }
+}

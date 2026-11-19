@@ -1,0 +1,16 @@
+import ipc
+
+fn takeScrollInfo(tp: *mut TabProcess, max_y: f64, pan: u32, background: u32) []u8 {
+    if ipc.badScroll(0.0, max_y) || pan > 1 { return "bad scroll_info" }
+
+    tp.max_y = max_y
+    tp.pan_ok = pan == 1
+    tp.pan_bg = background
+
+    if !tp.pan_ok || tp.want_y > max_y {
+        tp.want_y = tp.frame_y
+        tp.whole = true
+    }
+
+    return ""
+}

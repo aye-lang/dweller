@@ -1,0 +1,22 @@
+fn moveLogical(wins: []Win, values: []mut Value, to: [4]usize, from: [4]usize) {
+    var moved = [4]?Value{null, null, null, null}
+
+    for k in 0..4 {
+        if wins[from[k]].set && wins[from[k]].d.logical && to[k] != from[k] {
+            moved[k] = values[from[k]]
+            values[from[k]] = PROPERTIES[from[k]].initial
+        }
+    }
+
+    for k in 0..4 {
+        if moved[k] |v| {
+            if yieldsTo(wins[to[k]], wins[from[k]]) {
+                values[to[k]] = v
+            }
+        }
+    }
+}
+
+fn yieldsTo(physical: Win, logical: Win) bool {
+    return !physical.set || physical.d.logical || logical.level > physical.level || (logical.level == physical.level && logical.spec >= physical.spec)
+}

@@ -1,0 +1,22 @@
+import js
+import js.JsError
+
+fn queueSwMessage(ts: *mut Script, message: []u8, client: u32) JsError!void {
+    let it = &mut ts.it
+    let base = it.stack.len()
+    defer it.truncate(base)
+    let arr = try it.newArray(0)
+
+    try it.push(js.objVal(arr))
+    try it.heap.pushElem(arr, it.roots.items()[ts.on_sw])
+    try it.heap.pushElem(arr, try it.newString("message"))
+    try it.heap.pushElem(arr, try it.newString(message))
+    try it.heap.pushElem(arr, js.numVal(client as f64))
+
+    let root = try it.addRoot(js.objVal(arr))
+
+    tick(ts)
+    try ts.timers.append(Timer { id: ts.next_timer, due: ts.now, interval: 0.0, repeat: false, raf: false, root: root, seq: ts.seq })
+    ts.next_timer += 1
+    ts.seq += 1
+}

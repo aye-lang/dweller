@@ -10,20 +10,21 @@ From the repository root, with SDL2, FreeType and libcurl installed
 (`pkg-config` must find them); HarfBuzz (text shaping: Arabic, Indic
 scripts, icon font ligatures) and libbrotlidec (WOFF 2 web fonts) are
 used when they are installed. The first build also needs libclang, for the
-`@cimport` of `pthread.h` in `js/js.aye` (macOS has it with the Command
-Line Tools; later builds read the declarations from `~/.cache/aye`):
+`@cimport`s (`pthread.h` in `js/js.aye`, the vendored `wasmtime.h` and
+`angle.h`; macOS has it with the Command Line Tools; later builds read
+the declarations from `~/.cache/aye`). Two libraries are optional and
+fetched by a script: libwasmtime (`browser/wasm/fetch_wasmtime.sh`;
+without it `WebAssembly` is undefined) and ANGLE
+(`browser/gpu/fetch_angle.sh`; without it there is no WebGL).
 
-```
-cargo build --release
-target/release/aye build browser -o dweller
-```
-
-Outside the Aye repository (a copy or the split Dweller repository),
-use any `aye` on the PATH; `browser/aye.toml` names the executable:
+The compiler is the `aye` of the revision in `AYE_REV` (the root
+`README.md` has the install line), on the PATH or named by `AYE`;
+`browser/aye.toml` names the executable:
 
 ```
 aye build browser                               # writes ./dweller
 AYE=/path/to/aye browser/build.sh               # safe mode, target/dweller
+browser/build.sh [OUT] [--mode safe|fast|debug] [--coverage]
 ```
 
 Run it:
@@ -36,7 +37,16 @@ Run it:
 ./dweller mcp                                  # an MCP server on stdio
 ```
 
-`cargo test --test browser` runs the browser's tests (headless, offline).
+`AYE=$(command -v aye) cargo test --release --test browser` runs the
+browser's tests (headless, offline; `DWELLER_BLESS=1` rewrites the
+goldens), and `aye test browser` the unit tests.
+
+`DWELLER_PROCESS=tab` runs each tab's page in a sandboxed renderer
+process and `DWELLER_PROCESS=site` also each cross-site iframe
+(`docs/process-model.md`); unset, pages run in the window's process.
+`DWELLER_PROFILE` names the profile directory (`~/.dweller` by
+default) and `DWELLER_DOWNLOADS` the download directory (`~/Downloads`
+by default).
 
 Before coding, read [`docs/practices/browser.md`](../docs/practices/browser.md);
 when you learn a lesson that will come up again, add an entry there.
@@ -66,12 +76,14 @@ when it is missing), and every connection starts with the token the
 window writes next to the socket (`agent.sock.token`); `dweller connect`
 sends it for you (docs/agent-protocol.md, "A shared window").
 
-The agent then works in the tab you see (or in a background tab it
-opens with `browser_tab_new`), and you see what it does:
+The agent then works in a Space: tabs of its own, out of your tab
+strip. It sees what you do through `browser_user_context`, and you see
+what it does:
 
-- its target element is outlined with its ref (`e12`) for a moment, an
-  `AI` badge shows in the toolbar while it is connected, and the status
-  bar tells its last action;
+- a chip per agent (its Space) shows in the toolbar with its state, and
+  the status bar tells its last action; a click on the chip (or
+  Cmd+Shift+1..8) watches its tabs, "You" (or Cmd+Shift+0) goes back to
+  yours;
 - **Pause** in the toolbar, or Cmd+Shift+P, stops it: its actions fail
   with "paused by user" until you resume (it can still look);
 - Cmd+Shift+K points it at the element under the mouse (or the focused

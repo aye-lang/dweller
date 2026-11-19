@@ -1,0 +1,23 @@
+pub fn closeBackend() {
+    let b = the_backend orelse return
+
+    while b.txs.pop() |tx| { freeTransaction(b, tx) }
+    while b.dbs.pop() |db| { freeDatabase(b.alloc, db) }
+    while b.events.pop() |e| { b.alloc.free(e.line) }
+
+    while b.requests.pop() |r| {
+        b.alloc.free(r.area)
+        b.alloc.free(r.name)
+    }
+
+    while b.loaded.pop() |area| { b.alloc.free(area) }
+
+    b.loaded.deinit()
+    b.txs.deinit()
+    b.dbs.deinit()
+    b.events.deinit()
+    b.requests.deinit()
+    b.conns.deinit()
+    the_backend = null
+    b.alloc.destroy(b)
+}

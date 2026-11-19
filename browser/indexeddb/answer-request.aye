@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn answerRequest(b: *mut Backend, i: usize, line: *mut text.Builder) AllocError!bool {
+    let r = b.requests.orderedRemove(i)
+
+    b.alloc.free(r.area)
+    b.alloc.free(r.name)
+    try emit(b, r.client, line)
+
+    return true
+}
+
+fn requestLine(line: *mut text.Builder, kind: []u8, r: *OpenRequest) AllocError!void {
+    try line.append(kind)
+    try line.appendByte('\n')
+    try line.appendUint(r.request)
+}
+
+fn appendNumber(line: *mut text.Builder, n: u64) AllocError!void {
+    try line.appendByte('\n')
+    try line.appendUint(n)
+}

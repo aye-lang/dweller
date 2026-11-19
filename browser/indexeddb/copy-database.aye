@@ -1,0 +1,17 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+fn copyDatabase(alloc: Allocator, db: *Database) AllocError!*mut Database {
+    let copy = try alloc.create(Database {
+        area: try dupe(alloc, db.area),
+        name: try dupe(alloc, db.name),
+        version: db.version,
+        stores: List(*mut Store).init(alloc),
+        next_store: db.next_store,
+    })
+
+    for s in db.stores.items() { try copy.stores.append(try copyStore(alloc, s)) }
+
+    return copy
+}

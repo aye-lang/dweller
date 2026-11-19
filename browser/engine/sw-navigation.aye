@@ -1,0 +1,26 @@
+import net
+import std
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// chromium: content/browser/service_worker/service_worker_controllee_request_handler.cc
+fn swNavigation(alloc: Allocator, target: *Url) AllocError!u32 {
+    var ask = text.Builder.init(alloc)
+    defer ask.deinit()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    if !text.startsWith(target.scheme, "http") { return 0 }
+
+    if sw_state |st| {
+        if st.running { return 0 }
+    }
+
+    try ask.append("sw\nmatch\n")
+    try ask.append(target.href)
+    try askStore(alloc, IdbAsk { href: target.href, page: 0, request: ask.bytes() }, &mut out)
+
+    return activeVersion(out.bytes())
+}

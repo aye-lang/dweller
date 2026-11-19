@@ -1,0 +1,21 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akIdb(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let request = try it.builder()
+    defer it.release(request)
+    let out = try it.builder()
+    defer it.release(out)
+
+    if s.page.sandbox & SB_ORIGIN != 0 || originPage(s.page).opaque { return it.newString("!SecurityError") }
+
+    s.idb_used = true
+    try argText(it, a, 0, request)
+    askIdb(s, request.bytes(), out) catch return JsError.OutOfMemory
+
+    return it.newString(out.bytes())
+}

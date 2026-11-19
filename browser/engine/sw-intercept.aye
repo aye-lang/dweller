@@ -1,0 +1,23 @@
+import net
+import std.mem.Allocator
+import url.Url
+
+fn swClaims() bool {
+    let st = sw_state orelse return false
+
+    return st.seen && !st.running
+}
+
+fn swIntercept(alloc: Allocator, target: *Url, req: net.Request) net.FetchError!?net.Response {
+    let st = sw_state orelse return null
+    let from = match req.initiator {
+        .Browser => ""
+        .Page { url: page } => page
+    }
+
+    if st.running || req.kind is .Document || from.len == 0 { return null }
+
+    let p = controlledPage(from) orelse return null
+
+    return swFetch(alloc, SwFetch { version: p.controller, client: p.id, navigates: false }, target, req)
+}

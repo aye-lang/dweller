@@ -1416,6 +1416,25 @@ pub let LIB =
     \\  },
     \\  configurable: true,
     \\});
+    \\function legacyAccessor(name, part) {
+    \\  hidden(Object.prototype, name, function (key, fn) {
+    \\    if (typeof fn !== 'function') throw new TypeError('Object.prototype.' + name + ': Expecting function');
+    \\    Object.defineProperty(Object(this), key, { [part]: fn, enumerable: true, configurable: true });
+    \\  });
+    \\}
+    \\function legacyLookup(name, part) {
+    \\  hidden(Object.prototype, name, function (key) {
+    \\    for (let o = Object(this); o !== null; o = Object.getPrototypeOf(o)) {
+    \\      const d = Object.getOwnPropertyDescriptor(o, key);
+    \\      if (d) return d[part];
+    \\    }
+    \\    return undefined;
+    \\  });
+    \\}
+    \\legacyAccessor('__defineGetter__', 'get');
+    \\legacyAccessor('__defineSetter__', 'set');
+    \\legacyLookup('__lookupGetter__', 'get');
+    \\legacyLookup('__lookupSetter__', 'set');
     \\
     \\// ---- Reflect
     \\

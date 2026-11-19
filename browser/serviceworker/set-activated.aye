@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+fn setActivated(a: Ask) AllocError!void {
+    let id = a.f.int()
+
+    for reg in a.r.regs.items() {
+        let v = reg.active orelse continue
+
+        if v.id as u64 != id || v.state != ACTIVATING { continue }
+
+        v.state = ACTIVATED
+
+        return tell(a.r, reg)
+    }
+}
