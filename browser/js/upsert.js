@@ -9,7 +9,11 @@ const weakHas = WeakMap.prototype.has;
 const weakGet = WeakMap.prototype.get;
 const weakSet = WeakMap.prototype.set;
 
-function install(proto, has, get, set) {
+function heldWeakly(key) {
+  if (typeof key === 'symbol') return Symbol.keyFor(key) === undefined;
+  return key !== null && (typeof key === 'object' || typeof key === 'function');
+}
+function install(proto, has, get, set, weak) {
   const methods = {
     getOrInsert(key, value) {
       if (apply(has, this, [key])) return apply(get, this, [key]);
@@ -19,6 +23,7 @@ function install(proto, has, get, set) {
     getOrInsertComputed(key, callbackfn) {
       const present = apply(has, this, [key]);
       if (typeof callbackfn !== 'function') throw new TypeError('callbackfn is not a function');
+      if (weak && !heldWeakly(key)) throw new TypeError('Invalid value used as weak map key');
       if (present) return apply(get, this, [key]);
       const value = callbackfn(key === 0 ? 0 : key);
       apply(set, this, [key, value]);
@@ -29,6 +34,6 @@ function install(proto, has, get, set) {
     Object.defineProperty(proto, name, { value: methods[name], writable: true, enumerable: false, configurable: true });
   }
 }
-install(Map.prototype, mapHas, mapGet, mapSet);
-install(WeakMap.prototype, weakHas, weakGet, weakSet);
+install(Map.prototype, mapHas, mapGet, mapSet, false);
+install(WeakMap.prototype, weakHas, weakGet, weakSet, true);
 })();
