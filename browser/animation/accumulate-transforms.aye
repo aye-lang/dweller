@@ -1,0 +1,28 @@
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#combining-transform-lists
+fn accumulateTransforms(base: *mut List(TransformFn), added: *mut List(TransformFn), out: *mut text.Builder) AllocError!bool {
+    if !(try padTransforms(base, added.items())) || !(try padTransforms(added, base.items())) {
+        return false
+    }
+
+    for k in 0..base.len() {
+        let a = base.items()[k]
+        var f = added.items()[k]
+        let identity = identityTransform(a) orelse return false
+
+        if !text.eql(a.name, f.name) || a.count != f.count || text.startsWith(a.name, "matrix") {
+            return false
+        }
+
+        for n in 0..a.count {
+            f.n[n] = a.n[n] + f.n[n] - identity.n[n]
+        }
+
+        try writeTransformFn(f, out)
+    }
+
+    return true
+}

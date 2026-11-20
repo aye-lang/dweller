@@ -1,0 +1,40 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import media
+import std.text
+
+// https://w3c.github.io/media-source/#sourcebuffer-segment-parser-loop
+fn akMediaStream(it: *mut Interp, a: Args) JsError!Value {
+    let format = try it.builder()
+    defer it.release(format)
+
+    let given = try it.builder()
+    defer it.release(given)
+
+    let init = try it.builder()
+    defer it.release(init)
+
+    let bytes = try it.builder()
+    defer it.release(bytes)
+
+    try argText(it, a, 0, format)
+    try argText(it, a, 1, given)
+    try binaryBytes(given.bytes(), init)
+    given.clear()
+    try argText(it, a, 2, given)
+    try binaryBytes(given.bytes(), bytes)
+
+    var found = media.Stream.init(it.alloc)
+    defer found.deinit()
+
+    if text.eql(format.bytes(), "mp4") {
+        try media.mp4Stream(init.bytes(), bytes.bytes(), &mut found)
+    } else {
+        try media.webmStream(init.bytes(), bytes.bytes(), (try it.toNumber(it.arg(a, 3))) as i64, &mut found)
+    }
+
+    return streamValue(it, &found)
+}

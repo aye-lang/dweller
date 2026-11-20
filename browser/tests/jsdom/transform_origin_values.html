@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<title>transform-origin: the resolved value, interpolation, composition</title>
+<div id="box" style="width: 200px; height: 100px"></div>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\n'; }
+const box = document.getElementById('box');
+
+log('initial', getComputedStyle(box).transformOrigin);
+for (const v of ['left', 'bottom right', '10% 30px', 'top', 'center left 6px']) {
+  box.style.transformOrigin = v;
+  log(v, '->', getComputedStyle(box).transformOrigin);
+}
+
+box.style.transformOrigin = '';
+const half = box.animate({ transformOrigin: ['50% 50%', '20px 20px'] }, 1000);
+half.pause();
+half.currentTime = 500;
+log('percent to px, half way', getComputedStyle(box).transformOrigin);
+half.cancel();
+box.style.transformOrigin = '20px 20px';
+
+const a = box.animate({ transformOrigin: ['60px 40px', '60px 40px'] }, { duration: 1000, composite: 'add' });
+a.pause();
+a.currentTime = 500;
+log("add", getComputedStyle(box).transformOrigin);
+a.cancel();
+</script>

@@ -1,0 +1,25 @@
+import dom
+import engine
+import font
+import paint
+
+let BUBBLE_FONT: f64 = 13.333
+let BUBBLE_LINE = paint.Rgba { r: 200, g: 200, b: 200, a: 255 }
+let BUBBLE_PAPER = paint.Rgba { r: 255, g: 255, b: 255, a: 255 }
+let BUBBLE_INK = paint.Rgba { r: 40, g: 40, b: 40, a: 255 }
+
+// chromium: third_party/blink/renderer/core/html/forms/validation_message_client_impl.cc
+fn bubbleBox(r: *TabRenderer, p: *engine.Page) ?paint.Rect {
+    let el = p.doc.controls.validation orelse return null
+
+    if !p.doc.isLive(el) || !dom.isSame(p.doc.controls.focus, el) { return null }
+
+    let message = dom.validationMessage(&p.doc, el)
+    let at = engine.boxRect(p, el) orelse return null
+    let f = font.Font { size: BUBBLE_FONT, bold: false, italic: false, mono: false }
+    let m = r.measure.metrics(f)
+
+    if message.len == 0 { return null }
+
+    return paint.Rect { x: at.x, y: at.y + at.h + 5.0, w: r.measure.width(f, message) + 16.0, h: m.ascent + m.descent + 12.0 }
+}

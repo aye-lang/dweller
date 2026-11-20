@@ -1,0 +1,46 @@
+import dom.NodeId
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn userNode(s: *mut Session, tmp: Allocator, node: ?NodeId, json: *mut text.Builder, detail: *mut text.Builder) AllocError!void {
+    var ref: u32 = 0
+
+    if node |n| { ref = try refAt(s, tmp, n) }
+
+    if ref == 0 {
+        try json.append("null")
+
+        return detail.append("none")
+    }
+
+    var name = text.Builder.init(tmp)
+
+    try name.appendByte('e')
+    try name.appendUint(ref as u64)
+
+    var described: []u8 = name.bytes()
+    var said: []u8 = ""
+
+    if nodeOfRefIn(s, name.bytes()) |n| {
+        described = try describe(s, tmp, n)
+        said = try textOf(s, tmp, n, 200)
+    }
+
+    var w = Writer.init(json)
+
+    try w.beginObject()
+    try w.key("ref")
+    try w.string(name.bytes())
+    try w.key("element")
+    try w.string(described)
+    try w.key("text")
+    try w.string(said)
+    try w.endObject()
+    try detail.append(described)
+
+    if said.len > 0 {
+        try detail.append(": ")
+        try detail.append(said)
+    }
+}

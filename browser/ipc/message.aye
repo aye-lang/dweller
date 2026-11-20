@@ -26,7 +26,7 @@ pub enum Message {
     Redirect { url: []u8 }
     Agent { id: u32, mcp: u32, ref_base: u32, line: []u8 }
     AgentReply { id: u32, next_ref: u32, answer: []u8 }
-    Fetch { id: u32, doc: u32, nav: u32, kind: u32, credentials: u32, mode: u32, method: []u8, url: []u8, referrer: []u8, referrer_policy: []u8, top: []u8, headers: []u8, content_type: []u8, has_body: u32, body: []u8 }
+    Fetch { id: u32, doc: u32, nav: u32, stream: u32, kind: u32, credentials: u32, mode: u32, method: []u8, url: []u8, referrer: []u8, referrer_policy: []u8, top: []u8, headers: []u8, content_type: []u8, has_body: u32, body: []u8 }
     FetchHead { id: u32, doc: u32, status: u32, tainted: u32, mime: []u8, charset: []u8, url: []u8, headers: []u8 }
     FetchBody { id: u32, chunk: []u8 }
     FetchEnd { id: u32 }
@@ -65,19 +65,36 @@ pub enum Message {
     AgentPaused { on: u32 }
     AgentWindow { line: []u8 }
     AgentWindowReply { ok: u32, message: []u8, fields: []u8, detail: []u8 }
+    Dialog { kind: u32, message: []u8, preset: []u8 }
+    DialogReply { accepted: u32, typed: []u8 }
+    ClipboardWrite { copied: []u8 }
+    ClipboardRead
+    ClipboardText { ok: u32, pasted: []u8 }
     AttachTab { context: u32 }
     ContextClosed { context: u32 }
     OpenerInfo { frame: u32, name: []u8 }
     ContextTab { context: u32, frame: u32 }
     PortPost { tab: u32, key: u32, data: []u8, buffers: []u8 }
     PortPosted { tab: u32, key: u32, data: []u8, buffers: []u8 }
+    AskUserContext { id: u32, point: u32 }
+    UserContext { id: u32, point: u32, scroll: u32, selection: []u8, hovered: []u8, hovered_text: []u8, focused: []u8, focused_text: []u8, node: []u8, node_ref: []u8, node_text: []u8 }
     Settled { on: u32 }
     ScrollInfo { max_y: f64, pan: u32, background: u32 }
     AskState { with_text: u32 }
     State { scroll: f64, frames: []u8, focus: []u8, content: []u8 }
     AgentViewport { width: f64, height: f64 }
     Visible { on: u32 }
+    UpgradeInsecure { page: []u8 }
+    FramePeriod { ns: f64 }
+    Telemetry { records: []u8 }
+    BusyAsk { ms: u32 }
+    BusyAnswer { wait: u32 }
+    HostRequest { lock: u32, fs: u32 }
+    HostState { seq: u32, what: []u8 }
     FetchRemote { id: u32 }
+    HitTest { id: u32, x: u32, y: u32 }
+    HitTestReply { id: u32, key: u32 }
+    ReplaceNavigation { url: []u8, referrer_policy: u32, user: u32 }
     SocketOpen { id: u32, doc: u32, url: []u8, protocols: []u8 }
     SocketSend { id: u32, binary: u32, more: u32, data: []u8 }
     SocketClose { id: u32, code: u32, reason: []u8 }
@@ -87,9 +104,23 @@ pub enum Message {
     PermissionState { state: u32 }
     PermissionAsk { id: u32, doc: u32, kind: u32 }
     PermissionAnswer { id: u32, state: u32 }
+    DecoderOpen { id: u32, kind: u32, width: u32, height: u32, channels: u32, bits: u32, rate: u32, codec: []u8, config: []u8 }
+    DecoderData { id: u32, seq: u32, more: u32, data: []u8 }
+    DecoderOutput { id: u32, seq: u32, state: u32, more: u32, data: []u8 }
+    DecoderClose { id: u32 }
     Idb { doc: u32, page: u32, more: u32, request: []u8 }
     IdbReply { more: u32, reply: []u8 }
     IdbEvent { page: u32, line: []u8 }
+    ChooseFiles { multiple: u32, accept: []u8 }
+    ChosenFile { name: []u8, mime: []u8, modified: f64 }
+    ChosenBytes { chunk: []u8 }
+    ChosenEnd { count: u32 }
+    Print { paper: []u8 }
+    Printed { chunk: []u8 }
+    PrintedEnd { pages: u32 }
+    PrintAsk
+    CaretRect { on: u32, x: f64, y: f64, w: f64, h: f64 }
+    Compose { seq: u32, typed: []u8 }
 
     pub fn kind(self: Self) u16 {
         return match self {
@@ -157,19 +188,36 @@ pub enum Message {
             .AgentPaused { .. } => 71
             .AgentWindow { .. } => 72
             .AgentWindowReply { .. } => 73
+            .Dialog { .. } => 130
+            .DialogReply { .. } => 131
+            .ClipboardWrite { .. } => 132
+            .ClipboardRead => 133
+            .ClipboardText { .. } => 134
             .AttachTab { .. } => 74
             .ContextClosed { .. } => 90
             .OpenerInfo { .. } => 91
             .ContextTab { .. } => 92
             .PortPost { .. } => 93
             .PortPosted { .. } => 94
+            .AskUserContext { .. } => 95
+            .UserContext { .. } => 96
             .Settled { .. } => 78
             .ScrollInfo { .. } => 120
             .AskState { .. } => 80
             .State { .. } => 81
             .AgentViewport { .. } => 82
             .Visible { .. } => 83
+            .UpgradeInsecure { .. } => 84
+            .FramePeriod { .. } => 85
+            .Telemetry { .. } => 86
+            .BusyAsk { .. } => 88
+            .BusyAnswer { .. } => 89
+            .HostRequest { .. } => 220
+            .HostState { .. } => 221
             .FetchRemote { .. } => 100
+            .HitTest { .. } => 101
+            .HitTestReply { .. } => 102
+            .ReplaceNavigation { .. } => 103
             .SocketOpen { .. } => 140
             .SocketSend { .. } => 141
             .SocketClose { .. } => 142
@@ -179,9 +227,23 @@ pub enum Message {
             .PermissionState { .. } => 146
             .PermissionAsk { .. } => 147
             .PermissionAnswer { .. } => 148
+            .DecoderOpen { .. } => 149
+            .DecoderData { .. } => 150
+            .DecoderOutput { .. } => 151
+            .DecoderClose { .. } => 152
             .Idb { .. } => 160
             .IdbReply { .. } => 161
             .IdbEvent { .. } => 162
+            .ChooseFiles { .. } => 190
+            .ChosenFile { .. } => 191
+            .ChosenBytes { .. } => 192
+            .ChosenEnd { .. } => 193
+            .Print { .. } => 194
+            .Printed { .. } => 195
+            .PrintedEnd { .. } => 196
+            .PrintAsk => 197
+            .CaretRect { .. } => 198
+            .Compose { .. } => 199
         }
     }
 }

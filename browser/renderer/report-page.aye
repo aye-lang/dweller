@@ -1,12 +1,15 @@
 import ipc
+import perf
 import std.text
 
 fn reportPage(r: *mut TabRenderer) !void {
     try endBusy(r)
+    try sendCloses(r)
 
     try endOutOfMemory(r)
 
     try reportSettled(r)
+    try askFiles(r)
 
     let p = r.page orelse return
 
@@ -20,7 +23,10 @@ fn reportPage(r: *mut TabRenderer) !void {
         try send(r.alloc, r.conn, r.tab, ipc.Message.Title { title: p.title })
     }
 
+    try askHost(r, p)
     try reportHistory(r, p)
+    try reportCaret(r, p)
     try reportFrameFocus(r, p)
     try reportLoadStopped(r, p)
+    perf.telemetryFlush()
 }

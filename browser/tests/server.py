@@ -4,10 +4,14 @@
 # routes that a file server cannot produce:
 #
 #   /redirect        302 to /basic.html
-#   /attach?name=N&disposition=D&type=T  the body "attached N" with
-#                    Content-Disposition: D (attachment), filename="N"
-#                    when there is a name, and Content-Type T
-#                    (application/octet-stream)
+#   /ranged?size=N&name=X  a WAV file of N bytes of 8-bit mono sound at
+#                    8000 Hz (N/8000 s) that answers Range requests with
+#                    206 (the whole file with 200 when ?norange is there),
+#                    each recorded in /log as "ranged X RANGE"
+#   /attach?name=N&disposition=D&type=T&times=K  the body "attached N"
+#                    (K times, 1) with Content-Disposition: D
+#                    (attachment), filename="N" when there is a name, and
+#                    Content-Type T (application/octet-stream)
 #   /ws/NAME         a WebSocket that echoes each message (the last
 #                    subprotocol offered, or ?protocol=P; ?setcookie=V
 #                    sets the cookie ws=V; ?badaccept answers a wrong
@@ -74,6 +78,17 @@
 #   /acao/NAME       the file NAME (as /slow/NAME, at once) with
 #                    Access-Control-Allow-Origin: the request's Origin (or
 #                    *) and Access-Control-Allow-Credentials: true
+#   /cached/MODE/NAME  a style sheet `.MODE { color: rgb(1, 2, 3) }` with
+#                    the cache headers of MODE: fresh (max-age=3600),
+#                    etag (max-age=0 and an ETag), nocache (no-cache and
+#                    an ETag), plain (none). A matching If-None-Match
+#                    gets 304. Each request is logged ("cached MODE
+#                    200" or "... 304", see /log).
+#   /ordered/NAME      an empty response after 50 ms, typed by NAME's
+#                    extension; /order lists the NAMEs in the order the
+#                    requests arrived, /order-at with the ms since the
+#                    server started (NAME:MS); a NAME that starts with
+#                    "slow" takes 400 ms
 #   /logged-acao/NAME  as /acao/NAME, recording the request (method,
 #                    path, Origin, Cookie) in /log
 #   /meta/NAME       (GET and POST) records the request's method, path,
@@ -102,8 +117,10 @@
 #                    HOLD_LIMIT s, which only a broken browser reaches)
 #   /parts/NAME?KEY  the HTML file NAME in two parts, cut at its
 #                    "<!--rest-->": the first at once (no Content-Length),
-#                    the rest once a /held-now?KEY request counted it, as
-#                    a /held/ request with the query KEY
+#                    the rest once /parts-go?KEY was asked for (waits stop
+#                    after HOLD_LIMIT s)
+#   /parts-go?KEY    answers at once, every time, and lets the /parts/
+#                    request of KEY go on
 #   /held-now        once a /held/ request is in flight, the number in
 #                    flight, as text/plain; then it answers them
 #                    (waits stop after HOLD_LIMIT s, which only a broken
@@ -111,6 +128,10 @@
 #   /held-now?A,B    as /held-now, but once the /held/ requests whose
 #                    queries are A and B are in flight (requests on
 #                    separate connections arrive in any order)
+#   /event-stream-open?KEY  a text/event-stream response that sends the
+#                    event "held" and stays open until
+#                    /event-stream-end?KEY, then sends "last" and ends
+#                    ("timeout" after HOLD_LIMIT s)
 #   /hang/NAME?KEY   never answered: holds the request until the client
 #                    closes the connection (or HOLD_LIMIT s) and records
 #                    that it was closed; KEY (or NAME) names it
@@ -138,6 +159,7 @@ import json
 import http.server
 import mimetypes
 import os
+import re
 import secrets
 import select
 import socket
@@ -162,6 +184,16 @@ COOKIES = [
 ]
 
 LOG = []
+ORDER = []
+ORDER_AT = []
+START = time.time()
+CACHED_TAG = '"v1"'
+CACHED = {
+    "fresh": [("Cache-Control", "max-age=3600")],
+    "etag": [("Cache-Control", "max-age=0"), ("ETag", CACHED_TAG)],
+    "nocache": [("Cache-Control", "no-cache"), ("ETag", CACHED_TAG)],
+    "plain": [],
+}
 META = []
 
 SLOW = {"now": 0, "peak": 0}
@@ -173,6 +205,14 @@ SLOW_LOCK = threading.Lock()
 HELD = {"now": 0, "counted": 0, "failed": 0, "queries": []}
 HELD_CHANGED = threading.Condition()
 HOLD_LIMIT = 30
+
+# The keys /parts-go was asked for: a /parts/ request sends its rest once
+# its key is here.
+PARTS_GONE = set()
+PARTS_CHANGED = threading.Condition()
+# The keys of the /event-stream-open responses that may end.
+STREAM_ENDED = set()
+STREAM_CHANGED = threading.Condition()
 
 # The /hang/ requests by key: "open" while held, "closed" once the client
 # closed the connection.
@@ -224,11 +264,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             HELD["queries"].remove(query)
 
     def parts(self, path):
-        """/parts/NAME?KEY: the file's first part, then (once counted
-        by /held-now?KEY) the rest; the end closes the connection."""
+        """/parts/NAME?KEY: the file's first part, then (once
+        /parts-go?KEY was asked for) the rest; the end closes the
+        connection."""
         split = urllib.parse.urlsplit(path)
         with open(os.path.join(ROOT, split.path[len("/parts/"):]), "rb") as f:
             first, _, rest = f.read().partition(b"<!--rest-->")
+        with PARTS_CHANGED:
+            PARTS_GONE.discard(split.query)
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Cache-Control", "no-store")
@@ -236,7 +279,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(first)
         self.wfile.flush()
-        self.hold(split.query)
+        with PARTS_CHANGED:
+            PARTS_CHANGED.wait_for(lambda: split.query in PARTS_GONE, HOLD_LIMIT)
         self.wfile.write(rest)
         self.close_connection = True
 
@@ -283,12 +327,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             back = query.get("redirect_uri", ["/"])[0]
             extra = urllib.parse.urlencode({"code": "c0de", "state": query.get("state", [""])[0], "seen": query.get("seen", [""])[0]})
             self.reply(302, [("Location", back + "?" + extra)])
+        elif path.startswith("/ranged"):
+            self.ranged(path)
         elif path.startswith("/attach"):
             query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query))
             disposition = query.get("disposition", "attachment")
             if "name" in query:
                 disposition += '; filename="' + query["name"] + '"'
-            self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], ("attached " + query.get("name", "")).encode())
+            body = ("attached " + query.get("name", "")).encode()
+            self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], body * int(query.get("times", "1")))
+        elif path == "/event-stream":
+            last = self.headers.get("Last-Event-ID")
+            body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"
+            self.reply(200, [("Content-Type", "text/event-stream"), ("Cache-Control", "no-store")], body)
+        elif path.startswith("/event-stream-open?"):
+            query = path.split("?", 1)[1]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b"data: held\n\n")
+            self.wfile.flush()
+            with STREAM_CHANGED:
+                ended = STREAM_CHANGED.wait_for(lambda: query in STREAM_ENDED, HOLD_LIMIT)
+            self.wfile.write(b"data: last\n\n" if ended else b"data: timeout\n\n")
+        elif path.startswith("/event-stream-end?"):
+            with STREAM_CHANGED:
+                STREAM_ENDED.add(path.split("?", 1)[1])
+                STREAM_CHANGED.notify_all()
+            self.reply(200, [("Content-Type", "text/plain")], b"ended")
+        elif path == "/event-stream-html":
+            self.reply(200, [("Content-Type", "text/html")], b"data: x\n\n")
         elif path == "/agent":
             agent = self.headers.get("User-Agent", "")
             self.reply(200, [("Content-Type", "text/plain")], agent.encode() + b"\n")
@@ -324,6 +392,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path.startswith("/policy/"):
             policy, _, name = path[len("/policy/"):].partition("/")
             self.reply_file(name, [("Referrer-Policy", policy)])
+        elif path.startswith("/cached/"):
+            mode = path[len("/cached/"):].partition("/")[0]
+            headers = CACHED[mode] + [("Content-Type", "text/css")]
+            if self.headers.get("If-None-Match") == CACHED_TAG:
+                LOG.append("cached %s 304\n" % mode)
+                self.reply(304, headers)
+            else:
+                LOG.append("cached %s 200\n" % mode)
+                self.reply(200, headers, (".%s { color: rgb(1, 2, 3) }" % mode).encode())
+        elif path.startswith("/ordered/"):
+            name = path[len("/ordered/"):]
+            ORDER.append(name)
+            ORDER_AT.append("%s:%d" % (name, (time.time() - START) * 1000))
+            time.sleep(0.4 if name.startswith("slow") else 0.05)
+            kind = {"css": "text/css", "js": "text/javascript", "html": "text/html"}.get(name.rpartition(".")[2], "image/png")
+            self.reply(200, [("Content-Type", kind), ("Cache-Control", "no-store")], b"")
+        elif path == "/order-at":
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], " ".join(ORDER_AT).encode())
+        elif path == "/order":
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], " ".join(ORDER).encode())
         elif path.startswith("/log/"):
             self.log_request_line("GET")
         elif path.startswith("/fail/"):
@@ -380,6 +468,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply_file(path[len("/held/"):])
         elif path.startswith("/parts/"):
             self.parts(path)
+        elif path.startswith("/parts-go?"):
+            with PARTS_CHANGED:
+                PARTS_GONE.add(urllib.parse.urlsplit(path).query)
+                PARTS_CHANGED.notify_all()
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], b"go\n")
         elif path == "/held-now" or path.startswith("/held-now?"):
             names = [q for q in urllib.parse.urlsplit(path).query.split(",") if q]
             with HELD_CHANGED:
@@ -539,6 +632,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.ws_send(kind, parts)
 
+    def ranged(self, path):
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(path).query, keep_blank_values=True))
+        size = int(query.get("size", "200000"))
+        data = bytes(128 + (i % 64) for i in range(size))
+        wav = b"RIFF" + (36 + size).to_bytes(4, "little") + b"WAVEfmt " + (16).to_bytes(4, "little") + (1).to_bytes(2, "little") + (1).to_bytes(2, "little") + (8000).to_bytes(4, "little") * 2 + (1).to_bytes(2, "little") + (8).to_bytes(2, "little") + b"data" + size.to_bytes(4, "little") + data
+        asked = self.headers.get("Range", "")
+        LOG.append("ranged %s %s\n" % (query.get("name", ""), asked or "whole"))
+        if "norange" in query or not asked.startswith("bytes="):
+            self.reply(200, [("Content-Type", "audio/wav")], wav)
+            return
+        first, _, last = asked[6:].partition("-")
+        start = int(first)
+        end = min(int(last) if last else len(wav) - 1, len(wav) - 1)
+        if start >= len(wav):
+            self.reply(416, [("Content-Range", "bytes */%d" % len(wav))])
+            return
+        self.reply(206, [("Content-Type", "audio/wav"), ("Accept-Ranges", "bytes"), ("Content-Range", "bytes %d-%d/%d" % (start, end, len(wav)))], wav[start:end + 1])
+
     def hang(self, path):
         parts = urllib.parse.urlsplit(path)
         key = parts.query or parts.path[len("/hang/"):]
@@ -616,6 +727,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(303, [("Location", "/meta/" + self.path[len("/see/"):])])
         elif self.path == "/echo" or self.path.startswith("/echo?"):
             self.echo("POST", body)
+        elif self.path == "/upload":
+            self.upload(body)
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
@@ -913,6 +1026,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             self.reply(404, [("Content-Type", "text/plain")], b"not found\n")
 
+    def upload(self, body):
+        ctype = self.headers.get("Content-Type", "")
+        lines = ["upload " + ctype.split(";")[0]] + upload_parts(ctype, body)
+        page = "<!doctype html><title>done9</title><pre>%s</pre>" % html.escape("\n".join(lines))
+        self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
     def echo(self, method, body):
         query = urllib.parse.urlsplit(self.path).query
         ctype = self.headers.get("Content-Type", "")
@@ -929,6 +1048,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             % (method, html.escape(self.path), html.escape(ctype), items, html.escape(raw))
         )
         self.reply(200, [("Content-Type", "text/html; charset=utf-8")], page.encode())
+
+
+def upload_parts(ctype, body):
+    """One line per part of a multipart/form-data body: its name, file
+    name, type, length and the start of its SHA-256."""
+    boundary = ctype.split("boundary=", 1)[-1].strip().strip('"').encode()
+    lines = []
+    for part in body.split(b"--" + boundary)[1:-1]:
+        head, _, data = part[2:].partition(b"\r\n\r\n")
+        data = data[:-2]
+        text = head.decode("utf-8", "replace")
+        name = re.search(r'name="([^"]*)"', text)
+        filename = re.search(r'filename="([^"]*)"', text)
+        kind = re.search(r"Content-Type: (.*)", text)
+        lines.append(
+            "part %s | %s | %s | %d | %s"
+            % (
+                name.group(1) if name else "?",
+                filename.group(1) if filename else "-",
+                kind.group(1).strip() if kind else "-",
+                len(data),
+                hashlib.sha256(data).hexdigest()[:16],
+            )
+        )
+    return lines
 
 
 def form_fields(ctype, body):

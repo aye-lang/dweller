@@ -1,0 +1,18 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+fn akSubmitEntry(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let name = try it.builder()
+    defer it.release(name)
+    let value = try it.builder()
+    defer it.release(value)
+
+    try argText(it, a, 0, name)
+    try argText(it, a, 1, value)
+    try addEntry(s.page.alloc, &mut s.submit_entries, name.bytes(), value.bytes(), it.toBoolean(it.arg(a, 2)))
+
+    return Value.Undefined
+}

@@ -5,52 +5,24 @@ import std.text
 
 // spec: https://drafts.csswg.org/css-values-4/#combining-values
 pub fn interpolateText(alloc: Allocator, name: []u8, a: []u8, b: []u8, p: f64, out: *mut text.Builder) AllocError!bool {
-    let prop = css.propertyIndex(name) orelse return false
-
-    if prop == css.BOX_SHADOW {
-        out.clear()
-
-        return mixShadows(alloc, a, b, p, out)
+    if !(try interpolateRaw(alloc, name, a, b, p, out)) {
+        return false
     }
 
-    var sheet = try css.Sheet.init(alloc)
-    defer sheet.deinit()
+    let prop = css.propertyIndex(name) orelse return true
 
-    let nonneg = try nonNegative(alloc, prop)
-    let va = try parsedValue(&mut sheet, prop, name, a, out)
-    let vb = try parsedValue(&mut sheet, prop, name, b, out)
+    if prop != css.ROTATE && prop != css.SCALE && prop != css.TRANSLATE {
+        return true
+    }
 
+    var raw = text.Builder.init(alloc)
+    defer raw.deinit()
+
+    try raw.append(out.bytes())
     out.clear()
 
-    if va != null && vb != null {
-        if interpolate(va.?, vb.?, p) |v| {
-            try css.writeValue(clampToRange(prop, v, nonneg), out)
-
-            return true
-        }
-    }
-
-    if prop == css.BACKGROUND_IMAGE || prop == css.MASK_IMAGE {
-        return false
-    }
-
-    var na = text.Builder.init(alloc)
-    defer na.deinit()
-
-    var nb = text.Builder.init(alloc)
-    defer nb.deinit()
-
-    try matchValues(alloc, prop, a, b, &mut na, &mut nb)
-
-    if !(try mixText(prop, na.bytes(), nb.bytes(), p, isInteger(name), nonneg, out)) {
-        return false
-    }
-
-    if prop >= css.BORDER_IMAGE_SLICE && prop <= css.BORDER_IMAGE_OUTSET {
-        na.clear()
-        try collapseQuad(alloc, out.bytes(), &mut na)
-        out.clear()
-        try out.append(na.bytes())
+    if !(try css.canonicalValue(alloc, prop, raw.bytes(), out)) {
+        try out.append(raw.bytes())
     }
 
     return true

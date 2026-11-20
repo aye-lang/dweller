@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn diskCachePath(alloc: Allocator, dir: []u8, key: []u8) AllocError![]mut u8 {
+    var h: u64 = 14695981039346656037
+
+    for b in key {
+        h = (h ^ (b as u64)) *% 1099511628211
+    }
+
+    var name = text.Builder.init(alloc)
+    defer name.deinit()
+
+    for i in 0..16 {
+        try name.appendByte("0123456789abcdef"[((h >> ((60 - 4 * i) as u64)) & 15) as usize])
+    }
+
+    return joinPath(alloc, dir, name.bytes())
+}

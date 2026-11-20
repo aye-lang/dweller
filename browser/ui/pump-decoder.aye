@@ -1,0 +1,20 @@
+fn pumpDecoder(ms: i32) {
+    let d = decoder_process orelse return
+    var buf = @zeroed([65536]u8)
+
+    if d.fd < 0 || !flushDecoder(d) { return }
+
+    if ms > 0 { _ = readableWithin(d.fd, ms) }
+
+    while true {
+        let n = readSome(d.fd, buf[..])
+
+        if n < 0 { return }
+
+        if n == 0 { return loseDecoder(d) }
+
+        d.inbox.append(buf[0..n as usize]) catch return loseDecoder(d)
+
+        if !takeDecoderMessages(d) { return loseDecoder(d) }
+    }
+}

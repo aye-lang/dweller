@@ -1,0 +1,35 @@
+import places
+import std
+import std.mem.AllocError
+import std.text
+
+// chromium: components/history/core/browser/history_backend.cc (AddPage)
+fn noteSlotVisit(slot: *mut TabSlot) AllocError!void {
+    let h = &slot.session.tab.history
+    let href = zoomHref(slot)
+    var title = slotTitle(slot)
+
+    if slot.in_space != 0 || slot.agent || slotLoading(slot) || href.len == 0 { return }
+    if text.eql(title, href) { title = "" }
+
+    let traversed = h.len() == slot.visit_len && h.current != slot.visit_at
+    let seen = hashBytes(href)
+
+    slot.visit_len = h.len()
+    slot.visit_at = h.current
+
+    if seen != slot.visit_hash && !traversed {
+        try places.noteVisit(href, title, std.time.now() as u64)
+    } else if hashBytes(title) != slot.title_hash {
+        try places.noteTitle(href, title)
+    }
+
+    slot.visit_hash = seen
+    slot.title_hash = hashBytes(title)
+}
+
+fn slotLoading(slot: *TabSlot) bool {
+    if slot.process |tp| { return tp.loading || tp.committed.len() == 0 || tp.gone.len > 0 }
+
+    return slot.session.tab.early || slot.session.tab.page == null
+}

@@ -1,0 +1,23 @@
+fn endSweep(it: *mut Interp) {
+    let h = &mut it.heap
+
+    h.sweeping = false
+    h.collecting = false
+    h.live_bytes = h.swept_bytes
+    h.out_of_memory = h.out_of_memory || h.swept_bytes > h.limit_bytes
+    it.terminated = it.terminated || h.out_of_memory
+
+    if h.threshold <= 1 {
+        return
+    }
+
+    h.threshold = h.swept_live * 2
+
+    if h.threshold < 20000 {
+        h.threshold = 20000
+    }
+
+    if it.gc_stress {
+        h.threshold = 256
+    }
+}

@@ -1,0 +1,173 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn testStore(alloc: Allocator) PlaceStore {
+    return PlaceStore { alloc: alloc, places: List(Place).init(alloc) }
+}
+
+fn endTestStore(s: *mut PlaceStore) {
+    for p in s.places.items() {
+        freePlace(s, p)
+    }
+
+    s.places.deinit()
+    place_store = null
+}
+
+test "typed text is a search unless it is a URL, a path or a host" {
+    @expect(isSearch("weather tomorrow"))
+    @expect(isSearch("weather"))
+    @expect(isSearch("?example.com"))
+    @expect(isSearch("what is node.js"))
+    @expect(!isSearch("example.com"))
+    @expect(!isSearch("https://example.com/?q=a b"))
+    @expect(!isSearch("data:text/html,<b>a b</b>"))
+    @expect(!isSearch("localhost"))
+    @expect(!isSearch("localhost:8000/x"))
+    @expect(!isSearch("/tmp/a file.html"))
+    @expect(!isSearch("./page"))
+    @expect(!isSearch("about:blank"))
+    @expect(!isSearch("host:8080"))
+    @expect(!isSearch(""))
+}
+
+test "a search URL has the query form-encoded where the template has %s" {
+    let alloc = @testAllocator()
+    var out = text.Builder.init(alloc)
+    defer out.deinit()
+
+    try fillSearch(&mut out, "https://search.example/?q=%s&x=1", "a b&c/é")
+
+    @expectEqual("https://search.example/?q=a+b%26c%2F%C3%A9&x=1", out.bytes())
+
+    out.clear()
+    try searchUrl(&mut out, " cats ")
+
+    @expectEqual("https://duckduckgo.com/?q=cats", out.bytes())
+}
+
+test "visits and bookmarks are kept, written and read back; torn or foreign files read as nothing" {
+    let alloc = @testAllocator()
+    var s = testStore(alloc)
+
+    place_store = &mut s
+    try noteVisit("https://a.example/", "A\tsite", 1000)
+    try noteVisit("https://a.example/", "A site", 2000)
+    try noteVisit("https://b.example/x", "", 1500)
+    try noteVisit("about:blank", "", 1500)
+    try noteVisit("data:text/html,x", "", 1500)
+    try setBookmark("https://c.example/", "C", true)
+    try setBookmark("https://b.example/x", "B", true)
+    try setBookmark("https://c.example/", "C", false)
+    try noteTitle("https://b.example/x", "B page")
+
+    @expect(isBookmarked("https://b.example/x"))
+    @expect(!isBookmarked("https://c.example/"))
+    @expect(!isBookmarked("https://a.example/"))
+    @expectEqual(2, s.places.len())
+
+    var history = text.Builder.init(alloc)
+    defer history.deinit()
+    var bookmarks = text.Builder.init(alloc)
+    defer bookmarks.deinit()
+
+    try encodeHistory(&s, &mut history)
+    try encodeBookmarks(&s, &mut bookmarks)
+
+    @expectEqual("dweller-history 1\n2 2000 https://a.example/ A site\n1 1500 https://b.example/x B page\n", history.bytes())
+    @expectEqual("dweller-bookmarks 1\nhttps://b.example/x B page\n", bookmarks.bytes())
+
+    var back = testStore(alloc)
+
+    try decodeBookmarks(&mut back, bookmarks.bytes())
+    try decodeHistory(&mut back, history.bytes())
+    try decodeHistory(&mut back, "dweller-history 1\nx 1 https://bad.example/ T\n3 https://short.example/\n0 5 https://zero.example/ Z\n1 5 javascript:x J\n")
+    try decodeHistory(&mut back, "cookies\n1 5 https://foreign.example/ F\n")
+    try decodeBookmarks(&mut back, "dweller-history 1\nhttps://foreign.example/ F\n")
+
+    @expectEqual(2, back.places.len())
+    @expectEqual("https://b.example/x", back.places.items()[0].owned_url)
+    @expect(back.places.items()[0].bookmarked)
+    @expectEqual(1, back.places.items()[0].visits)
+    @expectEqual("A site", back.places.items()[1].owned_title)
+    @expectEqual(2000, back.places.items()[1].last_ms)
+
+    endTestStore(&mut back)
+    endTestStore(&mut s)
+}
+
+test "suggestions match every typed word in the URL or the title and rank by visits, age, host prefix and bookmark" {
+    let alloc = @testAllocator()
+    let day: u64 = 86400000
+    let now = 200 * day
+    var s = testStore(alloc)
+    var out = List(Suggestion).init(alloc)
+    defer out.deinit()
+
+    place_store = &mut s
+    try noteVisit("https://news.example/today", "Daily News", now - day)
+    try noteVisit("https://old.example/news", "Old news archive", now - 100 * day)
+    try noteVisit("https://old.example/news", "Old news archive", now - 100 * day)
+    try noteVisit("https://old.example/news", "Old news archive", now - 100 * day)
+    try noteVisit("https://www.example.org/", "Example", now - day)
+    try noteVisit("https://shop.example/cart", "Cart", now - day)
+    try setBookmark("https://docs.example/news-style", "Style guide", true)
+
+    try suggest("NEWS", now, 6, &mut out)
+
+    @expectEqual(3, out.len())
+    @expectEqual("https://news.example/today", out.items()[0].url)
+    @expectEqual("https://docs.example/news-style", out.items()[1].url)
+    @expect(out.items()[1].bookmarked)
+    @expectEqual("https://old.example/news", out.items()[2].url)
+
+    out.clear()
+    try suggest("news old", now, 6, &mut out)
+
+    @expectEqual(1, out.len())
+    @expectEqual("Old news archive", out.items()[0].title)
+
+    out.clear()
+    try suggest("exam", now, 2, &mut out)
+
+    @expectEqual(2, out.len())
+    @expectEqual("https://www.example.org/", out.items()[0].url)
+
+    out.clear()
+    try suggest("", now, 6, &mut out)
+
+    @expectEqual(1, out.len())
+    @expectEqual("Style guide", out.items()[0].title)
+
+    out.clear()
+    try suggest("nothing-here", now, 6, &mut out)
+
+    @expectEqual(0, out.len())
+
+    endTestStore(&mut s)
+}
+
+test "clearing the history forgets visits and keeps bookmarks; one page can be forgotten alone" {
+    let alloc = @testAllocator()
+    var s = testStore(alloc)
+
+    place_store = &mut s
+    try noteVisit("https://a.example/", "A", 1000)
+    try noteVisit("https://b.example/", "B", 2000)
+    try noteVisit("https://c.example/", "C", 3000)
+    try setBookmark("https://b.example/", "B", true)
+    try clearHistory("https://a.example/")
+
+    @expectEqual(2, s.places.len())
+    @expectEqual("https://b.example/", bookmarkAt(0).?.url)
+    @expect(bookmarkAt(1) == null)
+
+    try clearHistory(null)
+
+    @expectEqual(1, s.places.len())
+    @expectEqual(0, s.places.items()[0].visits)
+    @expect(isBookmarked("https://b.example/"))
+
+    endTestStore(&mut s)
+}

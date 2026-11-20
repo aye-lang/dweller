@@ -14,7 +14,7 @@ function computedWith(el, name, value) {
 
   el.style.setProperty(name, value);
 
-  const v = getComputedStyle(el).getPropertyValue(name);
+  const v = name === 'transform' || name === 'transform-origin' ? ak.computedStyle(el, name) : getComputedStyle(el).getPropertyValue(name);
 
   el.style.setProperty(name, old);
 
@@ -33,7 +33,7 @@ function composed(el, name, frame, composite) {
 
   if (frame.value === null || mode === 'replace') return frame.value;
 
-  const r = ak.add(name, computedWith(el, name, underlying(el, name)), computedWith(el, name, frame.value));
+  const r = ak.add(name, computedWith(el, name, underlying(el, name)), computedWith(el, name, frame.value), mode === 'accumulate');
 
   return r === null ? frame.value : r;
 }
@@ -55,8 +55,8 @@ function valueAt(el, name, frames, progress, easing, composite) {
   const span = b.offset - a.offset;
   const local = span === 0 ? 1 : ak.ease(a.easing, (progress - a.offset) / span);
 
-  if (local === 0) return va;
-  if (local === 1) return vb;
+  if (local === 0 && name !== 'transform') return va;
+  if (local === 1 && name !== 'transform') return vb;
 
   const r = ak.interpolate(name, computedWith(el, name, va), computedWith(el, name, vb), local);
 

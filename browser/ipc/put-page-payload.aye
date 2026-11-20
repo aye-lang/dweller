@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.text
+
+fn putPagePayload(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .Dialog { kind, message, preset } => {
+            try putU32(out, kind)
+            try putBytes(out, message)
+            try putBytes(out, preset)
+        }
+
+        .DialogReply { accepted, typed } => {
+            try putU32(out, accepted)
+            try putBytes(out, typed)
+        }
+
+        .ClipboardWrite { copied } => try putBytes(out, copied)
+        .ClipboardText { ok, pasted } => {
+            try putU32(out, ok)
+            try putBytes(out, pasted)
+        }
+
+        _ => {}
+    }
+}

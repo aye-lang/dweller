@@ -1,0 +1,12 @@
+import engine
+import ipc
+
+fn askFiles(r: *mut TabRenderer) !void {
+    if r.page |p| {
+        if engine.takePrintAsk(p) { try send(r.alloc, r.conn, r.tab, ipc.Message.PrintAsk) }
+    }
+
+    let asked = engine.takeFileRequest(r.page orelse return) orelse return
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.ChooseFiles { multiple: asked.multiple as u32, accept: asked.accept })
+}

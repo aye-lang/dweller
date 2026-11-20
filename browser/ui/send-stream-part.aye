@@ -1,0 +1,20 @@
+import net
+import std.mem.AllocError
+import std.text
+
+fn sendStreamPart(tp: *mut TabProcess, h: *mut HeldFetch) AllocError!void {
+    var bytes = text.Builder.init(tp.url.alloc)
+    defer bytes.deinit()
+
+    let part = try net.takeStreamPart(h.load, &mut bytes) orelse return
+
+    if !h.streamed {
+        var res = try net.streamHead(tp.url.alloc, part, h.href.bytes())
+        defer res.deinit(tp.url.alloc)
+
+        try sendHead(tp, h.on, h.id, false, false, h.href.bytes(), &res)
+        h.streamed = true
+    }
+
+    try sendBody(tp, h.on, h.id, bytes.bytes())
+}

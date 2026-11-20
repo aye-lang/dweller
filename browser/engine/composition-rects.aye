@@ -1,0 +1,20 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+let COMPOSITION_LINE: f64 = 1.0
+
+pub fn compositionRects(page: *Page, out: *mut List(paint.Rect)) AllocError!void {
+    let c = &page.doc.controls
+    let el = c.composing orelse return
+    let first = out.len()
+
+    try rangeRects(page, el, c.compose_start, c.compose_start + c.compose_len, out)
+
+    for k in first..out.len() {
+        let r = &mut out.items()[k]
+
+        r.y = r.y + r.h - COMPOSITION_LINE
+        r.h = COMPOSITION_LINE
+    }
+}

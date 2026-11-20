@@ -23,16 +23,9 @@ pub fn navigationHead(alloc: Allocator, id: u32) AllocError!?Response {
         ct = p[0..strlen(p)]
     }
 
-    var res = try respond(alloc, ct, try alloc.alloc(0 as u8, 0))
+    var res = try streamHead(alloc, StreamPart { status: status, content_type: ct, url: job.at.href, headers: job.sink.headers_raw.bytes() }, l.href)
 
     errdefer res.deinit(alloc)
-    res.status = status
-    res.headers_raw = try dup(alloc, job.sink.headers_raw.bytes())
-
-    if !text.eql(job.at.href, l.href) {
-        res.url = try dup(alloc, job.at.href)
-    }
-
     try storeHead(job)
 
     return res

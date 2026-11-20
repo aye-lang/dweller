@@ -12,6 +12,14 @@ fn specifiedShorthand(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
         return specifiedFlex(alloc, prop, value, out)
     }
 
+    if text.eql(prop, "font-synthesis") && text.indexOf(value, "var(") == null && !isWideOrEmpty(value) {
+        return specifiedSynthesis(alloc, value, out)
+    }
+
+    if text.eql(prop, "font") && text.indexOf(value, "var(") == null && !isWideOrEmpty(value) {
+        return specifiedFont(alloc, value, out)
+    }
+
     if checksShorthand(prop) && !isWideOrEmpty(value) && !(try parsesAs(alloc, prop, value)) {
         return false
     }
@@ -20,7 +28,7 @@ fn specifiedShorthand(alloc: Allocator, prop: []u8, value: []u8, out: *mut text.
 }
 
 fn checksShorthand(prop: []u8) bool {
-    return inList(prop, "margin padding background border border-color border-style border-width border-radius border-image border-top-radius border-right-radius border-bottom-radius border-left-radius border-block-start-radius border-block-end-radius border-inline-start-radius border-inline-end-radius border-top border-right border-bottom border-left") != null
+    return inList(prop, "margin padding background border border-color border-style border-width border-radius border-image border-top-radius border-right-radius border-bottom-radius border-left-radius border-block-start-radius border-block-end-radius border-inline-start-radius border-inline-end-radius border-top border-right border-bottom border-left border-spacing") != null
 }
 
 fn isWideOrEmpty(value: []u8) bool {

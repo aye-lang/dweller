@@ -1,0 +1,20 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-1/#serialization-of-the-computed-value
+pub fn resolvedTransform(alloc: Allocator, value: []u8, width: f64, height: f64, out: *mut text.Builder) AllocError!bool {
+    var list = List(TransformFn).init(alloc)
+    defer list.deinit()
+
+    if !(try parseTransformList(value, &mut list)) || list.len() == 0 {
+        return false
+    }
+
+    let m = transformsMatrix(list.items(), [2]f64{width, height}) orelse return false
+
+    try writeTransformFn(matrixTransform(m), out)
+
+    return true
+}

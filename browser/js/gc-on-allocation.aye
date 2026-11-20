@@ -1,0 +1,21 @@
+fn gcOnAllocation(it: *mut Interp) {
+    if it.heap.marking {
+        return markStep(it)
+    }
+
+    if it.heap.sweeping {
+        sweepStep(it)
+    }
+
+    let over_limit = it.heap.live_bytes + it.heap.bytes_since_gc > it.heap.limit_bytes
+
+    if it.heap.since_gc < it.heap.threshold && (!over_limit || it.heap.out_of_memory) {
+        return
+    }
+
+    if it.gc_incremental && !over_limit && it.heap.threshold > 1 {
+        return startMarking(it)
+    }
+
+    collectGarbage(it)
+}

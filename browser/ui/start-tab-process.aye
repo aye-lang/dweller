@@ -1,4 +1,5 @@
 import engine
+import perf
 import std
 import std.heap.Arena
 import std.mem.AllocError
@@ -13,11 +14,14 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     if socketpair(AF_UNIX, SOCK_STREAM, 0, sv[..].ptr) != 0 { return null }
 
+    testSocketBuffers(sv[..])
+
     cloexec(sv[0])
+    setNonBlocking(sv[0])
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [10][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", "", ""}
+    var argv = [11][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", "", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -36,6 +40,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     if engine.consoleEchoed() {
         argv[n] = "--console"
+        n += 1
+    }
+
+    if perf.telemetryOn() && partition == 0 {
+        argv[n] = "--telemetry"
         n += 1
     }
 

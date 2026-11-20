@@ -1,0 +1,24 @@
+import css
+
+// spec: https://drafts.csswg.org/css-tables-3/#height-distribution-algorithm
+fn preferBodies(t: *Tree, tracks: []usize, marks: []mut u8) {
+    var bodies: usize = 0
+
+    for c in tracks {
+        if isBody(t, c) {
+            bodies += 1
+        }
+    }
+
+    for k in 0..tracks.len {
+        if bodies > 0 && !isBody(t, tracks[k]) {
+            marks[k] = TRACK_OUT
+        }
+    }
+}
+
+fn isBody(t: *Tree, c: usize) bool {
+    let display = t.bx(c).style[css.DISPLAY]
+
+    return !isKeyword(display, "table-header-group") && !isKeyword(display, "table-footer-group")
+}

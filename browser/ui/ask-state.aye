@@ -18,9 +18,7 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
     var buf = @zeroed([65536]u8)
 
     while true {
-        if !sendAll(tp.fd, tp.outbox.bytes()) { return }
-
-        tp.outbox.clear()
+        if !(try sendReading(tp, end)) { return }
 
         let got = ipc.nextMessage(tp.inbox.bytes()) catch return
 
@@ -40,6 +38,7 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
                     return
                 }
 
+                .BusyAsk { .. } => try ipc.encode(&mut tp.outbox, tp.tab, ipc.Message.BusyAnswer { wait: 1 })
                 _ => {}
             }
 
@@ -56,10 +55,10 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
 
         if std.time.monotonicMs() >= end || !readableWithin(tp.fd, (end - std.time.monotonicMs()) as i32) { return }
 
-        let n = read(tp.fd, buf[..].ptr, buf.len)
+        let n = readSome(tp.fd, buf[..])
 
-        if n <= 0 { return }
+        if n == 0 { return }
 
-        try tp.inbox.append(buf[0..n as usize])
+        if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
     }
 }

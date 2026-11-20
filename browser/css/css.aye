@@ -55,6 +55,7 @@ pub enum Value {
     Calc { pct: f64, px: f64 }
     FitContent { pct: f64, px: f64 }
     CurrentColor
+    Schemed { light: u32, dark: u32 }
     Inherit
     Initial
     Unset
@@ -64,6 +65,7 @@ pub enum Value {
 pub struct Media {
     width: f64
     height: f64
+    dark: ?bool = null
 }
 
 // ---- properties
@@ -148,7 +150,7 @@ pub let PROPERTIES = [NPROPS]Property{
     Property { name: "background-color", inherited: false, kind: PKind.Color, keywords: "", initial: Value.Rgba { c: TRANSPARENT } },
     Property { name: "font-size", inherited: true, kind: PKind.FontSize, keywords: "", initial: Value.Px { v: 16.0 } },
     Property { name: "font-weight", inherited: true, kind: PKind.FontWeight, keywords: "", initial: Value.Number { v: 400.0 } },
-    Property { name: "font-style", inherited: true, kind: PKind.Keywords, keywords: "normal italic oblique", initial: Value.Keyword { k: "normal" } },
+    Property { name: "font-style", inherited: true, kind: PKind.Layers, keywords: "", initial: Value.Keyword { k: "normal" } },
     Property { name: "font-family", inherited: true, kind: PKind.FontFamily, keywords: "", initial: Value.Keyword { k: "serif" } },
     Property { name: "line-height", inherited: true, kind: PKind.LineHeight, keywords: "", initial: Value.Keyword { k: "normal" } },
     Property { name: "margin-top", inherited: false, kind: PKind.Length, keywords: "auto", initial: Value.Px { v: 0.0 } },
@@ -354,6 +356,20 @@ pub let PROPERTIES = [NPROPS]Property{
     Property { name: "font-variant-east-asian", inherited: true, kind: PKind.Layers, keywords: "", initial: Value.Keyword { k: "normal" } },
     Property { name: "font-variant-alternates", inherited: true, kind: PKind.Layers, keywords: "", initial: Value.Keyword { k: "normal" } },
     Property { name: "font-palette", inherited: true, kind: PKind.Layers, keywords: "", initial: Value.Keyword { k: "normal" } },
+    Property { name: "color-scheme", inherited: true, kind: PKind.Raw, keywords: "normal", initial: Value.Keyword { k: "normal" } },
+    Property { name: "print-color-adjust", inherited: true, kind: PKind.Keywords, keywords: "economy exact", initial: Value.Keyword { k: "economy" } },
+    Property { name: "forced-color-adjust", inherited: true, kind: PKind.Keywords, keywords: "auto none preserve-parent-color", initial: Value.Keyword { k: "auto" } },
+    Property { name: "caption-side", inherited: true, kind: PKind.Keywords, keywords: "top bottom", initial: Value.Keyword { k: "top" } },
+    Property { name: "empty-cells", inherited: true, kind: PKind.Keywords, keywords: "show hide", initial: Value.Keyword { k: "show" } },
+    Property { name: "table-layout", inherited: false, kind: PKind.Keywords, keywords: "auto fixed", initial: Value.Keyword { k: "auto" } },
+    Property { name: "scroll-marker-group", inherited: false, kind: PKind.Keywords, keywords: "none before after", initial: Value.Keyword { k: "none" } },
+    Property { name: "scroll-target-group", inherited: false, kind: PKind.Keywords, keywords: "none auto", initial: Value.Keyword { k: "none" } },
+    Property { name: "break-before", inherited: false, kind: PKind.Keywords, keywords: "auto avoid always all avoid-page page left right recto verso avoid-column column avoid-region region", initial: Value.Keyword { k: "auto" } },
+    Property { name: "break-after", inherited: false, kind: PKind.Keywords, keywords: "auto avoid always all avoid-page page left right recto verso avoid-column column avoid-region region", initial: Value.Keyword { k: "auto" } },
+    Property { name: "break-inside", inherited: false, kind: PKind.Keywords, keywords: "auto avoid avoid-page avoid-column avoid-region", initial: Value.Keyword { k: "auto" } },
+    Property { name: "page-break-before", inherited: false, kind: PKind.Keywords, keywords: "auto always avoid left right", initial: Value.Keyword { k: "auto" } },
+    Property { name: "page-break-after", inherited: false, kind: PKind.Keywords, keywords: "auto always avoid left right", initial: Value.Keyword { k: "auto" } },
+    Property { name: "page-break-inside", inherited: false, kind: PKind.Keywords, keywords: "auto avoid", initial: Value.Keyword { k: "auto" } },
 }
 
 /// The index of the longhand property `name` (lower case).
@@ -472,6 +488,7 @@ pub struct Sheet {
     import_layers: List(u32)
     // The `@font-face` rules (fontface.aye).
     font_faces: List(FontFace)
+    page: PageBox = PageBox {}
     keyframes: List(Keyframe)
     keyframe_rules: u32
     // The URL that the `url()`s of the source being parsed are relative

@@ -54,6 +54,7 @@
 
 import agent
 import css
+import decoder
 import dom
 import dom.NodeId
 import encoding
@@ -81,6 +82,7 @@ let USAGE_ALL = "usage: dweller [open] FILE|URL | dump --tree|--text|--style|--l
 
 pub fn main() {
     var gpa = std.heap.General.init()
+    css.setPrefersDark(text.eql(std.os.getenv("DWELLER_COLOR_SCHEME") orelse "", "dark"))
     if !rendererRun(gpa.allocator()) {
         net.start(gpa.allocator()) catch |e| {
         }
@@ -119,6 +121,9 @@ fn run(alloc: Allocator) i32 {
         if args.len == 4 && text.eql(args[2], "--test262") {
             return js.runTest262File(alloc, args[3])
         }
+        if args.len == 4 && text.eql(args[2], "--test262-module") {
+            return js.runTest262Module(alloc, args[3])
+        }
         if args.len != 3 {
             std.log.err("usage: dweller js FILE")
             return 2
@@ -131,6 +136,9 @@ fn run(alloc: Allocator) i32 {
     if args.len >= 2 && text.eql(args[1], "screenshot") {
         return screenshot(alloc, args[2..])
     }
+    if args.len >= 2 && text.eql(args[1], "print") {
+        return printMain(alloc, args[2..])
+    }
     if args.len >= 2 && (text.eql(args[1], "agent") || text.eql(args[1], "mcp")) {
         if text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "tab") || text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "site") { return ui.relayAgentMain(alloc, args[2..], text.eql(args[1], "mcp")) }
 
@@ -142,6 +150,13 @@ fn run(alloc: Allocator) i32 {
     if args.len >= 3 && text.eql(args[1], "--renderer") {
         return renderer.serve(alloc, args[2], args[3..])
     }
+    if args.len >= 3 && text.eql(args[1], "--decoder") {
+        if !renderer.enterProcessSandbox(alloc) { return 3 }
+
+        return decoder.serve(alloc, args[2])
+    }
+    ui.decoderThrough(alloc)
+    defer ui.stopDecoder()
     if args.len >= 2 && text.eql(args[1], "fuzz") {
         return fuzz.fuzzMain(alloc, args[2..])
     }

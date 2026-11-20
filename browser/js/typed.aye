@@ -29,6 +29,8 @@ fn installTyped(it: *mut Interp, e: u32) JsError!void {
     try it.defineNative(e, "viewSet", 5, engineViewSet)
     try it.defineNative(e, "bufNew", 2, engineBufNew)
     try it.defineNative(e, "bufLen", 1, engineBufLen)
+    try it.defineNative(e, "bufMax", 1, engineBufMax)
+    try it.defineNative(e, "bufResize", 2, engineBufResize)
     try it.defineNative(e, "bufDetached", 1, engineBufDetached)
     try it.defineNative(e, "bufDetach", 1, engineBufDetach)
     try it.defineNative(e, "bufCopy", 5, engineBufCopy)
@@ -110,7 +112,7 @@ pub fn viewBytes(it: *Interp, o: u32) []mut u8 {
     match it.heap.obj(o).data {
         .View { store, off, len, kind } => {
             let mem = storeMem(it, store)
-            let n = len as usize * kindSize(kind) as usize
+            let n = viewLength(it, store, off, len, kind) as usize * kindSize(kind) as usize
             if off as usize + n <= mem.len {
                 return mem[off as usize..off as usize + n]
             }
@@ -263,9 +265,7 @@ pub fn viewWrite(it: *mut Interp, store: u32, at: u32, kind: u32, n: f64, le: bo
 pub fn typedLen(it: *Interp, o: u32) u32 {
     match it.heap.obj(o).data {
         .View { store, off, len, kind } => {
-            if off as usize + len as usize * kindSize(kind) as usize <= storeMem(it, store).len {
-                return len
-            }
+            return viewLength(it, store, off, len, kind)
         }
         _ => {}
     }
@@ -273,11 +273,14 @@ pub fn typedLen(it: *Interp, o: u32) u32 {
 }
 
 /// o[idx] of typed array o (undefined past its end).
-pub fn typedGet(it: *Interp, o: u32, idx: u32) Value {
+pub fn typedGet(it: *mut Interp, o: u32, idx: u32) JsError!Value {
     match it.heap.obj(o).data {
         .View { store, off, len, kind } => {
-            let at = off + idx * kindSize(kind)
-            if idx < len && at as usize + kindSize(kind) as usize <= storeMem(it, store).len {
+            if idx < viewLength(it, store, off, len, kind) {
+                let at = off + idx * kindSize(kind)
+                if kind >= K_BIGINT64 {
+                    return viewReadBig(it, store, at, kind, true)
+                }
                 return numVal(viewRead(it, store, at, kind, true))
             }
         }
@@ -288,14 +291,33 @@ pub fn typedGet(it: *Interp, o: u32, idx: u32) Value {
 
 /// o[idx] = v of typed array o (ignored past its end).
 pub fn typedSet(it: *mut Interp, o: u32, idx: u32, v: Value) JsError!void {
+    if typedIsBig(it, o) {
+        let big = try bigConvert(it, v, false)
+        match it.heap.obj(o).data {
+            .View { store, off, len, kind } => {
+                if idx < viewLength(it, store, off, len, kind) {
+                    viewWriteBig(it, store, off + idx * 8, big, true)
+                }
+            }
+            _ => {}
+        }
+        return
+    }
     let n = try elemNumber(it, v)
     match it.heap.obj(o).data {
         .View { store, off, len, kind } => {
-            if idx < len {
+            if idx < viewLength(it, store, off, len, kind) {
                 viewWrite(it, store, off + idx * kindSize(kind), kind, n, true)
             }
         }
         _ => {}
+    }
+}
+
+fn typedIsBig(it: *Interp, o: u32) bool {
+    return match it.heap.obj(o).data {
+        .View { kind, .. } => kind >= K_BIGINT64
+        _ => false
     }
 }
 
@@ -327,6 +349,7 @@ fn engineMakeView(it: *mut Interp, a: Args) JsError!Value {
     let ob = it.heap.obj(o)
     ob.class = Class.TypedArray
     ob.data = ObjData.View { store: store, off: off, len: len, kind: kind }
+    it.heap.wrote(o)
     return Value.Undefined
 }
 
@@ -338,6 +361,9 @@ fn engineViewGet(it: *mut Interp, a: Args) JsError!Value {
     }
     let at = try argU32(it, a, 1)
     let kind = try argU32(it, a, 2)
+    if kind >= K_BIGINT64 {
+        return viewReadBig(it, store, at, kind, it.toBoolean(it.arg(a, 3)))
+    }
     return numVal(viewRead(it, store, at, kind, it.toBoolean(it.arg(a, 3))))
 }
 
@@ -349,6 +375,10 @@ fn engineViewSet(it: *mut Interp, a: Args) JsError!Value {
     }
     let at = try argU32(it, a, 1)
     let kind = try argU32(it, a, 2)
+    if kind >= K_BIGINT64 {
+        viewWriteBig(it, store, at, it.arg(a, 3), it.toBoolean(it.arg(a, 4)))
+        return Value.Undefined
+    }
     let n = try elemNumber(it, it.arg(a, 3))
     viewWrite(it, store, at, kind, n, it.toBoolean(it.arg(a, 4)))
     return Value.Undefined
@@ -372,6 +402,14 @@ fn engineBufNew(it: *mut Interp, a: Args) JsError!Value {
     if !(n >= 0.0) || n > MAX_BYTES {
         return it.rangeError("Array buffer allocation failed")
     }
+    let most = try it.toNumber(it.arg(a, 2))
+    var limit = NONE
+    if most >= 0.0 {
+        if most > MAX_BYTES || n > most {
+            return it.rangeError("Invalid array buffer max length")
+        }
+        limit = most as u32
+    }
     let size = n as usize
     var mem = []mut u8{}
     if size > 0 {
@@ -380,7 +418,7 @@ fn engineBufNew(it: *mut Interp, a: Args) JsError!Value {
     // A large store counts toward the next collection like objects do.
     it.heap.since_gc += size / 256
     it.heap.bytes_since_gc += size
-    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: false }
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: false, max: limit }
     return Value.Undefined
 }
 
@@ -405,7 +443,7 @@ pub fn engineBufDetach(it: *mut Interp, a: Args) JsError!Value {
     if mem.len > 0 {
         it.alloc.free(mem)
     }
-    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: false }
+    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: false, max: NONE }
     return Value.Undefined
 }
 
@@ -419,12 +457,12 @@ fn isExternal(it: *Interp, o: u32) bool {
 /// Makes ArrayBuffer `o` alias host bytes `mem` (a WebAssembly memory),
 /// which the host keeps alive and frees: collecting `o` leaves them.
 pub fn setExternalBytes(it: *mut Interp, o: u32, mem: []mut u8) {
-    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: true }
+    it.heap.obj(o).data = ObjData.Bytes { mem: mem, detached: false, external: true, max: NONE }
 }
 
 /// Detaches ArrayBuffer `o` without freeing its bytes (Memory.grow).
 pub fn detachExternalBytes(it: *mut Interp, o: u32) {
-    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: true }
+    it.heap.obj(o).data = ObjData.Bytes { mem: []mut u8{}, detached: true, external: true, max: NONE }
 }
 
 /// Is `o` an ArrayBuffer that aliases exactly `mem` and is not detached?
@@ -456,7 +494,14 @@ fn engineBufCopy(it: *mut Interp, a: Args) JsError!Value {
 // value, converted once and then copied.
 fn engineTypedFill(it: *mut Interp, a: Args) JsError!Value {
     let o = objectOf(it.arg(a, 0))
-    let n = try elemNumber(it, it.arg(a, 1))
+    var bits: u64 = 0
+    var n = 0.0
+    if typedIsBig(it, o) {
+        var signed = bigToI64(it, it.arg(a, 1))
+        bits = @ptrCast(*u64, &signed).*
+    } else {
+        n = try elemNumber(it, it.arg(a, 1))
+    }
     let start = try argU32(it, a, 2) as usize
     let end = try argU32(it, a, 3) as usize
     match it.heap.obj(o).data {
@@ -467,7 +512,10 @@ fn engineTypedFill(it: *mut Interp, a: Args) JsError!Value {
                 return Value.Undefined
             }
             let part = mem[start * size..end * size]
-            storeBits(part, 0, size as u32, numberBits(kind, n), true)
+            if kind < K_BIGINT64 {
+                bits = numberBits(kind, n)
+            }
+            storeBits(part, 0, size as u32, bits, true)
             var done = size
             while done < part.len {
                 var m = done

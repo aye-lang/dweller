@@ -1,0 +1,35 @@
+import ipc
+import std.mem.AllocError
+
+let MAX_CONTEXT_PART: usize = 65536
+
+fn takeUserContext(slot: *TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
+    if got.frame != slot.id { return "bad user_context" }
+
+    match got.message {
+        .UserContext { point, selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text, .. } => {
+            let parts = [8][]u8{selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text}
+
+            for p in parts {
+                if p.len > MAX_CONTEXT_PART { return "bad user_context" }
+            }
+
+            if point > 1 || !(try jsonParses(tp.url.alloc, "", hovered, "")) || !(try jsonParses(tp.url.alloc, "", focused, "")) { return "bad user_context" }
+            if point == 1 && !(try jsonParses(tp.url.alloc, "{", node, "}")) { return "bad user_context" }
+
+            if point == 1 {
+                tp.pointed.clear()
+                try ipc.encode(&mut tp.pointed, got.frame, got.message)
+
+                return ""
+            }
+        }
+
+        _ => return "bad user_context"
+    }
+
+    tp.ctx.clear()
+    try ipc.encode(&mut tp.ctx, got.frame, got.message)
+
+    return ""
+}

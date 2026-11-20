@@ -1,0 +1,27 @@
+import paint
+import places
+import std.mem.AllocError
+
+fn drawBookmarksBar(ui: *mut Ui) AllocError!void {
+    if !ui.bar_shown { return }
+
+    let f = uiFont(12.0)
+    let y = ui.top() - BOOKMARKS_BAR
+    var x: f64 = 4.0
+    var k: usize = 0
+
+    fill(ui, 0.0, y, ui.win_w as f64, BOOKMARKS_BAR, BAR_BG)
+    fill(ui, 0.0, y + BOOKMARKS_BAR - 1.0, ui.win_w as f64, 1.0, LINE)
+
+    while places.bookmarkAt(k) |b| {
+        let w = barItemWidth(ui, b)
+
+        if x + w > ui.win_w as f64 { break }
+
+        try ui.canvas.pushClip(paint.deviceRect(paint.Rect { x: x + BAR_ITEM_PAD, y: y, w: w - 2.0 * BAR_ITEM_PAD, h: BOOKMARKS_BAR }, screen(ui)))
+        try label(ui, x + BAR_ITEM_PAD, centered(ui, y, BOOKMARKS_BAR - 1.0, f), barItemText(b), f, INK)
+        ui.canvas.popClip()
+        x += w
+        k += 1
+    }
+}

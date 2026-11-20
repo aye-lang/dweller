@@ -17,6 +17,7 @@ struct TabProcess {
     nav_policy: net.ReferrerPolicy = net.ReferrerPolicy.StrictOriginWhenCrossOrigin
     nav_user: bool = true
     visible: bool = true
+    period_ns: u64 = 0
     docs: text.Builder
     idb_request: ?*mut text.Builder = null
     fetches: u32 = 0
@@ -37,8 +38,16 @@ struct TabProcess {
     take_focus: bool = false
     redirected: bool = false
     nav_failed: bool = false
+    cert: ?net.CertKind = null
+    loaded_new: bool = false
+    nav_began: u64 = 0
+    paint_from: u32 = 0
     downloaded: bool = false
+    navigates_open: u32 = 0
     push_on_commit: bool = false
+    replace_on_commit: bool = false
+    replaced_on_commit: bool = false
+    replace_at: usize = 0
     doc_seq: u32 = 0
     traverse_to: ?u32 = null
     agent_id: u32 = 0
@@ -52,6 +61,8 @@ struct TabProcess {
     answer: text.Builder
     acted: text.Builder
     window_ask: text.Builder
+    asked: ?*mut AskedDialog = null
+    front: bool = false
     damage: text.Builder
     last_damage: text.Builder
     whole: bool = false
@@ -62,6 +73,13 @@ struct TabProcess {
     ping_at: u64 = 0
     pong_at: u64 = 0
     hung: bool = false
+    busy_asked: bool = false
+    busy_seen: bool = false
+    busy_ms: u32 = 0
+    host_lock: u32 = 0
+    host_fs: u32 = 0
+    locked: bool = false
+    fullscreen: bool = false
     hang_seen: bool = false
     frames: u32 = 0
     pressed: u32 = 0
@@ -77,6 +95,17 @@ struct TabProcess {
     children: List(ChildFrame)
     held: List(*mut HeldFetch)
     kept: List(KeptFrame)
+    frame_steps: List(FrameStep)
+    before: text.Builder
+    self_nav: bool = false
+    pushes: bool = false
+    hit_queue: List(SDL_Event)
+    hit_asked: ?HitAsk = null
+    hit_answers: List(HitAsk)
+    hit_replay: bool = false
+    hit_ids: u32 = 0
+    hit_open: u32 = 0
+    hit_key: u32 = 0
     embedder: ?*mut TabProcess = null
     mouse_frame: u32 = 0
     capture_frame: u32 = 0
@@ -89,6 +118,8 @@ struct TabProcess {
     coop: net.Coop = net.Coop.UnsafeNone
     copy_seq: u32 = 0
     find_id: u32 = 0
+    find_frame: u32 = 0
+    find_passive: bool = false
     find_seen: u32 = 0
     find_count: u32 = 0
     find_active: u32 = 0
@@ -105,9 +136,23 @@ struct TabProcess {
     max_y: f64 = 0.0
     frame_y: f64 = 0.0
     want_y: f64 = 0.0
+    canvas_px: i64 = 0
+    placed: bool = false
     input_kind: []u8 = ""
+    page_zoom: f64 = 1.0
+    given_scale: f64 = 0.0
+    file_ask: u32 = 0
+    print_job: ?*mut PrintJob = null
+    printed_pages: u32 = 0
+    print_asked: bool = false
+    caret: [5]f64 = [5]f64{0.0, 0.0, 0.0, 0.0, 0.0}
+    file_accept: []mut u8 = []mut u8{}
     attaches: List(PendingAttach)
     serial: u32 = 0
+    ctx: text.Builder
+    pointed: text.Builder
+    ctx_next: u32 = 0
+    point_asked: bool = false
     opener_tab: u32 = 0
     speculative: bool = false
 }

@@ -1479,6 +1479,9 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
                 pc += 3 * w as usize
 
                 if vmIcHitStoreProp(it, e, o) |p| {
+                    if it.heap.marking {
+                        shadeValue(&mut it.heap, acc)
+                    }
                     p.value = acc
                 } else {
                     regs[fp] = acc
@@ -1610,6 +1613,9 @@ fn vmLoop(it: *mut Interp, st: *mut VmState, f: *mut VmFault, depth: usize) JsEr
             }
             83 => {
                 // v8: src/interpreter/interpreter-generator.cc (StaContextSlot)
+                if it.heap.marking {
+                    shadeValue(&mut it.heap, acc)
+                }
                 vmEnvAt(it, vmIdx(bytes, pc, w)).slots[vmIdx(bytes, pc + w as usize, w) as usize] = acc
                 pc += 2 * w as usize
             }

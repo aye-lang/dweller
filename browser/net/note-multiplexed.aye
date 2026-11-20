@@ -1,0 +1,22 @@
+import std.list.List
+
+let CURLINFO_HTTP_VERSION: i32 = 2097198
+let CURL_HTTP_VERSION_2: i64 = 3
+
+fn noteMultiplexed(ld: *mut Loader, job: *Job) {
+    var version: i64 = 0
+
+    curl_easy_getinfo(job.curl, CURLINFO_HTTP_VERSION, &mut version)
+
+    if version < CURL_HTTP_VERSION_2 || multiplexes(ld, authorityOf(job.at.href)) { return }
+
+    if ld.multiplexed == null {
+        ld.multiplexed = ld.alloc.create(List([]mut u8).init(ld.alloc)) catch return
+    }
+
+    let host = dup(ld.alloc, authorityOf(job.at.href)) catch return
+
+    ld.multiplexed.?.append(host) catch |e| {
+        release(ld.alloc, host)
+    }
+}

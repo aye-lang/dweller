@@ -1,0 +1,21 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#crossoriginproperties-(-o-)
+fn akWinOrigin(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let page = (try argWindow(it, a)) orelse s.page
+
+    if !sameOrigin(s.page, page) || routeOf(it, it.arg(a, 0)) != null {
+        return crossOrigin(it, "the origin")
+    }
+
+    let b = try it.builder()
+    defer it.release(b)
+
+    try appendOrigin(b, page)
+
+    return it.newString(b.bytes())
+}

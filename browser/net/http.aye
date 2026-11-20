@@ -100,6 +100,7 @@ struct Sink {
     public_only: bool = false
     reached_public: bool = false
     partition: u32 = 0
+    head_done: bool = false
 }
 
 // libcurl calls this with each piece of the body; returning less than
@@ -132,6 +133,11 @@ fn onHeader(data: [*]u8, size: usize, n: usize, user: [*]u8) usize {
         sink.headers_raw.clear()
         sink.no_store = false
         sink.challenged = false
+        sink.head_done = false
+        return total
+    }
+    if line.len == 0 {
+        sink.head_done = true
         return total
     }
     let colon = std.mem.indexOf(line, ':') orelse return total
@@ -175,14 +181,24 @@ fn containsIgnoreCase(s: []u8, word: []u8) bool {
 }
 
 fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
-    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other
+    let cacheable = req.body == null && req.kind != Kind.Document && req.kind != Kind.Other && req.kind != Kind.Audio && req.kind != Kind.Video
     if session |s| {
         let key = try cacheKey(alloc, req, target.withoutFragment())
         defer alloc.free(key)
+        noteDocumentLoad(s, req)
         if cacheable {
             if try s.cache.lookup(alloc, key) |hit| {
                 return hit
             }
+        }
+        var asked = req
+        var validators: ?[]mut u8 = null
+        if cacheable {
+            validators = try staleValidators(&mut s.cache, alloc, key, req.headers)
+        }
+        defer release(alloc, validators orelse []mut u8{})
+        if validators |v| {
+            asked.headers = v
         }
         if s.curl == null {
             s.curl = curl_easy_init()
@@ -190,7 +206,14 @@ fn fetchHttp(alloc: Allocator, target: *Url, req: Request) FetchError!Response {
         if s.curl |curl| {
             if !sharedBusy(curl) {
                 var keep = cacheable
-                var res = try transfer(alloc, curl, target, req, s, &mut keep)
+                var res = try transfer(alloc, curl, target, asked, s, &mut keep)
+                if validators != null && res.status == 304 && refreshEntry(&mut s.cache, key, res.headers_raw) {
+                    res.deinit(alloc)
+                    if try s.cache.lookup(alloc, key) |hit| {
+                        return hit
+                    }
+                    return FetchError.Network
+                }
                 if keep && !res.tainted && res.status >= 200 && res.status < 300 {
                     s.cache.keep(key, &res, false) catch |e| {
                         res.deinit(alloc)
@@ -572,7 +595,7 @@ fn acceptOf(kind: Kind) []u8 {
         .Document => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         .Style => "text/css,*/*;q=0.1"
         .Image => "image/webp,image/png,image/gif,image/jpeg,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-        .Script, .Other, .Font, .Worker => "*/*"
+        .Script, .Other, .Font, .Worker, .Audio, .Video => "*/*"
     }
 }
 

@@ -1,0 +1,31 @@
+import std
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: content/browser/web_contents/file_chooser_impl.cc
+fn pickerArgs(tmp: Allocator, multiple: bool, accepted: []u8, argv: *mut List([]u8)) AllocError!void {
+    var mode: []u8 = "single"
+
+    if multiple { mode = "multiple" }
+
+    if std.os.getenv("DWELLER_PICKER") |command| {
+        try argv.append("/bin/sh")
+        try argv.append("-c")
+        try argv.append(command)
+        try argv.append("dweller-picker")
+        try argv.append(mode)
+        try argv.append(accepted)
+
+        return
+    }
+
+    if text.eql(std.os.getenv("SDL_VIDEODRIVER") orelse "", "dummy") { return }
+
+    if @targetOs() is .macos {
+        try osascriptArgs(tmp, multiple, accepted, argv)
+    } else {
+        try zenityArgs(tmp, multiple, accepted, argv)
+    }
+}

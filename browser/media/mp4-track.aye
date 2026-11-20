@@ -1,0 +1,39 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: media/formats/mp4/box_definitions.cc
+fn mp4Track(alloc: Allocator, b: []u8, trak: Box) AllocError!?Track {
+    let mdhd = boxPath(b, trak, "mdia", "mdhd", "") orelse return null
+    let hdlr = boxPath(b, trak, "mdia", "hdlr", "") orelse return null
+    let stbl = boxPath(b, trak, "mdia", "minf", "stbl") orelse return null
+    let stsd = boxIn(b, stbl.body, stbl.end, "stsd") orelse return null
+    let entry = stsd.body + 8
+
+    if hdlr.body + 12 > hdlr.end || entry + 36 > stsd.end { return null }
+
+    let handler = b[hdlr.body + 8..hdlr.body + 12]
+    var t = Track { kind: TrackKind.Video, codec: b[entry + 4..entry + 8], duration: headerSeconds(b, mdhd), samples: List(Sample).init(alloc) }
+
+    if text.eql(handler, "vide") {
+        t.width = be16(b, entry + 32)
+        t.height = be16(b, entry + 34)
+    } else if text.eql(handler, "soun") {
+        t.kind = TrackKind.Audio
+        t.channels = be16(b, entry + 24)
+        t.rate = be16(b, entry + 32) as f64
+    } else {
+        return null
+    }
+
+    t.number = trackId(b, trak)
+    t.scale = headerScale(b, mdhd)
+    t.config = mp4Config(b, t, entry, stsd.end)
+
+    errdefer t.samples.deinit()
+
+    try mp4Samples(b, stbl, headerScale(b, mdhd), &mut t.samples)
+
+    return t
+}

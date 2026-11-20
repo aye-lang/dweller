@@ -1994,7 +1994,7 @@ pub struct Parser {
                 if kind != PROP_INIT || self.at(Tok.LParen) || isAsync || isGen {
                     var fname = A_EMPTY
                     if !computed {
-                        fname = key
+                        fname = try parseMemberName(self, key, computed, kind)
                     }
                     let f = try self.functionRestFlags(fname, pstart, true, isAsync, isGen)
                     value = try self.mk(Node.Func { f: f }, pstart)
@@ -2236,7 +2236,7 @@ pub struct Parser {
             let key = try self.propertyKey()
             if self.at(Tok.LParen) {
                 let isCtor = !isStatic && !computed && kind == PROP_METHOD && text.eql(self.atoms.name(key), "constructor")
-                var fname = try parseMemberName(self, key, computed)
+                var fname = try parseMemberName(self, key, computed, kind)
                 if computed {
                     fname = A_EMPTY
                 }
@@ -2273,7 +2273,7 @@ pub struct Parser {
                 self.in_field = outerField
                 self.ast.funcs.items()[f].expr = init
                 if !computed {
-                    try self.nameValue(init, try parseMemberName(self, key, computed))
+                    try self.nameValue(init, try parseMemberName(self, key, computed, PROP_FIELD))
                 }
             }
             self.finishFunc(f, mstart)

@@ -1,0 +1,23 @@
+import dom
+import dom.Document
+import std.mem.AllocError
+import std.text
+
+// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
+fn filePart(out: *mut text.Builder, doc: *Document, e: FormEntry) AllocError!void {
+    var mime: []u8 = "application/octet-stream"
+    var bytes: []u8 = ""
+
+    if e.el |el| {
+        if dom.fileAt(doc, el, e.index) |f| {
+            mime = f.owned_type
+            bytes = f.owned_bytes
+        }
+    }
+
+    try out.append("Content-Type: ")
+    try out.append(mime)
+    try out.append("\r\n\r\n")
+    try out.append(bytes)
+    try out.append("\r\n")
+}

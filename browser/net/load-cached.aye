@@ -1,0 +1,33 @@
+import std
+import std.text
+
+pub let DISK_EPOCH: u64 = 0xFFFFFFFFFFFFFFFF
+
+fn loadCached(c: *mut Cache, key: []u8) ?usize {
+    if c.dir.len == 0 || key.len == 0 || key[0] == '#' { return null }
+
+    let path = diskCachePath(c.alloc, c.dir, key) catch return null
+    defer c.alloc.free(path)
+
+    if !std.fs.exists(path) { return null }
+
+    let bytes = std.fs.readFile(c.alloc, path) catch return null
+    defer c.alloc.free(bytes)
+    let e = parseCached(c, bytes, key) orelse return null
+
+    if c.bytes + e.body.len > MAX_CACHE_BYTES {
+        freeEntry(c.alloc, e)
+
+        return null
+    }
+
+    c.entries.append(e) catch |err| {
+        freeEntry(c.alloc, e)
+
+        return null
+    }
+
+    c.bytes += e.body.len
+
+    return c.entries.len() - 1
+}

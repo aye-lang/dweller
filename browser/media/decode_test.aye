@@ -1,0 +1,28 @@
+import std.list.List
+import std.text
+
+test "PCM and raw video decode to floats and RGBA" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    var sound = Track { kind: TrackKind.Audio, codec: PCM_INT, bits: 16, samples: List(Sample).init(@testAllocator()) }
+    var picture = Track { kind: TrackKind.Video, codec: RAW_VIDEO, config: "RGBA", width: 1, height: 2, samples: List(Sample).init(@testAllocator()) }
+
+    @expect(try decodeAudio(&mut out, &sound, "\x00\x40\x00\x80\x00\x00"))
+    @expectEqual("\x00\x00\x00\x3f\x00\x00\x80\xbf\x00\x00\x00\x00", out.bytes())
+
+    out.clear()
+    sound.bits = 8
+    @expect(try decodeAudio(&mut out, &sound, "\xc0"))
+    @expectEqual("\x00\x00\x00\x3f", out.bytes())
+
+    out.clear()
+    sound.bits = 12
+    @expect(!(try decodeAudio(&mut out, &sound, "\xc0")))
+    @expect(try decodeVideo(&mut out, &picture, "abcdefgh"))
+    @expectEqual("abcdefgh", out.bytes())
+    @expect(!(try decodeVideo(&mut out, &picture, "abcdefg")))
+
+    picture.config = "YUY2"
+    @expect(!(try decodeVideo(&mut out, &picture, "abcdefgh")))
+}

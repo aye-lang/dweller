@@ -1,0 +1,36 @@
+import font
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+// chromium: third_party/skia/src/pdf/SkPDFDevice.cpp (text as text where the page's paint order allows it)
+fn vectorRuns(alloc: Allocator, list: *paint.DisplayList, measure: dyn font.Measurer, book: *mut GlyphBook, out: *mut List(bool)) AllocError!void {
+    var covers = try coversOf(alloc, list)
+    defer covers.deinit()
+    var depth: usize = 0
+
+    for at, item in list.items.items() {
+        var vector = false
+
+        match item {
+            .Layer { .. } => {
+                depth += 1
+            }
+
+            .EndLayer { .. } => {
+                depth -= (depth > 0) as usize
+            }
+
+            .Text { x, y, s, face, c } => {
+                let box = paint.Rect { x: x, y: y - face.size * TEXT_ASCENT, w: measure.width(face, s), h: face.size * (TEXT_ASCENT + TEXT_DESCENT) }
+
+                vector = depth == 0 && c.a == 255 && !face.turned && !coveredLater(&covers, at, box) && try runOutlined(book, face, s)
+            }
+
+            _ => {}
+        }
+
+        try out.append(vector)
+    }
+}

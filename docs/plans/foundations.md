@@ -126,10 +126,10 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | Lane | Next | Then |
 |---|---|---|
 | base | DV2b | DV1 is counted over its next landings |
-| proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.13, Q2.14 |
-| sec | Q3.15 (Q3.15b to Q3.15e) | – |
+| proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.14 |
+| sec | Q3.15 ( to Q3.15e) | – |
 | perf | Q4.25a | Q4.25b, Q4.25e first of the kept Q4 rows (react's click), then Q6.3 to  |
-| feat | Q5.2, Q5.8 (decision 4) | Q5.10 |
+| feat | Q5.2 | – |
 
 ## Decisions (2026-11-04)
 
@@ -218,9 +218,8 @@ and the weekly workflow is green.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q0.3 | Re-run W2, W3 and the conformance table on `main` (with the `html/syntax` and `webaudio` baselines, which grew new files: Q0.1's card) | `page_load.py check --agent`; `conformance.py run` and then `table` are committed | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b, Q0.3.
 
 ## Q1: stable in one process (lanes base and perf)
 
@@ -259,10 +258,9 @@ How the steps run:
 | Q2.14h | The 20 failures without a known cause (causes 3, 11, 15 and 19 to 23): read them from the first daily run after Q2.14b to Q2.14d, with shard 0's failure report kept whole, and give each a row | every failing test of the daily run has a cause in a card | – |
 | Q2.15 | The readiness list below, "Security (X1)", "Logins and popups" and "What a person sees": one card per item (`Q2.15a`, ...), each with a test that runs with `DWELLER_PROCESS=site` | every item has a done card, or a reason in its card why the flip does not need it | – |
 | Q2.16 | The readiness list below, "Speed with the flag": one card per item (`Q2.16a`, ...) | every item has a done card with its number, measured on the pages of `browser/tests/` | – |
-| Q2.13 | Process limits and memory: a cap on processes, the reuse policy, and memory per tab against Chromium on the 20 sites. This sets the M1 budget | the report table in `PERF.md` | `content/browser/renderer_host/render_process_host_impl.cc` (`GetMaxRendererProcessCount`) |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 
@@ -347,12 +345,10 @@ states the W7 sites it moves.
 | Q4.25b | What the window waits on for 0.7 to 1.5 s on mistral with the flag: the wait has no window record | the wait has a record and a cause in the card | – |
 | Q4.25e | The window scrolls from the renderer's last frame while the renderer is busy (the texture offset of P4.36c) | the wheel-to-frame p95 of bbc with the flag is under 33 ms while a renderer task runs | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` |
 | Q4.6 | Why `relayoutDirty` refuses (mistral: 1301 times): fix the exits | the mistral refusals fall under 10 | `core/layout/layout_object.cc` (`MarkContainerChainForLayout`) |
-| Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
-| Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
 | Q4.12 | HTTP disk cache with revalidation and expiry, request priorities by kind, and the preload scanner checked. Includes Q0.4d: zol's live document load hits the 30 s timeout | live W8 does not drop, zol's W8 passes when Chrome paints under 5 s, and a revisit is served from cache | `net/http/http_cache.cc`, `core/html/parser/html_preload_scanner.cc`, `platform/loader/fetch/resource_fetcher.cc` |
 | Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids (measured by Q4.16a, #303: mistral is natives and forced restyle, bbc is calls and inline-cache misses; the ranked cards Q4.16b–l are in its card) | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5, Q4.2, Q4.8, Q4.25c, Q4.25d.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5, Q4.2, Q4.8, Q4.25c, Q4.25d, Q4.7, Q4.11.
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
@@ -376,17 +372,8 @@ Where a row can be verified:
 
 | Step | Feature | Chromium |
 |---|---|---|
-| Q5.1 | Zoom (Cmd +/−/0), per site, remembered | `chrome/browser/ui/zoom/`, `components/zoom/` |
 | Q5.2 | `prefers-color-scheme: dark`, a dark UA sheet, and `color-scheme` | `core/css/media_query_evaluator.cc`, `core/css/resolver/` (color-scheme) |
-| Q5.3 | `alert`, `confirm` and `prompt` as real dialogs (`prompt` returns null today) | `core/frame/local_dom_window.cc`, `chrome/browser/ui/javascript_dialogs/` |
-| Q5.4 | IME composition events and the candidate window placed at the caret (CJK) | `core/editing/ime/input_method_controller.cc` |
-| Q5.5 | `<input type=file>`: the picker and a multipart upload with files | `core/html/forms/file_input_type.cc`, `core/fileapi/` |
-| Q5.8 | EventSource | `modules/eventsource/` |
-| Q5.9a | `<video>` and `<audio>` 1: progressive playback of MP4 (H.264, AAC), WebM (VP9, Opus) and MP3, with controls. Decoding uses the system decoders in a utility process | `media/`, `third_party/blink/renderer/core/html/media/` |
 | Q5.9b | Media 2: Media Source Extensions (YouTube) | `third_party/blink/renderer/modules/mediasource/` |
-| Q5.10 | contenteditable and the core of `execCommand`; the async Clipboard API | `core/editing/`, `modules/clipboard/` |
-| Q5.13 | Bookmarks and address-bar search (search engine, suggestions from history) | `components/bookmarks/`, `components/omnibox/` |
-| Q5.15 | Print to PDF and `@media print` | `components/printing/`, `core/paint/` (print) |
 
 Autofill and password saving stay out, as decided before
 (`docs/plans/browser.md` "Login readiness").
@@ -402,12 +389,9 @@ check`. Chromium references come from the module map of
 | Step | Area (score, threshold) |
 |---|---|
 | Q6.3 | `css/css-flexbox` (62.8, 70) |
-| Q6.4 | `css/box-sizing` (51.5, 70) |
-| Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
-| Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2, Q6.4, Q6.8, Q6.9.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.

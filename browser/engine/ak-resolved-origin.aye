@@ -1,0 +1,26 @@
+import animation
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+fn akResolvedOrigin(it: *mut Interp, a: Args) JsError!Value {
+    let value = try it.builder()
+    defer it.release(value)
+    let out = try it.builder()
+    defer it.release(out)
+
+    try argText(it, a, 1, value)
+
+    let h = ownHandle(it, it.arg(a, 0)) orelse return it.arg(a, 1)
+    let g = try geometry(scriptOf(it))
+    let k = firstBox(g, h) orelse return it.arg(a, 1)
+
+    if !try animation.resolvedOrigin(value.bytes(), g.tree.bx(k).w, g.tree.bx(k).h, out) {
+        return it.arg(a, 1)
+    }
+
+    return it.newString(out.bytes())
+}

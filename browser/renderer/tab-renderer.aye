@@ -20,6 +20,8 @@ struct TabRenderer {
     measure: dyn font.Measurer
     system: ?*mut font.System
     fds: List(i32)
+    chosen: ?*mut ChosenFiles = null
+    caret_said: [5]f64 = [5]f64{0.0, 0.0, 0.0, 0.0, 0.0}
     drawn: List(paint.Sig)
     marks: List(Mark)
     title: text.Builder
@@ -40,6 +42,8 @@ struct TabRenderer {
     context: u32 = 0
     broken: bool = false
     closed: bool = false
+    mouse_in: bool = false
+    mouse_at: [2]f64 = [2]f64{0.0, 0.0}
     remote_opener: u32 = 0
     opener_name: text.Builder
     first: u32 = 0
@@ -87,6 +91,8 @@ struct TabRenderer {
     notes: ?*mut RendererNotes = null
     agent_size: [2]f64 = [2]f64{800.0, 600.0}
     hidden: bool = false
+    frame_ns: u64 = 16666667
+    next_frame_ns: u64 = 0
     background_run_at: u64 = 0
     said_null: bool = true
     subframes: text.Builder
@@ -99,24 +105,25 @@ struct TabRenderer {
     find_command: u32 = 0
     find_id: u32 = 0
     find_on: bool = false
+    find_passive: bool = false
     find_said: [2]u32 = [2]u32{0, 0}
     load_said: u32 = 0
     staged: StagedLoad
     preview: Preview
     outer: u32 = 0
     images_at: u64 = 0
+    shift: i64 = 0
     pan_off: bool = false
     info_said: bool = false
     info_max: f64 = 0.0
     info_pan: u32 = 0
     info_bg: u32 = 0
-    list: ?paint.DisplayList = null
+    lists: pageview.PageView
+    layers: paint.RasterCache
     list_tree: ?*mut layout.Tree = null
     list_version: u64 = 0
     list_laid: u64 = 0
     relist: bool = true
-    sigs: List(paint.Sig)
-    shown: List(paint.ShownBitmap)
     attaching: List(Attach)
     settled_said: bool = false
 
@@ -184,8 +191,9 @@ struct TabRenderer {
 
         self.pending.deinit()
         dropList(self)
-        self.sigs.deinit()
-        self.shown.deinit()
+        self.layers.deinit()
+        freeViewTab(self.lists.tab)
+        pageview.shutdown(&mut self.lists)
         self.staged.deinit()
         self.preview.deinit()
         self.find.deinit()

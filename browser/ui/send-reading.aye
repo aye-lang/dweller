@@ -1,0 +1,30 @@
+import ipc
+import std.mem.AllocError
+
+fn sendReading(tp: *mut TabProcess, deadline: ?u64) AllocError!bool {
+    var buf = @zeroed([65536]u8)
+
+    while tp.outbox.len() > 0 {
+        let sent = sendSome(tp.fd, tp.outbox.bytes())
+
+        if sent < 0 { return false }
+
+        ipc.consume(&mut tp.outbox, sent as usize)
+
+        if tp.outbox.len() == 0 { return true }
+
+        var p = [1]ipc.PollFd{ipc.PollFd { fd: tp.fd, events: POLL_IN | POLL_OUT, revents: 0 }}
+
+        if ipc.poll(p[..].ptr, 1, msUntil(deadline)) == 0 { return false }
+
+        if p[0].revents & POLL_IN != 0 {
+            let n = readSome(tp.fd, buf[..])
+
+            if n == 0 { return false }
+
+            if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
+        }
+    }
+
+    return true
+}

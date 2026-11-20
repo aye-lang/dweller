@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+// chromium: components/printing/browser/print_manager.cc (a renderer sends a document only for a print the browser asked it for)
+fn takePrinted(tp: *mut TabProcess, chunk: []u8, done: bool, pages: u32) AllocError![]u8 {
+    let job = tp.print_job orelse return "unexpected printed"
+
+    if job.bytes.len() + chunk.len > PRINTED_LIMIT { return "printed too much" }
+
+    try job.bytes.append(chunk)
+
+    if done { tp.printed_pages = 1 + pages }
+
+    return ""
+}

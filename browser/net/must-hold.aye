@@ -1,0 +1,14 @@
+import std.text
+
+// chromium: services/network/resource_scheduler/resource_scheduler.cc (ShouldStartRequest)
+fn mustHold(ld: *Loader, l: *Load) bool {
+    if l.kind != Kind.Image || multiplexes(ld, authorityOf(l.href)) { return false }
+
+    var on_host: i64 = 0
+
+    for other in ld.loads.items() {
+        if other.job != null && text.eql(authorityOf(other.href), authorityOf(l.href)) { on_host += 1 }
+    }
+
+    return on_host >= hostLimit()
+}

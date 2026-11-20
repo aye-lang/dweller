@@ -140,6 +140,8 @@ fn window_renderer_loads_parts() {
         return;
     };
     let href = format!("{}/parts/net/parts.html?p", srv.base);
+    // The suite builds the browser on first use: not inside the timed run.
+    let _ = dweller();
     let began = std::time::Instant::now();
     let renderer = login_window_with(&href, "frame", None, &[("DWELLER_PROCESS", "tab")]);
     assert!(

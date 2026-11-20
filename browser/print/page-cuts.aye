@@ -1,0 +1,28 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+
+pub struct Span {
+    top: f64
+    bottom: f64
+}
+
+// https://www.w3.org/TR/css-break-3/#breaking-rules
+pub fn pageCuts(height: f64, page_height: f64, forced: []f64, whole: []Span, out: *mut List(f64)) AllocError!void {
+    var top = 0.0
+
+    try out.append(0.0)
+
+    while top + page_height < height || forcedWithin(forced, top, height) != null {
+        var cut = top + page_height
+
+        if forcedWithin(forced, top, cut) |f| {
+            cut = f
+        } else {
+            cut = cutAround(whole, top, cut)
+        }
+
+        try out.append(cut)
+        top = cut
+    }
+}

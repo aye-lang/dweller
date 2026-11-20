@@ -1,5 +1,4 @@
 import ipc
-import net
 import std
 import std.mem.AllocError
 
@@ -26,151 +25,31 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             if tp.loading { try commitEntry(slot, tp, url) }
 
             try showCommitted(tp, title, url)
-            tp.loading = false
+            tp.loading = tp.loading && nextNavigate(tp)
+            tp.loaded_new = true
+            notePageLoaded(tp, url)
         }
 
-        .ScrollInfo { max_y, pan, background } => {
-            if got.frame != slot.id { return "bad scroll_info" }
-
-            return takeScrollInfo(tp, max_y, pan, background)
-        }
-
-        .Title { title } => {
-            if got.frame != slot.id || title.len > 4096 { return "bad title" }
-
-            try showCommitted(tp, title, tp.committed.bytes())
-        }
-
-        .SameDocument { url, index, nulls, state } => {
-            if got.frame != slot.id || tp.loading || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
-            if nulls > 1 || !(try sameDocumentEntry(slot, tp, url, index, nulls, state)) { return "bad same_document" }
-
-            try showCommitted(tp, tp.title.bytes(), url)
-        }
-
+        .ScrollInfo { .. }, .Title { .. }, .Popup { .. }, .Cursor { .. }, .TargetUrl { .. }, .LongTask { .. }, .Settled { .. }, .TakeFocus { .. } => return rendererSentChrome(slot, tp, got)
+        .SameDocument { .. }, .HistoryGo { .. }, .BeginNavigation { .. }, .ReplaceNavigation { .. }, .Redirect { .. }, .UpgradeInsecure { .. } => return rendererSentNavigation(slot, tp, got)
         .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
-            if !tp.loading && slot.session.tab.history.len() > 0 { slot.session.tab.history.now().scroll = scroll_y }
-
-            noteFrameScroll(tp, scroll_y)
+            keepFrameScroll(slot, tp, scroll_y)
 
             return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
         }
 
-        .HistoryGo { index } => {
-            if got.frame != slot.id || index as usize >= slot.session.tab.history.len() { return "bad history_go" }
-
-            if !tp.loading && tp.traverse_to == null { _ = try goToEntry(slot, tp, index as usize) }
-        }
-
-        .BeginNavigation { url, post, content_type, body, referrer_policy, user } => {
-            if got.frame != slot.id { return "unexpected begin_navigation" }
-            if user > 1 { return "bad begin_navigation" }
-
-            tp.nav_user = user == 1
-
-            let policy = net.referrerPolicyAt(referrer_policy) orelse return "bad begin_navigation"
-
-            try beginNavigation(slot, tp, url, post, content_type, body, policy)
-        }
-
-        .Popup { items, disabled, selected, x, y, w, h } => {
-            if got.frame != slot.id || ipc.badPopup(items, disabled, selected) { return "bad popup" }
-
-            tp.popup.clear()
-            try tp.popup.append(items)
-            tp.popup_off.clear()
-            try tp.popup_off.append(disabled)
-            tp.popup_at = [4]f64{x, y, w, h}
-            tp.popup_selected = selected
-            tp.popup_new = true
-        }
-
-        .Cursor { shape } => {
-            if got.frame != slot.id || shape > 2 { return "bad cursor" }
-
-            tp.cursor = shape
-            tp.status_new = true
-        }
-
-        .TargetUrl { url } => {
-            if got.frame != slot.id || url.len > MAX_URL_CHARS { return "bad target_url" }
-
-            tp.target.clear()
-            try tp.target.append(url)
-            tp.status_new = true
-        }
-
-        .LongTask { on, ms } => {
-            if got.frame != slot.id || on > 1 || (on == 1) == tp.busy { return "bad long_task" }
-
-            tp.busy = on == 1
-            tp.long_ms = ms
-            tp.status_new = true
-        }
-
-        .Settled { on } => {
-            if got.frame != slot.id || on > 1 { return "bad settled" }
-
-            tp.settled = on == 1
-        }
-
-        .TakeFocus { reverse } => {
-            if got.frame != slot.id || reverse > 1 { return "bad take_focus" }
-
-            tp.take_focus = true
-        }
-
-        .Redirect { url } => {
-            if got.frame != slot.id || !tp.loading || tp.redirected || !redirectAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad redirect" }
-
-            tp.redirected = true
-            tp.committed.clear()
-            try tp.committed.append(url)
-        }
-
-        .AgentReply { id, next_ref, answer } => {
-            if got.frame != slot.id || tp.agent_id == 0 || id != tp.agent_id || next_ref < tp.next_ref { return "bad agent_reply" }
-
-            tp.next_ref = next_ref
-            tp.answer.clear()
-            try tp.answer.append(answer)
-            tp.agent_id = 0
-            tp.answered = true
-        }
-
-        .AgentActed { what } => {
-            if got.frame != slot.id || tp.agent_id == 0 || what.len > 4096 { return "bad agent_acted" }
-
-            tp.acted.clear()
-            try tp.acted.append(what)
-        }
-
-        .AgentWindow { line } => {
-            if got.frame != slot.id || tp.agent_id == 0 || tp.window_ask.len() > 0 || line.len > 65536 { return "bad agent_window" }
-
-            try tp.window_ask.append(line)
-        }
-
-        .Fetch { .. } => {
-            if got.frame != slot.id { return "bad fetch" }
-
-            return answerFetch(tp, got.frame, got.message)
-        }
-
+        .AgentReply { .. }, .AgentActed { .. }, .AgentWindow { .. } => return rendererSentAgent(slot, tp, got)
+        .Fetch { .. }, .FetchCancel { .. }, .CookieGet { .. }, .CookieSet { .. }, .ClipboardWrite { .. }, .ClipboardRead, .Dialog { .. }, .Storage { .. }, .Idb { .. } => return rendererSentAsks(slot, tp, got)
         .DownloadHint { url: hinted, name } => return hintDownload(tp, hinted, name)
         .PermissionGet { .. }, .PermissionAsk { .. } => return permissionSent(tp, got.frame, got.message)
+        .DecoderOpen { .. }, .DecoderData { .. }, .DecoderClose { .. } => return tabDecoderSent(tp, got.frame, got.message)
+        .ChooseFiles { .. }, .Printed { .. }, .PrintedEnd { .. }, .PrintAsk, .CaretRect { .. } => return featUiSent(tp, got.message)
         .SocketOpen { .. }, .SocketSend { .. }, .SocketClose { .. } => {
             if got.frame != slot.id { return "bad socket" }
 
             return tabSocketSent(tp, got.frame, got.message)
-        }
-
-        .FetchCancel { id } => {
-            if got.frame != slot.id { return "bad fetch_cancel" }
-
-            return cancelFetch(tp, id)
         }
 
         .OutOfMemory => {
@@ -179,74 +58,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             try showCommitted(tp, "Out of memory", tp.committed.bytes())
         }
 
-        .CookieGet { .. }, .CookieSet { .. } => {
-            if got.frame != slot.id { return "bad cookie" }
-
-            return answerCookie(tp, got.frame, got.message)
-        }
-
-        .Storage { .. } => {
-            if got.frame != slot.id { return "bad storage" }
-
-            return answerStorage(tp, got.frame, got.message)
-        }
-
-        .Idb { .. } => {
-            if got.frame != slot.id { return "bad idb" }
-
-            return answerIdb(tp, got.frame, got.message)
-        }
-
-        .Subframes { frames } => {
-            if got.frame != slot.id { return "bad subframes" }
-
-            return takeSubframes(tp, frames)
-        }
-
-        .FocusFrame { key, how } => {
-            if got.frame != slot.id { return "bad focus_frame" }
-
-            return focusFrame(tp, key, how)
-        }
-
-        .Clipboard { copied } => {
-            if got.frame != slot.id { return "bad clipboard" }
-
-            return takeClipboard(tp, copied)
-        }
-
-        .FindReply { id, count, active } => {
-            if got.frame != slot.id { return "bad find_reply" }
-
-            return takeFindReply(tp, id, count, active)
-        }
-
-        .Context { .. } => {
-            if got.frame != slot.id { return "bad context" }
-
-            return takeContext(tp, got)
-        }
-
-        .PostMessage { .. } => {
-            if got.frame != slot.id { return "bad post_message" }
-
-            return routePostMessage(tp, got.message)
-        }
-
-        .PortPost { .. } => {
-            if got.frame != slot.id { return "bad port_post" }
-
-            return routePortMessage(tp, got.message)
-        }
-
-        .ProxyNavigate { .. } => {
-            if got.frame != slot.id { return "bad proxy_navigate" }
-
-            return navigateProxy(tp, got.message)
-        }
-
+        .Subframes { .. }, .FocusFrame { .. }, .Clipboard { .. }, .FindReply { .. }, .Context { .. }, .PostMessage { .. }, .PortPost { .. }, .ProxyNavigate { .. } => return rendererSentFrames(slot, tp, got)
         .WheelUnused { .. } => return "unexpected wheel_unused"
+        .HitTestReply { id, key } => return takeHitReply(tp, id, key)
+        .UserContext { .. } => return takeUserContext(slot, tp, got)
         .State { .. } => return "unexpected state"
+        .BusyAsk { .. }, .Telemetry { .. }, .HostRequest { .. } => return rendererAsked(slot, tp, got)
         .LoadStopped => {}
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }

@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+fn zenityArgs(tmp: Allocator, multiple: bool, accepted: []u8, argv: *mut List([]u8)) AllocError!void {
+    var filter = text.Builder.init(tmp)
+    var names = text.Builder.init(tmp)
+    var tokens = text.split(accepted, ",")
+
+    try argv.append("zenity")
+    try argv.append("--file-selection")
+    try argv.append("--separator=\n")
+
+    if multiple { try argv.append("--multiple") }
+
+    while tokens.next() |raw| {
+        let token = text.trim(raw)
+
+        if token.len < 2 || token[0] != '.' { return }
+
+        try names.append(" *")
+        try names.append(token)
+    }
+
+    if names.len() == 0 { return }
+
+    try filter.append("--file-filter=Accepted |")
+    try filter.append(names.bytes())
+    try argv.append(filter.bytes())
+}

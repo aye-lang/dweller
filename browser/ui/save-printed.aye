@@ -1,0 +1,26 @@
+import std
+import std.mem.AllocError
+
+fn savePrinted(ui: *mut Ui, path: []u8, pdf: []u8, pages: usize) AllocError!void {
+    ui.hover.clear()
+    ui.dirty = true
+
+    let f = std.fs.create(path) catch |e| {
+        try ui.hover.append("Cannot write ")
+
+        return ui.hover.append(path)
+    }
+
+    defer f.close()
+
+    f.write(pdf) catch |e| {
+        try ui.hover.append("Cannot write ")
+
+        return ui.hover.append(path)
+    }
+
+    try ui.hover.append("Printed ")
+    try ui.hover.appendUint(pages as u64)
+    try ui.hover.append(" pages to ")
+    try ui.hover.append(path)
+}

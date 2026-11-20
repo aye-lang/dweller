@@ -1,12 +1,13 @@
+import decoder
 import engine
 import net
 
 fn pageSettled(ui: *mut Ui) bool {
-    if ui.rest.len() > 0 || ui.dirty || ui.repaint || ui.tab.early || net.loadsRunning() || net.socketsBusy() || !rendererSettled(ui) {
+    if ui.picker != null || printWaits(ui) || ui.rest.len() > 0 || ui.dirty || ui.repaint || ui.tab.early || net.loadsRunning() || net.socketsBusy() || !rendererSettled(ui) {
         return false
     }
 
     let p = ui.tab.page orelse return true
 
-    return !engine.imagesLoading(p) && !engine.decodesPending(p) && !engine.canvasFramesPending(p) && !engine.navigationPending(p) && engine.msUntilNextTimer(p) == null && !engine.animationFrameRequested(p)
+    return !engine.imagesLoading(p) && !engine.decodesPending(p) && !engine.canvasFramesPending(p) && !engine.navigationPending(p) && engine.msUntilNextTimer(p) == null && !engine.animationFrameRequested(p) && !decoder.busy()
 }

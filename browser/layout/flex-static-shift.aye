@@ -1,5 +1,4 @@
 import css
-import std.text
 
 // spec: https://drafts.csswg.org/css-flexbox-1/#abspos-items
 fn flexStaticShift(t: *Tree, i: usize, horizontal: bool) f64 {
@@ -11,19 +10,17 @@ fn flexStaticShift(t: *Tree, i: usize, horizontal: bool) f64 {
         return 0.0
     }
 
-    let s = pb.style
-    let rtl = horizontal && isKeyword(s[css.DIRECTION], "rtl")
     var room = pb.w - hEdges(pb) - b.w - b.margin[1] - b.margin[3]
 
     if !horizontal {
         room = pb.h - vEdges(pb) - b.h - b.margin[0] - b.margin[2]
     }
 
-    if isRow(t, p) == horizontal {
-        let reverse = text.endsWith(keywordOf(s[css.FLEX_DIRECTION]), "reverse")
+    let factor = flexStaticFactor(t, i, horizontal, room)
 
-        return room * staticAlignFactor(alignWord(keywordOf(s[css.JUSTIFY_CONTENT]), room), reverse, rtl, horizontal)
+    if horizontal && pb.mode == VERTICAL_RL {
+        return room * (factor - 1.0)
     }
 
-    return room * staticAlignFactor(alignWord(alignOf(t, i), room), wrapsReverse(s[css.FLEX_WRAP]), rtl, horizontal)
+    return room * factor
 }

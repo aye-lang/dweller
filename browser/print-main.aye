@@ -1,0 +1,33 @@
+import font
+import std
+import std.mem.Allocator
+import std.text
+
+// chromium: headless/app/headless_shell.cc (--print-to-pdf)
+fn printMain(alloc: Allocator, args: [][]u8) i32 {
+    let o = printOptions(args) orelse {
+        std.log.err(PRINT_USAGE)
+
+        return 2
+    }
+
+    var fixed = font.Fixed.init()
+
+    if text.eql(o.face, "fixed") { return printTo(alloc, o, &mut fixed, null) }
+
+    var sys = font.System.init(alloc) catch |e| {
+        if text.eql(o.face, "system") {
+            std.log.err("no system font found ({})", e)
+
+            return 1
+        }
+
+        return printTo(alloc, o, &mut fixed, null)
+    }
+
+    defer sys.deinit()
+
+    font.addEnvFonts(alloc, &mut sys)
+
+    return printTo(alloc, o, &mut sys, &mut sys)
+}

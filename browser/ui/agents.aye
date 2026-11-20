@@ -78,11 +78,16 @@ pub struct Conn {
     // The peer is gone: the connection is closed after this round.
     gone: bool
     asked: bool
+    // The tab the asked request went to: a `run` can select another one.
+    asked_tab: u32
     // With --spaces: the Space serving it (null: not started yet).
     space: ?*mut Space
     admitted: bool
     asked_wait: bool = false
     held_at: u64 = 0
+    ctx_ask: u32 = 0
+    ctx_sent: bool = false
+    ctx_tab: u32 = 0
 }
 
 /// The agents' side of a window.
@@ -261,6 +266,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
             wait_idle: false,
             gone: false,
             asked: false,
+            asked_tab: 0,
             space: null,
             admitted: false,
         })
@@ -317,7 +323,7 @@ fn pollAgents(ui: *mut Ui) AllocError!void {
 fn serveLines(ui: *mut Ui, i: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[i].?
-    while !c.waiting && !c.asked && !ui.quit {
+    while !c.waiting && !c.asked && !ui.quit && !personAhead(ui) {
         let bytes = c.pending.bytes()
         var end = bytes.len
         var next = bytes.len
@@ -447,7 +453,7 @@ fn connSlot(ui: *Ui, c: *Conn) *mut TabSlot {
 fn syncSlot(ui: *mut Ui, slot: *mut TabSlot) AllocError!void {
     let fresh = slot.shown != slot.seen
     slot.seen = slot.shown
-    try agent.syncSession(&mut slot.session, ui.win_w as f64, ui.layoutHeight(), fresh)
+    try agent.syncSession(&mut slot.session, pageX(ui, ui.win_w as f64), ui.layoutHeight() / ui.page_zoom, fresh)
     if slot == ui.slots[ui.active].? {
         // The shown page was laid out again: the window's display list
         // pointed into the old layout.
@@ -585,7 +591,7 @@ fn windowCommandOf(ui: *mut Ui, conn: usize, tmp: Allocator, cmd: []u8, doc: *mu
     let a = ui.agents orelse return false
     let c = a.conns[conn] orelse return false
     if hostedSpace(c) |sp| {
-        if try hostedCommand(ui, c, sp, tmp, cmd, doc, args, reply) {
+        if try hostedCommand(ui, c, sp, tmp, cmd, doc, args, id, reply) {
             return true
         }
     }
@@ -757,7 +763,7 @@ fn hoveredNode(ui: *mut Ui) ?NodeId {
     }
     let p = ui.tab.page orelse return null
     let t = p.tree orelse return null
-    return engine.nodeAt(t, ui.mouse_x + ui.tab.scroll_x, ui.mouse_y - ui.top() + ui.tab.scroll)
+    return engine.nodeAt(t, pageX(ui, ui.mouse_x) + ui.tab.scroll_x, pageY(ui, ui.mouse_y) + ui.tab.scroll)
 }
 
 fn refText(tmp: Allocator, r: u32) AllocError![]u8 {
@@ -878,6 +884,9 @@ fn nodeContext(s: *mut agent.Session, tmp: Allocator, w: *mut agent.Writer, d: *
 fn pointAt(ui: *mut Ui) AllocError!void {
     let a = ui.agents orelse return
     let slot = ui.slots[ui.active].?
+    if try askPointed(slot) {
+        return
+    }
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()
     let tmp = arena.allocator()
@@ -1031,6 +1040,9 @@ fn startWait(ui: *mut Ui, conn: usize, tmp: Allocator, doc: *mut agent.Json, arg
 fn checkWait(ui: *mut Ui, conn: usize) AllocError!void {
     let a = ui.agents.?
     let c = a.conns[conn].?
+    if c.ctx_tab != 0 {
+        return checkContext(ui, c)
+    }
     let slot = connSlot(ui, c)
     var arena = Arena.init(ui.alloc)
     defer arena.deinit()

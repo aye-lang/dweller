@@ -43,6 +43,7 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     let it = &mut s.it
     try defMethod(it, o, "frameCount", 0, akFrameCount)
     try defMethod(it, o, "frameWindow", 1, akFrameWindow)
+    try defMethod(it, o, "blankFrameLoaded", 1, akBlankFrameLoaded)
     try defMethod(it, o, "parentWindow", 0, akParentWindow)
     try defMethod(it, o, "topWindow", 0, akTopWindow)
     try defMethod(it, o, "frameElement", 0, akFrameElement)
@@ -54,6 +55,7 @@ fn installFrames(s: *mut Script, o: u32) JsError!void {
     try defMethod(it, o, "documentWindow", 1, akDocumentWindow)
     try defMethod(it, o, "postMessage", 3, akPostMessage)
     try defMethod(it, o, "winDocument", 1, akWinDocument)
+    try defMethod(it, o, "winOrigin", 1, akWinOrigin)
     try defMethod(it, o, "winParent", 1, akWinParent)
     try defMethod(it, o, "winTop", 1, akWinTop)
     try defMethod(it, o, "winLength", 1, akWinLength)
@@ -468,6 +470,7 @@ fn akPostMessage(it: *mut Interp, a: Args) JsError!Value {
 // `data` and `origin` must not be in `ts`'s heap.
 fn queueMessage(ts: *mut Script, data: ?[]u8, origin: []u8, from: *mut Page) JsError!void {
     let it = &mut ts.it
+    local_messages += 1
     let base = it.stack.len()
     defer it.truncate(base)
     let arr = try it.newArray(0)
@@ -495,7 +498,7 @@ fn queueMessage(ts: *mut Script, data: ?[]u8, origin: []u8, from: *mut Page) JsE
 
 fn akWinDocument(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return remoteCrossOrigin(it, a, "the document", Value.Undefined)
+    let page = (try argWindow(it, a)) orelse return documentOfUnloaded(it, a)
     if !sameOrigin(s.page, page) {
         return crossOrigin(it, "the document")
     }
@@ -534,7 +537,7 @@ fn akWinHref(it: *mut Interp, a: Args) JsError!Value {
 // against this page) once the script returned.
 fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
-    let page = (try argWindow(it, a)) orelse return navigateRemote(it, a)
+    let page = (try argWindow(it, a)) orelse return navigateUnloaded(it, a)
     if page.remote {
         return navigateRemote(it, a)
     }
@@ -588,7 +591,10 @@ fn akWinClosed(it: *mut Interp, a: Args) JsError!Value {
 
     let id = winContext(it, it.arg(a, 0))
     if id != 0 {
-        return js.boolVal(contextOf(id) == null)
+        let c = contextOf(id) orelse return js.boolVal(true)
+
+        // spec: https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-closed
+        return js.boolVal(c.closing)
     }
     return js.boolVal((try argWindow(it, a)) == null)
 }

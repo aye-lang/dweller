@@ -1,0 +1,12 @@
+import ipc
+import std.mem.AllocError
+
+fn askPointed(slot: *mut TabSlot) AllocError!bool {
+    let tp = contextProcess(slot) orelse return false
+
+    tp.point_asked = true
+
+    try ipc.encode(&mut tp.outbox, slot.id, ipc.Message.AskUserContext { id: 0, point: 1 })
+
+    return true
+}

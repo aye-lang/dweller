@@ -1,0 +1,29 @@
+import std.text
+
+test "ask_user_context goes to the renderer, user_context to the browser, and both round-trip" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let ask = try roundTrip(&mut out, 7, Message.AskUserContext { id: 4, point: 1 })
+
+    match ask.message {
+        .AskUserContext { id, point } => @expect(id == 4 && point == 1)
+        _ => @expect(false)
+    }
+
+    let sent = Message.UserContext { id: 4, point: 1, scroll: 120, selection: "world", hovered: "null", hovered_text: "none", focused: "{}", focused_text: "f", node: "\"text\":\"\"", node_ref: "e1", node_text: "the page" }
+    let got = try roundTrip(&mut out, 7, sent)
+
+    match got.message {
+        .UserContext { id, scroll, selection, focused_text, node_ref, node_text, .. } => {
+            @expect(id == 4 && scroll == 120)
+            @expect(text.eql(selection, "world") && text.eql(focused_text, "f") && text.eql(node_ref, "e1") && text.eql(node_text, "the page"))
+        }
+
+        _ => @expect(false)
+    }
+
+    @expectEqual(95, Message.AskUserContext { id: 0, point: 0 }.kind())
+    @expectEqual(96, sent.kind())
+    @expect(!fromRenderer(Message.AskUserContext { id: 0, point: 0 }) && fromRenderer(sent))
+}

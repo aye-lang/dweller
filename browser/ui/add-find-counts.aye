@@ -1,0 +1,15 @@
+fn addFindCounts(tp: *TabProcess, active: u32, sum: *mut [2]usize) bool {
+    var found = tp.tab == active
+
+    if found { sum[1] = sum[0] + tp.find_active as usize }
+
+    sum[0] += tp.find_count as usize
+
+    for c in tp.children.items() {
+        let child = c.tp orelse continue
+
+        if child.gone.len == 0 && addFindCounts(child, active, sum) { found = true }
+    }
+
+    return found
+}

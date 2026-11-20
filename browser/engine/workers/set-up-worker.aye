@@ -4,11 +4,13 @@ import js.JsError
 
 pub let WIRE_JS = @embedFile("wire.js")
 let SCOPE_JS = @embedFile("worker-scope.js")
+let SCOPE_EVENT_SOURCE_JS = @embedFile("worker-event-source.js")
 
 fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
     try js.installBuiltins(it)
     try installScope(it)
     _ = try it.runScript(WIRE_JS)
+    _ = try it.runScript(SCOPE_EVENT_SOURCE_JS)
     _ = try it.runScript(SCOPE_JS)
     if l.scope_hook |hook| {
         try hook(it)
@@ -24,12 +26,4 @@ fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
     defer it.alloc.free(source)
 
     try runWorkerSource(it, l, source)
-}
-
-fn runWorkerSource(it: *mut Interp, l: *mut Link, source: []u8) JsError!void {
-    if l.module {
-        _ = try js.runModuleScript(it, null, source, l.href, false)
-    } else {
-        _ = try it.runScript(source)
-    }
 }

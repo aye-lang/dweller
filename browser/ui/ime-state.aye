@@ -1,0 +1,49 @@
+import std.mem.AllocError
+import std.text
+
+let SDL_TEXTEDITING: u32 = 0x302
+let SDL_TEXTEDITING_EXT: u32 = 0x305
+
+extern struct TextEditingEvent {
+    kind: u32
+    timestamp: u32
+    window: u32
+    text: [32]u8
+    start: i32
+    length: i32
+}
+
+extern struct TextEditingExtEvent {
+    kind: u32
+    timestamp: u32
+    window: u32
+    text: ?[*]u8
+    start: i32
+    length: i32
+}
+
+extern fn SDL_SetTextInputRect(rect: *SDL_Rect)
+
+struct ImeState {
+    composed: text.Builder
+    in_field: bool = false
+    used: bool = false
+    focus: Focus = Focus.Page
+    start: usize = 0
+    len: usize = 0
+    rect: [4]i32 = [4]i32{-1, -1, 0, 0}
+}
+
+fn imeOf(ui: *mut Ui) AllocError!*mut ImeState {
+    if ui.ime == null { ui.ime = try ui.alloc.create(ImeState { composed: text.Builder.init(ui.alloc) }) }
+
+    return ui.ime.?
+}
+
+fn endIme(ui: *mut Ui) {
+    let s = ui.ime orelse return
+
+    s.composed.deinit()
+    ui.alloc.destroy(s)
+    ui.ime = null
+}

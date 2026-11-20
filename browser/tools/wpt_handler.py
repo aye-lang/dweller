@@ -20,14 +20,16 @@ class Query(dict):
 class Headers(list):
     def set(self, k, v):
         self[:] = [(a, b) for a, b in self if a.lower() != text(k).lower()]
-        self.append((text(k), text(v)))
+        list.append(self, (text(k), text(v)))
 
     def append(self, k, v):
         list.append(self, (text(k), text(v)))
 
 
 class Request:
-    def __init__(self, query, headers):
+    def __init__(self, query, headers, method="GET", body=b""):
+        self.method = method
+        self.body = body
         self.GET = Query()
         for k, v in parse_qsl(query, keep_blank_values=True):
             self.GET.setdefault(k.encode("latin-1", "replace"), []).append(v.encode("latin-1", "replace"))
@@ -52,10 +54,10 @@ def load_utils(path):
     package.utils = importlib.import_module("wptserve.utils")
 
 
-def run(root, file, query, headers):
+def run(root, file, query, headers, method="GET", body=b""):
     if "wptserve" not in sys.modules:
         load_utils(root / "tools" / "wptserve" / "wptserve" / "utils.py")
-    request, response = Request(query, headers), Response()
+    request, response = Request(query, headers, method, body), Response()
     out = runpy.run_path(str(file))["main"](request, response)
     if isinstance(out, tuple):
         if len(out) == 3:

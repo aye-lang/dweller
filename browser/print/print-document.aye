@@ -1,0 +1,36 @@
+import engine
+import font
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// chromium: third_party/blink/renderer/core/page/print_context.cc (BeginPrintMode, ComputePageRects, EndPrintMode)
+pub fn printDocument(alloc: Allocator, page: *mut engine.Page, measure: dyn font.Measurer, system: ?*mut font.System, paper: Paper, screen: [2]f64, out: *mut text.Builder) AllocError!usize {
+    var ignored = text.Builder.init(alloc)
+    defer ignored.deinit()
+
+    _ = try engine.evalInPage(page, "dispatchEvent(new Event('beforeprint'))", &mut ignored)
+    engine.setPrintMedia(page, true)
+    try page.layoutPage(measure, paper.contentWidth(), paper.contentHeight())
+
+    let fitted = paperFor(paper, engine.pageBox(page))
+
+    if fitted.contentWidth() != paper.contentWidth() || fitted.contentHeight() != paper.contentHeight() {
+        try page.layoutPage(measure, fitted.contentWidth(), fitted.contentHeight())
+    }
+
+    let count = printLaidOut(alloc, page, measure, system, fitted, out) catch |e| {
+        engine.setPrintMedia(page, false)
+
+        return e
+    }
+
+    engine.setPrintMedia(page, false)
+    try page.layoutPage(measure, screen[0], screen[1])
+    ignored.clear()
+    _ = try engine.evalInPage(page, "dispatchEvent(new Event('afterprint'))", &mut ignored)
+
+    return count
+}

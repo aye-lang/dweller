@@ -1,0 +1,27 @@
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+let SUGGEST_LIMIT: usize = 5
+let SUGGEST_ROW: f64 = 26.0
+
+struct SuggestRow {
+    owned_url: []mut u8
+    owned_title: []mut u8
+    bookmarked: bool
+}
+
+struct Suggestions {
+    alloc: Allocator
+    rows: List(SuggestRow)
+    typed: text.Builder
+    selected: ?usize = null
+}
+
+fn suggestionsOpen(ui: *Ui) bool {
+    return ui.suggest != null && ui.focus == Focus.Address
+}
+
+fn suggestRowCount(s: *Suggestions) usize {
+    return s.rows.len() + (s.typed.len() > 0) as usize
+}

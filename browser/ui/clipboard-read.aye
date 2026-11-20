@@ -1,0 +1,14 @@
+import std.mem.AllocError
+import std.text
+
+// chromium: content/browser/renderer_host/clipboard_host_impl.cc ReadText
+fn clipboardRead(pasted: *mut text.Builder) AllocError!bool {
+    let p = SDL_GetClipboardText() orelse return false
+    defer SDL_free(p)
+
+    if strlen(p) > MAX_CLIP_BYTES { return false }
+
+    try pasted.append(p[0..strlen(p)])
+
+    return true
+}

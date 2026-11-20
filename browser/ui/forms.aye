@@ -72,7 +72,7 @@ fn afterEdit(ui: *mut Ui) AllocError!void {
 
 /// A click at the window point (`x`, `y`) of the page area.
 fn clickPage(ui: *mut Ui, x: f64, y: f64) AllocError!void {
-    let dy = y - ui.top() + ui.tab.scroll
+    let dy = pageY(ui, y) + ui.tab.scroll
     if ui.dropdown |dd| {
         ui.dropdown = null
         ui.dirty = true
@@ -270,12 +270,12 @@ fn submitNow(ui: *mut Ui, form: NodeId, submitter: ?NodeId) AllocError!void {
 /// A key while the page has the focus; false when the page did not
 /// take it (the window scrolls).
 fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
-    let p = ui.tab.page orelse return false
-    let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
-    let shift = (mods & KMOD_SHIFT) != 0
     if ui.dropdown != null {
         return dropdownKey(ui, sym)
     }
+    let p = ui.tab.page orelse return false
+    let cmd = (mods & (KMOD_GUI | KMOD_CTRL)) != 0
+    let shift = (mods & KMOD_SHIFT) != 0
     if sym == SDLK_TAB && !cmd {
         let next = try engine.nextFocus(p, !shift)
         try engine.keyFocus(p, next)
@@ -285,7 +285,12 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
         }
         return true
     }
-    let f = p.doc.controls.focus orelse return false
+    let f = p.doc.controls.focus orelse {
+        if cmd {
+            return hostCmdKey(ui, p, sym, shift)
+        }
+        return false
+    }
     try engine.setFocusVisible(p, true)
     let range = p.doc.isElement(f, "input") && text.eql(dom.inputType(&p.doc, f), "range")
     if !cmd && (sym == SDLK_UP || sym == SDLK_DOWN || (range && (sym == SDLK_LEFT || sym == SDLK_RIGHT))) {
@@ -300,7 +305,10 @@ fn pageKey(ui: *mut Ui, sym: i32, mods: u16) AllocError!bool {
         return fieldKey(ui, p, f, sym, cmd, shift)
     }
     if cmd {
-        return false
+        return hostCmdKey(ui, p, sym, shift)
+    }
+    if try hostKey(ui, p, sym, shift) {
+        return true
     }
     let enter = sym == SDLK_RETURN || sym == SDLK_KP_ENTER
     if sym == SDLK_ESCAPE {
@@ -405,8 +413,16 @@ fn fieldKey(ui: *mut Ui, p: *mut engine.Page, f: NodeId, sym: i32, cmd: bool, sh
 fn pageText(ui: *mut Ui, s: []u8) AllocError!bool {
     let p = ui.tab.page orelse return false
     let f = p.doc.controls.focus orelse return false
+    if try engine.editHost(p, "inserttext", s) {
+        try ui.relayout()
+        return true
+    }
     if !dom.isTextField(&p.doc, f) || p.doc.attr(f, "readonly") != null {
         return false
+    }
+    if try engine.commitText(p, s) {
+        try afterEdit(ui)
+        return true
     }
     if !try engine.dispatchEvent(p, f, "beforeinput", s) {
         return true
@@ -467,7 +483,7 @@ fn stepOption(ui: *mut Ui, p: *mut engine.Page, sel: NodeId, down: bool) AllocEr
 fn showElement(ui: *mut Ui, el: NodeId) {
     let p = ui.tab.page orelse return
     let r = engine.boxRect(p, el) orelse return
-    let view = ui.viewHeight()
+    let view = ui.viewHeight() / ui.page_zoom
     if r.y < ui.tab.scroll {
         ui.scrollTo(r.y - 8.0)
     } else if r.y + r.h > ui.tab.scroll + view {
@@ -555,6 +571,12 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
         }
         return
     }
+    for r in engine.pageSelection(p) {
+        ui.canvas.fillRect(paint.deviceRect(r, v), SELECTED_TEXT)
+    }
+    if engine.hostCaret(p) |c| {
+        ui.canvas.fillRect(paint.deviceRect(c, v), CARET_INK)
+    }
     if p.doc.controls.focus |f| {
         if dom.isTextField(&p.doc, f) {
             var rects = List(paint.Rect).init(ui.alloc)
@@ -568,6 +590,7 @@ fn drawPageState(ui: *mut Ui, v: paint.View) AllocError!void {
                     ui.canvas.fillRect(paint.deviceRect(c, v), CARET_INK)
                 }
             }
+            try drawComposition(ui, p, v)
         }
     }
     try drawValidation(ui, p, v)
@@ -625,6 +648,6 @@ fn drawDropdown(ui: *mut Ui, p: ?*mut engine.Page, dd: Dropdown, v: paint.View) 
 fn overTextField(ui: *mut Ui, x: f64, y: f64) bool {
     let p = ui.tab.page orelse return false
     let t = p.tree orelse return false
-    let n = engine.nodeAt(t, x, y - ui.top() + ui.tab.scroll) orelse return false
+    let n = engine.nodeAt(t, x, pageY(ui, y) + ui.tab.scroll) orelse return false
     return dom.isTextField(&p.doc, n)
 }

@@ -1,0 +1,17 @@
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+
+// spec: https://w3c.github.io/clipboard-apis/#dom-clipboard-readtext
+fn akClipboardRead(it: *mut Interp, a: Args) JsError!Value {
+    let reader = clipboard_read orelse return Value.Null
+    let pasted = try it.builder()
+    defer it.release(pasted)
+
+    if !(try reader(pasted)) {
+        return Value.Null
+    }
+
+    return it.newString(pasted.bytes())
+}

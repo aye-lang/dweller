@@ -1,0 +1,12 @@
+import decoder
+import ipc
+
+fn takeDecoderMessages(d: *mut DecoderProcess) bool {
+    while (ipc.nextMessage(d.inbox.bytes()) catch return false) |got| {
+        if !(decoder.deliver(got.message) catch false) { return false }
+
+        ipc.consume(&mut d.inbox, got.used)
+    }
+
+    return true
+}

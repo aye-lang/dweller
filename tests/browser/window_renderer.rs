@@ -485,7 +485,7 @@ fn window_renderer_frames() {
     let golden = scratch().join("renderer_frames_in_process.png");
     let tab = scratch().join("renderer_frames_tab.png");
 
-    let (state, err) = run(&golden, "loaded", &[]);
+    let (state, err) = run(&golden, "loaded", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     assert!(!state.lines().any(|l| l.starts_with("renderer")), "{state}");
 
@@ -508,7 +508,7 @@ fn window_renderer_frames() {
     assert!(!state.lines().any(|l| l.starts_with("renderer-frame")), "{state}");
 
     let page = "browser/tests/ui/renderer_damage.html";
-    let (_, err) = run_page(page, &golden, "loaded", &[]);
+    let (_, err) = run_page(page, &golden, "loaded", &[IN_PROCESS]);
     assert!(err.is_empty(), "{err}");
     let (state, err) = run_page(page, &tab, "renderer:loaded renderer:frame", &[("DWELLER_PROCESS", "tab")]);
     assert!(err.is_empty(), "{err}");
@@ -806,7 +806,7 @@ fn window_renderer_history() {
 
     let (state, err) = run("renderer:loaded click:50,282 renderer:input", &tab);
     assert!(state.contains(&format!("\naddress {page}\nhistory 1 of 1\n")), "{state}");
-    assert_eq!(err, "error: Not allowed to navigate top frame to data URL: data:text/html,hi\n");
+    assert_eq!(err, "", "the renderer refuses a top-level data: navigation itself (a console error), as the window's own process does");
 
     let evil = [("DWELLER_PROCESS", "tab"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "pushstate")];
     let (state, err) = run("renderer:loaded click:50,238 renderer:gone", &evil);
@@ -1044,7 +1044,7 @@ fn window_renderer_input_actions() {
 
     run(&page, &still, "renderer:loaded renderer:frame", &tab);
     let (_, err) = run(&page, &shot, "renderer:loaded renderer:frame click:275,65 renderer:input move:390,330 renderer:input", &tab);
-    assert_eq!(err, format!("error: navigation refused: {secret}\n"));
+    assert_eq!(err, "", "the renderer drops a file: link of an http page itself, as the window's own process does");
     assert!(page_area(&shot) == page_area(&still), "file: link: the page changed in {}", shot.display());
 }
 
@@ -1074,8 +1074,14 @@ fn window_renderer_status() {
             .args(["--frames", "2000", "--until-idle", "--state", "--processes", "--events", events])
             .output()
             .unwrap();
-        assert!(out.status.success(), "{events}: {}\n{}", out.status, text(&out.stderr));
-        assert!(out.stderr.is_empty(), "{events}: {}", text(&out.stderr));
+        let err = text(&out.stderr);
+        let busy = events.ends_with("click:30,145 renderer:busy") || events.ends_with("click:30,145 renderer:input frame");
+        assert!(out.status.success(), "{events}: {}\n{err}", out.status);
+        // The Busy button runs 5.5 s: a headless window says once that it waits, as in one process (`window_stuck_headless`).
+        assert!(
+            if busy { err.starts_with("stuck: page busy ") && err.ends_with(" ms, waiting\n") && err.lines().count() == 1 } else { err.is_empty() },
+            "{events}: {err}"
+        );
         text(&out.stdout)
     };
     let hits = |path: &str| {

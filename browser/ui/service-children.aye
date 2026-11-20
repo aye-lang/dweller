@@ -19,6 +19,7 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
             continue
         }
 
+        child.page_zoom = tp.page_zoom
         try giveBuffers(ui, child, c.width, c.height)
 
         if child.hello && !c.sent {
@@ -33,12 +34,18 @@ fn serviceChildren(ui: *mut Ui, tp: *mut TabProcess) AllocError!void {
             continue
         }
 
+        if child.pushes {
+            child.pushes = false
+            try noteFrameStep(ui, tp, c, child)
+        }
+
         if child.unused |left| {
             child.unused = null
             try bubbleScroll(ui, tp, c.*, left)
         }
 
         if child.take_focus { try focusEmbedder(tp, c.*) }
+        if child.file_ask == 1 || child.file_ask == 2 { try answerFileAsk(ui, child) }
 
         if child.swap_to != null {
             try swapChild(ui, tp, c)

@@ -1,3 +1,4 @@
+import decoder
 import engine
 import ipc
 
@@ -42,10 +43,27 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 if !(try landSocketNote(r, got.message)) { return false }
             }
 
+            .DecoderOutput { .. } => {
+                if !(try decoder.deliver(got.message)) { return false }
+
+                r.landed = true
+            }
+
             .FrameAck { buffer } => r.ack(buffer)
             .Ping { n } => try send(r.alloc, r.conn, 0, ipc.Message.Pong { n: n })
             .Focus { on } => try focusPage(r, on != 0)
+            .HostState { seq, what } => {
+                try hostSaid(r, what)
+                r.took(seq)
+            }
+
             .AskState { with_text } => try sayState(r, got.frame, with_text != 0)
+            .FramePeriod { ns } => {
+                if !(ns >= 1.0e6 && ns <= 1.0e9) { return false }
+
+                r.frame_ns = ns as u64
+            }
+
             .Visible { on } => {
                 if on > 1 { return false }
 
@@ -82,13 +100,13 @@ fn answerAll(r: *mut TabRenderer) !bool {
             }
 
             .Find { id, command, query } => {
-                if command > 4 { return false }
+                if command > 6 { return false }
 
                 try takeFind(r, id, command, query)
             }
 
             .Edit { seq, command, typed } => {
-                if command > 3 { return false }
+                if command > 5 { return false }
 
                 try editCommand(r, command, typed)
                 r.took(seq)
@@ -111,6 +129,8 @@ fn answerAll(r: *mut TabRenderer) !bool {
                 wakeForMessage(r)
             }
 
+            .AskUserContext { id, point } => try answerUserContext(r, id, point)
+            .HitTest { id, x, y } => try answerHitTest(r, id, x, y)
             .ContextClosed { context } => closeContext(r, context)
             .ContextTab { context, frame } => engine.setContextTab(context, frame)
             .OpenerInfo { frame, name } => {
@@ -138,6 +158,19 @@ fn answerAll(r: *mut TabRenderer) !bool {
             .Text { seq, typed } => {
                 try textInput(r, typed)
                 r.took(seq)
+            }
+
+            .Compose { seq, typed } => {
+                try composeInput(r, typed)
+                r.took(seq)
+            }
+
+            .Print { paper } => {
+                if !(try printPage(r, paper)) { return false }
+            }
+
+            .ChosenFile { .. }, .ChosenBytes { .. }, .ChosenEnd { .. } => {
+                if !(try takeChosen(r, got.message)) { return false }
             }
 
             _ => return false

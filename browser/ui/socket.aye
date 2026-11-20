@@ -189,6 +189,9 @@ fn readSome(fd: i32, buf: []mut u8) isize {
         return -1
     }
     let n = read(fd, buf.ptr, buf.len)
+    if n < 0 && wouldBlock() {
+        return -1
+    }
     if n < 0 {
         return 0
     }
@@ -223,6 +226,9 @@ fn sendSome(fd: i32, data: []u8) isize {
     if !(@targetOs() is .macos) {
         flags = MSG_DONTWAIT_LINUX | MSG_NOSIGNAL_LINUX
         again = EAGAIN_LINUX
+    }
+    if testSendWaits() {
+        flags = flags & ~(MSG_DONTWAIT_DARWIN | MSG_DONTWAIT_LINUX)
     }
     let n = send(fd, data.ptr, data.len, flags)
     if n >= 0 {

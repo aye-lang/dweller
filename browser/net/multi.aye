@@ -48,6 +48,7 @@ struct Job {
     result: i32
     stalled: u64 = 0
     stored: bool = false
+    endless: bool = false
 }
 
 /// Fetches the `http:` and `https:` URLs of `hrefs` (one per line, no
@@ -134,6 +135,7 @@ fn startJob(alloc: Allocator, s: *mut Session, m: *mut CurlMulti, asked: []u8, r
         return null
     }
     hop.site = fetchSiteAt(alloc, requestOrigin(req, req.referrer), &job.at, hop.site)
+    curl_easy_setopt(curl, CURLOPT_STREAM_WEIGHT, streamWeight(req.kind))
     job.headers = prepare(alloc, curl, address.ptr, &job.at, req, method, post, s, hop.from, hop.crossed, hop.site, &mut job.sink) catch |e| {
         freeJob(alloc, job)
         return null

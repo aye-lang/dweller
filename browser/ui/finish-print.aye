@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+fn finishPrint(ui: *mut Ui, tp: *mut TabProcess, shown: bool) AllocError!void {
+    let job = tp.print_job orelse return
+
+    if tp.printed_pages != 0 && shown { try savePrinted(ui, job.owned_path, job.bytes.bytes(), (tp.printed_pages - 1) as usize) }
+
+    if tp.printed_pages != 0 || tp.gone.len > 0 {
+        freePrintJob(tp)
+        tp.printed_pages = 0
+    }
+}

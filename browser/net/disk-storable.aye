@@ -1,0 +1,6 @@
+// chromium: net/http/http_cache_transaction.cc (ShouldPassThrough, the conditions to write)
+fn diskStorable(c: *Cache, e: *Cached) bool {
+    if c.dir.len == 0 || e.once || e.key.len == 0 || e.key[0] == '#' || e.status < 200 || e.status >= 300 { return false }
+
+    return e.lifetime > 0 || requestHeaderValue(e.headers, "ETag").len > 0 || requestHeaderValue(e.headers, "Last-Modified").len > 0
+}

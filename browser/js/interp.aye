@@ -181,6 +181,10 @@ pub struct Interp {
     msg: text.Builder
     out: text.Builder
     gc_count: u32
+    gc_debt: u32 = 0
+    gc_incremental: bool = false
+    gc_stress: bool = false
+    gc_verify: bool = false
     // The object for the next derived-constructor frame (see Frame).
     derived_this: u32
     // The `this_obj` of the last constructor frame that returned: what
@@ -347,6 +351,9 @@ pub struct Interp {
             msg: text.Builder.init(alloc),
             out: text.Builder.init(alloc),
             gc_count: 0,
+            gc_incremental: gcIncrementalMode() >= 1,
+            gc_verify: gcIncrementalMode() >= 2,
+            gc_stress: gcIncrementalMode() == 3,
             derived_this: NONE,
             ctor_this: NONE,
             iterator_proto: NONE,
@@ -634,8 +641,8 @@ pub struct Interp {
     // ---- allocation (may collect garbage first)
 
     fn maybeGc(self: *mut Self) {
-        if self.heap.since_gc >= self.heap.threshold || (self.heap.live_bytes + self.heap.bytes_since_gc > self.heap.limit_bytes && !self.heap.out_of_memory) {
-            collectGarbage(self)
+        if self.heap.collecting || self.heap.since_gc >= self.heap.threshold || (self.heap.live_bytes + self.heap.bytes_since_gc > self.heap.limit_bytes && !self.heap.out_of_memory) {
+            gcOnAllocation(self)
         }
     }
 
@@ -871,6 +878,9 @@ pub struct Interp {
         }
         if self.heap.findProp(o, key) |i| {
             let p = &mut self.heap.obj(o).props[i]
+            if self.heap.marking {
+                shadeValue(&mut self.heap, v)
+            }
             p.value = v
             p.setter = Value.Undefined
             p.flags = flags
@@ -885,13 +895,25 @@ pub struct Interp {
             let p = &mut self.heap.obj(o).props[i]
             if (p.flags & F_ACCESSOR) != 0 {
                 if !isNullish(getter) {
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, getter)
+                    }
                     p.value = getter
                 }
                 if !isNullish(setter) {
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, setter)
+                    }
                     p.setter = setter
                 }
             } else {
+                if self.heap.marking {
+                    shadeValue(&mut self.heap, getter)
+                }
                 p.value = getter
+                if self.heap.marking {
+                    shadeValue(&mut self.heap, setter)
+                }
                 p.setter = setter
             }
             p.flags = flags | F_ACCESSOR
@@ -906,6 +928,9 @@ pub struct Interp {
             return
         }
         if idx < ob.nelems {
+            if self.heap.marking {
+                shadeValue(&mut self.heap, v)
+            }
             ob.elems[idx] = v
             return
         }
@@ -916,6 +941,9 @@ pub struct Interp {
             return
         }
         try self.heap.setLength(o, idx + 1, Value.Empty)
+        if self.heap.marking {
+            shadeValue(&mut self.heap, v)
+        }
         self.heap.obj(o).elems[idx] = v
     }
 
@@ -1322,6 +1350,9 @@ pub struct Interp {
             }
             if (p.flags & F_WRITE) == 0 {
                 return failSet(self, key)
+            }
+            if self.heap.marking {
+                shadeValue(&mut self.heap, value)
             }
             self.heap.obj(o).props[i].value = value
             return
@@ -2312,6 +2343,9 @@ pub struct Interp {
         try self.push(objVal(f))
         let p = try self.newObject(self.object_proto)
         try self.heap.addProp(p, A_CONSTRUCTOR, objVal(f), Value.Undefined, F_HIDDEN)
+        if self.heap.marking {
+            shadeValue(&mut self.heap, objVal(p))
+        }
         self.heap.obj(f).props[slot].value = objVal(p)
         return objVal(p)
     }
@@ -2320,6 +2354,7 @@ pub struct Interp {
         match self.heap.obj(m).data {
             .Closure { func, env, outer, .. } => {
                 self.heap.obj(m).data = ObjData.Closure { func: func, env: env, home: home, outer: outer }
+                self.heap.wrote(m)
             }
             _ => {}
         }
@@ -2548,6 +2583,9 @@ pub struct Interp {
                             }
                             _ => {}
                         }
+                    }
+                    if self.heap.marking {
+                        shadeValue(&mut self.heap, v)
                     }
                     self.heap.envs.items()[e].slots[slot] = v
                 } else {
@@ -2974,7 +3012,9 @@ pub struct Interp {
 
     /// A host object (a DOM node wrapper) with prototype `proto`.
     pub fn newHostObject(self: *mut Self, proto: u32, tag: u32, index: u32, generation: u32) JsError!u32 {
-        return self.newObjectOf(Class.Host, proto, ObjData.Host { tag: tag, index: index, generation: generation })
+        let made = try self.newObjectOf(Class.Host, proto, ObjData.Host { tag: tag, index: index, generation: generation })
+        try self.heap.host_objs.append(made)
+        return made
     }
 }
 

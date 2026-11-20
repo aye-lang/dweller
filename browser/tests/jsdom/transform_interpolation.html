@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<title>Interpolation and composition of transform lists; the resolved matrix</title>
+<div id="box"></div>
+<pre id="out"></pre>
+<script>
+function log(...parts) { document.getElementById('out').textContent += parts.map(String).join(' ') + '\n'; }
+const box = document.getElementById('box');
+
+function half(from, to) {
+  const a = box.animate({ transform: [from, to] }, 2000);
+  a.pause();
+  a.currentTime = 1000;
+  const v = getComputedStyle(box).transform;
+  a.cancel();
+  return v;
+}
+
+log('same function', half('translateX(0px)', 'translateX(50px)'));
+log('same primitive', half('translateX(50px)', 'translateY(50px)'));
+log('scale', half('scale(1, 3)', 'scale(2)'));
+log('shorter list', half('translate(100px)', 'translate(200px) rotate(720deg)'));
+log('from none', half('none', 'rotate(90deg)'));
+log('same axis', half('rotate3d(0, 1, 0, 0deg)', 'rotate3d(0, 2, 0, 90deg)'));
+log('matrices', half('matrix(1, 0, 0, 1, 0, 0)', 'matrix(0, 1, -1, 0, 20, 0)'));
+log('mismatch', half('rotate(90deg)', 'translate(20px, 0px)'));
+log('3d', half('rotateX(90deg)', 'scale3d(1, 1, 2)'));
+
+function composed(under, value, composite) {
+  box.style.transform = under;
+  const a = box.animate({ transform: [value, value] }, { duration: 2000, composite });
+  a.pause();
+  a.currentTime = 1000;
+  const v = getComputedStyle(box).transform;
+  a.cancel();
+  box.style.transform = '';
+  return v;
+}
+
+log('add', composed('translateX(100px)', 'scale(2)', 'add'));
+log('accumulate', composed('scale(2)', 'scale(3)', 'accumulate'));
+log('percent', (box.style.width = '200px', box.style.transform = 'translateX(50%)', getComputedStyle(box).transform));
+log('none', (box.style.transform = '', getComputedStyle(box).transform));
+</script>

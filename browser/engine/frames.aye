@@ -56,7 +56,7 @@ pub fn newPageId() u32 {
 
 /// Is `h` a `frame` or an `iframe`?
 pub fn isFrameElement(doc: *dom.Document, h: NodeId) bool {
-    return doc.isElement(h, "frame") || doc.isElement(h, "iframe")
+    return doc.isElement(h, "frame") || doc.isElement(h, "iframe") || isHtmlObject(doc, h)
 }
 
 /// The page of the tab that `p` is in (`p` when it is no frame).
@@ -162,7 +162,7 @@ fn sourceKey(alloc: Allocator, doc: *dom.Document, el: NodeId) AllocError![]mut 
         }
     }
     try b.append("src ")
-    try b.append(text.trim(doc.attr(el, "src") orelse ""))
+    try b.append(text.trim(doc.attr(el, frameAddressAttr(doc, el)) orelse ""))
     return b.toOwned()
 }
 
@@ -283,7 +283,7 @@ fn loadFrame(p: *mut Page, el: NodeId) AllocError!?*mut Page {
         p.alloc.free(key)
         return null
     }
-    p.frames.append(Frame { el: el, page: child, scroll: 0.0, source: key, pending_load: true }) catch |e| {
+    p.frames.append(Frame { el: el, page: child, scroll: 0.0, source: key, pending_load: !takeAnnounced(p, el) }) catch |e| {
         p.alloc.free(key)
         child.destroy()
         return e
@@ -345,6 +345,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
 fn placeFrame(p: *mut Page, el: NodeId, c: *mut Page) {
     c.parent = p
     c.depth = p.depth + 1
+    c.prefers_dark = frameScheme(p, el) catch null
     // Its subresources are for the top-level page's site (cookies).
     net.noteFrame(c.id, c.url.href, rootPage(p).url.href) catch |e| {
     }
@@ -401,7 +402,7 @@ fn fireFrameLoads(p: *mut Page) AllocError!void {
         k += 1
         // A frame's load event waits for its document's (on the
         // window's clock it may come later: settleLoad).
-        if !f.pending_load || !pageLoaded(f.page) {
+        if !f.pending_load || !pageLoaded(f.page) || try frameSourceChanged(p, f) {
             continue
         }
         p.frames.items()[k - 1].pending_load = false
@@ -449,7 +450,9 @@ fn syncFrames(p: *mut Page) AllocError!void {
             try reloadFrame(p, k, key)
         } else {
             p.alloc.free(key)
-            if !try submitIntoFrame(f.page) {
+            if f.page.opened_doc.len > 0 {
+                try showWritten(p, k)
+            } else if !try submitIntoFrame(f.page) {
                 try followFrameNavigation(p, k)
             }
         }
@@ -505,6 +508,9 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
+            if nav.replace {
+                return replaceInFrame(FrameSlot { parent: p, index: k }, &target, initiatorOf(c))
+            }
             return navigateFrame(FrameSlot { parent: p, index: k }, &target, null, initiatorOf(c))
         }
         .Reload => {
@@ -633,6 +639,9 @@ pub fn targetFrame(from: *mut Page, name: []u8) ?FrameSlot {
 // The frame named `name` among the frames of `p` and theirs.
 fn namedFrame(p: *mut Page, name: []u8) ?FrameSlot {
     for k, f in p.frames.items() {
+        if !p.doc.isLive(f.el) || !p.doc.isConnected(f.el) {
+            continue
+        }
         if p.doc.attr(f.el, "name") |n| {
             if text.eql(n, name) {
                 return FrameSlot { parent: p, index: k }
@@ -660,6 +669,7 @@ fn layoutFrames(p: *mut Page, measure: dyn font.Measurer) AllocError!void {
         if frameBox(t, f.el) |bi| {
             let r = contentRect(t, bi)
             if r.w > 0.0 && r.h > 0.0 {
+                noteFrameScheme(p, f)
                 try f.page.layoutPage(measure, r.w, r.h)
                 if f.page.tree |sub| {
                     let scroll = math.min(f.scroll, maxFrameScroll(sub, r.h))

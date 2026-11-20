@@ -1,0 +1,36 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.text
+
+// spec: https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+fn akBlankFrameLoaded(it: *mut Interp, a: Args) JsError!Value {
+    let s = scriptOf(it)
+    let el = ownHandle(it, it.arg(a, 0)) orelse return js.boolVal(false)
+    let doc = &s.page.doc
+    let src = text.trim(doc.attr(el, "src") orelse "")
+
+    if !doc.isElement(el, "iframe") || doc.attr(el, "srcdoc") != null || (src.len > 0 && !text.eqlIgnoreCase(src, "about:blank")) {
+        return js.boolVal(false)
+    }
+
+    if frameIndex(s.page, el) |k| {
+        let waiting = s.page.frames.items()[k].pending_load
+
+        s.page.frames.items()[k].pending_load = false
+
+        return js.boolVal(waiting)
+    }
+
+    if takeAnnounced(s.page, el) {
+        try s.announced_frames.append(el)
+
+        return js.boolVal(false)
+    }
+
+    try s.announced_frames.append(el)
+
+    return js.boolVal(true)
+}

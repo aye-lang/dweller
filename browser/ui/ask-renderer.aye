@@ -14,9 +14,8 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
 
     try ipc.encode(&mut tp.outbox, 0, ipc.Message.Agent { id: id, mcp: flag, ref_base: tp.next_ref, line: line })
 
-    if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
+    if !(try sendReading(tp, null)) { return "renderer gone" }
 
-    tp.outbox.clear()
     tp.agent_id = id
     tp.agent_acts = true
     tp.agent_mcp = mcp
@@ -46,9 +45,7 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
                     if try followSwap(at, id, out) |gone| { return gone }
                 }
 
-                if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
-
-                tp.outbox.clear()
+                if !(try sendReading(tp, null)) { return "renderer gone" }
 
                 continue
             }
@@ -83,20 +80,20 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
                 if try followSwap(at, id, out) |gone| { return gone }
             }
 
-            if !sendAll(tp.fd, tp.outbox.bytes()) { return "renderer gone" }
-
-            tp.outbox.clear()
+            if !(try sendReading(tp, null)) { return "renderer gone" }
 
             net.waitLoadsOr(tp.fd, HELD_WAIT_MS)
 
             if !readableWithin(tp.fd, 0) { continue }
         }
 
-        let n = read(tp.fd, buf[..].ptr, buf.len)
+        _ = readableWithin(tp.fd, -1)
 
-        if n <= 0 { return "renderer gone" }
+        let n = readSome(tp.fd, buf[..])
 
-        try tp.inbox.append(buf[0..n as usize])
+        if n == 0 { return "renderer gone" }
+
+        if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
     }
 
     unreachable

@@ -8,9 +8,13 @@ fn editCommand(r: *mut TabRenderer, command: u32, typed: []u8) !void {
 
     if evilTest("clipboard") { try send(r.alloc, r.conn, r.tab, ipc.Message.Clipboard { copied: "stolen" }) }
 
+    let commands = [6][]u8{"selectall", "copy", "cut", "paste", "undo", "redo"}
+
+    if command < 6 && (try engine.editHost(p, commands[command as usize], typed)) { return }
+
     let f = p.doc.controls.focus orelse return
 
-    if !dom.isTextField(&p.doc, f) { return }
+    if command > 3 || !dom.isTextField(&p.doc, f) { return }
 
     if command == 3 {
         if typed.len > 0 { try textInput(r, typed) }

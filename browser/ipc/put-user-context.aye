@@ -1,0 +1,21 @@
+import std.mem.AllocError
+import std.text
+
+fn putUserContext(out: *mut text.Builder, m: Message) AllocError!void {
+    match m {
+        .AskUserContext { id, point } => {
+            try putU32(out, id)
+            try putU32(out, point)
+        }
+
+        .UserContext { id, point, scroll, selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text } => {
+            let numbers = [3]u32{id, point, scroll}
+            let texts = [8][]u8{selection, hovered, hovered_text, focused, focused_text, node, node_ref, node_text}
+
+            for v in numbers { try putU32(out, v) }
+            for b in texts { try putBytes(out, b) }
+        }
+
+        _ => {}
+    }
+}

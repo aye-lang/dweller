@@ -1,0 +1,28 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-prop-desc
+fn fontFaceStyle(comps: []Comp, out: *mut text.Builder) AllocError!bool {
+    if comps.len == 1 && (isIdent(comps[0], "normal") || isIdent(comps[0], "italic") || isIdent(comps[0], "oblique")) {
+        try writeTokens(comps[0].toks, out)
+
+        return true
+    }
+
+    if comps.len < 2 || !isIdent(comps[0], "oblique") {
+        return false
+    }
+
+    try out.append("oblique ")
+
+    if !(try writeDescriptorRange(comps[1..], 'a', -90.0, 90.0, "", out)) {
+        return false
+    }
+
+    if allZeroAngles(comps[1..]) {
+        out.clear()
+        try out.append("normal")
+    }
+
+    return true
+}

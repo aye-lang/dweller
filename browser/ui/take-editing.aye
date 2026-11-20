@@ -1,0 +1,22 @@
+import std.mem.AllocError
+
+// https://wiki.libsdl.org/SDL2/SDL_TextEditingEvent
+fn takeEditing(ui: *mut Ui, ev: *SDL_Event) AllocError!void {
+    if ev.kind == SDL_TEXTEDITING_EXT {
+        let ext = @ptrCast(*TextEditingExtEvent, ev)
+        let p = ext.text orelse return
+
+        defer SDL_free(p)
+
+        return compose(ui, p[0..strlen(p)])
+    }
+
+    let edit = @ptrCast(*TextEditingEvent, ev)
+    var n: usize = 0
+
+    while n < edit.text.len && edit.text[n] != 0 {
+        n += 1
+    }
+
+    try compose(ui, edit.text[0..n])
+}

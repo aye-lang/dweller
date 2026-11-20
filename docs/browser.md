@@ -74,6 +74,8 @@ browser/
   renderer/       the renderer process and its sandbox
                   (`docs/process-model.md`)
   sessions/       session restore: the saved tabs and their history
+  indexeddb/      the IndexedDB store: databases, records, transactions
+  serviceworker/  service worker registrations, versions and clients
   tools/          generators, checks and the conformance runners
   tests/          fixtures (HTML/CSS/JS) and golden outputs
 ```
@@ -160,6 +162,18 @@ its card in `docs/plans/cards/`:
   and `wss:` over libcurl; a message of at most 16 MiB, at most 255
   sockets a renderer; with renderer processes the connection is the
   browser's (IPC 140 to 143). Tests: `tests/browser/websocket.rs`.
+- **EventSource** (Q5.8, `engine/event-source.js`, the parser in
+  `engine/event-stream.aye`, `ak.eventStream`). The response is read
+  while it runs: a request marked `stream` has no total timeout and no
+  preflight (`net/endless-job.aye`), and its parts reach the script
+  through a stream task (`engine/stream-turn.aye`, `ak.fetchPart`).
+  With renderer processes the browser sends the head and one
+  `FetchBody` per part of the held fetch (`ui/send-stream-part.aye`;
+  the field `stream` of the IPC message `Fetch`, no new message). In a
+  dedicated worker it is a proxy to the page's
+  (`engine/workers/worker-event-source.js`). Only `EventSource` uses
+  the parts: fetch's `Response.body` and XHR `progress` still get the
+  whole body. Tests: `tests/browser/eventsource.rs`.
 - **Downloads** (Q5.6, `net/download*.aye`). A response with
   `Content-Disposition: attachment`, or a link with `download`, is
   saved under `DWELLER_DOWNLOADS` (else `~/Downloads`) and the page
@@ -170,6 +184,21 @@ its card in `docs/plans/cards/`:
   geolocation, camera and microphone: the window asks in a bar under
   the toolbar and keeps the answer per origin in
   `<profile>/permissions`. Tests: `tests/browser/permissions.rs`.
+- **IndexedDB** (Q5.11, `indexeddb/`, `engine/idb/*.js`). The
+  databases, the records and the order of transactions are the
+  browser's, saved in `<profile>/indexeddb/`; the interfaces, keys and
+  structured clone are JavaScript in the page's process, which asks
+  with one text call (`ak.idb`; IPC 160 to 162 with renderer
+  processes). Tests: `tests/browser/indexeddb.rs`.
+- **Service workers and the Cache API** (Q5.14, `serviceworker/`,
+  `engine/sw/`, `engine/cachestorage/cache.js`). Registrations, versions and clients are
+  the browser's, saved in `<profile>/serviceworkers`; the worker's
+  script runs in a hidden page of its client's process
+  (`engine/worker-page.aye`) and answers
+  `fetch` events for the client's subresources and for navigations into
+  its scope. `caches` is JavaScript over one reserved IndexedDB
+  database per origin. Tests: `tests/browser/serviceworker.rs`,
+  `cachestorage.rs`.
 - **WebGL** (`gpu/`, `docs/webgl.md`), **WebAssembly** (`wasm/`, on
   wasmtime), **Web Audio** (`audio/`) and **Workers**
   (`engine/workers/`). Tests: `tests/browser/webgl.rs`, `js.rs`,
@@ -814,7 +843,8 @@ on (`--no-js` turns it off), `dump` with `--js`.
     `localStorage` through the window; an `isolated` one has a partition
     in memory (Q2.12c). Layout:
     `cookies` (the jar), `lock`, `storage/`, `hsts`, `permissions`,
-    `downloads`, `session`, `settings` and `telemetry/`. The jar is loaded at the start and
+    `downloads`, `session`, `indexeddb/`, `serviceworkers`, `settings`
+    and `telemetry/`. The jar is loaded at the start and
     written after any change, at most once a second (the window's loop),
     and at exit, so a killed window loses at most a second of cookies.
     Each write goes to a temporary file (mode 0600) renamed over

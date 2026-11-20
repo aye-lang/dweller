@@ -1,0 +1,23 @@
+import std.mem.AllocError
+import std.text
+
+fn writeIme(ui: *Ui, out: *mut text.Builder) AllocError!void {
+    let s = ui.ime orelse return
+
+    if s.composed.len() > 0 {
+        try out.append("composing ")
+        try out.append(s.composed.bytes())
+        try out.append("\n")
+    }
+
+    if s.rect[0] < 0 || !s.used { return }
+
+    try out.append("ime-rect")
+
+    for n in s.rect {
+        try out.append(" ")
+        try out.appendInt(n as i64)
+    }
+
+    try out.append("\n")
+}

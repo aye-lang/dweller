@@ -1,0 +1,12 @@
+import std.mem.AllocError
+
+pub fn noteTitle(href: []u8, title: []u8) AllocError!void {
+    let s = place_store orelse return
+    let k = findPlace(s, href) orelse return
+
+    if try renamePlace(s, &mut s.places.items()[k], title) {
+        s.history_dirty = true
+
+        if s.places.items()[k].bookmarked { try saveBookmarks(s) }
+    }
+}

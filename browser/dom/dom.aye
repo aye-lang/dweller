@@ -172,6 +172,7 @@ pub struct Document {
     held: List(NodeId)
     ids: StrMap(List(NodeId))
     names: StrMap(List(NodeId))
+    media_made: u32 = 0
     style_marks: IntMap(u32, u32)
 
     /// An empty document: only the `Document` node.
@@ -317,6 +318,9 @@ pub struct Document {
     /// A new element named `name` (lower case) with copies of `attrs`.
     pub fn createElement(self: *mut Self, name: []u8, attrs: []Attr) AllocError!NodeId {
         var n = blank(Kind.Element, try self.dup(name), "")
+        if text.eql(name, "video") || text.eql(name, "audio") {
+            self.media_made += 1
+        }
         if attrs.len > 0 {
             let a = self.strings.allocator()
             let copy = try a.alloc(Attr { name: "", value: "" }, attrs.len)

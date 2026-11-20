@@ -1,0 +1,34 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+
+var remote_closes: ?*mut List(u32) = null
+
+// chromium: third_party/blink/renderer/core/frame/local_dom_window.cc (close: the browser closes the page)
+pub fn closeThroughBrowser(alloc: Allocator) AllocError!void {
+    if remote_closes == null { remote_closes = try alloc.create(List(u32).init(alloc)) }
+}
+
+pub fn dropRemoteCloses(alloc: Allocator) {
+    let l = remote_closes orelse return
+
+    l.deinit()
+    alloc.destroy(l)
+    remote_closes = null
+}
+
+pub fn takeRemoteClose() ?u32 {
+    let l = remote_closes orelse return null
+
+    return l.pop()
+}
+
+fn noteRemoteClose(id: u32) AllocError!void {
+    let l = remote_closes orelse return
+
+    for c in l.items() {
+        if c == id { return }
+    }
+
+    try l.append(id)
+}

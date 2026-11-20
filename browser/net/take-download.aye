@@ -7,12 +7,11 @@ import url.Url
 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigation-params (as a download)
 pub fn takeDownload(alloc: Allocator, target: *Url, res: *Response) AllocError!bool {
     let all = downloadsOf() orelse return false
-    let hinted = all.owned_hint_href.len > 0 && text.eql(all.owned_hint_href, target.href)
-    let disposition = requestHeaderValue(res.headers_raw, "content-disposition")
 
-    if res.status >= 400 || (!hinted && !dispositionAttaches(disposition)) {
-        return false
-    }
+    if !downloadResponse(target.href, res) { return false }
+
+    let hint = downloadHintAt(all, target.href)
+    let disposition = requestHeaderValue(res.headers_raw, "content-disposition")
 
     var final: []u8 = target.href
 
@@ -26,11 +25,12 @@ pub fn takeDownload(alloc: Allocator, target: *Url, res: *Response) AllocError!b
 
     var suggested: []u8 = ""
 
-    if hinted { suggested = all.owned_hint_name }
+    if hint |i| { suggested = all.hints.items()[i].owned_name }
 
     try downloadName(alloc, disposition, suggested, &at, &mut name)
     try saveDownload(alloc, all, final, name.bytes(), res.body)
-    forgetDownloadHint(all)
+
+    if hint |i| { forgetDownloadHint(all, i) }
 
     return true
 }

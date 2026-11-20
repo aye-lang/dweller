@@ -1,0 +1,27 @@
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-synthesis
+fn writeSynthesis(words: [4][]u8, out: *mut text.Builder) AllocError!void {
+    let names = [4][]u8{"weight", "style", "small-caps", "position"}
+
+    for k in 0..4 {
+        if isNoneWord(words[k]) {
+            continue
+        }
+
+        if out.len() > 0 {
+            try out.appendByte(' ')
+        }
+
+        if text.eql(words[k], "oblique-only") {
+            try out.append(words[k])
+        } else {
+            try out.append(names[k])
+        }
+    }
+
+    if out.len() == 0 {
+        try out.append("none")
+    }
+}

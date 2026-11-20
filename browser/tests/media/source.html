@@ -1,0 +1,106 @@
+<!doctype html>
+<title>Media source</title>
+<video id="v" muted></video>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const v = document.getElementById('v');
+const TYPE = 'video/x-matroska; codecs="V_UNCOMPRESSED, A_PCM/INT/LIT"';
+const NAMES = { '255,0,0,255': 'red', '0,255,0,255': 'green', '0,0,255,255': 'blue', '255,255,0,255': 'yellow', '0,255,255,255': 'cyan', '0,0,0,0': 'nothing' };
+const c = document.createElement('canvas');
+const g = c.getContext('2d');
+const once = (target, type) => new Promise(done => target.addEventListener(type, done, { once: true }));
+const sleep = ms => new Promise(done => setTimeout(done, ms));
+const ranges = r => Array.from({ length: r.length }, (_, i) => r.start(i).toFixed(2) + '-' + r.end(i).toFixed(2)).join(', ') || 'none';
+const thrown = f => { try { f(); return 'nothing'; } catch (e) { return e.name; } };
+function colour() {
+  g.clearRect(0, 0, 300, 150);
+  g.drawImage(v, 0, 0);
+
+  const key = Array.from(g.getImageData(1, 10, 1, 1).data).join(',');
+
+  return NAMES[key] || key;
+}
+async function shown(label, want) {
+  for (let i = 0; i < 200 && colour() !== want; i++) await sleep(5);
+
+  log(label + ': ' + colour());
+}
+(async () => {
+  const marks = await (await fetch('stream.json')).json();
+  const bytes = await (await fetch('stream.mkv')).arrayBuffer();
+  const cluster = (from, to) => bytes.slice(marks.clusters[from][0], marks.clusters[to][1]);
+  const ms = new MediaSource();
+  log('types: ' + [TYPE, 'video/webm; codecs="vp9"', 'video/mp4', ''].map(t => MediaSource.isTypeSupported(t)).join(' '));
+  log('closed: readyState ' + ms.readyState + ', duration ' + ms.duration + ', addSourceBuffer ' + thrown(() => ms.addSourceBuffer(TYPE)));
+
+  const events = [];
+  for (const type of ['sourceopen', 'sourceended', 'sourceclose']) ms.addEventListener(type, () => events.push(type));
+  for (const type of ['loadstart', 'durationchange', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'waiting', 'seeking', 'seeked', 'ended', 'error']) v.addEventListener(type, () => events.push(type));
+
+  const told = label => { log(label + ': ' + (events.join(' ') || 'no events')); events.length = 0; };
+  v.src = URL.createObjectURL(ms);
+  await once(ms, 'sourceopen');
+  log('open: readyState ' + ms.readyState + ', element ' + v.readyState + '/' + v.networkState + ', unsupported ' + thrown(() => ms.addSourceBuffer('video/webm; codecs="vp9"')) + ', empty ' + thrown(() => ms.addSourceBuffer('')));
+
+  const sb = ms.addSourceBuffer(TYPE);
+  for (const type of ['updatestart', 'update', 'updateend', 'error', 'abort']) sb.addEventListener(type, () => events.push(type));
+
+  const append = async data => { sb.appendBuffer(data); await once(sb, 'updateend'); };
+  log('buffer: ' + ms.sourceBuffers.length + ' of ' + ms.activeSourceBuffers.length + ' active, mode ' + sb.mode + ', updating ' + sb.updating + ', not a buffer ' + thrown(() => sb.appendBuffer('x')));
+  sb.appendBuffer(bytes.slice(0, 100));
+  log('appending: updating ' + sb.updating + ', again ' + thrown(() => sb.appendBuffer(bytes)) + ', endOfStream ' + thrown(() => ms.endOfStream()));
+  await once(sb, 'updateend');
+  told('part of the initialization segment');
+  await append(bytes.slice(100, marks.init));
+  told('initialization segment');
+  log('metadata: element ' + v.readyState + ', ' + v.videoWidth + 'x' + v.videoHeight + ', duration ' + v.duration + '/' + ms.duration + ', active ' + ms.activeSourceBuffers.length + ', buffered ' + ranges(sb.buffered));
+  await append(cluster(0, 1));
+  told('two clusters');
+  log('data: element ' + v.readyState + ', buffered ' + ranges(sb.buffered) + ' / ' + ranges(v.buffered) + ', duration ' + ms.duration.toFixed(2));
+  await shown('first frame', 'red');
+  await append(cluster(6, 7));
+  told('two later clusters');
+  log('gap: buffered ' + ranges(v.buffered) + ', duration ' + v.duration.toFixed(2));
+  v.currentTime = 0.9;
+  await once(v, 'seeking');
+  await sleep(50);
+  told('seek into the gap');
+  log('waiting for data: element ' + v.readyState + ', seeking ' + v.seeking);
+  await append(cluster(2, 5));
+  if (v.seeking) await once(v, 'seeked');
+  told('the gap filled');
+  log('sought: element ' + v.readyState + ', buffered ' + ranges(v.buffered));
+  await shown('frame at 0.9', 'cyan');
+  sb.remove(0, 0.4);
+  await once(sb, 'updateend');
+  told('remove');
+  log('removed: buffered ' + ranges(sb.buffered) + ', bad ' + thrown(() => sb.remove(1, 1)) + ' ' + thrown(() => sb.remove(-1, 1)));
+  await append(cluster(8, 9));
+  ms.endOfStream();
+  await once(ms, 'sourceended');
+  told('end of stream');
+  log('ended: readyState ' + ms.readyState + ', duration ' + v.duration.toFixed(2) + ', buffered ' + ranges(v.buffered) + ', element ' + v.readyState);
+
+  const ORDER = ['red', 'green', 'blue', 'yellow', 'cyan'];
+  const seen = [];
+  v.addEventListener('timeupdate', () => seen.push(colour()));
+  await v.play();
+  await once(v, 'ended');
+  log('played: ' + (seen.length > 2 && seen.every(name => ORDER.includes(name)) ? 'frames' : seen.join(' ')) + ', ended at ' + v.currentTime.toFixed(2));
+  await shown('last frame', 'cyan');
+  told('playing');
+  sb.timestampOffset = 5;
+  told('a change after the end');
+  log('reopened: readyState ' + ms.readyState + ', offset ' + sb.timestampOffset);
+  ms.removeSourceBuffer(sb);
+  log('removed buffer: ' + ms.sourceBuffers.length + ', buffered ' + thrown(() => sb.buffered) + ', append ' + thrown(() => sb.appendBuffer(bytes)) + ', again ' + thrown(() => ms.removeSourceBuffer(sb)));
+  v.removeAttribute('src');
+  v.load();
+  await once(ms, 'sourceclose');
+  told('detached');
+  log('closed: readyState ' + ms.readyState + ', duration ' + ms.duration + ', error ' + (v.error && v.error.code));
+  log('done');
+})().catch(e => log('failed: ' + e.name + ': ' + e.message));
+</script>

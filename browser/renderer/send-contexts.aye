@@ -8,7 +8,7 @@ fn sendContexts(r: *mut TabRenderer) !void {
     while engine.takeContextRequest() |req| {
         defer engine.freeContextRequest(req)
 
-        if req.ask is .Close { continue }
+        if req.ask is .Close || !mayOpen(r, req.href) { continue }
 
         var ask = (req.ask is .Navigate) as u32
         var keeps: u32 = 0
@@ -19,7 +19,7 @@ fn sendContexts(r: *mut TabRenderer) !void {
             name = c.name
         }
 
-        if evilTest("context") { ask = 2 }
+        if evilTest("context") { ask = 3 }
 
         try send(r.alloc, r.conn, r.tab, ipc.Message.Context { ask: ask, context: req.context, href: req.href, post: req.post as u32, content_type: req.content_type, body: req.body, keeps: keeps, name: name })
     }

@@ -92,6 +92,9 @@ fn scriptEvent(word: []u8) ?SDL_Event {
         }
         return ev
     }
+    if text.startsWith(word, "compose:") {
+        return composeEvent(word[8..])
+    }
     if text.startsWith(word, "text:") {
         let s = word[5..]
         if s.len > 31 {
@@ -247,7 +250,7 @@ fn keySym(name: []u8) ?i32 {
 fn validScript(script: []u8) bool {
     var words = text.split(script, " ")
     while words.next() |w| {
-        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") {
+        if w.len > 0 && scriptEvent(w) == null && agentsWait(w) == null && spaceWordOf(w) == null && !text.eql(w, "frame") && !text.eql(w, "picker") && !text.eql(w, "downloaded") && !text.eql(w, "painted") && !text.eql(w, "loaded") && !text.eql(w, "asked") && !text.eql(w, "overflow") && !text.startsWith(w, "renderer:") && !text.eql(w, "stuck:stop") && !text.eql(w, "dialog:keep") {
             return false
         }
     }
@@ -295,11 +298,23 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
                 return
             }
         }
-        if text.eql(w, "painted") && ui.paint_began != 0 {
+        if text.eql(w, "painted") && (ui.paint_began != 0 || tabPaintWaits(ui)) {
             // The page is not drawn yet (`Ui.loop` resumes the script).
             return
         }
-        if text.eql(w, "loaded") && ui.tab.early {
+        if text.eql(w, "painted") {
+            ui.early_input = true
+        }
+        if text.eql(w, "loaded") {
+            ui.early_input = false
+        }
+        if text.eql(w, "loaded") && (ui.tab.early || rendererBehind(ui)) {
+            return
+        }
+        if text.eql(w, "picker") && pickerWaits(ui) {
+            return
+        }
+        if text.eql(w, "downloaded") && !ui.downloads_open {
             return
         }
         if text.eql(w, "asked") && permissionBarOf(ui) == null {
@@ -311,7 +326,10 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if rendererWaits(ui, w) {
             return
         }
-        if scriptEvent(w) != null && rendererBehind(ui) {
+        if ui.auto_waits && scriptEvent(w) != null && (ui.wheel_x != 0.0 || ui.wheel_y != 0.0) {
+            try ui.flushWheel()
+        }
+        if (scriptEvent(w) != null && rendererBehind(ui)) || stopWaits(ui, w) {
             ui.script_held = true
             return
         }
@@ -335,11 +353,14 @@ fn resumeScript(ui: *mut Ui) AllocError!void {
         if text.eql(w, "renderer:kill") || text.eql(w, "renderer:kill-child") {
             killRenderer(ui, text.eql(w, "renderer:kill-child"))
         }
+        if text.eql(w, "dialog:keep") {
+            keepDialog()
+        }
         if text.eql(w, "stuck:stop") && ui.stuck {
             ui.stuck = false
             ui.wait = false
         } else if text.eql(w, "stuck:stop") {
-            stopHung(ui)
+            try stopHung(ui)
         }
         if text.eql(w, "frame") {
             // The rest waits for the next frame (`Ui.loop`).
@@ -394,7 +415,7 @@ fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!
         try out.append(chipStatus(ui))
     }
     try out.append("\n")
-    try writeDownloads(out)
+    try writeDownloads(ui, out)
     try writePermission(out)
     if certPage(ui) |p| {
         try out.append("cert ")
@@ -405,6 +426,9 @@ fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!
         try out.append("unresponsive ")
         try out.appendUint(ui.unresponsive as u64)
         try out.append("\n")
+    }
+    if ui.dialog.open {
+        try writeDialogState(ui, out)
     }
     if ui.auth.open {
         // The sign-in prompt (auth.aye): its realm and username.
@@ -453,6 +477,9 @@ fn writeState(ui: *mut Ui, said: *SaidState, out: *mut text.Builder) AllocError!
         try out.appendUint(a.loop_max_ms)
         try out.append("\n")
     }
+    try writeZoom(ui, out)
+    try writePlaces(ui, out)
+    try writeIme(ui, out)
     if ui.tab.page |p| {
         try pageview.writeFocus(p, out)
     }

@@ -1,0 +1,28 @@
+import css
+import std.math
+import std.mem.AllocError
+import std.text
+
+// spec: https://drafts.csswg.org/css-transforms-2/#propdef-rotate
+fn writeRotateValue(f: TransformFn, out: *mut text.Builder) AllocError!bool {
+    var first = f.count - 1
+    let length = math.sqrt(f.n[0] * f.n[0] + f.n[1] * f.n[1] + f.n[2] * f.n[2])
+
+    if f.count == 4 && length > 0.0 {
+        first = 0
+    }
+
+    for k in first..f.count {
+        var v = f.n[k]
+
+        if k < 3 && f.count == 4 {
+            v = v / length
+        }
+
+        try css.writeFineNumber(v, out)
+        try out.append(UNIT_NAMES[f.unit[k] as usize])
+        try out.appendByte(' ')
+    }
+
+    return true
+}

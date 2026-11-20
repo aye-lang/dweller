@@ -1,0 +1,28 @@
+import engine
+import ipc
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/render_widget_host_impl.cc (ImeSetComposition)
+fn compose(ui: *mut Ui, typed: []u8) AllocError!void {
+    let s = try imeOf(ui)
+
+    s.used = true
+    s.composed.clear()
+    try s.composed.append(typed)
+    ui.dirty = true
+
+    if ui.focus != Focus.Page || ui.auth.open { return composeInField(ui, s, typed) }
+
+    if tabInput(ui) |top| {
+        let to = focusedFrame(top).tp
+
+        to.seq += 1
+
+        return ipc.encode(&mut to.outbox, to.tab, ipc.Message.Compose { seq: to.seq, typed: typed })
+    }
+
+    if ui.tab_processes { return }
+
+    try engine.composeText(ui.tab.page orelse return, typed)
+    try afterEdit(ui)
+}

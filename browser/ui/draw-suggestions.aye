@@ -1,0 +1,30 @@
+import paint.Rgba
+import places
+import std.mem.AllocError
+import std.text
+
+// chromium: chrome/browser/ui/views/omnibox/omnibox_popup_view_views.cc
+fn drawSuggestions(ui: *mut Ui) AllocError!void {
+    let r = suggestRect(ui) orelse return
+    let s = ui.suggest.?
+    var y = r.y + 1.0
+    var line = text.Builder.init(ui.alloc)
+    defer line.deinit()
+
+    fill(ui, r.x + 1.0, r.y + 2.0, r.w, r.h, Rgba { r: 0, g: 0, b: 0, a: 28 })
+    fill(ui, r.x, r.y, r.w, r.h, PAPER)
+    frame(ui, r, 1.0, LINE)
+
+    if s.typed.len() > 0 {
+        try typedRowText(s.typed.bytes(), &mut line)
+        try drawSuggestRow(ui, r, y, line.bytes(), false, s.selected == null)
+        y += SUGGEST_ROW
+    }
+
+    for k in 0..s.rows.len() {
+        line.clear()
+        try placeRowText(&s.rows.items()[k], &mut line)
+        try drawSuggestRow(ui, r, y, line.bytes(), s.rows.items()[k].bookmarked, s.selected != null && s.selected.? == k)
+        y += SUGGEST_ROW
+    }
+}

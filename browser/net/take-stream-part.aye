@@ -1,0 +1,30 @@
+import std.mem.AllocError
+import std.text
+
+pub fn takeStreamPart(id: u32, out: *mut text.Builder) AllocError!?StreamPart {
+    if remote_loader |rl| { return remoteTakePart(rl, id, out) }
+
+    if !streamReady(id) {
+        return null
+    }
+
+    let l = loadById(loader.?, id).?
+    let job = l.job.?
+    var status: i64 = 0
+    var content_type: ?[*]u8 = null
+    var ct: []u8 = ""
+
+    curl_easy_getinfo(job.curl, CURLINFO_RESPONSE_CODE, &mut status)
+    curl_easy_getinfo(job.curl, CURLINFO_CONTENT_TYPE, &mut content_type)
+
+    if content_type |p| {
+        ct = p[0..strlen(p)]
+    }
+
+    try storeHead(job)
+    try out.append(job.sink.body.bytes())
+    job.sink.body.clear()
+    l.ask.?.stream_taken = true
+
+    return StreamPart { status: status, content_type: ct, url: job.at.href, headers: job.sink.headers_raw.bytes() }
+}

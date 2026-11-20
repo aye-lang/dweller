@@ -1,0 +1,41 @@
+import agent
+import dom
+import dom.NodeId
+import engine
+import ipc
+import std.heap.Arena
+import std.math
+import std.text
+
+// chromium: content/browser/devtools/protocol (the page's own process describes its focused and hovered nodes)
+fn answerUserContext(r: *mut TabRenderer, id: u32, point: u32) !void {
+    if r.session == null { r.session = try agentSession(r) }
+
+    let s = r.session.?
+    var arena = Arena.init(r.alloc)
+    defer arena.deinit()
+    let tmp = arena.allocator()
+    let fresh = s.tab.page != r.page
+    var hovered = text.Builder.init(tmp)
+    var hovered_text = text.Builder.init(tmp)
+    var focused = text.Builder.init(tmp)
+    var focused_text = text.Builder.init(tmp)
+    var pointed = agent.Pointed { members: "", ref: "", described: "" }
+
+    s.tab.page = r.page
+    s.tab.scroll = r.scroll_y
+    s.tab.scroll_x = r.scroll_x
+
+    if r.width > 0 { try agent.syncSession(s, r.width as f64 / r.scale, r.height as f64 / r.scale, fresh) }
+
+    let over = hoveredNode(r)
+    let focus = focusedNode(r)
+    let selection = selectedText(r)
+
+    try agent.userNode(s, tmp, over, &mut hovered, &mut hovered_text)
+    try agent.userNode(s, tmp, focus, &mut focused, &mut focused_text)
+
+    if point != 0 { pointed = try agent.pointedNode(s, tmp, over orelse focus, selection) }
+
+    try send(r.alloc, r.conn, r.tab, ipc.Message.UserContext { id: id, point: point, scroll: math.floor(r.scroll_y + 0.5) as u32, selection: selection, hovered: hovered.bytes(), hovered_text: hovered_text.bytes(), focused: focused.bytes(), focused_text: focused_text.bytes(), node: pointed.members, node_ref: pointed.ref, node_text: pointed.described })
+}

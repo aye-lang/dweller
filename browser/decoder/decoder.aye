@@ -1,0 +1,54 @@
+import ipc
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+pub let AUDIO: u32 = 1
+pub let VIDEO: u32 = 2
+pub let GONE: u32 = 0xffffffff
+
+let CHUNK: usize = 262144
+let MAX_STREAMS: usize = 64
+let MAX_SAMPLE: usize = 268435456
+
+pub struct Spec {
+    kind: u32
+    width: u32 = 0
+    height: u32 = 0
+    channels: u32 = 0
+    bits: u32 = 0
+    rate: u32 = 0
+    codec: []u8
+    config: []u8 = ""
+}
+
+pub struct Output {
+    seq: u32
+    ok: bool
+    data: []u8
+}
+
+pub struct Link {
+    send: fn(ipc.Message) bool
+    pump: fn(i32)
+}
+
+struct Stream {
+    id: u32
+    pending: u32
+    partial: text.Builder
+    outputs: List(Output)
+}
+
+struct Client {
+    alloc: Allocator
+    streams: List(Stream)
+    next: u32 = 1
+}
+
+var client: ?*mut Client = null
+var link: ?Link = null
+
+pub fn setLink(l: ?Link) {
+    link = l
+}

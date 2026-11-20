@@ -212,20 +212,27 @@ class Runner:
         return b"".join(parts)
 
     def run_one(self, rel, src, meta, strict, module, raw):
-        code = self.build(src, meta, strict, raw)
-        suffix = ".mjs" if module else ".js"
-        # A module's imports are relative to the test: its file goes next
-        # to it.
-        d = os.path.dirname(os.path.join(self.root, rel)) if module else None
-        fd, tmp = tempfile.mkstemp(suffix=suffix, prefix=".t262-", dir=d)
+        # A module runs at its own path (it may import itself), after the
+        # harness as a script of its own: the harness names are globals.
+        # A script's `import()` is relative to the test: its file goes
+        # next to it.
+        code = self.build(b"" if module else src, meta, strict, raw)
+        beside = not module and b"import(" in src
+        d = os.path.dirname(os.path.join(self.root, rel)) if beside else None
+        fd, tmp = tempfile.mkstemp(suffix=".js", prefix=".t262-", dir=d)
+        cmd = [self.dweller, "js", "--test262", tmp]
+        env = self.env
+        if module:
+            cmd = [self.dweller, "js", "--test262-module",
+                   os.path.join(self.root, rel)]
+            env = dict(self.env, DWELLER_TEST262_HARNESS=tmp)
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(code)
             try:
-                p = subprocess.run([self.dweller, "js", "--test262", tmp],
-                                   stdout=subprocess.PIPE,
+                p = subprocess.run(cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE,
-                                   timeout=self.timeout, env=self.env)
+                                   timeout=self.timeout, env=env)
             except subprocess.TimeoutExpired:
                 return False, "timeout"
         finally:

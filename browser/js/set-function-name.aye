@@ -1,0 +1,32 @@
+// https://tc39.es/ecma262/#sec-setfunctionname
+
+fn setFunctionName(it: *mut Interp, f: Value, key: u32, kind: u32) JsError!void {
+    let o = objectOf(f)
+
+    if o == NONE || it.heap.obj(o).class != Class.Function || it.heap.findProp(o, A_NAME) != null {
+        return
+    }
+
+    let b = try it.builder()
+    defer it.release(b)
+
+    if kind == PROP_GET {
+        try b.append("get ")
+    } else if kind == PROP_SET {
+        try b.append("set ")
+    }
+
+    if !isSymbolAtom(it, key) {
+        try b.append(it.heap.atoms.name(key))
+    } else if symbolDescription(it, key) |description| {
+        try b.append("[")
+        try b.append(description)
+        try b.append("]")
+    }
+
+    let name = try it.newString(b.bytes())
+
+    try it.push(name)
+    try it.defineOwn(o, A_NAME, name, F_CONFIG)
+    it.pop()
+}
