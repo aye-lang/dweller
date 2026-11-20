@@ -173,7 +173,8 @@ fn media_element_video_painted() {
             .args(["--frames", "2000", "--until-idle", "--text", "--save"])
             .arg(&png)
             .args(["--events", events])
-            .output()
+            .spawn_drained()
+            .wait_with_output_within(std::time::Duration::from_secs(120))
             .unwrap();
         let got = text(&out.stdout);
         assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
@@ -261,5 +262,37 @@ fn media_element_controls() {
             png.display(),
             golden.display()
         );
+    }
+}
+
+/// Q5.9a slice 4b on macOS: with local socket buffers of a few KiB (the
+/// size macOS gives, `DWELLER_TEST_SOCKET_BUFFER`), eight videos that
+/// seek every millisecond keep frames flowing from the decoder process
+/// through the browser to the renderer when the run ends. The browser
+/// asked the renderer for its state with a blocking send of a backlog of
+/// frames while the renderer was blocked sending samples to the browser:
+/// neither read again (the merge queue's macOS run hung 25 minutes). The
+/// run must end after its frames with the renderer's text.
+#[test]
+fn media_element_small_socket_buffers() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for mode in ["single", "site"] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let out = dweller_command()
+            .current_dir(root())
+            .envs([("DWELLER_PROCESS", mode), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SOCKET_BUFFER", "4096")])
+            .args([&format!("{}/media/seeking.html", srv.base), "--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "60", "--text"])
+            .spawn_drained()
+            .wait_with_output_within(std::time::Duration::from_secs(60))
+            .unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains("seeking videos"), "{mode}: {}", text(&out.stdout));
     }
 }

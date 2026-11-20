@@ -18,9 +18,7 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
     var buf = @zeroed([65536]u8)
 
     while true {
-        if !sendAll(tp.fd, tp.outbox.bytes()) { return }
-
-        tp.outbox.clear()
+        if !(try sendReading(tp, end)) { return }
 
         let got = ipc.nextMessage(tp.inbox.bytes()) catch return
 
