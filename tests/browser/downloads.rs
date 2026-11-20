@@ -1,6 +1,6 @@
 use super::*;
 
-fn downloads_run(name: &str, envs: &[(&str, &str)]) -> Option<(String, PathBuf, String)> {
+fn downloads_run(name: &str, path: &str, envs: &[(&str, &str)]) -> Option<(String, PathBuf, String)> {
     let srv = server()?;
     if !has_sdl() {
         return None;
@@ -9,7 +9,7 @@ fn downloads_run(name: &str, envs: &[(&str, &str)]) -> Option<(String, PathBuf, 
     let prof = profile(&format!("{name}-profile"));
     let mut all = vec![("DWELLER_DOWNLOADS", dir.to_str().unwrap())];
     all.extend_from_slice(envs);
-    let page = login_window_with(&format!("{}/net/download.html", srv.base), "frame", Some(&prof), &all);
+    let page = login_window_with(&format!("{}{path}", srv.base), "frame", Some(&prof), &all);
     let list = login_window_with("about:downloads", "frame", Some(&prof), &all);
     Some((page, dir, list))
 }
@@ -44,7 +44,7 @@ fn downloads_check(page: &str, dir: &Path, list: &str) {
 /// run.
 #[test]
 fn downloads_saved_and_listed() {
-    let Some((page, dir, list)) = downloads_run("downloads", &[]) else {
+    let Some((page, dir, list)) = downloads_run("downloads", "/net/download.html", &[]) else {
         println!("skipped: no test server or no SDL2");
         return;
     };
@@ -56,11 +56,44 @@ fn downloads_saved_and_listed() {
 #[test]
 fn downloads_saved_and_listed_in_renderers() {
     for mode in ["tab", "site"] {
-        let Some((page, dir, list)) = downloads_run(&format!("downloads-{mode}"), &[("DWELLER_PROCESS", mode)]) else {
+        let Some((page, dir, list)) = downloads_run(&format!("downloads-{mode}"), "/net/download.html", &[("DWELLER_PROCESS", mode)]) else {
             println!("skipped: no test server or no SDL2");
             return;
         };
         downloads_check(&page, &dir, &list);
+    }
+}
+
+/// Q5.6: navigations 2 ms apart, each a download, so that with a
+/// renderer the browser gets the next `begin_navigation` before the
+/// renderer took the earlier `navigate` (macOS CI: the browser ended the
+/// navigation at the first download, answered the next one's fetch as a
+/// subresource and killed the renderer for its `loaded`; and a second
+/// `download` link's hint replaced the first's). Each navigation the
+/// browser sent is saved; one the page replaced before it was sent may
+/// be missing, but never the last, a large attachment that the browser
+/// must not stream to the renderer as a document.
+#[test]
+fn downloads_overlapping_navigations() {
+    for mode in ["single", "tab", "site"] {
+        let Some((page, dir, _)) = downloads_run(&format!("downloads-overlap-{mode}"), "/net/download_overlap.html", &[("DWELLER_PROCESS", mode)]) else {
+            println!("skipped: no test server or no SDL2");
+            return;
+        };
+        assert!(page.contains("still here: /net/download_overlap.html history 1"), "{mode}: {page}");
+        let names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert!(page.contains(&format!("\ndownloads {}\n", names.len())), "{mode}: {names:?} {page}");
+        assert_eq!(std::fs::read(dir.join("big.bin")).unwrap(), "attached big.bin".repeat(100000).as_bytes(), "{mode}");
+        for n in &names {
+            let want = match n.as_str() {
+                "named.txt" => "the file of the download test\n",
+                "one.txt" => "attached one.txt",
+                "two.txt" => "attached two.txt",
+                _ => continue,
+            };
+            assert_eq!(std::fs::read_to_string(dir.join(n)).unwrap(), want, "{mode}");
+        }
+        assert!(names.iter().all(|n| ["named.txt", "one.txt", "two.txt", "big.bin"].contains(&n.as_str())), "{mode}: {names:?}");
     }
 }
 

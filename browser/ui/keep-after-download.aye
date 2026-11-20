@@ -6,6 +6,10 @@ fn keepAfterDownload(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
 
     if !tp.downloaded { return }
 
+    tp.downloaded = false
+
+    if tp.loading && nextNavigate(tp) { return }
+
     if slot.typed && h.len() > 0 {
         h.truncate(h.len() - 1)
 
@@ -13,7 +17,6 @@ fn keepAfterDownload(slot: *mut TabSlot, tp: *mut TabProcess) AllocError!void {
     }
 
     slot.typed = false
-    tp.downloaded = false
     tp.loading = false
     tp.nav_failed = false
     tp.push_on_commit = false

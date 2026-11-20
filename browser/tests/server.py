@@ -8,10 +8,10 @@
 #                    8000 Hz (N/8000 s) that answers Range requests with
 #                    206 (the whole file with 200 when ?norange is there),
 #                    each recorded in /log as "ranged X RANGE"
-#   /attach?name=N&disposition=D&type=T  the body "attached N" with
-#                    Content-Disposition: D (attachment), filename="N"
-#                    when there is a name, and Content-Type T
-#                    (application/octet-stream)
+#   /attach?name=N&disposition=D&type=T&times=K  the body "attached N"
+#                    (K times, 1) with Content-Disposition: D
+#                    (attachment), filename="N" when there is a name, and
+#                    Content-Type T (application/octet-stream)
 #   /ws/NAME         a WebSocket that echoes each message (the last
 #                    subprotocol offered, or ?protocol=P; ?setcookie=V
 #                    sets the cookie ws=V; ?badaccept answers a wrong
@@ -334,7 +334,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             disposition = query.get("disposition", "attachment")
             if "name" in query:
                 disposition += '; filename="' + query["name"] + '"'
-            self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], ("attached " + query.get("name", "")).encode())
+            body = ("attached " + query.get("name", "")).encode()
+            self.reply(200, [("Content-Type", query.get("type", "application/octet-stream")), ("Content-Disposition", disposition)], body * int(query.get("times", "1")))
         elif path == "/event-stream":
             last = self.headers.get("Last-Event-ID")
             body = b"id: 7\r\nretry: 50\r\n: comment\r\nevent: first\r\ndata: one\r\n\r\n" if last is None else b"data: back " + last.encode() + b"\n\n"

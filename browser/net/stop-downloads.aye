@@ -2,13 +2,18 @@ fn stopDownloads() {
     let all = downloads orelse return
 
     downloads = null
-    forgetDownloadHint(all)
 
     for d in all.all.items() {
         release(all.alloc, d.owned_path)
         release(all.alloc, d.owned_href)
     }
 
+    for h in all.hints.items() {
+        release(all.alloc, h.owned_href)
+        release(all.alloc, h.owned_name)
+    }
+
     all.all.deinit()
+    all.hints.deinit()
     all.alloc.destroy(all)
 }
