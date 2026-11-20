@@ -271,8 +271,11 @@ fn media_element_controls() {
 /// through the browser to the renderer when the run ends. The browser
 /// asked the renderer for its state with a blocking send of a backlog of
 /// frames while the renderer was blocked sending samples to the browser:
-/// neither read again (the merge queue's macOS run hung 25 minutes). The
-/// run must end after its frames with the renderer's text.
+/// neither read again (the merge queue's macOS run hung 25 minutes). And
+/// on macOS `send` with `MSG_DONTWAIT` waits on these sockets
+/// (`DWELLER_TEST_SEND_WAITS` drops the flag on Linux too): the window
+/// blocked feeding the decoder while the decoder blocked writing its
+/// frames back. The run must end after its frames with the page's text.
 #[test]
 fn media_element_small_socket_buffers() {
     if !has_sdl() {
@@ -286,7 +289,7 @@ fn media_element_small_socket_buffers() {
         };
         let out = dweller_command()
             .current_dir(root())
-            .envs([("DWELLER_PROCESS", mode), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SOCKET_BUFFER", "4096")])
+            .envs([("DWELLER_PROCESS", mode), ("DWELLER_TEST", "1"), ("DWELLER_TEST_SOCKET_BUFFER", "4096"), ("DWELLER_TEST_SEND_WAITS", "1")])
             .args([&format!("{}/media/seeking.html", srv.base), "--font", "fixed", "--width", "400", "--height", "300"])
             .args(["--frames", "60", "--text"])
             .spawn_drained()

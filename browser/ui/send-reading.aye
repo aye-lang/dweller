@@ -18,11 +18,11 @@ fn sendReading(tp: *mut TabProcess, deadline: ?u64) AllocError!bool {
         if ipc.poll(p[..].ptr, 1, msUntil(deadline)) == 0 { return false }
 
         if p[0].revents & POLL_IN != 0 {
-            let n = read(tp.fd, buf[..].ptr, buf.len)
+            let n = readSome(tp.fd, buf[..])
 
-            if n <= 0 { return false }
+            if n == 0 { return false }
 
-            try tp.inbox.append(buf[0..n as usize])
+            if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
         }
     }
 

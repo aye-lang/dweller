@@ -55,10 +55,10 @@ fn askState(ui: *mut Ui, with_text: bool, out: *mut SaidState) AllocError!void {
 
         if std.time.monotonicMs() >= end || !readableWithin(tp.fd, (end - std.time.monotonicMs()) as i32) { return }
 
-        let n = read(tp.fd, buf[..].ptr, buf.len)
+        let n = readSome(tp.fd, buf[..])
 
-        if n <= 0 { return }
+        if n == 0 { return }
 
-        try tp.inbox.append(buf[0..n as usize])
+        if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
     }
 }

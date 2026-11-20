@@ -87,11 +87,13 @@ fn askRenderer(at: *mut *mut TabProcess, id: u32, mcp: bool, line: []u8, out: *m
             if !readableWithin(tp.fd, 0) { continue }
         }
 
-        let n = read(tp.fd, buf[..].ptr, buf.len)
+        _ = readableWithin(tp.fd, -1)
 
-        if n <= 0 { return "renderer gone" }
+        let n = readSome(tp.fd, buf[..])
 
-        try tp.inbox.append(buf[0..n as usize])
+        if n == 0 { return "renderer gone" }
+
+        if n > 0 { try tp.inbox.append(buf[0..n as usize]) }
     }
 
     unreachable
