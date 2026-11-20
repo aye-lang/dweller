@@ -219,18 +219,61 @@ impl Drained {
     }
 
     /// `wait_with_output`, but the child is killed after `limit`: a run
-    /// that hangs fails its test instead of holding it for hours.
+    /// that hangs fails its test instead of holding it for hours, and
+    /// its stderr ends with the stacks of the child and of the processes
+    /// it started (`stacks_of`), taken before the kill.
     fn wait_with_output_within(mut self, limit: std::time::Duration) -> std::io::Result<Output> {
         let start = std::time::Instant::now();
+        let mut stacks = String::new();
         while self.try_wait()?.is_none() {
             if start.elapsed() > limit {
+                stacks = stacks_of(self.id());
                 let _ = self.kill();
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        self.wait_with_output()
+        let mut out = self.wait_with_output()?;
+        out.stderr.extend_from_slice(stacks.as_bytes());
+        Ok(out)
     }
+}
+
+/// The stacks of process `pid` and its descendants, for a run that
+/// passed its time limit: `ps`, then `sample` on macOS, `gdb` and the
+/// waiting call from `/proc` on Linux, each cut to its first 12000 bytes.
+fn stacks_of(pid: u32) -> String {
+    let mut pids = vec![pid];
+    let mut i = 0;
+    while i < pids.len() {
+        if let Ok(o) = Command::new("pgrep").args(["-P", &pids[i].to_string()]).output() {
+            pids.extend(String::from_utf8_lossy(&o.stdout).split_whitespace().filter_map(|p| p.parse::<u32>().ok()));
+        }
+        i += 1;
+    }
+    let mut all = String::from("\n--- stacks at the time limit\n");
+    for p in pids {
+        let id = p.to_string();
+        let ps = Command::new("ps").args(["-o", "pid,ppid,stat,time,command", "-p", &id]).output();
+        all += &ps.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        let file = scratch().join(format!("stacks-{p}.txt"));
+        let got = if cfg!(target_os = "macos") {
+            Command::new("sample").args([id.as_str(), "1", "-mayDie", "-file"]).arg(&file).output().ok().and_then(|_| std::fs::read_to_string(&file).ok())
+        } else {
+            Command::new("gdb").args(["-batch", "-p", &id, "-ex", "thread apply all bt 25"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        };
+        let mut waiting = String::new();
+        for what in ["wchan", "syscall"] {
+            if let Ok(t) = std::fs::read_to_string(format!("/proc/{p}/{what}")) {
+                waiting += &format!("{what}: {}\n", t.trim());
+            }
+        }
+        let got = waiting + &got.unwrap_or_default();
+        let end = (0..=got.len().min(12000)).rev().find(|&n| got.is_char_boundary(n)).unwrap_or(0);
+        all += &got[..end];
+        all += "\n";
+    }
+    all
 }
 
 trait SpawnDrained {
