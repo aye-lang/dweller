@@ -1,0 +1,15 @@
+extern fn getcwd(buf: [*]u8, size: usize) ?[*]u8
+extern fn readlink(path: [*]u8, buf: [*]u8, size: usize) isize
+
+var trap_cwd = @zeroed([4096]u8)
+var trap_cwd_len: usize = 0
+var trap_exe = @zeroed([4096]u8)
+var trap_exe_len: usize = 0
+
+fn recordTrapPaths() {
+    if getcwd(trap_cwd[..].ptr, trap_cwd.len) != null { trap_cwd_len = strlen(trap_cwd[..].ptr) }
+
+    let n = readlink("/proc/self/exe\x00".ptr, trap_exe[..].ptr, trap_exe.len - 1)
+
+    if n > 0 { trap_exe_len = n as usize }
+}

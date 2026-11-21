@@ -170,6 +170,9 @@ Dweller does the same, in `browser/gpu/gl.aye`:
   - `swiftshader`: Vulkan plus `EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE`
   - `null`: `EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE`, no pixels
   - `off`: no WebGL
+  With no `DWELLER_GL`, a display that Vulkan cannot make (no GPU, or a
+  sandboxed renderer, which has no GPU device) falls back to
+  `swiftshader` (`gpu/init-display.aye`, Q2.14h).
 
   The display is made lazily, on the first `getContext('webgl2')`, so
   pages without WebGL pay nothing.

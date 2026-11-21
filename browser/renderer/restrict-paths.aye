@@ -1,3 +1,4 @@
+import gpu
 import std
 import std.mem.Allocator
 
@@ -29,6 +30,12 @@ fn restrictPaths(alloc: Allocator) bool {
         defer alloc.free(exe)
         allowReads(alloc, fd, std.path.dirname(exe))
     } else |e| {}
+
+    var angle = @zeroed([4096]u8)
+
+    for dir in gpu.angleSourceDirs(angle[..]) {
+        if dir.len > 0 { allowReads(alloc, fd, dir) }
+    }
 
     return syscall(NR_LANDLOCK_RESTRICT_SELF, fd, 0 as u64) == 0
 }

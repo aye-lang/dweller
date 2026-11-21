@@ -9,6 +9,7 @@ fn runAnimationFrame(r: *mut TabRenderer, p: *mut engine.Page) !void {
     var frame_ns = r.next_frame_ns
 
     if r.hidden || (r.staged.stepping && !engine.scriptsRan(p)) || now < frame_ns || !engine.animationFrameRequested(p) { return }
+    if r.due && !r.free[0] && !r.free[1] { return }
 
     if now - frame_ns >= r.frame_ns {
         frame_ns = now
@@ -19,6 +20,8 @@ fn runAnimationFrame(r: *mut TabRenderer, p: *mut engine.Page) !void {
     let began = perf.start()
 
     if try engine.runAnimationFrames(p, frame_ns) { r.due = true }
+
+    r.ticks += 1
 
     perf.end("ui_raf", began, "")
 }

@@ -78,3 +78,34 @@ fn sandbox_workers_of_frames() {
         assert!(got.contains(want), "no {want:?} in:\n{got}\n{}", text(&out.stderr));
     }
 }
+
+/// Q2.14h row 26: the Linux sandbox answers `stat` itself (a `SIGSYS`
+/// handler opens the path read-only, so Landlock decides): the profile
+/// stays refused and `/usr` can be looked at. Without Landlock seccomp
+/// refuses both, as before.
+#[test]
+fn sandbox_stat_follows_landlock() {
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) || !has_sdl() {
+        println!("skipped: the Linux x86_64 sandbox, with SDL2");
+        return;
+    }
+    let home = scratch().join("sandbox-stat-home");
+    std::fs::create_dir_all(home.join(".dweller")).unwrap();
+    let run = |envs: &[(&str, &str)]| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("HOME", &home)
+            .env("DWELLER_PROCESS", "site")
+            .env("DWELLER_TEST", "1")
+            .env("DWELLER_TEST_SANDBOX_STAT", "1")
+            .envs(envs.iter().copied())
+            .args(["browser/tests/ui/form.html", "--frames", "100", "--until-idle", "--events", "renderer:loaded"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+        text(&out.stderr)
+    };
+    let err = run(&[]);
+    assert!(err == "sandbox-stat home=13 usr=0\n" || err == "sandbox-stat home=1 usr=1\n", "{err}");
+    assert_eq!(run(&[("DWELLER_TEST_NO_LANDLOCK", "1")]), "sandbox-stat home=1 usr=1\n");
+}

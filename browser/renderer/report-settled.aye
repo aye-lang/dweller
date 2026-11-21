@@ -2,13 +2,16 @@ import decoder
 import engine
 import ipc
 
+let SETTLED_UNSAID: u32 = 3
+
 fn reportSettled(r: *mut TabRenderer) !void {
-    let settled = !r.due && !r.staged.on && (r.page == null || pageIdle(r.page.?))
+    let on = settledState(r)
 
-    if engine.embedded() || settled == r.settled_said { return }
+    if r.tab == 0 || (on == r.settled_said && r.ticks == r.ticks_said) { return }
 
-    r.settled_said = settled
-    try send(r.alloc, r.conn, r.tab, ipc.Message.Settled { on: settled as u32 })
+    r.settled_said = on
+    r.ticks_said = r.ticks
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Settled { on: on, ticks: r.ticks })
 }
 
 fn pageIdle(p: *mut engine.Page) bool {

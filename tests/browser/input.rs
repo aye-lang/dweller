@@ -608,8 +608,9 @@ fn window_wheel() {
             failures.push(format!("wheel.html{query}: expected {want:?} and {line:?}:\n{got}{}", text(&out.stderr)));
         }
     }
-    // Scrolling repaints: no layout, and no display list built again; in
-    // a frame (frames.html), one list for all the events of an iteration.
+    // Scrolling repaints: no layout, and no display list built again; one
+    // wheel costs what 50 cost (they are summed into one, and in a frame,
+    // frames.html, one list serves all the events of an iteration).
     let phases = |page: &str, events: &str| {
         let out = dweller_command()
             .current_dir(root())
@@ -623,7 +624,7 @@ fn window_wheel() {
     };
     let frames = "browser/tests/ui/frames.html";
     for (page, one, many) in [
-        (long, "move:100,200".to_string(), format!("move:100,200 {}", repeat("wheel:-0.3", 50))),
+        (long, "move:100,200 wheel:-1".to_string(), format!("move:100,200 {}", repeat("wheel:-0.3", 50))),
         (frames, "move:200,100 wheel:-1".to_string(), format!("move:200,100 {}", repeat("wheel:-0.3", 50))),
     ] {
         let (a, b) = (phases(page, &one), phases(page, &many));

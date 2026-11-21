@@ -1,0 +1,25 @@
+import std
+import std.mem.Allocator
+import std.text
+
+extern("stat") fn statPath(path: [*]u8, buf: [*]u8) i32
+
+fn probeStat(alloc: Allocator) {
+    if !text.eql(std.os.getenv("DWELLER_TEST") orelse "", "1") || !text.eql(std.os.getenv("DWELLER_TEST_SANDBOX_STAT") orelse "", "1") { return }
+
+    var home = text.Builder.init(alloc)
+
+    defer home.deinit()
+    home.append(std.os.getenv("HOME") orelse "") catch return
+    home.append("/.dweller\x00") catch return
+
+    std.log.line("sandbox-stat home={} usr={}", statErrno(home.bytes().ptr), statErrno("/usr/share\x00".ptr))
+}
+
+fn statErrno(path: [*]u8) i32 {
+    var buf = @zeroed([256]u8)
+
+    if statPath(path, buf[..].ptr) == 0 { return 0 }
+
+    return errno()
+}

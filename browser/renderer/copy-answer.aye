@@ -1,0 +1,20 @@
+import std.math
+
+let ERANGE: i64 = 34
+let ENOENT: i64 = 2
+
+fn copyAnswer(value: []u8, buf: Reg, size: i64, with_nul: bool) i64 {
+    let out = buf.p orelse return -EINVAL
+    let need = value.len as i64 + with_nul as i64
+
+    if value.len == 0 { return -ENOENT }
+    if size < need && with_nul { return -ERANGE }
+
+    let n = math.minOf(i64, need, size) as usize
+
+    for i in 0..math.minOf(usize, n, value.len) { out[i] = value[i] }
+
+    if n > value.len { out[value.len] = 0 }
+
+    return n as i64
+}

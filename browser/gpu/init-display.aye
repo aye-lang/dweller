@@ -1,0 +1,20 @@
+fn initDisplay(api: Api, backend: Backend) c.EGLDisplay {
+    var device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE
+    let kind = match backend {
+        .Metal => c.EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE
+        .Vulkan, .SwiftShader => c.EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
+        .Gl => c.EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE
+        .Null, .Off => c.EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE
+    }
+
+    if backend is .SwiftShader { device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE }
+
+    let attribs = [5]c_long{c.EGL_PLATFORM_ANGLE_TYPE_ANGLE as c_long, kind as c_long, c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE as c_long, device as c_long, c.EGL_NONE as c_long}
+    let dpy = api.eglGetPlatformDisplay(c.EGL_PLATFORM_ANGLE_ANGLE as c.EGLenum, null, &attribs[0])
+    var major: c.EGLint = 0
+    var minor: c.EGLint = 0
+
+    if dpy == null || api.eglInitialize(dpy, &mut major, &mut minor) == 0 { return null }
+
+    return dpy
+}

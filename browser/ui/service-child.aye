@@ -8,7 +8,10 @@ fn serviceChild(tp: *mut TabProcess) AllocError!bool {
 
     let sent = sendSome(tp.fd, tp.outbox.bytes())
 
-    if sent > 0 { ipc.consume(&mut tp.outbox, sent as usize) }
+    if sent > 0 {
+        ipc.consume(&mut tp.outbox, sent as usize)
+        tp.settled = false
+    }
 
     if sent < 0 || !(try readTabProcess(tp)) {
         dropTabProcess(tp, "crashed")

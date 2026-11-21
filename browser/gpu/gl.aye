@@ -334,33 +334,16 @@ fn makeDisplay() ?Display {
     }
     display_error = Unavailable.NoDisplay
     let api = bind(egl) orelse return null
-    var device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE
-    let kind = match backend {
-        .Metal => c.EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE
-        .Vulkan => c.EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
-        .Gl => c.EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE
-        .SwiftShader => c.EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
-        .Null => c.EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE
-        .Off => c.EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE
+    var used = backend
+    var dpy = initDisplay(api, backend)
+    if dpy == null && backend is .Vulkan && (std.os.getenv("DWELLER_GL") orelse "").len == 0 {
+        used = Backend.SwiftShader
+        dpy = initDisplay(api, used)
     }
-    if backend is .SwiftShader {
-        device = c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE
-    }
-    let attribs = [5]c_long{
-        c.EGL_PLATFORM_ANGLE_TYPE_ANGLE as c_long, kind as c_long,
-        c.EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE as c_long, device as c_long,
-        c.EGL_NONE as c_long,
-    }
-    let dpy = api.eglGetPlatformDisplay(c.EGL_PLATFORM_ANGLE_ANGLE as c.EGLenum, null, &attribs[0])
     if dpy == null {
         return null
     }
-    var major: c.EGLint = 0
-    var minor: c.EGLint = 0
-    if api.eglInitialize(dpy, &mut major, &mut minor) == 0 {
-        return null
-    }
-    return Display { api: api, egl: dpy, backend: backend }
+    return Display { api: api, egl: dpy, backend: used }
 }
 
 // dlopens libGLESv2, then libEGL, from the first directory of the search
@@ -368,12 +351,11 @@ fn makeDisplay() ?Display {
 fn openLibraries() ?[*]u8 {
     var exe = @zeroed([4096]u8)
     let exe_dir = executableDir(exe[..])
-    let rev = text.trim(REVISION)
-    var target = @zeroed([256]u8)
-    let target_lib = join(target[..], "target/angle/", rev, "/lib")
+    var target = @zeroed([4096]u8)
+    let sources = angleSourceDirs(target[..])
     var frameworks = @zeroed([4096]u8)
     let bundle = join(frameworks[..], exe_dir, "/../Frameworks", "")
-    let dirs = [4][]u8{std.os.getenv("DWELLER_ANGLE") orelse "", exe_dir, bundle, target_lib}
+    let dirs = [4][]u8{sources[0], exe_dir, bundle, sources[1]}
     for dir in dirs {
         if dir.len == 0 {
             continue
