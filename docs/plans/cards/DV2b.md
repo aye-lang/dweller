@@ -8,3 +8,5 @@
 - verify:
   - on this machine (Linux): the three servers start and print their ports; the whole suite passes (Q2.14's verify).
   - the macOS verify is the next merge-queue run: the 22 tests' macOS times (`browser/tools/test_times.py RUN_ID`) under 15 s, and the two macOS shards' walls. The integrator then refreshes `tests/browser-times.txt` (DV2).
+
+## Status: in progress, 2026-11-21 (the fix is in; its check is the macOS times of the next merge-queue run)
