@@ -59,20 +59,84 @@
   delete G.__makeWorkerUrl;
   function WorkerGlobalScope() { throw new TypeError('Illegal constructor'); }
   function DedicatedWorkerGlobalScope() { throw new TypeError('Illegal constructor'); }
+  function SharedWorkerGlobalScope() { throw new TypeError('Illegal constructor'); }
   WorkerGlobalScope.prototype = Object.create(Object.getPrototypeOf(G), { constructor: { value: WorkerGlobalScope, writable: true, configurable: true } });
-  DedicatedWorkerGlobalScope.prototype = Object.create(WorkerGlobalScope.prototype, { constructor: { value: DedicatedWorkerGlobalScope, writable: true, configurable: true }, [Symbol.toStringTag]: { value: 'DedicatedWorkerGlobalScope', configurable: true } });
-  Object.setPrototypeOf(G, DedicatedWorkerGlobalScope.prototype);
+  for (const [C, name] of [[DedicatedWorkerGlobalScope, 'DedicatedWorkerGlobalScope'], [SharedWorkerGlobalScope, 'SharedWorkerGlobalScope']]) {
+    C.prototype = Object.create(WorkerGlobalScope.prototype, { constructor: { value: C, writable: true, configurable: true }, [Symbol.toStringTag]: { value: name, configurable: true } });
+  }
+  Object.setPrototypeOf(G, h.shared ? SharedWorkerGlobalScope.prototype : DedicatedWorkerGlobalScope.prototype);
   def('WorkerGlobalScope', WorkerGlobalScope);
-  def('DedicatedWorkerGlobalScope', DedicatedWorkerGlobalScope);
+  def(h.shared ? 'SharedWorkerGlobalScope' : 'DedicatedWorkerGlobalScope', h.shared ? SharedWorkerGlobalScope : DedicatedWorkerGlobalScope);
   def('self', G);
   def('location', new WorkerLocation(h.href));
   def('origin', new URL(h.href).origin);
   def('onmessage', null);
   def('onmessageerror', null);
   def('onerror', null);
-  def('postMessage', function postMessage(value, transfer) {
-    h.post(MESSAGE, wire.send(h, value, wire.transferOf(transfer)));
-  });
+  if (h.shared) {
+    def('name', h.name);
+    def('onconnect', null);
+  } else {
+    def('postMessage', function postMessage(value, transfer) {
+      h.post(MESSAGE, wire.send(h, value, wire.transferOf(transfer)));
+    });
+  }
+  const ports = new Map();
+  class ConnectPort {
+    #id;
+    #listeners = new Map();
+    #queue = [];
+    #started = false;
+    #onmessage = null;
+    constructor(id) { this.#id = id; }
+    get onmessage() { return this.#onmessage; }
+    set onmessage(f) { this.#onmessage = typeof f === 'function' ? f : null; this.start(); }
+    postMessage(value, transfer) { h.post(MESSAGE, this.#id + '\u0002' + wire.send(h, value, wire.transferOf(transfer))); }
+    start() {
+      if (this.#started) return;
+      this.#started = true;
+      for (const ev of this.#queue.splice(0)) this.dispatchEvent(ev);
+    }
+    close() { ports.delete(this.#id); }
+    addEventListener(type, f) {
+      if (!this.#listeners.has(type)) this.#listeners.set(type, []);
+      if (f && !this.#listeners.get(type).includes(f)) this.#listeners.get(type).push(f);
+    }
+    removeEventListener(type, f) {
+      const l = this.#listeners.get(type) || [];
+      if (l.includes(f)) l.splice(l.indexOf(f), 1);
+    }
+    dispatchEvent(ev) {
+      if (ev.type === 'message' && !this.#started) { this.#queue.push(ev); return true; }
+      const on = ev.type === 'message' ? this.#onmessage : null;
+      try {
+        if (on) on.call(this, ev);
+        for (const f of (this.#listeners.get(ev.type) || []).slice()) typeof f === 'function' ? f.call(this, ev) : f.handleEvent(ev);
+      } catch (e) {
+        report(e);
+      }
+      return true;
+    }
+  }
+  function sharedDeliver(json, n) {
+    if (json.startsWith('\u0003')) {
+      const port = new ConnectPort(json.slice(1));
+      ports.set(json.slice(1), port);
+      dispatch({ type: 'connect', data: '', origin: '', lastEventId: '', ports: [port], source: port, target: G, currentTarget: G });
+      return;
+    }
+    const at = json.indexOf('\u0002');
+    const port = ports.get(json.slice(0, at));
+    if (!port) return;
+    let data;
+    try {
+      data = wire.receive(h, json.slice(at + 1), n);
+    } catch (e) {
+      port.dispatchEvent({ type: 'messageerror', data: null, target: port });
+      return;
+    }
+    port.dispatchEvent({ type: 'message', data, target: port, currentTarget: port, origin: '', ports: [], source: null });
+  }
   def('addEventListener', function (type, f) {
     if (!listeners.has(type)) listeners.set(type, []);
     if (f && !listeners.get(type).includes(f)) listeners.get(type).push(f);
@@ -130,6 +194,7 @@
   }
   def('__wDeliver', function (json, n) {
     if (relayed(json)) return;
+    if (h.shared) return sharedDeliver(json, n);
     let data;
     try {
       data = wire.receive(h, json, n);
