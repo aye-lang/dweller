@@ -9,4 +9,10 @@
   - on this machine (Linux): the three servers start and print their ports; the whole suite passes (Q2.14's verify).
   - the macOS verify is the next merge-queue run: the 22 tests' macOS times (`browser/tools/test_times.py RUN_ID`) under 15 s, and the two macOS shards' walls. The integrator then refreshes `tests/browser-times.txt` (DV2).
 
-## Status: in progress, 2026-11-21 (the fix is in; its check is the macOS times of the next merge-queue run)
+- measured (PR #378's run 44955222897 with the `macos` label, macOS, seconds before (`tests/browser-times.txt` of DV2) and after): `link_events::link_events` 141 -> 1.9, `net::coop_popups` 106 -> 2.2, `net::fetch_metadata` 82 -> 17.1, `net::cert_bypass` 78 -> 7.5, `media::window_lazy_images` 71 -> 1.8, `security::csp_script_src` 71 -> 0.6, `net::hsts` 36 -> 0.4, `websocket::websocket_echo` 36 -> 1.3. `browser/tools/test_times.py --logs` on that run's seven shard logs: the macOS shards' summed seconds fell from 2924 to 1113 each (379 tests measured on both systems); `tests/browser-times.txt` refreshed from it.
+
+## Status: done, 2026-11-21
+
+Left:
+- `downloads::downloads_saved_and_listed` takes 88 s on macOS and 1 s on Ubuntu (its `_in_renderers` twin 3 s): another macOS-only wait, not looked at.
+- DV2's 9 minutes: the slowest macOS shard is now set by `jsdom::jsdom_gc_stress` alone (537 s on macOS, 305 s on Ubuntu) and `window_renderer_limits_find_in_frames` (300 s, 190 s); slow on both systems, so DV2's own card.

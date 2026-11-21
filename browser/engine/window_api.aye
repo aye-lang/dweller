@@ -281,10 +281,19 @@ fn akQueueMicrotask(it: *mut Interp, a: Args) JsError!Value {
 fn akActivate(it: *mut Interp, a: Args) JsError!Value {
     let s = scriptOf(it)
     let h = ownHandle(it, it.arg(a, 0)) orelse return activateForeign(it, a)
+
+    if linkTarget(s.page, h).len > 0 && !s.page.scripts_pending { try syncFrames(s.page) }
+
     let act = try activate(s.page, h)
     match act {
         .Follow { target } => {
             defer target.deinit(s.alloc)
+
+            if targetFrame(s.page, linkTarget(s.page, h)) |slot| {
+                try navigateFrame(slot, &target, null, initiatorOf(s.page))
+
+                return Value.Undefined
+            }
 
             if isFragmentOf(s.page, &target) {
                 return it.newString(target.href)
@@ -1074,7 +1083,7 @@ fn computedStyling(s: *mut Script) AllocError!*mut Styling {
     var author = try css.Sheet.init(p.alloc)
     errdefer author.deinit()
     try markStyles(p, false)
-    try authorSheets(p.alloc, &p.doc, &p.url, media, &mut author)
+    try pageAuthorSheets(p, media, &mut author)
     var styles = try css.Styles.init(p.alloc)
     errdefer styles.deinit()
     let c = try p.alloc.create(Styling { media: media, ua: ua, author: author, styles: styles, version: s.style_version })

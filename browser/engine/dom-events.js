@@ -95,11 +95,14 @@ function dispatchWith(dispatch) {
 
     ev.isTrusted = false;
 
-    const checkable = ev instanceof MouseEvent && ev.type === 'click' ? checkableTarget(this, ev.bubbles) : null;
+    const click = ev instanceof MouseEvent && ev.type === 'click';
+    const checkable = click ? checkableTarget(this, ev.bubbles) : null;
+    const link = click && !checkable ? linkTarget(this, ev.bubbles) : null;
     const before = checkable && legacyPreActivation(checkable);
     const go = dispatch.call(this, ev);
 
     if (checkable) activateCheckable(checkable, before, go);
+    if (link && go) link._followLink();
 
     return go;
   };
@@ -112,6 +115,17 @@ function checkableTarget(target, bubbles) {
     if (n.nodeType !== Node.ELEMENT_NODE || !ACTIVATES.test(n.localName) || ((n.localName === 'a' || n.localName === 'area') && !n.hasAttribute('href'))) continue;
 
     return n.localName === 'input' && (n.type === 'checkbox' || n.type === 'radio') ? n : null;
+  }
+
+  return null;
+}
+
+// https://html.spec.whatwg.org/multipage/links.html#links-created-by-a-and-area-elements
+function linkTarget(target, bubbles) {
+  for (let n = target; n instanceof Node; n = bubbles ? n.parentNode : null) {
+    if (n.nodeType !== Node.ELEMENT_NODE || !ACTIVATES.test(n.localName)) continue;
+
+    return (n.localName === 'a' || n.localName === 'area') && n.hasAttribute('href') ? n : null;
   }
 
   return null;

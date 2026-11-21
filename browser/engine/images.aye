@@ -299,7 +299,7 @@ pub struct ImageCache {
     }
 
     fn imageRequest(self: *Self, crossorigin: ?[]u8) net.Request {
-        return corsRequest(crossorigin, net.Request { kind: net.Kind.Image, referrer: self.referrer, initiator: net.Initiator.Page { url: self.referrer } })
+        return imageRequestOf(self, crossorigin)
     }
 }
 
@@ -499,7 +499,7 @@ fn loadElementImage(cache: *mut ImageCache, doc: *Document, h: NodeId, base: *Ur
     }
     if crossorigin == null && policy == null && !cache.known(href) && fetch == ImageFetch.Background {
         if waited == 0 || net.loadOf(href) != waited {
-            let id = net.startLoad(href, net.Kind.Image, cache.referrer)
+            let id = net.startLoadAs(href, cache.imageRequest(null))
             if id != 0 {
                 return LoadedElementImage { target: target, bmp: null, density: choice.density, load: id }
             }
@@ -675,7 +675,7 @@ fn prefetchImages(cache: *mut ImageCache, doc: *Document, base: *Url, extra: [][
         }
         return
     }
-    net.prefetch(cache.alloc, hrefs.bytes(), net.Kind.Image, cache.referrer)
+    net.prefetchAs(cache.alloc, hrefs.bytes(), cache.imageRequest(null))
 }
 
 /// The window's pages: starts loading the images of the elements of

@@ -1,0 +1,13 @@
+import net
+
+// spec: https://w3c.github.io/webappsec-mixed-content/#categorize-settings-object
+fn imageRequestOf(cache: *ImageCache, crossorigin: ?[]u8) net.Request {
+    var req = net.Request { kind: net.Kind.Image, referrer: cache.referrer, initiator: net.Initiator.Page { url: cache.referrer } }
+
+    if cache.page |p| {
+        req.initiator = initiatorOf(p)
+        req.top = rootPage(p).url.href
+    }
+
+    return corsRequest(crossorigin, req)
+}

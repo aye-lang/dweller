@@ -5,12 +5,18 @@ import js.JsError
 pub let WIRE_JS = @embedFile("wire.js")
 let SCOPE_JS = @embedFile("worker-scope.js")
 let SCOPE_EVENT_SOURCE_JS = @embedFile("worker-event-source.js")
+let SCOPE_XHR_JS = @embedFile("worker-xhr.js")
+let SCOPE_URL_JS = @embedFile("worker-url.js")
+let SCOPE_WEB_SOCKET_JS = @embedFile("worker-websocket.js")
 
 fn setUpWorker(it: *mut Interp, l: *mut Link) JsError!void {
     try js.installBuiltins(it)
     try installScope(it)
     _ = try it.runScript(WIRE_JS)
     _ = try it.runScript(SCOPE_EVENT_SOURCE_JS)
+    _ = try it.runScript(SCOPE_XHR_JS)
+    _ = try it.runScript(SCOPE_URL_JS)
+    _ = try it.runScript(SCOPE_WEB_SOCKET_JS)
     _ = try it.runScript(SCOPE_JS)
     if l.scope_hook |hook| {
         try hook(it)

@@ -59,6 +59,11 @@ struct Job {
 /// already cached are skipped; failures are left to the fetch that
 /// follows. Does nothing without a session.
 pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
+    prefetchAs(alloc, hrefs, Request { kind: kind, referrer: referrer, initiator: Initiator.Page { url: referrer } })
+}
+
+pub fn prefetchAs(alloc: Allocator, hrefs: []u8, req: Request) {
+    let referrer = req.referrer
     let began = perf.start()
     defer perf.end("prefetch", began, referrer)
     if archiveReplay() {
@@ -71,7 +76,7 @@ pub fn prefetch(alloc: Allocator, hrefs: []u8, kind: Kind, referrer: []u8) {
     defer ids.deinit()
     var lines = text.split(hrefs, "\n")
     while lines.next() |href| {
-        let id = startLoad(href, kind, referrer)
+        let id = startLoadAs(href, req)
         if id == 0 {
             continue
         }

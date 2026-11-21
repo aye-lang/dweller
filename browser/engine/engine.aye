@@ -486,7 +486,7 @@ pub struct Page {
         errdefer author.deinit()
         let sheets_began = perf.start()
         try markStyles(self, false)
-        try authorSheets(self.alloc, &self.doc, &self.url, media, &mut author)
+        try pageAuthorSheets(self, media, &mut author)
         perf.end("sheets", sheets_began, self.url.href)
         var styles = try css.Styles.init(self.alloc)
         errdefer styles.deinit()
@@ -563,20 +563,20 @@ pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32),
     var queries = try css.Sheet.init(p.alloc)
     defer queries.deinit()
     try sheetHrefs(p.alloc, &p.doc, &base, media, &mut queries, &mut hrefs)
-    try startLoads(hrefs.bytes(), net.Kind.Style, p.url.href, sheets)
+    try startLoads(hrefs.bytes(), net.Request { kind: net.Kind.Style, referrer: p.url.href, initiator: initiatorOf(p), top: rootPage(p).url.href }, sheets)
     if p.scripts_pending {
         hrefs.clear()
         try scriptHrefs(p, &mut hrefs)
-        try startLoads(hrefs.bytes(), net.Kind.Script, p.url.href, scripts)
+        try startLoads(hrefs.bytes(), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p), top: rootPage(p).url.href }, scripts)
     }
     try preloadImages(p, media)
 }
 
 // Starts the loads of `hrefs` (one per line) and adds their ids to `ids`.
-fn startLoads(hrefs: []u8, kind: net.Kind, referrer: []u8, ids: *mut List(u32)) AllocError!void {
+fn startLoads(hrefs: []u8, req: net.Request, ids: *mut List(u32)) AllocError!void {
     var lines = text.split(hrefs, "\n")
     while lines.next() |href| {
-        let id = net.startLoad(href, kind, referrer)
+        let id = net.startLoadAs(href, req)
         if id == 0 {
             continue
         }
