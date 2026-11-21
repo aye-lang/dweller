@@ -1,0 +1,22 @@
+import gpu
+import std.text
+
+
+var angle_real = @zeroed([1024]u8)
+
+fn angleDirFor(fallback: []u8) []u8 {
+    var buf = @zeroed([4096]u8)
+    var path = @zeroed([4096]u8)
+
+    for dir in gpu.angleSourceDirs(buf[..]) {
+        if dir.len == 0 || dir.len >= path.len { continue }
+
+        for i in 0..dir.len { path[i] = dir[i] }
+
+        path[dir.len] = 0
+
+        if realpath(path[..].ptr, angle_real[..].ptr) != null { return angle_real[0..strlen(angle_real[..].ptr)] }
+    }
+
+    return fallback
+}
