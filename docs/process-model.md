@@ -217,10 +217,12 @@ adds the renderers of cross-site iframes (the spawn argument
 `--site-frames`).
 
 **Modes.** `DWELLER_PROCESS` picks one: `tab` and `site` as above, and
-`single`, the page in the window's own process (there is no
-`--single-process` flag). Unset, or any other value, is `single` until Q2.14
-makes `site` the default. A test arm that means the window's own process
-sets `single` (Q2.14c), so it keeps that meaning after the flip.
+`single`, the page in the window's own process. Unset, or any other value,
+is `site` since Q2.14 (2026-11-21). The `--single-process` flag, anywhere
+among the arguments, sets `single` (`ui/take-single-process-flag.aye`):
+as in Chromium, it is for debugging, and a daily CI run
+(`single-mode.yml`) keeps the suite whole in it. A test arm that means the
+window's own process sets `single` (Q2.14c).
 
 ## 4. The site-lock checks
 
@@ -602,7 +604,8 @@ Space and the frame file are removed. What the paragraphs above call
 9. **Open: `--single-process`.** Recommendation: the same interfaces,
    bound to direct calls (no IPC, no checks), for debugging and for
    `dump` and `screenshot`. CI runs one smoke test in it. As built
-   there is no flag: an unset `DWELLER_PROCESS` is this mode.
+   (Q2.14): `--single-process` or `DWELLER_PROCESS=single`, and a daily
+   run of the whole suite.
 
 **Changes to the Q2 step list:**
 - Add **Q2.1b** before Q2.2: the in-process split of `ui/window.aye`

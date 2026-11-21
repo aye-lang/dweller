@@ -382,7 +382,7 @@ fn window_damage_rect_only() {
         .iter()
         .rposition(|f| f.iter().any(|(n, _)| n == "ui_window_px"))
         .unwrap_or_else(|| panic!("no window raster:\n{err}"));
-    if std::env::var("DWELLER_PROCESS").is_ok_and(|m| m == "site" || m == "tab") {
+    if !std::env::var("DWELLER_PROCESS").is_ok_and(|m| m == "single") {
         // With a renderer the caret is the renderer's, so the window has
         // no overlay to compose: it presents the page's texture, and the
         // last frame that drew pixels drew the rect alone.

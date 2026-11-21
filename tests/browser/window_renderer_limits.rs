@@ -175,7 +175,7 @@ fn window_renderer_limits_page_copy() {
         let events = format!("{loaded} key:cmd+a {input} key:cmd+c {input} frame frame click:50,55 release:50,55 {input} key:cmd+v {input} frame");
         let mut command = dweller_command();
         if mode.is_empty() {
-            command.env_remove("DWELLER_PROCESS");
+            command.env("DWELLER_PROCESS", "single");
         } else {
             command.env("DWELLER_PROCESS", mode);
         }
@@ -210,7 +210,7 @@ fn window_renderer_limits_root_bounds() {
     for mode in ["", "site"] {
         let mut command = dweller_command();
         let wait = if mode.is_empty() {
-            command.env_remove("DWELLER_PROCESS");
+            command.env("DWELLER_PROCESS", "single");
             "loaded ".to_string() + &"frame ".repeat(60)
         } else {
             command.env("DWELLER_PROCESS", mode);

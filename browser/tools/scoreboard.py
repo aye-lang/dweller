@@ -70,20 +70,20 @@ def count_lines(directory, name):
     return sum(len(f.read_text().split()) for f in Path(directory).glob(f"*/{name}"))
 
 
-def site_mode_lines():
-    runs = api("actions/workflows/site-mode.yml/runs?branch=main&status=completed&per_page=1")["workflow_runs"]
+def single_mode_lines():
+    runs = api("actions/workflows/single-mode.yml/runs?branch=main&status=completed&per_page=1")["workflow_runs"]
 
     if not runs:
-        return ["### Flip readiness (Q2.14a)", "", "No finished `site-mode` run on `main`."]
+        return ["### The debugging mode (Q2.14)", "", "No finished `single-mode` run on `main`."]
 
     run = runs[0]
 
     with tempfile.TemporaryDirectory() as shards:
-        gh("run", "download", str(run["id"]), "--pattern", "site-mode-*", "--dir", shards)
+        gh("run", "download", str(run["id"]), "--pattern", "single-mode-*", "--dir", shards)
         passed, failed = count_lines(shards, "ok.txt"), count_lines(shards, "failed.txt")
 
-    return ["### Flip readiness (Q2.14a)", "",
-            f"{passed} of {passed + failed} tests pass with `DWELLER_PROCESS=site` "
+    return ["### The debugging mode (Q2.14)", "",
+            f"{passed} of {passed + failed} tests pass with `DWELLER_PROCESS=single` "
             f"(run {run['id']}, {run['created_at'][:10]}, {run['head_sha'][:8]})."]
 
 
@@ -151,7 +151,7 @@ def flaky_lines():
 
 
 def cmd_summary(args):
-    sections = [["## Scoreboard, the CI cells"], conformance_lines(), site_mode_lines(), issue_lines(),
+    sections = [["## Scoreboard, the CI cells"], conformance_lines(), single_mode_lines(), issue_lines(),
                 ["### S1 no flaky test in 50 runs", "", *flaky_lines()],
                 ["### W2 and W7", "", "Not measured on CI: the site archives are on the owner's Mac (DV5)."]]
     print("\n\n".join("\n".join(s) for s in sections))

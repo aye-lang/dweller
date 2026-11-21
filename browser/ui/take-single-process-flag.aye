@@ -1,0 +1,25 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+pub fn takeSingleProcessFlag(alloc: Allocator, args: [][]u8) AllocError![][]u8 {
+    var n: usize = 0
+
+    for a in args {
+        if !text.eql(a, "--single-process") { n += 1 }
+    }
+
+    let out = try alloc.alloc([]u8{}, n)
+    var k: usize = 0
+
+    for a in args {
+        if text.eql(a, "--single-process") { continue }
+
+        out[k] = a
+        k += 1
+    }
+
+    if n < args.len { _ = setenv("DWELLER_PROCESS\x00".ptr, "single\x00".ptr, 1) }
+
+    return out
+}

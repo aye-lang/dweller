@@ -1,9 +1,11 @@
-name: site-mode
+name: single-mode
 
-# Flip readiness as a number (Q2.14a): the whole browser suite with
-# DWELLER_PROCESS=site, passed over total and the failing names. Not a
-# required check. Failing tests are the measurement: the run is red only
-# when the build breaks or a shard does not finish.
+# The debugging mode as a number (Q2.14): since the flip the suite runs
+# with a renderer per site, and this run keeps the window's own process
+# (DWELLER_PROCESS=single, Chromium's --single-process) whole: passed over
+# total and the failing names. Not a required check. Failing tests are the
+# measurement: the run is red only when the build breaks or a shard does
+# not finish.
 
 on:
   schedule:
@@ -18,7 +20,7 @@ env:
 
 jobs:
   shard:
-    name: site (${{ matrix.shard }})
+    name: single (${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
@@ -69,17 +71,17 @@ jobs:
         if: steps.aye-cache.outputs.cache-hit != 'true'
         run: cargo install --git https://github.com/aye-lang/aye --rev "$(cat AYE_REV)" --locked aye
 
-      - name: cargo test --release --test browser, DWELLER_PROCESS=site
+      - name: cargo test --release --test browser, DWELLER_PROCESS=single
         env:
-          DWELLER_PROCESS: site
-        run: .github/scripts/site-mode-shard.sh run ${{ matrix.shard }} "$SHARDS"
+          DWELLER_PROCESS: single
+        run: .github/scripts/mode-shard.sh run ${{ matrix.shard }} "$SHARDS"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: site-mode-${{ matrix.shard }}
+          name: single-mode-${{ matrix.shard }}
           path: |
-            target/site-mode/ok.txt
-            target/site-mode/failed.txt
+            target/mode-run/ok.txt
+            target/mode-run/failed.txt
           retention-days: 30
 
   count:
@@ -92,11 +94,11 @@ jobs:
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: site-mode-*
-          path: target/site-mode-shards
+          pattern: single-mode-*
+          path: target/mode-run-shards
 
       - name: Passed over total
-        run: .github/scripts/site-mode-shard.sh summary "$SHARDS" target/site-mode-shards | tee -a "$GITHUB_STEP_SUMMARY"
+        run: DWELLER_PROCESS=single .github/scripts/mode-shard.sh summary "$SHARDS" target/mode-run-shards | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Every shard finished
         env:
