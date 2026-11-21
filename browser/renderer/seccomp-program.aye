@@ -6,6 +6,7 @@ let SECCOMP_RET_KILL_PROCESS: u32 = 0x80000000
 let SECCOMP_RET_ALLOW: u32 = 0x7fff0000
 let SECCOMP_RET_EPERM: u32 = 0x00050001
 let SECCOMP_RET_ENOSYS: u32 = 0x00050026
+let SECCOMP_RET_TRAP: u32 = 0x00030000
 let SECCOMP_NR: u32 = 0
 let SECCOMP_ARCH: u32 = 4
 let AUDIT_ARCH_X86_64: u32 = 0xc000003e
@@ -31,6 +32,10 @@ fn seccompProgram(alloc: Allocator, pid: u32, landlocked: bool) AllocError!List(
     if landlocked {
         try allowSyscallIf(&mut prog, SYS_OPENAT, 2, OPEN_WRITE_FLAGS, 0)
         try allowSyscallIf(&mut prog, SYS_OPEN, 1, OPEN_WRITE_FLAGS, 0)
+
+        try answerSyscall(&mut prog, SYS_FCHDIR, SECCOMP_RET_ALLOW)
+
+        for nr in PATH_CALLS { try answerSyscall(&mut prog, nr, SECCOMP_RET_TRAP) }
     }
 
     try allowSyscallIf(&mut prog, SYS_CLONE, 0, CLONE_NOT_TLS_OR_TID, CLONE_THREAD_FLAGS)

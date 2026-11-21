@@ -1,0 +1,17 @@
+import std.text
+
+let EINVAL: i64 = 22
+
+fn readlinkAnswer(dir: Reg, path: Reg, buf: Reg, size: i64) i64 {
+    let p = path.p orelse return -EINVAL
+
+    if dir.n == AT_FDCWD && text.eql(p[0..strlen(p)], "/proc/self/exe") { return copyAnswer(trap_exe[..trap_exe_len], buf, size, false) }
+
+    let fd = openForTrap(dir, path)
+
+    if fd < 0 { return fd }
+
+    _ = rawCall(SYS_CLOSE as i64, Reg { n: fd }, Reg { n: 0 }, Reg { n: 0 })
+
+    return -EINVAL
+}

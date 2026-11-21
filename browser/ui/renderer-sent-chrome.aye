@@ -50,10 +50,12 @@ fn rendererSentChrome(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) All
             tp.status_new = true
         }
 
-        .Settled { on } => {
-            if got.frame != slot.id || on > 1 { return "bad settled" }
+        .Settled { on, ticks } => {
+            if got.frame != slot.id || on > 2 { return "bad settled" }
 
             tp.settled = on == 1
+            tp.animating = on == 2
+            tp.ticks = ticks
         }
 
         .TakeFocus { reverse } => {

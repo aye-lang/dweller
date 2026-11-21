@@ -725,9 +725,9 @@ fn window_css_animation() {
     assert!(
         recs[last_raf..]
             .iter()
-            .filter(|r| r.0 == "ui_damage_px")
-            .skip(1)
-            .all(|r| r.1.starts_with("0 ")),
+            .filter(|r| r.0 == "ui_damage_px" && !r.1.starts_with("0 "))
+            .count()
+            <= 1,
         "damage after the animation ended:\n{err}"
     );
 }
@@ -735,7 +735,8 @@ fn window_css_animation() {
 /// A CSS transition on `:hover` (P10.51d): `browser/tests/ui/hover_transition.html`
 /// moves the pointer over a box with `transition: background-color .6s,
 /// transform .6s`, with no script. Its frames damage only the box's rect,
-/// and once it ended no more animation frames run. As in
+/// and once it ended no more animation frames run (the last one's frame
+/// is drawn, and nothing after it). As in
 /// `window_css_animation` the transition runs on the wall clock: 10
 /// frames fit in it at up to 60 ms a frame, and 300 frames leave 50 after
 /// it at 10 ms a frame.
@@ -805,9 +806,9 @@ fn window_css_transition() {
     assert!(
         recs[last_raf..]
             .iter()
-            .filter(|r| r.0 == "ui_damage_px")
-            .skip(1)
-            .all(|r| r.1.starts_with("0 ")),
+            .filter(|r| r.0 == "ui_damage_px" && !r.1.starts_with("0 "))
+            .count()
+            <= 1,
         "damage after the transition ended:\n{err}"
     );
 }

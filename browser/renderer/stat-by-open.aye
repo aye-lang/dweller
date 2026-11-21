@@ -1,0 +1,23 @@
+let O_RDONLY_NONBLOCK_CLOEXEC: i64 = 0x80800
+
+fn statByOpen(dir: Reg, path: Reg, buf: Reg) i64 {
+    let fd = openForTrap(dir, path)
+
+    if fd < 0 { return fd }
+
+    defer _ = rawCall(SYS_CLOSE as i64, Reg { n: fd }, Reg { n: 0 }, Reg { n: 0 })
+
+    return rawCall(SYS_FSTAT as i64, Reg { n: fd }, buf, Reg { n: 0 })
+}
+
+fn openForTrap(dir: Reg, path: Reg) i64 {
+    return rawCall(SYS_OPENAT as i64, dir, path, Reg { n: O_RDONLY_NONBLOCK_CLOEXEC })
+}
+
+fn rawCall(nr: i64, a: Reg, b: Reg, c: Reg) i64 {
+    let r = syscall(nr, a.n, b.n, c.n)
+
+    if r == -1 { return -(errno() as i64) }
+
+    return r
+}

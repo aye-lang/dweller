@@ -1,0 +1,17 @@
+let O_DIRECTORY_CLOEXEC: i64 = 0x90000
+let SYS_FCHDIR: u32 = 81
+
+fn changeDir(path: Reg) i64 {
+    let p = path.p orelse return -EINVAL
+    let fd = rawCall(SYS_OPENAT as i64, Reg { n: AT_FDCWD }, path, Reg { n: O_DIRECTORY_CLOEXEC })
+
+    if fd < 0 { return fd }
+
+    defer _ = rawCall(SYS_CLOSE as i64, Reg { n: fd }, Reg { n: 0 }, Reg { n: 0 })
+
+    let r = rawCall(SYS_FCHDIR as i64, Reg { n: fd }, Reg { n: 0 }, Reg { n: 0 })
+
+    if r == 0 { noteCwd(p[0..strlen(p)]) }
+
+    return r
+}

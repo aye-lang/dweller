@@ -1,0 +1,31 @@
+let SYS_STAT: u32 = 4
+let SYS_LSTAT: u32 = 6
+let SYS_GETCWD: u32 = 79
+let SYS_CHDIR: u32 = 80
+let SYS_READLINK: u32 = 89
+let SYS_NEWFSTATAT: u32 = 262
+let SYS_READLINKAT: u32 = 267
+let AT_FDCWD: i64 = -100
+let AT_EMPTY_PATH: i64 = 0x1000
+let ENOSYS: i64 = 38
+
+fn answerPathCall(nr: u32, a: [4]Reg) i64 {
+    let here = Reg { n: AT_FDCWD }
+
+    if nr == SYS_STAT || nr == SYS_LSTAT { return statByOpen(here, a[0], a[1]) }
+    if nr == SYS_NEWFSTATAT { return statAt(a[0], a[1], a[2], a[3].n) }
+    if nr == SYS_READLINK { return readlinkAnswer(here, a[0], a[1], a[2].n) }
+    if nr == SYS_READLINKAT { return readlinkAnswer(a[0], a[1], a[2], a[3].n) }
+    if nr == SYS_CHDIR { return changeDir(a[0]) }
+    if nr == SYS_GETCWD { return copyAnswer(trap_cwd[..trap_cwd_len], a[0], a[1].n, true) }
+
+    return -ENOSYS
+}
+
+fn statAt(dir: Reg, path: Reg, buf: Reg, flags: i64) i64 {
+    let empty = path.p == null || path.p.?[0] == 0
+
+    if (flags & AT_EMPTY_PATH) != 0 && empty { return rawCall(SYS_FSTAT as i64, dir, buf, Reg { n: 0 }) }
+
+    return statByOpen(dir, path, buf)
+}

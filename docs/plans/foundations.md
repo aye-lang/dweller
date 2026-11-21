@@ -37,7 +37,7 @@ that decides who can close it.
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
 | S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
-| Flip readiness (Q2.14a) | 151 of 249 tests pass with `DWELLER_PROCESS=site` | 2026-11-12 | CI (the daily `site-mode` job) | Q2.14b to Q2.14h (about 50 of the 98 are test or harness artefacts, 7 are product gaps, the rest have no known cause yet), then Q2.14 |
+| Flip readiness (Q2.14a) | 377 of 377 tests pass with `DWELLER_PROCESS=site` (Q2.14h) | 2026-11-21 | cloud; CI (the daily `site-mode` job) | Q2.14 |
 | S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
 | S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
@@ -126,9 +126,9 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | Lane | Next | Then |
 |---|---|---|
 | base | DV2b | DV1 is counted over its next landings |
-| proc | then  to Q2.14h; Q2.15 and Q2.16 (the readiness list) | Q2.14 |
-| sec | Q3.15 ( to Q3.15e) | – |
-| perf | Q4.25a | Q4.25b, Q4.25e first of the kept Q4 rows (react's click), then Q6.3 to  |
+| proc | Q2.14 (the flip) | – |
+| sec | Q3.15 (Q3.15c to Q3.15e) | – |
+| perf | Q4.25e (slices 2b and 3) | Q4.6, Q4.12, Q4.16; Q6.3, Q6.13 |
 | feat | Q5.2 | – |
 
 ## Decisions (2026-11-04)
@@ -236,7 +236,7 @@ Q1.1 was listed as open at the stop, but its verify holds on `main`
 `browser` job runs "Smoke the shipped build"); closed 2026-11-11 in its
 card.
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q1.1, Q1.2, Q1.3, Q1.6, Q1.7, Q1.8, Q1.9, Q1.9b, Q1.10a, Q1.10a2, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e, Q1.12.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q1.1, Q1.2, Q1.3, Q1.6, Q1.7, Q1.8, Q1.9, Q1.9b, Q1.10a, Q1.10a2, Q1.10b, Q1.10c, Q1.10d, Q1.10d2, Q1.10e, Q1.12, Q1.4b.
 
 ## Q2: process model and site isolation (lane proc)
 
@@ -255,12 +255,9 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q2.14h | The 20 failures without a known cause (causes 3, 11, 15 and 19 to 23): read them from the first daily run after Q2.14b to Q2.14d, with shard 0's failure report kept whole, and give each a row | every failing test of the daily run has a cause in a card | – |
-| Q2.15 | The readiness list below, "Security (X1)", "Logins and popups" and "What a person sees": one card per item (`Q2.15a`, ...), each with a test that runs with `DWELLER_PROCESS=site` | every item has a done card, or a reason in its card why the flip does not need it | – |
-| Q2.16 | The readiness list below, "Speed with the flag": one card per item (`Q2.16a`, ...) | every item has a done card with its number, measured on the pages of `browser/tests/` | – |
 | Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13, Q2.14h, Q2.15, Q2.16.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 

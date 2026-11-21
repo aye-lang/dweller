@@ -1,0 +1,9 @@
+fn onSigsys(sig: i32, info: ?[*]u8, ctx: ?[*]u8) {
+    let i = info orelse return
+    let c = ctx orelse return
+    let si = @ptrCast(*SigsysInfo, i)
+    let uc = @ptrCast(*mut SigsysContext, c)
+    let a = [4]Reg{uc.regs[REG_RDI], uc.regs[REG_RSI], uc.regs[REG_RDX], uc.regs[REG_R10]}
+
+    uc.regs[REG_RAX] = Reg { n: answerPathCall(si.nr as u32, a) }
+}

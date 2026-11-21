@@ -84,7 +84,9 @@ var action_next: usize = 0
 // script, decode.
 var phase_ns: [6]u64 = [6]u64{0, 0, 0, 0, 0, 0}
 let PHASES = [6][]u8{"net", "style", "layout", "paint", "script", "decode"}
+let SLOW_LOOPS_A_SECOND: u64 = 3
 var slow_ms: u64 = 0
+var slow_count: u64 = 0
 // The page shown: when its navigation began, its load time, whether it
 // was painted since, and its scroll frames (ms).
 var nav_ms: u64 = 0
@@ -292,10 +294,14 @@ pub fn loopEnd(ms: u64) {
     if !tm_on {
         return
     }
-    // At most one a second: a busy page is slow loop after loop.
+    // At most three a second: a busy page is slow loop after loop.
     let now = std.time.monotonicMs()
     if ms > SLOW_LOOP_MS && now - slow_ms >= 1000 {
         slow_ms = now
+        slow_count = 0
+    }
+    if ms > SLOW_LOOP_MS && slow_count < SLOW_LOOPS_A_SECOND {
+        slow_count += 1
         let mark = begin("slow_loop")
         putInt("ms", ms)
         putByte(',')

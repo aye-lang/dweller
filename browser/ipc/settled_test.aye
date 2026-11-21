@@ -4,13 +4,16 @@ test "settled goes from the renderer and round-trips" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 3, Message.Settled { on: 1 })
+    let got = try roundTrip(&mut out, 3, Message.Settled { on: 2, ticks: 7 })
 
     match got.message {
-        .Settled { on } => @expectEqual(1, on)
+        .Settled { on, ticks } => {
+            @expectEqual(2, on)
+            @expectEqual(7, ticks)
+        }
         _ => @expect(false)
     }
 
-    @expect(fromRenderer(Message.Settled { on: 0 }))
-    @expectEqual(78, Message.Settled { on: 0 }.kind())
+    @expect(fromRenderer(Message.Settled { on: 0, ticks: 0 }))
+    @expectEqual(78, Message.Settled { on: 0, ticks: 0 }.kind())
 }
