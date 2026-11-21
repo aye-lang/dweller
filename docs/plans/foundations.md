@@ -129,7 +129,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 |---|---|---|
 | base | DV1 is counted over its next landings | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
-| sec | Q3.15 (Q3.15d, Q3.15e) | – |
+| sec | Q3.15 (Q3.15d) | – |
 | perf | Q4.25e (slices 2b and 3) | Q4.6, Q4.12, Q4.16; Q6.3, Q6.13 |
 | feat | Q5.2 | – |
 
