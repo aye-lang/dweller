@@ -1262,3 +1262,29 @@ fn window_renderer_agent_refs() {
     let out = window.wait_with_output().unwrap();
     assert!(!text(&out.stderr).contains("bad message"), "{}", text(&out.stderr));
 }
+
+/// Q2.14: with no `DWELLER_PROCESS` a page loads in a renderer of its
+/// site; `--single-process` (anywhere among the arguments) keeps it in the
+/// window's own process, for debugging, as Chromium's flag does.
+#[test]
+fn window_process_default_and_single_flag() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let run = |extra: &[&str]| -> String {
+        let out = dweller_command()
+            .current_dir(root())
+            .env_remove("DWELLER_PROCESS")
+            .args(extra)
+            .args(["browser/tests/ui/form.html", "--frames", "300", "--until-idle", "--state", "--processes"])
+            .output()
+            .unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{extra:?}: {}\n{}", out.status, text(&out.stderr));
+        text(&out.stdout)
+    };
+    let default = run(&[]);
+    assert!(default.lines().any(|l| l.starts_with("renderer-site file:")), "{default}");
+    let single = run(&["--single-process"]);
+    assert!(!single.lines().any(|l| l.starts_with("renderer")), "{single}");
+}

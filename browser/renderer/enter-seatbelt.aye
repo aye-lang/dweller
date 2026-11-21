@@ -31,9 +31,14 @@ fn enterSeatbelt(alloc: Allocator) bool {
     strs.append(dir) catch return false
     strs.appendByte(0) catch return false
 
+    let angle_at = strs.len()
+
+    strs.append(angleDirFor(dir)) catch return false
+    strs.appendByte(0) catch return false
+
     let all = strs.bytes()
     let home: ?[*]u8 = getenv("HOME".ptr) orelse "".ptr
-    var params = [5]?[*]u8{"EXECUTABLE_DIR".ptr, all[PROFILE.len + 1..].ptr, "HOME_DIR".ptr, home, null}
+    var params = [7]?[*]u8{"EXECUTABLE_DIR".ptr, all[PROFILE.len + 1..].ptr, "HOME_DIR".ptr, home, "ANGLE_DIR".ptr, all[angle_at..].ptr, null}
     var failure: ?[*]u8 = null
 
     if sandbox_init_with_parameters(all.ptr, 0, params[..].ptr, &mut failure) == 0 { return true }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The browser suite with DWELLER_PROCESS=site (Q2.14a, `.github/workflows/site-mode.yml`).
+# The browser suite in one DWELLER_PROCESS mode (Q2.14a; `.github/workflows/single-mode.yml`).
 #
 # run SHARD SHARDS: runs the shard's tests once, with no re-run of a failed
-#   test, and writes the names that passed and failed to target/site-mode/ok.txt
+#   test, and writes the names that passed and failed to target/mode-run/ok.txt
 #   and failed.txt. A failing test is the measurement, not an error: the exit
 #   is non-zero only when the shard did not run to its `test result:` line, or
 #   when the names read from the log do not add up to that line.
@@ -11,7 +11,7 @@
 #   grouped by the name's prefix up to its second underscore.
 set -eo pipefail
 
-out=target/site-mode
+out=target/mode-run
 
 shard_names() {
   cargo test --release --test browser -- --list --format terse | sed -n 's/: test$//p' \
@@ -72,7 +72,7 @@ summary() {
   finished="$(find "$dir" -mindepth 1 -maxdepth 1 -type d | wc -l)"
   passed="$(shard_files ok.txt | wc -l)"
   failed="$(shard_files failed.txt | wc -l)"
-  echo "## \`DWELLER_PROCESS=site\`: $((passed)) / $((passed + failed)) passed"
+  echo "## \`DWELLER_PROCESS=${DWELLER_PROCESS:-site}\`: $((passed)) / $((passed + failed)) passed"
   echo
   echo "$((failed)) failing; $((finished)) of $shards shards finished."
   shard_files failed.txt \

@@ -1,8 +1,20 @@
 import http.server
 import os
+import socketserver
 import ssl
 import sys
 import threading
+
+
+class QuickServer(http.server.ThreadingHTTPServer):
+    """A ThreadingHTTPServer that binds without `socket.getfqdn`: that
+    reverse lookup of the address takes about 35 s on the macOS CI runners
+    (DV2b), and a test waits for the port line printed after the bind."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
 
 DIR = sys.argv[1]
 GIF = bytes.fromhex(
@@ -51,7 +63,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def serve(secure):
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    srv = QuickServer(("127.0.0.1", 0), Handler)
     if secure:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(os.path.join(DIR, "site.pem"))

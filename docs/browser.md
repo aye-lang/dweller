@@ -104,9 +104,10 @@ it) and lists the exceptions with the card that removes each.
 ## Threading model
 
 One thread owns the DOM, the scripts, style, layout and paint of a
-page: the window's thread by default, and the main thread of the tab's
-renderer process with `DWELLER_PROCESS=tab` or `site` and always for a
-Space's tabs (`docs/process-model.md`).
+page: the main thread of the page's renderer process (the default,
+`site`, since Q2.14; also `tab`), or the window's thread with
+`DWELLER_PROCESS=single` or `--single-process`; a Space's tabs are always
+in renderers (`docs/process-model.md`).
 Chromium's rule is the same (`docs/threading_and_tasks.md`: tasks on
 sequences, not threads; only the main thread touches the DOM), and the
 engine's module-level state (B9) makes any other split a rewrite.
@@ -140,10 +141,12 @@ engine's module-level state (B9) makes any other split a rewrite.
 Features built by the Q steps of `docs/plans/foundations.md`, each with
 its card in `docs/plans/cards/`:
 
-- **Renderer processes** (Q2, `docs/process-model.md`). `DWELLER_PROCESS=tab`
-  runs each tab's page in a sandboxed process (`dweller --renderer FD`,
-  `renderer/`, `ipc/`), `site` also each cross-site iframe; unset, the
-  page runs in the window's process. The sandbox is seatbelt on macOS
+- **Renderer processes** (Q2, `docs/process-model.md`). By default (Q2.14)
+  each site's pages run in a sandboxed process (`dweller --renderer FD`,
+  `renderer/`, `ipc/`), cross-site iframes too (`DWELLER_PROCESS=site`);
+  `DWELLER_PROCESS=tab` is one process per tab, and `DWELLER_PROCESS=single`
+  or `--single-process` runs the page in the window's process, for
+  debugging. The sandbox is seatbelt on macOS
   and Landlock with seccomp on Linux; `DWELLER_NO_SANDBOX=1` turns it
   off with a warning. In a headless run `--processes` (with `--state`)
   adds the renderers' lines. Tests: `tests/browser/window_renderer*.rs`.

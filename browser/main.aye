@@ -102,11 +102,17 @@ pub fn main() {
 }
 
 fn run(alloc: Allocator) i32 {
-    let args = std.os.args(alloc) catch |e| {
+    let all_args = std.os.args(alloc) catch |e| {
         std.log.err("out of memory")
         return 1
     }
-    defer alloc.free(args)
+    defer alloc.free(all_args)
+    let kept = ui.takeSingleProcessFlag(alloc, all_args) catch |e| {
+        std.log.err("out of memory")
+        return 1
+    }
+    defer alloc.free(kept)
+    let args = kept
     if args.len < 2 {
         std.log.err(USAGE_ALL)
         return 2
@@ -140,7 +146,7 @@ fn run(alloc: Allocator) i32 {
         return printMain(alloc, args[2..])
     }
     if args.len >= 2 && (text.eql(args[1], "agent") || text.eql(args[1], "mcp")) {
-        if text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "tab") || text.eql(std.os.getenv("DWELLER_PROCESS") orelse "", "site") { return ui.relayAgentMain(alloc, args[2..], text.eql(args[1], "mcp")) }
+        if ui.inRenderers() { return ui.relayAgentMain(alloc, args[2..], text.eql(args[1], "mcp")) }
 
         return agent.serveMain(alloc, args[2..], text.eql(args[1], "mcp"))
     }

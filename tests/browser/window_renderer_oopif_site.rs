@@ -6,7 +6,7 @@ use super::*;
 fn run_site(base: &str, page: &str, mode: &str, png: &Path, events: &str) -> String {
     let mut command = dweller_command();
     if mode.is_empty() {
-        command.env_remove("DWELLER_PROCESS");
+        command.env("DWELLER_PROCESS", "single");
     } else {
         command.env("DWELLER_PROCESS", mode);
     }
@@ -327,7 +327,7 @@ fn window_renderer_oopif_site_late_fonts() {
     let run = |png: &Path, events: &str, envs: &[(&str, &str)]| -> String {
         let out = dweller_command()
             .current_dir(root())
-            .env_remove("DWELLER_PROCESS")
+            .env("DWELLER_PROCESS", "single")
             .env("HOME", &home)
             .env("DWELLER_PROFILE", &profile)
             .envs(envs.iter().copied())

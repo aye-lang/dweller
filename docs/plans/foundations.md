@@ -37,11 +37,11 @@ that decides who can close it.
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
 | S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
-| Flip readiness (Q2.14a) | 377 of 377 tests pass with `DWELLER_PROCESS=site` (Q2.14h) | 2026-11-21 | cloud; CI (the daily `site-mode` job) | Q2.14 |
-| S2 a tab crash stays in the tab | holds with `DWELLER_PROCESS=tab` or `site` (Q2.5 tests); not in the default build | 2026-11-08 | CI | Q2.14 |
+| The debugging mode (Q2.14) | the suite runs in site mode, the default since Q2.14 (379 / 379); `DWELLER_PROCESS=single` 379 / 379 | 2026-11-21 | CI (the daily `single-mode` job) | – |
+| S2 a tab crash stays in the tab | holds in the default build (site mode since Q2.14; Q2.5 tests) | 2026-11-21 | CI | – |
 | S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
-| X1 a compromised renderer reads nothing | holds behind the flag (Q2.7, Q2.8a, Q2.8b tests) | 2026-11-09 | CI | Q2.14 and the readiness list in Q2 |
+| X1 a compromised renderer reads nothing | holds in the default build (Q2.7, Q2.8a, Q2.8b tests; site mode since Q2.14) | 2026-11-21 | CI | – |
 | X2 web security areas at threshold | `conformance.py check` passes, but the thresholds are floors set under the first score: `html/browsers/origin` 2.4% (floor 2), `html/browsers/sandboxing` 34.4% (30), `x-frame-options` 38.9% (35) | 2026-11-09 | CI, cloud | targets (decision 3) |
 | X3 bad TLS refused | holds (Q3.4, Q3.4b tests) | 2026-11-08 | CI | – |
 | W7 interactivity, 20 sites | 9 of 20 with the fast build, 8 of 20 with the safe build that ships; the 4 worst re-measured 2026-11-08: none passes, 1.05× (react) to 12× (mistral) over the loop budget | 2026-11-04 | the Mac only | never measured with site isolation; decision 2 |
@@ -113,7 +113,9 @@ Work only the owner's Mac can verify, kept in one list so that one
 sitting clears it (`velocity.md`, "Rules", 6):
 - Q0.3: W2 and W3 on the current `main` (W3 is 27 days old).
 - W7 and W8 on all 20 sites, in process and with `DWELLER_PROCESS=site`
-  (last full run 2026-11-04).
+  (last full run 2026-11-04), now the default (Q2.14).
+- WebGL in a renderer on macOS (Q2.14h): Metal in Seatbelt, SwiftShader in
+  the macOS ANGLE package.
 - Q2.13: memory per tab against Chromium.
 - Q1.11: the soak.
 - macOS sandbox Left items (Q2.8a) and Q5.4 (IME) when they come up.
@@ -126,7 +128,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | Lane | Next | Then |
 |---|---|---|
 | base | DV2b | DV1 is counted over its next landings |
-| proc | Q2.14 (the flip) | – |
+| proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
 | sec | Q3.15 (Q3.15c to Q3.15e) | – |
 | perf | Q4.25e (slices 2b and 3) | Q4.6, Q4.12, Q4.16; Q6.3, Q6.13 |
 | feat | Q5.2 | – |
@@ -255,9 +257,8 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q2.14 | `DWELLER_PROCESS=site` becomes the default. `--single-process` is kept for debugging only, as in Chromium | the full CI is green, and W7/W8 are re-measured | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13, Q2.14h, Q2.15, Q2.16.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13, Q2.14h, Q2.15, Q2.16, Q2.14.
 
 ### Readiness list for Q2.14 (proposed 2026-11-11)
 
