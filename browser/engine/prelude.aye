@@ -3008,6 +3008,23 @@ pub let PRELUDE =
     \\  constructor() { throw new TypeError('Illegal constructor'); }
     \\}
     \\hidden(G, 'SVGAnimatedString', SVGAnimatedString);
+    \\const XLINK = 'http://www.w3.org/1999/xlink';
+    \\function svgHrefOf(el) {
+    \\  return el.hasAttribute('href') ? el.getAttribute('href') : (el.getAttributeNS(XLINK, 'href') || '');
+    \\}
+    \\for (const C of ['SVGAElement', 'SVGImageElement', 'SVGUseElement']) {
+    \\  if (typeof G[C] !== 'function') continue;
+    \\  getter(G[C].prototype, 'href', function () {
+    \\    if (this.__href) return this.__href;
+    \\    const el = this;
+    \\    const s = Object.create(SVGAnimatedString.prototype, {
+    \\      baseVal: { get() { return svgHrefOf(el); }, set(v) { el.setAttribute('href', String(v)); }, enumerable: true },
+    \\      animVal: { get() { return svgHrefOf(el); }, enumerable: true },
+    \\    });
+    \\    hidden(this, '__href', s);
+    \\    return s;
+    \\  });
+    \\}
     \\getter(G, 'origin', function () { return ak.winOrigin(G); });
     \\hidden(G, 'isSecureContext', true);
     \\hidden(G, 'Image', function Image(width, height) {
