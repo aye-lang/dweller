@@ -1,0 +1,28 @@
+import js
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#evaluate-a-javascript:-url
+fn runQueuedJavascriptUrl(s: *mut Script, i: usize) AllocError!void {
+    let t = s.timers.orderedRemove(i)
+    let it = &mut s.it
+    let arr = js.objectOf(it.roots.items()[t.root])
+    let code = try ownedBytes(s.alloc, it.heap.bytes(js.strOf(it.heap.obj(arr).elems[0])))
+
+    defer s.alloc.free(code)
+    it.removeRoot(t.root)
+
+    if !s.real && t.due > s.now {
+        s.now = t.due
+    }
+
+    let markup = (try javascriptResult(s, code)) orelse return
+
+    if s.page.parent == null {
+        s.alloc.free(markup)
+
+        return
+    }
+
+    freePolicy(s.alloc, s.page.opened_doc)
+    s.page.opened_doc = markup
+}

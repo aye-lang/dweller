@@ -1953,6 +1953,9 @@ pub struct Ui {
                     return
                 }
                 defer target.deinit(self.alloc)
+                if engine.isJavascriptUrl(&target) {
+                    return self.navigated(try engine.followJavascriptNavigation(self.tab, p, &target))
+                }
                 self.tab.replace_next = nav.replace
                 try self.go(&target, engine.initiatorOf(p))
                 self.tab.replace_next = false

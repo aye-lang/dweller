@@ -1,0 +1,20 @@
+import std.mem.AllocError
+import std.text
+
+fn frameSourceJavascript(p: *mut Page, child: *mut Page, key: []u8) AllocError!void {
+    if !text.startsWith(key, "src ") {
+        return
+    }
+
+    let src = text.trim(key[4..])
+
+    if src.len < JAVASCRIPT_SCHEME.len || !text.eqlIgnoreCase(src[..JAVASCRIPT_SCHEME.len], JAVASCRIPT_SCHEME) {
+        return
+    }
+
+    var target = p.resolve(p.alloc, src) catch return
+
+    defer target.deinit(p.alloc)
+
+    return runFrameJavascript(p, child, target.href)
+}

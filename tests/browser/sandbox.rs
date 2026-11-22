@@ -152,7 +152,8 @@ fn javascript_url_in_named_popup() {
 }
 
 /// A page whose CSP has no `'unsafe-inline'` cannot run a `javascript:`
-/// URL in its popup: the opener gets a violation of `script-src-elem`.
+/// URL in its popup or in a frame's `src`: the page gets a violation of
+/// `script-src-elem` for each, and the frame stays empty.
 #[test]
 fn javascript_url_refused_by_csp() {
     let got = javascript_url_page("javascript_url_csp.html");
@@ -160,6 +161,7 @@ fn javascript_url_refused_by_csp() {
         return;
     }
     assert!(got.contains("violation: script-src-elem inline\n"), "{got}");
+    assert!(got.contains("frame: \"\"\n"), "the frame stays empty:\n{got}");
     assert!(got.contains("done\n") && !got.contains("ran"), "{got}");
 }
 
@@ -186,4 +188,31 @@ fn blank_popup_is_an_empty_document() {
     assert!(dump.status.success(), "{}\n{}", dump.status, text(&dump.stderr));
     let got = text(&dump.stdout);
     assert!(got.contains("popup body \"\""), "{got}");
+}
+
+/// A frame whose `src` is a `javascript:` URL shows the string the URL
+/// returns, and so does a frame that sets its own `location` to one; a
+/// popup that sets its own `location` to one runs it. In the window with
+/// one process (the popup's tab is shown last: `cmd+1` shows the opener).
+#[test]
+fn javascript_url_of_frames_and_location() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let frames = "frame ".repeat(30);
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "single")
+        .args([
+            &format!("{}/sandbox/javascript_url_frames.html", srv.base),
+            "--frames", "300", "--until-idle", "--text", "--events", &format!("{frames}key:cmd+1 frame"),
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    for want in ["the popup ran its own location\n", "src frame: from the src\n", "self frame: navigated itself\n", "done\n"] {
+        assert!(got.contains(want), "no {want:?} in:\n{got}");
+    }
 }

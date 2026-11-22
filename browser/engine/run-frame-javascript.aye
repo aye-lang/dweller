@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
+fn runFrameJavascript(source: *mut Page, child: *mut Page, href: []u8) AllocError!void {
+    let s = source.script orelse return
+
+    if try javascriptUrlRefused(s, href) {
+        return
+    }
+
+    if !sameOrigin(source, child) {
+        return
+    }
+
+    let cs = child.script orelse return
+    let code = try url.percentDecode(child.alloc, href[JAVASCRIPT_SCHEME.len..])
+
+    defer child.alloc.free(code)
+    let markup = (try javascriptResult(cs, code)) orelse return
+
+    freePolicy(child.alloc, child.opened_doc)
+    child.opened_doc = markup
+}

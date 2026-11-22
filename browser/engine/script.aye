@@ -183,6 +183,7 @@ struct Timer {
     request: bool = false
     stream: bool = false
     stream_poll: bool = false
+    javascript_url: bool = false
 }
 
 /// What a script asked the tab to do; the front end does it once the
@@ -1640,6 +1641,9 @@ fn runTimer(s: *mut Script, i: usize) AllocError!void {
     let began = perf.start()
     defer perf.end("timers", began, s.page.url.href)
     var t = s.timers.items()[i]
+    if t.javascript_url {
+        return runQueuedJavascriptUrl(s, i)
+    }
     if t.stream {
         match streamTurn(s, i) {
             .Idle => return

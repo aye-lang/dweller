@@ -289,6 +289,7 @@ fn loadFrame(p: *mut Page, el: NodeId) AllocError!?*mut Page {
         return e
     }
     try runDocument(child, scriptingEnabled())
+    try frameSourceJavascript(p, child, key)
     return child
 }
 
@@ -475,7 +476,8 @@ fn reloadFrame(p: *mut Page, k: usize, key: []u8) AllocError!void {
         gone.page.destroy()
         return
     }
-    return replaceFrame(p, k, child, null)
+    try replaceFrame(p, k, child, null)
+    return frameSourceJavascript(p, child, key)
 }
 
 // Frame `k` of `p` shows `child` now (its scripts not run yet): the old
@@ -511,6 +513,9 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
+            if isJavascriptUrl(&target) {
+                return runFrameJavascript(c, c, target.href)
+            }
             if nav.replace {
                 return replaceInFrame(FrameSlot { parent: p, index: k }, &target, initiatorOf(c))
             }
