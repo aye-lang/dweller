@@ -39,5 +39,7 @@ Checked on the runs of 2026-11-22 (#386, #388, #389, #390):
 - a PR run without the label: 4 Ubuntu shards, `perf` skipped, `browser` reporting (e.g. run 44989937034 of #386); the PRs were mergeable and entered the queue on auto-merge.
 - the queue runs: 4 Ubuntu shards, 3 macOS shards and `perf` (runs 894 and 897, 11 jobs each), green.
 
+Landings since DV1 (48fa418b, 2026-11-12), counted from `main`'s first-parent merges: 16 by #395 (2026-11-22 14:43 UTC), #371 to #395.
+
 Left:
 - The 30-landing count and the deliberate macOS break (card verify).
