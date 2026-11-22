@@ -50,7 +50,7 @@ WPT_URL = "https://github.com/web-platform-tests/wpt.git"
 PROCESS = ""
 TIMEOUT_NORMAL = 10
 TIMEOUT_LONG = 60
-EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources", "FileAPI/file/resources"]
+EXTRA_DIRS = ["resources", "common", "fonts", "images", "media", "css/support", "css/reference", "tools", "docs", "web-animations/resources", "FileAPI/file/resources", "reporting/resources"]
 # Directories that hold test support files, not tests.
 SKIP_DIRS = {"resources", "support", "tools", "reference", "references"}
 # Tests that need servers or globals Dweller does not have.

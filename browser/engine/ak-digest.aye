@@ -1,0 +1,40 @@
+import js
+import js.Args
+import js.Interp
+import js.JsError
+import js.Value
+import std.crypto
+import std.mem
+
+fn akDigest(it: *mut Interp, a: Args) JsError!Value {
+    let bits = try it.toNumber(it.arg(a, 0))
+    let data = js.objectOf(it.arg(a, 1))
+    let out = js.objectOf(it.arg(a, 2))
+
+    if data == js.NONE || out == js.NONE {
+        return Value.Undefined
+    }
+
+    let b = js.viewBytes(it, data)
+    let o = js.viewBytes(it, out)
+
+    if bits == 1.0 && o.len == 20 {
+        let d = crypto.sha1(b)
+
+        mem.copy(o, d[..])
+    } else if bits == 256.0 && o.len == 32 {
+        let d = crypto.sha256(b)
+
+        mem.copy(o, d[..])
+    } else if bits == 384.0 && o.len == 48 {
+        let d = crypto.sha384(b)
+
+        mem.copy(o, d[..])
+    } else if bits == 512.0 && o.len == 64 {
+        let d = crypto.sha512(b)
+
+        mem.copy(o, d[..])
+    }
+
+    return Value.Undefined
+}

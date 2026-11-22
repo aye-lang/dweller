@@ -1,0 +1,60 @@
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#source-list-subsumption:
+fn listSubsumes(a: Allocator, da: *Directive, db: *Directive, name: []u8, origin: *Url) AllocError!bool {
+    if db.none {
+        return true
+    }
+
+    if da.none {
+        return false
+    }
+
+    let la = da.sources.items()
+    let lb = db.sources.items()
+    let script = text.startsWith(name, "script-src")
+    let typed = script || text.startsWith(name, "style-src")
+
+    if script && hasKeyword(lb, "'strict-dynamic'") && !hasKeyword(la, "'strict-dynamic'") {
+        return false
+    }
+
+    if typed {
+        for keyword in [3][]u8{"'unsafe-eval'", "'unsafe-hashes'", "'wasm-unsafe-eval'"} {
+            if hasKeyword(lb, keyword) && !hasKeyword(la, keyword) && !(text.eql(keyword, "'wasm-unsafe-eval'") && hasKeyword(la, "'unsafe-eval'")) {
+                return false
+            }
+        }
+
+        if allowsAllInlineOf(lb, script) && !allowsAllInlineOf(la, script) {
+            return false
+        }
+    }
+
+    let xs = try subsumingSources(a, da, name, origin)
+    let ys = try subsumingSources(a, db, name, origin)
+
+    for y in ys.items() {
+        if (y.kind == SOURCE_NONCE || y.kind == SOURCE_HASH) && !typed {
+            continue
+        }
+
+        var found = false
+
+        for x in xs.items() {
+            if sourceSubsumes(x, y, origin.scheme) {
+                found = true
+                break
+            }
+        }
+
+        if !found {
+            return false
+        }
+    }
+
+    return true
+}

@@ -1,0 +1,24 @@
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#effective-directive-value
+fn effectiveValue(all: []Directive, name: []u8) ?*Directive {
+    if !knownDirective(name) {
+        return null
+    }
+
+    if findDirective(all, name) |d| {
+        return d
+    }
+
+    if !text.eqlIgnoreCase(name, "default-src") && !text.eqlIgnoreCase(name, "frame-ancestors") && !text.eqlIgnoreCase(name, "base-uri") && !text.eqlIgnoreCase(name, "form-action") {
+        var chain = text.split(fallbackChain(name), " ")
+
+        while chain.next() |up| {
+            if findDirective(all, up) |d| {
+                return d
+            }
+        }
+    }
+
+    return null
+}

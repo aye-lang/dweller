@@ -19,9 +19,15 @@ fn runAnimationFrame(r: *mut TabRenderer, p: *mut engine.Page) !void {
 
     let began = perf.start()
 
-    if try engine.runAnimationFrames(p, frame_ns) { r.due = true }
-
-    r.ticks += 1
+    if !(try engine.runAnimationFrames(p, frame_ns)) {
+        r.ticks += 1
+    } else if r.free[0] || r.free[1] {
+        r.due = true
+        r.ticks += 1
+    } else {
+        r.due = true
+        r.tick_painting = true
+    }
 
     perf.end("ui_raf", began, "")
 }

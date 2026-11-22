@@ -1,0 +1,48 @@
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#source-expression-subsumption;
+fn sourceSubsumes(a: Source, b: Source, scheme: []u8) bool {
+    if a.kind == SOURCE_HASH && b.kind == SOURCE_HASH {
+        return text.eql(a.text, b.text)
+    }
+
+    if a.kind == SOURCE_NONCE && b.kind == SOURCE_NONCE {
+        return true
+    }
+
+    if (a.kind != SOURCE_SCHEME && a.kind != SOURCE_HOST) || (b.kind != SOURCE_SCHEME && b.kind != SOURCE_HOST) {
+        return false
+    }
+
+    var scheme_a = a.scheme
+    var scheme_b = b.scheme
+
+    if scheme_a.len == 0 { scheme_a = scheme }
+    if scheme_b.len == 0 { scheme_b = scheme }
+
+    if !schemesMatch(scheme_a, scheme_b) {
+        return false
+    }
+
+    if a.kind == SOURCE_SCHEME || b.kind == SOURCE_SCHEME {
+        return a.kind == SOURCE_SCHEME
+    }
+
+    if text.startsWith(b.host, "*") {
+        if !text.startsWith(a.host, "*") || !hostPartMatch(a.host, b.host[1..]) && !text.eqlIgnoreCase(a.host, b.host) {
+            return false
+        }
+    } else if !hostPartMatch(a.host, b.host) {
+        return false
+    }
+
+    if text.eql(b.port, "*") {
+        if !text.eql(a.port, "*") {
+            return false
+        }
+    } else if !portsMatch(a.port, b.port, scheme_b) {
+        return false
+    }
+
+    return pathPartMatch(a.path, b.path)
+}

@@ -383,6 +383,10 @@ fn installElementInterfaces(s: *mut Script, html: u32, element: u32) JsError!voi
     try defineInterfaces(s, SVG_GEOMETRY_INTERFACES, shapes, true)
     s.mathml_proto = try newProto(it, element)
     try interfaceObject(it, "MathMLElement", s.mathml_proto)
+
+    for proto in [3]u32{html, s.svg_proto, s.mathml_proto} {
+        try accessor(it, proto, "nonce", elementNonceGet, elementNonceSet)
+    }
 }
 
 // The prototype of the wrapper of the element `h`: its interface's.
@@ -992,6 +996,7 @@ fn copyTree(doc: *mut Document, h: NodeId, deep: bool) AllocError!NodeId {
         .Element => {
             copy = try doc.createElement(n.name, n.attrs)
             doc.node(copy).ns = n.ns
+            try copyNonce(doc, h, copy)
         }
         .Text => {
             copy = try doc.createText(n.data)

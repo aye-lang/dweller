@@ -1,0 +1,60 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#intersection-source-list
+fn intersectLists(a: Allocator, da: *Directive, db: *Directive, name: []u8, origin: *Url) AllocError!Directive {
+    var ea = try effectiveSources(a, da, name, origin)
+    var eb = try effectiveSources(a, db, name, origin)
+    var out = Directive { name: name, value: "", sources: List(Source).init(a), none: true }
+
+    if ea.none || eb.none {
+        return out
+    }
+
+    var schemes = List(Source).init(a)
+
+    for y in eb.sources.items() {
+        if y.kind == SOURCE_SCHEME && hasScheme(ea.sources.items(), y.scheme) {
+            try schemes.append(y)
+        }
+    }
+
+    for y in schemes.items() {
+        let covered = (text.eqlIgnoreCase(y.scheme, "https") && hasScheme(schemes.items(), "http")) || (text.eqlIgnoreCase(y.scheme, "wss") && hasScheme(schemes.items(), "ws"))
+
+        if !covered {
+            try out.sources.append(y)
+        }
+    }
+
+    for x in ea.sources.items() {
+        if x.kind == SOURCE_SCHEME && hasScheme(schemes.items(), x.scheme) {
+            continue
+        }
+
+        for y in eb.sources.items() {
+            if (x.kind != SOURCE_SCHEME && x.kind != SOURCE_HOST) || (y.kind != SOURCE_SCHEME && y.kind != SOURCE_HOST) {
+                if x.kind == y.kind && text.eqlIgnoreCase(x.text, y.text) {
+                    try out.sources.append(x)
+                }
+
+                continue
+            }
+
+            if hasScheme(schemes.items(), y.scheme) {
+                continue
+            }
+
+            if intersectSource(x, y) |s| {
+                try out.sources.append(s)
+            }
+        }
+    }
+
+    out.none = out.sources.len() == 0
+
+    return out
+}

@@ -1,0 +1,12 @@
+import csp
+import std.mem.AllocError
+import url.Url
+
+// https://w3c.github.io/webappsec-csp/#should-block-request
+fn workerRefused(s: *mut Script, target: *Url) AllocError!bool {
+    let r = csp.workerUrlRefusal(s.page.csp, target, &s.page.url) orelse return false
+
+    try refuseWorker(s, r, target.href)
+
+    return true
+}

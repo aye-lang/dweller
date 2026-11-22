@@ -1,0 +1,13 @@
+import js.Interp
+import js.JsError
+
+fn runWorklet(it: *mut Interp, l: *mut Link) JsError!void {
+    if l.has_source {
+        return evaluateWorklet(it, l, l.source)
+    }
+
+    let source = try loadBytes(it, l.href, FETCH_MODULE)
+    defer it.alloc.free(source)
+
+    return evaluateWorklet(it, l, source)
+}

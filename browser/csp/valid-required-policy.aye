@@ -1,0 +1,29 @@
+import std.text
+
+let MAX_REQUIRED: usize = 4096
+
+// https://w3c.github.io/webappsec-cspee/#csp-attribute
+pub fn validRequiredPolicy(value: []u8) bool {
+    if text.trim(value).len == 0 || value.len > MAX_REQUIRED {
+        return false
+    }
+
+    for c in value {
+        if c == ',' || ((c < 0x20 || c > 0x7e) && c != '\t') {
+            return false
+        }
+    }
+
+    var all = text.split(value, ";")
+
+    while all.next() |d| {
+        var at: usize = 0
+        let name = nextWord(d, &mut at) orelse continue
+
+        if !directiveName(name) || text.eqlIgnoreCase(name, "report-uri") || text.eqlIgnoreCase(name, "report-to") {
+            return false
+        }
+    }
+
+    return true
+}

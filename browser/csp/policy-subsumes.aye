@@ -1,0 +1,43 @@
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#csp-list-subsumption
+pub fn policySubsumes(alloc: Allocator, required: []u8, policies: []u8, origin: *Url) AllocError!bool {
+    var arena = Arena.init(alloc)
+    defer arena.deinit()
+
+    let a = arena.allocator()
+    let pa = try parsePolicy(a, required)
+    var known = false
+
+    for d in pa.items() {
+        known = known || knownDirective(d.name)
+    }
+
+    if !known {
+        return true
+    }
+
+    var merged = List(Directive).init(a)
+    var any = false
+    var all = text.split(policies, ",")
+
+    while all.next() |policy| {
+        if text.trim(policy).len == 0 {
+            continue
+        }
+
+        any = true
+        merged = try intersectPolicies(a, merged, try parsePolicy(a, policy), origin)
+    }
+
+    if !any {
+        return false
+    }
+
+    return policySubsumesList(a, pa, merged, origin)
+}

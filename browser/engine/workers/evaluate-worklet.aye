@@ -1,0 +1,18 @@
+import js
+import js.Interp
+import js.JsError
+
+// https://html.spec.whatwg.org/multipage/worklets.html#fetch-a-worklet-script-graph
+fn evaluateWorklet(it: *mut Interp, l: *mut Link, source: []u8) JsError!void {
+    let ran = try js.runModuleScript(it, null, source, l.href, false)
+
+    if js.isNullish(ran) {
+        try it.typeError("Failed to load a module of the worklet")
+    }
+
+    let m = try l.seal(false, READY, "")
+
+    l.toPage(m) catch |e| {
+        l.release(m)
+    }
+}

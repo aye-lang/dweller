@@ -1,0 +1,20 @@
+import dom.NodeId
+import net
+import std.mem.AllocError
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#sec-required-csp-header
+fn fetchFramePage(p: *mut Page, el: NodeId, target: *Url, body: ?*net.Body, initiator: net.Initiator) AllocError!*mut Page {
+    var headers = text.Builder.init(p.alloc)
+    defer headers.deinit()
+
+    let required = try requiredCsp(p, el)
+
+    if required.len > 0 {
+        try headers.append("Sec-Required-CSP: ")
+        try headers.append(required)
+    }
+
+    return fetchPageAs(p.alloc, target, net.Request { body: body, top: rootPage(p).url.href, initiator: initiator, headers: headers.bytes() }, p.encoding)
+}

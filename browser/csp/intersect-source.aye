@@ -1,0 +1,43 @@
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#intersection-source-expressions:
+fn intersectSource(a: Source, b: Source) ?Source {
+    if !similarSources(a, b) {
+        return null
+    }
+
+    let more_secure_b = !schemesMatch(a.scheme, b.scheme)
+    var out = Source { kind: SOURCE_HOST }
+
+    out.scheme = b.scheme
+
+    if a.scheme.len > 0 && !more_secure_b {
+        out.scheme = a.scheme
+    }
+
+    if a.kind == SOURCE_SCHEME && b.kind == SOURCE_SCHEME {
+        out.kind = SOURCE_SCHEME
+
+        return out
+    }
+
+    out.host = b.host
+
+    if a.host.len > 0 && (b.host.len == 0 || (a.kind != SOURCE_SCHEME && !text.startsWith(a.host, "*"))) {
+        out.host = a.host
+    }
+
+    out.port = b.port
+
+    if a.port.len > 0 && (b.port.len == 0 || (!text.eql(a.port, "*") && !more_secure_b)) {
+        out.port = a.port
+    }
+
+    out.path = a.path
+
+    if b.path.len > 0 && (a.path.len == 0 || pathPartMatch(a.path, b.path)) {
+        out.path = b.path
+    }
+
+    return out
+}

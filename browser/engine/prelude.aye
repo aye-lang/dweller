@@ -507,7 +507,11 @@ pub let PRELUDE =
     \\    // message, x the value thrown.
     \\    ev = new ErrorEvent(type, { cancelable: true, message: key, error: x });
     \\  } else if (type === 'securitypolicyviolation') {
-    \\    ev = new SecurityPolicyViolationEvent(type, Object.assign(JSON.parse(key), { bubbles: true, composed: true }));
+    \\    const fields = JSON.parse(key);
+    \\    fields.blockedURI = reportedUrl(fields.blockedURI);
+    \\    sendViolationReports(fields, fields.source);
+    \\    delete fields.source;
+    \\    ev = new SecurityPolicyViolationEvent(type, Object.assign(fields, { bubbles: true, composed: true }));
     \\  } else if (type === 'submit') {
     \\    ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: ak.submitter() });
     \\  } else {
@@ -519,6 +523,29 @@ pub let PRELUDE =
     \\  const r = dispatch(target, ev);
     \\  if (page) pageEvent(type, true);
     \\  return r;
+    \\}
+    \\
+    \\function reportedUrl(href) {
+    \\  let u;
+    \\  try { u = new URL(href); } catch (e) { return href; }
+    \\  if (u.protocol !== 'http:' && u.protocol !== 'https:') return href;
+    \\  u.username = '';
+    \\  u.password = '';
+    \\  u.hash = '';
+    \\  return u.href;
+    \\}
+    \\const reportsSent = new Set();
+    \\function sendViolationReports(v, source) {
+    \\  const m = /(?:^|;)\s*report-uri\s+([^;]*)/i.exec(v.originalPolicy);
+    \\  if (!m) return;
+    \\  const body = JSON.stringify({ 'csp-report': { 'document-uri': v.documentURI, referrer: document.referrer, 'violated-directive': v.effectiveDirective, 'effective-directive': v.effectiveDirective, 'original-policy': v.originalPolicy, disposition: v.disposition, 'blocked-uri': v.blockedURI, 'status-code': 200, 'script-sample': v.sample || '' } });
+    \\  for (const u of m[1].trim().split(/\s+/)) {
+    \\    let target;
+    \\    try { target = new URL(u, document.baseURI); } catch (e) { continue; }
+    \\    if (target.protocol !== 'http:' && target.protocol !== 'https:' || reportsSent.has(target.href + body + source)) continue;
+    \\    reportsSent.add(target.href + body + source);
+    \\    ak.fetchStart(target.href, 'POST', 'Content-Type: application/csp-report', body, 'same-origin', 'no-cors', () => {}, '', 0, 'report');
+    \\  }
     \\}
     \\
     \\// ---- nodes
@@ -805,6 +832,7 @@ pub let PRELUDE =
     \\  if (!this.__sandbox) hidden(this, '__sandbox', new DOMTokenList(this, 'sandbox', ['allow-downloads', 'allow-forms', 'allow-modals', 'allow-orientation-lock', 'allow-pointer-lock', 'allow-popups', 'allow-popups-to-escape-sandbox', 'allow-presentation', 'allow-same-origin', 'allow-scripts', 'allow-storage-access-by-user-activation', 'allow-top-navigation', 'allow-top-navigation-by-user-activation', 'allow-top-navigation-to-custom-protocols']));
     \\  return this.__sandbox;
     \\}, function (v) { this.setAttribute('sandbox', String(v)); });
+    \\reflect('csp', 'csp', HTMLIFrameElement.prototype);
     \\getter(ElementP, 'classList', function () {
     \\  let l = this.__classList;
     \\  if (!l) {
@@ -1721,10 +1749,15 @@ pub let PRELUDE =
     \\function callableOf(fn) {
     \\  if (typeof fn === 'function') return fn;
     \\  const src = String(fn);
+    \\  if (ak.stringCodeRefused(src)) return null;
     \\  return function () { ak.evalGlobal(src); };
     \\}
-    \\hidden(G, 'setTimeout', function (fn, ms, ...args) { return ak.setTimer(callableOf(fn), ms, false, args, false); });
-    \\hidden(G, 'setInterval', function (fn, ms, ...args) { return ak.setTimer(callableOf(fn), ms, true, args, false); });
+    \\function startTimer(fn, ms, repeat, args) {
+    \\  const f = callableOf(fn);
+    \\  return f === null ? 0 : ak.setTimer(f, ms, repeat, args, false);
+    \\}
+    \\hidden(G, 'setTimeout', function (fn, ms, ...args) { return startTimer(fn, ms, false, args); });
+    \\hidden(G, 'setInterval', function (fn, ms, ...args) { return startTimer(fn, ms, true, args); });
     \\hidden(G, 'clearTimeout', function (id) { ak.clearTimer(id); });
     \\hidden(G, 'clearInterval', function (id) { ak.clearTimer(id); });
     \\hidden(G, 'requestAnimationFrame', function (fn) {
@@ -2987,6 +3020,21 @@ pub let PRELUDE =
     \\    return s.slice(0, 8) + '-' + s.slice(8, 12) + '-' + s.slice(12, 16) + '-' + s.slice(16, 20) + '-' + s.slice(20);
     \\  },
     \\};
+    \\const DIGESTS = { 'SHA-1': [1, 20], 'SHA-256': [256, 32], 'SHA-384': [384, 48], 'SHA-512': [512, 64] };
+    \\class SubtleCrypto {
+    \\  digest(algorithm, data) {
+    \\    const name = String(algorithm && typeof algorithm === 'object' ? algorithm.name : algorithm).toUpperCase();
+    \\    const d = DIGESTS[name];
+    \\    if (!d) return Promise.reject(new DOMException('Algorithm: Unrecognized name', 'NotSupportedError'));
+    \\    if (!(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data)) return Promise.reject(new TypeError("Failed to execute 'digest' on 'SubtleCrypto': The provided value is not of type '(ArrayBuffer or ArrayBufferView)'."));
+    \\    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data.slice(0)) : new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    \\    const out = new Uint8Array(d[1]);
+    \\    ak.digest(d[0], bytes, out);
+    \\    return Promise.resolve(out.buffer);
+    \\  }
+    \\}
+    \\hidden(G, 'SubtleCrypto', SubtleCrypto);
+    \\crypto.subtle = new SubtleCrypto();
     \\hidden(G, 'crypto', crypto);
     \\
     \\// Smaller things
@@ -4166,6 +4214,10 @@ pub let PRELUDE =
     \\  return this.isConnected && !ak.styleBlocked(this) && !(request && (!request.done || request.failed)) && /(^|\s)stylesheet(\s|$)/i.test(this.getAttribute('rel') || '') ? ownedSheet(this) : null;
     \\});
     \\hidden(G, 'CSS', {
+    \\  get paintWorklet() {
+    \\    if (!this._paintWorklet) hidden(this, '_paintWorklet', G.__newWorklet(1));
+    \\    return this._paintWorklet;
+    \\  },
     \\  supports(a, b) { return b === undefined ? ak.supports(String(a)) || ak.supports('(' + String(a) + ')') : ak.supports('(' + String(a) + ': ' + String(b) + ')'); },
     \\  escape(s) {
     \\    s = String(s);

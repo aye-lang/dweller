@@ -1,0 +1,24 @@
+import std.mem.AllocError
+import std.text
+
+fn hideNonce(doc: *mut Document, el: NodeId) AllocError!void {
+    let n = doc.node(el)
+
+    if n.kind != Kind.Element || doc.namespaceOf(el) == NS_OTHER {
+        return
+    }
+
+    for i, at in n.attrs {
+        if text.eql(at.name, "nonce") && at.value.len > 0 {
+            try setNonce(doc, el, at.value)
+
+            if doc.recording {
+                doc.record(Mutation { kind: 1, added: false, target: el, node: null, prev: null, next: null, name: at.name, old: at.value })
+            }
+
+            doc.node(el).attrs[i].value = ""
+
+            return
+        }
+    }
+}

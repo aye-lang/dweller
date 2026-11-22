@@ -110,6 +110,8 @@ pub struct Page {
     csp: []u8 = ""
     header_csp: []u8 = ""
     report_csp: []u8 = ""
+    required_csp: []u8 = ""
+    allow_csp_from: []u8 = ""
     opened_doc: []u8 = ""
     styles_marked: u64 = 0xFFFFFFFFFFFFFFFF
     styles_reported: u64 = 0xFFFFFFFFFFFFFFFF
@@ -191,6 +193,8 @@ pub struct Page {
         freePolicy(alloc, self.csp)
         freePolicy(alloc, self.header_csp)
         freePolicy(alloc, self.report_csp)
+        freePolicy(alloc, self.required_csp)
+        freePolicy(alloc, self.allow_csp_from)
         freePolicy(alloc, self.opened_doc)
         alloc.free(self.title)
         self.url.deinit(alloc)
@@ -677,9 +681,14 @@ pub fn scriptsRan(p: *Page) bool {
 // (its site is the site for cookies), "" for a top-level navigation.
 // Its scripts have not run (`runDocument`).
 fn fetchPage(alloc: Allocator, target: *Url, body: ?*net.Body, fallback: encoding.Encoding, top: []u8, initiator: net.Initiator) AllocError!*mut Page {
+    return fetchPageAs(alloc, target, net.Request { body: body, top: top, initiator: initiator }, fallback)
+}
+
+fn fetchPageAs(alloc: Allocator, target: *Url, req: net.Request, fallback: encoding.Encoding) AllocError!*mut Page {
+    let top = req.top
     let fetch_began = perf.start()
     let worker = try swNavigation(alloc, target)
-    let res = navigationResponse(alloc, target, net.Request { body: body, top: top, initiator: initiator }, worker) catch |e| {
+    let res = navigationResponse(alloc, target, req, worker) catch |e| {
         perf.end("fetch", fetch_began, target.href)
         match e {
             .OutOfMemory => {
@@ -731,12 +740,16 @@ fn pageOf(alloc: Allocator, target: *Url, res: *net.Response, fallback: encoding
     errdefer freePolicy(alloc, header_csp)
     let report_csp = try headerPolicy(alloc, res, "Content-Security-Policy-Report-Only")
     errdefer freePolicy(alloc, report_csp)
+    let allow_csp_from = try headerPolicy(alloc, res, "Allow-CSP-From")
+    errdefer freePolicy(alloc, allow_csp_from)
     try notePageUpgrades(policy, located.href)
     try notePageReferrerPolicy(alloc, &doc, res, located.href)
     let p = try newPage(alloc, located, res.status, "", doc)
     p.csp = policy
     p.header_csp = header_csp
     p.report_csp = report_csp
+    p.allow_csp_from = allow_csp_from
+    hidePageNonces(p)
     p.frame_options = net.parseFrameOptions(res.headers_raw)
     p.coop = net.parseCoop(res.headers_raw)
     p.encoding = enc

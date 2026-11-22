@@ -1,0 +1,70 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#effective-source-list
+fn effectiveSources(a: Allocator, d: *Directive, name: []u8, origin: *Url) AllocError!Directive {
+    var out = Directive { name: name, value: d.value, sources: List(Source).init(a), none: true }
+
+    if d.none {
+        return out
+    }
+
+    let list = d.sources.items()
+    let script = text.eqlIgnoreCase(name, "script-src")
+    let typed = script || text.eqlIgnoreCase(name, "style-src")
+    let dynamic = hasKeyword(list, "'strict-dynamic'")
+
+    for x in list {
+        if x.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(x.text, "'self'") {
+            if selfSource(origin) |s| {
+                try out.sources.append(s)
+            }
+
+            continue
+        }
+
+        if (x.kind == SOURCE_KEYWORD || x.kind == SOURCE_NONCE || x.kind == SOURCE_HASH) && !typed {
+            continue
+        }
+
+        if x.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(x.text, "'strict-dynamic'") && !script {
+            continue
+        }
+
+        if x.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(x.text, "'unsafe-inline'") && typed && ((script && dynamic) || hasNonceOrHash(list)) {
+            continue
+        }
+
+        if (x.kind == SOURCE_HOST || x.kind == SOURCE_SCHEME) && script && dynamic {
+            continue
+        }
+
+        if x.kind == SOURCE_HOST && text.eql(x.host, "*") && x.scheme.len == 0 {
+            try appendSchemes(&mut out.sources, "ftp: http: https: ws: wss:")
+            try out.sources.append(Source { kind: SOURCE_SCHEME, scheme: origin.scheme })
+
+            continue
+        }
+
+        try out.sources.append(x)
+
+        if text.eqlIgnoreCase(x.scheme, "http") || text.eqlIgnoreCase(x.scheme, "ws") {
+            var secure = x
+
+            secure.scheme = "wss"
+
+            if text.eqlIgnoreCase(x.scheme, "http") {
+                secure.scheme = "https"
+            }
+
+            try out.sources.append(secure)
+        }
+    }
+
+    out.none = out.sources.len() == 0 || (out.sources.len() == 1 && hasKeyword(out.sources.items(), "'strict-dynamic'"))
+
+    return out
+}
