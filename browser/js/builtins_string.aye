@@ -260,9 +260,7 @@ fn stringLastIndexOf(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringIncludes(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
-    if try isRegExp(it, it.arg(a, 0)) {
-        return it.typeError("First argument to String.prototype.includes must not be a regular expression")
-    }
+    try rejectRegExpArg(it, a, "First argument to String.prototype.includes must not be a regular expression")
     let n = try searchArg(it, a)
     let from = relativeIndex(try argInteger(it, a, 1, 0.0), units16(it, s))
     return boolVal(findBytes(it.heap.bytes(s), it.heap.bytes(n), byteAt(it, s, from)) != null)
@@ -270,9 +268,7 @@ fn stringIncludes(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringStartsWith(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
-    if try isRegExp(it, it.arg(a, 0)) {
-        return it.typeError("First argument to String.prototype.startsWith must not be a regular expression")
-    }
+    try rejectRegExpArg(it, a, "First argument to String.prototype.startsWith must not be a regular expression")
     let n = try searchArg(it, a)
     let from = relativeIndex(try argInteger(it, a, 1, 0.0), units16(it, s))
     return boolVal(text.startsWith(it.heap.bytes(s)[byteAt(it, s, from)..], it.heap.bytes(n)))
@@ -280,9 +276,7 @@ fn stringStartsWith(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringEndsWith(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
-    if try isRegExp(it, it.arg(a, 0)) {
-        return it.typeError("First argument to String.prototype.endsWith must not be a regular expression")
-    }
+    try rejectRegExpArg(it, a, "First argument to String.prototype.endsWith must not be a regular expression")
     let n = try searchArg(it, a)
     let end = relativeIndex(try argInteger(it, a, 1, units16(it, s) as f64), units16(it, s))
     return boolVal(text.endsWith(it.heap.bytes(s)[..byteAt(it, s, end)], it.heap.bytes(n)))
