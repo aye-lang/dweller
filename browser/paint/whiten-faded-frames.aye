@@ -1,0 +1,22 @@
+// chromium: components/viz/service/display/surface_aggregator.cc (EmitSurfaceContent)
+pub fn whitenFadedFrames(list: *mut DisplayList) {
+    let items = list.items.items()
+
+    for f in list.frames.items() {
+        if !f.remote || f.at + 1 >= items.len {
+            continue
+        }
+
+        match items[f.at + 1] {
+            .Fill { r, .. } => {
+                var shown = Rgba { r: 0, g: 0, b: 0, a: 0 }
+
+                if alphaAround(items, f.at) < 255 { shown = WHITE }
+
+                items[f.at + 1] = Item.Fill { r: r, c: shown }
+            }
+
+            _ => {}
+        }
+    }
+}

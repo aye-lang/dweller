@@ -2961,17 +2961,44 @@ pub let PRELUDE =
     \\hidden(G, 'ResizeObserver', ResizeObserver);
     \\
     \\// matchMedia: the browser's media queries against the viewport
+    \\const mediaWatched = new Set();
     \\class MediaQueryList extends EventTarget {
     \\  constructor(media) {
     \\    super();
     \\    hidden(this, '_media', media);
+    \\    hidden(this, '_matched', ak.matchMedia(media));
+    \\    hidden(this, '_onchange', null);
     \\  }
     \\  get media() { return this._media; }
     \\  get matches() { return ak.matchMedia(this._media); }
+    \\  get onchange() { return this._onchange; }
+    \\  set onchange(f) {
+    \\    this._onchange = typeof f === 'function' ? f : null;
+    \\    this._watch();
+    \\  }
+    \\  addEventListener(type, f, options) {
+    \\    super.addEventListener(type, f, options);
+    \\    if (type === 'change') this._watch();
+    \\  }
     \\  addListener(f) { this.addEventListener('change', f); }
     \\  removeListener(f) { this.removeEventListener('change', f); }
+    \\  _watch() {
+    \\    this._matched = ak.matchMedia(this._media);
+    \\    mediaWatched.add(this);
+    \\    ak.watchMedia();
+    \\  }
     \\}
     \\hidden(G, 'MediaQueryList', MediaQueryList);
+    \\hidden(G, '__mediaChanges', function () {
+    \\  for (const l of mediaWatched) {
+    \\    const now = ak.matchMedia(l._media);
+    \\    if (now === l._matched) continue;
+    \\    l._matched = now;
+    \\    const ev = new MediaQueryListEvent('change', { media: l._media, matches: now });
+    \\    if (l._onchange) l._onchange.call(l, ev);
+    \\    l.dispatchEvent(ev);
+    \\  }
+    \\});
     \\hidden(G, 'matchMedia', function matchMedia(q) { return new MediaQueryList(String(q)); });
     \\
     \\// document.fonts: the engine loads a page's web fonts before it lays the
@@ -3536,6 +3563,7 @@ pub let PRELUDE =
     \\}
     \\eventClass('MessageEvent', Event, { data: null, origin: '', lastEventId: '', source: null, ports: [] });
     \\eventClass('ErrorEvent', Event, { message: '', filename: '', lineno: 0, colno: 0, error: null });
+    \\eventClass('MediaQueryListEvent', Event, { media: '', matches: false });
     \\eventClass('PopStateEvent', Event, { state: null });
     \\eventClass('HashChangeEvent', Event, { oldURL: '', newURL: '' });
     \\eventClass('StorageEvent', Event, { key: null, oldValue: null, newValue: null, url: '', storageArea: null });

@@ -13,6 +13,10 @@ pub fn fireResize(page: *mut Page) AllocError!bool {
 
     let s = page.script orelse return fired
 
+    if s.media_watched && page.tree != null {
+        _ = try evalInPage(page, "__mediaChanges()", &mut ignored)
+    }
+
     if page.tree == null || (s.width == s.resized[0] && s.height == s.resized[1]) { return fired }
 
     let first = s.resized[0] == 0.0

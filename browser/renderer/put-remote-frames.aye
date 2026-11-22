@@ -25,6 +25,7 @@ fn putRemoteFrames(r: *TabRenderer, out: *mut text.Builder, list: *paint.Display
 
         var s = ipc.Subframe { key: f.page.id, x: 0.0, y: 0.0, width: size[0] as u32, height: size[1] as u32, clip: [4]u32{0, 0, 0, 0}, url: f.page.url.href, holder: holder, sandbox: engine.ownerSandbox(p, f.el), name: p.doc.attr(f.el, "name") orelse "" }
 
+        if f.page.prefers_dark |dark| { s.scheme = 1 + dark as u32 }
         if paint.shownFrame(list, f.page.tree.?) |shown| { placeShown(r, &mut s, shown, origin) }
         if engine.frameIgnoresPointer(p, k) || paint.coveredFrame(list, f.page.tree.?) { s.hit_test = 1 }
 

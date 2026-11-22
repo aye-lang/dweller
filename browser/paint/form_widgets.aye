@@ -40,14 +40,22 @@ fn widget(b: *mut Builder, el: dom.NodeId, kind: layout.ControlKind, x: f64, y: 
     if dom.isDisabled(b.t.doc, el) {
         accent = DISABLED_EDGE
     }
+    var edge = CONTROL_EDGE
+    var inside = WHITE
+    var track = DISABLED_EDGE
+    if controlDark(b.t, el) {
+        edge = CONTROL_EDGE_DARK
+        inside = FIELD_DARK
+        track = FIELD_DARK
+    }
     if kind == layout.ControlKind.Range {
-        let track = math.max(0.0, w - 12.0)
-        try b.fill(x + 6.0, y + h / 2.0 - 2.0, track, 4.0, DISABLED_EDGE)
-        try b.fill(x + 6.0, y + h / 2.0 - 2.0, track * ratio, 4.0, accent)
-        try b.fill(x + track * ratio, y + h / 2.0 - 7.0, 12.0, 14.0, accent)
+        let span = math.max(0.0, w - 12.0)
+        try b.fill(x + 6.0, y + h / 2.0 - 2.0, span, 4.0, track)
+        try b.fill(x + 6.0, y + h / 2.0 - 2.0, span * ratio, 4.0, accent)
+        try b.fill(x + span * ratio, y + h / 2.0 - 7.0, 12.0, 14.0, accent)
     } else {
-        try b.fill(x, y, w, h, CONTROL_EDGE)
-        try b.fill(x + 1.0, y + 1.0, math.max(0.0, w - 2.0), math.max(0.0, h - 2.0), WHITE)
+        try b.fill(x, y, w, h, edge)
+        try b.fill(x + 1.0, y + 1.0, math.max(0.0, w - 2.0), math.max(0.0, h - 2.0), inside)
         if kind == layout.ControlKind.Progress && b.t.doc.attr(el, "value") == null {
             ratio = 0.3
         }

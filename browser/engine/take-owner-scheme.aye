@@ -1,0 +1,19 @@
+// spec: https://drafts.csswg.org/css-color-adjust-1/#color-scheme-effect (the embedded document's preferred color scheme)
+pub fn takeOwnerScheme(p: *mut Page) bool {
+    let o = frame_owner orelse return false
+
+    if o.scheme == 0 {
+        return false
+    }
+
+    let dark = o.scheme == 2
+
+    if p.prefers_dark != null && p.prefers_dark.? == dark {
+        return false
+    }
+
+    p.prefers_dark = dark
+    p.dropStyling()
+
+    return true
+}
