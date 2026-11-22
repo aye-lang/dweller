@@ -44,6 +44,6 @@ fn window_renderer_pan_while_busy() {
     let (w, h, a) = png_rgba(&std::fs::read(&tab).unwrap());
     let (w2, h2, b) = png_rgba(&std::fs::read(&own).unwrap());
     assert_eq!((w, h), (w2, h2));
-    let _ = h;
-    assert!(a == b, "the scrolled window differs from the in-process one: {} and {}", tab.display(), own.display());
+    let rows: Vec<usize> = (0..h).filter(|&y| a[y * w * 4..(y + 1) * w * 4] != b[y * w * 4..(y + 1) * w * 4]).collect();
+    assert!(rows.is_empty(), "the scrolled window differs from the in-process one in {} rows, {:?} to {:?}: {} and {}\n{}\n{}", rows.len(), rows.first(), rows.last(), tab.display(), own.display(), state, err.lines().filter(|l| l.contains("\tui_pan\t") || l.contains("\tpaint\t") || l.contains("\tinput_to_")).collect::<Vec<_>>().join("\n"));
 }
