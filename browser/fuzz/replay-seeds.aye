@@ -1,0 +1,16 @@
+import std.mem.Allocator
+import std.time
+
+fn replaySeeds(alloc: Allocator, target: Target, current: []u8, seeds: [][]u8, corpus: *mut Corpus, end: u64, whole: bool) !u64 {
+    var ran: u64 = 0
+
+    for i in 0..seeds.len {
+        if !whole && time.monotonicMs() >= end { break }
+
+        try runOne(alloc, target, current, seeds[i])
+        observeCoverage(corpus)
+        ran += 1
+    }
+
+    return ran
+}

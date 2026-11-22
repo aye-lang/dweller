@@ -418,3 +418,38 @@ fn web_font_files() {
         println!("WOFF 2 skipped: no libbrotlidec");
     }
 }
+
+/// Issue #376: `dweller fuzz` stops at `--seconds` while it replays its
+/// corpus, not only once it starts mutating. The nightly `fuzz.py` runs
+/// the binary again with the seconds that are left, down to 1; the js
+/// corpus had grown to 2075 files, which took 69 s to replay in the debug
+/// build, and the run was killed as a hang at 1 + 60 s. Here 200 seeds
+/// that take longer than a second to replay: `--seconds 1` replays some
+/// of them, `--seconds 0` (the replay the issue asks for) all of them.
+#[test]
+fn fuzz_stops_replay_at_seconds() {
+    let dir = scratch().join("fuzz-replay");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let body: String = (0..400)
+        .map(|i| format!("function f{i}(a, b) {{ const x = [a, b, ...arguments].map(v => v * 2); return x.reduce((s, v) => s + v, 0) + `{i}${{a}}`; }}\n"))
+        .collect();
+    for n in 0..200 {
+        std::fs::write(dir.join(format!("s{n:03}")), format!("{body}// {n}\n")).unwrap();
+    }
+    let replayed = |seconds: &str| -> u64 {
+        let out = dweller_command()
+            .current_dir(root())
+            .args(["fuzz", "js", "--seconds", seconds, "--corpus"])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{seconds}: {}\n{}", out.status, text(&out.stderr));
+        let line = text(&out.stdout);
+        let n = line.split("fuzz js: ").nth(1).and_then(|r| r.split(' ').next()).unwrap_or("");
+        n.parse().unwrap_or_else(|_| panic!("{seconds}: {line}"))
+    };
+    assert_eq!(replayed("0"), 200);
+    let some = replayed("1");
+    assert!(some < 200, "--seconds 1 replayed all {some} seeds");
+}
