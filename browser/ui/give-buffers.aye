@@ -3,7 +3,8 @@ import std.mem.AllocError
 import std.text
 
 fn giveBuffers(ui: *mut Ui, tp: *mut TabProcess, w: u32, h: u32) AllocError!void {
-    let size = w as usize * h as usize * 4
+    let over = panOver(tp, h)
+    let size = w as usize * (h + 2 * over) as usize * 4
     let scale = ui.scale * tp.page_zoom
 
     if !tp.hello || tp.gone.len > 0 || tp.outbox.len() > 0 || size == 0 { return }
@@ -21,7 +22,7 @@ fn giveBuffers(ui: *mut Ui, tp: *mut TabProcess, w: u32, h: u32) AllocError!void
     defer out.deinit()
     var sent: isize = -1
 
-    try ipc.encode(&mut out, tp.tab, ipc.Message.Resize { width: w, height: h, scale: scale, buffer: tp.buffers.next })
+    try ipc.encode(&mut out, tp.tab, ipc.Message.Resize { width: w, height: h, scale: scale, buffer: tp.buffers.next, over: over })
 
     if maps[0] != null && maps[1] != null {
         sent = try ipc.sendFds(ui.alloc, tp.fd, out.bytes(), fds[..])
@@ -39,7 +40,7 @@ fn giveBuffers(ui: *mut Ui, tp: *mut TabProcess, w: u32, h: u32) AllocError!void
 
     unmapBuffers(tp)
     tp.maps = maps
-    tp.buffers.give(w, h)
+    tp.buffers.give(w, h, over)
     tp.given_scale = scale
     try tp.outbox.append(out.bytes()[sent as usize..])
 }

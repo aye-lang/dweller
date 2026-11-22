@@ -43,9 +43,16 @@ fn writeTabProcess(ui: *Ui, out: *mut text.Builder) AllocError!void {
 
         var r = ipc.Reader { data: tp.last_damage.bytes() }
 
+        var k: usize = 0
+
         while r.at < r.data.len {
+            var n = (r.readU32() catch unreachable) as i64
+
+            if k % 2 == 1 { n -= tp.buffers.over as i64 }
+
             try out.appendByte(' ')
-            try out.appendInt((r.readU32() catch unreachable) as i64)
+            try out.appendInt(n)
+            k += 1
         }
 
         try out.append("\n")

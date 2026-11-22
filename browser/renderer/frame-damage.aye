@@ -3,8 +3,8 @@ import std.mem.AllocError
 
 // chromium: components/viz/service/display/display.cc
 fn frameDamage(r: *mut TabRenderer, sigs: []paint.Sig, bg: paint.Rgba, marked: bool, out: *mut paint.Damage) AllocError!bool {
-    let v = r.view()
-    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.height as i64 }
+    let v = r.bufferView()
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.rows() as i64 }
     let was = r.background
     let my = scrollPx(r, r.drawn_y) - scrollPx(r, r.scroll_y)
     let whole = r.sent == null || bg.r != was.r || bg.g != was.g || bg.b != was.b || bg.a != was.a || r.drawn_x != r.scroll_x || my <= -all.y1 || my >= all.y1 || (my != 0 && marked)
@@ -12,18 +12,27 @@ fn frameDamage(r: *mut TabRenderer, sigs: []paint.Sig, bg: paint.Rgba, marked: b
     r.shift = 0
 
     if whole {
+        r.stale.clear()
+        r.prepaint = false
         try out.add(all)
-    } else {
-        if my != 0 {
-            r.shift = my
-            try addScrollBand(out, all, my)
-            try paint.edgeLayers(sigs, v, all, out)
-        }
+        _ = try paint.spreadLayers(sigs, v, all, out)
 
-        try paint.diff(r.drawn.items(), sigs, v, all, out)
+        return true
     }
 
-    _ = try paint.spreadLayers(sigs, v, all, out)
+    var found = paint.Damage.init(r.alloc)
+    defer found.deinit()
 
-    return whole
+    if my != 0 {
+        r.shift = my
+        try addScrollBand(out, all, my)
+        try paint.edgeLayers(sigs, v, all, out)
+        shiftStale(r, my, all)
+    }
+
+    try paint.diff(r.drawn.items(), sigs, v, all, &mut found)
+    _ = try paint.spreadLayers(sigs, v, all, &mut found)
+    try splitDamage(r, found.rects.items(), out)
+
+    return false
 }

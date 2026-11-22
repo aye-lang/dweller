@@ -20,8 +20,8 @@ fn answerAll(r: *mut TabRenderer) !bool {
         match got.message {
             .Navigate { url, post, content_type, body } => try load(r, got.frame, url, post != 0, content_type, body)
             .PopupChoice { index } => try choosePopup(r, index)
-            .Resize { width, height, scale, buffer } => {
-                if !takeBuffers(r, width, height, scale, buffer) { return false }
+            .Resize { width, height, scale, buffer, over } => {
+                if over > height || !takeBuffers(r, width, height, scale, buffer, over) { return false }
             }
 
             .SessionHistory { index, length, scroll, nulls, state } => {

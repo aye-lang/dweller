@@ -77,10 +77,11 @@ test "resize round-trips through the framing" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 7, Message.Resize { width: 800, height: 600, scale: 2.5, buffer: 3 })
+    let got = try roundTrip(&mut out, 7, Message.Resize { width: 800, height: 600, scale: 2.5, buffer: 3, over: 300 })
 
     match got.message {
-        .Resize { width, height, scale, buffer } => {
+        .Resize { width, height, scale, buffer, over } => {
+            @expectEqual(300, over)
             @expectEqual(800, width)
             @expectEqual(600, height)
             @expectEqual(2.5, scale)
@@ -235,7 +236,7 @@ test "what a renderer may send" {
     @expect(!fromRenderer(Message.Navigate { url: "", post: 0, content_type: "", body: "" }))
     @expect(!fromRenderer(Message.Shutdown))
     @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "" }))
-    @expect(!fromRenderer(Message.Resize { width: 1, height: 1, scale: 1.0, buffer: 1 }))
+    @expect(!fromRenderer(Message.Resize { width: 1, height: 1, scale: 1.0, buffer: 1, over: 0 }))
     @expect(!fromRenderer(Message.FrameAck { buffer: 1 }))
     @expect(!fromRenderer(Message.Text { seq: 1, typed: "" }))
     @expect(fromRenderer(Message.InputAck { seq: 1 }))

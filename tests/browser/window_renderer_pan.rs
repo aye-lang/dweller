@@ -20,7 +20,8 @@ fn pan_run(base: &str, query: &str, mode: &str, png: &Path, events: &str) -> (St
 /// of 20 s in `browser/tests/ui/pan_busy.html`, the wheel that follows is
 /// not acked before the window ends, and the window's pixels are already
 /// those of the page scrolled by the wheel (the in-process window after
-/// the same wheel) except the strip the old frame does not hold.
+/// the same wheel), the strip that came into view too: the renderer paints
+/// rows above and below its viewport (slice 2b).
 #[test]
 fn window_renderer_pan_while_busy() {
     if !has_sdl() {
@@ -43,7 +44,6 @@ fn window_renderer_pan_while_busy() {
     let (w, h, a) = png_rgba(&std::fs::read(&tab).unwrap());
     let (w2, h2, b) = png_rgba(&std::fs::read(&own).unwrap());
     assert_eq!((w, h), (w2, h2));
-    let rows = h - 120;
-    assert!(a[..rows * w * 4] == b[..rows * w * 4], "the rows above the strip differ: {} and {}", tab.display(), own.display());
-    assert!(a != b, "nothing was left blank: the renderer's frame arrived");
+    let _ = h;
+    assert!(a == b, "the scrolled window differs from the in-process one: {} and {}", tab.display(), own.display());
 }

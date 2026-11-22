@@ -5,8 +5,8 @@ import std.mem.AllocError
 extern fn memcmp(a: [*]u8, b: [*]u8, n: usize) i32
 
 fn checkFrame(r: *mut TabRenderer, drawn: []u8, list: *paint.DisplayList) AllocError!void {
-    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.height as i64 }
-    var whole = try paint.Canvas.init(r.alloc, r.width as usize, r.height as usize)
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.rows() as i64 }
+    var whole = try paint.Canvas.init(r.alloc, r.width as usize, r.rows() as usize)
     defer whole.deinit()
     var painter = paint.TextPainter.init(r.alloc, r.system)
     defer painter.deinit()
@@ -14,16 +14,16 @@ fn checkFrame(r: *mut TabRenderer, drawn: []u8, list: *paint.DisplayList) AllocE
 
     paint.clearRect(&mut whole, all)
     whole.fillRect(all, r.background)
-    try paint.renderWith(list, &mut whole, r.view(), &mut painter, &mut reuse)
+    try paint.renderWith(list, &mut whole, r.bufferView(), &mut painter, &mut reuse)
 
-    for m in r.marks.items() { whole.fillRect(m.rect, m.ink) }
+    for m in r.marks.items() { whole.fillRect(bufferRect(r, m.rect), m.ink) }
 
     try drawBubble(r, &mut whole, &mut painter)
 
     var count: usize = 0
 
     for i in 0..drawn.len / 4 {
-        if memcmp(drawn[i * 4..].ptr, whole.pixels[i * 4..].ptr, 4) != 0 { count += 1 }
+        if memcmp(drawn[i * 4..].ptr, whole.pixels[i * 4..].ptr, 4) != 0 && !staleAt(r, (i % r.width as usize) as i64, (i / r.width as usize) as i64) { count += 1 }
     }
 
     if count > 0 { std.log.err("DAMAGE CHECK: {} pixels of the renderer's frame differ from a whole drawing", count) }
