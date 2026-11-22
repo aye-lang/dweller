@@ -28,10 +28,10 @@ fn installString(it: *mut Interp) JsError!void {
     try it.defineNative(p, "toLocaleUpperCase", 0, stringToUpperCase)
     try it.defineNative(p, "toLocaleLowerCase", 0, stringToLowerCase)
     try it.defineNative(p, "trim", 0, stringTrim)
-    try it.defineNative(p, "trimStart", 0, stringTrimStart)
-    try it.defineNative(p, "trimEnd", 0, stringTrimEnd)
-    try it.defineNative(p, "trimLeft", 0, stringTrimStart)
-    try it.defineNative(p, "trimRight", 0, stringTrimEnd)
+    let trim_start = try it.defineNative(p, "trimStart", 0, stringTrimStart)
+    let trim_end = try it.defineNative(p, "trimEnd", 0, stringTrimEnd)
+    try it.defineValue(p, "trimLeft", objVal(trim_start))
+    try it.defineValue(p, "trimRight", objVal(trim_end))
     try it.defineNative(p, "split", 2, stringSplit)
     try it.defineNative(p, "replace", 2, stringReplace)
     try it.defineNative(p, "replaceAll", 2, stringReplaceAll)
@@ -260,7 +260,7 @@ fn stringLastIndexOf(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringIncludes(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
-    if it.hasClass(it.arg(a, 0), Class.RegExp) {
+    if try isRegExp(it, it.arg(a, 0)) {
         return it.typeError("First argument to String.prototype.includes must not be a regular expression")
     }
     let n = try searchArg(it, a)
@@ -270,6 +270,9 @@ fn stringIncludes(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringStartsWith(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
+    if try isRegExp(it, it.arg(a, 0)) {
+        return it.typeError("First argument to String.prototype.startsWith must not be a regular expression")
+    }
     let n = try searchArg(it, a)
     let from = relativeIndex(try argInteger(it, a, 1, 0.0), units16(it, s))
     return boolVal(text.startsWith(it.heap.bytes(s)[byteAt(it, s, from)..], it.heap.bytes(n)))
@@ -277,6 +280,9 @@ fn stringStartsWith(it: *mut Interp, a: Args) JsError!Value {
 
 fn stringEndsWith(it: *mut Interp, a: Args) JsError!Value {
     let s = try thisStr(it, a)
+    if try isRegExp(it, it.arg(a, 0)) {
+        return it.typeError("First argument to String.prototype.endsWith must not be a regular expression")
+    }
     let n = try searchArg(it, a)
     let end = relativeIndex(try argInteger(it, a, 1, units16(it, s) as f64), units16(it, s))
     return boolVal(text.endsWith(it.heap.bytes(s)[..byteAt(it, s, end)], it.heap.bytes(n)))
@@ -372,6 +378,10 @@ fn trimSides(it: *mut Interp, a: Args, start: bool, end: bool) JsError!Value {
     }
     if end {
         to = lead + kept
+    }
+
+    if end && kept == 0 {
+        to = 0
     }
     if from == 0 && to == bytes.len {
         return strVal(s)
