@@ -19,12 +19,7 @@ fn fuzzLoop(alloc: Allocator, target: Target, seeds: [][]u8, current: []u8, save
     let end = began + seconds * 1000
     var report_at = began + REPORT_MS
 
-    for i in 0..seeds.len {
-        try runOne(alloc, target, current, seeds[i])
-        observeCoverage(&mut corpus)
-    }
-
-    var runs = seeds.len as u64
+    var runs = try replaySeeds(alloc, target, current, seeds, &mut corpus, end, seconds == 0)
 
     while time.monotonicMs() < end {
         try mutant(rng, &mut corpus, target, &mut input, &mut next)
