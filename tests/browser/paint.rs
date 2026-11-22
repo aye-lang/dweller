@@ -309,9 +309,12 @@ fn rasters(frame: &[(String, String)]) -> Vec<(&str, &str)> {
         .collect()
 }
 
+// The caret holds still (a renderer blinks it, one process does not):
+// these runs compare rasters and pixels, not the blink.
 fn damage_window_run(page: &str, png: &std::path::Path, events: &str) -> String {
     let out = dweller_command()
         .current_dir(root())
+        .env("DWELLER_STEADY_CARET", "1")
         .env("DWELLER_DAMAGE_CHECK", "1")
         .env("DWELLER_TIMING", "1")
         .args([

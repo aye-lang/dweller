@@ -1,0 +1,12 @@
+import ipc
+import std.mem.AllocError
+
+// chromium: components/viz/service/display/display.cc (DidReceiveSwapBuffersAck)
+fn releaseShown(tp: *mut TabProcess) AllocError!void {
+    if tp.unacked == 0 {
+        return
+    }
+
+    try ipc.encode(&mut tp.outbox, tp.unacked_id, ipc.Message.FrameAck { buffer: tp.unacked })
+    tp.unacked = 0
+}

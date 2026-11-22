@@ -456,6 +456,9 @@ fn syncFrames(p: *mut Page) AllocError!void {
                 try followFrameNavigation(p, k)
             }
         }
+        if k < p.frames.len() && !p.frames.items()[k].page.scripts_pending {
+            try syncFrames(p.frames.items()[k].page)
+        }
         k += 1
     }
     try loadFrames(p)

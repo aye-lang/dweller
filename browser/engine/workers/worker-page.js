@@ -1,5 +1,5 @@
 (function (G, h, wire) {
-  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5, FETCH_MODULE = 6, EVENT_SOURCE = 7;
+  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5, FETCH_MODULE = 6, EVENT_SOURCE = 7, WEB_SOCKET = 8;
   const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
   const blobs = URL._blobStore;
   const workers = new Map();
@@ -40,6 +40,7 @@
     terminate() {
       if (!workers.delete(this._id)) return;
       G.__workerEventSource(this, '["end"]');
+      G.__workerWebSocket(this, '["end"]');
       h.terminate(this._id);
     }
   }
@@ -60,6 +61,10 @@
     }
     if (kind === EVENT_SOURCE) {
       G.__workerEventSource(w, json, line => h.post(id, line));
+      return;
+    }
+    if (kind === WEB_SOCKET) {
+      G.__workerWebSocket(w, json, line => h.post(id, line));
       return;
     }
     if (kind === FRAME) {

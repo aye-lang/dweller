@@ -4,8 +4,11 @@
   const listeners = new Map();
   const timers = new Map();
   let nextTimer = 1;
-  const relayed = G.__wEventSource;
+  const relayedSource = G.__wEventSource;
+  const relayedSocket = G.__wWebSocket;
+  const relayed = line => relayedSource(line) || relayedSocket(line);
   delete G.__wEventSource;
+  delete G.__wWebSocket;
   function describe(e) {
     return e instanceof Error ? e.name + ': ' + e.message : String(e);
   }
@@ -43,10 +46,27 @@
   class WorkerLocation {
     constructor(href) { this.href = href; }
     get hash() { return this.href.includes('#') ? this.href.slice(this.href.indexOf('#')) : ''; }
+    get origin() { return new URL(this.href).origin; }
+    get protocol() { return new URL(this.href).protocol; }
+    get host() { return new URL(this.href).host; }
+    get hostname() { return new URL(this.href).hostname; }
+    get port() { return new URL(this.href).port; }
+    get pathname() { return new URL(this.href).pathname; }
+    get search() { return new URL(this.href).search; }
     toString() { return this.href; }
   }
+  if (typeof G.URL !== 'function') def('URL', G.__makeWorkerUrl(h));
+  delete G.__makeWorkerUrl;
+  function WorkerGlobalScope() { throw new TypeError('Illegal constructor'); }
+  function DedicatedWorkerGlobalScope() { throw new TypeError('Illegal constructor'); }
+  WorkerGlobalScope.prototype = Object.create(Object.getPrototypeOf(G), { constructor: { value: WorkerGlobalScope, writable: true, configurable: true } });
+  DedicatedWorkerGlobalScope.prototype = Object.create(WorkerGlobalScope.prototype, { constructor: { value: DedicatedWorkerGlobalScope, writable: true, configurable: true }, [Symbol.toStringTag]: { value: 'DedicatedWorkerGlobalScope', configurable: true } });
+  Object.setPrototypeOf(G, DedicatedWorkerGlobalScope.prototype);
+  def('WorkerGlobalScope', WorkerGlobalScope);
+  def('DedicatedWorkerGlobalScope', DedicatedWorkerGlobalScope);
   def('self', G);
   def('location', new WorkerLocation(h.href));
+  def('origin', new URL(h.href).origin);
   def('onmessage', null);
   def('onmessageerror', null);
   def('onerror', null);
@@ -79,18 +99,32 @@
   def('clearTimeout', function clearTimeout(id) { timers.delete(id); });
   def('clearInterval', function clearInterval(id) { timers.delete(id); });
   def('performance', { now: () => h.now(), timeOrigin: Date.now() - h.now() });
+  function loaded(url) {
+    try {
+      return h.load(url);
+    } catch (e) {
+      return null;
+    }
+  }
   def('fetch', function fetch(input) {
-    return new Promise(resolve => {
-      const url = String(input);
-      const raw = h.load(url);
+    return new Promise((resolve, reject) => {
+      const url = new URL(String(input && input.url !== undefined ? input.url : input), h.href).href;
+      const raw = loaded(url);
+      if (raw === null) {
+        reject(new TypeError('Failed to fetch'));
+        return;
+      }
+      const text = () => Promise.resolve(new TextDecoder().decode(bytes(raw)));
       resolve({
-        ok: true, status: 200, url,
-        text: () => Promise.resolve(new TextDecoder().decode(bytes(raw))),
-        json: () => Promise.resolve(JSON.parse(new TextDecoder().decode(bytes(raw)))),
+        ok: true, status: 200, statusText: 'OK', url, type: 'basic', redirected: false,
+        headers: { get: () => null, has: () => false },
+        text, json: () => text().then(JSON.parse),
         arrayBuffer: () => Promise.resolve(bytes(raw).buffer),
       });
     });
   });
+  def('XMLHttpRequest', G.__makeWorkerXhr(h, loaded, bytes));
+  delete G.__makeWorkerXhr;
   for (const level of ['log', 'info', 'debug', 'warn', 'error']) {
     console[level] = function (...a) { h.post(CONSOLE, JSON.stringify([level, a.map(String).join(' ')])); };
   }

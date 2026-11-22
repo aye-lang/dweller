@@ -594,6 +594,10 @@ pub let PRELUDE =
     \\  else if (where === 'afterend') el.after(...nodes);
     \\  else throw new DOMException("The value provided ('" + where + "') is not one of 'beforeBegin', 'afterBegin', 'beforeEnd', or 'afterEnd'.", 'SyntaxError');
     \\}
+    \\hidden(ElementP, '_followLink', function () {
+    \\  const fragment = ak.activate(this);
+    \\  if (fragment) navigateTo(fragment, false);
+    \\});
     \\hidden(HTMLP, 'click', function () {
     \\  if (this.hasAttribute('disabled') && /^(button|input|select|textarea)$/.test(this.localName)) return;
     \\  const ev = new PointerEvent('click', { bubbles: true, cancelable: true, composed: true, pointerId: -1 });
@@ -722,7 +726,7 @@ pub let PRELUDE =
     \\
     \\// classList
     \\class DOMTokenList {
-    \\  constructor(el, attr = 'class') { hidden(this, '_el', el); hidden(this, '_attr', attr); }
+    \\  constructor(el, attr = 'class', supported = null) { hidden(this, '_el', el); hidden(this, '_attr', attr); hidden(this, '_supported', supported); }
     \\  _get() {
     \\    const c = this._el.getAttribute(this._attr);
     \\    return c ? c.split(/[ \t\n\f\r]+/).filter((t, i, a) => t && a.indexOf(t) === i) : [];
@@ -745,6 +749,10 @@ pub let PRELUDE =
     \\    return i >= 0 && i < l.length ? l[i] : null;
     \\  }
     \\  contains(t) { return this._get().includes(String(t)); }
+    \\  supports(t) {
+    \\    if (!this._supported) throw new TypeError("Failed to execute 'supports' on 'DOMTokenList': DOMTokenList has no supported tokens.");
+    \\    return this._supported.includes(String(t).toLowerCase());
+    \\  }
     \\  add(...tokens) {
     \\    const l = this._get().filter((x, i, a) => a.indexOf(x) === i);
     \\    for (const t of tokens) {
@@ -785,14 +793,16 @@ pub let PRELUDE =
     \\  toString() { return this.value; }
     \\}
     \\hidden(G, 'DOMTokenList', DOMTokenList);
+    \\const REL_LIST_LINK = ['alternate', 'icon', 'modulepreload', 'prefetch', 'preload', 'stylesheet'];
+    \\const REL_LIST_ANCHOR = ['noopener', 'noreferrer', 'opener'];
     \\for (const P of [HTMLLinkElement.prototype, HTMLAnchorElement.prototype, HTMLAreaElement.prototype]) {
     \\  getter(P, 'relList', function () {
-    \\    if (!this.__relList) hidden(this, '__relList', new DOMTokenList(this, 'rel'));
+    \\    if (!this.__relList) hidden(this, '__relList', new DOMTokenList(this, 'rel', this.localName === 'link' ? REL_LIST_LINK : REL_LIST_ANCHOR));
     \\    return this.__relList;
     \\  }, function (v) { this.setAttribute('rel', String(v)); });
     \\}
     \\getter(HTMLIFrameElement.prototype, 'sandbox', function () {
-    \\  if (!this.__sandbox) hidden(this, '__sandbox', new DOMTokenList(this, 'sandbox'));
+    \\  if (!this.__sandbox) hidden(this, '__sandbox', new DOMTokenList(this, 'sandbox', ['allow-downloads', 'allow-forms', 'allow-modals', 'allow-orientation-lock', 'allow-pointer-lock', 'allow-popups', 'allow-popups-to-escape-sandbox', 'allow-presentation', 'allow-same-origin', 'allow-scripts', 'allow-storage-access-by-user-activation', 'allow-top-navigation', 'allow-top-navigation-by-user-activation', 'allow-top-navigation-to-custom-protocols']));
     \\  return this.__sandbox;
     \\}, function (v) { this.setAttribute('sandbox', String(v)); });
     \\getter(ElementP, 'classList', function () {
@@ -1415,7 +1425,15 @@ pub let PRELUDE =
     \\  get plugins() { return []; }
     \\  get mimeTypes() { return []; }
     \\  javaEnabled() { return false; }
-    \\  sendBeacon(url) { return !ak.cspRefused(String(url)); }
+    \\  sendBeacon(url, data) {
+    \\    const target = new URL(String(url), document.baseURI);
+    \\    if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new TypeError("Failed to execute 'sendBeacon' on 'Navigator': Beacons are only supported over HTTP(S).");
+    \\    if (ak.cspRefused(target.href)) return false;
+    \\    const init = { method: 'POST', keepalive: true, mode: 'no-cors', credentials: 'include' };
+    \\    if (data !== undefined && data !== null) init.body = data;
+    \\    fetch(target.href, init).catch(() => {});
+    \\    return true;
+    \\  }
     \\  vibrate() { return false; }
     \\}
     \\hidden(G, 'Navigator', Navigator);
@@ -2990,6 +3008,23 @@ pub let PRELUDE =
     \\  constructor() { throw new TypeError('Illegal constructor'); }
     \\}
     \\hidden(G, 'SVGAnimatedString', SVGAnimatedString);
+    \\const XLINK = 'http://www.w3.org/1999/xlink';
+    \\function svgHrefOf(el) {
+    \\  return el.hasAttribute('href') ? el.getAttribute('href') : (el.getAttributeNS(XLINK, 'href') || '');
+    \\}
+    \\for (const C of ['SVGAElement', 'SVGImageElement', 'SVGUseElement']) {
+    \\  if (typeof G[C] !== 'function') continue;
+    \\  getter(G[C].prototype, 'href', function () {
+    \\    if (this.__href) return this.__href;
+    \\    const el = this;
+    \\    const s = Object.create(SVGAnimatedString.prototype, {
+    \\      baseVal: { get() { return svgHrefOf(el); }, set(v) { el.setAttribute('href', String(v)); }, enumerable: true },
+    \\      animVal: { get() { return svgHrefOf(el); }, enumerable: true },
+    \\    });
+    \\    hidden(this, '__href', s);
+    \\    return s;
+    \\  });
+    \\}
     \\getter(G, 'origin', function () { return ak.winOrigin(G); });
     \\hidden(G, 'isSecureContext', true);
     \\hidden(G, 'Image', function Image(width, height) {

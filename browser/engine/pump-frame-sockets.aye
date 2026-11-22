@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+fn pumpFrameSockets(p: *mut Page) AllocError!bool {
+    var queued = false
+
+    if p.script |s| {
+        queued = try pumpPageSockets(s)
+    }
+
+    for f in p.frames.items() {
+        if try pumpFrameSockets(f.page) {
+            queued = true
+        }
+    }
+
+    return queued
+}

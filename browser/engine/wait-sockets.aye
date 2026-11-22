@@ -8,10 +8,10 @@ fn waitSockets(p: *mut Page, block: bool) AllocError!bool {
     let s = p.script orelse return false
     let started = time.monotonicMs()
 
-    while block && socketsBusy(s) && time.monotonicMs() - started < SOCKET_IDLE_MS {
+    while block && frameSocketsBusy(p) && time.monotonicMs() - started < SOCKET_IDLE_MS {
         net.pumpLoads()
 
-        if try pumpPageSockets(s) {
+        if try pumpFrameSockets(p) {
             passSocketWait(s, time.monotonicMs() - started)
 
             return true
@@ -22,7 +22,7 @@ fn waitSockets(p: *mut Page, block: bool) AllocError!bool {
 
     net.pumpLoads()
 
-    return pumpPageSockets(s)
+    return pumpFrameSockets(p)
 }
 
 fn passSocketWait(s: *mut Script, waited: u64) {
