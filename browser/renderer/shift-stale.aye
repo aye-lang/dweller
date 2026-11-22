@@ -1,0 +1,19 @@
+import paint
+
+fn shiftStale(r: *mut TabRenderer, my: i64, all: paint.IRect) {
+    var k: usize = 0
+
+    while k < r.stale.len() {
+        let s = r.stale.items()[k]
+        let moved = paint.intersect(paint.IRect { x0: s.x0, y0: s.y0 + my, x1: s.x1, y1: s.y1 + my }, all)
+
+        if moved.y1 <= moved.y0 {
+            _ = r.stale.swapRemove(k)
+
+            continue
+        }
+
+        r.stale.items()[k] = moved
+        k += 1
+    }
+}

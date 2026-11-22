@@ -4,19 +4,19 @@ import std.list.List
 import std.mem.AllocError
 
 fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *paint.Damage) AllocError!void {
-    let size = r.width as usize * r.height as usize * 4
-    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.height as i64 }
-    let v = r.view()
+    let size = r.width as usize * r.rows() as usize * 4
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.rows() as i64 }
+    let v = r.bufferView()
     let pixels = r.maps[k].?[0..size]
 
-    var canvas = paint.Canvas { alloc: r.alloc, width: r.width as usize, height: r.height as usize, pixels: pixels, clip: all, clips: List(paint.IRect).init(r.alloc), bound: all, bounds: List(paint.IRect).init(r.alloc) }
+    var canvas = paint.Canvas { alloc: r.alloc, width: r.width as usize, height: r.rows() as usize, pixels: pixels, clip: all, clips: List(paint.IRect).init(r.alloc), bound: all, bounds: List(paint.IRect).init(r.alloc) }
     defer canvas.clips.deinit()
     defer canvas.bounds.deinit()
     var painter = paint.TextPainter.init(r.alloc, r.system)
     defer painter.deinit()
     var reuse = paint.Reuse { sigs: r.drawn.items(), cache: &mut r.layers }
 
-    if r.sent |j| { copyShifted(pixels, r.maps[j].?[0..size], r.width as usize, r.height as usize, r.shift) }
+    if r.sent |j| { copyShifted(pixels, r.maps[j].?[0..size], r.width as usize, r.rows() as usize, r.shift) }
 
     for d in damage.rects.items() {
         try canvas.pushDamage(d)
@@ -25,7 +25,7 @@ fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *
         canvas.fillRect(d, r.background)
         try paint.renderWith(list, &mut canvas, v, &mut painter, &mut reuse)
 
-        for m in r.marks.items() { canvas.fillRect(m.rect, m.ink) }
+        for m in r.marks.items() { canvas.fillRect(bufferRect(r, m.rect), m.ink) }
 
         try drawBubble(r, &mut canvas, &mut painter)
 

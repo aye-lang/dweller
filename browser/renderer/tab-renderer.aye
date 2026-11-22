@@ -23,6 +23,8 @@ struct TabRenderer {
     chosen: ?*mut ChosenFiles = null
     caret_said: [5]f64 = [5]f64{0.0, 0.0, 0.0, 0.0, 0.0}
     drawn: List(paint.Sig)
+    stale: List(paint.IRect)
+    prepaint: bool = false
     marks: List(Mark)
     title: text.Builder
     href: text.Builder
@@ -49,6 +51,7 @@ struct TabRenderer {
     first: u32 = 0
     width: u32 = 0
     height: u32 = 0
+    over: u32 = 0
     scale: f64 = 1.0
     maps: [2]?[*]u8 = [2]?[*]u8{null, null}
     free: [2]bool = [2]bool{false, false}
@@ -149,6 +152,18 @@ struct TabRenderer {
         return paint.View { scale: self.scale, dx: -pageview.snappedScroll(self.scroll_x, self.scale) * self.scale, dy: -pageview.snappedScroll(self.scroll_y, self.scale) * self.scale }
     }
 
+    pub fn rows(self: *Self) u32 {
+        return self.height + 2 * self.over
+    }
+
+    pub fn bufferView(self: *Self) paint.View {
+        var v = self.view()
+
+        v.dy += self.over as f64
+
+        return v
+    }
+
     pub fn deinit(self: *mut Self) {
         if self.page |p| { p.destroy() }
 
@@ -170,6 +185,7 @@ struct TabRenderer {
 
         self.fds.deinit()
         self.drawn.deinit()
+        self.stale.deinit()
         self.marks.deinit()
         self.title.deinit()
         self.href.deinit()

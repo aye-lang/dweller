@@ -1,0 +1,41 @@
+import paint
+import std.math
+import std.mem.AllocError
+
+let MAX_STALE: usize = 8
+
+// chromium: cc/tiles/tile_manager.cc (tiles in the viewport are rastered now, the prepaint ones when there is time)
+fn splitDamage(r: *mut TabRenderer, found: []paint.IRect, out: *mut paint.Damage) AllocError!void {
+    let shown = paint.IRect { x0: 0, y0: r.over as i64, x1: r.width as i64, y1: (r.over + r.height) as i64 }
+
+    if r.prepaint {
+        for s in r.stale.items() { try out.add(s) }
+
+        r.stale.clear()
+        r.prepaint = false
+    }
+
+    for s in r.stale.items() { try out.add(paint.intersect(s, shown)) }
+
+    for d in found {
+        if r.over == 0 {
+            try out.add(d)
+
+            continue
+        }
+
+        try out.add(paint.intersect(d, shown))
+
+        for part in [2]paint.IRect{paint.IRect { x0: d.x0, y0: d.y0, x1: d.x1, y1: math.minOf(i64, d.y1, shown.y0) }, paint.IRect { x0: d.x0, y0: math.maxOf(i64, d.y0, shown.y1), x1: d.x1, y1: d.y1 }} {
+            if part.y1 > part.y0 && part.x1 > part.x0 { try r.stale.append(part) }
+        }
+    }
+
+    while r.stale.len() > MAX_STALE {
+        let last = r.stale.pop().?
+
+        let first = r.stale.items()[0]
+
+        r.stale.items()[0] = paint.IRect { x0: math.minOf(i64, first.x0, last.x0), y0: math.minOf(i64, first.y0, last.y0), x1: math.maxOf(i64, first.x1, last.x1), y1: math.maxOf(i64, first.y1, last.y1) }
+    }
+}

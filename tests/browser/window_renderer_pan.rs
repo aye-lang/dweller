@@ -20,7 +20,11 @@ fn pan_run(base: &str, query: &str, mode: &str, png: &Path, events: &str) -> (St
 /// of 20 s in `browser/tests/ui/pan_busy.html`, the wheel that follows is
 /// not acked before the window ends, and the window's pixels are already
 /// those of the page scrolled by the wheel (the in-process window after
-/// the same wheel) except the strip the old frame does not hold.
+/// the same wheel), the strip that came into view too: the renderer paints
+/// rows above and below its viewport (slice 2b). The window's own status
+/// bubble (20 px at the bottom left: "The page is busy" once the script
+/// has run 5 s, which a slow machine reaches before the window ends) is
+/// chrome, not the page, and is left out.
 #[test]
 fn window_renderer_pan_while_busy() {
     if !has_sdl() {
@@ -43,7 +47,8 @@ fn window_renderer_pan_while_busy() {
     let (w, h, a) = png_rgba(&std::fs::read(&tab).unwrap());
     let (w2, h2, b) = png_rgba(&std::fs::read(&own).unwrap());
     assert_eq!((w, h), (w2, h2));
-    let rows = h - 120;
-    assert!(a[..rows * w * 4] == b[..rows * w * 4], "the rows above the strip differ: {} and {}", tab.display(), own.display());
-    assert!(a != b, "nothing was left blank: the renderer's frame arrived");
+    let status = state.lines().any(|l| l.starts_with("status ") && l.len() > "status ".len());
+    let bubble = |x: usize, y: usize| status && y >= h - 20 && x * 10 < w * 7;
+    let rows: Vec<usize> = (0..h).filter(|&y| (0..w).any(|x| !bubble(x, y) && a[(y * w + x) * 4..(y * w + x + 1) * 4] != b[(y * w + x) * 4..(y * w + x + 1) * 4])).collect();
+    assert!(rows.is_empty(), "the scrolled window differs from the in-process one in {} rows, {:?} to {:?}: {} and {}\n{}\n{}", rows.len(), rows.first(), rows.last(), tab.display(), own.display(), state, err.lines().filter(|l| l.contains("\tui_pan\t") || l.contains("\tpaint\t") || l.contains("\tinput_to_")).collect::<Vec<_>>().join("\n"));
 }
