@@ -192,7 +192,8 @@ fn blank_popup_is_an_empty_document() {
 
 /// A frame whose `src` is a `javascript:` URL shows the string the URL
 /// returns, and so does a frame that sets its own `location` to one; a
-/// popup that sets its own `location` to one runs it. In the window with
+/// popup that sets its own `location` to one runs it, and shows the string
+/// it returns. In the window with
 /// one process (the popup's tab is shown last: `cmd+1` shows the opener).
 #[test]
 fn javascript_url_of_frames_and_location() {
@@ -212,7 +213,7 @@ fn javascript_url_of_frames_and_location() {
         .unwrap();
     assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
     let got = text(&out.stdout);
-    for want in ["the popup ran its own location\n", "src frame: from the src\n", "self frame: navigated itself\n", "done\n"] {
+    for want in ["the popup ran its own location\n", "src frame: from the src\n", "self frame: navigated itself\n", "popup: its own string\n", "done\n"] {
         assert!(got.contains(want), "no {want:?} in:\n{got}");
     }
 }

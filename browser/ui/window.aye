@@ -1945,6 +1945,9 @@ pub struct Ui {
     fn afterScripts(self: *mut Self) AllocError!void {
         let p = self.tab.page orelse return
         try self.hostRequests()
+        if try engine.showOwnJavascriptResult(self.tab) {
+            return self.navigated(true)
+        }
         let nav = engine.takeNavigation(p)
         match nav.kind {
             .To => {
