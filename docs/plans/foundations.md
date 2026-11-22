@@ -130,7 +130,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | base | DV1 is counted over its next landings | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
 | sec | – (the X2 areas are at their targets) | – |
-| perf | Q6.3b, Q4.12 (Q4.25e: slices 1 to 3b done, its verify is in the Mac queue) | Q4.6, Q4.16; Q6.13 to 90 |
+| perf | – (Q6.3b done; Q4.25e and Q4.12: their verify is in their Mac queues) | Q4.6, Q4.16 (their verify needs the site archives); Q6.13 to 90 |
 | feat | – (Q5.9b is for the Mac) | – |
 
 ## Decisions (2026-11-04)
