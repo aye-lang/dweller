@@ -264,20 +264,23 @@ function watch() {
   }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'controls'] });
 }
 // https://html.spec.whatwg.org/multipage/media.html#location-of-the-media-resource : setting src loads, in the document or not.
-let srcOwner = P;
-while (srcOwner && !Object.getOwnPropertyDescriptor(srcOwner, 'src')) srcOwner = Object.getPrototypeOf(srcOwner);
-const srcAccess = srcOwner ? Object.getOwnPropertyDescriptor(srcOwner, 'src') : null;
-if (srcAccess && srcAccess.set) {
-  Object.defineProperty(P, 'src', {
+function loadOnSrc(proto) {
+  let owner = proto;
+  while (owner && !Object.getOwnPropertyDescriptor(owner, 'src')) owner = Object.getPrototypeOf(owner);
+  const access = owner ? Object.getOwnPropertyDescriptor(owner, 'src') : null;
+  if (!access || !access.set) return;
+
+  Object.defineProperty(proto, 'src', {
     configurable: true,
     enumerable: true,
-    get() { return srcAccess.get.call(this); },
+    get() { return access.get.call(this); },
     set(v) {
-      srcAccess.set.call(this, v);
-      if (!this.isConnected) noticed(this);
+      access.set.call(this, v);
+      noticed(this);
     },
   });
 }
+for (const proto of [P, HTMLAudioElement.prototype, HTMLVideoElement.prototype]) loadOnSrc(proto);
 const scan = () => document.querySelectorAll('audio, video').forEach(stateOf);
 later(scan);
 ak.mediaWatch(() => { watch(); scan(); });

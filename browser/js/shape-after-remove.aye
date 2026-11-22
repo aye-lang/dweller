@@ -1,0 +1,12 @@
+// v8: src/runtime/runtime-object.cc (DeleteObjectProperty: deleting the last added property rolls the map back)
+fn shapeAfterRemove(h: *mut Heap, o: u32, i: u32) u32 {
+    let ob = h.obj(o)
+
+    if ob.shape == NONE || ob.shape == 0 || i + 1 != ob.nprops { return NONE }
+
+    let s = h.shapes.items()[ob.shape]
+
+    if s.key != ob.props[i].key || s.slot != i { return NONE }
+
+    return s.parent
+}

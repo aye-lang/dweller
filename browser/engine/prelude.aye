@@ -4146,14 +4146,26 @@ pub let PRELUDE =
     \\  }
     \\  get cssRules() {
     \\    if (!this._ruleList) hidden(this, '_ruleList', cssomRules.ruleList([]));
-    \\    return this._syncRules();
+    \\    if (this._listOf !== this._rules) this._syncRules();
+    \\    return this._ruleList;
     \\  }
     \\  _syncRules() {
     \\    const list = this._ruleList;
     \\    const rules = this._rules;
     \\    const objects = this._objects;
-    \\    if (list) list.splice(0, list.length, ...rules.map((t, i) => objects[i] || (objects[i] = cssomRules.ruleObject(this, t))));
+    \\    if (!list) return list;
+    \\    list.splice(0, list.length, ...rules.map((t, i) => objects[i] || (objects[i] = cssomRules.ruleObject(this, t))));
+    \\    hidden(this, '_listOf', rules);
     \\    return list;
+    \\  }
+    \\  _listInserted(index) {
+    \\    const list = this._ruleList;
+    \\    if (!list || this._listOf !== this._rules) return;
+    \\    list.splice(index, 0, this._objects[index] = cssomRules.ruleObject(this, this._rules[index]));
+    \\  }
+    \\  _listDeleted(index) {
+    \\    const list = this._ruleList;
+    \\    if (list && this._listOf === this._rules) list.splice(index, 1);
     \\  }
     \\  _ruleChanged(rule) {
     \\    const i = this._rules && this._objects.indexOf(rule);
@@ -4193,14 +4205,14 @@ pub let PRELUDE =
     \\      rules.splice(index, 0, rule);
     \\      this._objects.splice(index, 0, undefined);
     \\      this._changed(null);
-    \\      this._syncRules();
+    \\      this._listInserted(index);
     \\      return index;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 0, rule);
     \\    this._objects.splice(index, 0, undefined);
     \\    ak.sheetInsert(this._id, index, rule);
-    \\    this._syncRules();
+    \\    this._listInserted(index);
     \\    return index;
     \\  }
     \\  deleteRule(index) {
@@ -4211,14 +4223,14 @@ pub let PRELUDE =
     \\      rules.splice(index, 1);
     \\      this._objects.splice(index, 1);
     \\      this._changed(null);
-    \\      this._syncRules();
+    \\      this._listDeleted(index);
     \\      return;
     \\    }
     \\    this._hand();
     \\    rules.splice(index, 1);
     \\    this._objects.splice(index, 1);
     \\    ak.sheetDelete(this._id, index);
-    \\    this._syncRules();
+    \\    this._listDeleted(index);
     \\  }
     \\  addRule(sel, style, index) { this.insertRule(sel + ' { ' + style + ' }', index === undefined ? this._rules.length : index); return -1; }
     \\  removeRule(index) { this.deleteRule(index === undefined ? 0 : index); }
