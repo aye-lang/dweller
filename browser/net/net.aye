@@ -237,6 +237,9 @@ fn requestLive(alloc: Allocator, target: *Url, req: Request) FetchError!Response
     if text.eql(target.scheme, "data") {
         return fetchData(alloc, target)
     }
+    if req.kind == Kind.Document && isAboutBlank(target) {
+        return respond(alloc, "text/html", try alloc.alloc(0 as u8, 0))
+    }
     if req.initiator is .Browser && text.eql(target.href, "about:downloads") {
         return downloadsPage(alloc)
     }

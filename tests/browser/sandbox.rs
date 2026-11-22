@@ -162,3 +162,28 @@ fn javascript_url_refused_by_csp() {
     assert!(got.contains("violation: script-src-elem inline\n"), "{got}");
     assert!(got.contains("done\n") && !got.contains("ran"), "{got}");
 }
+
+/// A popup opened on `about:blank` shows an empty document, in the window
+/// with one process too, where it showed the error page "this kind of
+/// URL is not supported yet"; its opener can read its document.
+#[test]
+fn blank_popup_is_an_empty_document() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "single")
+        .args([&format!("{}/sandbox/blank_popup.html", srv.base), "--frames", "300", "--until-idle", "--state", "--text"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    assert!(got.contains("url about:blank\n") && got.contains("tabs 2, showing 2\n"), "{got}");
+    assert!(!got.contains("Cannot load"), "{got}");
+    let dump = run(&["dump", "--text", "--js", &format!("{}/sandbox/blank_popup.html", srv.base)]);
+    assert!(dump.status.success(), "{}\n{}", dump.status, text(&dump.stderr));
+    let got = text(&dump.stdout);
+    assert!(got.contains("popup body \"\""), "{got}");
+}
