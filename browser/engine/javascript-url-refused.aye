@@ -1,0 +1,18 @@
+import csp
+import std.mem.AllocError
+
+// spec: https://w3c.github.io/webappsec-csp/#should-block-navigation-request
+fn javascriptUrlRefused(s: *mut Script, href: []u8) AllocError!bool {
+    let p = s.page
+    let code = href[JAVASCRIPT_SCHEME.len..]
+    let enforced = try csp.inlineRefusal(s.alloc, p.csp, csp.Inline.Navigation, "", false, code)
+    let reported = try csp.inlineRefusal(s.alloc, p.report_csp, csp.Inline.Navigation, "", false, code)
+
+    if csp.orReport(enforced, reported) |r| {
+        try refuseInline(s, null, r, "run the JavaScript URL", code)
+
+        return !r.report
+    }
+
+    return false
+}

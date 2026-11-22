@@ -29,6 +29,11 @@ fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Va
     }
 
     defer target.deinit(it.alloc)
+    var refused = false
+
+    if text.eql(target.scheme, "javascript") {
+        refused = try javascriptUrlRefused(s, target.href)
+    }
 
     var name = text.trim(tb.bytes())
 
@@ -77,8 +82,12 @@ fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Va
     if !text.eqlIgnoreCase(name, "_blank") {
         let named = namedContext(from, name)
 
+        if named != 0 && refused {
+            return contextValue(s, named)
+        }
+
         if named != 0 {
-            try navigateContext(named, target.href, null, originPage(source).url.href)
+            try navigateContext(named, target.href, null, source)
 
             return contextValue(s, named)
         }
@@ -86,7 +95,13 @@ fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Va
 
     consumeActivation(source)
 
-    let id = try openContext(from, target.href, name, no_opener, true, null, originPage(source).url.href, source.sandbox)
+    var opened = target.href
+
+    if refused {
+        opened = "about:blank"
+    }
+
+    let id = try openContext(from, opened, name, no_opener, true, null, originPage(source).url.href, source.sandbox)
 
     if no_opener || id == 0 {
         return Value.Null

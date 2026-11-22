@@ -1,0 +1,27 @@
+import js
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#evaluate-a-javascript:-url
+fn javascriptResult(s: *mut Script, code: []u8) AllocError!?[]mut u8 {
+    enter(s)
+    let v = s.it.evalScript(code) catch |e| {
+        leave(s)
+        try uncaught(s, e)
+        try runMicrotasks(s)
+        try afterTask(s)
+
+        return null
+    }
+
+    leave(s)
+    var markup: ?[]mut u8 = null
+
+    if js.isStr(v) {
+        markup = try ownedBytes(s.alloc, s.it.heap.bytes(js.strOf(v)))
+    }
+
+    try runMicrotasks(s)
+    try afterTask(s)
+
+    return markup
+}

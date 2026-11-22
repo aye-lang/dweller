@@ -1,0 +1,17 @@
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
+fn initiatorReaches(p: *mut Page, initiator: []u8) bool {
+    if p.opaque {
+        return false
+    }
+
+    var from = url.parse(p.alloc, initiator) catch return false
+
+    defer from.deinit(p.alloc)
+    var to = url.parse(p.alloc, originHref(originPage(p))) catch return false
+
+    defer to.deinit(p.alloc)
+
+    return sameUrlOrigin(&from, &to)
+}

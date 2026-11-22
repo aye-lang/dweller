@@ -1,0 +1,17 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#evaluate-a-javascript:-url
+fn showJavascriptResult(tab: *mut Tab, old: *mut Page, markup: []u8) AllocError!bool {
+    let page = try writtenPage(old, markup)
+
+    errdefer page.destroy()
+    setSandbox(page, old.sandbox)
+    try inheritCreator(page, old.creator)
+    tab.enter()
+    try attachLoading(page)
+    try runDocument(page, scriptingEnabled())
+    tab.replace_next = true
+    try tab.push(&page.url, page)
+
+    return true
+}

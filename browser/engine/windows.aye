@@ -142,21 +142,19 @@ pub fn sameOrigin(a: *mut Page, b: *mut Page) bool {
     if x == y {
         return true
     }
-    let u = &x.url
-    let v = &y.url
-    if text.eql(u.scheme, "file") || text.eql(v.scheme, "file") {
-        return fileAccessFromFiles() && text.eql(u.scheme, v.scheme)
+    if x.creator.len > 0 || y.creator.len > 0 {
+        return sameCreatorOrigin(x, y)
     }
-    if text.eql(u.scheme, "about") || text.eql(v.scheme, "about") {
-        return false
-    }
-    return text.eql(u.scheme, v.scheme) && text.eql(u.host, v.host) && text.eql(u.port, v.port)
+    return sameUrlOrigin(&x.url, &y.url)
 }
 
 // The origin of `p` as `event.origin` and `location.origin` show it.
 fn appendOrigin(b: *mut text.Builder, p: *mut Page) AllocError!void {
     if p.opaque {
         return b.append("null")
+    }
+    if originPage(p).creator.len > 0 {
+        return appendCreatorOrigin(b, originPage(p))
     }
     return appendUrlPart(b, &originPage(p).url, "origin")
 }

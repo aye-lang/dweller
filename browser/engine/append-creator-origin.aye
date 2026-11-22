@@ -1,0 +1,11 @@
+import std.mem.AllocError
+import std.text
+import url
+
+fn appendCreatorOrigin(b: *mut text.Builder, p: *mut Page) AllocError!void {
+    var u = url.parse(p.alloc, p.creator) catch return b.append("null")
+
+    defer u.deinit(p.alloc)
+
+    return appendUrlPart(b, &u, "origin")
+}

@@ -77,6 +77,7 @@ pub struct ContextRequest {
     content_type: []mut u8
     body: []mut u8
     initiator: []mut u8
+    opaque_initiator: bool = false
 }
 
 struct ContextTable {
@@ -294,7 +295,7 @@ fn ownedBytes(alloc: Allocator, b: []u8) AllocError![]mut u8 {
     return c
 }
 
-fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body, initiator: []u8) AllocError!void {
+fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body, initiator: []u8, opaque: bool) AllocError!void {
     let t = bc_table orelse return
     let h = try ownedBytes(t.alloc, href)
     errdefer t.alloc.free(h)
@@ -310,7 +311,7 @@ fn pushRequest(ask: ContextAsk, id: u32, href: []u8, body: ?*net.Body, initiator
     errdefer t.alloc.free(d)
     let i = try ownedBytes(t.alloc, initiator)
     errdefer t.alloc.free(i)
-    try t.requests.append(ContextRequest { ask: ask, context: id, href: h, post: body != null, content_type: c, body: d, initiator: i })
+    try t.requests.append(ContextRequest { ask: ask, context: id, href: h, post: body != null, content_type: c, body: d, initiator: i, opaque_initiator: opaque })
 }
 
 /// The oldest request not served yet (the caller frees it:
@@ -340,6 +341,7 @@ pub fn setTabHost(on: bool) {
 /// from context `from` (its opener unless `no_opener`), which loads
 /// `href` (by POST with `body`) once the front end gave it a tab. Its id.
 fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bool, body: ?*net.Body, initiator: []u8, sandbox: u32) AllocError!u32 {
+    let opaque = sandbox & SB_ORIGIN != 0
     let t = bc_table orelse return 0
     let id = try addContext(t.alloc, false)
     let c = contextOf(id).?
@@ -358,13 +360,13 @@ fn openContext(from: u32, href: []u8, name: []u8, no_opener: bool, by_script: bo
     if !text.eqlIgnoreCase(name, "_blank") {
         try setContextName(id, name)
     }
-    try pushRequest(ContextAsk.Open, id, href, body, initiator)
+    try pushRequest(ContextAsk.Open, id, href, body, initiator, opaque)
     return id
 }
 
 /// Context `id` loads `href` (by POST with `body`) in its tab.
-fn navigateContext(id: u32, href: []u8, body: ?*net.Body, initiator: []u8) AllocError!void {
-    return pushRequest(ContextAsk.Navigate, id, href, body, initiator)
+fn navigateContext(id: u32, href: []u8, body: ?*net.Body, initiator: *mut Page) AllocError!void {
+    return pushRequest(ContextAsk.Navigate, id, href, body, originPage(initiator).url.href, initiator.opaque)
 }
 
 /// Asks the front end to close context `id`.
@@ -381,7 +383,7 @@ fn closeContext(id: u32) AllocError!void {
             return
         }
     }
-    return pushRequest(ContextAsk.Close, id, "", null, "")
+    return pushRequest(ContextAsk.Close, id, "", null, "", false)
 }
 
 /// May a script of context `from` close context `id`? Only one that a
@@ -431,7 +433,7 @@ fn targetContext(p: *mut Page, el: dom.NodeId, href: []u8, body: ?*net.Body) All
     if !text.eqlIgnoreCase(name, "_blank") {
         let named = namedContext(from, name)
         if named != 0 {
-            try navigateContext(named, href, body, originPage(p).url.href)
+            try navigateContext(named, href, body, p)
             return named
         }
     }
@@ -520,12 +522,28 @@ fn serveInMemory(t: *mut ContextTable, r: ContextRequest) AllocError!void {
 pub fn loadInTab(tab: *mut Tab, target: *Url, r: ContextRequest) AllocError!bool {
     let initiator = net.Initiator.Page { url: r.initiator }
 
+    var creator: []u8 = r.initiator
+
+    if r.opaque_initiator {
+        creator = ""
+    }
+
+    if text.eql(target.scheme, "javascript") {
+        return navigateToJavascript(tab, target, creator)
+    }
+
     if try blocksTopData(tab.page, target, initiator) {
         return false
     }
 
     if !r.post {
-        return tab.navigate(target, initiator)
+        let loaded = try tab.navigate(target, initiator)
+
+        if loaded && text.eql(target.href, "about:blank") {
+            try inheritCreator(tab.page.?, creator)
+        }
+
+        return loaded
     }
 
     var body = net.Body { content_type: r.content_type, data: r.body }

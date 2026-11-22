@@ -1,0 +1,13 @@
+import url
+
+// spec: https://html.spec.whatwg.org/multipage/document-sequences.html#determining-the-origin
+fn sameCreatorOrigin(x: *mut Page, y: *mut Page) bool {
+    var u = url.parse(x.alloc, originHref(x)) catch return false
+
+    defer u.deinit(x.alloc)
+    var v = url.parse(x.alloc, originHref(y)) catch return false
+
+    defer v.deinit(x.alloc)
+
+    return sameUrlOrigin(&u, &v)
+}

@@ -42,13 +42,13 @@ that decides who can close it.
 | S3 fuzz nightly, no open crash | 6 of 6 targets green in runs 45042466169 and 45056892424 (`main` be60dbd6 and bfa2c365), after the JS replay hang was fixed (#376, closed); the scheduled runs of 11-20 and 11-22 failed on that hang. No open `fuzz` issue | 2026-11-22 | CI | a scheduled run after the fix (the next is 11-23) |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
 | X1 a compromised renderer reads nothing | holds in the default build: the Q2.7, Q2.8a, Q2.8b tests (`window_renderer_site_lock`, `window_renderer_sandbox`, `window_spaces_renderer_sandboxed`, `relay_snapshot`) pass in site mode, queue run 45055982022 | 2026-11-22 | CI | – |
-| X2 web security areas at threshold | 4 of 5 areas at their target: `content-security-policy` 80.4% (target 80), `mixed-content` 96.3% (89), `x-frame-options` 100% (90), `html/browsers/origin` 46.0% (39); `html/browsers/sandboxing` 62.5% (64), one subtest under | 2026-11-22 (`conformance` run 45056886571) | CI, cloud | `html/browsers/sandboxing`: Q3.15b's Left list |
+| X2 web security areas at threshold | 5 of 5 areas at their target: `content-security-policy` 80.5% (target 80, 3323/4127 since Q3.16), `mixed-content` 96.3% (89), `x-frame-options` 100% (90), `html/browsers/origin` 46.0% (39), `html/browsers/sandboxing` 65.6% (64, 21/32 since Q3.16) | 2026-11-22 (`conformance` run 45056886571; sandboxing with Q3.16, `wpt.py run` on its branch) | CI, cloud | – |
 | X3 bad TLS refused | holds: `tls_errors`, `cert_bypass` (Q3.4, Q3.4b) pass, queue run 45055982022 | 2026-11-22 | CI | – |
 | W7 interactivity, 20 sites | 9 of 20 with the fast build, 8 of 20 with the safe build that ships; the 4 worst re-measured 2026-11-08: none passes, 1.05× (react) to 12× (mistral) over the loop budget | 2026-11-04 | the Mac only | never measured with site isolation; decision 2 |
 | W8 first paint, 20 sites | 19 of 20 (zol's live load times out) | 2026-11-04 | the Mac only (live, Chrome) | never measured with site isolation; Q4.12 |
 | M1 memory per tab | no budget | – | the Mac | Q2.13 |
 | F1 basic features | 17 of 18 (`check_plan.py`: Q5 1 open) | 2026-11-22 | per row | Q5.9b (YouTube, the Mac) |
-| W9 conformance | 47 areas at their floor, 0 below, 51 without a floor; 10 of the 47 within 3.5 points of it; 8 of the 20 areas with a target at it; `conformance.py check`: no area fell (59 of 98 areas measured in the run, the rest are baselines) | 2026-11-22 (`conformance` run 45056886571) | cloud; the weekly CI job, green again since #399 fetched libwasmtime for it | Q6, Q0.1 |
+| W9 conformance | 47 areas at their floor, 0 below, 51 without a floor; 10 of the 47 within 3.5 points of it; 9 of the 20 areas with a target at it (with Q3.16); `conformance.py check`: no area fell (59 of 98 areas measured in the run, the rest are baselines) | 2026-11-22 (`conformance` run 45056886571) | cloud; the weekly CI job, green again since #399 fetched libwasmtime for it | Q6, Q0.1 |
 | W2 sites load and agents work | passed | 2026-10-15 | the Mac (archives) | Q0.3 |
 | W3 sites look right | 8 of 20 | 2026-10-15 | the Mac and the owner's eyes | Q0.3 |
 
@@ -130,7 +130,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 |---|---|---|
 | base | DV1 is counted over its next landings | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
-| sec | – (4 of the 5 X2 areas are at their targets; `html/browsers/sandboxing` is one subtest under, and each file left needs a feature with no card yet, the Left list of the card: `javascript:` URL navigations, replaced pages kept alive while a script holds them) | a card for `javascript:` URL navigations (it also waits in `html/browsers/origin` and `content-security-policy`) |
+| sec | – (the 5 X2 areas are at their targets) | `javascript:` URLs of links, `location` and frames, and replaced pages kept alive while a script holds them (Left of the last card) |
 | perf | – (Q6 is done; Q4.25e and Q4.12: their verify is in their Mac queues; the last two ranked Q4.16 cards are done) | Q4.6, Q4.16 (their verify needs the site archives) |
 | feat | – (Q5.9b: slices 1 to 5 done, YouTube is for the Mac) | – |
 

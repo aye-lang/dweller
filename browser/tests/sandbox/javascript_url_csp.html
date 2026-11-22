@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-a'">
+<title>javascript: URLs under a CSP without unsafe-inline</title>
+<pre id="out"></pre>
+<script nonce="a">
+const out = document.getElementById('out');
+const log = (line) => { out.textContent += line + '\n'; };
+addEventListener('message', (e) => log(e.data));
+addEventListener('securitypolicyviolation', (e) => log('violation: ' + e.violatedDirective + ' ' + e.blockedURI));
+window.open('about:blank', 'popup');
+window.open(`javascript:"<script>opener.postMessage('ran', '*')</scr` + `ipt>"`, 'popup');
+setTimeout(() => log('done'), 300);
+</script>

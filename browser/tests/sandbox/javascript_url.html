@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<title>javascript: URLs in named popups</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = (line) => { out.textContent += line + '\n'; };
+addEventListener('message', (e) => log(e.data.replace(location.origin, 'OPENER')));
+const report = (what) => `"<script>opener.postMessage('${what}: ' + location.href + ' ' + self.origin, '*')</scr` + `ipt>"`;
+window.open('about:blank', 'same');
+window.open('javascript:' + report('same origin'), 'same');
+window.open('http://localhost:' + location.port + '/sandbox/blank.html', 'other');
+const kept = window.open('about:blank', 'kept');
+const opaque = document.createElement('iframe');
+opaque.sandbox = 'allow-scripts allow-popups';
+opaque.src = 'javascript_url_frame.html';
+document.body.append(opaque);
+setTimeout(() => {
+  window.open('javascript:' + report('cross origin'), 'other');
+  kept.document.title = 'mine';
+  window.open('javascript:1 + 1', 'kept');
+  setTimeout(() => {
+    log('a number keeps the document: ' + (kept.document.title === 'mine'));
+    log('done');
+  }, 300);
+}, 300);
+</script>
