@@ -1,0 +1,16 @@
+import ipc
+
+fn saidRegionAt(r: *TabRenderer, x: f64, y: f64) bool {
+    var at = ipc.Reader { data: r.regions_said.bytes() }
+
+    while at.at < at.data.len {
+        let x0 = (at.readU32() catch return false) as f64
+        let y0 = (at.readU32() catch return false) as f64
+        let x1 = (at.readU32() catch return false) as f64
+        let y1 = (at.readU32() catch return false) as f64
+
+        if x >= x0 && x < x1 && y >= y0 && y < y1 { return true }
+    }
+
+    return false
+}

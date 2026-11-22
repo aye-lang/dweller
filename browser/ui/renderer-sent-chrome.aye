@@ -3,10 +3,10 @@ import std.mem.AllocError
 
 fn rendererSentChrome(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
     match got.message {
-        .ScrollInfo { max_y, pan, background } => {
+        .ScrollInfo { max_y, pan, background, regions } => {
             if got.frame != slot.id { return "bad scroll_info" }
 
-            return takeScrollInfo(tp, max_y, pan, background)
+            return try takeScrollInfo(tp, max_y, pan, background, regions)
         }
 
         .Title { title } => {

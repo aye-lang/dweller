@@ -4,10 +4,11 @@ test "scroll_info goes from the renderer and round-trips" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 3, Message.ScrollInfo { max_y: 1200.5, pan: 1, background: 0xFFEEDDCC })
+    let got = try roundTrip(&mut out, 3, Message.ScrollInfo { max_y: 1200.5, pan: 1, background: 0xFFEEDDCC, regions: "0123456789abcdef" })
 
     match got.message {
-        .ScrollInfo { max_y, pan, background } => {
+        .ScrollInfo { max_y, pan, background, regions } => {
+            @expectEqual("0123456789abcdef", regions)
             @expectEqual(1200.5, max_y)
             @expectEqual(1, pan)
             @expectEqual(0xFFEEDDCC, background)
@@ -16,6 +17,6 @@ test "scroll_info goes from the renderer and round-trips" {
         _ => @expect(false)
     }
 
-    @expect(fromRenderer(Message.ScrollInfo { max_y: 0.0, pan: 0, background: 0 }))
-    @expectEqual(120, Message.ScrollInfo { max_y: 0.0, pan: 0, background: 0 }.kind())
+    @expect(fromRenderer(Message.ScrollInfo { max_y: 0.0, pan: 0, background: 0, regions: "" }))
+    @expectEqual(120, Message.ScrollInfo { max_y: 0.0, pan: 0, background: 0, regions: "" }.kind())
 }

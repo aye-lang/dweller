@@ -1,0 +1,42 @@
+import paint
+import std.list.List
+import std.mem.AllocError
+import std.text
+
+// chromium: cc/input/input_handler.h (HasBlockingWheelEventHandlerAt, the non-fast scrollable region)
+pub fn wheelRegions(p: *mut Page, out: *mut List(paint.Rect)) AllocError!bool {
+    let t = p.tree orelse return false
+    var boxes = List(usize).init(p.alloc)
+    defer boxes.deinit()
+
+    try scrollerBoxes(t, &mut boxes)
+
+    for i in boxes.items() {
+        let range = maxScroll(t, i)
+
+        if range.x > 0.0 || range.y > 0.0 {
+            let b = t.bx(i)
+
+            try out.append(paint.Rect { x: b.ax, y: b.ay, w: b.w, h: b.h })
+        }
+    }
+
+    for k in 0..p.frames.len() {
+        let f = p.frames.items()[k]
+        let at = frameRect(p, k) orelse continue
+        let sub = f.page.tree orelse continue
+
+        if maxFrameScroll(sub, at.h) > 0.0 { try out.append(paint.Rect { x: at.x, y: at.y, w: at.w, h: at.h }) }
+    }
+
+    let s = p.script orelse return false
+
+    if !s.wheel_watched { return false }
+
+    var b = text.Builder.init(p.alloc)
+    defer b.deinit()
+
+    _ = try evalInPage(p, "__wheelRegions()", &mut b)
+
+    return listenerRegions(b.bytes(), out)
+}

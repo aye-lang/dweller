@@ -52,3 +52,52 @@ fn window_renderer_pan_while_busy() {
     let rows: Vec<usize> = (0..h).filter(|&y| (0..w).any(|x| !bubble(x, y) && a[(y * w + x) * 4..(y * w + x + 1) * 4] != b[(y * w + x) * 4..(y * w + x + 1) * 4])).collect();
     assert!(rows.is_empty(), "the scrolled window differs from the in-process one in {} rows, {:?} to {:?}: {} and {}\n{}\n{}", rows.len(), rows.first(), rows.last(), tab.display(), own.display(), state, err.lines().filter(|l| l.contains("\tui_pan\t") || l.contains("\tpaint\t") || l.contains("\tinput_to_")).collect::<Vec<_>>().join("\n"));
 }
+
+/// Q4.25e slice 3: the window shifts the page ahead for a wheel outside
+/// the regions the renderer said must see the wheel first, and not for
+/// one over an inner scroller or over an element whose wheel listener may
+/// cancel it (`browser/tests/ui/pan_regions.html`, while a script of 20 s
+/// runs); a wheel the page handled there leaves the page's shifting on.
+#[test]
+fn window_renderer_pan_regions() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let png = scratch().join("pan-regions.png");
+    let run = |query: &str, at: &str| {
+        let events = format!("renderer:loaded click:100,100 release:100,100 renderer:title:busy move:{at} wheel:-3 frame frame");
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", "tab")
+            .env("DWELLER_TIMING", "1")
+            .arg(format!("{}/ui/pan_regions.html{query}", srv.base))
+            .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--save"])
+            .arg(&png)
+            .args(["--events", &events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{at}: {}\n{}", out.status, text(&out.stderr));
+        text(&out.stderr).contains("DWELLER_TIMING\tui_pan\t")
+    };
+    assert!(run("?20000", "100,150"), "a wheel outside the regions is shifted ahead");
+    assert!(!run("?20000", "300,80"), "a wheel over the inner scroller waits for the renderer");
+    assert!(!run("?20000", "300,220"), "a wheel over a listener that may cancel it waits for the renderer");
+    let events = "renderer:loaded move:300,80 wheel:-1 renderer:input click:100,100 release:100,100 renderer:title:busy move:100,150 wheel:-3 frame frame";
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "tab")
+        .env("DWELLER_TIMING", "1")
+        .arg(format!("{}/ui/pan_regions.html?20000", srv.base))
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "400", "--save"])
+        .arg(&png)
+        .args(["--events", events])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(text(&out.stderr).contains("DWELLER_TIMING\tui_pan\t"), "the inner scroller's wheel turned the shifting off");
+}
