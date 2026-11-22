@@ -1,0 +1,11 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/document-sequences.html#determining-the-origin
+fn inheritCreator(p: *mut Page, initiator: []u8) AllocError!void {
+    if initiator.len == 0 || p.parent != null {
+        return
+    }
+
+    freePolicy(p.alloc, p.creator)
+    p.creator = try ownedBytes(p.alloc, initiator)
+}

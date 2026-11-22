@@ -1,0 +1,26 @@
+import std.mem.AllocError
+import url
+import url.Url
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
+fn runJavascriptUrl(tab: *mut Tab, target: *Url, initiator: []u8) AllocError!bool {
+    let p = tab.page orelse return false
+    let s = p.script orelse return false
+
+    if !initiatorReaches(p, initiator) {
+        return false
+    }
+
+    let code = try url.percentDecode(tab.alloc, target.href[JAVASCRIPT_SCHEME.len..])
+
+    defer tab.alloc.free(code)
+    let markup = (try javascriptResult(s, code)) orelse return false
+
+    defer tab.alloc.free(markup)
+
+    if tab.page != p {
+        return false
+    }
+
+    return showJavascriptResult(tab, p, markup)
+}

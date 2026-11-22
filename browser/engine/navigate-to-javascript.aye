@@ -1,0 +1,21 @@
+import net
+import std.mem.AllocError
+import url
+import url.Url
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
+fn navigateToJavascript(tab: *mut Tab, target: *Url, initiator: []u8) AllocError!bool {
+    if tab.page == null {
+        var blank = url.parse(tab.alloc, "about:blank") catch return false
+
+        defer blank.deinit(tab.alloc)
+
+        if !(try tab.navigate(&blank, net.Initiator.Page { url: initiator })) {
+            return false
+        }
+
+        try inheritCreator(tab.page.?, initiator)
+    }
+
+    return runJavascriptUrl(tab, target, initiator)
+}

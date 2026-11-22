@@ -109,3 +109,56 @@ fn sandbox_stat_follows_landlock() {
     assert!(err == "sandbox-stat home=13 usr=0\n" || err == "sandbox-stat home=1 usr=1\n", "{err}");
     assert_eq!(run(&[("DWELLER_TEST_NO_LANDLOCK", "1")]), "sandbox-stat home=1 usr=1\n");
 }
+
+fn javascript_url_page(page: &str) -> String {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return String::new();
+    };
+    let out = run(&["dump", "--text", "--js", &format!("{}/sandbox/{page}", srv.base)]);
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    text(&out.stdout)
+}
+
+/// `window.open("javascript:...", name)` runs the script in the named
+/// popup when the opener is of its origin, and a string result becomes
+/// the popup's document, with the popup's URL and origin (an
+/// `about:blank` popup has its opener's); a popup of another origin, or a
+/// sandboxed frame of an opaque origin, runs nothing, and a result that is
+/// not a string keeps the document. In
+/// `dump` and in the window with renderers.
+#[test]
+fn javascript_url_in_named_popup() {
+    let got = javascript_url_page("javascript_url.html");
+    if got.is_empty() {
+        return;
+    }
+    let Some(srv) = server() else {
+        return;
+    };
+    let window = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "site")
+        .args([&format!("{}/sandbox/javascript_url.html", srv.base), "--frames", "300", "--until-idle", "--text"])
+        .output()
+        .unwrap();
+    assert!(window.status.success(), "{}\n{}", window.status, text(&window.stderr));
+    for got in [got, text(&window.stdout)] {
+        for want in ["same origin: about:blank OPENER\n", "a number keeps the document: true\n", "done\n"] {
+            assert!(got.contains(want), "no {want:?} in:\n{got}");
+        }
+        assert!(!got.contains("cross origin:") && !got.contains("opaque frame:"), "{got}");
+    }
+}
+
+/// A page whose CSP has no `'unsafe-inline'` cannot run a `javascript:`
+/// URL in its popup: the opener gets a violation of `script-src-elem`.
+#[test]
+fn javascript_url_refused_by_csp() {
+    let got = javascript_url_page("javascript_url_csp.html");
+    if got.is_empty() {
+        return;
+    }
+    assert!(got.contains("violation: script-src-elem inline\n"), "{got}");
+    assert!(got.contains("done\n") && !got.contains("ran"), "{got}");
+}
