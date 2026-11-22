@@ -69,7 +69,12 @@ pub fn activate(page: *mut Page, node: NodeId) AllocError!Activation {
             return Activation.Nothing
         }
         net.noteNavigationPolicy(linkReferrerPolicy(doc, el))
-        if text.eql(target.scheme, "javascript") || text.eql(target.scheme, "mailto") {
+        if text.eql(target.scheme, "javascript") {
+            defer target.deinit(page.alloc)
+            try followJavascriptLink(page, el, &target)
+            return Activation.Nothing
+        }
+        if text.eql(target.scheme, "mailto") {
             target.deinit(page.alloc)
             return Activation.Nothing
         }

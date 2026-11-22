@@ -216,3 +216,26 @@ fn javascript_url_of_frames_and_location() {
         assert!(got.contains(want), "no {want:?} in:\n{got}");
     }
 }
+
+/// A click on a link whose `href` is a `javascript:` URL runs it in the
+/// link's page (a link the page's script clicks, in `dump` and in the
+/// window with renderers); before, the click did nothing.
+#[test]
+fn javascript_url_link_runs() {
+    let got = javascript_url_page("javascript_url_link.html");
+    if got.is_empty() {
+        return;
+    }
+    assert!(got.contains("the link ran\ndone\n"), "{got}");
+    let Some(srv) = server() else {
+        return;
+    };
+    let window = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "site")
+        .args([&format!("{}/sandbox/javascript_url_link.html", srv.base), "--frames", "100", "--until-idle", "--text"])
+        .output()
+        .unwrap();
+    assert!(window.status.success(), "{}\n{}", window.status, text(&window.stderr));
+    assert!(text(&window.stdout).contains("the link ran\ndone\n"), "{}", text(&window.stdout));
+}
