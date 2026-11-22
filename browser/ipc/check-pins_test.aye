@@ -1,0 +1,46 @@
+import std.text
+
+fn pin(out: *mut text.Builder, v: [7]u32) []u8 {
+    for n in v { putU32(out, n) catch unreachable }
+
+    return out.bytes()
+}
+
+test "pins inside the buffer and its pin rows pass" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    var b = Buffers {}
+
+    b.give(200, 80, 40)
+
+    @expectEqual("", checkPins(&b, ""))
+    @expectEqual("", checkPins(&b, pin(&mut out, [7]u32{0, 40, 200, 30, 0, 0, 4294967295})))
+    @expectEqual("", checkPins(&b, pin(&mut out, [7]u32{10, 100, 50, 10, 30, 12, 90})))
+    @expectEqual(200 * 200 * 4, b.width * b.mapped() * 4)
+}
+
+test "the browser refuses each bad pin" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+    var b = Buffers {}
+
+    b.give(200, 80, 40)
+
+    @expectEqual("bad pins", checkPins(&b, "short"))
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{0, 0, 0, 10, 0, 0, 1})))
+    out.clear()
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{1, 0, 200, 10, 0, 0, 1})))
+    out.clear()
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{0, 150, 10, 11, 0, 0, 1})))
+    out.clear()
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{0, 0, 10, 41, 0, 0, 1})))
+    out.clear()
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{0, 0, 10, 10, 31, 0, 1})))
+    out.clear()
+    @expectEqual("pin outside", checkPins(&b, pin(&mut out, [7]u32{0, 0, 10, 10, 0, 5, 4})))
+    out.clear()
+
+    for k in 0..9 { _ = pin(&mut out, [7]u32{0, 0, 1, 1, 0, 0, 0}) }
+
+    @expectEqual("bad pins", checkPins(&b, out.bytes()))
+}

@@ -1,0 +1,20 @@
+fn pinsCovered(list: *DisplayList, sigs: []Sig, v: View, pins: []PinLayer) bool {
+    let items = list.items.items()
+    var at: usize = 0
+
+    while at < items.len {
+        let it = items[at]
+
+        if isLayerItem(it) && list.pinnedAt(at) {
+            at = sigs[at].end + 1
+
+            continue
+        }
+
+        if !isLayerItem(it) && !structural(it) && coversPin(sigBounds(sigs[at], v), at, pins) { return true }
+
+        at += 1
+    }
+
+    return false
+}

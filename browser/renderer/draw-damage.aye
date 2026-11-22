@@ -5,18 +5,18 @@ import std.mem.AllocError
 
 fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *paint.Damage) AllocError!void {
     let size = r.width as usize * r.rows() as usize * 4
-    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.rows() as i64 }
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.mapped() as i64 }
     let v = r.bufferView()
-    let pixels = r.maps[k].?[0..size]
+    let pixels = r.maps[k].?[0..r.width as usize * r.mapped() as usize * 4]
 
-    var canvas = paint.Canvas { alloc: r.alloc, width: r.width as usize, height: r.rows() as usize, pixels: pixels, clip: all, clips: List(paint.IRect).init(r.alloc), bound: all, bounds: List(paint.IRect).init(r.alloc) }
+    var canvas = paint.Canvas { alloc: r.alloc, width: r.width as usize, height: r.mapped() as usize, pixels: pixels, clip: all, clips: List(paint.IRect).init(r.alloc), bound: all, bounds: List(paint.IRect).init(r.alloc) }
     defer canvas.clips.deinit()
     defer canvas.bounds.deinit()
     var painter = paint.TextPainter.init(r.alloc, r.system)
     defer painter.deinit()
-    var reuse = paint.Reuse { sigs: r.drawn.items(), cache: &mut r.layers }
+    var reuse = paint.Reuse { sigs: r.drawn.items(), cache: &mut r.layers, skip_pinned: r.pinning }
 
-    if r.sent |j| { copyShifted(pixels, r.maps[j].?[0..size], r.width as usize, r.rows() as usize, r.shift) }
+    if r.sent |j| { copyShifted(pixels[0..size], r.maps[j].?[0..size], r.width as usize, r.rows() as usize, r.shift) }
 
     for d in damage.rects.items() {
         try canvas.pushDamage(d)
@@ -32,8 +32,12 @@ fn drawDamage(r: *mut TabRenderer, k: usize, list: *paint.DisplayList, damage: *
         canvas.popClip()
     }
 
+    reuse.skip_pinned = false
+
+    for pin in r.pins.items() { try drawPin(r, &mut canvas, list, &mut painter, &mut reuse, pin) }
+
     noteLayers(reuse.kept, reuse.drawn)
     r.layers.endFrame()
 
-    if std.os.getenv("DWELLER_DAMAGE_CHECK") != null { try checkFrame(r, pixels, list) }
+    if std.os.getenv("DWELLER_DAMAGE_CHECK") != null { try checkFrame(r, pixels[0..size], list) }
 }

@@ -54,17 +54,19 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     let background = frameBackground(list)
 
-    try sayScrollInfo(r, t, background)
-
     var marks = List(Mark).init(r.alloc)
     defer marks.deinit()
 
     try findMarks(r, &mut marks)
     try fieldMarks(r, p, &mut marks)
     try bubbleMarks(r, p, &mut marks)
+    try findPins(r, list, t, r.marks.len() > 0 || marks.len() > 0)
+    try sayScrollInfo(r, t, background)
     try reportSubframes(r, list, p)
 
     let whole = try frameDamage(r, r.lists.sigs.items(), background, r.marks.len() > 0 || marks.len() > 0, &mut damage)
+
+    r.pins_drawn = r.pinning
 
     if !whole && !sameMarks(r.marks.items(), marks.items()) { try addMarks(r, &mut damage, marks.items()) }
 
@@ -94,15 +96,19 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     var rects = text.Builder.init(r.alloc)
     defer rects.deinit()
+    var pins = text.Builder.init(r.alloc)
+    defer pins.deinit()
     var width = r.width
 
     if !whole {
         try putDamage(&mut rects, &damage)
     }
 
+    try putPins(r, &mut pins)
+
     if evilTest("frame") {
         width += 1
     }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k as u32, width: width, height: r.height, scroll_x: r.scroll_x, scroll_y: r.scroll_y, damage: rects.bytes() })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.Frame { buffer: r.first + k as u32, width: width, height: r.height, scroll_x: r.scroll_x, scroll_y: r.scroll_y, damage: rects.bytes(), pins: pins.bytes() })
 }

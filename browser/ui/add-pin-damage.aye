@@ -1,0 +1,18 @@
+import ipc
+import paint
+import std.mem.AllocError
+
+fn addPinDamage(ui: *mut Ui, all: paint.IRect) AllocError!void {
+    let tp = ui.slots[ui.active].?.process orelse return
+
+    for d in tp.pins_drawn.items() { try ui.page.damage.add(paint.intersect(d, all)) }
+
+    tp.pins_drawn.clear()
+
+    for k in 0..tp.pins.len() / ipc.PIN_BYTES {
+        let at = pinPlace(ui, tp, readPin(tp, k))
+
+        try tp.pins_drawn.append(at)
+        try ui.page.damage.add(paint.intersect(at, all))
+    }
+}

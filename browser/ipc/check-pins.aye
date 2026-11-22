@@ -1,0 +1,22 @@
+pub let MAX_PINS: usize = 8
+pub let PIN_BYTES: usize = 28
+
+pub fn checkPins(b: *Buffers, pins: []u8) []u8 {
+    if pins.len % PIN_BYTES != 0 || pins.len > MAX_PINS * PIN_BYTES { return "bad pins" }
+
+    var r = Reader { data: pins }
+
+    while r.at < pins.len {
+        let x = r.readU32() catch unreachable
+        let y = r.readU32() catch unreachable
+        let w = r.readU32() catch unreachable
+        let h = r.readU32() catch unreachable
+        let row = r.readU32() catch unreachable
+        let lo = r.readU32() catch unreachable
+        let hi = r.readU32() catch unreachable
+
+        if w == 0 || h == 0 || w > b.width || x > b.width - w || h > b.rows() || y > b.rows() - h || h > b.over || row > b.over - h || lo > hi { return "pin outside" }
+    }
+
+    return ""
+}

@@ -1,0 +1,23 @@
+import std.list.List
+import std.mem.AllocError
+
+pub struct PinLayer {
+    at: usize
+    box: usize
+    rect: IRect
+}
+
+// chromium: cc/trees/property_tree.cc (a fixed or sticky layer keeps its place while the compositor scrolls)
+pub fn pinLayers(list: *DisplayList, sigs: []Sig, v: View, area: IRect, out: *mut List(PinLayer)) AllocError!bool {
+    if list.unpinned { return false }
+
+    for l in list.layers.items() {
+        if !l.pinned { continue }
+
+        let k = intersect(sigBounds(sigs[l.at], v), area)
+
+        if k.x1 > k.x0 && k.y1 > k.y0 { try out.append(PinLayer { at: l.at, box: l.box, rect: k }) }
+    }
+
+    return !pinsCovered(list, sigs, v, out.items())
+}

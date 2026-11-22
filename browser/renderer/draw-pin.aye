@@ -1,0 +1,16 @@
+import paint
+import std.mem.AllocError
+
+// chromium: cc/trees/layer_tree_host_impl.cc (a fixed layer is rastered apart from the layer that scrolls)
+fn drawPin(r: *TabRenderer, canvas: *mut paint.Canvas, list: *paint.DisplayList, painter: *mut paint.TextPainter, reuse: *mut paint.Reuse, pin: Pin) AllocError!void {
+    let base = r.rows() as i64 + pin.row as i64
+    let d = paint.IRect { x0: pin.rect.x0, y0: base, x1: pin.rect.x1, y1: base + pin.rect.y1 - pin.rect.y0 }
+    var v = r.bufferView()
+
+    v.dy += (base - pin.rect.y0) as f64
+
+    try canvas.pushDamage(d)
+    paint.clearRect(canvas, d)
+    try paint.renderRange(list, canvas, v, painter, reuse, pin.at, reuse.sigs[pin.at].end + 1)
+    canvas.popClip()
+}

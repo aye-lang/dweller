@@ -96,16 +96,17 @@ test "frame round-trips through the framing" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 7, Message.Frame { buffer: 4, width: 8, height: 6, scroll_x: 0.0, scroll_y: 12.5, damage: "0123456789abcdef" })
+    let got = try roundTrip(&mut out, 7, Message.Frame { buffer: 4, width: 8, height: 6, scroll_x: 0.0, scroll_y: 12.5, damage: "0123456789abcdef", pins: "0123456789abcdef0123456789ab" })
 
     match got.message {
-        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage, pins } => {
             @expectEqual(4, buffer)
             @expectEqual(8, width)
             @expectEqual(6, height)
             @expectEqual(0.0, scroll_x)
             @expectEqual(12.5, scroll_y)
             @expectEqual("0123456789abcdef", damage)
+            @expectEqual("0123456789abcdef0123456789ab", pins)
         }
 
         _ => @expect(false)
@@ -235,7 +236,7 @@ test "what a renderer may send" {
     @expect(fromRenderer(Message.Loaded { title: "", url: "" }))
     @expect(!fromRenderer(Message.Navigate { url: "", post: 0, content_type: "", body: "" }))
     @expect(!fromRenderer(Message.Shutdown))
-    @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "" }))
+    @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "", pins: "" }))
     @expect(!fromRenderer(Message.Resize { width: 1, height: 1, scale: 1.0, buffer: 1, over: 0 }))
     @expect(!fromRenderer(Message.FrameAck { buffer: 1 }))
     @expect(!fromRenderer(Message.Text { seq: 1, typed: "" }))

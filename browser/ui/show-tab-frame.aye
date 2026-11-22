@@ -1,12 +1,14 @@
 import ipc
 import std.mem.AllocError
 
-fn showTabFrame(id: u32, tp: *mut TabProcess, frame_id: u32, buffer: u32, width: u32, height: u32, damage: []u8) AllocError![]u8 {
+fn showTabFrame(id: u32, tp: *mut TabProcess, frame_id: u32, buffer: u32, width: u32, height: u32, damage: []u8, pins: []u8) AllocError![]u8 {
     let b = &mut tp.buffers
     let why = ipc.checkFrame(b, buffer, width, height, damage)
+    let bad_pins = ipc.checkPins(b, pins)
 
     if frame_id != id { return "unexpected frame" }
     if why.len > 0 || buffer < b.first { return why }
+    if bad_pins.len > 0 { return bad_pins }
 
     if b.shown != 0 {
         try releaseShown(tp)
@@ -15,6 +17,8 @@ fn showTabFrame(id: u32, tp: *mut TabProcess, frame_id: u32, buffer: u32, width:
     }
 
     b.shown = buffer
+    tp.pins.clear()
+    try tp.pins.append(pins)
     tp.frames += 1
     tp.last_damage.clear()
     try tp.last_damage.append(damage)

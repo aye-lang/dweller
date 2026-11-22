@@ -32,12 +32,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
 
         .ScrollInfo { .. }, .Title { .. }, .Popup { .. }, .Cursor { .. }, .TargetUrl { .. }, .LongTask { .. }, .Settled { .. }, .TakeFocus { .. } => return rendererSentChrome(slot, tp, got)
         .SameDocument { .. }, .HistoryGo { .. }, .BeginNavigation { .. }, .ReplaceNavigation { .. }, .Redirect { .. }, .UpgradeInsecure { .. } => return rendererSentNavigation(slot, tp, got)
-        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage, pins } => {
             if ipc.badScroll(scroll_x, scroll_y) { return "bad scroll" }
 
             keepFrameScroll(slot, tp, scroll_y)
 
-            return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage)
+            return showTabFrame(slot.id, tp, got.frame, buffer, width, height, damage, pins)
         }
 
         .AgentReply { .. }, .AgentActed { .. }, .AgentWindow { .. } => return rendererSentAgent(slot, tp, got)
