@@ -1,0 +1,25 @@
+// chromium: components/viz/service/display/surface_aggregator.cc (a surface quad's pixels are premultiplied)
+fn overPixel(under: []mut u8, child: []u8, alpha: u32) {
+    let a = child[3] as u32
+
+    if alpha == 255 {
+        if a == 255 {
+            for c in 0..3 { under[c] = child[c] }
+        } else if a > 0 {
+            for c in 0..3 { under[c] = ((child[c] as u32 * 255 + under[c] as u32 * (255 - a) + 127) / 255) as u8 }
+        }
+
+        return
+    }
+
+    for c in 0..3 {
+        let shown = child[c] as u32 + 255 - a
+        let lost = ((255 - shown) * alpha + 127) / 255
+
+        if lost >= under[c] as u32 {
+            under[c] = 0
+        } else {
+            under[c] = (under[c] as u32 - lost) as u8
+        }
+    }
+}

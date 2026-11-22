@@ -131,7 +131,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
 | sec | – (the X2 areas are at their targets) | – |
 | perf | Q4.25e (slices 2b and 3) | Q4.6, Q4.12, Q4.16; Q6.3, Q6.13 |
-| feat | Q5.2 | – |
+| feat | – (Q5.9b is for the Mac) | – |
 
 ## Decisions (2026-11-04)
 
@@ -370,7 +370,6 @@ Where a row can be verified:
 
 | Step | Feature | Chromium |
 |---|---|---|
-| Q5.2 | `prefers-color-scheme: dark`, a dark UA sheet, and `color-scheme` | `core/css/media_query_evaluator.cc`, `core/css/resolver/` (color-scheme) |
 | Q5.9b | Media 2: Media Source Extensions (YouTube) | `third_party/blink/renderer/modules/mediasource/` |
 
 Autofill and password saving stay out, as decided before

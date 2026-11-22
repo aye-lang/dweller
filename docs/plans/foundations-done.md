@@ -231,6 +231,7 @@ Follow-ups noted at the stop (not yet cards):
 
 | Step | Feature | Chromium |
 |---|---|---|
+| Q5.2 | `prefers-color-scheme: dark`, a dark UA sheet, and `color-scheme` | `core/css/media_query_evaluator.cc`, `core/css/resolver/` (color-scheme) |
 | Q5.12 | Permissions with a prompt: notifications, geolocation, camera and microphone denied until asked | `components/permissions/`, `modules/permissions/` |
 | Q5.6 | Downloads: `Content-Disposition`, `download` attribute and a downloads list | `components/download/`, `chrome/browser/download/` |
 | Q5.7 | WebSocket (through the browser's network) | `modules/websockets/`, `services/network/websocket.cc` |

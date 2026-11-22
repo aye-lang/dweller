@@ -167,3 +167,50 @@ fn window_renderer_oopif_crash() {
         }
     }
 }
+
+/// Q5.2, slice 5: frames in other processes take their `iframe`
+/// element's used color scheme as their preference (`Subframe.scheme`,
+/// `FrameOwner.scheme`), and their canvas is transparent when their own
+/// used scheme is the element's, as in one process: the window that runs
+/// five cross-site frames in renderers of their own (`ui/oopif_scheme.html`:
+/// plain, dark, translucent, plain in a dark element, and a page that is
+/// blue for a dark preference in a dark element) equals the in-process
+/// window, and the pixels are the in-process rule's.
+#[test]
+fn window_renderer_oopif_color_scheme() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let golden = scratch().join("oopif_scheme_in_process.png");
+    let shot = scratch().join("oopif_scheme_site.png");
+    let run = |mode: &str, png: &Path, events: &str| {
+        let out = dweller_command()
+            .env("DWELLER_PROCESS", if mode.is_empty() { IN_PROCESS.1 } else { mode })
+            .current_dir(root())
+            .arg(format!("{}/ui/oopif_scheme.html", srv.base))
+            .args(["--font", "fixed", "--width", "320", "--height", "100"])
+            .args(["--frames", "1000", "--until-idle", "--save"])
+            .arg(png)
+            .args(["--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+    };
+    run("", &golden, "loaded");
+    run("site", &shot, "renderer:loaded renderer:child frame frame");
+    same_png(&shot, &golden, "color schemes of frames");
+    let (w, h, px) = png_rgba(&std::fs::read(&golden).unwrap());
+    let at = |x: usize, y: usize| px[(y * w + x) * 4..(y * w + x) * 4 + 3].to_vec();
+    let top = (0..h).find(|&y| at(315, y) == [0, 128, 0]).expect("the page's green");
+    let y = top + 25;
+    assert_eq!(at(25, y), [0, 128, 0], "the same scheme: transparent");
+    assert_eq!(at(85, y), [18, 18, 18], "a dark frame in a light element");
+    assert_eq!(at(145, y), [0, 64, 128], "a translucent background over the page");
+    assert_eq!(at(205, y), [255, 255, 255], "a light frame in a dark element");
+    assert_eq!(at(265, y), [0, 0, 255], "a dark element makes the frame prefer dark");
+}

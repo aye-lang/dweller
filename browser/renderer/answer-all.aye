@@ -115,7 +115,16 @@ fn answerAll(r: *mut TabRenderer) !bool {
 
             .AdvanceFocus { key, reverse } => try advanceFocus(r, key, reverse != 0)
             .ViewportIntersection { x0, y0, x1, y1 } => try takeIntersection(r, [4]u32{x0, y0, x1, y1})
-            .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name } => try engine.setFrameOwner(r.alloc, engine.FrameOwner { parent_frame: parent_frame, parent_page: parent_page, top_frame: top_frame, sandbox: sandbox, name: name })
+            .FrameOwner { parent_frame, parent_page, top_frame, sandbox, name, scheme } => {
+                if scheme > 2 { return false }
+
+                try engine.setFrameOwner(r.alloc, engine.FrameOwner { parent_frame: parent_frame, parent_page: parent_page, top_frame: top_frame, sandbox: sandbox, name: name, scheme: scheme })
+
+                if r.page |p| {
+                    if engine.takeOwnerScheme(p) { r.due = true }
+                }
+            }
+
             .PortPosted { tab, key, data, buffers } => {
                 if r.page |p| { try engine.deliverPortMessage(p, tab, key, data, buffers) }
 

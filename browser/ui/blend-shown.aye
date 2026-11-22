@@ -21,16 +21,8 @@ fn blendShown(ui: *mut Ui, tp: *TabProcess, r: paint.IRect, at: [2]i64, alpha: u
         let from = ((y - at[1]) as usize * b.width as usize + (x0 - at[0]) as usize) * 4
         let to = (((y + pd.ring) % h) as usize * pd.canvas.width + x0 as usize) * 4
 
-        for k in 0..(x1 - x0) as usize * 4 {
-            if k % 4 != 3 { pd.canvas.pixels[to + k] = overPlaceholder(pd.canvas.pixels[to + k], map[from + k], alpha) }
+        for k in 0..(x1 - x0) as usize {
+            overPixel(pd.canvas.pixels[to + k * 4..to + k * 4 + 4], map[from + k * 4..from + k * 4 + 4], alpha)
         }
     }
-}
-
-fn overPlaceholder(under: u8, child: u8, alpha: u32) u8 {
-    let lost = ((255 - child as u32) * alpha + 127) / 255
-
-    if lost >= under as u32 { return 0 }
-
-    return (under as u32 - lost) as u8
 }

@@ -52,7 +52,9 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     let list = &r.lists.list.?
 
-    try sayScrollInfo(r, t, list.background)
+    let background = frameBackground(list)
+
+    try sayScrollInfo(r, t, background)
 
     var marks = List(Mark).init(r.alloc)
     defer marks.deinit()
@@ -62,7 +64,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
     try bubbleMarks(r, p, &mut marks)
     try reportSubframes(r, list, p)
 
-    let whole = try frameDamage(r, r.lists.sigs.items(), list.background, r.marks.len() > 0 || marks.len() > 0, &mut damage)
+    let whole = try frameDamage(r, r.lists.sigs.items(), background, r.marks.len() > 0 || marks.len() > 0, &mut damage)
 
     if !whole && !sameMarks(r.marks.items(), marks.items()) { try addMarks(r, &mut damage, marks.items()) }
 
@@ -74,7 +76,7 @@ fn paintFrame(r: *mut TabRenderer) !void {
 
     r.marks = marks
     marks = old_marks
-    r.background = list.background
+    r.background = background
     r.drawn_x = r.scroll_x
     r.drawn_y = r.scroll_y
     r.due = false
