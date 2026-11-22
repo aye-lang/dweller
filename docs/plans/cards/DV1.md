@@ -32,12 +32,12 @@ macOS jobs per landed PR: 3 in the queue (2 shards + `perf`), plus 1 short `cach
 - The matrix expression, evaluated by hand in Python for both values of the condition: 6 entries (2 macOS, 4 Ubuntu) and 4 entries (Ubuntu only), with the same `os`, `shard`, `shards`, `part` as before.
 - The card's CI verify (30 landings, open-to-merge median, a deliberately broken macOS test leaves the queue) is for the integrator on the real runs.
 
-## Status: in progress, 2026-11-12
+## Status: in progress, 2026-11-22 (checked on real runs; the 30-landing count is left)
 
-Built and checked locally; waiting for the first real PR and queue run.
+Checked on the runs of 2026-11-22 (#386, #388, #389, #390):
+- the label `macos` exists ("run the macOS shards and perf on this pull request (DV1)"); #386 and #388 used it, and their PR runs then ran the three macOS shards and `perf` as well.
+- a PR run without the label: 4 Ubuntu shards, `perf` skipped, `browser` reporting (e.g. run 44989937034 of #386); the PRs were mergeable and entered the queue on auto-merge.
+- the queue runs: 4 Ubuntu shards, 3 macOS shards and `perf` (runs 894 and 897, 11 jobs each), green.
 
 Left:
-- The label `macos` does not exist in `aye-lang/dweller` yet: `gh label create macos --description "run the macOS shards and perf on this PR"`.
-- No change in the ruleset: it requires `browser` and `perf`, and both keep reporting.
-- On the first PR: the run shows 4 shards and `perf` as skipped, and the PR is mergeable (queue entry not blocked by a pending `perf`). In its queue run, 6 shards and `perf` run. After the merge, the push run has only `caches` (2 jobs).
 - The 30-landing count and the deliberate macOS break (card verify).

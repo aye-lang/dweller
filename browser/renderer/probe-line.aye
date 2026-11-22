@@ -1,0 +1,21 @@
+import std
+import std.mem.AllocError
+import std.text
+
+fn probeLine(b: *mut text.Builder) AllocError!void {
+    try b.append(std.os.getenv("HOME") orelse "")
+    try b.append("/.dweller\x00")
+
+    let home = openErrno(openPath(b.bytes().ptr, 0))
+
+    b.clear()
+    try b.append("sandbox-probe home=")
+    try b.appendInt(home as i64)
+    try b.append(" tmp=")
+    try b.appendInt(probeWrite() as i64)
+    try b.append(" tcp=")
+    try b.appendInt(probeConnect() as i64)
+    try b.append(" fork=")
+    try b.appendInt(probeFork() as i64)
+    try b.append("\n")
+}

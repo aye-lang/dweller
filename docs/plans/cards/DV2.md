@@ -61,10 +61,12 @@ Nine of the ten take under 10 s on Ubuntu and 70 to 140 s on macOS; six sit at 7
 - times here (Linux x86_64, 4 cores, each part alone): 180, 136 and 146 s; the fixtures one by one: 874 s in all, the parts 324, 281 and 269 s of it. `tests/browser-times.txt` gets the three names with the old row's times split by these shares (Ubuntu 119, 90, 96; macOS 209, 158, 170) until the next refresh from a green queue run (`test_times.py RUN_ID`).
 - expected: the slowest macOS shard under 9 minutes, its floor now about 3.5 minutes (the largest part) instead of 9.
 
-## Status: in progress, 2026-11-22 (the gc-stress split is in; the goal is checked on the queue runs after it)
+- measured (queue run 45011774124, #392, the split's own run): macOS test steps 8 min 4 s, 6 min 32 s and 5 min 59 s (before: 9 min 44 s in run 894, 8 min 42 s in run 897); Ubuntu 5 min 21 s at most; the whole run 9 min.
 
-The tool and the refreshed file are built; the 9-minute goal was not met by them, and DV2b and the split above are the rest.
+## Status: done, 2026-11-22 (the slowest macOS shard 8 min 4 s; the shards within 2 minutes of each other)
+
+The tool and the refreshed file are built; DV2b and the split above met the 9-minute goal.
 
 Left:
-- What the ten slowest macOS tests wait on (TC3j's method), starting with the common ~70 s of the six at 71 to 75 s and the 140 s of `link_events::link_events` (1 s on Ubuntu).
-- The next green queue run: compare its two macOS walls with this card's prediction (balanced, about 15 min).
+- the next refresh of `tests/browser-times.txt` from a green queue run (`test_times.py RUN_ID`) replaces the split's estimated times with measured ones.
+
