@@ -36,19 +36,19 @@ that decides who can close it.
 
 | Criterion | Now | Measured | Where | What is missing |
 |---|---|---|---|---|
-| S1 no flaky test in 50 runs | no open `flaky` issue; 4 of 1 817 green shard jobs needed the re-run | 2026-11-04 to 11-09 | CI | nothing counts the 50 runs (DV7) |
-| The debugging mode (Q2.14) | the suite runs in site mode, the default since Q2.14 (379 / 379); `DWELLER_PROCESS=single` 379 / 379 | 2026-11-21 | CI (the daily `single-mode` job) | – |
-| S2 a tab crash stays in the tab | holds in the default build (site mode since Q2.14; Q2.5 tests) | 2026-11-21 | CI | – |
-| S3 fuzz nightly, no open crash | 3 scheduled runs, all green, 6 targets | 2026-11-09 to 11-11 | CI | – |
+| S1 no flaky test in 50 runs | 1 green merge-queue run of `ci` since the last one with a flaky test (45041506917, macOS shard, #398); 13 of the last 130 queue runs had one. Open `flaky` issues: #398, #385, #380, each seen only on macOS (the Mac queue) | 2026-11-22 (`scoreboard.py flaky`) | CI | 50 green queue runs in a row; the three macOS issues |
+| The debugging mode (Q2.14) | the suite runs in site mode, the default since Q2.14: 390 / 390 (#399's queue run 45055982022); `DWELLER_PROCESS=single` 390 / 390 (`single-mode` run 45056889555) | 2026-11-22 | CI (the daily `single-mode` job) | – |
+| S2 a tab crash stays in the tab | holds in the default build: `window_renderer_hang`, `window_renderer_sad_tab` (Q2.5) pass in site mode, queue run 45055982022 | 2026-11-22 | CI | – |
+| S3 fuzz nightly, no open crash | 6 of 6 targets green in runs 45042466169 and 45056892424 (`main` be60dbd6 and bfa2c365), after the JS replay hang was fixed (#376, closed); the scheduled runs of 11-20 and 11-22 failed on that hang. No open `fuzz` issue | 2026-11-22 | CI | a scheduled run after the fix (the next is 11-23) |
 | S4 1 h soak | no test | – | the Mac (archives) | Q1.11 |
-| X1 a compromised renderer reads nothing | holds in the default build (Q2.7, Q2.8a, Q2.8b tests; site mode since Q2.14) | 2026-11-21 | CI | – |
-| X2 web security areas at threshold | `conformance.py check` passes, but the thresholds are floors set under the first score: `html/browsers/origin` 2.4% (floor 2), `html/browsers/sandboxing` 34.4% (30), `x-frame-options` 38.9% (35) | 2026-11-09 | CI, cloud | targets (decision 3) |
-| X3 bad TLS refused | holds (Q3.4, Q3.4b tests) | 2026-11-08 | CI | – |
+| X1 a compromised renderer reads nothing | holds in the default build: the Q2.7, Q2.8a, Q2.8b tests (`window_renderer_site_lock`, `window_renderer_sandbox`, `window_spaces_renderer_sandboxed`, `relay_snapshot`) pass in site mode, queue run 45055982022 | 2026-11-22 | CI | – |
+| X2 web security areas at threshold | 4 of 5 areas at their target: `content-security-policy` 80.4% (target 80), `mixed-content` 96.3% (89), `x-frame-options` 100% (90), `html/browsers/origin` 46.0% (39); `html/browsers/sandboxing` 62.5% (64), one subtest under | 2026-11-22 (`conformance` run 45056886571) | CI, cloud | `html/browsers/sandboxing`: Q3.15b's Left list |
+| X3 bad TLS refused | holds: `tls_errors`, `cert_bypass` (Q3.4, Q3.4b) pass, queue run 45055982022 | 2026-11-22 | CI | – |
 | W7 interactivity, 20 sites | 9 of 20 with the fast build, 8 of 20 with the safe build that ships; the 4 worst re-measured 2026-11-08: none passes, 1.05× (react) to 12× (mistral) over the loop budget | 2026-11-04 | the Mac only | never measured with site isolation; decision 2 |
 | W8 first paint, 20 sites | 19 of 20 (zol's live load times out) | 2026-11-04 | the Mac only (live, Chrome) | never measured with site isolation; Q4.12 |
 | M1 memory per tab | no budget | – | the Mac | Q2.13 |
-| F1 basic features | 0 of 18 | – | per row | Q5 |
-| W9 conformance | 32 areas at threshold, 13 below; 12 of the 32 are within 3.5 points of their floor | 2026-11-09 | cloud; the weekly CI job is red on real drops since 2026-11-09 (Q0.1's card: Q1.12, Q6.15) | Q6, Q0.1 |
+| F1 basic features | 17 of 18 (`check_plan.py`: Q5 1 open) | 2026-11-22 | per row | Q5.9b (YouTube, the Mac) |
+| W9 conformance | 47 areas at their floor, 0 below, 51 without a floor; 10 of the 47 within 3.5 points of it; 8 of the 20 areas with a target at it; `conformance.py check`: no area fell (59 of 98 areas measured in the run, the rest are baselines) | 2026-11-22 (`conformance` run 45056886571) | cloud; the weekly CI job, green again since #399 fetched libwasmtime for it | Q6, Q0.1 |
 | W2 sites load and agents work | passed | 2026-10-15 | the Mac (archives) | Q0.3 |
 | W3 sites look right | 8 of 20 | 2026-10-15 | the Mac and the owner's eyes | Q0.3 |
 
