@@ -222,7 +222,7 @@ fn startFrameLoads(p: *mut Page) AllocError!void {
             continue
         }
         defer target.deinit(p.alloc)
-        if !net.liveRequest(&target) || remoteFrame(p, &target) || frameBlocked(p, &target) {
+        if !net.liveRequest(&target) || remoteFrame(p, &target) || frameBlocked(p, &target) || (try requiredCsp(p, h)).len > 0 {
             continue
         }
         let href = try p.alloc.alloc(0 as u8, target.href.len)
@@ -322,7 +322,7 @@ fn framedDocument(p: *mut Page, el: NodeId, key: []u8) AllocError!?*mut Page {
             } else {
                 try net.noteNavigation(target.href, p.url.href, false)
                 net.noteNavigationPolicy(net.parseReferrerPolicy(p.doc.attr(el, "referrerpolicy") orelse ""))
-                child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, initiatorOf(p))
+                child = try fetchFramePage(p, el, &target, null, initiatorOf(p))
             }
         } else |e| {
             match e {
@@ -542,7 +542,7 @@ fn followFrameNavigation(p: *mut Page, k: usize) AllocError!void {
                 return
             }
             defer target.deinit(p.alloc)
-            let child = try fetchPage(p.alloc, &target, null, p.encoding, rootPage(p).url.href, net.Initiator.Browser)
+            let child = try fetchFramePage(p, p.frames.items()[k].el, &target, null, net.Initiator.Browser)
             if e.state |st| {
                 try child.history.replace(child.url.href, st)
             }
@@ -583,7 +583,7 @@ pub fn navigateFrame(slot: FrameSlot, target: *Url, body: ?*net.Body, initiator:
     if remoteFrame(p, target) {
         return showInFrame(slot, try remotePage(p, target), null)
     }
-    let child = try fetchPage(p.alloc, target, body, p.encoding, rootPage(p).url.href, initiator)
+    let child = try fetchFramePage(p, p.frames.items()[slot.index].el, target, body, initiator)
     return showInFrame(slot, child, null)
 }
 

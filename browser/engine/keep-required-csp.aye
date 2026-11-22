@@ -1,0 +1,31 @@
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#initialize-document-csp
+fn keepRequiredCsp(c: *mut Page, required: []u8, enforce: bool) AllocError!void {
+    var kept = text.Builder.init(c.alloc)
+    defer kept.deinit()
+
+    try kept.append(required)
+    freePolicy(c.alloc, c.required_csp)
+    c.required_csp = try kept.toOwned()
+
+    if !enforce {
+        return
+    }
+
+    var b = text.Builder.init(c.alloc)
+    defer b.deinit()
+
+    try b.append(required)
+
+    if c.csp.len > 0 {
+        try b.appendByte(',')
+        try b.append(c.csp)
+        c.inherited_csp += 1
+    }
+
+    c.inherited_csp += required.len
+    freePolicy(c.alloc, c.csp)
+    c.csp = try b.toOwned()
+}

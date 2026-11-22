@@ -1,0 +1,45 @@
+import url
+
+test "a returned policy subsumes a required one when it allows no more" {
+    let a = @testAllocator()
+    let at = try url.parse(a, "http://frame.test:8000/f.html")
+    defer at.deinit(a)
+
+    @expect(try policySubsumes(a, "style-src 'none'; script-src 'unsafe-inline'", "style-src 'none'; script-src 'unsafe-inline'", &at))
+    @expect(!(try policySubsumes(a, "style-src 'none';", "", &at)))
+    @expect(try policySubsumes(a, "script-src 'nonce-abc' 'nonce-123'", "script-src 'nonce-abc'", &at))
+    @expect(!(try policySubsumes(a, "style-src 'none'; script-src 'none'", "style-src 'none'; script-src 'self' 'nonce-abc'", &at)))
+    @expect(try policySubsumes(a, "frame-src http://c.com:443 http://b.com", "frame-src http://b.com:80 http://c.com:443", &at))
+    @expect(!(try policySubsumes(a, "frame-src http://*.a.com", "frame-src http://a.com", &at)))
+    @expect(try policySubsumes(a, "frame-sr 'none'", "frame-src http://a.com,frame-src http://*.a.com", &at))
+    @expect(try policySubsumes(a, "frame-src http://b.com:80", "child-src https://b.com:443", &at))
+    @expect(try policySubsumes(a, "plugin-types application/pdf", "", &at))
+    @expect(!(try policySubsumes(a, "style-src 'none'; plugin-types application/pdf", "", &at)))
+}
+
+test "intersections of returned policies, wildcards and keywords" {
+    let a = @testAllocator()
+    let at = try url.parse(a, "http://frame.test:8000/f.html")
+    defer at.deinit(a)
+
+    @expect(!(try policySubsumes(a, "style-src http://*.example.com:*", "style-src http://*.com:*,style-src http://*.com http://*.example.com:*", &at)))
+    @expect(try policySubsumes(a, "style-src http://*.example.com", "style-src http://*.example.com:*,style-src http://*.com", &at))
+    @expect(try policySubsumes(a, "img-src http: ftp: ws: 'self'", "img-src *", &at))
+    @expect(try policySubsumes(a, "img-src http://a.com ws://b.com ftp://c.com", "img-src *,img-src http://a.com ws://b.com ftp://c.com", &at))
+    @expect(!(try policySubsumes(a, "img-src *", "img-src data:", &at)))
+    @expect(!(try policySubsumes(a, "style-src *", "style-src * 'unsafe-eval'", &at)))
+    @expect(try policySubsumes(a, "script-src 'strict-dynamic' 'nonce-abc'", "script-src 'self' 'strict-dynamic' 'nonce-abc'", &at))
+    @expect(!(try policySubsumes(a, "script-src http://example1.com/foo/ 'unsafe-inline' 'strict-dynamic'", "script-src 'unsafe-inline' http://example1.com/foo/bar.html", &at)))
+    @expect(try policySubsumes(a, "style-src http://example1.com/foo/ 'self' 'unsafe-inline' 'sha512-321cba'", "style-src http://example1.com/foo/ 'unsafe-inline' 'nonce-yay',style-src http://example1.com/foo/ 'unsafe-inline' 'sha512-321cba'", &at))
+    @expect(try policySubsumes(a, "img-src 'self' http://b.com:*", "img-src http://b.com:*", &at))
+    @expect(!(try policySubsumes(a, "img-src http://b.com:*", "img-src 'self' http://b.com:*", &at)))
+}
+
+test "a frame's csp attribute is one policy without reports" {
+    @expect(validRequiredPolicy("script-src 'unsafe-inline' 'self' object-src 'self' style-src *"))
+    @expect(validRequiredPolicy("not-a-directive https://whatever.not-a-tld"))
+    @expect(!validRequiredPolicy("script-src 'unsafe-inline' 'self', object-src 'none'"))
+    @expect(!validRequiredPolicy("media-src%20127.0.0.1%3A8000"))
+    @expect(!validRequiredPolicy("script-src 'unsafe-inline'; report-uri resources/dummy-report.php"))
+    @expect(!validRequiredPolicy(""))
+}

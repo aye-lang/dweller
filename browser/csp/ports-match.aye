@@ -1,0 +1,16 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#port-part-matches,
+fn portsMatch(pattern: []u8, port: []u8, scheme: []u8) bool {
+    if text.eql(pattern, "*") {
+        return true
+    }
+
+    var want = pattern
+    var got = port
+
+    if want.len == 0 { want = defaultPort(scheme) }
+    if got.len == 0 { got = defaultPort(scheme) }
+
+    return text.eql(want, got) || (text.eql(want, "80") && text.eql(got, "443"))
+}

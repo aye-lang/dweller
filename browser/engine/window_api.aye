@@ -34,6 +34,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "compile", 1, akCompile)
     try defMethod(it, o, "parseDocument", 1, akParseDocument)
     try defMethod(it, o, "evalGlobal", 1, akEvalGlobal)
+    try defMethod(it, o, "stringCodeRefused", 1, akStringCodeRefused)
     try defMethod(it, o, "setTimer", 5, akSetTimer)
     try defMethod(it, o, "clearTimer", 1, akClearTimer)
     try defMethod(it, o, "queueMicrotask", 1, akQueueMicrotask)
@@ -119,6 +120,7 @@ fn installWindow(s: *mut Script) JsError!void {
     try defMethod(it, o, "latin1Into", 2, js.hostLatin1Into)
     try defMethod(it, o, "latin1Of", 1, js.hostLatin1Of)
     try defMethod(it, o, "randomFill", 1, js.hostRandomFill)
+    try defMethod(it, o, "digest", 3, akDigest)
     try defMethod(it, o, "supports", 1, akSupports)
     try defMethod(it, o, "windowNamed", 1, akWindowNamed)
     try defMethod(it, o, "selectorText", 1, akSelectorText)
@@ -676,7 +678,7 @@ fn fetchWith(it: *mut Interp, a: Args, queue: bool) JsError!Value {
     }
     defer target.deinit(it.alloc)
     let page = scriptOf(it).page
-    if try requestRefused(page, "connect-src", &target, null) {
+    if !(try reportDestination(it, a, 9)) && try requestRefused(page, "connect-src", &target, null) {
         try setField(it, r, "error", "blocked by Content Security Policy")
         return fetchEnd(it, a, queue, 0)
     }

@@ -1,0 +1,24 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#parse-serialized-policy
+fn parseDirective(a: Allocator, name: []u8, value: []u8) AllocError!Directive {
+    var d = Directive { name: name, value: value, sources: List(Source).init(a), none: false }
+    var at: usize = 0
+
+    while nextWord(value, &mut at) |word| {
+        let s = parseSource(word)
+
+        if s.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(word, "'none'") {
+            continue
+        }
+
+        try d.sources.append(s)
+    }
+
+    d.none = d.sources.len() == 0
+
+    return d
+}

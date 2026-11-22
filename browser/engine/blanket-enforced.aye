@@ -1,0 +1,22 @@
+import std.mem.AllocError
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#origin-allowed
+fn blanketEnforced(p: *mut Page, c: *Page) AllocError!bool {
+    if text.eql(c.url.scheme, "about") || text.eql(c.url.scheme, "blob") || text.eql(c.url.scheme, "data") {
+        return true
+    }
+
+    let allowed = text.trim(c.allow_csp_from)
+
+    if text.eql(allowed, "*") {
+        return true
+    }
+
+    var origin = text.Builder.init(p.alloc)
+    defer origin.deinit()
+
+    try appendOrigin(&mut origin, p)
+
+    return allowed.len > 0 && text.eql(allowed, origin.bytes())
+}

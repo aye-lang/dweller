@@ -1,4 +1,3 @@
-import csp
 import js
 import js.Args
 import js.Interp
@@ -14,11 +13,5 @@ fn wkRefused(it: *mut Interp, a: Args) JsError!Value {
     let target = url.parse(it.alloc, it.heap.bytes(js.strOf(href))) catch return js.boolVal(false)
     defer target.deinit(it.alloc)
 
-    if csp.workerUrlRefusal(s.page.csp, &target, &s.page.url) |r| {
-        try refuseWorker(s, r, target.href)
-
-        return js.boolVal(true)
-    }
-
-    return js.boolVal(false)
+    return js.boolVal(try workerRefused(s, &target))
 }

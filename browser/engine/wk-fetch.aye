@@ -16,18 +16,35 @@ fn wkFetch(it: *mut Interp, a: Args) JsError!Value {
 
     var req = net.Request { kind: net.Kind.Script, referrer: s.page.url.href, initiator: initiatorOf(s.page), top: rootPage(s.page).url.href }
 
-    if it.toBoolean(it.arg(a, 4)) { req.kind = net.Kind.Worker }
+    let guarded = it.toBoolean(it.arg(a, 4))
+
+    if guarded && l.worklet == 0 { req.kind = net.Kind.Worker }
+
+    if guarded && try workerLoadRefused(s, l, &target) {
+        return answerWorker(l, null, "")
+    }
 
     if it.toBoolean(it.arg(a, 2)) {
         req.mode = net.Mode.Cors
         req.credentials = workerCredentials(it.heap.bytes(js.strOf(try it.toStringValue(it.arg(a, 3)))))
     }
 
+    if it.toBoolean(it.arg(a, 5)) { req.kind = net.Kind.Other }
+
     var res = net.request(s.alloc, &target, req) catch return answerWorker(l, null, "")
     defer res.deinit(s.alloc)
 
     if res.status < 200 || res.status > 299 {
         return answerWorker(l, null, "")
+    }
+
+    if guarded && res.url.len > 0 {
+        var landed = url.parse(s.alloc, res.url) catch return answerWorker(l, null, "")
+        defer landed.deinit(s.alloc)
+
+        if try workerLoadRefused(s, l, &landed) {
+            return answerWorker(l, null, "")
+        }
     }
 
     return answerWorker(l, res.body, res.mime)

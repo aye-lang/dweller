@@ -1,0 +1,40 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#intersection-policy
+fn intersectPolicies(a: Allocator, pa: List(Directive), pb: List(Directive), origin: *Url) AllocError!List(Directive) {
+    if pa.len() == 0 {
+        return pb
+    }
+
+    if pb.len() == 0 {
+        return pa
+    }
+
+    var out = List(Directive).init(a)
+
+    for half in [2][]Directive{pa.items(), pb.items()} {
+        for d in half {
+            if text.eqlIgnoreCase(d.name, "report-uri") || text.eqlIgnoreCase(d.name, "report-to") || !isSourceListName(d.name) || findDirective(out.items(), d.name) != null {
+                continue
+            }
+
+            let ea = effectiveValue(pa.items(), d.name)
+            let eb = effectiveValue(pb.items(), d.name)
+
+            if ea == null || eb == null {
+                var kept = (ea orelse eb.?).*
+
+                kept.name = d.name
+                try out.append(kept)
+            } else {
+                try out.append(try intersectLists(a, ea.?, eb.?, d.name, origin))
+            }
+        }
+    }
+
+    return out
+}

@@ -1,0 +1,35 @@
+import std.text
+
+// https://w3c.github.io/webappsec-cspee/#source-expression-similarity
+fn similarSources(a: Source, b: Source) bool {
+    let networked = (a.kind == SOURCE_SCHEME || a.kind == SOURCE_HOST) && (b.kind == SOURCE_SCHEME || b.kind == SOURCE_HOST)
+
+    if !networked {
+        return a.kind == b.kind && text.eqlIgnoreCase(a.text, b.text)
+    }
+
+    if !schemesMatch(a.scheme, b.scheme) && !schemesMatch(b.scheme, a.scheme) {
+        return false
+    }
+
+    if a.kind == SOURCE_SCHEME || b.kind == SOURCE_SCHEME {
+        return true
+    }
+
+    let wild_a = text.startsWith(a.host, "*")
+    let wild_b = text.startsWith(b.host, "*")
+
+    if wild_a && wild_b && !text.eqlIgnoreCase(a.host, b.host) {
+        return false
+    }
+
+    if !(wild_a && wild_b) && !hostPartMatch(a.host, b.host) && !hostPartMatch(b.host, a.host) {
+        return false
+    }
+
+    if !text.eql(a.port, "*") && !text.eql(b.port, "*") && !portsMatch(a.port, b.port, b.scheme) && !portsMatch(b.port, a.port, a.scheme) {
+        return false
+    }
+
+    return pathPartMatch(a.path, b.path) || pathPartMatch(b.path, a.path)
+}

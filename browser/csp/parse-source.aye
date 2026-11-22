@@ -1,0 +1,42 @@
+import std.text
+
+// https://w3c.github.io/webappsec-csp/#grammardef-source-expression
+fn parseSource(word: []u8) Source {
+    if word[0] == '\'' {
+        if startsWithIgnoreCase(word, "'nonce-") {
+            return Source { kind: SOURCE_NONCE, text: word }
+        }
+
+        if startsWithIgnoreCase(word, "'sha256-") || startsWithIgnoreCase(word, "'sha384-") || startsWithIgnoreCase(word, "'sha512-") {
+            return Source { kind: SOURCE_HASH, text: word }
+        }
+
+        return Source { kind: SOURCE_KEYWORD, text: word }
+    }
+
+    if word[word.len - 1] == ':' && text.indexOf(word, "/") == null {
+        return Source { kind: SOURCE_SCHEME, text: word, scheme: word[..word.len - 1] }
+    }
+
+    var s = Source { kind: SOURCE_HOST, text: word }
+    var rest = word
+
+    if text.indexOf(rest, "://") |i| {
+        s.scheme = rest[..i]
+        rest = rest[i + 3..]
+    }
+
+    let path_at = text.indexOf(rest, "/") orelse rest.len
+
+    s.path = rest[path_at..]
+    rest = rest[..path_at]
+
+    if text.indexOf(rest, ":") |i| {
+        s.port = rest[i + 1..]
+        rest = rest[..i]
+    }
+
+    s.host = rest
+
+    return s
+}

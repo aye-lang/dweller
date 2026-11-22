@@ -1,0 +1,15 @@
+import std.mem.AllocError
+
+pub fn setNonce(doc: *mut Document, el: NodeId, value: []u8) AllocError!void {
+    let v = try doc.dup(value)
+
+    for i in 0..doc.nonces.len() {
+        if same(doc.nonces.items()[i].el, el) {
+            doc.nonces.items()[i].value = v
+
+            return
+        }
+    }
+
+    try doc.nonces.append(Nonce { el: el, value: v })
+}

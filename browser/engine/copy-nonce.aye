@@ -1,0 +1,14 @@
+import dom
+import dom.Document
+import dom.NodeId
+import std.mem.AllocError
+import std.text
+
+// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#nonce-attributes (cloning steps)
+fn copyNonce(doc: *mut Document, from: NodeId, to: NodeId) AllocError!void {
+    let kept = dom.nonceOf(doc, from)
+
+    if !text.eql(kept, doc.attr(from, "nonce") orelse "") {
+        try dom.setNonce(doc, to, kept)
+    }
+}

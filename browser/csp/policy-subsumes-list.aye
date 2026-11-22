@@ -1,0 +1,55 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+let FETCH_NAMES = "child-src connect-src font-src img-src manifest-src media-src object-src script-src style-src script-src-elem script-src-attr style-src-elem style-src-attr frame-src worker-src"
+
+// https://w3c.github.io/webappsec-cspee/#policy-subsumption:
+fn policySubsumesList(a: Allocator, pa: List(Directive), pb: List(Directive), origin: *Url) AllocError!bool {
+    var names = List([]u8).init(a)
+
+    for d in pa.items() {
+        try names.append(d.name)
+    }
+
+    if findDirective(pa.items(), "default-src") != null {
+        var at: usize = 0
+
+        while nextWord(FETCH_NAMES, &mut at) |n| {
+            try names.append(n)
+        }
+    }
+
+    for name in names.items() {
+        if text.eqlIgnoreCase(name, "default-src") || text.eqlIgnoreCase(name, "report-uri") || text.eqlIgnoreCase(name, "report-to") || text.eqlIgnoreCase(name, "disown-opener") {
+            continue
+        }
+
+        let ea = effectiveValue(pa.items(), name) orelse continue
+        let eb = effectiveValue(pb.items(), name) orelse return false
+
+        if text.eqlIgnoreCase(name, "sandbox") {
+            var at: usize = 0
+
+            while nextWord(eb.value, &mut at) |flag| {
+                if !hasSource(ea.value, flag) {
+                    return false
+                }
+            }
+
+            continue
+        }
+
+        if !isSourceListName(name) {
+            continue
+        }
+
+        if !(try listSubsumes(a, ea, eb, name, origin)) {
+            return false
+        }
+    }
+
+    return true
+}

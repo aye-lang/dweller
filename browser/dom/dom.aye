@@ -39,6 +39,11 @@ pub let NS_MATHML: u8 = 2
 // Any other namespace, or none.
 pub let NS_OTHER: u8 = 3
 
+pub struct Nonce {
+    el: NodeId
+    value: []u8
+}
+
 pub struct Attr {
     name: []u8
     value: []u8
@@ -174,6 +179,8 @@ pub struct Document {
     names: StrMap(List(NodeId))
     media_made: u32 = 0
     style_marks: IntMap(u32, u32)
+    hide_nonces: bool = false
+    nonces: List(Nonce)
 
     /// An empty document: only the `Document` node.
     pub fn init(alloc: Allocator) AllocError!Document {
@@ -224,6 +231,7 @@ pub struct Document {
             ids: StrMap(List(NodeId)).init(alloc),
             names: StrMap(List(NodeId)).init(alloc),
             style_marks: IntMap(u32, u32).init(alloc),
+            nonces: List(Nonce).init(alloc),
         }
     }
 
@@ -244,6 +252,7 @@ pub struct Document {
         freeIndex(&mut self.names)
         self.controls.deinit()
         self.style_marks.deinit()
+        self.nonces.deinit()
         self.strings.deinit()
         self.alloc.destroy(self.strings)
         self.nodes.deinit()
@@ -479,6 +488,9 @@ pub struct Document {
         if self.recording {
             self.recordAdded(parent, child)
         }
+        if self.hide_nonces {
+            hideNonces(self, child)
+        }
     }
 
     /// Puts `child` into `parent` just before `before`, or last when
@@ -501,6 +513,9 @@ pub struct Document {
             noteSheetChange(self, child)
             if self.recording {
                 self.recordAdded(parent, child)
+            }
+            if self.hide_nonces {
+                hideNonces(self, child)
             }
         } else {
             self.appendChild(parent, child)
@@ -538,6 +553,9 @@ pub struct Document {
 
     /// Sets the attribute `name` of the element `el` to `value`.
     pub fn setAttr(self: *mut Self, el: NodeId, name: []u8, value: []u8) AllocError!void {
+        if text.eql(name, "nonce") {
+            try keepNonce(self, el, value)
+        }
         let n = self.node(el)
         if text.eql(name, "href") {
             self.href_version += 1
@@ -573,6 +591,9 @@ pub struct Document {
 
     /// Removes the attribute `name` of the element `el`, if it has one.
     pub fn removeAttr(self: *mut Self, el: NodeId, name: []u8) {
+        if text.eql(name, "nonce") {
+            forgetNonce(self, el)
+        }
         let n = self.node(el)
         if text.eql(name, "href") {
             self.href_version += 1

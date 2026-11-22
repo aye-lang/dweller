@@ -165,7 +165,7 @@
   def('performance', { now: () => h.now(), timeOrigin: Date.now() - h.now() });
   function loaded(url) {
     try {
-      return h.load(url);
+      return h.connect(url);
     } catch (e) {
       return null;
     }
@@ -222,5 +222,35 @@
     for (const t of timers.values()) if (next < 0 || t.due - now < next) next = Math.max(0, t.due - now);
     return next;
   });
+  if (h.worklet) {
+    // https://html.spec.whatwg.org/multipage/worklets.html#workletglobalscope
+    for (const k of ['postMessage', 'importScripts', 'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'location', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'close', 'onmessage', 'onmessageerror', 'onerror', 'self', 'WorkerGlobalScope', 'DedicatedWorkerGlobalScope']) delete G[k];
+    function WorkletGlobalScope() { throw new TypeError('Illegal constructor'); }
+    WorkletGlobalScope.prototype = Object.create(Object.getPrototypeOf(WorkerGlobalScope.prototype), { constructor: { value: WorkletGlobalScope, writable: true, configurable: true } });
+    const paint = h.worklet === 1;
+    const name = paint ? 'PaintWorkletGlobalScope' : 'AudioWorkletGlobalScope';
+    function Scope() { throw new TypeError('Illegal constructor'); }
+    Scope.prototype = Object.create(WorkletGlobalScope.prototype, { constructor: { value: Scope, writable: true, configurable: true }, [Symbol.toStringTag]: { value: name, configurable: true } });
+    Object.setPrototypeOf(G, Scope.prototype);
+    def('WorkletGlobalScope', WorkletGlobalScope);
+    def(name, Scope);
+    const registered = new Map();
+    function register(kind, what, ctor) {
+      what = String(what);
+      if (what === '') throw new TypeError("Failed to execute '" + kind + "': The empty string is not a valid name.");
+      if (registered.has(what)) throw new DOMException("Failed to execute '" + kind + "': A class with name:'" + what + "' is already registered.", 'NotSupportedError');
+      if (typeof ctor !== 'function') throw new TypeError("Failed to execute '" + kind + "': The provided callback is not a function.");
+      registered.set(what, ctor);
+    }
+    if (paint) {
+      def('registerPaint', function registerPaint(what, ctor) { register('registerPaint', what, ctor); });
+      def('devicePixelRatio', 1);
+    } else {
+      def('registerProcessor', function registerProcessor(what, ctor) { register('registerProcessor', what, ctor); });
+      def('sampleRate', 48000);
+      def('currentFrame', 0);
+      def('currentTime', 0);
+    }
+  }
   delete G.__worker;
 })(globalThis, globalThis.__worker, globalThis.__wire);

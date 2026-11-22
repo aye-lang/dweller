@@ -1,0 +1,31 @@
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url.Url
+
+// https://w3c.github.io/webappsec-cspee/#source-list-subsumption
+fn subsumingSources(a: Allocator, d: *Directive, name: []u8, origin: *Url) AllocError!List(Source) {
+    var out = List(Source).init(a)
+    let dynamic = text.startsWith(name, "script-src") && hasKeyword(d.sources.items(), "'strict-dynamic'")
+
+    for x in d.sources.items() {
+        if dynamic && (x.kind == SOURCE_HOST || x.kind == SOURCE_SCHEME || (x.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(x.text, "'self'"))) {
+            continue
+        }
+
+        if x.kind == SOURCE_KEYWORD && text.eqlIgnoreCase(x.text, "'self'") {
+            if selfSource(origin) |s| {
+                try out.append(s)
+            }
+        } else if x.kind == SOURCE_HOST && text.eql(x.host, "*") && x.scheme.len == 0 {
+            try appendSchemes(&mut out, "ftp: http: https: ws: wss:")
+            try out.append(Source { kind: SOURCE_SCHEME, scheme: origin.scheme })
+
+        } else if x.kind != SOURCE_KEYWORD {
+            try out.append(x)
+        }
+    }
+
+    return out
+}

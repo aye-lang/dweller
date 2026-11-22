@@ -1,5 +1,5 @@
 (function (G, h, wire) {
-  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5, FETCH_MODULE = 6, EVENT_SOURCE = 7, WEB_SOCKET = 8;
+  const MESSAGE = 0, ERROR = 1, CONSOLE = 2, FETCH = 3, FETCH_SAME_ORIGIN = 4, FRAME = 5, FETCH_MODULE = 6, EVENT_SOURCE = 7, WEB_SOCKET = 8, FETCH_CONNECT = 9, READY = 10;
   const hidden = (o, k, v) => Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
   const blobs = URL._blobStore;
   const workers = new Map();
@@ -142,17 +142,50 @@
     }
   }
   hidden(G, 'SharedWorker', SharedWorker);
+  const WORKLET = Symbol('worklet');
+  // https://html.spec.whatwg.org/multipage/worklets.html#worklet: each
+  // module runs in a global scope of its own.
+  class Worklet {
+    constructor(token, kind) {
+      if (token !== WORKLET) throw new TypeError('Illegal constructor');
+      hidden(this, '_kind', kind);
+    }
+    addModule(moduleURL, options) {
+      let href;
+      try {
+        href = new URL(String(moduleURL), document.baseURI).href;
+      } catch (e) {
+        return Promise.reject(new DOMException("Failed to execute 'addModule' on 'Worklet': The URL '" + moduleURL + "' is invalid.", 'SyntaxError'));
+      }
+      const credentials = options && options.credentials !== undefined ? String(options.credentials) : 'same-origin';
+      return new Promise((resolve, reject) => {
+        const fail = () => reject(new DOMException("Failed to execute 'addModule' on 'Worklet': Unable to load a worklet's module.", 'AbortError'));
+        let source;
+        if (href.startsWith('blob:')) {
+          const blob = blobs.get(href);
+          if (!blob) return fail();
+          source = new TextDecoder().decode(blob._array());
+        }
+        if (h.workletRefused(href)) return setTimeout(fail, 0);
+        const entry = { _credentials: credentials, _worklet: { resolve, fail }, dispatchEvent() { return true; } };
+        const id = h.start(href, true, source, undefined, this._kind);
+        workers.set(id, entry);
+      });
+    }
+  }
+  hidden(G, 'Worklet', Worklet);
+  hidden(G, '__newWorklet', kind => new Worklet(WORKLET, kind));
   hidden(G, '__workerDeliver', function (id, kind, json, n) {
     const w = workers.get(id);
     if (!w) return;
-    if (kind === FETCH || kind === FETCH_SAME_ORIGIN || kind === FETCH_MODULE) {
+    if (kind === FETCH || kind === FETCH_SAME_ORIGIN || kind === FETCH_MODULE || kind === FETCH_CONNECT) {
       if (json.startsWith('blob:')) {
         const blob = blobs.get(json);
         h.answer(id, blob ? blob._array().buffer : null);
       } else if (kind === FETCH_SAME_ORIGIN && new URL(json).origin !== origin) {
         h.answer(id, null);
       } else {
-        h.fetch(id, json, kind === FETCH_MODULE, w._credentials, kind !== FETCH);
+        h.fetch(id, json, kind === FETCH_MODULE || kind === FETCH_CONNECT, w._credentials, kind === FETCH_SAME_ORIGIN || kind === FETCH_MODULE, kind === FETCH_CONNECT);
       }
       return;
     }
@@ -173,6 +206,12 @@
     if (kind === CONSOLE) {
       const [level, text] = JSON.parse(json);
       console[level](text);
+      return;
+    }
+    if (w._worklet && (kind === READY || kind === ERROR)) {
+      workers.delete(id);
+      if (kind === READY) w._worklet.resolve();
+      else w._worklet.fail();
       return;
     }
     if (kind === ERROR) {
