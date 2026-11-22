@@ -1,0 +1,14 @@
+<!doctype html>
+<title>fetch: a timer aborts the body of a response that keeps arriving</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+const key = 'abort' + location.search;
+const controller = new AbortController();
+fetch('/trickle?' + key, { signal: controller.signal }).then(res => {
+  log('head ' + res.status);
+  setTimeout(() => { log('timer'); controller.abort(); }, 250);
+  return res.arrayBuffer();
+}).then(() => log('read to the end'), e => log('rejected ' + e.name)).finally(() => fetch('/event-stream-end?' + key));
+</script>

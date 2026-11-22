@@ -1438,6 +1438,35 @@ fn fetch_body_streams_while_open() {
     assert!(site.contains(want.trim_end()), "{site}");
 }
 
+/// A response whose body keeps arriving does not hold the page's clock:
+/// `/trickle` sends a byte every 10 ms until `/event-stream-end`, the page
+/// reads its body with `arrayBuffer()` and a 250 ms timer aborts it, so
+/// the read rejects with `AbortError`. Before, with `dump` each part was
+/// read at the same time on the page's clock, the timer never came and
+/// the body was read until the server gave up (WPT
+/// `service-workers/cache-storage/cache-abort.https.any.js`). With
+/// `dump`, in the window, and with `DWELLER_PROCESS=site`.
+#[test]
+fn fetch_abort_while_body_arrives() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/fetch_abort_trickle.html", srv.base);
+    let want = std::fs::read_to_string(root().join("browser/tests/net/fetch_abort_trickle.txt")).unwrap();
+    let out = run(&["dump", "--text", "--js", &format!("{href}?dump")]);
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).contains(want.trim_end()), "{}", text(&out.stdout));
+    if !has_sdl() {
+        println!("skipped the window: no SDL2");
+        return;
+    }
+    let window = login_window_with(&format!("{href}?window"), "frame", None, &[]);
+    assert!(window.contains(want.trim_end()), "{window}");
+    let site = login_window_with(&format!("{href}?site"), "frame", None, &[("DWELLER_PROCESS", "site")]);
+    assert!(site.contains(want.trim_end()), "{site}");
+}
+
 /// Q5.8 (left list): an asynchronous `XMLHttpRequest` reaches
 /// HEADERS_RECEIVED at the head of the response and fires LOADING and
 /// `progress` with the text so far for each part that arrives; the page
