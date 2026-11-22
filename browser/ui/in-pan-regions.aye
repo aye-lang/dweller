@@ -1,0 +1,16 @@
+import ipc
+
+fn inPanRegions(tp: *TabProcess, x: f64, y: f64) bool {
+    var r = ipc.Reader { data: tp.pan_regions.bytes() }
+
+    while r.at < r.data.len {
+        let x0 = (r.readU32() catch return true) as f64
+        let y0 = (r.readU32() catch return true) as f64
+        let x1 = (r.readU32() catch return true) as f64
+        let y1 = (r.readU32() catch return true) as f64
+
+        if x >= x0 && x < x1 && y >= y0 && y < y1 { return true }
+    }
+
+    return false
+}

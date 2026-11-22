@@ -1,0 +1,30 @@
+import ipc
+import paint
+
+// chromium: components/viz/service/display/surface_aggregator.cc (a fixed layer's quad is drawn over the scrolled one)
+fn blendPins(ui: *mut Ui, tp: *TabProcess, r: paint.IRect) {
+    let b = &tp.buffers
+
+    if b.shown < b.first { return }
+
+    let map = tp.maps[b.shown - b.first] orelse return
+    let pd = &mut ui.page
+    let h = pd.canvas.height as i64
+    let canvas = paint.IRect { x0: 0, y0: 0, x1: pd.canvas.width as i64, y1: h }
+
+    for k in 0..tp.pins.len() / ipc.PIN_BYTES {
+        let pin = readPin(tp, k)
+        let at = pinPlace(ui, tp, pin)
+        let c = paint.intersect(paint.intersect(at, r), canvas)
+        let from_y = b.rows() as i64 + pin[4] as i64 - at.y0
+
+        if c.x1 <= c.x0 || c.y1 <= c.y0 { continue }
+
+        for y in c.y0..c.y1 {
+            let from = ((y + from_y) as usize * b.width as usize + c.x0 as usize) * 4
+            let to = (((y + pd.ring) % h) as usize * pd.canvas.width + c.x0 as usize) * 4
+
+            for x in 0..(c.x1 - c.x0) as usize { overPixel(pd.canvas.pixels[to + x * 4..to + x * 4 + 4], map[from + x * 4..from + x * 4 + 4], 255) }
+        }
+    }
+}

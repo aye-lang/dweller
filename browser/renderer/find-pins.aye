@@ -1,0 +1,38 @@
+import engine
+import ipc
+import layout
+import paint
+import std.list.List
+import std.mem.AllocError
+
+// chromium: cc/trees/property_tree.cc (fixed and sticky layers are not moved by the compositor's scroll)
+fn findPins(r: *mut TabRenderer, list: *paint.DisplayList, t: *layout.Tree, marked: bool) AllocError!void {
+    r.pins.clear()
+    r.pinning = false
+
+    if engine.embedded() || r.over == 0 || marked || t.scrolled.len() == 0 { return }
+
+    var found = List(paint.PinLayer).init(r.alloc)
+    defer found.deinit()
+    let all = paint.IRect { x0: 0, y0: 0, x1: r.width as i64, y1: r.rows() as i64 }
+
+    if !(try paint.pinLayers(list, r.lists.sigs.items(), r.bufferView(), all, &mut found)) || found.len() > ipc.MAX_PINS { return }
+
+    var row: u32 = 0
+
+    for f in found.items() {
+        let range = layout.stuckRange(t, f.box)
+        let h = (f.rect.y1 - f.rect.y0) as u32
+
+        if range == null || row + h > r.over {
+            r.pins.clear()
+
+            return
+        }
+
+        try r.pins.append(Pin { at: f.at, rect: f.rect, row: row, lo: pinPx(r, range.?[0]), hi: pinPx(r, range.?[1]) })
+        row += h
+    }
+
+    r.pinning = true
+}

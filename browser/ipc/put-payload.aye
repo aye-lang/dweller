@@ -29,13 +29,14 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, over)
         }
 
-        .Frame { buffer, width, height, scroll_x, scroll_y, damage } => {
+        .Frame { buffer, width, height, scroll_x, scroll_y, damage, pins } => {
             try putU32(out, buffer)
             try putU32(out, width)
             try putU32(out, height)
             try putF64(out, scroll_x)
             try putF64(out, scroll_y)
             try putBytes(out, damage)
+            try putBytes(out, pins)
         }
 
         .FrameAck { buffer } => try putU32(out, buffer)
@@ -111,10 +112,11 @@ fn putPayload(out: *mut text.Builder, m: Message) AllocError!void {
             try putU32(out, ticks)
         }
 
-        .ScrollInfo { max_y, pan, background } => {
+        .ScrollInfo { max_y, pan, background, regions } => {
             try putF64(out, max_y)
             try putU32(out, pan)
             try putU32(out, background)
+            try putBytes(out, regions)
         }
 
         .AskState { with_text } => try putU32(out, with_text)

@@ -1820,6 +1820,7 @@ fn akSetScroll(it: *mut Interp, a: Args) JsError!Value {
         }
     }
     let max = maxScroll(g.tree, i)
+    let kept = old
     old.x = math.clamp(old.x, 0.0, max.x)
     old.y = math.clamp(old.y, 0.0, max.y)
     var moved = old
@@ -1830,6 +1831,10 @@ fn akSetScroll(it: *mut Interp, a: Args) JsError!Value {
         moved.y = math.clamp(top, 0.0, max.y)
     }
     if moved.x == old.x && moved.y == old.y {
+        if kept.x != old.x || kept.y != old.y {
+            try s.page.box_scrolls.put(el.index, moved)
+        }
+
         return js.boolVal(false)
     }
     try s.page.box_scrolls.put(el.index, moved)

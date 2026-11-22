@@ -1,7 +1,13 @@
 import ipc
+import std.mem.AllocError
 
-fn takeScrollInfo(tp: *mut TabProcess, max_y: f64, pan: u32, background: u32) []u8 {
-    if ipc.badScroll(0.0, max_y) || pan > 1 { return "bad scroll_info" }
+let MAX_REGIONS: usize = 64
+
+fn takeScrollInfo(tp: *mut TabProcess, max_y: f64, pan: u32, background: u32, regions: []u8) AllocError![]u8 {
+    if ipc.badScroll(0.0, max_y) || pan > 1 || regions.len % 16 != 0 || regions.len > MAX_REGIONS * 16 { return "bad scroll_info" }
+
+    tp.pan_regions.clear()
+    try tp.pan_regions.append(regions)
 
     tp.max_y = max_y
     tp.pan_ok = pan == 1

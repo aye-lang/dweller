@@ -1,0 +1,15 @@
+import pageview
+import paint
+import std.math
+
+// chromium: cc/trees/property_tree.cc (StickyPositionOffset)
+fn pinPlace(ui: *Ui, tp: *TabProcess, pin: [7]u32) paint.IRect {
+    let pan = tabPan(ui, tp)
+    let shown = math.round(pageview.snappedScroll(tp.frame_y, ui.scale) * ui.scale) as i64
+    let lo = pin[5] as i64
+    let hi = pin[6] as i64
+    let stuck = math.maxOf(i64, lo, math.minOf(i64, shown + pan, hi)) - math.maxOf(i64, lo, math.minOf(i64, shown, hi))
+    let y = pin[1] as i64 - tp.buffers.over as i64 - pan + stuck
+
+    return paint.IRect { x0: pin[0] as i64, y0: y, x1: pin[0] as i64 + pin[2] as i64, y1: y + pin[3] as i64 }
+}

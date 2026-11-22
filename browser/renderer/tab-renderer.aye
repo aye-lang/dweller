@@ -23,7 +23,9 @@ struct TabRenderer {
     chosen: ?*mut ChosenFiles = null
     caret_said: [5]f64 = [5]f64{0.0, 0.0, 0.0, 0.0, 0.0}
     drawn: List(paint.Sig)
+    regions_said: text.Builder
     stale: List(paint.IRect)
+    pins: List(Pin)
     prepaint: bool = false
     marks: List(Mark)
     title: text.Builder
@@ -52,6 +54,8 @@ struct TabRenderer {
     width: u32 = 0
     height: u32 = 0
     over: u32 = 0
+    pinning: bool = false
+    pins_drawn: bool = false
     scale: f64 = 1.0
     maps: [2]?[*]u8 = [2]?[*]u8{null, null}
     free: [2]bool = [2]bool{false, false}
@@ -156,6 +160,10 @@ struct TabRenderer {
         return self.height + 2 * self.over
     }
 
+    pub fn mapped(self: *Self) u32 {
+        return self.height + 3 * self.over
+    }
+
     pub fn bufferView(self: *Self) paint.View {
         var v = self.view()
 
@@ -185,7 +193,9 @@ struct TabRenderer {
 
         self.fds.deinit()
         self.drawn.deinit()
+        self.regions_said.deinit()
         self.stale.deinit()
+        self.pins.deinit()
         self.marks.deinit()
         self.title.deinit()
         self.href.deinit()

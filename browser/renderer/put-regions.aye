@@ -1,0 +1,40 @@
+import ipc
+import paint
+import std.math
+import std.mem.AllocError
+import std.text
+
+let MAX_REGIONS: usize = 64
+
+fn putRegions(r: *TabRenderer, found: []paint.Rect, out: *mut text.Builder) AllocError!void {
+    let vw = r.width as f64 / r.scale
+    let vh = r.height as f64 / r.scale
+    var n: usize = 0
+    var last = [4]f64{0.0, 0.0, 0.0, 0.0}
+
+    for f in found {
+        let x0 = math.max(0.0, math.floor(f.x - r.scroll_x))
+        let y0 = math.max(0.0, math.floor(f.y - r.scroll_y))
+        let x1 = math.min(vw, math.ceil(f.x + f.w - r.scroll_x))
+        let y1 = math.min(vh, math.ceil(f.y + f.h - r.scroll_y))
+
+        if x1 <= x0 || y1 <= y0 { continue }
+
+        if n + 1 >= MAX_REGIONS && n > 0 {
+            last = [4]f64{math.min(last[0], x0), math.min(last[1], y0), math.max(last[2], x1), math.max(last[3], y1)}
+
+            continue
+        }
+
+        if n > 0 { try putRect(out, last) }
+
+        last = [4]f64{x0, y0, x1, y1}
+        n += 1
+    }
+
+    if n > 0 { try putRect(out, last) }
+}
+
+fn putRect(out: *mut text.Builder, q: [4]f64) AllocError!void {
+    for v in q { try ipc.putU32(out, v as u32) }
+}

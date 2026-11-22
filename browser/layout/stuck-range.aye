@@ -1,0 +1,27 @@
+import css
+import std.math
+
+let NEVER_UNSTUCK: f64 = 1.0e12
+
+// chromium: cc/trees/property_tree.cc (StickyPositionOffset)
+pub fn stuckRange(t: *Tree, i: usize) ?[2]f64 {
+    let b = t.bx(i).*
+
+    if b.abs == 2 { return [2]f64{0.0, NEVER_UNSTUCK} }
+
+    let p = t.bx(b.parent orelse return null).*
+    let top0 = b.ay - b.scroll_dy
+    let vh = t.viewport_h
+    let lo = p.ay + p.border[0] + p.padding[0] + b.margin[0] - top0
+    let hi = p.ay + p.h - p.border[2] - p.padding[2] - b.margin[2] - (top0 + b.h)
+    let top = lengthOf(b.style[css.INSET_TOP], vh)
+    let bottom = lengthOf(b.style[css.INSET_TOP + 2], vh)
+
+    if top != null && bottom != null { return null }
+    if top |s| { return [2]f64{top0 - s, top0 - s + math.max(0.0, hi)} }
+
+    let s = bottom orelse return null
+    let bottom_edge = top0 + b.h + s - vh
+
+    return [2]f64{bottom_edge + math.min(0.0, lo), bottom_edge}
+}
