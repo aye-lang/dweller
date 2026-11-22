@@ -17,7 +17,14 @@ jobs:
             target/wpt
             target/test262
           key: conformance-${{ hashFiles('browser/tools/wpt.rev', 'browser/tools/test262.rev', 'browser/tools/wpt_areas.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: target/wasmtime
+          key: wasmtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('browser/wasm/wasmtime.lock', 'browser/wasm/fetch_wasmtime.sh') }}
       - run: sh scripts/setup-ubuntu.sh
+      # the baselines are measured with libwasmtime: without it `WebAssembly` is
+      # undefined and html/browsers/origin and content-security-policy fall
+      - run: browser/wasm/fetch_wasmtime.sh
       - run: |
           git clone https://github.com/aye-lang/aye ../aye
           git -C ../aye checkout "$(cat AYE_REV)"

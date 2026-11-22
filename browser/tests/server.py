@@ -132,6 +132,9 @@
 #                    event "held" and stays open until
 #                    /event-stream-end?KEY, then sends "last" and ends
 #                    ("timeout" after HOLD_LIMIT s)
+#   /trickle?KEY     a text/plain response that sends "." every 10 ms
+#                    until /event-stream-end?KEY or the client closes it
+#                    (or HOLD_LIMIT s)
 #   /hang/NAME?KEY   never answered: holds the request until the client
 #                    closes the connection (or HOLD_LIMIT s) and records
 #                    that it was closed; KEY (or NAME) names it
@@ -362,6 +365,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with STREAM_CHANGED:
                 ended = STREAM_CHANGED.wait_for(lambda: query in STREAM_ENDED, HOLD_LIMIT)
             self.wfile.write(b"data: last\n\n" if ended else b"data: timeout\n\n")
+        elif path.startswith("/trickle?"):
+            query = path.split("?", 1)[1]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            end = time.monotonic() + HOLD_LIMIT
+            try:
+                while query not in STREAM_ENDED and time.monotonic() < end:
+                    self.wfile.write(b".")
+                    self.wfile.flush()
+                    time.sleep(0.01)
+            except OSError:
+                pass
         elif path.startswith("/event-stream-end?"):
             with STREAM_CHANGED:
                 STREAM_ENDED.add(path.split("?", 1)[1])

@@ -119,7 +119,7 @@ sitting clears it (`velocity.md`, "Rules", 6):
 - Q2.13: memory per tab against Chromium.
 - Q1.11: the soak.
 - macOS sandbox Left items (Q2.8a) and Q5.4 (IME) when they come up.
-- Two `flaky:` issues seen only on the macOS runners (Q1.4b): #385, a tab-mode renderer that crashed in `window_renderer_popup_opener` (queue run 44987415404; CI kept no crash report), and #380, `window_frame_lists_reused` building the changing iframe in 3 frames, not 5 or more (run 44963994657). Neither failed in 12 rounds under 8 busy loops on Linux; on the Mac, run each 20 times with `DWELLER_PROCESS=tab` and keep the crash report from `~/Library/Logs/DiagnosticReports`.
+- Three `flaky:` issues seen only on the macOS runners (Q1.4b): #398, `inserted_scripts` with one window iteration of 118 ms where it allows 100 (queue run 45041506917, macOS shard 3; the re-run passed); #385, a tab-mode renderer that crashed in `window_renderer_popup_opener` (queue run 44987415404; CI kept no crash report), and #380, `window_frame_lists_reused` building the changing iframe in 3 frames, not 5 or more (run 44963994657). #380 and #385 did not fail in 12 rounds under 8 busy loops on Linux; on the Mac, run each 20 times (#398 with `DWELLER_TIMING=1`, to see which iteration is long) with `DWELLER_PROCESS=tab` and keep the crash report from `~/Library/Logs/DiagnosticReports`.
 
 ### Next, per lane
 
