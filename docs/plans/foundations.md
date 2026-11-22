@@ -130,7 +130,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 |---|---|---|
 | base | DV1 is counted over its next landings | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
-| sec | – (the X2 areas are at their targets) | – |
+| sec | – (4 of the 5 X2 areas are at their targets; `html/browsers/sandboxing` is one subtest under, and each file left needs a feature with no card yet, the Left list of the card: `javascript:` URL navigations, replaced pages kept alive while a script holds them) | a card for `javascript:` URL navigations (it also waits in `html/browsers/origin` and `content-security-policy`) |
 | perf | – (Q6 is done; Q4.25e and Q4.12: their verify is in their Mac queues; the last two ranked Q4.16 cards are done) | Q4.6, Q4.16 (their verify needs the site archives) |
 | feat | – (Q5.9b: slices 1 to 5 done, YouTube is for the Mac) | – |
 
