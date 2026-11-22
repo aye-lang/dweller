@@ -54,9 +54,16 @@ Nine of the ten take under 10 s on Ubuntu and 70 to 140 s on macOS; six sit at 7
 - `bash -n .github/scripts/browser-shard.sh`: ok (unchanged). `python3 browser/tools/check_taste.py`: exit 0.
 - The card's CI verify (the two macOS shards of the next green run differ by under 1 minute, the slower under 9) is for the integrator on the next queue run: the first half is predicted to hold (it already held), the second is predicted to fail.
 
-## Status: in progress, 2026-11-12
+## After DV2b (2026-11-22)
 
-The tool and the refreshed file are built; the 9-minute goal is not met by them.
+- the macOS test steps of today's green queue runs: run 894 (#388) 1/3 9 min 44 s; run 897 (#389) 7 min 48 s, 8 min 42 s and 5 min 23 s. The slowest shard is now set by `jsdom::jsdom_gc_stress` alone, 537 s on macOS (305 on Ubuntu): one test cannot be split over shards, and its pages already run in parallel inside it.
+- change: the test is three tests, `jsdom_gc_stress_1` to `_3`, each with a third of the fixtures (the six slowest first, spread round robin; `_3` also runs code mode, P9.8). The slow list was stale: `frames_many` (118 s alone here) was not in it and could start last. Nothing is loosened: every fixture still runs under `DWELLER_JS_GC=stress` with the same check.
+- times here (Linux x86_64, 4 cores, each part alone): 180, 136 and 146 s; the fixtures one by one: 874 s in all, the parts 324, 281 and 269 s of it. `tests/browser-times.txt` gets the three names with the old row's times split by these shares (Ubuntu 119, 90, 96; macOS 209, 158, 170) until the next refresh from a green queue run (`test_times.py RUN_ID`).
+- expected: the slowest macOS shard under 9 minutes, its floor now about 3.5 minutes (the largest part) instead of 9.
+
+## Status: in progress, 2026-11-22 (the gc-stress split is in; the goal is checked on the queue runs after it)
+
+The tool and the refreshed file are built; the 9-minute goal was not met by them, and DV2b and the split above are the rest.
 
 Left:
 - What the ten slowest macOS tests wait on (TC3j's method), starting with the common ~70 s of the six at 71 to 75 s and the 140 s of `link_events::link_events` (1 s on Ubuntu).

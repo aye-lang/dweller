@@ -427,8 +427,41 @@ fn benchmark_date_follows_virtual_clock() {
 
 /// The DOM fixtures again with a collection at every allocation
 /// (`DWELLER_JS_GC=stress`): the bindings keep what they hold reachable.
+/// The fixtures are split in three tests (a third each, the slowest
+/// spread first) so that the CI shards can run them apart: together they
+/// took about 9 minutes of one macOS shard (DV2).
 #[test]
-fn jsdom_gc_stress() {
+fn jsdom_gc_stress_1() {
+    gc_stress_part(0);
+}
+
+#[test]
+fn jsdom_gc_stress_2() {
+    gc_stress_part(1);
+}
+
+/// The third part also runs P9.8's code mode under GC stress.
+#[test]
+fn jsdom_gc_stress_3() {
+    gc_stress_part(2);
+    gc_stress_agent();
+}
+
+const GC_STRESS_PARTS: usize = 3;
+// The slowest pages under GC stress (here, 2026-11-22: 118, 76, 72 and
+// 51 s alone), spread over the parts first.
+const GC_STRESS_SLOW: [&str; 6] = [
+    "frames_many.html",
+    "gc_wrappers.html",
+    "wrapper_identity.html",
+    "weak_nodes.html",
+    "sandbox_flags.html",
+    "sandbox_popups.html",
+];
+// A page takes up to about 2 minutes here; one that hangs is killed.
+const GC_STRESS_LIMIT: std::time::Duration = std::time::Duration::from_secs(600);
+
+fn gc_stress_part(part: usize) {
     let dir = root().join("browser").join("tests").join("jsdom");
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
@@ -436,16 +469,8 @@ fn jsdom_gc_stress() {
         .filter(|p| p.extension().is_some_and(|e| e == "html"))
         .collect();
     pages.sort();
-    // The slowest pages first, so that they do not all run at the end.
-    const SLOW: [&str; 4] = [
-        "virtual_clock.html",
-        "wrapper_identity.html",
-        "weak_nodes.html",
-        "layout_many_changes.html",
-    ];
-    pages.sort_by_key(|p| !SLOW.iter().any(|s| p.ends_with(s)));
-    // A page takes up to about 2 minutes here; one that hangs is killed.
-    let limit = std::time::Duration::from_secs(600);
+    pages.sort_by_key(|p| GC_STRESS_SLOW.iter().position(|s| p.ends_with(s)).unwrap_or(GC_STRESS_SLOW.len()));
+    let pages: Vec<PathBuf> = pages.into_iter().enumerate().filter(|(i, _)| i % GC_STRESS_PARTS == part).map(|(_, p)| p).collect();
     dweller();
     let failures: Vec<String> = common::run_queue(&pages, |page| {
         let rel = page
@@ -459,7 +484,7 @@ fn jsdom_gc_stress() {
             .env("DWELLER_ALLOW_FILE_ACCESS_FROM_FILES", "1")
             .args(["dump", "--tree", "--js", &rel])
             .spawn_drained()
-            .wait_with_output_within(limit)
+            .wait_with_output_within(GC_STRESS_LIMIT)
             .unwrap();
         let want = std::fs::read_to_string(page.with_extension("tree")).unwrap_or_default();
         if !out.status.success() || rooted(&text(&out.stdout)) != want {
@@ -477,7 +502,10 @@ fn jsdom_gc_stress() {
         failures.len(),
         failures.join("\n\n")
     );
-    // P9.8: code mode's realm calls into the page's realm and back.
+}
+
+// P9.8: code mode's realm calls into the page's realm and back.
+fn gc_stress_agent() {
     let run = root().join("browser/tests/agent/sessions/run.jsonl");
     // A run's 30 s default budget is wall time, which GC stress takes
     // most of on a slow runner: runs without their own `ms` get 300 s.
@@ -499,7 +527,7 @@ fn jsdom_gc_stress() {
         .stdin(std::process::Stdio::piped())
         .spawn_drained();
     std::io::Write::write_all(&mut child.child.stdin.take().unwrap(), input.as_bytes()).unwrap();
-    let out = child.wait_with_output_within(limit).unwrap();
+    let out = child.wait_with_output_within(GC_STRESS_LIMIT).unwrap();
     assert!(
         out.status.success() && out.stderr.is_empty(),
         "run.jsonl under GC stress: {}\n{}",
