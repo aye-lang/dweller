@@ -476,14 +476,18 @@ pub struct Heap {
     pub fn removeProp(self: *mut Self, o: u32, i: u32) AllocError!void {
         heapProtoChanged(self, o)
         let ob = self.obj(o)
-        ob.shape = NONE
+        ob.shape = shapeAfterRemove(self, o, i)
         var j = i
         while j + 1 < ob.nprops {
             ob.props[j] = ob.props[j + 1]
             j += 1
         }
         ob.nprops -= 1
-        if ob.nprops > INDEX_AT || ob.index != null {
+        if ob.shape == NONE {
+            heapMakeFast(self, o)
+        }
+
+        if self.obj(o).shape == NONE && (ob.nprops > INDEX_AT || ob.index != null) {
             try self.buildIndex(o)
         }
     }

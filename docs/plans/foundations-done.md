@@ -184,6 +184,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q3.12 | Agent socket: a `0700` directory, a `0600` socket and a token handshake. A process without the token is refused (done, #290; the socket moved to `~/.dweller/agent.sock`) | a test without the token is refused | – |
 | Q3.13 | The HTTP cache keyed by the top-level site and the frame site (Chrome's network isolation key), and by credentials mode; the same for the connection pool | a test shows site B gets no cache hit for a response site A loaded | `net/http/http_cache.cc` (`GenerateCacheKey`), `net/base/network_isolation_key.h` |
 | Q3.14 | Fetch Metadata (`Sec-Fetch-Site`, `-Mode`, `-Dest`, `-User`) on requests to potentially trustworthy URLs, `Origin` on POST navigations, and the page's referrer policy applied in `net/` (done, #313) | `fetch_metadata` | `services/network/sec_header_helpers.cc`, `net/url_request/referrer_policy.h` |
+| Q3.15 | The X2 areas to the Target column of `docs/conformance.md` (Q0.3b), one card per area: `Q3.15a` `x-frame-options` (done), `Q3.15b` `html/browsers/sandboxing`, `Q3.15c` `mixed-content`, `Q3.15d` `content-security-policy`, `Q3.15e` `html/browsers/origin` (done, 2026-11-22: `x-frame-options`, `html/browsers/sandboxing` one subtest under, `mixed-content` 89.0%, `content-security-policy` 80.4%, `html/browsers/origin`; notes and Left lists in `cards/Q3.15a.md` to `Q3.15e.md`) | each area is at its target, or its card's Left list says why not | – |
 | Q3.14b | `referrerpolicy` on `a`, `area`, `iframe` and `script`, `rel=noreferrer`, `fetch(url, {referrerPolicy})`, a redirect's `Referrer-Policy`, and no `Origin` after a 303 (done, #319; left: the image cache does not key on the policy) | `fetch_metadata` | `core/html/html_anchor_element.cc`, `net/url_request/redirect_util.cc` |
 | Q3.14c | `Sec-Fetch-Dest` for every destination (fonts, workers), `Sec-Fetch-User` only with transient activation, and WPT `fetch/metadata` (29.6%) and `referrer-policy` (49.2%) measured (done, #325; left: fonts load `no-cors`, not `cors`; activation is per page; in the tab process a frame's and a `_blank` tab's document fetch carry no referrer) | `fetch_metadata`; the two WPT areas in `docs/conformance.md` with thresholds | `services/network/sec_header_helpers.cc` (`SetSecFetchDestHeader`, `SetSecFetchUserHeader`), `third_party/blink/public/common/frame/user_activation_state.h` |
 
@@ -268,6 +269,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.4 | `css/box-sizing` (51.5, 70) |
 | Q6.8 | `css/positioning` (61.7, 70), `css/overflow` (54.3, 60) |
 | Q6.9 | `css/floats-tables` (55.5, 65) |
+| Q6.3 | `css/css-flexbox` (62.8 -> 87.4, threshold 70; done, 2026-11-22: Q6.3 to the floor, Q6.3b to 87: abspos static positions and the scroll origin in vertical writing modes; notes and Left in `cards/Q6.3.md`, `cards/Q6.3b.md`) |
+| Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3 -> 86.4, 86.1, 82.0; 80; done, 2026-11-22: slices a to l in `cards/Q6.13*.md`; toward 90 by that card's Left lists) |
 
 ## Q7: acceptance and release (lane sites)
 

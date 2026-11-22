@@ -130,8 +130,8 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 | base | DV1 is counted over its next landings | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
 | sec | – (the X2 areas are at their targets) | – |
-| perf | – (Q6.3b done; Q4.25e and Q4.12: their verify is in their Mac queues) | Q4.6, Q4.16 (their verify needs the site archives); Q6.13 to 90 |
-| feat | – (Q5.9b is for the Mac) | – |
+| perf | – (Q6 is done; Q4.25e and Q4.12: their verify is in their Mac queues; the last two ranked Q4.16 cards are done) | Q4.6, Q4.16 (their verify needs the site archives) |
+| feat | – (Q5.9b: slices 1 to 5 done, YouTube is for the Mac) | – |
 
 ## Decisions (2026-11-04)
 
@@ -322,9 +322,8 @@ with thresholds.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q3.15 | The X2 areas to the Target column of `docs/conformance.md` (Q0.3b), one card per area: `Q3.15a` `x-frame-options` (done), `Q3.15b` `html/browsers/sandboxing`, `Q3.15c` `mixed-content`, `Q3.15d` `content-security-policy`, `Q3.15e` `html/browsers/origin` | each area is at its target, or its card's Left list says why not | – |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q3.1, Q3.1c, Q3.1b, Q3.2a, Q3.2b, Q3.3, Q3.4, Q3.4b, Q3.5, Q3.5b, Q3.6, Q3.7, Q3.7b, Q3.8, Q3.9, Q3.10, Q3.10b, Q3.10c, Q3.10d, Q3.11, Q3.12, Q3.13, Q3.14, Q3.14b, Q3.14c.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q3.1, Q3.1c, Q3.1b, Q3.2a, Q3.2b, Q3.3, Q3.4, Q3.4b, Q3.5, Q3.5b, Q3.6, Q3.7, Q3.7b, Q3.8, Q3.9, Q3.10, Q3.10b, Q3.10c, Q3.10d, Q3.11, Q3.12, Q3.13, Q3.14, Q3.14b, Q3.14c, Q3.15.
 
 ## Q4: interactivity (lane perf)
 
@@ -385,10 +384,8 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
-| Q6.3 | `css/css-flexbox` (62.8, 70) |
-| Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3; 80) |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2, Q6.4, Q6.8, Q6.9.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2, Q6.4, Q6.8, Q6.9, Q6.3, Q6.13.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.
