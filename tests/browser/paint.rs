@@ -725,14 +725,24 @@ fn window_css_animation() {
     let last_raf = recs.iter().rposition(|r| r.0 == "ui_raf").unwrap();
     let idle = recs[last_raf..].iter().filter(|r| r.0 == "ui_draw").count();
     assert!(idle >= 50, "animation frames until the end ({idle} idle frames):\n{err}");
-    assert!(
-        recs[last_raf..]
-            .iter()
-            .filter(|r| r.0 == "ui_damage_px" && !r.1.starts_with("0 "))
-            .count()
-            <= 1,
-        "damage after the animation ended:\n{err}"
-    );
+    assert_ended_with_last_frame(&recs[last_raf..], "animation", &err);
+}
+
+/// After the last animation frame (`after` starts at its `ui_raf`) the
+/// page restyles once, for that frame, and nothing after it. In one
+/// process the window then draws that frame alone. With a renderer the
+/// window's draws and the renderer's records share stderr but not a
+/// clock: a window one frame behind draws the frame before the last
+/// after the renderer's last `ui_raf`, so there the frames are counted
+/// at the renderer, which restyles them.
+fn assert_ended_with_last_frame(after: &[(&str, &str)], what: &str, err: &str) {
+    let restyles = after.iter().filter(|r| r.0 == "restyle").count();
+    assert!(restyles <= 1, "{restyles} restyles after the {what}'s last frame:\n{err}");
+    if after.iter().any(|r| r.0 == "r_task") {
+        return;
+    }
+    let damaged = after.iter().filter(|r| r.0 == "ui_damage_px" && !r.1.starts_with("0 ")).count();
+    assert!(damaged <= 1, "damage after the {what} ended:\n{err}");
 }
 
 /// A CSS transition on `:hover` (P10.51d): `browser/tests/ui/hover_transition.html`
@@ -806,14 +816,7 @@ fn window_css_transition() {
         idle >= 50,
         "transition frames until the end ({idle} idle frames):\n{err}"
     );
-    assert!(
-        recs[last_raf..]
-            .iter()
-            .filter(|r| r.0 == "ui_damage_px" && !r.1.starts_with("0 "))
-            .count()
-            <= 1,
-        "damage after the transition ended:\n{err}"
-    );
+    assert_ended_with_last_frame(&recs[last_raf..], "transition", &err);
 }
 
 #[test]

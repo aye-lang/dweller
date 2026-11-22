@@ -201,3 +201,30 @@ fn window_renderer_targets() {
 
     killed(page, "context", "renderer:loaded renderer:frame click:10,60 renderer:input renderer:gone", "bad context");
 }
+
+/// Q1.4: a press on a range input moves its value and restyles the page;
+/// a click that comes in the same batch, before any frame, still finds its
+/// target (`browser/tests/ui/range_then_click.html`). The renderer lays
+/// the page out before it hit-tests input, as the in-process window does;
+/// before, it dropped the click while the restyle had left no tree
+/// (`media_element_controls` lost its last two clicks under load so).
+#[test]
+fn window_renderer_range_then_click() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    for (mode, loaded) in [("single", "loaded"), ("site", "renderer:loaded")] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .args(["browser/tests/ui/range_then_click.html", "--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "300", "--until-idle", "--text", "--events"])
+            .arg(format!("{loaded} click:150,50 click:50,115 frame"))
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        assert!(got.contains("input 77;click;"), "{mode}: {got}");
+    }
+}

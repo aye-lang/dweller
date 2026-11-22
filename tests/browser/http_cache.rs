@@ -136,7 +136,10 @@ fn request_order(site: bool) -> String {
 /// connections are taken, so the sheet is asked for right after the two
 /// images in flight, not after all eight (libcurl's own queue is first
 /// in, first out). The same with a renderer per site. (The page is left
-/// for `/order` before the last images are asked for.)
+/// for `/order` before the last images are asked for.) Requests that go
+/// out together, on the host's two connections, reach the server in
+/// either order: `i1` and `i2` once `late.js` is done, then the sheet and
+/// `i3` once both are done. So each such pair is compared as a set.
 #[test]
 fn request_priority_sheet_before_waiting_images() {
     for site in [false, true] {
@@ -144,7 +147,13 @@ fn request_priority_sheet_before_waiting_images() {
         if got.is_empty() {
             return;
         }
-        let want = "late.js i1.png i2.png late.css i3.png";
-        assert!(got.contains(want), "site {site}: expected {want:?} in:\n{got}");
+        let names: Vec<&str> = got.lines().last().unwrap_or("").split(' ').collect();
+        let pair = |at: usize| {
+            let mut p = names.get(at..at + 2).map(|p| p.to_vec()).unwrap_or_default();
+            p.sort();
+            p
+        };
+        let ok = names.first() == Some(&"late.js") && pair(1) == ["i1.png", "i2.png"] && pair(3) == ["i3.png", "late.css"];
+        assert!(ok, "site {site}: expected late.js, then i1.png and i2.png, then late.css and i3.png, in:\n{got}");
     }
 }
