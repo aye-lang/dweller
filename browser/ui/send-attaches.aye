@@ -2,6 +2,7 @@ import ipc
 import std.mem.AllocError
 import std.text
 
+// chromium: mojo/core/channel_posix.cc (XNU can flush a socket closed by its sender while in transit, crbug.com/298276: the sender keeps it until HANDLES_SENT_ACK)
 fn sendAttaches(tp: *mut TabProcess) AllocError!void {
     var out = text.Builder.init(tp.url.alloc)
     defer out.deinit()
@@ -16,7 +17,7 @@ fn sendAttaches(tp: *mut TabProcess) AllocError!void {
 
         if sent <= 0 { return }
 
-        closeFd(fds[0])
+        try tp.attach_ends_sent.append(fds[0])
         _ = tp.attaches.orderedRemove(0)
         try tp.outbox.append(out.bytes()[sent as usize..])
     }
