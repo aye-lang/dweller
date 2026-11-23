@@ -1,0 +1,19 @@
+import css
+
+// spec: https://drafts.csswg.org/css-position-3/#staticpos-rect
+fn emptyLineX(t: *Tree, p: usize, y: f64, cw: f64) f64 {
+    let band = bandAt(t, y, 0.0, cw)
+    let align = t.bx(p).style[css.TEXT_ALIGN]
+    let start = isKeyword(align, "start") || isKeyword(align, "justify")
+    let rtl = isRtl(t.bx(p).style)
+
+    if isKeyword(align, "center") {
+        return (band.left + band.right) / 2.0
+    }
+
+    if isKeyword(align, "right") || (isKeyword(align, "end") && !rtl) || (start && rtl) {
+        return band.right
+    }
+
+    return band.left
+}

@@ -58,7 +58,11 @@ The entry points ask it first:
   size of the fitted box.
 - `layoutAbsolute` -> `layoutTurnedAbsolute`: the whole problem is turned
   (containing block, static position), solved by `layoutAbsolute`, and
-  turned back; static positions are then taken physically.
+  turned back; the position is then taken physically
+  (`placeAbsolute`), as for a horizontal box: the static point is
+  the box's far edge when the parent starts at the far end of that axis
+  (`staticFlip`: `rtl`, or `vertical-rl` on x), and the end inset wins
+  when the containing block starts at the far end (`endInsetWins`).
 
 A replaced box (`BoxKind.Image`) is never turned: its natural size is
 physical. In a vertical flow `replacedSize` sizes it with its physical

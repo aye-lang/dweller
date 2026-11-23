@@ -102,8 +102,11 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
         let ra = isKeyword(s[css.MARGIN_TOP + 1], "auto")
         if la && ra {
             r.margin[3] += math.max(0.0, free) / 2.0
+            r.margin[1] += math.max(0.0, free) / 2.0
         } else if la {
             r.margin[3] += free
+        } else if ra {
+            r.margin[1] += free
         }
     }
     if top != null && bottom != null {
@@ -112,27 +115,14 @@ fn layoutAbsolute(t: *mut Tree, i: usize) AllocError!void {
         let ba = isKeyword(s[css.MARGIN_TOP + 2], "auto")
         if ta && ba {
             r.margin[0] += math.max(0.0, free) / 2.0
+            r.margin[2] += math.max(0.0, free) / 2.0
         } else if ta {
             r.margin[0] += free
+        } else if ba {
+            r.margin[2] += free
         }
-    }
-    var ax = sx + r.margin[3] + flexStaticShift(t, i, true) + gridStaticShift(t, i, cb, sx, true) - staticFlip(t, i)
-    if left |l| {
-        ax = cb.x + l + r.margin[3]
-    } else if right |rr| {
-        ax = cb.x + cb.w - rr - r.margin[1] - r.w
-    }
-    var ay = sy + r.margin[0] + flexStaticShift(t, i, false) + gridStaticShift(t, i, cb, sy, false)
-    if top |tp| {
-        ay = cb.y + tp + r.margin[0]
-    } else if bottom |bt| {
-        ay = cb.y + cb.h - bt - r.margin[2] - r.h
     }
     r.rel_x = 0.0
     r.rel_y = 0.0
-    r.x = ax - ox
-    r.y = ay - oy
-    r.ax = ax
-    r.ay = ay
-    placeChildren(t, i, ax + r.border[3] + r.padding[3], ay + r.border[0] + r.padding[0])
+    placeAbsolute(t, i, cb, StaticSpot { at: Area { x: sx, y: sy, w: 0.0, h: 0.0 }, origin: Area { x: ox, y: oy, w: 0.0, h: 0.0 } })
 }
