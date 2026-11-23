@@ -220,7 +220,8 @@ fn javascript_url_of_frames_and_location() {
 
 /// A click on a link whose `href` is a `javascript:` URL runs it in the
 /// link's page (a link the page's script clicks, in `dump` and in the
-/// window with renderers); before, the click did nothing.
+/// window with renderers); before, the click did nothing. Its result is
+/// `undefined`, so the page stays (a string would replace it).
 #[test]
 fn javascript_url_link_runs() {
     let got = javascript_url_page("javascript_url_link.html");
