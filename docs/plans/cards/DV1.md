@@ -32,14 +32,29 @@ macOS jobs per landed PR: 3 in the queue (2 shards + `perf`), plus 1 short `cach
 - The matrix expression, evaluated by hand in Python for both values of the condition: 6 entries (2 macOS, 4 Ubuntu) and 4 entries (Ubuntu only), with the same `os`, `shard`, `shards`, `part` as before.
 - The card's CI verify (30 landings, open-to-merge median, a deliberately broken macOS test leaves the queue) is for the integrator on the real runs.
 
-## Status: in progress, 2026-11-22 (checked on real runs; the 30-landing count is left)
+## Verify on CI, 2026-11-23
 
-Checked on the runs of 2026-11-22 (#386, #388, #389, #390):
-- the label `macos` exists ("run the macOS shards and perf on this pull request (DV1)"); #386 and #388 used it, and their PR runs then ran the three macOS shards and `perf` as well.
-- a PR run without the label: 4 Ubuntu shards, `perf` skipped, `browser` reporting (e.g. run 44989937034 of #386); the PRs were mergeable and entered the queue on auto-merge.
-- the queue runs: 4 Ubuntu shards, 3 macOS shards and `perf` (runs 894 and 897, 11 jobs each), green.
+35 landings since 48fa418b (#365 to #413), every `ci` run of each: its PR runs, its queue attempts and the push run of its merge.
+- macOS jobs that ran, per landed PR: median 5, the same over the 20 most recent:
+  - a PR without the label `macos`: 0 on the PR (`perf` skipped);
+  - 4 in the queue: 3 macOS shards (DV2 split the suite into three) and `perf`; until #372, 3 (two shards and `perf`);
+  - 1 `caches` on the push to `main`.
 
-Landings since DV1 (48fa418b, 2026-11-12), counted from `main`'s first-parent merges: 16 by #395 (2026-11-22 14:43 UTC), #371 to #395.
+  The PRs with the label (#373, #378, #386, #388, #394) and those that went through the queue more than once ran more: at most 31 (#373, nine PR runs and four queue attempts). Before DV1 every landing ran the macOS shards and `perf` on its PR, in the queue and on the push: three times.
+- wait for a macOS runner (job start minus job creation), 58 of the jobs:
+
+  | days | jobs | median | p90 |
+  |---|---|---|---|
+  | all | 58 | 0.05 min | 0.13 min |
+  | 2026-11-22, the busiest day (13 landings) | 16 | 0.03 min | 0.05 min |
+  | 2026-11-23 | 25 | 0.05 min | 2.25 min |
+
+  The longest wait, 6.8 min, was on 2026-11-23, when #407's queue run started 34 s after #409's. On 11-08: median 9.8 min, p90 43.
+- open to merge: median 21.1 min over the 35, against 28.1 min over the 22 landings of 11-08 and 11-09.
+- a macOS failure leaves the queue: of the 6 failed queue runs since 11-12, 5 had a failed macOS job (`browser (macos-latest, N/3)` or `perf`; runs 44654065728 #373, 44954054235 #378, 44959242524 and 44963994657 #379, 44990613216 #386). None of those PRs landed from that attempt; each landed from a later green one. These were real macOS failures, not a deliberate one; they show the same thing.
+- runs read, the landing queue run of each PR: #365 43156048023, #366 43159305222, #367 43161465351, #370 43162986930, #371 43997007014, #372 44002006311, #373 44681296007, #377 44949382214, #378 44956488177, #379 44968179705, #382 44983721861, #384 44987415404, #386 44997685501, #388 44999876412, #389 45003848579, #390 45009974483, #392 45011774124, #393 45018289320, #394 45029414934, #395 45034360224, #396 45034594814, #397 45041506917, #399 45055982022, #400 45064413475, #401 45064791745, #402 45073595170, #403 45086385470, #405 45090101908, #406 45104311080, #408 45114959836, #410 45115277560, #409 45116820150, #407 45116882858, #411 45117848996, #413 45118634565. The push run lists `perf` as a skipped macOS job beside `caches`; the queue of a docs-only change lists `perf` skipped and runs no macOS job (#395, #396, #400, #401, #410).
+
+## Status: done, 2026-11-23
 
 Left:
-- The 30-landing count and the deliberate macOS break (card verify).
+- two queue runs that start together share the macOS runners: their shards wait for each other (up to 6.8 min on 2026-11-23). If that becomes common, a concurrency limit on the queue's macOS jobs is the next step, not more shards.
