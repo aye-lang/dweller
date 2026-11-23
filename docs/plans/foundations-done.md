@@ -272,6 +272,8 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.9 | `css/floats-tables` (55.5, 65) |
 | Q6.3 | `css/css-flexbox` (62.8 -> 87.4, threshold 70; done, 2026-11-22: Q6.3 to the floor, Q6.3b to 87: abspos static positions and the scroll origin in vertical writing modes; notes and Left in `cards/Q6.3.md`, `cards/Q6.3b.md`) |
 | Q6.13 | test262 `language`, `built-ins`, `annexB` (73.4, 72.7, 41.3 -> 86.4, 86.1, 82.0; 80; done, 2026-11-22: slices a to l in `cards/Q6.13*.md`; toward 90 by that card's Left lists) |
+| Q6.18 | `css/css-writing-modes` toward its target 89 (63.4 -> 68.6; done, 2026-11-23: abspos boxes honour `direction: rtl`, rtl auto margins centre; notes and Left in `cards/Q6.18.md`) |
+| Q6.19 | `css/css-transforms` toward its target 89 (from 80.4; done, 2026-11-23: perspective interpolated in `transform` animations; notes and Left in `cards/Q6.19.md`) |
 
 ## Q7: acceptance and release (lane sites)
 

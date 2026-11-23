@@ -385,8 +385,10 @@ check`. Chromium references come from the module map of
 
 | Step | Area (score, threshold) |
 |---|---|
+| Q6.16 | test262 `language`, `built-ins`, `annexB` toward their target 90 (86.4, 86.2, 82.4 on 2026-11-23): array element and `length` descriptors first |
+| Q6.17 | `html/semantics/forms` toward its target 82 (71.5 -> 73.6, 2026-11-23: validity flags of barred controls); next: `cloneNode` state, `autocomplete`, `<meter>` |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2, Q6.4, Q6.8, Q6.9, Q6.3, Q6.13.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q6.1, Q6.11, Q6.11b, Q6.12, Q6.15, Q6.6, Q6.7, Q6.5, Q6.10, Q6.14, Q6.2, Q6.4, Q6.8, Q6.9, Q6.3, Q6.13, Q6.18, Q6.19.
 
 Areas can split into more steps. A step stops at its time budget with a
 "left" list, as the P10 cards do now.
