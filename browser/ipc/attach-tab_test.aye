@@ -15,3 +15,14 @@ test "attach_tab goes to the renderer and round-trips" {
     @expectEqual(74, Message.AttachTab { context: 0 }.kind())
     @expect(!fromRenderer(Message.AttachTab { context: 0 }))
 }
+
+test "attach_taken comes from the renderer and round-trips" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 0, Message.AttachTaken)
+
+    @expect(got.message is .AttachTaken)
+    @expectEqual(75, Message.AttachTaken.kind())
+    @expect(fromRenderer(Message.AttachTaken))
+}
