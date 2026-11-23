@@ -1,0 +1,32 @@
+test "a barred control reports its validity flags but does not fail validation" {
+    var doc = try Document.init(@testAllocator())
+    defer doc.deinit()
+
+    let number = try addEl(&mut doc, doc.root, "input", []Attr{})
+    try doc.setAttr(number, "type", "number")
+    try doc.setAttr(number, "max", "5")
+    try setValue(&mut doc, number, "9")
+    try doc.setAttr(number, "disabled", "")
+
+    @expect(validityOf(&doc, number).rangeOverflow)
+    @expect(!willValidate(&doc, number))
+    @expect(!failsValidation(&doc, number))
+    @expectEqual("", validationMessage(&doc, number))
+
+    doc.removeAttr(number, "disabled")
+
+    @expect(failsValidation(&doc, number))
+
+    let field = try addEl(&mut doc, doc.root, "input", []Attr{})
+    try doc.setAttr(field, "required", "")
+    try doc.setAttr(field, "readonly", "")
+
+    @expect(!validityOf(&doc, field).valueMissing)
+
+    let checkbox = try addEl(&mut doc, doc.root, "input", []Attr{})
+    try doc.setAttr(checkbox, "type", "checkbox")
+    try doc.setAttr(checkbox, "required", "")
+    try doc.setAttr(checkbox, "disabled", "")
+
+    @expect(validityOf(&doc, checkbox).valueMissing)
+}

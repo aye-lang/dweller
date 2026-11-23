@@ -78,9 +78,6 @@ fn radioMissing(doc: *Document, el: NodeId) bool {
 
 pub fn validityOf(doc: *Document, el: NodeId) Validity {
     var v = Validity { valueMissing: false, typeMismatch: false, patternMismatch: false, tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false, stepMismatch: false, badInput: false, customError: false }
-    if !willValidate(doc, el) {
-        return v
-    }
     if doc.controls.get(el) |c| {
         v.customError = c.custom.len > 0
     }
@@ -95,7 +92,9 @@ pub fn validityOf(doc: *Document, el: NodeId) Validity {
         if isCheckable(doc, el) {
             v.valueMissing = !isChecked(doc, el)
         } else {
-            v.valueMissing = s.len == 0
+            let immutable = isTextField(doc, el) && (isDisabled(doc, el) || doc.attr(el, "readonly") != null)
+
+            v.valueMissing = s.len == 0 && !immutable
         }
     }
     if s.len == 0 || isCheckable(doc, el) || (doc.isElement(el, "input") && (text.eql(t, "range") || text.eql(t, "color"))) {
@@ -237,6 +236,10 @@ pub fn setCustomValidity(doc: *mut Document, el: NodeId, message: []u8) AllocErr
 }
 
 pub fn validationMessage(doc: *Document, el: NodeId) []u8 {
+    if !willValidate(doc, el) {
+        return ""
+    }
+
     let v = validityOf(doc, el)
     if v.customError {
         return doc.controls.get(el).?.custom
