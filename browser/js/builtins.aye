@@ -547,6 +547,19 @@ pub fn defineOwnProperty(it: *mut Interp, o: u32, key: u32, desc: Value, throwin
         }
         return true
     }
+    if it.heap.obj(o).class == Class.Array {
+        if key == A_LENGTH {
+            return arraySetLength(it, o, desc, throwing)
+        }
+
+        let idx = it.heap.atoms.indexOf(key)
+
+        if idx != NONE {
+            if try arrayDefineIndex(it, o, key, idx, desc, throwing) |done| {
+                return done
+            }
+        }
+    }
     if key == A_PROTOTYPE && it.heap.obj(o).class == Class.Function {
         let base = it.stack.len()
         try it.push(desc)
@@ -602,6 +615,8 @@ pub fn defineOwnProperty(it: *mut Interp, o: u32, key: u32, desc: Value, throwin
             it.heap.shade(setter)
             p.setter = setter
             p.flags = flags | F_ACCESSOR
+        } else if isArrayIndexKey(it, o, key) {
+            try defineElemProp(it, o, key, getter, setter, flags | F_ACCESSOR)
         } else {
             try it.defineAccessor(o, key, getter, setter, flags)
         }
@@ -633,6 +648,10 @@ pub fn defineOwnProperty(it: *mut Interp, o: u32, key: u32, desc: Value, throwin
         if it.heap.findProp(o, key) |i| {
             v = it.heap.obj(o).props[i].value
         }
+    }
+    if isArrayIndexKey(it, o, key) {
+        try defineElemProp(it, o, key, v, Value.Undefined, flags)
+        return true
     }
     try it.defineOwn(o, key, v, flags)
     return true
@@ -755,7 +774,7 @@ pub fn ownDescriptor(it: *mut Interp, o: u32, key: u32) JsError!Value {
         let v = try it.getProp(objVal(o), key)
         let isLength = key == A_LENGTH
         try it.defineOwn(d, A_VALUE, v, F_DEFAULT)
-        try it.defineOwn(d, A_WRITABLE, boolVal(!it.heap.obj(o).frozen), F_DEFAULT)
+        try it.defineOwn(d, A_WRITABLE, boolVal(!it.heap.obj(o).frozen && !(isLength && it.heap.obj(o).length_read_only)), F_DEFAULT)
         try it.defineOwn(d, A_ENUMERABLE, boolVal(!isLength), F_DEFAULT)
         try it.defineOwn(d, A_CONFIGURABLE, boolVal(!isLength && !it.heap.obj(o).frozen), F_DEFAULT)
     }
@@ -869,7 +888,7 @@ fn objectIsFrozen(it: *mut Interp, a: Args) JsError!Value {
     if ob.frozen {
         return boolVal(true)
     }
-    if ob.extensible || ob.nelems > 0 {
+    if ob.extensible || hasElems(it, o) || (ob.class == Class.Array && !ob.length_read_only) {
         return boolVal(false)
     }
     for i in 0..ob.nprops {
@@ -919,7 +938,7 @@ fn objectIsSealed(it: *mut Interp, a: Args) JsError!Value {
             return boolVal(false)
         }
     }
-    return boolVal(ob.nelems == 0)
+    return boolVal(!hasElems(it, o))
 }
 
 fn objectIsExtensible(it: *mut Interp, a: Args) JsError!Value {
