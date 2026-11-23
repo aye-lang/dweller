@@ -467,7 +467,11 @@ fn window_same_text_write_builds_nothing() {
 /// Q4.20: a page whose only change is canvas draws (one in the page, one
 /// in an iframe, 40 rAF ticks) lays out and builds its display list only
 /// for the load, yet every tick draws the canvas's rect, and the last
-/// frame equals the final page drawn from the start.
+/// frame equals the final page drawn from the start. The window's draws
+/// that drew pixels are its `raster_px` records: with a renderer a draw of
+/// a tick's frame can come before the window reads that tick (the
+/// renderer's `Settled`), and such a draw writes no `ui_draw`, so counting
+/// the frames between `ui_draw` records found 39 under load.
 #[test]
 fn window_canvas_raf_no_relayout() {
     if !has_sdl() {
@@ -486,7 +490,7 @@ fn window_canvas_raf_no_relayout() {
     assert!(a == b, "the window differs from the final page drawn whole");
     let frames = frame_records(&err);
     let count = |name: &str| frames.iter().flatten().filter(|(n, _)| n == name).count();
-    let drawn = frames.iter().filter(|f| f.iter().any(|(n, _)| n == "raster_px")).count();
+    let drawn = count("raster_px");
     assert!(count("ui_relayout") <= 3, "{} relayouts", count("ui_relayout"));
     assert!(count("paint_build") <= 8, "{} display-list builds", count("paint_build"));
     assert!(drawn >= 40, "{drawn} frames drew pixels");
