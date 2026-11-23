@@ -152,7 +152,8 @@ fn javascript_url_in_named_popup() {
 }
 
 /// A page whose CSP has no `'unsafe-inline'` cannot run a `javascript:`
-/// URL in its popup: the opener gets a violation of `script-src-elem`.
+/// URL in its popup or in a frame's `src`: the page gets a violation of
+/// `script-src-elem` for each, and the frame stays empty.
 #[test]
 fn javascript_url_refused_by_csp() {
     let got = javascript_url_page("javascript_url_csp.html");
@@ -160,5 +161,82 @@ fn javascript_url_refused_by_csp() {
         return;
     }
     assert!(got.contains("violation: script-src-elem inline\n"), "{got}");
+    assert!(got.contains("frame: \"\"\n"), "the frame stays empty:\n{got}");
     assert!(got.contains("done\n") && !got.contains("ran"), "{got}");
+}
+
+/// A popup opened on `about:blank` shows an empty document, in the window
+/// with one process too, where it showed the error page "this kind of
+/// URL is not supported yet"; its opener can read its document.
+#[test]
+fn blank_popup_is_an_empty_document() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "single")
+        .args([&format!("{}/sandbox/blank_popup.html", srv.base), "--frames", "300", "--until-idle", "--state", "--text"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    assert!(got.contains("url about:blank\n") && got.contains("tabs 2, showing 2\n"), "{got}");
+    assert!(!got.contains("Cannot load"), "{got}");
+    let dump = run(&["dump", "--text", "--js", &format!("{}/sandbox/blank_popup.html", srv.base)]);
+    assert!(dump.status.success(), "{}\n{}", dump.status, text(&dump.stderr));
+    let got = text(&dump.stdout);
+    assert!(got.contains("popup body \"\""), "{got}");
+}
+
+/// A frame whose `src` is a `javascript:` URL shows the string the URL
+/// returns, and so does a frame that sets its own `location` to one; a
+/// popup that sets its own `location` to one runs it, and shows the string
+/// it returns. In the window with
+/// one process (the popup's tab is shown last: `cmd+1` shows the opener).
+#[test]
+fn javascript_url_of_frames_and_location() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let frames = "frame ".repeat(30);
+    let out = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "single")
+        .args([
+            &format!("{}/sandbox/javascript_url_frames.html", srv.base),
+            "--frames", "300", "--until-idle", "--text", "--events", &format!("{frames}key:cmd+1 frame"),
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    for want in ["the popup ran its own location\n", "src frame: from the src\n", "self frame: navigated itself\n", "popup: its own string\n", "done\n"] {
+        assert!(got.contains(want), "no {want:?} in:\n{got}");
+    }
+}
+
+/// A click on a link whose `href` is a `javascript:` URL runs it in the
+/// link's page (a link the page's script clicks, in `dump` and in the
+/// window with renderers); before, the click did nothing.
+#[test]
+fn javascript_url_link_runs() {
+    let got = javascript_url_page("javascript_url_link.html");
+    if got.is_empty() {
+        return;
+    }
+    assert!(got.contains("the link ran\ndone\n"), "{got}");
+    let Some(srv) = server() else {
+        return;
+    };
+    let window = dweller_command()
+        .current_dir(root())
+        .env("DWELLER_PROCESS", "site")
+        .args([&format!("{}/sandbox/javascript_url_link.html", srv.base), "--frames", "100", "--until-idle", "--text"])
+        .output()
+        .unwrap();
+    assert!(window.status.success(), "{}\n{}", window.status, text(&window.stderr));
+    assert!(text(&window.stdout).contains("the link ran\ndone\n"), "{}", text(&window.stdout));
 }

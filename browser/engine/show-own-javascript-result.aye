@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+pub fn showOwnJavascriptResult(tab: *mut Tab) AllocError!bool {
+    let p = tab.page orelse return false
+
+    if p.opened_doc.len == 0 {
+        return false
+    }
+
+    let markup = p.opened_doc
+
+    defer tab.alloc.free(markup)
+    p.opened_doc = ""
+
+    return showJavascriptResult(tab, p, markup)
+}

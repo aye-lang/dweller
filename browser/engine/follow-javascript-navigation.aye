@@ -1,0 +1,13 @@
+import std.mem.AllocError
+import url.Url
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
+pub fn followJavascriptNavigation(tab: *mut Tab, p: *mut Page, target: *Url) AllocError!bool {
+    let s = p.script orelse return false
+
+    if try javascriptUrlRefused(s, target.href) {
+        return false
+    }
+
+    return runJavascriptUrl(tab, target, initiatorHref(p))
+}

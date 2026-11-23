@@ -474,12 +474,23 @@ pub fn pumpContexts() AllocError!void {
             let tab = c.own orelse continue
             let p = tab.page orelse continue
             let ran = try runDueTimers(p)
+
+            if try showOwnJavascriptResult(tab) {
+                did = true
+                continue
+            }
+
             let nav = takeNavigation(tab.page.?)
             if nav.kind is .To {
                 let target = url.parse(t.alloc, nav.href) catch |e| {
                     continue
                 }
                 defer target.deinit(t.alloc)
+                if isJavascriptUrl(&target) {
+                    _ = try followJavascriptNavigation(tab, p, &target)
+                    did = true
+                    continue
+                }
                 tab.replace_next = nav.replace
                 try tab.navigate(&target, initiatorOf(p))
                 tab.replace_next = false
