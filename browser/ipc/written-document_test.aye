@@ -1,0 +1,20 @@
+import std.text
+
+test "written_document round-trips and comes from a renderer" {
+    var out = text.Builder.init(@testAllocator())
+    defer out.deinit()
+
+    let got = try roundTrip(&mut out, 7, Message.WrittenDocument { title: "t", url: "http://a/b" })
+
+    match got.message {
+        .WrittenDocument { title, url } => {
+            @expectEqual("t", title)
+            @expectEqual("http://a/b", url)
+        }
+
+        _ => @expect(false)
+    }
+
+    @expectEqual(222, (Message.WrittenDocument { title: "", url: "" }).kind())
+    @expect(fromRenderer(Message.WrittenDocument { title: "", url: "" }))
+}

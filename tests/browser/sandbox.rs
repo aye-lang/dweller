@@ -220,7 +220,8 @@ fn javascript_url_of_frames_and_location() {
 
 /// A click on a link whose `href` is a `javascript:` URL runs it in the
 /// link's page (a link the page's script clicks, in `dump` and in the
-/// window with renderers); before, the click did nothing.
+/// window with renderers); before, the click did nothing. Its result is
+/// `undefined`, so the page stays (a string would replace it).
 #[test]
 fn javascript_url_link_runs() {
     let got = javascript_url_page("javascript_url_link.html");
@@ -239,4 +240,33 @@ fn javascript_url_link_runs() {
         .unwrap();
     assert!(window.status.success(), "{}\n{}", window.status, text(&window.stderr));
     assert!(text(&window.stdout).contains("the link ran\ndone\n"), "{}", text(&window.stdout));
+}
+
+/// A top-level page that sets its own `location` to a `javascript:` URL
+/// whose result is a string shows that string as its new document, with
+/// its URL and its scripts run, in the window with renderers (the
+/// renderer replaces its page and the browser commits the new document,
+/// `written_document`) as with one process.
+#[test]
+fn javascript_url_top_string_replaces_document() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/sandbox/javascript_url_top_string.html", srv.base);
+    for mode in ["site", "single"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .args([&page, "--frames", "200", "--until-idle", "--state", "--text"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        let url = format!("url {page}\n");
+        for want in ["the written document, its script ran, written, history 1", &url, "history 1 of 1\n"] {
+            assert!(got.contains(want), "{mode}: no {want:?} in:\n{got}");
+        }
+        assert!(!got.contains("the old document"), "{mode}: {got}");
+    }
 }
