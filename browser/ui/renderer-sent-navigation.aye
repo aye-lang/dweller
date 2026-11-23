@@ -37,6 +37,12 @@ fn rendererSentNavigation(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got)
             try tp.committed.append(url)
         }
 
+        .WrittenDocument { title, url } => {
+            if got.frame != slot.id || !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad written_document" }
+
+            if !tp.loading { try commitWritten(slot, tp, title, url) }
+        }
+
         .UpgradeInsecure { page } => {
             if got.frame != slot.id || page.len > MAX_URL_CHARS { return "bad upgrade_insecure" }
 
