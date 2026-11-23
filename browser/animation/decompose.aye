@@ -1,15 +1,26 @@
 import std.math
 
 // spec: https://drafts.csswg.org/css-transforms-2/#decomposing-a-3d-matrix
-fn decompose(m: [16]f64) ?Decomposed {
-    var d = Decomposed { translate: [3]f64{m[12], m[13], m[14]}, scale: [3]f64{0.0, 0.0, 0.0}, skew: [3]f64{0.0, 0.0, 0.0}, quaternion: [4]f64{0.0, 0.0, 0.0, 1.0} }
+fn decompose(matrix: [16]f64) ?Decomposed {
+    var m = matrix
+
+    if matrix[15] == 0.0 {
+        return null
+    }
+
+    for k in 0..16 {
+        m[k] = matrix[k] / matrix[15]
+    }
+
     var row0 = [3]f64{m[0], m[1], m[2]}
     var row1 = [3]f64{m[4], m[5], m[6]}
     var row2 = [3]f64{m[8], m[9], m[10]}
 
-    if m[3] != 0.0 || m[7] != 0.0 || m[11] != 0.0 || m[15] != 1.0 || dot3(row0, cross3(row1, row2)) == 0.0 {
+    if dot3(row0, cross3(row1, row2)) == 0.0 {
         return null
     }
+
+    var d = Decomposed { translate: [3]f64{m[12], m[13], m[14]}, scale: [3]f64{0.0, 0.0, 0.0}, skew: [3]f64{0.0, 0.0, 0.0}, perspective: perspectiveOf(m), quaternion: [4]f64{0.0, 0.0, 0.0, 1.0} }
 
     d.scale[0] = length3(row0)
     row0 = scaled3(row0, 1.0 / d.scale[0])

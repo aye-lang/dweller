@@ -1,11 +1,17 @@
 // spec: https://drafts.csswg.org/css-transforms-2/#recomposing-to-a-3d-matrix
 fn recompose(d: Decomposed) [16]f64 {
     var m = IDENTITY4
+    var moved = IDENTITY4
     var shear = IDENTITY4
 
-    m[12] = d.translate[0]
-    m[13] = d.translate[1]
-    m[14] = d.translate[2]
+    for i in 0..4 {
+        m[i * 4 + 3] = d.perspective[i]
+    }
+
+    moved[12] = d.translate[0]
+    moved[13] = d.translate[1]
+    moved[14] = d.translate[2]
+    m = multiply4(m, moved)
     m = multiply4(m, quaternionMatrix(d.quaternion))
     shear[9] = d.skew[2]
     m = multiply4(m, shear)
