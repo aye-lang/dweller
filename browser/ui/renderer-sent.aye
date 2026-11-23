@@ -65,6 +65,12 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
         .State { .. } => return "unexpected state"
         .BusyAsk { .. }, .Telemetry { .. }, .HostRequest { .. } => return rendererAsked(slot, tp, got)
         .LoadStopped => {}
+        .AttachTaken => {
+            if tp.attach_ends_sent.len() == 0 { return "unexpected attach_taken" }
+
+            closeFd(tp.attach_ends_sent.orderedRemove(0))
+        }
+
         .InputAck { seq } => {
             if got.frame != slot.id || seq <= tp.acked || seq > tp.seq { return "unexpected input_ack" }
 
