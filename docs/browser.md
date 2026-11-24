@@ -167,7 +167,7 @@ its card in `docs/plans/cards/`:
   browser's (IPC 140 to 143). Tests: `tests/browser/websocket.rs`.
 - **EventSource** (Q5.8, `engine/event-source.js`, the parser in
   `engine/event-stream.aye`, `ak.eventStream`). The response is read
-  while it runs: a request marked `stream` has no total timeout and no
+  while it runs: a request marked `stream` has no stall limit and no
   preflight (`net/endless-job.aye`), and its parts reach the script
   through a stream task (`engine/stream-turn.aye`, `ak.fetchPart`).
   With renderer processes the browser sends the head and one

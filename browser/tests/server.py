@@ -141,6 +141,13 @@
 #   /hang-started?A,B  once the /hang/ requests A and B arrived, "started"
 #   /hang-closed?A,B "A closed B open": whether the client closed each
 #                    /hang/ request, waiting up to CLOSE_LIMIT s for all
+#   /hang-took?KEY   the seconds from the last /hang/ request of KEY to the
+#                    client's close ("%.1f"), waiting up to CLOSE_LIMIT s
+#                    for the close ("open" without one)
+#   /head-hang?KEY   the head of a 200 text/javascript response, then as
+#                    /hang/: no byte of the body
+#   /drip/MS/N?KEY   a script in N parts, one every MS ms, then the line
+#                    `window.dripped = N;` (no Content-Length)
 #   /samesite/...    (GET and POST) the SameSite fixture (P10.21), on the
 #                    hosts 127.0.0.1 and localhost of one port (two
 #                    sites): /set sets strict, lax, dflt (no SameSite)
@@ -230,8 +237,9 @@ STREAM_ENDED = set()
 STREAM_CHANGED = threading.Condition()
 
 # The /hang/ requests by key: "open" while held, "closed" once the client
-# closed the connection.
+# closed the connection, and the seconds until that close.
 HANGS = {}
+HANG_TOOK = {}
 HANG_CHANGED = threading.Condition()
 CLOSE_LIMIT = 5
 
@@ -480,6 +488,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply_file(path[len("/nosniff/"):], [("X-Content-Type-Options", "nosniff")])
         elif path.startswith("/hang/"):
             self.hang(path)
+        elif path.startswith("/hang-took?"):
+            key = urllib.parse.urlsplit(path).query
+            with HANG_CHANGED:
+                HANG_CHANGED.wait_for(lambda: HANGS.get(key) == "closed", CLOSE_LIMIT)
+                took = b"%.1f\n" % HANG_TOOK[key] if HANGS.get(key) == "closed" else b"open\n"
+            self.reply(200, [("Content-Type", "text/plain"), ("Cache-Control", "no-store")], took)
+        elif path.startswith("/head-hang?"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.end_headers()
+            self.wfile.flush()
+            self.hang(path)
+        elif path.startswith("/drip/"):
+            self.drip(path)
         elif path.startswith("/hang-started?"):
             names = urllib.parse.urlsplit(path).query.split(",")
             with HANG_CHANGED:
@@ -678,18 +700,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         self.reply(206, [("Content-Type", "audio/wav"), ("Accept-Ranges", "bytes"), ("Content-Range", "bytes %d-%d/%d" % (start, end, len(wav)))], wav[start:end + 1])
 
+    def drip(self, path):
+        ms, _, n = urllib.parse.urlsplit(path).path[len("/drip/"):].partition("/")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript")
+        self.end_headers()
+        try:
+            for i in range(int(n)):
+                self.wfile.write(b"// part %d\n" % i)
+                self.wfile.flush()
+                time.sleep(int(ms) / 1000)
+            self.wfile.write(b"window.dripped = %d;\n" % int(n))
+        except OSError:
+            pass
+        self.close_connection = True
+
     def hang(self, path):
         parts = urllib.parse.urlsplit(path)
         key = parts.query or parts.path[len("/hang/"):]
         with HANG_CHANGED:
             HANGS[key] = "open"
             HANG_CHANGED.notify_all()
-        end = time.time() + HOLD_LIMIT
+        start = time.time()
+        end = start + HOLD_LIMIT
         while time.time() < end:
             ready, _, _ = select.select([self.connection], [], [], 0.05)
             if ready and not self.connection.recv(1, socket.MSG_PEEK):
                 with HANG_CHANGED:
                     HANGS[key] = "closed"
+                    HANG_TOOK[key] = time.time() - start
                     HANG_CHANGED.notify_all()
                 break
         self.close_connection = True
