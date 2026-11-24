@@ -1,0 +1,12 @@
+import std.text
+
+pub fn startSecuredLoad(href: []u8, req: Request) u32 {
+    let s = session orelse return 0
+    var secured = text.Builder.init(s.alloc)
+    defer secured.deinit()
+    let sendable = secureHref(s.alloc, req, href, &mut secured) catch false
+
+    if !sendable { return 0 }
+
+    return startLoadAs(secured.bytes(), req)
+}

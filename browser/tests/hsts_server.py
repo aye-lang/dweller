@@ -4,6 +4,7 @@ import socketserver
 import ssl
 import sys
 import threading
+import time
 
 
 class QuickServer(http.server.ThreadingHTTPServer):
@@ -41,7 +42,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 kind = "text/javascript"
             with open(os.path.join(DIR, path[1:]), "rb") as f:
                 body = f.read()
-        elif path == "/img.gif":
+        elif path in ("/img.gif", "/slow.gif"):
+            if path == "/slow.gif":
+                time.sleep(2)
             kind = "image/gif"
             body = GIF
         elif path == "/data":

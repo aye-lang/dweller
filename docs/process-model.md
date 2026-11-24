@@ -545,6 +545,14 @@ site-lock check is unchanged. So a slow server no longer stalls the
 window's loop. A `file:` or `data:` navigation, a replayed archive and
 a primed response (after a swap) are still answered at once.
 
+**Upgraded subresources (Q2.18, 2026-11-25).** A subresource GET whose
+URL net upgrades (an http image on an https page, an HSTS host) is
+held too: `net.startSecuredLoad` starts the background load under the
+https URL, the key the synchronous `net.request` then finds in the
+cache. A load that failed already is answered `fetch_fail` without a
+retry. Only a load that is done at once (a fresh cache entry) is
+answered by the synchronous path, which then reads no network.
+
 **Partitions and crashes (Q2.12c, 2026-11-09).** With the switch an
 `isolated` Space is hosted too, on a partition of its own: the window
 gives it a cookie jar (`net.openPartition`, keyed by the Space's id) and
