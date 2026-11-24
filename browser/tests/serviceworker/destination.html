@@ -1,0 +1,24 @@
+<!doctype html>
+<title>Service worker: request destinations</title>
+<pre id="log"></pre>
+<script src="../indexeddb/harness.js"></script>
+<script>
+async function run() {
+  const sw = navigator.serviceWorker;
+  for (const old of await sw.getRegistrations()) await old.unregister();
+  const claimed = new Promise(r => { sw.oncontrollerchange = r; });
+  await sw.register('worker.js');
+  await claimed;
+  const seen = [];
+  sw.onmessage = e => {
+    seen.push(e.data);
+    if (seen.length === 3) done('destinations ' + seen.sort().join(', '));
+  };
+  const script = document.createElement('script');
+  script.src = 'a.js?dest';
+  document.body.append(script);
+  document.createElement('audio').src = 'a.wav?dest';
+  document.createElement('video').src = 'a.mkv?dest';
+}
+run().catch(e => done('failed ' + e));
+</script>
