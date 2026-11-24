@@ -18,13 +18,15 @@ fn reportHistory(r: *mut TabRenderer, p: *mut engine.Page) !void {
     try noteState(r, state)
 
     var href = p.url.href
+    var index = at
     var nulls: u32 = 0
 
     if evilTest("pushstate") { href = "https://evil.example/" }
+    if evilTest("history-index") { index += 7 }
 
     if state == null { nulls = 1 }
 
-    try send(r.alloc, r.conn, r.tab, ipc.Message.SameDocument { url: href, index: at, nulls: nulls, state: state orelse "" })
+    try send(r.alloc, r.conn, r.tab, ipc.Message.SameDocument { url: href, index: index, nulls: nulls, state: state orelse "" })
 }
 
 fn sameState(r: *TabRenderer, state: ?[]u8) bool {

@@ -17,7 +17,7 @@ fn childSent(tp: *mut TabProcess, got: ipc.Got) AllocError![]u8 {
             tp.hello = true
         }
 
-        .Loaded { title, url: href } => {
+        .Loaded { title, url: href, .. } => {
             if !tp.loading { return "unexpected loaded" }
             if !commitMatches(tp.url.alloc, tp.committed.bytes(), href) { return "bad url" }
             if !tp.nav_failed && !(try inSiteLock(tp, href)) { return "commit outside site lock" }
