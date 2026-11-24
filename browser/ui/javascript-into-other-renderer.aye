@@ -1,0 +1,12 @@
+import engine
+import url.Url
+
+// chromium: content/browser/renderer_host/render_frame_proxy_host.cc (OpenURL: a javascript: URL never reaches a frame of another renderer)
+fn javascriptIntoOtherRenderer(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32, target: *Url) bool {
+    if !engine.isJavascriptUrl(target) { return false }
+
+    let tab = openedTab(ui, opener, tp, context) orelse return false
+    let p = tab.process orelse return true
+
+    return p.pid != tp.pid
+}

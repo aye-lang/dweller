@@ -211,6 +211,42 @@ fn javascript_url_into_frames_needs_same_origin() {
     assert!(err.contains("navigation refused: javascript:"), "{err}");
 }
 
+/// Q3.16d: a page opens a named tab of another site (a click), then aims
+/// `window.open('javascript:...', name)` at it (a second click). The tab
+/// runs in another renderer, so the browser drops the URL
+/// (`navigation refused` in the log, as for `proxy_navigate`): the tab
+/// keeps its URL, its one history entry and its document. With a
+/// renderer per tab and with one per site.
+#[test]
+fn javascript_url_into_tab_of_other_renderer_is_dropped() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("{}/sandbox/javascript_url_into_tab.html", srv.base);
+    let probe = format!("{}/sandbox/javascript_url_probe.html", srv.base.replace("127.0.0.1", "localhost"));
+    let events = "renderer:loaded click:50,200 renderer:input key:cmd+1 renderer:title:ready \
+        click:50,200 renderer:input renderer:title:sent key:cmd+2 renderer:loaded";
+    for mode in ["tab", "site"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .args([page.as_str(), "--font", "fixed", "--width", "400", "--height", "400"])
+            .args(["--frames", "1000", "--until-idle", "--state", "--processes", "--text", "--events", events])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        let err = text(&out.stderr);
+        assert!(got.contains(&format!("url {probe}\n")) && got.contains("\nhistory 1 of 1\n"), "{mode}:\n{got}\n{err}");
+        assert!(got.contains("\ntabs 2, showing 2\n") && got.contains(" title Probe\n") && got.contains("\nprobe\n"), "{mode}:\n{got}");
+        assert!(!got.contains("written") && !got.contains("Cannot load"), "{mode}:\n{got}");
+        let pids: Vec<&str> = got.lines().find(|l| l.starts_with("renderer-tabs ")).unwrap_or("").split(' ').skip(1).collect();
+        assert!(pids.len() == 2 && pids[0] != pids[1], "{mode}: the tab is in another renderer: {pids:?}\n{got}");
+        assert!(err.contains("navigation refused: javascript:"), "{mode}: {err}");
+    }
+}
+
 /// A popup opened on `about:blank` shows an empty document, in the window
 /// with one process too, where it showed the error page "this kind of
 /// URL is not supported yet"; its opener can read its document.
