@@ -1,0 +1,23 @@
+import std.mem.AllocError
+
+// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#evaluate-a-javascript:-url
+pub fn ownJavascriptPage(old: *mut Page, context: u32, h: *mut SessionHistory) AllocError!?*mut Page {
+    if old.opened_doc.len == 0 { return null }
+
+    let markup = old.opened_doc
+
+    defer old.alloc.free(markup)
+    old.opened_doc = ""
+    let page = try writtenPage(old, markup)
+
+    errdefer page.destroy()
+    setSandbox(page, old.sandbox)
+    try inheritCreator(page, old.creator)
+    try h.adoptAt(h.current, &mut page.history)
+    page.shared = h
+    setLoadingContext(context)
+    try attachLoading(page)
+    try runDocument(page, scriptingEnabled())
+
+    return page
+}

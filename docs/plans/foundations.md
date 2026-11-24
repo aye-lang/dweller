@@ -128,7 +128,7 @@ The wave of 2026-11-16 runs these lanes as one worker session each
 
 | Lane | Next | Then |
 |---|---|---|
-| base | DV1 is counted over its next landings | – |
+| base | – | – |
 | proc | – (Q2 is done; W7/W8 with the flip are in the Mac queue) | – |
 | sec | – (the 5 X2 areas are at their targets) | `javascript:` URLs of links, `location` and frames, and replaced pages kept alive while a script holds them (Left of the last card) |
 | perf | – (Q6 is done; Q4.25e and Q4.12: their verify is in their Mac queues; the last two ranked Q4.16 cards are done) | Q4.6, Q4.16 (their verify needs the site archives) |

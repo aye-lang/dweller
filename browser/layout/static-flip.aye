@@ -1,11 +1,17 @@
 // spec: https://drafts.csswg.org/css-position-3/#staticpos-rect
-fn staticFlip(t: *Tree, i: usize) f64 {
+fn staticFlip(t: *Tree, i: usize, horizontal: bool) f64 {
     let b = t.bx(i)
     let p = b.parent orelse return 0.0
+    let pb = t.bx(p)
+    let in_lines = isBlockContainer(pb.kind) || pb.kind == BoxKind.Inline
 
-    if !t.vertical || t.bx(p).mode != VERTICAL_RL {
+    if !startsFar(pb, horizontal) || (!in_lines && !(horizontal && pb.mode == VERTICAL_RL)) {
         return 0.0
     }
 
-    return b.w + b.margin[1] + b.margin[3]
+    if horizontal {
+        return b.w + b.margin[1] + b.margin[3]
+    }
+
+    return b.h + b.margin[0] + b.margin[2]
 }
