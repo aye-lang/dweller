@@ -1,5 +1,5 @@
 import engine
-import net
+import std.text
 
 // blink: core/loader/document_loader.cc
 fn stageLoad(r: *mut TabRenderer, p: *mut engine.Page) !void {
@@ -7,7 +7,7 @@ fn stageLoad(r: *mut TabRenderer, p: *mut engine.Page) !void {
     try engine.startEarly(p, r.width as f64 / r.scale, r.height as f64 / r.scale, &mut r.staged.sheets, &mut r.staged.scripts)
     r.staged.on = true
 
-    if !net.liveRequest(&p.url) { return finishStaged(r) }
+    if !text.eql(p.url.scheme, "http") && !text.eql(p.url.scheme, "https") { return finishStaged(r) }
 
     try advanceStaged(r, true)
 }

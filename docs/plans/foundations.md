@@ -222,7 +222,7 @@ and the weekly workflow is green.
 | Step | What | Verify | Chromium |
 |---|---|---|---|
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b, Q0.3.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.2, Q0.4, Q0.5, Q0.1, Q0.3b, Q0.3, Q0.3f.
 
 ## Q1: stable in one process (lanes base and perf)
 

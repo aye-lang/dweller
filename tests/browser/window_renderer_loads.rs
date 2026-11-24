@@ -237,3 +237,62 @@ fn window_renderer_loads_import_referrer() {
         assert_eq!(page_lines(&renderer), page_lines(&own), "{envs:?}");
     }
 }
+
+/// Q0.3f: a renderer steps a replayed load's scripts as it steps a live
+/// load's, a task of at most 50 ms each (Q4.25d). `dump` records
+/// `browser/tests/perf/replay_scripts.html` (an external script, then six
+/// inline scripts of 100 ms) and the window replays it with
+/// `DWELLER_PROCESS=site`: each script is a renderer task (`r_task`), and
+/// a wheel sent once the page is shown is handled between two of them.
+/// Before, `stageLoad` ran the replayed load to its end in one task of
+/// about 640 ms and the wheel came after the last script. The window's own
+/// process runs a load whose loads are all in at once before its first
+/// paint (from an archive as from its cache); the same scripts run there.
+#[test]
+fn window_renderer_loads_replayed_scripts() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = scratch().join("renderer-replayed-scripts");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let href = format!("{}/perf/replay_scripts.html", srv.base);
+    let recorded = dweller_command().current_dir(root()).env("DWELLER_RECORD", &dir).args(["dump", "--text", "--js", &href]).output().unwrap();
+    assert!(recorded.status.success() && recorded.stderr.is_empty(), "{}", text(&recorded.stderr));
+    drop(srv);
+    let replay = |envs: &[(&str, &str)]| {
+        let out = dweller_command()
+            .current_dir(root())
+            .envs(envs.iter().copied())
+            .env("DWELLER_REPLAY", &dir)
+            .env("DWELLER_TIMING", "1")
+            .arg(&href)
+            .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000", "--until-idle", "--text"])
+            .args(["--events", "painted move:200,150 wheel:-1 renderer:input frame wheel:-1 renderer:input frame loaded frame"])
+            .output()
+            .unwrap();
+        let err = text(&out.stderr);
+        assert!(out.status.success() && !err.contains("archive miss"), "{envs:?}: {}\n{err}", out.status);
+        (text(&out.stdout), err)
+    };
+    let ran = "ran: external 0 1 2 3 4 5";
+    let (renderer, err) = replay(&[("DWELLER_PROCESS", "site")]);
+    let tasks: Vec<u64> = err
+        .lines()
+        .filter_map(|l| l.strip_prefix("info: DWELLER_TIMING\tr_task\t")?.split('\t').next()?.parse::<u64>().ok())
+        .map(|ns| ns / 1_000_000)
+        .filter(|ms| *ms >= 90)
+        .collect();
+    assert!(renderer.contains(ran), "{renderer}");
+    assert!(renderer.contains("wheel after external") && !renderer.contains("wheel after external 0 1 2 3 4 5"), "{renderer}");
+    assert!(tasks.len() >= 6 && tasks.iter().all(|ms| *ms < 300), "renderer tasks of 90 ms or more: {tasks:?}");
+    let (own, _) = replay(&[IN_PROCESS]);
+    assert!(own.contains(ran), "{own}");
+    println!("{renderer}\nrenderer tasks of 90 ms or more: {tasks:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
