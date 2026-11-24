@@ -1,0 +1,27 @@
+<!doctype html>
+<title>import referrer</title>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const other = location.origin.replace('127.0.0.1', 'localhost');
+self.log = s => { out.textContent += s + '\n'; };
+self.next = () => {
+  const sheet = document.createElement('link');
+  sheet.rel = 'stylesheet';
+  sheet.onload = () => {
+    log('imported sheet: ' + getComputedStyle(out).color);
+    fetch(other + '/fetch-echo').then(r => r.json()).then(echo => {
+      log('fetch origin is the page: ' + (echo.headers.origin === location.origin));
+      log('fetch sec-fetch-site: ' + echo.headers['sec-fetch-site']);
+    }, e => log('fetch: ' + e.name));
+  };
+  sheet.onerror = () => log('imported sheet: error');
+  sheet.href = other + '/acao/net/import-referrer/outer.css';
+  document.head.appendChild(sheet);
+};
+const runtime = document.createElement('script');
+runtime.type = 'module';
+runtime.onerror = () => log('runtime: error');
+runtime.src = other + '/acao/net/import-referrer/runtime.js';
+document.head.appendChild(runtime);
+</script>

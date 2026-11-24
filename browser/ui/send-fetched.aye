@@ -2,8 +2,9 @@ import ipc
 import net
 import std.mem.AllocError
 
-fn sendFetched(tp: *mut TabProcess, on: u32, id: u32, navigates: bool, document: bool, href: []u8, res: *net.Response) AllocError!void {
-    try sendHead(tp, on, id, navigates, document, href, res)
+fn sendFetched(tp: *mut TabProcess, on: u32, id: u32, navigates: bool, kind: u32, href: []u8, res: *net.Response) AllocError!void {
+    try noteReferrerOrigin(tp, kind, href, res)
+    try sendHead(tp, on, id, navigates, kind == 0, href, res)
     try sendBody(tp, on, id, res.body)
     try ipc.encode(&mut tp.outbox, on, ipc.Message.FetchEnd { id: id })
 }

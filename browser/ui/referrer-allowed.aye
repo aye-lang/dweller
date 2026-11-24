@@ -1,9 +1,11 @@
 import net
+import std.mem.AllocError
 import std.mem.Allocator
 import std.text
 import url
 
-fn referrerAllowed(alloc: Allocator, doc: []u8, referrer: []u8) bool {
+// chromium: services/network/url_loader_util.cc (SetReferrer: the renderer's referrer, cut by its policy only)
+fn referrerAllowed(alloc: Allocator, doc: []u8, origins: []u8, referrer: []u8) AllocError!bool {
     if referrer.len == 0 { return true }
 
     let from = url.parse(alloc, referrer) catch return false
@@ -14,5 +16,12 @@ fn referrerAllowed(alloc: Allocator, doc: []u8, referrer: []u8) bool {
     let at = url.parse(alloc, doc) catch return false
     defer at.deinit(alloc)
 
-    return net.sameOrigin(&from, &at)
+    if net.sameOrigin(&from, &at) { return true }
+
+    var origin = text.Builder.init(alloc)
+    defer origin.deinit()
+
+    try net.hrefOrigin(alloc, referrer, &mut origin)
+
+    return hasLine(origins, origin.bytes())
 }

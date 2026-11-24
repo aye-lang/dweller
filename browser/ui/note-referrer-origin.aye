@@ -1,0 +1,21 @@
+import net
+import std.mem.AllocError
+import std.text
+
+// blink: core/loader/modulescript/module_tree_linker.cc (an import's referrer is its module script's base URL)
+fn noteReferrerOrigin(tp: *mut TabProcess, kind: u32, href: []u8, res: *net.Response) AllocError!void {
+    if kind != 1 && kind != 3 { return }
+
+    var final = href
+    var origin = text.Builder.init(tp.url.alloc)
+    defer origin.deinit()
+
+    if res.url.len > 0 { final = res.url }
+
+    try net.hrefOrigin(tp.url.alloc, final, &mut origin)
+
+    if hasLine(tp.referrer_origins.bytes(), origin.bytes()) { return }
+
+    try tp.referrer_origins.append(origin.bytes())
+    try tp.referrer_origins.appendByte('\n')
+}

@@ -8,7 +8,9 @@ import url
 fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
     match m {
         .Fetch { id, doc, nav, stream, kind, credentials, mode, method, url: href, referrer, referrer_policy, top, headers, content_type, has_body, body } => {
-            if id != tp.fetches + 1 || nav > 1 || stream > 2 || has_body > 1 || doc > docCount(tp) { return "bad fetch" }
+            if id != tp.fetches + 1 { return "bad fetch id" }
+            if nav > 1 || stream > 2 || has_body > 1 { return "bad fetch flags" }
+            if doc > docCount(tp) { return "bad fetch doc" }
 
             tp.fetches = id
 
@@ -31,13 +33,15 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
                 return ""
             }
 
-            var req = net.codedRequest(kind, credentials, mode, fetchInitiator(tp, doc, navigates)) orelse return "bad fetch"
+            var req = net.codedRequest(kind, credentials, mode, fetchInitiator(tp, doc, navigates)) orelse return "bad fetch kind"
             var sent = net.Body { content_type: content_type, data: body }
             var allowed = text.Builder.init(alloc)
             defer allowed.deinit()
 
-            if !net.methodAllowed(method) || !topClaimed(alloc, topOf(tp), top) || !referrerAllowed(alloc, fetchDoc(tp, doc), referrer) { return "bad fetch" }
-            if !(try net.allowedHeaders(headers, &mut allowed)) { return "bad fetch" }
+            if !net.methodAllowed(method) { return "bad fetch method" }
+            if !topClaimed(alloc, topOf(tp), top) { return "bad fetch top" }
+            if !(try referrerAllowed(alloc, fetchDoc(tp, doc), tp.referrer_origins.bytes(), referrer)) { return "bad fetch referrer" }
+            if !(try net.allowedHeaders(headers, &mut allowed)) { return "bad fetch headers" }
 
             req.method = method
             req.stream = stream >= 1 && req.mode == net.Mode.Cors
@@ -83,7 +87,7 @@ fn answerFetch(tp: *mut TabProcess, on: u32, m: ipc.Message) AllocError![]u8 {
             }
 
             defer res.deinit(alloc)
-            try sendFetched(tp, on, id, false, kind == 0, target.href, &res)
+            try sendFetched(tp, on, id, false, kind, target.href, &res)
         }
 
         _ => {}

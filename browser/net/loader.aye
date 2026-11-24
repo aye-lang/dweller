@@ -471,7 +471,7 @@ fn startHop(ld: *mut Loader, s: *mut Session, l: *mut Load, href: []u8) bool {
         post = &body
     }
     if !a.nav {
-        a.hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
+        a.hop = Hop { from: requestOrigin(req, l.referrer), limit: MAX_SUBRESOURCE }
     }
     l.job = startJob(ld.alloc, s, ld.multi, href, req, a.verb[..a.verb.len - 1], post, &mut a.hop)
     let job = l.job orelse return false
@@ -815,7 +815,7 @@ fn finishLoad(ld: *mut Loader, l: *mut Load, result: i32) {
                 l.referrer_policy = policy
             }
             l.hops += 1
-            var hop = Hop { from: l.referrer, limit: MAX_SUBRESOURCE }
+            var hop = Hop { from: requestOrigin(loadRequest(l), l.referrer), limit: MAX_SUBRESOURCE }
             l.job = startJob(ld.alloc, s, ld.multi, moved, loadRequest(l), "GET", null, &mut hop)
             if l.job != null {
                 l.state = LoadState.Running
