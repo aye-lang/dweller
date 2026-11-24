@@ -1,0 +1,19 @@
+fn descKeepsDefault(it: *mut Interp, desc: Value, present: bool) JsError!bool {
+    let d = objectOf(desc)
+
+    if it.hasProperty(d, A_GET) || it.hasProperty(d, A_SET) {
+        return false
+    }
+
+    for k in [3]u32{A_WRITABLE, A_ENUMERABLE, A_CONFIGURABLE} {
+        if it.hasProperty(d, k) {
+            if !it.toBoolean(try it.getProp(desc, k)) {
+                return false
+            }
+        } else if !present {
+            return false
+        }
+    }
+
+    return true
+}

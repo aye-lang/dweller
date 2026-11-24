@@ -2,6 +2,8 @@ import engine
 import ipc
 import std.mem.AllocError
 
+let EVIL_JAVASCRIPT_URL = "javascript:parent.postMessage('ran in ' + name, '*'); '<p>written</p>'"
+
 var windows_renderer: ?*mut TabRenderer = null
 
 fn windowsThrough(r: *mut TabRenderer) {
@@ -13,6 +15,9 @@ fn windowsThrough(r: *mut TabRenderer) {
 // chromium: third_party/blink/renderer/core/frame/remote_frame.cc (Navigate: to the browser)
 fn navigateRemote(to: engine.RemoteRoute, href: []u8) AllocError!void {
     let r = windows_renderer orelse return
+    var sent = href
 
-    send(r.alloc, r.conn, r.tab, ipc.Message.ProxyNavigate { key: to.key, frame: to.frame, page: to.page, url: href }) catch return
+    if evilTest("javascript-url") { sent = EVIL_JAVASCRIPT_URL }
+
+    send(r.alloc, r.conn, r.tab, ipc.Message.ProxyNavigate { key: to.key, frame: to.frame, page: to.page, url: sent }) catch return
 }

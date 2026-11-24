@@ -1,0 +1,43 @@
+// https://tc39.es/ecma262/#sec-arraysetlength
+
+fn arraySetLength(it: *mut Interp, o: u32, desc: Value, throwing: bool) JsError!bool {
+    let d = objectOf(desc)
+    var n = it.heap.obj(o).nelems
+    let hasValue = it.hasProperty(d, A_VALUE)
+
+    if hasValue {
+        n = try arrayLengthOf(it, try it.getProp(desc, A_VALUE))
+    }
+
+    let fixed = it.heap.obj(o).length_read_only || it.heap.obj(o).frozen
+    let hasWritable = it.hasProperty(d, A_WRITABLE)
+    let writable = hasWritable && it.toBoolean(try it.getProp(desc, A_WRITABLE))
+    let toFixed = hasWritable && !writable
+
+    if (it.hasProperty(d, A_CONFIGURABLE) && it.toBoolean(try it.getProp(desc, A_CONFIGURABLE))) ||
+        (it.hasProperty(d, A_ENUMERABLE) && it.toBoolean(try it.getProp(desc, A_ENUMERABLE))) ||
+        it.hasProperty(d, A_GET) || it.hasProperty(d, A_SET) ||
+        (fixed && (writable || n != it.heap.obj(o).nelems)) {
+        return rejectLength(it, throwing)
+    }
+
+    let done = try arrayLengthTo(it, o, n)
+
+    if toFixed {
+        it.heap.obj(o).length_read_only = true
+    }
+
+    if !done {
+        return rejectLength(it, throwing)
+    }
+
+    return true
+}
+
+fn rejectLength(it: *mut Interp, throwing: bool) JsError!bool {
+    if throwing {
+        try it.typeError("Cannot redefine property: length")
+    }
+
+    return false
+}

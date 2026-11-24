@@ -23,6 +23,12 @@ fn navigateRemote(it: *mut Interp, a: Args) JsError!Value {
 
     defer target.deinit(it.alloc)
 
+    if isJavascriptUrl(&target) {
+        try addConsole(s, "[error] ", JAVASCRIPT_TARGET_ERROR)
+
+        return Value.Undefined
+    }
+
     if remote_navigate |go| { try go(to, target.href) }
 
     return Value.Undefined

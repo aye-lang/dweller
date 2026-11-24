@@ -1,10 +1,21 @@
 test "a renderer's referrer must be of the asking document's origin" {
     let a = @testAllocator()
 
-    @expect(referrerAllowed(a, "https://a.example/page", ""))
-    @expect(referrerAllowed(a, "https://a.example/page", "https://a.example/other?q#f"))
-    @expect(referrerAllowed(a, "https://a.example/page", "about:srcdoc"))
-    @expect(!referrerAllowed(a, "https://a.example/page", "https://b.example/"))
-    @expect(!referrerAllowed(a, "https://a.example/page", "http://a.example/page"))
-    @expect(!referrerAllowed(a, "file:///tmp/a.html", "https://a.example/"))
+    @expect(try referrerAllowed(a, "https://a.example/page", "", ""))
+    @expect(try referrerAllowed(a, "https://a.example/page", "", "https://a.example/other?q#f"))
+    @expect(try referrerAllowed(a, "https://a.example/page", "", "about:srcdoc"))
+    @expect(!(try referrerAllowed(a, "https://a.example/page", "", "https://b.example/")))
+    @expect(!(try referrerAllowed(a, "https://a.example/page", "", "http://a.example/page")))
+    @expect(!(try referrerAllowed(a, "file:///tmp/a.html", "", "https://a.example/")))
+}
+
+test "a renderer's referrer may be of a script or style sheet origin it was given" {
+    let a = @testAllocator()
+    let given = "https://cdn.example\nhttps://fonts.example:8443\n"
+
+    @expect(try referrerAllowed(a, "https://a.example/page", given, "https://cdn.example/assets/runtime.js"))
+    @expect(try referrerAllowed(a, "https://a.example/page", given, "https://fonts.example:8443/css"))
+    @expect(!(try referrerAllowed(a, "https://a.example/page", given, "https://b.example/")))
+    @expect(!(try referrerAllowed(a, "https://a.example/page", given, "http://cdn.example/assets/runtime.js")))
+    @expect(!(try referrerAllowed(a, "https://a.example/page", given, "https://fonts.example/css")))
 }

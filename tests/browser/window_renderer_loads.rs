@@ -206,3 +206,34 @@ fn window_renderer_loads_held_not_polled() {
     assert!(loops < 450, "{loops} loop iterations while one fetch was held for 2 s");
     println!("{loops} iterations");
 }
+
+/// Q2.16: an import's referrer is its module's URL and an `@import`'s
+/// its style sheet's (Blink `ModuleTreeLinker`), another origin than the
+/// page's when the module or the sheet comes from one
+/// (`browser/tests/net/import-referrer.html`). A site renderer loads them
+/// as the window's own process does, where the browser used to kill it
+/// (`bad fetch referrer`). A renderer that names such an origin as a
+/// `fetch()`'s referrer (`DWELLER_TEST_EVIL=script-referrer`) still sends
+/// its document's `Origin` and `Sec-Fetch-Site`.
+#[test]
+fn window_renderer_loads_import_referrer() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/import-referrer.html", srv.base);
+    let want = "static import: static\ndynamic import: late\nimported sheet: rgb(1, 2, 3)\nfetch origin is the page: true\nfetch sec-fetch-site: cross-site";
+    let own = login_window_with(&href, "frame", None, &[IN_PROCESS]);
+    assert!(own.contains(want), "{own}");
+    let site = [("DWELLER_PROCESS", "site")];
+    let evil = [("DWELLER_PROCESS", "site"), ("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "script-referrer")];
+    for envs in [&site[..], &evil[..]] {
+        let renderer = login_window_with(&href, "frame", None, envs);
+        assert!(renderer.contains(want), "{envs:?}: {renderer}");
+        assert_eq!(page_lines(&renderer), page_lines(&own), "{envs:?}");
+    }
+}

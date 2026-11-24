@@ -5,6 +5,8 @@ const A = Array.prototype;
 const native = {};
 const apply = Reflect.apply;
 const isArray = Array.isArray;
+const dense = globalThis.__denseArray;
+delete globalThis.__denseArray;
 const MAX = 9007199254740991;
 function toObject(o) {
   if (o === null || o === undefined) throw new TypeError('Array.prototype method called on null or undefined');
@@ -169,8 +171,8 @@ const speciesUsers = { map: true, filter: true };
 function wrap(k, g) {
   const n = native[k] = A[k];
   const fast = speciesUsers[k]
-    ? function () { return isArray(this) && this.constructor === Array; }
-    : function () { return isArray(this); };
+    ? function () { return dense(this) && this.constructor === Array; }
+    : function () { return dense(this); };
   const w = {
     [k]() {
       return apply(fast.call(this) ? n : g, this, arguments);

@@ -1,0 +1,46 @@
+// https://tc39.es/ecma262/#sec-arraysetlength
+
+fn arrayLengthTo(it: *mut Interp, o: u32, n: u32) JsError!bool {
+    let ob = it.heap.obj(o)
+    let old = ob.nelems
+
+    if n >= old {
+        if n - old <= 50000000 {
+            try it.heap.setLength(o, n, Value.Empty)
+        }
+
+        return true
+    }
+
+    if !ob.elems_in_props {
+        ob.nelems = n
+
+        return true
+    }
+
+    var keep = n
+
+    for i in 0..ob.nprops {
+        let idx = it.heap.atoms.indexOf(ob.props[i].key)
+
+        if idx != NONE && idx >= keep && idx < old && (ob.props[i].flags & F_CONFIG) == 0 {
+            keep = idx + 1
+        }
+    }
+
+    var i = ob.nprops
+
+    while i > 0 {
+        i -= 1
+
+        let idx = it.heap.atoms.indexOf(it.heap.obj(o).props[i].key)
+
+        if idx != NONE && idx >= keep && idx < old {
+            try it.heap.removeProp(o, i)
+        }
+    }
+
+    it.heap.obj(o).nelems = keep
+
+    return keep == n
+}

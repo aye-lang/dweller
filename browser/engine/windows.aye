@@ -550,6 +550,10 @@ fn akWinNavigate(it: *mut Interp, a: Args) JsError!Value {
         return domError(it, "SyntaxError", "Failed to set the 'href' property on 'Location': not a valid URL.")
     }
     defer target.deinit(it.alloc)
+    if isJavascriptUrl(&target) {
+        try queueJavascriptUrl(s.page, page, target.href)
+        return Value.Undefined
+    }
     try setNavigation(ts, target.href)
     return Value.Undefined
 }
