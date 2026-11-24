@@ -1,0 +1,20 @@
+<!doctype html>
+<title>Code</title>
+<nav><a id="issues" href="soft_nav_next.html">Issues</a></nav>
+<main id="content"><h1>Code</h1></main>
+<script>
+const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+document.getElementById('issues').addEventListener('click', async e => {
+  e.preventDefault();
+  const href = e.currentTarget.href;
+  const key = location.search.slice(1);
+  const response = await fetch('/parts/agent/site/soft_nav_next.html?' + key, { headers: { Accept: 'text/html, application/xhtml+xml' } });
+  const html = response.clone().text();
+  fetch('/parts-go?' + key);
+  const doc = new DOMParser().parseFromString(await html, 'text/html');
+  await frame();
+  history.pushState({}, '', href);
+  document.title = doc.title;
+  document.getElementById('content').replaceWith(document.importNode(doc.getElementById('content'), true));
+});
+</script>

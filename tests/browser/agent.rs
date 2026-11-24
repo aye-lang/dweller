@@ -639,3 +639,43 @@ fn agent_sessions_relay_sites() {
     assert!(out.status.success(), "{}: {}", out.status, text(&out.stderr));
     assert!(!before.is_empty() && !after.is_empty() && before != after, "no swap: {before:?} {after:?}");
 }
+
+/// Q4.27: a click that a script turns into a soft navigation (Turbo on
+/// GitHub) ends with the new document in the click's response: the page
+/// fetches the next page, whose body comes in two parts, reads a
+/// clone's `text()`, parses it, waits for an animation frame, then calls
+/// `pushState` and swaps the content. Before, an action ran only the
+/// tasks due at once, so the second part and the frame never came.
+#[test]
+fn agent_click_soft_navigation() {
+    use std::io::Write;
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    for mode in ["", "single"] {
+        let page = format!("{}/agent/site/soft_nav.html?{mode}", srv.base);
+        let mut cmd = dweller_command();
+        cmd.current_dir(root()).arg("agent");
+        if !mode.is_empty() {
+            cmd.env("DWELLER_PROCESS", mode);
+        }
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let input = format!(
+            "{{\"id\":1,\"cmd\":\"navigate\",\"url\":\"{page}\"}}\n{{\"id\":2,\"cmd\":\"click\",\"ref\":\"e1\"}}\n"
+        );
+        child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{mode}: {}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        let clicked = got.lines().nth(1).unwrap_or("");
+        let next = format!("\"url\":\"{}/agent/site/soft_nav_next.html\"", srv.base);
+        assert!(clicked.contains(&next) && clicked.contains("\"title\":\"Issues\""), "{mode}: {got}");
+        assert!(clicked.contains("+   - heading \\\"Issues\\\" [level=1]") && clicked.contains("+   - paragraph: Open issues"), "{mode}: {got}");
+    }
+}

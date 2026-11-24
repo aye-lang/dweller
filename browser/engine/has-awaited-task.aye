@@ -1,0 +1,19 @@
+fn hasAwaitedTask(p: *mut Page, end: f64) bool {
+    if p.script |s| {
+        for t in s.timers.items() {
+            let frame = t.raf && !s.vsync && !s.hidden
+
+            if t.due <= end && (frame || (t.load != 0 && !t.stream_poll)) {
+                return true
+            }
+        }
+    }
+
+    for f in p.frames.items() {
+        if hasAwaitedTask(f.page, end) {
+            return true
+        }
+    }
+
+    return false
+}

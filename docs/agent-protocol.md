@@ -33,9 +33,13 @@ clicks, `history.back()`) happens after the action and is added to its
 without loading; `back` and `forward` to an entry of the same document
 (one that pushState or a fragment link added) do not load it either:
 the page gets `popstate`, and the result is "went back to URL in the
-same document". Time is the page's own: after an action only the timers that
-are due run (a `setTimeout(f, 0)`); `wait` moves the clock forward,
-taking no real time. Console messages (`[log] ...`, uncaught
+same document". Time is the page's own: after an action the timers that
+are due run (a `setTimeout(f, 0)`), and after one that stays in the
+document (not `wait` or `eval`) the clock also moves on while the page
+waits for a response, a part of a response's body or an animation frame,
+at most 1 s of page time, running the timers due on the way (a soft
+navigation: Turbo's fetch, its body, the frames it renders in, Q4.27);
+`wait` moves the clock forward, taking no real time. Console messages (`[log] ...`, uncaught
 exceptions as `[error] Uncaught ...`, alerts as `[alert] ...`) come
 with the next response, as a `console` array (JSON lines) or a
 `Console:` section (MCP).
