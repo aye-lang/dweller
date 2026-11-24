@@ -981,6 +981,26 @@ the steps' `expect`; `check` (the page load itself) still fails on misses.
 **Why:** a check that fails on every capture gets ignored; the steps say
 whether the agent got where it was going.
 
+### Record a request the way the replay answers it
+**Context:** anything that delivers a response to a page on another path
+while `DWELLER_RECORD` is set than while `DWELLER_REPLAY` is set.
+**Bad:** a capture ran a script's fetch and XHR in the background: the
+body came in the parts the network sent, each a task 10 ms later on the
+virtual clock, and a request dropped before its end was never recorded.
+The replay answers at once, whole. bbc's first ad request went out
+10 ms earlier in the replay, with another `Math.random()` correlator,
+and 8 ad and beacon URLs missed after it (Q0.3e). Two captures in a
+row missed, so it looked like live network order no capture can fix.
+**Good:** under `DWELLER_RECORD`, `net.liveRequest` is false, as under
+`DWELLER_REPLAY`: the page gets the same tasks in both. To find such a
+path, record a live `dump` and replay that archive at once, then diff
+the first missed URL against its recorded twin (`correlator`, `dt`):
+a time a few ms apart points to a task the capture had and the replay
+did not.
+**Why:** seeding `Date` and `Math.random()` is not enough when the
+capture and the replay run other tasks; the same tasks give the same
+values.
+
 ### Script-visible network requests must not be serial
 **Context:** an API that lets scripts observe a resource's state (img
 `complete`/`naturalWidth`/`load`, fetch, XHR) on the synchronous fetch.

@@ -1,0 +1,19 @@
+<!doctype html>
+<title>Archive as replayed</title>
+<pre id="out">not run</pre>
+<script>
+const key = location.search.slice(1);
+const dropped = new XMLHttpRequest();
+dropped.open('GET', '/delay/300/dropped.txt?' + key);
+dropped.send();
+dropped.abort();
+const x = new XMLHttpRequest();
+x.open('GET', '/drip/100/3?' + key);
+x.onload = () => {
+  const at = Math.round(performance.now());
+  fetch('/acao/at-' + at + '.txt?' + key).then(() => {
+    document.getElementById('out').textContent = 'loaded at ' + at + ': ' + x.responseText.trim().split('\n').pop();
+  });
+};
+x.send();
+</script>

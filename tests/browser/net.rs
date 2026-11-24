@@ -1593,40 +1593,56 @@ fn preflight_answered_with_nosniff_html() {
     assert!(window.contains(want), "{window}");
 }
 
-/// Q0.3d: the archive keeps the whole body of a response that the page
-/// read while it arrived. An asynchronous XMLHttpRequest takes each part
-/// as it comes, and the archive kept only the bytes after the last part
-/// taken, so bbc's consent requests replayed with empty bodies. `/parts/`
-/// sends the rest of `parts.html` once the first `progress` asked
-/// `/parts-go`. Recorded with `dump` and in the window, replayed with
-/// `dump`.
+/// Q0.3e: a recording asks for what its replay asks for. A script's
+/// request ran in the background while recording: its body came in the
+/// parts the network sent, each a task 10 ms later on `dump`'s clock, and
+/// a request the page dropped before it ended was never recorded. The
+/// replay answers both at once, so bbc's ad URLs (`Date.now()`,
+/// `Math.random()`) and a request sent at its end missed. Now a
+/// recording makes them as the replay does (`net.liveRequest`). The page
+/// drops an XHR of `/delay/300/`, reads `/drip/100/3` (three parts), then
+/// asks for a URL with `performance.now()`. `dump` records and replays
+/// the same output with no miss; the window records the dropped request.
+/// By default and with `DWELLER_PROCESS=single`.
 #[test]
-fn archive_keeps_streamed_bodies() {
+fn archive_records_as_replayed() {
     let Some(srv) = server() else {
         println!("skipped: cannot start python3 for the test server");
         return;
     };
-    let dir = scratch().join("net-archive-streamed");
+    let dir = scratch().join("net-archive-replayed");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let want = "first part true, rest true";
-    let page = |key: &str| format!("{}/net/archive_streamed.html?{key}", srv.base);
-    let record = |args: &[&str]| {
-        let out = dweller_command().current_dir(root()).env("DWELLER_RECORD", &dir).args(args).output().unwrap();
-        assert!(out.status.success() && out.stderr.is_empty(), "{args:?}: {}\n{}", out.status, text(&out.stderr));
-        assert!(text(&out.stdout).contains(want), "{args:?}: {}", text(&out.stdout));
+    let base = srv.base.clone();
+    let page = |key: &str| format!("{base}/net/archive_as_replayed.html?{key}");
+    let dumps = [("dump-default", &[][..]), ("dump-single", &[IN_PROCESS][..])];
+    let windows = if has_sdl() { vec![("window-default", &[][..]), ("window-single", &[IN_PROCESS][..])] } else { vec![] };
+    let dump = |env: &str, key: &str, envs: &[(&str, &str)]| {
+        dweller_command().current_dir(root()).envs(envs.iter().copied()).env(env, &dir).args(["dump", "--text", "--js", &page(key)]).output().unwrap()
     };
-    let mut pages = vec![page("dump")];
-    record(&["dump", "--text", "--js", &pages[0]]);
-    if has_sdl() {
-        pages.push(page("window"));
-        record(&[&pages[1], "--font", "fixed", "--frames", "400", "--until-idle", "--text", "--events", "frame"]);
+    let mut recorded = Vec::new();
+    for (key, envs) in dumps {
+        let out = dump("DWELLER_RECORD", key, envs);
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains("window.dripped = 3;"), "{key}: {}", text(&out.stdout));
+        recorded.push(text(&out.stdout));
+    }
+    for (key, envs) in &windows {
+        let href = page(key);
+        let args = [&href[..], "--font", "fixed", "--frames", "400", "--until-idle", "--text", "--events", "frame"];
+        let out = dweller_command().current_dir(root()).envs(envs.iter().copied()).env("DWELLER_RECORD", &dir).args(args).output().unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
     }
     drop(srv);
-    for href in &pages {
-        let out = dweller_command().current_dir(root()).env("DWELLER_REPLAY", &dir).args(["dump", "--text", "--js", href]).output().unwrap();
-        assert!(out.status.success() && out.stderr.is_empty(), "{href}: {}\n{}", out.status, text(&out.stderr));
-        assert!(text(&out.stdout).contains(want), "{href}: {}", text(&out.stdout));
+    for ((key, envs), want) in dumps.iter().zip(&recorded) {
+        let out = dump("DWELLER_REPLAY", key, envs);
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
+        assert_eq!(&text(&out.stdout), want, "{key}");
+    }
+    let urls: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| text(&std::fs::read(e.unwrap().path()).unwrap()).lines().next().unwrap_or("").to_string()).collect();
+    for (key, _) in &windows {
+        let dropped = format!("{base}/delay/300/dropped.txt?{key}");
+        assert!(urls.contains(&dropped), "{key}: {urls:?}");
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }

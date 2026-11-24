@@ -99,7 +99,6 @@ struct Ask {
     no_preflight: bool = false
     stream_checked: bool = false
     stream_taken: bool = false
-    taken: text.Builder
 }
 
 struct Loader {
@@ -329,10 +328,10 @@ pub fn releaseLoad(id: u32) {
 
 /// Can a script's request to `target` run in the background
 /// (`startRequest`)? Not without a session, under DWELLER_REPLAY (the
-/// archive answers at once), nor for a URL other than http or https:
-/// those are made with `request`.
+/// archive answers at once) or DWELLER_RECORD (as the replay), nor for
+/// a URL other than http or https: those are made with `request`.
 pub fn liveRequest(target: *Url) bool {
-    if (session == null && remote_loader == null) || archiveReplay() || claimed() {
+    if (session == null && remote_loader == null) || archiveReplay() || archiveDir("DWELLER_RECORD") != null || claimed() {
         return false
     }
     return text.eql(target.scheme, "http") || text.eql(target.scheme, "https")
@@ -411,7 +410,6 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         user_activated: req.user_activated,
         stream: req.stream,
         no_preflight: req.no_preflight,
-        taken: text.Builder.init(ld.alloc),
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -512,7 +510,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
         req.body = &body
     }
     if a.has_res {
-        archiveStreamed(ld.alloc, &target, req, a)
+        archiveWrite(ld.alloc, &target, req, &a.res, "")
     } else {
         archiveWrite(ld.alloc, &target, req, null, a.failure)
     }
@@ -872,7 +870,6 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
         if a.has_res {
             a.res.deinit(ld.alloc)
         }
-        a.taken.deinit()
         ld.alloc.destroy(a)
     }
     release(ld.alloc, l.href)
