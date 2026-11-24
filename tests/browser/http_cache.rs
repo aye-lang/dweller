@@ -157,3 +157,34 @@ fn request_priority_sheet_before_waiting_images() {
         assert!(ok, "site {site}: expected late.js, then i1.png and i2.png, then late.css and i3.png, in:\n{got}");
     }
 }
+
+/// Q4.30: the `crossorigin` sheets and module script of
+/// `net/early_cors.html` (each answered after 0.4 s) are asked for
+/// together as the page is parsed, each with the request its fetch
+/// makes, and the first layout (its background image) comes before the
+/// scripts run (`ran.txt`). Before, the early loads left `crossorigin`
+/// out: the scripts ran before the first paint, then its style pass
+/// fetched the sheets one by one (github's first paint: 1 s of sheets).
+/// In one process and with a renderer per site.
+#[test]
+fn early_loads_crossorigin() {
+    for site in [false, true] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/early_cors.html", srv.base);
+        let env: &[(&str, &str)] = if site { &[] } else { &[IN_PROCESS] };
+        let got = visit_with(&page, &[format!("{}/order-at", srv.base)], site, env);
+        let at = |name: &str| -> u64 {
+            got.split_whitespace()
+                .find_map(|w| w.strip_prefix(&format!("{name}:")))
+                .and_then(|ms| ms.parse().ok())
+                .unwrap_or_else(|| panic!("site {site}: no {name} in:\n{got}"))
+        };
+        let early = [at("slow-a.css"), at("slow-b.css"), at("slow-m.js")];
+        let spread = early.iter().max().unwrap() - early.iter().min().unwrap();
+        assert!(spread < 300, "site {site}: the sheets and the module were asked for {spread} ms apart:\n{got}");
+        assert!(at("laid-out.png") < at("ran.txt"), "site {site}: the scripts ran before the first layout:\n{got}");
+    }
+}

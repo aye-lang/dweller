@@ -1,0 +1,32 @@
+import css
+import dom.Document
+import dom.NodeId
+import net
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+import url
+import url.Url
+
+pub fn startSheetLoads(alloc: Allocator, doc: *Document, base: *Url, address: *Url, media: css.Media, sheet: *mut css.Sheet, ids: *mut List(u32)) AllocError!void {
+    var links = List(NodeId).init(alloc)
+    defer links.deinit()
+
+    try unfetchedSheetLinks(alloc, doc, base, media, sheet, &mut links)
+
+    for link in links.items() {
+        let target = url.resolve(alloc, base, text.trim(doc.attr(link, "href").?)) catch continue
+        defer target.deinit(alloc)
+        let policy = net.parseReferrerPolicy(doc.attr(link, "referrerpolicy") orelse "")
+        let id = net.startLoadAs(target.withoutFragment(), sheetRequest(address, doc.attr(link, "crossorigin"), policy))
+
+        if id != 0 {
+            ids.append(id) catch |e| {
+                net.releaseLoad(id)
+
+                return e
+            }
+        }
+    }
+}

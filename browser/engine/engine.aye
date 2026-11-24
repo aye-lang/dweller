@@ -562,35 +562,14 @@ pub fn loadParsed(alloc: Allocator, target: *Url, initiator: net.Initiator) Allo
 /// the scan walks the tree. The ids are released by the caller.
 pub fn startEarly(p: *mut Page, width: f64, height: f64, sheets: *mut List(u32), scripts: *mut List(u32)) AllocError!void {
     let media = css.Media { width: width, height: height, dark: p.prefers_dark }
-    var base = try documentBase(p.alloc, &p.doc, &p.url)
-    defer base.deinit(p.alloc)
-    var hrefs = text.Builder.init(p.alloc)
-    defer hrefs.deinit()
-    var queries = try css.Sheet.init(p.alloc)
-    defer queries.deinit()
-    try sheetHrefs(p.alloc, &p.doc, &base, media, &mut queries, &mut hrefs)
-    try startLoads(hrefs.bytes(), net.Request { kind: net.Kind.Style, referrer: p.url.href, initiator: initiatorOf(p), top: rootPage(p).url.href }, sheets)
+    try pageSheetLoads(p, media, sheets)
     if p.scripts_pending {
-        hrefs.clear()
-        try scriptHrefs(p, &mut hrefs)
-        try startLoads(hrefs.bytes(), net.Request { kind: net.Kind.Script, referrer: p.url.href, initiator: initiatorOf(p), top: rootPage(p).url.href }, scripts)
+        var fetched = List(NodeId).init(p.alloc)
+        defer fetched.deinit()
+        try fetchedScripts(p, null, &mut fetched)
+        try startScriptLoads(p, fetched.items(), scripts)
     }
     try preloadImages(p, media)
-}
-
-// Starts the loads of `hrefs` (one per line) and adds their ids to `ids`.
-fn startLoads(hrefs: []u8, req: net.Request, ids: *mut List(u32)) AllocError!void {
-    var lines = text.split(hrefs, "\n")
-    while lines.next() |href| {
-        let id = net.startLoadAs(href, req)
-        if id == 0 {
-            continue
-        }
-        ids.append(id) catch |e| {
-            net.releaseLoad(id)
-            return e
-        }
-    }
 }
 
 /// Is every load of `ids` (from `startEarly`) over?
