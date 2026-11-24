@@ -1,0 +1,13 @@
+// spec: https://drafts.csswg.org/css-transforms-2/#decomposing-a-3d-matrix
+fn perspectiveOf(m: [16]f64) [4]f64 {
+    let row0 = [3]f64{m[0], m[1], m[2]}
+    let row1 = [3]f64{m[4], m[5], m[6]}
+    let row2 = [3]f64{m[8], m[9], m[10]}
+    let det = dot3(row0, cross3(row1, row2))
+    var solved = scaled3(cross3(row1, row2), m[3] / det)
+
+    solved = combined3(solved, cross3(row2, row0), m[7] / det)
+    solved = combined3(solved, cross3(row0, row1), m[11] / det)
+
+    return [4]f64{solved[0], solved[1], solved[2], m[15] - dot3(solved, [3]f64{m[12], m[13], m[14]})}
+}

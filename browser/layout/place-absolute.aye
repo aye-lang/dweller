@@ -1,0 +1,35 @@
+import css
+
+struct StaticSpot {
+    at: Area
+    origin: Area
+}
+
+fn placeAbsolute(t: *mut Tree, i: usize, cb: Area, spot: StaticSpot) {
+    let r = t.bx(i)
+    let s = r.style
+    let left = lengthOf(s[css.INSET_TOP + 3], cb.w)
+    let right = lengthOf(s[css.INSET_TOP + 1], cb.w)
+    let top = lengthOf(s[css.INSET_TOP], cb.h)
+    let bottom = lengthOf(s[css.INSET_TOP + 2], cb.h)
+    var ax = spot.at.x + r.margin[3] + flexStaticShift(t, i, true) + gridStaticShift(t, i, cb, spot.at.x, true) - staticFlip(t, i, true)
+    var ay = spot.at.y + r.margin[0] + flexStaticShift(t, i, false) + gridStaticShift(t, i, cb, spot.at.y, false) - staticFlip(t, i, false)
+
+    if endInsetWins(t, i, left, right, true) {
+        ax = cb.x + cb.w - right.? - r.margin[1] - r.w
+    } else if left |l| {
+        ax = cb.x + l + r.margin[3]
+    }
+
+    if endInsetWins(t, i, top, bottom, false) {
+        ay = cb.y + cb.h - bottom.? - r.margin[2] - r.h
+    } else if top |tp| {
+        ay = cb.y + tp + r.margin[0]
+    }
+
+    r.x = ax - spot.origin.x
+    r.y = ay - spot.origin.y
+    r.ax = ax
+    r.ay = ay
+    placeChildren(t, i, ax + r.border[3] + r.padding[3], ay + r.border[0] + r.padding[0])
+}

@@ -400,7 +400,7 @@ fn window_damage_rect_only() {
 /// Q4.19: a rAF tick that writes the same text into the top document
 /// builds the display list of that document alone; the still iframe keeps
 /// its list, the iframe whose own script changes its text is built again
-/// in the frames it changes, and the last frame equals the final page
+/// in the ticks it changes, and the last frame equals the final page
 /// drawn from the start.
 #[test]
 fn window_frame_lists_reused() {
@@ -418,16 +418,29 @@ fn window_frame_lists_reused() {
     let _ = std::fs::remove_file(&changed);
     let _ = std::fs::remove_file(&whole);
     assert!(a == b, "the window differs from the final page drawn whole");
-    let builds: Vec<usize> = frame_records(&err)
-        .iter()
-        .map(|f| f.iter().filter(|(n, _)| n == "paint_build").count())
-        .collect();
+    let builds = builds_per_tick(&err);
     let top_only = builds.iter().filter(|&&n| n == 1).count();
     let with_b = builds.iter().filter(|&&n| n == 2).count();
     let all = builds.iter().filter(|&&n| n >= 3).count();
-    assert!(top_only >= 20, "{top_only} frames built the top list alone: {builds:?}");
-    assert!(with_b >= 5, "{with_b} frames built the changing iframe: {builds:?}");
-    assert!(all <= 2, "{all} frames built every list: {builds:?}");
+    assert!(top_only >= 20, "{top_only} ticks built the top list alone: {builds:?}");
+    assert!(with_b >= 5, "{with_b} ticks built the changing iframe: {builds:?}");
+    assert!(all <= 2, "{all} ticks built every list: {builds:?}");
+}
+
+// The `paint_build` records from one animation frame tick (`ui_raf`) to
+// the next. A renderer runs its ticks on its own clock, so a window frame
+// of a loaded window can hold several ticks of a renderer or none; in one
+// process a tick is a window frame.
+fn builds_per_tick(err: &str) -> Vec<usize> {
+    let mut builds = vec![0];
+    for line in err.lines() {
+        match line.strip_prefix("info: DWELLER_TIMING\t").and_then(|r| r.split('\t').next()) {
+            Some("ui_raf") => builds.push(0),
+            Some("paint_build") => *builds.last_mut().unwrap() += 1,
+            _ => {}
+        }
+    }
+    builds
 }
 
 /// Q4.22: a rAF tick that writes the text an element already has, with
@@ -454,7 +467,11 @@ fn window_same_text_write_builds_nothing() {
 /// Q4.20: a page whose only change is canvas draws (one in the page, one
 /// in an iframe, 40 rAF ticks) lays out and builds its display list only
 /// for the load, yet every tick draws the canvas's rect, and the last
-/// frame equals the final page drawn from the start.
+/// frame equals the final page drawn from the start. The window's draws
+/// that drew pixels are its `raster_px` records: with a renderer a draw of
+/// a tick's frame can come before the window reads that tick (the
+/// renderer's `Settled`), and such a draw writes no `ui_draw`, so counting
+/// the frames between `ui_draw` records found 39 under load.
 #[test]
 fn window_canvas_raf_no_relayout() {
     if !has_sdl() {
@@ -473,7 +490,7 @@ fn window_canvas_raf_no_relayout() {
     assert!(a == b, "the window differs from the final page drawn whole");
     let frames = frame_records(&err);
     let count = |name: &str| frames.iter().flatten().filter(|(n, _)| n == name).count();
-    let drawn = frames.iter().filter(|f| f.iter().any(|(n, _)| n == "raster_px")).count();
+    let drawn = count("raster_px");
     assert!(count("ui_relayout") <= 3, "{} relayouts", count("ui_relayout"));
     assert!(count("paint_build") <= 8, "{} display-list builds", count("paint_build"));
     assert!(drawn >= 40, "{drawn} frames drew pixels");

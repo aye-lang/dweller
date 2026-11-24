@@ -199,7 +199,7 @@ These replace "one card and one PR" in `foundations.md`.
 
 | Step | What | Depends on | Status |
 |---|---|---|---|
-| DV1 | `ci` asks for macOS only where it decides: one macOS run per landing, not three | – | in progress (landed 2026-11-12; counted over the next 30 landings) |
+| DV1 | `ci` asks for macOS only where it decides: one macOS run per landing, not three | – | done (2026-11-23: 35 landings, median 5 macOS jobs per landing, all in the queue but one `caches` job; macOS runner wait median 0.05 min; a macOS failure left the queue 5 of 5 times; card) |
 | DV2 | The macOS shards are balanced again and under 9 minutes | – | done (2026-11-22: with DV2b and `jsdom_gc_stress` split in three, the slowest macOS shard ran its tests in 8 min 4 s; card) |
 | DV2b | The macOS-only wait in the slowest tests is found and removed: six tests take 71 to 75 s and `link_events` 140 s on macOS, and under 10 s on Ubuntu (DV2's card). Needs the Mac | DV2 | done (2026-11-21: the Python test servers' reverse lookup, about 35 s per server; card) |
 | DV3 | A docs-only change passes the required checks in under a minute | DV1 | done |

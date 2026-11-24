@@ -1,0 +1,14 @@
+import std.mem.AllocError
+
+// chromium: content/browser/renderer_host/navigation_request.cc CreateForSynchronousRendererCommit
+fn commitWritten(slot: *mut TabSlot, tp: *mut TabProcess, title: []u8, href: []u8) AllocError!void {
+    let h = &mut slot.session.tab.history
+
+    if h.len() > 0 {
+        tp.doc_seq += 1
+        try h.replace(href, null)
+        h.now().doc = tp.doc_seq
+    }
+
+    try showCommitted(tp, title, href)
+}

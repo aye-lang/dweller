@@ -1,0 +1,17 @@
+import engine
+import ipc
+
+// chromium: content/browser/renderer_host/navigation_request.cc CreateForSynchronousRendererCommit
+fn showWrittenDocument(r: *mut TabRenderer) !bool {
+    if r.embedded { return false }
+
+    let old = r.page orelse return false
+    let page = (try engine.ownJavascriptPage(old, r.context, &mut r.history)) orelse return false
+
+    old.destroy()
+    try adoptPage(r, r.tab, page)
+    try noteState(r, null)
+    try send(r.alloc, r.conn, r.tab, ipc.Message.WrittenDocument { title: page.title, url: page.url.href })
+
+    return true
+}
