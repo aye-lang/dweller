@@ -1,0 +1,16 @@
+<!doctype html>
+<title>loading</title>
+<p>A script whose server sends the head and then nothing fails once no
+byte came for the stall limit (2 s in the test), not before and not at
+the 30 s of the old total limit.</p>
+<pre id="out"></pre>
+<script>var stalled = 'loaded';</script>
+<script src="/head-hang?stall" onerror="stalled = 'failed'"></script>
+<script>
+fetch('/hang-took?stall').then(r => r.text()).then(t => {
+  const s = parseFloat(t);
+  const when = s >= 1.5 && s < 10 ? 'after the limit' : 'after ' + t.trim() + ' s';
+  document.getElementById('out').textContent = 'stalled script: ' + stalled + ' ' + when;
+  document.title = 'done';
+});
+</script>

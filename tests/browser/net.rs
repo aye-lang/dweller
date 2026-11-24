@@ -1504,3 +1504,67 @@ fn xhr_progress_while_open() {
     let site = login_window_with(&format!("{href}?site"), "frame", None, &[("DWELLER_PROCESS", "site")]);
     assert!(site.contains(want.trim_end()), "{site}");
 }
+
+/// The window on `page` of `browser/tests/net/` with a stall limit of 2 s
+/// and the console on stderr, until the page's title is `done`: its
+/// stdout and stderr. `envs` is the process mode.
+fn stall_window(srv: &Server, page: &str, envs: &[(&str, &str)]) -> (String, String) {
+    let out = dweller_command()
+        .current_dir(root())
+        .envs(envs.iter().copied())
+        .env("DWELLER_STALL_SECONDS", "2")
+        .env("DWELLER_CONSOLE", "1")
+        .args([
+            &format!("{}/net/{page}", srv.base),
+            "--font", "fixed", "--width", "400", "--height", "300", "--frames", "3000",
+            "--until-idle", "--text", "--events", "renderer:title:done",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{page} {envs:?}: {}\n{}", out.status, text(&out.stderr));
+    (text(&out.stdout), text(&out.stderr))
+}
+
+/// Q4.12a: a transfer has no total time limit, only a stall limit: a
+/// script that `/drip/500/8` sends in 8 parts over 4 s, twice the limit,
+/// loads. Before, any transfer ended at 30 s, so a script that trickled
+/// in for longer (zol's ad CDN: 818 KB at about 10 KB/s) failed. By
+/// default and with `DWELLER_PROCESS=single`.
+#[test]
+fn stall_limit_lets_a_slow_response_load() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    for envs in [&[][..], &[IN_PROCESS][..]] {
+        let (out, err) = stall_window(&srv, "stall_trickle.html", envs);
+        assert!(out.contains("dripped script: loaded"), "{envs:?}: {out}");
+        assert_eq!(err, "", "{envs:?}");
+    }
+}
+
+/// Q4.12a: a response that sends its head and then no byte fails once
+/// the stall limit (2 s here) passed, with the console error of any
+/// failed script. The server times the request until the browser closes
+/// it (`/hang-took`): from 1.5 s to 10 s. Before, it failed only at the
+/// 30 s total limit. By default and with `DWELLER_PROCESS=single`.
+#[test]
+fn stall_limit_fails_a_stalled_response() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    for envs in [&[][..], &[IN_PROCESS][..]] {
+        let (out, err) = stall_window(&srv, "stall_head.html", envs);
+        assert!(out.contains("stalled script: failed after the limit"), "{envs:?}: {out}");
+        assert_eq!(err, format!("[error] Failed to load script: {}/head-hang?stall\n", srv.base), "{envs:?}");
+    }
+}
