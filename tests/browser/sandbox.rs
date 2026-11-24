@@ -165,6 +165,52 @@ fn javascript_url_refused_by_csp() {
     assert!(got.contains("done\n") && !got.contains("ran"), "{got}");
 }
 
+/// A `javascript:` URL aimed at another frame (`window.open` into its
+/// name, a link whose `target` is its name, its `location`) runs in that
+/// frame when the source is of the frame's origin, and its string becomes
+/// the frame's document; in a frame of another origin nothing runs and
+/// the document stays. In the window with one process, with a renderer
+/// per tab and with one per site (the default). A renderer that sends one
+/// to a remote frame anyway (`proxy_navigate`, `DWELLER_TEST_EVIL`) has it
+/// dropped by the browser.
+#[test]
+fn javascript_url_into_frames_needs_same_origin() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let want = "link-other: probe\n\
+        link-same: written\n\
+        location-other: probe\n\
+        location-same: written\n\
+        open-other: probe\n\
+        open-same: written\n\
+        ran in link-same\n\
+        ran in location-same\n\
+        ran in open-same\n\
+        done\n";
+    let page = format!("{}/sandbox/javascript_url_into_frames.html", srv.base);
+    let window = |mode: &str, page: &str, envs: &[(&str, &str)]| {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .envs(envs.iter().copied())
+            .args([page, "--frames", "1000", "--until-idle", "--text"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{mode} {envs:?}: {}\n{}", out.status, text(&out.stderr));
+        let got = text(&out.stdout);
+        assert!(got.contains(want), "{mode} {envs:?}:\n{got}\n{}", text(&out.stderr));
+        text(&out.stderr)
+    };
+    for mode in ["single", "tab", "site"] {
+        window(mode, &page, &[]);
+    }
+    let evil = [("DWELLER_TEST", "1"), ("DWELLER_TEST_EVIL", "javascript-url")];
+    let err = window("site", &format!("{page}?evil"), &evil);
+    assert!(err.contains("navigation refused: javascript:"), "{err}");
+}
+
 /// A popup opened on `about:blank` shows an empty document, in the window
 /// with one process too, where it showed the error page "this kind of
 /// URL is not supported yet"; its opener can read its document.

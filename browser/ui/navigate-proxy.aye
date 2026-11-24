@@ -1,3 +1,4 @@
+import engine
 import ipc
 import net
 import std
@@ -18,7 +19,7 @@ fn navigateProxy(tp: *mut TabProcess, m: ipc.Message) AllocError![]u8 {
             let target = url.parse(tp.url.alloc, href) catch return ""
             defer target.deinit(tp.url.alloc)
 
-            if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) {
+            if !net.initiatorMayLoad(net.Initiator.Page { url: tp.committed.bytes() }, &target) || engine.isJavascriptUrl(&target) {
                 std.log.err("navigation refused: {}", target.href)
 
                 return ""

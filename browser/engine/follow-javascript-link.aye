@@ -5,12 +5,18 @@ import url.Url
 
 // spec: https://html.spec.whatwg.org/multipage/links.html#following-hyperlinks-2
 fn followJavascriptLink(p: *mut Page, el: NodeId, target: *Url) AllocError!void {
-    let s = p.script orelse return
     let name = linkTarget(p, el)
 
-    if name.len > 0 && !text.eqlIgnoreCase(name, "_self") {
+    if name.len == 0 || text.eqlIgnoreCase(name, "_self") {
+        return queueJavascriptUrl(p, p, target.href)
+    }
+
+    let slot = targetFrame(p, name) orelse return
+    let to = slotPage(slot)
+
+    if !sandboxAllowsNavigation(p, to, true) {
         return
     }
 
-    return queueJavascriptUrl(s, target.href)
+    return queueJavascriptUrl(p, to, target.href)
 }

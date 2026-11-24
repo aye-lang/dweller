@@ -29,12 +29,6 @@ fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Va
     }
 
     defer target.deinit(it.alloc)
-    var refused = false
-
-    if text.eql(target.scheme, "javascript") {
-        refused = try javascriptUrlRefused(s, target.href)
-    }
-
     var name = text.trim(tb.bytes())
 
     if name.len == 0 {
@@ -61,12 +55,20 @@ fn openWindow(it: *mut Interp, source: *mut Page, a: Args, at: usize) JsError!Va
             return Value.Null
         }
 
-        if p.script |ts| {
+        if isJavascriptUrl(&target) {
+            try queueJavascriptUrl(source, p, target.href)
+        } else if p.script |ts| {
             try setNavigation(ts, target.href)
             try net.noteNavigation(target.href, source.url.href, hasTransientActivation(source))
         }
 
         return windowValue(s, p)
+    }
+
+    var refused = false
+
+    if isJavascriptUrl(&target) {
+        refused = try javascriptUrlRefused(s, target.href)
     }
 
     if source.sandbox & SB_AUXILIARY_NAVIGATION != 0 {
