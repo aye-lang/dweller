@@ -1,0 +1,15 @@
+// https://tc39.es/ecma262/#sec-ordinarysetwithowndescriptor
+
+fn setArrayLength(it: *mut Interp, o: u32, value: Value) JsError!bool {
+    if it.heap.obj(o).length_read_only || it.heap.obj(o).frozen {
+        return false
+    }
+
+    return arrayLengthTo(it, o, try arrayLengthOf(it, value))
+}
+
+fn setArrayLengthOrThrow(it: *mut Interp, o: u32, value: Value) JsError!void {
+    if !(try setArrayLength(it, o, value)) {
+        try it.typeError("Cannot assign to read only property 'length' of object")
+    }
+}

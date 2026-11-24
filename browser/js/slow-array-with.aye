@@ -1,0 +1,27 @@
+// https://tc39.es/ecma262/#sec-array.prototype.with
+
+fn slowArrayWith(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(a.this)
+    let n = it.heap.obj(o).nelems
+    var k = try argInteger(it, a, 0, 0.0)
+
+    if k < 0.0 {
+        k += n as f64
+    }
+
+    if k < 0.0 || k >= n as f64 {
+        return it.rangeError("Invalid index")
+    }
+
+    let copy = try slowArrayCopy(it, o, k as u32)
+    let ob = it.heap.obj(copy)
+
+    for i in 0..ob.nelems {
+        ob.elems[i] = holeToUndef(ob.elems[i])
+    }
+
+    it.heap.shade(it.arg(a, 1))
+    ob.elems[k as u32] = it.arg(a, 1)
+
+    return objVal(copy)
+}

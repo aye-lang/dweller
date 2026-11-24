@@ -1,0 +1,34 @@
+fn isArrayIndexKey(it: *mut Interp, o: u32, key: u32) bool {
+    return it.heap.obj(o).class == Class.Array && it.heap.atoms.indexOf(key) != NONE
+}
+
+fn defineElemProp(it: *mut Interp, o: u32, key: u32, value: Value, setter: Value, flags: u8) JsError!void {
+    let idx = it.heap.atoms.indexOf(key)
+
+    if idx >= it.heap.obj(o).nelems {
+        _ = try arrayLengthTo(it, o, idx + 1)
+    }
+
+    let ob = it.heap.obj(o)
+
+    ob.elems_in_props = true
+
+    if idx < ob.nelems {
+        ob.elems[idx] = Value.Empty
+    }
+
+    if it.heap.findProp(o, key) |i| {
+        it.heap.shade(value)
+        it.heap.shade(setter)
+
+        let p = &mut it.heap.obj(o).props[i]
+
+        p.value = value
+        p.setter = setter
+        p.flags = flags
+
+        return
+    }
+
+    try it.heap.addProp(o, key, value, setter, flags)
+}

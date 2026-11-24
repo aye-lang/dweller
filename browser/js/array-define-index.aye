@@ -1,0 +1,46 @@
+// https://tc39.es/ecma262/#sec-array-exotic-objects-defineownproperty-p-desc
+
+fn arrayDefineIndex(it: *mut Interp, o: u32, key: u32, idx: u32, desc: Value, throwing: bool) JsError!?bool {
+    let ob = it.heap.obj(o)
+    let present = idx < ob.nelems && !(ob.elems[idx] is .Empty)
+
+    if idx >= ob.nelems && ob.length_read_only {
+        if !throwing {
+            return false
+        }
+
+        try it.typeErrorAbout("Cannot define property ", it.heap.atoms.name(key), ", array length is read-only")
+    }
+
+    if !present && it.heap.findProp(o, key) != null {
+        return null
+    }
+
+    var open = ob.extensible
+
+    if present {
+        open = !ob.frozen
+    }
+
+    if open && try descKeepsDefault(it, desc, present) {
+        var v = Value.Undefined
+
+        if present {
+            v = ob.elems[idx]
+        }
+
+        if it.hasProperty(objectOf(desc), A_VALUE) {
+            v = try it.getProp(desc, A_VALUE)
+        }
+
+        try it.setElem(o, idx, v)
+
+        return true
+    }
+
+    if present {
+        try elemToProp(it, o, key, idx)
+    }
+
+    return null
+}

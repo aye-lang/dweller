@@ -60,8 +60,11 @@ fn thisArray(it: *mut Interp, a: Args) JsError!u32 {
     }
     let o = try it.toObject(a.this)
     let cls = it.heap.obj(o).class
-    if cls == Class.Array || cls == Class.Arguments {
+    if (cls == Class.Array && !it.heap.obj(o).elems_in_props) || cls == Class.Arguments {
         return o
+    }
+    if cls == Class.Array {
+        return slowArrayCopy(it, o, NONE)
     }
     try it.push(objVal(o))
     let n = try pushArrayLike(it, objVal(o))
@@ -79,12 +82,15 @@ fn thisArray(it: *mut Interp, a: Args) JsError!u32 {
 // (`push.apply(jq, nodes)` on a jQuery object): `f` changes a copy
 // (thisArray), which is then written back to the object: its indices
 // and `length`.
-fn onArrayLike(it: *mut Interp, a: Args, f: NativeFn) JsError!Value {
+fn onArrayLike(it: *mut Interp, a: Args, f: NativeFn, setsLength: bool) JsError!Value {
     if !isObject(a.this) {
         return f(it, a)
     }
     let o = objectOf(a.this)
     let cls = it.heap.obj(o).class
+    if slowArray(it, o) {
+        return onSlowArray(it, a, f, setsLength)
+    }
     if cls == Class.Array || cls == Class.Arguments {
         return f(it, a)
     }
@@ -124,7 +130,10 @@ fn onArrayLike(it: *mut Interp, a: Args, f: NativeFn) JsError!Value {
 // a copy: a page pushed thousands of times onto an array-like object).
 fn genericPush(it: *mut Interp, a: Args) JsError!Value {
     if !isObject(a.this) {
-        return onArrayLike(it, a, arrayPush)
+        return onArrayLike(it, a, arrayPush, true)
+    }
+    if slowArray(it, objectOf(a.this)) {
+        return slowArrayPush(it, a)
     }
     let cls = it.heap.obj(objectOf(a.this)).class
     if cls == Class.Array || cls == Class.Arguments {
@@ -146,31 +155,31 @@ fn genericPush(it: *mut Interp, a: Args) JsError!Value {
 }
 
 fn genericPop(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayPop)
+    return onArrayLike(it, a, arrayPop, true)
 }
 
 fn genericShift(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayShift)
+    return onArrayLike(it, a, arrayShift, true)
 }
 
 fn genericUnshift(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayUnshift)
+    return onArrayLike(it, a, arrayUnshift, true)
 }
 
 fn genericSplice(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arraySplice)
+    return onArrayLike(it, a, arraySplice, true)
 }
 
 fn genericReverse(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayReverse)
+    return onArrayLike(it, a, arrayReverse, false)
 }
 
 fn genericSort(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arraySort)
+    return onArrayLike(it, a, arraySort, false)
 }
 
 fn genericFill(it: *mut Interp, a: Args) JsError!Value {
-    return onArrayLike(it, a, arrayFill)
+    return onArrayLike(it, a, arrayFill, false)
 }
 
 fn alen(it: *mut Interp, o: u32) u32 {
@@ -1022,6 +1031,9 @@ fn arrayToReversed(it: *mut Interp, a: Args) JsError!Value {
 }
 
 fn arrayWith(it: *mut Interp, a: Args) JsError!Value {
+    if isObject(a.this) && it.heap.obj(objectOf(a.this)).elems_in_props {
+        return slowArrayWith(it, a)
+    }
     let c = try copyArgs(it, a)
     let o = objectOf(c.this)
     let n = alen(it, o)

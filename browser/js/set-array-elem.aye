@@ -1,0 +1,37 @@
+// https://tc39.es/ecma262/#sec-ordinarysetwithowndescriptor
+
+fn setArrayElem(it: *mut Interp, o: u32, key: u32, idx: u32, value: Value, receiver: Value) JsError!bool {
+    if it.heap.findProp(o, key) |i| {
+        let p = it.heap.obj(o).props[i]
+
+        if (p.flags & F_ACCESSOR) != 0 {
+            if isNullish(p.setter) {
+                return false
+            }
+
+            try it.call1(p.setter, receiver, value)
+
+            return true
+        }
+
+        if (p.flags & F_WRITE) == 0 {
+            return false
+        }
+
+        it.heap.shade(value)
+        it.heap.obj(o).props[i].value = value
+
+        return true
+    }
+
+    let ob = it.heap.obj(o)
+    let present = idx < ob.nelems && !(ob.elems[idx] is .Empty)
+
+    if ob.frozen || (!present && (!ob.extensible || (idx >= ob.nelems && ob.length_read_only))) {
+        return false
+    }
+
+    try it.setElem(o, idx, value)
+
+    return true
+}
