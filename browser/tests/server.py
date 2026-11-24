@@ -822,6 +822,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         asked = self.headers.get("Access-Control-Request-Headers")
         LOG.append(" ".join([self.command, path] + ([asked] if asked else [])) + "\n")
         status, headers = 200, [("Access-Control-Allow-Origin", "*"), ("Content-Type", "text/plain")]
+        if "nosniff" in path:
+            # As cdn.privacy-mgmt.com (Express) answers bbc's preflights (Q0.3d).
+            headers = [headers[0], ("Content-Type", "text/html; charset=utf-8"), ("X-Content-Type-Options", "nosniff")]
         if self.command == "OPTIONS" and "deny" not in path:
             headers += [("Access-Control-Allow-Methods", "PUT"), ("Access-Control-Allow-Headers", "x-test"), ("Access-Control-Max-Age", "60")]
         if self.command == "PUT" and "hop" in path:

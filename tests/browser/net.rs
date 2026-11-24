@@ -1504,3 +1504,65 @@ fn xhr_progress_while_open() {
     let site = login_window_with(&format!("{href}?site"), "frame", None, &[("DWELLER_PROCESS", "site")]);
     assert!(site.contains(want.trim_end()), "{site}");
 }
+
+/// Q0.3d: a CORS preflight is a request of mode `cors`, so ORB does not
+/// check its response. cdn.privacy-mgmt.com answers bbc's preflights with
+/// `text/html` and `nosniff`, which ORB blocks for a `no-cors` request:
+/// the request the preflight allowed failed with "network error". With
+/// `dump` and in the window.
+#[test]
+fn preflight_answered_with_nosniff_html() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/net/preflight_nosniff.html", srv.base);
+    let want = "put: 200 PUT /preflight/nosniff";
+    let out = run(&["dump", "--text", "--js", &href]);
+    assert!(out.status.success() && out.stderr.is_empty(), "{}\n{}", out.status, text(&out.stderr));
+    assert!(text(&out.stdout).contains(want), "{}", text(&out.stdout));
+    if !has_sdl() {
+        println!("skipped the window: no SDL2");
+        return;
+    }
+    let window = login_window_with(&href, "frame", None, &[]);
+    assert!(window.contains(want), "{window}");
+}
+
+/// Q0.3d: the archive keeps the whole body of a response that the page
+/// read while it arrived. An asynchronous XMLHttpRequest takes each part
+/// as it comes, and the archive kept only the bytes after the last part
+/// taken, so bbc's consent requests replayed with empty bodies. `/parts/`
+/// sends the rest of `parts.html` once the first `progress` asked
+/// `/parts-go`. Recorded with `dump` and in the window, replayed with
+/// `dump`.
+#[test]
+fn archive_keeps_streamed_bodies() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = scratch().join("net-archive-streamed");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let want = "first part true, rest true";
+    let page = |key: &str| format!("{}/net/archive_streamed.html?{key}", srv.base);
+    let record = |args: &[&str]| {
+        let out = dweller_command().current_dir(root()).env("DWELLER_RECORD", &dir).args(args).output().unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{args:?}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains(want), "{args:?}: {}", text(&out.stdout));
+    };
+    let mut pages = vec![page("dump")];
+    record(&["dump", "--text", "--js", &pages[0]]);
+    if has_sdl() {
+        pages.push(page("window"));
+        record(&[&pages[1], "--font", "fixed", "--frames", "400", "--until-idle", "--text", "--events", "frame"]);
+    }
+    drop(srv);
+    for href in &pages {
+        let out = dweller_command().current_dir(root()).env("DWELLER_REPLAY", &dir).args(["dump", "--text", "--js", href]).output().unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{href}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains(want), "{href}: {}", text(&out.stdout));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}

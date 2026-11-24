@@ -99,6 +99,7 @@ struct Ask {
     no_preflight: bool = false
     stream_checked: bool = false
     stream_taken: bool = false
+    taken: text.Builder
 }
 
 struct Loader {
@@ -410,6 +411,7 @@ fn newRequest(ld: *mut Loader, target: *Url, req: Request) AllocError!*mut Load 
         user_activated: req.user_activated,
         stream: req.stream,
         no_preflight: req.no_preflight,
+        taken: text.Builder.init(ld.alloc),
     })
     let l = ld.alloc.create(Load {
         id: ld.next_id,
@@ -510,7 +512,7 @@ fn endRequest(ld: *mut Loader, l: *mut Load) {
         req.body = &body
     }
     if a.has_res {
-        archiveWrite(ld.alloc, &target, req, &a.res, "")
+        archiveStreamed(ld.alloc, &target, req, a)
     } else {
         archiveWrite(ld.alloc, &target, req, null, a.failure)
     }
@@ -870,6 +872,7 @@ fn freeLoad(ld: *mut Loader, l: *mut Load) {
         if a.has_res {
             a.res.deinit(ld.alloc)
         }
+        a.taken.deinit()
         ld.alloc.destroy(a)
     }
     release(ld.alloc, l.href)
