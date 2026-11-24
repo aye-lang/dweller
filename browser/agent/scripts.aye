@@ -2,9 +2,9 @@
 // actions, `eval`, `wait`, and what happens after scripts ran (the
 // navigation they asked for, a new layout, the focus they moved).
 //
-// Time is virtual: after an action, only timers already due run (a
-// `setTimeout(f, 0)` chain); `wait` moves the page's clock forward,
-// running the timers on the way.
+// Time is virtual: after an action, timers already due run, then the
+// responses and animation frames the page waits for (Q4.27); `wait`
+// moves the page's clock forward, running the timers on the way.
 
 import dom.NodeId
 import engine
@@ -19,6 +19,7 @@ import url
 // page's time.
 let WAIT_IDLE_MS: f64 = 5000.0
 let WAIT_SELECTOR_MS: f64 = 5000.0
+let ACTION_AWAIT_MS: f64 = 1000.0
 // Navigations that scripts may chain after one action.
 let MAX_SCRIPT_NAVIGATIONS: usize = 5
 
@@ -37,13 +38,18 @@ fn fireChange(p: *mut Page, el: NodeId) AllocError!void {
 /// After an action: runs the timers that are due, then does what the
 /// scripts asked (a navigation, which `o` then reports) or lays the page
 /// out again.
-fn settleScripts(s: *mut Session, tmp: Allocator, o: *mut Outcome) AllocError!void {
+fn settleScripts(s: *mut Session, tmp: Allocator, o: *mut Outcome, awaits: bool) AllocError!void {
     for round in 0..MAX_SCRIPT_NAVIGATIONS {
         let p = s.tab.page orelse return
         if !engine.hasScripts(p) {
             return
         }
         let ran = try engine.runDueTimers(p)
+
+        if awaits && !o.navigated {
+            try engine.runAwaitedTasks(p, ACTION_AWAIT_MS)
+        }
+
         let nav = engine.takeNavigation(p)
         var step: i64 = 0
         match nav.kind {

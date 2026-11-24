@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+pub fn runAwaitedTasks(p: *mut Page, max_ms: f64) AllocError!void {
+    let s = p.script orelse return
+
+    if s.real {
+        return
+    }
+
+    let end = pageClock(p) + max_ms
+    var n: usize = 0
+
+    while n < MAX_TASKS && hasAwaitedTask(p, end) {
+        if !(try runNextTimer(p, end)) {
+            return
+        }
+
+        n += 1
+    }
+}
