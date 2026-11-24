@@ -1,6 +1,7 @@
 import css
+import dom.NodeId
+import std.list.List
 import std.mem.AllocError
-import std.text
 
 fn stylingWithoutFetch(s: *mut Script) AllocError!?*mut Styling {
     let p = s.page
@@ -11,14 +12,14 @@ fn stylingWithoutFetch(s: *mut Script) AllocError!?*mut Styling {
 
     var base = try documentBase(p.alloc, &p.doc, &p.url)
     defer base.deinit(p.alloc)
-    var hrefs = text.Builder.init(p.alloc)
-    defer hrefs.deinit()
+    var links = List(NodeId).init(p.alloc)
+    defer links.deinit()
     var queries = try css.Sheet.init(p.alloc)
     defer queries.deinit()
 
-    try sheetHrefs(p.alloc, &p.doc, &base, css.Media { width: s.width, height: s.height, dark: p.prefers_dark }, &mut queries, &mut hrefs)
+    try unfetchedSheetLinks(p.alloc, &p.doc, &base, css.Media { width: s.width, height: s.height, dark: p.prefers_dark }, &mut queries, &mut links)
 
-    if hrefs.len() > 0 {
+    if links.len() > 0 {
         return null
     }
 

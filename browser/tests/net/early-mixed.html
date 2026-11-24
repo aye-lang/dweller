@@ -1,0 +1,33 @@
+<!doctype html><title>Early mixed</title>
+<link rel="stylesheet" href="/meta/co.css?same">
+<link crossorigin="anonymous" rel="stylesheet" href="/meta/co.css?same">
+<link rel="stylesheet" href="$OTHER/logged-acao/net/co.css?plain-first">
+<link crossorigin="anonymous" rel="stylesheet" href="$OTHER/logged-acao/net/co.css?plain-first">
+<link crossorigin="anonymous" rel="stylesheet" href="$OTHER/logged-acao/net/co.css?cors-first">
+<link rel="stylesheet" href="$OTHER/logged-acao/net/co.css?cors-first">
+<pre id="out"></pre>
+<script>
+var hits = [];
+var seen = [];
+function saw(name) {
+  seen.push(name + ': ' + JSON.stringify(self.lastCookie));
+  self.lastCookie = undefined;
+}
+</script>
+<script src="$OTHER/cookie-module?acao&plain-first"></script>
+<script>saw('script plain-first no-cors')</script>
+<script crossorigin="anonymous" src="$OTHER/cookie-module?acao&plain-first"></script>
+<script>saw('script plain-first anonymous')</script>
+<script crossorigin="anonymous" src="$OTHER/cookie-module?acao&cors-first"></script>
+<script>saw('script cors-first anonymous')</script>
+<script src="$OTHER/cookie-module?acao&cors-first"></script>
+<script>saw('script cors-first no-cors')</script>
+<script crossorigin="anonymous" src="$OTHER/cookie-module?no-acao"></script>
+<script>saw('script anonymous without acao')</script>
+<script>document.getElementById('out').textContent = seen.join('\n');</script>
+<!-- tests/browser/http_cache.rs: early_loads_keep_credentials. The same
+     URL with and without crossorigin, in both orders: each use is its own
+     load with its own credentials ($OTHER is another origin of the same
+     site, so its cookies go with a no-cors request), and each script
+     reports the Cookie header of the response it ran. Without ACAO the
+     anonymous script is a load error and does not run. -->

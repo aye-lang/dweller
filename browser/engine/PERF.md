@@ -1057,6 +1057,12 @@ contentful paint, median of 3 alternating runs):
 19 of 20 pass. zol's first paint was 3013 ms on 2026-10-17 and is
 30079 ms now (live network; not looked into).
 
+github's 429 ms is not a first paint (Q4.30): this build loaded a page
+over its loop iterations, the run's 13 iterations ended before the
+page had a frame, and with no `ui_first_paint` record the tool fell
+back to the first frame without the page. Run to `painted`, the same
+build shows github after 1.0–1.9 s (2026-11-25).
+
 jsbench (seconds, median of 3; speedup = fast / safe):
 
 | workload | fast (s) | safe (s) | speedup |

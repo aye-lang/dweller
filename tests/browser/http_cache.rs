@@ -157,3 +157,77 @@ fn request_priority_sheet_before_waiting_images() {
         assert!(ok, "site {site}: expected late.js, then i1.png and i2.png, then late.css and i3.png, in:\n{got}");
     }
 }
+
+/// Q4.30: the `crossorigin` sheets and module script of
+/// `net/early_cors.html` (each answered after 0.4 s) are asked for
+/// together as the page is parsed, each with the request its fetch
+/// makes, and the first layout (its background image) comes before the
+/// scripts run (`ran.txt`). Before, the early loads left `crossorigin`
+/// out: the scripts ran before the first paint, then its style pass
+/// fetched the sheets one by one (github's first paint: 1 s of sheets).
+/// In one process and with a renderer per site.
+#[test]
+fn early_loads_crossorigin() {
+    for site in [false, true] {
+        let Some(srv) = server() else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/net/early_cors.html", srv.base);
+        let env: &[(&str, &str)] = if site { &[] } else { &[IN_PROCESS] };
+        let got = visit_with(&page, &[format!("{}/order-at", srv.base)], site, env);
+        let at = |name: &str| -> u64 {
+            got.split_whitespace()
+                .find_map(|w| w.strip_prefix(&format!("{name}:")))
+                .and_then(|ms| ms.parse().ok())
+                .unwrap_or_else(|| panic!("site {site}: no {name} in:\n{got}"))
+        };
+        let early = [at("slow-a.css"), at("slow-b.css"), at("slow-m.js")];
+        let spread = early.iter().max().unwrap() - early.iter().min().unwrap();
+        assert!(spread < 300, "site {site}: the sheets and the module were asked for {spread} ms apart:\n{got}");
+        assert!(at("laid-out.png") < at("ran.txt"), "site {site}: the scripts ran before the first layout:\n{got}");
+    }
+}
+
+/// Q4.30: a URL that `net/early-mixed.html` uses with and without
+/// `crossorigin` (sheets and scripts, in both orders) is two loads, each
+/// with its own credentials and its own response. The no-cors use sends
+/// the cookies; the anonymous use of the other origin (same site) sends
+/// none and passes its CORS check; each script reports the Cookie header
+/// of the response it ran; without ACAO it is a load error and does not
+/// run. A same-origin pair (one cache key) is two requests too, one in
+/// CORS mode: before, the loader joined loads by their cache key alone,
+/// so the pair was one no-cors request. In one process and with a
+/// renderer per site.
+#[test]
+fn early_loads_keep_credentials() {
+    for site in [false, true] {
+        let (Some(srv), Some(other)) = (server(), server()) else {
+            println!("skipped: cannot start python3 for the test server");
+            return;
+        };
+        let page = format!("{}/with-other/net/early-mixed.html?other={}", srv.base, other.base);
+        let env: &[(&str, &str)] = if site { &[] } else { &[IN_PROCESS] };
+        let got = visit_with(&format!("{}/samesite/set", srv.base), &[page], site, env);
+        for line in ["script plain-first anonymous: \"\"", "script cors-first anonymous: \"\"", "script anonymous without acao: undefined"] {
+            assert!(got.contains(line), "site {site}: no {line:?} in:\n{got}");
+        }
+        for name in ["plain-first", "cors-first"] {
+            let line = got.lines().find(|l| l.contains(&format!("script {name} no-cors: "))).unwrap_or("");
+            assert!(line.contains("dflt=1"), "site {site}: the no-cors script {name} ran without the cookies:\n{got}");
+        }
+        let log = |base: &str| text(&run(&["dump", "--text", &format!("{base}/log")]).stdout);
+        let origin = format!("origin={} ", srv.base);
+        let theirs = log(&other.base);
+        for name in ["plain-first", "cors-first"] {
+            let lines: Vec<&str> = theirs.lines().filter(|l| l.contains(&format!("co.css?{name} "))).collect();
+            let plain = lines.iter().filter(|l| l.contains("origin= ") && l.contains("dflt=1")).count();
+            let anonymous = lines.iter().filter(|l| l.contains(&origin) && l.trim_end().ends_with("cookie=")).count();
+            assert!(lines.len() == 2 && plain == 1 && anonymous == 1, "site {site}: sheet {name}:\n{theirs}");
+        }
+        let ours = text(&run(&["dump", "--text", &format!("{}/meta-log", srv.base)]).stdout);
+        let same: Vec<&str> = ours.lines().filter(|l| l.contains("co.css?same ")).collect();
+        let cors = same.iter().filter(|l| l.contains("sec-fetch-mode=cors ")).count();
+        assert!(same.len() == 2 && cors == 1, "site {site}: same-origin sheet:\n{ours}");
+    }
+}

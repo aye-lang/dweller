@@ -1,8 +1,9 @@
 import std.text
 
-fn findKeyed(ld: *Loader, key: []u8) ?*mut Load {
+// blink: platform/loader/fetch/resource.cc (Resource::CanReuse)
+fn findKeyed(ld: *Loader, key: []u8, req: Request) ?*mut Load {
     for l in ld.loads.items() {
-        if l.ask == null && text.eql(l.key, key) {
+        if l.ask == null && l.mode == req.mode && l.credentials == req.credentials && text.eql(l.key, key) {
             return l
         }
     }
