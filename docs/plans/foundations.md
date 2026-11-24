@@ -50,7 +50,7 @@ that decides who can close it.
 | F1 basic features | 17 of 18 (`check_plan.py`: Q5 1 open) | 2026-11-22 | per row | Q5.9b (YouTube, the Mac) |
 | W9 conformance | 47 areas at their floor, 0 below, 51 without a floor; 10 of the 47 within 3.5 points of it; 9 of the 20 areas with a target at it; `conformance.py check`: no area fell (98 of 98 areas measured in the run, 59 in its `conformance` job, 39 in its `webgl` job) | 2026-11-22 (`conformance` run 45078360529; `docs/conformance.md` of 2026-11-23, Q0.3c) | cloud; the weekly CI job, green again since #399 fetched libwasmtime for it | Q6, Q0.1 |
 | W2 sites load and agents work | passed | 2026-10-15 | the Mac (archives) | Q0.3 |
-| W3 sites look right | 8 of 20 | 2026-10-15 | the Mac and the owner's eyes | Q0.3 |
+| W3 sites look right | 7 of 20 (9 if a font-face swap alone does not count: hn, go-docs). Since 10-15 fixed: python-docs sidebar (P3.68), BBC wordmark (P3.59), react thumbnail (P3.72), Mistral nav logo | 2026-11-25 | the Mac: compared with Chrome by the Mac session; screenshots (live Dweller and Chrome, same 1280 × 2000 viewport, light scheme; archive screens as reference) | top causes by sites: vertical centring in flex rows and buttons (5: github, duckduckgo, youtube, youtube-search, react; P3.51); row layout that wraps, stacks or drops items (4: github, mdn, abehiroshi, zol); script-driven parts that differ (4: mdn, youtube-search, react, mistral); local font faces not matched, Verdana and Menlo become Arial and Courier New (3: hn, go-docs, zol); `sup` not raised (2: both Wikipedias) |
 
 ### Critical path
 
@@ -111,7 +111,7 @@ reaches it.
 
 Work only the owner's Mac can verify, kept in one list so that one
 sitting clears it (`velocity.md`, "Rules", 6):
-- Q0.3: W2 and W3 on the current `main` (W3 is 27 days old).
+- Q0.3: W2 and W3 on the current `main` (W3 compared with Chrome 2026-11-25, P1.S9).
 - W7 and W8 on all 20 sites, in process and with `DWELLER_PROCESS=site`
   (last full run 2026-11-04), now the default (Q2.14).
 - WebGL in a renderer on macOS (Q2.14h): Metal in Seatbelt, SwiftShader in
