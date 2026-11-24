@@ -148,7 +148,7 @@ the one place with more than one process.
 | 0 ∥ | P9 | agents without disturbing the user (B9, R1–R7) | the P9 tests pass: `window_spaces*`, `agent_sessions` | P9.1–P9.9 done |
 | 0 ∥ | P11 | WebGL 2 and the APIs the user's game needs (`docs/webgl.md`) | P11.24: the user's game runs in Dweller at ≥ 50 fps | P11.1–P11.5, P11.16 done, P11.17 partial; P11.6 next |
 | 1 | P10 | components measured by WPT and test262 | W9 | harness P10.1–P10.4 not started; P10.20–P10.22 (login) done |
-| 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 8 of 20; P3.80 (the user bundle) is the acceptance |
+| 2 | P3 | real sites correct | W2, W3; `docs/browser-sites.md` rerun | W3 7 of 20 (2026-11-25, compared with Chrome); P3.80 (the user bundle) is the acceptance |
 | 2 | P5 | B8 "What remains" resolved (W6) | the list is empty or out of scope | items re-filed under P10 areas |
 | 2 | P6 | release | W1–W9; manual checklist recorded; tag | last |
 

@@ -111,7 +111,7 @@ reaches it.
 
 Work only the owner's Mac can verify, kept in one list so that one
 sitting clears it (`velocity.md`, "Rules", 6):
-- Q0.3: W2 and W3 on the current `main` (W3 is 27 days old).
+- Q0.3: W2 and W3 on the current `main` (W3 compared with Chrome 2026-11-25, P1.S9).
 - W7 and W8 on all 20 sites, in process and with `DWELLER_PROCESS=site`
   (last full run 2026-11-04), now the default (Q2.14).
 - WebGL in a renderer on macOS (Q2.14h): Metal in Seatbelt, SwiftShader in
