@@ -4,8 +4,6 @@ import js.Value
 import net
 import url.Url
 
-let DESTINATIONS = [7][]u8{"document", "style", "image", "script", "", "font", "worker"}
-
 fn callFetchHandler(s: *mut Script, id: u32, f: SwFetch, target: *Url, req: net.Request) JsError!void {
     let it = &mut s.it
     let base = it.stack.len()
@@ -27,7 +25,7 @@ fn callFetchHandler(s: *mut Script, id: u32, f: SwFetch, target: *Url, req: net.
     try it.push(try it.newString(method))
     try it.push(try it.newString(req.headers))
     try it.push(try latin1String(it, body))
-    try it.push(try it.newString(DESTINATIONS[net.requestCode(req)[0] as usize]))
+    try it.push(try it.newString(requestDestination(req.kind)))
     try it.push(try it.newString(mode))
     try it.push(js.numVal(f.client as f64))
     _ = callReported(s, base, 9) catch return JsError.OutOfMemory

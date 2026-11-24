@@ -6,6 +6,7 @@ const REGISTERED: &[&str] = &[
 ];
 const FETCHED: &str = "made 201 worker made by the worker for POST  | proxied: plain text from the server | plain plain text from the server | broken TypeError | xhr 201 made by the worker for GET  | clients fetch.html";
 const NAVIGATED: &str = "a page made by the worker, controlled true, navigate document, made by the worker for GET document";
+const DESTINED: &str = "destinations a.js script, a.mkv video, a.wav audio";
 
 fn has_all(got: &str, want: &[&str], what: &str) {
     assert!(want.iter().all(|w| got.contains(w)), "{what}: want {want:?}, got:\n{got}");
@@ -49,6 +50,27 @@ fn serviceworker_fetch() {
         return;
     };
     has_all(&dumped(&srv.base, "fetch.html", None), &["claimed | ", FETCHED], "fetch");
+}
+
+/// Q5.14c: the `fetch` event's `request.destination` for a controlled
+/// page's `<script>`, `<audio>` and `<video>` is `script`, `audio` and
+/// `video` (media requests used to read past the end of the
+/// destination table), in the window's own process and in a renderer
+/// per site (the default mode).
+#[test]
+fn serviceworker_destination() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let href = format!("{}/serviceworker/destination.html", srv.base);
+    for (events, mode) in [("", IN_PROCESS), ("renderer:title:done", ("DWELLER_PROCESS", "site"))] {
+        has_all(&login_window_with(&href, events, None, &[mode]), &[DESTINED], mode.1);
+    }
 }
 
 /// Q5.14a: with a profile the registration is saved, and the next run's
