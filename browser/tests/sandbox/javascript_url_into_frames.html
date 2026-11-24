@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<title>javascript: URLs into frames of the same and of another origin</title>
+<pre id="out"></pre>
+<iframe name="open-same"></iframe>
+<iframe name="open-other"></iframe>
+<iframe name="link-same"></iframe>
+<iframe name="link-other"></iframe>
+<iframe name="location-same"></iframe>
+<iframe name="location-other"></iframe>
+<script>
+const out = document.getElementById('out');
+const code = "javascript:parent.postMessage('ran in ' + name, '*'); '<p>written</p>'";
+const away = location.search === '?evil' ? '/sandbox/blank.html' : code;
+const ways = ['open', 'link', 'location'];
+const lines = [];
+let ready = 0;
+let replies = 0;
+let tries = 0;
+let late = 0;
+for (const f of document.querySelectorAll('iframe')) {
+  const host = f.name.endsWith('-other') ? 'http://localhost:' + location.port : '';
+  f.src = host + '/sandbox/javascript_url_probe.html';
+}
+const finish = () => {
+  if (out.textContent) return;
+  clearTimeout(late);
+  out.textContent = lines.sort().join('\n') + '\ndone\n';
+};
+const shown = (name) => frames[name].document.querySelector('p').textContent;
+const probe = () => {
+  for (const way of ways) frames[way + '-other'].postMessage('probe', '*');
+  late = setTimeout(finish, 2000);
+};
+const settle = () => {
+  if (ways.every((way) => shown(way + '-same') === 'written') || ++tries > 40) {
+    for (const way of ways) lines.push(way + '-same: ' + shown(way + '-same'));
+    setTimeout(probe, 300);
+    return;
+  }
+  setTimeout(settle, 50);
+};
+const attempt = () => {
+  for (const to of ['same', 'other']) {
+    window.open(code, 'open-' + to);
+    const a = document.createElement('a');
+    a.target = 'link-' + to;
+    a.href = code;
+    document.body.append(a);
+    a.click();
+    frames['location-' + to].location.href = to === 'other' ? away : code;
+  }
+  setTimeout(settle, 50);
+};
+addEventListener('message', (e) => {
+  if (e.data === 'ready') {
+    if (++ready === 6) attempt();
+    return;
+  }
+  lines.push(e.data);
+  if (e.data.includes('-other: ') && ++replies === ways.length) finish();
+});
+</script>

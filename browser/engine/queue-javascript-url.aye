@@ -1,33 +1,18 @@
-import js
 import std.mem.AllocError
-import url
 
-// spec: https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-javascript:-url
-fn queueJavascriptUrl(s: *mut Script, href: []u8) AllocError!void {
+// chromium: third_party/blink/renderer/core/frame/local_frame.cc (CanNavigate: a javascript: URL needs the target's origin)
+fn queueJavascriptUrl(source: *mut Page, target: *mut Page, href: []u8) AllocError!void {
+    let s = source.script orelse return
+
     if try javascriptUrlRefused(s, href) {
         return
     }
 
-    let it = &mut s.it
-    let code = try url.percentDecode(s.alloc, href[JAVASCRIPT_SCHEME.len..])
-
-    defer s.alloc.free(code)
-    let arr = it.newArray(0) catch return AllocError.OutOfMemory
-
-    try jsPush(s, js.objVal(arr))
-    let source = it.newString(code) catch return AllocError.OutOfMemory
-
-    try it.heap.pushElem(arr, source)
-    let root = it.addRoot(js.objVal(arr)) catch return AllocError.OutOfMemory
-
-    it.pop()
-    tick(s)
-    s.timers.append(Timer { id: s.next_timer, due: s.now, interval: 0.0, repeat: false, raf: false, root: root, seq: s.seq, javascript_url: true }) catch |e| {
-        it.removeRoot(root)
-
-        return e
+    if !sameOrigin(source, target) {
+        return addConsole(s, "[error] ", JAVASCRIPT_TARGET_ERROR)
     }
 
-    s.next_timer += 1
-    s.seq += 1
+    let ts = target.script orelse return
+
+    return queueJavascriptTask(ts, href)
 }
