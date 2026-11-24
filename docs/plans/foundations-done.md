@@ -229,6 +229,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q4.25d | A renderer runs the scripts of a load one per task, so an input is handled between them (bbc: one renderer task of 4.1 s) | bbc's longest renderer task with the flag falls under 500 ms | `third_party/blink/renderer/platform/scheduler/` |
 | Q4.7 | A layout result cache keyed by the constraint space | the W7 loop of bbc and youtube falls | `core/layout/layout_box.cc` (`CachedLayoutResult`), `constraint_space.h`, `layout_result.h` |
 | Q4.11 | GC pauses: measure them on the W7 sites. If p95 is over 16 ms, add incremental marking | GC p95 stays under 16 ms on every site | `v8/src/heap/incremental-marking.cc` |
+| Q4.28 | Mistral's 10 s gtag timer task: `Reflect.construct` read its list with the page's `Array.from`, and core-js's `Array.from` (axept) calls `Reflect.construct` through `isConstructor`, so each call recursed to the stack limit. `Reflect.construct` now reads its list natively (CreateListFromArrayLike) (done; left: native `Array.from` does not close the iterator when `mapfn` throws, which is why core-js replaces it) | `298_reflect_construct_array_like` (20 calls, was 66660); mistral renderer task 10131 → 1317 ms, wheel p95 7198 → 462 ms; jsbench 1.000 | `v8/src/builtins/builtins-call-gen.cc` (`CallOrConstructWithArrayLike`) |
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 

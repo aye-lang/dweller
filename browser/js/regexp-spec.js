@@ -1,6 +1,17 @@
 (function () {
 'use strict';
 // v8: src/builtins/regexp-match.tq, regexp-replace.tq, regexp-search.tq, regexp-split.tq, regexp-match-all.tq
+const { Object, String, Symbol, RegExp, TypeError, WeakMap, Math, Reflect } = globalThis;
+const ObjectCreate = Object.create;
+const ObjectDefineProperty = Object.defineProperty;
+const ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const ObjectGetPrototypeOf = Object.getPrototypeOf;
+const ObjectIs = Object.is;
+const MathMax = Math.max;
+const MathMin = Math.min;
+const MathTrunc = Math.trunc;
+const ReflectConstruct = Reflect.construct;
+const ReflectSet = Reflect.set;
 const slot = globalThis.__regexpSlot;
 delete globalThis.__regexpSlot;
 const P = RegExp.prototype;
@@ -18,11 +29,11 @@ function toStr(v) {
   return `${v}`;
 }
 function toLength(v) {
-  const n = Math.trunc(+v);
+  const n = MathTrunc(+v);
   return n !== n || n <= 0 ? 0 : n > MAX ? MAX : n;
 }
 function set(o, k, v) {
-  if (!Reflect.set(o, k, v)) throw new TypeError('Cannot assign to read only property ' + k);
+  if (!ReflectSet(o, k, v)) throw new TypeError('Cannot assign to read only property ' + k);
 }
 function advance(s, i, unicode) {
   if (!unicode || i + 1 >= s.length) return i + 1;
@@ -31,7 +42,7 @@ function advance(s, i, unicode) {
 function isConstructor(C) {
   if (typeof C !== 'function') return false;
   try {
-    Reflect.construct(String, [], C);
+    ReflectConstruct(String, [], C);
     return true;
   } catch (e) {
     return false;
@@ -59,10 +70,10 @@ function exec(R, S) {
   return apply(builtinExec, R, [S]);
 }
 function define(name, value) {
-  Object.defineProperty(P, name, { value, writable: true, configurable: true });
+  ObjectDefineProperty(P, name, { value, writable: true, configurable: true });
 }
 function getter(name, o) {
-  Object.defineProperty(P, name, { get: Object.getOwnPropertyDescriptor(o, name).get, configurable: true });
+  ObjectDefineProperty(P, name, { get: ObjectGetOwnPropertyDescriptor(o, name).get, configurable: true });
 }
 const flagNames = [['hasIndices', 'd'], ['global', 'g'], ['ignoreCase', 'i'], ['multiline', 'm'], ['dotAll', 's'], ['unicode', 'u'], ['unicodeSets', 'v'], ['sticky', 'y']];
 for (const [name, c] of flagNames) {
@@ -128,10 +139,10 @@ define(Symbol.search, { [Symbol.search](string) {
   const rx = thisObject(this, '@@search');
   const S = toStr(string);
   const previous = rx.lastIndex;
-  if (!Object.is(previous, 0)) set(rx, 'lastIndex', 0);
+  if (!ObjectIs(previous, 0)) set(rx, 'lastIndex', 0);
   const result = exec(rx, S);
   const current = rx.lastIndex;
-  if (!Object.is(current, previous)) set(rx, 'lastIndex', previous);
+  if (!ObjectIs(current, previous)) set(rx, 'lastIndex', previous);
   return result === null ? -1 : result.index;
 } }[Symbol.search]);
 // spec: https://tc39.es/ecma262/#sec-getsubstitution
@@ -211,10 +222,10 @@ define(Symbol.replace, { [Symbol.replace](string, replaceValue) {
   let next = 0;
   for (let k = 0; k < results.length; k++) {
     const result = results[k];
-    const nCaptures = Math.max(toLength(result.length) - 1, 0);
+    const nCaptures = MathMax(toLength(result.length) - 1, 0);
     const matched = toStr(result[0]);
-    const p = Math.trunc(+result.index);
-    const position = p !== p || p < 0 ? 0 : Math.min(p, S.length);
+    const p = MathTrunc(+result.index);
+    const position = p !== p || p < 0 ? 0 : MathMin(p, S.length);
     const captures = [];
     for (let n = 1; n <= nCaptures; n++) {
       const cap = result[n];
@@ -260,7 +271,7 @@ define(Symbol.split, { [Symbol.split](string, limit) {
   while (q < size) {
     set(splitter, 'lastIndex', q);
     const z = exec(splitter, S);
-    const e = z === null ? p : Math.min(toLength(splitter.lastIndex), size);
+    const e = z === null ? p : MathMin(toLength(splitter.lastIndex), size);
     if (z === null || e === p) {
       q = advance(S, q, unicode);
       continue;
@@ -268,7 +279,7 @@ define(Symbol.split, { [Symbol.split](string, limit) {
     A.push(S.slice(p, q));
     if (A.length === lim) return A;
     p = e;
-    const n = Math.max(toLength(z.length) - 1, 0);
+    const n = MathMax(toLength(z.length) - 1, 0);
     for (let i = 1; i <= n; i++) {
       A.push(z[i]);
       if (A.length === lim) return A;
@@ -278,10 +289,10 @@ define(Symbol.split, { [Symbol.split](string, limit) {
   A.push(S.slice(p, size));
   return A;
 } }[Symbol.split]);
-const IteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+const IteratorPrototype = ObjectGetPrototypeOf(ObjectGetPrototypeOf([][Symbol.iterator]()));
 const state = new WeakMap();
-const StringIteratorPrototype = Object.create(IteratorPrototype);
-Object.defineProperty(StringIteratorPrototype, 'next', { value: { next() {
+const StringIteratorPrototype = ObjectCreate(IteratorPrototype);
+ObjectDefineProperty(StringIteratorPrototype, 'next', { value: { next() {
   const s = isObject(this) ? state.get(this) : undefined;
   if (s === undefined) throw new TypeError('%RegExpStringIterator%.next called on incompatible receiver');
   if (s.done) return { value: undefined, done: true };
@@ -297,7 +308,7 @@ Object.defineProperty(StringIteratorPrototype, 'next', { value: { next() {
   if (toStr(match[0]) === '') set(s.R, 'lastIndex', advance(s.S, toLength(s.R.lastIndex), s.unicode));
   return { value: match, done: false };
 } }.next, writable: true, configurable: true });
-Object.defineProperty(StringIteratorPrototype, Symbol.toStringTag, { value: 'RegExp String Iterator', configurable: true });
+ObjectDefineProperty(StringIteratorPrototype, Symbol.toStringTag, { value: 'RegExp String Iterator', configurable: true });
 define(Symbol.matchAll, { [Symbol.matchAll](string) {
   const R = thisObject(this, '@@matchAll');
   const S = toStr(string);
@@ -305,7 +316,7 @@ define(Symbol.matchAll, { [Symbol.matchAll](string) {
   const flags = toStr(R.flags);
   const matcher = new C(R, flags);
   set(matcher, 'lastIndex', toLength(R.lastIndex));
-  const iterator = Object.create(StringIteratorPrototype);
+  const iterator = ObjectCreate(StringIteratorPrototype);
   state.set(iterator, { R: matcher, S, global: flags.includes('g'), unicode: flags.includes('u') || flags.includes('v'), done: false });
   return iterator;
 } }[Symbol.matchAll]);
@@ -329,7 +340,7 @@ function escapeChar(ch) {
   for (let i = 0; i < ch.length; i++) r += '\\u' + hex(ch.charCodeAt(i), 4);
   return r;
 }
-Object.defineProperty(RegExp, 'escape', { value: { escape(S) {
+ObjectDefineProperty(RegExp, 'escape', { value: { escape(S) {
   if (typeof S !== 'string') throw new TypeError('RegExp.escape requires a string');
   let r = '';
   let first = true;

@@ -1,6 +1,9 @@
 (function () {
 'use strict';
 // spec: https://tc39.es/proposal-upsert/
+const { Object, Symbol, TypeError, Map, WeakMap, Reflect } = globalThis;
+const ObjectDefineProperty = Object.defineProperty;
+const SymbolKeyFor = Symbol.keyFor;
 const apply = Reflect.apply;
 const mapHas = Map.prototype.has;
 const mapGet = Map.prototype.get;
@@ -10,7 +13,7 @@ const weakGet = WeakMap.prototype.get;
 const weakSet = WeakMap.prototype.set;
 
 function heldWeakly(key) {
-  if (typeof key === 'symbol') return Symbol.keyFor(key) === undefined;
+  if (typeof key === 'symbol') return SymbolKeyFor(key) === undefined;
   return key !== null && (typeof key === 'object' || typeof key === 'function');
 }
 function install(proto, has, get, set, weak) {
@@ -31,7 +34,7 @@ function install(proto, has, get, set, weak) {
     },
   };
   for (const name of ['getOrInsert', 'getOrInsertComputed']) {
-    Object.defineProperty(proto, name, { value: methods[name], writable: true, enumerable: false, configurable: true });
+    ObjectDefineProperty(proto, name, { value: methods[name], writable: true, enumerable: false, configurable: true });
   }
 }
 install(Map.prototype, mapHas, mapGet, mapSet, false);

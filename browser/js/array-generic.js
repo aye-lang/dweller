@@ -1,6 +1,13 @@
 (function () {
 'use strict';
 // v8: src/builtins/array-foreach.tq, array-map.tq, array-filter.tq, array-reduce.tq (spec order on generic objects)
+const { Object, Array, String, Symbol, TypeError, Math, Reflect } = globalThis;
+const ObjectDefineProperty = Object.defineProperty;
+const ObjectKeys = Object.keys;
+const MathMax = Math.max;
+const MathMin = Math.min;
+const MathTrunc = Math.trunc;
+const ReflectConstruct = Reflect.construct;
 const A = Array.prototype;
 const native = {};
 const apply = Reflect.apply;
@@ -14,7 +21,7 @@ function toObject(o) {
 }
 function toInteger(v) {
   const n = +v;
-  return n !== n ? 0 : Math.trunc(n);
+  return n !== n ? 0 : MathTrunc(n);
 }
 function lengthOf(o) {
   const n = toInteger(o.length);
@@ -27,7 +34,7 @@ function callable(f) {
 function isConstructor(C) {
   if (typeof C !== 'function') return false;
   try {
-    Reflect.construct(String, [], C);
+    ReflectConstruct(String, [], C);
     return true;
   } catch (e) {
     return false;
@@ -45,7 +52,7 @@ function speciesCreate(o, n, C) {
   return new C(n);
 }
 function put(o, k, v) {
-  Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+  ObjectDefineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
 }
 function search(o, len, x, from, step, strict) {
   for (let k = from; step > 0 ? k < len : k >= 0; k += step) {
@@ -59,7 +66,7 @@ function search(o, len, x, from, step, strict) {
 function startIndex(v, len, def) {
   if (v === undefined) return def;
   const n = toInteger(v);
-  return n < 0 ? Math.max(len + n, 0) : Math.min(n, len);
+  return n < 0 ? MathMax(len + n, 0) : MathMin(n, len);
 }
 const generic = {
   forEach(f, t) {
@@ -144,7 +151,7 @@ const generic = {
     const len = lengthOf(o);
     if (len === 0) return -1;
     const n = arguments.length > 1 ? toInteger(from) : len - 1;
-    return search(o, len, x, n < 0 ? len + n : Math.min(n, len - 1), -1, true);
+    return search(o, len, x, n < 0 ? len + n : MathMin(n, len - 1), -1, true);
   },
   includes(x, from) {
     const o = toObject(this);
@@ -178,9 +185,9 @@ function wrap(k, g) {
       return apply(fast.call(this) ? n : g, this, arguments);
     },
   }[k];
-  Object.defineProperty(w, 'length', { value: n.length, configurable: true });
-  Object.defineProperty(A, k, { value: w, writable: true, configurable: true });
+  ObjectDefineProperty(w, 'length', { value: n.length, configurable: true });
+  ObjectDefineProperty(A, k, { value: w, writable: true, configurable: true });
 }
-for (const k of Object.keys(generic)) wrap(k, generic[k]);
-for (const k of Object.keys(finders)) wrap(k, finders[k]);
+for (const k of ObjectKeys(generic)) wrap(k, generic[k]);
+for (const k of ObjectKeys(finders)) wrap(k, finders[k]);
 })();

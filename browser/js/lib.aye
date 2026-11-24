@@ -12,11 +12,37 @@ pub let LIB =
     \\(function () {
     \\'use strict';
     \\const G = globalThis;
+    \\const { Object, Array, String, Number, Boolean, Symbol, BigInt, Math, JSON, Date, RegExp, Map, Set, WeakMap, WeakSet, Function } = G;
+    \\const { Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, isNaN, isFinite, parseInt } = G;
+    \\const ArrayFrom = Array.from;
+    \\const ArrayIsArray = Array.isArray;
+    \\const ObjectAssign = Object.assign;
+    \\const ObjectCreate = Object.create;
+    \\const ObjectDefineProperty = Object.defineProperty;
+    \\const ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+    \\const ObjectGetOwnPropertyNames = Object.getOwnPropertyNames;
+    \\const ObjectGetOwnPropertySymbols = Object.getOwnPropertySymbols;
+    \\const ObjectGetPrototypeOf = Object.getPrototypeOf;
+    \\const ObjectIs = Object.is;
+    \\const ObjectIsExtensible = Object.isExtensible;
+    \\const ObjectKeys = Object.keys;
+    \\const ObjectPreventExtensions = Object.preventExtensions;
+    \\const ObjectSetPrototypeOf = Object.setPrototypeOf;
+    \\const MathAbs = Math.abs;
+    \\const MathFloor = Math.floor;
+    \\const MathMax = Math.max;
+    \\const MathMin = Math.min;
+    \\const MathRound = Math.round;
+    \\const MathTrunc = Math.trunc;
+    \\const BigIntAsIntN = BigInt.asIntN;
+    \\const DateUTC = Date.UTC;
+    \\const StringFromCharCode = String.fromCharCode;
+    \\const JSONParse = JSON.parse;
     \\function hidden(o, k, v) {
-    \\  Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
+    \\  ObjectDefineProperty(o, k, { value: v, writable: true, configurable: true });
     \\}
     \\function methods(o, table) {
-    \\  for (const k of Object.keys(table)) hidden(o, k, table[k]);
+    \\  for (const k of ObjectKeys(table)) hidden(o, k, table[k]);
     \\}
     \\
     \\// ---- Object, Array, String, Error additions
@@ -24,12 +50,12 @@ pub let LIB =
     \\methods(Object, {
     \\  getOwnPropertyDescriptors(o) {
     \\    const out = {};
-    \\    for (const k of Object.getOwnPropertyNames(o)) out[k] = Object.getOwnPropertyDescriptor(o, k);
-    \\    for (const s of Object.getOwnPropertySymbols(o)) out[s] = Object.getOwnPropertyDescriptor(o, s);
+    \\    for (const k of ObjectGetOwnPropertyNames(o)) out[k] = ObjectGetOwnPropertyDescriptor(o, k);
+    \\    for (const s of ObjectGetOwnPropertySymbols(o)) out[s] = ObjectGetOwnPropertyDescriptor(o, s);
     \\    return out;
     \\  },
     \\  groupBy(items, f) {
-    \\    const out = Object.create(null);
+    \\    const out = ObjectCreate(null);
     \\    let i = 0;
     \\    for (const x of items) {
     \\      const k = f(x, i++);
@@ -115,12 +141,12 @@ pub let LIB =
     \\  copyWithin(target, start, end) {
     \\    const len = this.length >>> 0;
     \\    const rel = (x, d) => {
-    \\      x = x === undefined ? d : Math.trunc(Number(x)) || 0;
-    \\      return x < 0 ? Math.max(len + x, 0) : Math.min(x, len);
+    \\      x = x === undefined ? d : MathTrunc(Number(x)) || 0;
+    \\      return x < 0 ? MathMax(len + x, 0) : MathMin(x, len);
     \\    };
     \\    let to = rel(target, 0), from = rel(start, 0);
     \\    const last = rel(end, len);
-    \\    let count = Math.min(last - from, len - to);
+    \\    let count = MathMin(last - from, len - to);
     \\    if (from < to && to < from + count) {
     \\      for (let i = count - 1; i >= 0; i--) {
     \\        if (from + i in this) this[to + i] = this[from + i];
@@ -164,7 +190,7 @@ pub let LIB =
     \\  },
     \\});
     \\Error.stackTraceLimit = 10;
-    \\Object.defineProperty(Error.prototype, 'stack', {
+    \\ObjectDefineProperty(Error.prototype, 'stack', {
     \\  get() { return String(this.name) + ': ' + String(this.message) + '\n    at <anonymous>'; },
     \\  set(v) { hidden(this, 'stack', v); },
     \\  configurable: true,
@@ -172,7 +198,7 @@ pub let LIB =
     \\class AggregateError extends Error {
     \\  constructor(errors, message) {
     \\    super(message === undefined ? '' : message);
-    \\    hidden(this, 'errors', Array.from(errors));
+    \\    hidden(this, 'errors', ArrayFrom(errors));
     \\  }
     \\}
     \\hidden(AggregateError.prototype, 'name', 'AggregateError');
@@ -216,16 +242,12 @@ pub let LIB =
     \\  finally(f) {
     \\    if (typeof f !== 'function') return this.then(f, f);
     \\    return this.then(
-    \\      v => Promise.resolve(f()).then(() => v),
-    \\      e => Promise.resolve(f()).then(() => { throw e; }),
+    \\      v => promiseResolve(Promise, f()).then(() => v),
+    \\      e => promiseResolve(Promise, f()).then(() => { throw e; }),
     \\    );
     \\  }
     \\  static get [Symbol.species]() { return this; }
-    \\  static resolve(v) {
-    \\    const C = ctorOf(this);
-    \\    if (v instanceof Promise && v.constructor === C) return v;
-    \\    return new C(res => res(v));
-    \\  }
+    \\  static resolve(v) { return promiseResolve(ctorOf(this), v); }
     \\  static reject(e) { return new (ctorOf(this))((res, rej) => rej(e)); }
     \\  static withResolvers() {
     \\    let resolve, reject;
@@ -234,7 +256,7 @@ pub let LIB =
     \\  }
     \\  static all(items) {
     \\    return new (ctorOf(this))((resolve, reject) => {
-    \\      const list = Array.from(items);
+    \\      const list = ArrayFrom(items);
     \\      const out = new Array(list.length);
     \\      let left = list.length;
     \\      if (left === 0) resolve(out);
@@ -248,7 +270,7 @@ pub let LIB =
     \\  }
     \\  static allSettled(items) {
     \\    return new (ctorOf(this))(resolve => {
-    \\      const list = Array.from(items);
+    \\      const list = ArrayFrom(items);
     \\      const out = new Array(list.length);
     \\      let left = list.length;
     \\      if (left === 0) resolve(out);
@@ -268,7 +290,7 @@ pub let LIB =
     \\  }
     \\  static any(items) {
     \\    return new (ctorOf(this))((resolve, reject) => {
-    \\      const list = Array.from(items);
+    \\      const list = ArrayFrom(items);
     \\      let left = list.length;
     \\      const errors = new Array(left);
     \\      if (left === 0) reject(new AggregateError([], 'All promises were rejected'));
@@ -279,10 +301,14 @@ pub let LIB =
     \\    });
     \\  }
     \\}
-    \\Object.defineProperty(Promise.prototype, Symbol.toStringTag, { value: 'Promise', configurable: true });
+    \\ObjectDefineProperty(Promise.prototype, Symbol.toStringTag, { value: 'Promise', configurable: true });
     \\// The constructor a static method makes its promise with: `this` (a
     \\// subclass), Promise when called unbound.
     \\function ctorOf(c) { return typeof c === 'function' ? c : Promise; }
+    \\function promiseResolve(C, v) {
+    \\  if (v instanceof Promise && v.constructor === C) return v;
+    \\  return new C(res => res(v));
+    \\}
     \\// SpeciesConstructor(p, Promise).
     \\function speciesOf(p) {
     \\  const c = p.constructor;
@@ -381,7 +407,7 @@ pub let LIB =
     \\        return;
     \\      }
     \\      if (r.done) resolve(r.value);
-    \\      else Promise.resolve(r.value).then(x => step(false, x), e => step(true, e));
+    \\      else promiseResolve(Promise, r.value).then(x => step(false, x), e => step(true, e));
     \\    }
     \\    step(false, undefined);
     \\  });
@@ -436,9 +462,9 @@ pub let LIB =
     \\        return;
     \\      }
     \\      if (r.done) finish(true, { value: r.value, done: true });
-    \\      else if (kindOf(g) === 1) Promise.resolve(r.value).then(x => step(0, x), e => step(1, e));
+    \\      else if (kindOf(g) === 1) promiseResolve(Promise, r.value).then(x => step(0, x), e => step(1, e));
     \\      else if (kindOf(g) === 2) finish(true, { value: r.value, done: false });
-    \\      else Promise.resolve(r.value).then(x => finish(true, { value: x, done: false }), e => step(1, e));
+    \\      else promiseResolve(Promise, r.value).then(x => finish(true, { value: x, done: false }), e => step(1, e));
     \\    }
     \\    step(req.mode, req.value);
     \\  }
@@ -472,7 +498,6 @@ pub let LIB =
     \\const constCell = G.__engine.constCell;
     \\const makeNamespace = G.__engine.makeNamespace;
     \\const fillNamespace = G.__engine.fillNamespace;
-    \\const jsonParse = JSON.parse;
     \\const AMBIGUOUS = {};
     \\let asyncOrder = 0;
     \\// The import map: [key, value] pairs, longest keys first.
@@ -485,7 +510,7 @@ pub let LIB =
     \\}
     \\function setupModule(m) {
     \\  if (m.json !== undefined) {
-    \\    m.cells = { default: constCell(jsonParse(m.json)) };
+    \\    m.cells = { default: constCell(JSONParse(m.json)) };
     \\    m.requests = []; m.imports = []; m.indirect = []; m.stars = [];
     \\    m.locals = [['default', 'default']];
     \\    m.tla = false;
@@ -573,8 +598,8 @@ pub let LIB =
     \\// (keys already there win).
     \\function mergeSpecifierMap(into, map, base) {
     \\  const out = into.slice();
-    \\  if (typeof map !== 'object' || map === null || Array.isArray(map)) return out;
-    \\  for (const k of Object.keys(map)) {
+    \\  if (typeof map !== 'object' || map === null || ArrayIsArray(map)) return out;
+    \\  for (const k of ObjectKeys(map)) {
     \\    if (k === '') continue;
     \\    const key = resolveModule(k, base, 1) || k;
     \\    if (out.some(e => e[0] === key)) continue;
@@ -703,7 +728,7 @@ pub let LIB =
     \\    if (r === null || r === AMBIGUOUS) throw linkError(m, e[1], e[2], r);
     \\  }
     \\  localsOf(m);
-    \\  const bindings = Object.create(null);
+    \\  const bindings = ObjectCreate(null);
     \\  for (let i = 0; i < m.imports.length; i++) {
     \\    const e = m.imports[i];
     \\    const d = m.deps[e[0]];
@@ -828,7 +853,7 @@ pub let LIB =
     \\      return;
     \\    }
     \\    if (r.done) cap.resolve(undefined);
-    \\    else Promise.resolve(r.value).then(x => step(false, x), e => step(true, e));
+    \\    else promiseResolve(Promise, r.value).then(x => step(false, x), e => step(true, e));
     \\  }
     \\  step(false, undefined);
     \\}
@@ -948,7 +973,7 @@ pub let LIB =
     \\          const attrs = options.with;
     \\          if (attrs !== undefined) {
     \\            if (typeof attrs !== 'object' || attrs === null) throw new TypeError("The 'with' option of import() must be an object");
-    \\            for (const k of Object.keys(attrs)) {
+    \\            for (const k of ObjectKeys(attrs)) {
     \\              if (typeof attrs[k] !== 'string') throw new TypeError('Import attribute values must be strings');
     \\              if (k === 'type') type = attrs[k];
     \\            }
@@ -997,11 +1022,11 @@ pub let LIB =
     \\    return p;
     \\  },
     \\  importMap(json, base) {
-    \\    const map = jsonParse(json);
+    \\    const map = JSONParse(json);
     \\    if (typeof map !== 'object' || map === null) return;
     \\    mapImports = mergeSpecifierMap(mapImports, map.imports, base);
     \\    if (typeof map.scopes === 'object' && map.scopes !== null) {
-    \\      for (const s of Object.keys(map.scopes)) {
+    \\      for (const s of ObjectKeys(map.scopes)) {
     \\        const prefix = resolveModule(s, base, 2);
     \\        if (prefix === null) continue;
     \\        let entry = mapScopes.find(e => e[0] === prefix);
@@ -1029,19 +1054,19 @@ pub let LIB =
     \\// ---- Iterator: the abstract constructor of %IteratorPrototype%, which
     \\// the built-in iterators and generators inherit from (polyfills of the
     \\// iterator helpers add their methods there).
-    \\const IteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+    \\const IteratorPrototype = ObjectGetPrototypeOf(ObjectGetPrototypeOf([][Symbol.iterator]()));
     \\function Iterator() {
     \\  if (new.target === undefined || new.target === Iterator) throw new TypeError('Abstract class Iterator not directly constructable');
     \\}
-    \\Object.defineProperty(Iterator, 'prototype', { value: IteratorPrototype, writable: false, enumerable: false, configurable: false });
+    \\ObjectDefineProperty(Iterator, 'prototype', { value: IteratorPrototype, writable: false, enumerable: false, configurable: false });
     \\hidden(IteratorPrototype, 'constructor', Iterator);
-    \\Object.defineProperty(IteratorPrototype, Symbol.toStringTag, { value: 'Iterator', writable: true, configurable: true });
+    \\ObjectDefineProperty(IteratorPrototype, Symbol.toStringTag, { value: 'Iterator', writable: true, configurable: true });
     \\hidden(G, 'Iterator', Iterator);
     \\// The iterator helpers (ES2025): methods of Iterator.prototype. map,
     \\// filter, take, drop and flatMap return lazy %IteratorHelperPrototype%
     \\// objects; the others consume the iterator.
     \\const helperState = new WeakMap();
-    \\const IteratorHelperPrototype = Object.create(IteratorPrototype);
+    \\const IteratorHelperPrototype = ObjectCreate(IteratorPrototype);
     \\function iterResult(value, done) { return { value, done }; }
     \\function closeIterator(o) {
     \\  const ret = o.return;
@@ -1066,7 +1091,7 @@ pub let LIB =
     \\  return r;
     \\}
     \\function helper(o, step, close) {
-    \\  const h = Object.create(IteratorHelperPrototype);
+    \\  const h = ObjectCreate(IteratorHelperPrototype);
     \\  helperState.set(h, { o, step, close, done: false, running: false });
     \\  return h;
     \\}
@@ -1099,7 +1124,7 @@ pub let LIB =
     \\    return iterResult(undefined, true);
     \\  },
     \\});
-    \\Object.defineProperty(IteratorHelperPrototype, Symbol.toStringTag, { value: 'Iterator Helper', configurable: true });
+    \\ObjectDefineProperty(IteratorHelperPrototype, Symbol.toStringTag, { value: 'Iterator Helper', configurable: true });
     \\hidden(G, '__iteratorHelper', helper);
     \\function limitOf(limit, o) {
     \\  const n = Number(limit);
@@ -1107,7 +1132,7 @@ pub let LIB =
     \\    closeQuietly(o);
     \\    throw new RangeError(String(limit) + ' must be positive');
     \\  }
-    \\  const k = n === Infinity ? Infinity : Math.trunc(n);
+    \\  const k = n === Infinity ? Infinity : MathTrunc(n);
     \\  if (k < 0) {
     \\    closeQuietly(o);
     \\    throw new RangeError(String(limit) + ' must be positive');
@@ -1301,7 +1326,7 @@ pub let LIB =
     \\});
     \\// Iterator.from: an iterator that inherits from Iterator.prototype, or a
     \\// wrapper around one that does not.
-    \\const WrapForValidIteratorPrototype = Object.create(IteratorPrototype);
+    \\const WrapForValidIteratorPrototype = ObjectCreate(IteratorPrototype);
     \\const wrapped = new WeakMap();
     \\methods(WrapForValidIteratorPrototype, {
     \\  next() {
@@ -1322,7 +1347,7 @@ pub let LIB =
     \\  if (typeof o === 'string') it = o[Symbol.iterator]();
     \\  else it = flattenable(o);
     \\  if (IteratorPrototype.isPrototypeOf(it)) return it;
-    \\  const w = Object.create(WrapForValidIteratorPrototype);
+    \\  const w = ObjectCreate(WrapForValidIteratorPrototype);
     \\  wrapped.set(w, { o: it, next: it.next });
     \\  return w;
     \\}));
@@ -1341,7 +1366,7 @@ pub let LIB =
     \\  return out;
     \\}));
     \\hidden(G, 'unescape', method(function unescape(s) {
-    \\  return String(s).replace(/%u([0-9a-fA-F]{4})|%([0-9a-fA-F]{2})/g, (m, u, b) => String.fromCharCode(parseInt(u || b, 16)));
+    \\  return String(s).replace(/%u([0-9a-fA-F]{4})|%([0-9a-fA-F]{2})/g, (m, u, b) => StringFromCharCode(parseInt(u || b, 16)));
     \\}));
     \\
     \\// ---- Date: setters and more formats (local time is UTC)
@@ -1355,15 +1380,15 @@ pub let LIB =
     \\    const p = dateParts(this);
     \\    for (let i = 0; i < count && i < args.length; i++) p[first + i] = Number(args[i]);
     \\    if (args.length === 0) p[first] = NaN;
-    \\    return this.setTime(Date.UTC(p[0], p[1], p[2], p[3], p[4], p[5], p[6]));
+    \\    return this.setTime(DateUTC(p[0], p[1], p[2], p[3], p[4], p[5], p[6]));
     \\  });
     \\}
     \\const setters = { FullYear: [0, 3], Month: [1, 2], Date: [2, 1], Hours: [3, 4], Minutes: [4, 3], Seconds: [5, 2], Milliseconds: [6, 1] };
-    \\for (const k of Object.keys(setters)) {
+    \\for (const k of ObjectKeys(setters)) {
     \\  for (const name of ['set' + k, 'setUTC' + k]) {
     \\    const f = setter(setters[k][0], setters[k][1]);
-    \\    Object.defineProperty(f, 'length', { value: setters[k][1], configurable: true });
-    \\    Object.defineProperty(f, 'name', { value: name, configurable: true });
+    \\    ObjectDefineProperty(f, 'length', { value: setters[k][1], configurable: true });
+    \\    ObjectDefineProperty(f, 'name', { value: name, configurable: true });
     \\    hidden(DP, name, f);
     \\  }
     \\}
@@ -1411,24 +1436,24 @@ pub let LIB =
     \\
     \\// ---- Object.prototype.__proto__ (Annex B): the prototype as an accessor
     \\
-    \\Object.defineProperty(Object.prototype, '__proto__', {
-    \\  get() { return Object.getPrototypeOf(this); },
+    \\ObjectDefineProperty(Object.prototype, '__proto__', {
+    \\  get() { return ObjectGetPrototypeOf(this); },
     \\  set(p) {
     \\    if (this === undefined || this === null) throw new TypeError('Object.prototype.__proto__ called on null or undefined');
-    \\    if ((typeof p === 'object' || typeof p === 'function') && (typeof this === 'object' || typeof this === 'function')) Object.setPrototypeOf(this, p);
+    \\    if ((typeof p === 'object' || typeof p === 'function') && (typeof this === 'object' || typeof this === 'function')) ObjectSetPrototypeOf(this, p);
     \\  },
     \\  configurable: true,
     \\});
     \\function legacyAccessor(name, part) {
     \\  hidden(Object.prototype, name, function (key, fn) {
     \\    if (typeof fn !== 'function') throw new TypeError('Object.prototype.' + name + ': Expecting function');
-    \\    Object.defineProperty(Object(this), key, { [part]: fn, enumerable: true, configurable: true });
+    \\    ObjectDefineProperty(Object(this), key, { [part]: fn, enumerable: true, configurable: true });
     \\  });
     \\}
     \\function legacyLookup(name, part) {
     \\  hidden(Object.prototype, name, function (key) {
-    \\    for (let o = Object(this); o !== null; o = Object.getPrototypeOf(o)) {
-    \\      const d = Object.getOwnPropertyDescriptor(o, key);
+    \\    for (let o = Object(this); o !== null; o = ObjectGetPrototypeOf(o)) {
+    \\      const d = ObjectGetOwnPropertyDescriptor(o, key);
     \\      if (d) return d[part];
     \\    }
     \\    return undefined;
@@ -1445,7 +1470,7 @@ pub let LIB =
     \\  apply(f, t, args) { return Function.prototype.apply.call(f, t, args); },
     \\  construct(C, args, NT) {
     \\    if (typeof C !== 'function') throw new TypeError('Reflect.construct: target is not a constructor');
-    \\    return engineConstruct(C, Array.from(args), NT === undefined ? C : NT);
+    \\    return engineConstruct(C, args, NT === undefined ? C : NT);
     \\  },
     \\  defineProperty(o, k, d) { return engineDefineProperty(o, k, d); },
     \\  deleteProperty(o, k) { return engineDeleteProperty(o, k); },
@@ -1472,19 +1497,19 @@ pub let LIB =
     \\    }
     \\    if (d && !d.writable) return false;
     \\    if (r === null || (typeof r !== 'object' && typeof r !== 'function')) return false;
-    \\    const own = Object.getOwnPropertyDescriptor(r, k);
+    \\    const own = ObjectGetOwnPropertyDescriptor(r, k);
     \\    if (own && (own.get || own.set || !own.writable)) return false;
     \\    return engineDefineProperty(r, k, own ? { value: v } : { value: v, writable: true, enumerable: true, configurable: true });
     \\  },
     \\  has(o, k) { return k in o; },
-    \\  ownKeys(o) { return [...Object.getOwnPropertyNames(o), ...Object.getOwnPropertySymbols(o)]; },
-    \\  getPrototypeOf(o) { return Object.getPrototypeOf(o); },
+    \\  ownKeys(o) { return [...ObjectGetOwnPropertyNames(o), ...ObjectGetOwnPropertySymbols(o)]; },
+    \\  getPrototypeOf(o) { return ObjectGetPrototypeOf(o); },
     \\  setPrototypeOf(o, p) { return engineSetPrototypeOf(o, p); },
-    \\  getOwnPropertyDescriptor(o, k) { return Object.getOwnPropertyDescriptor(o, k); },
-    \\  isExtensible(o) { return Object.isExtensible(o); },
+    \\  getOwnPropertyDescriptor(o, k) { return ObjectGetOwnPropertyDescriptor(o, k); },
+    \\  isExtensible(o) { return ObjectIsExtensible(o); },
     \\  preventExtensions(o) {
     \\    if (!isObjectLike(o)) throw new TypeError('Reflect.preventExtensions called on non-object');
-    \\    Object.preventExtensions(o);
+    \\    ObjectPreventExtensions(o);
     \\    return true;
     \\  },
     \\};
@@ -1493,18 +1518,18 @@ pub let LIB =
     \\}
     \\function canSet(o, k) {
     \\  const d = findDescriptor(o, k);
-    \\  if (!d) return Object.isExtensible(o);
+    \\  if (!d) return ObjectIsExtensible(o);
     \\  if (d.get || d.set) return !!d.set;
-    \\  return d.writable && (Object.prototype.hasOwnProperty.call(o, k) || Object.isExtensible(o));
+    \\  return d.writable && (Object.prototype.hasOwnProperty.call(o, k) || ObjectIsExtensible(o));
     \\}
     \\function findDescriptor(o, k) {
-    \\  for (let p = o; p !== null && p !== undefined; p = Object.getPrototypeOf(p)) {
-    \\    const d = Object.getOwnPropertyDescriptor(p, k);
+    \\  for (let p = o; p !== null && p !== undefined; p = ObjectGetPrototypeOf(p)) {
+    \\    const d = ObjectGetOwnPropertyDescriptor(p, k);
     \\    if (d) return d;
     \\  }
     \\  return undefined;
     \\}
-    \\Object.defineProperty(Reflect, Symbol.toStringTag, { value: 'Reflect', configurable: true });
+    \\ObjectDefineProperty(Reflect, Symbol.toStringTag, { value: 'Reflect', configurable: true });
     \\hidden(G, 'Reflect', Reflect);
     \\
     \\// ---- typed arrays: views over the byte store of one ArrayBuffer
@@ -1517,7 +1542,7 @@ pub let LIB =
     \\// An ArrayBuffer's bytes are one native block (typed.aye bufNew), freed
     \\// when it is collected or detached (transfer).
     \\function toIndex(n, what) {
-    \\  const i = n === undefined ? 0 : Math.trunc(Number(n)) || 0;
+    \\  const i = n === undefined ? 0 : MathTrunc(Number(n)) || 0;
     \\  if (i < 0 || i > 9007199254740991) throw new RangeError('Invalid ' + what + ': ' + n);
     \\  return i;
     \\}
@@ -1552,7 +1577,7 @@ pub let LIB =
     \\    const n = bufLen(this);
     \\    b = relIndex(b, n, 0);
     \\    e = relIndex(e, n, n);
-    \\    const r = new ArrayBuffer(Math.max(0, e - b));
+    \\    const r = new ArrayBuffer(MathMax(0, e - b));
     \\    if (e > b) bufCopy(r, 0, this, b, e - b);
     \\    return r;
     \\  }
@@ -1561,7 +1586,7 @@ pub let LIB =
     \\    const len = n === undefined ? bufLen(this) : toIndex(n, 'array buffer length');
     \\    const max = bufMax(this);
     \\    const r = max < 0 ? new ArrayBuffer(len) : new ArrayBuffer(len, { maxByteLength: max });
-    \\    bufCopy(r, 0, this, 0, Math.min(len, bufLen(this)));
+    \\    bufCopy(r, 0, this, 0, MathMin(len, bufLen(this)));
     \\    bufDetach(this);
     \\    return r;
     \\  }
@@ -1569,7 +1594,7 @@ pub let LIB =
     \\    liveBuffer(this, 'ArrayBuffer.prototype.transferToFixedLength');
     \\    const len = n === undefined ? bufLen(this) : toIndex(n, 'array buffer length');
     \\    const r = new ArrayBuffer(len);
-    \\    bufCopy(r, 0, this, 0, Math.min(len, bufLen(this)));
+    \\    bufCopy(r, 0, this, 0, MathMin(len, bufLen(this)));
     \\    bufDetach(this);
     \\    return r;
     \\  }
@@ -1578,8 +1603,8 @@ pub let LIB =
     \\hidden(G, 'ArrayBuffer', ArrayBuffer);
     \\function relIndex(i, n, dflt) {
     \\  if (i === undefined) return dflt;
-    \\  i = Math.trunc(Number(i)) || 0;
-    \\  return i < 0 ? Math.max(0, n + i) : Math.min(i, n);
+    \\  i = MathTrunc(Number(i)) || 0;
+    \\  return i < 0 ? MathMax(0, n + i) : MathMin(i, n);
     \\}
     \\// A plain iterator: a generator would count against the live generators.
     \\const apply = Reflect.apply;
@@ -1597,7 +1622,7 @@ pub let LIB =
     \\}
     \\function viewLen(v) {
     \\  if (outOfBounds(v)) return 0;
-    \\  return v.len === undefined ? Math.floor((bufLen(v.buf) - v.off) / v.size) : v.len;
+    \\  return v.len === undefined ? MathFloor((bufLen(v.buf) - v.off) / v.size) : v.len;
     \\}
     \\function validate(o, what) {
     \\  const v = viewOf(o, what);
@@ -1610,10 +1635,10 @@ pub let LIB =
     \\}
     \\function integer(n) {
     \\  n = Number(n);
-    \\  return n !== n ? 0 : Math.trunc(n);
+    \\  return n !== n ? 0 : MathTrunc(n);
     \\}
     \\function element(v, x) {
-    \\  return v.kind >= 9 ? BigInt.asIntN(64, x) : Number(x);
+    \\  return v.kind >= 9 ? BigIntAsIntN(64, x) : Number(x);
     \\}
     \\function created(a, length, what) {
     \\  const v = validate(a, what);
@@ -1659,16 +1684,16 @@ pub let LIB =
     \\      return { value: kind === 0 ? k : kind === 1 ? a[k] : [k, a[k]], done: false };
     \\    },
     \\  };
-    \\  Object.setPrototypeOf(it, arrayIteratorProto);
+    \\  ObjectSetPrototypeOf(it, arrayIteratorProto);
     \\  return it;
     \\}
-    \\const arrayIteratorProto = Object.getPrototypeOf([][Symbol.iterator]());
+    \\const arrayIteratorProto = ObjectGetPrototypeOf([][Symbol.iterator]());
     \\function defaultOrder(x, y) {
     \\  if (x !== x) return y !== y ? 0 : 1;
     \\  if (y !== y) return -1;
     \\  if (x < y) return -1;
     \\  if (x > y) return 1;
-    \\  if (x === 0 && y === 0) return Object.is(x, -0) ? (Object.is(y, -0) ? 0 : -1) : (Object.is(y, -0) ? 1 : 0);
+    \\  if (x === 0 && y === 0) return ObjectIs(x, -0) ? (ObjectIs(y, -0) ? 0 : -1) : (ObjectIs(y, -0) ? 1 : 0);
     \\  return 0;
     \\}
     \\function sortedList(o, len, compare) {
@@ -1705,7 +1730,7 @@ pub let LIB =
     \\    } else {
     \\      list = Object(source);
     \\    }
-    \\    const len = usingIterator !== undefined && usingIterator !== null ? list.length : Math.min(Math.max(integer(list.length), 0), 9007199254740991);
+    \\    const len = usingIterator !== undefined && usingIterator !== null ? list.length : MathMin(MathMax(integer(list.length), 0), 9007199254740991);
     \\    const target = typedCreate(C, [len], 'from');
     \\    for (let k = 0; k < len; k++) {
     \\      const value = list[k];
@@ -1738,11 +1763,11 @@ pub let LIB =
     \\    const to = relIndex(target, len, 0);
     \\    const from = relIndex(start, len, 0);
     \\    const final = relIndex(end, len, len);
-    \\    let count = Math.min(final - from, len - to);
+    \\    let count = MathMin(final - from, len - to);
     \\    if (count > 0) {
     \\      if (outOfBounds(v)) throw new TypeError('Cannot perform copyWithin on a detached or out-of-bounds typed array');
     \\      const now = viewLen(v);
-    \\      count = Math.min(count, now - from, now - to);
+    \\      count = MathMin(count, now - from, now - to);
     \\      if (count > 0) bufCopy(v.buf, v.off + to * v.size, v.buf, v.off + from * v.size, count * v.size);
     \\    }
     \\    return this;
@@ -1798,7 +1823,7 @@ pub let LIB =
     \\    const from = relIndex(start, len, 0);
     \\    let to = relIndex(end, len, len);
     \\    if (outOfBounds(v)) throw new TypeError('Cannot perform fill on a detached or out-of-bounds typed array');
-    \\    to = Math.min(to, viewLen(v));
+    \\    to = MathMin(to, viewLen(v));
     \\    if (from < to) typedFill(this, value, from, to);
     \\    return this;
     \\  }
@@ -1817,7 +1842,7 @@ pub let LIB =
     \\    const len = viewLen(validate(this, 'indexOf'));
     \\    if (len === 0) return -1;
     \\    let k = integer(from) + 0;
-    \\    if (k < 0) k = Math.max(len + k, 0);
+    \\    if (k < 0) k = MathMax(len + k, 0);
     \\    for (; k < len; k++) if (k in this && this[k] === x) return k;
     \\    return -1;
     \\  }
@@ -1825,7 +1850,7 @@ pub let LIB =
     \\    const len = viewLen(validate(this, 'lastIndexOf'));
     \\    if (len === 0) return -1;
     \\    const n = arguments.length > 1 ? integer(from) : len - 1;
-    \\    let k = (n >= 0 ? Math.min(n, len - 1) : len + n) + 0;
+    \\    let k = (n >= 0 ? MathMin(n, len - 1) : len + n) + 0;
     \\    for (; k >= 0; k--) if (k in this && this[k] === x) return k;
     \\    return -1;
     \\  }
@@ -1889,7 +1914,7 @@ pub let LIB =
     \\      return;
     \\    }
     \\    const src = Object(source);
-    \\    const n = Math.min(Math.max(integer(src.length), 0), 9007199254740991);
+    \\    const n = MathMin(MathMax(integer(src.length), 0), 9007199254740991);
     \\    if (at + n > len) throw new RangeError('offset is out of bounds');
     \\    for (let i = 0; i < n; i++) this[at + i] = src[i];
     \\  }
@@ -1898,14 +1923,14 @@ pub let LIB =
     \\    const len = viewLen(v);
     \\    const from = relIndex(start, len, 0);
     \\    let to = relIndex(end, len, len);
-    \\    const count = Math.max(to - from, 0);
+    \\    const count = MathMax(to - from, 0);
     \\    const a = speciesCreate(this, v, [count], 'slice');
     \\    if (count > 0) {
     \\      if (outOfBounds(v)) throw new TypeError('Cannot perform slice on a detached or out-of-bounds typed array');
-    \\      to = Math.min(to, viewLen(v));
+    \\      to = MathMin(to, viewLen(v));
     \\      const dst = views.get(a);
     \\      if (dst.kind === v.kind) {
-    \\        if (to > from) bufCopy(dst.buf, dst.off, v.buf, v.off + from * v.size, Math.min((to - from) * v.size, viewLen(dst) * dst.size));
+    \\        if (to > from) bufCopy(dst.buf, dst.off, v.buf, v.off + from * v.size, MathMin((to - from) * v.size, viewLen(dst) * dst.size));
     \\      } else {
     \\        for (let k = from, n = 0; k < to; k++, n++) a[n] = this[k];
     \\      }
@@ -1926,7 +1951,7 @@ pub let LIB =
     \\    const offset = v.off + from * v.size;
     \\    if (v.len === undefined && end === undefined) return speciesCreate(this, v, [v.buf, offset], 'subarray');
     \\    const to = relIndex(end, len, len);
-    \\    return speciesCreate(this, v, [v.buf, offset, Math.max(to - from, 0)], 'subarray');
+    \\    return speciesCreate(this, v, [v.buf, offset, MathMax(to - from, 0)], 'subarray');
     \\  }
     \\  toLocaleString() {
     \\    const len = viewLen(validate(this, 'toLocaleString'));
@@ -2004,7 +2029,7 @@ pub let LIB =
     \\          if ((from.kind >= 9) !== (kind >= 9)) throw new TypeError('Cannot mix BigInt and other typed arrays');
     \\          len = viewLen(from);
     \\        } else if (arg !== null && typeof arg === 'object') {
-    \\          src = Array.from(arg);
+    \\          src = ArrayFrom(arg);
     \\          len = src.length;
     \\        } else {
     \\          len = toIndex(arg, 'typed array length');
@@ -2020,9 +2045,9 @@ pub let LIB =
     \\    },
     \\  }[name + 'Array'];
     \\  CTORS[kind] = C;
-    \\  Object.defineProperty(C, 'name', { value: name + 'Array', configurable: true });
-    \\  Object.defineProperty(C, 'BYTES_PER_ELEMENT', { value: size });
-    \\  Object.defineProperty(C.prototype, 'BYTES_PER_ELEMENT', { value: size });
+    \\  ObjectDefineProperty(C, 'name', { value: name + 'Array', configurable: true });
+    \\  ObjectDefineProperty(C, 'BYTES_PER_ELEMENT', { value: size });
+    \\  ObjectDefineProperty(C.prototype, 'BYTES_PER_ELEMENT', { value: size });
     \\  hidden(G, name + 'Array', C);
     \\});
     \\const dataViews = new WeakSet();
@@ -2072,7 +2097,7 @@ pub let LIB =
     \\  }, ['set' + name](i, v, le = false) {
     \\    dataView(this, 'set' + name);
     \\    i = toIndex(i, 'offset');
-    \\    v = kind >= 9 ? BigInt.asIntN(64, v) : Number(v);
+    \\    v = kind >= 9 ? BigIntAsIntN(64, v) : Number(v);
     \\    if (i + size > dataViewLength(this, 'set' + name)) throw new RangeError('Offset is outside the bounds of the DataView');
     \\    viewSet(this._viewBuf, this._viewOff + i, kind, v, !!le);
     \\  } };
@@ -2089,9 +2114,9 @@ pub let LIB =
     \\  if (!isFinite(n)) return String(n);
     \\  let max = o.maximumFractionDigits !== undefined ? o.maximumFractionDigits : (o.style === 'percent' ? 0 : 3);
     \\  let min = o.minimumFractionDigits || 0;
-    \\  if (o.style === 'currency' && o.minimumFractionDigits === undefined) { min = 2; max = Math.max(max, 2); }
+    \\  if (o.style === 'currency' && o.minimumFractionDigits === undefined) { min = 2; max = MathMax(max, 2); }
     \\  if (o.style === 'percent') n *= 100;
-    \\  let s = n.toFixed(Math.max(min, max));
+    \\  let s = n.toFixed(MathMax(min, max));
     \\  if (s.indexOf('.') >= 0) {
     \\    while (s.endsWith('0') && s.length - s.indexOf('.') - 1 > min) s = s.slice(0, -1);
     \\    if (s.endsWith('.')) s = s.slice(0, -1);
@@ -2105,9 +2130,9 @@ pub let LIB =
     \\    int = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     \\    s = (neg ? '-' : '') + int + frac;
     \\  }
-    \\  if (o.notation === 'compact' && Math.abs(n) >= 1000) {
+    \\  if (o.notation === 'compact' && MathAbs(n) >= 1000) {
     \\    const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
-    \\    for (const [v, u] of units) if (Math.abs(n) >= v) return numberFormat(Math.round(n / v * 10) / 10, { maximumFractionDigits: 1 }) + u;
+    \\    for (const [v, u] of units) if (MathAbs(n) >= v) return numberFormat(MathRound(n / v * 10) / 10, { maximumFractionDigits: 1 }) + u;
     \\  }
     \\  if (o.style === 'percent') return s + '%';
     \\  if (o.style === 'currency') return (o.currency === 'EUR' ? '€' : o.currency === 'GBP' ? '£' : o.currency === 'JPY' ? '¥' : '$') + s;
@@ -2126,7 +2151,7 @@ pub let LIB =
     \\    constructor(locale, o) { hidden(this, '_o', o || {}); }
     \\    format(n) { return numberFormat(n, this._o); }
     \\    formatToParts(n) { return [{ type: 'integer', value: this.format(n) }]; }
-    \\    resolvedOptions() { return Object.assign({ locale: 'en-US', numberingSystem: 'latn' }, this._o); }
+    \\    resolvedOptions() { return ObjectAssign({ locale: 'en-US', numberingSystem: 'latn' }, this._o); }
     \\    static supportedLocalesOf(l) { return [].concat(l || []); }
     \\  },
     \\  DateTimeFormat: class DateTimeFormat {
@@ -2134,7 +2159,7 @@ pub let LIB =
     \\    format(d) { return dateFormat(d, this._o); }
     \\    formatToParts(d) { return [{ type: 'literal', value: this.format(d) }]; }
     \\    formatRange(a, b) { return this.format(a) + ' – ' + this.format(b); }
-    \\    resolvedOptions() { return Object.assign({ locale: 'en-US', calendar: 'gregory', numberingSystem: 'latn', timeZone: 'UTC' }, this._o); }
+    \\    resolvedOptions() { return ObjectAssign({ locale: 'en-US', calendar: 'gregory', numberingSystem: 'latn', timeZone: 'UTC' }, this._o); }
     \\    static supportedLocalesOf(l) { return [].concat(l || []); }
     \\  },
     \\  Collator: class Collator {
@@ -2161,16 +2186,16 @@ pub let LIB =
     \\    constructor(locale, o) { hidden(this, '_o', o || {}); }
     \\    format(v, unit) {
     \\      unit = String(unit).replace(/s$/, '');
-    \\      const n = Math.abs(v);
+    \\      const n = MathAbs(v);
     \\      if (this._o.numeric === 'auto' && n === 1 && unit === 'day') return v < 0 ? 'yesterday' : 'tomorrow';
     \\      const u = n === 1 ? unit : unit + 's';
-    \\      return v < 0 || Object.is(v, -0) ? n + ' ' + u + ' ago' : 'in ' + n + ' ' + u;
+    \\      return v < 0 || ObjectIs(v, -0) ? n + ' ' + u + ' ago' : 'in ' + n + ' ' + u;
     \\    }
     \\  },
     \\  ListFormat: class ListFormat {
     \\    constructor(locale, o) { hidden(this, '_o', o || {}); }
     \\    format(list) {
-    \\      const a = Array.from(list, String);
+    \\      const a = ArrayFrom(list, String);
     \\      const w = this._o.type === 'disjunction' ? 'or' : 'and';
     \\      if (a.length < 3) return a.join(' ' + w + ' ');
     \\      return a.slice(0, -1).join(', ') + ', ' + w + ' ' + a[a.length - 1];
@@ -2180,7 +2205,7 @@ pub let LIB =
     \\    constructor(locale, o) { hidden(this, '_o', o || {}); }
     \\    segment(s) {
     \\      s = String(s);
-    \\      const parts = this._o.granularity === 'word' ? s.split(/(\s+)/).filter(Boolean) : Array.from(s);
+    \\      const parts = this._o.granularity === 'word' ? s.split(/(\s+)/).filter(Boolean) : ArrayFrom(s);
     \\      let i = 0;
     \\      return parts.map(p => { const r = { segment: p, index: i, input: s, isWordLike: /\w/.test(p) }; i += p.length; return r; });
     \\    }
@@ -2208,7 +2233,7 @@ pub let LIB =
     \\    if (seen.has(v)) return seen.get(v);
     \\    const tag = Object.prototype.toString.call(v);
     \\    let out;
-    \\    if (Array.isArray(v)) out = new Array(v.length);
+    \\    if (ArrayIsArray(v)) out = new Array(v.length);
     \\    else if (v instanceof Date) out = new Date(v.getTime());
     \\    else if (v instanceof RegExp) out = new RegExp(v.source, v.flags);
     \\    else if (v instanceof Map) out = new Map();
@@ -2216,20 +2241,20 @@ pub let LIB =
     \\    else if (v instanceof Error) out = new (cloneErrors[v.name] || Error)(v.message);
     \\    else if (v instanceof ArrayBuffer) out = v.slice(0);
     \\    else if (v instanceof DataView) out = new DataView(clone(v.buffer), v.byteOffset, v.byteLength);
-    \\    else if (ArrayBuffer.isView(v)) out = new v.constructor(clone(v.buffer), v.byteOffset, v.length);
+    \\    else if (views.has(v)) out = new v.constructor(clone(v.buffer), views.get(v).off, views.get(v).len);
     \\    else if (tag === '[object Number]' || tag === '[object String]' || tag === '[object Boolean]') out = Object(v.valueOf());
     \\    else if (tag !== '[object Object]') fail(v);
     \\    else out = {};
     \\    seen.set(v, out);
     \\    if (v instanceof Map) for (const [k, x] of v) out.set(clone(k), clone(x));
     \\    else if (v instanceof Set) for (const x of v) out.add(clone(x));
-    \\    else if (Array.isArray(v) || tag === '[object Object]') for (const k of Object.keys(v)) out[k] = clone(v[k]);
+    \\    else if (ArrayIsArray(v) || tag === '[object Object]') for (const k of ObjectKeys(v)) out[k] = clone(v[k]);
     \\    return out;
     \\  }
     \\  // `transfer`: the buffers move (the source is detached) and the clone
     \\  // holds them, views included.
     \\  if (options !== undefined && options !== null && options.transfer !== undefined) {
-    \\    const list = Array.from(options.transfer);
+    \\    const list = ArrayFrom(options.transfer);
     \\    for (const b of list) if (!(b instanceof ArrayBuffer) || b.detached) fail(b);
     \\    for (const b of list) if (!seen.has(b)) seen.set(b, b.transfer());
     \\  }
