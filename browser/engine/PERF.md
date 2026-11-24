@@ -94,6 +94,15 @@ painted without them.
   status, MIME, charset, redirect destination, the response headers
   (`net.Response.headers_raw`), raw decompressed body, or fetch failure.
   Original URLs, HTML, CSS and JS are **not rewritten**.
+  A script's request (fetch, XHR, `EventSource`, an inserted script, a
+  frame) is made as the replay makes it: at once, whole, in the script
+  that asks (`net.liveRequest` is false). In the background its body
+  came in the parts the network sent, each a task 10 ms later on the
+  virtual clock, and a request the page dropped before it ended was
+  never recorded; the replay answers both at once, so the recording
+  and the replay saw other clocks and other `Math.random()` draws and
+  asked for other URLs (Q0.3e). A capture costs the time of these
+  requests one after the other.
 - `DWELLER_REPLAY=DIR` serves these files and disables HTTP prefetch.
   A miss fails locally, is printed, and **never falls through to HTTP**.
   With `DWELLER_RECORD` set as well (capture's screenshot), a miss is
