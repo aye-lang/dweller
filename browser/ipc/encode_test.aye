@@ -52,12 +52,13 @@ test "loaded round-trips through the framing" {
     var out = text.Builder.init(@testAllocator())
     defer out.deinit()
 
-    let got = try roundTrip(&mut out, 7, Message.Loaded { title: "", url: "file:///x.html" })
+    let got = try roundTrip(&mut out, 7, Message.Loaded { title: "", url: "file:///x.html", index: 3 })
 
     match got.message {
-        .Loaded { title, url } => {
+        .Loaded { title, url, index } => {
             @expectEqual("", title)
             @expectEqual("file:///x.html", url)
+            @expectEqual(3, index)
         }
         _ => @expect(false)
     }
@@ -233,7 +234,7 @@ fn failure(buf: []u8) []u8 {
 
 test "what a renderer may send" {
     @expect(fromRenderer(Message.Hello { version: VERSION, pid: 1 }))
-    @expect(fromRenderer(Message.Loaded { title: "", url: "" }))
+    @expect(fromRenderer(Message.Loaded { title: "", url: "", index: 0 }))
     @expect(!fromRenderer(Message.Navigate { url: "", post: 0, content_type: "", body: "" }))
     @expect(!fromRenderer(Message.Shutdown))
     @expect(fromRenderer(Message.Frame { buffer: 1, width: 1, height: 1, scroll_x: 0.0, scroll_y: 0.0, damage: "", pins: "" }))

@@ -1,0 +1,18 @@
+fn agentEntry(slot: *mut TabSlot, tp: *mut TabProcess, index: u32) bool {
+    let h = &mut slot.session.tab.history
+    let at = index as usize
+    var next = h.current + 1
+
+    if h.len() == 0 { next = 0 }
+
+    tp.push_on_commit = at == next
+    tp.replaced_on_commit = false
+    tp.share_doc_on_commit = !tp.push_on_commit
+
+    if tp.push_on_commit { return true }
+    if at >= h.len() { return false }
+
+    h.current = at
+
+    return true
+}

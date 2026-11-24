@@ -29,10 +29,7 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, ref_base: u3
         s.tab.scroll = r.scroll_y
         s.tab.scroll_x = r.scroll_x
 
-        if r.page |p| {
-            if s.tab.href().len == 0 { try s.tab.history.push(p.url.href, 0, null, false) }
-        }
-
+        try shareAgentHistory(r, s)
         try agent.syncSession(s, r.width as f64 / r.scale, r.height as f64 / r.scale, fresh)
         try agent.serveShared(&mut host, 0, mcp, tmp, line, &mut out)
 
@@ -47,7 +44,8 @@ fn answerAgent(r: *mut TabRenderer, frame: u32, id: u32, mcp: bool, ref_base: u3
     if s.tab.page |p| {
         if r.width > 0 && s.tab.page != r.page {
             try adoptPage(r, frame, p)
-            try send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: p.title, url: p.url.href })
+            try agentCommitted(r, p)
+            try send(r.alloc, r.conn, frame, ipc.Message.Loaded { title: p.title, url: p.url.href, index: r.at })
         }
     }
 

@@ -14,16 +14,16 @@ fn rendererSent(slot: *mut TabSlot, tp: *mut TabProcess, got: ipc.Got) AllocErro
             tp.hello = true
         }
 
-        .Loaded { title, url } => {
+        .Loaded { title, url, index } => {
             let by_agent = !tp.loading && tp.agent_id != 0 && tp.agent_acts
 
             if (!tp.loading && !by_agent) || got.frame != slot.id { return "unexpected loaded" }
             if tp.loading && !commitMatches(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
             if by_agent && !agentCommitAllowed(tp.url.alloc, tp.committed.bytes(), url) { return "bad url" }
             if !tp.nav_failed && !(try inSiteLock(tp, url)) { return "commit outside site lock" }
+            if by_agent && !agentEntry(slot, tp, index) { return "bad loaded" }
 
-            if tp.loading { try commitEntry(slot, tp, url) }
-
+            try commitEntry(slot, tp, url)
             try showCommitted(tp, title, url)
             tp.loading = tp.loading && nextNavigate(tp)
             tp.loaded_new = true

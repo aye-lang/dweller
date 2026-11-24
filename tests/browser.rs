@@ -140,6 +140,8 @@ mod window_renderer_popup;
 mod window_renderer_scroll;
 #[path = "browser/window_spaces.rs"]
 mod window_spaces;
+#[path = "browser/window_spaces_history.rs"]
+mod window_spaces_history;
 #[path = "browser/window_zoom.rs"]
 mod window_zoom;
 #[path = "browser/wpt.rs"]

@@ -3,6 +3,9 @@ import std.text
 
 fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!void {
     let h = &mut slot.session.tab.history
+    let shares = tp.share_doc_on_commit
+
+    tp.share_doc_on_commit = false
 
     if tp.url.len() == 0 && !tp.push_on_commit && h.len() > 0 && !text.eql(h.now().href, href) {
         tp.doc_seq += 1
@@ -26,10 +29,13 @@ fn commitEntry(slot: *mut TabSlot, tp: *mut TabProcess, href: []u8) AllocError!v
     }
 
     var state = h.now().state
+    let old = h.now().doc
 
     if tp.replaced_on_commit { state = null }
 
     tp.replaced_on_commit = false
     try h.replace(href, state)
     h.now().doc = tp.doc_seq
+
+    if shares { shareDocument(h, old, tp.doc_seq) }
 }

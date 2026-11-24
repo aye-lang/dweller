@@ -1,0 +1,24 @@
+import agent
+import engine
+import std.mem.AllocError
+
+fn shareAgentHistory(r: *mut TabRenderer, s: *mut agent.Session) AllocError!void {
+    let h = &mut s.tab.history
+    let p = r.page orelse return seedAgentHistory(h, r.hist_index)
+    let shown = p.sessionHistory()
+
+    if shown == h { return }
+
+    h.truncate(0)
+
+    for e in shown.entries.items() { try h.push(e.href, e.doc, e.state, e.manual_scroll) }
+
+    h.current = shown.current
+    p.shared = h
+}
+
+fn seedAgentHistory(h: *mut engine.SessionHistory, n: u32) AllocError!void {
+    h.truncate(0)
+
+    for i in 0..n { try h.push("", 0, null, false) }
+}
