@@ -101,8 +101,13 @@ painted without them.
   virtual clock, and a request the page dropped before it ended was
   never recorded; the replay answers both at once, so the recording
   and the replay saw other clocks and other `Math.random()` draws and
-  asked for other URLs (Q0.3e). A capture costs the time of these
-  requests one after the other.
+  asked for other URLs (Q0.3e). A background load of the loader (a
+  script's image request, a preload, the parser's prefetch) is done at
+  once too, as under `DWELLER_REPLAY`: the request that reads it fetches
+  it and records what came, a failure too. Live in the background, a
+  load that failed was never recorded, so the replay asked the archive
+  for its URL (P1.S7). A capture costs the time of these requests one
+  after the other (zol's live `dump`: about 75 s before, 125 s after).
 - `DWELLER_REPLAY=DIR` serves these files and disables HTTP prefetch.
   A miss fails locally, is printed, and **never falls through to HTTP**.
   With `DWELLER_RECORD` set as well (capture's screenshot), a miss is

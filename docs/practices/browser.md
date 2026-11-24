@@ -991,12 +991,20 @@ The replay answers at once, whole. bbc's first ad request went out
 10 ms earlier in the replay, with another `Math.random()` correlator,
 and 8 ad and beacon URLs missed after it (Q0.3e). Two captures in a
 row missed, so it looked like live network order no capture can fix.
-**Good:** under `DWELLER_RECORD`, `net.liveRequest` is false, as under
-`DWELLER_REPLAY`: the page gets the same tasks in both. To find such a
+The same for a loader's background load: zol's `pvhit0001.gif` (an
+image a script asks for) failed live now and then, was not recorded,
+and the capture's screenshot recorded it later, so the replay got an
+image where the recording had an error (P1.S7).
+**Good:** under `DWELLER_RECORD`, `net.liveRequest` is false, and
+`net.startLoadAs` starts no live load, as under `DWELLER_REPLAY`: the
+page gets the same tasks in both, and the request that reads a load
+records what came, a failure too. To find such a
 path, record a live `dump` and replay that archive at once, then diff
 the first missed URL against its recorded twin (`correlator`, `dt`):
 a time a few ms apart points to a task the capture had and the replay
-did not.
+did not. A URL the recording's `dump` asked for but recorded only later
+(its `date:` header is minutes after the dump) points to a load that
+failed in the background.
 **Why:** seeding `Date` and `Math.random()` is not enough when the
 capture and the replay run other tasks; the same tasks give the same
 values.
