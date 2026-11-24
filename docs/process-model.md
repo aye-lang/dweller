@@ -245,6 +245,7 @@ Dweller once every process is locked. As built the check is
 | `same_document` | the new URL has the frame's origin | kill |
 | `load`, `load_sync` | `initiator` is the frame's committed origin (Chromium `request_initiator_origin_lock`); no `Host`, `Cookie`, `Origin`, `Sec-*` header | kill |
 | `load`, `load_sync` | the scheme is allowed for the initiator (`file:` only from `file:`, Q3.1) | a network error (a page may try) |
+| `fetch` | the referrer is of the asking document's origin, or of the origin of a script or style sheet the browser gave this renderer (an import's referrer is its module's URL, an `@import`'s its sheet's, Blink `ModuleTreeLinker`; Q2.17). Net takes `Origin`, `Sec-Fetch-Site`, the credentials and SameSite from the initiator, never from the referrer, as Chromium takes them from `request_initiator` and only cuts the referrer by its policy (`services/network/url_loader_util.cc`) | kill (`bad fetch referrer`) |
 | `cookie_get`, `cookie_set` | `canAccess` for the URL's origin, which is a frame's origin | kill |
 | `storage_*` | the origin is the frame's committed origin | kill |
 | `post_message` | `source_origin` is the sender frame's origin (Chromium kills with `RFPH_POST_MESSAGE_INVALID_SOURCE_ORIGIN`); Q2.11: `null` or a serialized http(s) origin in the sender's site lock (`HostsOrigin`), `target_origin` `*` or a serialized origin, `buffers` well formed | kill |
@@ -264,6 +265,8 @@ ways (an intranet, cached HTTP auth). `X-Frame-Options` and
 
 **Kill.** The browser logs `bad message: REASON PID`, sends
 SIGKILL, and the frames of the process go to the crash path (§7).
+A refused `fetch` names its check in REASON: `bad fetch id`, `flags`,
+`doc`, `kind`, `method`, `top`, `referrer` or `headers` (Q2.17).
 Chromium `bad_message::ReceivedBadMessage` does the same. The Q2.7 test
 hook `DWELLER_TEST=1 DWELLER_TEST_EVIL=NAME` (the names are the
 `evilTest` calls in `renderer/`, such as `commit`, `site`, `initiator`,
