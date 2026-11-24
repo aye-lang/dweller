@@ -63,7 +63,11 @@ Where the modules go:
 `SO_NOSIGPIPE`, and it starts the same binary with `posix_spawnp`
 (`dweller --renderer FD`). It does not fork, so the browser's
 memory is not copied. One socket per renderer carries every message,
-so all messages of a renderer are in one order. Pixel buffers, and
+so all messages of a renderer are in one order. Its send and receive
+buffers are 512 KiB at both ends (Q4.29), the size of Chromium's
+response body data pipe: the browser writes a renderer's socket once a
+loop iteration, as much as it holds, and with macOS's default of 8 KiB
+a 16 MiB body took 4.5 s to reach the page. Pixel buffers, and
 later chosen files and fonts, go as fds with `SCM_RIGHTS` (`sendmsg`
 and `recvmsg` externs, new in Q2.2). The browser makes the buffers
 (Linux `memfd_create`; macOS `shm_open` then `shm_unlink` at once), so

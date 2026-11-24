@@ -111,6 +111,10 @@ painted without them.
   URL, whatever its body; this prints `archive fallback:` and `check`
   shows it on a `fallback:` line, not as a miss (P1.12). GET requests
   match exactly.
+  A renderer runs a replayed or recorded load's scripts as a live
+  load's: a task of at most 50 ms each, after the first frame (Q0.3f).
+  The window's own process runs a load whose subresources are all in
+  at once, as the archive gives them, before its first frame.
   The runner rejects misses, changed resource hashes, capture/replay
   Markdown differences, and before/after output differences.
 - The manifest lists every requested resource, body size and SHA-256.

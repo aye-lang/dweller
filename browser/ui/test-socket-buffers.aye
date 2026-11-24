@@ -1,28 +1,10 @@
 import std
 import std.text
 
-let SOL_SOCKET_LINUX: i32 = 1
-let SO_SNDBUF_LINUX: i32 = 7
-let SO_RCVBUF_LINUX: i32 = 8
-let SO_SNDBUF_DARWIN: i32 = 0x1001
-let SO_RCVBUF_DARWIN: i32 = 0x1002
-
 fn testSocketBuffers(sv: []i32) {
     if !text.eql(std.os.getenv("DWELLER_TEST") orelse "", "1") { return }
 
     let want = std.os.getenv("DWELLER_TEST_SOCKET_BUFFER") orelse return
-    var size = [1]i32{(text.parseInt(want) catch return) as i32}
-    var level = SOL_SOCKET_LINUX
-    var names = [2]i32{SO_SNDBUF_LINUX, SO_RCVBUF_LINUX}
 
-    if @targetOs() is .macos {
-        level = SOL_SOCKET_DARWIN
-        names = [2]i32{SO_SNDBUF_DARWIN, SO_RCVBUF_DARWIN}
-    }
-
-    for fd in sv {
-        for name in names {
-            setsockopt(fd, level, name, @ptrCast([*]u8, &mut size), 4)
-        }
-    }
+    setSocketBuffers(sv, (text.parseInt(want) catch return) as i32)
 }
