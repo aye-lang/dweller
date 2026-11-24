@@ -79,10 +79,9 @@ fn installGenerators(it: *mut Interp) JsError!void {
 }
 
 // construct(C, args, newTarget): `new C(...args)` with that new.target
-// (Reflect.construct); `args` is an array.
+// (Reflect.construct); `args` is an array-like.
 fn engineConstruct(it: *mut Interp, a: Args) JsError!Value {
     let c = it.arg(a, 0)
-    let arr = objectOf(it.arg(a, 1))
     var nt = objectOf(it.arg(a, 2))
     if isUndef(it.arg(a, 2)) {
         nt = objectOf(c)
@@ -90,16 +89,13 @@ fn engineConstruct(it: *mut Interp, a: Args) JsError!Value {
     if !isConstructor(it, c) || nt == NONE || !isConstructor(it, objVal(nt)) {
         return it.typeError("Reflect.construct: target is not a constructor")
     }
+    if !isObject(it.arg(a, 1)) {
+        return it.typeError("CreateListFromArrayLike called on non-object")
+    }
     let base = it.stack.len()
     try it.push(c)
     try it.push(Value.Undefined)
-    var n: usize = 0
-    if arr != NONE {
-        n = it.heap.obj(arr).nelems as usize
-        for i in 0..n {
-            try it.push(it.heap.obj(arr).elems[i])
-        }
-    }
+    let n = try pushArrayLike(it, it.arg(a, 1))
     return it.constructAt(base, n, nt)
 }
 
