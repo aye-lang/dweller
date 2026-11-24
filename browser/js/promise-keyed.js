@@ -1,6 +1,12 @@
 (function () {
 'use strict';
 // spec: https://tc39.es/proposal-await-dictionary/
+const { Object, TypeError, Reflect, Promise } = globalThis;
+const ObjectCreate = Object.create;
+const ObjectDefineProperty = Object.defineProperty;
+const ObjectKeys = Object.keys;
+const ReflectGetOwnPropertyDescriptor = Reflect.getOwnPropertyDescriptor;
+const ReflectOwnKeys = Reflect.ownKeys;
 const apply = Reflect.apply;
 function capability(C) {
   let resolve;
@@ -14,8 +20,8 @@ function capability(C) {
   return { promise, resolve, reject };
 }
 function keyedResult(keys, values) {
-  const o = Object.create(null);
-  for (let i = 0; i < keys.length; i++) Object.defineProperty(o, keys[i], { value: values[i], writable: true, enumerable: true, configurable: true });
+  const o = ObjectCreate(null);
+  for (let i = 0; i < keys.length; i++) ObjectDefineProperty(o, keys[i], { value: values[i], writable: true, enumerable: true, configurable: true });
   return o;
 }
 function element(settle, keys, values, index, state, cap, once) {
@@ -35,8 +41,8 @@ function keyed(C, promises, fulfilled, rejected) {
     const keys = [];
     const values = [];
     const state = { remaining: 1 };
-    for (const key of Reflect.ownKeys(promises)) {
-      const desc = Reflect.getOwnPropertyDescriptor(promises, key);
+    for (const key of ReflectOwnKeys(promises)) {
+      const desc = ReflectGetOwnPropertyDescriptor(promises, key);
       if (desc === undefined || !desc.enumerable) continue;
       const value = promises[key];
       const index = keys.length;
@@ -63,5 +69,5 @@ const methods = {
     return keyed(this, promises, value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason }));
   },
 };
-for (const k of Object.keys(methods)) Object.defineProperty(Promise, k, { value: methods[k], writable: true, configurable: true });
+for (const k of ObjectKeys(methods)) ObjectDefineProperty(Promise, k, { value: methods[k], writable: true, configurable: true });
 })();

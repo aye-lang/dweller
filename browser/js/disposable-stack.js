@@ -1,6 +1,12 @@
 (function () {
 'use strict';
 // spec: https://tc39.es/proposal-explicit-resource-management/
+const { Object, String, Symbol, Error, ReferenceError, TypeError, WeakMap, Reflect, Promise, Iterator } = globalThis;
+const ObjectCreate = Object.create;
+const ObjectGetPrototypeOf = Object.getPrototypeOf;
+const ObjectSetPrototypeOf = Object.setPrototypeOf;
+const PromiseResolve = Promise.resolve.bind(Promise);
+const PromiseReject = Promise.reject.bind(Promise);
 const apply = Reflect.apply;
 const construct = Reflect.construct;
 const defineProperty = Object.defineProperty;
@@ -38,8 +44,8 @@ function SuppressedError(error, suppressed, message) {
   hidden(o, 'suppressed', suppressed);
   return o;
 }
-Object.setPrototypeOf(SuppressedError, Error);
-defineProperty(SuppressedError, 'prototype', { value: Object.create(Error.prototype), writable: false, enumerable: false, configurable: false });
+ObjectSetPrototypeOf(SuppressedError, Error);
+defineProperty(SuppressedError, 'prototype', { value: ObjectCreate(Error.prototype), writable: false, enumerable: false, configurable: false });
 hidden(SuppressedError.prototype, 'constructor', SuppressedError);
 hidden(SuppressedError.prototype, 'message', '');
 hidden(SuppressedError.prototype, 'name', 'SuppressedError');
@@ -168,8 +174,8 @@ class AsyncDisposableStack {
   }
   disposeAsync() {
     const s = asyncSlots.get(this);
-    if (s === undefined) return Promise.reject(new TypeError('AsyncDisposableStack.prototype.disposeAsync called on incompatible receiver'));
-    if (s.disposed) return Promise.resolve(undefined);
+    if (s === undefined) return PromiseReject(new TypeError('AsyncDisposableStack.prototype.disposeAsync called on incompatible receiver'));
+    if (s.disposed) return PromiseResolve(undefined);
     s.disposed = true;
     const list = s.list;
     s.list = [];
@@ -192,14 +198,14 @@ const asyncIteratorDispose = {
       try {
         const r = iterator.return;
         if (r === undefined) return resolve(undefined);
-        Promise.resolve(apply(r, iterator, [undefined])).then(function () { resolve(undefined); }, reject);
+        PromiseResolve(apply(r, iterator, [undefined])).then(function () { resolve(undefined); }, reject);
       } catch (e) {
         reject(e);
       }
     });
   },
 };
-const asyncIteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf(async function* () {}.prototype));
+const asyncIteratorPrototype = ObjectGetPrototypeOf(ObjectGetPrototypeOf(async function* () {}.prototype));
 
 defineProperty(Symbol, 'dispose', { value: dispose });
 defineProperty(Symbol, 'asyncDispose', { value: asyncDispose });

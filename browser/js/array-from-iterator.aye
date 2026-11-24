@@ -1,0 +1,25 @@
+// https://tc39.es/ecma262/#sec-array.from
+
+fn arrayFromIterator(it: *mut Interp, out: u32, src: Value, mapfn: Value, thisv: Value) JsError!Value {
+    let at = it.stack.len()
+
+    try it.push(src)
+    _ = try it.openIterator(src)
+    var k: u32 = 0
+
+    while try it.stepIterator(at + 1) {
+        let mapped = it.call2(mapfn, thisv, it.slot(it.stack.len() - 1), numVal(k as f64)) catch |e| {
+            if e == JsError.Thrown {
+                try it.closeIterator(at + 1)
+            }
+
+            return e
+        }
+
+        it.pop()
+        try it.heap.pushElem(out, mapped)
+        k += 1
+    }
+
+    return objVal(out)
+}

@@ -1,6 +1,9 @@
 (function () {
 'use strict';
 // spec: https://tc39.es/ecma262/#sec-array.prototype.concat
+const { Object, Array, String, Symbol, TypeError, Math, Reflect } = globalThis;
+const ReflectConstruct = Reflect.construct;
+const MathFloor = Math.floor;
 const MAX = 9007199254740991;
 const isArray = Array.isArray;
 const define = Object.defineProperty;
@@ -10,7 +13,7 @@ function isObject(o) {
 function isConstructor(C) {
   if (typeof C !== 'function') return false;
   try {
-    Reflect.construct(String, [], C);
+    ReflectConstruct(String, [], C);
     return true;
   } catch (e) {
     return false;
@@ -35,7 +38,7 @@ function spreadable(o) {
 function lengthOf(o) {
   const n = +o.length;
   if (n !== n || n <= 0) return 0;
-  return n > MAX ? MAX : Math.floor(n);
+  return n > MAX ? MAX : MathFloor(n);
 }
 function put(a, n, v) {
   define(a, String(n), { value: v, writable: true, enumerable: true, configurable: true });

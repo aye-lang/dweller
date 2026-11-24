@@ -270,6 +270,9 @@ fn arrayFrom(it: *mut Interp, a: Args) JsError!Value {
     try it.push(objVal(out))
     var items = NONE
     if try it.isIterable(src) {
+        if it.isCallable(f) && !it.nativeIterable(src) {
+            return arrayFromIterator(it, out, src, f, it.arg(a, 2))
+        }
         items = try it.iterToArray(src)
         try it.push(objVal(items))
     } else {

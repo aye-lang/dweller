@@ -1,6 +1,11 @@
 (function () {
 'use strict';
 // spec: https://tc39.es/proposal-joint-iteration/ and https://tc39.es/proposal-iterator-sequencing/
+const { Object, String, Symbol, TypeError, Reflect, Iterator } = globalThis;
+const ObjectCreate = Object.create;
+const ObjectDefineProperty = Object.defineProperty;
+const ReflectGetOwnPropertyDescriptor = Reflect.getOwnPropertyDescriptor;
+const ReflectOwnKeys = Reflect.ownKeys;
 const helper = globalThis.__iteratorHelper;
 delete globalThis.__iteratorHelper;
 const apply = Reflect.apply;
@@ -180,9 +185,9 @@ const zipKeyed = { zipKeyed(iterables) {
   const { mode, padding } = options(opts);
   const keys = [];
   const iters = [];
-  for (const key of Reflect.ownKeys(iterables)) {
+  for (const key of ReflectOwnKeys(iterables)) {
     try {
-      const desc = Reflect.getOwnPropertyDescriptor(iterables, key);
+      const desc = ReflectGetOwnPropertyDescriptor(iterables, key);
       if (desc === undefined || !desc.enumerable) continue;
       const value = iterables[key];
       if (value === undefined) continue;
@@ -203,8 +208,8 @@ const zipKeyed = { zipKeyed(iterables) {
     }
   }
   return zipHelper(iters, mode, pad, results => {
-    const o = Object.create(null);
-    for (let i = 0; i < keys.length; i++) Object.defineProperty(o, keys[i], { value: results[i], writable: true, enumerable: true, configurable: true });
+    const o = ObjectCreate(null);
+    for (let i = 0; i < keys.length; i++) ObjectDefineProperty(o, keys[i], { value: results[i], writable: true, enumerable: true, configurable: true });
     return o;
   });
 } }.zipKeyed;
@@ -234,5 +239,5 @@ const concat = { concat(...items) {
     if (inner !== null) close(inner);
   });
 } }.concat;
-for (const f of [zip, zipKeyed, concat]) Object.defineProperty(Iterator, f.name, { value: f, writable: true, configurable: true });
+for (const f of [zip, zipKeyed, concat]) ObjectDefineProperty(Iterator, f.name, { value: f, writable: true, configurable: true });
 })();

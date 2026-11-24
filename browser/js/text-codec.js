@@ -1,5 +1,11 @@
 (function (data) {
 'use strict';
+const { Object, Array, String, Symbol, TypeError, RangeError, Map, Set, ArrayBuffer, Uint8Array, Uint16Array, parseInt } = globalThis;
+const ObjectDefineProperty = Object.defineProperty;
+const ObjectGetOwnPropertyNames = Object.getOwnPropertyNames;
+const StringFromCharCode = String.fromCharCode;
+const StringFromCodePoint = String.fromCodePoint;
+const ArrayBufferIsView = ArrayBuffer.isView;
 const G = globalThis;
 const { ENCODING_LABELS, SINGLE_BYTE_INDEXES } = data;
 const natives = G.__codec;
@@ -9,7 +15,7 @@ const LEGACY = new Set(['GBK', 'gb18030', 'Big5', 'EUC-JP', 'ISO-2022-JP', 'Shif
 const CHUNK = 8192;
 
 function hidden(o, k, v) {
-  Object.defineProperty(o, k, { value: v, writable: true, configurable: true });
+  ObjectDefineProperty(o, k, { value: v, writable: true, configurable: true });
 }
 
 // spec: https://encoding.spec.whatwg.org/#concept-encoding-get
@@ -34,7 +40,7 @@ function singleByteTable(name) {
 function bytesOf(input) {
   if (input === undefined) return new Uint8Array(0);
   if (input instanceof ArrayBuffer || (typeof SharedArrayBuffer === 'function' && input instanceof SharedArrayBuffer)) return new Uint8Array(input);
-  if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  if (ArrayBufferIsView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
   throw new TypeError("Failed to execute 'decode' on 'TextDecoder': The provided value is not of type '(ArrayBuffer or ArrayBufferView)'.");
 }
 
@@ -48,7 +54,7 @@ function concat(a, b) {
 
 function fromUnits(units) {
   let s = '';
-  for (let i = 0; i < units.length; i += CHUNK) s += String.fromCharCode.apply(null, units.slice(i, i + CHUNK));
+  for (let i = 0; i < units.length; i += CHUNK) s += StringFromCharCode.apply(null, units.slice(i, i + CHUNK));
   return s;
 }
 
@@ -201,7 +207,7 @@ class TextEncoder {
       const code = cp >= 0xD800 && cp <= 0xDFFF ? 0xFFFD : cp;
       const size = code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
       if (written + size > destination.length) break;
-      const piece = this.encode(String.fromCodePoint(code));
+      const piece = this.encode(StringFromCodePoint(code));
       destination.set(piece, written);
       written += size;
       read += units;
@@ -211,9 +217,9 @@ class TextEncoder {
 }
 
 for (const C of [TextDecoder, TextEncoder]) {
-  Object.defineProperty(C.prototype, Symbol.toStringTag, { value: C.name, configurable: true });
-  for (const k of Object.getOwnPropertyNames(C.prototype)) {
-    if (k !== 'constructor') Object.defineProperty(C.prototype, k, { enumerable: true });
+  ObjectDefineProperty(C.prototype, Symbol.toStringTag, { value: C.name, configurable: true });
+  for (const k of ObjectGetOwnPropertyNames(C.prototype)) {
+    if (k !== 'constructor') ObjectDefineProperty(C.prototype, k, { enumerable: true });
   }
 }
 hidden(G, 'TextEncoder', TextEncoder);
