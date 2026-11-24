@@ -1646,3 +1646,43 @@ fn archive_records_as_replayed() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// P1.S7: a recording makes a page's background load (a script's image
+/// request) as its replay does. It ran live in the background while
+/// recording, and a load that failed was never recorded; the replay
+/// answers the load at once, so it asked the archive for the URL and
+/// missed (zol's `pvhit0001.gif`, whose host times out now and then, was
+/// recorded later by the capture's screenshot, so the replay got an image
+/// where the recording had an error). Now the request that reads the load
+/// fetches it, as the replay's reads the archive, and records the
+/// failure. The page's image is on a port that refuses; `dump` records
+/// and replays the same output with no miss. By default and with
+/// `DWELLER_PROCESS=single`.
+#[test]
+fn archive_records_failed_image() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = scratch().join("net-archive-failed-image");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = srv.base.clone();
+    let page = |key: &str| format!("{base}/net/archive_failed_image.html?{key}");
+    let dumps = [("dump-default", &[][..]), ("dump-single", &[IN_PROCESS][..])];
+    let dump = |env: &str, key: &str, envs: &[(&str, &str)]| {
+        dweller_command().current_dir(root()).envs(envs.iter().copied()).env(env, &dir).args(["dump", "--text", "--js", &page(key)]).output().unwrap()
+    };
+    for (key, envs) in dumps {
+        let out = dump("DWELLER_RECORD", key, envs);
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains("image failed"), "{key}: {}", text(&out.stdout));
+    }
+    drop(srv);
+    for (key, envs) in dumps {
+        let out = dump("DWELLER_REPLAY", key, envs);
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains("image failed"), "{key}: {}", text(&out.stdout));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
