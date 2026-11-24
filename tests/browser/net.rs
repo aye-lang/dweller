@@ -493,7 +493,7 @@ impl HstsSite {
         })
     }
 
-    fn run(&self, profile: Option<&Path>, args: &[&str]) -> Output {
+    fn command(&self) -> Command {
         let (t, p) = (self.tls, self.plain);
         let mut c = dweller_command();
         c.current_dir(root())
@@ -502,8 +502,13 @@ impl HstsSite {
             .env(
                 "DWELLER_RESOLVE",
                 format!("site.test:{t}:127.0.0.1,site.test:{p}:127.0.0.1,sub.site.test:{t}:127.0.0.1"),
-            )
-            .args(args);
+            );
+        c
+    }
+
+    fn run(&self, profile: Option<&Path>, args: &[&str]) -> Output {
+        let mut c = self.command();
+        c.args(args);
         if let Some(dir) = profile {
             c.env("DWELLER_PROFILE", dir);
         }
@@ -604,6 +609,54 @@ fn mixed_content() {
         let shown = text(&out.stdout);
         assert!(shown.contains(want), "{page}: {shown}\n{}", text(&out.stderr));
     }
+}
+
+/// Q2.18: with `DWELLER_PROCESS=site` the window holds a renderer's
+/// fetch of an http image on an https page (mixed content, upgraded to
+/// https) in the background, as it holds an https one: the three images
+/// of `browser/tests/hsts/upgraded-images.html` take 2 s each
+/// (`/slow.gif`), the window's loop never runs one of them (no
+/// `ui_loop` of 100 ms or more, no `net_sync` request) and the first
+/// paint does not wait for them. Before, `startLoadAs` refused a URL
+/// that net upgrades, and the window fetched each image synchronously
+/// on its loop (6 s of `ui_loop`, the first paint after it).
+#[test]
+fn window_renderer_upgraded_images_held() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(site) = HstsSite::start() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let page = format!("https://site.test:{}/upgraded-images.html", site.tls);
+    let out = site
+        .command()
+        .env("DWELLER_PROCESS", "site")
+        .env("DWELLER_TIMING", "1")
+        .arg(&page)
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000", "--until-idle", "--text"])
+        .output()
+        .unwrap();
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{}\n{err}", out.status);
+    assert!(text(&out.stdout).contains("images: 3 loaded"), "{}\n{err}", text(&out.stdout));
+    let ms = |phase: &str| -> Vec<u64> {
+        let head = format!("info: DWELLER_TIMING\t{phase}\t");
+        err.lines()
+            .filter_map(|l| l.strip_prefix(head.as_str()))
+            .filter_map(|l| l.split('\t').next()?.parse::<u64>().ok())
+            .map(|ns| ns / 1_000_000)
+            .collect()
+    };
+    let longest = ms("ui_loop").into_iter().max().unwrap_or(0);
+    let first_paint = ms("ui_first_paint").first().copied().expect("no ui_first_paint record");
+    let synced = err.lines().filter(|l| l.starts_with("info: DWELLER_TIMING\tnet_sync\t") && l.ends_with("\trequest")).count();
+    println!("longest ui_loop {longest} ms, first paint {first_paint} ms, {synced} net_sync requests");
+    assert_eq!(synced, 0, "the window fetched on its loop:\n{err}");
+    assert!(longest < 100, "a ui_loop of {longest} ms");
+    assert!(first_paint < 2000, "the first paint took {first_paint} ms");
 }
 
 /// P10.21: SameSite (Lax by default), the third-party policy and
