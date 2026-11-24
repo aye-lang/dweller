@@ -92,7 +92,7 @@ fn window_renderer_lifecycle() {
 /// A renderer that names a document the browser never gave it as a
 /// request's initiator is killed (`bad message: bad fetch doc`).
 /// Q2.4d: so is one that claims another top-level site, a referrer of
-/// another origin or the TRACE method (Q2.16: the reason names the
+/// another origin or the TRACE method (Q2.17: the reason names the
 /// check); the `Cookie`, `Referer`, `Origin` and `Sec-*` headers it adds
 /// are dropped (the page shows the headers net sent, as without them).
 #[test]
