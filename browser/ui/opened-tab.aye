@@ -1,0 +1,17 @@
+fn openedTab(ui: *mut Ui, opener: *mut TabSlot, tp: *mut TabProcess, context: u32) ?*mut TabSlot {
+    for o in tp.opened.items() {
+        if o.context != context { continue }
+
+        for i in 0..ui.count {
+            if ui.slots[i].?.id == o.tab { return ui.slots[i] }
+        }
+
+        if spaceOfSlot(ui, opener) |sp| {
+            for t in sp.own_tabs.items() {
+                if t.id == o.tab { return t }
+            }
+        }
+    }
+
+    return null
+}
