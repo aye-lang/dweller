@@ -591,8 +591,11 @@ def load_site(args, name):
         for path in sorted(directory.glob("*.response")):
             data = path.read_bytes()
             fields = data.split(b"\n", 6)
+            # The status line is `<status>` or, since P10.40, `<status> <header length>`.
+            status = fields[1].split()
+            head = int(status[1]) if len(status) > 1 else 0
             resources.append({"file": path.name, "url": fields[0].decode(),
-                              "status": int(fields[1]), "bytes": len(fields[6]),
+                              "status": int(status[0]), "bytes": len(fields[6]) - head,
                               "sha256": hashlib.sha256(data).hexdigest()})
         manifest_path.write_text(json.dumps({"url": SITES[name], "capture": result,
                                             "resources": resources}, indent=2) + "\n")
