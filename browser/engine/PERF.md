@@ -140,6 +140,20 @@ painted without them.
   freezes JS Date at 2026-10-07 00:00 UTC and seeds Math.random with 1.
   Otherwise timestamp/random cache-busters cannot replay. Normal browsing
   retains the real builtins; the existing virtual timer clock is unchanged.
+- Under `DWELLER_RECORD` or `DWELLER_REPLAY` a page has no WebGL:
+  `getContext('webgl')` and `'webgl2'` give null, as with `DWELLER_GL=off`
+  (`net.archived`, `engine/webgl_api.aye`). Of what a `dump` page reads,
+  only WebGL came from the state of the machine: whether ANGLE is found
+  (`DWELLER_ANGLE`, next to the binary, or `target/angle/<rev>/lib` under
+  the working directory) and the GPU's limits, extensions and precisions.
+  zol's FingerprintJS hashes them into `tck`, so a capture made where
+  ANGLE was found missed in a worktree without it (P1.S10b). The other
+  values are engine data: `screen` 1280x800, `devicePixelRatio` 1 and an
+  800x600 viewport (`dump --dpr`, `--width`), the `matchMedia` features
+  (`DWELLER_COLOR_SCHEME` picks dark), `navigator`, the `UTC` time zone,
+  the `en-US` locale, and the font files at the fixed paths of
+  `font/freetype.aye`. A window for a person keeps WebGL and its
+  display's scale.
 - This is an immutable benchmark snapshot, **not a general HTTP cache**.
   Response headers, cookie-jar updates, expiry and authenticated sessions
   are not replayed. The runner clears `DWELLER_COOKIE_FILE`; avoid

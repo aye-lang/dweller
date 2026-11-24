@@ -1009,6 +1009,26 @@ failed in the background.
 capture and the replay run other tasks; the same tasks give the same
 values.
 
+### A page loaded from an archive reads nothing from the machine
+**Context:** a value a page can read while `DWELLER_RECORD` or
+`DWELLER_REPLAY` is set.
+**Bad:** WebGL was there when ANGLE was found (`target/angle` under the
+working directory, `DWELLER_ANGLE`, next to the binary), with the GPU's
+limits and extensions. zol's FingerprintJS hashes them into `tck`: the
+capture, made where ANGLE was found, had another `tck` than every replay
+in a worktree without it, so 2 mediav URLs missed and the cause looked
+like a changed machine (P1.S10, P1.S10b).
+**Good:** under an archive the value is engine data: no WebGL
+(`net.archived`), a fixed `screen`, `navigator`, time zone and media
+features. To find such a value, make the page report what it read (an
+image request such as `https://fpjs.log/?<value>` prints as a miss),
+then replay with each machine input changed by its override
+(`DWELLER_ANGLE`, `DWELLER_GL`, `DWELLER_COLOR_SCHEME`, `TZ`, the
+process mode) and see which one moves it.
+**Why:** a replay is only a test when its inputs are the archive and the
+binary; a value from the machine makes it pass in one checkout and fail
+in the next.
+
 ### Script-visible network requests must not be serial
 **Context:** an API that lets scripts observe a resource's state (img
 `complete`/`naturalWidth`/`load`, fetch, XHR) on the synchronous fetch.

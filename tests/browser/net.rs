@@ -1739,3 +1739,54 @@ fn archive_records_failed_image() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// P1.S10b: a page loaded from or into an archive has no WebGL. WebGL's
+/// values come from the machine: whether ANGLE is found (`DWELLER_ANGLE`,
+/// next to the binary, `target/angle` under the working directory) and
+/// the GPU's limits and extensions. zol's FingerprintJS hashes them into
+/// `tck`, so its recording, made where ANGLE was found, missed in a
+/// worktree without it. Live, the page sees WebGL on SwiftShader; it
+/// records with SwiftShader and replays with SwiftShader and with
+/// `DWELLER_GL=off`: the same output, no miss. By default and with
+/// `DWELLER_PROCESS=single`.
+#[test]
+fn archive_has_no_webgl() {
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let dir = scratch().join("net-archive-no-webgl");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = srv.base.clone();
+    let page = |key: &str| format!("{base}/net/archive_no_webgl.html?{key}");
+    let dumps = [("dump-default", &[][..]), ("dump-single", &[IN_PROCESS][..])];
+    let dump = |archive: Option<&str>, gl: &str, key: &str, envs: &[(&str, &str)]| {
+        let mut command = dweller_command();
+        command.current_dir(root()).envs(envs.iter().copied()).env("DWELLER_GL", gl).args(["dump", "--text", "--js", &page(key)]);
+        if let Some(name) = archive {
+            command.env(name, &dir);
+        }
+        command.output().unwrap()
+    };
+    if angle_present() {
+        let live = dump(None, "swiftshader", "live", &[]);
+        assert!(text(&live.stdout).contains("webgl on-"), "{}\n{}", text(&live.stdout), text(&live.stderr));
+    }
+    let mut recorded = Vec::new();
+    for (key, envs) in dumps {
+        let out = dump(Some("DWELLER_RECORD"), "swiftshader", key, envs);
+        assert!(out.status.success() && out.stderr.is_empty(), "{key}: {}\n{}", out.status, text(&out.stderr));
+        assert!(text(&out.stdout).contains("webgl off"), "{key}: {}", text(&out.stdout));
+        recorded.push(text(&out.stdout));
+    }
+    drop(srv);
+    for ((key, envs), want) in dumps.iter().zip(&recorded) {
+        for gl in ["swiftshader", "off"] {
+            let out = dump(Some("DWELLER_REPLAY"), gl, key, envs);
+            assert!(out.status.success() && out.stderr.is_empty(), "{key} {gl}: {}\n{}", out.status, text(&out.stderr));
+            assert_eq!(&text(&out.stdout), want, "{key} {gl}");
+        }
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
