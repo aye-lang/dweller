@@ -555,6 +555,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.reply(200, [("Content-Type", "text/plain")], b"%d\n" % SLOW["peak"])
         elif path == "/big":
             self.reply(200, [("Content-Type", "text/plain")], b"x" * (33 << 20))
+        elif path == "/big?16":
+            self.reply(200, [("Content-Type", "application/octet-stream")], b"x" * (16 << 20))
         elif path == "/big?stream":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")

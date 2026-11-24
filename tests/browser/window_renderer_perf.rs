@@ -73,3 +73,35 @@ fn window_renderer_perf_input_between_scripts() {
     assert!(longest < 600, "one scripts task of {longest} ms");
     println!("{after} scripts records after the ack, longest {longest} ms");
 }
+
+/// Q4.29: a page in a renderer has a large response about as soon as in
+/// the window's own process: the 16 MiB body of
+/// `browser/tests/perf/large_body.html` arrives in under 2 s, in whatever
+/// `DWELLER_PROCESS` the run has. The browser writes a renderer's
+/// responses once a loop iteration, as much as the socket holds: with
+/// macOS's 8 KiB the body took 4.5 s (in the window's own process 0.1 s).
+#[test]
+fn window_renderer_perf_large_body() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let Some(srv) = server() else {
+        println!("skipped: cannot start python3 for the test server");
+        return;
+    };
+    let out = dweller_command()
+        .current_dir(root())
+        .arg(format!("{}/perf/large_body.html", srv.base))
+        .args(["--font", "fixed", "--width", "400", "--height", "300", "--frames", "4000", "--until-idle", "--text"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}\n{}", out.status, text(&out.stderr));
+    let got = text(&out.stdout);
+    let ms: u64 = got
+        .lines()
+        .find_map(|l| l.strip_prefix("body 16777216 bytes in ")?.strip_suffix(" ms")?.parse().ok())
+        .unwrap_or_else(|| panic!("no body line in {got}"));
+    assert!(ms < 2000, "the 16 MiB body took {ms} ms");
+    println!("the 16 MiB body took {ms} ms");
+}
