@@ -1251,7 +1251,7 @@ pub struct Interp {
                     match v {
                         .Obj { o: oid } => {
                             let cls = self.heap.obj(oid).class
-                            if cls == Class.Array || cls == Class.Arguments {
+                            if (cls == Class.Array && !slowArray(self, oid)) || cls == Class.Arguments {
                                 return self.setElem(oid, idx, value)
                             }
                             if cls == Class.TypedArray {
@@ -1319,20 +1319,22 @@ pub struct Interp {
         }
         if cls == Class.Array || cls == Class.Arguments {
             let idx = self.heap.atoms.indexOf(key)
+            if idx != NONE && slowArray(self, o) {
+                if !(try setArrayElem(self, o, key, idx, value, receiver)) {
+                    return failSet(self, key)
+                }
+
+                return
+            }
             if idx != NONE {
                 return self.setElem(o, idx, value)
             }
             if key == A_LENGTH && cls == Class.Array {
-                let n = try self.toNumber(value)
-                let len = self.numIndex(n)
-                if len == NONE {
-                    try self.rangeError("Invalid array length")
+                if !(try setArrayLength(self, o, value)) {
+                    return failSet(self, key)
                 }
-                if len < self.heap.obj(o).nelems {
-                    self.heap.obj(o).nelems = len
-                    return
-                }
-                return self.heap.setLength(o, len, Value.Empty)
+
+                return
             }
         }
         if self.heap.obj(o).frozen {
@@ -1454,13 +1456,12 @@ pub struct Interp {
             }
             let idx = self.heap.atoms.indexOf(key)
             if idx != NONE {
-                if idx < ob.nelems {
-                    return match ob.elems[idx] {
-                        .Empty => false
-                        _ => true
-                    }
+                if idx < ob.nelems && !(ob.elems[idx] is .Empty) {
+                    return true
                 }
-                return false
+                if !ob.elems_in_props {
+                    return false
+                }
             }
         }
         if ob.class == Class.String {
@@ -1498,10 +1499,11 @@ pub struct Interp {
         }
         if ob.class == Class.Array || ob.class == Class.Arguments {
             let idx = self.heap.atoms.indexOf(key)
-            if idx != NONE {
-                if idx < ob.nelems {
-                    ob.elems[idx] = Value.Empty
-                }
+            if idx != NONE && idx < ob.nelems && !(ob.elems[idx] is .Empty) {
+                ob.elems[idx] = Value.Empty
+                return true
+            }
+            if idx != NONE && !ob.elems_in_props {
                 return true
             }
             if key == A_LENGTH {
@@ -1526,6 +1528,7 @@ pub struct Interp {
             return proxyOwnKeys(self, o, out, all, false)
         }
         try ownFunctionKeys(self, o)
+        let first = out.len()
         if cls == Class.TypedArray {
             let n = typedLen(self, o)
             for i in 0..n {
@@ -1566,7 +1569,10 @@ pub struct Interp {
             }
         }
         // Integer keys first, ascending (insertion sort of a few).
-        let start = out.len()
+        var start = out.len()
+        if self.heap.obj(o).elems_in_props {
+            start = first
+        }
         let np = self.heap.obj(o).nprops
         for i in 0..np {
             let p = self.heap.obj(o).props[i]
@@ -2632,7 +2638,7 @@ pub struct Interp {
         match v {
             .Obj { o: oid } => {
                 let cls = self.heap.obj(oid).class
-                if cls == Class.Array {
+                if cls == Class.Array && !self.heap.obj(oid).elems_in_props {
                     return oid
                 }
                 if cls == Class.Arguments || cls == Class.Set {

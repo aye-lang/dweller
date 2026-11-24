@@ -575,8 +575,11 @@ struct Stringifier {
                 try b.appendByte(',')
             }
             try self.newline(b)
-            let e = holeToUndef(it.heap.obj(o).elems[i])
+            var e = holeToUndef(it.heap.obj(o).elems[i])
             let key = try it.toKey(numVal(i as f64))
+            if it.heap.obj(o).elems_in_props {
+                e = try it.getProp(objVal(o), key)
+            }
             if !try self.property(b, objVal(o), key, e) {
                 try b.append("null")
             }

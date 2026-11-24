@@ -1,0 +1,14 @@
+fn slowArrayWrite(it: *mut Interp, o: u32, i: u32, e: Value, receiver: Value) JsError!void {
+    let key = try it.toKey(numVal(i as f64))
+    var ok = true
+
+    if e is .Empty {
+        ok = try it.deleteProp(o, key)
+    } else {
+        ok = try setArrayElem(it, o, key, i, e, receiver)
+    }
+
+    if !ok {
+        try it.typeErrorAbout("Cannot assign to read only property '", it.heap.atoms.name(key), "' of object")
+    }
+}

@@ -1,0 +1,16 @@
+// https://tc39.es/ecma262/#sec-array.prototype.push
+
+fn slowArrayPush(it: *mut Interp, a: Args) JsError!Value {
+    let o = objectOf(a.this)
+    let len = it.heap.obj(o).nelems
+
+    for i in 0..a.argc {
+        try slowArrayWrite(it, o, len + i as u32, it.arg(a, i), a.this)
+    }
+
+    let n = numVal((len + a.argc as u32) as f64)
+
+    try setArrayLengthOrThrow(it, o, n)
+
+    return n
+}

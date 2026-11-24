@@ -1,0 +1,61 @@
+fn onSlowArray(it: *mut Interp, a: Args, f: NativeFn, setsLength: bool) JsError!Value {
+    let o = objectOf(a.this)
+    let base = it.stack.len()
+
+    defer it.truncate(base)
+
+    let before = try slowArrayCopy(it, o, NONE)
+    let old = alen(it, before)
+    let copy = try it.newArray(0)
+
+    try it.push(objVal(copy))
+
+    for i in 0..old {
+        try it.heap.pushElem(copy, it.heap.obj(before).elems[i])
+    }
+
+    var b = a
+
+    b.this = objVal(copy)
+
+    var r = try f(it, b)
+
+    if isObject(r) && objectOf(r) == copy {
+        r = a.this
+    }
+
+    try it.push(r)
+
+    let n = alen(it, copy)
+    var i: u32 = 0
+
+    while i < n || i < old {
+        if !sameElem(it, elemOrHole(it, copy, i), elemOrHole(it, before, i)) {
+            try slowArrayWrite(it, o, i, elemOrHole(it, copy, i), a.this)
+        }
+
+        i += 1
+    }
+
+    if setsLength || n != old {
+        try setArrayLengthOrThrow(it, o, numVal(n as f64))
+    }
+
+    return r
+}
+
+fn elemOrHole(it: *mut Interp, o: u32, i: u32) Value {
+    if i < alen(it, o) {
+        return it.heap.obj(o).elems[i]
+    }
+
+    return Value.Empty
+}
+
+fn sameElem(it: *mut Interp, x: Value, y: Value) bool {
+    if x is .Empty || y is .Empty {
+        return x is .Empty && y is .Empty
+    }
+
+    return sameValue(it, x, y)
+}

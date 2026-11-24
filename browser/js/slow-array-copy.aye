@@ -1,0 +1,19 @@
+fn slowArrayCopy(it: *mut Interp, o: u32, skip: u32) JsError!u32 {
+    let n = it.heap.obj(o).nelems
+    let arr = try it.newArray(0)
+
+    try it.push(objVal(arr))
+
+    for i in 0..n {
+        let key = try it.toKey(numVal(i as f64))
+        var v = Value.Empty
+
+        if i != skip && try it.hasPropertyJs(o, key) {
+            v = try it.getProp(objVal(o), key)
+        }
+
+        try it.heap.pushElem(arr, v)
+    }
+
+    return arr
+}

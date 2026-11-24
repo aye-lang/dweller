@@ -1140,7 +1140,7 @@ pub fn pushArrayLike(it: *mut Interp, v: Value) JsError!usize {
         try it.typeError("CreateListFromArrayLike called on non-object")
     }
     let cls = it.heap.obj(o).class
-    if cls == Class.Array || cls == Class.Arguments {
+    if (cls == Class.Array && !it.heap.obj(o).elems_in_props) || cls == Class.Arguments {
         let n = it.heap.obj(o).nelems
         for i in 0..n {
             try it.push(holeToUndef(it.heap.obj(o).elems[i]))
