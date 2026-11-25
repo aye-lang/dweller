@@ -1659,7 +1659,9 @@ loops are above Q4.21's (load 2.0–3.6): bbc 376, zol 687, mistral 1190, react
    browser/tools/window_perf.py scroll https://www.zol.com.cn/ --step
    "renderer:loaded wheel:-3 renderer:input" --run-frames 8000`. The click
    run (same `renderer:loaded`, then `renderer:input`) ends, so the wait
-   that does not end is the wheel's `renderer:input`.
+   that does not end is the wheel's `renderer:input`. Q4.25a (2026-11-25,
+   main d8537a82): no longer hangs, 3 of 3 runs end in 8 to 10 s with 40 of
+   40 wheels acked (`docs/plans/cards/Q4.25a.md`).
 4. Mistral's window loop is 668–1516 ms in site mode: in that iteration the
    window's own records are `ui_draw` 2 ms and `ui_events` 0 ms; the rest of
    the 1.5 s has no window record (the iteration's stderr holds the

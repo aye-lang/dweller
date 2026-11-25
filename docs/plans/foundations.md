@@ -339,7 +339,6 @@ states the W7 sites it moves.
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
-| Q4.25a | With `DWELLER_PROCESS=site`, a wheel on zol never gets `renderer:input`: 3 of 3 runs hung to the tool's 600 s timeout with the window and the renderer at 0% CPU (Q4.25's card has the command) | the zol scroll row of `window_perf.py` finishes with the flag | – |
 | Q4.25b | What the window waits on for 0.7 to 1.5 s on mistral with the flag: the wait has no window record | the wait has a record and a cause in the card | – |
 | Q4.25e | The window scrolls from the renderer's last frame while the renderer is busy (the texture offset of P4.36c) | the wheel-to-frame p95 of bbc with the flag is under 33 ms while a renderer task runs | `cc/input/input_handler.h`, `cc/trees/layer_tree_host_impl.cc` |
 | Q4.6 | Why `relayoutDirty` refuses (mistral: 1301 times): fix the exits | the mistral refusals fall under 10 | `core/layout/layout_object.cc` (`MarkContainerChainForLayout`) |
@@ -347,7 +346,7 @@ states the W7 sites it moves.
 | Q4.16 | JS interpreter speed from the hottest bytecodes on bbc, youtube, wikipedia-en and go-docs: fused instructions, missing inline caches, native call cost (P4.75s, P4.75u). No JIT: a JIT needs executable memory, which the renderer sandbox (Q2.8) forbids (measured by Q4.16a, #303: mistral is natives and forced restyle, bbc is calls and inline-cache misses; the ranked cards Q4.16b–l are in its card) | bbc's script ms falls by a third; jsbench does not drop | `v8/src/interpreter/interpreter-generator.cc`, `v8/src/ic/` |
 | Q4.27 | GitHub's Turbo soft navigation completes: the agent's click lands on `/rust-lang/rust/issues` (done: an action moves the page clock through the responses and frames it waits for; Q4.27b: a Space's renderer is no longer killed at Turbo's `pushState`); left: a background fetch's `response.url` is empty when its body came whole | `check --agent --site github` exit 0; the window click lands on the issues page | `content/browser/renderer_host/render_frame_host_impl.cc` (`DidCommitSameDocumentNavigation`) |
 
-Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5, Q4.2, Q4.8, Q4.25c, Q4.25d, Q4.7, Q4.11.
+Done (rows in `foundations-done.md`, notes in `cards/`): Q0.4a, Q4.1, Q4.6a, Q4.6b, Q4.6c, Q4.9, Q4.10, Q4.13, Q4.14, Q4.15, Q4.15b, Q4.16c, Q4.16e, Q4.16g, Q4.16m, Q4.16k, Q4.16n, Q4.21, Q4.22, Q4.17, Q4.18, Q4.19, Q4.20, Q4.23, Q4.24, Q4.25, Q4.3, Q4.4, Q4.5, Q4.2, Q4.8, Q4.25c, Q4.25d, Q4.7, Q4.11, Q4.25a.
 
 ## Q5: basic features at Chromium parity (lane feat, after Q2.14)
 
