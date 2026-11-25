@@ -1,0 +1,39 @@
+import perf
+import std
+
+let RELEASE_EVERY_MS: u64 = 2000
+
+var release_wanted: bool = false
+var released_at_ms: u64 = 0
+
+fn wantRelease() {
+    release_wanted = true
+}
+
+// chromium: base/allocator/partition_allocator/src/partition_alloc/memory_reclaimer.cc
+pub fn releaseWhenIdle(wait: i32) i32 {
+    if !release_wanted || wait == 0 { return wait }
+
+    let now = std.time.monotonicMs()
+    let since = now - released_at_ms
+
+    if since < RELEASE_EVERY_MS { return shorterWait(wait, (RELEASE_EVERY_MS - since) as i32) }
+
+    let began = perf.start()
+
+    releaseFreeMemory()
+    perf.end("release_free_memory", began, "")
+    release_wanted = false
+    released_at_ms = std.time.monotonicMs()
+
+    if wait < 0 { return wait }
+
+    return shorterWait(wait, wait - (released_at_ms - now) as i32)
+}
+
+fn shorterWait(wait: i32, left: i32) i32 {
+    if left < 0 { return 0 }
+    if wait < 0 || left < wait { return left }
+
+    return wait
+}
