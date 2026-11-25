@@ -1,0 +1,71 @@
+import std.heap.Arena
+import std.list.List
+import std.mem.AllocError
+import std.mem.Allocator
+import std.text
+
+struct Counting {
+    backing: Allocator
+    bytes: usize = 0
+
+    fn alloc(self: *mut Self, size: usize, align: usize) ?[*]u8 {
+        let s = self.backing.alloc(0 as u8, size) catch |e| {
+            return null
+        }
+
+        self.bytes += size
+
+        return s.ptr
+    }
+
+    fn free(self: *mut Self, p: [*]u8, size: usize) {
+        self.bytes -= size
+        self.backing.free(p[0..size])
+    }
+}
+
+fn generatedSheet(b: *mut text.Builder, rules: usize) AllocError!void {
+    for i in 0..rules {
+        try b.append(".item-")
+        try b.appendInt(i as i64)
+        try b.append(" > .title:hover, #main .row-")
+        try b.appendInt(i as i64)
+        try b.append(" a[href] { color: #1a2b3c; margin: 0 auto 4px; padding: 2px 4px; display: flex; --gap-")
+        try b.appendInt(i as i64)
+        try b.append(": 3px; width: calc(100% - 10px); background: url(i.png) no-repeat }\n")
+    }
+}
+
+fn listBytes(s: *Sheet) usize {
+    var n = s.rules.buf.len * @sizeOf(Rule) + s.complexes.buf.len * @sizeOf(Complex) + s.compounds.buf.len * @sizeOf(Compound)
+
+    n += s.simples.buf.len * @sizeOf(Simple) + s.decls.buf.len * @sizeOf(Decl) + s.layers.buf.len * @sizeOf(Layer)
+
+    return n
+}
+
+test "a large sheet's arena holds its source and tokens, not the buffers its lists grew out of" {
+    let a = @testAllocator()
+    var src = text.Builder.init(a)
+    defer src.deinit()
+    try generatedSheet(&mut src, 8000)
+
+    var strings = Arena.init(a)
+    defer strings.deinit()
+    var toks = List(Token).init(a)
+    defer toks.deinit()
+    try tokenize(strings.allocator(), src.bytes(), &mut toks)
+
+    var c = Counting { backing: a }
+    var sheet = try Sheet.init(&mut c)
+    defer sheet.deinit()
+    let empty = c.bytes - listBytes(&sheet)
+
+    try parseSheet(&mut sheet, src.bytes(), Media { width: 800.0, height: 600.0 })
+
+    let arena = c.bytes - listBytes(&sheet) - empty
+    let live = src.len() + toks.len() * @sizeOf(Token)
+
+    @expectEqual(8000, sheet.rules.len())
+    @expect(arena * 10 <= live * 12)
+}

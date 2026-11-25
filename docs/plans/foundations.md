@@ -258,6 +258,7 @@ How the steps run:
 
 | Step | What | Verify | Chromium |
 |---|---|---|---|
+| Q2.13a | The lists of a style sheet grow outside its arena and only final slices go into it (stopped 2026-11-26: CSS live bytes 285 to 139 MB on youtube-search, but macOS malloc keeps the freed buffers, so the footprint rises; next: release malloc's free blocks after a style rebuild, or free no big buffer during a parse; card) | youtube-search's renderer footprint below 1.6 GB with CSS parse time within 3 % (card) | `third_party/blink/renderer/core/css/parser/css_tokenizer.cc` |
 
 Done (rows in `foundations-done.md`, notes in `cards/`): Q2.1, Q2.1b, Q2.2a, Q2.2b, Q2.2c, Q2.3, Q2.3a, Q2.3c, Q2.3d, Q2.3e, Q2.3b, Q2.3f, Q2.4, Q2.4a, Q2.4d, Q2.4b, Q2.4e, Q2.4c, Q2.5, Q2.8a, Q2.8b, Q2.6a, Q2.6b, Q2.7, Q2.7b, Q2.7c, Q2.9, Q2.10, Q2.11, Q2.12b, Q2.12c, Q2.14a, Q2.14d, Q2.12, Q2.14b, Q2.14c, Q2.14e, Q2.14f, Q2.14g, Q2.13, Q2.14h, Q2.15, Q2.16, Q2.14.
 

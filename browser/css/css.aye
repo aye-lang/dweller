@@ -472,8 +472,8 @@ pub struct Scoped {
 /// A style sheet: the rules of every source added to it, in order.
 pub struct Sheet {
     alloc: Allocator
-    // Owns every list and string of the sheet. On the heap, so that the
-    // `Allocator` the lists hold stays valid when the sheet is moved.
+    // Owns the strings and tokens of the sheet, each at its final length;
+    // the lists grow in `alloc`. On the heap, so that it stays put.
     arena: *mut Arena
     rules: List(Rule)
     complexes: List(Complex)
@@ -519,7 +519,6 @@ pub struct Sheet {
 
     pub fn init(alloc: Allocator) AllocError!Sheet {
         let arena = try alloc.create(Arena.init(alloc))
-        let a = arena.allocator()
         let index = alloc.create(RuleIndex.init(alloc)) catch |e| {
             arena.deinit()
             alloc.destroy(arena)
@@ -532,7 +531,7 @@ pub struct Sheet {
             alloc.destroy(arena)
             return e
         }
-        var layers = List(Layer).init(a)
+        var layers = List(Layer).init(alloc)
         layers.append(Layer { name: "", parent: 0, rank: 0 }) catch |e| {
             class_info.deinit()
             alloc.destroy(class_info)
@@ -545,23 +544,23 @@ pub struct Sheet {
         return Sheet {
             alloc: alloc,
             arena: arena,
-            rules: List(Rule).init(a),
-            complexes: List(Complex).init(a),
-            compounds: List(Compound).init(a),
-            simples: List(Simple).init(a),
-            decls: List(Decl).init(a),
-            imports: List([]u8).init(a),
-            import_layers: List(u32).init(a),
-            font_faces: List(FontFace).init(a),
-            keyframes: List(Keyframe).init(a),
+            rules: List(Rule).init(alloc),
+            complexes: List(Complex).init(alloc),
+            compounds: List(Compound).init(alloc),
+            simples: List(Simple).init(alloc),
+            decls: List(Decl).init(alloc),
+            imports: List([]u8).init(alloc),
+            import_layers: List(u32).init(alloc),
+            font_faces: List(FontFace).init(alloc),
+            keyframes: List(Keyframe).init(alloc),
             keyframe_rules: 0,
             base: "",
             layers: layers,
             base_layer: 0,
-            conditions: List(ContainerCondition).init(a),
-            registered: StrMap([]Token).init(a),
+            conditions: List(ContainerCondition).init(alloc),
+            registered: StrMap([]Token).init(alloc),
             scope_root: null,
-            scoped: List(Scoped).init(a),
+            scoped: List(Scoped).init(alloc),
             index: index,
             class_info: class_info,
         }
@@ -600,6 +599,7 @@ pub struct Sheet {
         self.alloc.destroy(self.index)
         self.class_info.deinit()
         self.alloc.destroy(self.class_info)
+        freeSheetLists(self)
         self.arena.deinit()
         self.alloc.destroy(self.arena)
     }

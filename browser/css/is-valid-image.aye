@@ -1,3 +1,4 @@
+import std.heap.Arena
 import std.mem.AllocError
 import std.mem.Allocator
 
@@ -6,5 +7,8 @@ fn isValidImage(alloc: Allocator, c: Comp) AllocError!bool {
         return false
     }
 
-    return !isGradient(c.toks[0]) || (try readGradient(alloc, c)) != null
+    var scratch = Arena.init(alloc)
+    defer scratch.deinit()
+
+    return !isGradient(c.toks[0]) || (try readGradient(scratch.allocator(), c)) != null
 }

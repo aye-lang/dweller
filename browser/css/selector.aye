@@ -244,8 +244,8 @@ pub fn nodeSelector(sheet: *mut Sheet, el: NodeId) AllocError!SelRange {
 }
 
 fn parseSelectorList(sheet: *mut Sheet, toks: []Token, mode: u8) AllocError!?SelRange {
-    let a = sheet.arena.allocator()
-    var parsed = List(Complex).init(a)
+    var parsed = List(Complex).init(sheet.alloc)
+    defer parsed.deinit()
     var i: usize = 0
     while true {
         var j = i
@@ -316,9 +316,10 @@ fn isCombinatorTok(t: Token) bool {
 // the end, so that the selectors of a nested `:not()` do not land between
 // them.
 fn parseComplex(sheet: *mut Sheet, all: []Token, mode: u8) AllocError!?Complex {
-    let a = sheet.arena.allocator()
-    var simples = List(Simple).init(a)
-    var compounds = List(Compound).init(a)
+    var simples = List(Simple).init(sheet.alloc)
+    defer simples.deinit()
+    var compounds = List(Compound).init(sheet.alloc)
+    defer compounds.deinit()
     var spec = Spec { ids: 0, classes: 0, types: 0 }
     var lo = skipWhitespace(all, 0)
     var hi = all.len
@@ -700,8 +701,8 @@ fn isMatchesAny(name: []u8) bool {
 // A forgiving selector list (`:is()`, `:where()`): its valid selectors,
 // appended to `sheet`.
 fn parseForgiving(sheet: *mut Sheet, toks: []Token) AllocError!SelRange {
-    let a = sheet.arena.allocator()
-    var parsed = List(Complex).init(a)
+    var parsed = List(Complex).init(sheet.alloc)
+    defer parsed.deinit()
     var i: usize = 0
     while i <= toks.len {
         var j = i
@@ -734,7 +735,8 @@ fn functionalPseudo(sheet: *mut Sheet, name: []u8, args: []Token) AllocError!?Si
     } else if text.eqlIgnoreCase(name, "nth-last-of-type") {
         kind = SelKind.NthLastOfType
     } else if text.eqlIgnoreCase(name, "has") {
-        var parsed = List(Complex).init(sheet.arena.allocator())
+        var parsed = List(Complex).init(sheet.alloc)
+        defer parsed.deinit()
         var i: usize = 0
         while true {
             var j = i
