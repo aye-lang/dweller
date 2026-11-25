@@ -1,4 +1,5 @@
 import engine
+import font
 import perf
 import std
 import std.heap.Arena
@@ -22,7 +23,7 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
     noSigpipe(sv[0])
 
     let args = try std.os.args(tmp)
-    var argv = [11][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", "", "", ""}
+    var argv = [12][]u8{args[0], "--renderer", try number(tmp, RENDERER_FD as i64), "--font", "system", "", "", "", "", "", "", ""}
     var n: usize = 5
 
     if fixed {
@@ -51,6 +52,11 @@ fn startTabProcess(alloc: Allocator, fixed: bool, tab: u32, partition: u32) Allo
 
     if tab >= FIRST_SPACE_TAB && tab < FIRST_CHILD_FRAME {
         argv[n] = "--space-tab"
+        n += 1
+    }
+
+    if font.osFamiliesOn() {
+        argv[n] = "--os-fonts"
         n += 1
     }
 

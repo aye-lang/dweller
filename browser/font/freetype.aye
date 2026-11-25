@@ -312,8 +312,8 @@ struct WebFace {
     face: usize
 }
 
-// The web faces a font asks for: `System.chain_faces[start..start + len]`
-// (indices in `System.web`).
+// The web and OS faces a font asks for:
+// `System.chain_faces[start..start + len]`.
 struct Span {
     start: usize
     len: usize
@@ -341,6 +341,7 @@ pub struct System {
     covered: IntMap(u32, u32)
     // Variable face << 16 | weight -> its weight instance (in `faces`).
     instances: IntMap(u64, u32)
+    os_loaded: IntMap(u64, u32)
     web: List(WebFace)
     // The URLs of web fonts that could not be fetched or read.
     failed: List([]mut u8)
@@ -348,7 +349,7 @@ pub struct System {
     // see `chainOf`); cleared when a web font is added.
     chains: StrMap(Span)
     chain_keys: List([]mut u8)
-    chain_faces: List(usize)
+    chain_faces: List(WebFace)
     key: text.Builder
     runs: List(Run)
     hb_buffer: ?*mut HbBuffer
@@ -378,11 +379,12 @@ pub struct System {
                     fallbacks_loaded: false,
                     covered: IntMap(u32, u32).init(alloc),
                     instances: IntMap(u64, u32).init(alloc),
+                    os_loaded: IntMap(u64, u32).init(alloc),
                     web: List(WebFace).init(alloc),
                     failed: List([]mut u8).init(alloc),
                     chains: StrMap(Span).init(alloc),
                     chain_keys: List([]mut u8).init(alloc),
-                    chain_faces: List(usize).init(alloc),
+                    chain_faces: List(WebFace).init(alloc),
                     key: text.Builder.init(alloc),
                     runs: List(Run).init(alloc),
                     hb_buffer: null,
@@ -415,6 +417,7 @@ pub struct System {
                     if @hasLink("harfbuzz") {
                         s.hb_buffer = hbBufferNew()
                     }
+                    holdOsIndex()
                     return s
                 }
                 s.faces.deinit()
@@ -464,6 +467,8 @@ pub struct System {
         self.fallbacks.deinit()
         self.covered.deinit()
         self.instances.deinit()
+        self.os_loaded.deinit()
+        releaseOsIndex(self.alloc)
         self.web.deinit()
         self.key.deinit()
         self.runs.deinit()
@@ -801,7 +806,7 @@ pub struct System {
             return slot
         }
         for k in 0..span.len {
-            let w = self.web.items()[self.chain_faces.items()[span.start + k]]
+            let w = self.chain_faces.items()[span.start + k]
             if inRanges(w.ranges, code) && FT_Get_Char_Index(self.faces.items()[w.face].ft, code as u64) != 0 {
                 return w.face as u32
             }
@@ -868,7 +873,7 @@ pub struct System {
             return self.slots[faceSlot(f)]
         }
         if span.len > 0 {
-            return self.web.items()[self.chain_faces.items()[span.start]].face
+            return self.chain_faces.items()[span.start].face
         }
         return self.slots[faceSlot(f)]
     }
@@ -881,7 +886,7 @@ pub struct System {
     // family comes before a system font of that name (CSS Fonts 4,
     // 5.2): "Fira Sans" or "Inter" of a page is its web font.
     fn chainOf(self: *mut Self, f: Font) AllocError!Span {
-        if self.web.len() == 0 || f.family.len == 0 {
+        if (self.web.len() == 0 && !osFamiliesOn()) || f.family.len == 0 {
             return Span { start: 0, len: 0 }
         }
         self.key.clear()
@@ -917,12 +922,12 @@ pub struct System {
             }
             if best |b| {
                 let bw = self.web.items()[b]
-                for wi, w in self.web.items() {
+                for w in self.web.items() {
                     if text.eqlIgnoreCase(w.family, name) && w.italic == bw.italic && w.weight_lo == bw.weight_lo && w.weight_hi == bw.weight_hi {
-                        try self.chain_faces.append(wi)
+                        try self.chain_faces.append(w)
                     }
                 }
-            } else if isSystemFamily(name) {
+            } else if try familyEnds(self, name, f) {
                 break
             }
         }

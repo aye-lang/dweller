@@ -454,6 +454,7 @@ def use_test_fonts(root):
         if (Path(root) / "fonts" / name).exists():
             shutil.copyfile(Path(root) / "fonts" / name, fonts / name)
     os.environ["DWELLER_FONT_DIRS"] = str(fonts)
+    os.environ["DWELLER_FONT_SET"] = "fixed"
 
 
 PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")

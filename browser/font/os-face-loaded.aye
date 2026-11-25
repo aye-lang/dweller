@@ -1,0 +1,22 @@
+import std.mem.AllocError
+
+fn osFaceLoaded(sys: *mut System, at: usize, o: OsFace) AllocError!?usize {
+    if sys.os_loaded.get(at as u64) |known| {
+        if known == NO_FACE { return null }
+
+        return known as usize
+    }
+
+    var loaded = NO_FACE
+
+    if openFace(sys.alloc, sys.library, o.owned_path, o.index) |ft| {
+        try sys.faces.append(faceOf(sys.library, ft, []mut u8{}, o.owned_path))
+        loaded = (sys.faces.len() - 1) as u32
+    }
+
+    try sys.os_loaded.put(at as u64, loaded)
+
+    if loaded == NO_FACE { return null }
+
+    return loaded as usize
+}

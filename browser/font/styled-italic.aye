@@ -1,0 +1,18 @@
+import std.text
+
+fn styledItalic(ft: *mut FTFaceRec) bool {
+    if (ft.style_flags & FT_STYLE_FLAG_ITALIC) != 0 { return true }
+
+    let name = ft.style_name orelse return false
+    var lower = @zeroed([64]u8)
+    var n: usize = 0
+
+    while n < 64 && name[n] != 0 {
+        lower[n] = name[n]
+        n += 1
+    }
+
+    text.toLower(lower[..n])
+
+    return text.indexOf(lower[..n], "italic") != null || text.indexOf(lower[..n], "oblique") != null
+}

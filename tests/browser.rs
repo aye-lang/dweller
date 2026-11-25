@@ -68,6 +68,8 @@ mod media_scripted;
 mod media_source;
 #[path = "browser/net.rs"]
 mod net;
+#[path = "browser/os_fonts.rs"]
+mod os_fonts;
 #[path = "browser/paint.rs"]
 mod paint;
 #[path = "browser/perf.rs"]

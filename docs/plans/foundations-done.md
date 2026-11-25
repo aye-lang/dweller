@@ -282,6 +282,7 @@ Follow-ups noted at the stop (not yet cards):
 | Q6.18 | `css/css-writing-modes` toward its target 89 (63.4 -> 68.6; done, 2026-11-23: abspos boxes honour `direction: rtl`, rtl auto margins centre; notes and Left in `cards/Q6.18.md`) |
 | Q6.19 | `css/css-transforms` toward its target 89 (from 80.4; done, 2026-11-23: perspective interpolated in `transform` animations; notes and Left in `cards/Q6.19.md`) |
 | Q6.20 | The UA sheet raises `<sup>` and lowers `<sub>` (`vertical-align: super`/`sub`, as Chromium's `html.css`); both Wikipedias' reference marks (W3, P1.S9) (done, 2026-11-25; notes in `cards/Q6.20.md`) |
+| Q6.21 | a named `font-family` is the OS font of that name (done, 2026-11-25: index of the OS font directories on the first named family, CSS font matching, the fixed set under record, replay, `dump` and tests; hn and go-docs visual ok; notes and Left in `cards/Q6.21.md`) |
 
 ## Q7: acceptance and release (lane sites)
 

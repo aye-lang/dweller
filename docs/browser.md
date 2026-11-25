@@ -1080,7 +1080,11 @@ on (`--no-js` turns it off), `dump` with `--js`.
     line breaks follow basic UAX 14; bidi basics (`direction`, `dir`,
     levels, lines reordered). `@font-face` in TTF, OTF, WOFF and WOFF 2
     (Brotli), matched by family, weight, style and unicode-range, icon
-    font ligatures included.
+    font ligatures included. A named family is the OS font of that name
+    (Q6.21: only the fonts that ship with the OS, `/System/Library/Fonts`
+    or `/usr/share/fonts`, indexed on the first named family; the fixed
+    set under `DWELLER_RECORD`, `DWELLER_REPLAY`,
+    `DWELLER_FONT_SET=fixed` and in `dump`).
   - *Encodings and frames:* Shift_JIS, EUC-JP, ISO-2022-JP, GBK,
     gb18030, Big5 and EUC-KR (WHATWG decoders and encoders, tables
     generated from the index files) in the meta prescan and
