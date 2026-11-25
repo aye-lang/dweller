@@ -488,14 +488,20 @@ fn lowerAscii(c: u8) u8 {
 
 // The component values of `toks`, without whitespace.
 pub fn components(sheet: *mut Sheet, toks: []Token) AllocError![]Comp {
-    var list = List(Comp).init(sheet.arena.allocator())
+    let n = componentCount(toks)
+    if n == 0 {
+        return []Comp{}
+    }
+    let out = try sheet.arena.allocator().alloc(Comp { toks: toks[..0] }, n)
+    var k: usize = 0
     var i = skipWhitespace(toks, 0)
     while i < toks.len {
         let j = skipComponent(toks, i)
-        try list.append(Comp { toks: toks[i..j] })
+        out[k] = Comp { toks: toks[i..j] }
+        k += 1
         i = skipWhitespace(toks, j)
     }
-    return list.items()
+    return out
 }
 
 struct Declarer {

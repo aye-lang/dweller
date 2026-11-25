@@ -79,12 +79,13 @@ fn tokens(sheet: *mut Sheet, src: []u8) AllocError![]Token {
     let a = sheet.arena.allocator()
     let copy = try a.alloc(0 as u8, src.len)
     mem.copy(copy, src)
-    var list = List(Token).init(a)
+    var list = List(Token).init(sheet.alloc)
+    defer list.deinit()
     try tokenize(a, copy, &mut list)
     if sheet.base.len > 0 {
         try absoluteUrls(a, sheet.base, list.items())
     }
-    return list.items()
+    return settled(Token, a, list.items())
 }
 
 // The `url()`s of `toks` resolved against `base` (not those that are
