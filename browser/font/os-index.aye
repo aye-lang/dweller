@@ -1,0 +1,23 @@
+import perf
+import std.list.List
+import std.mem.Allocator
+
+var os_index: ?*mut List(OsFace) = null
+var os_index_users: usize = 0
+
+fn osIndex(alloc: Allocator, library: *mut FTLibraryRec) []OsFace {
+    if os_index |known| { return known.items() }
+
+    let index = alloc.create(List(OsFace).init(alloc)) catch return []OsFace{}
+    let began = perf.start()
+
+    os_index = index
+    indexFontDir(alloc, library, osFontRoot(), index)
+    perf.end("font_index", began, osFontRoot())
+
+    return index.items()
+}
+
+fn holdOsIndex() {
+    os_index_users += 1
+}

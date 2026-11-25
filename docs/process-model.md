@@ -419,7 +419,11 @@ profile has the shape of `sandbox/policy/mac/common.sb` and
   opened later by path under `/usr/share/fonts`, which Landlock allows.
   Without Landlock seccomp refuses every open and those faces are
   missing; a `font_open` from the browser (Chromium's font IPC,
-  `docs/linux/sandbox_ipc.md`) would bring them back.
+  `docs/linux/sandbox_ipc.md`) would bring them back. The index of OS
+  families (Q6.21) is read on the first named family, after entry:
+  seatbelt allows the font directories, Landlock `/usr`; without
+  Landlock it is empty and named families fall back to the generic
+  faces.
 
 The utility process gets the same profile without the fonts.
 

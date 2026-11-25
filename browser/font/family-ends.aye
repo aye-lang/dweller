@@ -1,0 +1,16 @@
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/platform/fonts/font_cache.cc (GetFontPlatformData: the platform's face of the family name)
+fn familyEnds(sys: *mut System, name: []u8, f: Font) AllocError!bool {
+    if !osFamiliesOn() { return isSystemFamily(name) }
+
+    if isGenericFamily(name) { return true }
+
+    let faces = osIndex(sys.alloc, sys.library)
+    let at = bestOsFace(faces, name, f) orelse return false
+    let face = (try osFaceLoaded(sys, at, faces[at])) orelse return false
+
+    try sys.chain_faces.append(webFaceOf(faces[at], face))
+
+    return false
+}

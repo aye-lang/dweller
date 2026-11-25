@@ -1,0 +1,29 @@
+import std
+import std.list.List
+import std.mem.Allocator
+import std.text
+
+fn indexFontDir(alloc: Allocator, library: *mut FTLibraryRec, dir: []u8, out: *mut List(OsFace)) {
+    let entries = std.fs.readDir(alloc, dir) catch return
+
+    defer entries.deinit()
+
+    for entry in entries.items {
+        var path = text.Builder.init(alloc)
+
+        defer path.deinit()
+        path.append(dir) catch return
+        path.appendByte('/') catch return
+        path.append(entry.name) catch return
+
+        if entry.kind == std.fs.Kind.Dir {
+            indexFontDir(alloc, library, path.bytes(), out)
+        } else if isFontFile(entry.name) {
+            indexFontFile(alloc, library, path.bytes(), out)
+        }
+    }
+}
+
+fn isFontFile(name: []u8) bool {
+    return name.len > 4 && (text.eqlIgnoreCase(name[name.len - 4..], ".ttf") || text.eqlIgnoreCase(name[name.len - 4..], ".otf") || text.eqlIgnoreCase(name[name.len - 4..], ".ttc"))
+}

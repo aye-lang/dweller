@@ -1,0 +1,30 @@
+import std.text
+
+// spec: https://drafts.csswg.org/css-fonts-4/#font-style-matching
+fn bestOsFace(faces: []OsFace, name: []u8, f: Font) ?usize {
+    var best: ?usize = null
+
+    for i, o in faces {
+        if !text.eqlIgnoreCase(o.owned_family, name) { continue }
+
+        if best |b| {
+            if osBetter(o, faces[b], f) { best = i }
+        } else {
+            best = i
+        }
+    }
+
+    return best
+}
+
+fn osBetter(a: OsFace, b: OsFace, f: Font) bool {
+    if stretchRank(a) != stretchRank(b) { return stretchRank(a) < stretchRank(b) }
+
+    return better(webFaceOf(a, 0), webFaceOf(b, 0), f)
+}
+
+fn stretchRank(o: OsFace) u16 {
+    if o.width_class <= 5 { return 5 - o.width_class }
+
+    return o.width_class
+}

@@ -1,0 +1,18 @@
+import std.mem.Allocator
+
+fn releaseOsIndex(alloc: Allocator) {
+    os_index_users -= 1
+
+    if os_index_users > 0 { return }
+
+    let index = os_index orelse return
+
+    for o in index.items() {
+        alloc.free(o.owned_family)
+        alloc.free(o.owned_path)
+    }
+
+    index.deinit()
+    alloc.destroy(index)
+    os_index = null
+}

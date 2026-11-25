@@ -1,0 +1,28 @@
+import std.list.List
+import std.mem
+import std.mem.Allocator
+
+fn addOsFace(alloc: Allocator, library: *mut FTLibraryRec, ft: *mut FTFaceRec, path: []u8, out: *mut List(OsFace)) {
+    let name = ft.family_name orelse return
+    let family = name[0..strlen(name)]
+
+    if family.len == 0 || family[0] == '.' { return }
+
+    let weights = faceOf(library, ft, []mut u8{}, path)
+    let owned_family = alloc.alloc(0 as u8, family.len) catch return
+    let owned_path = alloc.alloc(0 as u8, path.len) catch |e| {
+        alloc.free(owned_family)
+
+        return
+    }
+
+    mem.copy(owned_family, family)
+    mem.copy(owned_path, path)
+
+    let face = OsFace { owned_family: owned_family, owned_path: owned_path, index: ft.face_index, weight_lo: weights.lo, weight_hi: weights.hi, italic: styledItalic(ft), width_class: widthClassOf(ft) }
+
+    out.append(face) catch |e| {
+        alloc.free(owned_family)
+        alloc.free(owned_path)
+    }
+}
