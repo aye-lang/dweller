@@ -1,3 +1,4 @@
+import engine
 import ipc
 import std.list.List
 import std.mem.AllocError
@@ -14,6 +15,8 @@ fn pollTabs(tabs: *List(*mut TabRenderer)) AllocError!?usize {
 
         if w >= 0 && (wait < 0 || w < wait) { wait = w }
     }
+
+    wait = engine.releaseWhenIdle(wait)
 
     if ipc.poll(fds.items().ptr, fds.len() as u64, wait) <= 0 { return null }
 
