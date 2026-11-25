@@ -1,0 +1,20 @@
+import std.mem.AllocError
+
+fn appendLayers(dst: *mut Sheet, src: *Sheet) AllocError![]mut u32 {
+    let from = src.layers.items()
+    let map = try dst.alloc.alloc(0 as u32, from.len)
+
+    errdefer dst.alloc.free(map)
+
+    for i, l in from {
+        if i == 0 { continue }
+
+        if l.name.len > 0 {
+            map[i] = try dst.layerNamed(map[l.parent], l.name)
+        } else {
+            map[i] = try dst.newLayer(map[l.parent], "")
+        }
+    }
+
+    return map
+}

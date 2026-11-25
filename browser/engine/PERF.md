@@ -303,6 +303,16 @@ Raw `sample PID 3 1 -file report.txt` works too.
    Viewport/source changes still reparse. A regression test covers media
    changes (the old reader key omitted media). YouTube sheet parsing drops
    from 111 ms to 74 ms; final author-sheet loading disappears.
+   Since Q2.13b a rebuild parses only the sources that are new or changed:
+   the page keeps one parsed `css.Sheet` per source (`ParsedSheets`,
+   engine/parsed-sheets.aye; a style's text, base URL and media; a linked
+   sheet's response and media), and the author sheet a rebuild makes
+   copies their lists (`css.appendSheet`) and holds a reference to each,
+   whose strings and tokens the computed values point into. A CSSOM change
+   is a new source text, so a shared parse is never edited. A source that
+   no rebuild uses any more leaves the cache, and the last author sheet
+   holding it frees it. youtube-search parsed its 3.85 MB sheet 22 times
+   during the load before, 3 times after (Q2.13b card).
 
 The final ZOL sample no longer lists frame lookups or matching among hot
 leaf stacks. Image decode/JPEG store dominate (151/110 samples, followed

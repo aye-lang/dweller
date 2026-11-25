@@ -1,0 +1,18 @@
+import std.mem.AllocError
+
+// chromium: third_party/blink/renderer/core/css/style_sheet_contents.h
+pub fn appendSheet(dst: *mut Sheet, src: *mut Sheet) AllocError!void {
+    let at = sheetEnds(dst)
+    let layers = try appendLayers(dst, src)
+
+    defer dst.alloc.free(layers)
+
+    try appendRules(dst, src, at, layers)
+    try appendSelectors(dst, src, at)
+    try appendAtRules(dst, src, at, layers)
+    mergePageBox(&mut dst.page, src.page)
+    try dst.parts.append(src)
+    src.refs += 1
+    dst.index.ready = false
+    dst.rankLayers()
+}

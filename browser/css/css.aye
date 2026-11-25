@@ -516,6 +516,9 @@ pub struct Sheet {
     // What its selectors look at of `class` (inputs.aye), built when the
     // cascade first needs it. On the heap, like `arena`.
     class_info: *mut ClassInfo
+    parts: List(*mut Sheet)
+    refs: u32 = 0
+    scope_read: bool = false
 
     pub fn init(alloc: Allocator) AllocError!Sheet {
         let arena = try alloc.create(Arena.init(alloc))
@@ -564,6 +567,7 @@ pub struct Sheet {
             scoped: List(Scoped).init(a),
             index: index,
             class_info: class_info,
+            parts: List(*mut Sheet).init(a),
         }
     }
 
@@ -592,6 +596,9 @@ pub struct Sheet {
     }
 
     pub fn deinit(self: *mut Self) {
+        for part in self.parts.items() {
+            releaseSheet(part)
+        }
         for sc in self.scoped.items() {
             sc.sheet.deinit()
             self.alloc.destroy(sc.sheet)

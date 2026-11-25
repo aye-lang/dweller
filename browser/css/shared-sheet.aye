@@ -1,0 +1,15 @@
+import std.mem.AllocError
+import std.mem.Allocator
+
+pub fn sharedSheet(alloc: Allocator) AllocError!*mut Sheet {
+    var fresh = try Sheet.init(alloc)
+    let sheet = alloc.create(fresh) catch |e| {
+        fresh.deinit()
+
+        return e
+    }
+
+    sheet.refs = 1
+
+    return sheet
+}

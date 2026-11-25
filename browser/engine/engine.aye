@@ -78,6 +78,7 @@ pub struct Page {
     styling: ?*mut Styling
     // The stylesheet source fingerprint for styling (sheet_cache.aye).
     sheet_key: u64
+    parsed_sheets: ?*mut ParsedSheets = null
     tree: ?*mut layout.Tree
     host_caret: ?paint.Rect = null
     selection: []mut paint.Rect = []mut paint.Rect{}
@@ -172,6 +173,10 @@ pub struct Page {
         }
         self.dropTree()
         self.dropStyling()
+        if self.parsed_sheets |parsed| {
+            parsed.deinit()
+            alloc.destroy(parsed)
+        }
         if self.images |imgs| {
             imgs.deinit()
             alloc.destroy(imgs)
