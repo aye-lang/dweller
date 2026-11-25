@@ -1,0 +1,27 @@
+import css
+import dom.Document
+import dom.FetchedSheet
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+// chromium: third_party/blink/renderer/core/css/style_engine.cc (CreateSheet)
+fn appendSource(alloc: Allocator, doc: *Document, base: *Url, address: *Url, src: *SheetSource, fetched: ?*FetchedSheet, sheet: *mut css.Sheet, cache: *mut ParsedSheets) AllocError!bool {
+    if findParsed(cache, src) |hit| {
+        try css.appendSheet(sheet, hit.sheet)
+
+        return false
+    }
+
+    let parsed = try css.sharedSheet(alloc)
+
+    defer css.releaseSheet(parsed)
+
+    let failed = try parseSource(alloc, doc, base, address, src, fetched, parsed)
+
+    if !failed { try keepParsed(cache, src, parsed) }
+
+    try css.appendSheet(sheet, parsed)
+
+    return failed
+}

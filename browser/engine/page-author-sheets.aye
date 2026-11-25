@@ -7,5 +7,7 @@ fn pageAuthorSheets(p: *mut Page, media: css.Media, out: *mut css.Sheet) AllocEr
     sheet_top = rootPage(p).url.href
     defer sheet_top = ""
 
-    try authorSheets(p.alloc, &p.doc, &p.url, media, out)
+    if p.parsed_sheets == null { p.parsed_sheets = try p.alloc.create(ParsedSheets.init(p.alloc)) }
+
+    try authorSheets(p.alloc, &p.doc, &p.url, media, p.parsed_sheets.?, out)
 }

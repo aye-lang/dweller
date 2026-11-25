@@ -1,0 +1,28 @@
+import std.mem.AllocError
+
+fn appendAtRules(dst: *mut Sheet, src: *Sheet, at: SheetEnds, layers: []u32) AllocError!void {
+    for k, href in src.imports.items() {
+        try dst.imports.append(href)
+        try dst.import_layers.append(layers[src.import_layers.items()[k]])
+    }
+
+    for f in src.font_faces.items() {
+        try dst.font_faces.append(f)
+    }
+
+    for k in src.keyframes.items() {
+        try dst.keyframes.append(Keyframe { name: k.name, rule: k.rule + at.keyframe_rules, offset: k.offset, decls: shiftedDecls(k.decls, at.decls), layer: layers[k.layer] })
+    }
+
+    dst.keyframe_rules += src.keyframe_rules
+
+    for c in src.conditions.items() {
+        try dst.conditions.append(ContainerCondition { name: c.name, toks: c.toks, parent: shiftedIndex(c.parent, at.conditions) })
+    }
+
+    var it = src.registered.iterator()
+
+    while it.next() |e| {
+        try dst.registered.put(e.key, e.value.*)
+    }
+}

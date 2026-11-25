@@ -1,0 +1,26 @@
+import css
+import dom.Document
+import dom.FetchedSheet
+import encoding
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+fn parseFetched(alloc: Allocator, doc: *Document, target: *Url, res: *FetchedSheet, media: css.Media, sheet: *mut css.Sheet) AllocError!bool {
+    let src = try encoding.toUtf8(alloc, res.body, encoding.sniff(res.body, res.charset))
+
+    defer alloc.free(src)
+
+    let failed_before = failed_sheets
+
+    try parseWithImports(alloc, doc, target, target, src, media, sheet, true)
+
+    return failed_sheets != failed_before
+}
+
+fn linkedSource(alloc: Allocator, doc: *Document, target: *Url, res: *FetchedSheet, media: css.Media, sheet: *mut css.Sheet, cache: ?*mut ParsedSheets, mode: u8) AllocError!bool {
+    let shared = cache orelse return parseFetched(alloc, doc, target, res, media, sheet)
+    var source = SheetSource { kind: SOURCE_LINKED, mode: mode, text: "", base: target.href, media: media }
+
+    return appendSource(alloc, doc, target, target, &source, res, sheet, shared)
+}
