@@ -389,3 +389,43 @@ fn style_sheets_parsed_once_per_source() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn free_memory_released_after_load_at_most_every_two_seconds() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = scratch().join("free-memory-released");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let page = "<!doctype html><style id=s>p { color: rgb(0, 0, 1) }</style><p id=out>wait</p><script>\
+        addEventListener('load', () => {\
+          let n = 0;\
+          const t = setInterval(() => {\
+            n++;\
+            document.getElementById('s').textContent = 'p { color: rgb(0, 0, ' + n + ') }';\
+            getComputedStyle(document.getElementById('out')).color;\
+            if (n == 35) { clearInterval(t); document.title = 'done'; }\
+          }, 100);\
+        });</script>";
+    std::fs::write(dir.join("page.html"), page).unwrap();
+    for mode in ["single", "site"] {
+        let mut run = dweller_command();
+        run.current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .env("DWELLER_TIMING", "1")
+            .arg(dir.join("page.html"))
+            .args(["--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "400", "--until-idle", "--events", "renderer:title:done frame"]);
+        let began = std::time::Instant::now();
+        let out = run.output().unwrap();
+        let ms = began.elapsed().as_millis() as usize;
+        let trace = text(&out.stderr);
+        assert!(out.status.success(), "{mode}: {}\n{trace}", out.status);
+        let releases = trace.lines().filter(|l| l.contains("\trelease_free_memory\t")).count();
+        assert!(releases >= 1, "{mode}: no release of free memory after the load");
+        assert!(releases <= 1 + ms / 2000, "{mode}: {releases} releases in {ms} ms");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
