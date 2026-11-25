@@ -1,0 +1,11 @@
+import std.mem.AllocError
+
+fn appendRules(dst: *mut Sheet, src: *Sheet, at: SheetEnds, layers: []u32) AllocError!void {
+    for r in src.rules.items() {
+        try dst.rules.append(Rule { sel_start: r.sel_start + at.complexes, sel_end: r.sel_end + at.complexes, decl_start: r.decl_start + at.decls, decl_end: r.decl_end + at.decls, layer: layers[r.layer], cond: shiftedIndex(r.cond, at.conditions), scoped: r.scoped })
+    }
+
+    for d in src.decls.items() {
+        try dst.decls.append(d)
+    }
+}

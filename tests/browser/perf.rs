@@ -1,5 +1,5 @@
 //! Opt-in page-load timing and immutable response archives.
-use super::{dweller_command, root, scratch, server, text};
+use super::{dweller_command, has_sdl, root, scratch, server, text};
 
 #[test]
 fn live_frame_index_follows_mutations() {
@@ -324,5 +324,68 @@ fn archive_replays_unrecorded_post_bodies() {
             && out.contains("four got two"),
         "{out}"
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Q2.13b: a page next to a large linked sheet inserts 20 `style`
+/// elements, each in a task of its own that reads a computed style, and
+/// gives one of two `style` elements with the same text a rule
+/// (`insertRule`). The large sheet is parsed once (one `css_parse`
+/// record of its URL; it was one a rebuild), and the styles are those of
+/// every sheet, the twin untouched, in one process and with
+/// `DWELLER_PROCESS=site`.
+#[test]
+fn style_sheets_parsed_once_per_source() {
+    if !has_sdl() {
+        println!("skipped: no SDL2");
+        return;
+    }
+    let dir = scratch().join("sheets-parsed-once");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let big: String = (0..3000)
+        .map(|i| format!(".r{i} {{ color: rgb(1, 2, 3); margin: 1px 2px }}\n"))
+        .collect::<String>()
+        + "#big { color: rgb(0, 128, 0) }\n";
+    std::fs::write(dir.join("big.css"), big).unwrap();
+    let page = "<!doctype html><link rel=stylesheet href=big.css>\
+        <style>#twin { color: rgb(255, 0, 0) }</style><style>#twin { color: rgb(255, 0, 0) }</style>\
+        <p id=big>big</p><p id=twin>twin</p><p id=out>wait</p><script>\
+        let n = 0, got = [];\
+        function step() {\
+          const s = document.createElement('style'); s.textContent = '.s' + n + ' { margin-left: ' + n + 'px }'; document.head.appendChild(s);\
+          const p = document.createElement('p'); p.className = 's' + n; document.body.appendChild(p);\
+          got.push(getComputedStyle(p).marginLeft);\
+          if (n == 10) document.querySelectorAll('style')[0].sheet.insertRule('#twin { color: rgb(0, 0, 255) }', 1);\
+          n++;\
+          if (n < 20) { setTimeout(step, 16); return; }\
+          const css = (id) => getComputedStyle(document.getElementById(id)).color;\
+          document.getElementById('out').textContent = got.join(',') + ' ' + css('big') + ' ' + css('twin') + ' ' + document.querySelectorAll('style')[1].sheet.cssRules.length;\
+          document.title = 'done';\
+        }\
+        setTimeout(step, 0);</script>";
+    std::fs::write(dir.join("page.html"), page).unwrap();
+    let want = (0..20).map(|i| format!("{i}px")).collect::<Vec<_>>().join(",")
+        + " rgb(0, 128, 0) rgb(255, 0, 0) 1";
+    for mode in ["single", "site"] {
+        let out = dweller_command()
+            .current_dir(root())
+            .env("DWELLER_PROCESS", mode)
+            .env("DWELLER_TIMING", "1")
+            .arg(dir.join("page.html"))
+            .args(["--font", "fixed", "--width", "400", "--height", "300"])
+            .args(["--frames", "400", "--until-idle", "--text", "--events", "renderer:title:done frame"])
+            .output()
+            .unwrap();
+        let trace = text(&out.stderr);
+        assert!(out.status.success(), "{mode}: {}\n{trace}", out.status);
+        let got = text(&out.stdout);
+        assert!(got.contains(&want), "{mode}: {got}");
+        let parses = trace
+            .lines()
+            .filter(|l| l.contains("\tcss_parse\t") && l.ends_with("/sheets-parsed-once/big.css"))
+            .count();
+        assert_eq!(parses, 1, "{mode}: the large sheet was parsed {parses} times");
+    }
     std::fs::remove_dir_all(&dir).unwrap();
 }

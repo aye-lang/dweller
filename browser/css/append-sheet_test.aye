@@ -1,0 +1,124 @@
+import std.mem.Allocator
+
+let MERGED_SOURCES = [3][]u8{
+    "@layer base, theme; @import url(x.css) layer(imp); @layer base { p { color: red } } .a:is(.b, .c) > d { margin: 1px } @keyframes k { from { opacity: 0 } to { opacity: 1 } } @font-face { font-family: F; src: url(f.woff) } @container (min-width: 10px) { .x { color: blue } } @property --p { syntax: '<length>'; inherits: false; initial-value: 1px } @page { size: a4; margin: 1in }",
+    "@layer theme { .t:has(> .u) { color: green } } @layer { .anon { color: red } } .n { & .m { color: var(--p) } } @keyframes j { 50% { opacity: .5 } } @container card (min-width: 1px) { @container (max-width: 900px) { .y { color: red } } } @page { size: auto }",
+    "@layer base.inner { q { color: red } } :not(.z):nth-child(2n of .w) { color: red } @property --p { syntax: '*'; inherits: true } @page { margin-left: 2px }",
+}
+
+fn sameSelectors(a: *Sheet, b: *Sheet) {
+    @expectEqual(a.complexes.len(), b.complexes.len())
+
+    for k, c in a.complexes.items() {
+        let d = b.complexes.items()[k]
+
+        @expect(c.start == d.start && c.end == d.end && c.spec == d.spec && c.pseudo == d.pseudo)
+    }
+
+    @expectEqual(a.compounds.len(), b.compounds.len())
+
+    for k, c in a.compounds.items() {
+        let d = b.compounds.items()[k]
+
+        @expect(c.start == d.start && c.end == d.end && c.combinator == d.combinator)
+    }
+
+    @expectEqual(a.simples.len(), b.simples.len())
+
+    for k, s in a.simples.items() {
+        let t = b.simples.items()[k]
+
+        @expect(s.kind == t.kind && eqlBytes(s.name, t.name) && eqlBytes(s.value, t.value) && s.sub_start == t.sub_start && s.sub_end == t.sub_end && s.a == t.a && s.b == t.b)
+    }
+}
+
+fn sameRules(a: *Sheet, b: *Sheet) {
+    @expectEqual(a.rules.len(), b.rules.len())
+
+    for k, r in a.rules.items() {
+        let q = b.rules.items()[k]
+
+        @expect(r.sel_start == q.sel_start && r.sel_end == q.sel_end && r.decl_start == q.decl_start && r.decl_end == q.decl_end && r.layer == q.layer && r.cond == q.cond && r.scoped == q.scoped)
+    }
+
+    @expectEqual(a.decls.len(), b.decls.len())
+
+    for k, d in a.decls.items() {
+        let e = b.decls.items()[k]
+
+        @expect(d.prop == e.prop && d.important == e.important && d.raw.len == e.raw.len && eqlBytes(d.name, e.name))
+    }
+}
+
+fn sameAtRules(a: *Sheet, b: *Sheet) {
+    @expectEqual(a.layers.len(), b.layers.len())
+
+    for k, l in a.layers.items() {
+        let m = b.layers.items()[k]
+
+        @expect(eqlBytes(l.name, m.name) && l.parent == m.parent && l.rank == m.rank)
+    }
+
+    @expectEqual(a.keyframes.len(), b.keyframes.len())
+
+    for k, f in a.keyframes.items() {
+        let g = b.keyframes.items()[k]
+
+        @expect(eqlBytes(f.name, g.name) && f.rule == g.rule && f.decls.start == g.decls.start && f.decls.end == g.decls.end && f.layer == g.layer)
+    }
+
+    @expectEqual(a.keyframe_rules, b.keyframe_rules)
+    @expectEqual(a.conditions.len(), b.conditions.len())
+
+    for k, c in a.conditions.items() {
+        @expect(eqlBytes(c.name, b.conditions.items()[k].name) && c.parent == b.conditions.items()[k].parent)
+    }
+
+    @expectEqual(a.imports.len(), b.imports.len())
+
+    for k, l in a.import_layers.items() {
+        @expectEqual(l, b.import_layers.items()[k])
+    }
+
+    @expectEqual(a.font_faces.len(), b.font_faces.len())
+    @expectEqual(a.registered.len(), b.registered.len())
+    @expectEqual(a.registered.get("--p").?.len, b.registered.get("--p").?.len)
+    @expect(a.page.width == b.page.width && a.page.height == b.page.height && a.page.turn == b.page.turn)
+
+    for k in 0..4 {
+        @expect(a.page.margin[k] == b.page.margin[k])
+    }
+}
+
+fn mergedSheet(alloc: Allocator, media: Media, out: *mut Sheet) !void {
+    for src in MERGED_SOURCES {
+        let part = try sharedSheet(alloc)
+
+        try parseSheet(part, src, media)
+        try appendSheet(out, part)
+        @expectEqual(2, part.refs)
+        releaseSheet(part)
+    }
+}
+
+test "a sheet of appended parts is the sheet of its sources parsed in order" {
+    let a = @testAllocator()
+    let media = Media { width: 800.0, height: 600.0 }
+    var whole = try Sheet.init(a)
+    defer whole.deinit()
+    for src in MERGED_SOURCES {
+        try parseSheet(&mut whole, src, media)
+    }
+    var merged = try Sheet.init(a)
+    defer merged.deinit()
+    try mergedSheet(a, media, &mut merged)
+    @expectEqual(9, whole.rules.len())
+    @expectEqual(6, whole.layers.len())
+    @expectEqual(5, whole.keyframes.len())
+    @expectEqual(3, whole.conditions.len())
+    sameRules(&whole, &merged)
+    sameSelectors(&whole, &merged)
+    sameAtRules(&whole, &merged)
+    @expectEqual(3, merged.parts.len())
+    @expectEqual(1, merged.parts.items()[0].refs)
+}

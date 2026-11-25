@@ -1,0 +1,21 @@
+import std.list.List
+import std.mem.Allocator
+
+// chromium: third_party/blink/renderer/core/css/style_engine.cc (text_to_sheet_cache_)
+pub struct ParsedSheets {
+    alloc: Allocator
+    entries: List(ParsedSheet)
+    build: u64 = 0
+
+    pub fn init(alloc: Allocator) ParsedSheets {
+        return ParsedSheets { alloc: alloc, entries: List(ParsedSheet).init(alloc) }
+    }
+
+    pub fn deinit(self: *mut Self) {
+        for e in self.entries.items() {
+            dropParsed(self.alloc, e)
+        }
+
+        self.entries.deinit()
+    }
+}

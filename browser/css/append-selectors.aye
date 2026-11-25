@@ -1,0 +1,22 @@
+import std.mem.AllocError
+
+fn appendSelectors(dst: *mut Sheet, src: *Sheet, at: SheetEnds) AllocError!void {
+    for c in src.complexes.items() {
+        try dst.complexes.append(Complex { start: c.start + at.compounds, end: c.end + at.compounds, spec: c.spec, pseudo: c.pseudo })
+    }
+
+    for c in src.compounds.items() {
+        try dst.compounds.append(Compound { start: c.start + at.simples, end: c.end + at.simples, combinator: c.combinator })
+    }
+
+    for s in src.simples.items() {
+        var moved = s
+
+        if s.sub_end > 0 {
+            moved.sub_start += at.complexes
+            moved.sub_end += at.complexes
+        }
+
+        try dst.simples.append(moved)
+    }
+}

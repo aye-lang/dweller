@@ -1,0 +1,21 @@
+import css
+import dom.Document
+import dom.FetchedSheet
+import std.mem.AllocError
+import std.mem.Allocator
+import url.Url
+
+fn parseSource(alloc: Allocator, doc: *Document, base: *Url, address: *Url, src: *SheetSource, fetched: ?*FetchedSheet, parsed: *mut css.Sheet) AllocError!bool {
+    if fetched |res| { return parseFetched(alloc, doc, base, res, src.media, parsed) }
+
+    let failed_before = failed_sheets
+
+    if src.kind == SOURCE_ADOPTED {
+        try css.parseSheet(parsed, src.text, src.media)
+    } else {
+        parsed.scope_root = src.parent
+        try parseWithImports(alloc, doc, base, address, src.text, src.media, parsed, false)
+    }
+
+    return failed_sheets != failed_before
+}

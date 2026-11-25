@@ -1,0 +1,72 @@
+import css
+import dom
+import engine
+import url
+
+fn styled(doc: *mut dom.Document, src: []u8) !dom.NodeId {
+    let style = try doc.createElement("style", []dom.Attr{})
+
+    doc.appendChild(doc.root, style)
+    try doc.appendText(style, src)
+
+    return style
+}
+
+test "style elements with the same text share one parse, and a CSSOM change parses a copy" {
+    let a = @testAllocator()
+    var doc = try dom.Document.init(a)
+    defer doc.deinit()
+    let first = try styled(&mut doc, "p { color: red }")
+    _ = try styled(&mut doc, "p { color: red }")
+    var address = try url.parse(a, "https://x.test/")
+    defer address.deinit(a)
+    let media = css.Media { width: 800.0, height: 600.0 }
+    var cache = engine.ParsedSheets.init(a)
+    defer cache.deinit()
+    var before = try css.Sheet.init(a)
+    defer before.deinit()
+    try engine.authorSheets(a, &doc, &address, media, &mut cache, &mut before)
+    @expectEqual(1, cache.entries.len())
+    @expectEqual(2, before.rules.len())
+    @expect(before.parts.items()[0] == before.parts.items()[1])
+    try doc.sheets.reset(1, first, "p { color: red }")
+    try doc.sheets.insert(1, 0, "p { color: red }")
+    try doc.sheets.insert(1, 1, "p { color: blue }")
+    var after = try css.Sheet.init(a)
+    defer after.deinit()
+    try engine.authorSheets(a, &doc, &address, media, &mut cache, &mut after)
+    @expectEqual(2, cache.entries.len())
+    @expectEqual(3, after.rules.len())
+    @expectEqual(2, after.parts.items()[0].rules.len())
+    @expect(after.parts.items()[1] == before.parts.items()[1])
+    @expectEqual(1, after.parts.items()[1].rules.len())
+}
+
+test "a removed style element's parse leaves the cache, and the last sheet using it frees it" {
+    let a = @testAllocator()
+    var doc = try dom.Document.init(a)
+    defer doc.deinit()
+    let gone = try styled(&mut doc, "p { color: red }")
+    _ = try styled(&mut doc, "q { color: blue }")
+    var address = try url.parse(a, "https://x.test/")
+    defer address.deinit(a)
+    let media = css.Media { width: 800.0, height: 600.0 }
+    var cache = engine.ParsedSheets.init(a)
+    defer cache.deinit()
+    var old = try css.Sheet.init(a)
+    try engine.authorSheets(a, &doc, &address, media, &mut cache, &mut old)
+    let removed = old.parts.items()[0]
+    let kept = old.parts.items()[1]
+    @expectEqual(2, cache.entries.len())
+    @expectEqual(2, removed.refs)
+    doc.detach(gone)
+    var fresh = try css.Sheet.init(a)
+    defer fresh.deinit()
+    try engine.authorSheets(a, &doc, &address, media, &mut cache, &mut fresh)
+    @expectEqual(1, cache.entries.len())
+    @expect(cache.entries.items()[0].sheet == kept)
+    @expectEqual(1, removed.refs)
+    @expectEqual(3, kept.refs)
+    old.deinit()
+    @expectEqual(2, kept.refs)
+}

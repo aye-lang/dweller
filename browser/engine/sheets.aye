@@ -15,7 +15,6 @@ import css
 import dom
 import dom.Document
 import dom.NodeId
-import encoding
 import net
 import perf
 import std.list.List
@@ -28,23 +27,25 @@ import url.Url
 /// Appends to `sheet` the style sheets of `doc`, whose URL is
 /// `address`, whose media match. Sheets that cannot be fetched are
 /// skipped.
-pub fn authorSheets(alloc: Allocator, doc: *Document, address: *Url, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
+pub fn authorSheets(alloc: Allocator, doc: *Document, address: *Url, media: css.Media, cache: *mut ParsedSheets, sheet: *mut css.Sheet) AllocError!void {
     var base = try documentBase(alloc, doc, address)
     defer base.deinit(alloc)
+    cache.build += 1
     try prefetchSheets(alloc, doc, &base, address, media, sheet)
-    try treeSheets(alloc, doc, doc.root, &base, address, media, sheet)
+    try treeSheets(alloc, doc, doc.root, &base, address, media, cache, sheet)
     for root in doc.shadows.items() {
         if doc.isLive(root) && doc.isConnected(root) {
             let scoped = try sheet.addScoped(root)
-            try treeSheets(alloc, doc, root, &base, address, media, scoped)
+            try treeSheets(alloc, doc, root, &base, address, media, cache, scoped)
         }
     }
+    sweepParsed(cache)
 }
 
 // The sheets of the tree of `root` (the document node or a shadow root):
 // its `style` and `link` elements in tree order, then the sheets scripts
 // adopted for it.
-fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, address: *Url, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
+fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, address: *Url, media: css.Media, cache: *mut ParsedSheets, sheet: *mut css.Sheet) AllocError!void {
     var cur: ?NodeId = root
     while cur |h| {
         if doc.isElement(h, "style") && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
@@ -55,16 +56,14 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
                 if text.eql(scripted.source, src.bytes()) {
                     // Scripts changed its rules since it had this text.
                     if !scripted.disabled {
-                        try scriptedRules(alloc, doc, base, address, scripted, media, sheet)
+                        try scriptedRules(alloc, doc, base, address, scripted, media, cache, sheet)
                     }
                     cur = doc.following(h, root)
                     continue
                 }
             }
-            // `@scope` without a prelude scopes to the element's parent.
-            sheet.scope_root = doc.parent(h)
-            try parseWithImports(alloc, doc, base, address, src.bytes(), media, sheet, false)
-            sheet.scope_root = null
+            var source = SheetSource { kind: SOURCE_STYLE, text: src.bytes(), base: base.href, media: media, parent: doc.parent(h) }
+            _ = try appendSource(alloc, doc, base, address, &source, null, sheet, cache)
         } else if doc.isElement(h, "link") && isStylesheetLink(doc, h) && !dom.styleBlocked(doc, h, dom.MARK_BLOCKED) && !inNoscript(doc, h) && (try mediaOk(doc, h, media, sheet)) {
             let scripted = doc.sheets.ofOwner(h)
             var disabled = false
@@ -73,10 +72,10 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
             }
             if !disabled {
                 if doc.attr(h, "href") |href| {
-                    try linkedSheet(alloc, doc, base, address, href, media, sheet, doc.attr(h, "crossorigin"), net.parseReferrerPolicy(doc.attr(h, "referrerpolicy") orelse ""))
+                    try linkedSheet(alloc, doc, base, address, href, media, sheet, doc.attr(h, "crossorigin"), net.parseReferrerPolicy(doc.attr(h, "referrerpolicy") orelse ""), cache)
                 }
                 if scripted |ss| {
-                    try scriptedRules(alloc, doc, base, address, ss, media, sheet)
+                    try scriptedRules(alloc, doc, base, address, ss, media, cache, sheet)
                 }
             }
         }
@@ -84,21 +83,23 @@ fn treeSheets(alloc: Allocator, doc: *Document, root: NodeId, base: *Url, addres
     }
     for ad in doc.adopted.items() {
         if dom.same(ad.root, root) {
-            try css.parseSheet(sheet, ad.css, media)
+            var source = SheetSource { kind: SOURCE_ADOPTED, text: ad.css, base: "", media: media }
+            _ = try appendSource(alloc, doc, base, address, &source, null, sheet, cache)
         }
     }
 }
 
 // The rules a script gave a sheet (`dom.ScriptSheets`), parsed as one
 // sheet in the document.
-fn scriptedRules(alloc: Allocator, doc: *Document, base: *Url, address: *Url, ss: *dom.ScriptSheet, media: css.Media, sheet: *mut css.Sheet) AllocError!void {
+fn scriptedRules(alloc: Allocator, doc: *Document, base: *Url, address: *Url, ss: *dom.ScriptSheet, media: css.Media, cache: *mut ParsedSheets, sheet: *mut css.Sheet) AllocError!void {
     var src = text.Builder.init(alloc)
     defer src.deinit()
     for r in ss.rules.items() {
         try src.append(r)
         try src.appendByte('\n')
     }
-    try parseWithImports(alloc, doc, base, address, src.bytes(), media, sheet, false)
+    var source = SheetSource { kind: SOURCE_STYLE, text: src.bytes(), base: base.href, media: media }
+    _ = try appendSource(alloc, doc, base, address, &source, null, sheet, cache)
 }
 
 // Loads the linked sheets concurrently into the session's cache, each
@@ -154,7 +155,7 @@ fn isStylesheetLink(doc: *Document, el: NodeId) bool {
     return found
 }
 
-fn linkedSheet(alloc: Allocator, doc: *Document, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy) AllocError!void {
+fn linkedSheet(alloc: Allocator, doc: *Document, base: *Url, address: *Url, href: []u8, media: css.Media, sheet: *mut css.Sheet, crossorigin: ?[]u8, policy: ?net.ReferrerPolicy, cache: ?*mut ParsedSheets) AllocError!void {
     let target = url.resolve(alloc, base, text.trim(href)) catch |e| {
         return
     }
@@ -168,11 +169,7 @@ fn linkedSheet(alloc: Allocator, doc: *Document, base: *Url, address: *Url, href
         return
     }
     noteSheetResult(target.href, crossorigin != null, LINK_LOADED)
-    let src = try encoding.toUtf8(alloc, res.body, encoding.sniff(res.body, res.charset))
-    defer alloc.free(src)
-    let failed_before = failed_sheets
-    try parseWithImports(alloc, doc, &target, &target, src, media, sheet, true)
-    if failed_sheets != failed_before {
+    if try linkedSource(alloc, doc, &target, res, media, sheet, cache, sheetMode(crossorigin)) {
         noteSheetResult(target.href, crossorigin != null, LINK_FAILED)
     }
 }
@@ -209,7 +206,7 @@ fn parseWithImports(alloc: Allocator, doc: *Document, base: *Url, address: *Url,
         let href = sheet.imports.items()[first_import + k]
         // The imported sheet's rules go into the layer of its `@import`.
         sheet.base_layer = sheet.import_layers.items()[first_import + k]
-        try linkedSheet(alloc, doc, base, address, href, media, sheet, null, null)
+        try linkedSheet(alloc, doc, base, address, href, media, sheet, null, null, null)
     }
     sheet.base_layer = outer_layer
     try sheet.moveRulesFirst(first_rule, mid)
@@ -227,14 +224,16 @@ test "noscript sheets apply only while scripts do not run" {
     var address = try url.parse(a, "https://x.test/")
     defer address.deinit(a)
     let media = css.Media { width: 800.0, height: 600.0 }
+    var cache = ParsedSheets.init(a)
+    defer cache.deinit()
     var off = try css.Sheet.init(a)
     defer off.deinit()
-    try authorSheets(a, &doc, &address, media, &mut off)
+    try authorSheets(a, &doc, &address, media, &mut cache, &mut off)
     @expectEqual(1, off.rules.len())
     setScripting(true)
     defer setScripting(false)
     var on = try css.Sheet.init(a)
     defer on.deinit()
-    try authorSheets(a, &doc, &address, media, &mut on)
+    try authorSheets(a, &doc, &address, media, &mut cache, &mut on)
     @expectEqual(0, on.rules.len())
 }

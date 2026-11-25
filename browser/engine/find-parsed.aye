@@ -1,0 +1,32 @@
+import css
+import dom
+import dom.NodeId
+import std.text
+
+fn findParsed(cache: *mut ParsedSheets, src: *SheetSource) ?*mut ParsedSheet {
+    for i in 0..cache.entries.len() {
+        let e = &mut cache.entries.items()[i]
+
+        if sameSource(e, src) {
+            e.used = cache.build
+
+            return e
+        }
+    }
+
+    return null
+}
+
+fn sameSource(e: *ParsedSheet, src: *SheetSource) bool {
+    if e.kind != src.kind || e.mode != src.mode || e.owned_text.len != src.text.len || !sameParent(e, src.parent) { return false }
+    if e.media.width != src.media.width || e.media.height != src.media.height || !sameDark(e.media.dark, src.media.dark) || e.ratio != css.devicePixelRatio() || e.printing != css.printing() { return false }
+    return text.eql(e.owned_base, src.base) && text.eql(e.owned_text, src.text)
+}
+
+fn sameParent(e: *ParsedSheet, probe: ?NodeId) bool {
+    if !e.scope_read { return true }
+    let p = e.parent orelse return probe == null
+    let q = probe orelse return false
+
+    return dom.same(p, q)
+}
