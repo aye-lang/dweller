@@ -14,6 +14,7 @@ import js.Args
 import js.Interp
 import js.JsError
 import js.Value
+import net
 import paint
 import perf
 import std
@@ -84,12 +85,16 @@ fn glBool(it: *mut Interp, a: Args, i: usize) u8 {
 
 // webglCreate(canvas, alpha, depth, stencil, antialias,
 // premultipliedAlpha, preserveDrawingBuffer): true when the canvas has a
-// context; false without WebGL (no ANGLE, DWELLER_GL=off).
+// context; false without WebGL (no ANGLE, DWELLER_GL=off, an archive).
 fn akWebglCreate(it: *mut Interp, a: Args) JsError!Value {
     let c = try canvasBitmap(it, it.arg(a, 0))
     if c.gl != null {
         return js.boolVal(true)
     }
+    if net.archived() {
+        return js.boolVal(false)
+    }
+
     let attrs = gpu.Attrs { alpha: it.toBoolean(it.arg(a, 1)), depth: it.toBoolean(it.arg(a, 2)), stencil: it.toBoolean(it.arg(a, 3)), antialias: it.toBoolean(it.arg(a, 4)), premultiplied: it.toBoolean(it.arg(a, 5)), preserve: it.toBoolean(it.arg(a, 6)) }
     c.gl = gpu.createWebGL(it.alloc, attrs, c.bmp.width as i32, c.bmp.height as i32)
     return js.boolVal(c.gl != null)

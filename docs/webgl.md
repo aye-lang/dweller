@@ -172,7 +172,10 @@ Dweller does the same, in `browser/gpu/gl.aye`:
   - `off`: no WebGL
   With no `DWELLER_GL`, a display that Vulkan cannot make (no GPU, or a
   sandboxed renderer, which has no GPU device) falls back to
-  `swiftshader` (`gpu/init-display.aye`, Q2.14h).
+  `swiftshader` (`gpu/init-display.aye`, Q2.14h). Under `DWELLER_RECORD`
+  or `DWELLER_REPLAY` there is no WebGL, whatever `DWELLER_GL` says: an
+  archive's page must not read the machine's GPU (P1.S10b,
+  `browser/engine/PERF.md` "Archive semantics").
 
   The display is made lazily, on the first `getContext('webgl2')`, so
   pages without WebGL pay nothing.
